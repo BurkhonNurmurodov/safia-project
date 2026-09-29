@@ -1,18 +1,33 @@
 /**
- * «Kelish ro'yxati» — the T11 staff list on the platform (`/kelish`).
+ * «Kelish ro'yxati» — the T11 staff list on the platform (`/kelish`), read as a
+ * WEEK REGISTER (from 2026-09-29, the operator's directive).
  *
  * One list per CELL per shift-day: every worker the ORIGINAL Verifix upload
  * filed under the cell in the last 30 days, and beside each name whether they
- * are coming. A tap marks «Keladi» (green), the next «Kelmaydi» (red), the
- * third clears it again (empty → green → red → empty, the operator's call) —
- * an unmarked worker is simply not filled yet. «+» and «−»
- * at the table's foot change who is on the list, permanently, from today on.
+ * are coming. The page lays a calendar week (Monday → Sunday — this week by
+ * default, ‹ › step a week) across those lists: one row per worker, one column
+ * per day, and each day's answer as a square —
  *
- * Only today and tomorrow (the unit's shift-day frame) are editable; earlier
- * days are read-only and later ones are not offered. The server decides every
- * one of those questions and ships the answers (`editable`, `can_edit`,
- * `when`), so the page derives nothing from the viewer's role or the browser's
- * clock. Rules and scope: backend `services/kelish.py` + `routers/kelish.py`.
+ *   green ✓   «Keladi»            red ✗   «Kelmaydi»
+ *   □ (empty) not answered         ·       not on that day's list
+ *   hatched   a day that has not opened yet
+ *   ◥ corner  the answer was set by somebody other than the cell's leader
+ *
+ * Only TODAY and TOMORROW (the unit's shift-day frame) are open. Their two
+ * columns are lit and wider — the thumb's target — and a tap cycles a square
+ * empty → green → red → empty (the operator's call). The rest of the week is
+ * the record, read-only. «+» and «−» at the table's foot change who is on the
+ * list, permanently, from today on. Tapping a NAME opens that worker's week —
+ * who marked each day and when — which the grid has no room to print.
+ *
+ * The server decides every one of those questions and ships the answers
+ * (`days[].state / editable / when`, `can_edit`, `this_week`), so the page
+ * derives nothing from the viewer's role or the browser's clock. Rules and
+ * scope: backend `services/kelish.py` + `routers/kelish.py`.
+ *
+ * NOTHING above the rows may change size because of a tap (the operator's
+ * rule): the counts live in the header meters (fixed size) and the sticky
+ * totals row UNDER the rows; copy that comes and goes lives in the footer.
  *
  * Page key `kelish` — admin-only until the operator opens it. Checklist task
  * #11 is untouched: nothing here scores anything.
@@ -20,11 +35,10 @@
 import { useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, CheckCircle2, Clock, Info, Lock, Minus, Plus, Trash2, Undo2, UserCheck,
-  UserMinus, UserPlus, Users, X,
+  Check, Clock, Info, Lock, Minus, Plus, Trash2, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
-import TableCard, { Th } from "../components/ui/DataTable";
+import TableCard from "../components/ui/DataTable";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import DayStepper from "../components/ui/DayStepper";
@@ -41,19 +55,47 @@ import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { cellLabel } from "../utils/cellName";
 import { shortPerson } from "../utils/personName";
+import { TONE_HEX, toneFill } from "../utils/statusBands";
 import { transliterate, useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 
 const NONE = "none";          // the «cells with no brigadir» bucket
 const WINDOW_DAYS = 30;       // services/kelish.WINDOW_DAYS
-const GREEN = "#22c55e";
-const RED = "#ef4444";
+const GREEN = TONE_HEX.ok;
+const RED = TONE_HEX.bad;
+const NO_PARAMS = {};
+
+// The two answers, painted as the platform paints every heatmap cell: the hue
+// at full saturation with the ink `contrastText` picks for it (dark on green,
+// white on red), so a square reads the same on both themes.
+const FILL = { yes: toneFill("ok"), no: toneFill("bad") };
+
+// A day the week has not reached yet — the «Toifalar bo'yicha» matrix's own
+// hatch, one slate at a low alpha so it reads in both themes.
+const HATCH = "repeating-linear-gradient(135deg, transparent 0 4px, rgba(148,163,184,0.16) 4px 8px)";
+// Today's and tomorrow's lane: a brand wash down the whole column. The head
+// and the totals row are sticky and must be opaque, so theirs is layered on
+// the inner surface.
+const LANE = "rgba(var(--brand-rgb), 0.07)";
+const LANE_SOLID = "linear-gradient(rgba(var(--brand-rgb), 0.16), rgba(var(--brand-rgb), 0.16)), var(--bg-inner)";
+
+// The grid's geometry, phone first, named ONCE and read by the <colgroup>, the
+// squares and the skeleton, so the three can never disagree. On a 384px phone
+// the week fits with no sideways scroll: five 28px days, two 48px open days
+// and ~115px left for the name. Wider screens grow the squares rather than
+// the name column, so the eye never travels far from a name to its week.
+// --kd day column · --ko open day column · --sq square · --sqo open square.
+const GRID = "[--kd:28px] [--ko:48px] [--sq:20px] [--sqo:34px] sm:[--kd:64px] sm:[--ko:88px] sm:[--sq:30px] sm:[--sqo:40px] lg:[--kd:72px] lg:[--ko:100px] lg:[--sq:32px] lg:[--sqo:44px]";
+const ROW_H = "h-11 sm:h-[52px]";
 
 const fill = (s, params) =>
   Object.entries(params || {}).reduce((out, [k, v]) => out.split(`{${k}}`).join(String(v ?? "")), s);
 
 // "2026-09-29" → "29.09"
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
+// Monday = 0 … Sunday = 6, the `cal.d*` order.
+const dow = (iso) => (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
+const dayLabel = (iso, t) => `${t(`cal.d${dow(iso)}`)} ${dm(iso)}`;
 
 // The file spells names in capitals («RUSTAMOV XURSHIDBEK BAXTIYOR O'G'LI»);
 // read in sentence-case they are far quicker to scan. Only the first letter of
@@ -66,11 +108,27 @@ const titleCase = (s) =>
 const fold = (s) =>
   transliterate(String(s || ""), "uz").toLowerCase().replace(/[ʻʼ'’‘`]/g, "").replace(/\s+/g, " ").trim();
 
+// When a mark was set, on the PLANT's clock whatever zone the reader sits in.
+let STAMP = null;
+try {
+  STAMP = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+} catch { /* an engine without zone data prints no time rather than a wrong one */ }
+const stamp = (iso) => {
+  if (!iso || !STAMP) return "";
+  try {
+    const p = Object.fromEntries(STAMP.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+    return `${p.day}.${p.month} ${p.hour}:${p.minute}`;
+  } catch {
+    return "";
+  }
+};
+
 function whenText(w, t) {
   if (!w) return "";
   const f = (k) => fill(t(k), { start: w.start, end: w.end });
   switch (w.kind) {
-    case "past": return t("kelish.whenPast");
     case "today": return t("kelish.whenToday");
     case "tomorrow": return t("kelish.whenTomorrow");
     case "running": return f("kelish.whenRunning");
@@ -81,85 +139,181 @@ function whenText(w, t) {
   }
 }
 
-function patchRow(old, key, patch) {
-  if (!old) return old;
-  const rows = old.rows.map((r) => (r.key === key ? { ...r, ...patch } : r));
-  const yes = rows.filter((r) => r.mark === "yes").length;
-  const no = rows.filter((r) => r.mark === "no").length;
-  return { ...old, rows, counts: { yes, no, none: rows.length - yes - no, total: rows.length } };
+// The word over an open day. Read off the server's `when`, never the column's
+// position: on a night shift at 15:00 «tomorrow» is the night that opens
+// TONIGHT, so it says «Bugun» — a bare «Ertaga» there would send a leader to
+// the wrong shift.
+function tagOf(day, t) {
+  const k = day.when?.kind;
+  if (day.state === "today") {
+    if (k === "running") return { text: t("kelish.tagNow"), live: true };
+    if (k === "ended") return { text: t("kelish.tagEnded") };
+    return { text: t("kelish.tagToday") };
+  }
+  if (day.state === "tomorrow") {
+    return { text: t(k === "starts_today" ? "kelish.tagToday" : "kelish.tagTomorrow") };
+  }
+  return null;
 }
 
-// NOTHING above the table may change size because of a tap: a row that moves
-// under the thumb gets the next tap meant for its neighbour. So each chip has a
-// FIXED width on a phone — the number alone (the words stay for screen readers,
-// and show from lg up, where the header has room to spare) — and the third
-// chip is as wide as its «complete» form, so marking the last worker cannot
-// re-wrap the header either.
-const CHIP_W = "min-w-[3.25rem]";
-const CHIP_W3 = "min-w-[4.75rem]";
+// Where the week on screen sits against the plant's current one.
+function weekRel(from, thisWeek, t) {
+  if (!from || !thisWeek) return "";
+  const n = Math.round((Date.parse(from) - Date.parse(thisWeek)) / 604800000);
+  if (n === 0) return t("kelish.weekThis");
+  if (n === -1) return t("kelish.weekPrev");
+  if (n > 0) return t("kelish.weekNext");
+  return fill(t("kelish.weeksAgo"), { n: -n });
+}
 
-function Chip({ color, icon, n, word, wide = false }) {
-  const style = color
-    ? { background: `${color}1f`, color, border: `1px solid ${color}59` }
-    : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" };
+const countsText = (c, t) => [
+  fill(t("kelish.countYes"), { n: c.yes }),
+  fill(t("kelish.countNo"), { n: c.no }),
+  fill(t("kelish.countNone"), { n: c.none }),
+].join(" · ");
+
+const markWord = (mark, t) =>
+  (mark === "yes" ? t("kelish.yes") : mark === "no" ? t("kelish.no") : t("kelish.none"));
+
+// One slot's answer changed: repaint it and re-count its day, so the meter
+// and the totals row move with the tap instead of waiting for the server.
+function patchSlot(old, rowKey, i, patch) {
+  if (!old) return old;
+  const rows = old.rows.map((r) => {
+    if (r.key !== rowKey || !r.days[i]) return r;
+    const days = r.days.slice();
+    days[i] = { ...days[i], ...patch };
+    return { ...r, days };
+  });
+  const on = rows.map((r) => r.days[i]).filter(Boolean);
+  const yes = on.filter((s) => s.mark === "yes").length;
+  const no = on.filter((s) => s.mark === "no").length;
+  const days = old.days.slice();
+  days[i] = { ...days[i], counts: { yes, no, none: on.length - yes - no, total: on.length } };
+  return { ...old, rows, days };
+}
+
+// ── pieces of the grid ──────────────────────────────────────────────────────
+
+// «Somebody else set this»: a folded corner in the square's own ink — the
+// comment marker of the spreadsheet this list replaced.
+function Corner({ size }) {
   return (
     <span
-      title={word}
-      className={`inline-flex items-center justify-center gap-1 h-7 px-2 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap ${wide ? CHIP_W3 : CHIP_W}`}
-      style={style}
+      aria-hidden="true"
+      className="absolute top-0 right-0"
+      style={{ width: 0, height: 0, borderTop: `${size}px solid currentColor`, borderLeft: `${size}px solid transparent`, opacity: 0.55 }}
+    />
+  );
+}
+
+// THE square. Colour + icon, so it reads without colour. `open` is the big,
+// pressable slot of today/tomorrow; `px` sizes it outside the grid (the
+// worker card), where the grid's CSS variables do not reach.
+function Square({ mark, open = false, pop = false, byOther = false, px = null }) {
+  const Icon = mark === "yes" ? Check : mark === "no" ? X : null;
+  const size = px ? `${px}px` : open ? "var(--sqo)" : "var(--sq)";
+  const icon = px ? "w-3 h-3" : open ? "w-[18px] h-[18px] sm:w-5 sm:h-5" : "w-3 h-3 sm:w-4 sm:h-4";
+  return (
+    <span
+      className={`kelish-sq relative inline-grid place-items-center overflow-hidden flex-shrink-0 ${open ? "rounded-lg" : "rounded-[5px]"} ${!mark && open ? "kelish-empty" : ""} ${pop ? "kelish-pop" : ""}`}
+      style={{
+        width: size,
+        height: size,
+        ...(mark ? FILL[mark] : open ? null : { border: "1px solid var(--border-md)" }),
+      }}
     >
-      {icon}
-      <span aria-hidden="true" className="lg:hidden">{n}</span>
-      <span className="sr-only lg:not-sr-only">{word}</span>
+      {Icon && <Icon aria-hidden="true" className={icon} strokeWidth={3} />}
+      {mark && byOther && <Corner size={open ? 9 : 6} />}
     </span>
   );
 }
 
-function Counts({ c, t }) {
-  if (!c) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W}`} />
-        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W}`} />
-        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W3}`} />
-      </div>
-    );
-  }
-  const done = c.total > 0 && c.none === 0;
+// A day's answers as one thin bar — green, red, and the grey still to fill.
+// Fixed size: a tap changes its proportions, never the header's height.
+function Meter({ c }) {
+  const total = c?.total || 0;
+  const w = (n) => `${(n / total) * 100}%`;
   return (
-    <div className="flex items-center gap-1.5">
-      <Chip color={GREEN} icon={<Check size={12} strokeWidth={3} />} n={c.yes} word={fill(t("kelish.countYes"), { n: c.yes })} />
-      <Chip color={RED} icon={<X size={12} strokeWidth={3} />} n={c.no} word={fill(t("kelish.countNo"), { n: c.no })} />
-      {done
-        ? <Chip wide color={GREEN} icon={<CheckCircle2 size={12} />} n={t("kelish.complete")} word={t("kelish.complete")} />
-        : <Chip wide icon={<Minus size={12} strokeWidth={3} />} n={c.none} word={fill(t("kelish.countNone"), { n: c.none })} />}
+    <span
+      aria-hidden="true"
+      className="flex w-[70%] max-w-[46px] h-1 rounded-full overflow-hidden"
+      style={{ background: c && total ? "var(--border-md)" : "transparent" }}
+    >
+      {total > 0 && <span style={{ width: w(c.yes), background: GREEN, transition: "width .25s var(--ease-out)" }} />}
+      {total > 0 && <span style={{ width: w(c.no), background: RED, transition: "width .25s var(--ease-out)" }} />}
+    </span>
+  );
+}
+
+function DayHead({ day, t }) {
+  const future = day.state === "future";
+  const lane = day.state === "today" || day.state === "tomorrow";
+  const tag = tagOf(day, t);
+  const label = [
+    dayLabel(day.date, t),
+    day.when ? whenText(day.when, t) : null,
+    future ? t("kelish.legendFuture") : day.counts ? countsText(day.counts, t) : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <th
+      scope="col"
+      title={label}
+      aria-label={label}
+      className="sticky top-0 z-10 p-0 align-top font-normal"
+      style={{
+        background: future ? `${HATCH}, var(--bg-inner)` : lane ? LANE_SOLID : "var(--bg-inner)",
+        boxShadow: lane ? "inset 0 2px 0 var(--brand)" : undefined,
+        borderRightWidth: 0,
+      }}
+    >
+      <div className="flex flex-col items-center gap-1 pt-1.5 pb-2">
+        <span className="text-[10px] leading-3 font-medium uppercase" style={{ color: lane ? "var(--brand-text)" : "var(--text-3)" }}>
+          {t(`cal.d${dow(day.date)}`)}
+        </span>
+        <span className="text-[15px] sm:text-base leading-[18px] font-bold tabular-nums" style={{ color: future ? "var(--text-4)" : "var(--text-1)" }}>
+          {day.date.slice(8, 10)}
+        </span>
+        <span className="h-3 inline-flex items-center gap-1 text-[9px] sm:text-[10px] leading-3 font-semibold whitespace-nowrap" style={{ color: "var(--brand-text)" }}>
+          {tag?.live && <span className="live-dot w-1.5 h-1.5 rounded-full" style={{ background: GREEN }} />}
+          {tag?.text}
+        </span>
+        <Meter c={future ? null : day.counts} />
+      </div>
+    </th>
+  );
+}
+
+function Swatch({ kind }) {
+  const box = "relative inline-grid place-items-center w-3 h-3 rounded-[3px] overflow-hidden flex-shrink-0";
+  if (kind === "yes" || kind === "no") return <span className={box} style={FILL[kind]} />;
+  if (kind === "by") return <span className={box} style={FILL.yes}><Corner size={5} /></span>;
+  if (kind === "none") return <span className={box} style={{ border: "1px solid var(--border-md)" }} />;
+  if (kind === "future") return <span className={box} style={{ background: HATCH, border: "1px solid var(--border)" }} />;
+  return (
+    <span className="inline-grid place-items-center w-3 h-3 flex-shrink-0">
+      <span className="w-1 h-1 rounded-full" style={{ background: "var(--text-4)" }} />
+    </span>
+  );
+}
+
+function Legend({ t }) {
+  const items = [
+    ["yes", t("kelish.yes")], ["no", t("kelish.no")], ["none", t("kelish.none")],
+    ["off", t("kelish.legendOff")], ["future", t("kelish.legendFuture")], ["by", t("kelish.legendByOther")],
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {items.map(([k, label]) => (
+        <span key={k} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <Swatch kind={k} />{label}
+        </span>
+      ))}
     </div>
   );
 }
 
-// THE mark. Colour + icon + word, so it reads without colour. Read-only marks
-// keep full strength (a past day is a record, not a disabled control).
-function MarkButton({ mark, editable, onClick, name, t }) {
-  const variant = mark === "yes" ? "success" : mark === "no" ? "danger" : "ghost";
-  const Icon = mark === "yes" ? Check : mark === "no" ? X : null;
-  const word = mark === "yes" ? t("kelish.yes") : mark === "no" ? t("kelish.no") : t("kelish.none");
-  return (
-    <Button
-      variant={variant} tint size="lg"
-      disabled={!editable}
-      onClick={onClick}
-      icon={Icon ? <Icon size={15} strokeWidth={2.75} /> : null}
-      aria-label={`${name}: ${word}`}
-      className="w-full h-10 whitespace-nowrap"
-      style={{
-        ...(mark ? {} : { borderStyle: "dashed" }),
-        ...(editable ? {} : { opacity: 1, cursor: "default" }),
-      }}
-    >
-      {mark ? word : "—"}
-    </Button>
-  );
-}
+// ── the page ────────────────────────────────────────────────────────────────
 
 export default function Kelish() {
   const { t } = useLang();
@@ -169,10 +323,11 @@ export default function Kelish() {
   const { ready } = useFactory();
   const factorySection = useFactorySection();
 
-  const [date, setDate] = useState(null);                 // null = the cell's tomorrow
+  const [week, setWeek] = useState(null);                 // a Monday; null = the plant's current week
   const [unitPick, setUnitPick] = usePersistentState("kelish.unit", null);
   const [shiftPick, setShiftPick] = usePersistentState("kelish.shift", null);
   const [cellPick, setCellPick] = usePersistentState("kelish.cell", null);
+  const [sheet, setSheet] = useState(null);               // the worker whose week card is open
 
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState(() => new Set());
@@ -184,11 +339,14 @@ export default function Kelish() {
   const [addErr, setAddErr] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // One request chain per worker, so two quick taps land in order; `ver` keeps
-  // an older answer from repainting a newer tap.
+  // One request chain per (worker, day), so two quick taps land in order;
+  // `ver` keeps an older answer from repainting a newer tap.
   const queues = useRef(new Map());
   const ver = useRef(new Map());
   const pending = useRef(0);
+  // The squares a tap changed this week — the only ones that animate, so a
+  // week opening does not pop every square on it at once.
+  const [pops, setPops] = useState(() => new Set());
 
   const nameOf = (raw) => titleCase(tl(raw));
 
@@ -207,8 +365,7 @@ export default function Kelish() {
   };
 
   // ── which cells ───────────────────────────────────────────────────────────
-  const baseParams = useMemo(() => (date ? { date } : {}), [date]);
-  const cellsParams = useFactoryParams(baseParams);
+  const cellsParams = useFactoryParams(NO_PARAMS);
   const cellsQ = useQuery({
     queryKey: ["kelish-cells", cellsParams],
     queryFn: () => api.get("/api/kelish/cells", { params: cellsParams }).then((r) => r.data),
@@ -217,10 +374,12 @@ export default function Kelish() {
     staleTime: 30_000,
   });
   const cells = cellsQ.data?.cells || [];
-  const units = cellsQ.data?.units || [];
+  const units = useMemo(() => cellsQ.data?.units || [], [cellsQ.data]);
   const scopeKind = cellsQ.data?.scope?.kind;
   const scopeAll = scopeKind === "all";
   const hasOrphans = cells.some((c) => !c.manager_id);
+  const thisWeek = cellsQ.data?.this_week || null;
+  const weekFrom = week || thisWeek;
 
   const unitList = useMemo(
     () => units.filter((u) => !shiftPick || u.shift === shiftPick),
@@ -233,25 +392,28 @@ export default function Kelish() {
   const activeUnit = narrowByUnit ? (unitIds.includes(unitPick) ? unitPick : unitIds[0] ?? null) : null;
   const cellsShown = narrowByUnit ? cells.filter((c) => (c.manager_id ?? NONE) === activeUnit) : cells;
   const cell = cellsShown.find((c) => c.id === cellPick) || cellsShown[0] || null;
-  const shownDate = cell ? (date && date <= cell.tomorrow ? date : cell.tomorrow) : null;
 
-  // ── the list ──────────────────────────────────────────────────────────────
-  const listKey = ["kelish-list", cell?.id ?? null, shownDate];
-  const listQ = useQuery({
-    queryKey: listKey,
-    queryFn: () => api.get("/api/kelish/list", { params: { cell_id: cell.id, date: shownDate } }).then((r) => r.data),
-    enabled: !!cell && !!shownDate,
-    // Keep the table while only the DAY changes; never show one cell's names
+  // ── the week ──────────────────────────────────────────────────────────────
+  const weekKey = ["kelish-week", cell?.id ?? null, weekFrom];
+  const weekQ = useQuery({
+    queryKey: weekKey,
+    queryFn: () => api.get("/api/kelish/week", { params: { cell_id: cell.id, date: weekFrom } }).then((r) => r.data),
+    enabled: !!cell && !!weekFrom,
+    // Keep the grid while only the WEEK changes; never show one cell's names
     // under another cell's title.
     placeholderData: (prev, prevQuery) => (prevQuery?.queryKey?.[1] === cell?.id ? prev : undefined),
     refetchInterval: () => (pending.current > 0 ? false : 60_000),
     refetchOnWindowFocus: () => pending.current === 0,
   });
-  const data = listQ.data && listQ.data.cell?.id === cell?.id ? listQ.data : null;
-  const editable = !!data?.editable;
+  const data = weekQ.data && weekQ.data.cell?.id === cell?.id ? weekQ.data : null;
+  const stale = !!data && weekQ.isPlaceholderData;      // last week on screen while the next one loads
+  const days = data?.days || [];
+  const openAny = days.some((d) => d.editable);
+  const locked = !!data && !openAny;
 
   const view = useMemo(() => {
     if (!data) return [];
+    const openIdx = data.days.map((d, i) => (d.editable ? i : -1)).filter((i) => i >= 0);
     const rows = data.rows.map((r) => {
       const full = nameOf(r.name);
       const parts = full.split(" ");
@@ -261,11 +423,21 @@ export default function Kelish() {
     // comes back only where two workers of one list would otherwise read alike.
     const seen = {};
     rows.forEach((r) => { seen[r.short] = (seen[r.short] || 0) + 1; });
-    return rows.map((r) => ({ ...r, display: seen[r.short] > 1 ? r.full : r.short }));
+    return rows.map((r) => {
+      const display = seen[r.short] > 1 ? r.full : r.short;
+      const [surname, ...rest] = display.split(" ");
+      // «−» names a worker by the key an OPEN day's list uses.
+      const removeKey = openIdx.map((i) => r.days[i]?.k).find(Boolean) || null;
+      const warn = r.never || (r.quiet != null && r.quiet >= (data.quiet_days ?? 7));
+      return { ...r, display, surname, given: rest.join(" "), removeKey, warn };
+    });
   }, [data, tl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const currentCount = view.filter((r) => r.current).length;
+  const firstLeft = view.findIndex((r) => !r.current);
+
   const refreshAll = () => {
-    qc.invalidateQueries({ queryKey: ["kelish-list"] });
+    qc.invalidateQueries({ queryKey: ["kelish-week"] });
     qc.invalidateQueries({ queryKey: ["kelish-cells"] });
   };
   const exitSelect = () => { setSelecting(false); setSel(new Set()); };
@@ -275,29 +447,38 @@ export default function Kelish() {
     exitSelect();
     qc.invalidateQueries({ queryKey: ["kelish-cells"] });
   };
-  const pickDay = (iso) => { setDate(iso); exitSelect(); };
+  const pickWeek = (iso) => {
+    setWeek(iso === thisWeek ? null : iso);
+    setPops(new Set());
+    exitSelect();
+  };
 
   // ── a tap ─────────────────────────────────────────────────────────────────
-  const tap = (row) => {
-    if (!editable || selecting || !data) return;
+  const tap = (row, i) => {
+    const day = data?.days[i];
+    const slot = row.days[i];
+    if (!day?.editable || !slot || selecting || stale) return;
     // empty → yes → no → empty; null CLEARS the mark server-side.
-    const next = row.mark === "yes" ? "no" : row.mark === "no" ? null : "yes";
-    const key = listKey;
-    const v = (ver.current.get(row.key) || 0) + 1;
-    ver.current.set(row.key, v);
-    // Only a CLEAR drops «belgiladi: …» at once; a colour change keeps it until
-    // the server says who set the mark, so the line does not blink per tap.
-    qc.setQueryData(key, (old) => patchRow(old, row.key,
-      next ? { mark: next } : { mark: null, by: null, by_other: false }));
+    const next = slot.mark === "yes" ? "no" : slot.mark === "no" ? null : "yes";
+    const key = weekKey;
+    const id = `${row.key}|${day.date}`;
+    const v = (ver.current.get(id) || 0) + 1;
+    ver.current.set(id, v);
+    setPops((p) => (p.has(id) ? p : new Set(p).add(id)));
+    // Only a CLEAR drops «who marked» at once; a colour change keeps it until
+    // the server says who set the mark, so the corner does not blink per tap.
+    qc.setQueryData(key, (old) => patchSlot(old, row.key, i,
+      next ? { mark: next } : { mark: null, by: null, by_other: false, at: null }));
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
     pending.current += 1;
-    const body = { cell_id: data.cell.id, date: data.date, key: row.key, status: next };
-    const prev = queues.current.get(row.key) || Promise.resolve();
+    const body = { cell_id: data.cell.id, date: day.date, key: slot.k, status: next };
+    const prev = queues.current.get(id) || Promise.resolve();
     const run = prev.catch(() => {})
       .then(() => api.put("/api/kelish/mark", body))
       .then((r) => {
-        if (ver.current.get(row.key) === v) {
-          qc.setQueryData(key, (old) => patchRow(old, row.key, { mark: r.data.mark, by: r.data.by, by_other: r.data.by_other }));
+        if (ver.current.get(id) === v) {
+          qc.setQueryData(key, (old) => patchSlot(old, row.key, i,
+            { mark: r.data.mark, by: r.data.by, by_other: r.data.by_other, at: r.data.at }));
         }
       })
       .catch((e) => {
@@ -305,7 +486,23 @@ export default function Kelish() {
         qc.invalidateQueries({ queryKey: key });
       })
       .finally(() => { pending.current -= 1; });
-    queues.current.set(row.key, run);
+    queues.current.set(id, run);
+  };
+
+  // Arrow keys walk the open squares like a spreadsheet — down a column to
+  // fill a day, across to the other open day.
+  const onGridKey = (e) => {
+    const step = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+    const el = step && e.target.closest?.("[data-ks]");
+    if (!el) return;
+    const [r, c] = el.dataset.ks.split(":").map(Number);
+    for (let k = 1; k <= view.length + 7; k += 1) {
+      const rr = r + step[0] * k;
+      const cc = c + step[1] * k;
+      if (rr < 0 || rr >= view.length || cc < 0 || cc > 6) break;
+      const target = e.currentTarget.querySelector(`[data-ks="${rr}:${cc}"]`);
+      if (target) { e.preventDefault(); target.focus(); return; }
+    }
   };
 
   // ── «+» ───────────────────────────────────────────────────────────────────
@@ -332,14 +529,15 @@ export default function Kelish() {
   }, [data, addName]);
 
   // ── «−» ───────────────────────────────────────────────────────────────────
+  const removable = view.filter((r) => r.removeKey);
   const toggleSel = (key) => setSel((s) => {
     const n = new Set(s);
     if (n.has(key)) n.delete(key); else n.add(key);
     return n;
   });
-  const allSel = view.length > 0 && view.every((r) => sel.has(r.key));
-  const someSel = view.some((r) => sel.has(r.key));
-  const toggleAll = () => setSel(allSel ? new Set() : new Set(view.map((r) => r.key)));
+  const allSel = removable.length > 0 && removable.every((r) => sel.has(r.key));
+  const someSel = removable.some((r) => sel.has(r.key));
+  const toggleAll = () => setSel(allSel ? new Set() : new Set(removable.map((r) => r.key)));
   const selNames = useMemo(() => {
     const picked = view.filter((r) => sel.has(r.key)).map((r) => r.display);
     const head = picked.slice(0, 5).join(", ");
@@ -349,7 +547,8 @@ export default function Kelish() {
     setRemoving(true);
     setRemoveErr("");
     try {
-      const r = await api.post("/api/kelish/workers/remove", { cell_id: data.cell.id, keys: [...sel] });
+      const keys = view.filter((r) => sel.has(r.key) && r.removeKey).map((r) => r.removeKey);
+      const r = await api.post("/api/kelish/workers/remove", { cell_id: data.cell.id, keys });
       toast.success(fill(t("kelish.removedToast"), { n: r.data.removed }));
       setConfirmOpen(false);
       exitSelect();
@@ -405,8 +604,10 @@ export default function Kelish() {
     });
   }
 
+  // Each cell's chip says how far its NEXT list is filled.
+  const nextCounts = days.find((d) => d.state === "tomorrow")?.counts;
   const cellOptions = cellsShown.map((c) => {
-    const p = c.id === cell?.id && data ? data.counts : c.progress;
+    const p = c.id === cell?.id && nextCounts ? nextCounts : c.progress;
     return {
       value: c.id,
       title: c.leader ? tl(c.leader) : undefined,
@@ -415,38 +616,46 @@ export default function Kelish() {
   });
 
   // ── header of the card ────────────────────────────────────────────────────
-  const leaderShort = (name) => {
-    const parts = titleCase(tl(name || "")).split(" ").filter(Boolean);
-    return parts.slice(0, 2).join(" ");
-  };
+  const leaderShort = (name) => titleCase(tl(name || "")).split(" ").filter(Boolean).slice(0, 2).join(" ");
   const cellTitle = cell ? cellLabel(cell.code, cell.leader ? leaderShort(cell.leader) : "") : "";
-  const locked = data && (data.when?.kind === "past" || !data.can_edit);
-  // A skeleton of the same line while the list loads, so the header does not
-  // grow a line (and push the table down) the moment the data arrives.
+  // A skeleton of the same line while the week loads, so the header does not
+  // grow a line (and push the grid down) the moment the data arrives.
   const subtitle = data ? (
     <span className="inline-flex items-center gap-1 flex-wrap">
       {locked && <Lock size={11} aria-hidden="true" />}
-      {[whenText(data.when, t),
-        data.cell.shift ? fill(t("kelish.shiftN"), { n: data.cell.shift }) : null,
-        !data.can_edit ? t("kelish.readOnly") : null].filter(Boolean).join(" · ")}
+      {[data.cell.shift ? fill(t("kelish.shiftN"), { n: data.cell.shift }) : null,
+        weekRel(data.from, data.this_week, t),
+        locked ? t("kelish.readOnly") : null].filter(Boolean).join(" · ")}
     </span>
   ) : (
     <SkeletonBlock className="inline-block align-middle h-3 w-44" />
   );
 
-  const marked = data ? data.counts.yes + data.counts.no : 0;
-  const colCount = selecting ? 3 : 2;
-
+  // What sits under a name on a wide screen; on a phone the card holds it.
   const subLine = (r) => {
     const bits = [];
     if (r.job) bits.push({ text: tx(r.job) });
     if (r.source === "manual") bits.push({ text: t("kelish.manual") });
     if (r.source === "kept") bits.push({ text: t("kelish.kept") });
     if (r.never) bits.push({ text: fill(t("kelish.never"), { n: WINDOW_DAYS }), warn: true });
-    else if (r.quiet != null && r.quiet >= (data?.quiet_days ?? 7)) bits.push({ text: fill(t("kelish.quiet"), { n: r.quiet }), warn: true });
-    if (r.by_other && r.by) bits.push({ text: fill(t("kelish.by"), { name: shortPerson(tl(r.by)) }) });
+    else if (r.warn) bits.push({ text: fill(t("kelish.quiet"), { n: r.quiet }), warn: true });
     return bits;
   };
+
+  const slotLabel = (r, d, s) => {
+    const bits = [r.full, dayLabel(d.date, t)];
+    if (d.state === "future") bits.push(t("kelish.legendFuture"));
+    else if (!s) bits.push(t("kelish.legendOff"));
+    else {
+      bits.push(markWord(s.mark, t));
+      if (s.by && s.by_other) bits.push(fill(t("kelish.by"), { name: shortPerson(tl(s.by)) }));
+    }
+    return bits.join(" · ");
+  };
+
+  // ── footer ────────────────────────────────────────────────────────────────
+  const spotLines = days.filter((d) => d.when?.start).map((d) => `${dayLabel(d.date, t)} — ${whenText(d.when, t)}`);
+  const anyMark = days.some((d) => d.counts && d.counts.yes + d.counts.no > 0);
 
   const footer = !data ? null : selecting ? (
     <>
@@ -461,31 +670,276 @@ export default function Kelish() {
     </>
   ) : (
     <>
-      {/* The how-to lives UNDER the table and is there for the whole day: a
-          hint above it that came and went with the marks moved every row. */}
-      <div className="min-w-0 flex-1 space-y-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-        {editable && (
+      {/* How to read and use the grid lives UNDER it and stays for the whole
+          day: copy above it that came and went moved every row. */}
+      <div className="min-w-0 flex-1 space-y-1.5 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+        <Legend t={t} />
+        {openAny && (
           <div className="flex items-start gap-1.5">
             <Info size={13} className="flex-shrink-0 mt-px" aria-hidden="true" />
             <span>{t("kelish.hint")}</span>
           </div>
         )}
+        {spotLines.map((line) => (
+          <div key={line} className="flex items-start gap-1.5">
+            <Clock size={12} className="flex-shrink-0 mt-px" aria-hidden="true" />
+            <span>{line}</span>
+          </div>
+        ))}
         <div title={t("kelish.sourceHint")}>
           {fill(t("kelish.source"), { from: dm(data.source.from), to: dm(data.source.last_upload || data.source.to) })}
         </div>
-        {data.when?.kind === "past" && marked === 0 && data.counts.total > 0 && <div>{t("kelish.pastNoMarks")}</div>}
+        {!openAny && !anyMark && view.length > 0 && <div>{t("kelish.weekNoMarks")}</div>}
       </div>
-      {editable && (
+      {openAny && (
         <div className="ml-auto flex items-center gap-2 self-center">
           <Button variant="secondary" size="lg" icon={<Plus size={17} />} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
             variant="secondary" size="lg" icon={<Minus size={17} />}
             aria-label={t("kelish.remove")} title={t("kelish.remove")}
-            disabled={!view.length} onClick={() => { setSel(new Set()); setSelecting(true); }}
+            disabled={!removable.length} onClick={() => { setSel(new Set()); setSelecting(true); }}
           />
         </div>
       )}
     </>
+  );
+
+  // ── the grid ──────────────────────────────────────────────────────────────
+  const cols = data ? days : Array.from({ length: 7 }, (_, i) => ({ date: String(i), skeleton: true }));
+  const dim = stale ? { opacity: 0.5, pointerEvents: "none", transition: "opacity .15s" } : { transition: "opacity .15s" };
+  const FOOT = { position: "sticky", bottom: 0, zIndex: 10, boxShadow: "inset 0 1px 0 var(--border-md)" };
+
+  const nameHead = (
+    <th
+      scope="col"
+      className="sticky top-0 z-10 px-2 sm:px-3 pb-2 text-left align-bottom font-semibold"
+      style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+    >
+      {selecting ? (
+        <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] font-medium">
+          <input
+            type="checkbox" checked={allSel}
+            ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
+            onChange={toggleAll}
+            className="w-4 h-4 cursor-pointer accent-[var(--brand)]"
+          />
+          {t("kelish.selectAll")}
+        </label>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+          {t("kelish.colWorker")}
+          {data && (
+            <span
+              className="px-1.5 rounded-md tabular-nums normal-case tracking-normal"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+            >
+              {currentCount}
+            </span>
+          )}
+        </span>
+      )}
+    </th>
+  );
+
+  const nameCell = (r) => {
+    const left = !r.current;
+    const ink = left ? "var(--text-3)" : "var(--text-1)";
+    const bits = subLine(r);
+    const text = (
+      <>
+        {/* phone: surname over given name — two short lines fit where one
+            long one would be cut to nothing */}
+        <span className="sm:hidden block min-w-0">
+          <span className="flex items-center gap-1 min-w-0">
+            <span className="text-[13px] leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
+            {r.warn && <Clock size={11} className="flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />}
+            {r.source === "manual" && <UserPlus size={11} className="flex-shrink-0" style={{ color: "var(--text-3)" }} aria-hidden="true" />}
+          </span>
+          <span className="block text-[11px] leading-[14px] truncate" style={{ color: "var(--text-3)" }}>{r.given || "\u00a0"}</span>
+        </span>
+        <span className="hidden sm:block min-w-0">
+          <span className="block text-sm leading-5 font-medium truncate" style={{ color: ink }}>{r.display}</span>
+          {/* Always one line, even empty, so every row is the same height. */}
+          <span className="block text-[11px] leading-4 truncate" style={{ color: "var(--text-3)" }}>
+            {bits.length > 0 ? bits.map((b, i) => (
+              <span key={i} style={b.warn ? { color: "var(--status-warn)" } : undefined}>
+                {i > 0 && " · "}{b.text}
+              </span>
+            )) : "\u00a0"}
+          </span>
+        </span>
+      </>
+    );
+    return (
+      <td className="px-2 sm:px-3 py-0 align-middle">
+        {selecting ? (
+          <label
+            className={`flex items-center gap-2 min-w-0 ${r.removeKey ? "cursor-pointer" : "opacity-50"}`}
+            title={r.full}
+          >
+            <input
+              type="checkbox" checked={sel.has(r.key)} disabled={!r.removeKey} aria-label={r.display}
+              onChange={() => toggleSel(r.key)}
+              className="w-4 h-4 flex-shrink-0 cursor-pointer accent-[var(--brand)] disabled:cursor-default"
+            />
+            <span className="min-w-0 flex-1">{text}</span>
+          </label>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSheet(r.key)}
+            title={`${r.full} · ${t("kelish.details")}`}
+            className="block w-full min-w-0 text-left rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
+          >
+            {text}
+          </button>
+        )}
+      </td>
+    );
+  };
+
+  const dayCell = (r, ri, d, i) => {
+    const s = r.days[i];
+    const lane = d.state === "today" || d.state === "tomorrow";
+    const label = slotLabel(r, d, s);
+    let body = null;
+    if (d.state !== "future" && !s) {
+      body = <span role="img" aria-label={label} title={label} className="inline-block w-1 h-1 rounded-full align-middle" style={{ background: "var(--text-4)", opacity: 0.7 }} />;
+    } else if (s && d.editable && !selecting) {
+      const id = `${r.key}|${d.date}`;
+      body = (
+        <button
+          type="button"
+          data-ks={`${ri}:${i}`}
+          onClick={() => tap(r, i)}
+          aria-label={label}
+          title={label}
+          className={`kelish-hit w-full ${ROW_H} grid place-items-center cursor-pointer`}
+        >
+          <Square key={s.mark || "-"} mark={s.mark} open pop={pops.has(id)} byOther={s.by_other} />
+        </button>
+      );
+    } else if (s) {
+      body = (
+        <span
+          role="img" aria-label={label} title={label}
+          className={`${ROW_H} grid place-items-center`}
+          style={selecting ? { opacity: 0.35 } : undefined}
+        >
+          <Square mark={s.mark} byOther={s.by_other} />
+        </span>
+      );
+    }
+    return (
+      <td
+        key={d.date}
+        className="p-0 text-center align-middle"
+        style={{ background: d.state === "future" ? HATCH : lane ? LANE : undefined, borderRightWidth: 0 }}
+      >
+        {body}
+      </td>
+    );
+  };
+
+  const skeletonRows = Array.from({ length: 7 }).map((_, i) => (
+    <tr key={`sk${i}`}>
+      <td className={`px-2 sm:px-3 ${ROW_H}`}>
+        <SkeletonBlock className={`h-3.5 ${["w-2/3", "w-1/2", "w-3/5"][i % 3]}`} />
+        <SkeletonBlock className="h-2.5 w-1/3 mt-1.5" />
+      </td>
+      {cols.map((c) => (
+        <td key={c.date} className="p-0 text-center" style={{ borderRightWidth: 0 }}>
+          <SkeletonBlock className="inline-block align-middle rounded-[5px] w-[var(--sq)] h-[var(--sq)]" />
+        </td>
+      ))}
+    </tr>
+  ));
+
+  const grid = (
+    <TableCard
+      icon={UserCheck} headSize="lg"
+      title={cellTitle} subtitle={subtitle}
+      fixed minWidth={320} footer={footer}
+      className={GRID}
+    >
+      <colgroup>
+        <col />
+        {cols.map((d) => <col key={d.date} style={{ width: d.editable ? "var(--ko)" : "var(--kd)" }} />)}
+      </colgroup>
+      <thead style={dim}>
+        <tr>
+          {nameHead}
+          {cols.map((d) => (d.skeleton ? (
+            <th key={d.date} className="sticky top-0 z-10 p-0" style={{ background: "var(--bg-inner)", borderRightWidth: 0 }}>
+              <div className="flex flex-col items-center gap-1 pt-1.5 pb-2">
+                <SkeletonBlock className="h-3 w-4" />
+                <SkeletonBlock className="h-[18px] w-5" />
+                <span className="h-3" />
+                <SkeletonBlock className="h-1 w-[70%] max-w-[46px]" />
+              </div>
+            </th>
+          ) : <DayHead key={d.date} day={d} t={t} />))}
+        </tr>
+      </thead>
+      <tbody onKeyDown={onGridKey} style={dim}>
+        {!data && skeletonRows}
+        {data && view.length === 0 && (
+          <tr>
+            <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
+              {openAny ? t("kelish.emptyList") : t("kelish.emptyListRO")}
+            </td>
+          </tr>
+        )}
+        {data && view.map((r, ri) => (
+          <FragmentRow key={r.key} divider={ri === firstLeft && firstLeft > 0 ? fill(t("kelish.leftGroup"), { n: view.length - firstLeft }) : null}>
+            <tr style={selecting && sel.has(r.key) ? { background: "var(--brand-bg)" } : undefined}>
+              {nameCell(r)}
+              {days.map((d, i) => dayCell(r, ri, d, i))}
+            </tr>
+          </FragmentRow>
+        ))}
+      </tbody>
+      {data && view.length > 0 && (
+        <tfoot style={dim}>
+          <tr>
+            <td className="px-2 sm:px-3 py-1.5" style={{ ...FOOT, background: "var(--bg-inner)" }}>
+              <div className="flex flex-col gap-0.5 text-[10px] leading-3 font-medium" style={{ color: "var(--text-3)" }}>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="yes" />{t("kelish.yes")}</span>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="no" />{t("kelish.no")}</span>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="none" />{t("kelish.none")}</span>
+              </div>
+            </td>
+            {days.map((d) => {
+              const c = d.counts;
+              const lane = d.state === "today" || d.state === "tomorrow";
+              return (
+                <td
+                  key={d.date}
+                  className="p-0 text-center align-middle"
+                  style={{
+                    ...FOOT,
+                    borderRightWidth: 0,
+                    background: d.state === "future" ? `${HATCH}, var(--bg-inner)` : lane ? LANE_SOLID : "var(--bg-inner)",
+                  }}
+                >
+                  {d.state !== "future" && (!c || !c.total ? (
+                    <span className="text-[11px]" style={{ color: "var(--text-4)" }}>—</span>
+                  ) : (
+                    <div className="flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] leading-3 font-bold tabular-nums">
+                      <span style={{ color: "var(--status-ok)" }}>{c.yes}</span>
+                      <span style={{ color: "var(--status-bad)" }}>{c.no}</span>
+                      {c.none === 0
+                        ? <Check size={11} strokeWidth={3} style={{ color: "var(--status-ok)" }} aria-label={t("kelish.complete")} />
+                        : <span style={{ color: d.editable ? "var(--text-2)" : "var(--text-3)" }}>{c.none}</span>}
+                    </div>
+                  ))}
+                </td>
+              );
+            })}
+          </tr>
+        </tfoot>
+      )}
+    </TableCard>
   );
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -515,109 +969,33 @@ export default function Kelish() {
         />
       </div>
     );
-  } else if (listQ.isError && !data) {
+  } else if (weekQ.isError && !data) {
     body = (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState
-          title={t("kelish.errLoad")} message={errText(listQ.error)} showUploadLink={false}
-          action={<Button variant="secondary" onClick={() => listQ.refetch()}>{t("kelish.retry")}</Button>}
+          title={t("kelish.errLoad")} message={errText(weekQ.error)} showUploadLink={false}
+          action={<Button variant="secondary" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>}
         />
       </div>
     );
   } else {
-    body = (
-      <TableCard
-        icon={UserCheck} headSize="lg"
-        title={cellTitle} subtitle={subtitle}
-        right={<Counts c={data?.counts} t={t} />}
-        fixed footer={footer}
-      >
-        <thead>
-          <tr>
-            {selecting && (
-              <Th
-                cls="w-11"
-                label={(
-                  <input
-                    type="checkbox" aria-label={t("kelish.selectAll")}
-                    checked={allSel}
-                    ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
-                    onChange={toggleAll}
-                    className="w-4 h-4 cursor-pointer accent-[var(--brand)]"
-                  />
-                )}
-              />
-            )}
-            <Th label={t("kelish.colWorker")} />
-            <Th label={t("kelish.colStatus")} align="center" cls="w-[132px] sm:w-[156px]" />
-          </tr>
-        </thead>
-        <tbody>
-          {!data && Array.from({ length: 6 }).map((_, i) => (
-            <tr key={`sk${i}`}>
-              {selecting && <td className="px-3 py-2" />}
-              <td className="px-3 py-2">
-                <SkeletonBlock className={`h-3.5 ${["w-2/3", "w-1/2", "w-3/5"][i % 3]}`} />
-                <SkeletonBlock className="h-2.5 w-1/3 mt-2" />
-              </td>
-              <td className="px-3 py-2"><SkeletonBlock className="h-10 w-full" /></td>
-            </tr>
-          ))}
-          {data && view.length === 0 && (
-            <tr>
-              <td colSpan={colCount} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
-                {editable ? t("kelish.emptyList") : t("kelish.emptyListRO")}
-              </td>
-            </tr>
-          )}
-          {data && view.map((r) => {
-            const bits = subLine(r);
-            const picked = sel.has(r.key);
-            return (
-              <tr
-                key={r.key}
-                onClick={selecting ? () => toggleSel(r.key) : undefined}
-                style={selecting ? { cursor: "pointer", background: picked ? "var(--brand-bg)" : undefined } : undefined}
-              >
-                {selecting && (
-                  <td className="px-3 py-2 align-middle">
-                    <input
-                      type="checkbox" checked={picked} aria-label={r.display}
-                      onChange={() => toggleSel(r.key)} onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 cursor-pointer accent-[var(--brand)]"
-                    />
-                  </td>
-                )}
-                <td className="px-3 py-2 align-middle">
-                  <div className="text-sm font-medium truncate" title={r.full}>{r.display}</div>
-                  {/* Always one line, even empty: «belgiladi: …» arriving with
-                      a tap must not make the row taller and push the rows
-                      under it. */}
-                  <div className="text-[11px] leading-4 mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
-                    {bits.length > 0 ? bits.map((b, i) => (
-                      <span key={i} style={b.warn ? { color: "var(--status-warn)" } : undefined}>
-                        {i > 0 && " · "}{b.text}
-                      </span>
-                    )) : " "}
-                  </div>
-                </td>
-                <td className="px-3 py-2 align-middle">
-                  <MarkButton mark={r.mark} editable={editable && !selecting} onClick={() => tap(r)} name={r.display} t={t} />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </TableCard>
-    );
+    body = grid;
   }
+
+  const sheetRow = sheet ? view.find((r) => r.key === sheet) || null : null;
 
   return (
     <Layout title={t("nav.kelish")}>
-      <div className="flex flex-col gap-3">
+      <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
         {(cell || sections.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
-            {cell && shownDate && <DayStepper value={shownDate} onChange={pickDay} max={cell.tomorrow} />}
+            {cell && weekFrom && (
+              <DayStepper
+                week value={weekFrom} onChange={pickWeek} max={cell.tomorrow}
+                dotPrev={data && !stale && data.today < data.from ? t("kelish.dotHere") : null}
+                dotNext={data && !stale && data.tomorrow > data.to ? t("kelish.dotHere") : null}
+              />
+            )}
             {sections.length > 0 && <FilterPanel sections={sections} />}
           </div>
         )}
@@ -628,6 +1006,10 @@ export default function Kelish() {
 
         {body}
       </div>
+
+      {sheetRow && data && (
+        <WorkerSheet row={sheetRow} data={data} onClose={() => setSheet(null)} t={t} tl={tl} tx={tx} />
+      )}
 
       <Modal
         open={addOpen}
@@ -696,5 +1078,104 @@ export default function Kelish() {
 
       {toast.node}
     </Layout>
+  );
+}
+
+// A worker row, preceded — once — by the band that opens the «left the list
+// during the week» group.
+function FragmentRow({ divider, children }) {
+  return (
+    <>
+      {divider && (
+        <tr>
+          <td
+            colSpan={8}
+            className="px-2 sm:px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider"
+            style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+          >
+            {divider}
+          </td>
+        </tr>
+      )}
+      {children}
+    </>
+  );
+}
+
+// ── the worker's week card ──────────────────────────────────────────────────
+// Everything the grid has no room for: where the name came from, when they
+// last came in, and for each day who set the answer and when — the corner
+// marker's explanation on a phone, which has no hover.
+function WorkerSheet({ row, data, onClose, t, tl, tx }) {
+  const source = row.source === "manual" ? t("kelish.manual")
+    : row.source === "kept" ? t("kelish.kept") : t("kelish.sheetFile");
+  const warn = row.never ? fill(t("kelish.never"), { n: WINDOW_DAYS })
+    : row.warn ? fill(t("kelish.quiet"), { n: row.quiet }) : null;
+  const fact = (text, isWarn = false, key = text) => (
+    <span
+      key={key}
+      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium"
+      style={isWarn
+        ? { background: "rgba(234,179,8,0.12)", color: "var(--status-warn)", border: "1px solid rgba(234,179,8,0.35)" }
+        : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
+    >
+      {isWarn && <Clock size={11} aria-hidden="true" />}{text}
+    </span>
+  );
+  return (
+    <Modal
+      open onClose={onClose}
+      title={row.full}
+      subtitle={row.job ? tx(row.job) : null}
+      icon={<UserCheck size={18} />}
+      maxWidth="max-w-md"
+      footer={<Button variant="secondary" onClick={onClose}>{t("kelish.close")}</Button>}
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {fact(source)}
+        {row.came && fact(fill(t("kelish.lastCame"), { d: dm(row.came) }))}
+        {warn && fact(warn, true)}
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-3)" }}>
+          {t("kelish.sheetWeek")}
+        </div>
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+          {data.days.map((d, i) => {
+            const s = row.days[i];
+            const lane = d.state === "today" || d.state === "tomorrow";
+            const tag = tagOf(d, t);
+            const word = d.state === "future" ? t("kelish.legendFuture") : !s ? t("kelish.legendOff") : markWord(s.mark, t);
+            return (
+              <div
+                key={d.date}
+                className="flex items-center gap-3 px-3 py-2"
+                style={{ borderTop: i ? "1px solid var(--border)" : "none", background: lane ? LANE : undefined }}
+              >
+                <span className="w-14 flex-shrink-0 text-xs font-medium tabular-nums" style={{ color: lane ? "var(--brand-text)" : "var(--text-2)" }}>
+                  {dayLabel(d.date, t)}
+                </span>
+                <span className="w-5 flex-shrink-0 grid place-items-center">
+                  {d.state === "future"
+                    ? <Swatch kind="future" />
+                    : s ? <Square mark={s.mark} byOther={s.by_other} px={18} /> : <Swatch kind="off" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm" style={{ color: s || d.state === "future" ? "var(--text-1)" : "var(--text-3)" }}>{word}</div>
+                  {s?.by && (
+                    <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
+                      {fill(t("kelish.by"), { name: shortPerson(tl(s.by)) })}{s.at ? ` · ${stamp(s.at)}` : ""}
+                    </div>
+                  )}
+                </div>
+                {tag && (
+                  <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "var(--brand-text)" }}>{tag.text}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Modal>
   );
 }

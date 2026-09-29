@@ -12,7 +12,7 @@ or copy-paste its markup into a page.
 |---|---|---|
 | Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. |
 | Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. |
-| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. |
+| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. |
 | Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). Carries `role=dialog`, a focus trap, Escape-to-cancel and initial focus on the SAFE button. `error` renders the failure INSIDE the dialog — a mutation that fails must leave the dialog standing with the reason on it, never close and fire `alert()`. `challenge` (+ `challengeLabel`) demands the operator retype a string before confirm enables: use it for anything no undo can reach (full-DB restore → `RESTORE`, whole-day attendance wipe → the date). `cancelLabel` defaults to `common.cancel`. |
@@ -6880,11 +6880,36 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   each cell's «marked/total»; admins and shift-managers pick the brigadir in the
   `FilterPanel` (plant → shift → brigadir). A worker idle 7+ days, or never in
   the 30, carries a quiet hint so the leader knows whom «−» is for.
-- **Nothing above the table moves on a tap.** The how-to line lives in the
-  footer (below the rows); the header's count chips have fixed widths on a phone
-  (numbers only below `lg`, words for screen readers) and a «complete» word short
-  enough to fit the same chip; every row keeps its second line even when empty;
-  the header loads with skeletons of its final size.
+- **It is read as a WEEK REGISTER** (from 2026-09-29, the operator's
+  directive): one row per worker, one column per day of a calendar week
+  (Monday → Sunday — the PLANT's current week by default, `this_week` on
+  `/cells`; the `DayStepper week` steps it, never past the week holding the
+  cell's tomorrow). `GET /api/kelish/week` builds each day's list with the very
+  `roster` a single day uses (`kelish.week` lays them side by side), so a square
+  on screen is a square `PUT /mark` accepts; each slot carries the key its OWN
+  day's list uses (`k`). `GET /list` stays for a tab open on an older bundle.
+  The file is read ONCE for the whole run of days — `kelish.file_workers_days`
+  is THE reader and `file_workers` is its one-day call — because the per-day
+  window query cost ~0.3 s apiece (a week was ~2 s; it is ~50–90 ms now, and
+  every tap's validation got ~3× cheaper too). Verified equal to the old query
+  worker for worker before it shipped.
+- **The grid's vocabulary**: a green ✓ / red ✗ square is an answer (full
+  saturation, `toneFill`, so it reads in both themes); an empty box is «on the
+  list, not answered»; a small dot is «not on that day's list»; a hatch is a
+  day after tomorrow (no list yet); a folded corner in the square's own ink is
+  «set by somebody other than the cell's leader». Today's and tomorrow's
+  columns are a brand LANE, and — only where the viewer may fill them — wider,
+  with big dashed slots: the thumb's target. Their header word comes from the
+  server's `when` (Hozir · Tugadi · Bugun · Ertaga), never from the column's
+  position, so a night unit's «tomorrow» at 15:00 reads «Bugun». Workers who
+  left the list during the week sort after a divider. Tapping a NAME opens the
+  worker's week card (who set each day and when — the corner's explanation on
+  a phone), and arrow keys walk the open slots.
+- **Nothing above the table moves on a tap.** Each day's header carries a
+  fixed-size meter (green · red · still grey), the per-day totals are a sticky
+  row UNDER the rows (a ✓ once a day is complete), and the legend, the how-to
+  and the shift clock sentences live in the footer; every row keeps its second
+  line even when empty; the header loads with skeletons of its final size.
 - **Consequence to know:** every tap is an action-register row
   (`kelish.mark_set`) — cheap while the page is admin-only; opened to ~100
   leaders it roughly triples the register's daily volume.
