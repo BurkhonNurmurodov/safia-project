@@ -450,15 +450,18 @@ function ComparisonTable({
   // Measure the scroll container so date-columns stretch to fill exactly
   // BASIS_DAYS (+ the summary) across the available width. Column width depends
   // only on container size + BASIS_DAYS, never on how many days are selected.
+  // On a phone (`fit`) the grid is two boxes side by side — see the render —
+  // so the width measured is the wrapper holding both.
   const scrollRef = useRef(null);
+  const outerRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = fit ? outerRef.current : scrollRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => setContainerW(el.clientWidth));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [fit]);
 
   // Pad up to BASIS_DAYS with blank columns so the table width stays constant
   // for ≤14 days; >14 days overflows and scrolls horizontally. Each date is a
@@ -507,6 +510,18 @@ function ComparisonTable({
   // A value's button fills its half-cell on a phone, so a finger landing
   // anywhere on the colour reaches it — not only on the digits.
   const fillBtn    = fit ? { width: "100%", height: "100%" } : null;
+  // In a phone's own names table nothing scrolls under a name, so it is not
+  // sticky: a sticky cell is drawn as a layer of its own, and a layer that
+  // lands a frame late is what let the days under the names show through.
+  // Its cells carry the day cells' 1px rules (invisible), so a row of names
+  // and its row of days collapse to exactly the same pitch.
+  const namesOnly  = (part) => (part === "names"
+    ? { position: "static", borderTop: "1px solid transparent", borderBottom: "1px solid transparent" }
+    : null);
+  // A phone's two header rows have ONE height in both tables (a selected
+  // day's underline must not make the day row taller than the names' row).
+  const headH      = fit ? { height: 30 } : null;
+  const subH       = fit ? { height: 24 } : null;
 
   // Summary column pinned to the right; data scrolls underneath it.
   const stickySum = {
@@ -745,10 +760,11 @@ function ComparisonTable({
     );
   }
   const dateEdge = (i) => ((i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined);
-  const skRows = loading ? Array.from({ length: loadingRows }, (_, r) => (
+  const skRows = (part) => (loading ? Array.from({ length: loadingRows }, (_, r) => (
     <tr key={`sk-${r}`} aria-hidden="true">
-      <td style={{
+      {part !== "data" && <td style={{
         position: "sticky", left: 0, zIndex: 3,
+        ...namesOnly(part),
         background: "var(--bg-card)",
         borderRight: "2px solid var(--border-md)",
         paddingLeft: namePadL, paddingRight: namePadR,
@@ -759,22 +775,22 @@ function ComparisonTable({
           className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`}
           style={skeletonWave(0, r)}
         />
-      </td>
-      {dates.map((d, i) => skPair(r, i + 1, `sk-${r}-${d}`, { borderRight: dateEdge(i) }))}
-      {pads.map((_, i) => (
+      </td>}
+      {part !== "names" && dates.map((d, i) => skPair(r, i + 1, `sk-${r}-${d}`, { borderRight: dateEdge(i) }))}
+      {part !== "names" && pads.map((_, i) => (
         <td key={`sk-pad-${r}-${i}`} colSpan={2} style={{
           padding: 0, height: 34,
           border: "1px solid var(--border)",
           background: "var(--bg-card)",
         }} />
       ))}
-      {!isMobile && skPair(r, dates.length + 1, `sk-sum-${r}`, {
+      {part !== "names" && !isMobile && skPair(r, dates.length + 1, `sk-sum-${r}`, {
         ...stickySum, zIndex: 4,
         background: "var(--bg-card)",
         borderLeft: "2px solid var(--border-md)",
       })}
     </tr>
-  )) : null;
+  )) : null);
 
   // The D bands' legend: above the grid on a desktop (holding its space in the
   // P·A view, so a switch never moves the rows), under it on a phone.
@@ -842,6 +858,713 @@ function ComparisonTable({
         </button>
       )}
     </>
+  );
+
+  // ONE table in every measure, drawn whole ("all") — or, on a phone, as its
+  // two halves side by side: the names ("names") and the days ("data"), in a
+  // horizontal scroller of their own. On a phone the grid opens scrolled to
+  // the latest day, so a sticky name column sat over days at rest — and a
+  // sticky cell is its own layer, which a fast scroll can draw a frame late,
+  // showing the days under the names first. With nothing under the names
+  // there is nothing to show through. Rows keep one pitch in both halves:
+  // body cells 34px, footer rows 30/34px, the header rows 30 + 24px on a phone.
+  const renderTable = (part) => (
+    <table style={{
+      borderCollapse: "collapse", borderSpacing: 0,
+      tableLayout: "fixed",
+      width: part === "names" ? labelW : part === "data" ? tableWidth - labelW : tableWidth,
+      ...(part === "names" ? { flexShrink: 0 } : null),
+    }}>
+      {/* colgroup defines the real column grid (2 cols per date, each colW) */}
+      <colgroup>
+        {part !== "data" && <col style={{ width: labelW }} />}
+        {part !== "names" && dates.flatMap((_, i) => [
+          <col key={`cg-${i}-1`} style={{ width: colW }} />,
+          <col key={`cg-${i}-2`} style={{ width: colW }} />,
+        ])}
+        {part !== "names" && pads.flatMap((_, i) => [
+          <col key={`cg-pad-${i}-1`} style={{ width: colW }} />,
+          <col key={`cg-pad-${i}-2`} style={{ width: colW }} />,
+        ])}
+        {part !== "names" && !isMobile && <col style={{ width: colW }} />}
+        {part !== "names" && !isMobile && <col style={{ width: colW }} />}
+      </colgroup>
+
+      <thead>
+        {/* Date row */}
+        <tr>
+          {part !== "data" && <th
+            onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
+            style={{
+              ...thBase,
+              position: "sticky", left: 0, zIndex: 4,
+              ...namesOnly(part),
+              ...headH,
+              borderRight: "2px solid var(--border-md)",
+              width: labelW, textAlign: "left", paddingLeft: namePadL,
+              cursor: "pointer", userSelect: "none",
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {rowLabel}
+              {nameAsc === null
+                ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
+                : nameAsc
+                  ? <span style={{ fontSize: 9 }}>↑</span>
+                  : <span style={{ fontSize: 9 }}>↓</span>}
+            </span>
+          </th>}
+
+          {part !== "names" && dates.map((d, i) => {
+            const dateSel   = selection?.type === "date";
+            const thisDSel  = dateSel && selection.value === d;
+            const thisDGray = dateSel && selection.value !== d;
+            return (
+              <th key={d} colSpan={2}
+                className="ct-colhead"
+                data-gc={i}
+                onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
+                style={{
+                  ...thBase,
+                  textAlign: "center", color: "#fff",
+                  fontWeight: thisDSel ? 700 : 600,
+                  border: "1px solid var(--border)",
+                  borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+                  opacity: thisDGray ? 0.45 : 1,
+                  transition: "filter .08s, opacity .1s",
+                  cursor: "pointer", userSelect: "none",
+                  ...(fit ? { scrollSnapAlign: "start" } : null),
+                  ...headH,
+                }}
+              >
+                {shortDate(d)}
+                {thisDSel && (
+                  <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3 }} />
+                )}
+              </th>
+            );
+          })}
+
+          {/* Blank placeholder date headers */}
+          {part !== "names" && pads.map((_, i) => (
+            <th key={`pad-dh-${i}`} colSpan={2} style={{
+              ...thBase,
+              border: "1px solid var(--border)",
+              background: HDR_BG,
+            }} />
+          ))}
+
+          {part !== "names" && !isMobile && (
+            <th
+              colSpan={2}
+              onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
+              style={{
+                ...thBase,
+                ...stickySum,
+                zIndex: 5,
+                textAlign: "center",
+                borderLeft: "2px solid var(--border-md)",
+                cursor: "pointer", userSelect: "none",
+                color: "#fff",
+              }}
+              title={t("comparison.cycleTooltip")}
+            >
+              {summaryMode.toUpperCase()}
+            </th>
+          )}
+        </tr>
+
+        {/* P / A|D sub-header — animated internally */}
+        <tr>
+          {part !== "data" && <th style={{
+            position: "sticky", left: 0, zIndex: 4,
+            ...namesOnly(part),
+            ...subH,
+            background: HDR_BG,
+            borderRight: "2px solid var(--border-md)",
+          }} />}
+
+          {part !== "names" && dates.map((d, i) => (
+            <th key={`${d}-sub`} colSpan={2} style={{
+              padding: 0, position: "relative", height: 24,
+              border: "1px solid var(--border)", background: HDR_BG,
+              borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+              overflow: "hidden",
+            }}>
+              {/* P label — shrinks away */}
+              <div style={{
+                position: "absolute", left: 0, top: 0, bottom: 0,
+                width: isDiff ? "0%" : "50%",
+                transition: `width ${DUR} ${EASE}`,
+                overflow: "hidden",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
+                borderRight: "1px solid var(--border)",
+                boxSizing: "border-box",
+              }}>P</div>
+
+              {/* A/D label — overgrrows P */}
+              <div style={{
+                position: "absolute", right: 0, top: 0, bottom: 0,
+                width: isDiff ? "100%" : "50%",
+                transition: `width ${DUR} ${EASE}`,
+                overflow: "hidden",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
+              }}>
+                {isDiff ? "D" : "A"}
+              </div>
+            </th>
+          ))}
+
+          {/* Blank placeholder sub-headers */}
+          {part !== "names" && pads.map((_, i) => (
+            <th key={`pad-sub-${i}`} colSpan={2} style={{
+              padding: 0, height: 24,
+              border: "1px solid var(--border)", background: HDR_BG,
+            }} />
+          ))}
+
+          {part !== "names" && !isMobile && (
+            <th colSpan={2} style={{
+              ...stickySum,
+              zIndex: 5,
+              padding: 0, height: 24,
+              border: "1px solid var(--border)", background: HDR_BG,
+              borderLeft: "2px solid var(--border-md)",
+              overflow: "hidden",
+            }}>
+              <div style={{
+                position: "absolute", left: 0, top: 0, bottom: 0,
+                width: isDiff ? "0%" : "50%",
+                transition: `width ${DUR} ${EASE}`,
+                overflow: "hidden",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
+                borderRight: "1px solid var(--border)",
+                boxSizing: "border-box",
+              }}>P</div>
+              <div style={{
+                position: "absolute", right: 0, top: 0, bottom: 0,
+                width: isDiff ? "100%" : "50%",
+                transition: `width ${DUR} ${EASE}`,
+                overflow: "hidden",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
+              }}>
+                {isDiff ? "D" : "A"}
+              </div>
+            </th>
+          )}
+        </tr>
+      </thead>
+
+      <tbody>
+        {loading ? skRows(part) : displayManagers.map((name, ri) => {
+          // Un-approved days are excluded from the visible summaries.
+          const pVals = dates.map(d => {
+            const cell = data[name]?.[d];
+            return isApproved(name, d) ? pctOf(planOf(cell)) : null;
+          });
+          const aVals = dates.map(d => {
+            const cell = data[name]?.[d];
+            return isApproved(name, d) ? pctOf(actOf(cell)) : null;
+          });
+          const dVals = dates.map((d, i) =>
+            (pVals[i] !== null && aVals[i] !== null) ? pVals[i] - aVals[i] : null);
+
+          let pSummary, aSummary, dSummary;
+          if (summaryMode === "avg") {
+            pSummary = rowAvg(pVals);
+            aSummary = rowAvg(aVals);
+            dSummary = rowAvg(dVals);
+          } else {
+            const idx = findExtremeIdx(dVals, pVals, summaryMode);
+            pSummary = idx !== null ? pVals[idx] : null;
+            aSummary = idx !== null ? aVals[idx] : null;
+            dSummary = idx !== null ? dVals[idx] : null;
+          }
+
+          const pSumColor = pSummary !== null ? getColor(pSummary, psegs) : { bg: "transparent", fg: "var(--text-4)" };
+          const aSumColor = dSummary !== null ? getColor(dSummary, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
+          const dSumColor = dSummary !== null ? getColor(dSummary, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
+
+          const mgrSel      = selection?.type === "manager";
+          const thisMgrSel  = mgrSel && selection.value === name;
+          const thisMgrGray = mgrSel && selection.value !== name;
+
+          return (
+            <tr key={name}>
+              {/* Name — sticky */}
+              {part !== "data" && <td
+                className="ct-rowhead"
+                data-gr={ri}
+                onClick={e => { e.stopPropagation(); toggleSel("manager", name); }}
+                style={{
+                  position: "sticky", left: 0, zIndex: 3,
+                  ...namesOnly(part),
+                  background: "var(--bg-card)",
+                  borderRight: "2px solid var(--border-md)",
+                  textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
+                  fontSize: 12,
+                  fontWeight: thisMgrSel ? 700 : 500,
+                  color: thisMgrGray ? "var(--text-4)" : thisMgrSel ? "var(--text-1)" : labelColor,
+                  opacity: thisMgrGray ? 0.35 : 1,
+                  // nowrap without clipping let a long row name spill across
+                  // the date columns — clip it and keep the full text in the
+                  // tooltip. Names wider than the column are normal now that
+                  // the rows can be cells («4311 · Участок …»), not just
+                  // supervisors, whose names happened to fit.
+                  whiteSpace: fit ? "normal" : "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis",
+                  maxWidth: labelW,
+                  verticalAlign: "middle", height: 34,
+                  width: labelW, minWidth: labelW,
+                  transition: "background .08s, opacity .1s, color .1s",
+                  cursor: "pointer", userSelect: "none",
+                }}
+                title={shown(name, true)}
+              >
+                {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
+              </td>}
+
+              {/* Per-date cell — colSpan=2, animated P and A/D inside */}
+              {part !== "names" && dates.map((d, i) => {
+                const cell = data[name]?.[d];
+                const pv = pctOf(planOf(cell));
+                const av = pctOf(actOf(cell));
+                const dv = (pv !== null && av !== null) ? pv - av : null;
+
+                const pColor = pv !== null
+                  ? getColor(pv, psegs)
+                  : { bg: "transparent", fg: "var(--text-4)", noData: true };
+                // A column color is always based on diff
+                const aColor = dv !== null
+                  ? getColor(dv, dsegs)
+                  : { bg: "transparent", fg: "var(--text-4)", noData: true };
+                const dColor = dv !== null
+                  ? getColor(dv, dsegs)
+                  : { bg: "transparent", fg: "var(--text-4)", noData: true };
+
+                const isLast = i === dates.length - 1;
+
+                // Pending = Verifix data uploaded but the value can't show
+                // yet. The backend marks the cell with the blocking reason:
+                // "not_closed" | "requests" (unprocessed edit requests) |
+                // "no_headcount" (day confirmed, «Odam soni» not loaded).
+                const pendingReason =
+                  cell?.pending ?? ((pv !== null || av !== null) && !isApproved(name, d) ? "not_closed" : null);
+                if (pendingReason !== null) {
+                  return (
+                    <td
+                      key={`${name}-${d}`} colSpan={2}
+                      title={t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")}
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (selection) clearSel();
+                        else open.pending({ name, date: d, reason: pendingReason });
+                      }}
+                      data-gt=""
+                      data-gr={ri}
+                      data-gc={i}
+                      style={{
+                        padding: 0,
+                        border: "1px solid var(--border)",
+                        borderRight: (!isLast || padCount > 0) ? GROUP_BORDER : undefined,
+                        height: 34, verticalAlign: "middle", textAlign: "center",
+                        background: "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)",
+                        opacity: cellGrayed(name, d) ? 0.18 : 1,
+                        transition: "opacity .1s",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
+                    </td>
+                  );
+                }
+
+                const grayed = cellGrayed(name, d);
+
+                // No inline filter / transform / z-index: the hover lift is
+                // index.css's («Grid hover»), and an inline value would win.
+                return (
+                  <td
+                    key={`${name}-${d}`} colSpan={2}
+                    className="ct-cell"
+                    data-gt=""
+                    data-gr={ri}
+                    data-gc={i}
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      padding: 0, position: "relative",
+                      border: "1px solid var(--border)",
+                      borderRight: (!isLast || padCount > 0) ? GROUP_BORDER : undefined,
+                      height: 34, verticalAlign: "middle",
+                      opacity: grayed ? 0.18 : 1,
+                      transition: "filter .08s, transform .07s, opacity .1s",
+                    }}
+                  >
+                    {/* P half — shrinks toward zero */}
+                    <div style={{
+                      position: "absolute", left: 0, top: 0, bottom: 0,
+                      width: isDiff ? "0%" : "50%",
+                      transition: `width ${DUR} ${EASE}`,
+                      overflow: "hidden",
+                      background: pColor.bg,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--border)",
+                      boxSizing: "border-box",
+                    }}>
+                      {pv !== null
+                        ? <button
+                            onClick={() => open.formula({
+                              title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
+                              value: `${pv}%`,
+                              formula: planFormula(cell),
+                              inputs: planInputs(cell),
+                            })}
+                            style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
+                          >
+                            {pv}%
+                          </button>
+                        : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                      }
+                    </div>
+
+                    {/* A/D half — overgrrows P to fill the whole cell */}
+                    <div style={{
+                      position: "absolute", right: 0, top: 0, bottom: 0,
+                      width: isDiff ? "100%" : "50%",
+                      transition: `width ${DUR} ${EASE}, background-color 250ms`,
+                      overflow: "hidden",
+                      background: isDiff ? dColor.bg : aColor.bg,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {isDiff
+                        ? dv !== null
+                          ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
+                              <button
+                                onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
+                                style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
+                              >
+                                {dv > 0 ? "+" : ""}{dv}%
+                              </button>
+                              {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
+                                <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
+                              )}
+                            </div>
+                          : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                        : av !== null
+                          ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
+                              <button
+                                onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
+                                style={{ fontSize: 11, fontWeight: 700, color: aColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
+                              >
+                                {av}%
+                              </button>
+                              {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
+                                <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
+                              )}
+                            </div>
+                          : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                      }
+                    </div>
+                  </td>
+                );
+              })}
+
+              {/* Blank placeholder body cells */}
+              {part !== "names" && pads.map((_, i) => (
+                <td key={`pad-${name}-${i}`} colSpan={2} style={{
+                  padding: 0, height: 34,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-card)",
+                }} />
+              ))}
+
+              {/* Summary column — mirrors a date cell, pinned right (hidden on phones) */}
+              {part !== "names" && !isMobile && (
+              <td colSpan={2} style={{
+                ...stickySum,
+                zIndex: 4,
+                padding: 0,
+                border: "1px solid var(--border)",
+                borderLeft: "2px solid var(--border-md)",
+                height: 34, verticalAlign: "middle",
+                background: "var(--bg-card)",
+              }}>
+                {/* P half */}
+                <div style={{
+                  position: "absolute", left: 0, top: 0, bottom: 0,
+                  width: isDiff ? "0%" : "50%",
+                  transition: `width ${DUR} ${EASE}`,
+                  overflow: "hidden",
+                  background: pSumColor.bg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  borderRight: "1px solid var(--border)",
+                  boxSizing: "border-box",
+                }}>
+                  {pSummary !== null
+                    ? <button
+                        onClick={() => open.formula({
+                          title: `${summaryMode.toUpperCase()} ${t("comparison.plannedP")}`,
+                          value: `${pSummary}%`,
+                          formula: summaryMode === "avg"
+                            ? t("comparison.fmAvgP")
+                            : t("comparison.fmModeP")
+                                .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum"))
+                                .replace("{tb}", t(summaryMode === "min" ? "comparison.lowest" : "comparison.highest")),
+                          inputs: [{ label: t("comparison.pValue"), val: `${pSummary}%` }, { label: t("comparison.mode"), val: summaryMode.toUpperCase() }],
+                        })}
+                        style={{ fontSize: 11, fontWeight: 700, color: pSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                      >
+                        {pSummary}%
+                      </button>
+                    : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                  }
+                </div>
+                {/* A / D half */}
+                <div style={{
+                  position: "absolute", right: 0, top: 0, bottom: 0,
+                  width: isDiff ? "100%" : "50%",
+                  transition: `width ${DUR} ${EASE}, background-color 250ms`,
+                  overflow: "hidden",
+                  background: isDiff ? dSumColor.bg : aSumColor.bg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {isDiff
+                    ? dSummary !== null
+                      ? <button
+                          onClick={() => open.formula({
+                            title: `${summaryMode.toUpperCase()} ${t("comparison.differenceD")}`,
+                            value: `${dSummary > 0 ? "+" : ""}${dSummary}%`,
+                            formula: summaryMode === "avg"
+                              ? t("comparison.fmAvgD")
+                              : t("comparison.fmModeD")
+                                  .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum")),
+                            inputs: [
+                              { label: t("comparison.dValue"), val: `${dSummary > 0 ? "+" : ""}${dSummary}%` },
+                              { label: t("comparison.pSameDate"), val: pSummary !== null ? `${pSummary}%` : "—" },
+                              { label: t("comparison.aSameDate"), val: aSummary !== null ? `${aSummary}%` : "—" },
+                            ],
+                          })}
+                          style={{ fontSize: 11, fontWeight: 700, color: dSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                        >
+                          {dSummary > 0 ? "+" : ""}{dSummary}%
+                        </button>
+                      : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                    : aSummary !== null
+                      ? <button
+                          onClick={() => open.formula({
+                            title: `${summaryMode.toUpperCase()} ${t("comparison.actualA")}`,
+                            value: `${aSummary}%`,
+                            formula: summaryMode === "avg"
+                              ? t("comparison.fmAvgA")
+                              : t("comparison.fmModeA")
+                                  .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum"))
+                                  .replace("{tb}", t(summaryMode === "min" ? "comparison.lowest" : "comparison.highest")),
+                            inputs: [{ label: t("comparison.aValue"), val: `${aSummary}%` }, { label: t("comparison.mode"), val: summaryMode.toUpperCase() }],
+                          })}
+                          style={{ fontSize: 11, fontWeight: 700, color: aSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                        >
+                          {aSummary}%
+                        </button>
+                      : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
+                  }
+                </div>
+              </td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+
+      {/* Column statistic — ONE row, the transpose of the pinned summary
+          column, and driven by the same `summaryMode`: pressing the AVG
+          header on the right cycles this row with it. The label is a second
+          handle on that one control, not a second control. */}
+      {(unitVals || columnStats || (loading && columnSummary)) && (
+        <tfoot>
+          {/* One blank row of air between the grid and the footer. The
+              footer answers a different question from the rows above it
+              (a measurement and a statistic, not more brigadirs), so it
+              reads as a separate block rather than as the last two lines
+              of the table. Borderless and background-only: a bordered
+              spacer would read as an empty brigadir. */}
+          <tr aria-hidden="true">
+            <td
+              colSpan={part === "names" ? 1
+                : (part === "data" ? 0 : 1) + dates.length * 2 + pads.length * 2 + (isMobile ? 0 : 1)}
+              style={{
+                padding: 0, height: 30, border: "none",
+                background: "var(--bg-card)",
+              }}
+            />
+          </tr>
+
+          {/* The unit's own load — the row the cells above belong to,
+              computed from the unit's summed inputs, not from them. It
+              leads the footer because it is a measurement; the AVG row
+              under it is a statistic over the grid, and the two answer
+              different questions on the same day. */}
+          {unitVals && (
+          <tr>
+            {part !== "data" && <td
+              title={pinnedRow.hint || undefined}
+              style={{
+                position: "sticky", left: 0, zIndex: 3,
+                ...namesOnly(part),
+                background: "var(--bg-inner)",
+                borderRight: "2px solid var(--border-md)",
+                borderTop: "2px solid var(--border-md)",
+                textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
+                fontSize: 12, fontWeight: 700, color: "var(--text-1)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                verticalAlign: "middle", height: 34,
+                width: labelW, minWidth: labelW, maxWidth: labelW,
+              }}
+            >
+              {tl(pinnedRow.label)}
+              {pinnedRow.note && (
+                <div style={{
+                  fontSize: 10, fontWeight: 500, color: "var(--text-3)",
+                  overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
+                }}>
+                  {pinnedRow.note}
+                </div>
+              )}
+            </td>}
+
+            {part !== "names" && dates.map((d, i) => unitCell(
+              unitVals.per[i],
+              d,
+              `unit-${d}`,
+              {
+                borderTop: "2px solid var(--border-md)",
+                borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+              },
+            ))}
+
+            {part !== "names" && pads.map((_, i) => (
+              <td key={`unit-pad-${i}`} colSpan={2} style={{
+                padding: 0, height: 34,
+                border: "1px solid var(--border)",
+                borderTop: "2px solid var(--border-md)",
+                background: "var(--bg-card)",
+              }} />
+            ))}
+
+            {part !== "names" && !isMobile && unitCell(unitVals.sum, null, "unit-sum", {
+              ...stickySum,
+              zIndex: 4,
+              borderLeft: "2px solid var(--border-md)",
+              borderTop: "2px solid var(--border-md)",
+            })}
+          </tr>
+          )}
+
+          {columnStats && (
+          <tr>
+            {part !== "data" && <td
+              onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
+              title={t("comparison.cycleTooltip")}
+              style={{
+                position: "sticky", left: 0, zIndex: 3,
+                ...namesOnly(part),
+                background: "var(--bg-card)",
+                borderRight: "2px solid var(--border-md)",
+                borderTop: "2px solid var(--border-md)",
+                textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
+                fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+                textTransform: "uppercase", color: "var(--text-3)",
+                whiteSpace: "nowrap",
+                verticalAlign: "middle", height: 30,
+                width: labelW, minWidth: labelW, maxWidth: labelW,
+                cursor: "pointer", userSelect: "none",
+              }}
+            >
+              {summaryMode.toUpperCase()}
+              <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
+                {t("comparison.perDay")}
+              </span>
+            </td>}
+
+            {part !== "names" && dates.map((d, i) => statCell(
+              columnStats.byDate[d],
+              `stat-${d}`,
+              {
+                borderTop: "2px solid var(--border-md)",
+                borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+              },
+            ))}
+
+            {part !== "names" && pads.map((_, i) => (
+              <td key={`stat-pad-${i}`} colSpan={2} style={{
+                padding: 0, height: 30,
+                border: "1px solid var(--border)",
+                borderTop: "2px solid var(--border-md)",
+                background: "var(--bg-card)",
+              }} />
+            ))}
+
+            {part !== "names" && !isMobile && statCell(columnStats.all, "stat-all", {
+              ...stickySum,
+              zIndex: 4,
+              borderLeft: "2px solid var(--border-md)",
+              borderTop: "2px solid var(--border-md)",
+            })}
+          </tr>
+          )}
+
+          {/* The same AVG row while loading — its label is real, its
+              values pulse with the grid above it. */}
+          {loading && columnSummary && (
+          <tr aria-hidden="true">
+            {part !== "data" && <td style={{
+              position: "sticky", left: 0, zIndex: 3,
+              ...namesOnly(part),
+              background: "var(--bg-card)",
+              borderRight: "2px solid var(--border-md)",
+              borderTop: "2px solid var(--border-md)",
+              textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
+              fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+              textTransform: "uppercase", color: "var(--text-3)",
+              whiteSpace: "nowrap",
+              verticalAlign: "middle", height: 30,
+              width: labelW, minWidth: labelW, maxWidth: labelW,
+            }}>
+              {summaryMode.toUpperCase()}
+              <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
+                {t("comparison.perDay")}
+              </span>
+            </td>}
+
+            {part !== "names" && dates.map((d, i) => skPair(loadingRows + 1, i + 1, `sk-stat-${d}`, {
+              borderTop: "2px solid var(--border-md)",
+              borderRight: dateEdge(i),
+            }, 30))}
+
+            {part !== "names" && pads.map((_, i) => (
+              <td key={`sk-stat-pad-${i}`} colSpan={2} style={{
+                padding: 0, height: 30,
+                border: "1px solid var(--border)",
+                borderTop: "2px solid var(--border-md)",
+                background: "var(--bg-card)",
+              }} />
+            ))}
+
+            {part !== "names" && !isMobile && skPair(loadingRows + 1, dates.length + 1, "sk-stat-all", {
+              ...stickySum,
+              zIndex: 4,
+              background: "var(--bg-card)",
+              borderLeft: "2px solid var(--border-md)",
+              borderTop: "2px solid var(--border-md)",
+            }, 30)}
+          </tr>
+          )}
+        </tfoot>
+      )}
+    </table>
   );
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -915,707 +1638,40 @@ function ComparisonTable({
       {!fit && diffLegend(isDiff, "mb-3")}
 
       {/* Table — on a phone it bleeds to the card's edges (the card's p-4),
-          giving the dates the 32px the padding held. */}
-      <div
-        ref={scrollRef}
-        style={{
-          overflowX: "auto", WebkitOverflowScrolling: "touch",
-          // A phone's swipe comes to rest on a whole day, never half of one
-          // tucked under the names (the padding is the sticky name column).
-          ...(fit ? { marginLeft: -16, marginRight: -16, scrollSnapType: "x mandatory", scrollPaddingLeft: labelW } : null),
-        }}
-        data-grid=""
-        data-sel={selection ? "" : undefined}
-        onMouseOver={hover.onMouseOver}
-        onMouseLeave={hover.onMouseLeave}
-        onClick={() => clearSel()}
-      >
-        <table style={{
-          borderCollapse: "collapse", borderSpacing: 0,
-          tableLayout: "fixed",
-          width: tableWidth,
-        }}>
-          {/* colgroup defines the real column grid (2 cols per date, each colW) */}
-          <colgroup>
-            <col style={{ width: labelW }} />
-            {dates.flatMap((_, i) => [
-              <col key={`cg-${i}-1`} style={{ width: colW }} />,
-              <col key={`cg-${i}-2`} style={{ width: colW }} />,
-            ])}
-            {pads.flatMap((_, i) => [
-              <col key={`cg-pad-${i}-1`} style={{ width: colW }} />,
-              <col key={`cg-pad-${i}-2`} style={{ width: colW }} />,
-            ])}
-            {!isMobile && <col style={{ width: colW }} />}
-            {!isMobile && <col style={{ width: colW }} />}
-          </colgroup>
-
-          <thead>
-            {/* Date row */}
-            <tr>
-              <th
-                onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
-                style={{
-                  ...thBase,
-                  position: "sticky", left: 0, zIndex: 4,
-                  borderRight: "2px solid var(--border-md)",
-                  width: labelW, textAlign: "left", paddingLeft: namePadL,
-                  cursor: "pointer", userSelect: "none",
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                  {rowLabel}
-                  {nameAsc === null
-                    ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
-                    : nameAsc
-                      ? <span style={{ fontSize: 9 }}>↑</span>
-                      : <span style={{ fontSize: 9 }}>↓</span>}
-                </span>
-              </th>
-
-              {dates.map((d, i) => {
-                const dateSel   = selection?.type === "date";
-                const thisDSel  = dateSel && selection.value === d;
-                const thisDGray = dateSel && selection.value !== d;
-                return (
-                  <th key={d} colSpan={2}
-                    className="ct-colhead"
-                    data-gc={i}
-                    onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
-                    style={{
-                      ...thBase,
-                      textAlign: "center", color: "#fff",
-                      fontWeight: thisDSel ? 700 : 600,
-                      border: "1px solid var(--border)",
-                      borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
-                      opacity: thisDGray ? 0.45 : 1,
-                      transition: "filter .08s, opacity .1s",
-                      cursor: "pointer", userSelect: "none",
-                      ...(fit ? { scrollSnapAlign: "start" } : null),
-                    }}
-                  >
-                    {shortDate(d)}
-                    {thisDSel && (
-                      <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3 }} />
-                    )}
-                  </th>
-                );
-              })}
-
-              {/* Blank placeholder date headers */}
-              {pads.map((_, i) => (
-                <th key={`pad-dh-${i}`} colSpan={2} style={{
-                  ...thBase,
-                  border: "1px solid var(--border)",
-                  background: HDR_BG,
-                }} />
-              ))}
-
-              {!isMobile && (
-                <th
-                  colSpan={2}
-                  onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
-                  style={{
-                    ...thBase,
-                    ...stickySum,
-                    zIndex: 5,
-                    textAlign: "center",
-                    borderLeft: "2px solid var(--border-md)",
-                    cursor: "pointer", userSelect: "none",
-                    color: "#fff",
-                  }}
-                  title={t("comparison.cycleTooltip")}
-                >
-                  {summaryMode.toUpperCase()}
-                </th>
-              )}
-            </tr>
-
-            {/* P / A|D sub-header — animated internally */}
-            <tr>
-              <th style={{
-                position: "sticky", left: 0, zIndex: 4,
-                background: HDR_BG,
-                borderRight: "2px solid var(--border-md)",
-              }} />
-
-              {dates.map((d, i) => (
-                <th key={`${d}-sub`} colSpan={2} style={{
-                  padding: 0, position: "relative", height: 24,
-                  border: "1px solid var(--border)", background: HDR_BG,
-                  borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
-                  overflow: "hidden",
-                }}>
-                  {/* P label — shrinks away */}
-                  <div style={{
-                    position: "absolute", left: 0, top: 0, bottom: 0,
-                    width: isDiff ? "0%" : "50%",
-                    transition: `width ${DUR} ${EASE}`,
-                    overflow: "hidden",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
-                    borderRight: "1px solid var(--border)",
-                    boxSizing: "border-box",
-                  }}>P</div>
-
-                  {/* A/D label — overgrrows P */}
-                  <div style={{
-                    position: "absolute", right: 0, top: 0, bottom: 0,
-                    width: isDiff ? "100%" : "50%",
-                    transition: `width ${DUR} ${EASE}`,
-                    overflow: "hidden",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
-                  }}>
-                    {isDiff ? "D" : "A"}
-                  </div>
-                </th>
-              ))}
-
-              {/* Blank placeholder sub-headers */}
-              {pads.map((_, i) => (
-                <th key={`pad-sub-${i}`} colSpan={2} style={{
-                  padding: 0, height: 24,
-                  border: "1px solid var(--border)", background: HDR_BG,
-                }} />
-              ))}
-
-              {!isMobile && (
-                <th colSpan={2} style={{
-                  ...stickySum,
-                  zIndex: 5,
-                  padding: 0, height: 24,
-                  border: "1px solid var(--border)", background: HDR_BG,
-                  borderLeft: "2px solid var(--border-md)",
-                  overflow: "hidden",
-                }}>
-                  <div style={{
-                    position: "absolute", left: 0, top: 0, bottom: 0,
-                    width: isDiff ? "0%" : "50%",
-                    transition: `width ${DUR} ${EASE}`,
-                    overflow: "hidden",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
-                    borderRight: "1px solid var(--border)",
-                    boxSizing: "border-box",
-                  }}>P</div>
-                  <div style={{
-                    position: "absolute", right: 0, top: 0, bottom: 0,
-                    width: isDiff ? "100%" : "50%",
-                    transition: `width ${DUR} ${EASE}`,
-                    overflow: "hidden",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
-                  }}>
-                    {isDiff ? "D" : "A"}
-                  </div>
-                </th>
-              )}
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? skRows : displayManagers.map((name, ri) => {
-              // Un-approved days are excluded from the visible summaries.
-              const pVals = dates.map(d => {
-                const cell = data[name]?.[d];
-                return isApproved(name, d) ? pctOf(planOf(cell)) : null;
-              });
-              const aVals = dates.map(d => {
-                const cell = data[name]?.[d];
-                return isApproved(name, d) ? pctOf(actOf(cell)) : null;
-              });
-              const dVals = dates.map((d, i) =>
-                (pVals[i] !== null && aVals[i] !== null) ? pVals[i] - aVals[i] : null);
-
-              let pSummary, aSummary, dSummary;
-              if (summaryMode === "avg") {
-                pSummary = rowAvg(pVals);
-                aSummary = rowAvg(aVals);
-                dSummary = rowAvg(dVals);
-              } else {
-                const idx = findExtremeIdx(dVals, pVals, summaryMode);
-                pSummary = idx !== null ? pVals[idx] : null;
-                aSummary = idx !== null ? aVals[idx] : null;
-                dSummary = idx !== null ? dVals[idx] : null;
-              }
-
-              const pSumColor = pSummary !== null ? getColor(pSummary, psegs) : { bg: "transparent", fg: "var(--text-4)" };
-              const aSumColor = dSummary !== null ? getColor(dSummary, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
-              const dSumColor = dSummary !== null ? getColor(dSummary, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
-
-              const mgrSel      = selection?.type === "manager";
-              const thisMgrSel  = mgrSel && selection.value === name;
-              const thisMgrGray = mgrSel && selection.value !== name;
-
-              return (
-                <tr key={name}>
-                  {/* Name — sticky */}
-                  <td
-                    className="ct-rowhead"
-                    data-gr={ri}
-                    onClick={e => { e.stopPropagation(); toggleSel("manager", name); }}
-                    style={{
-                      position: "sticky", left: 0, zIndex: 3,
-                      background: "var(--bg-card)",
-                      borderRight: "2px solid var(--border-md)",
-                      textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
-                      fontSize: 12,
-                      fontWeight: thisMgrSel ? 700 : 500,
-                      color: thisMgrGray ? "var(--text-4)" : thisMgrSel ? "var(--text-1)" : labelColor,
-                      opacity: thisMgrGray ? 0.35 : 1,
-                      // nowrap without clipping let a long row name spill across
-                      // the date columns — clip it and keep the full text in the
-                      // tooltip. Names wider than the column are normal now that
-                      // the rows can be cells («4311 · Участок …»), not just
-                      // supervisors, whose names happened to fit.
-                      whiteSpace: fit ? "normal" : "nowrap",
-                      overflow: "hidden", textOverflow: "ellipsis",
-                      maxWidth: labelW,
-                      verticalAlign: "middle", height: 34,
-                      width: labelW, minWidth: labelW,
-                      transition: "background .08s, opacity .1s, color .1s",
-                      cursor: "pointer", userSelect: "none",
-                    }}
-                    title={shown(name, true)}
-                  >
-                    {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
-                  </td>
-
-                  {/* Per-date cell — colSpan=2, animated P and A/D inside */}
-                  {dates.map((d, i) => {
-                    const cell = data[name]?.[d];
-                    const pv = pctOf(planOf(cell));
-                    const av = pctOf(actOf(cell));
-                    const dv = (pv !== null && av !== null) ? pv - av : null;
-
-                    const pColor = pv !== null
-                      ? getColor(pv, psegs)
-                      : { bg: "transparent", fg: "var(--text-4)", noData: true };
-                    // A column color is always based on diff
-                    const aColor = dv !== null
-                      ? getColor(dv, dsegs)
-                      : { bg: "transparent", fg: "var(--text-4)", noData: true };
-                    const dColor = dv !== null
-                      ? getColor(dv, dsegs)
-                      : { bg: "transparent", fg: "var(--text-4)", noData: true };
-
-                    const isLast = i === dates.length - 1;
-
-                    // Pending = Verifix data uploaded but the value can't show
-                    // yet. The backend marks the cell with the blocking reason:
-                    // "not_closed" | "requests" (unprocessed edit requests) |
-                    // "no_headcount" (day confirmed, «Odam soni» not loaded).
-                    const pendingReason =
-                      cell?.pending ?? ((pv !== null || av !== null) && !isApproved(name, d) ? "not_closed" : null);
-                    if (pendingReason !== null) {
-                      return (
-                        <td
-                          key={`${name}-${d}`} colSpan={2}
-                          title={t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")}
-                          onClick={e => {
-                            e.stopPropagation();
-                            if (selection) clearSel();
-                            else open.pending({ name, date: d, reason: pendingReason });
-                          }}
-                          data-gt=""
-                          data-gr={ri}
-                          data-gc={i}
-                          style={{
-                            padding: 0,
-                            border: "1px solid var(--border)",
-                            borderRight: (!isLast || padCount > 0) ? GROUP_BORDER : undefined,
-                            height: 34, verticalAlign: "middle", textAlign: "center",
-                            background: "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)",
-                            opacity: cellGrayed(name, d) ? 0.18 : 1,
-                            transition: "opacity .1s",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
-                        </td>
-                      );
-                    }
-
-                    const grayed = cellGrayed(name, d);
-
-                    // No inline filter / transform / z-index: the hover lift is
-                    // index.css's («Grid hover»), and an inline value would win.
-                    return (
-                      <td
-                        key={`${name}-${d}`} colSpan={2}
-                        className="ct-cell"
-                        data-gt=""
-                        data-gr={ri}
-                        data-gc={i}
-                        onClick={e => e.stopPropagation()}
-                        style={{
-                          padding: 0, position: "relative",
-                          border: "1px solid var(--border)",
-                          borderRight: (!isLast || padCount > 0) ? GROUP_BORDER : undefined,
-                          height: 34, verticalAlign: "middle",
-                          opacity: grayed ? 0.18 : 1,
-                          transition: "filter .08s, transform .07s, opacity .1s",
-                        }}
-                      >
-                        {/* P half — shrinks toward zero */}
-                        <div style={{
-                          position: "absolute", left: 0, top: 0, bottom: 0,
-                          width: isDiff ? "0%" : "50%",
-                          transition: `width ${DUR} ${EASE}`,
-                          overflow: "hidden",
-                          background: pColor.bg,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          borderRight: "1px solid var(--border)",
-                          boxSizing: "border-box",
-                        }}>
-                          {pv !== null
-                            ? <button
-                                onClick={() => open.formula({
-                                  title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
-                                  value: `${pv}%`,
-                                  formula: planFormula(cell),
-                                  inputs: planInputs(cell),
-                                })}
-                                style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
-                              >
-                                {pv}%
-                              </button>
-                            : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                          }
-                        </div>
-
-                        {/* A/D half — overgrrows P to fill the whole cell */}
-                        <div style={{
-                          position: "absolute", right: 0, top: 0, bottom: 0,
-                          width: isDiff ? "100%" : "50%",
-                          transition: `width ${DUR} ${EASE}, background-color 250ms`,
-                          overflow: "hidden",
-                          background: isDiff ? dColor.bg : aColor.bg,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                        }}>
-                          {isDiff
-                            ? dv !== null
-                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
-                                  <button
-                                    onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
-                                    style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
-                                  >
-                                    {dv > 0 ? "+" : ""}{dv}%
-                                  </button>
-                                  {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
-                                    <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
-                                  )}
-                                </div>
-                              : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                            : av !== null
-                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
-                                  <button
-                                    onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
-                                    style={{ fontSize: 11, fontWeight: 700, color: aColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
-                                  >
-                                    {av}%
-                                  </button>
-                                  {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
-                                    <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
-                                  )}
-                                </div>
-                              : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                          }
-                        </div>
-                      </td>
-                    );
-                  })}
-
-                  {/* Blank placeholder body cells */}
-                  {pads.map((_, i) => (
-                    <td key={`pad-${name}-${i}`} colSpan={2} style={{
-                      padding: 0, height: 34,
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-card)",
-                    }} />
-                  ))}
-
-                  {/* Summary column — mirrors a date cell, pinned right (hidden on phones) */}
-                  {!isMobile && (
-                  <td colSpan={2} style={{
-                    ...stickySum,
-                    zIndex: 4,
-                    padding: 0,
-                    border: "1px solid var(--border)",
-                    borderLeft: "2px solid var(--border-md)",
-                    height: 34, verticalAlign: "middle",
-                    background: "var(--bg-card)",
-                  }}>
-                    {/* P half */}
-                    <div style={{
-                      position: "absolute", left: 0, top: 0, bottom: 0,
-                      width: isDiff ? "0%" : "50%",
-                      transition: `width ${DUR} ${EASE}`,
-                      overflow: "hidden",
-                      background: pSumColor.bg,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      borderRight: "1px solid var(--border)",
-                      boxSizing: "border-box",
-                    }}>
-                      {pSummary !== null
-                        ? <button
-                            onClick={() => open.formula({
-                              title: `${summaryMode.toUpperCase()} ${t("comparison.plannedP")}`,
-                              value: `${pSummary}%`,
-                              formula: summaryMode === "avg"
-                                ? t("comparison.fmAvgP")
-                                : t("comparison.fmModeP")
-                                    .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum"))
-                                    .replace("{tb}", t(summaryMode === "min" ? "comparison.lowest" : "comparison.highest")),
-                              inputs: [{ label: t("comparison.pValue"), val: `${pSummary}%` }, { label: t("comparison.mode"), val: summaryMode.toUpperCase() }],
-                            })}
-                            style={{ fontSize: 11, fontWeight: 700, color: pSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                          >
-                            {pSummary}%
-                          </button>
-                        : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                      }
-                    </div>
-                    {/* A / D half */}
-                    <div style={{
-                      position: "absolute", right: 0, top: 0, bottom: 0,
-                      width: isDiff ? "100%" : "50%",
-                      transition: `width ${DUR} ${EASE}, background-color 250ms`,
-                      overflow: "hidden",
-                      background: isDiff ? dSumColor.bg : aSumColor.bg,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      {isDiff
-                        ? dSummary !== null
-                          ? <button
-                              onClick={() => open.formula({
-                                title: `${summaryMode.toUpperCase()} ${t("comparison.differenceD")}`,
-                                value: `${dSummary > 0 ? "+" : ""}${dSummary}%`,
-                                formula: summaryMode === "avg"
-                                  ? t("comparison.fmAvgD")
-                                  : t("comparison.fmModeD")
-                                      .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum")),
-                                inputs: [
-                                  { label: t("comparison.dValue"), val: `${dSummary > 0 ? "+" : ""}${dSummary}%` },
-                                  { label: t("comparison.pSameDate"), val: pSummary !== null ? `${pSummary}%` : "—" },
-                                  { label: t("comparison.aSameDate"), val: aSummary !== null ? `${aSummary}%` : "—" },
-                                ],
-                              })}
-                              style={{ fontSize: 11, fontWeight: 700, color: dSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                            >
-                              {dSummary > 0 ? "+" : ""}{dSummary}%
-                            </button>
-                          : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                        : aSummary !== null
-                          ? <button
-                              onClick={() => open.formula({
-                                title: `${summaryMode.toUpperCase()} ${t("comparison.actualA")}`,
-                                value: `${aSummary}%`,
-                                formula: summaryMode === "avg"
-                                  ? t("comparison.fmAvgA")
-                                  : t("comparison.fmModeA")
-                                      .replace("{mode}", t(summaryMode === "min" ? "comparison.minimum" : "comparison.maximum"))
-                                      .replace("{tb}", t(summaryMode === "min" ? "comparison.lowest" : "comparison.highest")),
-                                inputs: [{ label: t("comparison.aValue"), val: `${aSummary}%` }, { label: t("comparison.mode"), val: summaryMode.toUpperCase() }],
-                              })}
-                              style={{ fontSize: 11, fontWeight: 700, color: aSumColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                            >
-                              {aSummary}%
-                            </button>
-                          : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
-                      }
-                    </div>
-                  </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-
-          {/* Column statistic — ONE row, the transpose of the pinned summary
-              column, and driven by the same `summaryMode`: pressing the AVG
-              header on the right cycles this row with it. The label is a second
-              handle on that one control, not a second control. */}
-          {(unitVals || columnStats || (loading && columnSummary)) && (
-            <tfoot>
-              {/* One blank row of air between the grid and the footer. The
-                  footer answers a different question from the rows above it
-                  (a measurement and a statistic, not more brigadirs), so it
-                  reads as a separate block rather than as the last two lines
-                  of the table. Borderless and background-only: a bordered
-                  spacer would read as an empty brigadir. */}
-              <tr aria-hidden="true">
-                <td
-                  colSpan={1 + dates.length * 2 + pads.length * 2 + (isMobile ? 0 : 1)}
-                  style={{
-                    padding: 0, height: 30, border: "none",
-                    background: "var(--bg-card)",
-                  }}
-                />
-              </tr>
-
-              {/* The unit's own load — the row the cells above belong to,
-                  computed from the unit's summed inputs, not from them. It
-                  leads the footer because it is a measurement; the AVG row
-                  under it is a statistic over the grid, and the two answer
-                  different questions on the same day. */}
-              {unitVals && (
-              <tr>
-                <td
-                  title={pinnedRow.hint || undefined}
-                  style={{
-                    position: "sticky", left: 0, zIndex: 3,
-                    background: "var(--bg-inner)",
-                    borderRight: "2px solid var(--border-md)",
-                    borderTop: "2px solid var(--border-md)",
-                    textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
-                    fontSize: 12, fontWeight: 700, color: "var(--text-1)",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    verticalAlign: "middle", height: 34,
-                    width: labelW, minWidth: labelW, maxWidth: labelW,
-                  }}
-                >
-                  {tl(pinnedRow.label)}
-                  {pinnedRow.note && (
-                    <div style={{
-                      fontSize: 10, fontWeight: 500, color: "var(--text-3)",
-                      overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
-                    }}>
-                      {pinnedRow.note}
-                    </div>
-                  )}
-                </td>
-
-                {dates.map((d, i) => unitCell(
-                  unitVals.per[i],
-                  d,
-                  `unit-${d}`,
-                  {
-                    borderTop: "2px solid var(--border-md)",
-                    borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
-                  },
-                ))}
-
-                {pads.map((_, i) => (
-                  <td key={`unit-pad-${i}`} colSpan={2} style={{
-                    padding: 0, height: 34,
-                    border: "1px solid var(--border)",
-                    borderTop: "2px solid var(--border-md)",
-                    background: "var(--bg-card)",
-                  }} />
-                ))}
-
-                {!isMobile && unitCell(unitVals.sum, null, "unit-sum", {
-                  ...stickySum,
-                  zIndex: 4,
-                  borderLeft: "2px solid var(--border-md)",
-                  borderTop: "2px solid var(--border-md)",
-                })}
-              </tr>
-              )}
-
-              {columnStats && (
-              <tr>
-                <td
-                  onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
-                  title={t("comparison.cycleTooltip")}
-                  style={{
-                    position: "sticky", left: 0, zIndex: 3,
-                    background: "var(--bg-card)",
-                    borderRight: "2px solid var(--border-md)",
-                    borderTop: "2px solid var(--border-md)",
-                    textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
-                    fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
-                    textTransform: "uppercase", color: "var(--text-3)",
-                    whiteSpace: "nowrap",
-                    verticalAlign: "middle", height: 30,
-                    width: labelW, minWidth: labelW, maxWidth: labelW,
-                    cursor: "pointer", userSelect: "none",
-                  }}
-                >
-                  {summaryMode.toUpperCase()}
-                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
-                    {t("comparison.perDay")}
-                  </span>
-                </td>
-
-                {dates.map((d, i) => statCell(
-                  columnStats.byDate[d],
-                  `stat-${d}`,
-                  {
-                    borderTop: "2px solid var(--border-md)",
-                    borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
-                  },
-                ))}
-
-                {pads.map((_, i) => (
-                  <td key={`stat-pad-${i}`} colSpan={2} style={{
-                    padding: 0, height: 30,
-                    border: "1px solid var(--border)",
-                    borderTop: "2px solid var(--border-md)",
-                    background: "var(--bg-card)",
-                  }} />
-                ))}
-
-                {!isMobile && statCell(columnStats.all, "stat-all", {
-                  ...stickySum,
-                  zIndex: 4,
-                  borderLeft: "2px solid var(--border-md)",
-                  borderTop: "2px solid var(--border-md)",
-                })}
-              </tr>
-              )}
-
-              {/* The same AVG row while loading — its label is real, its
-                  values pulse with the grid above it. */}
-              {loading && columnSummary && (
-              <tr aria-hidden="true">
-                <td style={{
-                  position: "sticky", left: 0, zIndex: 3,
-                  background: "var(--bg-card)",
-                  borderRight: "2px solid var(--border-md)",
-                  borderTop: "2px solid var(--border-md)",
-                  textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
-                  fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
-                  textTransform: "uppercase", color: "var(--text-3)",
-                  whiteSpace: "nowrap",
-                  verticalAlign: "middle", height: 30,
-                  width: labelW, minWidth: labelW, maxWidth: labelW,
-                }}>
-                  {summaryMode.toUpperCase()}
-                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
-                    {t("comparison.perDay")}
-                  </span>
-                </td>
-
-                {dates.map((d, i) => skPair(loadingRows + 1, i + 1, `sk-stat-${d}`, {
-                  borderTop: "2px solid var(--border-md)",
-                  borderRight: dateEdge(i),
-                }, 30))}
-
-                {pads.map((_, i) => (
-                  <td key={`sk-stat-pad-${i}`} colSpan={2} style={{
-                    padding: 0, height: 30,
-                    border: "1px solid var(--border)",
-                    borderTop: "2px solid var(--border-md)",
-                    background: "var(--bg-card)",
-                  }} />
-                ))}
-
-                {!isMobile && skPair(loadingRows + 1, dates.length + 1, "sk-stat-all", {
-                  ...stickySum,
-                  zIndex: 4,
-                  background: "var(--bg-card)",
-                  borderLeft: "2px solid var(--border-md)",
-                  borderTop: "2px solid var(--border-md)",
-                }, 30)}
-              </tr>
-              )}
-            </tfoot>
-          )}
-        </table>
-      </div>
+          giving the dates the 32px the padding held, and the names stand
+          beside a scroller of their own (see renderTable). */}
+      {fit ? (
+        <div
+          ref={outerRef}
+          style={{ display: "flex", alignItems: "flex-start", marginLeft: -16, marginRight: -16 }}
+          data-grid=""
+          data-sel={selection ? "" : undefined}
+          onMouseOver={hover.onMouseOver}
+          onMouseLeave={hover.onMouseLeave}
+          onClick={() => clearSel()}
+        >
+          {renderTable("names")}
+          {/* A phone's swipe comes to rest on a whole day. */}
+          <div
+            ref={scrollRef}
+            style={{ flex: 1, minWidth: 0, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollSnapType: "x mandatory" }}
+          >
+            {renderTable("data")}
+          </div>
+        </div>
+      ) : (
+        <div
+          ref={scrollRef}
+          style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+          data-grid=""
+          data-sel={selection ? "" : undefined}
+          onMouseOver={hover.onMouseOver}
+          onMouseLeave={hover.onMouseLeave}
+          onClick={() => clearSel()}
+        >
+          {renderTable("all")}
+        </div>
+      )}
 
       {fit && isDiff && diffLegend(true, "mt-3")}
 

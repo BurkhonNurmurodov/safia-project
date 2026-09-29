@@ -155,15 +155,18 @@ const SingleGrid = memo(function SingleGrid({
   // across the available width (both embedded and fullscreen). Column width
   // depends only on container size + BASIS_DAYS — never on how many days are
   // selected — so cells never grow/shrink as you change the date range.
+  // On a phone (`fit`) the grid is two boxes side by side — see the render —
+  // so the width measured is the wrapper holding both.
   const scrollRef = useRef(null);
+  const outerRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = fit ? outerRef.current : scrollRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => setContainerW(el.clientWidth));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [fit]);
 
   // Pad up to BASIS_DAYS with blank cells so the table keeps a constant width;
   // more than BASIS_DAYS overflows and scrolls. Day-columns stretch so exactly
@@ -206,10 +209,13 @@ const SingleGrid = memo(function SingleGrid({
   // bleeds to the card's edges on a phone.
   const namePadL = fit ? 16 : 12;
   const namePadR = fit ? 6 : 8;
-  // Fullscreen on a phone: the grid fills the overlay and scrolls BOTH ways,
-  // its date row pinned on top. Left to its content height it ran past the
-  // screen's bottom edge, and the rows down there could not be reached at all.
-  const pinTop = fit && fullscreen;
+  // Fullscreen on a phone: the grid fills the overlay and scrolls down inside
+  // it. Left at its content height it ran past the screen's bottom edge, and
+  // the rows down there could not be reached at all.
+  const fillFull = fit && fullscreen;
+  // A phone's header row has ONE height in both of its tables (a selected
+  // day's underline must not make the day row taller than the names' row).
+  const headH = fit ? { height: 30 } : null;
 
   // Summary column is pinned to the right edge; data scrolls underneath it.
   const stickyAvg = {
@@ -229,6 +235,14 @@ const SingleGrid = memo(function SingleGrid({
     background: "var(--bg-card)",
     borderRight: "2px solid var(--border-md)",
   };
+  // In a phone's own names table nothing scrolls under a name, so it is not
+  // sticky: a sticky cell is drawn as a layer of its own, and a layer that
+  // lands a frame late is what let the days under the names show through.
+  // Its cells carry the day cells' 1px rules (invisible), so a row of names
+  // and its row of days collapse to exactly the same pitch.
+  const namesOnly = (part) => (part === "names"
+    ? { position: "static", borderTop: "1px solid transparent", borderBottom: "1px solid transparent" }
+    : null);
 
   const thBase = {
     fontSize: fit ? 11 : 10, fontWeight: 700, letterSpacing: ".07em",
@@ -247,10 +261,11 @@ const SingleGrid = memo(function SingleGrid({
     background: "var(--skeleton)",
     ...skeletonWave(col, row),
   });
-  const skRows = loading ? Array.from({ length: loadingRows }, (_, r) => (
+  const skRows = (part) => (loading ? Array.from({ length: loadingRows }, (_, r) => (
     <tr key={`sk-${r}`} aria-hidden="true">
-      <td style={{
+      {part !== "data" && <td style={{
         ...stickyNameBase,
+        ...namesOnly(part),
         paddingLeft: namePadL, paddingRight: namePadR,
         width: labelW, maxWidth: labelW,
         verticalAlign: "middle", height: 34,
@@ -259,8 +274,8 @@ const SingleGrid = memo(function SingleGrid({
           className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`}
           style={skeletonWave(0, r)}
         />
-      </td>
-      {dates.map((d, i) => (
+      </td>}
+      {part !== "names" && dates.map((d, i) => (
         <td key={d} style={{
           position: "relative", padding: 0,
           width: cellW, minWidth: cellW, height: 34,
@@ -269,14 +284,14 @@ const SingleGrid = memo(function SingleGrid({
           <div className="animate-pulse" style={skFill(i + 1, r)} />
         </td>
       ))}
-      {pads.map((_, i) => (
+      {part !== "names" && pads.map((_, i) => (
         <td key={`sk-pad-${r}-${i}`} style={{
           width: cellW, minWidth: cellW, height: 34,
           border: "1px solid var(--border)",
           background: "var(--bg-card)",
         }} />
       ))}
-      {!isMobile && (
+      {part !== "names" && !isMobile && (
         <td style={{
           ...stickyAvg,
           zIndex: 4, padding: 0,
@@ -289,349 +304,383 @@ const SingleGrid = memo(function SingleGrid({
         </td>
       )}
     </tr>
-  )) : null;
+  )) : null);
 
-  return (
+  // ONE table in every measure, drawn whole ("all") — or, on a phone, as its
+  // two halves side by side: the names ("names") and the days ("data"), in a
+  // horizontal scroller of their own. On a phone the grid opens scrolled to
+  // the latest day, so a sticky name column sat over days at rest — and a
+  // sticky cell is its own layer, which a fast scroll can draw a frame late,
+  // showing the days under the names first. With nothing under the names
+  // there is nothing to show through. Rows keep one pitch in both halves:
+  // every cell is 34px, the header row 30px on a phone.
+  const renderTable = (part) => (
+    <table style={{
+      borderCollapse: "collapse",
+      borderSpacing:  0,
+      width:          part === "names" ? labelW : part === "data" ? tableWidth - labelW : tableWidth,
+      ...(part === "names" ? { flexShrink: 0 } : null),
+    }}>
+      <thead>
+        <tr>
+          {/* BRIGADIR header */}
+          {part !== "data" && <th
+            onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
+            style={{
+              ...stickyNameBase,
+              ...thBase,
+              width: labelW,
+              zIndex: 4,
+              ...namesOnly(part),
+              ...headH,
+              textAlign: "left",
+              paddingLeft: namePadL,
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {rowLabel}
+              {nameAsc === null
+                ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
+                : nameAsc
+                  ? <span style={{ fontSize: 9 }}>↑</span>
+                  : <span style={{ fontSize: 9 }}>↓</span>}
+            </span>
+          </th>}
+
+          {/* Date headers */}
+          {part !== "names" && dates.map(d => {
+            const dateSel  = selection?.type === "date";
+            const thisSel  = dateSel && selection.value === d;
+            const thisGray = dateSel && selection.value !== d;
+            return (
+              <th
+                key={d}
+                onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
+                style={{
+                  ...thBase,
+                  textAlign:  "center",
+                  fontWeight: thisSel ? 700 : 600,
+                  color:      "#fff",
+                  opacity:    thisGray ? 0.45 : 1,
+                  cursor:     "pointer",
+                  transition: "opacity .1s, color .1s",
+                  userSelect: "none",
+                  width:      cellW,
+                  minWidth:   cellW,
+                  border:     "1px solid var(--border)",
+                  ...(fit ? { scrollSnapAlign: "start" } : null),
+                  ...headH,
+                }}
+              >
+                {shortDate(d)}
+                {thisSel && (
+                  <span style={{
+                    display: "block", height: 2, borderRadius: 1,
+                    background: "#fff", marginTop: 3,
+                  }} />
+                )}
+              </th>
+            );
+          })}
+
+          {/* Blank placeholder headers — hold the BASIS_DAYS width */}
+          {part !== "names" && pads.map((_, i) => (
+            <th key={`pad-h-${i}`} style={{
+              ...thBase,
+              width: cellW, minWidth: cellW,
+              border: "1px solid var(--border)",
+            }} />
+          ))}
+
+          {/* AVG / MAX / MIN header — clickable to cycle, pinned right (hidden on phones) */}
+          {part !== "names" && !isMobile && (
+            <th
+              onClick={e => { e.stopPropagation(); onCycleAvg(); }}
+              style={{
+                ...thBase,
+                ...stickyAvg,
+                zIndex:      5,
+                textAlign:   "center",
+                width:       AVG_W,
+                minWidth:    AVG_W,
+                cursor:      "pointer",
+                userSelect:  "none",
+                borderLeft:  "2px solid var(--border-md)",
+                paddingLeft: 4,
+                paddingRight: 4,
+              }}
+            >
+              {t(`zagruzka.stat${avgMode.charAt(0).toUpperCase() + avgMode.slice(1)}`)}
+              <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>↕</span>
+            </th>
+          )}
+        </tr>
+      </thead>
+
+      <tbody>
+        {loading ? skRows(part) : displayManagers.map((name, ri) => {
+          const mgrSel   = selection?.type === "manager";
+          const thisSel  = mgrSel && selection.value === name;
+          const thisGray = mgrSel && selection.value !== name;
+          const stat     = rowStat(name, read, data, dates, avgMode, isApproved);
+          const statColor = getSegmentColor(stat, segs);
+
+          return (
+            <tr key={name}>
+              {/* Name cell */}
+              {part !== "data" && <td
+                onClick={e => { e.stopPropagation(); toggleSel("manager", name); }}
+                style={{
+                  ...stickyNameBase,
+                  ...namesOnly(part),
+                  textAlign:     "left",
+                  paddingLeft:   namePadL,
+                  paddingRight:  namePadR,
+                  fontSize:      12,
+                  fontWeight:    thisSel ? 700 : 500,
+                  color:         thisGray ? "var(--text-4)" : thisSel ? "var(--text-1)" : labelColor,
+                  // nowrap alone let a long row name widen the column past
+                  // labelW (which tableWidth was computed from) or spill
+                  // over the date cells. Clip it; the tooltip keeps the rest.
+                  whiteSpace:    fit ? "normal" : "nowrap",
+                  overflow:      "hidden",
+                  textOverflow:  "ellipsis",
+                  width:         labelW,
+                  maxWidth:      labelW,
+                  verticalAlign: "middle",
+                  cursor:        "pointer",
+                  opacity:       thisGray ? 0.35 : 1,
+                  transition:    "opacity .1s, color .1s",
+                  userSelect:    "none",
+                  height:        34,
+                }}
+                title={shown(name, true)}
+              >
+                {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
+              </td>}
+
+              {/* Data cells */}
+              {part !== "names" && dates.map((d, ci) => {
+                const cell   = data[name]?.[d];
+                const val    = read(cell);
+                const v      = val != null ? Math.round(val * 100) : -1;
+                const hasData = v >= 0;
+                // Pending = Verifix data uploaded but the value can't show
+                // yet. The backend marks the cell with the blocking reason:
+                // "not_closed" | "requests" (unprocessed edit requests) |
+                // "no_headcount" (day confirmed, «Odam soni» not loaded).
+                const pendingReason =
+                  cell?.pending ?? (hasData && !isApproved(name, d) ? "not_closed" : null);
+                const pending = pendingReason !== null;
+                const color  = pending ? { bg: "transparent", fg: "var(--text-4)", accent: "var(--text-4)", noData: true } : getSegmentColor(v, segs);
+                const grayed = cellGrayed(name, d);
+
+                return (
+                  <td
+                    key={d}
+                    className={color.noData ? undefined : "hm-live"}
+                    data-gt=""
+                    data-gr={ri}
+                    data-gc={ci}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (selection) clearSel();
+                      else if (pending) onPendingClick(name, d, pendingReason);
+                      else if (!color.noData) onCellClick(name, d, v, cell);
+                    }}
+                    title={pending
+                      ? t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")
+                      : cellTitle?.(cell, name, d)}
+                    style={{
+                      ...buildCellStyle({ color, grayed, width: cellW }),
+                      ...(pending ? {
+                        background: "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)",
+                        cursor: "pointer",
+                      } : {}),
+                    }}
+                  >
+                    <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
+                      {pending
+                        ? <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
+                        : v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
+                    </div>
+                  </td>
+                );
+              })}
+
+              {/* Blank placeholder cells — hold the BASIS_DAYS width */}
+              {part !== "names" && pads.map((_, i) => (
+                <td key={`pad-${name}-${i}`} style={{
+                  width: cellW, minWidth: cellW, height: 34,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-card)",
+                }} />
+              ))}
+
+              {/* AVG / MAX / MIN cell — pinned right (hidden on phones) */}
+              {part !== "names" && !isMobile && (
+                <td style={{
+                  ...buildCellStyle({ color: statColor, grayed: thisGray, width: AVG_W }),
+                  ...stickyAvg,
+                  zIndex:       4,
+                  minWidth:     AVG_W,
+                  background:   statColor.noData ? "var(--bg-card)" : statColor.bg,
+                  borderLeft:   "2px solid var(--border-md)",
+                  fontWeight:   700,
+                  cursor:       "default",
+                }}>
+                  {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
+                </td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+
+      {/* ── The unit's own row ──────────────────────────────────────────
+          The supervisor the rows belong to, computed from the unit's summed
+          inputs rather than averaged out of the grid. It sits in the footer,
+          visually separated, and names itself: two percentages for one day
+          are only readable when each says which question it answers. */}
+      {pinnedRow?.data && (
+        <tfoot>
+          <tr>
+            {part !== "data" && <td
+              title={pinnedRow.hint || undefined}
+              style={{
+                ...stickyNameBase,
+                ...namesOnly(part),
+                background:    "var(--bg-inner)",
+                borderTop:     "2px solid var(--border-md)",
+                textAlign:     "left",
+                paddingLeft:   namePadL,
+                paddingRight:  namePadR,
+                fontSize:      12,
+                fontWeight:    700,
+                color:         "var(--text-1)",
+                whiteSpace:    "nowrap",
+                overflow:      "hidden",
+                textOverflow:  "ellipsis",
+                width:         labelW,
+                maxWidth:      labelW,
+                verticalAlign: "middle",
+                height:        34,
+              }}
+            >
+              {tl(pinnedRow.label)}
+              {pinnedRow.note && (
+                <div style={{
+                  fontSize: 10, fontWeight: 500, color: "var(--text-3)",
+                  overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
+                }}>
+                  {pinnedRow.note}
+                </div>
+              )}
+            </td>}
+
+            {part !== "names" && dates.map((d, ci) => {
+              const cell = pinnedRow.data[d];
+              const val  = read(cell);
+              const v    = val != null ? Math.round(val * 100) : -1;
+              const color = getSegmentColor(v, segs);
+              return (
+                <td
+                  key={`unit-${d}`}
+                  className={color.noData ? undefined : "hm-live"}
+                  data-gt=""
+                  data-gc={ci}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (selection) clearSel();
+                    else if (!color.noData) onCellClick(pinnedRow.label, d, v, cell);
+                  }}
+                  title={cellTitle?.(cell, pinnedRow.label, d)}
+                  style={{
+                    ...buildCellStyle({ color, grayed: false, width: cellW }),
+                    borderTop: "2px solid var(--border-md)",
+                  }}
+                >
+                  <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
+                    {v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
+                  </div>
+                </td>
+              );
+            })}
+
+            {part !== "names" && pads.map((_, i) => (
+              <td key={`unit-pad-${i}`} style={{
+                width: cellW, minWidth: cellW, height: 34,
+                border: "1px solid var(--border)",
+                borderTop: "2px solid var(--border-md)",
+                background: "var(--bg-card)",
+              }} />
+            ))}
+
+            {part !== "names" && !isMobile && (() => {
+              // The same statistic the rows use, over the unit's own values —
+              // so the pinned column reads one way down the whole table.
+              const stat = rowStat(pinnedRow.label, read, { [pinnedRow.label]: pinnedRow.data },
+                                   dates, avgMode, null);
+              const statColor = getSegmentColor(stat, segs);
+              return (
+                <td style={{
+                  ...buildCellStyle({ color: statColor, grayed: false, width: AVG_W }),
+                  ...stickyAvg,
+                  zIndex:     4,
+                  minWidth:   AVG_W,
+                  background: statColor.noData ? "var(--bg-card)" : statColor.bg,
+                  borderLeft: "2px solid var(--border-md)",
+                  borderTop:  "2px solid var(--border-md)",
+                  fontWeight: 700,
+                  cursor:     "default",
+                }}>
+                  {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
+                </td>
+              );
+            })()}
+          </tr>
+        </tfoot>
+      )}
+    </table>
+  );
+
+  if (fit) return (
     <div
-      ref={scrollRef}
-      style={{
-        overflowX: "auto", WebkitOverflowScrolling: "touch",
-        // A phone's swipe comes to rest on a whole day, never half of one
-        // tucked under the names (the padding is the sticky name column).
-        ...(fit ? { scrollSnapType: "x mandatory", scrollPaddingLeft: labelW } : null),
-        ...(pinTop ? { height: "100%" } : null),
-      }}
+      ref={outerRef}
+      // flex-start: each half keeps its own content height — stretched to a
+      // fullscreen wrapper's fixed height, the days half turned into a
+      // vertical scroller of its own and slid out of line with the names.
+      style={{ display: "flex", alignItems: "flex-start", ...(fillFull ? { height: "100%", overflowY: "auto" } : null) }}
       data-grid=""
       data-sel={selection ? "" : undefined}
       onMouseOver={hover.onMouseOver}
       onMouseLeave={hover.onMouseLeave}
       onClick={() => clearSel()}
     >
-      <table style={{
-        borderCollapse: "collapse",
-        borderSpacing:  0,
-        width:          tableWidth,
-      }}>
-        <thead>
-          <tr>
-            {/* BRIGADIR header */}
-            <th
-              onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
-              style={{
-                ...stickyNameBase,
-                ...thBase,
-                width: labelW,
-                zIndex: 4,
-                ...(pinTop ? { top: 0, zIndex: 6 } : null),
-                textAlign: "left",
-                paddingLeft: namePadL,
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                {rowLabel}
-                {nameAsc === null
-                  ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
-                  : nameAsc
-                    ? <span style={{ fontSize: 9 }}>↑</span>
-                    : <span style={{ fontSize: 9 }}>↓</span>}
-              </span>
-            </th>
+      {renderTable("names")}
+      {/* A phone's swipe comes to rest on a whole day. */}
+      <div
+        ref={scrollRef}
+        style={{ flex: 1, minWidth: 0, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollSnapType: "x mandatory" }}
+      >
+        {renderTable("data")}
+      </div>
+    </div>
+  );
 
-            {/* Date headers */}
-            {dates.map(d => {
-              const dateSel  = selection?.type === "date";
-              const thisSel  = dateSel && selection.value === d;
-              const thisGray = dateSel && selection.value !== d;
-              return (
-                <th
-                  key={d}
-                  onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
-                  style={{
-                    ...thBase,
-                    textAlign:  "center",
-                    fontWeight: thisSel ? 700 : 600,
-                    color:      "#fff",
-                    opacity:    thisGray ? 0.45 : 1,
-                    cursor:     "pointer",
-                    transition: "opacity .1s, color .1s",
-                    userSelect: "none",
-                    width:      cellW,
-                    minWidth:   cellW,
-                    border:     "1px solid var(--border)",
-                    ...(fit ? { scrollSnapAlign: "start" } : null),
-                    ...(pinTop ? { position: "sticky", top: 0, zIndex: 4 } : null),
-                  }}
-                >
-                  {shortDate(d)}
-                  {thisSel && (
-                    <span style={{
-                      display: "block", height: 2, borderRadius: 1,
-                      background: "#fff", marginTop: 3,
-                    }} />
-                  )}
-                </th>
-              );
-            })}
-
-            {/* Blank placeholder headers — hold the BASIS_DAYS width */}
-            {pads.map((_, i) => (
-              <th key={`pad-h-${i}`} style={{
-                ...thBase,
-                width: cellW, minWidth: cellW,
-                border: "1px solid var(--border)",
-              }} />
-            ))}
-
-            {/* AVG / MAX / MIN header — clickable to cycle, pinned right (hidden on phones) */}
-            {!isMobile && (
-              <th
-                onClick={e => { e.stopPropagation(); onCycleAvg(); }}
-                style={{
-                  ...thBase,
-                  ...stickyAvg,
-                  zIndex:      5,
-                  textAlign:   "center",
-                  width:       AVG_W,
-                  minWidth:    AVG_W,
-                  cursor:      "pointer",
-                  userSelect:  "none",
-                  borderLeft:  "2px solid var(--border-md)",
-                  paddingLeft: 4,
-                  paddingRight: 4,
-                }}
-              >
-                {t(`zagruzka.stat${avgMode.charAt(0).toUpperCase() + avgMode.slice(1)}`)}
-                <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>↕</span>
-              </th>
-            )}
-          </tr>
-        </thead>
-
-        <tbody>
-          {loading ? skRows : displayManagers.map((name, ri) => {
-            const mgrSel   = selection?.type === "manager";
-            const thisSel  = mgrSel && selection.value === name;
-            const thisGray = mgrSel && selection.value !== name;
-            const stat     = rowStat(name, read, data, dates, avgMode, isApproved);
-            const statColor = getSegmentColor(stat, segs);
-
-            return (
-              <tr key={name}>
-                {/* Name cell */}
-                <td
-                  onClick={e => { e.stopPropagation(); toggleSel("manager", name); }}
-                  style={{
-                    ...stickyNameBase,
-                    textAlign:     "left",
-                    paddingLeft:   namePadL,
-                    paddingRight:  namePadR,
-                    fontSize:      12,
-                    fontWeight:    thisSel ? 700 : 500,
-                    color:         thisGray ? "var(--text-4)" : thisSel ? "var(--text-1)" : labelColor,
-                    // nowrap alone let a long row name widen the column past
-                    // labelW (which tableWidth was computed from) or spill
-                    // over the date cells. Clip it; the tooltip keeps the rest.
-                    whiteSpace:    fit ? "normal" : "nowrap",
-                    overflow:      "hidden",
-                    textOverflow:  "ellipsis",
-                    width:         labelW,
-                    maxWidth:      labelW,
-                    verticalAlign: "middle",
-                    cursor:        "pointer",
-                    opacity:       thisGray ? 0.35 : 1,
-                    transition:    "opacity .1s, color .1s",
-                    userSelect:    "none",
-                    height:        34,
-                  }}
-                  title={shown(name, true)}
-                >
-                  {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
-                </td>
-
-                {/* Data cells */}
-                {dates.map((d, ci) => {
-                  const cell   = data[name]?.[d];
-                  const val    = read(cell);
-                  const v      = val != null ? Math.round(val * 100) : -1;
-                  const hasData = v >= 0;
-                  // Pending = Verifix data uploaded but the value can't show
-                  // yet. The backend marks the cell with the blocking reason:
-                  // "not_closed" | "requests" (unprocessed edit requests) |
-                  // "no_headcount" (day confirmed, «Odam soni» not loaded).
-                  const pendingReason =
-                    cell?.pending ?? (hasData && !isApproved(name, d) ? "not_closed" : null);
-                  const pending = pendingReason !== null;
-                  const color  = pending ? { bg: "transparent", fg: "var(--text-4)", accent: "var(--text-4)", noData: true } : getSegmentColor(v, segs);
-                  const grayed = cellGrayed(name, d);
-
-                  return (
-                    <td
-                      key={d}
-                      className={color.noData ? undefined : "hm-live"}
-                      data-gt=""
-                      data-gr={ri}
-                      data-gc={ci}
-                      onClick={e => {
-                        e.stopPropagation();
-                        if (selection) clearSel();
-                        else if (pending) onPendingClick(name, d, pendingReason);
-                        else if (!color.noData) onCellClick(name, d, v, cell);
-                      }}
-                      title={pending
-                        ? t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")
-                        : cellTitle?.(cell, name, d)}
-                      style={{
-                        ...buildCellStyle({ color, grayed, width: cellW }),
-                        ...(pending ? {
-                          background: "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)",
-                          cursor: "pointer",
-                        } : {}),
-                      }}
-                    >
-                      <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
-                        {pending
-                          ? <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
-                          : v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
-                      </div>
-                    </td>
-                  );
-                })}
-
-                {/* Blank placeholder cells — hold the BASIS_DAYS width */}
-                {pads.map((_, i) => (
-                  <td key={`pad-${name}-${i}`} style={{
-                    width: cellW, minWidth: cellW, height: 34,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg-card)",
-                  }} />
-                ))}
-
-                {/* AVG / MAX / MIN cell — pinned right (hidden on phones) */}
-                {!isMobile && (
-                  <td style={{
-                    ...buildCellStyle({ color: statColor, grayed: thisGray, width: AVG_W }),
-                    ...stickyAvg,
-                    zIndex:       4,
-                    minWidth:     AVG_W,
-                    background:   statColor.noData ? "var(--bg-card)" : statColor.bg,
-                    borderLeft:   "2px solid var(--border-md)",
-                    fontWeight:   700,
-                    cursor:       "default",
-                  }}>
-                    {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-
-        {/* ── The unit's own row ──────────────────────────────────────────
-            The supervisor the rows belong to, computed from the unit's summed
-            inputs rather than averaged out of the grid. It sits in the footer,
-            visually separated, and names itself: two percentages for one day
-            are only readable when each says which question it answers. */}
-        {pinnedRow?.data && (
-          <tfoot>
-            <tr>
-              <td
-                title={pinnedRow.hint || undefined}
-                style={{
-                  ...stickyNameBase,
-                  background:    "var(--bg-inner)",
-                  borderTop:     "2px solid var(--border-md)",
-                  textAlign:     "left",
-                  paddingLeft:   namePadL,
-                  paddingRight:  namePadR,
-                  fontSize:      12,
-                  fontWeight:    700,
-                  color:         "var(--text-1)",
-                  whiteSpace:    "nowrap",
-                  overflow:      "hidden",
-                  textOverflow:  "ellipsis",
-                  width:         labelW,
-                  maxWidth:      labelW,
-                  verticalAlign: "middle",
-                  height:        34,
-                }}
-              >
-                {tl(pinnedRow.label)}
-                {pinnedRow.note && (
-                  <div style={{
-                    fontSize: 10, fontWeight: 500, color: "var(--text-3)",
-                    overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
-                  }}>
-                    {pinnedRow.note}
-                  </div>
-                )}
-              </td>
-
-              {dates.map((d, ci) => {
-                const cell = pinnedRow.data[d];
-                const val  = read(cell);
-                const v    = val != null ? Math.round(val * 100) : -1;
-                const color = getSegmentColor(v, segs);
-                return (
-                  <td
-                    key={`unit-${d}`}
-                    className={color.noData ? undefined : "hm-live"}
-                    data-gt=""
-                    data-gc={ci}
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (selection) clearSel();
-                      else if (!color.noData) onCellClick(pinnedRow.label, d, v, cell);
-                    }}
-                    title={cellTitle?.(cell, pinnedRow.label, d)}
-                    style={{
-                      ...buildCellStyle({ color, grayed: false, width: cellW }),
-                      borderTop: "2px solid var(--border-md)",
-                    }}
-                  >
-                    <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
-                      {v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
-                    </div>
-                  </td>
-                );
-              })}
-
-              {pads.map((_, i) => (
-                <td key={`unit-pad-${i}`} style={{
-                  width: cellW, minWidth: cellW, height: 34,
-                  border: "1px solid var(--border)",
-                  borderTop: "2px solid var(--border-md)",
-                  background: "var(--bg-card)",
-                }} />
-              ))}
-
-              {!isMobile && (() => {
-                // The same statistic the rows use, over the unit's own values —
-                // so the pinned column reads one way down the whole table.
-                const stat = rowStat(pinnedRow.label, read, { [pinnedRow.label]: pinnedRow.data },
-                                     dates, avgMode, null);
-                const statColor = getSegmentColor(stat, segs);
-                return (
-                  <td style={{
-                    ...buildCellStyle({ color: statColor, grayed: false, width: AVG_W }),
-                    ...stickyAvg,
-                    zIndex:     4,
-                    minWidth:   AVG_W,
-                    background: statColor.noData ? "var(--bg-card)" : statColor.bg,
-                    borderLeft: "2px solid var(--border-md)",
-                    borderTop:  "2px solid var(--border-md)",
-                    fontWeight: 700,
-                    cursor:     "default",
-                  }}>
-                    {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
-                  </td>
-                );
-              })()}
-            </tr>
-          </tfoot>
-        )}
-      </table>
+  return (
+    <div
+      ref={scrollRef}
+      style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+      data-grid=""
+      data-sel={selection ? "" : undefined}
+      onMouseOver={hover.onMouseOver}
+      onMouseLeave={hover.onMouseLeave}
+      onClick={() => clearSel()}
+    >
+      {renderTable("all")}
     </div>
   );
 });
