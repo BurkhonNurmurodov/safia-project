@@ -7281,9 +7281,44 @@ morning, with «XATO» wherever a brigadir had entered nothing.
 - **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
   sort chevron hidden and the active one stacked under its label, a blank's
   reason as a bare icon (its words are in the legend at every width, since the
-  cell can no longer spare a second line). Rows open
-  `/brigadir/:id`. No per-cell links: a shift manager does not hold
-  `/production`, and a link that 403s is a dead link.
+  cell can no longer spare a second line).
+- **Every cell opens WHERE ITS FIGURE COMES FROM, on the scope it was counted
+  over** (the operator's rulings, 2026-09-30). The NAME opens `/brigadir/:id`;
+  the row itself no longer does, because each cell has a destination of its
+  own.
+  - Load → «Zagruzka fayli» on the unit's shift-day (the group's `today`).
+    Plan fulfilment → the same page on `yesterday`, whose «O'rtacha
+    yuklanish» / «Bajarish %» cards ARE these figures. Quality → «Sifat»,
+    «Brigadirlar» tab, that brigadir (the unit's own name, which is `r.sup`),
+    `quality_month`'s span clamped to today, «Sochsiz», and only the
+    UNRESOLVED records (open · waiting · repeat). That is the operator's pick
+    over the full actionable set, so the page's closure figure does NOT equal
+    the cell. Open concerns → «Xavotirlar», that unit, level brigadir, «to do» +
+    «in work», «Barcha vaqt» (the count has no period).
+  - A BLANK opens where its gap is filled: no people → the «Odamlar soni» tab;
+    no plan / no fact → the positions; `not_configured` → the admin catalog
+    upload, for ADMINS only (nobody else can fix it, and the unit is not in
+    /production's picker, which would silently show another unit).
+  - **The target page resets to exactly that scope and keeps it** («exact
+    scope, remembered»). `utils/scopeLinks.js` builds the URLs.
+    `hooks/useUrlScope.js` is the page half: each page's `readLinkScope` maps
+    the params onto its OWN `usePersistentState` keys and clears every filter
+    the link does not name. It writes them during the first render, above every
+    `usePersistentState` call, so no request goes out for the old scope; then it
+    drops the params (replace). A new linked page = one reader beside its keys.
+  - **A linked pick is kept even with no rows.** Quality keeps a brigadir who
+    owns a cell but has no record, and Concerns keeps a unit with no concern
+    (through `/api/managers/all`). Both lists used to drop a pick they could not
+    offer, which would have widened the linked page to every brigadir
+    (Turdimurodov Nodirjon's unit has no quality record at all).
+  - **`/production` is open to shift- and top-managers** for this
+    (`DEFAULT_PAGE_ACCESS`, plus `startup.open_production_page_to_managers`,
+    flag `production_page_managers_2026_09_30_v1`, both entrypoints, ADDS them
+    to a stored matrix once). By the operator's call they type ПЛАН/ФАКТ there
+    like anyone who opens the page. «Bugungi fakt» people, staffing and the
+    catalog stay admin / brigadir / leader. A shift-manager's picker stays in
+    their shift ∩ plant.
+  - A cell whose page the viewer cannot open is plain, never a dead link.
 - **The three LOAD cards above it read the same figure** (the operator's call,
   2026-09-30) — «O'rt. smena boshi zagruzka», «Brigadirlar ≥ 100%» and «< 90%»
   on `/shift-daily` count «Smena boshi Zagruzka», no longer the full formula's

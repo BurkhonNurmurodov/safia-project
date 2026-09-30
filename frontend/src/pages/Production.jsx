@@ -27,6 +27,8 @@ import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam } from "../utils/scopeLinks";
 import useUndoStack, { useUndoHotkeys } from "../hooks/useUndoStack";
 import { useLang } from "../context/LangContext";
 import { useFactory } from "../context/FactoryContext";
@@ -1238,6 +1240,24 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   );
 }
 
+// A link that opens this page on one unit and one day (utils/scopeLinks.js
+// `productionLink` — the «Smena hisoboti» board's load and plan-fulfilment
+// cells). It decides the unit, the day and the tab, and clears the scope
+// filters it does not name (plant-wide shift pick, search, Команда), so the
+// page shows the very figures the link was pressed on. Read by `useUrlScope`.
+const readLinkScope = (q) => {
+  const unit = Number(q.get("unit"));
+  if (!q.has("unit") || !Number.isInteger(unit) || unit <= 0) return null;
+  return {
+    production_manager: unit,
+    production_date: dayParam(q, "date"),              // none → today
+    production_view: q.get("tab") === "people" ? "people" : "zagruzka",
+    production_shift: null,
+    production_search: null,
+    production_wc_filter: null,
+  };
+};
+
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
@@ -1248,6 +1268,8 @@ export default function Production() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
+  // Before every persisted filter below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [date, setDate] = usePersistentState("production_date", todayISO());
   const [viewPref, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
   // A LEADER owns CELLS, not a unit, so the backend pins their whole page to the

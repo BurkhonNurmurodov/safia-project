@@ -22,6 +22,8 @@ import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam, listParam } from "../utils/scopeLinks";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -474,6 +476,34 @@ const fmtDateTime = (iso8601) => {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
+// A link that opens this page on one brigadir over a span (utils/scopeLinks.js
+// `qualityLink` — the «Smena hisoboti» board's «Sifat nazorati %» cell, which
+// opens the unresolved records of the month it counted). It lands on the
+// «Brigadirlar» tab «Sochsiz» — the board's own reading of the register — and
+// clears every record filter it does not name, so the list is exactly the
+// linked scope. Read by `useUrlScope`.
+const readLinkScope = (q) => {
+  const brig = (q.get("brigadir") || "").trim();
+  if (!brig) return null;
+  return {
+    quality_view: "production",
+    quality_brig_sel: [brig],
+    quality_date_from: dayParam(q, "from"),            // none → the page's default
+    quality_date_to: dayParam(q, "to"),
+    quality_status_sel: listParam(q, "status", Object.keys(STATUS_COLORS)),
+    quality_hair_mode: "without",
+    quality_src_sel: null,
+    quality_type_sel: null,
+    quality_cat_sel: null,
+    quality_ret_sel: null,
+    quality_shift_sel: null,
+    quality_mgr_sel: null,
+    quality_lead_sel: null,
+    quality_cell_sel: null,
+    quality_page: null,
+  };
+};
+
 export default function Quality() {
   const { lang, t } = useLang();
   const { auth } = useAuth();
@@ -532,6 +562,8 @@ export default function Quality() {
 
   // Default window: year-to-date — from Jan 1 of the current year through today.
   const today = iso(new Date());
+  // Before every persisted filter below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [dateFrom, setDateFrom] = usePersistentState("quality_date_from", today.slice(0, 4) + "-01-01");
   const [dateTo, setDateTo] = usePersistentState("quality_date_to", today);
 
@@ -1136,8 +1168,20 @@ export default function Quality() {
       const k = who(r);
       if (k) c[k] = (c[k] || 0) + 1;
     }
-    return Object.keys(c).sort((a, b) => c[b] - c[a]);
-  }, [rows, view, shiftTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    const out = Object.keys(c).sort((a, b) => c[b] - c[a]);
+    // The reader's own pick stays offered, last, while it names a unit that
+    // owns a cell in scope — even with no record at all. A unit nobody ever
+    // filed against (one that exists to measure a single cell's load) is a real
+    // answer, «nothing here», and the «Smena hisoboti» board links to exactly
+    // that; dropping the pick instead would widen the page to every brigadir.
+    if (brigPick && !c[brigPick] && Object.values(cellMap).some((cell) =>
+      cell?.sup === brigPick
+      && (factory == null || cell.fi === factory)
+      && (shiftTab === "all" || String(cell.sh ?? "") === shiftTab))) {
+      out.push(brigPick);
+    }
+    return out;
+  }, [rows, view, shiftTab, brigPick, cellMap, factory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // LEADER — every leader the in-scope RECORDS blame, and, once a brigadir is
   // picked, that brigadir's whole team from the CELLS REGISTRY. Both halves are

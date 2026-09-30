@@ -36,6 +36,8 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam, listParam } from "../utils/scopeLinks";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
@@ -482,6 +484,34 @@ const emptyForm = () => ({
 // A stored multi-select pick, read defensively — localStorage may hold anything.
 const asList = (v) => (Array.isArray(v) ? v : []);
 
+// A link that opens this page on one brigadir's unit (utils/scopeLinks.js
+// `concernsLink` — the «Smena hisoboti» board's «Ochiq xavotirlar» cell: level
+// brigadir, statuses «to do» + «in work», «Barcha vaqt», because the count it
+// was pressed on has no period). It clears every filter it does not name, so
+// the register holds exactly the rows that count was made of. Read by
+// `useUrlScope`.
+const readLinkScope = (q) => {
+  const unit = Number(q.get("unit"));
+  if (!q.has("unit") || !Number.isInteger(unit) || unit <= 0) return null;
+  return {
+    concerns_date_from: dayParam(q, "from"),
+    concerns_date_to: dayParam(q, "to"),
+    concerns_sup_sel: [String(unit)],
+    concerns_level_sel: listParam(q, "level", LEVELS),
+    concerns_status_sel: listParam(q, "status", STATUSES),
+    concerns_search: null,
+    concerns_shift: null,
+    concerns_cell_sel: null,
+    concerns_owner_sel: null,
+    concerns_resp_sel: null,
+    concerns_category_sel: null,
+    concerns_deadline_min: null,
+    concerns_deadline_max: null,
+    concerns_only_my_level: null,
+    concerns_view: "list",
+  };
+};
+
 export default function Concerns() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
@@ -556,6 +586,8 @@ export default function Concerns() {
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
+  // Before every persisted filter below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [startDate, setStartDate] = usePersistentState("concerns_date_from", () => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = usePersistentState("concerns_date_to", () => localTodayIso());
   const [search, setSearch] = usePersistentState("concerns_search", "");
@@ -791,10 +823,21 @@ export default function Concerns() {
       if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) continue;
       if (!seen.has(r.brigadir_manager_id)) seen.set(r.brigadir_manager_id, r.brigadir_name);
     }
+    // The reader's own pick stays offered while it names a unit in scope, even
+    // one with no concern at all: «nothing filed» is a real answer, and the
+    // «Smena hisoboti» board links a 0 here. Dropping the pick would widen the
+    // register to every brigadir under a count that was about one.
+    const picked = new Set(asList(fSups));
+    for (const m of allManagers) {
+      if (!picked.has(String(m.manager_id)) || seen.has(m.manager_id) || !m.name) continue;
+      if (factory != null && m.factory_id !== factory) continue;
+      if (shiftF && m.shift !== shiftF) continue;
+      seen.set(m.manager_id, m.name);
+    }
     return [...seen.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, shiftF, shiftOf, tl]);
+  }, [rows, shiftF, shiftOf, tl, fSups, allManagers, factory]);
   const supLabel = useMemo(() => new Map(supOpts.map((o) => [o.value, o.label])), [supOpts]);
   // The EFFECTIVE picks: one the list no longer offers (another shift, another
   // plant) narrows nothing — the effect below drops it, and until that lands it

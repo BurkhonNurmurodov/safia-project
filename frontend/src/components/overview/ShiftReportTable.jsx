@@ -40,9 +40,22 @@
 //   threshold nobody can read is a verdict nobody can check.
 // - It stays a TABLE on a phone. The rows are read against each other, which
 //   cards would take away; the headers shorten and a blank shows its icon alone.
+// - Every cell OPENS WHERE ITS FIGURE COMES FROM, on the scope it was counted
+//   over (the operator's directive, 2026-09-30): load → «Zagruzka fayli» on the
+//   unit's shift-day, plan fulfilment → the same page on the day before,
+//   quality → the brigadir's UNRESOLVED records of the month, open concerns →
+//   the brigadir's register at level brigadir, «to do» + «in work», all time.
+//   A blank opens where its gap is filled — «Odamlar soni» for no people, the
+//   positions for no plan / no fact, the admin catalog upload for a unit with
+//   no catalog (admins only; nobody else can fix it). The target page resets
+//   itself to exactly that scope and keeps it (utils/scopeLinks.js builds the
+//   links, each page's `useUrlScope` reads them). A cell whose page the viewer
+//   cannot open is plain, never a dead link; the NAME opens the brigadir's
+//   profile, and the row itself no longer does, because a cell now has a
+//   destination of its own.
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle, FileClock, FileX, Inbox, ListChecks, PackageX, SlidersHorizontal, UserX,
 } from "lucide-react";
@@ -51,6 +64,12 @@ import StatusBandsModal from "./StatusBandsModal";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
+import { usePageAccess } from "../../hooks/usePageAccess";
+import { useCapabilities } from "../../hooks/useCapabilities";
+import { canAccessPage } from "../../config/pages";
+import {
+  productionLink, qualityLink, concernsLink, monthSpan, QUALITY_UNRESOLVED, CONCERN_OPEN,
+} from "../../utils/scopeLinks";
 import { useFactory, useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -172,9 +191,17 @@ const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
 // that outranks any plain utility on the cell itself — a `border-[…]` class
 // here compiles, loses, and leaves the grid invisible with nothing to show for
 // it. `RULE` is that one declaration and every figure cell carries it.
-const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums "
+const TD_FIG = "text-center align-middle tabular-nums "
   + "leading-tight text-[11px] sm:text-xs border";
 const RULE = { borderColor: "var(--bg-card)" };
+// A linked cell moves its padding onto the link, so the whole tile is the
+// target and the row keeps its height. Hover tints with the cell's own INK
+// (`currentColor`), which lightens a white-ink fill and darkens a dark-ink
+// one, in both themes, with no colour of its own.
+const TD_PAD = "px-1 sm:px-2 py-2.5";
+const LINK_CLS = "block w-full outline-none transition-colors "
+  + "hover:bg-[color-mix(in_srgb,currentColor_14%,transparent)] "
+  + "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]";
 
 // The name placeholders cycle a fixed list — Math.random() re-rolls on every
 // render and makes the skeleton twitch (the SkeletonMatrix rule).
@@ -195,8 +222,9 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const bands = useStatusBands();
   const [bandsOpen, setBandsOpen] = useState(false);
   const { tl } = useTranslit();
-  const navigate = useNavigate();
   const { factory, locked } = useFactory();
+  const { access } = usePageAccess();
+  const { capPages, deniedPages } = useCapabilities();
   const [sort, setSort] = usePersistentState("overview_sr_sort", DEFAULT_SORT);
 
   // The page's scope only — never its dates.
@@ -246,32 +274,74 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
     return DEFAULT_SORT;
   });
 
-  const open = (r) => navigate(`/brigadir/${r.manager_id}`);
-  const onRowKey = (e, r) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      open(r);
+  // Where each cell leads — `{ to, page }`, or null where the viewer cannot
+  // open the page or there is nothing to open. The rule is in the header note;
+  // the URLs are `utils/scopeLinks.js`, so a link and the page reading it share
+  // one spelling of every param.
+  const isAdmin = auth?.role === "admin";
+  const may = (key) => canAccessPage(auth?.role, key, access, capPages, deniedPages);
+  const canProd = may("production");
+  const canQuality = may("quality");
+  const canConcerns = may("concerns");
+  const qSpan = monthSpan(data?.quality_month);
+  const prodPage = t("nav.production");
+
+  const productionTarget = (cell, r, date) => {
+    if (cell?.reason === "not_configured") {
+      return isAdmin ? { to: "/admin/upload?tab=production", page: t("admin.tabProduction") } : null;
     }
+    if (!canProd) return null;
+    const tab = cell?.reason === "no_people" ? "people" : undefined;
+    return { to: productionLink({ unit: r.manager_id, date, tab }), page: prodPage };
   };
+  const qualityTarget = (r) => (canQuality && qSpan && r.name
+    ? {
+      to: qualityLink({ brigadir: r.name, from: qSpan.from, to: qSpan.to, status: QUALITY_UNRESOLVED }),
+      page: t("nav.quality"),
+    }
+    : null);
+  const concernsTarget = (r) => (canConcerns
+    ? {
+      to: concernsLink({ unit: r.manager_id, level: "supervisor", status: CONCERN_OPEN }),
+      page: t("nav.concerns"),
+    }
+    : null);
 
   // One figure cell: the tile is the verdict, the figure is printed on it, and
   // a blank grows no tile at all — a missing figure reads as a hole in a
-  // coloured field, which is what it is.
-  const figCell = (cell, toneFn, render, extraTitle) => {
-    const tone = cellTone(cell, toneFn);
-    const blank = !!cell?.reason;
-    const title = blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle;
+  // coloured field, which is what it is. With a `target` the whole tile is the
+  // link, and its tooltip adds where it leads.
+  const figTd = ({ tone, title, target, children }) => {
+    const hint = target ? fill(t("overview.sr.goto"), { page: target.page }) : null;
+    const fullTitle = [title, hint].filter(Boolean).join("\n") || undefined;
     return (
       <td
-        className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+        className={`${TD_FIG} ${target ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
         style={{ ...toneFill(tone), ...RULE }}
-        title={title}
+        title={fullTitle}
       >
-        {blank ? <Blank reason={cell.reason} />
-          : isNum(cell?.value) ? render(cell)
-          : <span style={{ color: "var(--text-4)" }}>—</span>}
+        {target ? (
+          <Link
+            to={target.to}
+            className={`${LINK_CLS} ${TD_PAD}`}
+            aria-label={fullTitle ? fullTitle.replace(/\n/g, ". ") : undefined}
+          >
+            {children}
+          </Link>
+        ) : children}
       </td>
     );
+  };
+  const figCell = (cell, toneFn, render, extraTitle, target) => {
+    const blank = !!cell?.reason;
+    return figTd({
+      tone: cellTone(cell, toneFn),
+      title: blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle,
+      target,
+      children: blank ? <Blank reason={cell.reason} />
+        : isNum(cell?.value) ? render(cell)
+        : <span style={{ color: "var(--text-4)" }}>—</span>,
+    });
   };
 
   let body;
@@ -334,47 +404,39 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
         {g.rows.map((r) => {
           const open_ = r.concerns?.open ?? 0;
           return (
-            <tr
-              key={r.manager_id}
-              tabIndex={0}
-              onClick={() => open(r)}
-              onKeyDown={(e) => onRowKey(e, r)}
-              className="group cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
-            >
-              {/* The fills cover the row's own hover tint, so the rail carries
-                  the mark instead: a brand bar down the name cell. */}
-              <td className="px-2 sm:px-3 py-2 align-middle group-hover:shadow-[inset_3px_0_0_0_var(--brand)]">
-                <span
-                  className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
-                  style={{ color: "var(--text-1)" }}
+            <tr key={r.manager_id}>
+              {/* The name opens the brigadir's profile. The fills cover a row
+                  hover tint, so the rail carries the mark: a brand bar down
+                  the name cell. */}
+              <td className="p-0 align-middle">
+                <Link
+                  to={`/brigadir/${r.manager_id}`}
+                  className="block px-2 sm:px-3 py-2 outline-none hover:shadow-[inset_3px_0_0_0_var(--brand)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
                 >
-                  {tl(r.name || "")}
-                </span>
+                  <span
+                    className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
+                    style={{ color: "var(--text-1)" }}
+                  >
+                    {tl(r.name || "")}
+                  </span>
+                </Link>
               </td>
               {figCell(r.load, loadTone, (c) => (
                 <>
                   {pctText(c.value)}
                   {c.partial && <span className="ml-px font-normal opacity-70">*</span>}
                 </>
-              ))}
-              {figCell(r.compl, vypTone, (c) => pctText(c.value))}
+              ), undefined, productionTarget(r.load, r, g.today))}
+              {figCell(r.compl, vypTone, (c) => pctText(c.value), undefined,
+                productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure. «done/actionable» was printed
                   beside it and is not (the operator's call, 2026-09-16) — it
                   stays on the cell as its tooltip, where it costs no width. */}
               {figCell(r.quality, resolvedTone, (c) => pctText(c.value),
                 r.quality && !r.quality.reason && isNum(r.quality.value)
-                  ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
-              {(() => {
-                const tone = concernsTone(open_);
-                return (
-                  <td
-                    className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-                    style={{ ...toneFill(tone), ...RULE }}
-                  >
-                    {open_}
-                  </td>
-                );
-              })()}
+                  ? `${r.quality.done}/${r.quality.actionable}` : undefined,
+                qualityTarget(r))}
+              {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );
         })}
@@ -382,7 +444,6 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
     ));
   }
 
-  const isAdmin = auth?.role === "admin";
   const right = (rows.length > 0 || isAdmin) && (
     <div className="flex items-center gap-2 flex-wrap justify-end">
       {missing > 0 && (
@@ -507,6 +568,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
             ))}
           </div>
           {anyPartial && <div>* — {t("overview.sr.partial")}</div>}
+          {(canProd || canQuality || canConcerns) && <div>{t("overview.sr.tapHint")}</div>}
           {reasons.length > 0 && (
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {reasons.map((k) => {
