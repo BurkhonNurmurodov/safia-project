@@ -6973,7 +6973,12 @@ says; a supervisor or leader would see their own unit only).
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
 
-## «Kelish ro'yxati» — the T11 staff list (`/kelish`)
+## «Ish grafigi» — the T11 staff list (`/kelish`)
+
+Named «Kelish ro'yxati» until **2026-09-30**, when the operator renamed it
+«Ish grafigi» (ru «График работы», en «Work schedule») — the label only
+(`nav.kelish`, and the two «Jurnal» labels naming the list): the route, the
+page key, the `kelish.*` keys and every table keep the old word.
 
 From **2026-09-28** (the operator's rulings, asked one by one) checklist task
 #11's staff list — until now an Excel / Google Sheets file screenshotted into

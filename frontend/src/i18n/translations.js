@@ -3342,8 +3342,8 @@ const t = {
     "logs.act.idle.interval_deleted": "Kutish oralig'i o'chirildi",
     "logs.act.idle.entry_deleted": "Kutish yozuvi o'chirildi",
     "logs.act.kelish.mark_set": "Kelish belgisi qo'yildi",
-    "logs.act.kelish.worker_added": "Kelish ro'yxatiga xodim qo'shildi",
-    "logs.act.kelish.workers_removed": "Kelish ro'yxatidan xodimlar olib tashlandi",
+    "logs.act.kelish.worker_added": "Ish grafigiga xodim qo'shildi",
+    "logs.act.kelish.workers_removed": "Ish grafigidan xodimlar olib tashlandi",
     "logs.act.concern.escalated": "Xavotir yuqoriga uzatildi",
     "logs.act.concern.comment_added": "Xavotirga izoh qo'shildi",
     "logs.act.concern.comment_edited": "Xavotir izohi o'zgartirildi",
@@ -5839,7 +5839,7 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Jonli monitoring",
-    "nav.kelish": "Kelish ro'yxati",
+    "nav.kelish": "Ish grafigi",
     "kelish.hint": "Faqat bugungi va ertangi kataklar ochiq. Katakni bosing: bir marta — keladi, ikki marta — kelmaydi, uch marta — belgi olib tashlanadi.",
     "kelish.tapLead": "Bosing:",
     "kelish.awayLegend": "{n}+ kun kelmagan",
@@ -9374,8 +9374,8 @@ const t = {
     "logs.act.idle.interval_deleted": "Кутиш оралиғи ўчирилди",
     "logs.act.idle.entry_deleted": "Кутиш ёзуви ўчирилди",
     "logs.act.kelish.mark_set": "Келиш белгиси қўйилди",
-    "logs.act.kelish.worker_added": "Келиш рўйхатига ходим қўшилди",
-    "logs.act.kelish.workers_removed": "Келиш рўйхатидан ходимлар олиб ташланди",
+    "logs.act.kelish.worker_added": "Иш графигига ходим қўшилди",
+    "logs.act.kelish.workers_removed": "Иш графигидан ходимлар олиб ташланди",
     "logs.act.concern.escalated": "Хавотир юқорига узатилди",
     "logs.act.concern.comment_added": "Хавотирга изоҳ қўшилди",
     "logs.act.concern.comment_edited": "Хавотир изоҳи ўзгартирилди",
@@ -11871,7 +11871,7 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Жонли мониторинг",
-    "nav.kelish": "Келиш рўйхати",
+    "nav.kelish": "Иш графиги",
     "kelish.hint": "Фақат бугунги ва эртанги катаклар очиқ. Катакни босинг: бир марта — келади, икки марта — келмайди, уч марта — белги олиб ташланади.",
     "kelish.tapLead": "Босинг:",
     "kelish.awayLegend": "{n}+ кун келмаган",
@@ -15406,8 +15406,8 @@ const t = {
     "logs.act.idle.interval_deleted": "Интервал ожидания удалён",
     "logs.act.idle.entry_deleted": "Запись ожидания удалена",
     "logs.act.kelish.mark_set": "Отмечен выход",
-    "logs.act.kelish.worker_added": "Сотрудник добавлен в список выхода",
-    "logs.act.kelish.workers_removed": "Сотрудники убраны из списка выхода",
+    "logs.act.kelish.worker_added": "Сотрудник добавлен в график работы",
+    "logs.act.kelish.workers_removed": "Сотрудники убраны из графика работы",
     "logs.act.concern.escalated": "Обращение передано выше",
     "logs.act.concern.comment_added": "Комментарий к обращению добавлен",
     "logs.act.concern.comment_edited": "Комментарий к обращению изменён",
@@ -17903,7 +17903,7 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Живой мониторинг",
-    "nav.kelish": "Список выхода",
+    "nav.kelish": "График работы",
     "kelish.hint": "Открыты только сегодня и завтра. Нажмите на клетку: один раз — выйдет, второй — не выйдет, третий — отметка снимается.",
     "kelish.tapLead": "Нажмите:",
     "kelish.awayLegend": "не выходил {n}+ дн.",
@@ -21438,8 +21438,8 @@ const t = {
     "logs.act.idle.interval_deleted": "Idle interval deleted",
     "logs.act.idle.entry_deleted": "Idle entry deleted",
     "logs.act.kelish.mark_set": "Attendance mark set",
-    "logs.act.kelish.worker_added": "Worker added to the attendance plan",
-    "logs.act.kelish.workers_removed": "Workers removed from the attendance plan",
+    "logs.act.kelish.worker_added": "Worker added to the work schedule",
+    "logs.act.kelish.workers_removed": "Workers removed from the work schedule",
     "logs.act.concern.escalated": "Concern escalated",
     "logs.act.concern.comment_added": "Comment added to a concern",
     "logs.act.concern.comment_edited": "Concern comment edited",
@@ -23935,7 +23935,7 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Live monitor",
-    "nav.kelish": "Attendance plan",
+    "nav.kelish": "Work schedule",
     "kelish.hint": "Only today and tomorrow are open. Tap a square: once for coming, twice for not coming, a third time to clear it.",
     "kelish.tapLead": "Tap:",
     "kelish.awayLegend": "not in for {n}+ days",
