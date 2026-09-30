@@ -1,5 +1,7 @@
 import json
 import logging
+import random
+import re
 import threading
 from collections import Counter
 from datetime import datetime, time, timedelta, timezone
@@ -36,6 +38,7 @@ from app.services.name_map import (
     supervisor_match,
     unit_display_names,
 )
+from app.translit import transliterate
 
 router = APIRouter(prefix="/api", tags=["leaders"])
 
@@ -411,11 +414,25 @@ def get_leaders(
     **Wire shape.** Every task ships `photos` (a count), never the URL string
     the source row holds — see `_wire_task`. The modal that needs the links
     fetches them for its ONE report from `/api/leaders/report/{uid}`."""
-    role = payload.get("role")
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
     # its data — so a granted supervisor keeps their own view, widened.
-    sees_all = page_scope_is_all(db, payload, "leaders")
+    return _json_response(
+        _leaders_feed(db, payload, page_scope_is_all(db, payload, "leaders")))
+
+
+def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
+                  lite: bool = False) -> dict:
+    """The register `get_leaders` serves, built for one viewer.
+
+    `sees_all` lifts both scoping passes: the page grant decides it for the
+    register, and the «Mening o'rnim» pool (`_standing_pool`) passes True,
+    because a place is a statement about everybody. `lite` skips what only the
+    register's own screen reads — the per-row AI state and the wire copy of
+    every task — and adds the one thing the pool needs besides the rows: every
+    unit's label and shift (`_units`). The scores are the same either way:
+    `_apply_overlays` runs in both."""
+    role = payload.get("role")
 
     rows = (
         db.query(LeaderChecklist)
@@ -663,14 +680,15 @@ def get_leaders(
     # reading this, and hiding the reason from the two people it costs would
     # leave them with a number that dropped for no visible cause. It stays one
     # aggregated query scoped to the dates already on screen.
-    ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
-    for row in data:
-        hit = ai_stats.get(row["uid"])
-        if hit:
-            row["ai"] = hit
-        # LAST, after every overlay has stamped the source tasks: the wire copy
-        # carries the count, not the links (see _wire_task).
-        row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
+    if not lite:
+        ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
+        for row in data:
+            hit = ai_stats.get(row["uid"])
+            if hit:
+                row["ai"] = hit
+            # LAST, after every overlay has stamped the source tasks: the wire
+            # copy carries the count, not the links (see _wire_task).
+            row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
 
     # The per-cell floors and each leader's cells, for the roster below: on a
     # switched unit a leader owes one checklist PER CELL, and a "not filed" view
@@ -936,7 +954,21 @@ def get_leaders(
         cut_leaders = {k: v for k, v in cut_leaders.items() if k in seen_names}
         cut_units = {k: v for k, v in cut_units.items() if k in seen_units}
 
-    return _json_response({
+    if lite:
+        return {
+            "data": data,
+            "roster": roster,
+            "cutoffs": cut_leaders,
+            "cutUnits": cut_units,
+            # Every unit's label — the spelling its rows and roster entries
+            # carry, `sup_display` first exactly as the roster reads it — and
+            # its shift, so the pool can name a brigadir's own unit even when
+            # none of its leaders is on the roster.
+            "_units": {int(m.id): (sup_display.get(m.id) or m.name, m.shift)
+                       for m in managers},
+        }
+
+    return {
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": data,
@@ -951,6 +983,200 @@ def get_leaders(
         # made from the role string on the client.
         "can_request_late": role in ("admin", "supervisor"),
         "can_decide_late": _may_decide(payload),
+    }
+
+
+# ── «Mening o'rnim»: where the viewer stands ─────────────────────────────────
+# A leader and a brigadir are handed only their own rows by the register, so
+# the board that would tell them their place is the one board they cannot read.
+# This is the pool that board is built from — every leader-day of the period,
+# the roster and the two cutoff maps — with every PERSON and every UNIT renamed
+# by an opaque code that is drawn afresh on every request. The client runs it
+# through the very functions the board is scored with (`boardScores` +
+# `rankPlaces` in Leaders.jsx), so the place a leader is told is the place an
+# admin reads off the board for the same scope and window. The only codes named
+# back to the viewer are their own (`me`).
+#
+# What never travels: a name, a unit's name, a task, a proof, a report id, an
+# exclusion's reason or author. What does: each leader-day's score and flags,
+# because a ranking cannot be computed from less — and a ranking computed a
+# second time in Python would be a second rule that drifts from the board.
+
+_STANDING_TTL = 60.0              # seconds one unscoped build answers everybody
+_standing_lock = threading.Lock()
+_standing_build = threading.Lock()
+_standing_cache: dict = {"at": 0.0, "pool": None}
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TOK_DROP = re.compile(r"[ʻʼ'`‘’]")
+_TOK_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _standing_fresh() -> dict | None:
+    with _standing_lock:
+        pool = _standing_cache["pool"]
+        if pool is not None and monotonic() - _standing_cache["at"] < _STANDING_TTL:
+            return pool
+    return None
+
+
+def _standing_pool(db: Session) -> dict:
+    """The unscoped register, cut down to what a ranking reads, kept a minute.
+
+    One build answers every leader and brigadir for sixty seconds: the pool is
+    the same for all of them — who is asking decides only which codes are
+    theirs — and a shift's worth of leaders opening the page at once must not
+    rebuild the whole register per head. The build lock makes the second
+    caller wait for the first one's answer instead of starting its own."""
+    pool = _standing_fresh()
+    if pool is not None:
+        return pool
+    with _standing_build:
+        pool = _standing_fresh()
+        if pool is not None:
+            return pool
+        # No role, so nothing in the builder reads as a viewer: no scoping pass
+        # runs (`sees_all`), and no admin-only field (a cutoff's reason and
+        # author) is filled in.
+        feed = _leaders_feed(db, {"role": None}, True, lite=True)
+        rows, filed = [], set()
+        for r in feed["data"]:
+            leader = r.get("leader") or ""
+            if leader and not r.get("missing"):
+                filed.add(leader)
+            ex = r.get("excluded")
+            rows.append((
+                str(r["date"])[:10],
+                leader,
+                1 if r.get("leader_id") else 0,
+                r.get("supervisor") or "",
+                r.get("shift"),
+                float(r.get("completion") or 0),
+                # 1 = this day was excluded, 2 = the leader's cutoff reached
+                # it — `slotsBy` treats the two differently.
+                (2 if ex.get("cutoff") else 1) if ex else 0,
+                1 if r.get("rejected") else 0,
+                1 if r.get("missing") else 0,
+            ))
+        pool = {
+            "rows": rows,
+            "filed": filed,
+            "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
+                        p["cutoff"], p["cell_from"], len(p["cells"]))
+                       for p in feed["roster"]],
+            "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
+            "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
+            "units": feed["_units"],
+        }
+        with _standing_lock:
+            _standing_cache["pool"] = pool
+            _standing_cache["at"] = monotonic()
+        return pool
+
+
+def _name_toks(name: str) -> list[str]:
+    """The words a name is compared by — the twin of `nameToks` in Leaders.jsx:
+    Uzbek Latin, lower case, apostrophes dropped. The codes keep this word
+    structure because `rosterFold` on the client matches an unlinked sheet
+    spelling to a profile by its first two words; a code per whole name would
+    quietly change who the board counts as having filed nothing."""
+    s = _TOK_DROP.sub("", (transliterate(name, "uz") or "").lower())
+    return [t for t in _TOK_SPLIT.split(s) if t]
+
+
+def _pool_codes(names: set, units: set) -> tuple[dict, dict]:
+    """Fresh opaque codes for every person and unit in the pool.
+
+    A person becomes one code per WORD of their name (`w…`, shared wherever two
+    names share a word) plus a code of their own (`p…`), so two spellings of
+    one name stay two keys, exactly as they are on the board. Drawn in a random
+    order on every call, so neither a code nor its position says anything about
+    the name behind it, and two responses cannot be joined into one history.
+    «N/A» and blanks are the page's own "nobody" and pass through unchanged."""
+    rnd = random.SystemRandom()
+    people = [n for n in names if n and n != "N/A"]
+    words = list({t for n in people for t in _name_toks(n)})
+    rnd.shuffle(words)
+    word = {t: f"w{i:x}" for i, t in enumerate(words)}
+    rnd.shuffle(people)
+    name_of = {n: " ".join([word[t] for t in _name_toks(n)] + [f"p{i:x}"])
+               for i, n in enumerate(people)}
+    labels = [u for u in units if u and u != "N/A"]
+    rnd.shuffle(labels)
+    unit_of = {u: f"u{i:x}" for i, u in enumerate(labels)}
+    return name_of, unit_of
+
+
+@router.get("/leaders/standing")
+def get_standing(
+    date_from: str = Query(..., alias="from"),
+    date_to: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """The viewer's own place — a leader in their unit, their shift and the
+    whole platform; a brigadir's unit in its shift and the whole platform.
+    See the block above for what the pool carries and why."""
+    role = payload.get("role")
+    if role not in ("leader", "supervisor"):
+        raise HTTPException(403, "Only a leader or a brigadir has a place of their own")
+    if not (_ISO_DAY.match(date_from or "") and _ISO_DAY.match(date_to or "")):
+        raise HTTPException(400, "from and to must be YYYY-MM-DD")
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+    pool = _standing_pool(db)
+
+    # Who is asking, in the currency the pool is keyed by: a leader is their
+    # profile's name (what every row of theirs is grouped under), a brigadir is
+    # their unit's label. The roster answers both of a leader's scopes; a
+    # leader whose unit is archived has none, and is still placed overall.
+    me_name = me_unit = me_shift = None
+    if role == "leader":
+        pid = identity.viewer_leader_profile_id(db, payload)
+        entry = next((p for p in pool["roster"] if p[0] == pid), None) if pid else None
+        if entry:
+            me_name, me_unit, me_shift = entry[1], entry[2], entry[3]
+        elif pid:
+            prof = db.get(RoleProfile, pid)
+            me_name = prof.name if prof else None
+    else:
+        try:
+            unit = pool["units"].get(int(payload.get("role_id")))
+        except (TypeError, ValueError):
+            unit = None
+        if unit:
+            me_unit, me_shift = unit
+
+    rows = [r for r in pool["rows"] if date_from <= r[0] <= date_to]
+    roster = list(pool["roster"])
+    names = ({r[1] for r in rows} | {p[1] for p in roster}
+             | set(pool["cutoffs"]) | ({me_name} if me_name else set()))
+    units = ({r[3] for r in rows} | {p[2] for p in roster}
+             | set(pool["cutUnits"]) | ({me_unit} if me_unit else set()))
+    name_of, unit_of = _pool_codes(names, units)
+    # The register's order is by date and, within the roster, by NAME — an
+    # order that would outlive the codes, so neither list keeps it.
+    rnd = random.SystemRandom()
+    rnd.shuffle(rows)
+    rnd.shuffle(roster)
+
+    return _json_response({
+        "me": {
+            "kind": "leader" if role == "leader" else "unit",
+            # The standings key to look for: a leader's code, or the unit's.
+            "key": (name_of.get(me_name) if role == "leader" else unit_of.get(me_unit)),
+            "unit": unit_of.get(me_unit),
+            "shift": me_shift,
+        },
+        # [date, leader, linked-to-a-profile, unit, shift, completion,
+        #  excluded (0 · 1 day · 2 cutoff), voided, missing]
+        "rows": [[r[0], name_of.get(r[1], r[1]), r[2], unit_of.get(r[3], r[3]),
+                  r[4], r[5], r[6], r[7], r[8]] for r in rows],
+        # [name, unit, shift, cutoff, cell_from, cells owned, filed anything]
+        "roster": [[name_of.get(p[1], p[1]), unit_of.get(p[2], p[2]), p[3],
+                    p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0]
+                   for p in roster],
+        "cutoffs": {name_of.get(k, k): {"from": v} for k, v in pool["cutoffs"].items()},
+        "cutUnits": {unit_of.get(k, k): {"from": v} for k, v in pool["cutUnits"].items()},
     })
 
 

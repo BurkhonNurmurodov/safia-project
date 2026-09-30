@@ -9,7 +9,7 @@ import {
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
   ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash, CalendarCheck,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, Medal, Globe,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -110,6 +110,12 @@ const TXT = {
     trendNoPrev: "Avvalgi davr uchun ma'lumot yo'q",
     trendNew: "Yangi",
     trendNewHint: "Avvalgi davrda umuman ma'lumot yo'q — reytingda yangi",
+    meTitle: "Mening o'rnim", meTitleSup: "Brigadangiz o'rni",
+    meScopeUnit: "Brigadada", meScopeShift: "{n}-smenada", meScopeShiftAny: "Smenada", meScopeAll: "Umumiy",
+    meByRating: "Reyting bo'yicha", meByConsist: "Barqarorlik bo'yicha",
+    mePlaceOf: "{p}-o'rin, {n} tadan", meTied: "yana {n} ta bilan teng",
+    meUnranked: "Bu davrda reytingda yo'q", meNoUnit: "Brigada belgilanmagan", meNoShift: "Smena belgilanmagan",
+    meError: "O'rinni hisoblab bo'lmadi",
     tierEdit: "Daraja chegaralari", tierEditSub: "Barcha foydalanuvchilar uchun amal qiladi",
     tierEditRow: "% va undan yuqori",
     tierEditHint: "Chegaralar ro'yxat saralanayotgan ustunga (Reyting yoki Barqarorlik) qo'llanadi. Eng past chegaradan pastda qolganlar — «Past». «Chempion» va «A'lo» — pyedestal belgilari: chegaradan tashqari «Chempion» 1-o'rinni, «A'lo» esa 2–3-o'rinni talab qiladi; chegaradan yuqoridagi qolganlar — «O'rta».",
@@ -288,6 +294,12 @@ const TXT = {
     trendNoPrev: "Аввалги давр учун маълумот йўқ",
     trendNew: "Янги",
     trendNewHint: "Аввалги даврда умуман маълумот йўқ — рейтингда янги",
+    meTitle: "Менинг ўрним", meTitleSup: "Бригадангиз ўрни",
+    meScopeUnit: "Бригадада", meScopeShift: "{n}-сменада", meScopeShiftAny: "Сменада", meScopeAll: "Умумий",
+    meByRating: "Рейтинг бўйича", meByConsist: "Барқарорлик бўйича",
+    mePlaceOf: "{p}-ўрин, {n} тадан", meTied: "яна {n} та билан тенг",
+    meUnranked: "Бу даврда рейтингда йўқ", meNoUnit: "Бригада белгиланмаган", meNoShift: "Смена белгиланмаган",
+    meError: "Ўринни ҳисоблаб бўлмади",
     tierEdit: "Даража чегаралари", tierEditSub: "Барча фойдаланувчилар учун амал қилади",
     tierEditRow: "% ва ундан юқори",
     tierEditHint: "Чегаралар рўйхат сараланаётган устунга (Рейтинг ёки Барқарорлик) қўлланади. Энг паст чегарадан пастда қолганлар — «Паст». «Чемпион» ва «Аъло» — пьедестал белгилари: чегарадан ташқари «Чемпион» 1-ўринни, «Аъло» эса 2–3-ўринни талаб қилади; чегарадан юқоридаги қолганлар — «Ўрта».",
@@ -466,6 +478,12 @@ const TXT = {
     trendNoPrev: "Нет данных за предыдущий период",
     trendNew: "Новый",
     trendNewHint: "За предыдущий период данных нет вообще — новый в рейтинге",
+    meTitle: "Моё место", meTitleSup: "Место вашей бригады",
+    meScopeUnit: "В бригаде", meScopeShift: "В смене {n}", meScopeShiftAny: "В смене", meScopeAll: "Среди всех",
+    meByRating: "по рейтингу", meByConsist: "по стабильности",
+    mePlaceOf: "{p}-е место из {n}", meTied: "наравне ещё с {n}",
+    meUnranked: "В этом периоде нет в рейтинге", meNoUnit: "Бригада не указана", meNoShift: "Смена не указана",
+    meError: "Не удалось рассчитать место",
     tierEdit: "Границы уровней", tierEditSub: "Действуют для всех пользователей",
     tierEditRow: "% и выше",
     tierEditHint: "Границы применяются к тому столбцу, по которому отсортирован список (Рейтинг или Стабильность). Всё, что ниже последней границы, — «Низко». «Чемпион» и «Отлично» — награды пьедестала: кроме границы «Чемпион» требует 1-го места, а «Отлично» — 2–3-го; остальные выше границы — «Средне».",
@@ -644,6 +662,12 @@ const TXT = {
     trendNoPrev: "No data for the previous period",
     trendNew: "New",
     trendNewHint: "No data at all for the previous period — new to the ranking",
+    meTitle: "My rank", meTitleSup: "Your unit's rank",
+    meScopeUnit: "In your unit", meScopeShift: "In shift {n}", meScopeShiftAny: "In your shift", meScopeAll: "Overall",
+    meByRating: "by rating", meByConsist: "by consistency",
+    mePlaceOf: "Rank {p} of {n}", meTied: "tied with {n} more",
+    meUnranked: "Not ranked in this period", meNoUnit: "No unit assigned", meNoShift: "No shift assigned",
+    meError: "Couldn't work out your rank",
     tierEdit: "Grade cutoffs", tierEditSub: "Applies to every viewer",
     tierEditRow: "% and above",
     tierEditHint: "Cutoffs apply to whichever column the list is ranked by (Rating or Consistency). Anything below the lowest cutoff is «Low». «Champion» and «Excellent» are podium badges: besides its cutoff, «Champion» needs 1st place and «Excellent» needs 2nd–3rd; everyone else above a cutoff drops to «Average».",
@@ -1176,6 +1200,100 @@ const rankPlaces = (list, metric) => {
   });
   return list;
 };
+
+// ── one board, whoever reads it ──────────────────────────────────────────────
+// The pieces the ranking is composed of, lifted out of the component so the
+// «Mening o'rnim» card can compose the SAME ranking over the platform-wide pool
+// (`/api/leaders/standing`). A leader and a brigadir cannot read the board
+// itself, and the place the card tells them must be the place an admin reads
+// off the board for the same scope and window. Change the board here and the
+// card follows; a card with rules of its own would be a second leaderboard.
+
+// Is this row inside a scope: a date window plus the page's three narrowings.
+const inScope = (r, { from, to, shift = null, sup = "All", leader = "All" }) => {
+  const d = rowDate(r);
+  return (!from || d >= from) && (!to || d <= to)
+    && (shift == null || r.shift === shift)
+    && (sup === "All" || r.supervisor === sup)
+    && (leader === "All" || r.leader === leader);
+};
+
+// Who OWED the rows of a scope — the roster, narrowed by exactly the filters
+// that narrow the rows (see `rosterLeaders` in the component for why).
+const rosterIn = (roster, { shift = null, sup = "All", leader = "All" }) =>
+  (roster ?? []).filter((p) => p.supervisor && p.name
+    && (shift == null || p.shift === shift)
+    && (sup === "All" || p.supervisor === sup)
+    && (leader === "All" || p.name === leader));
+
+// unit label → the names of the leaders who owe it a checklist.
+const rosterByUnit = (roster) => {
+  const m = new Map();
+  for (const p of roster) {
+    let set = m.get(p.supervisor);
+    if (!set) m.set(p.supervisor, (set = new Set()));
+    set.add(p.name);
+  }
+  return m;
+};
+
+// Every name the feed holds a real filing under — an excluded day nobody filed
+// (`missing`) is a decision, not a filing.
+const filedUnderOf = (rows) => {
+  const s = new Set();
+  for (const r of rows ?? []) if (r.leader && !r.missing) s.add(r.leader);
+  return s;
+};
+
+// Who stopped counting, and from when — one entry per DECISION, keyed by the
+// display name `slotsBy` groups by. `cutoffs` is the backend's answer for the
+// names it has rows under; the ROSTER adds the two cases that map cannot carry,
+// and both matter because the roster itself puts people on the board: a leader
+// cut before they ever filed, and a leader of a per-CELL unit who owns no cell
+// (owes nothing from the switch on). Without them either one would print as a
+// red row of days nobody asked them for.
+//
+// A roster CUTOFF speaks only for a name the feed has no rows under: where it
+// has rows, the backend's key-level answer already weighed everybody filing
+// under that spelling and cut it only once all of them were cut, and the
+// roster, which lists profiles alone, must not overrule that. Several profiles
+// sharing one name stop owing only once EVERY one of them has, from the last of
+// their dates — the backend's own rule for a shared key.
+const buildCutLeaders = (cutoffs, filedUnder, roster) => {
+  const m = new Map();
+  for (const [name, c] of Object.entries(cutoffs ?? {})) m.set(name, c.from);
+  const floors = new Map();                 // name → last floor, or null = someone still owes
+  for (const p of roster ?? []) {
+    if (!p.name) continue;
+    const own = [];
+    if (p.cutoff && !filedUnder.has(p.name)) own.push(p.cutoff);
+    if (p.cell_from && !p.cells?.length) own.push(p.cell_from);
+    const f = own.length ? own.sort()[0] : null;
+    const had = floors.has(p.name), cur = floors.get(p.name);
+    floors.set(p.name, !had ? f : cur == null || f == null ? null : f > cur ? f : cur);
+  }
+  for (const [name, f] of floors) {
+    if (!f) continue;
+    const cur = m.get(name);
+    if (!cur || f < cur) m.set(name, f);
+  }
+  return m;
+};
+
+// The same for a whole unit, which the backend computes because the client
+// cannot: a unit leaves its own denominator only once EVERY leader it has is
+// cut, and the client is never handed a unit's full roster.
+const buildCutUnits = (cutUnits) =>
+  new Map(Object.entries(cutUnits ?? {}).map(([name, c]) => [name, c.from]));
+
+// THE ranking of a scope: leaders (`slotsBy`, the roster folded in as the
+// people who filed nothing) or units (`unitSlots`, a unit's day composed of
+// its leaders), scored over the window by `scoreSlots`.
+const boardScores = (mode, rows, roster, cutLeaders, cutUnits, dates, days) =>
+  mode === "leader"
+    ? scoreSlots(slotsBy(rows, (r) => r.leader, cutLeaders, dates,
+        rosterFold(new Set(roster.map((p) => p.name)), rows)), days)
+    : scoreSlots(unitSlots(rows, rosterByUnit(roster), cutLeaders, cutUnits, dates), days);
 
 // ── localized long-date formatter ("19th June, 2026" and its translations) ──────
 const MONTHS = {
@@ -1915,6 +2033,226 @@ function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
   );
 }
 
+/* ── «Mening o'rnim» — the reader's own place ─────────────────────────────────
+ * A leader and a brigadir are handed their own rows only, so the board that
+ * would say where they stand is the one board they cannot read. This card
+ * answers it from the platform-wide pool (`/api/leaders/standing`, every person
+ * and unit in it an opaque code), composed by `boardScores` + `rankPlaces` — the
+ * board's own functions — so each tile prints exactly the place an admin reads
+ * off the board with the same scope, window and metric.
+ *
+ * One tile per scope, side by side like a scoreboard: the place over the size
+ * of the pool, then the whole pool as a strip in rank order — best on the left,
+ * tinted by the score band each person sits in — with the reader's own slot
+ * framed on it. The frame is as wide as the places the reader SHARES, so a tie
+ * reads as one slot rather than as a place nobody else holds. The podium keeps
+ * the board's medal colours and the board's rule (only on a pool of more than
+ * three); nothing else is painted as a verdict — fifth among people who all
+ * scored above 90% is no failure, and the strip already shows how the pool did.
+ */
+
+// The pool's wire order: tuples, because a month of the platform is a few
+// thousand of them. Rebuilt into the register's own row shape, so the board's
+// functions read them unchanged.
+const poolRows = (raw) => (raw ?? []).map(
+  ([date, leader, linked, supervisor, shift, completion, excl, voided, missing]) => ({
+    date, leader, supervisor, shift, completion,
+    leader_id: linked ? 1 : null,
+    excluded: excl ? { cutoff: excl === 2 } : null,
+    rejected: !!voided,
+    missing: !!missing,
+  }));
+const poolRoster = (raw) => (raw ?? []).map(
+  ([name, supervisor, shift, cutoff, cellFrom, cells, filed]) => ({
+    name, supervisor, shift, cutoff,
+    cell_from: cellFrom,
+    cells: Array.from({ length: cells || 0 }),
+    filed: !!filed,
+  }));
+
+// Which scopes a reader is placed in, in reading order: a leader among their
+// unit, their shift and everybody; a brigadir's unit among its shift and all.
+const MY_SCOPES = { leader: ["unit", "shift", "all"], unit: ["shift", "all"] };
+const SCOPE_ICON = { unit: ShieldCheck, shift: Layers, all: Globe };
+
+// scope → { state: "ok", place, size, lo, hi, bands } | { state: "unranked" | "noscope" }
+const placesOf = (pool, scopes, win, metric) => {
+  const me = pool?.me;
+  if (!me || !win.days) return null;
+  const rows = poolRows(pool.rows), roster = poolRoster(pool.roster);
+  const cutLeaders = buildCutLeaders(pool.cutoffs,
+    new Set(roster.filter((p) => p.filed).map((p) => p.name)), roster);
+  const cutUnits = buildCutUnits(pool.cutUnits);
+  const mode = me.kind === "unit" ? "unit" : "leader";
+  const val = (e) => (metric === "consist" ? e.consist : e.rating);
+  const out = {};
+  for (const key of scopes) {
+    if ((key === "unit" && !me.unit) || (key === "shift" && me.shift == null)) {
+      out[key] = { state: "noscope" };
+      continue;
+    }
+    const sc = {
+      from: win.from, to: win.to,
+      shift: key === "shift" ? me.shift : null,
+      sup: key === "unit" ? me.unit : "All",
+    };
+    const list = rankPlaces(boardScores(mode, rows.filter((r) => inScope(r, sc)),
+      rosterIn(roster, sc), cutLeaders, cutUnits, win.dates, win.days), metric);
+    const i = me.key ? list.findIndex((e) => e.name === me.key) : -1;
+    // Off the board for this window — every day excluded or cut, or (a unit)
+    // nothing filed in it at all. Said as such, never printed as a last place.
+    if (i < 0) { out[key] = { state: "unranked" }; continue; }
+    // The run of places the reader shares — `rankPlaces` keeps ties adjacent.
+    let lo = i, hi = i;
+    while (lo > 0 && list[lo - 1].place === list[i].place) lo--;
+    while (hi < list.length - 1 && list[hi + 1].place === list[i].place) hi++;
+    // The pool by score band, counted with the very colour rule the board
+    // paints each figure with, so the strip can never call green what the
+    // board calls amber. The list is sorted by that figure, so the bands are
+    // contiguous in rank order.
+    const bands = { [C_GOOD]: 0, [C_MID]: 0, [C_BAD]: 0 };
+    for (const e of list) bands[scoreColor(val(e))]++;
+    out[key] = { state: "ok", place: list[i].place, size: list.length, lo, hi, bands };
+  }
+  return out;
+};
+
+// The pool in rank order, the reader's slot framed on it.
+function RankStrip({ t }) {
+  const { size, lo, hi, bands } = t;
+  const pct = (n) => (n / size) * 100;
+  let at = 0;
+  const segs = [C_GOOD, C_MID, C_BAD].map((c) => {
+    const s = { c, left: pct(at), width: pct(bands[c]) };
+    at += bands[c];
+    return s;
+  }).filter((s) => s.width > 0);
+  return (
+    <div aria-hidden="true">
+      <div className="relative h-3.5">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full overflow-hidden"
+          style={{ background: "var(--border)" }}>
+          {segs.map((s) => (
+            <span key={s.c} className="absolute inset-y-0"
+              style={{ left: `${s.left}%`, width: `${s.width}%`, background: hexA(s.c, 0.5) }} />
+          ))}
+        </div>
+        {/* Never thinner than a finger's worth of pixels: one slot of a
+            hundred-person pool is under a pixel wide on a phone. */}
+        <span className="absolute inset-y-0 rounded-full -translate-x-1/2 transition-[left,width] duration-200 motion-reduce:transition-none"
+          style={{
+            left: `${pct((lo + hi + 1) / 2)}%`,
+            width: `max(5px, ${pct(hi + 1 - lo)}%)`,
+            border: "2px solid var(--text-1)",
+            boxShadow: "0 0 0 1px var(--bg-inner)",
+          }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] tabular-nums leading-none"
+        style={{ color: "var(--text-4)" }}>
+        <span>1</span><span>{size}</span>
+      </div>
+    </div>
+  );
+}
+
+function RankTile({ scope, label, t, loading, T }) {
+  const Icon = SCOPE_ICON[scope];
+  const ok = t?.state === "ok";
+  // The board's medals, on the board's terms: a podium only above three.
+  const tone = ok && t.size > 3 && t.place <= 3 ? MEDAL[t.place] : null;
+  const tied = ok ? t.hi - t.lo : 0;
+  const said = ok
+    ? [T.mePlaceOf.replace("{p}", t.place).replace("{n}", t.size),
+       tied ? T.meTied.replace("{n}", tied) : ""].filter(Boolean).join(" · ")
+    : t?.state === "unranked" ? T.meUnranked
+    : t?.state === "noscope" ? (scope === "unit" ? T.meNoUnit : T.meNoShift)
+    : "";
+  return (
+    <div role="group" aria-label={said ? `${label}: ${said}` : label} title={said || undefined}
+      className="rounded-2xl p-2.5 sm:p-3 flex flex-col min-w-0"
+      style={{ background: "var(--bg-inner)",
+               border: `1px solid ${tone ? hexA(tone, t.place === 1 ? 0.6 : 0.38) : "var(--border)"}` }}>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <span className="text-[10px] uppercase tracking-wider font-semibold leading-[1.3] line-clamp-2 min-w-0 pt-0.5"
+          style={{ color: "var(--text-3)" }}>{label}</span>
+        {/* The chip needs room a phone's third of a card does not have. */}
+        <span className="hidden sm:grid place-items-center w-6 h-6 rounded-lg flex-shrink-0"
+          style={{ background: "var(--bg-card)", color: tone || "var(--brand-text)" }}>
+          <Icon size={13} />
+        </span>
+      </div>
+      <div className="mt-2 h-7 sm:h-8 flex items-baseline gap-1 min-w-0">
+        {loading ? (
+          <SkeletonBlock className="h-6 w-14 self-center" />
+        ) : ok ? (
+          <>
+            {tone && <Trophy size={15} className="flex-shrink-0 self-center" style={{ color: tone }} />}
+            <span className="text-[24px] sm:text-[28px] font-black tabular-nums leading-none"
+              style={{ color: tone || "var(--text-1)" }}>{t.place}</span>
+            <span className="text-[12px] font-semibold tabular-nums leading-none" style={{ color: "var(--text-4)" }}>
+              /{t.size}
+            </span>
+          </>
+        ) : (
+          <span className="text-[24px] sm:text-[28px] font-black leading-none" style={{ color: "var(--text-4)" }}>—</span>
+        )}
+      </div>
+      {/* One fixed-height floor for the strip or, with no place to show, the
+          reason why — so a tile never changes height as its answer arrives. */}
+      <div className="mt-auto pt-2.5">
+        <div className="h-7">
+          {loading ? (
+            <SkeletonBlock className="h-1.5 w-full mt-1" />
+          ) : ok ? (
+            <RankStrip t={t} />
+          ) : (
+            <p className="text-[10.5px] leading-snug line-clamp-2" style={{ color: "var(--text-4)" }}>{said}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MyStanding({ kind, query, win, metric, shiftHint, T, onInfo }) {
+  const { data: pool, isLoading, isError, isFetching, refetch } = query;
+  const scopes = MY_SCOPES[kind];
+  const out = useMemo(() => placesOf(pool, scopes, win, metric), [pool, scopes, win, metric]);
+  const shift = pool?.me?.shift ?? shiftHint ?? null;
+  const label = (key) => (key === "unit" ? T.meScopeUnit
+    : key === "shift" ? (shift ? T.meScopeShift.replace("{n}", shift) : T.meScopeShiftAny)
+    : T.meScopeAll);
+  const title = kind === "leader" ? T.meTitle : T.meTitleSup;
+  return (
+    <section aria-label={title} className="rounded-2xl overflow-hidden mb-4"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SectionHead icon={Medal} title={title}
+        subtitle={`${ddmm(win.from)} – ${ddmm(win.to)} · ${win.days} ${T.dayAbbr} · ${metric === "consist" ? T.meByConsist : T.meByRating}`}
+        right={
+          <button onClick={onInfo} title={T.standInfo} aria-label={T.standInfo}
+            className="-my-2 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10"
+            style={{ color: "var(--brand-text)" }}>
+            <Info size={16} />
+          </button>
+        } />
+      {isError && !pool ? (
+        <div role="alert" className="px-4 py-6 flex flex-wrap items-center justify-center gap-3 text-sm"
+          style={{ color: "var(--text-3)" }}>
+          <span>{T.meError}</span>
+          <Button size="md" variant="secondary" loading={isFetching} onClick={() => refetch()}>{T.retry}</Button>
+        </div>
+      ) : (
+        <div className={`grid gap-2 sm:gap-2.5 p-2.5 sm:p-3 ${scopes.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+          {scopes.map((key) => (
+            <RankTile key={key} scope={key} label={label(key)} t={out?.[key]}
+              loading={isLoading && !pool} T={T} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ── day calendar ─────────────────────────────────────────────────────────────
  * A binary heatmap under the register: rows are the ranking above, in the same
  * order, and columns are every day of the same scoring window — so a row's green
@@ -2453,54 +2791,11 @@ export default function Leaders() {
   // same display name `slotsBy` groups by. Rows carry the cutoff on the days a
   // cut leader actually FILED; these carry the days nobody filed, which is most
   // of them and the only reason the denominator moves at all. Expanded over
-  // whichever window each ranking happens to be scored over — see `slotsBy`.
-  //
-  // …plus the ROSTER's own answer, for the two cases that map cannot carry, and
-  // both matter now that the roster itself puts people on the board
-  // (`rosterLeaders`). `cutoffs` is built from the people the feed has ROWS for,
-  // so a leader cut before they ever filed is not in it; and it knows nothing of
-  // a unit filing per CELL, where a leader who owns no cell owes nothing from
-  // the switch on (`leader_cells.expected_days` answers `[]`). Without them
-  // either one would print as a red row of days nobody asked them for.
-  //
-  // A roster CUTOFF speaks only for a name the feed has no rows under: where it
-  // has rows, the backend's key-level answer already weighed everybody filing
-  // under that spelling and cut it only once all of them were cut, and the
-  // roster, which lists profiles alone, must not overrule that. Several profiles
-  // sharing one name stop owing only once EVERY one of them has, from the last
-  // of their dates — the backend's own rule for a shared key.
-  const cutLeaders = useMemo(() => {
-    const m = new Map();
-    for (const [name, c] of Object.entries(data?.cutoffs ?? {})) m.set(name, c.from);
-    // An excluded day nobody filed (`missing`) is a decision, not a filing, so
-    // the backend's census never saw it either.
-    const filedUnder = new Set();
-    for (const r of data?.data ?? []) if (r.leader && !r.missing) filedUnder.add(r.leader);
-    const floors = new Map();                 // name → last floor, or null = someone still owes
-    for (const p of data?.roster ?? []) {
-      if (!p.name) continue;
-      const own = [];
-      if (p.cutoff && !filedUnder.has(p.name)) own.push(p.cutoff);
-      if (p.cell_from && !p.cells?.length) own.push(p.cell_from);
-      const f = own.length ? own.sort()[0] : null;
-      const had = floors.has(p.name), cur = floors.get(p.name);
-      floors.set(p.name, !had ? f : cur == null || f == null ? null : f > cur ? f : cur);
-    }
-    for (const [name, f] of floors) {
-      if (!f) continue;
-      const cur = m.get(name);
-      if (!cur || f < cur) m.set(name, f);
-    }
-    return m;
-  }, [data]);
-  // The same for a whole unit, which the backend computes because the client
-  // cannot: a unit leaves its own denominator only once EVERY leader it has is
-  // cut, and the client is never handed a unit's full roster.
-  const cutUnits = useMemo(() => {
-    const m = new Map();
-    for (const [name, c] of Object.entries(data?.cutUnits ?? {})) m.set(name, c.from);
-    return m;
-  }, [data]);
+  // whichever window each ranking happens to be scored over — see `slotsBy`,
+  // and `buildCutLeaders` for the roster's half of the answer.
+  const cutLeaders = useMemo(
+    () => buildCutLeaders(data?.cutoffs, filedUnderOf(data?.data), data?.roster), [data]);
+  const cutUnits = useMemo(() => buildCutUnits(data?.cutUnits), [data]);
   // Name → shift, for the S1/S2 chips the combined view prints beside people:
   // a unit lives in one shift, so any of a person's rows answers for them.
   const shiftOf = useMemo(() => {
@@ -2535,6 +2830,7 @@ export default function Leaders() {
     mutationFn: () => api.post("/admin/refresh-sheet/leaders").then((r) => r.data),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["leaders"] });
+      qc.invalidateQueries({ queryKey: ["leader-standing"] });
       setJustSynced(true);
       setTimeout(() => setJustSynced(false), 2500);
       if (d?.ai_queued > 0) {
@@ -2843,13 +3139,9 @@ export default function Leaders() {
   }, [fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
-  const filtered = useMemo(() => rows.filter((r) => {
-    const d = String(r.date).slice(0, 10);
-    return (!startDate || d >= startDate) && (!endDate || d <= endDate)
-      && (effShift == null || r.shift === effShift)
-      && (effSup === "All" || r.supervisor === effSup)
-      && (effLeader === "All" || r.leader === effLeader);
-  }), [rows, startDate, endDate, effShift, effSup, effLeader]);
+  const filtered = useMemo(() => rows.filter((r) => inScope(r, {
+    from: startDate, to: endDate, shift: effShift, sup: effSup, leader: effLeader,
+  })), [rows, startDate, endDate, effShift, effSup, effLeader]);
   // Rows the server gave this viewer that the FILTERS are hiding — the empty
   // state has to tell those two situations apart, or "no data" reads as "the
   // platform has nothing of yours" when it means "you narrowed it away".
@@ -2888,44 +3180,59 @@ export default function Leaders() {
   // in the period on the ranking and the calendar at all (`slotsBy`'s
   // `members`); before it they were absent from both, so a unit whose calendar
   // was solid green could still hold a leader who had not filed for weeks.
-  const rosterLeaders = useMemo(() => {
-    const s = new Set();
-    for (const p of data?.roster ?? []) {
-      if (!p.supervisor || !p.name) continue;
-      if (effShift != null && p.shift !== effShift) continue;
-      if (effSup !== "All" && p.supervisor !== effSup) continue;
-      if (effLeader !== "All" && p.name !== effLeader) continue;
-      s.add(p.name);
-    }
-    return s;
-  }, [data, effShift, effSup, effLeader]);
-  // …minus anybody an unmatched sheet spelling in the period may name. ONE set
-  // for the ranking and the task bars, which describe the same people.
+  //
+  // The same list, by unit, is who a unit's leaders ARE (`rosterUnits`): a
+  // roster wider than the rows on screen reports a miss for somebody the page is
+  // deliberately not showing — filter to one leader and every unit would
+  // suddenly owe reports from people who are not in the table. The backend
+  // scopes it the same way per viewer, for the same reason.
+  const rosterScoped = useMemo(
+    () => rosterIn(data?.roster, { shift: effShift, sup: effSup, leader: effLeader }),
+    [data, effShift, effSup, effLeader]);
+  const rosterLeaders = useMemo(() => new Set(rosterScoped.map((p) => p.name)), [rosterScoped]);
+  // …minus anybody an unmatched sheet spelling in the period may name. The task
+  // bars read this set, and `boardScores` folds the ranking's own with the same
+  // function over the same rows, so the two describe the same people.
   const foldLeaders = useMemo(() => rosterFold(rosterLeaders, filtered), [rosterLeaders, filtered]);
   const leaderScores = useMemo(
-    () => scoreSlots(slotsBy(filtered, (r) => r.leader, cutLeaders, winDates, foldLeaders), scoreWin.days),
-    [filtered, scoreWin.days, cutLeaders, winDates, foldLeaders]);
-  // Who a unit's leaders ARE, narrowed by exactly the filters that narrow its
-  // rows. A roster wider than the rows on screen reports a miss for somebody
-  // the page is deliberately not showing: filter to one leader and every unit
-  // would suddenly owe reports from people who are not in the table. The
-  // backend scopes it the same way per viewer, for the same reason.
-  const rosterUnits = useMemo(() => {
-    const m = new Map();
-    for (const p of data?.roster ?? []) {
-      if (!p.supervisor || !p.name) continue;
-      if (effShift != null && p.shift !== effShift) continue;
-      if (effSup !== "All" && p.supervisor !== effSup) continue;
-      if (effLeader !== "All" && p.name !== effLeader) continue;
-      let set = m.get(p.supervisor);
-      if (!set) m.set(p.supervisor, (set = new Set()));
-      set.add(p.name);
-    }
-    return m;
-  }, [data, effShift, effSup, effLeader]);
+    () => boardScores("leader", filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days),
+    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days]);
+  const rosterUnits = useMemo(() => rosterByUnit(rosterScoped), [rosterScoped]);
   const supScores = useMemo(
-    () => scoreSlots(unitSlots(filtered, rosterUnits, cutLeaders, cutUnits, winDates), scoreWin.days),
-    [filtered, rosterUnits, scoreWin.days, cutLeaders, cutUnits, winDates]);
+    () => boardScores("unit", filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days),
+    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days]);
+
+  // «Mening o'rnim» — a leader's and a brigadir's own place, which the rows
+  // this page holds for them cannot answer (see `MyStanding`). Keyed by the
+  // role, not by `isLeader` / `isSupervisor`: a «see all» grant widens what
+  // they may read, it does not make their own place any less theirs.
+  const standKind = auth?.role === "leader" ? "leader"
+    : auth?.role === "supervisor" ? "unit" : null;
+  // Not mid-exam: the sandbox has a fixture register and no pool to rank it in.
+  const standingOn = !!standKind && !examOn && tab === "monitor"
+    && !!scoreWin.from && !!scoreWin.to && scoreWin.days > 0;
+  const standQuery = useQuery({
+    queryKey: ["leader-standing", scoreWin.from, scoreWin.to],
+    queryFn: () => api.get("/api/leaders/standing", {
+      params: { from: scoreWin.from, to: scoreWin.to },
+    }).then((r) => r.data),
+    enabled: standingOn,
+    // The server builds the pool at most once a minute; asking more often
+    // only re-draws the codes.
+    staleTime: 60_000,
+  });
+  const standWin = useMemo(
+    () => ({ from: scoreWin.from, to: scoreWin.to, days: scoreWin.days, dates: winDates }),
+    [scoreWin, winDates]);
+  // The shift a tile is labelled with before the pool answers, off the rows
+  // this viewer already holds — a locked viewer's roster and rows are one
+  // unit, so any entry names its shift. A widened viewer's are not, so their
+  // label waits for the pool.
+  const standShiftHint = useMemo(() => {
+    if (!isLeader && !isSupervisor) return null;
+    return (data?.roster ?? []).find((p) => p.shift != null)?.shift
+      ?? rows.find((r) => r.shift != null)?.shift ?? null;
+  }, [data, rows, isLeader, isSupervisor]);
 
   // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
   // the filtered slice: narrowing to one leader must not turn that leader's own
@@ -3997,6 +4304,17 @@ export default function Leaders() {
         <div className="rounded-2xl p-3 text-xs mb-3" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
           {refreshMut.error?.response?.data?.detail || String(refreshMut.error)}
         </div>
+      )}
+
+      {/* Where the reader stands — first, because it is the first thing a
+          leader or a brigadir opens this page to find out. A leader has no
+          metric toggle, so a value another session left in this browser must
+          not steer their card: they are placed by Reyting, as the board ranks
+          by default. */}
+      {standingOn && (
+        <MyStanding kind={standKind} query={standQuery} win={standWin}
+          metric={isLeader ? "rating" : standMetric} shiftHint={standShiftHint}
+          T={T} onInfo={() => setStandInfo(true)} />
       )}
 
       {/* KPI / insight cards */}

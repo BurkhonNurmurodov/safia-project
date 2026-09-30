@@ -4346,6 +4346,52 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   grid headers); the toolbar's filter chips wrap (`chipsWrap`, which the
   template applies below md) instead of being clipped.
 
+## «Mening o'rnim» — a leader's and a brigadir's own place (`/leaders`)
+
+From **2026-09-30** (the operator's request) the Monitoring tab opens, for a
+LEADER, with their place in their unit, their shift and overall, and for a
+BRIGADIR with their unit's place among its shift's units and overall — over the
+page's period. `MyStanding` in `Leaders.jsx`, fed by `GET
+/api/leaders/standing?from&to` (`routers/leaders.py`). Keyed by the ROLE, so a
+«see all» grant does not hide it; hidden mid-exam; 403 for every other role.
+
+- **ONE rule, and it is the board's.** The ranking's pieces are module-level in
+  `Leaders.jsx` — `inScope`, `rosterIn`, `rosterByUnit`, `buildCutLeaders`,
+  `buildCutUnits`, `boardScores`, `rankPlaces` — and the board itself is composed
+  of them. The card composes the SAME ones (`placesOf`), so a tile prints the
+  place an admin reads off the board with that scope, window and metric.
+  Verified when it shipped: 138 board-vs-card places matched, both metrics, a
+  September window and an August one with 46 unlinked sheet spellings. Never
+  give the card a rule of its own — that is a second leaderboard.
+- **The pool is the unscoped register with every name replaced by a code.**
+  `get_leaders` is a thin wrapper over `_leaders_feed(sees_all, lite)` (verified
+  byte-identical for admin, supervisor and shift-manager when split);
+  `_standing_pool` builds it with `sees_all=True, lite=True` and keeps it 60 s
+  in-process (the build is ~1.5 s; a shift opening the page at once must not
+  rebuild it per head). Each request windows it and draws fresh random codes
+  (`_pool_codes`): a unit is `u…`, a person is one `w…` code per WORD of their
+  name plus a `p…` code of their own — the word structure is kept because
+  `rosterFold` matches an unlinked sheet spelling to a profile by its first two
+  words. `_name_toks` is the twin of `nameToks` in `Leaders.jsx`; keep them in
+  step. Rows and roster are shuffled (their order would name people).
+- **What travels and what does not.** No name, unit name, task, proof, report
+  id, or exclusion reason/author. Each leader-day's score and flags DO — a
+  ranking cannot be computed from less — so a determined reader could see
+  colleagues' anonymous daily scores in the raw response (and pick out which
+  codes are their own unit's). Porting the ranking to Python instead would
+  remove that and create the second rule above; that trade-off is the
+  operator's to reopen.
+- **The metric**: a leader is placed by Reyting — they have no metric toggle, so
+  a value another session left in the browser must not steer their card; a
+  brigadir's card follows the board's own toggle.
+- **The tile**: place over the pool size, then the pool as a strip in rank order
+  (best on the left) tinted by each person's `scoreColor` band, with the
+  reader's slot framed — as wide as the places they share, so a tie reads as one
+  slot. Medal colours only on a pool of more than three (the podium's rule).
+  Nothing else is coloured as a verdict. «Not ranked this period» (every day
+  excluded/cut, or a unit that filed nothing) is said, never printed as a last
+  place. A shift or unit the viewer has none of is said too.
+
 ## What is ON the `/leaders` tab strip
 
 From **2026-09-02** (the operator's call) the strip was five tabs; from
