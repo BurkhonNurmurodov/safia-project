@@ -15,6 +15,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtDuration } from "../../utils/formatters";
 import api from "../../utils/api";
+import { usePersistentState } from "../../hooks/usePersistentState";
 
 /**
  * «Norozliklar» and «Kechikkan isbotlar» — the two appeal queues on /leaders,
@@ -238,8 +239,13 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   // the tab they did not open. Everybody else keeps the split, landing where
   // their work is.
   const split = role !== "leader";
-  const [stage, setStage] = useState(role === "supervisor" ? "sup" : "adm");
-  const [seg, setSeg] = useState("all");
+  // Both toggles survive opening a chat and coming back. The stage is kept per
+  // ROLE: the keys are per browser, and an admin's «Adminlarda» must not land a
+  // brigadir sharing the machine away from their own half.
+  const [stage, setStage] = usePersistentState(
+    `leaders_appeal_${thread}_stage_${role || "none"}`,
+    role === "supervisor" ? "sup" : "adm");
+  const [seg, setSeg] = usePersistentState(`leaders_appeal_${thread}_seg`, "all");
   const [introOpen, setIntroOpen] = useState(false);
   const [q, setQ] = useState("");
 
