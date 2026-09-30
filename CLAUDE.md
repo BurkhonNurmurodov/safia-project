@@ -5770,6 +5770,51 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
   closed-day lock; and the SAP snapshot itself, which is still written for every
   group the file names.
 
+## «Plan Bajarish» — which products, cells and brigadirs fall short (`/plan`)
+
+From **2026-09-30** (the operator's directive: management must see which
+products are usually not fulfilled, which cells, which brigadirs, and the
+trend) `/plan` is four views over ONE request —
+`GET /api/plan-fulfillment/analysis` (`routers/plan.py`) →
+`services/plan_fulfillment.py`: «Umumiy» (KPIs against the previous period,
+the daily trend in % or hours, the weekday pattern, the worst brigadirs /
+products / cells), «Mahsulotlar» (every catalog line: plan · fact · shortfall in
+pieces and hours · short days · a day strip), «Yacheykalar» and «Brigadirlar»
+(a brigadir × day heatmap whose squares open «Zagruzka fayli» on that day, then
+the period table with Δ vs the previous period). `components/plan/` holds the
+views; `PlanLegend`, `DayStrip` and `planUtil.js` are its shared vocabulary.
+
+- **Nothing is measured here.** The minutes are `zagruzka_source.line_facts` —
+  `pp_calc.line_minutes`' own loop handing each LINE to a callback
+  (`pp_calc.line_facts`), so a unit-day is the Positions table's «Bajarish %»
+  and the загрузка's Трудоёмкость to the float, and a unit's products add up to
+  the unit. Fulfilment is always minutes-weighted (Σ fact ÷ Σ plan).
+- **A cell's part is `wc_group.share`'s rule** (own letter whole, unclaimed
+  lines evenly) — `cell_labor`'s split, so the cells of a work centre add up to
+  it. A leader / cell pick narrows the lines by those same weights; lines at a
+  work centre no cell stands at are a «Yacheykasiz» row per brigadir.
+- **The floor is `ZAGRUZKA_FROM`**: before it plan and fact were one sheet
+  number per brigadir with no product or cell, so a range reaching back is
+  clamped and says so (`clamped`). `MAX_DAYS` (124) caps a request.
+- **A unit-day counts only with BOTH halves in**, judged on the WHOLE unit
+  before any narrowing: plan without fact is `nf` («fakt kiritilmagan», the
+  /live and shift-report rule — never 0%), fact without plan is `np`; both are
+  counted and named, neither enters a percentage. The day-close gate of
+  `build_metrics_list` is deliberately NOT applied.
+- **Shortfall is line-day by line-day** (Σ max(0, plan − fact)): over-making
+  one product does not repay another. «Short days» are counted on the client
+  against the completion bands in force (`statusBands`, admin-editable), the
+  same reading that paints the squares.
+- **Filters**: the period and shift are the shared FilterContext values; plant
+  (`useFactorySection`) → brigadir → leader → cell → product are this page's
+  own (`plan_*` keys), multi-select, each list narrowed by the level above with
+  a note. The registry the lists come from (`scope_units`, `cells`) is the
+  whole plant, both shifts, so a child pick is pruned the moment a parent
+  changes. Products are picked by SKU (`pp_daily.sap_code`, «~name» for a
+  code-less line) and a pick stays listed even where the period holds none.
+- The pre-redesign `GET /api/plan-fulfillment` stays for tabs still open on an
+  older bundle; nothing in the current one calls it.
+
 ## The call forecast, sent by the clock (`forecast_autocall`)
 
 From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:

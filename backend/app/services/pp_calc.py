@@ -464,12 +464,34 @@ def line_minutes_by_group(lines_by_key, shared, per_line, sec_per_min: float = 6
     return plan_grp, actual_grp
 
 
-def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of):
-    """The one loop behind `line_minutes` and `line_minutes_by_group`. The
-    (wc, date) sums accumulate in exactly the order they always did, so the
-    fleet figure stays byte-identical; the (wc, group, date) sums ride beside
-    them only when `group_of` is given — keyed per LINE, so the letter is read
-    inside the line loop and two operations of one SKU may answer differently."""
+def line_facts(lines_by_key, shared, per_line, emit, sec_per_min: float = 60.0,
+               sap_off=None):
+    """`line_minutes` one level further down: every catalog LINE on every day,
+    handed to ``emit(wc, qty_key, line_key, date, plan_qty, actual_qty,
+    plan_min, actual_min)`` instead of being summed.
+
+    The third reader of the loop, for the plan-fulfilment page
+    (services/plan_fulfillment.py), which ranks PRODUCTS and has to see each
+    line's own quantity. It is the same private function with a callback, never
+    a copy of it: the resolution order (the line's own value → the group's typed
+    value → the SAP snapshot, gated by `sap_off`) is spelled once, so Σ over the
+    lines of a work centre is that work centre's `line_minutes` figure and the
+    products can never add up to minutes the загрузка does not count.
+
+    Lines whose two quantities both resolve to 0 are emitted too — the caller
+    decides what an empty day means."""
+    _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, None, emit)
+
+
+def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of,
+                  emit=None):
+    """The one loop behind `line_minutes`, `line_minutes_by_group` and
+    `line_facts`. The (wc, date) sums accumulate in exactly the order they
+    always did, so the fleet figure stays byte-identical; the (wc, group, date)
+    sums ride beside them only when `group_of` is given — keyed per LINE, so the
+    letter is read inside the line loop and two operations of one SKU may
+    answer differently — and `emit`, when given, is handed each line's own
+    resolved quantities and minutes as they are added."""
     plan_min: dict = {}
     actual_min: dict = {}
     plan_grp: dict = {}
@@ -494,14 +516,18 @@ def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of
                 gated = bool(off) and (wc, key, line_key) in off
                 bp = sp if (typed_p or not gated) else 0.0
                 ba = sa if (typed_a or not gated) else 0.0
-                pv = labor * (lp if lp is not None else bp) / sec_per_min
-                av = labor * (la if la is not None else ba) / sec_per_min
+                qp = lp if lp is not None else bp
+                qa = la if la is not None else ba
+                pv = labor * qp / sec_per_min
+                av = labor * qa / sec_per_min
                 plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + pv
                 actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + av
                 if grouped:
                     g = group_of.get((wc, key, line_key)) or None
                     plan_grp[(wc, g, d)] = plan_grp.get((wc, g, d), 0.0) + pv
                     actual_grp[(wc, g, d)] = actual_grp.get((wc, g, d), 0.0) + av
+                if emit is not None:
+                    emit(wc, key, line_key, d, qp, qa, pv, av)
     return plan_min, actual_min, plan_grp, actual_grp
 
 

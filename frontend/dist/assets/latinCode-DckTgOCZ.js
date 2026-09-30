@@ -1,0 +1,1 @@
+var o={а:"a",в:"b",е:"e",к:"k",м:"m",н:"h",о:"o",р:"p",с:"c",т:"t",у:"y",х:"x",і:"i",ј:"j",ѕ:"s",ү:"y"},n=/[авекмнорстухіјѕү]/g;function e(r){return String(r!=null?r:"").toLowerCase().replace(n,a=>o[a])}export{e as t};

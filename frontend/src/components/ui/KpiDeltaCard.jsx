@@ -55,13 +55,19 @@ export default function KpiDeltaCard({
   higherIsBetter = true,
   trend,
   accent = false, danger = false,
+  // `color` (a #hex — a status band's colour, say) paints the value and wins
+  // over accent/danger; `sub` is one line under the value naming what it was
+  // counted over. Both optional, so every existing card renders as before.
+  color, sub,
   onValueClick,
 }) {
   const favorable = delta === 0 ? null : (delta > 0) === higherIsBetter;
   const chipColor = favorable === null ? FLAT : favorable ? GOOD : BAD;
   const Arrow = delta === 0 ? Minus : delta > 0 ? ArrowUpRight : ArrowDownRight;
 
-  const valueStyle = accent
+  const valueStyle = color
+    ? { color }
+    : accent
     ? { color: "var(--brand-text)" }
     : danger
       ? { color: "#f87171" }
@@ -96,6 +102,7 @@ export default function KpiDeltaCard({
           </span>
         )}
       </div>
+      {sub && <div className="text-[11px] -mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
 
       <div className="flex items-end justify-between gap-2 mt-1">
         <div className="text-[11px]" style={{ color: "var(--text-4)" }}>

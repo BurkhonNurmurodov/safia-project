@@ -56,6 +56,7 @@ from sqlalchemy.orm import Session
 from app.models import PPDaily, PPLineDaily, PPWorkCenterDaily
 from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
+from app.services.pp_calc import line_facts as pp_line_facts
 from app.services import pp_catalog
 from app.services import wc_group
 
@@ -350,6 +351,33 @@ def fold_group_labor(group_labor: dict) -> dict[tuple[int, str, str], tuple[floa
         row[0] += p
         row[1] += a
     return {k: (v[0], v[1]) for k, v in acc.items()}
+
+
+def line_facts(db: Session, manager_ids: Iterable[int], date_from: date,
+               date_to: date, emit) -> None:
+    """Every active catalog LINE of the units on every day of the range, handed
+    to ``emit(manager_id, line, wc, qty_key, line_key, day, plan_qty,
+    actual_qty, plan_min, actual_min)`` — `line` being the catalog row itself
+    (name, SAP code, group…) as the catalog stood on that day.
+
+    `wc_labor` one level down, over the same three reads and the same spans:
+    `pp_calc.line_facts` is `line_minutes`' own loop with a callback, so the
+    lines of a (unit, day) add up to exactly the trudoyomkost the загрузка and
+    the Positions table count. The plan-fulfilment page ranks products off it
+    (services/plan_fulfillment.py)."""
+    prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
+    for mid, products, sh, pl in _per_span(prods, shared, per_line):
+        lines_by_key, sap_off = _lines_of(products)
+        if not lines_by_key:
+            continue
+        keys = line_keys(products)
+        meta = {(p.work_center, daily_key(p.sap_code, p.name), keys.get(p.id, "")): p
+                for p in products if p.active and p.labor_time is not None}
+
+        def cb(wc, key, lk, d, qp, qa, pv, av, _mid=mid, _meta=meta):
+            emit(_mid, _meta.get((wc, key, lk)), wc, key, lk, d, qp, qa, pv, av)
+
+        pp_line_facts(lines_by_key, sh, pl, cb, _SEC_PER_MIN, sap_off)
 
 
 def _lines_of(products) -> tuple[dict, set]:

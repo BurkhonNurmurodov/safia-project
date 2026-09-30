@@ -4,12 +4,89 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import Manager
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
+from app.services import plan_fulfillment, pp_catalog
+from app.services.factory_scope import scoped_manager_ids
 
 router = APIRouter(prefix="/api", tags=["plan"])
 
 
+@router.get("/plan-fulfillment/analysis")
+def get_plan_analysis(
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    # Which plant. Omitted = «All factories»; a locked viewer is pinned to
+    # their own whatever this says (services/factory_scope.py).
+    factory: Optional[int] = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    leader_id: List[int] = Query(default=[]),
+    cell_id: List[int] = Query(default=[]),
+    # SKUs — `pp_daily.sap_code`, i.e. `pp_calc.daily_key` (the SAP code, or
+    # «~name» for a code-less line).
+    product: List[str] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("plan")),
+):
+    """The /plan page, whole — every figure out of
+    `services/plan_fulfillment.build` (see its docstring for the rules).
+
+    The unit scope is resolved HERE and nowhere else: the plant lock
+    (`scoped_manager_ids` — `?factory=` cannot widen a locked viewer), the
+    shift, the brigadir pick. A leader or cell pick becomes a set of cells,
+    read by the share rule; the units whose lines are read then narrow to the
+    units those cells stand in.
+
+    The REGISTRY the option lists are drawn from — `scope_units` and `cells` —
+    is the whole plant, both shifts, before any pick: the page narrows the
+    brigadir, leader and cell lists by the shift and the brigadir pick itself,
+    at once, so a pick never shortens the list it was made from and a child
+    pick the new parent no longer offers is dropped before a request goes out
+    for it."""
+    today = pp_catalog.now_local().date()
+    date_to = date_to or today
+    date_from = date_from or (date_to - timedelta(days=13))
+
+    plant = scoped_manager_ids(db, payload, factory, [])
+    base: list = []
+    if plant is None or plant:
+        q = db.query(Manager).filter(Manager.archived.is_(False))
+        if plant is not None:
+            q = q.filter(Manager.id.in_(plant))
+        base = q.order_by(Manager.name).all()
+    cells, leader_names = plan_fulfillment.registry(db, [m.id for m in base])
+
+    picked_units = set(manager_id)
+    units = [m for m in base
+             if (shift not in (1, 2) or m.shift == shift)
+             and (not picked_units or m.id in picked_units)]
+    pick = None
+    if leader_id or cell_id:
+        lset, cset = set(leader_id), set(cell_id)
+        in_units = {m.id for m in units}
+        pick = {c.id for c in cells
+                if c.manager_id in in_units
+                and (not lset or c.leader_id in lset)
+                and (not cset or c.id in cset)}
+        standing = {c.manager_id for c in cells if c.id in pick}
+        units = [m for m in units if m.id in standing]
+
+    out = plan_fulfillment.build(
+        db, units, date_from, date_to, cells=cells, leader_names=leader_names,
+        cell_ids=pick, skus=set(product) if product else None)
+    out["today"] = today.isoformat()
+    out["scope_units"] = [{"manager_id": m.id, "name": m.name, "shift": m.shift,
+                           "factory_id": m.factory_id} for m in base]
+    return out
+
+
+# ── The page as it was until 2026-09-30 ─────────────────────────────────────
+# One number per brigadir per day out of `build_metrics_list`. Nothing in the
+# current bundle calls it; it stays so a tab still open on an older bundle keeps
+# working (a removed endpoint an open tab calls is the one thing a MINOR must
+# not do). Delete it once no such tab can be left.
 @router.get("/plan-fulfillment")
 def get_plan_fulfillment(
     date_from: date = Query(default=None),
