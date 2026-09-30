@@ -7284,6 +7284,18 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   cell can no longer spare a second line). Rows open
   `/brigadir/:id`. No per-cell links: a shift manager does not hold
   `/production`, and a link that 403s is a dead link.
+- **The three LOAD cards above it read the same figure** (the operator's call,
+  2026-09-30) — «O'rt. smena boshi zagruzka», «Brigadirlar ≥ 100%» and «< 90%»
+  on `/shift-daily` count «Smena boshi Zagruzka», no longer the full formula's
+  `net_util`. `GET /api/shift-report/start-load` serves it per unit per day
+  (≤ 62 days, scoped by `_scope` like the board) off `zagruzka_source`'s
+  `unit_labor` plan minutes and `unit_people` typed pins over `pp_shift_min`
+  (`shift_report.start_load`, the `avg_load` arithmetic and `load_cell`'s
+  blanks), because the cards' day stepper and 7-day trend cannot afford the
+  engine per unit per day. NOT gated on the day-close or on attendance, as the
+  board is not; days before `ZAGRUZKA_FROM` are absent. The ≥ 100 / < 90 tests
+  compare the whole percent printed. The waiting card still reads the heatmap
+  (closed days) and the charts below still read `net_util`.
 - Up to two engine runs per configured unit per request, uncached; `staleTime`
   60 s and a refetch on focus. **It is the LAST thing on the page to fetch**
   (`pageReady`, handed down by its page): that cost competes with the queries

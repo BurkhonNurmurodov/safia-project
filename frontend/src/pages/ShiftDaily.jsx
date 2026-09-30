@@ -101,9 +101,19 @@ export default function ShiftDaily() {
     queryFn: () => api.get("/api/heatmap", { params: winParams }).then(r => r.data),
     enabled: scopeKnown,
   });
+  // «Smena boshi Zagruzka» per unit per day — the figure the «Smena hisoboti»
+  // board's first column prints, so the three load cards and the board below
+  // them tell one story. Not gated on the day-close (the heatmap is): the
+  // figure exists from the moment the plan and the people are typed.
+  const { data: startLoad, isLoading: startLoading } = useQuery({
+    queryKey: ["shift-daily-start-load", winParams],
+    queryFn: () => api.get("/api/shift-report/start-load", { params: winParams }).then(r => r.data),
+    enabled: scopeKnown,
+  });
   // While the scope is still resolving the page is loading, not empty.
   const isLoading = brigLoading || scopePending;
   const hmLoading = heatLoading || scopePending;
+  const cardsLoading = hmLoading || startLoading;
 
   // Live colour thresholds from admin config — shared (same query keys) with the
   // Zagruzka page. P bars use the fleet-heatmap segments; A bars use the
@@ -123,33 +133,45 @@ export default function ShiftDaily() {
   });
   const diffSegments = compThresholdData?.diff_segments?.length ? compThresholdData.diff_segments : DEFAULT_DIFF_SEGMENTS;
 
-  // ── Day-over-day aggregates from the heatmap window ─────────────────────────
-  const dayAgg = (dStr) => {
-    let idle = 0, sum = 0, cnt = 0, over = 0, under = 0;
+  // ── Day-over-day aggregates ─────────────────────────────────────────────────
+  // Waiting comes off the heatmap window (closed days); the three load cards
+  // off «Smena boshi Zagruzka». The ≥100 / <90 tests compare the WHOLE percent
+  // printed, the platform's band rule, so a unit the board shows at «100%» is
+  // counted as ≥ 100%.
+  const idleOf = (dStr) => {
+    let idle = 0;
     const data = heatmap?.data || {};
     for (const name of (heatmap?.managers || [])) {
       const c = data[name]?.[dStr];
-      if (!c) continue;
-      idle += c.equip_downtime || 0;
-      if (c.net_util != null) {
-        sum += c.net_util; cnt++;
-        if (c.net_util >= 1.0) over++;
-        if (c.net_util < 0.90) under++;
-      }
+      if (c) idle += c.equip_downtime || 0;
     }
-    return { idle, avg: cnt ? sum / cnt : null, over, under, cnt };
+    return idle;
   };
+  const loadOf = (iso) => {
+    let sum = 0, cnt = 0, over = 0, under = 0;
+    for (const row of Object.values(startLoad?.data || {})) {
+      const v = row[iso];
+      if (v == null) continue;
+      const pct = Math.round(v * 100);
+      sum += v; cnt++;
+      if (pct >= 100) over++;
+      if (pct < 90) under++;
+    }
+    return { avg: cnt ? sum / cnt : null, over, under, cnt };
+  };
+  const dayAgg = (iso) => ({ idle: idleOf(toDMY(iso)), ...loadOf(iso) });
 
   const cards = useMemo(() => {
-    const dates = heatmap?.dates || [];
-    const cur = dayAgg(toDMY(date));
-    const prev = dayAgg(toDMY(addDaysISO(date, -1)));
+    const dates = [];
+    for (let d = winFrom; d <= date; d = addDaysISO(d, 1)) dates.push(d);
+    const cur = dayAgg(date);
+    const prev = dayAgg(addDaysISO(date, -1));
     const trend = (k, scale = 1) => dates.map(d => {
       const v = dayAgg(d)[k];
       return v == null ? null : v * scale;
     });
     return { cur, prev, trend };
-  }, [heatmap, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [heatmap, startLoad, date, winFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { cur, prev, trend } = cards;
   const avgDeltaPp = (cur.avg != null && prev.avg != null) ? (cur.avg - prev.avg) * 100 : 0;
@@ -227,7 +249,7 @@ export default function ShiftDaily() {
 
       {/* KPI cards — selected day vs the day before, with trend */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-6">
-        {hmLoading ? (
+        {cardsLoading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
@@ -243,8 +265,8 @@ export default function ShiftDaily() {
               trend={trend("idle")}
             />
             <KpiDeltaCard
-              label={t("overview.avgFinalWorkload")}
-              tooltip={t("overview.tip.avgFinalWorkload")}
+              label={t("shiftDaily.avgStartLoad")}
+              tooltip={t("shiftDaily.tip.avgStartLoad")}
               value={fmtPct(cur.avg)}
               prevValue={fmtPct(prev.avg)}
               prevLabel={t("shiftDaily.prevDay")}
@@ -256,7 +278,7 @@ export default function ShiftDaily() {
             />
             <KpiDeltaCard
               label={t("overview.over100")}
-              tooltip={t("overview.tip.over100")}
+              tooltip={t("shiftDaily.tip.over100")}
               value={String(cur.over)}
               prevValue={String(prev.over)}
               prevLabel={t("shiftDaily.prevDay")}
@@ -267,7 +289,7 @@ export default function ShiftDaily() {
             />
             <KpiDeltaCard
               label={t("overview.under90")}
-              tooltip={t("overview.tip.under90")}
+              tooltip={t("shiftDaily.tip.under90")}
               value={String(cur.under)}
               prevValue={String(prev.under)}
               prevLabel={t("shiftDaily.prevDay")}
@@ -298,7 +320,7 @@ export default function ShiftDaily() {
           It fetches LAST: one of its requests can run the «Zagruzka fayli»
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
-      <ShiftReportTable shift={shift} pageReady={!isLoading && !hmLoading} />
+      <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

@@ -132,6 +132,18 @@ def load_cell(totals: Optional[dict]) -> dict:
     }
 
 
+def start_load(plan_min: Optional[float], people: Optional[float],
+               shift_min: float) -> Optional[float]:
+    """«Smena boshi Zagruzka» for ONE unit-day off the range readers —
+    I1 ÷ (ΣN × shift_min), the arithmetic `pp_calc`'s `avg_load` runs, blank on
+    exactly the days `load_cell` blanks: nobody typed people (or typed 0), no
+    plan minutes. The KPI cards on the shift dashboard read this, because their
+    day stepper and 7-day trend cannot afford the engine per unit per day."""
+    if not people or people <= 0 or not plan_min or not shift_min:
+        return None
+    return round(float(plan_min) / (float(people) * float(shift_min)), 4)
+
+
 def compl_cell(totals: Optional[dict]) -> dict:
     """«Bajarilish %» — `totals.completion` = F1 ÷ I1.
 

@@ -20,9 +20,10 @@ A shift manager whose profile names no shift reads an EMPTY board with
 The period picker beside the table does not reach it. Each column has a fixed
 window — today, yesterday, this month, whole time — and its header prints it.
 """
+from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -30,7 +31,8 @@ from app.database import get_db
 from app.models import LeaderConcern, Manager, QualityComplaint
 from app.permissions import require_page
 from app.routers import production
-from app.services import cell_hours, live_overview, shift_report, shift_scope
+from app.services import (cell_hours, live_overview, shift_report, shift_scope,
+                          zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import supervisor_match
 
@@ -157,4 +159,71 @@ def get_shift_report(
                 for m in groups[s]
             ],
         })
+    return out
+
+
+_START_LOAD_MAX_DAYS = 62
+
+
+@router.get("/start-load")
+def get_start_load(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("overview")),
+):
+    """«Smena boshi Zagruzka» per unit per day — the figure the board's first
+    column prints, for the shift dashboard's KPI cards (their day stepper and
+    their 7-day trend).
+
+    Read off `zagruzka_source` — the plan minutes (`unit_labor`) and the typed
+    «Bugungi fakt» (`unit_people`) the «Zagruzka fayli» page's `avg_load` is
+    built from — over `pp_shift_min`, the page's own shift length. NOT gated on
+    the day-close and NOT on attendance, exactly as the board is not: the
+    figure exists from the moment the plan and the people are typed, which is
+    the whole point of «smena boshi». Days before `ZAGRUZKA_FROM` have no such
+    figure (the typed pins are not the headcount there) and are absent.
+    Scoped as the board is (`_scope`)."""
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+    if (date_to - date_from).days + 1 > _START_LOAD_MAX_DAYS:
+        raise HTTPException(status_code=400,
+                            detail=f"period is capped at {_START_LOAD_MAX_DAYS} days")
+    dates = [(date_from + timedelta(days=i)).isoformat()
+             for i in range((date_to - date_from).days + 1)]
+    out = {"dates": dates, "units": [], "data": {}}
+
+    ids, _note = _scope(db, payload, factory, manager_id)
+    if empty_scope(ids):
+        return out
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if ids is not None:
+        q = q.filter(Manager.id.in_(ids))
+    if shift in (1, 2):
+        q = q.filter(Manager.shift == shift)
+    units = q.order_by(Manager.name, Manager.id).all()
+    out["units"] = [{"manager_id": m.id, "name": m.name, "shift": m.shift}
+                    for m in units]
+    lo = zagruzka_source.range_start(date_from, date_to)
+    if not units or lo is None:
+        return out
+
+    unit_ids = [m.id for m in units]
+    labor = zagruzka_source.unit_labor(db, unit_ids, lo, date_to)
+    people = zagruzka_source.unit_people(
+        zagruzka_source.typed_people(db, unit_ids, lo, date_to))
+    shift_min, _pm = production._constants(db)
+    for m in units:
+        row = {}
+        for iso in dates:
+            if iso < lo.isoformat():
+                continue
+            plan, _actual = labor.get((m.id, iso), (0.0, 0.0))
+            v = shift_report.start_load(plan, people.get((m.id, iso)), shift_min)
+            if v is not None:
+                row[iso] = v
+        out["data"][str(m.id)] = row
     return out
