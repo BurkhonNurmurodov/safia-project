@@ -7014,23 +7014,26 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   window query cost ~0.3 s apiece (a week was ~2 s; it is ~50–90 ms now, and
   every tap's validation got ~3× cheaper too). Verified equal to the old query
   worker for worker before it shipped.
-- **The grid's vocabulary**: a green ✓ / red ✗ square is an answer (full
-  saturation, `toneFill`, so it reads in both themes); an empty box is «on the
-  list, not answered»; a small dot is «not on that day's list»; a hatch is a
-  day after tomorrow (no list yet); a folded corner in the square's own ink is
-  «set by somebody other than the cell's leader». Today's and tomorrow's
-  columns are a brand LANE, and — only where the viewer may fill them — wider,
-  with big dashed slots: the thumb's target. Their header word comes from the
-  server's `when` (Hozir · Tugadi · Bugun · Ertaga), never from the column's
-  position, so a night unit's «tomorrow» at 15:00 reads «Bugun». Workers who
-  left the list during the week sort after a divider. Tapping a NAME opens the
-  worker's week card (who set each day and when — the corner's explanation on
-  a phone), and arrow keys walk the open slots.
-- **Nothing above the table moves on a tap.** Each day's header carries a
-  fixed-size meter (green · red · still grey), the per-day totals are a sticky
-  row UNDER the rows (a ✓ once a day is complete), and the legend, the how-to
-  and the shift clock sentences live in the footer; every row keeps its second
-  line even when empty; the header loads with skeletons of its final size.
+- **It reads like the spreadsheet it replaced** (2026-09-30, the operator: «more
+  like the Excel … all cell sizes the same … too much noise»). Names down the
+  left, one equal-width column per day, **every cell one size — an open day is
+  never wider**, and the answer is the cell's OWN fill: green ✓ / red ✗ at full
+  saturation (`toneFill`, with the icon so it reads without colour); white = on
+  the list, not answered (brand-tinted where the viewer may tap it); grey = no
+  slot (not on that day's list, or a day after tomorrow). Today's and
+  tomorrow's headers carry a brand underline; the shift clock and «who set
+  this» are tooltips, and the worker card (tap a NAME) carries who set each day
+  and when. Retired as noise: the per-day meters, the «Hozir/Bugun/Ertaga»
+  header words, the folded «set by somebody else» corner, the sub-line under
+  every name (a worker's absence now prints only while choosing whom to
+  remove), and the footer's hint / clock / source / «nobody marked» lines — the
+  footer is ONE legend line, which on an open week is the tap cycle itself.
+  Workers who left the list during the week sort after a divider; arrow keys
+  walk the open cells.
+- **Nothing above the table moves on a tap.** The per-day total (how many are
+  coming; the full split on hover) is a sticky row UNDER the rows, the legend
+  lives in the footer, a closed week says «faqat ko'rish» inline beside the
+  title, and the header loads with skeletons of its final size.
 - **Consequence to know:** every tap is an action-register row
   (`kelish.mark_set`) — cheap while the page is admin-only; opened to ~100
   leaders it roughly triples the register's daily volume.

@@ -5,20 +5,27 @@
  * One list per CELL per shift-day: every worker the ORIGINAL Verifix upload
  * filed under the cell in the last 30 days, and beside each name whether they
  * are coming. The page lays a calendar week (Monday → Sunday — this week by
- * default, ‹ › step a week) across those lists: one row per worker, one column
- * per day, and each day's answer as a square —
+ * default, ‹ › step a week) across those lists like the spreadsheet it
+ * replaced (2026-09-30, the operator: «more like the Excel»): names down the
+ * left, one column per day, and EVERY cell the same size — an open day is
+ * never wider than the rest. The answer is the cell's own fill —
  *
  *   green ✓   «Keladi»            red ✗   «Kelmaydi»
- *   □ (empty) not answered         ·       not on that day's list
- *   hatched   a day that has not opened yet
- *   ◥ corner  the answer was set by somebody other than the cell's leader
+ *   white     on the list, no answer (brand-tinted where it can be tapped)
+ *   grey      no slot: not on that day's list, or a day not opened yet
  *
- * Only TODAY and TOMORROW (the unit's shift-day frame) are open. Their two
- * columns are lit and wider — the thumb's target — and a tap cycles a square
+ * Only TODAY and TOMORROW (the unit's shift-day frame) are open: their headers
+ * are marked, their empty cells tinted, and a tap cycles a cell
  * empty → green → red → empty (the operator's call). The rest of the week is
  * the record, read-only. «+» and «−» at the table's foot change who is on the
  * list, permanently, from today on. Tapping a NAME opens that worker's week —
- * who marked each day and when — which the grid has no room to print.
+ * who marked each day and when — which the grid does not print.
+ *
+ * Deliberately quiet (the same ruling): one line per name, a two-line day
+ * header, one total per day under the rows, one legend line. Who set a mark,
+ * the shift's clock and a worker's absences live in tooltips and the worker
+ * card; an absence is printed under the name only while choosing whom to
+ * remove, which is the moment it matters.
  *
  * The server decides every one of those questions and ships the answers
  * (`days[].state / editable / when`, `can_edit`, `this_week`), so the page
@@ -26,8 +33,7 @@
  * scope: backend `services/kelish.py` + `routers/kelish.py`.
  *
  * NOTHING above the rows may change size because of a tap (the operator's
- * rule): the counts live in the header meters (fixed size) and the sticky
- * totals row UNDER the rows; copy that comes and goes lives in the footer.
+ * rule): the totals row sits UNDER the rows, the legend in the footer.
  *
  * Page key `kelish` — admin-only until the operator opens it. Checklist task
  * #11 is untouched: nothing here scores anything.
@@ -35,7 +41,7 @@
 import { useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, Clock, Info, Lock, Minus, Plus, Trash2, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
+  Check, Clock, Lock, Minus, Plus, Trash2, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
@@ -61,32 +67,26 @@ import api from "../utils/api";
 
 const NONE = "none";          // the «cells with no brigadir» bucket
 const WINDOW_DAYS = 30;       // services/kelish.WINDOW_DAYS
-const GREEN = TONE_HEX.ok;
 const RED = TONE_HEX.bad;
 const NO_PARAMS = {};
 
 // The two answers, painted as the platform paints every heatmap cell: the hue
 // at full saturation with the ink `contrastText` picks for it (dark on green,
-// white on red), so a square reads the same on both themes.
+// white on red), so a cell reads the same on both themes.
 const FILL = { yes: toneFill("ok"), no: toneFill("bad") };
+// Where a cell holds no slot at all.
+const OFF = { background: "var(--bg-inner)" };
+// An open day's unanswered cell: a brand wash that says «tap here».
+const LANE = { background: "rgba(var(--brand-rgb), 0.08)" };
+// The open days' header, opaque because the header row is sticky.
+const LANE_HEAD = "linear-gradient(rgba(var(--brand-rgb), 0.14), rgba(var(--brand-rgb), 0.14)), var(--bg-inner)";
 
-// A day the week has not reached yet — the «Toifalar bo'yicha» matrix's own
-// hatch, one slate at a low alpha so it reads in both themes.
-const HATCH = "repeating-linear-gradient(135deg, transparent 0 4px, rgba(148,163,184,0.16) 4px 8px)";
-// Today's and tomorrow's lane: a brand wash down the whole column. The head
-// and the totals row are sticky and must be opaque, so theirs is layered on
-// the inner surface.
-const LANE = "rgba(var(--brand-rgb), 0.07)";
-const LANE_SOLID = "linear-gradient(rgba(var(--brand-rgb), 0.16), rgba(var(--brand-rgb), 0.16)), var(--bg-inner)";
-
-// The grid's geometry, phone first, named ONCE and read by the <colgroup>, the
-// squares and the skeleton, so the three can never disagree. On a 384px phone
-// the week fits with no sideways scroll: five 28px days, two 48px open days
-// and ~115px left for the name. Wider screens grow the squares rather than
-// the name column, so the eye never travels far from a name to its week.
-// --kd day column · --ko open day column · --sq square · --sqo open square.
-const GRID = "[--kd:28px] [--ko:48px] [--sq:20px] [--sqo:34px] sm:[--kd:64px] sm:[--ko:88px] sm:[--sq:30px] sm:[--sqo:40px] lg:[--kd:72px] lg:[--ko:100px] lg:[--sq:32px] lg:[--sqo:44px]";
-const ROW_H = "h-11 sm:h-[52px]";
+// The grid's geometry, named ONCE: every day column is --kd wide and every row
+// ROW_H high, so all cells are one size. On a 384px phone the whole week fits
+// with no sideways scroll (7 × 32px, ~125px left for the name); wider screens
+// widen the days, not the name.
+const GRID = "[--kd:32px] sm:[--kd:60px] lg:[--kd:64px]";
+const ROW_H = "h-11 sm:h-10";
 
 const fill = (s, params) =>
   Object.entries(params || {}).reduce((out, [k, v]) => out.split(`{${k}}`).join(String(v ?? "")), s);
@@ -139,31 +139,18 @@ function whenText(w, t) {
   }
 }
 
-// The word over an open day. Read off the server's `when`, never the column's
-// position: on a night shift at 15:00 «tomorrow» is the night that opens
-// TONIGHT, so it says «Bugun» — a bare «Ertaga» there would send a leader to
-// the wrong shift.
+// The word for an open day, in the worker card. Read off the server's `when`,
+// never the column's position: on a night shift at 15:00 «tomorrow» is the
+// night that opens TONIGHT, so it says «Bugun».
 function tagOf(day, t) {
   const k = day.when?.kind;
   if (day.state === "today") {
-    if (k === "running") return { text: t("kelish.tagNow"), live: true };
-    if (k === "ended") return { text: t("kelish.tagEnded") };
-    return { text: t("kelish.tagToday") };
+    if (k === "running") return t("kelish.tagNow");
+    if (k === "ended") return t("kelish.tagEnded");
+    return t("kelish.tagToday");
   }
-  if (day.state === "tomorrow") {
-    return { text: t(k === "starts_today" ? "kelish.tagToday" : "kelish.tagTomorrow") };
-  }
+  if (day.state === "tomorrow") return t(k === "starts_today" ? "kelish.tagToday" : "kelish.tagTomorrow");
   return null;
-}
-
-// Where the week on screen sits against the plant's current one.
-function weekRel(from, thisWeek, t) {
-  if (!from || !thisWeek) return "";
-  const n = Math.round((Date.parse(from) - Date.parse(thisWeek)) / 604800000);
-  if (n === 0) return t("kelish.weekThis");
-  if (n === -1) return t("kelish.weekPrev");
-  if (n > 0) return t("kelish.weekNext");
-  return fill(t("kelish.weeksAgo"), { n: -n });
 }
 
 const countsText = (c, t) => [
@@ -175,8 +162,8 @@ const countsText = (c, t) => [
 const markWord = (mark, t) =>
   (mark === "yes" ? t("kelish.yes") : mark === "no" ? t("kelish.no") : t("kelish.none"));
 
-// One slot's answer changed: repaint it and re-count its day, so the meter
-// and the totals row move with the tap instead of waiting for the server.
+// One slot's answer changed: repaint it and re-count its day, so the totals
+// row moves with the tap instead of waiting for the server.
 function patchSlot(old, rowKey, i, patch) {
   if (!old) return old;
   const rows = old.rows.map((r) => {
@@ -195,121 +182,81 @@ function patchSlot(old, rowKey, i, patch) {
 
 // ── pieces of the grid ──────────────────────────────────────────────────────
 
-// «Somebody else set this»: a folded corner in the square's own ink — the
-// comment marker of the spreadsheet this list replaced.
-function Corner({ size }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="absolute top-0 right-0"
-      style={{ width: 0, height: 0, borderTop: `${size}px solid currentColor`, borderLeft: `${size}px solid transparent`, opacity: 0.55 }}
-    />
-  );
+// The mark inside a filled cell. Colour + icon, so it reads without colour.
+function MarkIcon({ mark, pop = false }) {
+  const Icon = mark === "yes" ? Check : X;
+  return <Icon aria-hidden="true" className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${pop ? "kelish-pop" : ""}`} strokeWidth={3} />;
 }
 
-// THE square. Colour + icon, so it reads without colour. `open` is the big,
-// pressable slot of today/tomorrow; `px` sizes it outside the grid (the
-// worker card), where the grid's CSS variables do not reach.
-function Square({ mark, open = false, pop = false, byOther = false, px = null }) {
+// A cell in miniature, for the legend and the worker card.
+function Chip({ mark = null, off = false, size = 14 }) {
   const Icon = mark === "yes" ? Check : mark === "no" ? X : null;
-  const size = px ? `${px}px` : open ? "var(--sqo)" : "var(--sq)";
-  const icon = px ? "w-3 h-3" : open ? "w-[18px] h-[18px] sm:w-5 sm:h-5" : "w-3 h-3 sm:w-4 sm:h-4";
-  return (
-    <span
-      className={`kelish-sq relative inline-grid place-items-center overflow-hidden flex-shrink-0 ${open ? "rounded-lg" : "rounded-[5px]"} ${!mark && open ? "kelish-empty" : ""} ${pop ? "kelish-pop" : ""}`}
-      style={{
-        width: size,
-        height: size,
-        ...(mark ? FILL[mark] : open ? null : { border: "1px solid var(--border-md)" }),
-      }}
-    >
-      {Icon && <Icon aria-hidden="true" className={icon} strokeWidth={3} />}
-      {mark && byOther && <Corner size={open ? 9 : 6} />}
-    </span>
-  );
-}
-
-// A day's answers as one thin bar — green, red, and the grey still to fill.
-// Fixed size: a tap changes its proportions, never the header's height.
-function Meter({ c }) {
-  const total = c?.total || 0;
-  const w = (n) => `${(n / total) * 100}%`;
+  const style = mark ? FILL[mark] : off ? { ...OFF, border: "1px solid var(--border)" } : { background: "var(--bg-card)", border: "1px solid var(--border-md)" };
   return (
     <span
       aria-hidden="true"
-      className="flex w-[70%] max-w-[46px] h-1 rounded-full overflow-hidden"
-      style={{ background: c && total ? "var(--border-md)" : "transparent" }}
+      className="inline-grid place-items-center rounded-[3px] flex-shrink-0"
+      style={{ width: size, height: size, ...style }}
     >
-      {total > 0 && <span style={{ width: w(c.yes), background: GREEN, transition: "width .25s var(--ease-out)" }} />}
-      {total > 0 && <span style={{ width: w(c.no), background: RED, transition: "width .25s var(--ease-out)" }} />}
+      {Icon && <Icon style={{ width: size - 4, height: size - 4 }} strokeWidth={3.5} />}
     </span>
   );
 }
 
 function DayHead({ day, t }) {
   const future = day.state === "future";
-  const lane = day.state === "today" || day.state === "tomorrow";
-  const tag = tagOf(day, t);
+  const current = day.state === "today" || day.state === "tomorrow";
   const label = [
     dayLabel(day.date, t),
     day.when ? whenText(day.when, t) : null,
-    future ? t("kelish.legendFuture") : day.counts ? countsText(day.counts, t) : null,
+    future ? t("kelish.legendFuture") : null,
   ].filter(Boolean).join(" · ");
   return (
     <th
       scope="col"
       title={label}
       aria-label={label}
-      className="sticky top-0 z-10 p-0 align-top font-normal"
+      className="sticky top-0 z-10 px-0 py-1.5 text-center font-normal"
       style={{
-        background: future ? `${HATCH}, var(--bg-inner)` : lane ? LANE_SOLID : "var(--bg-inner)",
-        boxShadow: lane ? "inset 0 2px 0 var(--brand)" : undefined,
-        borderRightWidth: 0,
+        background: current ? LANE_HEAD : "var(--bg-inner)",
+        boxShadow: current ? "inset 0 -2px 0 var(--brand)" : "inset 0 -1px 0 var(--border)",
       }}
     >
-      <div className="flex flex-col items-center gap-1 pt-1.5 pb-2">
-        <span className="text-[10px] leading-3 font-medium uppercase" style={{ color: lane ? "var(--brand-text)" : "var(--text-3)" }}>
-          {t(`cal.d${dow(day.date)}`)}
-        </span>
-        <span className="text-[15px] sm:text-base leading-[18px] font-bold tabular-nums" style={{ color: future ? "var(--text-4)" : "var(--text-1)" }}>
-          {day.date.slice(8, 10)}
-        </span>
-        <span className="h-3 inline-flex items-center gap-1 text-[9px] sm:text-[10px] leading-3 font-semibold whitespace-nowrap" style={{ color: "var(--brand-text)" }}>
-          {tag?.live && <span className="live-dot w-1.5 h-1.5 rounded-full" style={{ background: GREEN }} />}
-          {tag?.text}
-        </span>
-        <Meter c={future ? null : day.counts} />
-      </div>
+      <span className="block text-[10px] leading-3 font-medium uppercase" style={{ color: current ? "var(--brand-text)" : "var(--text-3)" }}>
+        {t(`cal.d${dow(day.date)}`)}
+      </span>
+      <span
+        className="block mt-0.5 text-xs leading-4 font-semibold tabular-nums"
+        style={{ color: future ? "var(--text-4)" : current ? "var(--brand-text)" : "var(--text-1)" }}
+      >
+        <span className="sm:hidden">{day.date.slice(8, 10)}</span>
+        <span className="hidden sm:inline">{dm(day.date)}</span>
+      </span>
     </th>
   );
 }
 
-function Swatch({ kind }) {
-  const box = "relative inline-grid place-items-center w-3 h-3 rounded-[3px] overflow-hidden flex-shrink-0";
-  if (kind === "yes" || kind === "no") return <span className={box} style={FILL[kind]} />;
-  if (kind === "by") return <span className={box} style={FILL.yes}><Corner size={5} /></span>;
-  if (kind === "none") return <span className={box} style={{ border: "1px solid var(--border-md)" }} />;
-  if (kind === "future") return <span className={box} style={{ background: HATCH, border: "1px solid var(--border)" }} />;
+// One line under the grid: on an open week it is the tap cycle itself, which
+// is also the whole legend; on a closed one, the three answers.
+function Legend({ open, t }) {
+  const arrow = <span aria-hidden="true" style={{ color: "var(--text-4)" }}>→</span>;
+  if (open) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        <span className="font-medium" style={{ color: "var(--text-2)" }}>{t("kelish.tapLead")}</span>
+        <Chip />{arrow}
+        <span className="inline-flex items-center gap-1"><Chip mark="yes" />{t("kelish.yes")}</span>{arrow}
+        <span className="inline-flex items-center gap-1"><Chip mark="no" />{t("kelish.no")}</span>{arrow}
+        <Chip />
+      </span>
+    );
+  }
   return (
-    <span className="inline-grid place-items-center w-3 h-3 flex-shrink-0">
-      <span className="w-1 h-1 rounded-full" style={{ background: "var(--text-4)" }} />
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="inline-flex items-center gap-1"><Chip mark="yes" />{t("kelish.yes")}</span>
+      <span className="inline-flex items-center gap-1"><Chip mark="no" />{t("kelish.no")}</span>
+      <span className="inline-flex items-center gap-1"><Chip />{t("kelish.none")}</span>
     </span>
-  );
-}
-
-function Legend({ t }) {
-  const items = [
-    ["yes", t("kelish.yes")], ["no", t("kelish.no")], ["none", t("kelish.none")],
-    ["off", t("kelish.legendOff")], ["future", t("kelish.legendFuture")], ["by", t("kelish.legendByOther")],
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      {items.map(([k, label]) => (
-        <span key={k} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-          <Swatch kind={k} />{label}
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -618,29 +565,18 @@ export default function Kelish() {
   // ── header of the card ────────────────────────────────────────────────────
   const leaderShort = (name) => titleCase(tl(name || "")).split(" ").filter(Boolean).slice(0, 2).join(" ");
   const cellTitle = cell ? cellLabel(cell.code, cell.leader ? leaderShort(cell.leader) : "") : "";
-  // A skeleton of the same line while the week loads, so the header does not
-  // grow a line (and push the grid down) the moment the data arrives.
-  const subtitle = data ? (
-    <span className="inline-flex items-center gap-1 flex-wrap">
-      {locked && <Lock size={11} aria-hidden="true" />}
-      {[data.cell.shift ? fill(t("kelish.shiftN"), { n: data.cell.shift }) : null,
-        weekRel(data.from, data.this_week, t),
-        locked ? t("kelish.readOnly") : null].filter(Boolean).join(" · ")}
+  // A closed week says so beside the title — inline, so the header never
+  // grows a line and pushes the grid down.
+  const headRight = locked ? (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-3)" }}>
+      <Lock size={12} aria-hidden="true" />{t("kelish.readOnly")}
     </span>
-  ) : (
-    <SkeletonBlock className="inline-block align-middle h-3 w-44" />
-  );
+  ) : null;
 
-  // What sits under a name on a wide screen; on a phone the card holds it.
-  const subLine = (r) => {
-    const bits = [];
-    if (r.job) bits.push({ text: tx(r.job) });
-    if (r.source === "manual") bits.push({ text: t("kelish.manual") });
-    if (r.source === "kept") bits.push({ text: t("kelish.kept") });
-    if (r.never) bits.push({ text: fill(t("kelish.never"), { n: WINDOW_DAYS }), warn: true });
-    else if (r.warn) bits.push({ text: fill(t("kelish.quiet"), { n: r.quiet }), warn: true });
-    return bits;
-  };
+  // Whether a worker has stopped coming — printed only while choosing whom to
+  // remove; the worker card carries it the rest of the time.
+  const absence = (r) => (r.never ? fill(t("kelish.never"), { n: WINDOW_DAYS })
+    : r.warn ? fill(t("kelish.quiet"), { n: r.quiet }) : null);
 
   const slotLabel = (r, d, s) => {
     const bits = [r.full, dayLabel(d.date, t)];
@@ -654,9 +590,6 @@ export default function Kelish() {
   };
 
   // ── footer ────────────────────────────────────────────────────────────────
-  const spotLines = days.filter((d) => d.when?.start).map((d) => `${dayLabel(d.date, t)} — ${whenText(d.when, t)}`);
-  const anyMark = days.some((d) => d.counts && d.counts.yes + d.counts.no > 0);
-
   const footer = !data ? null : selecting ? (
     <>
       <Button
@@ -670,29 +603,12 @@ export default function Kelish() {
     </>
   ) : (
     <>
-      {/* How to read and use the grid lives UNDER it and stays for the whole
-          day: copy above it that came and went moved every row. */}
-      <div className="min-w-0 flex-1 space-y-1.5 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-        <Legend t={t} />
-        {openAny && (
-          <div className="flex items-start gap-1.5">
-            <Info size={13} className="flex-shrink-0 mt-px" aria-hidden="true" />
-            <span>{t("kelish.hint")}</span>
-          </div>
-        )}
-        {spotLines.map((line) => (
-          <div key={line} className="flex items-start gap-1.5">
-            <Clock size={12} className="flex-shrink-0 mt-px" aria-hidden="true" />
-            <span>{line}</span>
-          </div>
-        ))}
-        <div title={t("kelish.sourceHint")}>
-          {fill(t("kelish.source"), { from: dm(data.source.from), to: dm(data.source.last_upload || data.source.to) })}
-        </div>
-        {!openAny && !anyMark && view.length > 0 && <div>{t("kelish.weekNoMarks")}</div>}
+      {/* How to read the grid lives UNDER it: copy above it moves every row. */}
+      <div className="min-w-0 flex-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+        <Legend open={openAny} t={t} />
       </div>
       {openAny && (
-        <div className="ml-auto flex items-center gap-2 self-center">
+        <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" size="lg" icon={<Plus size={17} />} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
             variant="secondary" size="lg" icon={<Minus size={17} />}
@@ -707,13 +623,13 @@ export default function Kelish() {
   // ── the grid ──────────────────────────────────────────────────────────────
   const cols = data ? days : Array.from({ length: 7 }, (_, i) => ({ date: String(i), skeleton: true }));
   const dim = stale ? { opacity: 0.5, pointerEvents: "none", transition: "opacity .15s" } : { transition: "opacity .15s" };
-  const FOOT = { position: "sticky", bottom: 0, zIndex: 10, boxShadow: "inset 0 1px 0 var(--border-md)" };
+  const FOOT = { position: "sticky", bottom: 0, zIndex: 10, background: "var(--bg-inner)", boxShadow: "inset 0 1px 0 var(--border-md)" };
 
   const nameHead = (
     <th
       scope="col"
-      className="sticky top-0 z-10 px-2 sm:px-3 pb-2 text-left align-bottom font-semibold"
-      style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+      className="sticky top-0 z-10 px-2 sm:px-3 py-1.5 text-left align-middle font-semibold"
+      style={{ background: "var(--bg-inner)", color: "var(--text-3)", boxShadow: "inset 0 -1px 0 var(--border)" }}
     >
       {selecting ? (
         <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] font-medium">
@@ -728,45 +644,28 @@ export default function Kelish() {
       ) : (
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
           {t("kelish.colWorker")}
-          {data && (
-            <span
-              className="px-1.5 rounded-md tabular-nums normal-case tracking-normal"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}
-            >
-              {currentCount}
-            </span>
-          )}
+          {data && <span className="tabular-nums normal-case tracking-normal" style={{ color: "var(--text-2)" }}>{currentCount}</span>}
         </span>
       )}
     </th>
   );
 
   const nameCell = (r) => {
-    const left = !r.current;
-    const ink = left ? "var(--text-3)" : "var(--text-1)";
-    const bits = subLine(r);
+    const ink = r.current ? "var(--text-1)" : "var(--text-3)";
+    const away = selecting ? absence(r) : null;
     const text = (
       <>
         {/* phone: surname over given name — two short lines fit where one
             long one would be cut to nothing */}
         <span className="sm:hidden block min-w-0">
-          <span className="flex items-center gap-1 min-w-0">
-            <span className="text-[13px] leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
-            {r.warn && <Clock size={11} className="flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />}
-            {r.source === "manual" && <UserPlus size={11} className="flex-shrink-0" style={{ color: "var(--text-3)" }} aria-hidden="true" />}
+          <span className="block text-[13px] leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
+          <span className="block text-[11px] leading-[14px] truncate" style={{ color: away ? "var(--status-warn)" : "var(--text-3)" }}>
+            {away || r.given || "\u00a0"}
           </span>
-          <span className="block text-[11px] leading-[14px] truncate" style={{ color: "var(--text-3)" }}>{r.given || "\u00a0"}</span>
         </span>
         <span className="hidden sm:block min-w-0">
-          <span className="block text-sm leading-5 font-medium truncate" style={{ color: ink }}>{r.display}</span>
-          {/* Always one line, even empty, so every row is the same height. */}
-          <span className="block text-[11px] leading-4 truncate" style={{ color: "var(--text-3)" }}>
-            {bits.length > 0 ? bits.map((b, i) => (
-              <span key={i} style={b.warn ? { color: "var(--status-warn)" } : undefined}>
-                {i > 0 && " · "}{b.text}
-              </span>
-            )) : "\u00a0"}
-          </span>
+          <span className="block text-[13px] leading-5 font-medium truncate" style={{ color: ink }}>{r.display}</span>
+          {away && <span className="block text-[11px] leading-4 truncate" style={{ color: "var(--status-warn)" }}>{away}</span>}
         </span>
       </>
     );
@@ -789,7 +688,7 @@ export default function Kelish() {
             type="button"
             onClick={() => setSheet(r.key)}
             title={`${r.full} · ${t("kelish.details")}`}
-            className="block w-full min-w-0 text-left rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
+            className="block w-full min-w-0 text-left rounded-md hover:underline decoration-[var(--border-md)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
           >
             {text}
           </button>
@@ -798,15 +697,17 @@ export default function Kelish() {
     );
   };
 
+  // Every day cell is the same box — ROW_H high, --kd wide — and its fill IS
+  // the answer; only an open, listed cell is a button.
   const dayCell = (r, ri, d, i) => {
     const s = r.days[i];
-    const lane = d.state === "today" || d.state === "tomorrow";
     const label = slotLabel(r, d, s);
-    let body = null;
-    if (d.state !== "future" && !s) {
-      body = <span role="img" aria-label={label} title={label} className="inline-block w-1 h-1 rounded-full align-middle" style={{ background: "var(--text-4)", opacity: 0.7 }} />;
-    } else if (s && d.editable && !selecting) {
-      const id = `${r.key}|${d.date}`;
+    const box = `${ROW_H} w-full grid place-items-center`;
+    const id = `${r.key}|${d.date}`;
+    let body;
+    if (d.state === "future" || !s) {
+      body = <span role="img" aria-label={label} title={label} className={box} style={OFF} />;
+    } else if (d.editable && !selecting) {
       body = (
         <button
           type="button"
@@ -814,42 +715,36 @@ export default function Kelish() {
           onClick={() => tap(r, i)}
           aria-label={label}
           title={label}
-          className={`kelish-hit w-full ${ROW_H} grid place-items-center cursor-pointer`}
+          className={`kelish-hit ${box} cursor-pointer ${s.mark ? "is-filled" : "is-empty"}`}
+          style={s.mark ? FILL[s.mark] : LANE}
         >
-          <Square key={s.mark || "-"} mark={s.mark} open pop={pops.has(id)} byOther={s.by_other} />
+          {s.mark && <MarkIcon key={s.mark} mark={s.mark} pop={pops.has(id)} />}
         </button>
       );
-    } else if (s) {
+    } else {
       body = (
         <span
           role="img" aria-label={label} title={label}
-          className={`${ROW_H} grid place-items-center`}
-          style={selecting ? { opacity: 0.35 } : undefined}
+          className={box}
+          style={{ ...(s.mark ? FILL[s.mark] : null), ...(selecting ? { opacity: 0.35 } : null) }}
         >
-          <Square mark={s.mark} byOther={s.by_other} />
+          {s.mark && <MarkIcon mark={s.mark} />}
         </span>
       );
     }
-    return (
-      <td
-        key={d.date}
-        className="p-0 text-center align-middle"
-        style={{ background: d.state === "future" ? HATCH : lane ? LANE : undefined, borderRightWidth: 0 }}
-      >
-        {body}
-      </td>
-    );
+    return <td key={d.date} className="p-0 align-middle">{body}</td>;
   };
 
   const skeletonRows = Array.from({ length: 7 }).map((_, i) => (
     <tr key={`sk${i}`}>
-      <td className={`px-2 sm:px-3 ${ROW_H}`}>
+      <td className="px-2 sm:px-3">
         <SkeletonBlock className={`h-3.5 ${["w-2/3", "w-1/2", "w-3/5"][i % 3]}`} />
-        <SkeletonBlock className="h-2.5 w-1/3 mt-1.5" />
       </td>
       {cols.map((c) => (
-        <td key={c.date} className="p-0 text-center" style={{ borderRightWidth: 0 }}>
-          <SkeletonBlock className="inline-block align-middle rounded-[5px] w-[var(--sq)] h-[var(--sq)]" />
+        <td key={c.date} className="p-0">
+          <div className={`${ROW_H} grid place-items-center`}>
+            <SkeletonBlock className="h-3 w-3 rounded-[3px]" />
+          </div>
         </td>
       ))}
     </tr>
@@ -858,24 +753,22 @@ export default function Kelish() {
   const grid = (
     <TableCard
       icon={UserCheck} headSize="lg"
-      title={cellTitle} subtitle={subtitle}
-      fixed minWidth={320} footer={footer}
+      title={cellTitle} right={headRight}
+      fixed minWidth={320} footer={footer} hover={false}
       className={GRID}
     >
       <colgroup>
         <col />
-        {cols.map((d) => <col key={d.date} style={{ width: d.editable ? "var(--ko)" : "var(--kd)" }} />)}
+        {cols.map((d) => <col key={d.date} style={{ width: "var(--kd)" }} />)}
       </colgroup>
       <thead style={dim}>
         <tr>
           {nameHead}
           {cols.map((d) => (d.skeleton ? (
-            <th key={d.date} className="sticky top-0 z-10 p-0" style={{ background: "var(--bg-inner)", borderRightWidth: 0 }}>
-              <div className="flex flex-col items-center gap-1 pt-1.5 pb-2">
-                <SkeletonBlock className="h-3 w-4" />
-                <SkeletonBlock className="h-[18px] w-5" />
-                <span className="h-3" />
-                <SkeletonBlock className="h-1 w-[70%] max-w-[46px]" />
+            <th key={d.date} className="sticky top-0 z-10 px-0 py-1.5" style={{ background: "var(--bg-inner)", boxShadow: "inset 0 -1px 0 var(--border)" }}>
+              <div className="flex flex-col items-center gap-1">
+                <SkeletonBlock className="h-2.5 w-4" />
+                <SkeletonBlock className="h-3.5 w-6" />
               </div>
             </th>
           ) : <DayHead key={d.date} day={d} t={t} />))}
@@ -901,38 +794,26 @@ export default function Kelish() {
       </tbody>
       {data && view.length > 0 && (
         <tfoot style={dim}>
+          {/* One figure per day: how many are coming. The full split is on hover. */}
           <tr>
-            <td className="px-2 sm:px-3 py-1.5" style={{ ...FOOT, background: "var(--bg-inner)" }}>
-              <div className="flex flex-col gap-0.5 text-[10px] leading-3 font-medium" style={{ color: "var(--text-3)" }}>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="yes" />{t("kelish.yes")}</span>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="no" />{t("kelish.no")}</span>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><Swatch kind="none" />{t("kelish.none")}</span>
-              </div>
+            <td className="px-2 sm:px-3 h-9 align-middle" style={FOOT}>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
+                <Chip mark="yes" size={12} />{t("kelish.yes")}
+              </span>
             </td>
             {days.map((d) => {
               const c = d.counts;
-              const lane = d.state === "today" || d.state === "tomorrow";
+              const any = c && c.yes + c.no > 0;
               return (
                 <td
                   key={d.date}
-                  className="p-0 text-center align-middle"
-                  style={{
-                    ...FOOT,
-                    borderRightWidth: 0,
-                    background: d.state === "future" ? `${HATCH}, var(--bg-inner)` : lane ? LANE_SOLID : "var(--bg-inner)",
-                  }}
+                  className="p-0 text-center align-middle text-xs font-bold tabular-nums"
+                  style={FOOT}
+                  title={d.state !== "future" && c ? countsText(c, t) : undefined}
                 >
-                  {d.state !== "future" && (!c || !c.total ? (
-                    <span className="text-[11px]" style={{ color: "var(--text-4)" }}>—</span>
-                  ) : (
-                    <div className="flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] leading-3 font-bold tabular-nums">
-                      <span style={{ color: "var(--status-ok)" }}>{c.yes}</span>
-                      <span style={{ color: "var(--status-bad)" }}>{c.no}</span>
-                      {c.none === 0
-                        ? <Check size={11} strokeWidth={3} style={{ color: "var(--status-ok)" }} aria-label={t("kelish.complete")} />
-                        : <span style={{ color: d.editable ? "var(--text-2)" : "var(--text-3)" }}>{c.none}</span>}
-                    </div>
-                  ))}
+                  {d.state === "future" ? null : any
+                    ? <span style={{ color: "var(--status-ok)" }}>{c.yes}</span>
+                    : <span className="font-normal" style={{ color: "var(--text-4)" }}>—</span>}
                 </td>
               );
             })}
@@ -986,7 +867,7 @@ export default function Kelish() {
 
   return (
     <Layout title={t("nav.kelish")}>
-      <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
+      <div className="mx-auto w-full max-w-3xl flex flex-col gap-3">
         {(cell || sections.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
             {cell && weekFrom && (
@@ -1150,15 +1031,13 @@ function WorkerSheet({ row, data, onClose, t, tl, tx }) {
               <div
                 key={d.date}
                 className="flex items-center gap-3 px-3 py-2"
-                style={{ borderTop: i ? "1px solid var(--border)" : "none", background: lane ? LANE : undefined }}
+                style={{ borderTop: i ? "1px solid var(--border)" : "none", ...(lane ? LANE : null) }}
               >
                 <span className="w-14 flex-shrink-0 text-xs font-medium tabular-nums" style={{ color: lane ? "var(--brand-text)" : "var(--text-2)" }}>
                   {dayLabel(d.date, t)}
                 </span>
                 <span className="w-5 flex-shrink-0 grid place-items-center">
-                  {d.state === "future"
-                    ? <Swatch kind="future" />
-                    : s ? <Square mark={s.mark} byOther={s.by_other} px={18} /> : <Swatch kind="off" />}
+                  {d.state === "future" || !s ? <Chip off size={18} /> : <Chip mark={s.mark} size={18} />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm" style={{ color: s || d.state === "future" ? "var(--text-1)" : "var(--text-3)" }}>{word}</div>
@@ -1169,7 +1048,7 @@ function WorkerSheet({ row, data, onClose, t, tl, tx }) {
                   )}
                 </div>
                 {tag && (
-                  <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "var(--brand-text)" }}>{tag.text}</span>
+                  <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "var(--brand-text)" }}>{tag}</span>
                 )}
               </div>
             );
