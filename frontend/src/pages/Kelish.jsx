@@ -21,6 +21,11 @@
  * list, permanently, from today on. Tapping a NAME opens that worker's week —
  * who marked each day and when — which the grid does not print.
  *
+ * The page lists every cell in scope as an ACCORDION card — the /idle-cell
+ * shape (the operator's call, 2026-09-30): the head names the cell (code, its
+ * leader, how far its next list is filled) and a tap opens that cell's week
+ * under it. One cell, or a leader's few, open by themselves.
+ *
  * Deliberately quiet (the same ruling): one line per name, a two-line day
  * header, one total per day under the rows, one legend line. Who set a mark,
  * the shift's clock and a worker's absences live in tooltips and the worker
@@ -38,20 +43,20 @@
  * Page key `kelish` — admin-only until the operator opens it. Checklist task
  * #11 is untouched: nothing here scores anything.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, Clock, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
+  Check, ChevronDown, Clock, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
 import Button from "../components/ui/Button";
+import CellIdent from "../components/ui/CellIdent";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import DayStepper from "../components/ui/DayStepper";
 import EmptyState from "../components/ui/EmptyState";
 import FormField from "../components/ui/FormField";
 import Modal from "../components/ui/Modal";
-import StyledSelect from "../components/ui/StyledSelect";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useFactorySection } from "../components/ui/FactorySelect";
@@ -115,6 +120,13 @@ const STICK_BOTTOM = {
 const fill = (s, params) =>
   Object.entries(params || {}).reduce((out, [k, v]) => out.split(`{${k}}`).join(String(v ?? "")), s);
 
+// "2026-09-28" + 6 → "2026-10-04", on the calendar alone (no zone can shift it).
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
 // "2026-09-29" → "29.09"
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 // Monday = 0 … Sunday = 6, the `cal.d*` order.
@@ -126,6 +138,13 @@ const dayLabel = (iso, t) => `${t(`cal.d${dow(iso)}`)} ${dm(iso)}`;
 // each word is raised, so «O'G'LI» reads «O'g'li».
 const titleCase = (s) =>
   String(s || "").toLocaleLowerCase().replace(/(^|[\s-])(\S)/gu, (_, a, b) => a + b.toLocaleUpperCase());
+
+// A cell as the page names it in a title: its code, and beside it its leader
+// cut to surname + first name (utils/cellName.js).
+const cellTitleOf = (c, tl) => cellLabel(
+  c.code,
+  c.leader ? titleCase(tl(c.leader)).split(" ").filter(Boolean).slice(0, 2).join(" ") : "",
+);
 
 // Script- and apostrophe-blind folding for matching a typed name against the
 // removed list — a leader may type Cyrillic on a Latin list.
@@ -298,37 +317,27 @@ function Legend({ open, gaps = false, t }) {
   );
 }
 
-// ── the page ────────────────────────────────────────────────────────────────
+// ── one cell: an accordion card whose body is the cell's week ──────────────
+// The page lists every cell in scope as one of these — the /idle-cell shape
+// (the operator's call, 2026-09-30): the head is the cell (its code, its
+// leader, how far its next list is filled) and a tap opens its week under it.
+// Everything a week needs — its query, the taps, «+» and «−», the worker card —
+// lives here, one per cell, so two open cells never share a selection, a
+// cursor or a request chain.
 
-export default function Kelish() {
-  const { t } = useLang();
-  const { tl, tx } = useTranslit();
+function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   const qc = useQueryClient();
-  const toast = useToast();
-  const { ready } = useFactory();
-  const factorySection = useFactorySection();
+  const [open, setOpen] = useState(autoOpen);
+  // A list narrowed to one cell (or a leader's few) opens by itself — the
+  // /idle-cell rule — and a card the reader opened is never shut for them.
+  const [seenAuto, setSeenAuto] = useState(autoOpen);
+  if (seenAuto !== autoOpen) {
+    setSeenAuto(autoOpen);
+    if (autoOpen) setOpen(true);
+  }
 
-  const [week, setWeek] = useState(null);                 // a Monday; null = the plant's current week
-  const [unitPick, setUnitPick] = usePersistentState("kelish.unit", null);
-  const [shiftPick, setShiftPick] = usePersistentState("kelish.shift", null);
-  const [cellPick, setCellPick] = usePersistentState("kelish.cell", null);
   const [sheet, setSheet] = useState(null);               // the worker whose week card is open
   const [cursor, setCursor] = useState(null);             // the grid's one Tab stop, "row:col"
-  const [headAway, setHeadAway] = useState(false);        // the card's title has scrolled off
-  // A 1px marker at the foot of the card's title: once it has scrolled PAST
-  // (out of view, in the upper half), the app header names the cell instead —
-  // the LeaderAppeal pattern — so a long list never loses whose cell it is.
-  const headIO = useRef(null);
-  const headRef = useCallback((node) => {
-    headIO.current?.disconnect();
-    headIO.current = null;
-    if (!node || typeof IntersectionObserver === "undefined") { setHeadAway(false); return; }
-    const io = new IntersectionObserver(([e]) =>
-      setHeadAway(!e.isIntersecting && e.boundingClientRect.top < window.innerHeight / 2));
-    io.observe(node);
-    headIO.current = io;
-  }, []);
-
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState(() => new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -338,15 +347,27 @@ export default function Kelish() {
   const [addName, setAddName] = useState("");
   const [addErr, setAddErr] = useState("");
   const [adding, setAdding] = useState(false);
+  const [kbd, setKbd] = useState(false);                  // the grid holds KEYBOARD focus
 
   // One request chain per (worker, day), so two quick taps land in order;
   // `ver` keeps an older answer from repainting a newer tap.
   const queues = useRef(new Map());
   const ver = useRef(new Map());
   const pending = useRef(0);
+  const settle = useRef(null);
   // The squares a tap changed this week — the only ones that animate, so a
   // week opening does not pop every square on it at once.
   const [pops, setPops] = useState(() => new Set());
+
+  const exitSelect = () => { setSelecting(false); setSel(new Set()); };
+  // A new week starts clean: nothing mid-selection, nothing popping.
+  const [seenWeek, setSeenWeek] = useState(weekFrom);
+  if (seenWeek !== weekFrom) {
+    setSeenWeek(weekFrom);
+    setPops(new Set());
+    setSelecting(false);
+    setSel(new Set());
+  }
 
   const nameOf = (raw) => titleCase(tl(raw));
 
@@ -370,48 +391,20 @@ export default function Kelish() {
   // A load that failed: the connection only when there was NO answer at all.
   const loadErr = (e) => knownErr(e) || t(e?.response ? "kelish.errServer" : "kelish.errLoadHint");
 
-  // ── which cells ───────────────────────────────────────────────────────────
-  const cellsParams = useFactoryParams(NO_PARAMS);
-  const cellsQ = useQuery({
-    queryKey: ["kelish-cells", cellsParams],
-    queryFn: () => api.get("/api/kelish/cells", { params: cellsParams }).then((r) => r.data),
-    enabled: ready,
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-  });
-  const cells = cellsQ.data?.cells || [];
-  const units = useMemo(() => cellsQ.data?.units || [], [cellsQ.data]);
-  const scopeKind = cellsQ.data?.scope?.kind;
-  const scopeAll = scopeKind === "all";
-  const hasOrphans = cells.some((c) => !c.manager_id);
-  const thisWeek = cellsQ.data?.this_week || null;
-  const weekFrom = week || thisWeek;
-
-  const unitList = useMemo(
-    () => units.filter((u) => !shiftPick || u.shift === shiftPick),
-    [units, shiftPick],
-  );
-  const unitIds = [...unitList.map((u) => u.id), ...(hasOrphans && !shiftPick ? [NONE] : [])];
-  // A leader's own cells are never narrowed by unit — one of them may stand in
-  // another brigadir's unit, and hiding it would hide half their work.
-  const narrowByUnit = scopeKind !== "leader" && units.length + (hasOrphans ? 1 : 0) > 1;
-  const activeUnit = narrowByUnit ? (unitIds.includes(unitPick) ? unitPick : unitIds[0] ?? null) : null;
-  const cellsShown = narrowByUnit ? cells.filter((c) => (c.manager_id ?? NONE) === activeUnit) : cells;
-  const cell = cellsShown.find((c) => c.id === cellPick) || cellsShown[0] || null;
-
   // ── the week ──────────────────────────────────────────────────────────────
-  const weekKey = ["kelish-week", cell?.id ?? null, weekFrom];
+  // Fetched only once the card is open; a card shut again keeps what it read,
+  // which is what its head goes on counting from.
+  const weekKey = ["kelish-week", cell.id, weekFrom];
   const weekQ = useQuery({
     queryKey: weekKey,
     queryFn: () => api.get("/api/kelish/week", { params: { cell_id: cell.id, date: weekFrom } }).then((r) => r.data),
-    enabled: !!cell && !!weekFrom,
-    // Keep the grid while only the WEEK changes; never show one cell's names
-    // under another cell's title.
-    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey?.[1] === cell?.id ? prev : undefined),
+    enabled: open && !!weekFrom,
+    // Keep the grid while the WEEK changes (the cell never does on this card).
+    placeholderData: keepPreviousData,
     refetchInterval: () => (pending.current > 0 ? false : 60_000),
     refetchOnWindowFocus: () => pending.current === 0,
   });
-  const data = weekQ.data && weekQ.data.cell?.id === cell?.id ? weekQ.data : null;
+  const data = weekQ.data && weekQ.data.cell?.id === cell.id ? weekQ.data : null;
   const stale = !!data && weekQ.isPlaceholderData;      // last week on screen while the next one loads
   const days = data?.days || [];
   const openAny = days.some((d) => d.editable);
@@ -451,22 +444,44 @@ export default function Kelish() {
     && view.some((r) => r.days[i] && !r.days[i].mark));
   const firstLeft = view.findIndex((r) => !r.current);
 
+  // The cells list counts every cell's next list; this card's own changes
+  // reach it once the taps have gone quiet, never one refetch per tap.
+  const refreshCells = () => qc.invalidateQueries({ queryKey: ["kelish-cells"] });
   const refreshAll = () => {
-    qc.invalidateQueries({ queryKey: ["kelish-week"] });
-    qc.invalidateQueries({ queryKey: ["kelish-cells"] });
+    qc.invalidateQueries({ queryKey: ["kelish-week", cell.id] });
+    refreshCells();
   };
-  const exitSelect = () => { setSelecting(false); setSel(new Set()); };
 
-  const pickCell = (id) => {
-    setCellPick(id);
-    exitSelect();
-    qc.invalidateQueries({ queryKey: ["kelish-cells"] });
-  };
-  const pickWeek = (iso) => {
-    setWeek(iso === thisWeek ? null : iso);
-    setPops(new Set());
-    exitSelect();
-  };
+  // ── the head ──────────────────────────────────────────────────────────────
+  // How far the NEXT list (the cell's «tomorrow») is filled — off this card's
+  // own week while it holds that day, so it moves with a tap; otherwise off
+  // the cells list.
+  const nextDay = data && !stale ? days.find((d) => d.state === "tomorrow") : null;
+  const prog = nextDay?.counts ? { day: nextDay.date, ...nextDay.counts } : cell.progress;
+  const cellTitle = cellTitleOf(cell, tl);
+
+  // A 1px marker at the foot of the head: once it has scrolled PAST (out of
+  // view, in the upper half) while this card's week is still on screen, the
+  // app header names the cell instead — so a long list never loses whose cell
+  // it is. At most one open card can be in that state at a time.
+  const headEl = useRef(null);
+  const cardEl = useRef(null);
+  useEffect(() => {
+    const h = headEl.current;
+    const c = cardEl.current;
+    if (!open || !h || !c || typeof IntersectionObserver === "undefined") return undefined;
+    const seen = new Map();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => seen.set(e.target, e));
+      const eh = seen.get(h);
+      const ec = seen.get(c);
+      onAway(cell.id, !!eh && !!ec && ec.isIntersecting && !eh.isIntersecting
+        && eh.boundingClientRect.top < window.innerHeight / 2);
+    });
+    io.observe(h);
+    io.observe(c);
+    return () => { io.disconnect(); onAway(cell.id, false); };
+  }, [open, cell.id, onAway]);
 
   // ── a tap ─────────────────────────────────────────────────────────────────
   const tap = (row, i) => {
@@ -486,6 +501,7 @@ export default function Kelish() {
       next ? { mark: next } : { mark: null, by: null, by_other: false, at: null }));
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
     pending.current += 1;
+    clearTimeout(settle.current);
     const body = { cell_id: data.cell.id, date: day.date, key: slot.k, status: next };
     const prev = queues.current.get(id) || Promise.resolve();
     const run = prev.catch(() => {})
@@ -502,7 +518,13 @@ export default function Kelish() {
         toast.error(`${fill(t("kelish.errMark"), { name: row.display, day: dayLabel(day.date, t) })}${why ? ` (${why})` : ""}`);
         qc.invalidateQueries({ queryKey: key });
       })
-      .finally(() => { pending.current -= 1; });
+      .finally(() => {
+        pending.current -= 1;
+        if (pending.current === 0) {
+          clearTimeout(settle.current);
+          settle.current = setTimeout(refreshCells, 1500);
+        }
+      });
     queues.current.set(id, run);
   };
 
@@ -524,7 +546,6 @@ export default function Kelish() {
     const [r, c] = (cursor || "").split(":").map(Number);
     return cursor && focusable(r, c) ? cursor : defaultStop;
   })();
-  const [kbd, setKbd] = useState(false);                  // the grid holds KEYBOARD focus
   const onGridFocus = (e) => {
     const k = e.target.dataset?.ks;
     if (k && k !== cursor) setCursor(k);
@@ -604,89 +625,6 @@ export default function Kelish() {
     }
   };
 
-  // ── the filter bar (only where there is something to choose) ─────────────
-  const unitName = (id) => (id === NONE ? t("kelish.noUnit") : tl(units.find((u) => u.id === id)?.name || ""));
-  const sections = [];
-  if (scopeAll && factorySection) sections.push(factorySection);
-  if (scopeAll) {
-    sections.push({
-      key: "shift", icon: Clock, label: t("kelish.shift"),
-      active: shiftPick != null,
-      display: shiftPick ? fill(t("kelish.shiftN"), { n: shiftPick }) : "",
-      onClear: () => setShiftPick(null),
-      render: ({ close } = {}) => (
-        <PickFilter
-          opts={[
-            { value: "all", label: t("kelish.allShifts") },
-            { value: 1, label: fill(t("kelish.shiftN"), { n: 1 }) },
-            { value: 2, label: fill(t("kelish.shiftN"), { n: 2 }) },
-          ]}
-          value={shiftPick ?? "all"}
-          onChange={(v) => { setShiftPick(v === "all" ? null : v); exitSelect(); }}
-          close={close}
-        />
-      ),
-    });
-  }
-  if (narrowByUnit) {
-    const opts = unitIds.map((id) => ({ value: id, label: unitName(id) }));
-    sections.push({
-      key: "unit", icon: Users, label: t("kelish.unit"), pinned: true,
-      active: activeUnit != null,
-      display: activeUnit != null ? unitName(activeUnit) : "",
-      render: ({ close } = {}) => (
-        <PickFilter
-          opts={opts} value={activeUnit} searchable
-          note={shiftPick ? fill(t("kelish.unitNarrowed"), { v: fill(t("kelish.shiftN"), { n: shiftPick }), n: opts.length }) : null}
-          empty={shiftPick ? (
-            <Button variant="secondary" size="sm" onClick={() => setShiftPick(null)}>{t("kelish.allShifts")}</Button>
-          ) : null}
-          onChange={(v) => { setUnitPick(v); setCellPick(null); exitSelect(); }}
-          close={close}
-        />
-      ),
-    });
-  }
-
-  // Each cell's option says how far its NEXT list is filled; its title says so
-  // in words (which day, marked of total), since the fraction alone does not —
-  // and leads with the code, which is what the dropdown's search matches.
-  const nextDay = days.find((d) => d.state === "tomorrow");
-  const cellOptions = cellsShown.map((c) => {
-    const live = c.id === cell?.id && nextDay?.counts;
-    const p = live ? nextDay.counts : c.progress;
-    const day = live ? nextDay.date : c.progress?.day;
-    const progress = p && p.total
-      ? fill(t("kelish.cellProgress"), { d: dm(day), n: p.yes + p.no, total: p.total }) : null;
-    const n = p ? p.yes + p.no : 0;
-    return {
-      value: String(c.id),
-      title: [c.code, c.leader ? titleCase(tl(c.leader)) : null, progress].filter(Boolean).join(" · "),
-      // «7014 · Pa 7/13» — which day's list, answered of total. The count is a
-      // fixed width for its total, so a tap never widens the dropdown and
-      // shoves the toolbar (nothing above the rows may move on a tap).
-      label: p && p.total ? (
-        <span className="tabular-nums">
-          {c.code}
-          <span style={{ opacity: 0.75 }}>{` · ${day ? t(`cal.d${dow(day)}`) : ""} `}</span>
-          <span className="inline-block text-right" style={{ minWidth: `${String(p.total).length}ch` }}>{n}</span>
-          /{p.total}
-        </span>
-      ) : c.code,
-    };
-  });
-
-  // ── header of the card ────────────────────────────────────────────────────
-  const leaderShort = (name) => titleCase(tl(name || "")).split(" ").filter(Boolean).slice(0, 2).join(" ");
-  const cellTitle = cell ? cellLabel(cell.code, cell.leader ? leaderShort(cell.leader) : "") : "";
-  // A closed week says so beside the title — inline, so the header never
-  // grows a line and pushes the grid down.
-  const headRight = locked ? (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-3)" }}>
-      <Lock size={12} aria-hidden="true" />{t("kelish.readOnly")}
-    </span>
-  ) : null;
-
   // Whether a worker has stopped coming — printed only while choosing whom to
   // remove; the worker card carries it the rest of the time.
   const absence = (r) => (r.never ? fill(t("kelish.never"), { n: WINDOW_DAYS })
@@ -704,6 +642,69 @@ export default function Kelish() {
     }
     return bits.join(" · ");
   };
+
+  // ── the head of the card ──────────────────────────────────────────────────
+  // /idle-cell's row: chevron · code over leader · the one figure on the right.
+  // Here that figure is the next list's fill («Pa 01.10 · 3/4»), its width
+  // fixed for its total so a tap never shifts the head (nothing above the rows
+  // may move on a tap); a done list carries the totals row's green tick.
+  let progress = <span className="text-xs" style={{ color: "var(--text-4)" }}>—</span>;
+  if (prog && prog.total) {
+    const n = prog.yes + prog.no;
+    const done = prog.none === 0;
+    progress = (
+      <span
+        className="inline-flex items-center gap-1.5 whitespace-nowrap"
+        title={fill(t("kelish.cellProgress"), { d: dm(prog.day), n, total: prog.total })}
+      >
+        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{dayLabel(prog.day, t)}</span>
+        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+          <span className="inline-block text-right" style={{ minWidth: `${String(prog.total).length}ch` }}>{n}</span>/{prog.total}
+        </span>
+        <span className="hidden sm:inline text-[11px]" style={{ color: "var(--text-3)" }}>{t("kelish.markedWord")}</span>
+        <Check
+          aria-label={done ? t("kelish.complete") : undefined}
+          aria-hidden={!done}
+          className="w-3 h-3 flex-shrink-0" strokeWidth={3}
+          style={{ color: "var(--status-ok)", visibility: done ? "visible" : "hidden" }}
+        />
+      </span>
+    );
+  }
+  const head = (
+    <div className="relative" style={{ borderBottom: open ? "1px solid var(--border)" : "none" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2 min-h-[44px] text-left"
+      >
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+        />
+        <CellIdent
+          code={cell.code}
+          leader={cell.leader ? titleCase(tl(cell.leader)) : ""}
+          noLeader={t("idleCell.noLeader")}
+          leaderTitle={t("idleCell.leader")}
+        />
+        <span className="flex items-center gap-3 flex-shrink-0">
+          {/* A week nobody may change says so here — a line of its own would
+              push the grid down (a phone gets the padlock and its tooltip). */}
+          {locked && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-3)" }} title={t("kelish.readOnly")}>
+              <Lock size={12} aria-hidden="true" />
+              <span className="hidden sm:inline">{t("kelish.readOnly")}</span>
+            </span>
+          )}
+          {progress}
+        </span>
+      </button>
+      <div ref={headEl} aria-hidden="true" className="absolute left-0 bottom-0 w-px h-px pointer-events-none" />
+    </div>
+  );
 
   // ── footer ────────────────────────────────────────────────────────────────
   // While choosing whom to remove, the selection bar IS the sticky bottom row:
@@ -736,14 +737,14 @@ export default function Kelish() {
           so the cycle reads as one line instead of three beside them. */}
       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
         {view.length > 0 && <Legend open={openAny} gaps={closedGaps} t={t} />}
-        {/* Keyboard users only: while the grid holds keyboard focus, say how it
-            moves — one Tab stop hides the arrows from anybody who does not guess. */}
         {nightLine && (
           <div className="flex items-start gap-1.5 mt-1.5" style={{ color: "var(--text-2)" }}>
             <Clock size={12} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
             <span>{nightLine}</span>
           </div>
         )}
+        {/* Keyboard users only: while the grid holds keyboard focus, say how it
+            moves — one Tab stop hides the arrows from anybody who does not guess. */}
         {kbd && openAny && (
           <div className="hidden pointer-fine:block mt-1.5" style={{ color: "var(--text-2)" }}>{t("kelish.kbdHint")}</div>
         )}
@@ -805,7 +806,7 @@ export default function Kelish() {
             <span className="text-[13px] max-[359px]:text-xs leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
           </span>
           <span className="block text-[11px] leading-[14px] truncate" style={{ color: "var(--text-2)" }}>
-            {r.given || "\u00a0"}
+            {r.given || " "}
           </span>
         </span>
         <span className="hidden sm:block min-w-0">
@@ -885,7 +886,7 @@ export default function Kelish() {
     return <td key={d.date} className="p-0 align-middle">{body}</td>;
   };
 
-  const skeletonRows = Array.from({ length: 7 }).map((_, i) => (
+  const skeletonRows = Array.from({ length: 5 }).map((_, i) => (
     <tr key={`sk${i}`}>
       <td className="px-2 sm:px-3">
         <SkeletonBlock className={`h-3.5 ${["w-2/3", "w-1/2", "w-3/5"][i % 3]}`} />
@@ -900,191 +901,118 @@ export default function Kelish() {
     </tr>
   ));
 
-  const grid = (
-    <TableCard
-      icon={UserCheck} headSize="lg"
-      title={cellTitle} right={headRight}
-      fixed minWidth={280} footer={footer} hover={false} pageScroll
-      className={GRID}
-    >
-      <colgroup>
-        <col />
-        {cols.map((d) => <col key={d.date} style={{ width: "var(--kd)" }} />)}
-      </colgroup>
-      <thead style={dim}>
-        <tr>
-          {nameHead}
-          {cols.map((d) => (d.skeleton ? (
-            <th key={d.date} className="sticky z-10 px-0 py-1.5" style={{ ...STICK_TOP, background: "var(--bg-inner)", boxShadow: "inset 0 -1px 0 var(--border)" }}>
-              <div className="flex flex-col items-center gap-1">
-                <SkeletonBlock className="h-2.5 w-4" />
-                <SkeletonBlock className="h-3.5 w-6" />
-              </div>
-            </th>
-          ) : <DayHead key={d.date} day={d} t={t} />))}
-        </tr>
-      </thead>
-      <tbody onKeyDown={onGridKey} onFocus={onGridFocus} onBlur={onGridBlur} style={dim}>
-        {!data && skeletonRows}
-        {data && view.length === 0 && (
-          <tr>
-            <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
-              {openAny ? t("kelish.emptyList") : t("kelish.emptyListRO")}
-              {openAny && (
-                <div className="mt-4 flex justify-center">
-                  <Button variant="primary" size="lg" icon={<Plus size={16} />} onClick={openAdd}>{t("kelish.add")}</Button>
-                </div>
-              )}
-            </td>
-          </tr>
-        )}
-        {data && view.map((r, ri) => (
-          <FragmentRow key={r.key} divider={ri === firstLeft && firstLeft > 0 ? fill(t("kelish.leftGroup"), { n: view.length - firstLeft }) : null}>
-            <tr className="kelish-row" style={selecting && sel.has(r.key) ? { background: "var(--brand-bg)" } : undefined}>
-              {nameCell(r, ri)}
-              {days.map((d, i) => dayCell(r, ri, d, i))}
-            </tr>
-          </FragmentRow>
-        ))}
-      </tbody>
-      {data && view.length > 0 && selecting && (
-        <tfoot style={dim}>
-          <tr>
-            <td colSpan={8} className="p-0" style={STICK_BOTTOM}>{selectBar}</td>
-          </tr>
-        </tfoot>
-      )}
-      {data && view.length > 0 && !selecting && (
-        <tfoot style={dim}>
-          {/* One figure per day: how many are coming. The full split is on hover. */}
-          <tr>
-            <td className="px-2 sm:px-3 h-9 align-middle" style={STICK_BOTTOM}>
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
-                <span aria-hidden="true" className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--status-ok)" }} />
-                {t("kelish.yes")}
-              </span>
-            </td>
-            {days.map((d) => {
-              const c = d.counts;
-              const any = c && c.yes + c.no > 0;
-              return (
-                <td
-                  key={d.date}
-                  className="p-0 text-center align-middle text-xs font-bold tabular-nums"
-                  style={STICK_BOTTOM}
-                  title={d.state !== "future" && c ? countsText(c, t) : undefined}
-                >
-                  {d.state === "future" ? null : (
-                    <span className="inline-flex items-center justify-center gap-0.5">
-                      {any
-                        ? <span style={{ color: c.yes > 0 ? "var(--status-ok)" : "var(--text-3)" }}>{c.yes}</span>
-                        : <span className="font-normal" style={{ color: "var(--text-3)" }}>—</span>}
-                      {/* an open day's list is DONE once nobody is left unanswered;
-                          the slot is reserved so the count never shifts */}
-                      {d.editable && (
-                        <Check
-                          aria-label={c && c.total && c.none === 0 ? t("kelish.complete") : undefined}
-                          aria-hidden={!(c && c.total && c.none === 0)}
-                          className="w-3 h-3 flex-shrink-0" strokeWidth={3}
-                          style={{ color: "var(--status-ok)", visibility: c && c.total && c.none === 0 ? "visible" : "hidden" }}
-                        />
-                      )}
-                    </span>
-                  )}
-                </td>
-              );
-            })}
-          </tr>
-        </tfoot>
-      )}
-    </TableCard>
-  );
-
-  // ── render ────────────────────────────────────────────────────────────────
-  let body;
-  if (!cellsQ.data && (cellsQ.isLoading || !ready)) {
-    body = (
-      <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-10 w-full" />)}
-      </div>
-    );
-  } else if (cellsQ.isError && !cellsQ.data) {
-    body = (
-      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <EmptyState
-          title={t("kelish.errLoad")} message={loadErr(cellsQ.error)} showUploadLink={false}
-          action={<Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => cellsQ.refetch()}>{t("kelish.retry")}</Button>}
-        />
-      </div>
-    );
-  } else if (!cell) {
-    body = (
-      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <EmptyState
-          icon={UserCheck} showUploadLink={false} height="h-48"
-          title={t("kelish.noCellsTitle")}
-          message={scopeKind === "leader" ? t("kelish.noCellsLeader") : t("kelish.noCells")}
-        />
-      </div>
-    );
-  } else if (weekQ.isError && !data) {
-    body = (
-      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <EmptyState
-          title={t("kelish.errLoad")} message={loadErr(weekQ.error)} showUploadLink={false}
-          action={<Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>}
-        />
-      </div>
-    );
-  } else {
-    body = (
-      <div className="relative">
-        <span id="kelish-kbd" className="sr-only">{t("kelish.kbdHint")}</span>
-        <div ref={headRef} aria-hidden="true" className="absolute left-0 top-8 w-px h-px pointer-events-none" />
-        {grid}
-      </div>
-    );
-  }
-
+  const failed = weekQ.isError && !data;
   const sheetRow = sheet ? view.find((r) => r.key === sheet) || null : null;
 
   return (
-    <Layout title={t("nav.kelish")} subtitle={headAway ? cellTitle : undefined}>
-      <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
-        {(cell || sections.length > 0) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {cell && weekFrom && (
-              <DayStepper
-                week compactUntil="xl" value={weekFrom} onChange={pickWeek} max={cell.tomorrow}
-                dotPrev={data && !stale && data.today < data.from ? t("kelish.dotHere") : null}
-                dotNext={data && !stale && data.tomorrow > data.to ? t("kelish.dotHere") : null}
-              />
-            )}
-            {sections.length > 0 && (
-              <FilterPanel
-                sections={sections} chipsWrap="always"
-                anyActive={!!(factorySection?.active && factorySection?.onClear) || shiftPick != null}
-              />
-            )}
-            {/* The cell — last in the chain plant → shift → brigadir → cell, a
-                dropdown like the brigadir picker on /idle-cell. */}
-            {cellsShown.length > 1 && cell && (
-              <StyledSelect
-                value={String(cell.id)}
-                onChange={(v) => pickCell(Number(v))}
-                options={cellOptions}
-                placeholder={t("kelish.cell")}
-                searchable={cellOptions.length > 6}
-                searchPlaceholder={t("kelish.cell")}
-                triggerClassName="px-3 py-2 text-sm"
-                className="w-full md:w-auto md:min-w-[160px]"
-              />
-            )}
-          </div>
+    <div ref={cardEl}>
+      <TableCard
+        head={head} collapsed={!open}
+        fixed minWidth={280} footer={footer} hover={false} pageScroll
+        className={GRID}
+      >
+        <colgroup>
+          <col />
+          {cols.map((d) => <col key={d.date} style={{ width: "var(--kd)" }} />)}
+        </colgroup>
+        <thead style={dim}>
+          <tr>
+            {nameHead}
+            {cols.map((d) => (d.skeleton ? (
+              <th key={d.date} className="sticky z-10 px-0 py-1.5" style={{ ...STICK_TOP, background: "var(--bg-inner)", boxShadow: "inset 0 -1px 0 var(--border)" }}>
+                <div className="flex flex-col items-center gap-1">
+                  <SkeletonBlock className="h-2.5 w-4" />
+                  <SkeletonBlock className="h-3.5 w-6" />
+                </div>
+              </th>
+            ) : <DayHead key={d.date} day={d} t={t} />))}
+          </tr>
+        </thead>
+        <tbody onKeyDown={onGridKey} onFocus={onGridFocus} onBlur={onGridBlur} style={dim}>
+          {!data && !failed && skeletonRows}
+          {failed && (
+            <tr>
+              <td colSpan={8} className="px-4 py-8 text-center whitespace-normal">
+                <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("kelish.errLoad")}</div>
+                <div className="mt-1 text-xs" style={{ color: "var(--text-3)" }}>{loadErr(weekQ.error)}</div>
+                <div className="mt-4 flex justify-center">
+                  <Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>
+                </div>
+              </td>
+            </tr>
+          )}
+          {data && view.length === 0 && (
+            <tr>
+              <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
+                {openAny ? t("kelish.emptyList") : t("kelish.emptyListRO")}
+                {openAny && (
+                  <div className="mt-4 flex justify-center">
+                    <Button variant="primary" size="lg" icon={<Plus size={16} />} onClick={openAdd}>{t("kelish.add")}</Button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          )}
+          {data && view.map((r, ri) => (
+            <FragmentRow key={r.key} divider={ri === firstLeft && firstLeft > 0 ? fill(t("kelish.leftGroup"), { n: view.length - firstLeft }) : null}>
+              <tr className="kelish-row" style={selecting && sel.has(r.key) ? { background: "var(--brand-bg)" } : undefined}>
+                {nameCell(r, ri)}
+                {days.map((d, i) => dayCell(r, ri, d, i))}
+              </tr>
+            </FragmentRow>
+          ))}
+        </tbody>
+        {data && view.length > 0 && selecting && (
+          <tfoot style={dim}>
+            <tr>
+              <td colSpan={8} className="p-0" style={STICK_BOTTOM}>{selectBar}</td>
+            </tr>
+          </tfoot>
         )}
-
-        {body}
-      </div>
+        {data && view.length > 0 && !selecting && (
+          <tfoot style={dim}>
+            {/* One figure per day: how many are coming. The full split is on hover. */}
+            <tr>
+              <td className="px-2 sm:px-3 h-9 align-middle" style={STICK_BOTTOM}>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
+                  <span aria-hidden="true" className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--status-ok)" }} />
+                  {t("kelish.yes")}
+                </span>
+              </td>
+              {days.map((d) => {
+                const c = d.counts;
+                const any = c && c.yes + c.no > 0;
+                return (
+                  <td
+                    key={d.date}
+                    className="p-0 text-center align-middle text-xs font-bold tabular-nums"
+                    style={STICK_BOTTOM}
+                    title={d.state !== "future" && c ? countsText(c, t) : undefined}
+                  >
+                    {d.state === "future" ? null : (
+                      <span className="inline-flex items-center justify-center gap-0.5">
+                        {any
+                          ? <span style={{ color: c.yes > 0 ? "var(--status-ok)" : "var(--text-3)" }}>{c.yes}</span>
+                          : <span className="font-normal" style={{ color: "var(--text-3)" }}>—</span>}
+                        {/* an open day's list is DONE once nobody is left unanswered;
+                            the slot is reserved so the count never shifts */}
+                        {d.editable && (
+                          <Check
+                            aria-label={c && c.total && c.none === 0 ? t("kelish.complete") : undefined}
+                            aria-hidden={!(c && c.total && c.none === 0)}
+                            className="w-3 h-3 flex-shrink-0" strokeWidth={3}
+                            style={{ color: "var(--status-ok)", visibility: c && c.total && c.none === 0 ? "visible" : "hidden" }}
+                          />
+                        )}
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          </tfoot>
+        )}
+      </TableCard>
 
       {sheetRow && data && (
         <WorkerSheet row={sheetRow} data={data} onClose={() => setSheet(null)} t={t} tl={tl} tx={tx} />
@@ -1128,7 +1056,7 @@ export default function Kelish() {
                       {nameOf(g.name).split(" ").slice(0, 2).join(" ")}
                     </div>
                     <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-                      {[nameOf(g.name).split(" ").slice(2).join(" "), g.job ? tx(g.job) : ""].filter(Boolean).join(" · ") || "\u00a0"}
+                      {[nameOf(g.name).split(" ").slice(2).join(" "), g.job ? tx(g.job) : ""].filter(Boolean).join(" · ") || " "}
                     </div>
                   </div>
                   <Button variant="secondary" size="md" icon={<Undo2 size={13} />} className="max-sm:min-h-11" disabled={adding} onClick={() => submitAdd(g.name)}>
@@ -1159,6 +1087,174 @@ export default function Kelish() {
         loading={removing}
         error={removeErr}
       />
+    </div>
+  );
+}
+
+// ── the page ────────────────────────────────────────────────────────────────
+
+export default function Kelish() {
+  const { t } = useLang();
+  const { tl, tx } = useTranslit();
+  const toast = useToast();
+  const { ready } = useFactory();
+  const factorySection = useFactorySection();
+
+  const [week, setWeek] = useState(null);                 // a Monday; null = the plant's current week
+  const [unitPick, setUnitPick] = usePersistentState("kelish.unit", null);
+  const [shiftPick, setShiftPick] = usePersistentState("kelish.shift", null);
+  // The open card whose head has scrolled away while its week is still on
+  // screen; the app header names that cell (the LeaderAppeal pattern).
+  const [awayId, setAwayId] = useState(null);
+  const onAway = useCallback((id, away) => setAwayId((cur) => (away ? id : cur === id ? null : cur)), []);
+
+  // ── which cells ───────────────────────────────────────────────────────────
+  const cellsParams = useFactoryParams(NO_PARAMS);
+  const cellsQ = useQuery({
+    queryKey: ["kelish-cells", cellsParams],
+    queryFn: () => api.get("/api/kelish/cells", { params: cellsParams }).then((r) => r.data),
+    enabled: ready,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+  const cells = cellsQ.data?.cells || [];
+  const units = useMemo(() => cellsQ.data?.units || [], [cellsQ.data]);
+  const scopeKind = cellsQ.data?.scope?.kind;
+  const scopeAll = scopeKind === "all";
+  const hasOrphans = cells.some((c) => !c.manager_id);
+  const thisWeek = cellsQ.data?.this_week || null;
+  const weekFrom = week || thisWeek;
+
+  const unitList = useMemo(
+    () => units.filter((u) => !shiftPick || u.shift === shiftPick),
+    [units, shiftPick],
+  );
+  const unitIds = [...unitList.map((u) => u.id), ...(hasOrphans && !shiftPick ? [NONE] : [])];
+  // A leader's own cells are never narrowed by unit — one of them may stand in
+  // another brigadir's unit, and hiding it would hide half their work.
+  const narrowByUnit = scopeKind !== "leader" && units.length + (hasOrphans ? 1 : 0) > 1;
+  const activeUnit = narrowByUnit ? (unitIds.includes(unitPick) ? unitPick : unitIds[0] ?? null) : null;
+  const cellsShown = narrowByUnit ? cells.filter((c) => (c.manager_id ?? NONE) === activeUnit) : cells;
+  // One cell, or a leader's few, open by themselves — the /idle-cell rule.
+  const autoOpen = cellsShown.length === 1 || (scopeKind === "leader" && cellsShown.length <= 3);
+
+  // The week stepper spans every cell listed: it steps as far as the latest
+  // cell's tomorrow, and a dot points to the side an open day lies on.
+  const maxDay = cellsShown.reduce((m, c) => (c.tomorrow && c.tomorrow > m ? c.tomorrow : m), "");
+  const weekTo = weekFrom ? addDays(weekFrom, 6) : "";
+  const dotPrev = weekFrom && cellsShown.some((c) => c.today && c.today < weekFrom) ? t("kelish.dotHere") : null;
+  const dotNext = weekTo && cellsShown.some((c) => c.tomorrow && c.tomorrow > weekTo) ? t("kelish.dotHere") : null;
+  const pickWeek = (iso) => setWeek(iso === thisWeek ? null : iso);
+
+  // ── the filter bar (only where there is something to choose) ─────────────
+  const unitName = (id) => (id === NONE ? t("kelish.noUnit") : tl(units.find((u) => u.id === id)?.name || ""));
+  const sections = [];
+  if (scopeAll && factorySection) sections.push(factorySection);
+  if (scopeAll) {
+    sections.push({
+      key: "shift", icon: Clock, label: t("kelish.shift"),
+      active: shiftPick != null,
+      display: shiftPick ? fill(t("kelish.shiftN"), { n: shiftPick }) : "",
+      onClear: () => setShiftPick(null),
+      render: ({ close } = {}) => (
+        <PickFilter
+          opts={[
+            { value: "all", label: t("kelish.allShifts") },
+            { value: 1, label: fill(t("kelish.shiftN"), { n: 1 }) },
+            { value: 2, label: fill(t("kelish.shiftN"), { n: 2 }) },
+          ]}
+          value={shiftPick ?? "all"}
+          onChange={(v) => setShiftPick(v === "all" ? null : v)}
+          close={close}
+        />
+      ),
+    });
+  }
+  if (narrowByUnit) {
+    const opts = unitIds.map((id) => ({ value: id, label: unitName(id) }));
+    sections.push({
+      key: "unit", icon: Users, label: t("kelish.unit"), pinned: true,
+      active: activeUnit != null,
+      display: activeUnit != null ? unitName(activeUnit) : "",
+      render: ({ close } = {}) => (
+        <PickFilter
+          opts={opts} value={activeUnit} searchable
+          note={shiftPick ? fill(t("kelish.unitNarrowed"), { v: fill(t("kelish.shiftN"), { n: shiftPick }), n: opts.length }) : null}
+          empty={shiftPick ? (
+            <Button variant="secondary" size="sm" onClick={() => setShiftPick(null)}>{t("kelish.allShifts")}</Button>
+          ) : null}
+          onChange={(v) => setUnitPick(v)}
+          close={close}
+        />
+      ),
+    });
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
+  let body;
+  if (!cellsQ.data && (cellsQ.isLoading || !ready)) {
+    body = (
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-[58px] w-full rounded-2xl" />)}
+      </div>
+    );
+  } else if (cellsQ.isError && !cellsQ.data) {
+    body = (
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <EmptyState
+          title={t("kelish.errLoad")} message={t(cellsQ.error?.response ? "kelish.errServer" : "kelish.errLoadHint")} showUploadLink={false}
+          action={<Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => cellsQ.refetch()}>{t("kelish.retry")}</Button>}
+        />
+      </div>
+    );
+  } else if (!cellsShown.length) {
+    body = (
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <EmptyState
+          icon={UserCheck} showUploadLink={false} height="h-48"
+          title={t("kelish.noCellsTitle")}
+          message={scopeKind === "leader" ? t("kelish.noCellsLeader") : t("kelish.noCells")}
+        />
+      </div>
+    );
+  } else {
+    body = (
+      <div className="flex flex-col gap-2">
+        <span id="kelish-kbd" className="sr-only">{t("kelish.kbdHint")}</span>
+        {cellsShown.map((c) => (
+          <CellWeek
+            key={c.id} cell={c} weekFrom={weekFrom} autoOpen={autoOpen}
+            onAway={onAway} toast={toast} t={t} tl={tl} tx={tx}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const awayCell = awayId != null ? cellsShown.find((c) => c.id === awayId) : null;
+
+  return (
+    <Layout title={t("nav.kelish")} subtitle={awayCell ? cellTitleOf(awayCell, tl) : undefined}>
+      <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
+        {(cellsShown.length > 0 || sections.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {cellsShown.length > 0 && weekFrom && (
+              <DayStepper
+                week compactUntil="xl" value={weekFrom} onChange={pickWeek} max={maxDay || undefined}
+                dotPrev={dotPrev} dotNext={dotNext}
+              />
+            )}
+            {sections.length > 0 && (
+              <FilterPanel
+                sections={sections} chipsWrap="always"
+                anyActive={!!(factorySection?.active && factorySection?.onClear) || shiftPick != null}
+              />
+            )}
+          </div>
+        )}
+
+        {body}
+      </div>
 
       {toast.node}
     </Layout>

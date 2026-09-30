@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
-  Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
+  Info, ChevronDown, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
   Layers2, Archive, Play, Square, Pencil, Sunrise,
   GanttChartSquare, ListTree, Clock, Timer, MessageSquareText,
   Lock, Unlock, Radio, Users, AlertTriangle,
@@ -12,6 +12,7 @@ import { Th } from "../components/ui/DataTable";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
+import CellIdent from "../components/ui/CellIdent";
 import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
@@ -53,41 +54,6 @@ const catLabel = (code, t) => {
   const s = t(`downtime.cat.${code}.label`);
   return s && !s.startsWith("downtime.cat.") ? s : "";
 };
-
-// Cell identity block: the verifix badge on line 1, the cell's OWNING LEADER
-// (role_profiles) muted underneath — the code is the whole name and the leader
-// is the one fact printed beside it (utils/cellName.js). Shared by both views
-// so the leader always sits in exactly the same spot, and it lives on the row
-// rather than as a grouping level because leaders are ~1:1 with cells (93
-// leaders / 108 cells) — grouping would put a heading over almost every row.
-function CellIdent({ cell, t, tl, extra }) {
-  return (
-    <span className="min-w-0 flex-1 flex flex-col gap-0.5">
-      <span className="flex items-center gap-2 min-w-0">
-        {/* NEUTRAL, deliberately. The badge used to take a solid colour hashed
-            from the verifix code — identity, in intent. On a platform whose own
-            rule is that red and green are STATUS, a hash that paints 4811 red
-            and 8411 green beside a downtime figure reads as a traffic light
-            nobody set, and a reader scanning the list sees alarm where there is
-            only a different number. A code is an identity, so it gets the same
-            chrome as every other identity chip here. */}
-        <span
-          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0 tabular-nums"
-          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
-        >
-          {cell.verifix_code}
-        </span>
-        {extra}
-      </span>
-      <span className="flex items-center gap-1.5 min-w-0 text-[11px] leading-tight" title={t("idleCell.leader")}>
-        <Flag size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-        <span className="truncate" style={{ color: cell.leader ? "var(--text-3)" : "var(--text-4)" }}>
-          {cell.leader ? tl(cell.leader) : t("idleCell.noLeader")}
-        </span>
-      </span>
-    </span>
-  );
-}
 
 // The day's two totals, labelled, for a cell row whether it is open or shut.
 // «To'xtaganda» is the UNION of the stopped ranges — the workload figure, each
@@ -384,7 +350,12 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
           size={16}
           style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
         />
-        <CellIdent cell={cell} t={t} tl={tl} />
+        <CellIdent
+          code={cell.verifix_code}
+          leader={cell.leader ? tl(cell.leader) : ""}
+          noLeader={t("idleCell.noLeader")}
+          leaderTitle={t("idleCell.leader")}
+        />
         <span className="flex items-center gap-2 flex-shrink-0">
           {summary.overlap_min > 0 && (
             <span

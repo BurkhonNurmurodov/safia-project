@@ -122,6 +122,12 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   footer    – bordered row UNDER the table for actions over the whole list
  *               (add / remove rows, a selection's bulk bar). It sits outside
  *               the scroll cap, so it stays in view however long the list is.
+ *   head      – a node drawn IN PLACE of the SectionHead: the card's own
+ *               header row when the card is an accordion (one per cell on
+ *               /kelish). It owns its border against the table under it.
+ *   collapsed – the card with its head only — no toolbar, table or footer. The
+ *               head stays the same node either way, so the accordion's toggle
+ *               keeps focus when it opens or shuts the card.
  *   children  – <thead> + <tbody>
  */
 export default function TableCard({
@@ -140,32 +146,34 @@ export default function TableCard({
   footer,
   headSize = "sm",
   pageScroll = false,
+  head,
+  collapsed = false,
   className = "",
   children,
 }) {
   const detached = mobile != null && mobileCards;
   const card = (
     <div className={`rounded-2xl ${pageScroll ? "overflow-clip" : "overflow-hidden"} ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      {title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} size={headSize} />}
-      {toolbar && (
+      {head ?? (title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} size={headSize} />)}
+      {!collapsed && toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           {toolbar}
         </div>
       )}
-      <div className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
+      {!collapsed && <div className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
         <table
           className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)", ...(minWidth ? { minWidth } : {}) }}
         >
           {children}
         </table>
-      </div>
-      {mobile != null && !mobileCards && (
+      </div>}
+      {!collapsed && mobile != null && !mobileCards && (
         <div className="sm:hidden overflow-y-auto" style={{ maxHeight }}>
           {mobile}
         </div>
       )}
-      {footer && (
+      {!collapsed && footer && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
           {footer}
         </div>
@@ -176,7 +184,7 @@ export default function TableCard({
   return (
     <div className={className}>
       {card}
-      <div className="sm:hidden mt-3 space-y-3">{mobile}</div>
+      {!collapsed && <div className="sm:hidden mt-3 space-y-3">{mobile}</div>}
     </div>
   );
 }
