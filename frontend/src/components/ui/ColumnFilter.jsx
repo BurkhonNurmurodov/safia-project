@@ -915,11 +915,14 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
           horizontal scroller with no scrollbar and no fade is invisible on a
           phone: the active filter the reader most needs to see was the part
           cut off. Opt-in because it needs a `flex-wrap` parent row to wrap
-          into; md+ is untouched either way. */}
+          into; md+ is untouched either way — unless it is `"always"`, for a
+          page whose column is narrow enough that even on a laptop the
+          collapsed chips do not fit beside its controls (/kelish). */}
       {hasChips && (
         <div
           className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center${
-            chipsWrap ? " max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : ""}`}
+            chipsWrap === "always" ? " flex-auto flex-wrap overflow-visible"
+              : chipsWrap ? " max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : ""}`}
         >
           {statics.map(s => <FilterChip key={s.key} s={s} wide={chipsWrap} />)}
           {/* A pinned section carries its state in its own trigger from md+ —

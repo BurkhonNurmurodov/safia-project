@@ -111,6 +111,14 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *               standalone cards (each child styles itself as a card); the
  *               card keeps only the header/toolbar on phones and the stack
  *               scrolls with the page instead of an inner scroll cap
+ *   pageScroll – the table scrolls WITH the page instead of inside a scroller
+ *               of its own (no `maxHeight` cap, the card clips with
+ *               `overflow: clip`, which is not a scroll container). A phone
+ *               then scrolls one thing, not a box inside a box. Sticky header
+ *               / footer cells stick to Layout's <main> and must offset by its
+ *               padding: `top` / `bottom: calc(var(--main-pad) * -1)`. Only
+ *               for a table that fits its card's width (it never scrolls
+ *               sideways).
  *   footer    – bordered row UNDER the table for actions over the whole list
  *               (add / remove rows, a selection's bulk bar). It sits outside
  *               the scroll cap, so it stays in view however long the list is.
@@ -131,19 +139,20 @@ export default function TableCard({
   mobileCards = false,
   footer,
   headSize = "sm",
+  pageScroll = false,
   className = "",
   children,
 }) {
   const detached = mobile != null && mobileCards;
   const card = (
-    <div className={`rounded-2xl overflow-hidden ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className={`rounded-2xl ${pageScroll ? "overflow-clip" : "overflow-hidden"} ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} size={headSize} />}
       {toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           {toolbar}
         </div>
       )}
-      <div className={`overflow-auto${mobile != null ? " hidden sm:block" : ""}`} style={{ maxHeight }}>
+      <div className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
         <table
           className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)", ...(minWidth ? { minWidth } : {}) }}

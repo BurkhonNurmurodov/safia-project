@@ -82,11 +82,22 @@ const LANE = { background: "rgba(var(--brand-rgb), 0.08)" };
 const LANE_HEAD = "linear-gradient(rgba(var(--brand-rgb), 0.14), rgba(var(--brand-rgb), 0.14)), var(--bg-inner)";
 
 // The grid's geometry, named ONCE: every day column is --kd wide and every row
-// ROW_H high, so all cells are one size. On a 384px phone the whole week fits
-// with no sideways scroll (7 × 32px, ~125px left for the name); wider screens
-// widen the days, not the name.
-const GRID = "[--kd:32px] sm:[--kd:60px] lg:[--kd:64px]";
+// ROW_H high, so all cells are one size. The whole week always fits the card —
+// it never scrolls sideways: 7 × 28px on a 320px phone (~90px left for the
+// name), 7 × 32px up to sm (~120px at 375), then the days widen with the
+// screen and the name column keeps roughly 250–400px.
+const GRID = "[--kd:32px] max-[359px]:[--kd:28px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
 const ROW_H = "h-11 sm:h-10";
+// The table scrolls with the page (`pageScroll`), so its sticky header and
+// totals row stick to Layout's <main>, reaching past its padding. The totals
+// row also stands clear of a phone's home indicator, and paints the band under
+// itself so no row shows through there.
+const STICK_TOP = { top: "calc(var(--main-pad, 0px) * -1)" };
+const STICK_BOTTOM = {
+  position: "sticky", zIndex: 10, background: "var(--bg-inner)",
+  bottom: "calc(var(--tg-safe-bottom, 0px) - var(--main-pad, 0px))",
+  boxShadow: "inset 0 1px 0 var(--border-md), 0 var(--tg-safe-bottom, 0px) 0 0 var(--bg-inner)",
+};
 
 const fill = (s, params) =>
   Object.entries(params || {}).reduce((out, [k, v]) => out.split(`{${k}}`).join(String(v ?? "")), s);
@@ -216,8 +227,9 @@ function DayHead({ day, t }) {
       scope="col"
       title={label}
       aria-label={label}
-      className="sticky top-0 z-10 px-0 py-1.5 text-center font-normal"
+      className="sticky z-10 px-0 py-1.5 text-center font-normal"
       style={{
+        ...STICK_TOP,
         background: current ? LANE_HEAD : "var(--bg-inner)",
         boxShadow: current ? "inset 0 -2px 0 var(--brand)" : "inset 0 -1px 0 var(--border)",
       }}
@@ -240,14 +252,16 @@ function DayHead({ day, t }) {
 // is also the whole legend; on a closed one, the three answers.
 function Legend({ open, t }) {
   const arrow = <span aria-hidden="true" style={{ color: "var(--text-4)" }}>→</span>;
+  // Each step carries the arrow AFTER it, so a narrow footer breaks the cycle
+  // after an arrow — never leaving one dangling at the start of a line.
+  const step = (children) => <span className="inline-flex items-center gap-1 whitespace-nowrap">{children}</span>;
   if (open) {
     return (
       <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
-        <span className="font-medium" style={{ color: "var(--text-2)" }}>{t("kelish.tapLead")}</span>
-        <Chip />{arrow}
-        <span className="inline-flex items-center gap-1"><Chip mark="yes" />{t("kelish.yes")}</span>{arrow}
-        <span className="inline-flex items-center gap-1"><Chip mark="no" />{t("kelish.no")}</span>{arrow}
-        <Chip />
+        {step(<><span className="font-medium" style={{ color: "var(--text-2)" }}>{t("kelish.tapLead")}</span><Chip />{arrow}</>)}
+        {step(<><Chip mark="yes" />{t("kelish.yes")}{arrow}</>)}
+        {step(<><Chip mark="no" />{t("kelish.no")}{arrow}</>)}
+        {step(<Chip />)}
       </span>
     );
   }
@@ -623,13 +637,12 @@ export default function Kelish() {
   // ── the grid ──────────────────────────────────────────────────────────────
   const cols = data ? days : Array.from({ length: 7 }, (_, i) => ({ date: String(i), skeleton: true }));
   const dim = stale ? { opacity: 0.5, pointerEvents: "none", transition: "opacity .15s" } : { transition: "opacity .15s" };
-  const FOOT = { position: "sticky", bottom: 0, zIndex: 10, background: "var(--bg-inner)", boxShadow: "inset 0 1px 0 var(--border-md)" };
 
   const nameHead = (
     <th
       scope="col"
-      className="sticky top-0 z-10 px-2 sm:px-3 py-1.5 text-left align-middle font-semibold"
-      style={{ background: "var(--bg-inner)", color: "var(--text-3)", boxShadow: "inset 0 -1px 0 var(--border)" }}
+      className="sticky z-10 px-2 sm:px-3 py-1.5 text-left align-middle font-semibold"
+      style={{ ...STICK_TOP, background: "var(--bg-inner)", color: "var(--text-3)", boxShadow: "inset 0 -1px 0 var(--border)" }}
     >
       {selecting ? (
         <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] font-medium">
@@ -754,7 +767,7 @@ export default function Kelish() {
     <TableCard
       icon={UserCheck} headSize="lg"
       title={cellTitle} right={headRight}
-      fixed minWidth={320} footer={footer} hover={false}
+      fixed minWidth={280} footer={footer} hover={false} pageScroll
       className={GRID}
     >
       <colgroup>
@@ -765,7 +778,7 @@ export default function Kelish() {
         <tr>
           {nameHead}
           {cols.map((d) => (d.skeleton ? (
-            <th key={d.date} className="sticky top-0 z-10 px-0 py-1.5" style={{ background: "var(--bg-inner)", boxShadow: "inset 0 -1px 0 var(--border)" }}>
+            <th key={d.date} className="sticky z-10 px-0 py-1.5" style={{ ...STICK_TOP, background: "var(--bg-inner)", boxShadow: "inset 0 -1px 0 var(--border)" }}>
               <div className="flex flex-col items-center gap-1">
                 <SkeletonBlock className="h-2.5 w-4" />
                 <SkeletonBlock className="h-3.5 w-6" />
@@ -796,7 +809,7 @@ export default function Kelish() {
         <tfoot style={dim}>
           {/* One figure per day: how many are coming. The full split is on hover. */}
           <tr>
-            <td className="px-2 sm:px-3 h-9 align-middle" style={FOOT}>
+            <td className="px-2 sm:px-3 h-9 align-middle" style={STICK_BOTTOM}>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
                 <Chip mark="yes" size={12} />{t("kelish.yes")}
               </span>
@@ -808,7 +821,7 @@ export default function Kelish() {
                 <td
                   key={d.date}
                   className="p-0 text-center align-middle text-xs font-bold tabular-nums"
-                  style={FOOT}
+                  style={STICK_BOTTOM}
                   title={d.state !== "future" && c ? countsText(c, t) : undefined}
                 >
                   {d.state === "future" ? null : any
@@ -867,7 +880,7 @@ export default function Kelish() {
 
   return (
     <Layout title={t("nav.kelish")}>
-      <div className="mx-auto w-full max-w-3xl flex flex-col gap-3">
+      <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
         {(cell || sections.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
             {cell && weekFrom && (
@@ -877,7 +890,7 @@ export default function Kelish() {
                 dotNext={data && !stale && data.tomorrow > data.to ? t("kelish.dotHere") : null}
               />
             )}
-            {sections.length > 0 && <FilterPanel sections={sections} />}
+            {sections.length > 0 && <FilterPanel sections={sections} chipsWrap="always" />}
           </div>
         )}
 
