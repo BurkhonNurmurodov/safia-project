@@ -672,7 +672,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .kelish-hit { -webkit-tap-highlight-color: transparent; transition: background-color .15s ease, filter .12s ease; }
 /* An open cell nobody answered: a dashed slot INSIDE the same-size cell, so it
    never reads as the flat grey of «no slot» and two of them never merge. */
-.kelish-hit.is-empty { outline: 1px dashed rgba(var(--brand-rgb), .75); outline-offset: -5px; }
+.kelish-hit.is-empty { outline: 1px dashed var(--brand); outline-offset: -5px; }
 .kelish-hit:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand), inset 0 0 0 3px var(--bg-card); }
 /* Tracking a row: the name cell lights under the pointer / keyboard focus, so
    the eye can follow a name across to its days; no answer fill changes. */

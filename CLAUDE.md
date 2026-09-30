@@ -7053,9 +7053,11 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   Workers who left the list during the week sort after a divider; arrow keys
   walk the open cells.
 - **Every device size** (2026-09-30): the whole week ALWAYS fits the card and
-  never scrolls sideways — days are 28px below 360px, 32px to sm, then 60 · 72 ·
-  88px (sm · lg · xl) in a `max-w-4xl` column; names truncate only at 320px (the
-  full name is on the button and the worker card). The table scrolls WITH the
+  never scrolls sideways — days are 26px below 360px (the surname drops to
+  12px there), 32px to 400px, 36px to sm, then 60 · 72 · 88px (sm · lg · xl)
+  in a `max-w-4xl` column; the week label stays numeric up to xl
+  (`compactUntil="xl"`) and loses its year and glyph below 360px, so the
+  stepper and the filter button share one row even at 320px. The table scrolls WITH the
   page (`TableCard pageScroll`), its header and totals row sticking to `<main>`;
   the filter chips wrap (`chipsWrap="always"`), and on a phone the footer legend
   takes its own line above «+» «−». Rows are 44px under a finger at every width
@@ -7064,7 +7066,16 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   past the leftmost, the worker's name (Enter opens the card). Once the card's
   title scrolls away the app header names the cell (`Layout subtitle`). A load
   that fails says to check the connection, and a tap that fails names the
-  worker and day that flipped back — never a raw server string.
+  worker and day that flipped back — never a raw server string (a load that got
+  NO answer says to check the connection, one that got a 5xx says the server
+  did not answer). The cell switcher reads «7014 · Pa 7/13» — which day's list,
+  answered of total, the count at a fixed width so a tap never widens the chip.
+  In «−» mode the selection bar replaces the totals as the sticky bottom row,
+  a worker who stopped coming carries an amber clock beside the surname (named
+  once in the bar), and the confirm names the cell. A NIGHT unit's footer says
+  which open day is running / opens tonight — its days do not line up with the
+  calendar; a day unit gets no such line. While the grid holds KEYBOARD focus a
+  footer line says how the arrows move (fine pointers only).
 - **Nothing above the table moves on a tap.** The per-day total (how many are
   coming; the full split on hover) is a sticky row UNDER the rows, the legend
   lives in the footer, a closed week says «faqat ko'rish» inline beside the

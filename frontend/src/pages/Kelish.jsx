@@ -41,7 +41,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, Clock, Lock, Minus, Plus, Trash2, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
+  Check, Clock, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
@@ -82,18 +82,20 @@ const EMPTY_EDGE = "1px solid var(--text-3)";
 // An open day's unanswered cell: a brand wash that says «tap here». In the grid
 // `.kelish-hit.is-empty` adds a dashed slot inside it (index.css), so an open
 // empty cell never reads as the flat grey of «no slot».
-const LANE = { background: "rgba(var(--brand-rgb), 0.08)" };
-const SLOT_EDGE = "1px dashed rgba(var(--brand-rgb), 0.75)";
+const LANE = { background: "rgba(var(--brand-rgb), 0.12)" };
+const SLOT_EDGE = "1px dashed var(--brand)";
 // The open days' header, opaque because the header row is sticky.
 const LANE_HEAD = "linear-gradient(rgba(var(--brand-rgb), 0.14), rgba(var(--brand-rgb), 0.14)), var(--bg-inner)";
 
 // The grid's geometry, named ONCE: every day column is --kd wide and every row
 // ROW_H high (44px under a finger, 40px under a mouse), so all cells are one
 // size. The whole week always fits the card —
-// it never scrolls sideways: 7 × 28px on a 320px phone (~90px left for the
-// name), 32px to 400px (~120px at 375), 36px on the larger phones, then the
+// it never scrolls sideways: 7 × 26px on a 320px phone (~104px left for the
+// name, the surname at 12px), 32px to 400px (~120px at 375), 36px on the larger phones, then the
 // days widen with the screen and the name column keeps roughly 250–400px.
-const GRID = "[--kd:32px] max-[359px]:[--kd:28px] min-[400px]:[--kd:36px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
+const GRID = "[--kd:32px] max-[359px]:[--kd:26px] min-[400px]:[--kd:36px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
+// The name cell's inset: tighter below 360px, where every pixel goes to the surname.
+const NAME_PAD = "px-2 max-[359px]:px-1.5 sm:px-3";
 const ROW_H = "h-11 sm:pointer-fine:h-10";
 const NAME_H = "min-h-11 sm:pointer-fine:min-h-10";
 // «+» / «−»: the 38px toolbar square, 44px on a phone.
@@ -104,9 +106,9 @@ const ICON_BTN = "w-[38px] h-[38px] px-0 justify-center max-sm:w-11 max-sm:h-11"
 // itself so no row shows through there.
 const STICK_TOP = { top: "calc(var(--main-pad, 0px) * -1)" };
 const STICK_BOTTOM = {
-  position: "sticky", zIndex: 10, background: "var(--bg-inner)",
+  position: "sticky", zIndex: 10, background: "var(--bg-card)",
   bottom: "calc(var(--tg-safe-bottom, 0px) - var(--main-pad, 0px))",
-  boxShadow: "inset 0 1px 0 var(--border-md), 0 var(--tg-safe-bottom, 0px) 0 0 var(--bg-inner)",
+  boxShadow: "inset 0 1px 0 var(--border-md), 0 var(--tg-safe-bottom, 0px) 0 0 var(--bg-card)",
 };
 
 const fill = (s, params) =>
@@ -267,8 +269,8 @@ function DayHead({ day, t }) {
 
 // One line under the grid: on an open week it is the tap cycle itself, which
 // is also the whole legend; on a closed one, the three answers.
-function Legend({ open, t }) {
-  const arrow = <span aria-hidden="true" style={{ color: "var(--text-4)" }}>→</span>;
+function Legend({ open, gaps = false, t }) {
+  const arrow = <span aria-hidden="true" style={{ color: "var(--text-3)" }}>→</span>;
   // Each step carries the arrow AFTER it, so a narrow footer breaks the cycle
   // after an arrow — never leaving one dangling at the start of a line.
   const step = (children) => <span className="inline-flex items-center gap-1 whitespace-nowrap">{children}</span>;
@@ -279,6 +281,8 @@ function Legend({ open, t }) {
         {step(<><Chip mark="yes" />{t("kelish.yes")}{arrow}</>)}
         {step(<><Chip mark="no" />{t("kelish.no")}{arrow}</>)}
         {step(<Chip lane />)}
+        {/* a closed day's hollow box looks like an unticked checkbox — say what it is */}
+        {gaps && <span className="inline-flex items-center gap-1 whitespace-nowrap ml-2"><Chip />{t("kelish.none")}</span>}
       </span>
     );
   }
@@ -360,6 +364,8 @@ export default function Kelish() {
     }
   };
   const errText = (e, fallbackKey = "kelish.errSave") => knownErr(e) || t(fallbackKey);
+  // A load that failed: the connection only when there was NO answer at all.
+  const loadErr = (e) => knownErr(e) || t(e?.response ? "kelish.errServer" : "kelish.errLoadHint");
 
   // ── which cells ───────────────────────────────────────────────────────────
   const cellsParams = useFactoryParams(NO_PARAMS);
@@ -431,6 +437,15 @@ export default function Kelish() {
   }, [data, tl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentCount = view.filter((r) => r.current).length;
+  // A NIGHT unit's open days do not line up with the calendar (after midnight
+  // the running shift is dated yesterday; at 15:00 «tomorrow» opens tonight), so
+  // for it — and only it — the footer says which open day is which. A day unit
+  // reads the calendar and needs no line.
+  const nightLine = data?.cell?.shift === 2 && openAny
+    ? days.filter((d) => d.editable && d.when).map((d) => `${dayLabel(d.date, t)} — ${whenText(d.when, t)}`).join(" · ")
+    : "";
+  const closedGaps = days.some((d, i) => !d.editable && d.state !== "future"
+    && view.some((r) => r.days[i] && !r.days[i].mark));
   const firstLeft = view.findIndex((r) => !r.current);
 
   const refreshAll = () => {
@@ -506,9 +521,16 @@ export default function Kelish() {
     const [r, c] = (cursor || "").split(":").map(Number);
     return cursor && focusable(r, c) ? cursor : defaultStop;
   })();
+  const [kbd, setKbd] = useState(false);                  // the grid holds KEYBOARD focus
   const onGridFocus = (e) => {
     const k = e.target.dataset?.ks;
     if (k && k !== cursor) setCursor(k);
+    let visible = false;
+    try { visible = e.target.matches(":focus-visible"); } catch { /* old engine */ }
+    if (visible !== kbd) setKbd(visible);
+  };
+  const onGridBlur = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setKbd(false);
   };
   const onGridKey = (e) => {
     const step = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
@@ -632,10 +654,21 @@ export default function Kelish() {
     const day = live ? nextDay.date : c.progress?.day;
     const progress = p && p.total
       ? fill(t("kelish.cellProgress"), { d: dm(day), n: p.yes + p.no, total: p.total }) : null;
+    const n = p ? p.yes + p.no : 0;
     return {
       value: c.id,
       title: [c.leader ? titleCase(tl(c.leader)) : null, progress].filter(Boolean).join(" · ") || undefined,
-      label: p && p.total ? `${c.code} · ${p.yes + p.no}/${p.total}` : c.code,
+      // «7014 · Pa 7/13» — which day's list, answered of total. The count is a
+      // fixed width for its total, so a tap never widens the chip and shoves
+      // its neighbours (nothing above the rows may move on a tap).
+      label: p && p.total ? (
+        <span className="tabular-nums">
+          {c.code}
+          <span style={{ opacity: 0.75 }}>{` · ${day ? t(`cal.d${dow(day)}`) : ""} `}</span>
+          <span className="inline-block text-right" style={{ minWidth: `${String(p.total).length}ch` }}>{n}</span>
+          /{p.total}
+        </span>
+      ) : c.code,
     };
   });
 
@@ -669,26 +702,49 @@ export default function Kelish() {
   };
 
   // ── footer ────────────────────────────────────────────────────────────────
-  const footer = !data ? null : selecting ? (
-    <>
+  // While choosing whom to remove, the selection bar IS the sticky bottom row:
+  // on a long list its count and its action stay in view (the per-day totals
+  // mean nothing mid-selection).
+  const anyAway = view.some((r) => r.removeKey && absenceShort(r));
+  const selectBar = (
+    <div className="flex flex-wrap items-center gap-2 px-2 sm:px-4 py-2">
       <Button
-        variant="danger" tint size="lg" icon={<Trash2 size={15} />} className="max-sm:min-h-11"
+        variant="danger" tint size="lg" icon={<UserMinus size={15} />} className="max-sm:min-h-11"
         disabled={!sel.size} onClick={() => { setRemoveErr(""); setConfirmOpen(true); }}
       >
         {fill(t("kelish.removeN"), { n: sel.size })}
       </Button>
-      <span className="hidden sm:inline text-xs" style={{ color: "var(--text-3)" }}>{t("kelish.selectHint")}</span>
+      <span className="hidden sm:inline text-xs whitespace-normal" style={{ color: "var(--text-2)" }}>{t("kelish.selectHint")}</span>
       <Button variant="secondary" size="lg" className="ml-auto max-sm:min-h-11" onClick={exitSelect}>{t("common.cancel")}</Button>
-    </>
-  ) : (
+      {/* the amber clock beside a name, said once in words (a phone shows no sentence) */}
+      {anyAway && (
+        <div className="sm:hidden basis-full flex items-center gap-1.5 text-[11px] whitespace-normal" style={{ color: "var(--text-2)" }}>
+          <Clock size={12} className="flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />
+          {fill(t("kelish.awayLegend"), { n: data?.quiet_days ?? 7 })}
+        </div>
+      )}
+    </div>
+  );
+  const footer = !data || selecting ? null : (
     <>
       {/* How to read the grid lives UNDER it: copy above it moves every row.
           On a phone the legend takes the whole line and the buttons the next,
           so the cycle reads as one line instead of three beside them. */}
       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
-        {view.length > 0 && <Legend open={openAny} t={t} />}
+        {view.length > 0 && <Legend open={openAny} gaps={closedGaps} t={t} />}
+        {/* Keyboard users only: while the grid holds keyboard focus, say how it
+            moves — one Tab stop hides the arrows from anybody who does not guess. */}
+        {nightLine && (
+          <div className="flex items-start gap-1.5 mt-1.5" style={{ color: "var(--text-2)" }}>
+            <Clock size={12} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span>{nightLine}</span>
+          </div>
+        )}
+        {kbd && openAny && (
+          <div className="hidden pointer-fine:block mt-1.5" style={{ color: "var(--text-2)" }}>{t("kelish.kbdHint")}</div>
+        )}
       </div>
-      {openAny && (
+      {openAny && view.length > 0 && (
         <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" size="lg" icon={<Plus size={17} />} className={ICON_BTN} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
@@ -708,11 +764,11 @@ export default function Kelish() {
   const nameHead = (
     <th
       scope="col"
-      className="sticky z-10 px-2 sm:px-3 py-1.5 text-left align-middle font-semibold"
+      className={`sticky z-10 ${NAME_PAD} py-1.5 text-left align-middle font-semibold`}
       style={{ ...STICK_TOP, background: "var(--bg-inner)", color: "var(--text-3)", boxShadow: "inset 0 -1px 0 var(--border)" }}
     >
       {selecting ? (
-        <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] font-medium">
+        <label className="flex w-full min-h-11 sm:pointer-fine:min-h-0 items-center gap-1.5 sm:gap-2 cursor-pointer text-[11px] font-medium">
           <input
             type="checkbox" checked={allSel}
             ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
@@ -723,7 +779,7 @@ export default function Kelish() {
           <span className="hidden sm:inline">{t("kelish.selectAll")}</span>
         </label>
       ) : (
-        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
           {t("kelish.colWorker")}
           {data && <span className="tabular-nums normal-case tracking-normal" style={{ color: "var(--text-2)" }}>{currentCount}</span>}
         </span>
@@ -740,9 +796,12 @@ export default function Kelish() {
         {/* phone: surname over given name — two short lines fit where one
             long one would be cut to nothing */}
         <span className="sm:hidden block min-w-0">
-          <span className="block text-[13px] leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
-          <span className="block text-[11px] leading-[14px] truncate" style={{ color: away ? "var(--status-warn)" : "var(--text-3)" }}>
-            {awayShort || r.given || "\u00a0"}
+          <span className="flex items-center gap-1 min-w-0">
+            {awayShort && <Clock size={12} className="flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />}
+            <span className="text-[13px] max-[359px]:text-xs leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
+          </span>
+          <span className="block text-[11px] leading-[14px] truncate" style={{ color: "var(--text-2)" }}>
+            {r.given || "\u00a0"}
           </span>
         </span>
         <span className="hidden sm:block min-w-0">
@@ -752,10 +811,10 @@ export default function Kelish() {
       </>
     );
     return (
-      <td className="px-2 sm:px-3 py-0 align-middle">
+      <td className={`${NAME_PAD} py-0 align-middle`}>
         {selecting ? (
           <label
-            className={`flex items-center gap-2 min-w-0 ${NAME_H} ${r.removeKey ? "cursor-pointer" : "opacity-50"}`}
+            className={`flex items-center gap-1.5 sm:gap-2 min-w-0 ${NAME_H} ${r.removeKey ? "cursor-pointer" : "opacity-50"}`}
             title={[r.full, away].filter(Boolean).join(" · ")}
           >
             <input
@@ -770,6 +829,7 @@ export default function Kelish() {
             type="button"
             data-ks={`${ri}:-1`}
             tabIndex={stop === `${ri}:-1` ? 0 : -1}
+            aria-describedby={openAny ? "kelish-kbd" : undefined}
             onClick={() => setSheet(r.key)}
             title={`${r.full} · ${t("kelish.details")}`}
             className={`flex items-center ${NAME_H} w-full min-w-0 text-left rounded-md cursor-pointer hover:underline decoration-[var(--text-3)] underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]`}
@@ -797,6 +857,7 @@ export default function Kelish() {
           type="button"
           data-ks={`${ri}:${i}`}
           tabIndex={stop === `${ri}:${i}` ? 0 : -1}
+          aria-describedby="kelish-kbd"
           onClick={() => tap(r, i)}
           aria-label={label}
           title={label}
@@ -859,7 +920,7 @@ export default function Kelish() {
           ) : <DayHead key={d.date} day={d} t={t} />))}
         </tr>
       </thead>
-      <tbody onKeyDown={onGridKey} onFocus={onGridFocus} style={dim}>
+      <tbody onKeyDown={onGridKey} onFocus={onGridFocus} onBlur={onGridBlur} style={dim}>
         {!data && skeletonRows}
         {data && view.length === 0 && (
           <tr>
@@ -882,7 +943,14 @@ export default function Kelish() {
           </FragmentRow>
         ))}
       </tbody>
-      {data && view.length > 0 && (
+      {data && view.length > 0 && selecting && (
+        <tfoot style={dim}>
+          <tr>
+            <td colSpan={8} className="p-0" style={STICK_BOTTOM}>{selectBar}</td>
+          </tr>
+        </tfoot>
+      )}
+      {data && view.length > 0 && !selecting && (
         <tfoot style={dim}>
           {/* One figure per day: how many are coming. The full split is on hover. */}
           <tr>
@@ -902,9 +970,23 @@ export default function Kelish() {
                   style={STICK_BOTTOM}
                   title={d.state !== "future" && c ? countsText(c, t) : undefined}
                 >
-                  {d.state === "future" ? null : any
-                    ? <span style={{ color: c.yes > 0 ? "var(--status-ok)" : "var(--text-3)" }}>{c.yes}</span>
-                    : <span className="font-normal" style={{ color: "var(--text-4)" }}>—</span>}
+                  {d.state === "future" ? null : (
+                    <span className="inline-flex items-center justify-center gap-0.5">
+                      {any
+                        ? <span style={{ color: c.yes > 0 ? "var(--status-ok)" : "var(--text-3)" }}>{c.yes}</span>
+                        : <span className="font-normal" style={{ color: "var(--text-3)" }}>—</span>}
+                      {/* an open day's list is DONE once nobody is left unanswered;
+                          the slot is reserved so the count never shifts */}
+                      {d.editable && (
+                        <Check
+                          aria-label={c && c.total && c.none === 0 ? t("kelish.complete") : undefined}
+                          aria-hidden={!(c && c.total && c.none === 0)}
+                          className="w-3 h-3 flex-shrink-0" strokeWidth={3}
+                          style={{ color: "var(--status-ok)", visibility: c && c.total && c.none === 0 ? "visible" : "hidden" }}
+                        />
+                      )}
+                    </span>
+                  )}
                 </td>
               );
             })}
@@ -926,8 +1008,8 @@ export default function Kelish() {
     body = (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState
-          title={t("kelish.errLoad")} message={errText(cellsQ.error, "kelish.errLoadHint")} showUploadLink={false}
-          action={<Button variant="secondary" onClick={() => cellsQ.refetch()}>{t("kelish.retry")}</Button>}
+          title={t("kelish.errLoad")} message={loadErr(cellsQ.error)} showUploadLink={false}
+          action={<Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => cellsQ.refetch()}>{t("kelish.retry")}</Button>}
         />
       </div>
     );
@@ -945,15 +1027,16 @@ export default function Kelish() {
     body = (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState
-          title={t("kelish.errLoad")} message={errText(weekQ.error, "kelish.errLoadHint")} showUploadLink={false}
-          action={<Button variant="secondary" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>}
+          title={t("kelish.errLoad")} message={loadErr(weekQ.error)} showUploadLink={false}
+          action={<Button variant="secondary" size="lg" className="max-sm:min-h-11" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>}
         />
       </div>
     );
   } else {
     body = (
       <div className="relative">
-        <div ref={headRef} aria-hidden="true" className="absolute left-0 top-14 w-px h-px pointer-events-none" />
+        <span id="kelish-kbd" className="sr-only">{t("kelish.kbdHint")}</span>
+        <div ref={headRef} aria-hidden="true" className="absolute left-0 top-8 w-px h-px pointer-events-none" />
         {grid}
       </div>
     );
@@ -973,7 +1056,12 @@ export default function Kelish() {
                 dotNext={data && !stale && data.tomorrow > data.to ? t("kelish.dotHere") : null}
               />
             )}
-            {sections.length > 0 && <FilterPanel sections={sections} chipsWrap="always" />}
+            {sections.length > 0 && (
+              <FilterPanel
+                sections={sections} chipsWrap="always"
+                anyActive={!!(factorySection?.active && factorySection?.onClear) || shiftPick != null}
+              />
+            )}
           </div>
         )}
 
@@ -1046,6 +1134,7 @@ export default function Kelish() {
         title={fill(t("kelish.removeTitle"), { n: sel.size })}
         message={(
           <>
+            <span className="block text-xs mb-1" style={{ color: "var(--text-3)" }}>{cellTitle}</span>
             <span className="block font-medium" style={{ color: "var(--text-2)" }}>{selNames}</span>
             <span className="block mt-1.5">{t("kelish.removeBody")}</span>
           </>
@@ -1072,7 +1161,7 @@ function FragmentRow({ divider, children }) {
           <td
             colSpan={8}
             className="px-2 sm:px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider whitespace-normal"
-            style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}
           >
             {divider}
           </td>
@@ -1140,15 +1229,14 @@ function WorkerSheet({ row, data, onClose, t, tl, tx }) {
                   {d.state === "future" || !s ? <Chip off size={18} /> : <Chip mark={s.mark} lane={!s.mark && d.editable} size={18} />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm" style={{ color: s || d.state === "future" ? "var(--text-1)" : "var(--text-3)" }}>{word}</div>
+                  <div className="text-sm" style={{ color: s ? "var(--text-1)" : "var(--text-3)" }}>{word}</div>
                   {s?.by && (
-                    <div className="text-[11px] leading-4" style={{ color: "var(--text-3)" }}>
-                      {/* the space after «·» sits OUTSIDE the nowrap span: it is
-                          the only place the line may break */}
-                      {s.at && <><span className="tabular-nums whitespace-nowrap">{`${stamp(s.at)} ·`}</span>{" "}</>}
-                      {/* who set it is the point of this line: it moves to the
-                          next line as ONE piece rather than being cut */}
-                      <span className="inline-block max-w-full truncate align-bottom">{fill(t("kelish.by"), { name: shortPerson(titleCase(tl(s.by))) })}</span>
+                    <div className="text-[11px] leading-4 sm:flex sm:gap-1 min-w-0" style={{ color: "var(--text-2)" }}>
+                      {/* a phone gives «who» and «when» a line each — the two
+                          never fit one there, and a line ending in «·» read as
+                          broken; from sm up they share one line */}
+                      <span className="block truncate sm:order-2">{fill(t("kelish.by"), { name: shortPerson(titleCase(tl(s.by))) })}</span>
+                      {s.at && <span className="block tabular-nums whitespace-nowrap sm:order-1 sm:after:content-['·'] sm:after:ml-1">{stamp(s.at)}</span>}
                     </div>
                   )}
                 </div>

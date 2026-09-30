@@ -321,6 +321,9 @@ export default function DateRangePicker({
     : !dateFrom
     ? t("filter.selectDates")
     : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
+  // "xl" mode only: below 360px the year and the calendar glyph go too, so a
+  // week stepper and the filter button share one row on a 320px phone.
+  const tinyRange = dateFrom && dateTo && !isAllTime ? `${short(dateFrom).slice(0, 5)} – ${short(dateTo).slice(0, 5)}` : compactRange;
 
   const btnStyle = (active) => ({
     background: active ? "var(--brand)" : "transparent",
@@ -342,10 +345,11 @@ export default function DateRangePicker({
           color: dateFrom ? "var(--text-1)" : "var(--text-3)",
         }}
       >
-        <CalendarDays size={13} className="flex-shrink-0" style={{ color:"var(--text-3)" }} />
+        <CalendarDays size={13} className={`flex-shrink-0${compactLabel === "xl" ? " max-[359px]:hidden" : ""}`} style={{ color:"var(--text-3)" }} />
         {compactLabel === "xl" ? (
           <>
-            <span className="whitespace-nowrap xl:hidden">{compactRange}</span>
+            <span className="whitespace-nowrap min-[360px]:hidden">{tinyRange}</span>
+            <span className="whitespace-nowrap max-[359px]:hidden xl:hidden">{compactRange}</span>
             <span className="whitespace-nowrap hidden xl:inline">{triggerLabel}</span>
           </>
         ) : compactLabel ? (
