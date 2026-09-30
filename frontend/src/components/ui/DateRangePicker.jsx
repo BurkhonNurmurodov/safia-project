@@ -139,7 +139,8 @@ export default function DateRangePicker({
   weekday = false,     // single mode: prefix the trigger label with the weekday
   compactLabel = false, // show a numeric dd.mm.yy label below sm, verbose above —
                         // for tight mobile toolbars where the spelled-out month
-                        // range can't share a row with another control
+                        // range can't share a row with another control;
+                        // "xl" keeps the numeric label up to xl (/kelish)
   triggerClassName = "px-2.5 py-1.5 text-xs",
 }) {
   const { t } = useLang();
@@ -342,7 +343,12 @@ export default function DateRangePicker({
         }}
       >
         <CalendarDays size={13} className="flex-shrink-0" style={{ color:"var(--text-3)" }} />
-        {compactLabel ? (
+        {compactLabel === "xl" ? (
+          <>
+            <span className="whitespace-nowrap xl:hidden">{compactRange}</span>
+            <span className="whitespace-nowrap hidden xl:inline">{triggerLabel}</span>
+          </>
+        ) : compactLabel ? (
           <>
             <span className="whitespace-nowrap sm:hidden">{compactRange}</span>
             <span className="whitespace-nowrap hidden sm:inline">{triggerLabel}</span>

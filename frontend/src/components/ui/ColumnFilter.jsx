@@ -560,7 +560,8 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
 const PANEL_WIDTH = 300;
 const INLINE_POP_WIDTH = 240;
 // Single canonical trigger size — SearchInput and md Button match its height (38px).
-const TRIGGER_CLS = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
+// min-h: an icon-only trigger (phones) computed 35px, off the 38px toolbar baseline.
+const TRIGGER_CLS = "items-center gap-2 rounded-xl px-3 py-2 text-sm min-h-[38px]";
 
 // One filter as its own toolbar dropdown — the unfolded form of a FilterPanel
 // section on wide screens. Trigger matches the canonical toolbar-control size.

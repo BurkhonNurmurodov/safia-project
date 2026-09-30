@@ -20,6 +20,9 @@ import { useLang } from "../../context/LangContext";
  *              With `week`, «next» stays enabled while the next week still
  *              starts on or before it.
  *   week     – step whole weeks (see above)
+ *   compactUntil – with `week`: the breakpoint the numeric label gives way to
+ *              the spelled-out one — "sm" (default) or "xl", for a page whose
+ *              toolbar is too narrow on a laptop for the long label (/kelish).
  *   dotPrev / dotNext – a reason to look that way: draws a brand dot on the
  *              chevron and adds the text to its label (e.g. «today's list is
  *              in the next week»). Null = no dot.
@@ -42,6 +45,7 @@ function mondayOf(iso) {
 
 export default function DayStepper({
   value, onChange, max = toISO(new Date()), week = false, dotPrev = null, dotNext = null,
+  compactUntil = "sm",
 }) {
   const { t } = useLang();
   const step = week ? 7 : 1;
@@ -78,7 +82,7 @@ export default function DayStepper({
       <DateRangePicker
         single
         weekday={!week}
-        compactLabel={week}
+        compactLabel={week && (compactUntil === "xl" ? "xl" : true)}
         max={max}
         dateFrom={from}
         dateTo={to}

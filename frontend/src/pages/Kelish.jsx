@@ -38,7 +38,7 @@
  * Page key `kelish` — admin-only until the operator opens it. Checklist task
  * #11 is untouched: nothing here scores anything.
  */
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check, Clock, Lock, Minus, Plus, Trash2, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
@@ -91,11 +91,13 @@ const LANE_HEAD = "linear-gradient(rgba(var(--brand-rgb), 0.14), rgba(var(--bran
 // ROW_H high (44px under a finger, 40px under a mouse), so all cells are one
 // size. The whole week always fits the card —
 // it never scrolls sideways: 7 × 28px on a 320px phone (~90px left for the
-// name), 7 × 32px up to sm (~120px at 375), then the days widen with the
-// screen and the name column keeps roughly 250–400px.
-const GRID = "[--kd:32px] max-[359px]:[--kd:28px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
+// name), 32px to 400px (~120px at 375), 36px on the larger phones, then the
+// days widen with the screen and the name column keeps roughly 250–400px.
+const GRID = "[--kd:32px] max-[359px]:[--kd:28px] min-[400px]:[--kd:36px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
 const ROW_H = "h-11 sm:pointer-fine:h-10";
 const NAME_H = "min-h-11 sm:pointer-fine:min-h-10";
+// «+» / «−»: the 38px toolbar square, 44px on a phone.
+const ICON_BTN = "w-[38px] h-[38px] px-0 justify-center max-sm:w-11 max-sm:h-11";
 // The table scrolls with the page (`pageScroll`), so its sticky header and
 // totals row stick to Layout's <main>, reaching past its padding. The totals
 // row also stands clear of a phone's home indicator, and paints the band under
@@ -249,7 +251,7 @@ function DayHead({ day, t }) {
     >
       {/* The open days are marked by their tint and the brand underline; the
           ink stays neutral so it keeps AA contrast on the tint in both themes. */}
-      <span className="block text-[11px] leading-3 font-medium uppercase" style={{ color: current ? "var(--text-2)" : "var(--text-3)" }}>
+      <span className="block text-[11px] leading-3 font-medium uppercase" style={{ color: "var(--text-2)" }}>
         {t(`cal.d${dow(day.date)}`)}
       </span>
       <span
@@ -305,6 +307,20 @@ export default function Kelish() {
   const [cellPick, setCellPick] = usePersistentState("kelish.cell", null);
   const [sheet, setSheet] = useState(null);               // the worker whose week card is open
   const [cursor, setCursor] = useState(null);             // the grid's one Tab stop, "row:col"
+  const [headAway, setHeadAway] = useState(false);        // the card's title has scrolled off
+  // A 1px marker at the foot of the card's title: once it has scrolled PAST
+  // (out of view, in the upper half), the app header names the cell instead —
+  // the LeaderAppeal pattern — so a long list never loses whose cell it is.
+  const headIO = useRef(null);
+  const headRef = useCallback((node) => {
+    headIO.current?.disconnect();
+    headIO.current = null;
+    if (!node || typeof IntersectionObserver === "undefined") { setHeadAway(false); return; }
+    const io = new IntersectionObserver(([e]) =>
+      setHeadAway(!e.isIntersecting && e.boundingClientRect.top < window.innerHeight / 2));
+    io.observe(node);
+    headIO.current = io;
+  }, []);
 
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState(() => new Set());
@@ -327,7 +343,10 @@ export default function Kelish() {
 
   const nameOf = (raw) => titleCase(tl(raw));
 
-  const errText = (e) => {
+  // A refusal the server explains in a CODE is worded here; anything else —
+  // a dropped connection, a 500 — reads as the door's own fallback, never as a
+  // raw server string or as «not saved» on a page that was only loading.
+  const knownErr = (e) => {
     const d = e?.response?.data;
     const raw = d?.detail_raw ?? d?.detail;
     const code = raw && typeof raw === "object" ? raw.code : null;
@@ -337,9 +356,10 @@ export default function Kelish() {
       case "day_locked": return t("kelish.errDayLocked");
       case "read_only": return t("kelish.errReadOnly");
       case "not_on_list": return t("kelish.errNotOnList");
-      default: return (typeof d?.detail === "string" && d.detail) || t("kelish.errSave");
+      default: return null;
     }
   };
+  const errText = (e, fallbackKey = "kelish.errSave") => knownErr(e) || t(fallbackKey);
 
   // ── which cells ───────────────────────────────────────────────────────────
   const cellsParams = useFactoryParams(NO_PARAMS);
@@ -459,7 +479,9 @@ export default function Kelish() {
         }
       })
       .catch((e) => {
-        toast.error(`${t("kelish.errSave")}: ${errText(e)}`);
+        // Name the square that flipped back — the refetch repaints it silently.
+        const why = knownErr(e);
+        toast.error(`${fill(t("kelish.errMark"), { name: row.display, day: dayLabel(day.date, t) })}${why ? ` (${why})` : ""}`);
         qc.invalidateQueries({ queryKey: key });
       })
       .finally(() => { pending.current -= 1; });
@@ -477,7 +499,7 @@ export default function Kelish() {
     return !!data.days[ci]?.editable && !!view[ri].days[ci];
   };
   const defaultStop = (() => {
-    const ci = data ? data.days.findIndex((d) => d.editable && view[0]?.days[days.indexOf(d)]) : -1;
+    const ci = data ? data.days.findIndex((d, i) => d.editable && view[0]?.days[i]) : -1;
     return ci >= 0 ? `0:${ci}` : "0:-1";
   })();
   const stop = (() => {
@@ -632,6 +654,8 @@ export default function Kelish() {
   // remove; the worker card carries it the rest of the time.
   const absence = (r) => (r.never ? fill(t("kelish.never"), { n: WINDOW_DAYS })
     : r.warn ? fill(t("kelish.quiet"), { n: r.quiet }) : null);
+  const absenceShort = (r) => (r.never ? fill(t("kelish.neverShort"), { n: WINDOW_DAYS })
+    : r.warn ? fill(t("kelish.quietShort"), { n: r.quiet }) : null);
 
   const slotLabel = (r, d, s) => {
     const bits = [r.full, dayLabel(d.date, t)];
@@ -648,27 +672,27 @@ export default function Kelish() {
   const footer = !data ? null : selecting ? (
     <>
       <Button
-        variant="danger" tint size="lg" icon={<Trash2 size={15} />}
+        variant="danger" tint size="lg" icon={<Trash2 size={15} />} className="max-sm:min-h-11"
         disabled={!sel.size} onClick={() => { setRemoveErr(""); setConfirmOpen(true); }}
       >
         {fill(t("kelish.removeN"), { n: sel.size })}
       </Button>
       <span className="hidden sm:inline text-xs" style={{ color: "var(--text-3)" }}>{t("kelish.selectHint")}</span>
-      <Button variant="secondary" size="lg" className="ml-auto" onClick={exitSelect}>{t("common.cancel")}</Button>
+      <Button variant="secondary" size="lg" className="ml-auto max-sm:min-h-11" onClick={exitSelect}>{t("common.cancel")}</Button>
     </>
   ) : (
     <>
       {/* How to read the grid lives UNDER it: copy above it moves every row.
           On a phone the legend takes the whole line and the buttons the next,
           so the cycle reads as one line instead of three beside them. */}
-      <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-        <Legend open={openAny} t={t} />
+      <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
+        {view.length > 0 && <Legend open={openAny} t={t} />}
       </div>
       {openAny && (
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="secondary" size="lg" icon={<Plus size={17} />} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
+          <Button variant="secondary" size="lg" icon={<Plus size={17} />} className={ICON_BTN} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
-            variant="secondary" size="lg" icon={<Minus size={17} />}
+            variant="secondary" size="lg" icon={<Minus size={17} />} className={ICON_BTN}
             aria-label={t("kelish.remove")} title={t("kelish.remove")}
             disabled={!removable.length} onClick={() => { setSel(new Set()); setSelecting(true); }}
           />
@@ -695,7 +719,8 @@ export default function Kelish() {
             onChange={toggleAll}
             className="w-4 h-4 cursor-pointer accent-[var(--brand)]"
           />
-          {t("kelish.selectAll")}
+          <span className="sm:hidden">{t("kelish.selectAllShort")}</span>
+          <span className="hidden sm:inline">{t("kelish.selectAll")}</span>
         </label>
       ) : (
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
@@ -709,6 +734,7 @@ export default function Kelish() {
   const nameCell = (r, ri) => {
     const ink = r.current ? "var(--text-1)" : "var(--text-2)";
     const away = selecting ? absence(r) : null;
+    const awayShort = selecting ? absenceShort(r) : null;
     const text = (
       <>
         {/* phone: surname over given name — two short lines fit where one
@@ -716,7 +742,7 @@ export default function Kelish() {
         <span className="sm:hidden block min-w-0">
           <span className="block text-[13px] leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
           <span className="block text-[11px] leading-[14px] truncate" style={{ color: away ? "var(--status-warn)" : "var(--text-3)" }}>
-            {away || r.given || "\u00a0"}
+            {awayShort || r.given || "\u00a0"}
           </span>
         </span>
         <span className="hidden sm:block min-w-0">
@@ -729,11 +755,11 @@ export default function Kelish() {
       <td className="px-2 sm:px-3 py-0 align-middle">
         {selecting ? (
           <label
-            className={`flex items-center gap-2 min-w-0 ${r.removeKey ? "cursor-pointer" : "opacity-50"}`}
-            title={r.full}
+            className={`flex items-center gap-2 min-w-0 ${NAME_H} ${r.removeKey ? "cursor-pointer" : "opacity-50"}`}
+            title={[r.full, away].filter(Boolean).join(" · ")}
           >
             <input
-              type="checkbox" checked={sel.has(r.key)} disabled={!r.removeKey} aria-label={r.display}
+              type="checkbox" checked={sel.has(r.key)} disabled={!r.removeKey} aria-label={[r.display, away].filter(Boolean).join(" · ")}
               onChange={() => toggleSel(r.key)}
               className="w-4 h-4 flex-shrink-0 cursor-pointer accent-[var(--brand)] disabled:cursor-default"
             />
@@ -839,6 +865,11 @@ export default function Kelish() {
           <tr>
             <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
               {openAny ? t("kelish.emptyList") : t("kelish.emptyListRO")}
+              {openAny && (
+                <div className="mt-4 flex justify-center">
+                  <Button variant="primary" size="lg" icon={<Plus size={16} />} onClick={openAdd}>{t("kelish.add")}</Button>
+                </div>
+              )}
             </td>
           </tr>
         )}
@@ -857,7 +888,8 @@ export default function Kelish() {
           <tr>
             <td className="px-2 sm:px-3 h-9 align-middle" style={STICK_BOTTOM}>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
-                <Chip mark="yes" size={12} />{t("kelish.yes")}
+                <span aria-hidden="true" className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--status-ok)" }} />
+                {t("kelish.yes")}
               </span>
             </td>
             {days.map((d) => {
@@ -871,7 +903,7 @@ export default function Kelish() {
                   title={d.state !== "future" && c ? countsText(c, t) : undefined}
                 >
                   {d.state === "future" ? null : any
-                    ? <span style={{ color: "var(--status-ok)" }}>{c.yes}</span>
+                    ? <span style={{ color: c.yes > 0 ? "var(--status-ok)" : "var(--text-3)" }}>{c.yes}</span>
                     : <span className="font-normal" style={{ color: "var(--text-4)" }}>—</span>}
                 </td>
               );
@@ -894,7 +926,7 @@ export default function Kelish() {
     body = (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState
-          title={t("kelish.errLoad")} message={errText(cellsQ.error)} showUploadLink={false}
+          title={t("kelish.errLoad")} message={errText(cellsQ.error, "kelish.errLoadHint")} showUploadLink={false}
           action={<Button variant="secondary" onClick={() => cellsQ.refetch()}>{t("kelish.retry")}</Button>}
         />
       </div>
@@ -913,19 +945,24 @@ export default function Kelish() {
     body = (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState
-          title={t("kelish.errLoad")} message={errText(weekQ.error)} showUploadLink={false}
+          title={t("kelish.errLoad")} message={errText(weekQ.error, "kelish.errLoadHint")} showUploadLink={false}
           action={<Button variant="secondary" onClick={() => weekQ.refetch()}>{t("kelish.retry")}</Button>}
         />
       </div>
     );
   } else {
-    body = grid;
+    body = (
+      <div className="relative">
+        <div ref={headRef} aria-hidden="true" className="absolute left-0 top-14 w-px h-px pointer-events-none" />
+        {grid}
+      </div>
+    );
   }
 
   const sheetRow = sheet ? view.find((r) => r.key === sheet) || null : null;
 
   return (
-    <Layout title={t("nav.kelish")}>
+    <Layout title={t("nav.kelish")} subtitle={headAway ? cellTitle : undefined}>
       <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
         {(cell || sections.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -985,10 +1022,14 @@ export default function Kelish() {
               {suggestions.map((g, i) => (
                 <div key={g.key} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm truncate" style={{ color: "var(--text-1)" }}>{nameOf(g.name)}</div>
-                    {g.job && <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>{tx(g.job)}</div>}
+                    <div className="text-sm truncate" style={{ color: "var(--text-1)" }} title={nameOf(g.name)}>
+                      {nameOf(g.name).split(" ").slice(0, 2).join(" ")}
+                    </div>
+                    <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
+                      {[nameOf(g.name).split(" ").slice(2).join(" "), g.job ? tx(g.job) : ""].filter(Boolean).join(" · ") || "\u00a0"}
+                    </div>
                   </div>
-                  <Button variant="secondary" size="md" icon={<Undo2 size={13} />} disabled={adding} onClick={() => submitAdd(g.name)}>
+                  <Button variant="secondary" size="md" icon={<Undo2 size={13} />} className="max-sm:min-h-11" disabled={adding} onClick={() => submitAdd(g.name)}>
                     {t("kelish.restore")}
                   </Button>
                 </div>
@@ -1030,7 +1071,7 @@ function FragmentRow({ divider, children }) {
         <tr>
           <td
             colSpan={8}
-            className="px-2 sm:px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider"
+            className="px-2 sm:px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider whitespace-normal"
             style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
           >
             {divider}
@@ -1101,8 +1142,13 @@ function WorkerSheet({ row, data, onClose, t, tl, tx }) {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm" style={{ color: s || d.state === "future" ? "var(--text-1)" : "var(--text-3)" }}>{word}</div>
                   {s?.by && (
-                    <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-                      {fill(t("kelish.by"), { name: shortPerson(titleCase(tl(s.by))) })}{s.at ? ` · ${stamp(s.at)}` : ""}
+                    <div className="text-[11px] leading-4" style={{ color: "var(--text-3)" }}>
+                      {/* the space after «·» sits OUTSIDE the nowrap span: it is
+                          the only place the line may break */}
+                      {s.at && <><span className="tabular-nums whitespace-nowrap">{`${stamp(s.at)} ·`}</span>{" "}</>}
+                      {/* who set it is the point of this line: it moves to the
+                          next line as ONE piece rather than being cut */}
+                      <span className="inline-block max-w-full truncate align-bottom">{fill(t("kelish.by"), { name: shortPerson(titleCase(tl(s.by))) })}</span>
                     </div>
                   )}
                 </div>
