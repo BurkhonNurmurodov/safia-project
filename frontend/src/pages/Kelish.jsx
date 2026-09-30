@@ -617,8 +617,10 @@ export default function Kelish() {
     </>
   ) : (
     <>
-      {/* How to read the grid lives UNDER it: copy above it moves every row. */}
-      <div className="min-w-0 flex-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+      {/* How to read the grid lives UNDER it: copy above it moves every row.
+          On a phone the legend takes the whole line and the buttons the next,
+          so the cycle reads as one line instead of three beside them. */}
+      <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
         <Legend open={openAny} t={t} />
       </div>
       {openAny && (
