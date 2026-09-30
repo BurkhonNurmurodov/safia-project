@@ -51,7 +51,7 @@ import DayStepper from "../components/ui/DayStepper";
 import EmptyState from "../components/ui/EmptyState";
 import FormField from "../components/ui/FormField";
 import Modal from "../components/ui/Modal";
-import SegmentedToggle from "../components/ui/SegmentedToggle";
+import StyledSelect from "../components/ui/StyledSelect";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useFactorySection } from "../components/ui/FactorySelect";
@@ -76,9 +76,10 @@ const NO_PARAMS = {};
 const FILL = { yes: toneFill("ok"), no: toneFill("bad") };
 // Where a cell holds no slot at all.
 const OFF = { background: "var(--bg-inner)" };
-// A closed day's listed cell nobody answered: a small empty box, so a gap in
-// the record is never the same flat colour as «not on that day's list».
-const EMPTY_EDGE = "1px solid var(--text-3)";
+// A closed day's listed cell nobody answered prints «—», the totals row's own
+// blank — so a gap in the record is never the same flat colour as «not on that
+// day's list», and never a hollow box that reads as an unticked checkbox.
+const DASH = <span aria-hidden="true" className="text-xs leading-none" style={{ color: "var(--text-3)" }}>—</span>;
 // An open day's unanswered cell: a brand wash that says «tap here». In the grid
 // `.kelish-hit.is-empty` adds a dashed slot inside it (index.css), so an open
 // empty cell never reads as the flat grey of «no slot».
@@ -213,13 +214,14 @@ function MarkIcon({ mark, pop = false }) {
 
 // A cell in miniature, for the legend and the worker card — drawn exactly as
 // the grid draws it: `lane` is an open cell nobody answered yet (the dashed
-// slot), `off` is «no slot», and a bare chip is a closed cell left unanswered.
+// slot), `off` is «no slot», and a bare chip is a closed cell left unanswered
+// — the «—» the grid prints there.
 function Chip({ mark = null, off = false, lane = false, size = 14 }) {
   const Icon = mark === "yes" ? Check : mark === "no" ? X : null;
   const style = mark ? FILL[mark]
     : off ? { ...OFF, border: "1px solid var(--border)" }
       : lane ? { ...LANE, border: SLOT_EDGE }
-        : { border: EMPTY_EDGE };
+        : null;
   return (
     <span
       aria-hidden="true"
@@ -227,6 +229,7 @@ function Chip({ mark = null, off = false, lane = false, size = 14 }) {
       style={{ width: size, height: size, ...style }}
     >
       {Icon && <Icon style={{ width: size - 4, height: size - 4 }} strokeWidth={3.5} />}
+      {!mark && !off && !lane && DASH}
     </span>
   );
 }
@@ -281,7 +284,7 @@ function Legend({ open, gaps = false, t }) {
         {step(<><Chip mark="yes" />{t("kelish.yes")}{arrow}</>)}
         {step(<><Chip mark="no" />{t("kelish.no")}{arrow}</>)}
         {step(<Chip lane />)}
-        {/* a closed day's hollow box looks like an unticked checkbox — say what it is */}
+        {/* a closed day's «—» — say what it is */}
         {gaps && <span className="inline-flex items-center gap-1 whitespace-nowrap ml-2"><Chip />{t("kelish.none")}</span>}
       </span>
     );
@@ -645,8 +648,9 @@ export default function Kelish() {
     });
   }
 
-  // Each cell's chip says how far its NEXT list is filled; its title says so
-  // in words (which day, marked of total), since the fraction alone does not.
+  // Each cell's option says how far its NEXT list is filled; its title says so
+  // in words (which day, marked of total), since the fraction alone does not —
+  // and leads with the code, which is what the dropdown's search matches.
   const nextDay = days.find((d) => d.state === "tomorrow");
   const cellOptions = cellsShown.map((c) => {
     const live = c.id === cell?.id && nextDay?.counts;
@@ -656,11 +660,11 @@ export default function Kelish() {
       ? fill(t("kelish.cellProgress"), { d: dm(day), n: p.yes + p.no, total: p.total }) : null;
     const n = p ? p.yes + p.no : 0;
     return {
-      value: c.id,
-      title: [c.leader ? titleCase(tl(c.leader)) : null, progress].filter(Boolean).join(" · ") || undefined,
+      value: String(c.id),
+      title: [c.code, c.leader ? titleCase(tl(c.leader)) : null, progress].filter(Boolean).join(" · "),
       // «7014 · Pa 7/13» — which day's list, answered of total. The count is a
-      // fixed width for its total, so a tap never widens the chip and shoves
-      // its neighbours (nothing above the rows may move on a tap).
+      // fixed width for its total, so a tap never widens the dropdown and
+      // shoves the toolbar (nothing above the rows may move on a tap).
       label: p && p.total ? (
         <span className="tabular-nums">
           {c.code}
@@ -874,7 +878,7 @@ export default function Kelish() {
           className={box}
           style={{ ...(s.mark ? FILL[s.mark] : null), ...(selecting ? { opacity: 0.35 } : null) }}
         >
-          {s.mark ? <MarkIcon mark={s.mark} /> : <span aria-hidden="true" className="w-3 h-3 rounded-[3px]" style={{ border: EMPTY_EDGE }} />}
+          {s.mark ? <MarkIcon mark={s.mark} /> : DASH}
         </span>
       );
     }
@@ -1062,11 +1066,21 @@ export default function Kelish() {
                 anyActive={!!(factorySection?.active && factorySection?.onClear) || shiftPick != null}
               />
             )}
+            {/* The cell — last in the chain plant → shift → brigadir → cell, a
+                dropdown like the brigadir picker on /idle-cell. */}
+            {cellsShown.length > 1 && cell && (
+              <StyledSelect
+                value={String(cell.id)}
+                onChange={(v) => pickCell(Number(v))}
+                options={cellOptions}
+                placeholder={t("kelish.cell")}
+                searchable={cellOptions.length > 6}
+                searchPlaceholder={t("kelish.cell")}
+                triggerClassName="px-3 py-2 text-sm"
+                className="w-full md:w-auto md:min-w-[160px]"
+              />
+            )}
           </div>
-        )}
-
-        {cellsShown.length > 1 && cell && (
-          <SegmentedToggle value={cell.id} onChange={pickCell} options={cellOptions} ariaLabel={t("kelish.cell")} />
         )}
 
         {body}

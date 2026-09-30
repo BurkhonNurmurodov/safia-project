@@ -7025,9 +7025,12 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   reading, never filling.
 - **The page reads nothing off the viewer's role or the browser's clock** —
   `editable`, `can_edit`, `when` and the day bounds all come from the server.
-  A leader with two cells switches with a `SegmentedToggle` whose labels carry
-  each cell's «marked/total»; admins and shift-managers pick the brigadir in the
-  `FilterPanel` (plant → shift → brigadir). A worker idle 7+ days, or never in
+  A leader with two cells switches with a `StyledSelect` dropdown on the
+  toolbar (the /idle-cell brigadir picker's shape, the operator's call
+  2026-09-30 — it was a `SegmentedToggle` strip), whose options carry each
+  cell's «marked/total» and search by code; admins and shift-managers pick the
+  brigadir in the `FilterPanel` (plant → shift → brigadir), the cell dropdown
+  sitting after it. A worker idle 7+ days, or never in
   the 30, carries a quiet hint so the leader knows whom «−» is for.
 - **It is read as a WEEK REGISTER** (from 2026-09-29, the operator's
   directive): one row per worker, one column per day of a calendar week
@@ -7055,7 +7058,8 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   distinguishable in BOTH themes (a fresh review measured the first cut at
   1.03:1): an open cell nobody answered carries a DASHED gold slot inside the
   same-size cell (`.kelish-hit.is-empty`), a closed day's listed cell nobody
-  answered a small empty box, and «no slot» stays flat grey — the legend chips
+  answered prints «—», the totals row's own blank (2026-09-30 — it was a small
+  empty box, read as an unticked checkbox), and «no slot» stays flat grey — the legend chips
   draw exactly these. Retired as noise: the per-day meters, the «Hozir/Bugun/Ertaga»
   header words, the folded «set by somebody else» corner, the sub-line under
   every name (a worker's absence now prints only while choosing whom to
@@ -7080,7 +7084,7 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   worker and day that flipped back — never a raw server string (a load that got
   NO answer says to check the connection, one that got a 5xx says the server
   did not answer). The cell switcher reads «7014 · Pa 7/13» — which day's list,
-  answered of total, the count at a fixed width so a tap never widens the chip.
+  answered of total, the count at a fixed width so a tap never widens the dropdown.
   In «−» mode the selection bar replaces the totals as the sticky bottom row,
   a worker who stopped coming carries an amber clock beside the surname (named
   once in the bar), and the confirm names the cell. A NIGHT unit's footer says
