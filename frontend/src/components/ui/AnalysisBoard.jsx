@@ -147,7 +147,6 @@ export function NoChart({ height, text }) {
 //   badge  a node rendered before the name (a LevelChip, a tier chip, …)
 //   extra  an optional node rendered before the total (a red overdue mark)
 export function RankedBar({ row, max, parts, unit, badge, extra }) {
-  const width = max ? (row.total / max) * 100 : 0;
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2 mb-1">
@@ -160,17 +159,29 @@ export function RankedBar({ row, max, parts, unit, badge, extra }) {
           {row.total}
         </span>
       </div>
-      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-        <div className="flex h-full rounded-full overflow-hidden" style={{ width: `${width}%` }}>
-          {parts.map((p) => (row[p.key] > 0 ? (
-            <div
-              key={p.key}
-              className="h-full"
-              style={{ background: p.color, width: `${(row[p.key] / row.total) * 100}%` }}
-              title={`${p.label}: ${row[p.key]} ${unit}`}
-            />
-          ) : null))}
-        </div>
+      <StackBar row={row} max={max} parts={parts} unit={unit} />
+    </div>
+  );
+}
+
+// The bar half of a ranked row, on its own — for a TABLE that carries the
+// names and numbers in columns of its own and wants the same status stack in
+// one cell. Its LENGTH is the row's volume against the board's busiest row,
+// never 100% for every row: a stack stretched to full width says a cell with
+// one concern looks like a cell with eighty.
+export function StackBar({ row, max, parts, unit }) {
+  const width = max ? (row.total / max) * 100 : 0;
+  return (
+    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+      <div className="flex h-full rounded-full overflow-hidden" style={{ width: `${width}%` }}>
+        {parts.map((p) => (row[p.key] > 0 ? (
+          <div
+            key={p.key}
+            className="h-full"
+            style={{ background: p.color, width: `${(row[p.key] / row.total) * 100}%` }}
+            title={`${p.label}: ${row[p.key]} ${unit}`}
+          />
+        ) : null))}
       </div>
     </div>
   );
@@ -180,7 +191,9 @@ export function RankedBar({ row, max, parts, unit, badge, extra }) {
 // ApexCharts draws for free. Read from the same `parts` the bars read, so a
 // colour can never mean two things, and shared by a card and its full-list
 // modal.
-export function StackLegend({ parts }) {
+// `extra` appends one more key after the segments — a mark that is not a
+// segment (the red overdue flag a row carries beside its total).
+export function StackLegend({ parts, extra }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
       {parts.map((p) => (
@@ -189,6 +202,7 @@ export function StackLegend({ parts }) {
           {p.label}
         </span>
       ))}
+      {extra}
     </div>
   );
 }

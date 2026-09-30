@@ -140,6 +140,24 @@ def _leader_cells(db: Session, payload: dict):
     return [tuple(r) for r in q.order_by(Cell.verifix_code).all()]
 
 
+def _page_rows(db: Session, payload: dict, date_from, date_to, cell, category, status):
+    """The page's rows under its filters — ONE clause for the register and the
+    analysis, so the two halves of the page can never be narrowed two ways (the
+    status filter used to reach the register and silently skip the analysis)."""
+    q = _scope_query(_worker_rows(db.query(LeaderConcern)), payload, db)
+    if date_from:
+        q = q.filter(LeaderConcern.entry_date >= date_from)
+    if date_to:
+        q = q.filter(LeaderConcern.entry_date <= date_to)
+    if cell:
+        q = q.filter(LeaderConcern.cell_code == cell.strip())
+    if category:
+        q = q.filter(LeaderConcern.category == category.strip())
+    if status:
+        q = q.filter(LeaderConcern.status == status.strip())
+    return q
+
+
 @router.get("/meta")
 def cell_concerns_meta(
     db: Session = Depends(get_db),
@@ -307,18 +325,7 @@ def list_cell_concerns(
     """The register — worker filings still sitting at the leader step, newest
     first, scoped by concerns._scope_query so this page can never widen what a
     viewer may read on /concerns."""
-    q = _worker_rows(db.query(LeaderConcern))
-    q = _scope_query(q, payload, db)
-    if date_from:
-        q = q.filter(LeaderConcern.entry_date >= date_from)
-    if date_to:
-        q = q.filter(LeaderConcern.entry_date <= date_to)
-    if cell:
-        q = q.filter(LeaderConcern.cell_code == cell.strip())
-    if category:
-        q = q.filter(LeaderConcern.category == category.strip())
-    if status:
-        q = q.filter(LeaderConcern.status == status.strip())
+    q = _page_rows(db, payload, date_from, date_to, cell, category, status)
 
     rows = q.order_by(LeaderConcern.entry_date.desc(),
                       LeaderConcern.seq.desc().nullslast(),
@@ -346,36 +353,96 @@ def list_cell_concerns(
     }
 
 
+# «How long it takes» — the day buckets the /concerns board already draws, so
+# the two pages' answers to «how fast» sit on one scale. A mean alone hides the
+# tail: 2.7 days on average says nothing about the concern waiting three weeks.
+AGE_BUCKETS = ((0, 1), (2, 3), (4, 7), (8, 14), (15, None))
+
+# The trend follows the PERIOD the reader picked, never a fixed 14 days. It is
+# never narrower than a week (a date chart with three bars reads as noise), and
+# past nine weeks it counts per WEEK: ninety daily columns cannot be read.
+TREND_MIN_DAYS = 7
+TREND_DAILY_MAX = 62
+
+# How many of the busiest typed names the «who filed» card may draw. The card
+# shows as many as fit beside its neighbour, and says how many it holds.
+TOP_WORKERS = 15
+
+
+def _age_bucket(days: int) -> int:
+    days = max(0, days)
+    for i, (_lo, hi) in enumerate(AGE_BUCKETS):
+        if hi is None or days <= hi:
+            return i
+    return len(AGE_BUCKETS) - 1
+
+
+def _search_text(r) -> str:
+    """The register's own search string — the page filters its table on
+    «№ · name · text» client-side, and the analysis must match exactly that."""
+    return f"{_no(r)} {r.worker_name or ''} {r.concern_text or ''}".lower()
+
+
+def _trend(rows, date_from, date_to, today):
+    """(unit, points) — filed and resolved per day, or per week past
+    TREND_DAILY_MAX days. Filed = the row's entry_date; resolved = its
+    completion_date. A row can appear in both, in two different columns."""
+    end = date_to or today
+    if date_from:
+        start = date_from
+    else:
+        start = min((r.entry_date for r in rows if r.entry_date), default=end - timedelta(days=13))
+    start = min(start, end - timedelta(days=TREND_MIN_DAYS - 1))
+    weekly = (end - start).days + 1 > TREND_DAILY_MAX
+    if weekly:
+        key = lambda d: d - timedelta(days=d.weekday())      # the week's Monday
+        start, step = key(start), 7
+    else:
+        key, step = (lambda d: d), 1
+    buckets = []
+    d = start
+    while d <= end:
+        buckets.append(d)
+        d += timedelta(days=step)
+    filed = {b: 0 for b in buckets}
+    solved = {b: 0 for b in buckets}
+    for r in rows:
+        if r.entry_date and start <= r.entry_date <= end:
+            filed[key(r.entry_date)] += 1
+        if r.completion_date and start <= r.completion_date <= end:
+            solved[key(r.completion_date)] += 1
+    return ("week" if weekly else "day",
+            [{"d": b.isoformat(), "filed": filed[b], "done": solved[b]} for b in buckets])
+
+
 @router.get("/stats")
 def cell_concern_stats(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     cell: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
     """The analysis tab, computed over EXACTLY the rows the register would show
-    under the same filters — the two halves of one page must never be able to
-    quote different totals.
+    under the same filters — status and the search box included — so the two
+    halves of one page can never quote different totals.
 
     ``overdue`` is a flag, never a bucket: it counts the OPEN rows already past
     their own deadline, and those rows are also still counted under todo/doing.
     Subtracting them into a fourth bucket is how a board of twelve overdue «to
-    do» rows comes to print «to do: 0» above a table of twelve of them.
+    do» rows comes to print «to do: 0» above a table of twelve of them. Every
+    breakdown (department, cell) carries the same flag beside its status split.
     """
-    q = _scope_query(_worker_rows(db.query(LeaderConcern)), payload, db)
-    if date_from:
-        q = q.filter(LeaderConcern.entry_date >= date_from)
-    if date_to:
-        q = q.filter(LeaderConcern.entry_date <= date_to)
-    if cell:
-        q = q.filter(LeaderConcern.cell_code == cell.strip())
-    if category:
-        q = q.filter(LeaderConcern.category == category.strip())
-    rows = q.all()
+    rows = _page_rows(db, payload, date_from, date_to, cell, category, status).all()
+    needle = (q or "").strip().lower()
+    if needle:
+        rows = [r for r in rows if needle in _search_text(r)]
 
     today = date.today()
+    cell_info = _cell_leaders(db)        # code → (cell id, leader, brigadir)
     total = len(rows)
     by_status = {"todo": 0, "doing": 0, "done": 0}
     by_cat: dict = {}
@@ -383,14 +450,18 @@ def cell_concern_stats(
     by_worker: dict = {}
     overdue = 0
     res_days: list = []
+    age_done = [0] * len(AGE_BUCKETS)
+    age_open = [0] * len(AGE_BUCKETS)
+
+    def _acc():
+        return {"todo": 0, "doing": 0, "done": 0, "overdue": 0, "days": []}
 
     for r in rows:
         st = r.status if r.status in by_status else "todo"
         by_status[st] += 1
-        by_cat.setdefault(r.category or "other", 0)
-        by_cat[r.category or "other"] += 1
-        code = r.cell_code or "—"
-        b = by_cell.setdefault(code, {"todo": 0, "doing": 0, "done": 0})
+        c = by_cat.setdefault(r.category or "other", _acc())
+        b = by_cell.setdefault(r.cell_code or "—", _acc())
+        c[st] += 1
         b[st] += 1
         # Grouped on the EXACT typed string: free text is not an identity, so
         # folding spellings together here would invent a person. The page says
@@ -402,43 +473,60 @@ def cell_concern_stats(
         due = _due(r)
         if st != "done" and due is not None and due < today:
             overdue += 1
+            c["overdue"] += 1
+            b["overdue"] += 1
         if st == "done" and r.completion_date and r.entry_date:
-            res_days.append((r.completion_date - r.entry_date).days)
+            days = (r.completion_date - r.entry_date).days
+            res_days.append(days)
+            b["days"].append(days)
+            age_done[_age_bucket(days)] += 1
+        elif st != "done" and r.entry_date:
+            age_open[_age_bucket((today - r.entry_date).days)] += 1
 
-    # The 14-day trend. Filed = rows whose entry_date is that day; resolved =
-    # rows whose completion_date is. A row can appear in both, on two days.
-    end = date_to or today
-    start = end - timedelta(days=13)
-    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
-    filed = {d: 0 for d in days}
-    solved = {d: 0 for d in days}
-    for r in rows:
-        if r.entry_date in filed:
-            filed[r.entry_date] += 1
-        if r.completion_date in solved:
-            solved[r.completion_date] += 1
+    unit, trend = _trend(rows, date_from, date_to, today)
+
+    def _cell_row(code, v):
+        cid, leader, brigadir = cell_info.get(code, (None, None, None))
+        n = v["todo"] + v["doing"] + v["done"]
+        return {
+            "code": code, "cell_id": cid, "leader": leader, "brigadir": brigadir,
+            "todo": v["todo"], "doing": v["doing"], "done": v["done"],
+            "open": v["todo"] + v["doing"], "overdue": v["overdue"], "n": n,
+            "resolved_pct": round(v["done"] * 100 / n) if n else 0,
+            "avg_days": round(sum(v["days"]) / len(v["days"]), 1) if v["days"] else None,
+        }
 
     return {
         "total": total,
         "by_status": by_status,
+        "open": by_status["todo"] + by_status["doing"],
         "overdue": overdue,
         "avg_days": round(sum(res_days) / len(res_days), 1) if res_days else None,
         "resolved_pct": round(by_status["done"] * 100 / total) if total else 0,
         "workers": len(by_worker),
         "by_category": sorted(
-            [{"key": k, "n": v} for k, v in by_cat.items()],
-            key=lambda x: -x["n"],
+            [{"key": k, "todo": v["todo"], "doing": v["doing"], "done": v["done"],
+              "overdue": v["overdue"], "n": v["todo"] + v["doing"] + v["done"]}
+             for k, v in by_cat.items()],
+            key=lambda x: (-x["n"], x["key"]),
         ),
+        # Every cell, most still-open first — the page's cell table sorts it
+        # further on the reader's own column.
         "by_cell": sorted(
-            [{"code": k, **v, "n": sum(v.values())} for k, v in by_cell.items()],
-            key=lambda x: -x["n"],
+            [_cell_row(k, v) for k, v in by_cell.items()],
+            key=lambda x: (-x["open"], -x["n"], x["code"]),
         ),
         "by_worker": sorted(
             [{"name": k, "n": v} for k, v in by_worker.items()],
             key=lambda x: (-x["n"], x["name"]),
-        )[:8],
-        "trend": [
-            {"d": d.isoformat(), "filed": filed[d], "done": solved[d]}
-            for d in days
-        ],
+        )[:TOP_WORKERS],
+        # `trend` keeps the shape a tab on an older bundle reads; `trend_unit`
+        # says whether its points are days or weeks (the week's Monday).
+        "trend": trend,
+        "trend_unit": unit,
+        "age": {
+            "buckets": [f"{lo}–{hi}" if hi is not None else f"{lo}+" for lo, hi in AGE_BUCKETS],
+            "done": age_done,
+            "open": age_open,
+        },
     }
