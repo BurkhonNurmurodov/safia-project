@@ -367,9 +367,18 @@ def _account_label(info: dict, tid: int, fallback: Optional[str] = None) -> str:
 
 # ── Reads ────────────────────────────────────────────────────────────────────
 
+def _parse_day(value: Optional[str]) -> Optional[date]:
+    try:
+        return date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
 @router.get("/overview")
 def overview(
     days: int = 30,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     by: str = BY_PROFILE,
     db: Session = Depends(get_db),
     _: dict = Depends(require_page("activity")),
@@ -379,20 +388,40 @@ def overview(
     one-view bundle asks for) or "account":
 
       • kpis     — headline counters over the tab's identities
-      • daily    — active identities + minutes per day of the last ``days``
+      • daily    — active identities + minutes per day of the window
       • users    — one row per identity (a profile, or an account)
       • calendar — everyone's minutes per day for the 53-week grid
+
+    The WINDOW is `date_from`..`date_to` (the page's DateRangePicker); a tab
+    still open on the 7/30/90 bundle sends `days` instead, read as the last
+    ``days`` days. It is clamped to today and to the ledger's first day, so
+    «Barcha vaqt» (2015-01-01 →) is the ledger's own span, never a decade of
+    empty columns. Only the CHART is padded to 7 days (utils/chartRange.js's
+    rule); every figure is over the exact window.
     """
     by = BY_ACCOUNT if by == BY_ACCOUNT else BY_PROFILE
-    days = max(1, min(days, 365))
     now = datetime.now(timezone.utc)
     today = now.astimezone(TZ).date()
-    window_start = today - timedelta(days=days - 1)
+    d_from, d_to = _parse_day(date_from), _parse_day(date_to)
+    if d_from or d_to:
+        window_end = min(d_to or today, today)
+        window_start = d_from or window_end
+        if window_start > window_end:
+            window_start, window_end = window_end, window_start
+    else:
+        days = max(1, min(days, 365))
+        window_end = today
+        window_start = today - timedelta(days=days - 1)
+    ledger_first = db.query(func.min(UserActivity.day)).scalar()
+    if ledger_first and window_start < ledger_first <= window_end:
+        window_start = ledger_first
+    chart_start = min(window_start, window_end - timedelta(days=6))
     cal_start = today - timedelta(days=CALENDAR_DAYS - 1)
 
-    # One bounded scan (small table) covers both the window and the calendar;
-    # the window always sits inside the calendar span.
-    recs = _records(db, cal_start)
+    # One bounded scan (small table) covers the window, its chart padding and
+    # the calendar.
+    scan_start = min(cal_start, chart_start)
+    recs = _records(db, scan_start)
 
     people: dict[str, dict] = {}
     day_ids: dict[date, set] = defaultdict(set)      # window: day → identities
@@ -435,7 +464,7 @@ def overview(
         if seen and (part["last_seen"] is None or seen > part["last_seen"]):
             part["last_seen"] = seen
 
-        if d >= window_start:
+        if window_start <= d <= window_end:
             p["days"].add(d)
             p["secs"] += secs
             p["events"] += r["events"]
@@ -450,7 +479,7 @@ def overview(
     pkeys = {r["pkey"] for r in recs if r["pkey"]}
     names = _profile_names(db, pkeys)
     photos = identity.photo_versions(db, pkeys) if by == BY_PROFILE else {}
-    older = _seen_before(db, cal_start, by)
+    older = _seen_before(db, scan_start, by)
 
     users = []
     for pid, p in people.items():
@@ -512,7 +541,7 @@ def overview(
     window_secs = sum(day_secs.values())
     kpis = {
         "online_now":      sum(1 for u in users if u["online"]),
-        "active_today":    len(day_ids.get(today, ())),
+        "active_today":    len(cal_ids.get(today, ())),
         "active_7d":       sum(1 for p in people.values() if p["last_day"] >= today - timedelta(days=6)),
         "active_30d":      sum(1 for p in people.values() if p["last_day"] >= today - timedelta(days=29)),
         "tracked":         len(people),
@@ -522,14 +551,15 @@ def overview(
         "avg_minutes_day": round(window_secs / person_days / 60, 1) if person_days else 0,
         "total_minutes":   round(window_secs / 60, 1),
         "total_hours":     round(window_secs / 3600, 1),
-        "window_days":     days,
+        "window_days":     (window_end - window_start).days + 1,
     }
 
+    # The chart reads the whole scan, so its 7-day padding shows real days.
     daily = []
-    for i in range(days):
-        d = window_start + timedelta(days=i)
-        daily.append({"day": d.isoformat(), "active_users": len(day_ids.get(d, ())),
-                      "minutes": round(day_secs.get(d, 0) / 60, 1)})
+    for i in range((window_end - chart_start).days + 1):
+        d = chart_start + timedelta(days=i)
+        daily.append({"day": d.isoformat(), "active_users": len(cal_ids.get(d, ())),
+                      "minutes": round(cal_secs.get(d, 0) / 60, 1)})
 
     calendar = []
     for i in range(CALENDAR_DAYS):
@@ -543,6 +573,8 @@ def overview(
     return {
         "by": by,
         "today": today.isoformat(),
+        "window_from": window_start.isoformat(),
+        "window_to": window_end.isoformat(),
         "kpis": kpis,
         "daily": daily,
         "users": users,

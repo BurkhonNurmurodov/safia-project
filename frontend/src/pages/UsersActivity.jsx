@@ -17,6 +17,7 @@ import Button from "../components/ui/Button";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import DateRangePicker, { localISO } from "../components/ui/DateRangePicker";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ProfileAvatar from "../components/ui/ProfileAvatar";
@@ -46,7 +47,7 @@ const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--borde
 const TXT = {
   uz: {
     title: "Foydalanuvchilar faolligi", subtitle: "Kim faol, ilovada qancha vaqt o'tkazadi va faollik kalendari",
-    period: "Davr", refresh: "Yangilash", p7: "7 kun", p30: "30 kun", p90: "90 kun",
+    refresh: "Yangilash", p7: "7 kun",
     tabs: { profile: "Profillar bo'yicha", account: "Foydalanuvchilar bo'yicha" },
     note: {
       profile: "Har bir qator — bitta profil, ya'ni bitta odam. Bir profil bilan bir necha Telegram akkaunt ishlasa, ularning vaqti qo'shilib bitta qatorda ko'rinadi.",
@@ -84,7 +85,7 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Фойдаланувчилар фаоллиги", subtitle: "Ким фаол, иловада қанча вақт ўтказади ва фаоллик календари",
-    period: "Давр", refresh: "Янгилаш", p7: "7 кун", p30: "30 кун", p90: "90 кун",
+    refresh: "Янгилаш", p7: "7 кун",
     tabs: { profile: "Профиллар бўйича", account: "Фойдаланувчилар бўйича" },
     note: {
       profile: "Ҳар бир қатор — битта профил, яъни битта одам. Бир профил билан бир нечта Telegram аккаунт ишласа, уларнинг вақти қўшилиб битта қаторда кўринади.",
@@ -122,7 +123,7 @@ const TXT = {
   },
   ru: {
     title: "Активность пользователей", subtitle: "Кто активен, сколько времени проводит в приложении и календарь активности",
-    period: "Период", refresh: "Обновить", p7: "7 дней", p30: "30 дней", p90: "90 дней",
+    refresh: "Обновить", p7: "7 дней",
     tabs: { profile: "По профилям", account: "По пользователям" },
     note: {
       profile: "Каждая строка — один профиль, то есть один человек. Если под одним профилем работают несколько Telegram-аккаунтов, их время суммируется в одной строке.",
@@ -160,7 +161,7 @@ const TXT = {
   },
   en: {
     title: "Users Activity", subtitle: "Who's active, how long they spend in the app, and an activity calendar",
-    period: "Period", refresh: "Refresh", p7: "7 days", p30: "30 days", p90: "90 days",
+    refresh: "Refresh", p7: "7 days",
     tabs: { profile: "By profile", account: "By user" },
     note: {
       profile: "Each row is one profile — one person. When several Telegram accounts work as one profile, their time is added up in a single row.",
@@ -319,8 +320,13 @@ export default function UsersActivity() {
 
   const [tabRaw, setTab] = usePersistentState("users_activity_tab", "profile");
   const by = tabRaw === "account" ? "account" : "profile";
-  const [daysRaw, setDays] = usePersistentState("users_activity_days", 30);
-  const days = [7, 30, 90].includes(daysRaw) ? daysRaw : 30;
+  // The window is a date range, like every other page's period — «Oxirgi 30
+  // kun» until the reader picks another. The server clamps it to today and to
+  // the ledger's first day, so «Barcha vaqt» reads the ledger's own span.
+  const [dateFrom, setDateFrom] = usePersistentState("users_activity_from", () => {
+    const d = new Date(); d.setDate(d.getDate() - 29); return localISO(d);
+  });
+  const [dateTo, setDateTo] = usePersistentState("users_activity_to", () => localISO(new Date()));
 
   const refresh = useMutation({
     mutationFn: () => qc.invalidateQueries({ queryKey: ["activity"] }),
@@ -342,8 +348,8 @@ export default function UsersActivity() {
             <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{T.subtitle}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <SegmentedToggle value={days} onChange={setDays} ariaLabel={T.period} className="flex-shrink-0"
-              options={[[7, T.p7], [30, T.p30], [90, T.p90]]} />
+            <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
+              max={localISO(new Date())} compactLabel triggerClassName="px-3 py-2 text-sm" />
             <Button variant="secondary" size="lg" icon={<RefreshCw size={15} />}
               loading={refresh.isPending} onClick={() => refresh.mutate()}>
               {T.refresh}
@@ -357,13 +363,13 @@ export default function UsersActivity() {
         </div>
 
         {/* Keyed by the tab: its search, sort and calendar pick are its own. */}
-        <ActivityView key={by} by={by} days={days} T={T} />
+        <ActivityView key={by} by={by} dateFrom={dateFrom} dateTo={dateTo} T={T} />
       </div>
     </Layout>
   );
 }
 
-function ActivityView({ by, days, T }) {
+function ActivityView({ by, dateFrom, dateTo, T }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
@@ -377,8 +383,10 @@ function ActivityView({ by, days, T }) {
     s.key !== k ? { key: k, dir: "asc" } : s.dir === "asc" ? { key: k, dir: "desc" } : { key: null, dir: "asc" });
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["activity", "overview", by, days],
-    queryFn: () => api.get("/api/activity/overview", { params: { days, by } }).then((r) => r.data),
+    queryKey: ["activity", "overview", by, dateFrom, dateTo],
+    queryFn: () => api.get("/api/activity/overview", {
+      params: { date_from: dateFrom || undefined, date_to: dateTo || undefined, by },
+    }).then((r) => r.data),
     refetchInterval: 60_000,   // keeps «online now» fresh
   });
 
@@ -535,7 +543,7 @@ function ActivityView({ by, days, T }) {
 
   // Visits are counted forward only: say so whenever the window reaches back
   // past the first counted day, or a short count reads as a quiet month.
-  const windowStart = daily[0]?.day;
+  const windowStart = data.window_from || daily[0]?.day;
   const sessionsNote = !data.sessions_from ? T.sessionsSoon
     : windowStart && windowStart < data.sessions_from ? T.sessionsFrom.replace("{d}", fullDay(data.sessions_from))
     : null;
