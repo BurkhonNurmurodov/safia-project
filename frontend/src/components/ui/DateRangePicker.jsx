@@ -41,7 +41,9 @@ function fmtInput(iso) {
 // "All time" needs a floor and the data model has none, so it starts at a fixed
 // epoch far below any record the platform holds. Widening it costs nothing; a
 // floor picked from inside the data would silently hide the oldest rows.
-const ALL_TIME_FROM = "2015-01-01";
+// Exported so a link that opens a page on «Barcha vaqt» (utils/scopeLinks.js)
+// names the very floor the picker recognises as that choice.
+export const ALL_TIME_FROM = "2015-01-01";
 
 // The end of the widest range: today, or `max` where a page bounds the picker.
 function allTimeTo(max) { const today = todayISO(); return max && max < today ? max : today; }

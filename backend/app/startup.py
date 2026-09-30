@@ -3229,6 +3229,59 @@ def open_cells_page_to_supervisors() -> None:
         db.close()
 
 
+PRODUCTION_PAGE_MANAGERS_FLAG = "production_page_managers_2026_09_30_v1"
+PRODUCTION_PAGE_MANAGER_ROLES = ("top-manager", "shift-manager")
+
+
+def open_production_page_to_managers() -> None:
+    """2026-09-30 (the operator's directive): shift- and top-managers open
+    «Zagruzka fayli» (/production), so the «Smena hisoboti» board's load and
+    plan-fulfilment cells lead to the page those figures come from.
+
+    The twin of ``open_cells_page_to_supervisors`` and for the same reason: a
+    stored per-page list shadows ``DEFAULT_PAGE_ACCESS``, so on a box where the
+    Access tab was ever saved the new default alone changes nothing. This ADDS
+    the two roles to the stored "production" list once — every role already
+    ticked stays ticked — and leaves alone a box with no stored matrix, or one
+    that never stored the page, since the default already answers there. The
+    FLAG is what protects a later uncheck on the Access tab; changing what this
+    does needs a NEW flag key.
+
+    Config only. What they may do there is the page's own rule, unchanged:
+    ПЛАН/ФАКТ is typed by whoever may open the page (the operator's call — they
+    type it too), «Bugungi fakt» people stay admin / brigadir / leader, and a
+    shift-manager's picker stays inside their shift ∩ plant
+    (``routers/production._resolve_manager_id``).
+    """
+    import json
+    from app.permissions import SETTING_KEY
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PRODUCTION_PAGE_MANAGERS_FLAG).first():
+            return
+        row = db.query(AppSetting).filter_by(key=SETTING_KEY).first()
+        if row:
+            try:
+                stored = json.loads(row.value or "{}")
+            except (ValueError, TypeError):
+                stored = None
+            roles = stored.get("production") if isinstance(stored, dict) else None
+            if isinstance(roles, list):
+                add = [r for r in PRODUCTION_PAGE_MANAGER_ROLES if r not in roles]
+                if add:
+                    stored["production"] = roles + add
+                    row.value = json.dumps(stored)
+                    print(f"[startup] opened /production to {add} (was {roles})")
+        db.add(AppSetting(key=PRODUCTION_PAGE_MANAGERS_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] /production manager access not opened: {exc}")
+    finally:
+        db.close()
+
+
 def seed_admins() -> None:
     """Seed the admins table from ADMIN_TELEGRAM_ID (comma-separated) the
     first time — i.e. only while the table is empty. Once seeded, admins are

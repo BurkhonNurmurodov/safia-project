@@ -67,11 +67,14 @@ DEFAULT_PAGE_ACCESS = {
     # granted to shift-manager: their «Kunlik» still lands there and a second
     # nav row onto the same view would be the only thing that changed for them.
     "shift-daily": ["top-manager"],
-    # Pilot: admin-only by default. Above supervisors pick a configured brigadir
-    # from the dashboard picker (shift-managers within their shift, top-managers
-    # across all); flip those roles on here to let them in. "supervisor" grants
-    # every brigadir their own pinned dashboard (per-user gating is a later phase).
-    "production": [],
+    # Shift- and top-managers pick a configured brigadir from the dashboard
+    # picker (shift-managers within their shift ∩ plant, top-managers across
+    # all). Opened to them on 2026-09-30 (the operator's call) so the «Smena
+    # hisoboti» board's load and plan-fulfilment cells can open the page their
+    # figures come from; `startup.open_production_page_to_managers` adds them to
+    # a stored matrix once. "supervisor" grants every brigadir their own pinned
+    # dashboard (per-user gating is a later phase).
+    "production": ["top-manager", "shift-manager"],
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
     "trudoyomkost": ["top-manager", "shift-manager"],

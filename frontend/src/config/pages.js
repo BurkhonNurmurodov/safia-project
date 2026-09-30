@@ -74,7 +74,7 @@ export const DEFAULT_PAGE_ACCESS = {
   downtime: ["shift-manager", "idle-owner"],
   staff:    ["shift-manager", "supervisor"],
   daily:    ["shift-manager", "supervisor"],
-  production: [], // pilot: admin-only until enabled from the Access tab
+  production: ["top-manager", "shift-manager"], // opened 2026-09-30 for the «Smena hisoboti» cell links
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
   leaders: [], // pilot: admin-only until enabled from the Access tab
   cells: ["supervisor"], // Cell registry — supervisors read their OWN unit's

@@ -56,6 +56,7 @@ try:
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         relax_pp_upload_manager, rescale_pp_efficiency_base,
         backfill_leader_page_access, open_cells_page_to_supervisors,
+        open_production_page_to_managers,
         add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
@@ -302,6 +303,7 @@ try:
     migrate_leader_role_uniqueness()
     backfill_leader_page_access()
     open_cells_page_to_supervisors()
+    open_production_page_to_managers()
     seed_admins()
     seed_languages()
     seed_managers_and_sources()
