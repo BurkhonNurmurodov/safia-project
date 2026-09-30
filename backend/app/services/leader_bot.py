@@ -333,6 +333,13 @@ def dashboard_rows(
     by_day = entries_of(db, days)
     by_entry = media_of(db, [e.id for es in by_day.values() for e in es])
     caps = captures_of(db, days)
+    # What each AUTOMATIC verdict was taken on — printed beside its reason
+    # wherever the reason is (`leader_auto.results_for`). Lazy: leader_auto
+    # imports half the services layer.
+    from app.services import leader_auto, leader_tasks
+    auto_res = leader_auto.results_for(db, [
+        e.id for es in by_day.values() for e in es
+        if str(e.reason or "").startswith(leader_tasks.AUTO_PREFIX)])
 
     rows = []
     for d in days:
@@ -372,6 +379,10 @@ def dashboard_rows(
                         # the media rows from the roll on every change), so the
                         # nth capture describes the nth photo.
                         "cam": caps.get((d.id, e.task_id), []),
+                        # Only on an automatic verdict the ledger measured —
+                        # absent everywhere else, so the register does not
+                        # carry an empty key on every task of every row.
+                        **({"auto_facts": auto_res[e.id]} if e.id in auto_res else {}),
                     }
                     for e in sorted(by_day.get(d.id, []), key=lambda e: e.task_id)
                 ],

@@ -3000,9 +3000,11 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
     at = (leader_auto.measured(db, pid, day.date if day else effective_date(shift),
                                task_id, cid)
           if entry is None else None)
+    facts = None
     if at is not None:
         text += _lt(lang, "auto_done" if at.done else "auto_fail").format(
             why=_auto_why(lang, at.code or ("ok" if at.done else "no_data")))
+        facts = at.facts
     elif entry is None:
         text += _lt(lang, "auto_wait")
     elif entry.done:
@@ -3011,6 +3013,12 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
     else:
         text += _lt(lang, "auto_fail").format(
             why=_auto_why(lang, parsed[1] if parsed else "no_data"))
+    if entry is not None and parsed:
+        facts = leader_auto.results_for(db, [entry.id]).get(entry.id)
+    # What the check READ at its hour — the numbers the verdict was taken on,
+    # off the ledger and never re-measured (`leader_auto.result_lines`).
+    for line in leader_auto.result_lines(facts, lang):
+        text += f"\n• {line}"
     db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
     db.commit()
     kb = types.InlineKeyboardMarkup()
@@ -4912,6 +4920,12 @@ def _ad_card(db, d, lang: str) -> str:
         got = leader_tasks.read_auto_reason(e.reason) if e is not None else None
         if got:
             verdict = f"⚙️ {got[0]} — {leader_auto._WHY.get(got[1], got[1])}"
+            # …and what it READ at that hour, off the ledger — the numbers
+            # the objection is arguing with.
+            res = leader_auto.results_for(db, [e.id]).get(e.id)
+            lines = leader_auto.result_lines(res, lang)
+            if lines:
+                verdict += "\n" + "\n".join(f"• {x}" for x in lines)
     return _lt(lang, "ad_card_sup").format(
         leader=d.leader_name or "—",
         task=leader_dispute.task_label(db, d),

@@ -3235,6 +3235,17 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   carry one fixed sentence for four viewers. `utils/leaderReason.js#showReason`
   is the client twin and must expand it, or it prints the sentinel at an
   operator verbatim — exactly what `__missed__` did on 2026-08-27.
+- **Wherever an auto task's reason is printed, its RESULT is printed under it**
+  (2026-09-30, the operator's directive) — what the check READ at its hour,
+  off the ledger row and never re-measured: positions with a plan, the cells
+  whose people were (not) typed, each cell's «Bajarish %» against the target,
+  the concerns found in the window, and a check that ran late.
+  `leader_auto.results_for` (entry id → facts, by `ix_ltask_auto_entry`) is THE
+  door; payloads carry it as `auto_facts` (register rows), `autoFacts` (day
+  report, admin day detail) and `auto.facts` (appeal items, checklist).
+  `utils/autoResult.js` is the one client formatter and
+  `leader_auto.result_lines` its bot twin (the task screen and both objection
+  cards) — keep them saying the same.
 - **`task_state` gains `autopass` and `autofail`**, and `autofail` is in
   `FAILED_STATES`. A failed auto check is neither «I decided not to» (notdone)
   nor «I ran out of time» (expired): nobody answered it and nobody could have.

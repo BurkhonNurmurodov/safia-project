@@ -2444,6 +2444,13 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
     names = leader_reports._name_chain(db, day.manager_id, day.leader_id, defs)
     win_cfg = _task_cfg(db, list(revs.values())) if revs else None
 
+    # What each automatic verdict on the day was taken on — the same facts the
+    # day report prints under the reason (`leader_auto.results_for`).
+    from app.services import leader_auto
+    auto_res = leader_auto.results_for(db, [
+        e.id for e in entries.values()
+        if str(e.reason or "").startswith(AUTO_PREFIX)])
+
     tasks = []
     for tid in sorted(t for t, c in cfg.items() if c.get("enabled")):
         e = entries.get(tid)
@@ -2457,6 +2464,7 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
             "answered": e is not None,
             "done": bool(e.done) if e is not None else False,
             "reason": (e.reason if e is not None else "") or "",
+            "autoFacts": auto_res.get(e.id) if e is not None else None,
             "media": media.get(e.id, []) if e is not None else [],
             "photo": "",
             "review": _as_verdict(rev, _window(win_cfg, rev), _date_check(win_cfg, rev),

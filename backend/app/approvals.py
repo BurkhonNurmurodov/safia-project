@@ -541,6 +541,10 @@ def _leader_dispute_data(db, d) -> dict:
             auto = True
             hhmm, code = got
             verdict = f"{hhmm} — {leader_auto._WHY.get(code, code)}"
+            # …and what it READ at that hour — the numbers being argued with.
+            res = leader_auto.results_for(db, [e.id]).get(e.id)
+            for line in leader_auto.result_lines(res, "uz"):
+                verdict += f"\n• {line}"
     return {
         "auto":       auto,
         "unit":       mgr.name if mgr else "—",

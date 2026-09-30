@@ -7604,6 +7604,9 @@ def add_leader_auto_checks() -> None:
         "CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader ON leader_auto_checks (leader_id)",
         "CREATE INDEX IF NOT EXISTS ix_ltask_auto_date ON leader_auto_checks (date)",
         "CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager ON leader_auto_checks (manager_id)",
+        # 2026-09-30: every surface printing an auto task's reason reads its
+        # result by ENTRY (`leader_auto.results_for`) — the register included.
+        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_entry ON leader_auto_checks (entry_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_auto ON "
         "leader_auto_checks (leader_id, date, COALESCE(cell_id, 0), task_id)",
     ):

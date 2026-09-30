@@ -1906,7 +1906,7 @@ class LeaderAutoCheck(Base):
     code       = Column(String(32), nullable=True)
     # The numbers the verdict was taken on — the whole reason this row exists.
     facts      = Column(JSONB, nullable=True)
-    entry_id   = Column(Integer, nullable=True)
+    entry_id   = Column(Integer, nullable=True)   # indexed by startup (ix_ltask_auto_entry)
 
     __table_args__ = (
         Index("uq_ltask_auto", "leader_id", "date",

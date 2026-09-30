@@ -2058,7 +2058,13 @@ def _dispute_items(db: Session, payload: dict,
                 open_ref.add(ref)
             got = _lt.read_auto_reason(e.reason) if ref not in verdicts else None
             if got:
-                autos[ref] = {"reason": e.reason, "time": got[0], "code": got[1]}
+                autos[ref] = {"reason": e.reason, "time": got[0], "code": got[1],
+                              "eid": e.id}
+        # …and what the check was taken on at its hour, printed under it.
+        from app.services import leader_auto as _la
+        res = _la.results_for(db, [a.pop("eid") for a in autos.values()])
+        for ref, a in autos.items():
+            a["facts"] = res.get(int(ref[4:])) if ref[4:].isdigit() else None
 
     # `_project` fills an unresolvable name with an em dash rather than a null,
     # so read it as blank here — otherwise the placeholder wins over the name

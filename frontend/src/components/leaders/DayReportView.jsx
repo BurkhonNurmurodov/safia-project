@@ -14,6 +14,7 @@ import { ReportPhoto, BotPhoto } from "./ProofPhoto";
 import { VERIFY, GROUP_ORDER, groupOf, taskState, disputeOpen } from "./verifyState";
 import api from "../../utils/api";
 import { showReason } from "../../utils/leaderReason";
+import { autoResultLines } from "../../utils/autoResult";
 
 /**
  * One leader's day, verified — the body of `/leaders/report/:uid`, and of every
@@ -427,6 +428,12 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               })}
             </p>
           )}
+          {/* What the automatic check READ at its hour — the numbers its
+              verdict was taken on, never re-measured (utils/autoResult.js). */}
+          {!t.done && t.auto && autoResultLines(t.autoFacts, lang).map((line) => (
+            <p key={line} className="text-[12px] leading-snug tabular-nums"
+              style={{ color: "var(--text-2)" }}>{line}</p>
+          ))}
 
           {photos.length > 0 && (
             <div className="pt-2.5">

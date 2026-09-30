@@ -210,6 +210,9 @@ def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | Non
             # off the reason sentinel rather than the config, because a report
             # is read months later and the config may have moved since.
             "auto": is_auto,
+            # …and the numbers that check was taken on at its hour, printed
+            # under its reason (`leader_auto.results_for`).
+            "autoFacts": tk.get("auto_facts") if is_auto else None,
             "queued": bool(rev and rev.status == "pending"),
             "dispute": _dispute_out(d) if d is not None else None,
             # May this verdict be ARGUED? Two kinds, one chain (2026-09-28, the

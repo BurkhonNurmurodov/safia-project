@@ -45,6 +45,7 @@ import { useTranslit, transliterate } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { showReason as expandReason } from "../utils/leaderReason";
+import { autoResultLines } from "../utils/autoResult";
 import { surnameInitial } from "../utils/personName";
 
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
@@ -5092,6 +5093,11 @@ export default function Leaders() {
                           ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{reason}</p>
                           : !tk.done ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noReason}</p>
                           : null)}
+                        {/* An automatic check's result at its hour — what the
+                            verdict above was taken on (utils/autoResult.js). */}
+                        {!unasked && !tk.done && autoResultLines(tk.auto_facts, lang).map((line) => (
+                          <p key={line} className="text-xs mt-0.5 tabular-nums" style={{ color: "var(--text-2)" }}>{line}</p>
+                        ))}
                         {/* The photo IS the evidence on this card — an admin
                             rules on what the frame shows and on the clock in
                             its corner, so it renders big enough to read

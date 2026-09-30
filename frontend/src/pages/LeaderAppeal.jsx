@@ -722,7 +722,7 @@ function AppealView({ thread, path, id, onCompact }) {
               {/* An objection to an AUTOMATIC check carries no AI verdict —
                   what it argues with is the check's own sentinel. */}
               <VerdictBlock rev={item.verdict} autoReason={item.auto?.reason}
-                title={T.aiTitle} />
+                autoFacts={item.auto?.facts} title={T.aiTitle} />
             </>
           )}
         </div>
@@ -889,7 +889,7 @@ function NewObjection({ uid, taskId, onCompact }) {
         <div className="px-3 sm:px-6 py-4 space-y-4">
           <DisputePhotos photos={photos} uid={rep.uid} T={T} onZoom={setZoom} />
           <VerdictBlock rev={task.review} autoReason={task.auto ? task.reason : null}
-            title={T.aiTitle} />
+            autoFacts={task.autoFacts} title={T.aiTitle} />
         </div>
       </Card>
       <Card>

@@ -13,6 +13,7 @@ import EmptyState from "../ui/EmptyState";
 import { BotPhoto, ReportPhoto, RollPhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
+import { autoResultLines } from "../../utils/autoResult";
 import api from "../../utils/api";
 
 /**
@@ -161,6 +162,12 @@ function TaskRow({ task, uid, lang, T, onPhoto, onReopen, onWipe, busy }) {
           })}
         </p>
       ) : null}
+      {/* What the automatic check read at its hour (utils/autoResult.js). */}
+      {task.reason && !task.done && autoResultLines(task.autoFacts, lang).map((line) => (
+        <p key={line} className="text-[11px] leading-snug tabular-nums" style={{ color: "var(--text-2)" }}>
+          {line}
+        </p>
+      ))}
 
       {task.closedAt && (
         <p className="text-[11px]" style={{ color: "var(--text-4)" }}>

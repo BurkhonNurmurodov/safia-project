@@ -1,6 +1,7 @@
 import { Sparkles, Clock, CalendarCheck, Settings2, XCircle } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
+import { autoResultLines } from "../../utils/autoResult";
 import { hexA, pick } from "./DayReportView";
 
 /**
@@ -18,7 +19,7 @@ import { hexA, pick } from "./DayReportView";
  *
  *   rev        — the AI verdict (`review` on the report / `verdict` on a card)
  *   autoReason — the `__auto__|HH:MM|code` sentinel of an automatic task
- *   autoFacts  — the check's stored facts at the hour, when the caller has them
+ *   autoFacts  — the check's stored facts at the hour (`utils/autoResult.js`)
  *   title      — overrides the AI heading (the chat says "why it was rejected")
  */
 
@@ -37,10 +38,6 @@ const T_ALL = {
       started_late: "chek-list tekshiruvdan keyin boshlangan",
       not_checked: "tekshiruv o'tkazilmadi", no_data: "ma'lumot o'qilmadi",
     },
-    fPlan: "Reja kiritilgan pozitsiyalar: {a} / {b}",
-    fUntyped: "Odamlar soni kiritilmagan: {codes}",
-    fPct: "Bajarilishi: {pct}% (kerak: {target}%)",
-    fConcerns: "Yozilgan xavotirlar: {n} ta",
     f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
     f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
     f_unreadable: "Rasm o'qilmadi",
@@ -57,10 +54,6 @@ const T_ALL = {
       started_late: "чек-лист текширувдан кейин бошланган",
       not_checked: "текширув ўтказилмади", no_data: "маълумот ўқилмади",
     },
-    fPlan: "Режа киритилган позициялар: {a} / {b}",
-    fUntyped: "Одамлар сони киритилмаган: {codes}",
-    fPct: "Бажарилиши: {pct}% (керак: {target}%)",
-    fConcerns: "Ёзилган хавотирлар: {n} та",
     f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
     f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
     f_unreadable: "Расм ўқилмади",
@@ -77,10 +70,6 @@ const T_ALL = {
       started_late: "чек-лист начат после проверки",
       not_checked: "проверка не проводилась", no_data: "данные не прочитаны",
     },
-    fPlan: "Позиции с планом: {a} / {b}",
-    fUntyped: "Не внесено количество людей: {codes}",
-    fPct: "Выполнение: {pct}% (нужно: {target}%)",
-    fConcerns: "Записано обеспокоенностей: {n}",
     f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
     f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
     f_unreadable: "Фото не прочиталось",
@@ -97,33 +86,11 @@ const T_ALL = {
       started_late: "the checklist began after the check",
       not_checked: "the check did not run", no_data: "the data could not be read",
     },
-    fPlan: "Positions with a plan: {a} / {b}",
-    fUntyped: "Headcount missing: {codes}",
-    fPct: "Fulfilment: {pct}% (needed: {target}%)",
-    fConcerns: "Concerns written: {n}",
     f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
     f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
     f_unreadable: "Photo unreadable",
   },
 };
-
-const put = (s, p) => Object.entries(p).reduce((a, [k, v]) => a.replaceAll(`{${k}}`, v), s);
-
-/** The numbers an automatic check was taken on, as plain lines. Only what the
- *  check stored — never a figure recomputed on the client. */
-function autoFactLines(facts, T) {
-  const f = facts || {};
-  const out = [];
-  if (f.lines != null || f.with_plan != null) {
-    out.push(put(T.fPlan, { a: f.with_plan ?? 0, b: f.lines ?? 0 }));
-  }
-  if (Array.isArray(f.untyped) && f.untyped.length) {
-    out.push(put(T.fUntyped, { codes: f.untyped.slice(0, 8).join(", ") }));
-  }
-  if (f.pct != null) out.push(put(T.fPct, { pct: f.pct, target: f.target ?? "—" }));
-  if (f.found != null) out.push(put(T.fConcerns, { n: f.found }));
-  return out;
-}
 
 export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
   const { lang } = useLang();
@@ -134,7 +101,7 @@ export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
   // (15px, 1.55), not as a caption. It was 12px, which on a phone is exactly
   // where a reader squints and rules on the chip alone.
   if (!rev && autoReason) {
-    const facts = autoFactLines(autoFacts, T);
+    const facts = autoResultLines(autoFacts, lang);
     return (
       <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
         <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"

@@ -941,6 +941,101 @@ def measured(db: Session, leader_id: int, date: str, task_id: int,
     return _at_hour(_ledger(db, leader_id, str(date)[:10], task_id, cell_id))
 
 
+# What a reader is shown beside an automatic verdict's reason: the numbers the
+# check was TAKEN ON, read off the ledger row and never re-measured — a figure
+# recomputed now would pass work typed after the hour. Named keys only, so a
+# diagnostic the ledger grows later does not ride every register row.
+_RESULT_KEYS = ("lines", "with_plan", "cells", "untyped", "filled", "target",
+                "pct", "by_cell", "best", "best_pct", "found", "from", "to",
+                "checked_at", "late_by_min")
+
+
+def results_for(db: Session, entry_ids) -> dict[int, dict]:
+    """entry id → the facts its automatic verdict was taken on.
+
+    THE door every surface that prints an auto task's reason reads the result
+    through (the register, the day report, the admin day detail, the appeal
+    chat, the bot), so one verdict is never described two ways. Keyed by the
+    ENTRY because that is what every one of them already holds: on a per-cell
+    unit the one verdict is written onto each cell's entry, and each carries
+    its own ledger row. An entry the ledger does not know (a day-sweep
+    `not_checked`, a verdict before the ledger kept facts) is simply absent."""
+    ids = sorted({int(i) for i in entry_ids if i})
+    out: dict[int, dict] = {}
+    for k in range(0, len(ids), 1000):
+        for eid, facts in (db.query(LeaderAutoCheck.entry_id, LeaderAutoCheck.facts)
+                           .filter(LeaderAutoCheck.entry_id.in_(ids[k:k + 1000]),
+                                   LeaderAutoCheck.outcome.in_((PASSED, FAILED)))
+                           .all()):
+            f = facts if isinstance(facts, dict) else {}
+            got = {key: f[key] for key in _RESULT_KEYS if key in f}
+            if got:
+                out[int(eid)] = got
+    return out
+
+
+def result_lines(facts: dict | None, lang: str = "uz") -> list[str]:
+    """The result as plain lines in one language — for the bot and its cards.
+    The client twin is `utils/autoResult.js`; keep the two saying the same."""
+    f = facts or {}
+    L = _RESULT_TEXT.get(lang) or _RESULT_TEXT["uz"]
+    out: list[str] = []
+    if f.get("with_plan") is not None and f.get("lines") is not None:
+        out.append(L["plan"].format(a=f["with_plan"], b=f["lines"]))
+    if f.get("filled"):
+        out.append(L["filled"].format(codes=", ".join(map(str, f["filled"][:8]))))
+    if f.get("untyped"):
+        out.append(L["untyped"].format(codes=", ".join(map(str, f["untyped"][:8]))))
+    cells = [c for c in (f.get("by_cell") or []) if isinstance(c, dict)]
+    if cells:
+        parts = " · ".join(f"{c.get('cell')} — {_pct(c.get('pct'))}%" for c in cells[:6])
+        out.append(L["pct"].format(v=parts, target=_pct(f.get("target"))))
+    elif f.get("pct") is not None:
+        out.append(L["pct"].format(v=f"{_pct(f['pct'])}%", target=_pct(f.get("target"))))
+    if f.get("found") is not None:
+        out.append(L["concerns"].format(n=f["found"], frm=f.get("from") or "—",
+                                        to=f.get("to") or "—"))
+    if f.get("late_by_min"):
+        out.append(L["late"].format(n=f["late_by_min"]))
+    return out
+
+
+def _pct(v) -> str:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return str(int(x)) if x == int(x) else f"{x:.1f}"
+
+
+_RESULT_TEXT = {
+    "uz": {"plan": "Reja kiritilgan pozitsiyalar: {a} / {b}",
+           "filled": "Reja va odamlar kiritilgan yacheykalar: {codes}",
+           "untyped": "Odamlar soni kiritilmagan: {codes}",
+           "pct": "Bajarilishi: {v} (kerak: {target}%)",
+           "concerns": "Yozilgan xavotirlar: {n} ta ({frm} – {to})",
+           "late": "Tekshiruv {n} daqiqa kechikib o'tkazilgan"},
+    "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
+                "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
+                "untyped": "Одамлар сони киритилмаган: {codes}",
+                "pct": "Бажарилиши: {v} (керак: {target}%)",
+                "concerns": "Ёзилган хавотирлар: {n} та ({frm} – {to})",
+                "late": "Текширув {n} дақиқа кечикиб ўтказилган"},
+    "ru": {"plan": "Позиции с планом: {a} / {b}",
+           "filled": "Ячейки с планом и людьми: {codes}",
+           "untyped": "Не внесено количество людей: {codes}",
+           "pct": "Выполнение: {v} (нужно: {target}%)",
+           "concerns": "Записано обеспокоенностей: {n} ({frm} – {to})",
+           "late": "Проверка прошла с опозданием на {n} мин"},
+    "en": {"plan": "Positions with a plan: {a} / {b}",
+           "filled": "Cells with plan and people: {codes}",
+           "untyped": "Headcount missing: {codes}",
+           "pct": "Fulfilment: {v} (needed: {target}%)",
+           "concerns": "Concerns written: {n} ({frm} – {to})",
+           "late": "The check ran {n} min late"},
+}
+
+
 def _already_told(db: Session, row: LeaderAutoCheck) -> bool:
     """Has this leader already been sent this task's verdict for the day?
 
