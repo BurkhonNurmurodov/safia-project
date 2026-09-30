@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Ban, ArrowUpCircle, ShieldCheck, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   MessageSquareWarning, MessageCircle, Clock, Hourglass, UserCheck, CircleSlash,
-  Camera, ImageUp, Timer, Images, Gavel, FileText, Maximize2,
+  Camera, ImageUp, Timer, Images, Gavel, FileText, Maximize2, UserPlus,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -101,14 +101,16 @@ const TXT = {
     onPhoto: "Rasmda", deadline: "Muddat", filed: "Yuborildi", lateBy: "Kechikish",
     lateNone: "o'lchab bo'lmaydi", unitD: "kun", unitH: "soat", unitM: "daq",
     srcCam: "Ilovada olingan", srcUpload: "Yuklangan",
-    chat: "Muhokama", chatHint: "Lider, brigadir va adminlar ko'radi va xabar oladi",
+    chat: "Muhokama", chatHint: "Lider, brigadir, adminlar va chatga qo'shilganlar ko'radi va xabar oladi",
     placeholder: "Xabar yozing…", closed: "Qaror yakuniy — chat yopilgan. Admin qarorni bekor qilsa, chat qayta ochiladi.",
-    readOnly: "Bu chatda faqat lider, brigadir va adminlar yozadi.",
+    readOnly: "Bu chatda faqat lider, brigadir, adminlar va ular chatga qo'shgan odamlar yozadi.",
+    placeholderMention: "Xabar yozing… @ bilan odam qo'shing", kInvited: "Chatga qo'shildi",
     empty: "Hozircha xabar yo'q",
     kFiled: "Norozilik", kFiledLate: "Kechikkan isbot sababi", kSupRejected: "Brigadir rad etdi",
     kUplifted: "Adminlarga yuborildi", kApproved: "Qabul qilindi", kApprovedLate: "Tasdiqlandi",
     kRejected: "Rad etildi", kUndone: "Qaror bekor qilindi — chat qayta ochildi",
     rLeader: "Lider", rSupervisor: "Brigadir", rAdmin: "Admin",
+    rShiftManager: "Smena menejeri", rTopManager: "Top menejer", rGuest: "Mehmon", rIdleOwner: "Kutish mas'uli",
     mRejectT: "Rad etish", mUpliftT: "Adminlarga yuborish", mApproveT: "Qabul qilish",
     mNoteSup: "Brigadir izohi", mNoteAdm: "Admin izohi", noteOpt: "ixtiyoriy",
     hRejectSup: "Nega rad etyapsiz? Izoh chatga yoziladi va liderga yuboriladi.",
@@ -147,14 +149,16 @@ const TXT = {
     onPhoto: "Расмда", deadline: "Муддат", filed: "Юборилди", lateBy: "Кечикиш",
     lateNone: "ўлчаб бўлмайди", unitD: "кун", unitH: "соат", unitM: "дақ",
     srcCam: "Иловада олинган", srcUpload: "Юкланган",
-    chat: "Муҳокама", chatHint: "Лидер, бригадир ва админлар кўради ва хабар олади",
+    chat: "Муҳокама", chatHint: "Лидер, бригадир, админлар ва чатга қўшилганлар кўради ва хабар олади",
     placeholder: "Хабар ёзинг…", closed: "Қарор якуний — чат ёпилган. Админ қарорни бекор қилса, чат қайта очилади.",
-    readOnly: "Бу чатда фақат лидер, бригадир ва админлар ёзади.",
+    readOnly: "Бу чатда фақат лидер, бригадир, админлар ва улар чатга қўшган одамлар ёзади.",
+    placeholderMention: "Хабар ёзинг… @ билан одам қўшинг", kInvited: "Чатга қўшилди",
     empty: "Ҳозирча хабар йўқ",
     kFiled: "Норозилик", kFiledLate: "Кечиккан исбот сабаби", kSupRejected: "Бригадир рад этди",
     kUplifted: "Админларга юборилди", kApproved: "Қабул қилинди", kApprovedLate: "Тасдиқланди",
     kRejected: "Рад этилди", kUndone: "Қарор бекор қилинди — чат қайта очилди",
     rLeader: "Лидер", rSupervisor: "Бригадир", rAdmin: "Админ",
+    rShiftManager: "Смена менежери", rTopManager: "Топ менежер", rGuest: "Меҳмон", rIdleOwner: "Кутиш масъули",
     mRejectT: "Рад этиш", mUpliftT: "Админларга юбориш", mApproveT: "Қабул қилиш",
     mNoteSup: "Бригадир изоҳи", mNoteAdm: "Админ изоҳи", noteOpt: "ихтиёрий",
     hRejectSup: "Нега рад этяпсиз? Изоҳ чатга ёзилади ва лидерга юборилади.",
@@ -193,14 +197,16 @@ const TXT = {
     onPhoto: "На фото", deadline: "Срок", filed: "Отправлено", lateBy: "Опоздание",
     lateNone: "не измерить", unitD: "д", unitH: "ч", unitM: "мин",
     srcCam: "Снято в приложении", srcUpload: "Загружено",
-    chat: "Обсуждение", chatHint: "Лидер, бригадир и администраторы видят всё и получают уведомления",
+    chat: "Обсуждение", chatHint: "Лидер, бригадир, администраторы и добавленные в чат видят всё и получают уведомления",
     placeholder: "Напишите сообщение…", closed: "Решение окончательное — чат закрыт. Если администратор отменит решение, чат откроется снова.",
-    readOnly: "В этом чате пишут только лидер, бригадир и администраторы.",
+    readOnly: "В этом чате пишут только лидер, бригадир, администраторы и добавленные ими люди.",
+    placeholderMention: "Напишите сообщение… @ — добавить человека", kInvited: "Добавлен(а) в чат",
     empty: "Сообщений пока нет",
     kFiled: "Возражение", kFiledLate: "Причина опоздания", kSupRejected: "Бригадир отклонил",
     kUplifted: "Передано администраторам", kApproved: "Принято", kApprovedLate: "Принято",
     kRejected: "Отклонено", kUndone: "Решение отменено — чат открыт снова",
     rLeader: "Лидер", rSupervisor: "Бригадир", rAdmin: "Админ",
+    rShiftManager: "Менеджер смены", rTopManager: "Топ-менеджер", rGuest: "Гость", rIdleOwner: "Ответственный за простой",
     mRejectT: "Отклонить", mUpliftT: "Передать администраторам", mApproveT: "Принять",
     mNoteSup: "Комментарий бригадира", mNoteAdm: "Комментарий администратора", noteOpt: "необязательно",
     hRejectSup: "Почему вы отклоняете? Комментарий попадёт в чат и будет отправлен лидеру.",
@@ -239,14 +245,16 @@ const TXT = {
     onPhoto: "On the photo", deadline: "Deadline", filed: "Filed", lateBy: "Late by",
     lateNone: "not measurable", unitD: "d", unitH: "h", unitM: "min",
     srcCam: "Shot in the app", srcUpload: "Uploaded",
-    chat: "Discussion", chatHint: "The leader, the brigadir and the admins see everything and are notified",
+    chat: "Discussion", chatHint: "The leader, the brigadir, the admins and the people added to the chat see everything and are notified",
     placeholder: "Write a message…", closed: "The ruling is final — the chat is closed. If an admin undoes the ruling, it opens again.",
-    readOnly: "Only the leader, the brigadir and the admins write in this chat.",
+    readOnly: "Only the leader, the brigadir, the admins and the people they added write in this chat.",
+    placeholderMention: "Write a message… @ adds a person", kInvited: "Added to the chat",
     empty: "No messages yet",
     kFiled: "Objection", kFiledLate: "Reason for being late", kSupRejected: "The brigadir refused",
     kUplifted: "Passed to the admins", kApproved: "Upheld", kApprovedLate: "Approved",
     kRejected: "Refused", kUndone: "Ruling undone — the chat is open again",
     rLeader: "Leader", rSupervisor: "Brigadir", rAdmin: "Admin",
+    rShiftManager: "Shift manager", rTopManager: "Top manager", rGuest: "Guest", rIdleOwner: "Waiting owner",
     mRejectT: "Refuse", mUpliftT: "Pass to the admins", mApproveT: "Uphold",
     mNoteSup: "The brigadir's comment", mNoteAdm: "The admin's comment", noteOpt: "optional",
     hRejectSup: "Why are you refusing? The comment goes into the chat and to the leader.",
@@ -409,11 +417,17 @@ function useKinds(T, late) {
     approved: { label: late ? T.kApprovedLate : T.kApproved, color: C_OK, Icon: ShieldCheck },
     rejected: { label: T.kRejected, color: C_BAD, Icon: Ban },
     undone: { label: T.kUndone, color: C_OFF, Icon: RotateCcw, system: true },
+    // An admin @mentioned somebody new: a centred line naming who was added.
+    invited: { label: T.kInvited, color: C_UP, Icon: UserPlus, system: true, inline: true },
   }), [T, late]);
 }
 
 const roleLabelFor = (T) => (role) =>
-  ({ leader: T.rLeader, supervisor: T.rSupervisor, admin: T.rAdmin })[role] || "";
+  ({
+    leader: T.rLeader, supervisor: T.rSupervisor, admin: T.rAdmin,
+    "shift-manager": T.rShiftManager, "top-manager": T.rTopManager,
+    guest: T.rGuest, "idle-owner": T.rIdleOwner,
+  })[role] || "";
 
 /** The case: whose appeal, about which task, where it stands — and, for the
  *  one person whose turn it is, a row that takes them to the ruling. The page
@@ -528,6 +542,19 @@ function AppealView({ thread, path, id, onCompact }) {
     retry: false,
     refetchInterval: 30000,
   });
+  // Everybody an ADMIN may bring into the chat by @mentioning them — the
+  // server offers the list to admins alone (the operator's ruling), so nobody
+  // else asks for it.
+  const peopleKey = ["appeal-people", thread, String(id)];
+  const { data: people } = useQuery({
+    queryKey: peopleKey,
+    queryFn: () => api.get(`/api/leaders/${path}/${id}/mentionable`).then((r) => r.data),
+    enabled: !!data?.canMention,
+    staleTime: 5 * 60 * 1000,
+  });
+  const mentionNames = useMemo(() => (data?.item ? [
+    data.item.leader, data.item.supervisor, ...(data.members || []).map((m) => m.name),
+  ].filter(Boolean) : []), [data]);
 
   const back = () => {
     if ((window.history.state?.idx ?? 0) > 0) nav(-1);
@@ -615,7 +642,8 @@ function AppealView({ thread, path, id, onCompact }) {
   // moment a submitted task is judged — so its reader is sent to that day's
   // checklist instead. Navigation, so it is a row with a chevron, not a
   // button competing with the ruling.
-  const report = !late && item.uid ? {
+  // Somebody an admin brought in reads THIS chat, not the day behind it.
+  const report = !late && item.uid && !data.invited ? {
     label: item.dayOpen ? T.openChecklist : T.openReport,
     onClick: () => nav(item.dayOpen
       ? `/leaders?tab=checklist&leader=${item.leaderId || ""}&date=${item.date || ""}`
@@ -715,14 +743,16 @@ function AppealView({ thread, path, id, onCompact }) {
           layout="page"
           endpoint={`/api/leaders/${path}/${id}/messages`}
           queryKey={msgsKey}
-          refreshKeys={[threadKey, listKey]}
+          refreshKeys={[threadKey, listKey, peopleKey]}
           filesEndpoint={`/api/leaders/${path}/${id}/files`}
           attachments
           canComment={!!data.canWrite}
           closedText={data.open ? T.readOnly : T.closed}
           kinds={kinds}
           roleLabel={roleLabelFor(T)}
-          placeholder={T.placeholder}
+          mentionPeople={data.canMention ? (people || []) : null}
+          mentionNames={mentionNames}
+          placeholder={data.canMention ? T.placeholderMention : T.placeholder}
           emptyText={T.empty}
           pollMs={20000}
           beforeComposer={rulingPanel}

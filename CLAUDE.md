@@ -4573,6 +4573,23 @@ Where this section and the two below disagree, THIS section is current.
   and are spared a second DM. Keys: `leader_dispute_filed` (neutral now),
   `leader_dispute_message`, `late_proof_filed`, `late_proof_message`, the
   existing ruling keys, and `*_undone` / `*_undone_sup` (reopened).
+- **An ADMIN brings people in by @mentioning them** (2026-09-30, the operator's
+  rulings of 26 Sep): typing «@» in the composer opens a list of EVERY profile
+  on the platform, guests included, the unit's own shift-managers first
+  (`GET …/mentionable`, admins only; `chat.people`). The picks still named in
+  the text ride the post as `mentions`; the server honours them from an admin
+  alone (`chat.invite`), adds each new person to `leader_appeal_members` and
+  writes one «invited» entry naming them (a centred line in the thread). A
+  member READS and WRITES like the three parties, sees the photos of that
+  appeal (the late-proof photo door; `photo_scope_ok` → the disputed task
+  only), counts for ✓✓ and is told about every entry (`fanout`) — the message
+  that named them arrives as `leader_dispute_invited` / `late_proof_invited`
+  instead. They NEVER rule (stage rights are role + unit), there is no
+  removal, the leader and the brigadir get no list, and a member who reads
+  only because of the invite is offered no link to the day report
+  (`invited`). A re-filed objection carries its members (`chat.carry`).
+  `CommentsThread` takes it as `mentionPeople` / `mentionNames` — tasks and
+  concerns pass neither and render exactly as before.
 - **Telegram carries ONLY «Open chat»** (the operator's ruling): the brigadir's
   and admins' cards (`_ad_kb`, `_lp_kb`, the approvals `leader_dispute` card via
   `_broadcast(kb_fn=)`) have no ruling buttons. A button on a card minted before

@@ -2714,9 +2714,31 @@ def photo_scope_ok(db: Session, payload: dict, uid: str | None,
     # its day closes (`build_report_row`), and the appeal chat then shows its
     # photos through this very door.
     row = build_report_row(db, uid, allow_open=True)
-    if row is None or not report_scope_ok(db, payload, row):
+    if row is None:
         return False
-    return bool(in_report(row))
+    if report_scope_ok(db, payload, row):
+        return bool(in_report(row))
+    # Somebody an admin brought into an objection's chat sees the photos of
+    # the task that objection is about — that task only, never the whole day
+    # (the report itself is not theirs to read).
+    tasks = _member_dispute_tasks(db, payload, uid)
+    if not tasks:
+        return False
+    return bool(in_report({**row, "tasks": [
+        t for t in (row.get("tasks") or []) if int(t.get("id") or 0) in tasks]}))
+
+
+def _member_dispute_tasks(db: Session, payload: dict, uid: str) -> set[int]:
+    """The task ids of report `uid` whose objection chats the viewer was
+    brought into by an admin."""
+    ids = leader_appeal_chat.member_threads(
+        db, leader_appeal_chat.DISPUTE, identity.viewer_profile_key(db, payload))
+    if not ids:
+        return set()
+    rows = db.query(LeaderAiDispute).filter(LeaderAiDispute.id.in_(ids)).all()
+    from app.services import leader_reports
+    uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
+    return {int(r.task_id) for r in rows if uids.get(r.ref) == uid}
 
 
 @router.get("/leaders/photo")
@@ -3363,7 +3385,12 @@ def late_proof_photo(
                    # guest, a worker) read that leader's proofs.
                    or (role == "leader" and row.leader_id is not None
                        and int(row.leader_id) in
-                       identity.viewer_leader_profile_ids(db, payload)))
+                       identity.viewer_leader_profile_ids(db, payload))
+                   # Somebody an admin brought into this proof's chat: the
+                   # photos are what they were brought in to look at.
+                   or leader_appeal_chat.is_member(
+                       db, leader_appeal_chat.LATE, row.id,
+                       identity.viewer_profile_key(db, payload)))
         if not allowed:
             raise HTTPException(status_code=403, detail="Not allowed")
     m = (db.query(LeaderLateProofMedia)

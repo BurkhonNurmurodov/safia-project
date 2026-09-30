@@ -2618,6 +2618,34 @@ class LeaderAppealRead(Base):
     )
 
 
+class LeaderAppealMember(Base):
+    """Somebody an ADMIN brought into one appeal chat by @mentioning them
+    (2026-09-30, the operator's rulings of 2026-09-26).
+
+    The three parties — the leader, the unit's brigadir, the admins — are
+    implied by the appeal row and are never stored here. A member WRITES like
+    them and is told about every entry, but never rules: the stage rights are
+    decided by role and unit, which an invitation does not change. There is no
+    removal — once in, they stay — so a row is only ever inserted.
+    """
+    __tablename__ = "leader_appeal_members"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    thread      = Column(String(8), nullable=False)
+    thread_id   = Column(Integer, nullable=False)
+    profile_key = Column(String, nullable=False, index=True)
+    name        = Column(String(160), nullable=True)   # snapshot at the invite
+    invited_by_profile = Column(String, nullable=True)
+    invited_by_name    = Column(String(160), nullable=True)
+    message_id  = Column(Integer, nullable=True)       # the message that named them
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("thread", "thread_id", "profile_key",
+                         name="uq_appeal_member"),
+    )
+
+
 class LeaderTaskOverride(Base):
     """An admin's manual ruling on ONE task of ONE report — done or not done,
     regardless of what the leader answered or what the AI thought.

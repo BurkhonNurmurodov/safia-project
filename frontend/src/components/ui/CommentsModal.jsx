@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, useId } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import {
@@ -109,6 +109,17 @@ import { useTranslit } from "../../utils/transliterate";
  *                         field, plus whatever the filing needs beside it
  *   requireText, minText – the text is required even with files, this long
  *   onPosted(data)      – the server's answer (the page opens the new chat)
+ *   @mentions (the appeal chat, 2026-09-30 — an ADMIN brings a new person in
+ *   by naming them; nobody else is offered a list):
+ *   mentionPeople       – [{key, name, role, sub?, photo?, in_chat?}] — typing
+ *                         «@» opens the list; the picks still named in the text
+ *                         are posted as `mentionField` (a JSON list of keys)
+ *   mentionNames        – names whose «@Name» is highlighted in a message
+ *                         (the people in the chat), beside the authors'
+ *   mentionRoleLabel    – how a role is named on a list row (defaults to
+ *                         `roleLabel`)
+ *   A `kinds` entry with `system` + `inline` renders its TEXT inside the centred
+ *   line («Added to the chat: …»), rather than as somebody speaking.
  */
 
 const MAX_FILES = 10;
@@ -132,6 +143,11 @@ const tint = (hex, a = 0.12) => {
 const personInk = (name) => `hsl(${nameHue(name || "")}, 58%, 55%)`;
 
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2";
+
+// A name as a search compares it: case and the apostrophe's several spellings
+// (o'/oʻ/o`) folded away, so «@ozod» finds «Oʻzod».
+const foldName = (s) => String(s || "").toLowerCase().replace(/[\u2019'`\u02bb\u02bc\u2018]/g, "");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export default function CommentsModal({
   endpoint,
@@ -222,6 +238,10 @@ export function CommentsThread({
   minText = 1,
   onPosted,
   beforeComposer = null,
+  mentionPeople = null,
+  mentionNames = null,
+  mentionField = "mentions",
+  mentionRoleLabel,
 }) {
   const { auth } = useAuth();
   const { t, lang } = useLang();
@@ -238,8 +258,12 @@ export function CommentsThread({
   const [shot, setShot] = useState(null);
   const [openingFile, setOpeningFile] = useState(null);
   const [toDelete, setToDelete] = useState(null);   // the message awaiting a confirm
+  const [picked, setPicked] = useState([]);         // [{key, label}] named with «@»
+  const [mq, setMq] = useState(null);               // {at, q} — the «@…» being typed
+  const [mIdx, setMIdx] = useState(0);
   const listEndRef = useRef(null);
   const inputRef = useRef(null);
+  const mentionListId = useId();
   const scrollAfterPost = useRef(false);
   const page = layout === "page";
   // The design's roomy layout is a page on a wide screen; a dialog is as
@@ -274,12 +298,18 @@ export function CommentsThread({
   const valid = pending.filter((p) => !p.error);
 
   const target = postEndpoint || endpoint;
+  // The people picked from the list whose «@Name» is still in the text — one
+  // deleted from the text was changed the writer's mind about.
+  const mentionKeys = () => [...new Set(
+    picked.filter((p) => text.includes(`@${p.label}`)).map((p) => p.key))];
   const addMutation = useMutation({
     mutationFn: () => {
+      const keys = mentionPeople ? mentionKeys() : [];
       if (attachments && valid.length) {
         const fd = new FormData();
         fd.append(textField, text);
         Object.entries(postFields || {}).forEach(([k, v]) => fd.append(k, String(v)));
+        if (keys.length) fd.append(mentionField, JSON.stringify(keys));
         valid.forEach((p) => fd.append("files", p.file, p.file.name));
         setProgress(0);
         return api.post(target, fd, {
@@ -287,11 +317,16 @@ export function CommentsThread({
             setProgress(Math.min(100, Math.round((e.loaded * 100) / (e.total || e.loaded || 1)))),
         });
       }
-      return api.post(target, { ...(postFields || {}), [textField]: text });
+      return api.post(target, {
+        ...(postFields || {}), [textField]: text,
+        ...(keys.length ? { [mentionField]: keys } : {}),
+      });
     },
     onSuccess: (res) => {
       setText("");
       setPending([]);
+      setPicked([]);
+      setMq(null);
       scrollAfterPost.current = true;
       invalidate();
       onPosted?.(res?.data);
@@ -383,6 +418,92 @@ export function CommentsThread({
     addMutation.mutate();
   }
 
+  // ── @mentions ─────────────────────────────────────────────────────────────
+  // The «@…» the caret sits in: an «@» at the start or after a space, and up to
+  // 40 characters after it on one line. A name just picked (followed by its
+  // space) is finished, not being typed.
+  const findMention = (value, caret) => {
+    if (!mentionPeople) return null;
+    const before = value.slice(0, caret);
+    const at = before.lastIndexOf("@");
+    if (at < 0 || (at > 0 && !/\s/.test(before[at - 1]))) return null;
+    const q = before.slice(at + 1);
+    if (q.length > 40 || /\n/.test(q) || /\s{2}/.test(q)) return null;
+    if (picked.some((p) => q === `${p.label} ` || q.startsWith(`${p.label} `))) return null;
+    return { at, q };
+  };
+  const syncMention = (el) => {
+    if (!mentionPeople || !el) return;
+    const next = findMention(el.value, el.selectionStart ?? el.value.length);
+    if ((mq?.q ?? null) !== (next?.q ?? null)) setMIdx(0);
+    setMq(next);
+  };
+  const mentionMatches = useMemo(() => {
+    if (!mq || !mentionPeople) return [];
+    const q = foldName(mq.q).trim();
+    const scored = [];
+    for (const p of mentionPeople) {
+      if (!q) { scored.push([0, p]); continue; }
+      const hay = foldName(`${p.name} ${tl(p.name)}`);
+      if (!hay.includes(q)) continue;
+      scored.push([hay.split(/\s+/).some((w) => w.startsWith(q)) ? 0 : 1, p]);
+    }
+    return scored.sort((a, b) => a[0] - b[0]).slice(0, 60).map((x) => x[1]);
+  }, [mq, mentionPeople, tl]);
+  // Typing on past a name nobody carries («@ali bilan gaplashdim») is just
+  // words — the list steps aside instead of announcing «nobody found».
+  const mOpen = !!mq && (mentionMatches.length > 0 || !/\s/.test(mq.q));
+  const pickMention = (p) => {
+    const el = inputRef.current;
+    if (!mq || !p) return;
+    const label = tl(p.name) || p.name;
+    const caret = el?.selectionStart ?? text.length;
+    setText(`${text.slice(0, mq.at)}@${label} ${text.slice(caret)}`);
+    setPicked((prev) => (prev.some((x) => x.key === p.key) ? prev : [...prev, { key: p.key, label }]));
+    setMq(null);
+    const pos = mq.at + label.length + 2;
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(pos, pos); });
+  };
+  const roleName = mentionRoleLabel || roleLabel || (() => "");
+
+  // «@Name» in a message, for everybody in the chat — the people the page
+  // names, the list's, and whoever has written. Only where the page uses
+  // mentions at all (tasks and concerns render exactly as before).
+  const mentionRe = useMemo(() => {
+    if (!mentionPeople && !mentionNames?.length) return null;
+    const names = new Set();
+    const add = (n) => {
+      const v = String(n || "").trim();
+      if (v.length < 3) return;
+      names.add(v);
+      const x = tl(v);
+      if (x) names.add(x);
+    };
+    (mentionNames || []).forEach(add);
+    (mentionPeople || []).forEach((p) => add(p.name));
+    comments.forEach((c) => add(c.author_name));
+    if (!names.size) return null;
+    const alts = [...names].sort((a, b) => b.length - a.length).map(escapeRe);
+    return new RegExp(`@(?:${alts.join("|")})`, "g");
+  }, [mentionPeople, mentionNames, comments, tl]);
+  const withMentions = (s) => {
+    if (!mentionRe || !s || !s.includes("@")) return s;
+    const out = [];
+    let last = 0;
+    mentionRe.lastIndex = 0;
+    let m;
+    while ((m = mentionRe.exec(s))) {
+      if (m.index > last) out.push(s.slice(last, m.index));
+      out.push(
+        <span key={`m${m.index}`} className="font-semibold" style={{ color: "var(--brand-text)" }}>{m[0]}</span>,
+      );
+      last = m.index + m[0].length;
+    }
+    if (!out.length) return s;
+    if (last < s.length) out.push(s.slice(last));
+    return out;
+  };
+
   const startEdit = (c) => { setEditingId(c.id); setEditText(c.text || ""); };
   const stopEdit = () => { setEditingId(null); setEditText(""); };
   const askDelete = (c) => { deleteMutation.reset(); setToDelete(c); };
@@ -463,14 +584,17 @@ export function CommentsThread({
     const hasFiles = !!(c.files || []).length;
     const name = tl(c.author_name) || "—";
 
-    if (kind?.system && !hasText && !hasFiles) {
+    if (kind?.system && !hasFiles && (!hasText || kind.inline)) {
       const Icon = kind.Icon;
       return (
         <div key={c.id} className="self-center max-w-full my-1">
           <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 px-3 py-1 rounded-full text-xs text-center"
             style={{ background: "var(--hover-bg)", color: "var(--text-2)" }}>
             {Icon && <Icon size={12} className="chat-ink flex-shrink-0" style={{ "--ink": kind.color }} />}
-            <span className="chat-ink font-semibold" style={{ "--ink": kind.color }}>{kind.label}</span>
+            <span className="chat-ink font-semibold" style={{ "--ink": kind.color }}>
+              {kind.label}{hasText ? ":" : ""}
+            </span>
+            {hasText && <span className="font-semibold" style={{ color: "var(--text-1)" }}>{tl(c.text)}</span>}
             <span>· {name} · {fmtTime(c.created_at)}</span>
           </span>
         </div>
@@ -544,7 +668,7 @@ export function CommentsThread({
           ) : hasText ? (
             <p className="m-0 text-[15px] leading-[1.45] whitespace-pre-wrap [overflow-wrap:anywhere]"
               style={{ color: "var(--text-1)" }}>
-              {c.text}
+              {withMentions(c.text)}
               {!hasFiles && meta(c, own, editable, deletable, true)}
             </p>
           ) : null}
@@ -646,14 +770,87 @@ export function CommentsThread({
           </div>
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div className="relative flex items-end gap-2">
+        {mOpen && (
+          <div id={mentionListId} role="listbox" aria-label={t("ui.comments.mentionTitle")}
+            className="absolute left-0 right-0 bottom-full mb-2 z-30 rounded-2xl overflow-hidden"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)",
+                     boxShadow: "0 12px 32px rgba(0,0,0,0.18)" }}
+            // Keep the caret in the composer while the list is used.
+            onMouseDown={(e) => e.preventDefault()}>
+            <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: "var(--text-3)" }}>
+              {t("ui.comments.mentionTitle")}
+            </div>
+            <div className="max-h-64 overflow-y-auto pb-1">
+              {mentionMatches.length ? mentionMatches.map((p, i) => {
+                const on = i === Math.min(mIdx, mentionMatches.length - 1);
+                const sub = [roleName(p.role), p.sub ? tl(p.sub) : ""].filter(Boolean).join(" · ");
+                return (
+                  <button key={p.key} type="button" role="option" aria-selected={on}
+                    id={`${mentionListId}-${i}`}
+                    ref={on ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                    onClick={() => pickMention(p)}
+                    onMouseEnter={() => setMIdx(i)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 min-h-[44px] text-left transition-colors"
+                    style={{ background: on ? "var(--hover-bg)" : "transparent" }}>
+                    <ProfileAvatar name={tl(p.name) || p.name} colorKey={p.name}
+                      profileKey={p.key} photoVer={p.photo} size={30} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
+                        {tl(p.name) || p.name}
+                      </span>
+                      {sub && (
+                        <span className="block text-[11px] truncate" style={{ color: "var(--text-3)" }}>{sub}</span>
+                      )}
+                    </span>
+                    {p.in_chat && (
+                      <span className="flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full"
+                        style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                        {t("ui.comments.mentionInChat")}
+                      </span>
+                    )}
+                  </button>
+                );
+              }) : (
+                <div className="px-3 py-3 text-[13px]" style={{ color: "var(--text-3)" }}>
+                  {t("ui.comments.mentionNone")}
+                </div>
+              )}
+            </div>
+            <div className="px-3 py-2 text-[11px] leading-snug"
+              style={{ borderTop: "1px solid var(--border)", color: "var(--text-3)" }}>
+              {t("ui.comments.mentionHint")}
+            </div>
+          </div>
+        )}
         <div className="flex-1 min-w-0 flex items-end gap-1 rounded-[22px] pl-4 pr-1 py-1 border border-[var(--border-md)] focus-within:border-[var(--brand)] transition-colors"
           style={{ background: "var(--chat-bubble)" }}>
           <textarea
             ref={inputRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            onChange={(e) => { setText(e.target.value); syncMention(e.target); }}
+            onSelect={(e) => syncMention(e.target)}
+            onBlur={() => setMq(null)}
+            onKeyDown={(e) => {
+              const n = mentionMatches.length;
+              if (mOpen && n) {
+                if (e.key === "ArrowDown") { e.preventDefault(); setMIdx((i) => (Math.min(i, n - 1) + 1) % n); return; }
+                if (e.key === "ArrowUp") { e.preventDefault(); setMIdx((i) => (Math.min(i, n - 1) - 1 + n) % n); return; }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  pickMention(mentionMatches[Math.min(mIdx, n - 1)]);
+                  return;
+                }
+              }
+              if (mOpen && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setMq(null); return; }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+            }}
+            aria-autocomplete={mentionPeople ? "list" : undefined}
+            aria-expanded={mentionPeople ? mOpen : undefined}
+            aria-controls={mOpen ? mentionListId : undefined}
+            aria-activedescendant={mOpen && mentionMatches.length
+              ? `${mentionListId}-${Math.min(mIdx, mentionMatches.length - 1)}` : undefined}
             placeholder={placeholder || t("ui.comments.placeholder")}
             aria-label={placeholder || t("ui.comments.placeholder")}
             rows={1}

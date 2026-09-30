@@ -44,7 +44,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Admin, LeaderAppealFile, LeaderAppealMessage, LeaderAppealRead,
+    Admin, LeaderAppealFile, LeaderAppealMember, LeaderAppealMessage,
+    LeaderAppealRead, Manager, RoleProfile,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,9 +61,17 @@ UPLIFTED = "uplifted"
 APPROVED = "approved"
 REJECTED = "rejected"
 UNDONE = "undone"
+# An admin @mentioned somebody new and brought them into the chat — written by
+# the server, never typed, its text the names of the people added.
+INVITED = "invited"
 # Everything but free chat is the record of a step and can never be edited or
 # deleted — the ruling columns and the notices quote these words.
-FIXED_KINDS = (FILED, SUP_REJECTED, UPLIFTED, APPROVED, REJECTED, UNDONE)
+FIXED_KINDS = (FILED, SUP_REJECTED, UPLIFTED, APPROVED, REJECTED, UNDONE, INVITED)
+
+# Who an admin may bring in: every profile on the platform (the operator's
+# ruling, 2026-09-26 — guests included). Admins are parties already.
+MEMBER_ROLES = ("shift-manager", "top-manager", "supervisor", "leader",
+                "idle-owner", "guest")
 
 TEXT_MAX = 2000
 MAX_FILES = 10
@@ -158,6 +167,18 @@ def carry(db: Session, thread: str, old_ids: list[int], new_id: int) -> None:
      .filter(LeaderAppealRead.thread == thread,
              LeaderAppealRead.thread_id.in_(ids))
      .delete(synchronize_session=False))
+    # The people an admin brought in come along with the conversation they
+    # were brought into — one per person, whichever earlier row held them.
+    have = member_keys(db, thread, new_id)
+    for mb in (db.query(LeaderAppealMember)
+               .filter(LeaderAppealMember.thread == thread,
+                       LeaderAppealMember.thread_id.in_(ids))
+               .order_by(LeaderAppealMember.id).all()):
+        if mb.profile_key in have:
+            db.delete(mb)
+        else:
+            mb.thread_id = int(new_id)
+            have.add(mb.profile_key)
     db.flush()
 
 
@@ -178,6 +199,154 @@ def delete(db: Session, m: LeaderAppealMessage) -> None:
     db.query(LeaderAppealFile).filter_by(message_id=m.id).delete()
     db.delete(m)
     db.flush()
+
+
+# ── the people an admin brought in ───────────────────────────────────────────
+#
+# The operator's rulings (2026-09-26): only an ADMIN can bring a NEW person in,
+# by @mentioning them; the list offers everybody on the platform, the unit's
+# own shift-manager first; the person brought in writes like the three parties
+# and is told about every entry, but never rules; the leader and the brigadir
+# get no @ list at all; and nobody is ever taken back out.
+
+def members(db: Session, thread: str, thread_id: int) -> list[LeaderAppealMember]:
+    return (db.query(LeaderAppealMember)
+            .filter_by(thread=thread, thread_id=int(thread_id))
+            .order_by(LeaderAppealMember.id).all())
+
+
+def member_keys(db: Session, thread: str, thread_id: int) -> set[str]:
+    return {k for (k,) in db.query(LeaderAppealMember.profile_key)
+            .filter_by(thread=thread, thread_id=int(thread_id)).all()}
+
+
+def is_member(db: Session, thread: str, thread_id: int, profile: str | None) -> bool:
+    if not profile:
+        return False
+    return db.query(LeaderAppealMember.id).filter_by(
+        thread=thread, thread_id=int(thread_id), profile_key=profile).first() is not None
+
+
+def member_threads(db: Session, thread: str, profile: str | None) -> list[int]:
+    """The appeals of one kind this PERSON was brought into."""
+    if not profile:
+        return []
+    return [i for (i,) in db.query(LeaderAppealMember.thread_id)
+            .filter_by(thread=thread, profile_key=profile).all()]
+
+
+def party_keys(row) -> set[str]:
+    """The leader and the brigadir the appeal row names — the two parties that
+    are profiles of their own (the admins are a ROLE, not a list)."""
+    from app.identity import profile_key
+    return {k for k in (
+        profile_key("leader", int(row.leader_id)) if getattr(row, "leader_id", None) else None,
+        profile_key("supervisor", int(row.manager_id)) if getattr(row, "manager_id", None) else None,
+    ) if k}
+
+
+def people(db: Session, row, exclude: str | None = None) -> list[dict]:
+    """Everybody an admin may @mention in this appeal's chat — every profile on
+    the platform, guests included — in the order the list is read: the unit's
+    own shift-managers first, then by role, then by name. `in_chat` marks the
+    people who are in it already (the leader, the brigadir, the admins and
+    whoever was brought in), so naming them adds nobody."""
+    from app.identity import photo_versions, profile_key
+    from app.services import shift_scope
+    try:
+        own_sm = set(shift_scope.role_ids_for_unit(db, getattr(row, "manager_id", None)))
+    except Exception:
+        own_sm = set()
+    units = {m.id: m for m in db.query(Manager).all()}
+    inside = party_keys(row) | member_keys(db, _thread_of(row), row.id)
+    out: list[dict] = []
+    for m in units.values():
+        if m.archived:
+            continue
+        out.append({"key": profile_key("supervisor", m.id), "name": m.name,
+                    "role": "supervisor", "sub": None})
+    for p in db.query(RoleProfile).all():
+        if p.role not in MEMBER_ROLES and p.role != "admin":
+            continue
+        unit = units.get(p.manager_id) if p.manager_id else None
+        if p.role == "leader" and unit is not None and unit.archived:
+            continue
+        out.append({"key": profile_key(p.role, p.id), "name": p.name, "role": p.role,
+                    "sub": unit.name if (p.role == "leader" and unit) else None,
+                    "own": p.role == "shift-manager" and p.id in own_sm})
+    order = {r: i for i, r in enumerate(
+        ("shift-manager", "top-manager", "supervisor", "admin", "leader",
+         "idle-owner", "guest"))}
+    out = [o for o in out if o["key"] and o["key"] != exclude and (o["name"] or "").strip()]
+    photos = photo_versions(db, [o["key"] for o in out])
+    for o in out:
+        o["own"] = bool(o.get("own"))
+        o["in_chat"] = o["key"] in inside or o["role"] == "admin"
+        o["photo"] = photos.get(o["key"])
+    out.sort(key=lambda o: (not o["own"], order.get(o["role"], 99),
+                            (o["name"] or "").casefold()))
+    return out
+
+
+def _thread_of(row) -> str:
+    from app.models import LeaderAiDispute
+    return DISPUTE if isinstance(row, LeaderAiDispute) else LATE
+
+
+def invite(db: Session, thread: str, row, keys, *, by_profile: str | None,
+           by_name: str | None, by_role: str | None, by_telegram: int | None,
+           message_id: int | None, at: datetime | None = None) -> list[str]:
+    """Bring the named people into one chat; the keys actually ADDED.
+
+    A key that names nobody real, an admin (a party already), the leader or
+    the brigadir, or somebody brought in before, adds nothing — a mention of
+    them is only a mention. One «invited» entry records the step, naming the
+    people added, right after the message that named them. Does not commit."""
+    from app.identity import parse_profile_key, profile_key
+    have = party_keys(row) | member_keys(db, thread, row.id)
+    added: list[tuple[str, str]] = []
+    for raw in list(keys or [])[:20]:
+        role, ref = parse_profile_key(str(raw or "").strip())
+        if role not in MEMBER_ROLES or not ref:
+            continue
+        key = profile_key(role, ref)
+        if key in have or key == by_profile:
+            continue
+        if role == "supervisor":
+            m = db.query(Manager).filter_by(id=ref).first()
+            name = m.name if (m and not m.archived) else None
+        else:
+            p = db.query(RoleProfile).filter_by(id=ref, role=role).first()
+            name = p.name if p else None
+        if not name:
+            continue
+        db.add(LeaderAppealMember(
+            thread=thread, thread_id=int(row.id), profile_key=key, name=name[:160],
+            invited_by_profile=by_profile, invited_by_name=(by_name or "")[:160] or None,
+            message_id=message_id))
+        have.add(key)
+        added.append((key, name))
+    if added:
+        db.flush()
+        add(db, thread, row.id, kind=INVITED,
+            text=", ".join(n for _k, n in added),
+            author_profile=by_profile, author_name=by_name, author_role=by_role,
+            author_telegram=by_telegram, at=at)
+    return [k for k, _n in added]
+
+
+def member_wire(db: Session, thread: str, thread_id: int) -> list[dict]:
+    from app.identity import photo_versions
+    ms = members(db, thread, thread_id)
+    photos = photo_versions(db, [m.profile_key for m in ms])
+    out = []
+    for m in ms:
+        role, _ref = m.profile_key.split(":", 1) if ":" in m.profile_key else (None, None)
+        out.append({"key": m.profile_key, "name": m.name, "role": role,
+                    "photo": photos.get(m.profile_key),
+                    "by": m.invited_by_name,
+                    "at": m.created_at.isoformat() if m.created_at else None})
+    return out
 
 
 # ── reading ──────────────────────────────────────────────────────────────────
@@ -271,16 +440,13 @@ def seen_upto(db: Session, thread: str, thread_id: int, row,
     """How far the OTHER parties of one chat have read — the highest message id
     any of them has opened, which is what a sender's ✓✓ is drawn from.
 
-    Parties only — the appeal's leader, its unit's brigadir, any admin: a shift
-    or top manager reading along is not somebody who can answer, so their read
-    must not tell the sender they have been heard. `reader` (the person asking,
+    Parties only — the appeal's leader, its unit's brigadir, any admin, and
+    whoever an admin brought in (they can answer): a shift or top manager
+    merely reading along is not somebody who can answer, so their read must
+    not tell the sender they have been heard. `reader` (the person asking,
     whose own messages carry the ticks) is never counted.
     """
-    from app.identity import profile_key
-    party = {k for k in (
-        profile_key("leader", int(row.leader_id)) if getattr(row, "leader_id", None) else None,
-        profile_key("supervisor", int(row.manager_id)) if getattr(row, "manager_id", None) else None,
-    ) if k}
+    party = party_keys(row) | member_keys(db, thread, thread_id)
     best = 0
     for key, upto in (db.query(LeaderAppealRead.profile_key, LeaderAppealRead.last_read_id)
                       .filter_by(thread=thread, thread_id=int(thread_id)).all()):
@@ -374,14 +540,18 @@ def open_chat_markup(thread: str, thread_id: int, lang: str):
 
 def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
            author_profile: str | None = None, author_telegram: int | None = None,
-           tone: str = "info", skip_dm: set[int] | None = None) -> set[int]:
+           tone: str = "info", skip_dm: set[int] | None = None,
+           skip_profiles: set[str] | None = None) -> set[int]:
     """Tell all three parties — the leader, the unit's brigadir and EVERY admin
-    (the operator's ruling) — each with the button onto the chat.
+    (the operator's ruling) — and everybody an admin brought in, each with the
+    button onto the chat.
 
     The author is told nothing about their own words: no bell row on their
     profile and no DM to their account. `skip_dm` are accounts that already got
     a card about this same event (the brigadir's filing card, the admins'
     uplift card): they keep the bell row and are spared a second DM.
+    `skip_profiles` are people told about this event some other way — the ones
+    a message has just brought in, who get the invitation instead.
 
     Never fatal, and never raises into a ruling somebody already made.
     """
@@ -406,9 +576,14 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
         admins = []
     admin_profiles = sorted({a.profile_id for a in admins if a.profile_id})
     targets += [profile_key("admin", pid) for pid in admin_profiles]
+    try:
+        targets += [k for k in sorted(member_keys(db, thread, row.id)) if k not in targets]
+    except Exception:
+        logger.warning("appeal members unreadable for %s/%s", thread, row.id, exc_info=True)
+    skip = set(skip_profiles or ())
 
     for key in targets:
-        if not key or key == author_profile:
+        if not key or key == author_profile or key in skip:
             continue
         try:
             got = notify_profile(db, key, nkey, params, type=tone,
@@ -434,6 +609,25 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     except Exception:
         db.rollback()
     return told
+
+
+def notify_invited(db: Session, thread: str, row, keys: list[str], nkey: str,
+                   params: dict, *, author_telegram: int | None = None) -> None:
+    """Tell each person an admin has just brought in that they are in — with
+    the message that named them and the button onto the chat. Never fatal."""
+    from app.routers.staff import notify_profile
+    dmed: set[int] = {int(author_telegram)} if author_telegram else set()
+    for key in keys:
+        try:
+            dmed |= notify_profile(
+                db, key, nkey, params, type="info", skip_accounts=dmed,
+                markup_fn=lambda lang: open_chat_markup(thread, row.id, lang)) or set()
+        except Exception:
+            logger.warning("appeal invite notice to %s failed", key, exc_info=True)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def _notify_account(db: Session, tid: int, nkey: str, params: dict, tone: str,

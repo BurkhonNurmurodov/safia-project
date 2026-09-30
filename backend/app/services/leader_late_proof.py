@@ -718,7 +718,8 @@ def notify_undone(db: Session, row: LeaderLateProof, *, actor_name: str | None,
         logger.warning("late-proof undo notice failed", exc_info=True)
 
 
-def notify_message(db: Session, row: LeaderLateProof, m, nfiles: int) -> None:
+def notify_message(db: Session, row: LeaderLateProof, m, nfiles: int,
+                   invited: list[str] | None = None) -> None:
     from app.services import leader_appeal_chat as chat
     params = {**_params(db, row), "author": m.author_name or "\u2014",
               "text": chat.notice_text(m.text),
@@ -726,9 +727,13 @@ def notify_message(db: Session, row: LeaderLateProof, m, nfiles: int) -> None:
     try:
         chat.fanout(db, chat.LATE, row, "late_proof_message", params,
                     author_profile=m.author_profile,
-                    author_telegram=m.author_telegram)
+                    author_telegram=m.author_telegram,
+                    skip_profiles=set(invited or ()))
     except Exception:
         logger.warning("late-proof message notice failed", exc_info=True)
+    if invited:
+        chat.notify_invited(db, chat.LATE, row, invited, "late_proof_invited",
+                            params, author_telegram=m.author_telegram)
 
 
 def rescore(db: Session, row: LeaderLateProof) -> None:

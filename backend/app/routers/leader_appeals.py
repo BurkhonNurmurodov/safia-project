@@ -22,6 +22,12 @@ Authority is per ROW, never per page. READING follows the queues' own scope
 (admin all; a brigadir their unit; a leader their own; shift / top managers and
 a «see all» page grant read). WRITING is the three parties only — the leader,
 the unit's brigadir, an admin — and only while a ruling is still to be made.
+
+From 2026-09-30 an ADMIN can bring anybody on the platform into one chat by
+@mentioning them (`mentions` on the post; the list is `GET …/mentionable`,
+admins only). The person brought in reads and writes like the three parties
+and is told about every entry — and never rules, because the stage rights are
+decided by role and unit, which an invitation does not change.
 """
 from __future__ import annotations
 
@@ -79,7 +85,12 @@ def _is_leader(db: Session, payload: dict, row) -> bool:
                 identity.viewer_leader_profile_ids(db, payload) or []))
 
 
-def _can_read(db: Session, payload: dict, row) -> bool:
+def _is_member(db: Session, payload: dict, thread: str, row) -> bool:
+    """Somebody an admin brought into this one chat."""
+    return chat.is_member(db, thread, row.id, identity.viewer_profile_key(db, payload))
+
+
+def _reads_by_scope(db: Session, payload: dict, row) -> bool:
     role = payload.get("role")
     if role == "admin" or role in ("shift-manager", "top-manager"):
         return True
@@ -88,15 +99,20 @@ def _can_read(db: Session, payload: dict, row) -> bool:
     return _is_unit_sup(payload, row) or _is_leader(db, payload, row)
 
 
-def _party(db: Session, payload: dict, row) -> bool:
-    """One of the three people the chat belongs to."""
+def _can_read(db: Session, payload: dict, thread: str, row) -> bool:
+    return _reads_by_scope(db, payload, row) or _is_member(db, payload, thread, row)
+
+
+def _party(db: Session, payload: dict, thread: str, row) -> bool:
+    """One of the three people the chat belongs to — or somebody an admin
+    brought in, who writes like them."""
     return (payload.get("role") == "admin" or _is_unit_sup(payload, row)
-            or _is_leader(db, payload, row))
+            or _is_leader(db, payload, row) or _is_member(db, payload, thread, row))
 
 
 def _readable(db: Session, payload: dict, thread: str, rid: int):
     row = _row(db, thread, rid)
-    if not _can_read(db, payload, row):
+    if not _can_read(db, payload, thread, row):
         # 404, not 403: an id nobody may read is an id that does not exist.
         raise HTTPException(status_code=404, detail="Not found")
     return row
@@ -112,7 +128,14 @@ def _rights(db: Session, payload: dict, thread: str, row) -> dict:
         sup_ok, adm_ok = _lp_stage_rights(db, payload, row)
         back = leader_late_proof.reopen_stage(row)
     return {
-        "canWrite": _open(thread, row) and _party(db, payload, row),
+        "canWrite": _open(thread, row) and _party(db, payload, thread, row),
+        # Only an admin brings a new person in, and only while it is open.
+        "canMention": payload.get("role") == "admin" and _open(thread, row),
+        # Read ONLY because an admin brought them in: the day report behind
+        # the appeal is not theirs to open, so the page offers no link to it.
+        "invited": (not _reads_by_scope(db, payload, row)
+                    and _is_member(db, payload, thread, row)),
+        "members": chat.member_wire(db, thread, row.id),
         # stage 1: Refuse / Pass to the admins — both with a required comment
         "canSupervise": row.status == "supervisor" and sup_ok,
         # stage 2: Refuse (required comment) / Approve (optional comment)
@@ -228,7 +251,7 @@ def _wire(m: LeaderAppealMessage, files: list[LeaderAppealFile],
 def _list(db: Session, payload: dict, thread: str, rid: int) -> list[dict]:
     row = _readable(db, payload, thread, rid)
     viewer, tid, _n, _r = _viewer(db, payload)
-    writable = _open(thread, row) and _party(db, payload, row)
+    writable = _open(thread, row) and _party(db, payload, thread, row)
     msgs = chat.messages(db, thread, rid)
     files = chat.files_of(db, [m.id for m in msgs])
     if msgs:
@@ -253,9 +276,10 @@ def late_messages(rid: int, db: Session = Depends(get_db),
 
 def _post(db: Session, payload: dict, thread: str, rid: int, parsed: dict) -> dict:
     row = _readable(db, payload, thread, rid)
-    if not _party(db, payload, row):
-        raise HTTPException(status_code=403, detail="Only the leader, their brigadir "
-                                                    "and the admins write here")
+    if not _party(db, payload, thread, row):
+        raise HTTPException(status_code=403, detail="Only the leader, their brigadir, "
+                                                    "the admins and the people they "
+                                                    "brought in write here")
     if not _open(thread, row):
         raise HTTPException(status_code=409,
                             detail="This conversation is closed — the ruling is final")
@@ -271,20 +295,68 @@ def _post(db: Session, payload: dict, thread: str, rid: int, parsed: dict) -> di
     m = chat.add(db, thread, rid, kind=chat.MESSAGE, text=text,
                  author_profile=viewer, author_name=name, author_role=role,
                  author_telegram=tid, files=stored)
+    # An ADMIN's @mentions bring new people in; anybody else's are only words
+    # (the leader and the brigadir are offered no list, by the operator's
+    # ruling, and a typed key from them brings nobody).
+    invited: list[str] = []
+    if role == "admin":
+        invited = chat.invite(db, thread, row, _mention_keys(fields.get("mentions")),
+                              by_profile=viewer, by_name=name, by_role=role,
+                              by_telegram=tid, message_id=m.id)
     db.commit()
-    chat.mark_read(db, thread, rid, viewer, m.id)
+    last = chat.messages(db, thread, rid)[-1].id if invited else m.id
+    chat.mark_read(db, thread, rid, viewer, last)
     if thread == chat.DISPUTE:
-        leader_dispute.notify_message(db, row, m, len(stored))
+        leader_dispute.notify_message(db, row, m, len(stored), invited=invited)
     else:
-        leader_late_proof.notify_message(db, row, m, len(stored))
+        leader_late_proof.notify_message(db, row, m, len(stored), invited=invited)
     action_log.enrich(
         target_kind="dispute" if thread == chat.DISPUTE else "task",
         target_id=rid, target_name=row.leader_name, unit_id=row.manager_id,
         day=row.date, reason=(text[:200] or None),
         details=[("leader", row.leader_name), ("task", row.task_id),
-                 ("files", len(stored))],
+                 ("files", len(stored)), ("invited", len(invited))],
     )
     return _wire(m, chat.files_of(db, [m.id]).get(m.id, []), viewer, tid, True)
+
+
+def _mention_keys(raw) -> list[str]:
+    """`mentions` as the composer sends it: a JSON list in a JSON body, a JSON
+    string in a multipart one — or a plain comma list, from anything else."""
+    if isinstance(raw, list):
+        vals = raw
+    else:
+        txt = str(raw or "").strip()
+        if not txt:
+            return []
+        try:
+            import json
+            got = json.loads(txt)
+            vals = got if isinstance(got, list) else [got]
+        except ValueError:
+            vals = txt.split(",")
+    return [str(v).strip() for v in vals if str(v or "").strip()][:20]
+
+
+def _people(db: Session, payload: dict, thread: str, rid: int) -> list[dict]:
+    """Everybody an admin may @mention in this chat. Admins only — the leader
+    and the brigadir get no list (the operator's ruling, 2026-09-26)."""
+    row = _readable(db, payload, thread, rid)
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can add people to this chat")
+    return chat.people(db, row, exclude=identity.viewer_profile_key(db, payload))
+
+
+@router.get("/leaders/disputes/{rid}/mentionable")
+def dispute_people(rid: int, db: Session = Depends(get_db),
+                   payload: dict = Depends(require_auth)):
+    return _people(db, payload, chat.DISPUTE, rid)
+
+
+@router.get("/leaders/late-proofs/{rid}/mentionable")
+def late_people(rid: int, db: Session = Depends(get_db),
+                payload: dict = Depends(require_auth)):
+    return _people(db, payload, chat.LATE, rid)
 
 
 @router.post("/leaders/disputes/{rid}/messages")

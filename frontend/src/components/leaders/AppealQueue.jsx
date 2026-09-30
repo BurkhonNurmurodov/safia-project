@@ -79,7 +79,7 @@ const TXT = {
     lateBy: "kechikish", lateNone: "aniqlanmadi", unitD: "kun", unitH: "soat", unitM: "daq",
     kFiled: "Norozilik", kFiledLate: "Sabab", kSupRejected: "Brigadir rad etdi",
     kUplifted: "Adminlarga yuborildi", kApproved: "Qabul qilindi", kApprovedLate: "Tasdiqlandi",
-    kRejected: "Rad etildi", kUndone: "Qaror bekor qilindi",
+    kRejected: "Rad etildi", kUndone: "Qaror bekor qilindi", kInvited: "Chatga qo'shildi",
     emptyDispute: "Norozilik yo'q", emptyDisputeM: "Hech kim AI qaroriga e'tiroz bildirmagan.",
     emptyLate: "Kechikkan isbot yo'q", emptyLateM: "Vaqtidan keyin yuborilgan isbotlar shu yerda ko'rinadi.",
     noMatchT: "Mos yozuv yo'q", noMatchM: "Filtr yoki qidiruvni o'zgartiring.",
@@ -106,7 +106,7 @@ const TXT = {
     lateBy: "кечикиш", lateNone: "аниқланмади", unitD: "кун", unitH: "соат", unitM: "дақ",
     kFiled: "Норозилик", kFiledLate: "Сабаб", kSupRejected: "Бригадир рад этди",
     kUplifted: "Админларга юборилди", kApproved: "Қабул қилинди", kApprovedLate: "Тасдиқланди",
-    kRejected: "Рад этилди", kUndone: "Қарор бекор қилинди",
+    kRejected: "Рад этилди", kUndone: "Қарор бекор қилинди", kInvited: "Чатга қўшилди",
     emptyDispute: "Норозилик йўқ", emptyDisputeM: "Ҳеч ким AI қарорига эътироз билдирмаган.",
     emptyLate: "Кечиккан исбот йўқ", emptyLateM: "Вақтидан кейин юборилган исботлар шу ерда кўринади.",
     noMatchT: "Мос ёзув йўқ", noMatchM: "Филтр ёки қидирувни ўзгартиринг.",
@@ -133,7 +133,7 @@ const TXT = {
     lateBy: "опоздание", lateNone: "не измерить", unitD: "д", unitH: "ч", unitM: "мин",
     kFiled: "Возражение", kFiledLate: "Причина", kSupRejected: "Бригадир отклонил",
     kUplifted: "Передано администраторам", kApproved: "Принято", kApprovedLate: "Принято",
-    kRejected: "Отклонено", kUndone: "Решение отменено",
+    kRejected: "Отклонено", kUndone: "Решение отменено", kInvited: "Добавлен(а) в чат",
     emptyDispute: "Возражений нет", emptyDisputeM: "Никто не оспорил решение ИИ.",
     emptyLate: "Поздних подтверждений нет", emptyLateM: "Здесь появятся подтверждения, отправленные после срока.",
     noMatchT: "Ничего не найдено", noMatchM: "Измените фильтр или поиск.",
@@ -160,7 +160,7 @@ const TXT = {
     lateBy: "late", lateNone: "not measurable", unitD: "d", unitH: "h", unitM: "min",
     kFiled: "Objection", kFiledLate: "Reason", kSupRejected: "The brigadir refused",
     kUplifted: "Passed to the admins", kApproved: "Upheld", kApprovedLate: "Approved",
-    kRejected: "Refused", kUndone: "Ruling undone",
+    kRejected: "Refused", kUndone: "Ruling undone", kInvited: "Added to the chat",
     emptyDispute: "No objections", emptyDisputeM: "Nobody has contested an AI ruling.",
     emptyLate: "No late proofs", emptyLateM: "Proofs sent after their deadline appear here.",
     noMatchT: "Nothing matches", noMatchM: "Change the filter or the search.",
@@ -189,6 +189,7 @@ const KIND = {
   approved: { key: "kApproved", lateKey: "kApprovedLate", color: C_OK },
   rejected: { key: "kRejected", color: C_BAD },
   undone: { key: "kUndone", color: C_OFF },
+  invited: { key: "kInvited", color: C_UP },
 };
 
 // Which STAGE owns a row — the split the two sub-tabs make, off `status`. An

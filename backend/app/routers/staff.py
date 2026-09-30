@@ -474,6 +474,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{author}: новое сообщение в чате позднего подтверждения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\n\U0001F4CE Файлы: {files}"),
         "en": ("{author}: new message in a late-proof chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\n\U0001F4CE Files: {files}"),
     },
+    # An admin @mentioned somebody new in an appeal chat and brought them in.
+    # They may write there and hear about every message until the ruling is
+    # final; they never rule. `text` is the message that named them.
+    "late_proof_invited": {
+        "uz": ("{author} sizni kechikkan isbot chatiga qo'shdi", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\nChatda yozishingiz mumkin, har bir xabar haqida xabar olasiz."),
+        "uz_cyrl": ("{author} сизни кечиккан исбот чатига қўшди", "Лидер: {leader} | Сана: {date} | Вазифа: {task}\n«{text}»\nЧатда ёзишингиз мумкин, ҳар бир хабар ҳақида хабар оласиз."),
+        "ru": ("{author} добавил(а) вас в чат позднего подтверждения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\nВы можете писать в чате и будете получать уведомления о каждом сообщении."),
+        "en": ("{author} added you to a late-proof chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\nYou can write in the chat and will hear about every message."),
+    },
     "late_proof_undone": {
         "uz": ("Kechikkan isbot bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Yana adminlar qarorini kutmoqda, chat qayta ochildi."),
         "uz_cyrl": ("Кечиккан исбот бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Яна админлар қарорини кутмоқда, чат қайта очилди."),
@@ -517,6 +526,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("{author}: норозилик чатида янги хабар", "Лидер: {leader} | Сана: {date} | Вазифа: {task}\n«{text}»\n\U0001F4CE Файллар: {files}"),
         "ru": ("{author}: новое сообщение в чате возражения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\n\U0001F4CE Файлы: {files}"),
         "en": ("{author}: new message in an objection chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\n\U0001F4CE Files: {files}"),
+    },
+    "leader_dispute_invited": {
+        "uz": ("{author} sizni norozilik chatiga qo'shdi", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\nChatda yozishingiz mumkin, har bir xabar haqida xabar olasiz."),
+        "uz_cyrl": ("{author} сизни норозилик чатига қўшди", "Лидер: {leader} | Сана: {date} | Вазифа: {task}\n«{text}»\nЧатда ёзишингиз мумкин, ҳар бир хабар ҳақида хабар оласиз."),
+        "ru": ("{author} добавил(а) вас в чат возражения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\nВы можете писать в чате и будете получать уведомления о каждом сообщении."),
+        "en": ("{author} added you to an objection chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\nYou can write in the chat and will hear about every message."),
     },
     "leader_dispute_uplifted": {
         "uz": ("Norozilik adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by}\nIzoh: {note}"),
