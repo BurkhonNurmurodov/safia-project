@@ -216,16 +216,28 @@ const fmtDur = (min, T) => {
   const total = Math.round(min || 0);
   return T.dur(Math.floor(total / 60), total % 60);
 };
-// A duration as figures + units: the figures carry the weight, the unit words
-// («soat», «daq») drop to a smaller, lighter, muted size so «193 soat 39 daq»
-// reads as two numbers, not one wide bold phrase.
-const Dur = ({ min, T, unitClass = "text-[0.72em]" }) => (
-  <span className="whitespace-nowrap">
-    {fmtDur(min, T).split(/(\d+)/).filter(Boolean).map((part, i) => (/^\d+$/.test(part)
-      ? <span key={i}>{part}</span>
-      : <span key={i} className={`${unitClass} font-medium`} style={{ color: "var(--text-3)" }}>{part}</span>))}
-  </span>
-);
+// A duration as figures + units: each figure sits with its unit as one pair
+// (figure in the line's weight, unit smaller and muted, on the same baseline),
+// and the pairs stand a little apart — so «73 soat 2 daq» reads as two
+// quantities, not one bold phrase.
+const Dur = ({ min, T, unitClass = "text-[0.62em]", gap = "gap-[0.4em]" }) => {
+  const parts = fmtDur(min, T).match(/\d+|[^\d]+/g) || [];
+  const pairs = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (/^\d+$/.test(parts[i])) pairs.push([parts[i], (parts[i + 1] || "").trim()]), i++;
+    else pairs.push(["", parts[i].trim()]);
+  }
+  return (
+    <span className={`inline-flex items-baseline whitespace-nowrap ${gap}`}>
+      {pairs.map(([n, u], i) => (
+        <span key={i} className="inline-flex items-baseline gap-[0.18em]">
+          {n && <span>{n}</span>}
+          {u && <span className={`${unitClass} font-medium`} style={{ color: "var(--text-3)" }}>{u}</span>}
+        </span>
+      ))}
+    </span>
+  );
+};
 const fmtDate = (iso, T) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -662,8 +674,8 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
               const maxT = topUsers[0].total_minutes || 1;
               const sub = isProfile ? roleLabel(u.role) : (u.profiles?.[0] ? tl(u.profiles[0].name) : "");
               return (
-                <div key={u.id} className="rounded-xl p-3 min-w-0" style={{ background: "var(--bg-inner)" }}>
-                  <div className="flex items-center gap-2 mb-2 min-w-0">
+                <div key={u.id} className="rounded-xl p-3.5 min-w-0 flex flex-col gap-3" style={{ background: "var(--bg-inner)" }}>
+                  <div className="flex items-center gap-2 min-w-0">
                     <RankChip n={i + 1} />
                     <ProfileAvatar name={tl(u.full_name)} colorKey={u.full_name} size={28}
                       profileKey={isProfile ? u.profile_key : undefined} photoVer={isProfile ? u.photo : undefined} />
@@ -672,12 +684,25 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                       {sub && <div className="text-[10px] truncate" style={{ color: "var(--text-4)" }}>{sub}</div>}
                     </div>
                   </div>
-                  <div className="text-base font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}><Dur min={u.total_minutes} T={T} /></div>
-                  <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: "var(--bg-card)" }}>
-                    <div className="h-full rounded-full" style={{ width: `${(u.total_minutes / maxT) * 100}%`, background: C_TIME }} />
+                  <div>
+                    <div className="text-[22px] font-semibold tabular-nums leading-none tracking-tight" style={{ color: "var(--text-1)" }}>
+                      <Dur min={u.total_minutes} T={T} unitClass="text-[12px]" gap="gap-2" />
+                    </div>
+                    <div className="h-1 rounded-full mt-2.5 overflow-hidden" style={{ background: "var(--bg-card)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${(u.total_minutes / maxT) * 100}%`, background: C_TIME }} />
+                    </div>
                   </div>
-                  <div className="text-[10px] mt-1.5" style={{ color: "var(--text-4)" }}>
-                    {u.active_days} {T.activeDaysWord} · {fmtDur(u.avg_minutes, T)}{T.perDayShort}
+                  <div className="grid grid-cols-2 gap-2 pt-2.5 mt-auto" style={{ borderTop: "1px solid var(--border)" }}>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-4)" }}>{T.colActiveDays}</div>
+                      <div className="text-[13px] font-semibold tabular-nums mt-0.5" style={{ color: "var(--text-2)" }}>{u.active_days}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-4)" }}>{T.colAvg}</div>
+                      <div className="text-[13px] font-semibold tabular-nums mt-0.5" style={{ color: "var(--text-2)" }}>
+                        <Dur min={u.avg_minutes} T={T} unitClass="text-[10px]" gap="gap-1" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -789,7 +814,7 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell" style={{ color: "var(--text-2)" }}>{u.active_days}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ color: "var(--text-1)" }}><Dur min={u.total_minutes} T={T} unitClass="text-[11px]" /></td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDur(u.avg_minutes, T)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell whitespace-nowrap" style={{ color: "var(--text-2)" }}><Dur min={u.avg_minutes} T={T} unitClass="text-[11px]" /></td>
                   <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell" style={{ color: "var(--text-3)" }}>{u.sessions ?? "—"}</td>
                 </tr>
               );
