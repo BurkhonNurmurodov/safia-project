@@ -374,6 +374,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/notifications",                        "comms", "notification.created"),
     (("DELETE",), "/api/notifications/{}",                     "comms", "notification.deleted"),
     (("PUT",),    "/api/notifications/prefs",                  "comms", "notification.prefs_saved"),
+    (("POST",),   "/api/push/test",                            "comms", "notification.push_test"),
     (("POST",),   "/api/production/trudoyomkost/call-notify",  "comms", "notification.workers_called"),
 
     # ── external sync & exports ───────────────────────────────────────────────

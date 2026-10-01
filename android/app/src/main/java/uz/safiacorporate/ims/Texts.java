@@ -20,6 +20,10 @@ final class Texts {
     static final int UPDATE_LOADING = 10;
     static final int UPDATE_FAILED = 11;
     static final int CANCEL = 12;
+    /** A phone notification on a locked screen: that something arrived, not what. */
+    static final int PUSH_PUBLIC = 13;
+    /** The nine notification categories (Push.CATS order), naming the channels. */
+    static final int CAT_FIRST = 14;
 
     private static final String[] UZ = {
             "Yuklab olindi: %s",
@@ -35,6 +39,16 @@ final class Texts {
             "Yuklanmoqda… %d%%",
             "Yangilanishni yuklab bo'lmadi",
             "Bekor qilish",
+            "Yangi bildirishnoma",
+            "So'rovlar va hujjatlar",
+            "Davomat va kun yopilishi",
+            "Xavotirlar",
+            "Vazifalar",
+            "Chek-list va AI tekshiruvi",
+            "Norozilik va kechikkan isbotlar",
+            "Kutishlar (ojidaniya)",
+            "Ta'lim va imtihon",
+            "Boshqa xabarlar",
     };
     private static final String[] UZ_CYRL = {
             "Юклаб олинди: %s",
@@ -50,6 +64,16 @@ final class Texts {
             "Юкланмоқда… %d%%",
             "Янгиланишни юклаб бўлмади",
             "Бекор қилиш",
+            "Янги билдиришнома",
+            "Сўровлар ва ҳужжатлар",
+            "Давомат ва кун ёпилиши",
+            "Хавотирлар",
+            "Вазифалар",
+            "Чек-лист ва AI текшируви",
+            "Норозилик ва кечиккан исботлар",
+            "Кутишлар (ожидания)",
+            "Таълим ва имтиҳон",
+            "Бошқа хабарлар",
     };
     private static final String[] RU = {
             "Загружено: %s",
@@ -65,6 +89,16 @@ final class Texts {
             "Загрузка… %d%%",
             "Не удалось загрузить обновление",
             "Отмена",
+            "Новое уведомление",
+            "Запросы и документы",
+            "Посещаемость и закрытие дня",
+            "Обеспокоенности",
+            "Задачи",
+            "Чек-лист и проверка ИИ",
+            "Возражения и поздние доказательства",
+            "Ожидания",
+            "Обучение и экзамен",
+            "Прочее",
     };
     private static final String[] EN = {
             "Downloaded: %s",
@@ -80,6 +114,16 @@ final class Texts {
             "Downloading… %d%%",
             "Could not download the update",
             "Cancel",
+            "New notification",
+            "Requests and documents",
+            "Attendance and day close",
+            "Concerns",
+            "Tasks",
+            "Checklist and AI review",
+            "Objections and late proofs",
+            "Waiting time (ojidaniya)",
+            "Learning and exams",
+            "Other",
     };
 
     private Texts() {

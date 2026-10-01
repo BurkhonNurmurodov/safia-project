@@ -911,14 +911,16 @@ class NotificationReadMark(Base):
 
 class NotificationPref(Base):
     """Where one PROFILE wants one notification CATEGORY delivered. The app
-    always shows everything; this decides only whether Telegram also DMs it.
-    No row = Telegram on, so nothing changes for anyone who never opens the
-    settings."""
+    always shows everything; this decides whether Telegram also DMs it, and
+    whether the Android app also shows it as a phone notification (``push``,
+    NULL = on — services/notification_center.push_entries). No row = both on,
+    so nothing changes for anyone who never opens the settings."""
     __tablename__ = "notification_prefs"
 
     profile    = Column(String, primary_key=True)
     category   = Column(String, primary_key=True)
     telegram   = Column(Boolean, nullable=False, default=True)
+    push       = Column(Boolean, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

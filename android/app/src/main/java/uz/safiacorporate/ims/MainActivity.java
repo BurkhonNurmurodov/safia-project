@@ -13,6 +13,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
@@ -96,6 +97,13 @@ public class MainActivity extends ComponentActivity {
             result -> deliverFiles(result.getResultCode(), result.getData()));
     private final ActivityResultLauncher<String> cameraPermission = registerForActivityResult(
             new ActivityResultContracts.RequestPermission(), this::answerCamera);
+    /** Android 13+: phone notifications need the person's yes (Push). */
+    private final ActivityResultLauncher<String> notifyPermission = registerForActivityResult(
+            new ActivityResultContracts.RequestPermission(), granted -> {
+                Push.markAsked(this);
+                sendPushStatus();
+            });
+    private final Runnable pushChanged = this::sendPushStatus;
 
     static boolean isOurs(Uri u) {
         return u != null && "https".equalsIgnoreCase(u.getScheme()) && HOST.equalsIgnoreCase(u.getHost());
@@ -143,6 +151,8 @@ public class MainActivity extends ComponentActivity {
 
         blockServiceWorkers();
         configure(web);
+        // Opened from a phone notification: its rows are read now.
+        if (!isSession()) Push.opened(getApplicationContext(), getIntent());
         Uri data = getIntent() == null ? null : getIntent().getData();
         if (!isSession() && isSessionLink(data)) {
             // «Open as this profile» arrived as a link: this screen keeps the
@@ -159,6 +169,8 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        // A phone notification (Push) arrives here too, with the rows it showed.
+        Push.opened(getApplicationContext(), intent);
         // A production link tapped in another app (the verified app link). A tap on
         // the launcher icon carries none and leaves the page where it was.
         Uri u = intent.getData();
@@ -176,6 +188,7 @@ public class MainActivity extends ComponentActivity {
         updates.setOnReady(pagesReady);
         updates.resume();
         if (appUpdates != null) appUpdates.onResume();
+        if (!isSession()) Push.setListener(pushChanged);
     }
 
     @Override
@@ -183,6 +196,7 @@ public class MainActivity extends ComponentActivity {
         super.onPause();
         updates.pause();
         if (appUpdates != null) appUpdates.onPause();
+        Push.clearListener(pushChanged);
         CookieManager.getInstance().flush();
     }
 
@@ -315,6 +329,37 @@ public class MainActivity extends ComponentActivity {
                         Log.w(TAG, "the page could not hand over a file: " + m.optString("message"));
                         runOnUiThread(() -> FileHandoff.toast(this, Texts.get(lang, Texts.SAVE_FAILED)));
                         break;
+                    // Phone notifications (utils/androidPush.js ↔ Push). Never
+                    // from a session screen: that session is the admin's look at
+                    // somebody else, and the phone's notifications are its owner's.
+                    case "push-register":
+                        if (isSession()) break;
+                        Push.register(getApplicationContext(), m.optString("token"), m.optString("profile"), lang);
+                        runOnUiThread(this::askNotificationsOnce);
+                        sendPushStatus();
+                        break;
+                    case "push-clear":
+                        if (!isSession()) Push.clear(getApplicationContext());
+                        break;
+                    case "push-cursor":
+                        if (isSession()) break;
+                        Push.language(getApplicationContext(), lang);
+                        Push.cursor(getApplicationContext(), m.optLong("latest"));
+                        break;
+                    case "push-seen":
+                        if (!isSession()) Push.cancelAll(getApplicationContext());
+                        break;
+                    case "push-status":
+                        sendPushStatus();
+                        break;
+                    case "push-enable":
+                        if (!isSession()) runOnUiThread(this::enableNotifications);
+                        break;
+                    case "push-test":
+                        if (isSession()) break;
+                        long id = m.optLong("id");
+                        Push.EXEC.execute(() -> Push.poll(getApplicationContext(), true, id));
+                        break;
                     default:
                         break;
                 }
@@ -322,6 +367,43 @@ public class MainActivity extends ComponentActivity {
                 Log.w(TAG, "bridge message dropped", e);
             }
         });
+    }
+
+    /** The phone-notification state, for the settings dialog (utils/androidPush.js). */
+    private void sendPushStatus() {
+        if (isSession()) return;
+        String json = Push.status(getApplicationContext()).toString();
+        runOnUiThread(() -> {
+            if (web != null) {
+                web.evaluateJavascript("window.dispatchEvent(new CustomEvent('safia-push',{detail:" + json + "}))", null);
+            }
+        });
+    }
+
+    /** Android 13+ asks once by itself, the first time somebody signs in here. */
+    private void askNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < 33 || Push.allowed(this) || Push.asked(this)) return;
+        notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS);
+    }
+
+    /** «Yoqish»: Android's own prompt while it will still show one, its
+     *  notification settings for this app after that. */
+    private void enableNotifications() {
+        if (Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED
+                && (!Push.asked(this) || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS);
+            return;
+        }
+        Intent settings = Build.VERSION.SDK_INT >= 26
+                ? new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+        try {
+            startActivity(settings);
+        } catch (Exception e) {
+            FileHandoff.toast(this, Texts.get(siteLang(), Texts.NO_APP));
+        }
     }
 
     /**

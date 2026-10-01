@@ -4,16 +4,22 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../../utils/api";
+import { pushCursor } from "../../utils/androidPush";
 
 export const SUMMARY_KEY = ["notif", "summary"];
 export const QUEUE_KEY = ["notif", "queue"];
 
-// What the header bell polls: {queue, unread, fresh}. A minute is plenty for
-// a number whose job is «is anything waiting» — the Telegram DM is the push.
+// What the header bell polls: {queue, unread, fresh, latest}. A minute is
+// plenty for a number whose job is «is anything waiting». In the Android app
+// `latest` also moves the phone's cursor: what arrived while the app was open
+// is never turned into a phone notification later (utils/androidPush.js).
 export function useNotifSummary() {
   return useQuery({
     queryKey: SUMMARY_KEY,
-    queryFn: () => api.get("/api/notifications/summary").then((r) => r.data),
+    queryFn: () => api.get("/api/notifications/summary").then((r) => {
+      pushCursor(r.data?.latest);
+      return r.data;
+    }),
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
@@ -82,7 +88,8 @@ export function useNotifPrefs(enabled = true) {
 export function useSaveNotifPrefs() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (prefs) => api.put("/api/notifications/prefs", { prefs }).then((r) => r.data),
+    // {prefs} — Telegram, per category; and in the Android app {push} too.
+    mutationFn: (body) => api.put("/api/notifications/prefs", body).then((r) => r.data),
     onSuccess: (data) => qc.setQueryData(["notif", "prefs"], data),
   });
 }

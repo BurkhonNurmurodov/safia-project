@@ -28,6 +28,7 @@ stay readable history, link nowhere and fold only by kind. Every row at or below
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable, Optional
@@ -70,6 +71,7 @@ _EXACT = {
     "idle_request_new": "idle",
     "education_lesson_new": "learning",
     "call_forecast": "other",
+    "push_test": "other",
 }
 _PREFIX = (
     ("concern_", "concerns"),
@@ -106,33 +108,52 @@ def unmapped_keys() -> list[str]:
 
 # ── delivery preferences ──────────────────────────────────────────────────────
 
-def prefs_for(db: Session, profile: Optional[str]) -> dict[str, bool]:
-    """Category → «also DM it in Telegram» for one profile. Absent = True."""
+CHANNELS = ("telegram", "push")
+
+
+def _channel_on(row: NotificationPref, channel: str) -> bool:
+    if channel == "push":
+        return row.push is None or bool(row.push)
+    return bool(row.telegram)
+
+
+def prefs_for(db: Session, profile: Optional[str], channel: str = "telegram") -> dict[str, bool]:
+    """Category → is ``channel`` on for one profile: «telegram» = the bot also
+    DMs it, «push» = the Android app also shows it as a phone notification.
+    Absent = True."""
     out = {c: True for c in CATEGORIES}
     if not profile:
         return out
     for p in db.query(NotificationPref).filter(NotificationPref.profile == profile).all():
         if p.category in out:
-            out[p.category] = bool(p.telegram)
+            out[p.category] = _channel_on(p, channel)
     return out
 
 
-def set_prefs(db: Session, profile: str, changes: dict) -> dict[str, bool]:
-    """Write the switches named in ``changes``; returns the full map. A switch
-    turned back ON deletes its row, so «on» is always the absence of a record."""
+def set_prefs(db: Session, profile: str, changes: dict,
+              channel: str = "telegram") -> dict[str, bool]:
+    """Write the ``channel`` switches named in ``changes``; returns the full map
+    for that channel. A row with every channel on is deleted, so «on» is always
+    the absence of a record."""
+    if channel not in CHANNELS:
+        raise ValueError(channel)
     for cat, on in (changes or {}).items():
         if cat not in CATEGORIES:
             continue
         row = db.get(NotificationPref, (profile, cat))
-        if on:
-            if row is not None:
-                db.delete(row)
-        elif row is None:
-            db.add(NotificationPref(profile=profile, category=cat, telegram=False))
+        if row is None:
+            if on:
+                continue
+            row = NotificationPref(profile=profile, category=cat, telegram=True)
+            db.add(row)
+        if channel == "push":
+            row.push = None if on else False
         else:
-            row.telegram = False
+            row.telegram = bool(on)
+        if row.telegram and row.push is None:
+            db.delete(row)
     db.flush()
-    return prefs_for(db, profile)
+    return prefs_for(db, profile, channel)
 
 
 def telegram_muted(db: Session, profile: Optional[str], nkey: Optional[str]) -> bool:
@@ -197,7 +218,7 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
         return f"/staff?tab=workers&unit={mid}&date={d}"
     if kind == "idle":                         # IdleCell.jsx reads ?date=
         return f"/idle-cell?date={sid}"
-    if kind == "page" and sid in ("/production", "/concerns"):
+    if kind == "page" and sid in ("/production", "/concerns", "/notifications"):
         return sid
     if kind == "lesson":
         return "/education"
@@ -399,6 +420,38 @@ FOLD = {
     "idle_request_new":          ("leader_name",     None),
 }
 
+# The headline of a folded group, per viewer language — rendered HERE so the
+# bell, the notifications page and the Android app's phone notifications say
+# one thing. «Kun yopildi» lines count what they are ABOUT (a unit closed,
+# reopened and closed again is one unit), every other group counts rows.
+FOLD_TITLES = {
+    "day_closed": ("Yopilgan kunlar: {n} ta", "Ёпилган кунлар: {n} та", "Закрытых дней: {n}", "Days closed: {n}"),
+    "day_reopened": ("Qayta ochilgan kunlar: {n} ta", "Қайта очилган кунлар: {n} та", "Переоткрытых дней: {n}", "Days reopened: {n}"),
+    "new_role_change": ("Lavozim o'zgarishi hujjatlari: {n} ta", "Лавозим ўзгариши ҳужжатлари: {n} та", "Документы о смене должности: {n}", "Role change documents: {n}"),
+    "worker_exchange_created": ("Xodim almashinuvi hujjatlari: {n} ta", "Ходим алмашинуви ҳужжатлари: {n} та", "Документы обмена сотрудниками: {n}", "Worker exchange documents: {n}"),
+    "worker_exchange_approved": ("Tasdiqlangan almashinuvlar: {n} ta", "Тасдиқланган алмашинувлар: {n} та", "Одобренные обмены: {n}", "Exchanges approved: {n}"),
+    "worker_exchange_cancelled": ("Bekor qilingan almashinuvlar: {n} ta", "Бекор қилинган алмашинувлар: {n} та", "Отменённые обмены: {n}", "Exchanges cancelled: {n}"),
+    "role_change_approved": ("Tasdiqlangan lavozim o'zgarishlari: {n} ta", "Тасдиқланган лавозим ўзгаришлари: {n} та", "Одобренные смены должности: {n}", "Role changes approved: {n}"),
+    "request_approved_others": ("Tasdiqlangan so'rovlar: {n} ta", "Тасдиқланган сўровлар: {n} та", "Одобренные запросы: {n}", "Requests approved: {n}"),
+    "request_rejected_others": ("Rad etilgan so'rovlar: {n} ta", "Рад этилган сўровлар: {n} та", "Отклонённые запросы: {n}", "Requests rejected: {n}"),
+    "new_edit_request": ("Tahrirlash so'rovlari: {n} ta", "Таҳрирлаш сўровлари: {n} та", "Запросы на изменение: {n}", "Edit requests: {n}"),
+    "new_delete_request": ("O'chirish so'rovlari: {n} ta", "Ўчириш сўровлари: {n} та", "Запросы на удаление: {n}", "Deletion requests: {n}"),
+    "admin_record_edited": ("Admin tahrirlagan yozuvlar: {n} ta", "Админ таҳрирлаган ёзувлар: {n} та", "Записи, изменённые админом: {n}", "Records edited by an admin: {n}"),
+    "admin_record_deleted": ("Admin o'chirgan yozuvlar: {n} ta", "Админ ўчирган ёзувлар: {n} та", "Записи, удалённые админом: {n}", "Records deleted by an admin: {n}"),
+    "leader_day_report_clean": ("Toza lider hisobotlari: {n} ta", "Тоза лидер ҳисоботлари: {n} та", "Чистые отчёты лидеров: {n}", "Clean leader reports: {n}"),
+    "idle_request_new": ("Yangi kutishlar: {n} ta", "Янги кутишлар: {n} та", "Новые ожидания: {n}", "New waiting entries: {n}"),
+}
+_LANG_AT = {"uz": 0, "uz_cyrl": 1, "ru": 2, "en": 3}
+_COUNT_DISTINCT = ("day_closed", "day_reopened")
+
+
+def fold_title(nkey: str, n: int, lang: str) -> Optional[str]:
+    titles = FOLD_TITLES.get(nkey)
+    if not titles:
+        return None
+    return titles[_LANG_AT.get(lang, 0)].replace("{n}", str(n))
+
+
 def _row_json(r: Notification, lang: str, unread: bool) -> dict:
     title, body = render(r, lang)
     return {
@@ -491,6 +544,9 @@ def fold(rows: list[Notification], lang: str, unread_ids: set[int]) -> list[dict
             only = e["items"][0]
             e.update(kind="single", items=None, names=None, names_kind=None, sum=None,
                      title=only["title"], body=only["body"], link=only["link"])
+        elif e["kind"] == "group":
+            n = e["distinct"] if e["nkey"] in _COUNT_DISTINCT else e["count"]
+            e["title"] = fold_title(e["nkey"], n, lang) or f"{e['title']} · {n}"
     return out
 
 
@@ -634,3 +690,100 @@ def feed(db: Session, payload: dict, lang: str, *, before: Optional[date] = None
         "seen_upto": seen,
         "read_upto": upto,
     }
+
+
+# ── phone notifications (the Android app) ─────────────────────────────────────
+# The app has no push service behind it (no Firebase project): it ASKS — every
+# ~15 minutes from Android's job scheduler (android/…/Push.java), GET
+# /api/push/poll. What it shows is this feed, cut three ways: rows not read
+# yet, from the last day, in a category the person keeps on the phone (the
+# «push» pref). An entry is shown when it holds a row newer than the phone's
+# cursor and than the bell's «seen» mark — so nothing already looked at in the
+# app or a browser buzzes — and it shows ALL its unread rows, so a later poll
+# REPLACES a folded line («Yopilgan kunlar: 5 ta») instead of stacking a
+# second one. ``active`` is every unread entry's key: a phone notification
+# whose key is gone was read somewhere, and the phone takes it down.
+PUSH_WINDOW = timedelta(hours=24)
+PUSH_MAX_ITEMS = 8
+_MORE = ("Yana {n} ta bildirishnoma", "Яна {n} та билдиришнома",
+         "Ещё уведомлений: {n}", "{n} more notifications")
+
+
+def _push_text(text: Optional[str]) -> str:
+    """The stored body read as calm lines (notifMeta.displayBody's twin)."""
+    return re.sub(r"\n{2,}", "\n", (text or "").replace(" | ", " · ")).strip()
+
+
+def _names_line(e: dict, lang: str) -> str:
+    from app.translit import transliterate, transliterate_text
+    names = e.get("names") or []
+    spell = transliterate if e.get("names_kind") == "people" else transliterate_text
+    shown = [spell(n, lang) for n in names[:4]]
+    more = len(names) - len(shown)
+    return ", ".join(shown) + (f" +{more}" if more > 0 else "")
+
+
+def _epoch_ms(iso: Optional[str]) -> int:
+    """The phone sorts and dates by epoch milliseconds (Android 7 has no ISO
+    parser that reads Python's microseconds)."""
+    try:
+        return int(datetime.fromisoformat(iso).timestamp() * 1000) if iso else 0
+    except ValueError:
+        return 0
+
+
+def push_entries(db: Session, payload: dict, lang: str, after: int) -> dict:
+    """{latest, items, active} for one phone poll. ``after`` < 0 asks only for
+    ``latest`` — where a phone that has just signed in starts counting, so it
+    never replays the backlog."""
+    reader = reader_key(db, payload)
+    upto, seen = marks(db, reader)
+    clause = viewer_clause(db, payload)
+    latest = int(db.query(func.max(Notification.id)).filter(clause).scalar() or 0)
+    out: dict = {"latest": latest, "items": [], "active": []}
+    if after < 0:
+        return out
+    since = datetime.now(timezone.utc) - PUSH_WINDOW
+    rows = db.query(Notification).filter(
+        clause, Notification.id > upto, Notification.created_at >= since,
+    ).order_by(Notification.id.desc()).limit(400).all()
+    read = read_set(db, reader, [r.id for r in rows])
+    from app.identity import viewer_profile_key
+    off = {c for c, on in prefs_for(db, viewer_profile_key(db, payload), "push").items() if not on}
+    rows = [r for r in rows if r.id not in read and category_of(r.nkey) not in off]
+    entries = fold(rows, lang, {r.id for r in rows})
+    active = [e["key"] for e in entries]
+    floor = max(int(after), seen)
+    items = []
+    for e in entries:
+        if max(e["ids"]) <= floor:
+            continue
+        group = e["kind"] == "group"
+        items.append({
+            "key": e["key"],
+            "kind": e["kind"],
+            "category": e["category"],
+            "type": e["type"],
+            "title": e["title"],
+            "body": _names_line(e, lang) if group else _push_text(e["body"]),
+            # A folded line has no ONE record to open: the page lists it.
+            "link": "/notifications" if group or not e.get("link") else e["link"],
+            "ids": e["ids"][:100],
+            "at": e["at"],
+            "ts": _epoch_ms(e["at"]),
+            "count": e["count"],
+        })
+    if len(items) > PUSH_MAX_ITEMS:
+        rest = items[PUSH_MAX_ITEMS - 1:]
+        items = items[:PUSH_MAX_ITEMS - 1]
+        items.append({
+            "key": "more", "kind": "more", "category": "other", "type": "info",
+            "title": _MORE[_LANG_AT.get(lang, 0)].replace("{n}", str(len(rest))),
+            "body": "", "link": "/notifications", "ids": [], "at": rest[0]["at"],
+            "ts": rest[0]["ts"], "count": len(rest),
+        })
+        active.append("more")
+    out["items"] = items
+    out["active"] = active
+    return out
+

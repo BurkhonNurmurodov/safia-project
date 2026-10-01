@@ -14,6 +14,7 @@ import { dayLabel, fmt } from "./notifMeta";
 import {
   useMarkAllRead, useMarkRead, useMarkSeen, useNotifSummary,
 } from "./useNotifCenter";
+import { pushSeen } from "../../utils/androidPush";
 
 const PANEL_Z = 900;   // above the page and its own popovers; dialogs sit higher
 
@@ -139,6 +140,8 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
     if (topId) seen.mutate(topId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topId]);
+  // …and in the Android app the phone's own notifications come down with it.
+  useEffect(() => { pushSeen(); }, []);
 
   useLayoutEffect(() => {
     const place = () => {

@@ -151,6 +151,18 @@ _MONTHS = {
 }
 
 _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
+    # The settings dialog's «Sinov xabari» (routers/push.py): a row to the
+    # person themself, proving the Android app's phone notifications work.
+    "push_test": {
+        "uz": ("Sinov bildirishnomasi",
+               "Bildirishnomalar telefoningizga yetib kelmoqda."),
+        "uz_cyrl": ("Синов билдиришномаси",
+                    "Билдиришномалар телефонингизга етиб келмоқда."),
+        "ru": ("Тестовое уведомление",
+               "Уведомления приходят на ваш телефон."),
+        "en": ("Test notification",
+               "Notifications are reaching your phone."),
+    },
     # «Imtihon» — the dashboard exam (services/exam.py). Addressed to the
     # leader's PROFILE; the unit result goes to the brigadir's.
     "exam_assigned": {

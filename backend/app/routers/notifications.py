@@ -216,8 +216,11 @@ def _commit_retrying(db: Session, write) -> object:
 @router.get("/summary")
 def summary(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """What the header bell polls: how much is waiting on the viewer (the red
-    number), and whether anything arrived since they last opened it (the dot)."""
-    return {"queue": notif_queue.count(db, payload), **center.counts(db, payload)}
+    number), whether anything arrived since they last opened it (the dot), and
+    the newest row id — the Android app's phone notifications start counting
+    from it while the app is on screen (utils/androidPush.js)."""
+    return {"queue": notif_queue.count(db, payload), **center.counts(db, payload),
+            "latest": _top_id(db, payload)}
 
 
 @router.get("/center")
@@ -299,18 +302,22 @@ def mark_seen(body: _Seen, payload: dict = Depends(require_auth), db: Session = 
 
 @router.get("/prefs")
 def get_prefs(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
-    """Per category: does Telegram DM it as well, or is it kept in the app."""
+    """Per category: does Telegram DM it as well (``prefs``), and does the
+    Android app show it as a phone notification (``push``)."""
     profile = viewer_profile_key(db, payload)
     return {
         "editable": bool(profile),
         "reason": None if profile else "no_profile",
         "categories": list(center.CATEGORIES),
         "prefs": center.prefs_for(db, profile),
+        "push": center.prefs_for(db, profile, "push"),
     }
 
 
 class _Prefs(BaseModel):
-    prefs: dict[str, bool]
+    prefs: dict[str, bool] = {}
+    # Absent from a tab on an older bundle — and then left exactly as it is.
+    push: Optional[dict[str, bool]] = None
 
 
 @router.put("/prefs")
@@ -321,9 +328,21 @@ def put_prefs(body: _Prefs, payload: dict = Depends(require_auth), db: Session =
     if not profile:
         raise HTTPException(status_code=409, detail="This session has no profile to save settings for")
     before = center.prefs_for(db, profile)
-    after = _commit_retrying(db, lambda: center.set_prefs(db, profile, body.prefs))
+    before_push = center.prefs_for(db, profile, "push")
+
+    def write():
+        center.set_prefs(db, profile, body.prefs)
+        if body.push is not None:
+            center.set_prefs(db, profile, body.push, "push")
+
+    _commit_retrying(db, write)
+    after = center.prefs_for(db, profile)
+    after_push = center.prefs_for(db, profile, "push")
     changed = [(c, ("telegram" if after[c] else "app only")) for c in center.CATEGORIES
                if before.get(c) != after.get(c)]
+    changed += [(c, ("phone" if after_push[c] else "no phone")) for c in center.CATEGORIES
+                if before_push.get(c) != after_push.get(c)]
     action_log.enrich(target_kind="notification_prefs", target_id=profile,
                       details=changed or [("unchanged", "")])
-    return {"editable": True, "categories": list(center.CATEGORIES), "prefs": after}
+    return {"editable": True, "categories": list(center.CATEGORIES),
+            "prefs": after, "push": after_push}

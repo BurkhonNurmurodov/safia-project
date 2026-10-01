@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import api from "../utils/api";
 import {
   clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession,
@@ -8,6 +8,7 @@ import {
   findProfile, keepAppProfilesStored, listProfiles, removeProfile, saveProfile,
 } from "../utils/profileWallet";
 import { keepAppSignedIn } from "../utils/appSession";
+import { clearPush, registerPush } from "../utils/androidPush";
 
 const AuthContext = createContext(null);
 
@@ -130,7 +131,9 @@ export function AuthProvider({ children }) {
             setAuth(r.data);
             setWebSession(true);
             rememberActive(r.data);
-            keepAppSignedIn();
+            // The phone's notifications ask with this session — after any
+            // renewal, so the app holds the token that lasts.
+            keepAppSignedIn().then(() => registerPush(r.data));
           })
           .catch((e) => {
             // Only the server's NO ends a session: 401 (expired, revoked,
@@ -199,10 +202,14 @@ export function AuthProvider({ children }) {
 
   // The Android app renews its session whenever it comes back to the screen
   // or back online — at most once a day per session (utils/appSession.js).
+  const authRef = useRef(auth);
+  authRef.current = auth;
   useEffect(() => {
     if (!webSession || !inAndroidApp()) return undefined;
     const onReturn = () => {
-      if (document.visibilityState === "visible") keepAppSignedIn();
+      if (document.visibilityState === "visible") {
+        keepAppSignedIn().then(() => registerPush(authRef.current));
+      }
     };
     document.addEventListener("visibilitychange", onReturn);
     window.addEventListener("online", onReturn);
@@ -274,10 +281,12 @@ export function AuthProvider({ children }) {
       if (active) removeProfile(active);
       const next = listProfiles()[0];
       if (next) {
+        // The reload signs the phone's notifications over to this profile.
         setToken(next.token, { remember: next.remember, web: true });
         window.location.assign("/");
         return;
       }
+      clearPush();
       clearToken();
       window.location.href = "/";
       return;
@@ -294,6 +303,7 @@ export function AuthProvider({ children }) {
     setWebSession(true);
     setAuth(data);
     rememberActive(data, remember);
+    registerPush(data);
   }
 
   /**

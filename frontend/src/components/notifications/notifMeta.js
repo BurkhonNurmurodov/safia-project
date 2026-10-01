@@ -194,15 +194,10 @@ export function queueText(item, { t, tl, tx, lang }) {
   return { title, sub, subTone, quote, meta, urgent };
 }
 
-// Lines counted by WHAT they are about rather than by row: a unit whose day
-// was reopened and closed again is still one unit.
-const COUNT_DISTINCT = new Set(["day_closed", "day_reopened"]);
-
-/** The headline of a feed entry — a folded group speaks for all its rows. */
-export function entryTitle(entry, t) {
-  if (entry.kind !== "group") return entry.title;
-  const key = `notif.fold.${entry.nkey}`;
-  const s = t(key);
-  const n = COUNT_DISTINCT.has(entry.nkey) ? (entry.distinct ?? entry.count) : entry.count;
-  return s === key ? `${entry.title} · ${n}` : fmt(s, { n });
+/** The headline of a feed entry. A folded group's («Yopilgan kunlar: 15 ta»)
+ *  is written by the server (notification_center.FOLD_TITLES), in the
+ *  viewer's language, so the bell and the Android app's phone notifications
+ *  say one thing. */
+export function entryTitle(entry) {
+  return entry.title;
 }

@@ -265,6 +265,8 @@ def add_notification_center() -> None:
     try:
         db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS subject_kind VARCHAR"))
         db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS subject_id VARCHAR"))
+        # The Android app's phone notifications, per category (NULL = on).
+        db.execute(text("ALTER TABLE notification_prefs ADD COLUMN IF NOT EXISTS push BOOLEAN"))
         db.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_notifications_profile_id "
             "ON notifications (recipient_profile, id)"

@@ -21,6 +21,7 @@ import {
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import api from "../utils/api";
+import { pushSeen } from "../utils/androidPush";
 
 /**
  * /notifications — the bell's full page (2026-10-01). Two views over the
@@ -36,6 +37,9 @@ export default function Notifications() {
   const { data: sum } = useNotifSummary();
   const [prefsOpen, setPrefsOpen] = useState(false);
   const toast = useToast();
+
+  // Reading the list here is reading the phone's notifications too.
+  useEffect(() => { pushSeen(); }, []);
 
   // The bell links here with ?tab= — read it on every arrival, not only on
   // mount: the route is not keyed, so a second link from the bell while this

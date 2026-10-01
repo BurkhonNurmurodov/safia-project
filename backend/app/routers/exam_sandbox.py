@@ -1043,7 +1043,7 @@ _SB_CATS = ["approvals", "day", "concerns", "tasks", "checklist", "appeals", "id
 @router.get("/notifications/prefs")
 def sb_notif_prefs(g=Depends(_gate)):
     return {"editable": False, "reason": "exam", "categories": _SB_CATS,
-            "prefs": {c: True for c in _SB_CATS}}
+            "prefs": {c: True for c in _SB_CATS}, "push": {c: True for c in _SB_CATS}}
 
 
 @router.put("/notifications/prefs")

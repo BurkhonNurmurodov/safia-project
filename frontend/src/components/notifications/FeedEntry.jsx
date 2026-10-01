@@ -27,7 +27,7 @@ export default function FeedEntry({ entry, unread, onRead, onOpen }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = CATEGORY_ICON[entry.category] || Megaphone;
   const ink = TONE_INK[entry.type];
-  const title = entryTitle(entry, t);
+  const title = entryTitle(entry);
   const body = displayBody(entry.body);
   const isGroup = entry.kind === "group";
   const markRead = () => { if (unread) onRead?.(entry.ids); };
