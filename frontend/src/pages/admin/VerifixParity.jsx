@@ -243,6 +243,26 @@ export default function VerifixParity({ data, qk, configured, dirty, t, tx }) {
               {tot.api_came_other_cells > 0 && (
                 <div>{fill(t("verifix.p.otherCells"), { n: n0(tot.api_came_other_cells) })}</div>
               )}
+              {shown.uncovered?.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer">
+                    {fill(t("verifix.p.uncoveredList"), { n: n0(shown.uncovered_cells) })}
+                  </summary>
+                  <ul className="mt-1 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-0.5" style={{ color: "var(--text-2)" }}>
+                    {shown.uncovered.map((u) => (
+                      <li key={u.code} className="tabular-nums">
+                        <span className="font-mono">{u.code}</span>
+                        {" · "}{fill(t("verifix.p.people"), { n: n0(u.api) })}
+                        <span style={{ color: "var(--text-3)" }}>
+                          {" · "}{u.last_file
+                            ? fill(t("verifix.p.lastFile"), { date: fmtDay(u.last_file) })
+                            : t("verifix.p.neverFile")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {tot.skipped > 0 && <div>{fill(t("verifix.p.skipped"), { n: n0(tot.skipped) })}</div>}
             </div>
           )}

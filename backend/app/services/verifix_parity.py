@@ -43,6 +43,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import AttendanceBatch, AttendanceBatchRow, Cell
@@ -63,6 +64,7 @@ SEARCH_KINDS = 8
 # The search scores this many worker-days; the winner is then scored on all.
 SEARCH_SAMPLE = 4000
 TOP_CELLS = 25
+TOP_UNCOVERED = 40
 ALTERNATIVES = 3
 
 _CLOCK_RE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})")
@@ -388,6 +390,10 @@ def run(db: Session, d0: date, d1: date, actor: str = "") -> dict:
     days, all_pairs, day_pairs = [], [], {}
     cell_file: Counter[str] = Counter()
     cell_api: Counter[str] = Counter()
+    # People the API says came, in one of OUR cells, on a day the file has no
+    # row for that cell at all — a file not uploaded, or a cell no export
+    # carries. Switching to the API starts counting them either way.
+    uncovered: Counter[str] = Counter()
     day = d0
     while day <= d1:
         f_recs, a_recs = files.get(day, []), api.get(day, [])
@@ -403,8 +409,12 @@ def run(db: Session, d0: date, d1: date, actor: str = "") -> dict:
                 if f["came"] and f["cell"]:
                     cell_file[f["cell"]] += 1
             for a in a_recs:
-                if a["came"] and a["cell"] in covered:
+                if not a["came"]:
+                    continue
+                if a["cell"] in covered:
                     cell_api[a["cell"]] += 1
+                elif a["cell"] in ours:
+                    uncovered[a["cell"]] += 1
         days.append(row)
         day += timedelta(days=1)
 
@@ -435,6 +445,23 @@ def run(db: Session, d0: date, d1: date, actor: str = "") -> dict:
     result["cells"] = cells[:TOP_CELLS]
     result["cells_total"] = len(cells)
     result["cells_differ"] = sum(1 for c in cells if c["diff"])
+    if uncovered:
+        # When each of those cells was last in ANY uploaded file: a recent date
+        # says that day's file is missing, none says no export carries it.
+        last: dict[str, date] = {}
+        q = (db.query(AttendanceBatchRow.verifix_code, func.max(AttendanceBatch.date))
+             .join(AttendanceBatch, AttendanceBatch.id == AttendanceBatchRow.batch_id)
+             .group_by(AttendanceBatchRow.verifix_code))
+        for code, seen in q:
+            k = verifix._code_key(code) if code else None
+            if k in uncovered and seen and (k not in last or seen > last[k]):
+                last[k] = seen
+        result["uncovered"] = [
+            {"code": k.zfill(4) if k.isdigit() else k, "api": n,
+             "last_file": last[k].isoformat() if k in last else None}
+            for k, n in uncovered.most_common(TOP_UNCOVERED)
+        ]
+        result["uncovered_cells"] = len(uncovered)
     if partial:
         result["partial"] = True
     return _finish(db, result, started, "partial" if partial else "ok")

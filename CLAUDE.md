@@ -6280,7 +6280,17 @@ reads it yet except the card's own test, so no figure on the platform moves.
   stored (`verifix_last_parity`, counts and cell codes only). The default range
   ends the day before yesterday — yesterday's shift-2 file lands in the
   afternoon, so its batch is usually still short.
-- Next (not built): read the parity result, then the live feed — see the
+- **First parity run (27.09.2026, a Sunday): the API IS the file.** 1,477 of
+  1,478 file rows found by name, the same clock-in/out and the SAME hours for
+  1,157 of 1,158 who came, and everybody the file says came, Verifix says came.
+  The ±1 differences in 10 of 139 cells are people who changed «отдел» since
+  (the check places by the CURRENT org unit; a live feed reads the same day, so
+  it does not apply there). Verifix also showed **76 people who came in our
+  cells the file did not carry that day** — v4.194.1 lists those cells with the
+  last date each was in ANY uploaded file (`uncovered`): a recent date means a
+  file was not uploaded, none means no export carries the cell. Switching to
+  the API starts counting those people either way — say so before switching.
+- Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
 
 ## Browser login (the second door)
