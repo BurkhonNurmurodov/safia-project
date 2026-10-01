@@ -216,6 +216,16 @@ const fmtDur = (min, T) => {
   const total = Math.round(min || 0);
   return T.dur(Math.floor(total / 60), total % 60);
 };
+// A duration as figures + units: the figures carry the weight, the unit words
+// («soat», «daq») drop to a smaller, lighter, muted size so «193 soat 39 daq»
+// reads as two numbers, not one wide bold phrase.
+const Dur = ({ min, T, unitClass = "text-[0.72em]" }) => (
+  <span className="whitespace-nowrap">
+    {fmtDur(min, T).split(/(\d+)/).filter(Boolean).map((part, i) => (/^\d+$/.test(part)
+      ? <span key={i}>{part}</span>
+      : <span key={i} className={`${unitClass} font-medium`} style={{ color: "var(--text-3)" }}>{part}</span>))}
+  </span>
+);
 const fmtDate = (iso, T) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -575,7 +585,7 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
           footer={<Sparkline values={shownDaily.map((d) => d.active_users)} color={C_ACTIVE} />} />
 
         <StatCard icon={Clock} label={T.cardTime} accent={C_TIME}
-          value={fmtDur(kpis.avg_minutes_day, T)} valueSuffix={T.perIdDay[by]}
+          value={<Dur min={kpis.avg_minutes_day} T={T} />} valueSuffix={T.perIdDay[by]}
           secLabel={T.kTotalTime} secValue={kpis.total_hours != null ? T.hrs(kpis.total_hours) : "—"}
           footer={<Sparkline values={shownDaily.map((d) => d.minutes)} color={C_TIME} />} />
 
@@ -662,7 +672,7 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                       {sub && <div className="text-[10px] truncate" style={{ color: "var(--text-4)" }}>{sub}</div>}
                     </div>
                   </div>
-                  <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{fmtDur(u.total_minutes, T)}</div>
+                  <div className="text-base font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}><Dur min={u.total_minutes} T={T} /></div>
                   <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: "var(--bg-card)" }}>
                     <div className="h-full rounded-full" style={{ width: `${(u.total_minutes / maxT) * 100}%`, background: C_TIME }} />
                   </div>
@@ -778,7 +788,7 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell" style={{ color: "var(--text-2)" }}>{u.active_days}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ color: "var(--text-1)" }}>{fmtDur(u.total_minutes, T)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ color: "var(--text-1)" }}><Dur min={u.total_minutes} T={T} unitClass="text-[11px]" /></td>
                   <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDur(u.avg_minutes, T)}</td>
                   <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell" style={{ color: "var(--text-3)" }}>{u.sessions ?? "—"}</td>
                 </tr>
