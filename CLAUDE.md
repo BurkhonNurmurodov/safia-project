@@ -6478,6 +6478,9 @@ re-verifies it on every request. The second is a username + password at
   the ACTIVE profile only and falls back to the next row; the login screen is
   only for the last one. Switching always does a full page load: per-page
   filters, scroll and fetched rows belong to the profile being left.
+- **Lifetimes**: 12 hours unticked (sessionStorage), 30 days with «remember
+  me» — in a browser. The Android app signs in for good (a year, renewed
+  daily); see «The app stays signed in» under «The Android app».
 - **`token_version` is the revocation handle.** Bump it to end every browser
   session for a profile (password change, reset, disable, rename, admin
   "sign out everywhere"). Telegram sessions never carry it.
@@ -6759,6 +6762,39 @@ daily") **the app downloads every build the site deploys by itself** — see
   `<meta name="theme-color">`; the keyboard and bars are padding (Android 15+
   forces edge to edge). The app's own toasts speak the language picked on the
   site (`localStorage.lang`, sent with every bridge message — `Texts.java`).
+- **The app stays signed in until its person signs out** (2026-10-01, the
+  operator: «like other mobile apps … not expiring like web»). Three things
+  were signing phones out: the login form's «remember me» defaulted OFF, so
+  the token sat in sessionStorage, which a web view loses every time Android
+  stops the app in the background; a ticked one died after 30 days anyway;
+  and the boot check (`/api/auth/web/session`) CLEARED the token on any
+  failure, so opening the app without signal was a sign-out.
+  - **An app session is a year long and renewed daily.** The login form sends
+    `app: true` from inside the app (`inAndroidApp()`), and the server honours
+    it only from the app's user agent (`web_auth.from_app`, `APP_UA_MARK`) —
+    `create_web_jwt(app=True)`: `APP_SESSION_DAYS` (365), claims `app` + `iat`.
+    `utils/appSession.js` `keepAppSignedIn()` renews every session the app
+    holds — the active one and each wallet row — once it is a day old, on boot,
+    on return to the screen and on coming back online (`POST
+    /api/auth/web/refresh`, which re-derives the claims from the profile). A
+    browser-length token presented by the app is UPGRADED there, so nobody
+    signed in before this was asked for a password. Refused (403): a browser
+    (`not_app` — a browser keeps the 12-hour / 30-day rules) and an
+    impersonated token (`not_refreshable`; `create_web_jwt` never makes one an
+    app session).
+  - **Stored in localStorage, always.** In the app `setToken` and the wallet's
+    `saveProfile` keep every non-tab web session as remembered, and at boot
+    `keepAppSessionStored` / `keepAppProfilesStored` move whatever still sits
+    in sessionStorage over. The forms show «stays signed in until you sign out»
+    instead of the checkbox. The impersonation screen (`tab`) is untouched.
+  - **Only the server's NO signs out.** The boot check clears the token on 401 /
+    403 alone; no connection, a timeout or a 5xx shows the «Aloqa yo'q» screen
+    with the token kept (this applies to browsers too).
+  - Revocation is unchanged and immediate — every request re-checks the
+    credential, so a password change, reset, disabled login or «sign out
+    everywhere» ends an app session at once. A password change made in the app
+    re-issues an app token. Renewals are skipped by the action register (the
+    sign-in is logged, with `surface: android`).
 - **«Open as this profile» opens IN THE APP, as a screen of its own**
   (1.3.0, 2026-09-29 — the operator: it opening in the phone's browser was
   «the problem»). `SessionActivity` (a `MainActivity` whose `isSession()` is

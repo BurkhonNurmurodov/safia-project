@@ -6,6 +6,7 @@ import { Eye, EyeOff, Lock, User, ArrowLeft, Send, Check } from "lucide-react";
 // impression. See assets/logoChrome.js.
 import LOGO_SRC from "../assets/logoChrome.js";
 import api from "../utils/api";
+import { inAndroidApp } from "../utils/session";
 import { useLang } from "../context/LangContext";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
@@ -45,6 +46,9 @@ export default function WebLogin({ onSuccess }) {
   const [sent,     setSent]     = useState(false);
 
   const canSubmit = username.trim().length > 0 && password.length > 0;
+  // The Android app signs in like a phone app: once, until signing out — so it
+  // asks nothing about remembering (utils/appSession.js keeps it signed in).
+  const inApp = inAndroidApp();
 
   function readError(err) {
     const status = err?.response?.status;
@@ -69,9 +73,10 @@ export default function WebLogin({ onSuccess }) {
       const r = await api.post("/api/auth/web/login", {
         username: username.trim(),
         password,
-        remember,
+        remember: remember || inApp,
+        app: inApp,
       });
-      onSuccess(r.data, remember);
+      onSuccess(r.data, remember || inApp);
     } catch (err) {
       setError(readError(err));
       setPassword("");
@@ -180,7 +185,14 @@ export default function WebLogin({ onSuccess }) {
               </FormField>
 
               {/* Remember me — a real checkbox so it is keyboard-reachable and
-                  announced; the label is the hit area, which matters at 375px. */}
+                  announced; the label is the hit area, which matters at 375px.
+                  The app has no such choice to offer: it says what happens. */}
+              {inApp ? (
+                <p className="flex items-start gap-2 text-[13px] leading-snug" style={{ color: "var(--text-3)" }}>
+                  <Check size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--status-ok)" }} aria-hidden="true" />
+                  {t("weblogin.appKeep")}
+                </p>
+              ) : (
               <label className="flex items-start gap-2.5 cursor-pointer select-none">
                 <span
                   className="mt-0.5 w-[18px] h-[18px] rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
@@ -206,6 +218,7 @@ export default function WebLogin({ onSuccess }) {
                   </span>
                 </span>
               </label>
+              )}
 
               <Button
                 type="submit"

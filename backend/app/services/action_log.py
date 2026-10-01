@@ -459,6 +459,9 @@ _SKIP = (
     # one. Telemetry about attention, never a change to anybody's records.
     "/api/notifications/read",
     "/api/notifications/seen",
+    # The Android app renewing its own session (at most once a day). The
+    # sign-in that started it is recorded; a renewal changes nobody's access.
+    "/api/auth/web/refresh",
 )
 
 _PREFIXES = ("/api/", "/admin/")

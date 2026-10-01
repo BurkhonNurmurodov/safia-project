@@ -1,9 +1,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
 import {
-  clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession, setToken,
+  clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession,
+  keepAppSessionStored, setToken,
 } from "../utils/session";
-import { findProfile, listProfiles, removeProfile, saveProfile } from "../utils/profileWallet";
+import {
+  findProfile, keepAppProfilesStored, listProfiles, removeProfile, saveProfile,
+} from "../utils/profileWallet";
+import { keepAppSignedIn } from "../utils/appSession";
 
 const AuthContext = createContext(null);
 
@@ -116,10 +120,33 @@ export function AuthProvider({ children }) {
     // trusted: /session re-derives the profile, so a rename or a revoked login
     // lands on the next page load instead of living on in an open tab.
     if (!inTelegram() || FORCE_WEB_LOGIN) {
+      // The Android app keeps every sign-in until signing out: a session still
+      // in sessionStorage moves to localStorage before anything reads it.
+      keepAppSessionStored();
+      keepAppProfilesStored();
       if (getToken() && isWebSession()) {
         api.get("/api/auth/web/session")
-          .then((r) => { setAuth(r.data); setWebSession(true); rememberActive(r.data); })
-          .catch(() => { clearToken(); setWebSession(false); setAuth({ status: "web_login" }); })
+          .then((r) => {
+            setAuth(r.data);
+            setWebSession(true);
+            rememberActive(r.data);
+            keepAppSignedIn();
+          })
+          .catch((e) => {
+            // Only the server's NO ends a session: 401 (expired, revoked,
+            // disabled) or 403 (the profile is gone). No connection, a timeout
+            // or a 5xx says nothing about the token — dropping it there signed a
+            // phone out every time the app opened without signal. Keep it and
+            // offer a retry.
+            const status = e?.response?.status;
+            if (status === 401 || status === 403) {
+              clearToken();
+              setWebSession(false);
+              setAuth({ status: "web_login" });
+            } else {
+              setAuth({ status: "error" });
+            }
+          })
           .finally(() => setLoading(false));
         return;
       }
@@ -169,6 +196,21 @@ export function AuthProvider({ children }) {
       .catch(() => setAuth({ status: "error" }))
       .finally(() => setLoading(false));
   }, []);
+
+  // The Android app renews its session whenever it comes back to the screen
+  // or back online — at most once a day per session (utils/appSession.js).
+  useEffect(() => {
+    if (!webSession || !inAndroidApp()) return undefined;
+    const onReturn = () => {
+      if (document.visibilityState === "visible") keepAppSignedIn();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("online", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("online", onReturn);
+    };
+  }, [webSession]);
 
   // Countdown tick → close when it hits 0
   useEffect(() => {

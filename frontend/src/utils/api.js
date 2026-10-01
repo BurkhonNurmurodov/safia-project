@@ -52,7 +52,9 @@ export function authHeaders() {
 }
 
 api.interceptors.request.use((config) => {
-  const token = getToken();
+  // `_token`: a call made on behalf of a session that is NOT the active one —
+  // the Android app renewing a profile in the wallet (utils/appSession.js).
+  const token = config._token || getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   // Origin proof on EVERY request: the backend re-verifies this initData hash
   // (not just at login) so no endpoint can be reached from outside a genuine

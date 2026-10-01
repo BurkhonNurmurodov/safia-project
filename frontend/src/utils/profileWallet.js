@@ -27,12 +27,18 @@
  * told to. Reads merge both, sessionStorage first — a per-tab row is always the
  * more recent intent when a username somehow sits in both.
  *
+ * In the Android app every row is kept (localStorage), whatever was ticked:
+ * the app stays signed in until its person signs out, and a row in
+ * sessionStorage would vanish the next time Android stopped the app.
+ *
  * Every touch is wrapped: quota exhaustion, partitioned WebView storage and
  * private-mode variants all throw here, some on merely NAMING localStorage. A
  * module-memory mirror covers a failed write for the rest of the page load,
  * which is the honest ceiling — storage that cannot hold a row cannot survive a
  * reload either.
  */
+import { inAndroidApp } from "./session";
+
 const KEY = "web_profiles";
 
 // Last thing we tried to store, whether or not storage agreed to hold it.
@@ -97,6 +103,7 @@ export function findProfile(username) {
 export function saveProfile({ username, full_name, role, role_ref, profile_key,
                               photo_ver, token, remember }) {
   if (!username || !token) return null;
+  if (inAndroidApp()) remember = true;
   const entry = {
     username,
     full_name: full_name || "",
@@ -120,6 +127,21 @@ export function saveProfile({ username, full_name, role, role_ref, profile_key,
 
   mem = upsert(mem, entry);
   return entry;
+}
+
+/** Android app only: move rows still held in sessionStorage to localStorage
+ *  (see the header) — run once at boot, before anything reads the wallet. */
+export function keepAppProfilesStored() {
+  if (!inAndroidApp()) return;
+  for (const row of readStore(() => sessionStorage)) saveProfile({ ...row, remember: true });
+}
+
+/** Swap one row's token for a re-issued one — only while the row still holds
+ *  the token that was renewed, so a newer sign-in is never overwritten. */
+export function replaceProfileToken(oldToken, newToken) {
+  const row = listProfiles().find((e) => e.token === oldToken);
+  if (!row || !newToken) return;
+  saveProfile({ ...row, token: newToken });
 }
 
 export function removeProfile(username) {

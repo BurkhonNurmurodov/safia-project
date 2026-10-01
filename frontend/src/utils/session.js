@@ -11,6 +11,12 @@
  * tomorrow morning — so it is enforced by the STORAGE, not only by the token's
  * own expiry.
  *
+ * The Android app is the exception, and on purpose: a phone is one person's,
+ * and an app stays signed in until its person signs out. There a web session
+ * is ALWAYS kept in localStorage — sessionStorage in a web view dies every
+ * time Android stops the app in the background, which on a phone is constantly
+ * — and utils/appSession.js renews the token so it never runs out.
+ *
  * Reads check sessionStorage first: a per-tab token is always the more recent
  * intent when both happen to exist.
  *
@@ -74,6 +80,8 @@ export function getToken() {
 }
 
 export function setToken(token, { remember = true, web = false, tab = false } = {}) {
+  // In the Android app a sign-in is kept until signing out (see the header).
+  if (web && !tab && inAndroidApp()) remember = true;
   // Mirror first and unconditionally: whatever storage does below, this page
   // load has a working session.
   memToken = token;
@@ -135,6 +143,39 @@ export function clearToken() {
       store.removeItem(WEB_KEY);
       store.removeItem(TAB_KEY);
     } catch { /* storage blocked */ }
+  }
+}
+
+/**
+ * Android app only: carry a session that still sits in sessionStorage — signed
+ * in before the app kept every sign-in, or with «remember me» unticked — over
+ * to localStorage, so the next time Android stops the app it is still there.
+ * Never a tab session: that is the impersonation screen (SessionActivity), and
+ * it must die with that screen.
+ */
+export function keepAppSessionStored() {
+  if (!inAndroidApp() || memOnly || isTabSession()) return;
+  const token = read(() => sessionStorage, TOKEN_KEY);
+  if (!token) return;
+  setToken(token, { remember: true, web: read(() => sessionStorage, WEB_KEY) === "1" });
+}
+
+/** The claims of a JWT, read without verifying it (the server does that) —
+ *  only to learn what kind of session this is and when it was issued. */
+export function tokenClaims(token = getToken()) {
+  try {
+    const part = String(token || "").split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(b64 + "===".slice((b64.length + 3) % 4))
+        .split("")
+        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
   }
 }
 

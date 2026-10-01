@@ -46,6 +46,10 @@ class LoginBody(BaseModel):
     username: str
     password: str
     remember: bool = False
+    # Sent by the Android app's pages: sign in like a phone app — stay signed in
+    # until signing out (``web_auth.APP_SESSION_DAYS``). Honoured only from the
+    # app's own web view; anywhere else it is an ordinary remembered login.
+    app: bool = False
 
 
 @router.post("/login")
@@ -86,16 +90,20 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
     web_auth.clear_failures(db, cred)
     cred.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    log.info("WEB-LOGIN signin | login=%s | profile=%s | ip=%s",
-             cred.username, cred.profile_key, ip)
+    app = body.app and web_auth.from_app(request.headers.get("user-agent"))
+    log.info("WEB-LOGIN signin | login=%s | profile=%s | ip=%s | app=%s",
+             cred.username, cred.profile_key, ip, int(app))
 
-    token = web_auth.create_web_jwt(identity, cred, body.remember)
+    token = web_auth.create_web_jwt(identity, cred, body.remember or app, app=app)
     # The login NAME and the profile it belongs to — never the secret that
     # opened it, in details, changes or reason.
+    details = [("login", cred.username), ("role", identity["role"])]
+    if app:
+        details.append(("surface", "android"))
     action_log.enrich(
         target_kind="weblogin", target_id=cred.profile_key,
         target_name=identity["full_name"],
-        details=[("login", cred.username), ("role", identity["role"])],
+        details=details,
     )
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
     admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
@@ -349,9 +357,11 @@ def change_password(body: ChangePasswordBody, payload: dict = Depends(_any_calle
     remember = _is_long_session(payload)
     # The re-issued token inherits ``imp``: dropping it would leave an
     # impersonated tab looking like an ordinary session of the person whose
-    # password was just changed.
+    # password was just changed. It inherits ``app`` for the same reason — the
+    # phone that changed its own password stays signed in like an app.
     return {"ok": True, "token": web_auth.create_web_jwt(
-        identity, cred, remember, impersonated_by=payload.get("imp"))}
+        identity, cred, remember, impersonated_by=payload.get("imp"),
+        app=bool(payload.get("app")))}
 
 
 def _is_long_session(payload: dict) -> bool:
@@ -362,6 +372,42 @@ def _is_long_session(payload: dict) -> bool:
         return False
     remaining = datetime.fromtimestamp(exp, tz=timezone.utc) - datetime.now(timezone.utc)
     return remaining.total_seconds() > web_auth.SESSION_HOURS * 3600
+
+
+@router.post("/refresh")
+def web_refresh(request: Request, payload: dict = Depends(_web_caller),
+                db: Session = Depends(get_db)):
+    """Re-issue the Android app's session so it never runs out while in use.
+
+    The app calls this at most once a day (``utils/appSession.js``), with the
+    token it holds — an app token, or one minted before the app signed in like
+    an app (a 12-hour or 30-day browser token), which this turns into an app
+    token so nobody already signed in is ever asked for a password again.
+
+    Re-derived from the profile, never copied from the old token: the claims a
+    year-long session carries must not go stale. A token that is no longer live
+    (password changed, login disabled, signed out everywhere) is refused by
+    ``_web_caller`` with 401, exactly as every other request refuses it.
+
+    Two refusals, both 403: a browser tab (its sessions keep their own rules —
+    a shared PC must still forget an unticked login with the tab), and an
+    impersonated session, which belongs to the screen that opened it.
+    """
+    if payload.get("imp"):
+        raise HTTPException(status_code=403, detail="not_refreshable")
+    if not web_auth.from_app(request.headers.get("user-agent")):
+        raise HTTPException(status_code=403, detail="not_app")
+    cred = db.query(WebCredential).filter(WebCredential.username == payload.get("wu")).first()
+    if not cred:
+        raise HTTPException(status_code=401, detail="No web login")
+    identity = web_auth.session_identity(db, cred.profile_key)
+    if not identity:
+        raise HTTPException(status_code=403, detail="profile_unavailable")
+    if not payload.get("app"):
+        log.info("WEB-LOGIN app_upgrade | login=%s | profile=%s",
+                 cred.username, cred.profile_key)
+    return {"ok": True, "app": True,
+            "token": web_auth.create_web_jwt(identity, cred, True, app=True)}
 
 
 @router.get("/session")

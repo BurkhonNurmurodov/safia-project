@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, User, UserPlus, Check } from "lucide-react";
 import api from "../../utils/api";
+import { inAndroidApp } from "../../utils/session";
 import { useLang } from "../../context/LangContext";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
@@ -45,6 +46,8 @@ export default function AddProfileModal({ open, onClose, onAdded, presetUsername
   }, [open, presetUsername]);
 
   const canSubmit = username.trim().length > 0 && password.length > 0;
+  // In the Android app every profile stays signed in until it signs out.
+  const inApp = inAndroidApp();
 
   function readError(err) {
     const status = err?.response?.status;
@@ -69,11 +72,12 @@ export default function AddProfileModal({ open, onClose, onAdded, presetUsername
       const r = await api.post("/api/auth/web/login", {
         username: username.trim(),
         password,
-        remember,
+        remember: remember || inApp,
+        app: inApp,
       });
       // Hands over to AuthContext.addWebProfile, which stores the row and
       // reloads under the new profile — so nothing after this line runs.
-      onAdded(r.data, remember);
+      onAdded(r.data, remember || inApp);
     } catch (err) {
       setError(readError(err));
       setPassword("");
@@ -165,7 +169,14 @@ export default function AddProfileModal({ open, onClose, onAdded, presetUsername
         {/* Per-profile "remember me": ticked keeps this profile on the machine
             after a restart, unticked drops it when the tab closes. Each row
             carries its own choice, so adding a colleague for one shift does not
-            leave them signed in on a shared PC tomorrow. */}
+            leave them signed in on a shared PC tomorrow. The app has no such
+            choice: a phone is one person's, and it stays signed in. */}
+        {inApp ? (
+          <p className="flex items-start gap-2 text-[13px] leading-snug" style={{ color: "var(--text-3)" }}>
+            <Check size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--status-ok)" }} aria-hidden="true" />
+            {t("weblogin.appKeep")}
+          </p>
+        ) : (
         <label className="flex items-start gap-2.5 cursor-pointer select-none">
           <span
             className="mt-0.5 w-[18px] h-[18px] rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
@@ -191,6 +202,7 @@ export default function AddProfileModal({ open, onClose, onAdded, presetUsername
             </span>
           </span>
         </label>
+        )}
       </form>
     </Modal>
   );

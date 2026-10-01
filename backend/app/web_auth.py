@@ -56,6 +56,21 @@ LOCKOUT_MINUTES     = 15
 REMEMBER_DAYS  = 30
 SESSION_HOURS  = 12
 
+# The Android app (android/) signs in like a phone app, not like a browser tab:
+# once, and then it stays signed in until the person signs out. An app token
+# lives a year and is RE-ISSUED at most once a day while the app is used
+# (POST /api/auth/web/refresh), so only a phone left unopened for a whole year
+# ever sees the login screen again. Revocation is unchanged and still immediate:
+# every request re-checks the credential (``web_session_is_live``), so a
+# password change, a reset, a disabled login or «sign out everywhere» ends an
+# app session exactly as it ends a browser one. The shared-PC reasoning above
+# does not apply — a phone is one person's — and the browser keeps both rules.
+APP_SESSION_DAYS = 365
+# What the app's web view appends to its user agent (MainActivity). Not a
+# security boundary — a user agent is typeable — but it keeps an app-length
+# session out of an ordinary browser tab, where nothing asked for one.
+APP_UA_MARK = "SafiaIMS-Android/"
+
 MIN_PASSWORD_LEN = 8
 
 # Generated passwords avoid 0/O and 1/l/I — they are read off a phone screen and
@@ -386,8 +401,13 @@ def session_identity(db: Session, key: str) -> Optional[dict]:
 
 # ── the token ─────────────────────────────────────────────────────────────────
 
+def from_app(user_agent: Optional[str]) -> bool:
+    """Was this request sent by the Safia IMS Android app's web view?"""
+    return APP_UA_MARK in (user_agent or "")
+
+
 def create_web_jwt(identity: dict, cred: WebCredential, remember: bool,
-                   impersonated_by: Optional[dict] = None) -> str:
+                   impersonated_by: Optional[dict] = None, app: bool = False) -> str:
     """Same shape as ``auth.create_jwt`` plus the two claims that make it a
     browser session: ``web`` (what ``security.py`` accepts in place of initData)
     and ``wv`` (the token version, so an admin can revoke every browser session
@@ -400,8 +420,18 @@ def create_web_jwt(identity: dict, cred: WebCredential, remember: bool,
     It is carried so the app can SAY so on screen, and so the fact survives a
     reload, a page navigation and a password change rather than living in the
     tab that opened it.
+
+    ``app`` mints the Android app's session (``APP_SESSION_DAYS``, see above):
+    claim ``app`` marks it and ``iat`` dates it, so the app knows when to renew
+    it. An impersonated session is never one — it belongs to the screen that
+    opened it and dies with it.
     """
-    ttl = timedelta(days=REMEMBER_DAYS) if remember else timedelta(hours=SESSION_HOURS)
+    app = bool(app) and not impersonated_by
+    now = datetime.utcnow()
+    if app:
+        ttl = timedelta(days=APP_SESSION_DAYS)
+    else:
+        ttl = timedelta(days=REMEMBER_DAYS) if remember else timedelta(hours=SESSION_HOURS)
     payload = {
         "sub":       str(identity["telegram_id"]),
         "role":      identity["role"],
@@ -411,8 +441,11 @@ def create_web_jwt(identity: dict, cred: WebCredential, remember: bool,
         "web":       True,
         "wv":        cred.token_version,
         "wu":        cred.username,
-        "exp":       datetime.utcnow() + ttl,
+        "exp":       now + ttl,
     }
+    if app:
+        payload["app"] = True
+        payload["iat"] = now
     if impersonated_by:
         payload["imp"] = impersonated_by
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
