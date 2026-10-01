@@ -118,6 +118,7 @@ const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Targets = lazyWithReload(() => import("./pages/Targets"));
 const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
+const StaffLive = lazyWithReload(() => import("./pages/StaffLive"));
 const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
@@ -540,6 +541,8 @@ function AppWithLang() {
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
             <Route path="/targets" element={<AuthGate><RequireAdmin><Targets /></RequireAdmin></AuthGate>} />
             <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
+            {/* «Verifix to'g'irlash · Jonli» — the lab copy of /staff read live from Verifix; admin-only, no page key. */}
+            <Route path="/staff-live" element={<AuthGate><RequireAdmin><StaffLive /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />

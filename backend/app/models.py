@@ -4322,3 +4322,57 @@ class KelishRosterEvent(Base):
     by_key         = Column(String, nullable=True)
     by_name        = Column(String, nullable=True)
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveStaffEvent(Base):
+    """A change made on the LAB copy of «Verifix to'g'irlash» (`/staff-live`,
+    admin-only, from 2026-10-01): a worker moved to another unit, their role
+    changed, or their cell changed — from a stated wall-clock moment of one
+    shift-day. NOTHING on the platform reads this table except that page: real
+    attendance, documents and the загрузка are untouched.
+
+    It is the live flow the operator agreed (memory: verifix-api-integration,
+    decisions 4 and 6) tried out before it is built for real: a change counts
+    from `at` — the time the brigadir states — never from its approval; a
+    `pending` one is shown and holds the unit's day close; a move is approved
+    with the receiving CELL, so nobody arrives cell-less.
+
+    `employee_id` is Verifix's — the API carries one, unlike the Excel file.
+    `kind`: move | role | cell. `status`: pending | approved | rejected.
+    """
+    __tablename__ = "live_staff_events"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    day             = Column(Date, nullable=False, index=True)       # the shift-day
+    employee_id     = Column(String, nullable=False, index=True)
+    worker_name     = Column(String, nullable=True)                  # snapshot
+    kind            = Column(String, nullable=False)
+    at              = Column(DateTime, nullable=False)               # Tashkent wall clock
+    from_manager_id = Column(Integer, nullable=True, index=True)
+    to_manager_id   = Column(Integer, nullable=True, index=True)
+    from_cell       = Column(String, nullable=True)                  # verifix code
+    to_cell         = Column(String, nullable=True)
+    from_role       = Column(String, nullable=True)
+    to_role         = Column(String, nullable=True)
+    note            = Column(String, nullable=True)
+    status          = Column(String, nullable=False, default="pending")
+    created_by_name = Column(String, nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    decided_by_name = Column(String, nullable=True)
+    decided_at      = Column(DateTime(timezone=True), nullable=True)
+
+
+class LiveDayClose(Base):
+    """A unit's day closed BY HAND on the lab copy (`/staff-live`). The automatic
+    close is not stored — it is derived on every read from the data (an hour
+    after the unit's last check-out, held by a missing check-out or a pending
+    change), so it can never disagree with the figures beside it. Lab only:
+    the real day close (`/staff`) knows nothing about this table."""
+    __tablename__ = "live_day_closes"
+    __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_day_close"),)
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id     = Column(Integer, nullable=False, index=True)
+    day            = Column(Date, nullable=False)
+    closed_by_name = Column(String, nullable=True)
+    closed_at      = Column(DateTime(timezone=True), server_default=func.now())

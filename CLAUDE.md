@@ -6293,6 +6293,46 @@ reads it yet except the card's own test, so no figure on the platform moves.
 - Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
 
+## The live «Verifix to'g'irlash» (`/staff-live`, Laboratory)
+
+From **2026-10-01** (the operator's request, every part asked and picked) a LAB
+copy of /staff read straight from Verifix instead of the next-morning Excel:
+who is inside, who left, who has not come, late and early, hours so far, with a
+«Yangilash» button and a 2-minute auto-refresh; tabs Xodimlar · So'rovlar ·
+Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
+`verify_admin` on every endpoint), no page key.
+
+- **`services/verifix_live.py` is THE definition**; `routers/staff_live.py` is
+  the door (`/api/staff-live/meta · view · events · close`).
+- **Nothing else reads its two tables** (`live_staff_events`,
+  `live_day_closes`): real attendance, documents, the day close and the
+  загрузка are untouched by anything done here. It is the agreed live flow
+  (memory `verifix-api-integration`, decisions 1 and 4–7) tried before it is
+  built for real.
+- **A worker belongs to the brigadir (on /cells) of the cell their Verifix ORG
+  UNIT's code names** — never the division (the parity check's finding).
+- **Reads**: the working-employee directory (`employee$list` with
+  `statuses ["W"]`, divisions, jobs — cached 10 min), then `timesheet$export` and
+  `track$list` for the unit's employees ONLY (an empty `employee_ids` filter
+  means everyone, so an empty unit makes no call) — cached 60 s, forced by
+  «Yangilash».
+- **Status comes from the raw marks**: the last mark of the day — «O» left,
+  «T» on a break, anything else inside. A plant whose marks carry no I/O at all
+  falls back to the report's own in/out; `diag` on the page says which ran.
+- Late = more than 5 min after the schedule start, early leave = more than 5
+  min before its end, no check-out = still inside 60 min after the shift's end.
+  Hours = the «Отработано» kinds the parity check found (used when it matched ≥
+  90% of ≥ 50 person-days), else the clock span; someone inside counts so far
+  (marked *). A split row shares its hours by the clock.
+- **Changes** (move · role · cell) count from the time they state — HH:MM on
+  the shift-day, a night shift's small hours seated on the next morning
+  (`event_at`) — never from their approval. A move and a role change wait for
+  approval; a move is approved WITH the receiving cell. A cell placement inside
+  the unit applies at once.
+- **The day close is derived on every read**: open while anybody is inside;
+  held by a missing check-out or a pending change; otherwise it closes an hour
+  after the unit's last check-out. Only a close by hand is stored.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:

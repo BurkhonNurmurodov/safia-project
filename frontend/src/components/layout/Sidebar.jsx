@@ -66,6 +66,9 @@ const ALL_LINKS = [
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
   // Laboratory, admin-only until the operator opens it to shift managers.
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
+  // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
+  // changes land in its own tables only. adminOnly, no page key (the /targets pattern).
+  { to: "/staff-live", adminOnly: true, key: "nav.staffLive", icon: Fingerprint, group: "lab" },
   // «Ta'lim» — video lessons published to profiles. First entry in its own
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.
