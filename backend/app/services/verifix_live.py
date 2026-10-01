@@ -310,6 +310,15 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     else:
         status, t_out = "inside", None
 
+    # Still «inside» an hour after the shift's end with no exit anywhere: Verifix
+    # counts a day only by in→out intervals, so a lone mark is NOT attendance —
+    # its own day view reads «Не пришла» (Sabirdjanova N., 30.09.2026: one mark
+    # at 15:07, nothing after). Not inside, not came: its own status, which is
+    # the missing check-out the brigadir has to sort out.
+    if status in ("inside", "break") and end is not None \
+            and now > end + timedelta(minutes=MISSING_AFTER_MIN):
+        status = "no_out"
+
     facts = {}
     for f in (d or {}).get("facts") or []:
         k = str(f.get("time_kind_id") or "")
@@ -331,7 +340,7 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         hours, so_far = max(0.0, _mins(t_in, min(now, hi)) / 60.0), True
 
     late = early_in = early_out = None
-    if begin and t_in:
+    if begin and t_in and status != "no_out":
         delta = _mins(begin, t_in)
         if delta > LATE_GRACE_MIN:
             late = round(delta)
@@ -341,7 +350,7 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         delta = _mins(t_out, end)
         if delta > EARLY_GRACE_MIN:
             early_out = round(delta)
-    missing = status in ("inside", "break") and end is not None and now > end + timedelta(minutes=MISSING_AFTER_MIN)
+    missing = status == "no_out"
 
     return {
         "status": status, "in": t_in, "out": t_out, "begin": begin, "end": end,
@@ -551,7 +560,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             "so_far": person["so_far"],
             "from": _hm(seg_a) if seg_a and t_in and not arrived_here else None,
             "until": (_hm(seg_b) if seg_b and (t_out or seg_b < now) and not left_here
-                      and status not in ("moved_out", "inside", "break") else None),
+                      and status not in ("moved_out", "inside", "break", "no_out") else None),
             "late": person["late"] if arrived_here else None,
             "early_in": person["early_in"] if arrived_here else None,
             "early_out": person["early_out"] if left_here else None,
@@ -563,7 +572,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
         })
 
     counts = Counter(r["status"] for r in rows)
-    came = sum(1 for r in rows if r["in"])
+    came = sum(1 for r in rows if r["in"] and r["status"] != "no_out")
     inside = counts["inside"] + counts["break"]
     missing = sum(1 for r in rows if r["missing"])
     late = sum(1 for r in rows if r["late"])

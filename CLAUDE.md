@@ -6327,7 +6327,12 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   noon on 2026-10-01 and the whole night read «inside · no check-out» until
   this order existed. `diag.out_sources` counts each source.
 - Late = more than 5 min after the schedule start, early leave = more than 5
-  min before its end, no check-out = still inside 60 min after the shift's end.
+  min before its end. **No check-out is a status of its own (`no_out`), not
+  «inside»**: still without an exit an hour after the shift's end. Verifix
+  counts a day only by in→out intervals, so a lone mark is not attendance —
+  its own day view reads «Не пришла» for it (Sabirdjanova N., 30.09: one mark
+  at 15:07). Such a row is counted neither as inside nor as came, carries no
+  hours, and holds the day close.
   Hours = the «Отработано» kinds the parity check found (used when it matched ≥
   90% of ≥ 50 person-days), else the clock span; someone inside counts so far
   (marked *). A split row shares its hours by the clock.

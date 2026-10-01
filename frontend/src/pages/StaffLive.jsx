@@ -50,6 +50,7 @@ const STATUS_TONE = {
   not_yet: "#94a3b8",
   off: "#94a3b8",
   moved_out: "#94a3b8",
+  no_out: "#ef4444",
 };
 
 function Chip({ color, children, dashed = false, title }) {
