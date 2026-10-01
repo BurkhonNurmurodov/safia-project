@@ -6247,6 +6247,23 @@ reads it yet except the card's own test, so no figure on the platform moves.
   one 25 s call stays inside Cloudflare's 100 s; a count cut short says so.
   The last result is stored and shown on the next visit; changing the
   credential clears it.
+- **The first real run (2026-10-01, host `safia.verifix.com`) answered every
+  form**: 539 divisions, 255 with a code, **all 159 of our cell codes among
+  them** — so a division's `code` IS our verifix code; 8,511 employees, 2,942
+  working, so the "the API user sees nobody" worry is gone (the API is not the
+  UI's list); 2,942 timesheet rows for 30.09 (2,281 came).
+- **…and it placed 0 of those rows in a cell by the row's `division_id`.**
+  Verifix holds an employee at TWO levels — a division («департамент») and an
+  org unit («отдел»), both nodes of the one division tree — and
+  `timesheet$export` / `track$list` print only the division, while the cell
+  codes evidently sit on the org units. `employee$list` carries both
+  (`division_id`, `org_unit_id`, CURRENT only). So the test counts every
+  employee, report row and first-page track into our cells BOTH ways
+  (`placed.div` / `placed.unit`, + `came_unit`) and names the report's biggest
+  divisions (`top` — names and codes, org structure, never a person). If
+  `placed.unit` is the answer, the live feed places a row by its employee's
+  org unit — current, which is right for today's shift and approximate for a
+  past day (a history needs the Pro `transfer$list`, outside our role).
 - Next (not built): the parity report against the saved Excel days, then the
   live feed — see the memory for the operator's seven decisions.
 

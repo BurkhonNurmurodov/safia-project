@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
+import { useTranslit } from "../../utils/transliterate";
 import { useAdminDirty } from "./AdminPanel";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
@@ -54,10 +55,13 @@ const fmtAt = (iso) => {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-function StepRow({ s, t }) {
+function StepRow({ s, t, tx }) {
   const label = t(`verifix.s.${s.key}`);
   let figures = "";
   let extra = null;
+  // Where the people land: by the division Verifix prints on the row, and by
+  // the employee's current org unit («отдел») — see `run_test`.
+  const placed = (key, p) => fill(t(key), { div: p.div, unit: p.unit ?? "—", came: p.came_unit ?? "—" });
   if (s.ok) {
     if (s.key === "divisions") {
       figures = fill(t("verifix.f.divisions"), {
@@ -71,12 +75,17 @@ function StepRow({ s, t }) {
       }
     } else if (s.key === "employees") {
       figures = fill(t("verifix.f.employees"), { total: s.total, working: s.working });
+      if (s.placed) extra = placed("verifix.f.placed", s.placed);
     } else if (s.key === "timesheet") {
-      figures = fill(t("verifix.f.timesheet"), {
-        date: s.date, rows: s.rows, came: s.came, cells: s.in_cells,
-      }) + (s.partial ? ` ${t("verifix.f.partial")}` : "");
+      figures = fill(t("verifix.f.timesheet"), { date: s.date, rows: s.rows, came: s.came })
+        + (s.partial ? ` ${t("verifix.f.partial")}` : "");
+      if (s.placed) {
+        extra = placed("verifix.f.placedCame", s.placed)
+          + (s.no_div ? ` · ${fill(t("verifix.f.noDiv"), { n: s.no_div })}` : "");
+      }
     } else if (s.key === "tracks") {
       figures = fill(t("verifix.f.tracks"), { n: `${s.first_page}${s.more ? "+" : ""}` });
+      if (s.placed) extra = placed("verifix.f.placed", s.placed);
     } else {
       figures = fill(t("verifix.f.count"), { n: s.total });
     }
@@ -101,7 +110,34 @@ function StepRow({ s, t }) {
             <span className="text-sm tabular-nums" style={{ color: "var(--text-2)" }}>{figures}</span>
           )}
         </div>
-        {extra && <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{extra}</div>}
+        {extra && <div className="text-xs mt-1 tabular-nums" style={{ color: "var(--text-3)" }}>{extra}</div>}
+        {s.ok && s.key === "timesheet" && s.placed && (
+          <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{t("verifix.f.placedHint")}</div>
+        )}
+        {s.ok && s.key === "timesheet" && s.top?.length > 0 && (
+          <details className="mt-1">
+            <summary className="text-xs cursor-pointer" style={{ color: "var(--text-3)" }}>
+              {t("verifix.topDivs")}
+            </summary>
+            <ul className="mt-1 text-xs space-y-0.5" style={{ color: "var(--text-2)" }}>
+              {s.top.map((d) => (
+                <li key={d.id} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate">
+                    {d.code && <span className="font-mono" style={{ color: "var(--text-4)" }}>{d.code} · </span>}
+                    {tx(d.name) || `#${d.id}`}
+                    {d.cell && (
+                      <span className="ml-1.5 px-1.5 py-px rounded text-[10px]"
+                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                        {t("verifix.isCell")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="tabular-nums flex-shrink-0">{d.n}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {err && (
           <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>
             {err}
@@ -134,6 +170,7 @@ function StepRow({ s, t }) {
 
 export default function VerifixSettings() {
   const { t } = useLang();
+  const { tx } = useTranslit();
   const qc = useQueryClient();
   const { show: toast, node: toastNode } = useToast({ position: "bottom" });
 
@@ -323,7 +360,7 @@ export default function VerifixSettings() {
             </div>
             {steps.length > 0 && (
               <ul className="pb-1">
-                {steps.map((s) => <StepRow key={s.key} s={s} t={t} />)}
+                {steps.map((s) => <StepRow key={s.key} s={s} t={t} tx={tx} />)}
               </ul>
             )}
           </>

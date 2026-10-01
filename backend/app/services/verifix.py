@@ -40,6 +40,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -76,6 +77,9 @@ LIMIT_TRACKS = 1000
 BUDGET_S = 70.0
 CALL_TIMEOUT_S = 25.0
 MAX_PAGES = 60
+
+# How many of the report's divisions the test names, biggest first.
+TOP_DIVISIONS = 8
 
 # Failures after which every further call would fail the same way.
 _FATAL = {"unauthorized", "redirect", "not_found", "network", "timeout"}
@@ -313,8 +317,16 @@ def run_test(db: Session, actor: str = "") -> dict:
     """Log in with the stored credential and count what each form hands back.
 
     Counts only: no name, passport or phone number leaves this function, and
-    the pages are dropped as soon as they are counted. Stored as the last
-    result so the card can show it on the next visit.
+    the pages are dropped as soon as they are counted. Division NAMES do leave
+    it (the biggest ones the report names): they are org structure, not people.
+    Stored as the last result so the card can show it on the next visit.
+
+    Every row is placed in our cells two ways, both counted, because Verifix
+    keeps an employee at two levels — a division («департамент») and an org
+    unit («отдел») — and the report prints only the first. The first run
+    (2026-10-01) placed 0 of 2,942 rows by the division while all 159 cell
+    codes were in the division list, so the codes must sit on the org units;
+    `placed.unit` reads each employee's CURRENT org unit off employee$list.
     """
     cfg = config(db, with_password=True)
     started = time.monotonic()
@@ -338,7 +350,20 @@ def run_test(db: Session, actor: str = "") -> dict:
 
     deadline = started + BUDGET_S
     stopped: Optional[VerifixError] = None
-    division_codes: dict[str, str] = {}
+    ours = {_code_key(c) for (c,) in db.query(Cell.verifix_code).all() if c}
+    division_codes: dict[str, str] = {}     # division id → code key (coded only)
+    division_raw: dict[str, str] = {}       # division id → the code as stored
+    division_names: dict[str, str] = {}     # division id → name (every division)
+    # employee id → (division id, org unit id) as Verifix holds them NOW.
+    emp_place: dict[str, tuple[str, str]] = {}
+
+    def is_ours(div_id: Any) -> bool:
+        """Is this division (or org unit) one of our cells, by its code?"""
+        return division_codes.get(str(div_id or "")) in ours
+
+    def placed_by_unit(emp_id: Any) -> bool:
+        place = emp_place.get(str(emp_id or ""))
+        return bool(place) and is_ours(place[1])
 
     def step(key: str, fn: Callable[[httpx.Client], dict]) -> Optional[dict]:
         nonlocal stopped
@@ -366,13 +391,15 @@ def run_test(db: Session, actor: str = "") -> dict:
                               limit=LIMIT_LIST, deadline=deadline):
             for d in page:
                 total += 1
+                did = str(d.get("division_id") or "")
+                division_names[did] = str(d.get("name") or "")
                 if (d.get("state") or "A") == "A":
                     active += 1
                 code = str(d.get("code") or "").strip()
                 if code:
                     with_code += 1
-                    division_codes[str(d.get("division_id"))] = _code_key(code)
-        ours = {_code_key(c) for (c,) in db.query(Cell.verifix_code).all() if c}
+                    division_codes[did] = _code_key(code)
+                    division_raw[did] = code
         theirs = set(division_codes.values())
         missing_ours = sorted(c.zfill(4) if c.isdigit() else c for c in ours - theirs)
         return {
@@ -382,15 +409,34 @@ def run_test(db: Session, actor: str = "") -> dict:
         }
 
     def employees(cl):
-        total = working = 0
+        # Only ids are kept: the division and the org unit («отдел») each
+        # employee sits in now, which is what places a report row in a cell.
+        total = working = with_unit = unit_known = by_div = by_unit = 0
         body = {"employee_ids": [], "statuses": [], "npins": []}
         for page in each_page(cl, "core/employee$list", body,
                               limit=LIMIT_LIST, deadline=deadline):
             for e in page:
                 total += 1
-                if (e.get("status") or "") == "W":
-                    working += 1
-        return {"total": total, "working": working}
+                div = str(e.get("division_id") or "")
+                unit = str(e.get("org_unit_id") or "")
+                eid = str(e.get("employee_id") or "")
+                if eid:
+                    emp_place[eid] = (div, unit)
+                if (e.get("status") or "") != "W":
+                    continue
+                working += 1
+                if unit:
+                    with_unit += 1
+                    unit_known += unit in division_names
+                by_div += is_ours(div)
+                by_unit += is_ours(unit)
+        out = {"total": total, "working": working,
+               "with_unit": with_unit, "unit_known": unit_known}
+        # Without the division list nothing can be placed — say nothing
+        # rather than print a 0 that reads as «nobody is in a cell».
+        if division_names:
+            out["placed"] = {"div": by_div, "unit": by_unit}
+        return out
 
     def simple(path: str, body: dict):
         def run(cl):
@@ -413,31 +459,69 @@ def run_test(db: Session, actor: str = "") -> dict:
     day = (now - timedelta(days=1)).date()
 
     def timesheet(cl):
-        rows = came = in_cells = 0
-        ours = {_code_key(c) for (c,) in db.query(Cell.verifix_code).all() if c}
+        # A row is placed in a cell two ways, both counted: by the division the
+        # report prints on it, and by the org unit («отдел») its employee sits
+        # in now. Verifix keeps both levels; which one carries our cell codes is
+        # exactly what this has to find out (the first run placed 0 rows by the
+        # division alone while every cell code was in the division list).
+        rows = came = no_div = by_div = by_unit = came_unit = 0
+        per_div: Counter[str] = Counter()
         body = {"period_begin_date": _dmy(day), "period_end_date": _dmy(day),
                 "division_ids": [], "employee_ids": []}
+
+        def summary(partial: bool = False) -> dict:
+            out: dict[str, Any] = {"date": _dmy(day), "rows": rows, "came": came,
+                                   "in_cells": by_div, "no_div": no_div}
+            if division_names:
+                out["placed"] = {"div": by_div,
+                                 "unit": by_unit if emp_place else None,
+                                 "came_unit": came_unit if emp_place else None}
+                # The biggest divisions the report names — org structure,
+                # never a person.
+                out["top"] = [
+                    {"id": did, "name": division_names.get(did, ""),
+                     "code": division_raw.get(did, ""), "cell": is_ours(did), "n": n}
+                    for did, n in per_div.most_common(TOP_DIVISIONS) if did
+                ]
+            if partial:
+                out["partial"] = True
+            return out
+
         try:
             for page in each_page(cl, "core/timesheet$export", body,
                                   limit=LIMIT_TIMESHEET, deadline=deadline):
                 for r in page:
                     rows += 1
-                    if any(d.get("input_time") for d in (r.get("days") or [])):
-                        came += 1
-                    if division_codes.get(str(r.get("division_id"))) in ours:
-                        in_cells += 1
+                    in_ = any(d.get("input_time") for d in (r.get("days") or []))
+                    came += in_
+                    div = str(r.get("division_id") or "")
+                    if div:
+                        per_div[div] += 1
+                    else:
+                        no_div += 1
+                    by_div += is_ours(div)
+                    if placed_by_unit(r.get("employee_id")):
+                        by_unit += 1
+                        came_unit += in_
         except VerifixError as exc:
             if exc.code != "slow" or not rows:
                 raise
-            return {"date": _dmy(day), "rows": rows, "came": came,
-                    "in_cells": in_cells, "partial": True}
-        return {"date": _dmy(day), "rows": rows, "came": came, "in_cells": in_cells}
+            return summary(partial=True)
+        return summary()
 
     def tracks(cl):
         body = {"begin_datetime": now.strftime("%d.%m.%Y 00:00:00"),
                 "end_datetime": now.strftime("%d.%m.%Y %H:%M:%S")}
         data, nxt = call(cl, "core/track$list", body, limit=LIMIT_TRACKS)
-        return {"first_page": len(data or []), "more": bool(nxt)}
+        data = data or []
+        out: dict[str, Any] = {"first_page": len(data), "more": bool(nxt)}
+        if division_names:
+            out["placed"] = {
+                "div": sum(is_ours(t.get("division_id")) for t in data),
+                "unit": (sum(placed_by_unit(t.get("employee_id")) for t in data)
+                         if emp_place else None),
+            }
+        return out
 
     with client(cfg) as c:
         step("divisions", divisions)
