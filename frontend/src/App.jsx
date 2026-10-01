@@ -144,6 +144,7 @@ const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
+const Notifications = lazyWithReload(() => import("./pages/Notifications"));
 const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundary";
@@ -567,6 +568,8 @@ function AppWithLang() {
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />
+            {/* The bell's full page — auth-only like /profile: every session has notifications. */}
+            <Route path="/notifications" element={<AuthGate><Notifications /></AuthGate>} />
             {/* Admin management view of one profile — where the Profiles tab
                 rows navigate instead of opening an edit modal. */}
             <Route path="/profile/:ptype/:pid" element={<AuthGate><RequireProfilesManage><Profile /></RequireProfilesManage></AuthGate>} />

@@ -467,6 +467,7 @@ def notify(db: Session, req: Request) -> dict:
                  "start": spec.get("start"), "end": spec.get("end"),
                  "first": first, "last": last, "back": back,
                  "hours": int(spec.get("minutes") or 0) // 60},
+                subject=("leaders_tab", "checklist"),
                 html_fn=lambda lang, p=prof, s=spec, sh=mgr.shift: leader_html(
                     db, p, sh, req, s, lang))
             sent["leaders"].append(spec.get("name") or lid)
@@ -483,6 +484,7 @@ def notify(db: Session, req: Request) -> dict:
                 db, identity.profile_key("supervisor", mid), "leader_temp_hours_unit",
                 {"first": first, "last": last,
                  "lines": "; ".join(line[2:] for line in _unit_lines(frozen, mid, "uz"))},
+                subject=("leaders_tab", "monitor"),
                 html_fn=lambda lang, m=mid: unit_html(frozen, req, m, lang))
             sent["units"].append(mgr.name if mgr else str(mid))
         except Exception:

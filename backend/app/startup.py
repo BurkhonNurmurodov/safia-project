@@ -250,6 +250,42 @@ def add_notification_recipient_profile() -> None:
         db.close()
 
 
+def add_notification_center() -> None:
+    """The notification centre (2026-10-01): a row's SUBJECT (what a tap opens)
+    and the read floor. Idempotent; the three new tables — reads, read marks,
+    prefs — come from ``create_all``.
+
+    ``notif_read_floor_id`` is written ONCE, insert-only, at the newest row this
+    box holds when the centre first boots: every row at or below it counts as
+    READ for everybody. Read state used to live in each browser, so the server
+    has no honest answer for those rows — and an admin opening the new bell on
+    eighty thousand "unread" rows would learn exactly what the old badge
+    taught: ignore it."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS subject_kind VARCHAR"))
+        db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS subject_id VARCHAR"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_profile_id "
+            "ON notifications (recipient_profile, id)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_created_at "
+            "ON notifications (created_at)"
+        ))
+        db.execute(text(
+            "INSERT INTO app_settings (key, value) "
+            "SELECT 'notif_read_floor_id', COALESCE(MAX(id), 0)::text FROM notifications "
+            "ON CONFLICT (key) DO NOTHING"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] notification centre migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_task_comment_author_ref() -> None:
     """Add author_role_ref to leader_task_comments (idempotent). Comments are
     owned by the authoring PROFILE (telegram_user_roles.id, 0 = admin), not the

@@ -1,1 +1,0 @@
-var i=t=>{const r=String(t||"").trim().split(/\s+/).filter(Boolean);return r.length<2?r[0]||"":"".concat(r[0][0].toUpperCase(),". ").concat(r[1])},n=t=>{const r=String(t!=null?t:"").trim().split(/\s+/).filter(Boolean);return r.length<2?r[0]||String(t!=null?t:""):"".concat(r[0]," ").concat(r[1][0].toUpperCase(),".")};export{n,i as t};

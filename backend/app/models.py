@@ -872,6 +872,54 @@ class Notification(Base):
     body                  = Column(Text, nullable=False)
     type                  = Column(String, default="info")      # info | success | warning | error
     created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    # WHAT the row is about — the record a tap on it opens and the thread its
+    # updates fold into (services/notification_center: SUBJECTS + link_for).
+    # NULL on every row written before 2026-10-01: those carry display text
+    # only, so they stay readable history and link nowhere.
+    subject_kind          = Column(String, nullable=True)
+    subject_id            = Column(String, nullable=True)
+
+
+class NotificationRead(Base):
+    """One reader's read mark on one bell row. Read state lives HERE, per
+    reader, and never in the browser: the old localStorage list gave a phone, a
+    desktop and the Android app three different answers for one person.
+    ``reader`` is the viewer's PROFILE key (``acct:<id>`` for a profile-less
+    session) — the person, so co-holders of one profile share it."""
+    __tablename__ = "notification_reads"
+    __table_args__ = (UniqueConstraint("notification_id", "reader", name="uq_notification_read"),)
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    notification_id = Column(Integer, ForeignKey("notifications.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    reader          = Column(String, nullable=False, index=True)
+    read_at         = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NotificationReadMark(Base):
+    """Two watermarks per reader. ``upto_id``: every row at or below it is READ
+    («Hammasini o'qildi» — one row, never one per notification). ``seen_upto``:
+    the newest row the reader had when they last opened the bell, which is what
+    the bell's «something new» dot is measured against."""
+    __tablename__ = "notification_read_marks"
+
+    reader     = Column(String, primary_key=True)
+    upto_id    = Column(Integer, nullable=False, default=0)
+    seen_upto  = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class NotificationPref(Base):
+    """Where one PROFILE wants one notification CATEGORY delivered. The app
+    always shows everything; this decides only whether Telegram also DMs it.
+    No row = Telegram on, so nothing changes for anyone who never opens the
+    settings."""
+    __tablename__ = "notification_prefs"
+
+    profile    = Column(String, primary_key=True)
+    category   = Column(String, primary_key=True)
+    telegram   = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class ForecastCallNotice(Base):

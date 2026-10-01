@@ -373,6 +373,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/broadcast/emojis/{}",                  "comms", "broadcast.emoji_removed"),
     (("POST",),   "/api/notifications",                        "comms", "notification.created"),
     (("DELETE",), "/api/notifications/{}",                     "comms", "notification.deleted"),
+    (("PUT",),    "/api/notifications/prefs",                  "comms", "notification.prefs_saved"),
     (("POST",),   "/api/production/trudoyomkost/call-notify",  "comms", "notification.workers_called"),
 
     # ── external sync & exports ───────────────────────────────────────────────
@@ -454,6 +455,10 @@ _SKIP = (
     # /live carries the strip's route visits, ui snapshots and checks.
     "/api/exam/sandbox/",
     "/api/exam/live/",
+    # The bell's read marks: a viewer opened their notifications or tapped
+    # one. Telemetry about attention, never a change to anybody's records.
+    "/api/notifications/read",
+    "/api/notifications/seen",
 )
 
 _PREFIXES = ("/api/", "/admin/")

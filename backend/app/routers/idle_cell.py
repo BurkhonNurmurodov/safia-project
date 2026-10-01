@@ -675,7 +675,7 @@ def _cell_of(db: Session, cell_id: int) -> Optional[Cell]:
 
 
 def _tell(db: Session, profile: Optional[str], nkey: str, params: dict,
-          markup_fn=None, rich_fn=None) -> None:
+          markup_fn=None, rich_fn=None, subject=None) -> None:
     """Tell one person what was entered on their unit — bell row plus a DM to
     every account holding that profile.
 
@@ -695,7 +695,7 @@ def _tell(db: Session, profile: Optional[str], nkey: str, params: dict,
     try:
         from app.routers.staff import notify_profile
         notify_profile(db, profile, nkey, params,
-                       markup_fn=markup_fn, rich_fn=rich_fn)
+                       markup_fn=markup_fn, rich_fn=rich_fn, subject=subject)
         db.commit()
     except Exception:
         db.rollback()
@@ -1003,7 +1003,9 @@ def create_interval(
         _tell(db, identity.profile_key("supervisor", cell.manager_id),
               "idle_request_new",
               {**_row_facts(e, cell), "leader_name": who, "cleaners": e.cleaners},
-              markup_fn=markup_fn, rich_fn=rich_fn)
+              markup_fn=markup_fn, rich_fn=rich_fn,
+              # The bell opens the day the wait was filed on.
+              subject=("idle", str(e.date)[:10]) if e.date else None)
 
     return _interval_json(e, _names_for(db, [e.entered_by_profile]),
                           _row_perm(e, decides, True))

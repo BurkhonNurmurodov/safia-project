@@ -4102,6 +4102,7 @@ def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
         nkey="call_forecast",
         params={"name": mgr.name, "date": target, "eff": eff,
                 "count": workers, "max": max_workers},
+        subject=("forecast", str(target)[:10]),
         **card_kw,
     )
     db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,

@@ -315,7 +315,8 @@ def assign(db: Session, created_by: Optional[str], profile_keys: list[str], dead
 def _notify(db: Session, profile_key: str, nkey: str, params: dict, type: str = "info") -> None:
     try:
         from app.routers.staff import notify_profile
-        notify_profile(db, profile_key, nkey, params, type=type)
+        # Every exam notice opens the exam page.
+        notify_profile(db, profile_key, nkey, params, type=type, subject=("exam", "1"))
     except Exception:  # noqa: BLE001 — a DM that fails must not fail the act
         log.exception("exam: notification %s to %s failed", nkey, profile_key)
 

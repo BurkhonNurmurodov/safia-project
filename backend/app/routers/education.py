@@ -484,7 +484,8 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> in
             dmed |= notify_profile(db, key, "education_lesson_new", params,
                                    type="info",
                                    skip_accounts=dmed, markup_fn=markup_fn,
-                                   rich_fn=rich_fn)
+                                   rich_fn=rich_fn,
+                                   subject=("lesson", lesson.id))
         except Exception:
             # One unreachable profile must never cost the rest of the class its
             # notification — the lesson is already published either way. LOGGED,

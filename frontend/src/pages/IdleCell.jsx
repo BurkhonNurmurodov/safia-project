@@ -40,6 +40,7 @@ import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useOpenParam } from "../hooks/useOpenParam";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const localTodayIso = () => {
@@ -672,6 +673,14 @@ export default function IdleCell() {
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
+  // A «yangi kutish» notification links here with ?date=<the entry's day>:
+  // the reader lands on the day the wait was filed on, never on today's.
+  const [linkDate, linkDone] = useOpenParam("date");
+  useEffect(() => {
+    if (!linkDate) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(linkDate) && linkDate <= localTodayIso()) setDate(linkDate);
+    linkDone();
+  }, [linkDate, linkDone]);
   const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "timeline" | "peren"
   // «Perenaladka» reads and writes the REAL `/api/setup-times` register — the
   // sandbox has no twin for it — so it is off the tab strip for the whole of

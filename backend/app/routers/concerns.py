@@ -1471,7 +1471,7 @@ def create_concern(
             "concern": snippet,
             "concern_level": _level(c),
         },
-        author, dmed,
+        author, dmed, subject=("concern", c.id)
     )
 
     # Also tell the leader this concern is *about* — the owner of the cell it
@@ -1486,7 +1486,7 @@ def create_concern(
                 "date": entry,
                 "concern": snippet,
             },
-            author, dmed,
+            author, dmed, subject=("concern", c.id)
         )
 
     if sent:
@@ -1684,7 +1684,7 @@ def update_concern(
             # work — blank drops the row, the same courtesy as `solution`.
             "due": due.isoformat() if due and c.status == "doing" else "",
         },
-        int(payload["sub"]), set(),
+        int(payload["sub"]), set(), subject=("concern", c.id)
     ):
         db.commit()
 
@@ -1736,7 +1736,7 @@ def _comment_counts(db: Session, ids) -> dict:
 
 
 def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
-                       author: int, dmed: set[int]) -> bool:
+                       author: int, dmed: set[int], subject=None) -> bool:
     """Deliver one concern event to a list of (telegram_id, profile_key) targets.
     Returns True when anything was written (the caller commits).
 
@@ -1757,14 +1757,16 @@ def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
             if holders and not (set(holders) - {author}):
                 continue
             dmed |= notify_profile(db, prof_key, nkey=nkey, params=params,
-                                   exclude_account=author, skip_accounts=dmed)
+                                   exclude_account=author, skip_accounts=dmed,
+                                   subject=subject)
             sent = True
         elif tg is not None and tg != author:
             # Legacy row that resolves to no profile — the claiming account only.
             dm = tg not in dmed
             if dm:
                 dmed.add(tg)
-            _notify(db, tg, type="info", dm=dm, nkey=nkey, params=params)
+            _notify(db, tg, type="info", dm=dm, nkey=nkey, params=params,
+                    subject=subject)
             sent = True
     return sent
 
@@ -1961,7 +1963,7 @@ def escalate_concern(
     nkey = "concern_escalated" if body.direction == "up" else "concern_returned"
     dmed: set[int] = set()
     receiving = _level_recipients(db, c, new_level)
-    sent = _notify_recipients(db, receiving, nkey, params, author, dmed)
+    sent = _notify_recipients(db, receiving, nkey, params, author, dmed, subject=("concern", c.id))
 
     # The step moves the concern away from the people who stay responsible for
     # the place it is about — the unit's brigadir and the cell's leader. They
@@ -1969,7 +1971,7 @@ def escalate_concern(
     held = {k for _, k in receiving if k}
     sent |= _notify_recipients(
         db, [r for r in _interested(db, c) if r[1] and r[1] not in held],
-        "concern_moved", params, author, dmed,
+        "concern_moved", params, author, dmed, subject=("concern", c.id)
     )
     if sent:
         db.commit()
@@ -2234,7 +2236,7 @@ def add_concern_comment(
             "comment": _snippet(body.text),
             "concern": _snippet(c.concern_text),
         },
-        author, set(),
+        author, set(), subject=("concern", c.id)
     )
     db.commit()
     db.refresh(row)
@@ -2315,3 +2317,25 @@ def delete_concern_comment(
         details=[("concern", parent.seq), ("cell", parent.cell_code),
                  ("text", gone_text)],
     )
+
+
+@router.get("/one/{concern_id}")
+def get_one_concern(
+    concern_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """ONE concern as the register serializes it — what a notification's link
+    (/concerns?open=<id>) opens when the row is not in the page's own list, a
+    plant tab having cut it. Scope-checked like every other read: a concern the
+    caller may not see is a 404, never a 403."""
+    c = _visible_concern(concern_id, payload, db)
+    ctx = _viewer_ctx(db, payload)
+    esc = dict(
+        db.query(ConcernEscalation.concern_id, func.count(ConcernEscalation.id))
+        .filter(ConcernEscalation.concern_id == c.id)
+        .group_by(ConcernEscalation.concern_id)
+        .all()
+    )
+    return _serialize(c, ctx, esc, _sm_names(db), _owner_names(db, [c]),
+                      _cell_leaders(db), _comment_counts(db, [c.id]))

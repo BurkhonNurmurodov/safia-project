@@ -179,6 +179,14 @@ def carry(db: Session, thread: str, old_ids: list[int], new_id: int) -> None:
         else:
             mb.thread_id = int(new_id)
             have.add(mb.profile_key)
+    # The bell rows about the earlier filing open this chat too — their subject
+    # named an id that no longer exists, and a dead link is worse than none.
+    from app.models import Notification
+    (db.query(Notification)
+     .filter(Notification.subject_kind == subject_kind(thread),
+             Notification.subject_id.in_([str(i) for i in ids]))
+     .update({Notification.subject_id: str(int(new_id))},
+             synchronize_session=False))
     db.flush()
 
 
@@ -565,6 +573,9 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     def markup(lang):
         return open_chat_markup(thread, row.id, lang)
 
+    # The bell row opens the same chat the button does.
+    subject = (subject_kind(thread), row.id)
+
     targets = []
     if getattr(row, "leader_id", None):
         targets.append(profile_key("leader", int(row.leader_id)))
@@ -587,7 +598,8 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
             continue
         try:
             got = notify_profile(db, key, nkey, params, type=tone,
-                                 skip_accounts=dmed, markup_fn=markup) or set()
+                                 skip_accounts=dmed, markup_fn=markup,
+                                 subject=subject) or set()
             dmed |= got
             told |= got
         except Exception:
@@ -598,7 +610,8 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
         if a.profile_id or not a.telegram_id or a.telegram_id in dmed:
             continue
         try:
-            _notify_account(db, int(a.telegram_id), nkey, params, tone, markup)
+            _notify_account(db, int(a.telegram_id), nkey, params, tone, markup,
+                            subject=subject)
             dmed.add(int(a.telegram_id))
             told.add(int(a.telegram_id))
         except Exception:
@@ -621,7 +634,8 @@ def notify_invited(db: Session, thread: str, row, keys: list[str], nkey: str,
         try:
             dmed |= notify_profile(
                 db, key, nkey, params, type="info", skip_accounts=dmed,
-                markup_fn=lambda lang: open_chat_markup(thread, row.id, lang)) or set()
+                markup_fn=lambda lang: open_chat_markup(thread, row.id, lang),
+                subject=(subject_kind(thread), row.id)) or set()
         except Exception:
             logger.warning("appeal invite notice to %s failed", key, exc_info=True)
     try:
@@ -631,19 +645,24 @@ def notify_invited(db: Session, thread: str, row, keys: list[str], nkey: str,
 
 
 def _notify_account(db: Session, tid: int, nkey: str, params: dict, tone: str,
-                    markup_fn) -> None:
+                    markup_fn, subject=None) -> None:
     """Bell row + DM for one ACCOUNT, with the chat button — the admin-without-
     a-profile case `notify_profile` cannot address."""
     from app.notify_ctx import notifications_suppressed
     from app.routers.staff import _get_user_lang, _mk_notif, _mk_notif_tg, _notify
     if notifications_suppressed():
         return
-    _notify(db, tid, nkey=nkey, params=params, type=tone, dm=False)
+    _notify(db, tid, nkey=nkey, params=params, type=tone, dm=False, subject=subject)
     from app.telegram_bot import send_tg_notification
     lang = _get_user_lang(db, tid)
     title, body = _mk_notif(nkey, params, lang)
     send_tg_notification(tid, title, body, html=_mk_notif_tg(nkey, params, lang),
                          markup=markup_fn(lang))
+
+
+def subject_kind(thread: str) -> str:
+    """The notification-centre subject kind of a thread («dispute» | «late»)."""
+    return "late_proof" if thread == "late" else "dispute"
 
 
 def notice_text(text: str | None, limit: int = 400) -> str:

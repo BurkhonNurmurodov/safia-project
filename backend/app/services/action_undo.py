@@ -171,6 +171,7 @@ def _notify_day(db: Session, mid: int, day: date_t, payload: dict,
             ntype="warning" if reopened else "info",
             actor_tg_id=int(payload["sub"]) if str(payload.get("sub", "")).isdigit() else None,
             include_supervisor=True,
+            subject=("unit_day", f"{mid}:{day.isoformat()}"),
         )
         db.commit()
     except Exception:

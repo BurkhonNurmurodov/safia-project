@@ -1705,12 +1705,16 @@ def _notify(
     db: Session, telegram_id: int | None, title: str | None = None, body: str | None = None,
     type: str = "info", dm: bool = True, *,
     nkey: str | None = None, params: dict | None = None, lang: str | None = None,
-    profile: str | None = None,
+    profile: str | None = None, subject=None,
 ):
     # Ghost Mode (admin header toggle): the change still applies and is recorded
     # in the audit trail, but no bell/Telegram notification is pushed to anyone.
     if notifications_suppressed():
         return
+    # What the row is ABOUT — (kind, id), the record a tap on the bell opens and
+    # the thread its updates fold into (services/notification_center).
+    from app.services import notification_center as notif_center
+    skind, sid = notif_center.subject_cols(subject)
     # telegram_id None = the addressee profile is UNCLAIMED: the bell row queues
     # on the profile (whoever claims it inherits the history) and no DM goes out.
     if telegram_id is None:
@@ -1727,11 +1731,17 @@ def _notify(
         db.add(Notification(
             recipient_telegram_id=telegram_id, recipient_profile=profile, nkey=nkey,
             params=_jsonify_params(params or {}), title=title, body=body, type=type,
+            subject_kind=skind, subject_id=sid,
         ))
     else:
         title, body = title or "", body or ""
         db.add(Notification(recipient_telegram_id=telegram_id, recipient_profile=profile,
-                            title=title, body=body, type=type))
+                            title=title, body=body, type=type,
+                            subject_kind=skind, subject_id=sid))
+    # A person who switched this category to «app only» keeps the bell row and
+    # loses the DM — their own choice, made on the notifications page.
+    if dm and notif_center.telegram_muted(db, profile, nkey):
+        dm = False
     if dm:
         try:
             from app.telegram_bot import send_tg_notification
@@ -1783,7 +1793,7 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
                    skip_accounts: set[int] | None = None,
                    markup_fn=None, rich_fn=None, photo_fn=None,
-                   html_fn=None) -> set[int]:
+                   html_fn=None, subject=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -1840,11 +1850,16 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     holder_ids = profile_holders(db, profile)
     if not holder_ids:
         # unclaimed profile → queue the bell row only; no account to DM yet
-        _notify(db, None, nkey=nkey, params=params, type=type, profile=profile)
+        _notify(db, None, nkey=nkey, params=params, type=type, profile=profile,
+                subject=subject)
         return set()
     # one profile-addressed bell row (DMs handled per-holder below) …
     _notify(db, holder_ids[0], nkey=nkey, params=params, type=type, dm=False,
-            profile=profile)
+            profile=profile, subject=subject)
+    # … unless this person asked for this category in the app only …
+    from app.services import notification_center as notif_center
+    if notif_center.telegram_muted(db, profile, nkey):
+        return set()
     # … then a DM to each holder in their own language (HTML variant when the
     # notification defines one, e.g. the call-forecast blockquote)
     from app.telegram_bot import send_tg_notification
@@ -1979,6 +1994,7 @@ def _notify_all_parties(
     actor_tg_id: int = None,
     include_supervisor: bool = True,
     admin_dm: bool = True,
+    subject=None,
 ):
     """Notify admins + relevant shift-managers + optionally supervisor, excluding
     the actor. Each recipient receives the notification in their own language.
@@ -2019,18 +2035,21 @@ def _notify_all_parties(
         ).all()
     } if actor_tg_id else set()
 
+    from app.services import notification_center as notif_center
     dmed: set[int] = set()
     for prof in sorted(profiles):
         holders = identity.profile_holders(db, prof)
         if not holders:
             # unclaimed profile → queue the bell row, nobody to DM yet
-            _notify(db, None, type=ntype, nkey=nkey, params=params, profile=prof)
+            _notify(db, None, type=ntype, nkey=nkey, params=params, profile=prof,
+                    subject=subject)
             continue
         # One bell row for the profile …
         _notify(db, holders[0], type=ntype, dm=False, nkey=nkey, params=params,
-                profile=prof)
-        # … then at most one DM per ACCOUNT, however many profiles it holds.
-        if prof in actor_profiles:
+                profile=prof, subject=subject)
+        # … then at most one DM per ACCOUNT, however many profiles it holds —
+        # none at all for a person who keeps this category in the app.
+        if prof in actor_profiles or notif_center.telegram_muted(db, prof, nkey):
             continue
         for tg_id in holders:
             if tg_id == actor_tg_id or tg_id in dmed:
@@ -2075,7 +2094,8 @@ def notify_supervisor_verifix_upload(db: Session, manager_id: int, d: date):
     params = {"date": d}
     if mgr and mgr.name:
         params["name"] = mgr.name
-    notify_profile(db, prof, nkey="verifix_uploaded", params=params)
+    notify_profile(db, prof, nkey="verifix_uploaded", params=params,
+                   subject=("unit_day", f"{manager_id}:{str(d)[:10]}"))
 
 
 def _log_admin_action(
@@ -2124,6 +2144,7 @@ def _log_admin_action(
         ntype="info",
         actor_tg_id=admin_tg_id,
         include_supervisor=True,
+        subject=("unit_day", f"{manager_id}:{str(attend_date)[:10]}"),
     )
 
 
@@ -2631,6 +2652,7 @@ def bulk_delete_attendance(
                 actor_tg_id=supervisor_tg_id,
                 include_supervisor=False,
                 admin_dm=False,        # admins get the rich approve/reject message instead
+                subject=("edit_batch", new_batch_id),
             )
             pending_admin_batch = (new_batch_id, manager_id, d, supervisor_name, created_names)
 
@@ -2792,6 +2814,7 @@ def create_request(body: CreateRequestBody, caller=Depends(_require_staff), db: 
         actor_tg_id=supervisor_tg_id,
         include_supervisor=False,  # supervisor created it, no need to notify them
         admin_dm=False,            # admins get the rich approve/reject message instead
+        subject=("edit_request", req.id),
     )
 
     req_id = req.id      # snapshot: the commit below expires the instance
@@ -2965,6 +2988,7 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
             nkey=sup_nkey,
             params={"worker_name": req.worker_name, "date": req.date, "processor_name": processor_name},
             profile=_profile_key("supervisor", req.manager_id),
+            subject=("edit_request", req.id),
         )
 
     # Notify admin + shift-managers (supervisor already notified above)
@@ -2976,6 +3000,7 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         ntype=ntype,
         actor_tg_id=processor_tg_id,
         include_supervisor=False,
+        subject=("edit_request", req.id),
     )
 
     db.commit()
@@ -3145,6 +3170,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
         ntype="warning",
         actor_tg_id=tg_id,
         include_supervisor=True,
+        subject=("edit_request", req.id),
     )
 
     u_name, u_mid, u_date = req.worker_name, req.manager_id, req.date
@@ -4316,7 +4342,8 @@ def _notify_exchange(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
         "date":       doc.date,
     }
     _notify_all_parties(db, doc.manager_id, nkey, params, ntype="info",
-                        actor_tg_id=actor_tg_id, include_supervisor=True, admin_dm=admin_dm)
+                        actor_tg_id=actor_tg_id, include_supervisor=True, admin_dm=admin_dm,
+                        subject=("hr_doc", doc.id))
     if payload.get("target_type") == "supervisor" and payload.get("target_manager_id"):
         sup = _find_supervisor(db, payload["target_manager_id"])
         if sup and sup.telegram_id != actor_tg_id:
@@ -4326,7 +4353,8 @@ def _notify_exchange(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
             # approved/cancelled events carry no inline message, so DM as usual.
             _notify(db, sup.telegram_id, type="info", dm=event != "created",
                     nkey=nkey, params=params,
-                    profile=_profile_key("supervisor", sup.role_id))
+                    profile=_profile_key("supervisor", sup.role_id),
+                    subject=("hr_doc", doc.id))
 
 
 def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool = False):
@@ -4693,6 +4721,7 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
                  "new_role": body.new_role, "date": body.attend_date},
                 ntype="info",
                 actor_tg_id=int(caller["sub"]),
+                subject=("hr_doc", doc.id),
             )
         db.commit()
         action_log.enrich(**log)
@@ -4707,6 +4736,7 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
         actor_tg_id=int(caller["sub"]),
         include_supervisor=False,
         admin_dm=False,            # admins get the rich approve/reject message instead
+        subject=("hr_doc", doc.id),
     )
     db.commit()
     action_log.enrich(**log)
@@ -5000,7 +5030,8 @@ def _reject_document(doc: HrDocument, caller: dict, db: Session):
                     "actor_name": caller.get("full_name", ""),
                     "doc_type":   doc.doc_type,
                     "date":       doc.date,
-                })
+                },
+                subject=("hr_doc", doc.id))
 
 
 def _may_reject_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
@@ -6138,6 +6169,7 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
         ntype="info",
         actor_tg_id=int(caller["sub"]),
         include_supervisor=(role == "admin"),
+        subject=("unit_day", f"{manager_id}:{str(body.date)[:10]}"),
     )
     db.commit()
 
@@ -6180,6 +6212,7 @@ def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session =
             ntype="warning",
             actor_tg_id=int(caller["sub"]),
             include_supervisor=True,
+            subject=("unit_day", f"{body.manager_id}:{str(body.date)[:10]}"),
         )
         db.commit()
         unit = unit_name(db, body.manager_id)

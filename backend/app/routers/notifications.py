@@ -1,16 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from datetime import date
 from typing import Annotated, Optional
 import jwt
 from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.database import get_db
+from app.identity import viewer_profile_key
 from app.models import Notification
+from app.security import require_auth
 from app.services import action_log
+from app.services import notif_queue
+from app.services import notification_center as center
 from app.translit import transliterate_text
 # Notification text is template-based: rows store a template key + raw params and
 # the renderer lives with the templates in routers.staff. Importing it here lets
@@ -75,7 +81,11 @@ def list_notifications(
     token: Annotated[str | None, Depends(_oauth2)] = None,
     db: Session = Depends(get_db),
 ):
-    """Returns notifications relevant to the caller:
+    """LEGACY — the bell before the notification centre (2026-10-01). Kept for
+    a tab still open on an older bundle, which reads exactly this array; the
+    current bundle reads /center, /feed and /queue below.
+
+    Returns notifications relevant to the caller:
     - broadcast (no recipient at all)
     - addressed to their ACTIVE profile (recipient_profile)
     - legacy account-keyed rows addressed to their telegram account
@@ -165,3 +175,155 @@ def delete_notification(
         target_kind="notification", target_id=nid, target_name=ntitle,
         details=[("title", ntitle), ("type", ntype), ("audience", naudience)],
     )
+
+
+# ── the notification centre (2026-10-01) ──────────────────────────────────────
+# services/notification_center is THE definition of the feed, read state and
+# delivery settings; services/notif_queue of «Sizdan kutilmoqda». These
+# endpoints only decide the language, the paging and the commit.
+
+_LANGS = ("uz", "uz_cyrl", "ru", "en")
+# The bell shows this many queue items; «barchasini ko'rish» shows them all.
+QUEUE_PREVIEW = 3
+
+
+def _lang(db: Session, payload: dict, lang: Optional[str]) -> str:
+    if lang in _LANGS:
+        return lang
+    return _get_user_lang(db, int(payload["sub"])) or "uz"
+
+
+def _top_id(db: Session, payload: dict) -> int:
+    return db.query(func.max(Notification.id)).filter(
+        center.viewer_clause(db, payload)).scalar() or 0
+
+
+def _commit_retrying(db: Session, write) -> object:
+    """Run ``write`` and commit, once more on a unique-key race: two tabs of
+    one person marking the same row read at the same moment both INSERT, and
+    the loser must re-read the winner's mark rather than fail the tap."""
+    try:
+        out = write()
+        db.commit()
+        return out
+    except IntegrityError:
+        db.rollback()
+        out = write()
+        db.commit()
+        return out
+
+
+@router.get("/summary")
+def summary(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """What the header bell polls: how much is waiting on the viewer (the red
+    number), and whether anything arrived since they last opened it (the dot)."""
+    return {"queue": notif_queue.count(db, payload), **center.counts(db, payload)}
+
+
+@router.get("/center")
+def get_center(lang: Optional[str] = None, payload: dict = Depends(require_auth),
+               db: Session = Depends(get_db)):
+    """Everything the opened bell draws in one request: the head of the queue,
+    the newest feed entries, and the id the «seen» mark moves to."""
+    lang = _lang(db, payload, lang)
+    items = notif_queue.build(db, payload)
+    feed = center.feed(db, payload, lang, days=3, min_entries=8, max_windows=6)
+    return {
+        "queue": {"total": len(items), "items": items[:QUEUE_PREVIEW]},
+        "feed": feed,
+        "top_id": _top_id(db, payload),
+        **center.counts(db, payload),
+    }
+
+
+@router.get("/queue")
+def get_queue(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """The whole «Sizdan kutilmoqda» list, for the notifications page."""
+    items = notif_queue.build(db, payload)
+    return {"total": len(items), "items": items, "kinds": list(notif_queue.KIND_ORDER)}
+
+
+@router.get("/feed")
+def get_feed(
+    lang: Optional[str] = None,
+    before: Optional[str] = None,
+    cats: Optional[str] = None,
+    q: Optional[str] = None,
+    unread: bool = False,
+    payload: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """One page of history, folded, over whole days ending before ``before``."""
+    lang = _lang(db, payload, lang)
+    before_d = None
+    if before:
+        try:
+            before_d = date.fromisoformat(before[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="before must be YYYY-MM-DD")
+    cat_set = {c for c in (cats or "").split(",") if c in center.CATEGORIES} or None
+    out = center.feed(db, payload, lang, before=before_d, cats=cat_set,
+                      q=(q or "")[:120], unread_only=unread)
+    out["top_id"] = _top_id(db, payload)
+    return out
+
+
+class _Ids(BaseModel):
+    ids: list[int] = []
+
+
+@router.post("/read")
+def mark_read(body: _Ids, payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """Mark rows read — the ones a tap opened, or a folded line's whole set."""
+    n = _commit_retrying(db, lambda: center.mark_read(db, payload, body.ids[:500]))
+    return {"ok": True, "marked": n, **center.counts(db, payload)}
+
+
+@router.post("/read-all")
+def mark_all_read(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """«Hammasini o'qildi» — one watermark, not one mark per row."""
+    upto = _commit_retrying(db, lambda: center.mark_all_read(db, payload))
+    return {"ok": True, "upto": upto, **center.counts(db, payload)}
+
+
+class _Seen(BaseModel):
+    upto: int
+
+
+@router.post("/seen")
+def mark_seen(body: _Seen, payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """The bell was opened with rows up to ``upto`` on screen."""
+    _commit_retrying(db, lambda: center.mark_seen(db, payload, body.upto))
+    return {"ok": True, **center.counts(db, payload)}
+
+
+@router.get("/prefs")
+def get_prefs(payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """Per category: does Telegram DM it as well, or is it kept in the app."""
+    profile = viewer_profile_key(db, payload)
+    return {
+        "editable": bool(profile),
+        "reason": None if profile else "no_profile",
+        "categories": list(center.CATEGORIES),
+        "prefs": center.prefs_for(db, profile),
+    }
+
+
+class _Prefs(BaseModel):
+    prefs: dict[str, bool]
+
+
+@router.put("/prefs")
+def put_prefs(body: _Prefs, payload: dict = Depends(require_auth), db: Session = Depends(get_db)):
+    """Save the viewer's own switches. A profile-less session has nobody to
+    save them for — the notices it reads are not addressed to a person."""
+    profile = viewer_profile_key(db, payload)
+    if not profile:
+        raise HTTPException(status_code=409, detail="This session has no profile to save settings for")
+    before = center.prefs_for(db, profile)
+    after = _commit_retrying(db, lambda: center.set_prefs(db, profile, body.prefs))
+    changed = [(c, ("telegram" if after[c] else "app only")) for c in center.CATEGORIES
+               if before.get(c) != after.get(c)]
+    action_log.enrich(target_kind="notification_prefs", target_id=profile,
+                      details=changed or [("unchanged", "")])
+    return {"editable": True, "categories": list(center.CATEGORIES), "prefs": after}

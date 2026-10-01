@@ -349,7 +349,7 @@ def create_task(
             "date": body.due_date,
             "task": _snippet(t.task_text),
         },
-        exclude_account=sub,
+        exclude_account=sub, subject=("task", t.id)
     )
 
     db.commit()
@@ -464,10 +464,10 @@ def set_status(
         if t.created_by_profile:
             # Everyone working as the shift manager who set it hears about it.
             notify_profile(db, t.created_by_profile, nkey="task_status_changed",
-                           params=params, exclude_account=sub)
+                           params=params, exclude_account=sub, subject=("task", t.id))
         elif t.created_by and t.created_by != sub:
             _notify(db, t.created_by, type="info", nkey="task_status_changed",
-                    params=params)
+                    params=params, subject=("task", t.id))
         db.commit()
         db.refresh(t)
 
@@ -587,9 +587,9 @@ def add_task_comment(
     targets = [k for k in (tb.assignee_key(t), t.created_by_profile) if k]
     for prof in dict.fromkeys(targets):          # de-duplicated, order kept
         notify_profile(db, prof, nkey="task_comment", params=params,
-                       exclude_account=sub)
+                       exclude_account=sub, subject=("task", t.id))
     if not targets and t.created_by and t.created_by != sub:
-        _notify(db, t.created_by, type="info", nkey="task_comment", params=params)
+        _notify(db, t.created_by, type="info", nkey="task_comment", params=params, subject=("task", t.id))
 
     db.commit()
     db.refresh(c)

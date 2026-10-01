@@ -6044,6 +6044,100 @@ each row, an analysis tab beside it.
   `ResponsibleList` wrapper (a `RankedList` badged with the chain step). A
   third board copies nothing from either page.
 
+## The notification centre (the bell, `/notifications`)
+
+From **2026-10-01** (the operator: the old bell was «worse than bad», so people
+read Telegram instead) the header bell is a notification CENTRE, not a list.
+The old one kept the newest 50 rows (four to five hours of an admin's ~99 a
+day), every row was a dead end, read state lived in each browser's
+localStorage, and a row announcing a request said «new» forever after somebody
+decided it. Two halves now, one module each:
+
+- **`services/notif_queue.py` — «Sizdan kutilmoqda», THE queue.** What is
+  waiting on THIS viewer right now, read from the LIVE records on every request
+  and never from bell rows, so an item leaves the moment anybody deals with it
+  (the viewer here, a colleague in the bot, an admin on /staff). Sources: draft
+  HR documents (`staff._scope_documents` ∩ `_can_approve_doc`), deletion
+  batches and edit requests (admin + shift-manager, as `_process_*` admit),
+  shift-1 late days (admin), objections and late proofs (the unit's brigadir at
+  stage 1, admins at stage 2 only — an admin CAN rule stage 1, but a row with a
+  brigadir is not waiting on an admin), concerns at the viewer's own level and
+  holder in «todo», tasks assigned to the viewer in «todo». Decisions rank above
+  the work list, so one objection is never buried under ninety concerns. Each
+  source runs in a SAVEPOINT: a broken one costs its items, never the queue.
+- **The red badge counts the queue and nothing else** — the only number that
+  reaches zero when the work is done. Anything new that waits on nobody is a
+  quiet gold DOT, cleared by opening the bell («seen»). `GET
+  /api/notifications/summary` is polled every 60 s.
+- **Inline actions are DESCRIBED by the server** (method + url + `confirm` +
+  `undo`) and run by the client against the very endpoint /staff or /leaders
+  calls — rights stay where they are enforced, and a refusal arrives in that
+  endpoint's own words, inside the row. Offered inline only where the bot
+  already decides in one tap (HR documents, deletion/edit requests, late days);
+  an objection, a late proof or a concern (taking it into work needs a
+  deadline) is a link. **Only what nothing here can take back asks first**
+  (reject; a deletion approve). Undo exists where the server can reverse:
+  `documents/{id}/cancel` after an HR approve, `requests/{id}/undo` after an edit
+  approve. A draft older than `staff.STALE_APPROVE_DAYS` offers no Approve at all
+  — the door refuses it — and says why.
+- **A decided item STAYS where it is, showing its outcome** («Tasdiqlandi ·
+  hozir» + Undo), until the list is opened again: the queue is fetched on open
+  and never refetched under the reader (an action taken in a list must never move
+  the list).
+- **`services/notification_center.py` — THE feed, categories, links, read
+  state, delivery prefs.** Every notification key belongs to one of nine
+  CATEGORIES (`category_of`: an exact map, then prefixes; `unmapped_keys()` lists
+  strays). The feed reads whole Tashkent DAYS (never a row count, so one day's
+  burst never splits across pages), widening to the next day that HAS rows, and
+  FOLDS: every row of a `FOLD` key on one day is one line («Yopilgan kunlar: 15
+  ta», names under it, `distinct` counts what the rows are ABOUT), every row
+  about one subject is one thread line («2 ta yangilanish»). The two newest
+  «kun yopildi» lines carry a LIVE «N tasi hali ochiq» for the day most of them
+  were about (`open_units`; no chip when no attendance exists yet — «all
+  closed» would be a claim nobody can make).
+- **A row knows what it is ABOUT** — `notifications.subject_kind` +
+  `subject_id`, passed as `subject=(kind, id)` to `_notify` / `notify_profile` /
+  `_notify_all_parties` / `_notify_supervisor_all`. The LINK is derived at read
+  time (`link_for`), never stored. Kinds: `concern`, `task`, `leader_report`
+  (uid), `unit_report` (`mid:date`), `dispute`, `late_proof`, `checklist`
+  (`pid:date:task`), `leaders_tab`, `hr_doc`, `edit_request`, `edit_batch`,
+  `unit_day` (`mid:date`), `idle` (date), `page`, `lesson`, `exam`, `forecast`.
+  Rows written before 2026-10-01 carry display text only — readable history,
+  linking nowhere. **An objection's id moves when it is re-filed**, so
+  `leader_appeal_chat.carry` re-points the subjects with the conversation.
+- **Deep links the pages read** (`hooks/useOpenParam.js` reads on EVERY
+  arrival — the routes are not keyed, so a link to the page already open must
+  work too): `/concerns?open=<id>` (the detail; `GET /api/concerns/one/{id}`
+  when a plant tab cut it from the list), `/tasks?open=<id>` (the task's
+  thread), `/idle-cell?date=`, `/staff?tab=&unit=&date=`.
+- **Read state is per PERSON on the server** — `notification_reads` (one mark
+  per row) + `notification_read_marks` (`upto_id` = «Hammasini o'qildi», one row
+  not thousands; `seen_upto` = the dot). The reader is the active PROFILE key, so
+  a phone, a desktop and the Android app agree. Every row at or below
+  `notif_read_floor_id` (written ONCE at the first boot) counts as read: the
+  browsers' old marks could not be carried over, and eighty thousand «unread»
+  rows on day one would teach exactly what the old badge taught.
+- **Delivery prefs** — `notification_prefs` (profile × category, absent =
+  Telegram ON, so nothing changed for anybody who never opened the settings).
+  `telegram_muted` gates the DM in `_notify`, `notify_profile` and
+  `_notify_all_parties`; the bell row is written either way. Approval CARDS
+  (`approvals._broadcast`, the approve/reject buttons) are a separate mechanism
+  and always arrive — the settings dialog says so.
+- **The page** (`pages/Notifications.jsx`, auth-only like /profile): «Sizdan
+  kutilmoqda» grouped by kind, and «Tarix» with category / unread filters,
+  search, day sections and «Oldingi kunlarni yuklash». Components live in
+  `components/notifications/` (`notifMeta.js` is the vocabulary; `QueueItem`,
+  `FeedEntry`, `NotificationBell`, `NotifPrefsModal`).
+- **Adding a notification type**: the template in `staff._NOTIF_STRINGS` (4
+  languages) → its category (an `_EXACT` entry or a prefix) → `subject=` at the
+  call site (+ a `link_for` branch for a new kind) → for a burst type a `FOLD`
+  entry and `notif.fold.<nkey>` in all 4 languages.
+- Read and seen marks are telemetry and skipped by the action register; a
+  settings save is logged (`notification.prefs_saved`). The exam sandbox has
+  twins of every endpoint (fixtures, marks as sandbox rows), and exam task 49
+  («mark all read») reads those marks. `GET /api/notifications` (the array) stays
+  for tabs open on an older bundle.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

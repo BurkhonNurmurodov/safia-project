@@ -27,6 +27,9 @@ import { useLang } from "../context/LangContext";
 import { useTranslit, transliterate } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam } from "../utils/scopeLinks";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useDragSelect } from "../hooks/useDragSelect";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
@@ -4079,6 +4082,22 @@ function ApprovalsCalendar({ role, supervisors }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+// A notification's link onto this page — ?tab= (workers · requests · cells ·
+// approvals), plus ?unit= and ?date= for a day it is about. Written into the
+// page's own persisted keys, so the page opens ON that view rather than on the
+// one it remembered.
+const STAFF_TABS = ["workers", "requests", "cells", "approvals"];
+function readStaffLink(q) {
+  const out = {};
+  const tab = q.get("tab");
+  if (STAFF_TABS.includes(tab)) out.staff_tab = tab;
+  const date = dayParam(q, "date");
+  if (date) out.staff_selected_date = date;
+  const unit = q.get("unit");
+  if (/^\d+$/.test(unit || "")) out.staff_selected_manager_id = Number(unit);
+  return Object.keys(out).length ? out : null;
+}
+
 export default function Staff() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
@@ -4096,11 +4115,25 @@ export default function Staff() {
   // It widens READING only — creating documents stays their own unit's job.
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
+  // Before the persisted state below: a link writes it first.
+  useUrlScope(readStaffLink);
   const [rawTab, setTab] = usePersistentState("staff_tab", role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
   const [selectedDate, setSelectedDate] = usePersistentState("staff_selected_date", "");
   const [selectedManagerId, setSelectedManagerId] = usePersistentState("staff_selected_manager_id", null);
+  // …and a link followed while this page is ALREADY open: the route is not
+  // keyed, so useUrlScope (mount-only) would never see it.
+  const staffLoc = useLocation();
+  const staffNav = useNavigate();
+  useEffect(() => {
+    const v = readStaffLink(new URLSearchParams(staffLoc.search));
+    if (!v) return;
+    if (v.staff_tab) setTab(v.staff_tab);
+    if (v.staff_selected_date) setSelectedDate(v.staff_selected_date);
+    if (v.staff_selected_manager_id != null) setSelectedManagerId(v.staff_selected_manager_id);
+    staffNav({ pathname: staffLoc.pathname }, { replace: true });
+  }, [staffLoc.search, staffLoc.pathname, staffNav, setTab, setSelectedDate, setSelectedManagerId]);
   const [docCreate, setDocCreate] = useState(null);   // {mode:"create"} | {mode:"edit", doc}
 
   // ── Delete modal state ────────────────────────────────────────────────────

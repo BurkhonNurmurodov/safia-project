@@ -632,6 +632,21 @@ def _notif_all_read(db, attempt, chk, opened):
     ids = {sb.notification_id(r) for r in sb.rows(db, attempt.id, "notification")}
     if not ids:
         return False
+    # The notification centre (2026-10-01) keeps read marks on the server, so
+    # the exam's own sandbox rows are the answer: «mark all read», or every
+    # fixture opened one by one, after the task was opened.
+    read: set[int] = set()
+    for r in sb.rows(db, attempt.id, "notif_read"):
+        if opened is not None and r.created_at is not None \
+                and r.created_at < opened - timedelta(seconds=2):
+            continue
+        d = r.data or {}
+        if d.get("all"):
+            return True
+        read |= {int(x) for x in d.get("ids") or [] if str(x).lstrip("-").isdigit()}
+    if ids <= read:
+        return True
+    # A tab still on the bundle before the centre reported its localStorage.
     for e in events(db, attempt.id, opened):
         v = _ui(e).get("notif_read_ids")
         if isinstance(v, list) and ids <= {int(x) for x in v if str(x).lstrip("-").isdigit()}:

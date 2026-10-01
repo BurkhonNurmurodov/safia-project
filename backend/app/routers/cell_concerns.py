@@ -294,7 +294,7 @@ def file_cell_concern(
                 "date": today,
                 "concern": _snippet(text),
             },
-            int(payload["sub"]), set(),
+            int(payload["sub"]), set(), subject=("concern", c.id)
         )
         if sent:
             db.commit()

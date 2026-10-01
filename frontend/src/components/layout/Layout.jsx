@@ -7,7 +7,7 @@ import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog, Download, Share } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { useNavigate, useLocation } from "react-router-dom";
-import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
+import NotificationBell from "../notifications/NotificationBell";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
@@ -571,7 +571,6 @@ function ImpersonationBar() {
 }
 
 export default function Layout({ children, title, subtitle }) {
-  const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { pathname } = useLocation();
   const mainRef = useRef(null);
@@ -680,7 +679,7 @@ export default function Layout({ children, title, subtitle }) {
             {/* Right: bell · language · theme · ghost(admin) · account */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Notifications — standalone bell in the header */}
-              <NotificationsBell {...notif} />
+              <NotificationBell />
 
               {/* Language · theme · ghost — former Settings-modal controls.
                   md and up; a phone reaches them in the profile menu. */}

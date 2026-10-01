@@ -586,6 +586,7 @@ def _send(db: Session, p: dict, led: LeaderUnitReport | None,
             unit_url(p["managerId"], p["date"])),
         rich_fn=lambda lang: leader_unit_rich.body(p, lang,
                                                    None if first else diff),
+        subject=("unit_report", f"{p['managerId']}:{p['date']}"),
     )
 
     prev_unit = (led.state_sent or {}).get("unit") if led is not None else None

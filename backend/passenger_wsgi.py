@@ -134,6 +134,7 @@ try:
         add_task_assignee_kind_column,
         migrate_concern_solutions_to_thread,
         add_notification_recipient_profile,
+        add_notification_center,
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column,
         add_action_log_undo_column,
@@ -182,6 +183,7 @@ try:
     add_edit_requests_batch_id()
     add_notification_template_columns()
     add_notification_recipient_profile()
+    add_notification_center()
     add_admin_language_column()
     add_dm_reachability_columns()
     add_profiles_columns()

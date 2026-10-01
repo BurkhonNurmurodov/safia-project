@@ -37,6 +37,7 @@ import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useUrlScope } from "../hooks/useUrlScope";
+import { useOpenParam } from "../hooks/useOpenParam";
 import { dayParam, listParam } from "../utils/scopeLinks";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
@@ -2072,6 +2073,22 @@ export default function Concerns() {
   // disagree with the screen it was pressed from.
   const toast = useToast();
   const [exporting, setExporting] = useState(false);
+
+  // A notification's link — /concerns?open=<id> — opens that concern's detail.
+  // It is looked up in the page's own list first; a concern the list does not
+  // hold (a plant tab cut it) is fetched on its own, scope-checked server-side.
+  const [openId, openDone] = useOpenParam();
+  useEffect(() => {
+    if (!openId || isLoading) return undefined;
+    const hit = rows.find((r) => String(r.id) === String(openId));
+    if (hit) { setViewRow(hit); openDone(); return undefined; }
+    let alive = true;
+    api.get(`/api/concerns/one/${openId}`)
+      .then((r) => { if (alive) setViewRow(r.data); })
+      .catch(() => { if (alive) toast.error(t("notif.recordGone")); })
+      .finally(() => { if (alive) openDone(); });
+    return () => { alive = false; };
+  }, [openId, isLoading, rows, openDone, toast, t]);
 
   // «Haftalik hisobot» — the weekly PPTX deck. Admin only, and respects
   // the dates chosen on screen. It is a fixed report about both plants for

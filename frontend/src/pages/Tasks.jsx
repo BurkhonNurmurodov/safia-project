@@ -60,6 +60,7 @@ import { useTranslit } from "../utils/transliterate";
 import { shortPerson } from "../utils/personName";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useOpenParam } from "../hooks/useOpenParam";
 import { padChartFrom } from "../utils/chartRange";
 
 const KIND_SUP = "supervisor";
@@ -165,6 +166,16 @@ export default function Tasks() {
     queryFn: () => api.get("/api/tasks/board").then((r) => r.data),
   });
   const allRows = listResp?.data || [];
+
+  // A notification's link — /tasks?open=<id> — opens that task's thread, the
+  // one surface that shows a task whole whatever the page's period or filters.
+  const [openId, openDone] = useOpenParam();
+  useEffect(() => {
+    if (!openId || !listResp) return;
+    const hit = allRows.find((r) => String(r.id) === String(openId));
+    if (hit) setCommentsTask(hit);
+    openDone();
+  }, [openId, listResp, allRows, openDone]);
   const canCreateLeader = !!listResp?.can_create_leader;
   const canCreateBrigadir = !!listResp?.can_create_brigadir;
   const canCreate = canCreateLeader || canCreateBrigadir;

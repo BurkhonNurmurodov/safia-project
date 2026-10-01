@@ -687,7 +687,8 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
                 else "leader_day_report_flagged" if counts["rejected"]
                 else "leader_day_report_clean")
         notify_profile(db, profile_key("supervisor", row["manager_id"]),
-                       nkey, params, type=tone, markup_fn=markup)
+                       nkey, params, type=tone, markup_fn=markup,
+                       subject=("leader_report", uid))
 
     # ── the leader: never lose points silently (user, 2026-08-14) ────────────
     # Clean days are DMed too — the receipt is what makes the flagged one
@@ -697,7 +698,8 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
                 else "leader_day_flagged" if counts["rejected"]
                 else "leader_day_clean")
         notify_profile(db, profile_key("leader", leader_profile.id),
-                       nkey, params, type=tone, markup_fn=markup)
+                       nkey, params, type=tone, markup_fn=markup,
+                       subject=("leader_report", uid))
 
     now = datetime.now(timezone.utc)
     if led is None:
@@ -812,13 +814,15 @@ def notify_excluded(db: Session, *, leader_id: int | None, leader_name: str | No
         notify_profile(db, profile_key("supervisor", int(manager_id)),
                        "leader_day_report_restored" if restored
                        else "leader_day_report_excluded",
-                       params, type="info")
+                       params, type="info",
+                       subject=("leader_report", led.uid) if led.uid else None)
         sent += 1
     prof = db.query(RoleProfile).filter_by(id=int(leader_id)).first()
     if prof is not None:
         notify_profile(db, profile_key("leader", prof.id),
                        "leader_day_restored" if restored else "leader_day_excluded",
-                       params, type="info")
+                       params, type="info",
+                       subject=("leader_report", led.uid) if led.uid else None)
         sent += 1
     return sent
 
@@ -861,7 +865,7 @@ def notify_cutoff(db: Session, *, leader_id: int | None, leader_name: str | None
         notify_profile(db, profile_key("supervisor", int(manager_id)),
                        "leader_cutoff_report_lifted" if restored
                        else "leader_cutoff_report_set",
-                       params, type="info")
+                       params, type="info", subject=("leaders_tab", "monitor"))
         sent += 1
     if leader_id:
         prof = db.query(RoleProfile).filter_by(id=int(leader_id)).first()
@@ -869,6 +873,6 @@ def notify_cutoff(db: Session, *, leader_id: int | None, leader_name: str | None
             notify_profile(db, profile_key("leader", prof.id),
                            "leader_cutoff_lifted" if restored
                            else "leader_cutoff_set",
-                           params, type="info")
+                           params, type="info", subject=("leaders_tab", "monitor"))
             sent += 1
     return sent

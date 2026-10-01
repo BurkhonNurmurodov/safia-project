@@ -684,10 +684,12 @@ def _warn(db: Session, prof, td, due: datetime, hhmm: str, *,
             logger.exception("auto-soon card failed for leader %s task %s",
                              getattr(prof, "id", None), getattr(td, "id", None))
             kw = {}
+    # The bell row opens the page the check reads — the button's own target.
+    page = card.PAGE.get(check) if known else None
     notify_profile(db, profile_key("leader", int(prof.id)), nkey,
                    {"task": _task_name(td), "time": hhmm,
                     "date": due.astimezone(TASHKENT).strftime("%d.%m.%Y")},
-                   type="warning", **kw)
+                   type="warning", subject=("page", page) if page else None, **kw)
     return True
 
 
@@ -724,7 +726,9 @@ def _tell(db: Session, prof, td, v: Verdict, hhmm: str, date: str,
                     "date": str(date)[:10],
                     "why": _WHY.get(v.code, v.code),
                     "facts": facts},
-                   type="success" if v.done else "warning")
+                   type="success" if v.done else "warning",
+                   # The verdict sits on the leader's checklist for that day.
+                   subject=("checklist", f"{int(prof.id)}:{str(date)[:10]}:{td.id}"))
 
 
 # The codes, in the leader's own language. Deliberately a flat map in ONE

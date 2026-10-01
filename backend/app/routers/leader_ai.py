@@ -902,8 +902,14 @@ def _notify_leader(db: Session, rev: LeaderAiReview) -> None:
         return
     try:
         from app.routers.staff import notify_profile
+        from app.services import leader_reports
+        try:
+            uid = leader_reports.uid_of_ref(db, rev.ref)
+        except Exception:
+            uid = None
         notify_profile(
             db, f"leader:{rev.leader_id}",
+            subject=("leader_report", uid) if uid else None,
             nkey=("leader_proof_rejected" if rev.resolution == "rejected"
                   else "leader_proof_requeried"),
             params={

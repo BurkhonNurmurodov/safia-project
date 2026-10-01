@@ -2436,6 +2436,7 @@ def _notify_leader_opened(db: Session, req: LeaderLateRequest) -> None:
         from app.routers.staff import notify_profile
         notify_profile(
             db, f"leader:{req.leader_profile_id}", nkey="leader_late_approved",
+            subject=("leaders_tab", "monitor"),
             params={
                 "date": req.date,
                 "decided_by": req.decided_by_name or "—",

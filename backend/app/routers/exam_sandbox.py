@@ -919,6 +919,138 @@ def notifications(lang: Optional[str] = None, g=Depends(_gate), db: Session = De
     return rows
 
 
+# The notification centre's doors (2026-10-01), over the same fixture rows.
+# Read and seen marks are sandbox rows of their own, so «mark all read» in an
+# exam is recorded on the attempt and never on the leader's real bell.
+
+def _sb_marks(db: Session, at, kind: str) -> tuple[bool, set[int]]:
+    every, ids = False, set()
+    for r in sb.rows(db, at.id, kind):
+        d = r.data or {}
+        if d.get("all"):
+            every = True
+        ids |= {int(x) for x in d.get("ids") or [] if str(x).lstrip("-").isdigit()}
+    return every, ids
+
+
+def _sb_entries(db: Session, at, lang: str, *, cats=None, q: str = "",
+                unread_only: bool = False) -> tuple[list[dict], int, int]:
+    every, read = _sb_marks(db, at, "notif_read")
+    seen_all, seen = _sb_marks(db, at, "notif_seen")
+    out, unread_n, fresh_n = [], 0, 0
+    needle = (q or "").strip().lower()
+    for r in sb.rows(db, at.id, "notification"):
+        n = sb.notification_json(r, lang)
+        unread = not every and n["id"] not in read
+        if unread:
+            unread_n += 1
+            if not seen_all and n["id"] not in seen:
+                fresh_n += 1
+        if cats and "other" not in cats:
+            continue
+        if needle and needle not in (n["title"] or "").lower() and needle not in (n["body"] or "").lower():
+            continue
+        if unread_only and not unread:
+            continue
+        day = (n["created_at"] or "")[:10] or None
+        out.append({
+            "key": f"n:{n['id']}", "kind": "single", "category": "other", "nkey": None,
+            "type": n["type"], "title": n["title"], "body": n["body"], "link": None,
+            "at": n["created_at"], "day": day, "count": 1, "ids": [n["id"]],
+            "unread": unread,
+        })
+    out.sort(key=lambda e: e["at"] or "", reverse=True)
+    return out, unread_n, fresh_n
+
+
+def _sb_feed(db: Session, at, lang: str, **kw) -> dict:
+    entries, unread_n, fresh_n = _sb_entries(db, at, lang, **kw)
+    return {"entries": entries, "next_before": None, "today": today_local().isoformat(),
+            "seen_upto": 0, "read_upto": 0, "top_id": 0}
+
+
+@router.get("/notifications/summary")
+def sb_notif_summary(g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    _, unread_n, fresh_n = _sb_entries(db, at, "uz")
+    return {"queue": 0, "unread": unread_n, "fresh": fresh_n}
+
+
+@router.get("/notifications/center")
+def sb_notif_center(lang: Optional[str] = None, g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    l = lang if lang in sb.LANGS else "uz"
+    entries, unread_n, fresh_n = _sb_entries(db, at, l)
+    return {"queue": {"total": 0, "items": []},
+            "feed": {"entries": entries, "next_before": None,
+                     "today": today_local().isoformat(), "seen_upto": 0, "read_upto": 0},
+            "top_id": 0, "unread": unread_n, "fresh": fresh_n}
+
+
+@router.get("/notifications/queue")
+def sb_notif_queue(g=Depends(_gate)):
+    return {"total": 0, "items": [], "kinds": []}
+
+
+@router.get("/notifications/feed")
+def sb_notif_feed(lang: Optional[str] = None, before: Optional[str] = None,
+                  cats: Optional[str] = None, q: Optional[str] = None, unread: bool = False,
+                  g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    l = lang if lang in sb.LANGS else "uz"
+    if before:   # the fixtures fit on one page
+        return {"entries": [], "next_before": None, "today": today_local().isoformat(),
+                "seen_upto": 0, "read_upto": 0, "top_id": 0}
+    cat_set = {c for c in (cats or "").split(",") if c} or None
+    return _sb_feed(db, at, l, cats=cat_set, q=q or "", unread_only=unread)
+
+
+@router.post("/notifications/read")
+def sb_notif_read(body: dict = Body(default={}), g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    ids = [int(x) for x in (body or {}).get("ids") or [] if str(x).lstrip("-").isdigit()]
+    if ids:
+        sb.add(db, at.id, "notif_read", {"ids": ids})
+        _touch(db, at)
+        db.commit()
+    _, unread_n, fresh_n = _sb_entries(db, at, "uz")
+    return {"ok": True, "marked": len(ids), "unread": unread_n, "fresh": fresh_n}
+
+
+@router.post("/notifications/read-all")
+def sb_notif_read_all(g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    sb.add(db, at.id, "notif_read", {"all": True})
+    _touch(db, at)
+    db.commit()
+    return {"ok": True, "upto": 0, "unread": 0, "fresh": 0}
+
+
+@router.post("/notifications/seen")
+def sb_notif_seen(g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    ids = [sb.notification_id(r) for r in sb.rows(db, at.id, "notification")]
+    sb.add(db, at.id, "notif_seen", {"ids": ids})
+    db.commit()
+    _, unread_n, fresh_n = _sb_entries(db, at, "uz")
+    return {"ok": True, "unread": unread_n, "fresh": fresh_n}
+
+
+_SB_CATS = ["approvals", "day", "concerns", "tasks", "checklist", "appeals", "idle",
+            "learning", "other"]
+
+
+@router.get("/notifications/prefs")
+def sb_notif_prefs(g=Depends(_gate)):
+    return {"editable": False, "reason": "exam", "categories": _SB_CATS,
+            "prefs": {c: True for c in _SB_CATS}}
+
+
+@router.put("/notifications/prefs")
+def sb_notif_prefs_put(g=Depends(_gate)):
+    raise HTTPException(status_code=409, detail="Settings are not saved during an exam")
+
+
 # ── ui-prefs ──────────────────────────────────────────────────────────────────
 
 @router.get("/ui-prefs/{pref_key}")
