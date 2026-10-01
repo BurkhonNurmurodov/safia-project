@@ -64,6 +64,9 @@ FORMULA_MIN_N = 50
 OUT_TYPES = {"O"}
 BREAK_TYPES = {"T"}
 DIRECTED = {"I", "O"}
+# Marks with no direction: once the shift is over, the last of two marks at
+# least this far apart is the departure.
+PAIR_MIN = 30
 
 _lock = threading.Lock()
 _cache: dict[tuple, tuple[float, datetime, Any]] = {}
@@ -253,7 +256,7 @@ def _formula(db: Session) -> Optional[dict]:
 
 
 def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
-            directed: bool, formula: Optional[dict]) -> dict:
+            formula: Optional[dict]) -> dict:
     d = (rec or {}).get("days") or []
     d = d[0] if d else None
     schedule = (rec or {}).get("schedule") or ""
@@ -273,7 +276,13 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     if mine:
         t_in = min(t_in, mine[0][0]) if t_in else mine[0][0]
 
+    # Where the departure comes from, in order of trust: the report's own
+    # check-out (Verifix fills it in late — last night's shift had none by
+    # noon, 2026-10-01); a mark the terminal typed as an exit; and, for marks
+    # that carry no direction at all, the last mark once the shift is over.
     last = mine[-1] if mine else None
+    shift_over = now >= end if end else now >= datetime.combine(day + timedelta(days=1), time(6))
+    out_src = None
     if t_in is None:
         if not scheduled:
             status = "off"
@@ -281,15 +290,19 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             status = "not_yet"
         else:
             status = "absent"
-    elif directed and last:
+    elif t_out and (last is None or t_out >= last[0] - timedelta(minutes=1)):
+        status, out_src = "left", "report"
+    elif any(m[1] in DIRECTED for m in mine):
         if last[1] in OUT_TYPES:
-            status, t_out = "left", last[0]
+            status, t_out, out_src = "left", last[0], "mark"
         elif last[1] in BREAK_TYPES:
             status, t_out = "break", None
         else:
             status, t_out = "inside", None
+    elif len(mine) >= 2 and shift_over and _mins(mine[0][0], last[0]) >= PAIR_MIN:
+        status, t_out, out_src = "left", last[0], "last_mark"
     else:
-        status = "left" if t_out else "inside"
+        status, t_out = "inside", None
 
     facts = {}
     for f in (d or {}).get("facts") or []:
@@ -328,7 +341,7 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         "status": status, "in": t_in, "out": t_out, "begin": begin, "end": end,
         "schedule": schedule, "hours": hours, "so_far": so_far, "late": late,
         "early_in": early_in, "early_out": early_out, "missing": missing,
-        "marks": len(mine),
+        "marks": len(mine), "out_src": out_src,
     }
 
 
@@ -459,7 +472,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
     rows = []
     for eid in ids:
         rec = ts.get(eid)
-        person = _person(day, now, rec, tracks.get(eid, []), directed, formula)
+        person = _person(day, now, rec, tracks.get(eid, []), formula)
         home_unit, home_cell = home_of(eid)
         role0 = (rec or {}).get("job") or (emps.get(eid) or {}).get("job") or ""
         tl = _timeline(home_unit, home_cell, role0, approved.get(eid, []))
@@ -516,7 +529,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             "schedule": person["schedule"],
             "begin": _hm(person["begin"]), "end": _hm(person["end"]),
             "in": _hm(t_in), "out": _hm(t_out),
-            "in_at": _iso(t_in), "out_at": _iso(t_out),
+            "in_at": _iso(t_in), "out_at": _iso(t_out), "out_src": person["out_src"],
             "status": status,
             "hours": hours_u, "hours_total": round(hours, 2) if hours is not None else None,
             "share": round(share, 3) if t_in else None,
@@ -580,7 +593,8 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
                   "late_grace": LATE_GRACE_MIN, "early_grace": EARLY_GRACE_MIN},
         "diag": {"employees": len(ids), "report_rows": len(ts),
                  "marks": sum(type_counts.values()), "mark_types": dict(type_counts),
-                 "directed": directed},
+                 "directed": directed,
+                 "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"]))},
     }
 
 

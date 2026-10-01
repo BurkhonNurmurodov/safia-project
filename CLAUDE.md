@@ -6316,9 +6316,13 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   `track$list` for the unit's employees ONLY (an empty `employee_ids` filter
   means everyone, so an empty unit makes no call) — cached 60 s, forced by
   «Yangilash».
-- **Status comes from the raw marks**: the last mark of the day — «O» left,
-  «T» on a break, anything else inside. A plant whose marks carry no I/O at all
-  falls back to the report's own in/out; `diag` on the page says which ran.
+- **A departure comes from, in order of trust**: the report's own check-out;
+  a mark typed «O» (per PERSON: their last directed mark — «O» left, «T» on a
+  break, else inside); and for marks with no direction, the last of two marks
+  ≥ 30 min apart once the shift is over (`out_src` "last_mark", dotted on the
+  page). The report fills check-outs in LATE — last night's shift had none by
+  noon on 2026-10-01 and the whole night read «inside · no check-out» until
+  this order existed. `diag.out_sources` counts each source.
 - Late = more than 5 min after the schedule start, early leave = more than 5
   min before its end, no check-out = still inside 60 min after the shift's end.
   Hours = the «Отработано» kinds the parity check found (used when it matched ≥

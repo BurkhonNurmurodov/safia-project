@@ -587,6 +587,13 @@ export default function StaffLive() {
                             types: Object.entries(data.diag?.mark_types || {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—",
                           })}
                         </div>
+                        <div className="mt-0.5 tabular-nums">
+                          {fill(t("staffLive.diagOut"), {
+                            report: data.diag?.out_sources?.report || 0,
+                            mark: data.diag?.out_sources?.mark || 0,
+                            last: data.diag?.out_sources?.last_mark || 0,
+                          })}
+                        </div>
                         {data.diag && !data.diag.directed && data.diag.marks > 0 && (
                           <div className="mt-0.5">{t("staffLive.diagUndirected")}</div>
                         )}
@@ -648,7 +655,11 @@ export default function StaffLive() {
                           {r.early_in ? <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>{fill(t("staffLive.earlyIn"), { n: r.early_in })}</span> : null}
                         </td>
                         <td className="px-3 py-2 tabular-nums">
-                          {r.out || (r.status === "inside" || r.status === "break" ? <span style={{ color: "#22c55e" }}>{t("staffLive.stillInside")}</span> : "—")}
+                          {r.out
+                            ? (r.out_src === "last_mark"
+                              ? <span title={t("staffLive.outLastMark")} className="underline decoration-dotted underline-offset-2">{r.out}</span>
+                              : r.out)
+                            : (r.status === "inside" || r.status === "break" ? <span style={{ color: "#22c55e" }}>{t("staffLive.stillInside")}</span> : "—")}
                           {r.early_out ? <span className="ml-1.5"><Chip color="#eab308">{fill(t("staffLive.earlyOut"), { n: r.early_out })}</Chip></span> : null}
                           {r.missing ? <span className="ml-1.5"><Chip color="#ef4444">{t("staffLive.missing")}</Chip></span> : null}
                         </td>
