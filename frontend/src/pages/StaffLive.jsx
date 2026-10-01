@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   RefreshCw, FlaskConical, LogIn, LogOut, UserX, Clock, AlertTriangle, Timer,
-  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info, ChevronDown,
+  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -405,8 +405,7 @@ export default function StaffLive() {
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState(null);                // {mode, row}
   const [confirmClose, setConfirmClose] = useState(false);
-
-  useEffect(() => { setDay(null); }, [unitId]);
+  const [openRow, setOpenRow] = useState(null);             // the row whose raw Verifix data is shown
 
   const { data: meta } = useQuery({
     queryKey: ["staff-live-meta"],
@@ -451,7 +450,7 @@ export default function StaffLive() {
     onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
   });
 
-  const rows = data?.rows || [];
+  const rows = useMemo(() => data?.rows || [], [data]);
   const c = data?.counts || {};
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -483,7 +482,7 @@ export default function StaffLive() {
 
   const toolbar = (
     <div className="flex items-center gap-2 flex-wrap">
-      <SupervisorSelect value={unitId} onChange={setUnitId} supervisors={supervisors} />
+      <SupervisorSelect value={unitId} onChange={(v) => { setUnitId(v); setDay(null); }} supervisors={supervisors} />
       {data && (
         <DayStepper value={day || data.day} onChange={(iso) => setDay(iso)} max={data.today} />
       )}
@@ -577,10 +576,10 @@ export default function StaffLive() {
                         late: data.rules?.late_grace, early: data.rules?.early_grace,
                         miss: data.rules?.missing_after, close: data.rules?.close_after,
                       })}</div>
-                      <details>
-                        <summary className="cursor-pointer inline-flex items-center gap-1">
-                          <Info size={11} /> {t("staffLive.diag")} <ChevronDown size={11} />
-                        </summary>
+                      <div>
+                        <div className="inline-flex items-center gap-1 font-semibold">
+                          <Info size={11} /> {t("staffLive.diag")}
+                        </div>
                         <div className="mt-1 tabular-nums">
                           {fill(t("staffLive.diagLine"), {
                             e: data.diag?.employees, r: data.diag?.report_rows, m: data.diag?.marks,
@@ -597,7 +596,7 @@ export default function StaffLive() {
                         {data.diag && !data.diag.directed && data.diag.marks > 0 && (
                           <div className="mt-0.5">{t("staffLive.diagUndirected")}</div>
                         )}
-                      </details>
+                      </div>
                     </div>
                   )}>
                   <thead>
@@ -619,9 +618,14 @@ export default function StaffLive() {
                         {rows.length ? t("staffLive.noMatch") : t("staffLive.noRows")}
                       </td></tr>
                     ) : shown.map((r) => (
-                      <tr key={r.employee_id}>
+                      <Fragment key={r.employee_id}>
+                      <tr>
                         <td className="px-3 py-2">
-                          <div style={{ color: "var(--text-1)" }}>{tl(r.name)}</div>
+                          <button type="button" className="text-left underline decoration-dotted underline-offset-2"
+                            style={{ color: "var(--text-1)" }} title={t("staffLive.rawHint")}
+                            onClick={() => setOpenRow((v) => (v === r.employee_id ? null : r.employee_id))}>
+                            {tl(r.name)}
+                          </button>
                           {(r.from || r.until) && (
                             <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
                               {r.from ? fill(t("staffLive.from"), { t: r.from }) : ""}
@@ -697,6 +701,30 @@ export default function StaffLive() {
                           )}
                         </td>
                       </tr>
+                      {openRow === r.employee_id && r.raw && (
+                        <tr>
+                          <td colSpan={9} className="px-3 py-2" style={{ background: "var(--bg-inner)" }}>
+                            <div className="text-[11px] font-mono space-y-1 whitespace-normal" style={{ color: "var(--text-2)" }}>
+                              <div>
+                                {t("staffLive.rawReport")}: in {r.raw.report?.input_time || "—"} · out {r.raw.report?.output_time || "—"}
+                                {" · "}{r.raw.report?.begin_time || "—"} → {r.raw.report?.end_time || "—"}
+                                {" · "}{r.raw.report?.day_kind || "—"}
+                              </div>
+                              <div>{t("staffLive.rawWindow")}: {(r.raw.window || []).map((x) => (x || "—").replace("T", " ")).join(" → ")}</div>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                <span>{fill(t("staffLive.rawMarks"), { n: r.raw.marks_total ?? 0 })}:</span>
+                                {(r.raw.marks || []).length === 0 ? <span>—</span> : r.raw.marks.map(([tm, type, inWin], i) => (
+                                  <span key={i} style={{ opacity: inWin ? 1 : 0.5 }}>{tm} {type || "?"}</span>
+                                ))}
+                              </div>
+                              <div>
+                                {t("staffLive.rawFacts")}: {Object.entries(r.raw.facts || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "—"}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </TableCard>

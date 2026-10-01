@@ -282,6 +282,12 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     # that carry no direction at all, the last mark once the shift is over.
     last = mine[-1] if mine else None
     shift_over = now >= end if end else now >= datetime.combine(day + timedelta(days=1), time(6))
+    # Any mark at least PAIR_MIN after the arrival, up to 12 h past the shift's
+    # end, whatever its type: once the shift is over the latest of them is
+    # where the person left.
+    far = (end + timedelta(hours=12)) if end else datetime.combine(day + timedelta(days=1), time(14))
+    late_marks = sorted(m for m in marks
+                        if t_in and m[0] <= far and _mins(t_in, m[0]) >= PAIR_MIN) if t_in else []
     out_src = None
     if t_in is None:
         if not scheduled:
@@ -292,15 +298,15 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             status = "absent"
     elif t_out and (last is None or t_out >= last[0] - timedelta(minutes=1)):
         status, out_src = "left", "report"
-    elif any(m[1] in DIRECTED for m in mine):
+    elif any(m[1] in DIRECTED for m in mine) and last[1] in DIRECTED | BREAK_TYPES:
         if last[1] in OUT_TYPES:
             status, t_out, out_src = "left", last[0], "mark"
         elif last[1] in BREAK_TYPES:
             status, t_out = "break", None
         else:
             status, t_out = "inside", None
-    elif len(mine) >= 2 and shift_over and _mins(mine[0][0], last[0]) >= PAIR_MIN:
-        status, t_out, out_src = "left", last[0], "last_mark"
+    elif shift_over and late_marks:
+        status, t_out, out_src = "left", late_marks[-1][0], "last_mark"
     else:
         status, t_out = "inside", None
 
@@ -342,6 +348,15 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         "schedule": schedule, "hours": hours, "so_far": so_far, "late": late,
         "early_in": early_in, "early_out": early_out, "missing": missing,
         "marks": len(mine), "out_src": out_src,
+        "raw": {
+            "report": {k: (d or {}).get(k) for k in ("input_time", "output_time", "begin_time",
+                                                     "end_time", "day_kind", "plan_time")},
+            "facts": facts,
+            "window": [_iso(lo), _iso(hi)],
+            "marks": [[m[0].strftime("%d.%m %H:%M"), m[1], lo <= m[0] <= hi]
+                      for m in sorted(marks)[:40]],
+            "marks_total": len(marks),
+        },
     }
 
 
@@ -535,7 +550,8 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             "share": round(share, 3) if t_in else None,
             "so_far": person["so_far"],
             "from": _hm(seg_a) if seg_a and t_in and not arrived_here else None,
-            "until": _hm(seg_b) if seg_b and (t_out or seg_b < now) and not left_here and status != "moved_out" else None,
+            "until": (_hm(seg_b) if seg_b and (t_out or seg_b < now) and not left_here
+                      and status not in ("moved_out", "inside", "break") else None),
             "late": person["late"] if arrived_here else None,
             "early_in": person["early_in"] if arrived_here else None,
             "early_out": person["early_out"] if left_here else None,
@@ -543,6 +559,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             "moved": moved,
             "pending": [_event_out(ev, units) for ev in pending.get(eid, [])],
             "marks": person["marks"],
+            "raw": person["raw"],
         })
 
     counts = Counter(r["status"] for r in rows)

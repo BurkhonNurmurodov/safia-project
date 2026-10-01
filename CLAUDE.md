@@ -6317,10 +6317,13 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   means everyone, so an empty unit makes no call) — cached 60 s, forced by
   «Yangilash».
 - **A departure comes from, in order of trust**: the report's own check-out;
-  a mark typed «O» (per PERSON: their last directed mark — «O» left, «T» on a
-  break, else inside); and for marks with no direction, the last of two marks
-  ≥ 30 min apart once the shift is over (`out_src` "last_mark", dotted on the
-  page). The report fills check-outs in LATE — last night's shift had none by
+  a mark typed «O» (per PERSON, while their LAST mark is a directed one — «O»
+  left, «T» on a break, «I» inside); else, once the shift is over, the latest
+  mark of ANY type ≥ 30 min after the arrival and ≤ 12 h after the shift's end
+  (`out_src` "last_mark", dotted on the page). Tapping a worker's name opens
+  the raw facts behind the row — the report's in/out/begin/end, every mark
+  fetched with its type, the time kinds — because both earlier guesses about
+  the night shift were made without them. The report fills check-outs in LATE — last night's shift had none by
   noon on 2026-10-01 and the whole night read «inside · no check-out» until
   this order existed. `diag.out_sources` counts each source.
 - Late = more than 5 min after the schedule start, early leave = more than 5
