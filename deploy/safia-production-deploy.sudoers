@@ -1,8 +1,8 @@
 # Lets the deploy (deploy/deploy.sh, run by the Gitea act_runner as `user`)
-# restart the dashboard without a password — and nothing else. Restricted to
-# three exact argument vectors: no wildcards, no `systemctl *`, no shell.
+# start, stop and swap the dashboard without a password — and nothing else.
+# Restricted to exact argument vectors: no wildcards, no `systemctl *`, no shell.
 #
-# Install once, as root:
+# Installed by deploy/03-bluegreen-setup.sh (or by hand, as root):
 #   sudo install -m 440 -o root -g root \
 #     /var/www/production/deploy/safia-production-deploy.sudoers \
 #     /etc/sudoers.d/safia-production-deploy
@@ -10,5 +10,26 @@
 #
 # sudoers matches the literal path, and /bin/systemctl is a symlink into
 # /usr/bin on Ubuntu 22.04, so both spellings are listed.
+#
+# The single-copy unit (before the blue-green setup, and after --undo).
 user ALL=(root) NOPASSWD: /usr/bin/systemctl restart safia-production, /usr/bin/systemctl is-active safia-production, /usr/bin/systemctl status safia-production
 user ALL=(root) NOPASSWD: /bin/systemctl restart safia-production, /bin/systemctl is-active safia-production, /bin/systemctl status safia-production
+# The two blue-green copies.
+Cmnd_Alias SAFIA_BG = \
+  /usr/bin/systemctl start safia-production@8030, /usr/bin/systemctl stop safia-production@8030, \
+  /usr/bin/systemctl restart safia-production@8030, /usr/bin/systemctl is-active safia-production@8030, \
+  /usr/bin/systemctl status safia-production@8030, /usr/bin/systemctl enable safia-production@8030, \
+  /usr/bin/systemctl disable safia-production@8030, \
+  /usr/bin/systemctl start safia-production@8031, /usr/bin/systemctl stop safia-production@8031, \
+  /usr/bin/systemctl restart safia-production@8031, /usr/bin/systemctl is-active safia-production@8031, \
+  /usr/bin/systemctl status safia-production@8031, /usr/bin/systemctl enable safia-production@8031, \
+  /usr/bin/systemctl disable safia-production@8031, \
+  /bin/systemctl start safia-production@8030, /bin/systemctl stop safia-production@8030, \
+  /bin/systemctl restart safia-production@8030, /bin/systemctl is-active safia-production@8030, \
+  /bin/systemctl status safia-production@8030, /bin/systemctl enable safia-production@8030, \
+  /bin/systemctl disable safia-production@8030, \
+  /bin/systemctl start safia-production@8031, /bin/systemctl stop safia-production@8031, \
+  /bin/systemctl restart safia-production@8031, /bin/systemctl is-active safia-production@8031, \
+  /bin/systemctl status safia-production@8031, /bin/systemctl enable safia-production@8031, \
+  /bin/systemctl disable safia-production@8031
+user ALL=(root) NOPASSWD: SAFIA_BG

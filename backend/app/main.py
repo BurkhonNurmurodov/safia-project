@@ -581,8 +581,33 @@ async def lifespan(app: FastAPI):
     # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
     fix_nodirjon_leader_unit()
 
+    # Import every app module NOW, while this copy's files are still the ones
+    # it was started from. A blue-green deploy (deploy/deploy.sh) checks the
+    # NEXT version out over this directory and keeps this copy serving while
+    # the next one boots, so a module imported lazily for the first time in
+    # that window would be the NEW file inside the OLD process. After this,
+    # every later `import` inside a function is a sys.modules lookup.
+    _warm_import_app()
+
     yield
     shutdown_scheduler()
+
+
+def _warm_import_app() -> None:
+    import importlib
+    import pkgutil
+    import app as _app_pkg
+    failed = []
+    for mod in pkgutil.walk_packages(_app_pkg.__path__, "app."):
+        if mod.name.startswith("app.onetime_"):
+            continue
+        try:
+            importlib.import_module(mod.name)
+        except Exception as exc:  # an optional dependency, never fatal
+            failed.append(f"{mod.name}: {exc.__class__.__name__}")
+    if failed:
+        logging.getLogger(__name__).warning("Warm import skipped %d module(s): %s",
+                                            len(failed), "; ".join(failed[:10]))
 
 
 # Every /api/* request must carry a valid Telegram initData header (verified
@@ -963,7 +988,10 @@ app.include_router(staff_live.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": APP_VERSION}
+    # `jobs`: whether THIS copy fires the background jobs. During a blue-green
+    # swap the new copy answers false until the old one has exited.
+    from app.scheduler import runs_jobs
+    return {"status": "ok", "version": APP_VERSION, "jobs": runs_jobs()}
 
 
 @app.get("/api/version")

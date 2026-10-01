@@ -1,0 +1,41 @@
+# ============================================================
+# Safia Production dashboard — ONE of the two blue-green copies.
+#
+#   safia-production@8030.service   and   safia-production@8031.service
+#
+# nginx sends traffic to whichever of the two ports answers (both are listed in
+# its upstream). A deploy (deploy/deploy.sh) starts the idle copy, waits until
+# it answers /health, then stops the old one — so there is never a moment with
+# nothing answering. Normally exactly ONE copy runs; both run together only for
+# the seconds of a swap. Background jobs fire in one copy only (a Postgres
+# advisory lock — app/scheduler.py).
+#
+# Installed once, as root, by deploy/03-bluegreen-setup.sh. It replaces the
+# single-copy safia-production.service, which that script stops and disables
+# (the file stays, so --undo can bring it back).
+# ============================================================
+[Unit]
+Description=Safia Production dashboard, copy on port %i (blue-green)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=user
+Group=www-data
+WorkingDirectory=/var/www/production/backend
+EnvironmentFile=/var/www/production/backend/.env
+Environment="OPENBLAS_NUM_THREADS=1" "OMP_NUM_THREADS=1" "MKL_NUM_THREADS=1"
+Environment="NUMEXPR_NUM_THREADS=1" "VECLIB_MAXIMUM_THREADS=1"
+Environment="PYTHONUNBUFFERED=1"
+# --timeout-graceful-shutdown: on stop, stop accepting at once (nginx moves new
+# requests to the other copy) and give the requests already running up to 60 s
+# to finish — an Excel export mid-download is not cut off by a deploy.
+ExecStart=/var/www/production/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port %i --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 60
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

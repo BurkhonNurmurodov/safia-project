@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, sleep } from "./utils/serverRestart";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
@@ -33,24 +34,42 @@ import { LangProvider, useLang } from "./context/LangContext";
 // /build.json is same-origin, served no-store and always present, so a reply
 // of ANY status proves the server is reachable and the chunk really is stale;
 // only a rejection means the connection itself is what broke.
-async function originReachable() {
-  if (navigator.onLine === false) return false;
+// A third answer joined those two with the blue-green deploys: the server is
+// reachable but RESTARTING (a 502/503 from nginx or Cloudflare). A reload then
+// lands on an error page, so the import waits for the server and is simply
+// tried again — the chunk usually still exists (old builds' files are only
+// dropped by the deploy that replaces them).
+async function originState() {
+  if (navigator.onLine === false) return "down";
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6000);
   try {
-    await fetch(`/build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
-    return true;
+    const r = await fetch(`/build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
+    return restartKind(r) ? "restarting" : "up";
   } catch {
-    return false; // reset, blocked, offline — or too slow to be usable anyway
+    return "down"; // reset, blocked, offline — or too slow to be usable anyway
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function waitWhileRestarting() {
+  const since = Date.now();
+  let state = await originState();
+  for (let i = 0; state === "restarting" && Date.now() - since < RESTART_WAIT_MS; i++) {
+    setServerRestarting(true);
+    await sleep(restartDelay(i));
+    state = await originState();
+  }
+  if (state !== "restarting") setServerRestarting(false);
+  return state;
+}
+
 function lazyWithReload(importer) {
   return lazy(() =>
     importer().catch(async (err) => {
-      if (!(await originReachable())) {
+      const state = await waitWhileRestarting();
+      if (state === "down") {
         // A reload would hit the same dead connection. Say what actually broke.
         if (typeof window.__netFail === "function") {
           window.__netFail();
@@ -58,6 +77,8 @@ function lazyWithReload(importer) {
         }
         throw err;
       }
+      // The server answers again: the failure may have been the restart itself.
+      try { return await importer(); } catch { /* genuinely stale — reload below */ }
       if (typeof window.__staleReload === "function") {
         window.__staleReload();
         return new Promise(() => {}); // never resolves — the overlay takes over

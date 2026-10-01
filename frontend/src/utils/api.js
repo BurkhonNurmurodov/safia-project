@@ -2,6 +2,7 @@ import axios from "axios";
 import { examAttemptId, rewriteExamUrl, noteExamMutation, examWriteAllowed } from "./examMode";
 import { clearToken, getToken, isWebSession } from "./session";
 import { noteServerHeaders } from "./compat";
+import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, isServerRestarting, sleep as waitMs } from "./serverRestart";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "",
@@ -120,6 +121,9 @@ function examBlockError(config) {
 // page once per session so the document-level challenge can re-complete.
 const isWebShieldResponse = (resp) => {
   if (!resp || !String(resp.config?.url || "").startsWith("/api")) return false;
+  // A restart's 502/503 page is HTML too, and is NOT the challenge — reloading
+  // into a server that is still down only swaps a waiting page for a dead one.
+  if (restartKind(resp)) return false;
   if (resp.status === 415) return true;
   return String(resp.headers?.["content-type"] || "").includes("text/html");
 };
@@ -141,6 +145,31 @@ async function retryAfterWebShield(config, response) {
   err.response = response;
   err.config = config;
   throw err;
+}
+
+// The server is being restarted by a deploy (utils/serverRestart.js): wait for
+// it and send the same request again, instead of failing — or, as an HTML 502
+// used to be read, reloading the page as if it were the anti-bot challenge.
+// A write is repeated only when the answer proves it never reached the app.
+function shouldWaitForRestart(config, response) {
+  const kind = restartKind(response);
+  if (!kind || !config) return false;
+  const method = String(config.method || "get").toLowerCase();
+  const read = method === "get" || method === "head";
+  if (kind === "timed_out" && !read) return false;
+  const started = config._restartSince || Date.now();
+  return Date.now() - started < RESTART_WAIT_MS;
+}
+
+async function retryAfterRestart(config) {
+  const attempt = config._restartAttempt || 0;
+  setServerRestarting(true);
+  await waitMs(restartDelay(attempt));
+  return api({
+    ...config,
+    _restartAttempt: attempt + 1,
+    _restartSince: config._restartSince || Date.now(),
+  });
 }
 
 // A browser session that has been revoked, disabled or has simply expired keeps
@@ -205,6 +234,7 @@ function normalizeDetail(response) {
 api.interceptors.response.use(
   (response) => {
     noteServerHeaders(response.headers);
+    if (isServerRestarting() && !restartKind(response)) setServerRestarting(false);
     // A sandbox write the exam may be waiting on — the strip re-checks the task.
     const m = String(response.config?.method || "get").toLowerCase();
     if (m !== "get" && response.config?.headers?.["X-Exam-Attempt"]
@@ -215,6 +245,12 @@ api.interceptors.response.use(
   },
   (error) => {
     noteServerHeaders(error.response?.headers);
+    if (shouldWaitForRestart(error.config, error.response)) {
+      return retryAfterRestart(error.config);
+    }
+    // Any other answer — even an error — means the server is back; and a
+    // restart that outlasted the wait is reported as the failure it now is.
+    if (error.response && isServerRestarting()) setServerRestarting(false);
     normalizeDetail(error.response);
     if (isWebShieldResponse(error.response)) {
       return retryAfterWebShield(error.config, error.response);

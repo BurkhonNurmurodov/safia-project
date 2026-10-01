@@ -7984,6 +7984,9 @@ manual step, no SSH.
 - **Never edit files directly on the server** — the next deploy hard-resets the
   checkout. Server-only state (`backend/.env`, the Google service-account key,
   the venv) is untracked and survives; everything else comes from git.
+- **Backend deploys swap two copies, once IT has run the one-time root step**
+  (see «Zero-downtime deploys» below). Until then a backend deploy is still a
+  plain restart, and the app waits it out instead of reloading.
 - Run a deploy by hand with `bash /var/www/production/deploy/deploy.sh`, or
   force a restart with `FORCE_RESTART=1 bash …` (also available as
   "Run workflow" in the Actions tab).
@@ -7992,6 +7995,63 @@ manual step, no SSH.
   allow-list (`package.json`, the lockfile, tsconfig/jsconfig/eslint config), so
   if you add a file the app must read at runtime, check
   `git check-ignore -v <path>` before assuming it shipped.
+
+## Zero-downtime deploys (blue-green, v4.196.0)
+
+From **2026-10-01** (the operator's report: every backend deploy showed users
+Cloudflare's «502 Bad gateway» page for as long as the app took to boot) a backend
+deploy no longer leaves nothing answering. Everything is in the repo; **one
+root step by IT switches it on** — `deploy/03-bluegreen-setup.sh` (`--check`
+first, `--undo` to reverse), explained for them in `deploy/BLUEGREEN-IT.md`.
+Until that step runs, deploys restart the single unit exactly as before.
+
+- **Two copies, one at a time.** `deploy/safia-production@.service` is a
+  template on ports 8030/8031. `deploy.sh` detects it (the template file exists
+  AND sudo grants its argv). A restart then STARTS the idle copy, waits for
+  `/health`, enables it, and only then stops and disables the old one. A new copy
+  that never gets healthy is stopped and the old one keeps serving, so a failed
+  deploy costs nothing. With no template, it does the old `systemctl restart`.
+- **nginx lists both ports** (`deploy/production.safiacorporate.uz`). A down
+  copy refuses the connection and the request goes to the other copy
+  (`proxy_next_upstream error`, which never repeats a POST that reached a
+  copy). **`max_fails=0` is load-bearing**: with nginx's default, the copy that
+  had just come up was still marked dead while the old copy stopped, and
+  requests got «no live upstreams». Tested against a local nginx before
+  shipping.
+- **If neither copy answers**, nginx answers itself (`@safia_offline`). Page
+  files come from `frontend/dist`, and backend paths (`$safia_backend_only`:
+  /api, /bot, /health, /docs, /admin/* except the SPA's /admin/upload) get a
+  JSON 503. Both carry `X-Safia-Restarting: 1`. Never an HTML body on /api: the
+  app reads that as the anti-bot page.
+- **Background jobs fire in ONE copy** (`app/scheduler.py`). A Postgres advisory
+  lock (`_JOBS_LOCK_KEY`) decides it. The copy without the lock starts its
+  scheduler PAUSED, with every job registered, and resumes it when the old copy
+  exits. Shutdown `invalidate()`s the lock's connection. A plain `close()` would
+  return it to the pool still holding the lock. If the lock cannot be taken
+  (no Postgres, a dead connection), the copy runs the jobs anyway, as before.
+  `/health` reports `jobs`. Broadcast fan-out and the AI drain already had DB
+  claims of their own.
+- **The old copy keeps serving while the NEW files are on disk**, for as long
+  as the new copy boots. So the lifespan ends with `_warm_import_app()`, which
+  imports every `app.*` module up front, and no first-time lazy import can load
+  a new file into the old process. Page files are read per request, which is
+  harmless.
+- **Startup migrations must be ADDITIVE from now on.** Old and new code share
+  the database for a few seconds. Never drop or rename a column or table in the
+  same release that stops using it.
+- **The app waits a restart out instead of breaking**
+  (`utils/serverRestart.js` is THE definition). A 502/503/520–523 that never
+  reached the app is retried for any method. A 504/524 timeout is retried for
+  reads only. Retries back off 1→5 s for up to 3 minutes, and
+  `ServerRestartNotice` (in Layout) says «Server yangilanmoqda» meanwhile. The
+  app's own JSON 503s are real answers and are never retried. Before this, an
+  HTML 502 on /api was taken for the WebShield page and the tab reloaded itself
+  4.5 s into every deploy. `isWebShieldResponse` now excludes restart answers.
+  A lazy page chunk that fails during a restart waits for the server
+  (`/build.json`) and is imported again before the stale-build reload is
+  considered.
+- Not solved here: an old tab whose build's chunks the deploy's `git reset`
+  deleted (Part A of the 23 Sep «update later» spec, still not built).
 
 ## Versioning
 

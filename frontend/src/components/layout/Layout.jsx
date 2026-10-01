@@ -11,6 +11,7 @@ import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
+import ServerRestartNotice from "./ServerRestartNotice";
 import ExamBand from "../exam/ExamBand";
 import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
@@ -741,6 +742,7 @@ export default function Layout({ children, title, subtitle }) {
       {/* Notices a newer build and offers a reload. Portals to body, so it sits
           outside the column regardless of where it is mounted. */}
       <UpdatePrompt />
+      <ServerRestartNotice />
     </div>
   );
 }

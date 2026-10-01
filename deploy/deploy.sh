@@ -20,6 +20,15 @@
 # On an unhealthy service it rolls the checkout back to the previous commit,
 # rebuilds if it had built, restarts, and exits non-zero.
 #
+# TWO WAYS TO RESTART, picked automatically:
+#   blue-green (once deploy/03-bluegreen-setup.sh has been run as root): the
+#     app runs as safia-production@8030 / @8031. A restart STARTS the idle copy,
+#     waits for its /health, and only then stops the old one — nginx sends
+#     traffic to whichever answers, so users see no gap. A new copy that never
+#     gets healthy is stopped and the old one, never touched, keeps serving.
+#   single copy (before that setup, or after its --undo): `systemctl restart
+#     safia-production`, which leaves nothing answering while the app boots.
+#
 # Needs, on the deploy host:
 #   - passwordless sudo for exactly `systemctl restart|is-active safia-production`
 #     (see deploy/safia-production-deploy.sudoers)
@@ -34,6 +43,8 @@ APP_DIR=${APP_DIR:-/var/www/production}
 SVC=${SVC:-safia-production}
 BRANCH=${BRANCH:-main}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8030/health}
+BG_UNIT=/etc/systemd/system/safia-production@.service
+BG_PORTS="8030 8031"
 # Startup replays ~65 idempotent migrations/seeds against a 51 MB database
 # before the first request is served; the unit allows 300 s for it.
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}
@@ -71,6 +82,26 @@ SUDO_HINT="passwordless sudo for systemctl is not configured, so this deploy can
 # Not fatal here on purpose: a docs- or CI-only commit deploys fine without it.
 # It becomes fatal below, at the point a restart is actually required.
 [ "$SUDO_OK" = "1" ] || info "WARNING: $SUDO_HINT"
+
+# Blue-green when its unit is installed AND sudo lets us drive it; else the
+# single-copy restart. Probing the exact argv the sudoers file grants.
+BG=0
+ACTIVE_PORT=""
+if [ -f "$BG_UNIT" ]; then
+  bg_probe=$(sudo -n systemctl is-active safia-production@8030 2>&1 || true)
+  case "$bg_probe" in
+    *"password is required"*|*"not allowed"*|*"may not run"*)
+      info "WARNING: $BG_UNIT exists but sudo cannot drive it — using the single-copy restart" ;;
+    *) BG=1 ;;
+  esac
+fi
+if [ "$BG" = "1" ]; then
+  for p in $BG_PORTS; do
+    if systemctl is-active --quiet "safia-production@$p"; then ACTIVE_PORT=$p; break; fi
+  done
+  info "blue-green: live copy on port ${ACTIVE_PORT:-none}"
+  [ -n "$ACTIVE_PORT" ] && HEALTH_URL="http://127.0.0.1:$ACTIVE_PORT/health"
+fi
 
 # ------------------------------------------------------------------- fetch
 PREV=$(git rev-parse HEAD)
@@ -155,7 +186,50 @@ else
 fi
 
 # ---------------------------------------------------------------- restart
-if [ "$NEED_RESTART" = "1" ]; then
+wait_healthy() {  # url, unit — 0 when /health answers, 1 on timeout or a dead unit
+  local url=$1 unit=$2 i
+  for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+    if curl -sf -m 3 "$url" >/dev/null 2>&1; then info "healthy after ${i}s"; return 0; fi
+    # No sudo here: querying unit state needs no privilege (see below).
+    if ! systemctl is-active --quiet "$unit"; then info "$unit is not active — aborting the wait"; return 1; fi
+    sleep 1
+  done
+  return 1
+}
+
+if [ "$NEED_RESTART" = "1" ] && [ "$BG" = "1" ]; then
+  [ "$SUDO_OK" = "1" ] || die "$SUDO_HINT"
+  NEW_PORT=8030
+  [ "$ACTIVE_PORT" = "8030" ] && NEW_PORT=8031
+  NEW_UNIT="safia-production@$NEW_PORT"
+  log "Blue-green: starting the new copy on $NEW_PORT (old copy: ${ACTIVE_PORT:-none}, still serving)"
+  # A leftover from an aborted deploy would be running OLD code — start fresh.
+  if systemctl is-active --quiet "$NEW_UNIT"; then sudo -n systemctl stop "$NEW_UNIT"; fi
+  sudo -n systemctl start "$NEW_UNIT"
+  if wait_healthy "http://127.0.0.1:$NEW_PORT/health" "$NEW_UNIT"; then
+    sudo -n systemctl enable "$NEW_UNIT" >/dev/null 2>&1 || info "WARNING: could not enable $NEW_UNIT for boot"
+    if [ -n "$ACTIVE_PORT" ]; then
+      log "Stopping the old copy on $ACTIVE_PORT (it finishes its open requests first)"
+      sudo -n systemctl stop "safia-production@$ACTIVE_PORT" || info "WARNING: stopping the old copy failed"
+      sudo -n systemctl disable "safia-production@$ACTIVE_PORT" >/dev/null 2>&1 || true
+    fi
+    log "Deployed ${NEW:0:8} — live on port $NEW_PORT, no downtime"
+    exit 0
+  fi
+  printf '\n\033[1;31m✗ the new copy never got healthy — stopping it; the old copy keeps serving\033[0m\n' >&2
+  journalctl -u "$NEW_UNIT" -n 40 --no-pager 2>/dev/null || true
+  sudo -n systemctl stop "$NEW_UNIT" || true
+  git reset --hard --quiet "$PREV"
+  if [ "$NEED_BUILD" = "1" ]; then
+    ( cd "$APP_DIR/frontend" && npm run build --silent ) || true
+  fi
+  if [ -z "$ACTIVE_PORT" ]; then
+    # Nothing was running before either: bring the previous commit up.
+    sudo -n systemctl start "$NEW_UNIT" || true
+    wait_healthy "http://127.0.0.1:$NEW_PORT/health" "$NEW_UNIT" || true
+  fi
+  die "deploy of ${NEW:0:8} failed; production is still on ${PREV:0:8}"
+elif [ "$NEED_RESTART" = "1" ]; then
   [ "$SUDO_OK" = "1" ] || die "$SUDO_HINT"
   log "Restarting $SVC"
   sudo -n systemctl restart "$SVC"
@@ -190,6 +264,9 @@ if [ "$healthy" != "1" ]; then
   if [ "$NEED_BUILD" = "1" ]; then
     ( cd "$APP_DIR/frontend" && npm run build --silent ) || true
   fi
+  # Blue-green and no restart this time: the backend was not touched, so a
+  # restart would not help — the checkout is back, and the failure is reported.
+  [ "$BG" = "1" ] && die "service unhealthy at ${PREV:0:8} with the backend untouched — check journalctl"
   sudo -n systemctl restart "$SVC" || true
   for i in $(seq 1 120); do
     curl -sf -m 3 "$HEALTH_URL" >/dev/null 2>&1 && { info "rolled back and healthy"; break; }

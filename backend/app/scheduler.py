@@ -11,10 +11,18 @@ truth holding pickled callables: it drifts from the row it mirrors, and
 renaming a function silently breaks a job nobody can see. The row is the
 truth; this module is only a timer over it.
 
-An IN-PROCESS scheduler is safe here solely because the prod unit runs uvicorn
-with `--workers 1` (deploy/safia-production.service). At `--workers N` every
-job fires N times — if that flag ever changes, jobs must move behind a DB
-claim the way the broadcast fan-out already is.
+An IN-PROCESS scheduler is safe here because ONE process fires the jobs. Each
+copy runs uvicorn `--workers 1`, and from v4.196.0 a deploy may run TWO copies
+side by side for a few seconds (blue-green, deploy/deploy.sh): the new copy is
+started and health-checked before the old one stops. So the timers are gated
+on a Postgres advisory lock (`_JOBS_LOCK_KEY`): the copy holding it runs its
+scheduler, any other copy starts its scheduler PAUSED — every job registered,
+none fired — and resumes it the moment the lock frees, i.e. when the old copy
+exits and its connection closes. A missed fire time inside the misfire grace
+still runs on resume. With one copy (every deploy before the blue-green setup)
+the lock is taken at once and nothing differs from before. Anything that cannot
+claim the lock — no Postgres, a dead connection — fails OPEN and runs the jobs,
+which is the old behaviour, never silence.
 
 Times are handled as timezone-aware UTC throughout. SCHEDULER_TZ exists only
 to interpret a human wall-clock ("send at 08:00") and is PINNED to the plant's
@@ -30,6 +38,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import text
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -45,6 +54,78 @@ _MISFIRE_GRACE = 300
 
 _scheduler: BackgroundScheduler | None = None
 _lock = threading.Lock()
+
+# Arbitrary, distinct from every other advisory key in the app
+# (leader_ai._DRAIN_LOCK_KEY is 8_140_573_112_004_331).
+_JOBS_LOCK_KEY = 8_140_573_112_009_001
+# The connection that HOLDS the lock. An advisory lock lives as long as the
+# session that took it, so this is checked out of the pool for the life of the
+# process and never returned; the process exiting is what releases it.
+_jobs_conn = None
+_LEADER_POLL_S = 2
+
+
+def _claim_jobs_lock() -> bool | None:
+    """True = this copy runs the jobs, False = another copy holds them,
+    None = the question cannot be asked here (fail open: run them)."""
+    global _jobs_conn
+    try:
+        from app.database import engine
+        if engine.dialect.name != "postgresql":
+            return None
+        if _jobs_conn is None:
+            _jobs_conn = engine.connect()
+        got = _jobs_conn.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": _JOBS_LOCK_KEY}
+        ).scalar()
+        _jobs_conn.commit()
+        return bool(got)
+    except Exception:
+        logger.exception("Scheduler: could not ask for the jobs lock — running jobs here")
+        _drop_jobs_conn()
+        return None
+
+
+def _drop_jobs_conn() -> None:
+    """Close the lock's connection FOR REAL. `close()` would hand it back to
+    the pool still holding the session-level lock; `invalidate()` discards the
+    DBAPI connection, and Postgres releases the lock with it."""
+    global _jobs_conn
+    conn, _jobs_conn = _jobs_conn, None
+    if conn is not None:
+        try:
+            conn.invalidate()
+        except Exception:
+            pass
+
+
+def _await_jobs_lock() -> None:
+    """Poll until the other copy lets go, then un-pause this scheduler."""
+    import time
+    while True:
+        time.sleep(_LEADER_POLL_S)
+        sched = _scheduler
+        if sched is None or not sched.running:
+            return
+        if _claim_jobs_lock() is not False:
+            try:
+                sched.resume()
+                logger.info("Scheduler resumed — this copy now runs the jobs")
+            except Exception:
+                logger.exception("Scheduler resume failed")
+            return
+
+
+def runs_jobs() -> bool:
+    """Whether this copy's timers are live (False while another copy holds them)."""
+    sched = _scheduler
+    if sched is None or not sched.running:
+        return False
+    try:
+        from apscheduler.schedulers.base import STATE_PAUSED
+        return sched.state != STATE_PAUSED
+    except Exception:
+        return True
 
 
 def get_scheduler() -> BackgroundScheduler:
@@ -71,9 +152,16 @@ def start_scheduler() -> None:
     sched = get_scheduler()
     if sched.running:
         return
+    leader = _claim_jobs_lock() is not False
     try:
-        sched.start()
-        logger.info("Scheduler started (tz=%s)", SCHEDULER_TZ)
+        sched.start(paused=not leader)
+        if leader:
+            logger.info("Scheduler started (tz=%s)", SCHEDULER_TZ)
+        else:
+            logger.info("Scheduler started PAUSED — another copy runs the jobs; "
+                        "taking over when it exits")
+            threading.Thread(target=_await_jobs_lock, daemon=True,
+                             name="scheduler-leader-wait").start()
     except Exception:
         logger.exception("Scheduler failed to start")
 
@@ -143,3 +231,6 @@ def shutdown_scheduler() -> None:
             except Exception:
                 logger.exception("Scheduler shutdown failed")
         _scheduler = None
+        # Let the next copy take the jobs now, not when this process finally
+        # exits after draining its last requests.
+        _drop_jobs_conn()

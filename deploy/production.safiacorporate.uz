@@ -16,8 +16,42 @@
 # (another vhost carries a 1024-bit RSA key and it aborts):
 #   sudo certbot certonly --webroot -w /var/www/letsencrypt -d production.safiacorporate.uz
 #
+# BLUE-GREEN (deploy/03-bluegreen-setup.sh installs this version): the app runs
+# as two copies, safia-production@8030 and @8031, and a deploy starts the new
+# one before stopping the old one. Both ports are in the upstream; whichever is
+# down is skipped (connection refused → next server), so a swap needs no nginx
+# reload. If NEITHER answers (a crash, or the single-copy restart this replaced),
+# nginx serves the app's page files itself from frontend/dist and answers the
+# API with a JSON 503 marked `X-Safia-Restarting: 1`, which the app waits out
+# (frontend/src/utils/serverRestart.js) instead of showing an error page.
+#
 # Behind Cloudflare in "Full" mode. Port 80 and 443 both answer and both serve
 # the ACME challenge, so renewal works whichever port Cloudflare reaches.
+
+# max_fails=0: never "rest" a copy after a failure. A stopped copy refuses the
+# connection instantly on localhost, so asking it every time costs nothing —
+# while the default (1 failure → skipped for 10 s) left the copy that had just
+# come up marked dead in the very seconds the old one was stopping, and every
+# request in that window got "no live upstreams".
+upstream safia_production {
+    server 127.0.0.1:8030 max_fails=0;
+    server 127.0.0.1:8031 max_fails=0;
+}
+
+# Paths only the backend can answer. When no copy is up these get the JSON 503,
+# never the SPA's index.html: an HTML body on /api is read by the app as the
+# hosting anti-bot page. /admin/upload is the SPA's own page (listed FIRST —
+# regexes are tried in order), every other /admin/... is a backend route.
+map $uri $safia_backend_only {
+    default                     0;
+    ~^/admin/upload/?$          0;
+    ~^/admin/                   1;
+    ~^/api/                     1;
+    ~^/bot/                     1;
+    ~^/health                   1;
+    ~^/docs                     1;
+    ~^/openapi\.json            1;
+}
 
 server {
     listen 80;
@@ -71,7 +105,13 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:8030;
+        proxy_pass http://safia_production;
+        # A copy that is down refuses the connection instantly; try the other.
+        # Only `error` (connect/send/read-header failures) — never `timeout`,
+        # which would run a slow export a second time. nginx never repeats a
+        # POST that already reached a copy.
+        proxy_next_upstream error;
+        proxy_connect_timeout 3s;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -89,5 +129,32 @@ server {
         # api.js treats an HTML body on an /api URL as an anti-bot challenge and
         # force-reloads the page after two retries, so an nginx HTML error page
         # in front of a JSON endpoint would put clients in a reload loop.
+        # error_page below therefore only catches what NGINX itself produces —
+        # no copy answering at all — never an error the app returned.
+        error_page 502 504 = @safia_offline;
+    }
+
+    # No copy is answering. Keep the app itself on screen: its page files come
+    # straight from disk, and the API answers a marked JSON 503 that the app
+    # retries quietly until a copy is back.
+    location @safia_offline {
+        add_header Cache-Control "no-store" always;
+        add_header X-Safia-Restarting "1" always;
+        default_type application/json;
+        if ($safia_backend_only) {
+            return 503 '{"detail":"The server is restarting — try again in a few seconds."}';
+        }
+        root /var/www/production/frontend/dist;
+        try_files $uri /__safia_offline_index.html;
+    }
+
+    # The SPA shell for the fallback above — a location of its own, so the
+    # internal redirect lands on a file and never back on the proxy.
+    location = /__safia_offline_index.html {
+        internal;
+        add_header Cache-Control "no-store" always;
+        add_header X-Safia-Restarting "1" always;
+        root /var/www/production/frontend/dist;
+        try_files /index.html =503;
     }
 }
