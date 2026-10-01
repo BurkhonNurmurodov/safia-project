@@ -17,6 +17,10 @@
     <!-- The app's own updates (AppUpdates): the published APK is handed to
          Android's installer, which asks the person to confirm. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Phone notifications (Push): Android 13+ asks the person once; the
+         background check (PushJob) survives a restart of the phone. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Android 11+ package visibility: which app is the phone's browser — the
          one place a page of ours must open outside the app, and the failure
@@ -79,6 +83,13 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- The background check for notifications, run by Android's job
+             scheduler about every 15 minutes (Push.schedule). -->
+        <service
+            android:name=".PushJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Files FileHandoff hands to other apps (an opened photo, a download on
              Android 7–9). -->

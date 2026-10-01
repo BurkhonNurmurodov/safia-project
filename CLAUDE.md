@@ -6131,12 +6131,67 @@ decided it. Two halves now, one module each:
 - **Adding a notification type**: the template in `staff._NOTIF_STRINGS` (4
   languages) → its category (an `_EXACT` entry or a prefix) → `subject=` at the
   call site (+ a `link_for` branch for a new kind) → for a burst type a `FOLD`
-  entry and `notif.fold.<nkey>` in all 4 languages.
+  entry and its `FOLD_TITLES` line (4 languages). A group's headline is written
+  by the SERVER (`fold`), so the bell and the phone say one thing; the client's
+  `entryTitle` only prints it.
 - Read and seen marks are telemetry and skipped by the action register; a
   settings save is logged (`notification.prefs_saved`). The exam sandbox has
   twins of every endpoint (fixtures, marks as sandbox rows), and exam task 49
   («mark all read») reads those marks. `GET /api/notifications` (the array) stays
   for tabs open on an older bundle.
+
+## Phone notifications (the Android app, 1.5.0+)
+
+From **2026-10-01** (the operator's request) the Android app shows the bell's
+notifications as Android notifications — with the app closed, on the lock
+screen, one tap away from the record. There is **no Firebase**: that needs a
+Firebase project in the operator's Google account and a server key, so the app
+ASKS instead. Delivery is therefore **within ~15 minutes, not instant** (Android
+runs a periodic job no more often; Doze can stretch it while the phone sleeps).
+Instant delivery is a Firebase project away — the poll stays and FCM would only
+wake it.
+
+- **`notification_center.push_entries` is THE feed for a phone** — the bell's
+  own fold, cut to unread rows of the last 24 h (`PUSH_WINDOW`) in categories the
+  person keeps on the phone. An entry is SHOWN when it holds a row newer than the
+  phone's cursor and the bell's «seen» mark (nothing already looked at buzzes),
+  and carries ALL its unread rows, so a later poll REPLACES a folded line
+  («Yopilgan kunlar: 5 ta») rather than stacking a second one. `active` = every
+  unread entry's key: a phone notification whose key is gone was read somewhere
+  and comes down. More than 8 at once → 7 + «Yana N ta bildirishnoma».
+- **`GET /api/push/poll?after=&lang=`** (`routers/push.py`) with the app's own
+  session (the year-long app token — «The app stays signed in»); `after` < 0 is
+  the first call, which only learns where to start (never a backlog). A read;
+  nothing is stored server-side, no device table. `POST /api/push/test` writes
+  one bell row (`push_test`, no DM) to the caller — the settings dialog's «Sinov
+  xabari». `GET /api/notifications/summary` gained `latest`.
+- **A per-category «Telefon» switch** — `notification_prefs.push` (NULL = on),
+  `prefs_for(..., "push")` / `set_prefs(..., channel="push")`; `GET/PUT
+  /api/notifications/prefs` carry `push` beside `prefs` (a PUT without it leaves
+  it alone). The settings dialog shows a «Telefon» tab (first) beside «Telegram»
+  — only inside an app that can (`pushSupported()`), with the phone's state on
+  top: allowed or not («Yoqish» → Android's prompt, then its settings), the last
+  check, and the test. Android channels exist per category too
+  (`notif_<category>`, IMPORTANCE_HIGH), for anyone who mutes in Android itself.
+- **The page's half is `utils/androidPush.js`**: `registerPush` (who is signed
+  in + the token — at every boot, after every renewal and after a password
+  login), `pushCursor` (the bell's summary moves the phone's cursor while the
+  app is on screen, so what arrived then never buzzes later), `pushSeen` (the
+  bell or /notifications opened → the phone's notifications come down),
+  `clearPush` (signed out with nobody left in the wallet), `usePushStatus`. Every
+  call is a no-op unless the APK's app-bridge.js says `window.__safiaApp.push`
+  — older APKs and browsers see nothing. Never from the impersonation screen
+  (a tab session) — native refuses it there too.
+- **The app's half is `Push.java`** (+ `PushJob`, a JobScheduler job every 15
+  min, persisted, network required): shows each item (tag = key, brand gold,
+  white bell `ic_stat_notify`, lock screen shows only «Yangi bildirishnoma»),
+  nothing while an app screen is open (the bell is right there), a tap opens the
+  item's link in the app and marks its rows read (`POST
+  /api/notifications/read` with the stored token). A 401 = the session ended
+  elsewhere (password change, sign-out everywhere) → it stops until the next
+  sign-in. Android 13+ is asked for permission ONCE, at the first sign-in after
+  install; later only through «Yoqish».
+- A new APK is needed for this (1.5.0); the server and pages are ready either way.
 
 ## The action register (`/admin/upload?tab=logs`)
 
@@ -6846,7 +6901,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.4.0, versionCode 6).
+  **Raise `versionCode` on every release** (current: 1.5.0, versionCode 7).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
@@ -6885,10 +6940,10 @@ daily") **the app downloads every build the site deploys by itself** — see
   - Google Play remains possible later: it needs a developer account, and
     Play App Signing re-signs with Google's key — ADD its fingerprint to
     `ANDROID_ASSET_LINKS` (which `publish` also reads).
+- **Phone notifications** from 1.5.0 — see «Phone notifications».
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in
-  Telegram), push notifications (Telegram stays the channel), and the
-  Fullscreen API on `/live`.
+  Telegram), instant delivery (Firebase), and the Fullscreen API on `/live`.
 
 ## ARC tickets (`/arc`, page key `arc`)
 
