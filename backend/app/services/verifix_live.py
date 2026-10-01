@@ -54,6 +54,7 @@ TZ = verifix.TZ
 
 DIR_TTL = 600            # divisions / jobs / employees — the directory, seconds
 PULL_TTL = 60            # one unit-day's timesheet + marks, seconds
+PAST_TTL = 600           # …for a day already over, which barely changes
 CLOSE_AFTER_MIN = 60     # decision 1: an hour after the unit's last check-out
 MISSING_AFTER_MIN = 60   # still inside this long past the shift's end = no check-out
 LATE_GRACE_MIN = 5       # minutes a check-in may trail the schedule start
@@ -482,7 +483,8 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
     ids = sorted(ids)
 
     try:
-        pulled, pulled_at = _pull(cfg, ids, day, ttl=0 if force else PULL_TTL)
+        pulled, pulled_at = _pull(cfg, ids, day,
+                                  ttl=0 if force else (PAST_TTL if day < today else PULL_TTL))
     except verifix.VerifixError as exc:
         return {"error": exc.code, "message": exc.message}
     ts, tracks = pulled["ts"], pulled["tracks"]

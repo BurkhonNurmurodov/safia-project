@@ -1,8 +1,8 @@
-import { Fragment, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, FlaskConical, LogIn, LogOut, UserX, Clock, AlertTriangle, Timer,
-  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info,
+  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -16,7 +16,8 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DayStepper from "../components/ui/DayStepper";
 import TimeField from "../components/ui/TimeField";
 import TableCard, { Th } from "../components/ui/DataTable";
-import { SkeletonTable } from "../components/ui/Skeleton";
+import { SkeletonTable, SkeletonBlock } from "../components/ui/Skeleton";
+import { localISO } from "../components/ui/DateRangePicker";
 import { useToast } from "../components/ui/Toast";
 import { SupervisorSelect } from "./Staff";
 import { useLang } from "../context/LangContext";
@@ -41,6 +42,14 @@ const AUTO_MS = 120_000;
 const fill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 const hhmm = (iso) => (iso ? iso.slice(11, 16) : "");
 const n1 = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("ru-RU"));
+const shiftISO = (iso, n) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return localISO(d);
+};
+const fetchView = (managerId, day, force = false) => api.get("/api/staff-live/view", {
+  params: { manager_id: managerId, ...(day ? { day } : {}), ...(force ? { force: true } : {}) },
+}).then((r) => r.data);
 
 const STATUS_TONE = {
   inside: "#22c55e",
@@ -418,24 +427,39 @@ export default function StaffLive() {
     [meta],
   );
 
+  // No placeholder from the previous key: a new date or brigadir shows a
+  // skeleton at once, never the last day's table under the new day's label.
   const viewKey = ["staff-live-view", unitId, day];
   const view = useQuery({
     queryKey: viewKey,
-    queryFn: () => api.get("/api/staff-live/view", {
-      params: { manager_id: unitId, ...(day ? { day } : {}) },
-    }).then((r) => r.data),
+    queryFn: () => fetchView(unitId, day),
     enabled: !!unitId,
-    placeholderData: keepPreviousData,
+    staleTime: 60_000,
     refetchInterval: auto === "on" ? AUTO_MS : false,
     refetchIntervalInBackground: false,
   });
   const data = view.data && !view.data.error && view.data.unit?.id === unitId ? view.data : null;
   const error = view.data?.error;
+  // The unit's own day (its first load) keeps the stepper in place while
+  // another day is loading.
+  const base = qc.getQueryData(["staff-live-view", unitId, null]);
+  const stepDay = day || data?.day || base?.day || null;
+  const maxDay = data?.today || base?.today;
+
+  // Stepping BACK is the common move: the day before is fetched in the
+  // background, so it opens at once.
+  const prevDay = data ? shiftISO(data.day, -1) : null;
+  useEffect(() => {
+    if (!unitId || !prevDay) return;
+    qc.prefetchQuery({
+      queryKey: ["staff-live-view", unitId, prevDay],
+      queryFn: () => fetchView(unitId, prevDay),
+      staleTime: 60_000,
+    });
+  }, [qc, unitId, prevDay]);
 
   const refresh = useMutation({
-    mutationFn: () => api.get("/api/staff-live/view", {
-      params: { manager_id: unitId, ...(day ? { day } : {}), force: true },
-    }).then((r) => r.data),
+    mutationFn: () => fetchView(unitId, day, true),
     onSuccess: (res) => qc.setQueryData(viewKey, res),
     onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
   });
@@ -484,19 +508,23 @@ export default function StaffLive() {
   const toolbar = (
     <div className="flex items-center gap-2 flex-wrap">
       <SupervisorSelect value={unitId} onChange={(v) => { setUnitId(v); setDay(null); }} supervisors={supervisors} />
-      {data && (
-        <DayStepper value={day || data.day} onChange={(iso) => setDay(iso)} max={data.today} />
-      )}
+      {stepDay ? (
+        <DayStepper value={stepDay} onChange={(iso) => setDay(iso)} max={maxDay} />
+      ) : unitId ? (
+        <SkeletonBlock className="h-[38px] w-[340px] rounded-xl" />
+      ) : null}
       <Button size="lg" variant="primary" icon={RefreshCw} loading={refresh.isPending}
         disabled={!unitId} onClick={() => refresh.mutate()}>
         {t("staffLive.refresh")}
       </Button>
       <SegmentedToggle value={auto} onChange={setAuto}
         options={[["on", t("staffLive.autoOn")], ["off", t("staffLive.autoOff")]]} />
-      {data && (
-        <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
-          {fill(t("staffLive.updated"), { time: (data.pulled_at || "").slice(11, 16) })}
-          {view.isFetching && !refresh.isPending ? " …" : ""}
+      {unitId && (
+        <span className="text-xs tabular-nums inline-flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+          {(view.isFetching || refresh.isPending) && <Loader2 size={13} className="animate-spin" />}
+          {view.isFetching || refresh.isPending
+            ? t("staffLive.loading")
+            : data ? fill(t("staffLive.updated"), { time: (data.pulled_at || "").slice(11, 16) }) : ""}
         </span>
       )}
     </div>
@@ -529,7 +557,15 @@ export default function StaffLive() {
             </span>
           </div>
         ) : !data ? (
-          <SkeletonTable rows={10} cols={7} />
+          <div className="space-y-4" aria-busy="true">
+            <SkeletonBlock className="h-[52px] rounded-xl" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+              {Array.from({ length: 6 }, (_, i) => <SkeletonBlock key={i} className="h-[112px] rounded-2xl" />)}
+            </div>
+            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+              <SkeletonTable rows={10} cols={7} />
+            </div>
+          </div>
         ) : (
           <>
             <CloseBar close={data.close} t={t} busy={closeDay.isPending || reopenDay.isPending}

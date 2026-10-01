@@ -6314,8 +6314,13 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
 - **Reads**: the working-employee directory (`employee$list` with
   `statuses ["W"]`, divisions, jobs — cached 10 min), then `timesheet$export` and
   `track$list` for the unit's employees ONLY (an empty `employee_ids` filter
-  means everyone, so an empty unit makes no call) — cached 60 s, forced by
-  «Yangilash».
+  means everyone, so an empty unit makes no call) — cached 60 s (10 min for a
+  day already over), forced by «Yangilash».
+- **A new date or brigadir never shows the previous one's table**: no
+  placeholder data, a skeleton at once, a spinner while anything is fetching
+  (the operator found the old table under the new date's label confusing).
+  The day before the one on screen is prefetched — stepping back is the
+  common move.
 - **A departure comes from, in order of trust**: the report's own check-out;
   a mark typed «O» (per PERSON, while their LAST mark is a directed one — «O»
   left, «T» on a break, «I» inside); else, once the shift is over, the latest
