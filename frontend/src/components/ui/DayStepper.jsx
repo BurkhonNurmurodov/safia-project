@@ -26,6 +26,8 @@ import { useLang } from "../../context/LangContext";
  *   dotPrev / dotNext – a reason to look that way: draws a brand dot on the
  *              chevron and adds the text to its label (e.g. «today's list is
  *              in the next week»). Null = no dot.
+ *   marked   – Set of ISO days the calendar flags with a brand dot (days that
+ *              hold data) — replaces a second «jump to a date» control.
  */
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -45,7 +47,7 @@ function mondayOf(iso) {
 
 export default function DayStepper({
   value, onChange, max = toISO(new Date()), week = false, dotPrev = null, dotNext = null,
-  compactUntil = "sm",
+  compactUntil = "sm", marked = null,
 }) {
   const { t } = useLang();
   const step = week ? 7 : 1;
@@ -89,6 +91,7 @@ export default function DayStepper({
         setDateFrom={(v) => v && onChange(week ? mondayOf(v) : v)}
         setDateTo={() => {}}
         triggerClassName="px-3 py-2 text-sm"
+        marked={marked}
       />
       <button
         type="button"

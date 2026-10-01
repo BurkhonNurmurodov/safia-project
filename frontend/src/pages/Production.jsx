@@ -1784,7 +1784,7 @@ export default function Production() {
     queryFn: () => api.get("/api/production/dates", { params: managerParam }).then((r) => r.data),
     enabled: managerReady,
   });
-  const availableDates = datesData?.dates ?? [];
+  const markedDates = useMemo(() => new Set(datesData?.dates ?? []), [datesData]);
 
   const rows = data?.rows ?? [];
   const wcs = data?.work_centers ?? [];
@@ -2450,7 +2450,6 @@ export default function Production() {
     if (catSel != null) stripRef.current?.scrollIntoView({ block: "nearest" });
   }, [catSel]);
 
-  const isToday = date === todayISO();
 
   // ── the page bar's one filter zone ────────────────────────────────────────
   // Plant → shift → brigadir, the same broad→narrow chain every other scoped
@@ -2534,36 +2533,20 @@ export default function Production() {
           <span>{t("staff.exportToast")}</span>
         </div>
       )}
-      {/* ONE page bar: the period control inline, then the consolidated filter
-          zone (plant → shift → brigadir) with its chips, then the jump-to-a-
-          loaded-date select on the right. Supervisors and leaders are pinned to
-          their own unit by the backend, so they get no sections and no panel. */}
+      {/* ONE page bar: the day stepper (its calendar dots the days that hold
+          an upload, and offers «Bugun» itself), then the consolidated filter
+          zone (plant → shift → brigadir) whose chips wrap under it on a phone,
+          then undo/redo. No second date control: a jump-to-a-loaded-date
+          select beside the stepper was the same question asked twice. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <DayStepper value={date} onChange={setDate} max={null} />
-        {!isToday && (
-          <button onClick={() => setDate(todayISO())} className="px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--bg-accent)]"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-            {t("production.today")}
-          </button>
-        )}
+        <DayStepper value={date} onChange={setDate} max={null} marked={markedDates} />
         {pageSections.length > 0 && (
-          <FilterPanel sections={pageSections} />
+          <FilterPanel sections={pageSections} chipsWrap />
         )}
         {/* Undo / redo for the day's writes. It appears only once there IS a
             history — an always-visible pair of dead buttons says the page can
             take something back when there is nothing to take back. */}
         {undoBar}
-
-        {/* switcher — jump to a date that has uploaded data */}
-        {availableDates.length > 0 && (
-          <StyledSelect
-            className="ml-auto w-48"
-            value={availableDates.includes(date) ? date : ""}
-            onChange={(v) => { if (v) setDate(v); }}
-            options={availableDates.map((d) => ({ value: d, label: ddmmyyyy(d) }))}
-            placeholder={`${t("production.loadedDates")} (${availableDates.length})`}
-          />
-        )}
       </div>
 
       {/* The day's lock, stated ONCE at the top rather than as an absence of

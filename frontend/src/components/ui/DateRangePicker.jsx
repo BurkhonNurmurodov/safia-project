@@ -69,7 +69,7 @@ function getPresets(t, max) {
 
 // ── Day cell ──────────────────────────────────────────────────────────────────
 
-function Day({ iso, cur, from, to, hover, onPick, onHover, max }) {
+function Day({ iso, cur, from, to, hover, onPick, onHover, max, marked }) {
   const effTo  = from && !to && hover ? hover : to;
   let a=null, b=null;
   if (from && effTo) [a,b] = from<=effTo ? [from,effTo] : [effTo,from];
@@ -100,11 +100,15 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max }) {
         }}>
         {day}
       </span>
+      {marked && marked.has(iso) && !selected && (
+        <span aria-hidden="true" className="absolute bottom-[3px] left-1/2 -translate-x-1/2 z-10 w-1 h-1 rounded-full"
+          style={{ background:"var(--brand)" }} />
+      )}
     </div>
   );
 }
 
-function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max }) {
+function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, marked }) {
   const days = calDays(year, month);
   return (
     <div>
@@ -118,7 +122,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max }) {
         {days.map(({iso,cur}) => (
           <Day key={iso} iso={iso} cur={cur}
             from={from} to={to} hover={hover}
-            onPick={onPick} onHover={onHover} max={max} />
+            onPick={onPick} onHover={onHover} max={max} marked={marked} />
         ))}
       </div>
     </div>
@@ -142,6 +146,8 @@ export default function DateRangePicker({
                         // range can't share a row with another control;
                         // "xl" keeps the numeric label up to xl (/kelish)
   triggerClassName = "px-2.5 py-1.5 text-xs",
+  marked = null,       // Set of ISO days to flag with a brand dot (e.g. days that
+                       // hold uploaded data) — a hint, never a restriction
 }) {
   const { t } = useLang();
   const [open,     setOpen]     = useState(false);
@@ -463,7 +469,7 @@ export default function DateRangePicker({
               <div onMouseLeave={() => setHover(null)}>
                 <MonthGrid year={leftY} month={leftM}
                   from={tempFrom} to={tempTo} hover={hover}
-                  onPick={handlePick} onHover={setHover} t={t} max={max} />
+                  onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />
               </div>
             </div>
 
@@ -572,8 +578,8 @@ export default function DateRangePicker({
             </div>
 
             <div className={`grid ${single ? "grid-cols-1" : "grid-cols-2"} gap-6`} onMouseLeave={() => setHover(null)}>
-              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} />
-              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} />}
+              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />
+              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />}
             </div>
 
             {!single && (
