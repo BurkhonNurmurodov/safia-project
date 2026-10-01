@@ -13,6 +13,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
+import VerifixParity, { fill, fmtAt } from "./VerifixParity";
 
 /**
  * «Verifix» — the connection the platform will read attendance through.
@@ -45,15 +46,6 @@ const TONE = {
 };
 const toneOf = (v) => TONE[v] || "#ef4444";
 
-const fill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
-
-const fmtAt = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n) => String(n).padStart(2, "0");
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
 
 function StepRow({ s, t, tx }) {
   const label = t(`verifix.s.${s.key}`);
@@ -369,6 +361,9 @@ export default function VerifixSettings() {
           <div className="px-4 pb-4 text-xs" style={{ color: "var(--text-4)" }}>{t("verifix.never")}</div>
         )}
       </div>
+
+      {/* ── Verifix against the uploaded files ─────────────────────────── */}
+      <VerifixParity data={data} qk={QK} configured={configured} dirty={dirty} t={t} tx={tx} />
 
       <ConfirmDialog
         open={confirmClear}

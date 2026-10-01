@@ -6264,8 +6264,24 @@ reads it yet except the card's own test, so no figure on the platform moves.
   `placed.unit` is the answer, the live feed places a row by its employee's
   org unit — current, which is right for today's shift and approximate for a
   past day (a history needs the Pro `transfer$list`, outside our role).
-- Next (not built): the parity report against the saved Excel days, then the
-  live feed — see the memory for the operator's seven decisions.
+- **The parity check** (v4.194.0, the card's third block, `POST
+  /api/admin/verifix/parity` → `services/verifix_parity.py`): for up to 7
+  finished days, the FILE (`attendance_batch_rows` as uploaded; admin-edited and
+  hand-added rows skipped and counted) against the API (`timesheet$export`,
+  each row placed by its employee's current org unit). People are matched by
+  NAME — folded full name, else surname + first name, only when exactly one
+  answers (namesakes counted as ambiguous, never guessed). Per day: came on
+  each side, matched, only-in-file / only-in-Verifix (the latter only inside
+  cells the file covers — a whole cell missing is a file not uploaded, counted
+  apart), same cell, same clock, hours. **«Отработано» is FOUND, not assumed**:
+  every subset of the 8 most frequent time kinds, in minutes and in seconds, is
+  scored against the file's hours over the people both sides say came; the
+  winner and three runners-up are shown. Read-only on both sides; the result is
+  stored (`verifix_last_parity`, counts and cell codes only). The default range
+  ends the day before yesterday — yesterday's shift-2 file lands in the
+  afternoon, so its batch is usually still short.
+- Next (not built): read the parity result, then the live feed — see the
+  memory for the operator's seven decisions.
 
 ## Browser login (the second door)
 

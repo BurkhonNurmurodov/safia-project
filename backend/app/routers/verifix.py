@@ -10,6 +10,7 @@ stored and whether it still opens, the PUT keeps it on a blank field, and the
 action register records that it changed and its length — never the value.
 """
 import logging
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routers.admin import verify_admin
-from app.services import action_log, verifix
+from app.services import action_log, verifix, verifix_parity
 
 router = APIRouter(prefix="/api/admin/verifix", tags=["verifix"])
 
@@ -40,6 +41,10 @@ def _state(db: Session) -> dict:
         "host": cfg["host"],
         "default_host": verifix.DEFAULT_HOST,
         "last_test": verifix.last_test(db),
+        "last_parity": verifix_parity.last_parity(db),
+        "parity_default": [d.isoformat() for d in verifix_parity.default_range()],
+        "parity_max": (datetime.now(verifix.TZ).date() - timedelta(days=1)).isoformat(),
+        "parity_max_days": verifix_parity.MAX_DAYS,
     }
 
 
@@ -103,6 +108,40 @@ def test_verifix(db: Session = Depends(get_db), admin: dict = Depends(verify_adm
             details.append((key, steps[key].get(field)))
     # The test itself always RAN — its verdict is a detail, not the outcome
     # (the register's four outcomes are about the request, and this one ended).
+    action_log.enrich(target_kind="setting", target_id="verifix",
+                      target_name="Verifix", details=details)
+    return result
+
+
+class ParityIn(BaseModel):
+    date_from: date
+    date_to: date
+
+
+@router.post("/parity")
+def parity_verifix(body: ParityIn, db: Session = Depends(get_db),
+                   admin: dict = Depends(verify_admin)):
+    """Verifix against the uploaded Excel for a few past days — read-only on
+    both sides; see ``services/verifix_parity``."""
+    d0, d1 = body.date_from, body.date_to
+    yesterday = datetime.now(verifix.TZ).date() - timedelta(days=1)
+    if d0 > d1:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if d1 > yesterday:
+        raise HTTPException(status_code=400, detail="only finished days can be compared")
+    if (d1 - d0).days + 1 > verifix_parity.MAX_DAYS:
+        raise HTTPException(status_code=400,
+                            detail=f"at most {verifix_parity.MAX_DAYS} days at a time")
+    result = verifix_parity.run(db, d0, d1, actor=_who(admin))
+    tot = result.get("totals") or {}
+    hours = result.get("hours") or {}
+    details = [("verdict", result.get("verdict")), ("from", d0.isoformat()),
+               ("to", d1.isoformat())]
+    for key in ("file_came", "api_came", "matched", "same_cell", "clock_same"):
+        if key in tot:
+            details.append((key, tot[key]))
+    if hours:
+        details.append(("hours_exact", f"{hours.get('exact')}/{hours.get('n')}"))
     action_log.enrich(target_kind="setting", target_id="verifix",
                       target_name="Verifix", details=details)
     return result
