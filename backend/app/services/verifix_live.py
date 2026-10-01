@@ -310,11 +310,11 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     else:
         status, t_out = "inside", None
 
-    # Still «inside» an hour after the shift's end with no exit anywhere: Verifix
-    # counts a day only by in→out intervals, so a lone mark is NOT attendance —
-    # its own day view reads «Не пришла» (Sabirdjanova N., 30.09.2026: one mark
-    # at 15:07, nothing after). Not inside, not came: its own status, which is
-    # the missing check-out the brigadir has to sort out.
+    # Still «inside» an hour after the shift's end with no exit anywhere: the
+    # person arrived and never checked out. Not inside any more — its own
+    # status, the missing check-out the brigadir has to sort out. (Verifix
+    # counts a day only by in→out intervals and reads such a day «Не пришла»;
+    # the operator wants the arrival KEPT and the missing exit shown instead.)
     if status in ("inside", "break") and end is not None \
             and now > end + timedelta(minutes=MISSING_AFTER_MIN):
         status = "no_out"
@@ -572,7 +572,9 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
         })
 
     counts = Counter(r["status"] for r in rows)
-    came = sum(1 for r in rows if r["in"] and r["status"] != "no_out")
+    # An arrival without an exit is still an ARRIVAL (the operator's call,
+    # 2026-10-01): it counts as came, and the missing exit is what is flagged.
+    came = sum(1 for r in rows if r["in"])
     inside = counts["inside"] + counts["break"]
     missing = sum(1 for r in rows if r["missing"])
     late = sum(1 for r in rows if r["late"])
