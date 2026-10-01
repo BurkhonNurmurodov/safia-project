@@ -382,6 +382,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/worker-concerns/refresh",              "sync_export", "sync.worker_concerns_refreshed"),
     (("POST",),   "/api/kaizen/refresh",                       "sync_export", "sync.kaizen_refreshed"),
     (("POST",),   "/api/arc/refresh",                          "sync_export", "sync.arc_refreshed"),
+    (("POST",),   "/api/admin/verifix/test",                   "sync_export", "sync.verifix_tested"),
     (("POST",),   "/api/arc/export.xlsx",                      "sync_export", "export.arc"),
     (("POST",),   "/api/arc-legacy/refresh",                   "sync_export", "sync.arc_legacy_refreshed"),
     (("POST",),   "/api/arc-legacy/probe",                     "sync_export", "sync.arc_legacy_probed"),
@@ -419,6 +420,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/admin/translations/languages",         "config", "config.language_added"),
     (("POST",),   "/api/leader-ai/model",                      "config", "config.ai_model_set"),
     (("POST",),   "/api/leader-ai/key",                        "config", "config.ai_key_set"),
+    (("PUT",),    "/api/admin/verifix",                        "config", "config.verifix_saved"),
 
     # ── the danger zone ───────────────────────────────────────────────────────
     (("POST",),   "/admin/db-dump",                            "danger", "danger.db_dumped"),

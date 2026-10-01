@@ -6207,6 +6207,49 @@ day), filled by the 60 s heartbeat `POST /api/activity/ping`.
 - Page key `activity`, admin-only by default. Every figure is derived per
   request; nothing but the heartbeat writes.
 
+## The Verifix connection (`/admin/upload?tab=verifix`)
+
+From **2026-10-01** the admin panel carries the login the platform will read
+attendance from Verifix with — step one of replacing the daily «Davomat» Excel
+upload with Verifix's public API (memory: `verifix-api-integration`). Nothing
+reads it yet except the card's own test, so no figure on the platform moves.
+
+- **Basic auth, a dedicated user** (the operator's pick, 2026-09-30): the API's
+  documented first method, `Authorization: Basic base64(login@company:password)`
+  + `project_code: vhr` + `filial_id` (the organization; REQUIRED for this
+  method) on every call. The docs' OAuth client can only be created from the
+  «Администрирование» organization, which nobody at Safia can open. The user is
+  `safia-ims@safia` with a read-only role of 9 forms, list/get actions only.
+- **The data a call returns is the data THAT USER may see** — the docs say so
+  («доступен пользователю API»), and a brand-new user sees no employees in the
+  UI. The test counts employees separately and names that case
+  (`no_employees`) rather than reporting success.
+- **`services/verifix.py` is THE client** — `config`, `save`, `client`,
+  `call` (POST, `limit`/`cursor` headers, `next_cursor` -1 = done),
+  `each_page`, `run_test`. `routers/verifix.py` is the door: `GET` / `PUT
+  /api/admin/verifix` and `POST /api/admin/verifix/test`. Admin-only and NOT
+  grantable (no `capKey`) — this login reads every employee's attendance.
+- **Stored in `app_settings`, the password SEALED** (`web_auth.seal_password`,
+  the Gemini key's rule): `verifix_login`, `verifix_password`,
+  `verifix_filial_id`, `verifix_host`, `verifix_last_test`. Never returned,
+  never logged, never in the action register (it records that the password
+  changed and its length). Gitea secrets were the first plan; the operator's
+  Gitea account has write but not admin, so it cannot add one.
+- **The host is pinned to `*.verifix.com`** (`norm_host`): it decides where the
+  Basic header — the password — goes, so a free host would turn the test
+  button into a way to post the sealed password anywhere. Redirects are not
+  followed for the same reason. Default `app.verifix.com` (the docs').
+- **The test is COUNTS only** — divisions (and how many of OUR cells' codes
+  Verifix carries as a division `code`, one of the open questions), employees,
+  jobs, schedules, time kinds (listed: the «Отработано» mapping needs their
+  ids), locations, yesterday's «Отчёт по посещениям» rows, today's first page
+  of tracks. No name, passport or phone leaves the function. A 70 s budget plus
+  one 25 s call stays inside Cloudflare's 100 s; a count cut short says so.
+  The last result is stored and shown on the next visit; changing the
+  credential clears it.
+- Next (not built): the parity report against the saved Excel days, then the
+  live feed — see the memory for the operator's seven decisions.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:

@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
-  ClipboardList, CircleSlash, GraduationCap,
+  ClipboardList, CircleSlash, GraduationCap, Fingerprint,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -38,6 +38,7 @@ import LostWorkers from "./LostWorkers";
 import DocAudit from "./DocAudit";
 import Logs from "./Logs";
 import ExamAdmin from "./ExamAdmin";
+import VerifixSettings from "./VerifixSettings";
 
 /**
  * The admin panel shell.
@@ -133,6 +134,11 @@ export const ADMIN_NAV = [
   // Cross-document HR history: rejected-then-approved, posted long after the
   // document's own date, or repeatedly approved/cancelled. Read-only.
   { id: "docaudit",     group: "tools",  Icon: FileClock,      labelKey: "admin.tabDocAudit",     descKey: "admin.desc.docaudit" },
+  // The Verifix API connection: a dedicated read-only login (password sealed
+  // server-side, never shown back) and a connection test that counts what
+  // each form returns. No capKey: this login reads every employee's
+  // attendance, so it is admin-only and never grantable.
+  { id: "verifix",      group: "tools",  Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifix" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
   // on /zagruzka now carries its own colour bands and its own admin button.
@@ -163,6 +169,7 @@ const VIEWS = {
   idleowners:   IdleOwners,
   lostworkers:  LostWorkers,
   docaudit:     DocAudit,
+  verifix:      VerifixSettings,
   translations: TranslationsEditor,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,

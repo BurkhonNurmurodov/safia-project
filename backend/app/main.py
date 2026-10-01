@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -954,6 +954,9 @@ app.include_router(doc_audit.router)
 # The action register — every change on the platform, by category. Admin-only
 # and read-only: there is no delete or purge route anywhere in it.
 app.include_router(logs.router)
+# Verifix connection card — admin-only: the stored login (password sealed)
+# and the read-only connection test (services/verifix.py).
+app.include_router(verifix.router)
 
 
 @app.get("/health")
