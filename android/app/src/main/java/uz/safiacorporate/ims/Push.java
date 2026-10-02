@@ -288,6 +288,69 @@ final class Push {
         });
     }
 
+    /** Rows a person dealt with from the phone are read (the bell agrees). */
+    static void markRead(Context c, long[] ids) {
+        String token = prefs(c).getString("token", "");
+        if (ids == null || ids.length == 0 || token.isEmpty()) return;
+        HttpURLConnection conn = null;
+        try {
+            JSONArray list = new JSONArray();
+            for (long id : ids) list.put(id);
+            conn = open(c, "/api/notifications/read", token);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+            byte[] body = new JSONObject().put("ids", list).toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(body);
+            }
+            conn.getResponseCode();
+        } catch (Exception e) {
+            Log.w(TAG, "could not mark read", e);
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** One decision sent from a notification button: {code, message} — the
+     *  message is the server's own reason when it refused (its «detail»). */
+    static String[] send(Context c, String method, String path, Object body) {
+        String token = prefs(c).getString("token", "");
+        if (token.isEmpty()) return new String[]{"401", ""};
+        HttpURLConnection conn = null;
+        try {
+            conn = open(c, path, token);
+            conn.setRequestMethod(method == null || method.isEmpty() ? "POST" : method.toUpperCase());
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+            String json = body == null || body == JSONObject.NULL ? "{}" : body.toString();
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(json.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) return new String[]{String.valueOf(code), ""};
+            String msg = "";
+            try (InputStream in = conn.getErrorStream()) {
+                if (in != null) {
+                    ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[4096];
+                    int n;
+                    while ((n = in.read(chunk)) > 0 && buf.size() < 64 * 1024) buf.write(chunk, 0, n);
+                    Object d = new JSONObject(buf.toString("UTF-8")).opt("detail");
+                    if (d instanceof String) msg = (String) d;
+                }
+            } catch (Exception ignored) {
+                // No readable reason: the code alone is reported.
+            }
+            return new String[]{String.valueOf(code), msg.isEmpty() ? "HTTP " + code : msg};
+        } catch (Exception e) {
+            Log.w(TAG, "decision not sent", e);
+            return new String[]{"0", String.valueOf(e.getMessage())};
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     /** The bell was opened in the app: the phone's copies have done their job. */
     static void cancelAll(Context c) {
         NotificationManagerCompat.from(c).cancelAll();
@@ -296,8 +359,19 @@ final class Push {
 
     // ─── showing one ────────────────────────────────────────────────────────
 
-    @SuppressLint("MissingPermission") // allowed() was asked; a race is caught below
     private static boolean show(Context c, JSONObject item, String lang) {
+        return render(c, item, lang, PushAction.OFFER, -1, null);
+    }
+
+    /**
+     * Draws one feed line. {@code state} is where its Accept / Reject stands
+     * ({@link PushAction}): OFFER (the buttons), ASK (the in-notification
+     * confirm for {@code act}), BUSY, DONE (+ Undo where the server has one),
+     * UNDONE, FAILED ({@code note} = the server's reason). Redrawing never
+     * buzzes again.
+     */
+    @SuppressLint("MissingPermission") // allowed() was asked; a race is caught below
+    static boolean render(Context c, JSONObject item, String lang, String state, int act, String note) {
         String key = item.optString("key");
         if (key.isEmpty()) return false;
         String category = item.optString("category", "other");
@@ -337,9 +411,51 @@ final class Push {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setPublicVersion(hidden.build());
-        if (!body.isEmpty()) {
-            b.setContentText(body).setStyle(new NotificationCompat.BigTextStyle().bigText(body));
+        JSONArray acts = item.optJSONArray("actions");
+        JSONObject a = acts != null && act >= 0 && act < acts.length() ? acts.optJSONObject(act) : null;
+        String status = null;
+        switch (state) {
+            case PushAction.ASK:
+                if (a != null) {
+                    status = a.optString("ask");
+                    b.addAction(0, a.optString("yes"), PushAction.intent(c, item, lang, PushAction.DO, act));
+                    b.addAction(0, a.optString("cancel"), PushAction.intent(c, item, lang, PushAction.OFFER, -1));
+                }
+                break;
+            case PushAction.BUSY:
+                if (a != null) status = a.optString("busy");
+                break;
+            case PushAction.DONE:
+                if (a != null) {
+                    status = a.optString("done");
+                    JSONObject undo = a.optJSONObject("undo");
+                    if (undo != null) {
+                        b.addAction(0, undo.optString("label"), PushAction.intent(c, item, lang, PushAction.UNDO, act));
+                    }
+                }
+                break;
+            case PushAction.UNDONE:
+                JSONObject undo = a == null ? null : a.optJSONObject("undo");
+                if (undo != null) status = undo.optString("done");
+                break;
+            case PushAction.FAILED:
+                status = (a == null ? "" : a.optString("failed")) + (note == null || note.isEmpty() ? "" : ": " + note);
+                break;
+            default:
+                for (int i = 0; acts != null && i < acts.length() && i < 3; i++) {
+                    JSONObject o = acts.optJSONObject(i);
+                    if (o == null) continue;
+                    String next = o.optBoolean("confirm") ? PushAction.ASK : PushAction.DO;
+                    b.addAction(0, o.optString("label"), PushAction.intent(c, item, lang, next, i));
+                }
+                break;
         }
+        String text = status == null || status.isEmpty() ? body : (body.isEmpty() ? status : status + "\n" + body);
+        if (!text.isEmpty()) {
+            b.setContentText(status == null || status.isEmpty() ? body : status)
+                    .setStyle(new NotificationCompat.BigTextStyle().bigText(text));
+        }
+        if (!PushAction.OFFER.equals(state)) b.setOnlyAlertOnce(true).setAutoCancel(false);
         long ts = item.optLong("ts", 0);
         if (ts > 0) b.setWhen(ts).setShowWhen(true);
         try {

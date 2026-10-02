@@ -89,6 +89,11 @@
 
         <!-- The background check for notifications, run by Android's job
              scheduler about every 15 minutes (Push.schedule). -->
+        <!-- Accept / Reject tapped on a phone notification (Push). -->
+        <receiver
+            android:name=".PushAction"
+            android:exported="false" />
+
         <service
             android:name=".PushJob"
             android:exported="false"

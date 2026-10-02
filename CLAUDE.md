@@ -6191,6 +6191,20 @@ wake it.
   elsewhere (password change, sign-out everywhere) → it stops until the next
   sign-in. Android 13+ is asked for permission ONCE, at the first sign-in after
   install; later only through «Yoqish».
+- **Accept / Reject on the notification itself** (1.6.0, the operator's request
+  2026-10-02). `notification_center._push_decisions` hands each push item about
+  a record the viewer can still decide the queue's OWN inline actions
+  (`notif_queue._hr_docs` / `_edit_requests` / `_edit_batches` — same
+  endpoints, rights and confirm rules as the bell), as `actions` with the words
+  in the reader's language. Those records are kept OUT of the day's fold on the
+  phone (`fold(unfold=…)`; the bell still folds), because one button cannot
+  stand for five documents. `PushAction.java` carries a tap to the endpoint with
+  the app's session; a decision that asks first in the bell asks INSIDE the
+  notification (the buttons turn into «Ha, …» / «Bekor»), then it reads
+  «Yuborilmoqda…» → «✓ Tasdiqlandi» (+ «Qaytarish» where the queue has an undo)
+  or «Bajarilmadi: <the server's reason>». A decided item's rows are marked
+  read. Objections, late proofs, concerns and tasks need words, so they keep
+  only the tap that opens them.
 - A new APK is needed for this — **1.5.1**: 1.5.0 never scheduled the check (its job needs a network, and the manifest lacked `ACCESS_NETWORK_STATE`, so Android threw a SecurityException and nothing ever polled). The server and pages were fine.
 
 ## The action register (`/admin/upload?tab=logs`)
@@ -6901,7 +6915,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.5.3, versionCode 10).
+  **Raise `versionCode` on every release** (current: 1.6.0, versionCode 11).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.

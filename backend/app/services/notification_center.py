@@ -467,13 +467,18 @@ def _row_json(r: Notification, lang: str, unread: bool) -> dict:
     }
 
 
-def fold(rows: list[Notification], lang: str, unread_ids: set[int]) -> list[dict]:
+def fold(rows: list[Notification], lang: str, unread_ids: set[int],
+         unfold: frozenset = frozenset()) -> list[dict]:
     """Rows (newest first) → feed entries (newest first). Three shapes:
 
     * ``group``  — every row of one FOLD key on one Tashkent day, one line;
     * ``thread`` — every row about one subject (a concern's create → comment →
       resolve), shown as its newest row with the count;
     * ``single`` — everything else.
+
+    ``unfold``: subject keys («hr_doc:12») whose rows must stay a thread of
+    their own even when their kind folds — the phone's decision notifications,
+    where one Accept button cannot stand for five documents.
     """
     from app.routers.staff import _NAME_PARAMS
     entries: dict[str, dict] = {}
@@ -481,7 +486,8 @@ def fold(rows: list[Notification], lang: str, unread_ids: set[int]) -> list[dict
     for r in rows:
         day = local_day(r.created_at)
         unread = r.id in unread_ids
-        if r.nkey in FOLD:
+        subj = f"{r.subject_kind}:{r.subject_id}" if r.subject_kind and r.subject_id else None
+        if r.nkey in FOLD and subj not in unfold:
             key = f"g:{r.nkey}:{day}"
         elif r.subject_kind and r.subject_id:
             key = f"t:{r.subject_kind}:{r.subject_id}"
@@ -732,6 +738,78 @@ def _epoch_ms(iso: Optional[str]) -> int:
         return 0
 
 
+# The phone's Accept / Reject (Push.java draws them; the confirm runs INSIDE the
+# notification, since a notification cannot open a dialog). Words per language:
+# uz · uz_cyrl · ru · en.
+_ACT_WORDS = {
+    "approve": ("Tasdiqlash", "Тасдиқлаш", "Одобрить", "Approve"),
+    "reject": ("Rad etish", "Рад этиш", "Отклонить", "Reject"),
+    "ask_approve": ("Tasdiqlansinmi? Buni bu yerdan qaytarib bo'lmaydi.",
+                    "Тасдиқлансинми? Буни бу ердан қайтариб бўлмайди.",
+                    "Одобрить? Отменить это отсюда нельзя.",
+                    "Approve? This cannot be undone from here."),
+    "ask_reject": ("Rad etilsinmi? Rad etilgan so'rovni qaytarib bo'lmaydi.",
+                   "Рад этилсинми? Рад этилган сўровни қайтариб бўлмайди.",
+                   "Отклонить? Отклонённый запрос вернуть нельзя.",
+                   "Reject? A rejected request cannot be brought back."),
+    "yes_approve": ("Ha, tasdiqlash", "Ҳа, тасдиқлаш", "Да, одобрить", "Yes, approve"),
+    "yes_reject": ("Ha, rad etish", "Ҳа, рад этиш", "Да, отклонить", "Yes, reject"),
+    "cancel": ("Bekor", "Бекор", "Отмена", "Cancel"),
+    "done_approve": ("✓ Tasdiqlandi", "✓ Тасдиқланди", "✓ Одобрено", "✓ Approved"),
+    "done_reject": ("✕ Rad etildi", "✕ Рад этилди", "✕ Отклонено", "✕ Rejected"),
+    "undo": ("Qaytarish", "Қайтариш", "Вернуть", "Undo"),
+    "undone": ("Qaytarildi — qaror bekor qilindi", "Қайтарилди — қарор бекор қилинди",
+               "Возвращено — решение отменено", "Undone — the decision was taken back"),
+    "busy": ("Yuborilmoqda…", "Юборилмоқда…", "Отправка…", "Sending…"),
+    "failed": ("Bajarilmadi", "Бажарилмади", "Не выполнено", "Not done"),
+}
+
+
+def _push_decisions(db: Session, payload: dict, lang: str) -> dict[str, list[dict]]:
+    """Subject key → the buttons a phone notification about it carries: the
+    queue's own inline actions (services/notif_queue — the very endpoints,
+    rights and confirm rules the bell uses), for the kinds a notification is
+    written about. Nothing is offered for a record the viewer may not decide,
+    or that somebody has already decided."""
+    from app.services import notif_queue
+    at = _LANG_AT.get(lang, 0)
+    w = {k: v[at] for k, v in _ACT_WORDS.items()}
+    out: dict[str, list[dict]] = {}
+    for source in (notif_queue._hr_docs, notif_queue._edit_requests, notif_queue._edit_batches):
+        try:
+            with db.begin_nested():
+                items = source(db, payload)
+        except Exception:
+            logger.exception("push decisions: %s failed", source.__name__)
+            continue
+        for it in items:
+            acts = []
+            for a in it.get("actions") or []:
+                aid = a["id"]
+                if aid not in ("approve", "reject"):
+                    continue
+                undo = a.get("undo")
+                acts.append({
+                    "id": aid,
+                    "label": w[aid],
+                    "method": a.get("method", "post"),
+                    "url": a["url"],
+                    "body": a.get("body"),
+                    "confirm": bool(a.get("confirm")),
+                    "ask": w["ask_" + aid],
+                    "yes": w["yes_" + aid],
+                    "cancel": w["cancel"],
+                    "done": w["done_" + aid],
+                    "busy": w["busy"],
+                    "failed": w["failed"],
+                    "undo": ({"url": undo["url"], "method": undo.get("method", "post"),
+                              "label": w["undo"], "done": w["undone"]} if undo else None),
+                })
+            if acts:
+                out[it["key"]] = acts
+    return out
+
+
 def push_entries(db: Session, payload: dict, lang: str, after: int) -> dict:
     """{latest, items, active} for one phone poll. ``after`` < 0 asks only for
     ``latest`` — where a phone that has just signed in starts counting, so it
@@ -751,7 +829,8 @@ def push_entries(db: Session, payload: dict, lang: str, after: int) -> dict:
     from app.identity import viewer_profile_key
     off = {c for c, on in prefs_for(db, viewer_profile_key(db, payload), "push").items() if not on}
     rows = [r for r in rows if r.id not in read and category_of(r.nkey) not in off]
-    entries = fold(rows, lang, {r.id for r in rows})
+    decisions = _push_decisions(db, payload, lang)
+    entries = fold(rows, lang, {r.id for r in rows}, frozenset(decisions))
     active = [e["key"] for e in entries]
     floor = max(int(after), seen)
     items = []
@@ -772,6 +851,7 @@ def push_entries(db: Session, payload: dict, lang: str, after: int) -> dict:
             "at": e["at"],
             "ts": _epoch_ms(e["at"]),
             "count": e["count"],
+            "actions": decisions.get(e["key"][2:], []) if e["kind"] == "thread" else [],
         })
     if len(items) > PUSH_MAX_ITEMS:
         rest = items[PUSH_MAX_ITEMS - 1:]
