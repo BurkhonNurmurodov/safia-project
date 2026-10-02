@@ -92,4 +92,57 @@ export function installDomGuard() {
     }
     return nativeInsert.apply(this, arguments);
   };
+
+  guardBody();
+}
+
+/**
+ * The same desync one level up: something on the device takes `<body>` out of
+ * the document (reported 2026-10-02 from a desktop Chrome, a supervisor, five
+ * pages in a row). `document.body` then answers null, and every portal
+ * (`createPortal(…, document.body)` → React #299) and every scroll lock
+ * (`document.body.style` → «reading 'style' of null») throws — while the app
+ * itself, #root included, is still alive inside the detached body.
+ *
+ * So the ORIGINAL body is put back where it belongs, holding everything React
+ * rendered into it: synchronously on the first read that would have answered
+ * null (the getter below — that read is exactly the one about to throw), and
+ * at once when the removal happens (the observer — so the screen comes back
+ * without waiting for a read). A replacement body somebody else inserted is
+ * left alone: `document.body` answers it, which is not null and not ours to
+ * judge.
+ */
+function guardBody() {
+  const orig = typeof document !== "undefined" ? document.body : null;
+  if (!orig) return;
+
+  const heal = () => {
+    const html = document.documentElement;
+    if (!html || orig.parentNode === html) return;
+    try {
+      html.appendChild(orig);
+      report("body");
+    } catch { /* the document is beyond repair; the read below still answers */ }
+  };
+
+  const desc = Object.getOwnPropertyDescriptor(Document.prototype, "body");
+  if (desc && desc.get && desc.configurable) {
+    try {
+      Object.defineProperty(Document.prototype, "body", {
+        ...desc,
+        get() {
+          const b = desc.get.call(this);
+          if (b || this !== document) return b;
+          heal();
+          return desc.get.call(this) || orig;
+        },
+      });
+    } catch { /* a locked prototype: the observer alone still heals */ }
+  }
+
+  try {
+    new MutationObserver(() => {
+      if (!desc?.get?.call(document)) heal();
+    }).observe(document.documentElement, { childList: true });
+  } catch { /* no observer: the getter alone still heals */ }
 }
