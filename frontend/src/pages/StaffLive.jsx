@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, FlaskConical, LogIn, LogOut, UserX, Clock, AlertTriangle, Timer,
-  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info, Loader2,
+  ArrowRightLeft, BadgeCheck, LayoutGrid, Lock, Unlock, Info, Loader2, FileSpreadsheet,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -24,6 +24,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
 
 /**
  * «Verifix to'g'irlash · Jonli» — the LAB copy of /staff (admin-only, from
@@ -505,6 +506,56 @@ export default function StaffLive() {
     ["moved", `${t("staffLive.f.moved")} · ${rows.filter((r) => r.status === "moved_out" || r.moved?.dir === "in").length}`],
   ];
 
+  // Excel: the table exactly as it stands — filter, search, order and the
+  // viewer's alphabet — rendered to text here; the server only lays it out.
+  const [exporting, setExporting] = useState(false);
+  const exportExcel = async () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const headers = ["worker", "role", "cell", "schedule", "in", "late", "out", "earlyOut", "hours", "status", "note"]
+        .map((k) => t(`staffLive.x.${k}`));
+      const xrows = shown.map((r) => [
+        tl(r.name),
+        tx(r.role) || "",
+        r.cell || "",
+        r.begin && r.end ? `${r.begin}–${r.end}` : tx(r.schedule) || "",
+        r.in || "",
+        r.late || "",
+        r.out || (r.status === "inside" || r.status === "break" ? t("staffLive.stillInside") : ""),
+        r.early_out || "",
+        r.hours != null ? Math.round(r.hours * 100) / 100 : "",
+        t(`staffLive.st.${r.status}`),
+        [
+          r.missing ? t("staffLive.missing") : "",
+          r.moved ? fill(t(r.moved.dir === "out" ? "staffLive.movedOut" : "staffLive.movedIn"),
+            { unit: tl(r.moved.unit || "—"), t: r.moved.at }) : "",
+          r.pending?.length ? fill(t("staffLive.pending"), { n: r.pending.length }) : "",
+          r.so_far && r.hours != null ? t("staffLive.x.soFar") : "",
+        ].filter(Boolean).join("; "),
+      ]);
+      const filterLabel = (filters.find(([v]) => v === filter) || [, ""])[1];
+      const via = await exportXlsx("/api/staff-live/export.xlsx", {
+        body: {
+          title: fill(t("staffLive.tableTitle"), { unit: tl(data.unit.name) }),
+          subtitle: [data.day, filterLabel, search.trim() ? `«${search.trim()}»` : "",
+            fill(t("staffLive.updated"), { time: (data.pulled_at || "").slice(11, 16) })].filter(Boolean).join(" · "),
+          headers,
+          numeric: [5, 7, 8],
+          rows: xrows,
+          filename: `verifix_live_${data.day}.xlsx`,
+        },
+        fallbackName: `verifix_live_${data.day}.xlsx`,
+      });
+      toast(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"), "success");
+    } catch (e) {
+      toast(`${t("staffLive.x.failed")}: ${e?.response?.data?.detail || e?.message || ""}`, "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+
   const toolbar = (
     <div className="flex items-center gap-2 flex-wrap">
       <SupervisorSelect value={unitId} onChange={(v) => { setUnitId(v); setDay(null); }} supervisors={supervisors} />
@@ -597,6 +648,12 @@ export default function StaffLive() {
                       <SegmentedToggle value={filter} onChange={setFilter} options={filters} />
                       <SearchInput value={search} onChange={setSearch} placeholder={t("staffLive.search")}
                         className="w-full sm:w-56 sm:ml-auto" />
+                      <Button size="lg" variant="secondary" loading={exporting}
+                        disabled={shown.length === 0}
+                        icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+                        onClick={exportExcel} title={t("staffLive.x.export")} aria-label={t("staffLive.x.export")}>
+                        <span className="hidden sm:inline">{t("staffLive.x.export")}</span>
+                      </Button>
                     </div>
                   )}
                   footer={(

@@ -386,6 +386,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/arc/refresh",                          "sync_export", "sync.arc_refreshed"),
     (("POST",),   "/api/admin/verifix/test",                   "sync_export", "sync.verifix_tested"),
     (("POST",),   "/api/admin/verifix/parity",                 "sync_export", "sync.verifix_parity"),
+    (("POST",),   "/api/staff-live/export.xlsx",               "sync_export", "export.staff_live"),
     (("POST",),   "/api/staff-live/events/{}/decide",          "attendance", "lab.live_event_decided"),
     (("POST",),   "/api/staff-live/events",                    "attendance", "lab.live_event_created"),
     (("DELETE",), "/api/staff-live/events/{}",                 "attendance", "lab.live_event_deleted"),

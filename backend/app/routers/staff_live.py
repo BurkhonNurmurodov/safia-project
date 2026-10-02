@@ -14,7 +14,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app.database import get_db
 from app.models import LiveDayClose, LiveStaffEvent, Manager
 from app.routers.admin import verify_admin
 from app.services import action_log, verifix_live
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/staff-live", tags=["staff-live"])
 
@@ -188,3 +189,75 @@ def reopen_day(manager_id: int, day: date, db: Session = Depends(get_db),
     action_log.enrich(target_kind="unit", target_id=str(unit.id), target_name=unit.name,
                       unit_id=unit.id, unit_name=unit.name, day=day)
     return {"ok": True}
+
+
+# ── Excel ────────────────────────────────────────────────────────────────────
+class ExportIn(BaseModel):
+    """The table as it stands on screen — filter, search and order applied, in
+    the viewer's language and alphabet. A lab page: the rows are the page's own
+    payload rendered to text, so the file is exactly what the reader pressed
+    Export on."""
+    title: str = Field("", max_length=300)
+    subtitle: str = Field("", max_length=600)
+    headers: list[str] = Field(..., max_length=30)
+    numeric: list[int] = Field(default_factory=list, max_length=30)
+    rows: list[list[Optional[str | float | int]]] = Field(..., max_length=5000)
+    filename: str = Field("verifix_live.xlsx", max_length=120)
+
+
+@router.post("/export.xlsx")
+def export_xlsx(body: ExportIn, request: Request, admin: dict = Depends(verify_admin)):
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Xodimlar"
+    ws.sheet_view.showGridLines = False
+    ncol = max(len(body.headers), 1)
+    ws.cell(row=1, column=1, value=body.title).font = Font(bold=True, size=14)
+    ws.cell(row=2, column=1, value=body.subtitle).font = Font(size=10, color="64748B")
+    hrow = 4
+    fill = PatternFill("solid", fgColor="C8973F")
+    for i, h in enumerate(body.headers, 1):
+        c = ws.cell(row=hrow, column=i, value=h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = fill
+        c.alignment = Alignment(vertical="center", wrap_text=True)
+    zebra = PatternFill("solid", fgColor="F8FAFC")
+    numeric = set(body.numeric)
+    widths = [len(h or "") for h in body.headers]
+    for r_i, row in enumerate(body.rows, hrow + 1):
+        for c_i, v in enumerate(row[:ncol], 1):
+            if (c_i - 1) in numeric and isinstance(v, str):
+                try:
+                    v = float(v.replace(",", "."))
+                except ValueError:
+                    pass
+            cell = ws.cell(row=r_i, column=c_i, value=v if v != "" else None)
+            if isinstance(v, float):
+                cell.number_format = "0.0"
+            if (r_i - hrow) % 2 == 0:
+                cell.fill = zebra
+            widths[c_i - 1] = max(widths[c_i - 1], len(str(v)) if v is not None else 0)
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = min(max(w + 2, 8), 60)
+    ws.freeze_panes = ws.cell(row=hrow + 1, column=2)
+    if body.rows:
+        ws.auto_filter.ref = f"A{hrow}:{get_column_letter(ncol)}{hrow + len(body.rows)}"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    bio = BytesIO()
+    wb.save(bio)
+    blob = bio.getvalue()
+    fname = re.sub(r"[\\/:*?\"<>|]+", "_", body.filename) or "verifix_live.xlsx"
+    if not fname.lower().endswith(".xlsx"):
+        fname += ".xlsx"
+    resp = deliver_xlsx(request, admin, fname, blob, f"📊 {body.title}")
+    action_log.enrich(target_kind="report", target_id=fname,
+                      details=[("file", fname), ("rows", len(body.rows)), ("size", len(blob))])
+    return resp
