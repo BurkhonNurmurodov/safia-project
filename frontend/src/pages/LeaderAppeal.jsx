@@ -552,6 +552,16 @@ function AppealView({ thread, path, id, onCompact }) {
     enabled: !!data?.canMention,
     staleTime: 5 * 60 * 1000,
   });
+  // WHEN the ФАКТ behind a failed #9 was typed — its own request, asked once:
+  // it builds production pages, which the 30-second thread poll must not pay
+  // for. `null` for an objection to anything else, so nothing is drawn there.
+  const { data: timing } = useQuery({
+    queryKey: ["appeal-auto-timing", String(id)],
+    queryFn: () => api.get(`/api/leaders/disputes/${id}/auto-timing`).then((r) => r.data?.timing),
+    enabled: !late && !!data?.item?.auto && !data?.item?.verdict,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
   const mentionNames = useMemo(() => (data?.item ? [
     data.item.leader, data.item.supervisor, ...(data.members || []).map((m) => m.name),
   ].filter(Boolean) : []), [data]);
@@ -722,7 +732,7 @@ function AppealView({ thread, path, id, onCompact }) {
               {/* An objection to an AUTOMATIC check carries no AI verdict —
                   what it argues with is the check's own sentinel. */}
               <VerdictBlock rev={item.verdict} autoReason={item.auto?.reason}
-                autoFacts={item.auto?.facts} title={T.aiTitle} />
+                autoFacts={item.auto?.facts} autoTiming={timing} title={T.aiTitle} />
             </>
           )}
         </div>

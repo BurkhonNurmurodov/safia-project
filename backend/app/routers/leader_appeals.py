@@ -210,6 +210,18 @@ def dispute_thread(rid: int, db: Session = Depends(get_db),
     return _thread(db, payload, chat.DISPUTE, rid)
 
 
+@router.get("/leaders/disputes/{rid}/auto-timing")
+def dispute_auto_timing(rid: int, db: Session = Depends(get_db),
+                        payload: dict = Depends(require_auth)):
+    """WHEN the ФАКТ behind a failed #9 was typed (`services/auto_check_timing`).
+    Its own door, asked once by the page: it builds a production page per work
+    centre, which the 30-second thread poll must never pay for. Scoped exactly
+    as the thread is; `null` for an objection to anything but #9."""
+    row = _readable(db, payload, chat.DISPUTE, rid)
+    from app.services import auto_check_timing
+    return {"timing": auto_check_timing.for_dispute(db, row)}
+
+
 @router.get("/leaders/late-proofs/{rid}/thread")
 def late_thread(rid: int, db: Session = Depends(get_db),
                 payload: dict = Depends(require_auth)):
