@@ -3017,7 +3017,8 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
         facts = leader_auto.results_for(db, [entry.id]).get(entry.id)
     # What the check READ at its hour — the numbers the verdict was taken on,
     # off the ledger and never re-measured (`leader_auto.result_lines`).
-    for line in leader_auto.result_lines(facts, lang):
+    # The leader's own screen: never the pass mark (`leader_auto.hides_target`).
+    for line in leader_auto.result_lines(facts, lang, show_target=False):
         text += f"\n• {line}"
     db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
     db.commit()

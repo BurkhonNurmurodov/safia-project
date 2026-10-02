@@ -1,4 +1,5 @@
-"""WHEN the ФАКТ behind a task-#9 verdict was typed — shown on the objection.
+"""WHEN the ФАКТ behind a task-#9 verdict was typed — and the concerns behind
+a #8 one written — shown on the objection.
 
 Task #9 (`leader_auto`, `plan_pct`) fails a leader whose «Bajarish %» is under
 the target at the check hour. The objection almost always says the same thing
@@ -30,13 +31,14 @@ from datetime import date as _date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import (
-    ActionLog, Cell, LeaderAiDispute, LeaderAutoCheck, Manager, PPDaily,
-    PPLineDaily, PPManagerSetting, RoleProfile,
+    ActionLog, Cell, LeaderAiDispute, LeaderAutoCheck, LeaderConcern, Manager,
+    PPDaily, PPLineDaily, PPManagerSetting, RoleProfile,
 )
 from app.services import cell_lookup, latin_code, leader_auto, leader_dispute
 
 TZ = leader_auto.TASHKENT
 CHECK = "plan_pct"
+CONCERNS = "concerns"
 
 
 # ── small helpers ────────────────────────────────────────────────────────────
@@ -253,7 +255,11 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
     if e is None:
         return None
     row = db.query(LeaderAutoCheck).filter_by(entry_id=e.id).first()
-    if row is None or row.check != CHECK or row.outcome != leader_auto.FAILED:
+    if row is None or row.outcome != leader_auto.FAILED:
+        return None
+    if row.check == CONCERNS:
+        return _concerns(db, row)
+    if row.check != CHECK:
         return None
     prof = db.query(RoleProfile).filter_by(id=row.leader_id).first()
     m = db.query(Manager).filter_by(id=row.manager_id).first()
@@ -273,7 +279,7 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
         if plan > 0:
             pages[c] = (rows, plan, fact)
     if not pages:
-        return {**out, "verdict": "no_plan", "events": []}
+        return {**out, "check": CHECK, "verdict": "no_plan", "events": []}
     u = _Unit(db, mid, row.date)
 
     def pct_at(t):
@@ -302,10 +308,70 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
         verdict = "late"
     else:
         verdict = "unexplained"
-    return {**out, "verdict": verdict, "hour_pct": round(hour_pct, 1),
+    return {**out, "check": CHECK, "verdict": verdict, "hour_pct": round(hour_pct, 1),
             "now_pct": round(now_pct, 1), "reached": _iso(reached),
             "late_min": (int((reached - due).total_seconds() // 60)
                          if reached is not None and reached > due else None),
             "events": events,
             "other_days": [] if mine else _other_days(db, mid, row.date, set(pages),
                                                        f"leader:{prof.id}")}
+
+
+# ── #8: when the concerns were written ──────────────────────────────────────
+
+def _concerns(db: Session, row: LeaderAutoCheck) -> dict | None:
+    """Every concern that would have counted for #8 — the check's OWN filter
+    (`leader_auto._check_concerns`: written by the leader, or filed by a worker
+    against one of their cells) — from 00:00 of the checklist day to a day after
+    the hour, each with WHEN it was created. `created_at` cannot move, so an
+    «on time» here is exact, not a floor. The day before is asked too, for the
+    concern written on the wrong day."""
+    from sqlalchemy import and_, or_
+    due = _aware(row.due_at) or _aware(row.checked_at)
+    if due is None:
+        return None
+    start = leader_auto._day_start(row.date)
+    if row.cell_id:
+        c = db.query(Cell).filter_by(id=row.cell_id).first()
+        codes = [c.verifix_code] if c is not None and c.verifix_code else []
+    else:
+        codes = [x for (x,) in db.query(Cell.verifix_code).filter(
+            Cell.leader_id == row.leader_id, Cell.verifix_code.isnot(None)).all()]
+    mine = and_(LeaderConcern.worker_name.is_(None),
+                LeaderConcern.owner_role == "leader",
+                LeaderConcern.owner_profile_id == row.leader_id)
+    by_worker = (and_(LeaderConcern.worker_name.isnot(None),
+                      LeaderConcern.cell_code.in_(codes)) if codes else None)
+    who = mine if by_worker is None else or_(mine, by_worker)
+    rows = (db.query(LeaderConcern)
+            .filter(who, LeaderConcern.created_at >= start - timedelta(days=1),
+                    LeaderConcern.created_at < due + timedelta(days=1))
+            .order_by(LeaderConcern.created_at, LeaderConcern.id).all())
+    events, before_day = [], []
+    for c in rows:
+        at = _aware(c.created_at)
+        if at < start:
+            before_day.append(c)
+            continue
+        text = " ".join(str(c.concern_text or "").split())
+        events.append({"kind": "concern", "at": _iso(at), "after": at >= due,
+                       "worker": bool(c.worker_name), "cell": c.cell_code,
+                       "position": text[:90] + ("…" if len(text) > 90 else ""),
+                       "seq": c.seq or c.id})
+    first = next((e for e in events if e["after"]), None)
+    if any(not e["after"] for e in events):
+        verdict = "on_time"
+    elif first is not None:
+        verdict = "late"
+    else:
+        verdict = "never"
+    late_min = None
+    if verdict == "late":
+        late_min = int((datetime.fromisoformat(first["at"]) - due).total_seconds() // 60)
+    return {"check": CONCERNS, "date": row.date, "due": _iso(due), "verdict": verdict,
+            "found": sum(1 for e in events if not e["after"]),
+            "reached": first["at"] if first else None, "late_min": late_min,
+            "events": events,
+            "other_days": ([{"day": _aware(before_day[-1].created_at).astimezone(TZ)
+                             .date().isoformat(), "at": _iso(before_day[-1].created_at)}]
+                           if before_day and not events else [])}

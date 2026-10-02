@@ -3236,6 +3236,28 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   carry one fixed sentence for four viewers. `utils/leaderReason.js#showReason`
   is the client twin and must expand it, or it prints the sentinel at an
   operator verbatim — exactly what `__missed__` did on 2026-08-27.
+- **An objection to a failed #9 or #8 says WHEN the leader acted**
+  (2026-10-02, the operator — «I entered it on time» had become the commonest
+  objection). `services/auto_check_timing.py` → `GET
+  /api/leaders/disputes/{id}/auto-timing`, asked once by the appeal page (never
+  inside the 30-second thread poll) and drawn by `components/leaders/AutoTiming.jsx`
+  under the verdict: ONE sentence (on time · late by N min · never), for #9 one
+  line «at the hour X% · now Y%», and the saves behind a collapsed list. #9 is
+  REBUILT from the action register's timestamped ФАКТ saves and SAP uploads —
+  a FLOOR (only proven saves count), so «on time» is evidence; #8 reads each
+  concern's `created_at` under the check's own filter, exact. A save by someone
+  other than the leader names them, so a brigadir's next-morning figure is never
+  read as the leader's.
+- **A LEADER never reads a check's pass mark** (the operator, 2026-10-02 — the
+  standing «a minimum printed becomes the target» rule, now reaching results
+  too). `leader_auto.hides_target(payload)` + `hide_targets(obj)` strip
+  `target` from every `facts` / `auto_facts` / `autoFacts` a leader is served —
+  `/api/leaders`, the day report, the objection list and thread, every
+  checklist view (`leader_checklist._view`) and the auto-timing answer, which
+  also drops the % after each save. `result_lines(show_target=False)` on the
+  leader's bot screen and `_facts_line` (the verdict DM) print the figure alone,
+  and `utils/autoResult.js` prints «Bajarilishi: X%» with no «(kerak …)» when
+  `target` is absent. Brigadirs and admins keep it.
 - **Wherever an auto task's reason is printed, its RESULT is printed under it**
   (2026-09-30, the operator's directive) — what the check READ at its hour,
   off the ledger row and never re-measured: positions with a plan, the cells

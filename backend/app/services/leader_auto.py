@@ -756,9 +756,11 @@ def _facts_line(v: Verdict) -> str:
     if "pct" in f:
         # Several work centres: the one that decided, named — the combined
         # figure is not what a one-cell verdict was taken on.
+        # The LEADER reads this DM: their figure only, never the pass mark
+        # (`hides_target`).
         if len(f.get("by_cell") or []) > 1 and f.get("best"):
-            return f"{f['best']}: {f.get('best_pct')}% / {f.get('target')}%"
-        return f"{f['pct']}% / {f.get('target')}%"
+            return f"{f['best']}: {f.get('best_pct')}%"
+        return f"{f['pct']}%"
     if v.code == "no_staffing" and f.get("untyped"):
         return ", ".join(str(x) for x in f["untyped"][:6])
     if "found" in f:
@@ -978,9 +980,37 @@ def results_for(db: Session, entry_ids) -> dict[int, dict]:
     return out
 
 
-def result_lines(facts: dict | None, lang: str = "uz") -> list[str]:
+_FACT_KEYS = ("facts", "auto_facts", "autoFacts")
+
+
+def hides_target(payload: dict | None) -> bool:
+    """A LEADER is never told a check's pass mark (the operator, 2026-10-02 —
+    the standing rule: a minimum printed as the instruction becomes the
+    target). Every other reader rules on it and keeps it."""
+    return (payload or {}).get("role") == "leader"
+
+
+def hide_targets(obj):
+    """`obj` with the pass mark taken out of every stored check result in it —
+    the `facts` / `auto_facts` / `autoFacts` dicts any payload carries, at any
+    depth. In place, and returned, so a router can wrap its whole answer in
+    one call."""
+    if isinstance(obj, list):
+        for x in obj:
+            hide_targets(x)
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in _FACT_KEYS and isinstance(v, dict):
+                v.pop("target", None)
+            hide_targets(v)
+    return obj
+
+
+def result_lines(facts: dict | None, lang: str = "uz",
+                 show_target: bool = True) -> list[str]:
     """The result as plain lines in one language — for the bot and its cards.
-    The client twin is `utils/autoResult.js`; keep the two saying the same."""
+    The client twin is `utils/autoResult.js`; keep the two saying the same.
+    `show_target=False` on a leader's own screen (`hides_target`)."""
     f = facts or {}
     L = _RESULT_TEXT.get(lang) or _RESULT_TEXT["uz"]
     out: list[str] = []
@@ -993,15 +1023,21 @@ def result_lines(facts: dict | None, lang: str = "uz") -> list[str]:
     cells = [c for c in (f.get("by_cell") or []) if isinstance(c, dict)]
     if cells:
         parts = " · ".join(f"{c.get('cell')} — {_pct(c.get('pct'))}%" for c in cells[:6])
-        out.append(L["pct"].format(v=parts, target=_pct(f.get("target"))))
+        out.append(_pct_line(L, parts, f, show_target))
     elif f.get("pct") is not None:
-        out.append(L["pct"].format(v=f"{_pct(f['pct'])}%", target=_pct(f.get("target"))))
+        out.append(_pct_line(L, f"{_pct(f['pct'])}%", f, show_target))
     if f.get("found") is not None:
         out.append(L["concerns"].format(n=f["found"], frm=f.get("from") or "—",
                                         to=f.get("to") or "—"))
     if f.get("late_by_min"):
         out.append(L["late"].format(n=f["late_by_min"]))
     return out
+
+
+def _pct_line(L: dict, v: str, f: dict, show_target: bool) -> str:
+    if show_target and f.get("target") is not None:
+        return L["pct"].format(v=v, target=_pct(f.get("target")))
+    return L["pct_bare"].format(v=v)
 
 
 def _pct(v) -> str:
@@ -1017,24 +1053,28 @@ _RESULT_TEXT = {
            "filled": "Reja va odamlar kiritilgan yacheykalar: {codes}",
            "untyped": "Odamlar soni kiritilmagan: {codes}",
            "pct": "Bajarilishi: {v} (kerak: {target}%)",
+           "pct_bare": "Bajarilishi: {v}",
            "concerns": "Yozilgan xavotirlar: {n} ta ({frm} – {to})",
            "late": "Tekshiruv {n} daqiqa kechikib o'tkazilgan"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
                 "untyped": "Одамлар сони киритилмаган: {codes}",
                 "pct": "Бажарилиши: {v} (керак: {target}%)",
+                "pct_bare": "Бажарилиши: {v}",
                 "concerns": "Ёзилган хавотирлар: {n} та ({frm} – {to})",
                 "late": "Текширув {n} дақиқа кечикиб ўтказилган"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
            "untyped": "Не внесено количество людей: {codes}",
            "pct": "Выполнение: {v} (нужно: {target}%)",
+           "pct_bare": "Выполнение: {v}",
            "concerns": "Записано обеспокоенностей: {n} ({frm} – {to})",
            "late": "Проверка прошла с опозданием на {n} мин"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
            "untyped": "Headcount missing: {codes}",
            "pct": "Fulfilment: {v} (needed: {target}%)",
+           "pct_bare": "Fulfilment: {v}",
            "concerns": "Concerns written: {n} ({frm} – {to})",
            "late": "The check ran {n} min late"},
 }
