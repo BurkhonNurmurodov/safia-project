@@ -618,6 +618,8 @@ def _warm_import_app() -> None:
 # hash + freshness), enforced app-wide. /admin/* API routes are guarded per
 # router below (so SPA navigations to /admin/* aren't mistaken for API calls).
 app = FastAPI(title="Zagruzka KPI API", version=APP_VERSION, lifespan=lifespan,
+              docs_url=None if cfg.is_production else "/docs", redoc_url=None,
+              openapi_url=None if cfg.is_production else "/openapi.json",
               dependencies=[Depends(enforce_telegram_origin_global)])
 
 
@@ -636,14 +638,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # one origin, so CORS isn't even exercised there; this allowlist exists for local
 # dev (Vite on :5173 → backend) and to make "*" impossible. A wildcard combined
 # with credentials would let any website drive the API in a victim's browser.
-_CORS_ORIGINS = sorted({
-    o for o in (
-        cfg.webapp_url, cfg.backend_url,
-        "https://production.safiacorporate.uz",
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:8000", "http://localhost:8001",
-    ) if o
-})
+_CORS_ORIGINS = cfg.cors_origin_list
 
 app.add_middleware(
     CORSMiddleware,

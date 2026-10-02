@@ -1,0 +1,5 @@
+# Production security release
+
+Production defaults require a strong `SECRET_KEY`, disabled development authentication, a positive Telegram initData age, and explicit HTTPS CORS origins. Use `ENVIRONMENT=development` only for a local checkout. Public API explorers are disabled in production.
+
+JWT signing and stored credentials now support independent keys. Before rotating JWT `SECRET_KEY`, take a private configuration/database backup outside the web root. Configure a new `DATA_ENCRYPTION_KEY` and temporarily put the previous encryption root in `LEGACY_DATA_ENCRYPTION_KEY`; preserve the previously registered Telegram webhook secret explicitly. After the new code starts, run `PYTHONPATH=. .venv/bin/python ../deploy/rotate-encryption-key.py` from `backend/`. This locks only encrypted credential/settings rows, validates every original and replacement, and commits one transaction. Remove the legacy encryption key after success, restart, and verify service health. Keep the previous configuration/database backups private for the rollback window. Never print or commit key values.

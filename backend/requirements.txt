@@ -1,12 +1,13 @@
-fastapi==0.115.5
+fastapi==0.141.1
+starlette==1.7.0
 uvicorn[standard]==0.32.1
 sqlalchemy==2.0.36
 alembic==1.14.0
 psycopg2-binary==2.9.10
 pydantic==2.10.3
 pydantic-settings==2.6.1
-python-multipart==0.0.20
-PyJWT==2.9.0
+python-multipart==0.0.32
+PyJWT==2.15.1
 passlib[bcrypt]==1.7.4
 pandas==2.2.3
 openpyxl==3.1.5
@@ -16,10 +17,10 @@ python-pptx==1.0.2
 gspread==6.1.4
 google-auth==2.36.0
 httpx==0.28.1
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 pyTelegramBotAPI==4.25.0
 # Image rendering for the bot's /ojidaniya dashboard card.
-Pillow==11.0.0
+Pillow==12.3.0
 # Background/scheduled jobs. Runs IN-PROCESS inside the uvicorn worker — viable
 # only since prod moved to systemd (Passenger killed processes in seconds).
 # Jobs persist in the existing Postgres via SQLAlchemyJobStore, so no broker and
