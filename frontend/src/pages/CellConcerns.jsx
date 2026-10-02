@@ -118,7 +118,10 @@ export default function CellConcerns() {
   const [fSt, setFSt] = usePersistentState("cellConcerns.st", "");
   const [q, setQ] = useState("");
 
-  const { data: meta } = useQuery({
+  const {
+    data: meta, isLoading: metaLoading, isError: metaError,
+    isFetching: metaFetching, refetch: refetchMeta,
+  } = useQuery({
     queryKey: ["cell-concerns", "meta"],
     queryFn: () => api.get("/api/cell-concerns/meta").then((r) => r.data),
   });
@@ -236,6 +239,8 @@ export default function CellConcerns() {
         {tab === "write" && (
           <WriteTab
             cells={cells} t={t}
+            loading={metaLoading} failed={metaError && !meta}
+            retrying={metaFetching} onRetry={() => refetchMeta()}
             onFiled={(row) => { refresh(); show(tp(t, "cellConcerns.filed", { no: row.seq }), "success"); }}
             onError={(msg) => show(msg, "error")}
           />
@@ -283,7 +288,7 @@ export default function CellConcerns() {
 
 /* ── Tab 1 · the worker's form ─────────────────────────────────────────── */
 
-function WriteTab({ cells, t, onFiled, onError }) {
+function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onError }) {
   const only = cells.length === 1 ? cells[0].code : "";
   const [cell, setCell] = useState(only);
   const [name, setName] = useState("");
@@ -360,6 +365,28 @@ function WriteTab({ cells, t, onFiled, onError }) {
           {tp(t, "cellConcerns.done.countdown", { n: left })}
         </div>
       </div>
+    );
+  }
+
+  // «No cell assigned» is a statement about the registry, so it is printed only
+  // for an ANSWER with no cells — never while the answer is on its way, and
+  // never for a request that failed. Both used to print it, which sends the
+  // reader to an admin to assign a cell that is already assigned.
+  if (loading) return <SkeletonBlock className="max-w-2xl mx-auto h-80" />;
+
+  if (failed) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title={t("common.loadFailed")}
+        message={t("cellConcerns.metaFailed")}
+        showUploadLink={false}
+        action={
+          <Button variant="secondary" onClick={onRetry} loading={retrying}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
     );
   }
 

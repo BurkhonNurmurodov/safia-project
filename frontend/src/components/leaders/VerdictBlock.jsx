@@ -3,6 +3,7 @@ import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
 import { hexA, pick } from "./DayReportView";
+import AutoTiming from "./AutoTiming";
 
 /**
  * What judged a task, and what it said — the verdict an objection argues with.
@@ -20,6 +21,7 @@ import { hexA, pick } from "./DayReportView";
  *   rev        — the AI verdict (`review` on the report / `verdict` on a card)
  *   autoReason — the `__auto__|HH:MM|code` sentinel of an automatic task
  *   autoFacts  — the check's stored facts at the hour (`utils/autoResult.js`)
+ *   autoTiming — WHEN the ФАКТ behind a failed #9 was typed (`AutoTiming.jsx`)
  *   title      — overrides the AI heading (the chat says "why it was rejected")
  */
 
@@ -92,7 +94,7 @@ const T_ALL = {
   },
 };
 
-export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
+export default function VerdictBlock({ rev, autoReason, autoFacts, autoTiming, title }) {
   const { lang } = useLang();
   const T = T_ALL[lang] || T_ALL.ru;
 
@@ -116,6 +118,7 @@ export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
             {line}
           </p>
         ))}
+        {autoTiming && <AutoTiming timing={autoTiming} />}
       </div>
     );
   }

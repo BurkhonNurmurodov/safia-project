@@ -2497,6 +2497,27 @@ number.
   stays `running` between chained passes, so the strip does not blink through
   `idle` mid-drain. **Consequence to know: a large queue now finishes far
   faster and reaches the daily Gemini cap sooner.**
+- **The drain lock lives on a CONNECTION of its own** (`_claim_db_lock` /
+  `_release_db_lock`, 2026-10-02). It was taken on the drain's Session, and a
+  Session hands its connection back to the pool at every commit (`_beat`
+  commits right after the claim), so the unlock ran on another pooled
+  connection, answered false, and the lock stayed held: later kicks were
+  refused «locked» until pool_recycle closed that connection — measured
+  locally, one ordinary pass left it held and half the next kicks were
+  refused. Never take a session-level advisory lock on a Session again; the
+  backfill CLI uses the same pair.
+- **A stalled reviewer tells the admins** (`watch_stall`, job
+  `leader-ai-watch`, every 20 min, armed with or without a key). Proofs waiting
+  `STALL_AFTER_MIN` (60) with no verdict written in as long are a stall; the
+  support chat / every admin gets ONE DM naming the queue, the last verdict,
+  the model, the reason (no key · quota · API rejecting every call · crash ·
+  refused · silent · nothing started it) and Google's own words — again only
+  when the reason changes or after `STALL_REPEAT_H` (6 h), and one «yana
+  ishlayapti» when verdicts flow again (`leader_ai_stall_alert` holds the
+  state). Rows that merely gave up count only beside a failure the drain itself
+  reports, so one unfetchable photo cannot raise it on a quiet night. Born of
+  2 Oct 2026, when the plant learned from AI Studio's spend page that nothing
+  had been checked all day. It only REPORTS — the drain timer moves the queue.
 - **The two RECURRING passes use a rolling window, not the fixed floor** —
   `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
   a pass bounded only by it re-reads every automatic day ever filed; both of
@@ -3236,6 +3257,28 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   carry one fixed sentence for four viewers. `utils/leaderReason.js#showReason`
   is the client twin and must expand it, or it prints the sentinel at an
   operator verbatim — exactly what `__missed__` did on 2026-08-27.
+- **An objection to a failed #9 or #8 says WHEN the leader acted**
+  (2026-10-02, the operator — «I entered it on time» had become the commonest
+  objection). `services/auto_check_timing.py` → `GET
+  /api/leaders/disputes/{id}/auto-timing`, asked once by the appeal page (never
+  inside the 30-second thread poll) and drawn by `components/leaders/AutoTiming.jsx`
+  under the verdict: ONE sentence (on time · late by N min · never), for #9 one
+  line «at the hour X% · now Y%», and the saves behind a collapsed list. #9 is
+  REBUILT from the action register's timestamped ФАКТ saves and SAP uploads —
+  a FLOOR (only proven saves count), so «on time» is evidence; #8 reads each
+  concern's `created_at` under the check's own filter, exact. A save by someone
+  other than the leader names them, so a brigadir's next-morning figure is never
+  read as the leader's.
+- **A LEADER never reads a check's pass mark** (the operator, 2026-10-02 — the
+  standing «a minimum printed becomes the target» rule, now reaching results
+  too). `leader_auto.hides_target(payload)` + `hide_targets(obj)` strip
+  `target` from every `facts` / `auto_facts` / `autoFacts` a leader is served —
+  `/api/leaders`, the day report, the objection list and thread, every
+  checklist view (`leader_checklist._view`) and the auto-timing answer, which
+  also drops the % after each save. `result_lines(show_target=False)` on the
+  leader's bot screen and `_facts_line` (the verdict DM) print the figure alone,
+  and `utils/autoResult.js` prints «Bajarilishi: X%» with no «(kerak …)» when
+  `target` is absent. Brigadirs and admins keep it.
 - **Wherever an auto task's reason is printed, its RESULT is printed under it**
   (2026-09-30, the operator's directive) — what the check READ at its hour,
   off the ledger row and never re-measured: positions with a plan, the cells
@@ -6553,6 +6596,25 @@ re-verifies it on every request. The second is a username + password at
 - **`token_version` is the revocation handle.** Bump it to end every browser
   session for a profile (password change, reset, disable, rename, admin
   "sign out everywhere"). Telegram sessions never carry it.
+- **A token whose identity went stale is RE-ISSUED on the next page load**
+  (2026-10-02). Every API call is answered from the claims INSIDE the token
+  (`role_id`, `role_ref`, `full_name`, `sub`), and renaming a leader or moving
+  them to another unit rewrites the profile and its registration rows — never
+  a token already issued. `/api/auth/web/session` re-derived only the PAYLOAD,
+  so the header showed the new name while every page asked as the person at
+  sign-in, for up to 30 days: a renamed leader's cell PC read «Sizga yacheyka
+  biriktirilmagan» over an assigned cell, and an admin's «open as» (a fresh
+  token) could not reproduce it. Now `/session` compares the token with
+  `session_identity` (`web_auth.stale_claims`) and, when they differ, returns
+  `token` from `web_auth.reissue_web_jwt` — the current identity with the old
+  token's `exp`, `app`/`iat` and `imp` carried over, so a re-issue never extends
+  a session — and the boot in `AuthContext` swaps it in (same store, wallet row
+  updated). Logged as `WEB-LOGIN claims_refreshed`. Until that reload a leader
+  is still resolved right: `identity.viewer_profile_key` finds the registration
+  the token names (`role_ref`) BEFORE narrowing by the token's unit, and
+  `concerns._own_profile`, `cell_concerns._leader_cells` and
+  `worker_concerns._leader_lock_names` go through it instead of matching the
+  token's (unit, name) themselves — never add a fourth such match.
 - Passwords are PBKDF2-HMAC-SHA256 from the stdlib (`web_auth.hash_password`) —
   deliberately no native dependency on a pipeline that deploys straight to prod.
   5 failed attempts → 15-minute lockout, DB-backed; the per-IP throttle is

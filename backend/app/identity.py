@@ -115,6 +115,23 @@ def viewer_profile_key(db: Session, payload: dict) -> Optional[str]:
         # is. The JWT names the exact registration it was issued for (role_ref);
         # anything less could answer with the colleague's profile and hand this
         # session their rows.
+        #
+        # That registration is looked up FIRST and NOT narrowed by the token's
+        # unit: moving a leader to another unit re-points their registrations'
+        # role_id (profiles.py), while a token minted before the move goes on
+        # carrying the old unit until it is re-issued — and a unit-narrowed
+        # lookup then answered None, or the colleague's profile in the old unit.
+        ref = payload.get("role_ref")
+        if ref:
+            exact = db.query(TelegramUserRole).filter(
+                TelegramUserRole.id == ref,
+                TelegramUserRole.telegram_id == int(payload["sub"]),
+                TelegramUserRole.role == "leader",
+                TelegramUserRole.status == "approved",
+                TelegramUserRole.profile_key.isnot(None),
+            ).first()
+            if exact:
+                return exact.profile_key
         rows = db.query(TelegramUserRole).filter(
             TelegramUserRole.telegram_id == int(payload["sub"]),
             TelegramUserRole.role == "leader",
@@ -122,13 +139,11 @@ def viewer_profile_key(db: Session, payload: dict) -> Optional[str]:
             TelegramUserRole.status == "approved",
             TelegramUserRole.profile_key.isnot(None),
         ).all()
-        # Stamped registrations first — they survive a profile rename, which the
-        # name match does not.
-        ref = payload.get("role_ref")
-        row = next((r for r in rows if ref and r.id == ref), None)
-        if not row:
-            row = next((r for r in rows
-                        if r.full_name == payload.get("full_name")), None)
+        # No such registration (a token predating role_ref, or a row since
+        # re-claimed): a stamped registration in the token's unit under the
+        # token's name.
+        row = next((r for r in rows
+                    if r.full_name == payload.get("full_name")), None)
         # A token predating role_ref, in a unit where this account holds exactly
         # one leader profile: no ambiguity to resolve.
         if not row and len(rows) == 1:

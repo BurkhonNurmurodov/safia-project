@@ -128,6 +128,15 @@ export function AuthProvider({ children }) {
       if (getToken() && isWebSession()) {
         api.get("/api/auth/web/session")
           .then((r) => {
+            // A re-issued token: the one held here still named the person as
+            // they were at sign-in (renamed, moved to another unit), and every
+            // API call is answered from the TOKEN, not from this payload. Same
+            // store, same lifetime — only the claims move. Swapped before
+            // setAuth, so no page asks with the stale one; rememberActive
+            // below then writes it into this profile's wallet row.
+            if (r.data?.token) {
+              setToken(r.data.token, { remember: isRemembered(), web: true, tab: isTabSession() });
+            }
             setAuth(r.data);
             setWebSession(true);
             rememberActive(r.data);

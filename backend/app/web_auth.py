@@ -432,23 +432,64 @@ def create_web_jwt(identity: dict, cred: WebCredential, remember: bool,
         ttl = timedelta(days=APP_SESSION_DAYS)
     else:
         ttl = timedelta(days=REMEMBER_DAYS) if remember else timedelta(hours=SESSION_HOURS)
-    payload = {
-        "sub":       str(identity["telegram_id"]),
-        "role":      identity["role"],
-        "full_name": identity["full_name"],
-        "role_id":   identity["role_id"],
-        "role_ref":  identity["role_ref"],
-        "web":       True,
-        "wv":        cred.token_version,
-        "wu":        cred.username,
-        "exp":       now + ttl,
-    }
+    payload = _web_claims(identity, cred)
+    payload["exp"] = now + ttl
     if app:
         payload["app"] = True
         payload["iat"] = now
     if impersonated_by:
         payload["imp"] = impersonated_by
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def _identity_claims(identity: dict) -> dict:
+    """Who the token says the caller is — the claims every request is answered
+    from (a leader's profile is resolved off ``role_ref`` / ``role_id`` /
+    ``full_name``, a supervisor's unit IS ``role_id``)."""
+    return {
+        "sub":       str(identity["telegram_id"]),
+        "role":      identity["role"],
+        "full_name": identity["full_name"],
+        "role_id":   identity["role_id"],
+        "role_ref":  identity["role_ref"],
+    }
+
+
+def _web_claims(identity: dict, cred: WebCredential) -> dict:
+    """ONE claim shape for a minted token and a re-issued one."""
+    return {**_identity_claims(identity), "web": True,
+            "wv": cred.token_version, "wu": cred.username}
+
+
+def stale_claims(identity: dict, payload: dict) -> list[str]:
+    """The identity claims a live browser token carries that no longer match
+    what its profile resolves to now — empty when the token is current.
+
+    A token is minted once and read on every request, while the profile it
+    names can be renamed or moved to another unit (``profiles.py`` cascades
+    both onto the registration rows) underneath it. Nothing re-issued the
+    token, so for up to its whole lifetime — 30 days on a «remember me» PC —
+    every call was answered from the person as they were at sign-in: the
+    cell-concerns PC of a renamed leader read «no cell assigned» over a cell
+    that was assigned, while the header, re-derived on each load, showed the
+    new name (2026-10-02)."""
+    return [k for k, v in _identity_claims(identity).items() if payload.get(k) != v]
+
+
+def reissue_web_jwt(identity: dict, cred: WebCredential, payload: dict) -> str:
+    """The same session carrying the CURRENT identity — exactly the claims a
+    fresh sign-in with this credential would get now.
+
+    Everything about the session itself is carried over unchanged: its expiry
+    (a 12-hour tab stays a 12-hour tab — re-issuing must never be a way to
+    extend one), the app's renewal clock (``app`` / ``iat``) and who opened an
+    impersonated session (``imp``). Only call it for a session already proven
+    live (``web_session_is_live``)."""
+    fresh = _web_claims(identity, cred)
+    for k in ("exp", "app", "iat", "imp"):
+        if payload.get(k) is not None:
+            fresh[k] = payload[k]
+    return jwt.encode(fresh, settings.secret_key, algorithm=settings.algorithm)
 
 
 def web_session_is_live(db: Session, payload: dict) -> bool:

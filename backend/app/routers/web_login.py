@@ -418,6 +418,13 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
     restoring a snapshot the browser kept, so a rename, a role change or a
     revoked login takes effect on the next page load instead of persisting in
     somebody's tab until the token expires.
+
+    That has to include the TOKEN, because every API call is answered from the
+    claims inside it, not from this payload: re-deriving only the payload put
+    the new name in the header while the pages went on asking as the person
+    the token was minted for. A token whose identity claims went stale comes
+    back re-issued (``token``) with its own lifetime unchanged, and the browser
+    swaps it in — so «sign out and in again» is never the fix.
     """
     cred = db.query(WebCredential).filter(WebCredential.username == payload.get("wu")).first()
     if not cred:
@@ -427,9 +434,14 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
     if not identity:
         raise HTTPException(status_code=403, detail="profile_unavailable")
 
+    stale = web_auth.stale_claims(identity, payload)
+    if stale:
+        log.info("WEB-LOGIN claims_refreshed | login=%s | profile=%s | stale=%s",
+                 cred.username, cred.profile_key, ",".join(stale))
+
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
     admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
-    return {
+    out = {
         "status":      "approved",
         "role":        identity["role"],
         "role_id":     identity["role_id"],
@@ -451,3 +463,6 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
             "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
         },
     }
+    if stale:
+        out["token"] = web_auth.reissue_web_jwt(identity, cred, payload)
+    return out

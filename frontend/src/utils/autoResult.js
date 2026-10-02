@@ -20,6 +20,7 @@ const T_ALL = {
     filled: "Reja va odamlar kiritilgan yacheykalar: {codes}",
     untyped: "Odamlar soni kiritilmagan: {codes}",
     pct: "Bajarilishi: {v} (kerak: {target}%)",
+    pctBare: "Bajarilishi: {v}",
     concerns: "Yozilgan xavotirlar: {n} ta ({from} – {to})",
     late: "Tekshiruv {n} daqiqa kechikib o'tkazilgan",
   },
@@ -28,6 +29,7 @@ const T_ALL = {
     filled: "Режа ва одамлар киритилган ячейкалар: {codes}",
     untyped: "Одамлар сони киритилмаган: {codes}",
     pct: "Бажарилиши: {v} (керак: {target}%)",
+    pctBare: "Бажарилиши: {v}",
     concerns: "Ёзилган хавотирлар: {n} та ({from} – {to})",
     late: "Текширув {n} дақиқа кечикиб ўтказилган",
   },
@@ -36,6 +38,7 @@ const T_ALL = {
     filled: "Ячейки с планом и людьми: {codes}",
     untyped: "Не внесено количество людей: {codes}",
     pct: "Выполнение: {v} (нужно: {target}%)",
+    pctBare: "Выполнение: {v}",
     concerns: "Записано обеспокоенностей: {n} ({from} – {to})",
     late: "Проверка прошла с опозданием на {n} мин",
   },
@@ -44,6 +47,7 @@ const T_ALL = {
     filled: "Cells with plan and people: {codes}",
     untyped: "Headcount missing: {codes}",
     pct: "Fulfilment: {v} (needed: {target}%)",
+    pctBare: "Fulfilment: {v}",
     concerns: "Concerns written: {n} ({from} – {to})",
     late: "The check ran {n} min late",
   },
@@ -56,6 +60,11 @@ const pct = (v) => {
   if (v == null || !Number.isFinite(x)) return "—";
   return Number.isInteger(x) ? String(x) : x.toFixed(1);
 };
+
+// A LEADER's payload carries no pass mark (`leader_auto.hide_targets` — the
+// operator, 2026-10-02), and the line then names none.
+const pctLine = (T, v, f) => (f.target == null
+  ? put(T.pctBare, { v }) : put(T.pct, { v, target: pct(f.target) }));
 
 const codes = (list) => list.slice(0, 8).join(", ");
 
@@ -72,9 +81,9 @@ export function autoResultLines(facts, lang) {
   const cells = (Array.isArray(f.by_cell) ? f.by_cell : []).filter((c) => c && typeof c === "object");
   if (cells.length) {
     const v = cells.slice(0, 6).map((c) => `${c.cell} — ${pct(c.pct)}%`).join(" · ");
-    out.push(put(T.pct, { v, target: pct(f.target) }));
+    out.push(pctLine(T, v, f));
   } else if (f.pct != null) {
-    out.push(put(T.pct, { v: `${pct(f.pct)}%`, target: pct(f.target) }));
+    out.push(pctLine(T, `${pct(f.pct)}%`, f));
   }
   if (f.found != null) out.push(put(T.concerns, { n: f.found, from: f.from || "—", to: f.to || "—" }));
   if (f.late_by_min) out.push(put(T.late, { n: f.late_by_min }));

@@ -506,13 +506,14 @@ def _shift_unit_ids(db: Session, role_id: Optional[int]) -> list[int]:
 
 
 def _own_profile(db: Session, payload: dict) -> Optional[RoleProfile]:
-    """The viewing leader's pre-created profile. Leader role rows point at the
-    unit (role_id = managers.id) and bind to a profile via (unit, name)."""
-    return db.query(RoleProfile).filter_by(
-        role="leader",
-        manager_id=payload.get("role_id"),
-        name=payload.get("full_name"),
-    ).first()
+    """The viewing leader's pre-created profile, through THE resolver
+    (``identity.viewer_leader_profile_id``): the registration the token names
+    first, the (unit, name) match only as its last fallback. Matching on the
+    token's unit and name alone answered None for a session minted before a
+    rename or a unit move — a token keeps its claims until it is re-issued —
+    which emptied the leader's own register and took away their rights on it."""
+    pid = identity.viewer_leader_profile_id(db, payload)
+    return db.query(RoleProfile).filter_by(id=pid, role="leader").first() if pid else None
 
 
 def _leader_own_filter(db: Session, payload: dict):

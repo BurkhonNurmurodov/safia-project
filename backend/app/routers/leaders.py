@@ -391,6 +391,16 @@ def put_leader_tiers(
     return {**cuts, "can_edit": True}
 
 
+def _la_hides(payload: dict) -> bool:
+    from app.services import leader_auto
+    return leader_auto.hides_target(payload)
+
+
+def _la_hide(obj):
+    from app.services import leader_auto
+    return leader_auto.hide_targets(obj)
+
+
 @router.get("/leaders")
 def get_leaders(
     db: Session = Depends(get_db),
@@ -417,8 +427,10 @@ def get_leaders(
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
     # its data — so a granted supervisor keeps their own view, widened.
-    return _json_response(
-        _leaders_feed(db, payload, page_scope_is_all(db, payload, "leaders")))
+    feed = _leaders_feed(db, payload, page_scope_is_all(db, payload, "leaders"))
+    if _la_hides(payload):
+        _la_hide(feed)
+    return _json_response(feed)
 
 
 def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
@@ -1428,6 +1440,8 @@ def get_day_report(
         # a real report in another unit.
         raise HTTPException(status_code=404, detail="No such report")
 
+    if _la_hides(payload):
+        _la_hide(row)
     return _stamp_report_rights(db, payload, row)
 
 
@@ -2126,6 +2140,9 @@ def _dispute_items(db: Session, payload: dict,
             "dayOpen": d.ref in open_ref,
         })
     _attach_chat(db, payload, leader_appeal_chat.DISPUTE, items)
+    # A leader reads their own objection without the check's pass mark.
+    if _la_hides(payload):
+        _la_hide(items)
     return items
 
 

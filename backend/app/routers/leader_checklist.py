@@ -247,7 +247,7 @@ def _auto_wire(db: Session, prof: RoleProfile, date: str, tid: int,
     return out
 
 
-def _view(db: Session, payload: dict, prof: RoleProfile,
+def _view_raw(db: Session, payload: dict, prof: RoleProfile,
           date_q: str | None, cell_q: int | None) -> dict:
     """One leader's checklist for one day — THE payload of the tab."""
     mgr = db.query(Manager).filter_by(id=prof.manager_id).first()
@@ -512,6 +512,15 @@ def _view(db: Session, payload: dict, prof: RoleProfile,
 
 
 # ── read ─────────────────────────────────────────────────────────────────────
+
+
+def _view(db: Session, payload: dict, prof: RoleProfile, *args, **kw) -> dict:
+    """`_view_raw`, without an automatic check's pass mark when a LEADER reads
+    it (`leader_auto.hides_target`) — every door that returns a view goes
+    through here, so none can forget it."""
+    view = _view_raw(db, payload, prof, *args, **kw)
+    return leader_auto.hide_targets(view) if leader_auto.hides_target(payload) else view
+
 
 @router.get("/day")
 def checklist_day(
