@@ -4415,6 +4415,21 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   grid headers); the toolbar's filter chips wrap (`chipsWrap`, which the
   template applies below md) instead of being clipped.
 
+## Empty days count NOWHERE on `/leaders` (`countCap`)
+
+From **2026-10-02** (the operator: «empty days shouldn't affect any
+calculation — 10 days picked, one empty, average over 9») every number on the
+Monitoring tab is scored over the picked period CUT at `countCap` in
+`Leaders.jsx`: the earlier of `dataMax` (the newest day the register holds
+anything for) and `lastFinishedDay()` (a day is over at 09:00 the next morning,
+plant clock — so today never counts while it runs). The calendar still shows
+the whole picked period (`calWin`), hatched after the cap, and its subtitle
+names how many days were counted. KPI cards, ranking, task chart, trend,
+sparks and «Mening o'rnim» all read `scoreWin` (the cut window). A missed day
+inside it (red) is still 0. **The Δ chip compares with the whole previous period
+of the PICKED length** (`calWin.days`), scored over its own days. The
+server-side standing pool is given the cut window, so it agrees.
+
 ## «Mening o'rnim» — a leader's and a brigadir's own place (`/leaders`)
 
 From **2026-09-30** (the operator's request) the Monitoring tab opens, for a

@@ -123,7 +123,7 @@ const TXT = {
     tierEditOrder: "Chegaralar kamayib borishi kerak: Chempion > A'lo > O'rta.",
     save: "Saqlash", cancel: "Bekor qilish",
     winLabel: "Hisob oynasi", daysSent: "Yuborilgan", daysMissed: "O'tkazib yuborilgan",
-    hmTitle: "Kunlar kalendari", hmNoSync: "Ma'lumot hali kelmagan",
+    hmTitle: "Kunlar kalendari", hmNoSync: "Ma'lumot hali kelmagan", hmDayOpen: "Kun hali tugamagan — hisobga kirmaydi", hmCounted: "{n} kun hisoblandi",
     hmExcluded: "Hisobga olinmaydi",
     exclChip: "Hisobga olinmaydi",
     exclTitle: "Bu kun natijalarga kirmaydi — na ortiqcha, na kamchilik",
@@ -307,7 +307,7 @@ const TXT = {
     tierEditOrder: "Чегаралар камайиб бориши керак: Чемпион > Аъло > Ўрта.",
     save: "Сақлаш", cancel: "Бекор қилиш",
     winLabel: "Ҳисоб ойнаси", daysSent: "Юборилган", daysMissed: "Ўтказиб юборилган",
-    hmTitle: "Кунлар календари", hmNoSync: "Маълумот ҳали келмаган",
+    hmTitle: "Кунлар календари", hmNoSync: "Маълумот ҳали келмаган", hmDayOpen: "Кун ҳали тугамаган — ҳисобга кирмайди", hmCounted: "{n} кун ҳисобланди",
     hmExcluded: "Ҳисобга олинмайди",
     exclChip: "Ҳисобга олинмайди",
     exclTitle: "Бу кун натижаларга кирмайди — на ортиқча, на камчилик",
@@ -491,7 +491,7 @@ const TXT = {
     tierEditOrder: "Границы должны убывать: Чемпион > Отлично > Средне.",
     save: "Сохранить", cancel: "Отмена",
     winLabel: "Окно расчёта", daysSent: "Сдано", daysMissed: "Пропущено",
-    hmTitle: "Календарь дней", hmNoSync: "Данные ещё не поступили",
+    hmTitle: "Календарь дней", hmNoSync: "Данные ещё не поступили", hmDayOpen: "День ещё не закончился — не учитывается", hmCounted: "учтено дней: {n}",
     hmExcluded: "Не учитывается",
     exclChip: "Не учитывается",
     exclTitle: "Этот день не входит в результаты — ни в плюс, ни в минус",
@@ -675,7 +675,7 @@ const TXT = {
     tierEditOrder: "Cutoffs must descend: Champion > Excellent > Average.",
     save: "Save", cancel: "Cancel",
     winLabel: "Scoring window", daysSent: "Filed", daysMissed: "Missed",
-    hmTitle: "Day calendar", hmNoSync: "Not synced yet",
+    hmTitle: "Day calendar", hmNoSync: "Not synced yet", hmDayOpen: "Day not over yet — not counted", hmCounted: "{n} days counted",
     hmExcluded: "Not counted",
     exclChip: "Not counted",
     exclTitle: "This day is out of the results — neither a plus nor a minus",
@@ -860,6 +860,13 @@ const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 const todayISO = () => localISO(new Date());
 const isoShift = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); };
 const weekStartISO = (iso) => { const d = new Date(iso + "T00:00:00"); return isoShift(iso, -((d.getDay() + 6) % 7)); };
+// The last FINISHED shift-day on the plant's wall clock: a day is over once
+// 09:00 of the next morning has passed (shift 2's night closes then).
+const lastFinishedDay = () => {
+  const s = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent" })
+    .format(new Date(Date.now() - 9 * 3600e3));
+  return isoShift(s, -1);
+};
 const spanDays = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / DAY) + 1;
 const rowDate = (r) => String(r.date).slice(0, 10);
 
@@ -2328,7 +2335,7 @@ function HmLegend({ T, hasVoid, hasExcl }) {
  * thousand cells, and without this boundary every unrelated re-render of the
  * page around the grid would walk all of them. */
 const HmRow = memo(function HmRow({
-  rowKey, name, place, days, excluded, dates, dataMax, cellW, labelW, padCount,
+  rowKey, name, place, days, excluded, dates, dataMax, rawMax, cellW, labelW, padCount,
   sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T, narrow,
 }) {
   const live = !sel && !dim && selDate == null;   // hover only reads when nothing is isolated
@@ -2378,7 +2385,7 @@ const HmRow = memo(function HmRow({
             onMouseEnter={() => onEnter(rowKey, d)}
             onMouseLeave={onLeave}
             onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
-            title={`${name} · ${ddmm(d)} — ${off ? T.hmExcluded : stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
+            title={`${name} · ${ddmm(d)} — ${off ? T.hmExcluded : stale ? (rawMax != null && d <= rawMax ? T.hmDayOpen : T.hmNoSync) : sent ? T.daysSent : T.daysMissed}`}
             style={{
               width: cellW, minWidth: cellW, height: HM_ROW_H, padding: 0,
               background: off ? HM_EXCL : stale ? HM_VOID : sent ? HM_SENT : HM_MISSED,
@@ -2404,7 +2411,7 @@ const HmRow = memo(function HmRow({
   );
 });
 
-function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
+function DayGrid({ rows, dates, dataMax, rawMax, T, nm, nameHead }) {
   const scrollRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
   const [hover, setHover] = useState(null);           // { name, date }
@@ -2502,7 +2509,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
             return (
               <HmRow key={e.name} rowKey={e.name} name={nm(e.name)} place={e.place} days={e.days}
                 excluded={e.excluded}
-                dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW} padCount={padCount}
+                dates={dates} dataMax={dataMax} rawMax={rawMax} cellW={cellW} labelW={labelW} padCount={padCount}
                 sel={rowSel && selection.value === e.name}
                 dim={rowSel && selection.value !== e.name}
                 selDate={selDate}
@@ -3139,6 +3146,28 @@ export default function Leaders() {
     if (hits.length === 1) setClLeaderPick(hits[0].id);
   }, [fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
+  // the filtered slice: narrowing to one leader must not turn that leader's own
+  // misses into "not synced yet". Everything past it greys out in the grid and
+  // is left off the trend line.
+  const dataMax = useMemo(() => {
+    let mx = null;
+    for (const r of rows) {
+      const d = rowDate(r);
+      if (mx == null || d > mx) mx = d;
+    }
+    return mx;
+  }, [rows]);
+  // …and the last day that can be SCORED: no later than `dataMax`, and no later
+  // than the last FINISHED shift-day. A day counts from 09:00 the morning after
+  // it — when shift 2's night closes — so nobody turns red at 10:00 for a
+  // checklist they still have hours to file. Everything after it is hatched on
+  // the calendar and left out of every average on this page.
+  const countCap = useMemo(() => {
+    const done = lastFinishedDay();
+    return dataMax && dataMax < done ? dataMax : done;
+  }, [dataMax]);
+
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
   const filtered = useMemo(() => rows.filter((r) => inScope(r, {
     from: startDate, to: endDate, shift: effShift, sup: effSup, leader: effLeader,
@@ -3152,7 +3181,15 @@ export default function Leaders() {
   // period, every calendar day in it. Nothing is inferred from where the data
   // happens to begin or end; only a cleared date input falls back to the span
   // the data itself covers, since an open edge has no other floor or ceiling.
-  const scoreWin = useMemo(() => {
+  //
+  // The CALENDAR window is the picked period as picked; the SCORING window is
+  // that period cut at `countCap` — the last finished day the platform holds
+  // data for. A day after it (the future, today while it runs, a day the sheet
+  // has not reached yet) is hatched on the calendar and enters NO average: ten
+  // days picked with one of them empty are scored over nine (the operator,
+  // 2026-10-02). Only the Δ chip's baseline reads the calendar length — it
+  // compares with the whole previous period of the same span.
+  const calWin = useMemo(() => {
     let from = startDate || null, to = endDate || null;
     for (const r of filtered) {
       const d = rowDate(r);
@@ -3161,6 +3198,14 @@ export default function Leaders() {
     }
     return { from, to, days: from && to ? spanDays(from, to) : 0 };
   }, [filtered, startDate, endDate]);
+  const scoreWin = useMemo(() => {
+    const { from } = calWin;
+    let { to } = calWin;
+    if (to && countCap && to > countCap) to = countCap;
+    return from && to && to >= from
+      ? { from, to, days: spanDays(from, to) }
+      : { from: null, to: null, days: 0 };
+  }, [calWin, countCap]);
 
   // The two rankings the page reads from: leaders, and units scored as the mean
   // of their leaders (so a unit filing more rows than another can't inflate its
@@ -3235,18 +3280,6 @@ export default function Leaders() {
       ?? rows.find((r) => r.shift != null)?.shift ?? null;
   }, [data, rows, isLeader, isSupervisor]);
 
-  // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
-  // the filtered slice: narrowing to one leader must not turn that leader's own
-  // misses into "not synced yet". Everything past it greys out in the grid and
-  // is left off the trend line.
-  const dataMax = useMemo(() => {
-    let mx = null;
-    for (const r of rows) {
-      const d = rowDate(r);
-      if (mx == null || d > mx) mx = d;
-    }
-    return mx;
-  }, [rows]);
 
   // The trend chart uses a window widened to at least the last 7 days (ending
   // at the selected end date), so short periods still draw a meaningful line.
@@ -3428,7 +3461,7 @@ export default function Leaders() {
       if (rawMax == null || d > rawMax) rawMax = d;
     }
     let cutTo = endDate || rawMax;
-    if (dataMax && cutTo > dataMax) cutTo = dataMax;
+    if (countCap && cutTo > countCap) cutTo = countCap;
     const cutFrom = trendFrom || rawMin;
     const cutSpan = cutFrom && cutTo && cutTo >= cutFrom
       ? Array.from({ length: spanDays(cutFrom, cutTo) }, (_, i) => isoShift(cutFrom, i))
@@ -3457,7 +3490,7 @@ export default function Leaders() {
     }
     const from = trendFrom || dMin;
     let to = endDate || dMax;
-    if (dataMax && to > dataMax) to = dataMax;
+    if (countCap && to > countCap) to = countCap;
     if (!from || !to || to < from) return empty;
     const span = spanDays(from, to);
     const days = Array.from({ length: span }, (_, i) => isoShift(from, i));
@@ -3480,15 +3513,15 @@ export default function Leaders() {
       // weekly buckets get a full "start – end" range in the tooltip
       trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
     };
-  }, [trendRows, trendFrom, endDate, dataMax, cutLeaders, rosterLeaders]);
+  }, [trendRows, trendFrom, endDate, countCap, cutLeaders, rosterLeaders]);
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
   // ── standings ───────────────────────────────────────────────────────────────
   // Both columns come straight out of the scoring core above, over `scoreWin` —
-  // the picked period, every calendar day in it. A day with no report is a real
-  // 0%, whether it falls before a leader's first submission, on a Sunday, or
-  // after the last sheet sync.
+  // the picked period cut at `countCap`. Inside it a day with no report is a
+  // real 0%, whether it falls before a leader's first submission or on a
+  // Sunday; a day after it (not finished, or no data yet) counts nowhere.
   //
   //   Reyting     — each day's score averaged over EVERY day of the window, a
   //                 day with no report counting as 0%
@@ -3522,9 +3555,10 @@ export default function Leaders() {
   // filters as the ranking but over wider dates than `filtered` holds: the
   // equal-length window just before the picked one (the chip's baseline) and
   // the picked period widened to at least 7 days ending on its last day (the
-  // spark — the chart-window convention). Sparks stop at `dataMax` like the
-  // trend line: the un-synced tail is left off, not drawn as a dive to last
-  // place, while a missing day inside the data is a real 0.
+  // spark — the chart-window convention). Sparks stop at `countCap` like the
+  // trend line: the unfinished / un-synced tail is left off, not drawn as a dive
+  // to last place, while a missing day inside the data is a real 0. The chip's
+  // baseline spans the PICKED length (`calWin`), scored over its own days.
   //
   //   chip  — place(previous equal-length window) − place(picked period)
   //   spark — the place the board WOULD print if the period ended on that day,
@@ -3542,6 +3576,9 @@ export default function Leaders() {
     const EMPTY = { prev: null, prevSeen: null, sparks: new Map() };
     const { from: winFrom, to: winTo, days: winDays } = scoreWin;
     if (!winFrom || !winTo || !winDays || !standings.list.length) return EMPTY;
+    // The chip's baseline is the whole previous period of the PICKED length,
+    // scored over its own days — not the counted length of this one.
+    const calDays = calWin.days || winDays;
     // The board, the chip's baseline and every spark day must be ranked by
     // EXACTLY one rule, or a place delta describes the difference between two
     // measurements instead of movement. So the unit composition travels here
@@ -3549,10 +3586,10 @@ export default function Leaders() {
     const slotsFor = (rs, ds) => (effStandMode === "leader"
       ? slotsBy(rs, (r) => r.leader, cutLeaders, ds)
       : unitSlots(rs, rosterUnits, cutLeaders, cutUnits, ds));
-    const prevFrom = isoShift(winFrom, -winDays), prevTo = isoShift(winFrom, -1);
+    const prevFrom = isoShift(winFrom, -calDays), prevTo = isoShift(winFrom, -1);
     const weekAgo = isoShift(winTo, -6);
     const sparkFrom = winFrom < weekAgo ? winFrom : weekAgo;
-    const sparkTo = dataMax && winTo > dataMax ? dataMax : winTo;
+    const sparkTo = winTo;
     // The spark's first point needs a whole trailing window BEHIND it.
     const rollFrom = isoShift(sparkFrom, -(winDays - 1));
     const lo = prevFrom < rollFrom ? prevFrom : rollFrom;
@@ -3593,8 +3630,8 @@ export default function Leaders() {
 
     let prev = null, prevSeen = null;
     if (prevRows.length) {
-      const prevDays = Array.from({ length: winDays }, (_, i) => isoShift(prevFrom, i));
-      const scored = scoreSlots(slotsFor(prevRows, prevDays), winDays);
+      const prevDays = Array.from({ length: calDays }, (_, i) => isoShift(prevFrom, i));
+      const scored = scoreSlots(slotsFor(prevRows, prevDays), calDays);
       prevSeen = onRoster(scored, prevFrom);
       prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
       // «Yangi» is for somebody whose data BEGINS in this period, so their first
@@ -3666,7 +3703,7 @@ export default function Leaders() {
       for (const [name, vals] of series) sparks.set(name, vals);
     }
     return { prev, prevSeen, sparks };
-  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, effShift,
+  }, [rows, scoreWin, calWin, effStandMode, standMetric, standings, effShift,
       effSup, effLeader, cutLeaders, cutUnits, rosterUnits]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
@@ -3693,11 +3730,13 @@ export default function Leaders() {
   const heatRows = standSearch.trim() ? standRows : standOrdered;
   // One column per day of the SAME window the metrics are scored over, so a
   // row's green count is literally the "6/7" printed beside it in the register.
+  // The PICKED period, not the counted one: days past `countCap` stay on the
+  // calendar, hatched, so the reader sees why they are not in the numbers.
   const heatDates = useMemo(() => {
-    const { winFrom, winDays } = standings;
-    if (!winFrom || !winDays) return [];
-    return Array.from({ length: winDays }, (_, i) => isoShift(winFrom, i));
-  }, [standings]);
+    const { from, days } = calWin;
+    if (!standings.winFrom || !from || !days) return [];
+    return Array.from({ length: days }, (_, i) => isoShift(from, i));
+  }, [standings, calWin]);
 
   // Both registers page instead of scrolling: ten ranking rows and nine calendar
   // strips per page, so the card ends on a whole row and the page underneath is
@@ -4618,11 +4657,13 @@ export default function Leaders() {
         <div className="mb-4">
         <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={CalendarDays} title={T.hmTitle}
-            subtitle={`${ddmm(standings.winFrom)} – ${ddmm(standings.winTo)} · ${standings.winDays} ${T.dayAbbr}`}
+            subtitle={`${ddmm(calWin.from)} – ${ddmm(calWin.to)} · ${calWin.days} ${T.dayAbbr}`
+              + (standings.winDays < calWin.days
+                ? ` · ${T.hmCounted.replace("{n}", standings.winDays)}` : "")}
             right={<HmLegend T={T}
-              hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax}
+              hasVoid={countCap != null && heatDates[heatDates.length - 1] > countCap}
               hasExcl={heatRows.some((e) => e.excluded?.size)} />} />
-          <DayGrid rows={heatPageRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm}
+          <DayGrid rows={heatPageRows} dates={heatDates} dataMax={countCap} rawMax={dataMax} T={T} nm={nm}
             nameHead={effStandMode === "leader" ? T.thLeader : T.supervisor} />
         </div>
         <Pagination page={hmPg} pageCount={hmPageCount} total={heatRows.length}
