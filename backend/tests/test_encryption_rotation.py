@@ -60,3 +60,40 @@ class RotationPreparationTests(unittest.TestCase):
         with patch.object(web_auth, "settings", settings.settings("b" * 48, "d" * 48)):
             self.assertEqual(web_auth.open_password(rotated[("web_credentials", 1)]), "example-password")
             self.assertEqual(web_auth.open_password(rotated[("app_settings", 2)]), "example-api-key")
+
+
+class RotationTransactionTests(unittest.TestCase):
+    def test_real_synthetic_tables_preserve_keys_and_unrelated_rows(self):
+        import importlib.util
+        from pathlib import Path
+        from sqlalchemy import create_engine, insert, select
+        from app.models import AppSetting, WebCredential
+        spec = importlib.util.spec_from_file_location("rotation", Path(__file__).resolve().parents[2] / "deploy/rotate-encryption-key.py")
+        rotation = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rotation)
+        engine = create_engine("sqlite:///:memory:")
+        WebCredential.__table__.create(engine)
+        AppSetting.__table__.create(engine)
+        helper = EncryptionRotationTests()
+        with patch.object(web_auth, "settings", helper.settings("a" * 48)):
+            credential = web_auth.seal_password("example-password")
+            integration = web_auth.seal_password("example-api-key")
+        with engine.begin() as connection:
+            connection.execute(insert(WebCredential).values(id=1, profile_key="example:1", username="example", password_hash="unchanged-fixture-hash", password_enc=credential))
+            connection.execute(insert(AppSetting), [{"key":"example_api_key", "value":integration}, {"key":"unrelated", "value":"unchanged"}])
+        rotated = helper.settings("b" * 48, "d" * 48, "a" * 48)
+        with patch.object(web_auth, "settings", rotated), patch.object(rotation, "settings", rotated), engine.begin() as connection:
+            self.assertEqual(rotation.rotate_connection(connection), (1, 1))
+        with patch.object(web_auth, "settings", helper.settings("b" * 48, "d" * 48)), engine.connect() as connection:
+            row = connection.execute(select(WebCredential.password_enc, WebCredential.password_hash)).one()
+            self.assertEqual(web_auth.open_password(row.password_enc), "example-password")
+            self.assertEqual(row.password_hash, "unchanged-fixture-hash")
+            settings = dict(connection.execute(select(AppSetting.key, AppSetting.value)).all())
+            self.assertEqual(web_auth.open_password(settings["example_api_key"]), "example-api-key")
+            self.assertEqual(settings["unrelated"], "unchanged")
+        with engine.begin() as connection:
+            connection.execute(insert(AppSetting).values(key="corrupt", value="v1$corrupt"))
+        with patch.object(web_auth, "settings", rotated), patch.object(rotation, "settings", rotated), self.assertRaises(ValueError), engine.begin() as connection:
+            rotation.rotate_connection(connection)
+        with engine.connect() as connection:
+            self.assertEqual(connection.execute(select(AppSetting.value).where(AppSetting.key=="corrupt")).scalar_one(), "v1$corrupt")
