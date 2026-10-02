@@ -983,6 +983,8 @@ def admin_list_cells(db: Session = Depends(get_db),
             "name_workshop_en": c.name_workshop_en,
             "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
             "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
+            "archived_at": c.archived_at.isoformat() if c.archived_at else None,
+            "archived_by": c.archived_by,
         } for c in cell_rows],
     }
 
@@ -1338,6 +1340,45 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     return {"ok": True, "id": cid, "sap_code": new["sap_code"], "wc_group": new["wc_group"]}
 
 
+class CellArchiveBody(BaseModel):
+    archived: bool = True
+
+
+@router.post("/admin/cells/{cid}/archive")
+def admin_archive_cell(cid: int, body: CellArchiveBody, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+    """Archive (close) a cell, or bring it back. Records WHEN and WHO and
+    nothing else: every figure and every record the cell carries is left
+    exactly as it is — the alternative, DELETE, cascades its ojidaniya
+    intervals away and re-splits shared work centres over past days.
+    Re-archiving an archived cell keeps its first date."""
+    row = db.query(Cell).filter_by(id=cid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    was = row.archived_at
+    if body.archived and row.archived_at is None:
+        row.archived_at = datetime.now(timezone.utc)
+        row.archived_by = profile_display_name(db, viewer_profile_key(db, caller))
+    elif not body.archived:
+        row.archived_at = None
+        row.archived_by = None
+    code, mid = row.verifix_code, row.manager_id
+    at = row.archived_at
+    by = row.archived_by
+    db.commit()
+    unit = unit_name(db, mid)
+    details = [("cell", code), ("unit", unit)]
+    event = "cell.archived" if body.archived else "cell.unarchived"
+    if (was is None) != (at is None):
+        alert_grant_use(db, caller, CAP_CELLS_MANAGE, event, details=details)
+    action_log.enrich(target_kind="cell", target_id=cid, target_name=code,
+                      unit_id=mid, unit_name=unit, details=details,
+                      changes=[("archived_at", was.isoformat() if was else None,
+                                at.isoformat() if at else None)])
+    return {"ok": True, "id": cid,
+            "archived_at": at.isoformat() if at else None, "archived_by": by}
+
+
 @router.delete("/admin/cells/{cid}")
 def admin_delete_cell(cid: int, db: Session = Depends(get_db),
                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
@@ -1433,6 +1474,8 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "manager_id": c.manager_id, "leader_id": c.leader_id,
             "in_load": bool(c.in_load),
             "att_included": c.att_included,  # None = derived from supervisor
+            "archived_at": c.archived_at.isoformat() if c.archived_at else None,
+            "archived_by": c.archived_by,
         },
         "hours": {
             "start": eff_start, "end": eff_end,

@@ -166,6 +166,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # `/api/profiles/admin/cells/{id}` matches the generic profile template
     # below, and FIRST match wins. Specific before generic, always.
     (("POST",),   "/api/profiles/admin/cells",                 "org", "org.cell_created"),
+    (("POST",),   "/api/profiles/admin/cells/{}/archive",      "org", "org.cell_archived"),
     (("PUT",),    "/api/profiles/admin/cells/{}",              "org", "org.cell_edited"),
     (("DELETE",), "/api/profiles/admin/cells/{}",              "org", "org.cell_deleted"),
     (("PUT",),    "/api/profiles/admin/{}/{}",                 "identity", "identity.profile_edited"),

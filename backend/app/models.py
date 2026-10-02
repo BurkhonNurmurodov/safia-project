@@ -530,6 +530,13 @@ class Cell(Base):
     # NULL on BOTH = inherit the supervisor's shift default; see the docstring.
     shift_start  = Column(String(5), nullable=True)
     shift_end    = Column(String(5), nullable=True)
+    # 2026-10-02: ARCHIVED — a cell that closed. Archiving changes no figure
+    # and deletes nothing (deleting a cell CASCADES its ojidaniya intervals and
+    # re-splits shared work centres over past days), it only records WHEN the
+    # cell was closed and by whom, and hides it from the /cells register by
+    # default. NULL = active.
+    archived_at  = Column(DateTime(timezone=True), nullable=True)
+    archived_by  = Column(String, nullable=True)
     # 2026-09-14: which GROUP of its SAP work centre this cell is — one Latin
     # capital letter, NULL = none. Inside ONE unit a (sap_code, wc_group) names
     # one cell: either a code has a single cell, or every cell sharing it is

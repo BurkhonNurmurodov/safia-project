@@ -201,6 +201,20 @@ From **2026-09-14** (the operator's directive) the cells register opens to the
   list once; the flag is what protects a later uncheck on the Access tab, and
   changing what it does needs a NEW flag key.
 
+## A closed cell is ARCHIVED, not deleted (`/cells`)
+
+From **2026-10-02** (the operator's request) a cell that closed is archived
+from the /cells register's row actions (`POST /api/profiles/admin/cells/{id}/archive`,
+`{archived: bool}`, `CAP_CELLS_MANAGE`). `cells.archived_at` (when, timestamptz)
+and `archived_by` (a name snapshot) are the whole of it — NULL = active;
+re-archiving keeps the first date, restoring clears both. **It changes no figure
+and deletes nothing**, unlike DELETE, which cascades the cell's ojidaniya
+intervals and re-splits shared work centres over past days. The register hides
+archived cells by default (a «Holat» filter section: active · archived · all),
+marks them with a grey «Arxivda · date» chip, and `/cells/:id` carries a banner.
+Deliberately NOT done: no other page or picker reads the flag yet — an archived
+cell still counts wherever it counted (it carries no new data once closed).
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts

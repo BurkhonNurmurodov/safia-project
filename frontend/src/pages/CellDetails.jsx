@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, LayoutGrid, Hash, Users, Flag, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
-  Boxes, SearchX, AlertTriangle, Layers,
+  Boxes, SearchX, AlertTriangle, Layers, Archive,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -289,6 +289,21 @@ export default function CellDetails() {
       <div className="mx-auto w-full max-w-4xl">
         {back}
         <div className="space-y-4">
+
+          {c.archived_at && (
+            <div className="rounded-2xl px-4 py-3 flex items-center gap-2.5 text-sm"
+                 style={{ background: "rgba(148,163,184,0.12)", border: "1px solid rgba(148,163,184,0.28)", color: "var(--text-2)" }}>
+              <Archive size={16} className="flex-shrink-0" style={{ color: "#94a3b8" }} />
+              <span>
+                {t("admin.profiles.cellArchivedBanner")
+                  .replace("{date}", new Date(c.archived_at).toLocaleString("ru-RU", {
+                    timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  }))
+                  .replace("{by}", c.archived_by || "—")}
+              </span>
+            </div>
+          )}
 
           {/* Identity hero */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

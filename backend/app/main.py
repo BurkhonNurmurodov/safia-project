@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
+        add_cell_archive,
         add_education_thumb_url,
         add_idle_interval_client_key,
         add_idle_interval_cleaners,
@@ -189,6 +190,7 @@ async def lifespan(app: FastAPI):
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    add_cell_archive()
     add_wc_groups()
     add_education_thumb_url()
     add_idle_interval_client_key()

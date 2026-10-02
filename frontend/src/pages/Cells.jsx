@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
-  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle,
+  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle, Archive, ArchiveRestore,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -57,6 +57,36 @@ import { exportXlsx } from "../utils/exportXlsx";
  */
 
 // Whole-sentence templates with {placeholders} — word order differs per language.
+// When a cell was archived, on the plant's wall clock (never the browser's).
+const fmtArchived = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute}`;
+};
+
+// «Arxivda · DD.MM.YYYY» beside a closed cell's code; the time and who did it
+// on hover.
+function ArchivedChip({ c, t }) {
+  if (!c.archived_at) return null;
+  const when = fmtArchived(c.archived_at);
+  const tip = fill(t("admin.profiles.cellArchivedTip"), { date: when, by: c.archived_by || "—" });
+  return (
+    <span
+      title={tip}
+      className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap align-middle"
+      style={{ background: "rgba(148,163,184,0.14)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.25)" }}
+    >
+      <Archive size={11} />
+      {t("admin.profiles.cellArchived")} · {when.slice(0, 10)}
+    </span>
+  );
+}
+
 const fill = (s, vars) => String(s ?? "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
 
 // The register rule of a work-centre GROUP (backend services/wc_group.py
@@ -118,9 +148,20 @@ function GroupMark({ c, issue, t, placeholder = true }) {
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
 // the mobile card so both surfaces read identically. Clicks must not bubble:
 // the row/card underneath navigates to the cell page.
-function RowActions({ t, onEdit, onDelete, deleting }) {
+function RowActions({ t, onEdit, onDelete, deleting, archived, onArchive, archiving }) {
+  const archLabel = t(archived ? "admin.profiles.cellUnarchive" : "admin.profiles.cellArchive");
   return (
     <div className="flex items-center justify-center gap-1.5">
+      <button
+        onClick={(e) => { e.stopPropagation(); onArchive(); }}
+        disabled={archiving}
+        title={archLabel}
+        aria-label={archLabel}
+        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+        style={{ background: "rgba(148,163,184,0.12)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.22)" }}
+      >
+        {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+      </button>
       <button
         onClick={(e) => { e.stopPropagation(); onEdit(); }}
         title={t("admin.profiles.edit")}
@@ -151,10 +192,11 @@ function RowActions({ t, onEdit, onDelete, deleting }) {
 // the workshop name is never printed (utils/cellName.js), and the two people
 // answerable for the cell are what the card carries instead.
 // The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen, issue }) {
+function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
+      style={c.archived_at ? { opacity: 0.7 } : undefined}
       onClick={onOpen}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
@@ -169,10 +211,12 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen, issue
             </span>
           )}
           {c.sap_code && <GroupMark c={c} issue={issue} t={t} placeholder={false} />}
+          <ArchivedChip c={c} t={t} />
         </div>
         {canEdit && (
           <div className="flex-shrink-0">
-            <RowActions t={t} onEdit={onEdit} onDelete={onDelete} deleting={deleting} />
+            <RowActions t={t} onEdit={onEdit} onDelete={onDelete} deleting={deleting}
+              archived={!!c.archived_at} onArchive={onArchive} archiving={archiving} />
           </div>
         )}
       </div>
@@ -226,6 +270,9 @@ export default function Cells() {
   const [search, setSearch] = usePersistentState("cells_search", "");
   const [fBrigadir, setFBrigadir] = usePersistentState("cells_filter_brigadir", "");  // "" all · "none" unassigned · manager_id
   const [fLeader, setFLeader] = usePersistentState("cells_filter_leader", "");        // "" all · "none" unassigned · leader_id
+  // Archived (closed) cells are hidden by default; "archived" shows only them.
+  const [fStatus, setFStatus] = usePersistentState("cells_filter_status", "active"); // active · archived · all
+  const statusSel = ["active", "archived", "all"].includes(fStatus) ? fStatus : "active";
 
   // Set when the server narrowed the register to the viewer's OWN unit — a
   // supervisor who opens the page through their role (backend
@@ -248,6 +295,7 @@ export default function Cells() {
 
   const [modal, setModal] = useState(null);       // {mode:"add"|"edit", item?}
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmArchive, setConfirmArchive] = useState(null);
 
   const done = () => qc.invalidateQueries({ queryKey: ["admin-cells"] });
 
@@ -258,6 +306,25 @@ export default function Cells() {
     // signal that a deletion failed would be invisible on the primary device.
     onError: (e) => { setConfirmDelete(null); toast.error(e?.response?.data?.detail || t("admin.profiles.error")); },
   });
+
+  // Archive / restore. Archiving asks first (it hides the cell from the
+  // register); restoring is one tap — nothing to lose either way, nothing is
+  // deleted and no figure moves.
+  const archiveMut = useMutation({
+    mutationFn: ({ id, archived }) =>
+      api.post(`/api/profiles/admin/cells/${id}/archive`, { archived }).then((r) => r.data),
+    onSuccess: (_d, v) => {
+      done();
+      setConfirmArchive(null);
+      toast.success(t(v.archived ? "admin.profiles.cellArchivedToast" : "admin.profiles.cellRestoredToast"));
+    },
+  });
+  const onArchive = (c) => {
+    if (c.archived_at) archiveMut.mutate({ id: c.id, archived: false }, {
+      onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
+    });
+    else { archiveMut.reset(); setConfirmArchive(c); }
+  };
 
   // Cell id → what breaks the group rule for it (nothing for a sound register).
   // Keyed on `data`, not `cells`: `cells` is a fresh [] on every render while loading.
@@ -277,10 +344,12 @@ export default function Cells() {
             .includes(q)) return false;
       if (brigadirSel === "none" ? c.manager_id : brigadirSel && String(c.manager_id) !== brigadirSel) return false;
       if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
+      if (statusSel === "active" && c.archived_at) return false;
+      if (statusSel === "archived" && !c.archived_at) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, brigadirSel, leaderSel, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, statusSel, lang, tl]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
@@ -333,6 +402,11 @@ export default function Cells() {
     { value: "none", label: t("admin.profiles.cellNoSupervisor") },
     ...units.map((u) => ({ value: String(u.id), label: tl(u.name) })),
   ];
+  const statusOpts = [
+    { value: "active", label: t("admin.profiles.cellStatusActive") },
+    { value: "archived", label: t("admin.profiles.cellStatusArchived") },
+    { value: "all", label: t("admin.profiles.cellStatusAll") },
+  ];
   const leaderFilterOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllLeaders") },
     { value: "none", label: t("admin.profiles.cellUnassigned") },
@@ -368,6 +442,8 @@ export default function Cells() {
           onEdit={() => openEdit(c)}
           onDelete={() => setConfirmDelete(c)}
           deleting={deleteMut.isPending}
+          onArchive={() => onArchive(c)}
+          archiving={archiveMut.isPending}
           onOpen={() => navigate(`/cells/${c.id}`)}
           issue={issues.get(c.id)}
         />
@@ -423,6 +499,15 @@ export default function Cells() {
                     <PickFilter searchable close={close} opts={leaderFilterOpts} value={leaderSel} onChange={setFLeader} />
                   ),
                 },
+                {
+                  key: "status", icon: Archive, label: t("admin.profiles.cellFilterStatus"),
+                  active: statusSel !== "active",
+                  display: statusSel !== "active" ? (statusOpts.find((o) => o.value === statusSel)?.label || "") : "",
+                  onClear: () => setFStatus("active"),
+                  render: ({ close } = {}) => (
+                    <PickFilter close={close} opts={statusOpts} value={statusSel} onChange={setFStatus} />
+                  ),
+                },
               ]}
             />
             <div className="ml-auto flex items-center gap-2">
@@ -460,12 +545,12 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[16%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[20%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[14%]" />
             <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[25%]" />
-            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[25%]" />
-            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[8%]" />}
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[22%]" />
+            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[22%]" />
+            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[12%]" />}
           </tr>
         </thead>
         <tbody>
@@ -484,9 +569,13 @@ export default function Cells() {
             </tr>
           )}
           {!isLoading && sorted.map((c) => (
-            <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`/cells/${c.id}`)}>
+            <tr key={c.id} className="cursor-pointer" style={c.archived_at ? { opacity: 0.7 } : undefined}
+                onClick={() => navigate(`/cells/${c.id}`)}>
               <td className="px-3 py-2 font-mono font-semibold text-[var(--text-1)] whitespace-nowrap">
-                <CellLink id={c.id}>{c.verifix_code}</CellLink>
+                <span className="inline-flex items-center gap-2">
+                  <CellLink id={c.id}>{c.verifix_code}</CellLink>
+                  <ArchivedChip c={c} t={t} />
+                </span>
               </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
               <td className="px-3 py-2 whitespace-nowrap">
@@ -504,7 +593,8 @@ export default function Cells() {
               </td>
               {canEdit && (
                 <td className="px-3 py-2">
-                  <RowActions t={t} onEdit={() => openEdit(c)} onDelete={() => setConfirmDelete(c)} deleting={deleteMut.isPending} />
+                  <RowActions t={t} onEdit={() => openEdit(c)} onDelete={() => setConfirmDelete(c)} deleting={deleteMut.isPending}
+                    archived={!!c.archived_at} onArchive={() => onArchive(c)} archiving={archiveMut.isPending} />
                 </td>
               )}
             </tr>
@@ -535,6 +625,19 @@ export default function Cells() {
         cancelLabel={t("admin.users.cancel")}
         tone="danger"
         loading={deleteMut.isPending}
+      />
+
+      {/* Archive confirmation — the failure stays inside the dialog */}
+      <ConfirmDialog
+        open={!!confirmArchive}
+        onCancel={() => setConfirmArchive(null)}
+        onConfirm={() => archiveMut.mutate({ id: confirmArchive.id, archived: true })}
+        title={t("admin.profiles.cellArchiveTitle")}
+        message={confirmArchive && fill(t("admin.profiles.cellArchiveMsg"), { name: confirmArchive.verifix_code || "" })}
+        confirmLabel={t("admin.profiles.cellArchive")}
+        cancelLabel={t("admin.users.cancel")}
+        loading={archiveMut.isPending}
+        error={confirmArchive && archiveMut.isError ? (archiveMut.error?.response?.data?.detail || t("admin.profiles.error")) : null}
       />
 
       {toast.node}

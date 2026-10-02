@@ -1644,6 +1644,23 @@ def add_cell_shift_times() -> None:
         db.close()
 
 
+def add_cell_archive() -> None:
+    """2026-10-02: cells can be ARCHIVED (closed) instead of deleted —
+    ``archived_at`` (when) and ``archived_by`` (who, a name snapshot). NULL =
+    active, which is what every existing row is, so nothing moves. Pure DDL,
+    idempotent, no flag."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ"))
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS archived_by VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell archive migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_client_key() -> None:
     """2026-09-07: ``cell_ojidaniya_intervals`` gains ``client_key`` — the
     idempotency handle for the live start/finish recorder on /idle-cell.
