@@ -21,6 +21,9 @@
          background check (PushJob) survives a restart of the phone. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The notification check waits for a network (JobInfo.NETWORK_TYPE_ANY);
+         without this Android refuses to schedule it at all. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Android 11+ package visibility: which app is the phone's browser — the
          one place a page of ours must open outside the app, and the failure

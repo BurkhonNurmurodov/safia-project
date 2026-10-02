@@ -6191,7 +6191,7 @@ wake it.
   elsewhere (password change, sign-out everywhere) → it stops until the next
   sign-in. Android 13+ is asked for permission ONCE, at the first sign-in after
   install; later only through «Yoqish».
-- A new APK is needed for this (1.5.0); the server and pages are ready either way.
+- A new APK is needed for this — **1.5.1**: 1.5.0 never scheduled the check (its job needs a network, and the manifest lacked `ACCESS_NETWORK_STATE`, so Android threw a SecurityException and nothing ever polled). The server and pages were fine.
 
 ## The action register (`/admin/upload?tab=logs`)
 
@@ -6901,7 +6901,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.5.0, versionCode 7).
+  **Raise `versionCode` on every release** (current: 1.5.1, versionCode 8).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
