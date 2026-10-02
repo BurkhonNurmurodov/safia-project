@@ -6556,6 +6556,15 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   (the operator found the old table under the new date's label confusing).
   The day before the one on screen is prefetched — stepping back is the
   common move.
+- **The report's own check-in and check-out WIN wherever it has them**
+  (2026-10-02, the operator: «/staff is correct, fix /staff-live»). They are
+  what the next morning's file — and so /staff — prints (the parity check: the
+  same clock on 1,157 of 1,158 rows). The marks only fill in what the report
+  has not said yet. Until then an EARLIER mark replaced the report's arrival
+  (a night worker's exit from the previous night became today's check-in, a
+  pass through another terminal moved it earlier) and a LATER mark replaced
+  its check-out. One exception: a mark after the report's check-out while the
+  shift is still running is a person who came back in, so the marks decide.
 - **A departure comes from, in order of trust**: the report's own check-out;
   a mark typed «O» (per PERSON, while their LAST mark is a directed one — «O»
   left, «T» on a break, «I» inside); else, once the shift is over, the latest

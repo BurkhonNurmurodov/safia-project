@@ -22,10 +22,11 @@ Where a person stands is answered the way the agreed live feed will answer it:
   1) unless somebody is still inside long after their shift (a missing
   check-out — decision 5) or a change is pending; then a person closes it.
 
-**Inside / left come from the raw marks** (`track$list`): the last mark of the
-day decides — an «O» is a departure, anything else a presence. A plant whose
-terminals mark no direction at all (no «I»/«O» anywhere) falls back to the
-report's own first-in / last-out. `diag` says which happened.
+**The report's own check-in / check-out win wherever it has them** — they are
+what the next morning's file, and so /staff, prints. The raw marks
+(`track$list`) only fill in what the report has not said yet: an arrival it
+does not carry, and a departure it has not written (an «O» mark, else the last
+mark once the shift is over). `diag` says which happened.
 
 **Hours**: «Отработано» is summed from the time kinds the parity check FOUND
 (`verifix_last_parity.hours`) when that rule matched the files closely enough,
@@ -272,10 +273,18 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     hi = (end + timedelta(hours=6)) if end else datetime.combine(day, time(23, 59, 59))
     mine = sorted(m for m in marks if lo <= m[0] <= hi)
 
-    t_in = _dt(d.get("input_time")) if d else None
-    t_out = _dt(d.get("output_time")) if d else None
-    if mine:
-        t_in = min(t_in, mine[0][0]) if t_in else mine[0][0]
+    # The report's own clock is what the next morning's file — and so /staff —
+    # prints (parity check, 27.09.2026: the same in/out on 1,157 of 1,158
+    # rows). Wherever the report has answered, it WINS; the marks only fill in
+    # what it has not said yet. An earlier mark must never replace its arrival
+    # (it took the previous night's exit for today's check-in), and once the
+    # shift is over a later mark must never replace its check-out.
+    rep_in = _dt(d.get("input_time")) if d else None
+    rep_out = _dt(d.get("output_time")) if d else None
+    t_in = rep_in or (mine[0][0] if mine else None)
+    t_out = rep_out
+    if t_in:
+        mine = [m for m in mine if m[0] >= t_in - timedelta(minutes=1)]
 
     # Where the departure comes from, in order of trust: the report's own
     # check-out (Verifix fills it in late — last night's shift had none by
@@ -283,6 +292,11 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     # that carry no direction at all, the last mark once the shift is over.
     last = mine[-1] if mine else None
     shift_over = now >= end if end else now >= datetime.combine(day + timedelta(days=1), time(6))
+    # A mark after the report's check-out, while the shift still runs, is a
+    # person who came back in: the marks decide. After the shift the report is
+    # the record.
+    back_in = (rep_out is not None and last is not None and not shift_over
+               and last[0] > rep_out + timedelta(minutes=1))
     # Any mark at least PAIR_MIN after the arrival, up to 12 h past the shift's
     # end, whatever its type: once the shift is over the latest of them is
     # where the person left.
@@ -297,9 +311,10 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             status = "not_yet"
         else:
             status = "absent"
-    elif t_out and (last is None or t_out >= last[0] - timedelta(minutes=1)):
+    elif rep_out and not back_in:
         status, out_src = "left", "report"
-    elif any(m[1] in DIRECTED for m in mine) and last[1] in DIRECTED | BREAK_TYPES:
+    elif last is not None and any(m[1] in DIRECTED for m in mine) \
+            and last[1] in DIRECTED | BREAK_TYPES:
         if last[1] in OUT_TYPES:
             status, t_out, out_src = "left", last[0], "mark"
         elif last[1] in BREAK_TYPES:
