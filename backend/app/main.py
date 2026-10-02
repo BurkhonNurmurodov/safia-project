@@ -95,6 +95,7 @@ async def lifespan(app: FastAPI):
         report_proof_review_sep19_20,
         report_auto_checks_sep20_21,
         report_auto_check_restore,
+        report_auto_pct_disputes,
         report_missed_day_reports,
         report_missed_reports_resend,
         report_filling_times,
@@ -495,6 +496,12 @@ async def lifespan(app: FastAPI):
     # chat. Remove this line, `startup.report_auto_check_restore`, the `acr:`
     # callback and `services/auto_check_restore.py` once the button is used.
     report_auto_check_restore()
+    # ⚠ TEMPORARY one-shot (2026-10-02) — every objection to a failed #9, with
+    # the «Bajarish %» rebuilt at the check hour from when the ФАКТ was typed.
+    # Summary + .xlsx + .json in the operator's chat, flag-guarded — delivers
+    # once. Remove this line, `startup.report_auto_pct_disputes` and
+    # `services/auto_pct_dispute_report.py` once the files have landed.
+    report_auto_pct_disputes()
     # ⚠ TEMPORARY one-shot (2026-09-22) — every leader-day since 1 Sep: was its
     # day report sent, and if not, why (a day parked while still open and never
     # retried). Summary + .xlsx + .json in the operator's chat, flag-guarded —

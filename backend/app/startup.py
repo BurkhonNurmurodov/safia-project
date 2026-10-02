@@ -6738,6 +6738,38 @@ def _auto_check_restore_job() -> None:
                       auto_check_restore.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: objections to #9, checked against WHEN the ФАКТ was typed ─────
+# The operator, 2026-10-02: more and more leaders object to a failed #9 («I
+# entered 50% on time, it was not accepted»). `services/auto_pct_dispute_report.py`
+# rebuilds, for every such objection, the «Bajarish %» at the check hour from the
+# action register's timestamped ФАКТ saves and SAP uploads, the moment the target
+# was first reached, and the same figure today — summary + .xlsx + .json in the
+# operator's chat. It READS and writes nothing but its flag. Changing what it
+# reports needs a NEW flag key.
+AUTO_PCT_DISPUTES_FLAG = "auto_pct_disputes_report_2026_10_02_v1"
+_AUTO_PCT_DISPUTES_DELAY_S = 180
+
+
+def report_auto_pct_disputes() -> None:
+    """#9 objections with the % at the check hour, DMed once. Never raises."""
+    try:
+        if not _report_pending(AUTO_PCT_DISPUTES_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("auto-pct-disputes-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_AUTO_PCT_DISPUTES_DELAY_S),
+                    _auto_pct_disputes_job)
+    except Exception as exc:
+        print(f"[startup] #9 objections report could not be scheduled: {exc}")
+
+
+def _auto_pct_disputes_job() -> None:
+    from app.services import auto_pct_dispute_report
+    _send_report_once(AUTO_PCT_DISPUTES_FLAG, "#9 objections report",
+                      auto_pct_dispute_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader-days never got their day report ───────────────────
 # A leader reported on 2026-09-22 that the final report never came after they
 # closed their last task, and that they could not object to the AI. Reading the
