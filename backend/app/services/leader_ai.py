@@ -47,7 +47,7 @@ from sqlalchemy import and_, false, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models import (
     AppSetting,
     LeaderAiDispute,
@@ -3743,32 +3743,75 @@ def task_weights(db: Session) -> dict[int, int]:
 
 # ── background kick ──────────────────────────────────────────────────────────
 
-def _try_db_lock(db: Session) -> bool:
+# What `_claim_db_lock` hands back on a database that has no advisory locks
+# (a SQLite dev box): the slot is "held" and there is nothing to release.
+_NO_DB_LOCK = object()
+
+
+def _claim_db_lock():
     """Claim the platform-wide drain slot via a Postgres advisory lock.
 
-    The in-process lock below is not enough on its own: Passenger runs several
-    worker processes, and a Refresh landing on one while a bot day-close lands
-    on another would have both drain the SAME pending rows — paying twice for
-    one verdict out of a quota that is the whole constraint here. The advisory
-    lock is held on this session's connection and released in `_work`'s finally;
-    if the process dies outright the connection dies with it and Postgres drops
-    the lock, so a crash can never strand the queue.
+    Returns the Connection that HOLDS the lock (pass it to `_release_db_lock`),
+    None when another holder has it, or `_NO_DB_LOCK` on a database without
+    advisory locks.
+
+    The in-process lock below is not enough on its own: two processes (a
+    blue-green deploy's two copies, the backfill CLI beside the app) would both
+    drain the SAME pending rows — paying twice for one verdict out of a quota
+    that is the whole constraint here.
+
+    **The lock lives on a connection of its own, for the whole pass.** It used
+    to be taken on the drain's Session, and a Session hands its connection back
+    to the pool at every commit — `_beat` commits right after the claim — so the
+    unlock at the end ran on whichever pooled connection the session held by
+    then. `pg_advisory_unlock` answers false there and the lock stayed on a
+    pooled connection, refusing every later kick («locked») until pool_recycle
+    happened to close that connection; reproduced locally on 2026-10-02, the day
+    the reviewer checked nothing. If the process dies outright the connection
+    dies with it and Postgres drops the lock, so a crash can never strand the
+    queue.
     """
+    if engine.dialect.name != "postgresql":
+        return _NO_DB_LOCK
     try:
-        return bool(db.execute(
+        conn = engine.connect()
+    except Exception:
+        log.exception("leader-ai: no connection to claim the drain lock on")
+        return None
+    try:
+        got = bool(conn.execute(
             text("SELECT pg_try_advisory_lock(:k)"), {"k": _DRAIN_LOCK_KEY}
         ).scalar())
-    except Exception as exc:  # non-Postgres dev DB — fall back to the process lock
-        log.debug("leader-ai: advisory lock unavailable (%s)", exc)
-        return True
+        conn.commit()
+    except Exception:
+        log.exception("leader-ai: could not ask for the drain lock")
+        got = False
+    if got:
+        return conn
+    conn.close()
+    return None
 
 
-def _db_unlock(db: Session) -> None:
+def _release_db_lock(conn) -> None:
+    """Let go of the slot ON THE CONNECTION THAT TOOK IT. A connection that
+    cannot be shown to have released it is discarded rather than pooled —
+    Postgres drops a session's locks with the session."""
+    if conn is None or conn is _NO_DB_LOCK:
+        return
     try:
-        db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _DRAIN_LOCK_KEY})
-        db.commit()
+        released = conn.execute(
+            text("SELECT pg_advisory_unlock(:k)"), {"k": _DRAIN_LOCK_KEY}
+        ).scalar()
+        conn.commit()
+        if released:
+            conn.close()
+            return
     except Exception:
         log.debug("leader-ai: advisory unlock failed", exc_info=True)
+    try:
+        conn.invalidate()
+    except Exception:
+        pass
 
 
 # A drain pass stops after `gemini_batch_size` rows. It used to wait for the
@@ -3843,7 +3886,8 @@ def run_async(discover_first: bool = False, _chain: int = 0) -> None:
         # nothing next to the batch it is guarding.
         db = SessionLocal()
         started = datetime.now(timezone.utc).isoformat()
-        got = holding = False
+        got = False
+        holding = None
         chain = False
         try:
             got = _lock.acquire(blocking=False)
@@ -3851,8 +3895,8 @@ def run_async(discover_first: bool = False, _chain: int = 0) -> None:
                 log.debug("leader-ai: drain already running in this worker")
                 _note_refused(db, "busy")
                 return
-            holding = _try_db_lock(db)
-            if not holding:
+            holding = _claim_db_lock()
+            if holding is None:
                 log.debug("leader-ai: another worker is draining, skipping kick")
                 _note_refused(db, "locked")
                 return
@@ -3880,12 +3924,9 @@ def run_async(discover_first: bool = False, _chain: int = 0) -> None:
             # state most worth showing: everything else eventually retries.
             _beat(db, state="crashed", startedAt=started, error=str(exc)[:300])
         finally:
-            # Explicit unlock: db.close() only returns the connection to the
-            # pool, and the session outlives it — so an advisory lock left
-            # behind would ride that pooled connection and block every future
-            # drain in this worker.
-            if holding:
-                _db_unlock(db)
+            # Released on the connection that took it (`_claim_db_lock`) — a
+            # lock left on a pooled connection refuses every later kick.
+            _release_db_lock(holding)
             db.close()
             # Guarded: this thread may have exited because it never got the
             # lock, and releasing one it does not hold both raises and frees
@@ -3935,11 +3976,15 @@ def register_drain_job() -> None:
     the drain claims a Postgres advisory lock before doing any work, so even if
     the unit ever moves off `--workers 1` the extra firings no-op instead of
     double-spending quota.
+
+    The stall alarm (`watch_stall`) is armed FIRST and with or without a key:
+    "no key" is one of the stops it exists to report.
     """
+    from app.scheduler import schedule_interval
+    schedule_interval("leader-ai-watch", watch_stall, minutes=WATCH_EVERY_MIN)
     if not gemini.available():
         log.info("leader-ai: no API key, periodic drain not scheduled")
         return
-    from app.scheduler import schedule_interval
     schedule_interval("leader-ai-drain", lambda: run_async(discover_first=False),
                       minutes=DRAIN_EVERY_MIN)
     log.info("leader-ai: periodic drain scheduled every %s min", DRAIN_EVERY_MIN)
@@ -3994,5 +4039,211 @@ def resume_after_boot() -> None:
             run_async(discover_first=False)
     except Exception:
         log.exception("leader-ai: boot resume failed")   # never block startup
+    finally:
+        db.close()
+
+
+# ── the stall alarm ──────────────────────────────────────────────────────────
+# A reviewer that stops is SILENT. Every state it can stop in — no key, a quota
+# answer, an API that rejects every call, a crashed pass, kicks refused by the
+# lock — leaves at most a heartbeat on a page nobody has open, and costs nothing
+# on the Gemini bill. On 2026-10-02 the plant learned that no proof had been
+# checked all day from AI Studio's spend page.
+#
+# So the queue is watched: proofs that have waited STALL_AFTER_MIN, with no
+# verdict written in as long, are a stall, and the admins are told what is
+# waiting and Google's own words for why — once per reason, again every
+# STALL_REPEAT_H while it lasts, and once more when verdicts flow again. It
+# only REPORTS; the drain timer is still what moves the queue.
+STALL_AFTER_MIN = 60
+STALL_REPEAT_H = 6
+STALL_SETTING = "leader_ai_stall_alert"
+WATCH_EVERY_MIN = 20
+
+_STALL_WHY = {
+    "no_key":  "Gemini API kaliti sozlanmagan — tekshiruv o'chiq.",
+    "quota":   "Gemini so'rovlarni limit (kvota) bilan rad etmoqda.",
+    "api":     "Gemini har bir so'rovni xato bilan rad etmoqda.",
+    "crashed": "Tekshiruv jarayoni xato bilan to'xtadi.",
+    "refused": "Tekshiruvni ishga tushirish rad etildi — qulf band.",
+    "silent":  "Tekshiruv boshlangan, lekin javob bermayapti.",
+    "idle":    "Tekshiruvni hech narsa ishga tushirmadi.",
+}
+_STALL_DO = {
+    "no_key":  "Admin panel → AI kartasida kalitni kiriting.",
+    "quota":   ("AI Studio'da limit va to'lovni tekshiring yoki AI kartasida "
+                "modelni almashtiring."),
+    "api":     "AI Studio'da API kalitini, to'lovni va modelni tekshiring.",
+    "crashed": "Xato matnini dasturchiga yuboring.",
+    "refused": "Boshqa tekshiruv jarayoni ishlayaptimi — tekshiring.",
+    "silent":  "Serverni qayta ishga tushirish (deploy) jarayonni tiklaydi.",
+    "idle":    "«AI tekshiruvi» sahifasida «Hozir boshlash»ni bosing.",
+}
+
+
+def stall_state(db: Session) -> dict | None:
+    """Is proof review stalled, and why? None when it is moving, or has nothing
+    to move. Rows filed in the last 24 h only: the alarm is about today's work,
+    not about rows that gave up last week."""
+    now = datetime.now(timezone.utc)
+    recent = (db.query(LeaderAiReview.attempts, LeaderAiReview.created_at)
+              .filter(LeaderAiReview.status.in_(("pending", "error")),
+                      LeaderAiReview.created_at >= now - timedelta(hours=24),
+                      ~paused_clause())
+              .all())
+    if not recent:
+        return None
+    last = _utc(db.query(func.max(LeaderAiReview.reviewed_at)).scalar())
+    if last is not None and now - last < timedelta(minutes=STALL_AFTER_MIN):
+        return None
+    late = now - timedelta(minutes=STALL_AFTER_MIN)
+    queued = sum(1 for a, _ in recent if (a or 0) < MAX_ATTEMPTS)
+    waiting = [_utc(c) for a, c in recent
+               if (a or 0) < MAX_ATTEMPTS and c is not None]
+    beat = _read_beat(db) or {}
+    if not gemini.available():
+        code, detail = "no_key", ""
+    elif beat.get("quota"):
+        code, detail = "quota", str(beat.get("quotaMsg") or "")
+    elif beat.get("aborted"):
+        code, detail = "api", str(beat.get("aborted"))
+    elif beat.get("state") == "crashed":
+        code, detail = "crashed", str(beat.get("error") or "")
+    elif beat.get("state") in ("locked", "busy") or beat.get("refusedState"):
+        code, detail = "refused", ""
+    elif beat.get("state") == "running":
+        code, detail = "silent", ""
+    else:
+        code, detail = "idle", ""
+    # A row still queued an hour later is a stall whatever the reason. Rows that
+    # only GAVE UP count when the drain itself reports a failure: one proof whose
+    # photos cannot be fetched burns its retries on a healthy reviewer, and on a
+    # quiet night that alone must not read as «the reviewer stopped».
+    if any(c <= late for c in waiting):
+        oldest = min(waiting)
+    elif code in ("no_key", "quota", "api", "crashed"):
+        stamps = [_utc(c) for _, c in recent if c is not None and _utc(c) <= late]
+        if not stamps:
+            return None
+        oldest = min(stamps)
+    else:
+        return None
+    err = (db.query(LeaderAiReview.error, func.count(LeaderAiReview.id))
+           .filter(LeaderAiReview.status == "error",
+                   LeaderAiReview.error.isnot(None),
+                   LeaderAiReview.created_at >= now - timedelta(hours=24))
+           .group_by(LeaderAiReview.error)
+           .order_by(func.count(LeaderAiReview.id).desc())
+           .first())
+    return {"code": code, "detail": detail, "queued": queued,
+            "gave_up": len(recent) - queued, "oldest": oldest, "last": last,
+            "beat_at": beat.get("at"), "model": gemini.active_model(),
+            "error": err[0] if err else None, "error_n": err[1] if err else 0}
+
+
+def _tk(v: datetime | None) -> str:
+    """A moment on the plant's clock, for the admins' message."""
+    if v is None:
+        return "—"
+    from zoneinfo import ZoneInfo
+    return v.astimezone(ZoneInfo("Asia/Tashkent")).strftime("%d.%m %H:%M")
+
+
+def _stall_text(st: dict) -> str:
+    import html
+
+    esc = lambda v: html.escape(str(v), quote=False)          # noqa: E731
+    mins = int((datetime.now(timezone.utc) - (st["last"] or st["oldest"]))
+               .total_seconds() // 60)
+    lines = ["🛑 <b>AI tekshiruvi to'xtab qoldi</b>",
+             (f"Isbotlar navbatda, lekin {mins} daqiqadan beri bitta ham xulosa "
+              f"yozilmadi." if st["last"] else
+              "Isbotlar navbatda, lekin hali bitta ham xulosa yozilmadi."),
+             "",
+             f"• Navbatda: <b>{st['queued']}</b> ta"]
+    if st["gave_up"]:
+        lines.append(f"• Urinishlari tugagan: <b>{st['gave_up']}</b> ta")
+    lines += [f"• Eng eskisi: {_tk(st['oldest'])}",
+              f"• Oxirgi xulosa: {_tk(st['last'])}",
+              f"• Model: {esc(st['model'])}",
+              "",
+              f"Sabab: {esc(_STALL_WHY.get(st['code'], st['code']))}"]
+    if st["detail"]:
+        lines.append(f"Gemini javobi: <code>{esc(st['detail'][:400])}</code>")
+    if st["error"] and st["error"] != st["detail"]:
+        lines.append(f"Oxirgi xato ({st['error_n']} ta): "
+                     f"<code>{esc(st['error'][:400])}</code>")
+    lines.append(f"Nima qilish kerak: {esc(_STALL_DO.get(st['code'], ''))}")
+    return "\n".join(lines)
+
+
+def _tell_admins(text_html: str) -> int:
+    """The support chat, or every admin — the door the boot self-checks and
+    `leader_auto._alert_admins` use. Returns how many chats took it."""
+    sent = 0
+    try:
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text_html, parse_mode="HTML")
+                sent += 1
+            except Exception:                                 # noqa: BLE001
+                pass
+    except Exception:                                         # noqa: BLE001
+        log.exception("leader-ai: stall alert not delivered")
+    return sent
+
+
+def watch_stall() -> None:
+    """The timer body: compare the queue with the last alert, say what changed.
+
+    The alert row is written whether or not Telegram took the message — a DM
+    that failed is retried by the next repeat, never every 20 minutes."""
+    import json
+
+    db = SessionLocal()
+    try:
+        st = stall_state(db)
+        row = db.query(AppSetting).filter_by(key=STALL_SETTING).first()
+        try:
+            prev = json.loads(row.value) if row is not None and row.value else {}
+        except ValueError:
+            prev = {}
+        now = datetime.now(timezone.utc)
+        try:
+            sent_at = datetime.fromisoformat(prev["sent"]) if prev.get("sent") else None
+        except ValueError:
+            sent_at = None
+
+        def save(value: dict) -> None:
+            nonlocal row
+            if row is None:
+                row = AppSetting(key=STALL_SETTING, value=json.dumps(value))
+                db.add(row)
+            else:
+                row.value = json.dumps(value)
+            db.commit()
+
+        if st is None:
+            if prev.get("open"):
+                last = _utc(db.query(func.max(LeaderAiReview.reviewed_at)).scalar())
+                if last is not None and sent_at is not None and last > sent_at:
+                    _tell_admins("✅ <b>AI tekshiruvi yana ishlayapti</b>\n"
+                                 f"Oxirgi xulosa: {_tk(last)}")
+                    log.info("leader-ai: stall over, verdicts flowing since %s", last)
+                save({"open": False, "code": prev.get("code"), "closed": now.isoformat()})
+            return
+        if (prev.get("open") and prev.get("code") == st["code"] and sent_at is not None
+                and now - sent_at < timedelta(hours=STALL_REPEAT_H)):
+            return
+        log.warning("leader-ai: STALLED (%s) — %s queued, oldest %s, last verdict %s: %s",
+                    st["code"], st["queued"], st["oldest"], st["last"],
+                    st["detail"] or st["error"] or "")
+        n = _tell_admins(_stall_text(st))
+        save({"open": True, "code": st["code"], "sent": now.isoformat(), "chats": n})
+    except Exception:
+        log.exception("leader-ai: stall watch failed")
+        db.rollback()
     finally:
         db.close()

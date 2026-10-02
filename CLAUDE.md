@@ -2497,6 +2497,27 @@ number.
   stays `running` between chained passes, so the strip does not blink through
   `idle` mid-drain. **Consequence to know: a large queue now finishes far
   faster and reaches the daily Gemini cap sooner.**
+- **The drain lock lives on a CONNECTION of its own** (`_claim_db_lock` /
+  `_release_db_lock`, 2026-10-02). It was taken on the drain's Session, and a
+  Session hands its connection back to the pool at every commit (`_beat`
+  commits right after the claim), so the unlock ran on another pooled
+  connection, answered false, and the lock stayed held: later kicks were
+  refused «locked» until pool_recycle closed that connection — measured
+  locally, one ordinary pass left it held and half the next kicks were
+  refused. Never take a session-level advisory lock on a Session again; the
+  backfill CLI uses the same pair.
+- **A stalled reviewer tells the admins** (`watch_stall`, job
+  `leader-ai-watch`, every 20 min, armed with or without a key). Proofs waiting
+  `STALL_AFTER_MIN` (60) with no verdict written in as long are a stall; the
+  support chat / every admin gets ONE DM naming the queue, the last verdict,
+  the model, the reason (no key · quota · API rejecting every call · crash ·
+  refused · silent · nothing started it) and Google's own words — again only
+  when the reason changes or after `STALL_REPEAT_H` (6 h), and one «yana
+  ishlayapti» when verdicts flow again (`leader_ai_stall_alert` holds the
+  state). Rows that merely gave up count only beside a failure the drain itself
+  reports, so one unfetchable photo cannot raise it on a quiet night. Born of
+  2 Oct 2026, when the plant learned from AI Studio's spend page that nothing
+  had been checked all day. It only REPORTS — the drain timer moves the queue.
 - **The two RECURRING passes use a rolling window, not the fixed floor** —
   `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
   a pass bounded only by it re-reads every automatic day ever filed; both of

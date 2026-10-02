@@ -220,7 +220,7 @@ def main() -> int:
         gemini.set_model_override(args.model)
 
     db = SessionLocal()
-    holding = False
+    holding = None
     try:
         # ── stats ────────────────────────────────────────────────────────────
         counts = leader_ai.counts(db)
@@ -244,8 +244,8 @@ def main() -> int:
         # The SAME advisory lock the web drain takes. Without it a Refresh
         # landing mid-backfill would review the same rows from another process
         # and pay twice out of a quota that is the whole constraint here.
-        holding = leader_ai._try_db_lock(db)
-        if not holding:
+        holding = leader_ai._claim_db_lock()
+        if holding is None:
             print(f"\n{st.red}Another drain is running "
                   f"(the web app, or a second copy of this script).{st.off}\n"
                   f"Wait for it to finish, then re-run.")
@@ -316,8 +316,7 @@ def main() -> int:
         return _run(db, ids, leaders, tasks, args, st,
                     leader_ai=leader_ai, gemini=gemini, Review=LeaderAiReview)
     finally:
-        if holding:
-            leader_ai._db_unlock(db)
+        leader_ai._release_db_lock(holding)
         db.close()
 
 
