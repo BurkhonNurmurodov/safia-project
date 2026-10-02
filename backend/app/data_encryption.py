@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from app.web_auth import open_password, seal_password
 
 
-def reseal_values(values: Mapping[tuple[str, int], str]) -> dict[tuple[str, int], str]:
+def reseal_values(values: Mapping[tuple[str, int | str], str]) -> dict[tuple[str, int | str], str]:
     """Decrypt every input before preparing any replacement ciphertext."""
     plaintext = {}
     for identity, sealed in values.items():
