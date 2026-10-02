@@ -150,7 +150,7 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
       const top = r.bottom + 8;
       setPos(window.innerWidth < 640
         ? { top, left: 8, right: 8 }
-        : { top, right: Math.max(8, window.innerWidth - r.right), width: 440 });
+        : { top, right: Math.max(8, window.innerWidth - r.right), width: 384, cap: 560 });
     };
     place();
     window.addEventListener("resize", place);
@@ -231,7 +231,7 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
         left: pos.left,
         right: pos.right,
         width: pos.width,
-        maxHeight: `min(680px, calc(100dvh - ${pos.top}px - 12px - var(--tg-safe-bottom, 0px)))`,
+        maxHeight: `min(${pos.cap || 680}px, calc(100dvh - ${pos.top}px - 12px - var(--tg-safe-bottom, 0px)))`,
         background: "var(--bg-card)",
         border: "1px solid var(--border-md)",
       }}

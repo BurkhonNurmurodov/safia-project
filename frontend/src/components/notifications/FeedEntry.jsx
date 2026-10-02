@@ -8,7 +8,7 @@ import {
 } from "./notifMeta";
 import { IconChip, StatusChip, UnreadDot } from "./NotifParts";
 
-const ROW = "flex gap-3 px-4 py-3 w-full text-left transition-colors hover:bg-[var(--bg-inner)] " +
+const ROW = "flex gap-3 px-4 py-3 sm:py-2.5 w-full text-left transition-colors hover:bg-[var(--bg-inner)] " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2";
 
 /**
@@ -43,14 +43,14 @@ export default function FeedEntry({ entry, unread, onRead, onOpen }) {
       <UnreadDot on={unread} label={t("notif.stateUnread")} />
       <IconChip Icon={Icon} ink={ink} />
       <span className="flex-1 min-w-0 block">
-        <span className={`block text-sm leading-snug ${unread ? "font-semibold" : "font-normal"}`}
+        <span className={`block text-sm sm:text-[13px] leading-snug ${unread ? "font-semibold" : "font-normal"}`}
           style={{ color: "var(--text-1)" }}>
           {title}
         </span>
         {isGroup ? (
           <>
             {entry.names?.length > 0 && (
-              <span className="block text-[13px] mt-0.5 leading-snug" style={{ color: "var(--text-2)" }}>
+              <span className="block text-[13px] sm:text-xs mt-0.5 leading-snug" style={{ color: "var(--text-2)" }}>
                 {nameList(entry.names, { t, tl, tx, people: entry.names_kind !== "text" })}
               </span>
             )}
@@ -67,7 +67,7 @@ export default function FeedEntry({ entry, unread, onRead, onOpen }) {
         ) : body ? (
           // `line-clamp-*` IS a display (-webkit-box): pairing it with
           // `block` cancels the clamp, so the two never share a class list.
-          <span className={`text-[13px] mt-0.5 leading-snug whitespace-pre-line ${expanded ? "block" : "line-clamp-2"}`}
+          <span className={`text-[13px] sm:text-xs mt-0.5 leading-snug whitespace-pre-line ${expanded ? "block" : "line-clamp-2"}`}
             style={{ color: "var(--text-2)" }}>
             {body}
           </span>

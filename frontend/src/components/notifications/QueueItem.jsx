@@ -87,7 +87,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
   };
 
   return (
-    <div className="flex gap-3 px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+    <div className="flex gap-3 px-4 py-3 sm:py-2.5" style={{ borderTop: "1px solid var(--border)" }}>
       <IconChip Icon={Icon} />
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2">
@@ -95,13 +95,13 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
             <Link
               to={item.link}
               onClick={() => onOpen?.()}
-              className="text-sm font-semibold leading-snug line-clamp-2 hover:underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2"
+              className="text-sm sm:text-[13px] font-semibold leading-snug line-clamp-2 hover:underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2"
               style={{ color: "var(--text-1)", outlineColor: "var(--brand)" }}
             >
               {title}
             </Link>
           ) : (
-            <p className="text-sm font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }}>
+            <p className="text-sm sm:text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }}>
               {title}
             </p>
           )}
@@ -112,13 +112,13 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
           )}
         </div>
         {sub && (
-          <p className="text-[13px] mt-0.5 leading-snug"
+          <p className="text-[13px] sm:text-xs mt-0.5 leading-snug"
             style={{ color: subTone === "warn" ? "var(--status-warn)" : "var(--text-2)" }}>
             {sub}
           </p>
         )}
         {quote && (
-          <p className="text-[13px] mt-1 leading-snug line-clamp-2" style={{ color: "var(--text-2)" }}>
+          <p className="text-[13px] sm:text-xs mt-1 leading-snug line-clamp-2" style={{ color: "var(--text-2)" }}>
             «{quote}»
           </p>
         )}
@@ -126,7 +126,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
 
         {/* One fixed-height row for the controls AND the outcome that replaces
             them, so a decision changes nothing around it. */}
-        <div className="flex items-center gap-2 flex-wrap mt-2.5 min-h-[32px] max-sm:min-h-[38px]">
+        <div className="flex items-center gap-2 flex-wrap mt-2.5 sm:mt-2 min-h-[32px] max-sm:min-h-[38px]">
           {decided ? (
             <>
               <StatusChip tone={decided.action === "reject" ? "bad" : "ok"}
