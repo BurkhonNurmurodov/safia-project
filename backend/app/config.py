@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -21,6 +22,11 @@ _DEFAULT_SECRET = "change-this-secret-key"
 
 
 class Settings(BaseSettings):
+    environment: str = "production"
+    cors_origins: str = ""
+    # Independent encryption keys allow JWT rotation without losing stored credentials.
+    data_encryption_key: str = ""
+    legacy_data_encryption_key: str = ""
     database_url: str = "postgresql://postgres:postgres@localhost:5432/zagruzka_db"
     google_credentials_file: str = "../safia-project-bea00b0b2514.json"
     secret_key: str = "change-this-secret-key"
@@ -134,14 +140,25 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        """True on the live deployment, False for local dev.
+        return self.environment.lower() != "development"
 
-        Keyed on the public app URL: production serves the SPA from an https
-        host, local dev from http://localhost. Deliberately NOT keyed on the
-        database host (the prod DB may be reached over localhost) nor on
-        dev_auth (which we want to be able to forbid independently)."""
-        url = (self.webapp_url or "").lower()
-        return url.startswith("https://") and "localhost" not in url and "127.0.0.1" not in url
+    @property
+    def cors_origin_list(self) -> list[str]:
+        parsed = urlsplit(self.webapp_url)
+        default = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else ""
+        return [value.strip().rstrip("/") for value in (self.cors_origins or default).split(",") if value.strip()]
+
+    @model_validator(mode="after")
+    def validate_security(self):
+        if self.is_production and (len(self.secret_key) < 32 or any(value in self.secret_key.lower() for value in ("change-this", "change-me", "your-secret", "replace-me"))):
+            raise ValueError("SECRET_KEY must be a strong secret of at least 32 characters.")
+        if self.is_production and (self.dev_auth or self.init_data_max_age_hours <= 0):
+            raise ValueError("Production requires signed, expiring Telegram authentication.")
+        if self.is_production and any(origin == "*" or urlsplit(origin).scheme != "https" or not urlsplit(origin).netloc or urlsplit(origin).path not in ("", "/") or urlsplit(origin).query or urlsplit(origin).fragment or urlsplit(origin).username for origin in self.cors_origin_list):
+            raise ValueError("Production CORS origins must be explicit HTTPS origins.")
+        if self.is_production and self.data_encryption_key and len(self.data_encryption_key) < 32:
+            raise ValueError("DATA_ENCRYPTION_KEY must contain at least 32 characters.")
+        return self
 
     class Config:
         env_file = _ENV_FILE

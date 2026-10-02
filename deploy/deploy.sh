@@ -163,6 +163,7 @@ git log -1 --format='   %h  %s  (%an, %ar)'
 # ------------------------------------------------------------------ deps
 if [ "$NEED_PIP" = "1" ]; then
   log "requirements.txt changed — installing backend dependencies"
+  "$APP_DIR/backend/.venv/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade pip==26.2.1
   "$APP_DIR/backend/.venv/bin/pip" install --quiet --disable-pip-version-check \
       -r "$APP_DIR/backend/requirements.txt"
   NEED_RESTART=1

@@ -139,10 +139,9 @@ def generate_password(length: int = 10) -> str:
 _SEAL_SCHEME = "v1"
 
 
-def _seal_keys() -> tuple[bytes, bytes]:
-    """Two independent subkeys from SECRET_KEY — one to encrypt, one to
-    authenticate. Never the same bytes for both."""
-    root = (settings.secret_key or "").encode("utf-8")
+def _seal_keys(root_key: Optional[str] = None) -> tuple[bytes, bytes]:
+    """Independent encryption/MAC subkeys; JWT signing has its own root key."""
+    root = (root_key if root_key is not None else (settings.data_encryption_key or settings.secret_key)).encode("utf-8")
     return (
         hmac.new(root, b"web-login-seal-enc-v1", hashlib.sha256).digest(),
         hmac.new(root, b"web-login-seal-mac-v1", hashlib.sha256).digest(),
@@ -177,7 +176,7 @@ def seal_password(raw: str) -> str:
 def open_password(sealed: Optional[str]) -> Optional[str]:
     """Read a sealed password back, or None when there is nothing honest to
     show: no sealed copy (a login last set before this existed), a corrupt row,
-    or a rotated SECRET_KEY. The caller renders «unknown» — a wrong password
+    or unavailable encryption key. The caller renders «unknown» — a wrong password
     displayed confidently is worse than no password at all."""
     if not sealed:
         return None
@@ -185,14 +184,19 @@ def open_password(sealed: Optional[str]) -> Optional[str]:
         scheme, nonce_b64, ct_b64, tag_b64 = sealed.split("$")
         if scheme != _SEAL_SCHEME:
             return None
-        enc_key, mac_key = _seal_keys()
-        nonce = base64.b64decode(nonce_b64)
-        ct = base64.b64decode(ct_b64)
-        expected = hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()
-        if not hmac.compare_digest(expected, base64.b64decode(tag_b64)):
-            return None
-        plain = bytes(a ^ b for a, b in zip(ct, _keystream(enc_key, nonce, len(ct))))
-        return plain.decode("utf-8")
+        nonce = base64.b64decode(nonce_b64, validate=True)
+        ct = base64.b64decode(ct_b64, validate=True)
+        tag = base64.b64decode(tag_b64, validate=True)
+        roots = [settings.data_encryption_key or settings.secret_key]
+        if settings.legacy_data_encryption_key and settings.legacy_data_encryption_key not in roots:
+            roots.append(settings.legacy_data_encryption_key)
+        for root in roots:
+            enc_key, mac_key = _seal_keys(root)
+            expected = hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()
+            if hmac.compare_digest(expected, tag):
+                plain = bytes(a ^ b for a, b in zip(ct, _keystream(enc_key, nonce, len(ct))))
+                return plain.decode("utf-8")
+        return None
     except Exception:
         return None
 
