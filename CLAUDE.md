@@ -8021,9 +8021,11 @@ directive (2026-08-31) and it applies to all future changes.
    deploy — there is no staging step and no review window.
 
 **The deploy remote is identified by its URL, not by its name** —
-`git.safiabakery.uz/Safia-Outsource/production`. In this checkout it is called
-`origin`, and no GitHub mirror remote is configured; resolve it with
-`git remote -v` rather than assuming a name.
+`git.safiabakery.uz/Safia-Outsource/production`. **In the main local checkout
+it is called `gitea`, and `origin` is the GitHub MIRROR** — `git push origin
+main` deploys NOTHING (2026-10-02: a production fix sat on GitHub for eight
+minutes while the API was down). Resolve it with `git remote -v` before every
+push; never assume a name.
 
 **Steps 1–2 and 4–6 are automated by the two hooks below ONLY when those hooks
 are registered in `.claude/settings.local.json`.** Having
@@ -8036,7 +8038,7 @@ cloud session is the exception**: the committed `.claude/settings.json` wires
 the same loop there (`cloud-setup.sh` pulls, `auto-commit.sh cloud` ships) — see
 «A cloud turn deploys, exactly like a laptop turn».
 
-- **gitea is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks it, so a bare `git pull` / `git push` means gitea. **Its local NAME varies by checkout** — it is `gitea` where a GitHub mirror is also configured and `origin` where it is the only remote (this checkout), so read `git remote -v` instead of hard-coding a name. Where a GitHub mirror exists it is a mirror ONLY: pushed last, best-effort, never gated on.
+- **gitea is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks it, so a bare `git pull` / `git push` means gitea. **Its local NAME varies by checkout** — it is `gitea` where a GitHub mirror is also configured (the main local checkout, where `origin` IS the mirror) and `origin` where it is the only remote, so read `git remote -v` instead of hard-coding a name. Where a GitHub mirror exists it is a mirror ONLY: pushed last, best-effort, never gated on.
 - **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
 - **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.** A cloud session runs the SAME `auto-commit.sh` from the committed `.claude/settings.json` (as `auto-commit.sh cloud`, a no-op on a laptop) and pulls through `scripts/cloud-setup.sh` — see «Cloud sessions».
   - `SessionStart` → `.claude/hooks/auto-pull.sh` fetches gitea and **fast-forwards `main`** before anything is edited. It never merges or rebases: on a diverged branch, or when uncommitted work blocks the fast-forward, it reports and leaves the tree untouched. Log: `.claude/auto-pull.log`.

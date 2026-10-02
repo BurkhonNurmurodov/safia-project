@@ -20,6 +20,7 @@ this platform has and the only one that can silently fall behind.
 """
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -39,8 +40,13 @@ def _read_version() -> str:
                 value = fh.read().strip()
         except OSError:
             continue
-        if value:
-            return value
+        # Only an X.Y.Z ever leaves this function: the value rides in the
+        # X-App-Version header of EVERY /api response, and a newline there
+        # (a VERSION left with merge-conflict markers, 2026-10-02) turned
+        # every response into a 502 while /health still answered 200.
+        m = re.search(r"\d+\.\d+\.\d+", value)
+        if m:
+            return m.group(0)
     return "0.0.0"
 
 
