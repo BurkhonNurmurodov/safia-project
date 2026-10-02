@@ -6184,7 +6184,7 @@ wake it.
   (a tab session) — native refuses it there too.
 - **The app's half is `Push.java`** (+ `PushJob`, a JobScheduler job every 15
   min, persisted, network required): shows each item (tag = key, brand gold,
-  status-bar icon `ic_stat_notify` = the chef girl as a white silhouette (1.5.2; rendered by `render-android-icons.py`), lock screen shows only «Yangi bildirishnoma»),
+  status-bar icon `ic_stat_notify` = Safia's big S (1.5.3; source `android/brand/safia-s.png`, the S of the «Safia» wordmark from Safia's customer app, rendered by `render-android-icons.py`), lock screen shows only «Yangi bildirishnoma»),
   nothing while an app screen is open (the bell is right there), a tap opens the
   item's link in the app and marks its rows read (`POST
   /api/notifications/read` with the stored token). A 401 = the session ended
@@ -6901,7 +6901,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.5.2, versionCode 9).
+  **Raise `versionCode` on every release** (current: 1.5.3, versionCode 10).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
