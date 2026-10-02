@@ -64,6 +64,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.identity import viewer_leader_profile_id
 from app.models import Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
 from app.services import action_log
@@ -117,15 +118,14 @@ def _leader_cells(db: Session, payload: dict):
     )
     role = payload.get("role")
     if role == "leader":
-        # A leader's role row points at the UNIT, so the profile is resolved by
-        # (unit, name) exactly as concerns._own_profile does it.
-        prof = db.query(RoleProfile).filter_by(
-            role="leader", manager_id=payload.get("role_id"),
-            name=payload.get("full_name"),
-        ).first()
-        if not prof:
+        # THE resolver, never the token's own (unit, name): a browser token
+        # keeps the claims it was minted with, so after a rename or a unit move
+        # that pair named nobody and the cell's PC read «no cell assigned» over
+        # a cell that was assigned (2026-10-02).
+        pid = viewer_leader_profile_id(db, payload)
+        if not pid:
             return []
-        q = q.filter(Cell.leader_id == prof.id)
+        q = q.filter(Cell.leader_id == pid)
     elif role == "supervisor":
         q = q.filter(func.coalesce(RoleProfile.manager_id, Cell.manager_id)
                      == payload.get("role_id"))

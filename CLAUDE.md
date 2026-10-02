@@ -6561,6 +6561,25 @@ re-verifies it on every request. The second is a username + password at
 - **`token_version` is the revocation handle.** Bump it to end every browser
   session for a profile (password change, reset, disable, rename, admin
   "sign out everywhere"). Telegram sessions never carry it.
+- **A token whose identity went stale is RE-ISSUED on the next page load**
+  (2026-10-02). Every API call is answered from the claims INSIDE the token
+  (`role_id`, `role_ref`, `full_name`, `sub`), and renaming a leader or moving
+  them to another unit rewrites the profile and its registration rows — never
+  a token already issued. `/api/auth/web/session` re-derived only the PAYLOAD,
+  so the header showed the new name while every page asked as the person at
+  sign-in, for up to 30 days: a renamed leader's cell PC read «Sizga yacheyka
+  biriktirilmagan» over an assigned cell, and an admin's «open as» (a fresh
+  token) could not reproduce it. Now `/session` compares the token with
+  `session_identity` (`web_auth.stale_claims`) and, when they differ, returns
+  `token` from `web_auth.reissue_web_jwt` — the current identity with the old
+  token's `exp`, `app`/`iat` and `imp` carried over, so a re-issue never extends
+  a session — and the boot in `AuthContext` swaps it in (same store, wallet row
+  updated). Logged as `WEB-LOGIN claims_refreshed`. Until that reload a leader
+  is still resolved right: `identity.viewer_profile_key` finds the registration
+  the token names (`role_ref`) BEFORE narrowing by the token's unit, and
+  `concerns._own_profile`, `cell_concerns._leader_cells` and
+  `worker_concerns._leader_lock_names` go through it instead of matching the
+  token's (unit, name) themselves — never add a fourth such match.
 - Passwords are PBKDF2-HMAC-SHA256 from the stdlib (`web_auth.hash_password`) —
   deliberately no native dependency on a pipeline that deploys straight to prod.
   5 failed attempts → 15-minute lockout, DB-backed; the per-IP throttle is

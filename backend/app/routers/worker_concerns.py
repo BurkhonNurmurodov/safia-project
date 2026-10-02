@@ -36,6 +36,7 @@ from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.identity import viewer_leader_profile_id
 from app.models import (AppSetting, Cell, Manager, RoleProfile, WorkerConcern,
                         WorkerConcernSheetState, WorkerConcernSyncMeta)
 from app.permissions import require_page
@@ -89,11 +90,12 @@ def _brigadir_map(db: Session) -> dict[str, dict]:
 def _leader_lock_names(db: Session, payload: dict) -> list[str]:
     """The reg_leader spellings that belong to the viewing leader. May be
     empty — a leader whose name matches no registry spelling sees an empty
-    page (honest) rather than someone else's numbers."""
-    prof = db.query(RoleProfile).filter_by(
-        role="leader", manager_id=payload.get("role_id"),
-        name=payload.get("full_name"),
-    ).first()
+    page (honest) rather than someone else's numbers.
+
+    The profile comes from THE resolver, not the token's own (unit, name),
+    which names nobody once the token outlives a rename or a unit move."""
+    pid = viewer_leader_profile_id(db, payload)
+    prof = db.query(RoleProfile).filter_by(id=pid, role="leader").first() if pid else None
     pname = prof.name if prof else (payload.get("full_name") or "")
     if not pname:
         return []
