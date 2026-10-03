@@ -28,6 +28,10 @@ import { fmtPct, fmtTime } from "../utils/formatters";
 import { diffStatus } from "../utils/segments";
 import { utilNumbers, utilInputs, differenceNumbers, differenceInputs, differencePctNumbers, hcEquivNumbers, hcEquivInputs, avgWorkloadNumbers, rangeDays } from "../utils/formulas";
 import { padChartParams } from "../utils/chartRange";
+import { loadTone, TONE_HEX } from "../utils/statusBands";
+import useStatusBands from "../hooks/useStatusBands";
+import useIsMobile from "../hooks/useIsMobile";
+import { surnameInitial } from "../utils/personName";
 import api from "../utils/api";
 
 const INIT_FILTERS = {
@@ -49,6 +53,21 @@ function isFilterActive(f) {
 // Each option re-expresses the same Verifix-vs-production gap:
 //   min/hrs → labor-time gap, % → share of Verifix reported time, hc → headcount gap.
 const DIFF_UNITS = [["min", "min"], ["hrs", "hrs"], ["pct", "%"], ["hc", "HC"]];
+
+// Final-workload paint: the platform's load bands (utils/statusBands — the
+// admin-editable ≥90 green / 80–89 yellow / below red, judged on the whole
+// percent printed), plus ONE case of this page's own: ≥105% is OVER CAPACITY
+// and reads amber (the operator's call, 2026-10-03). The table, the ranking and
+// the KPI card all read this one rule, so a figure wears one colour on the page.
+const OVER_PCT = 105;
+const OVER_HEX = "#f97316";
+function workloadTone(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return null;
+  return Math.round(v * 100) >= OVER_PCT ? "over" : loadTone(v);
+}
+// Ink for text (theme-aware: 700 shades on light) and hex for a bar fill.
+const toneInk = (tone) => (tone ? `var(--status-${tone})` : "var(--text-4)");
+const toneHex = (tone) => (tone === "over" ? OVER_HEX : tone ? TONE_HEX[tone] : "#6b7280");
 
 // Numeric value of the Difference cell in the chosen unit, or null when the
 // inputs needed for that unit aren't present.
@@ -106,8 +125,10 @@ function HeadCell({ label, tip, sortKey, sort, onSort, align = "right", classNam
           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit" }}
         >
           {label}
-          {tip && <Tooltip text={tip} />}
-          <Icon size={9} style={{ opacity: isActive ? 1 : 0.4 }} />
+          {/* On a phone the (i) is dropped (the KPI card above explains the
+              figure) and the chevron shows only on the sorted column. */}
+          {tip && <span className="max-sm:hidden inline-flex"><Tooltip text={tip} /></span>}
+          <Icon size={9} className={isActive ? "" : "max-sm:hidden"} style={{ opacity: isActive ? 1 : 0.4 }} />
         </button>
       </span>
     </th>
@@ -120,6 +141,8 @@ export default function Overview() {
   const { tl, lang } = useTranslit();
   const hcLabel = t("overview.diffUnitHc"); // localized name for the HC (headcount) diff unit
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  useStatusBands();
   // Stored blob merged over INIT_FILTERS so older saved shapes can't lose keys
   const [rawFilters, setFilters] = usePersistentState("overview_table_filters", INIT_FILTERS);
   const filters = useMemo(() => ({ ...INIT_FILTERS, ...rawFilters }), [rawFilters]);
@@ -283,13 +306,19 @@ export default function Overview() {
     return "#ef4444";
   }
 
+  // A brigadir with no figure for the mode is not ranked (never ranked as 0%,
+  // which reads as the worst) — they are named under the chart instead.
+  const hasRankVal = (b) => rankMode === "planned" ? b.baseline_util != null
+    : rankMode === "diff" ? (b.baseline_util != null && b.net_util != null)
+    : b.net_util != null;
+  const unranked = filtered.filter((b) => !hasRankVal(b));
   // Sort ascending: lowest value at top across all modes
-  const ranked = [...filtered].sort((a, b) => getRankVal(a) - getRankVal(b));
+  const ranked = filtered.filter(hasRankVal).sort((a, b) => getRankVal(a) - getRankVal(b));
   const chartNames = ranked.map((b) => tl(b.name));
   const chartVals  = ranked.map((b) => getRankVal(b));
   const chartColors = rankMode === "diff"
     ? chartVals.map(diffColor)
-    : undefined; // undefined → BarChart uses default utilColor
+    : chartVals.map((v) => toneHex(workloadTone(v / 100)));
 
   const RANK_LABELS = { planned: t("overview.rankPlanned"), actual: t("overview.rankActual"), diff: t("overview.rankDiff") };
 
@@ -327,6 +356,15 @@ export default function Overview() {
 
   // Fleet idle time KPI: prefer the server's period total; fall back to summing
   // the per-supervisor downtime we already have so the card isn't empty pre-deploy.
+  // Whole minutes (or hours to one decimal) with a grouped thousands separator:
+  // a 7-day total to a tenth of a minute claims a precision nobody has.
+  const fmtIdle = (v) => {
+    if (v == null) return "—";
+    const nf = (x, d) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: d, minimumFractionDigits: d }).format(x);
+    return unit === "hrs"
+      ? `${nf(v / 60, 1)} ${t("general.unitHour")}`
+      : `${nf(Math.round(v), 0)} ${t("general.unitMin")}`;
+  };
   const totalIdle = summary?.total_idle != null
     ? summary.total_idle
     : (brigadirs.length ? brigadirs.reduce((s, b) => s + (b.equip_downtime || 0), 0) : null);
@@ -433,19 +471,19 @@ export default function Overview() {
           <>
             <KPICard
               label={t("overview.totalIdle")}
-              value={totalIdle != null ? fmtTime(totalIdle, unit) : "—"}
+              value={fmtIdle(totalIdle)}
               tooltip={t("overview.tip.totalIdle")}
               onValueClick={() => setFormulaModal({
                 title: t("overview.fm.idleTitle"),
-                value: totalIdle != null ? fmtTime(totalIdle, unit) : "—",
+                value: fmtIdle(totalIdle),
                 formula: t("fm.idleSumFormula"),
-                inputs: [{ label: t("overview.fm.idleTitle"), val: totalIdle != null ? fmtTime(totalIdle, unit) : "—", source: t("overview.fm.srcEquip") }],
+                inputs: [{ label: t("overview.fm.idleTitle"), val: fmtIdle(totalIdle), source: t("overview.fm.srcEquip") }],
               })}
             />
             <KPICard
               label={t("overview.avgFinalWorkload")}
               value={fmtPct(summary?.avg_final_workload)}
-              accent
+              color={summary?.avg_final_workload != null ? toneInk(workloadTone(summary.avg_final_workload)) : undefined}
               tooltip={t("overview.tip.avgFinalWorkload")}
               onValueClick={() => setFormulaModal({
                 title: t("overview.fm.avgWorkload"),
@@ -506,7 +544,7 @@ export default function Overview() {
                : t("overview.fleetTrendDiff")}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2 flex-wrap justify-end max-sm:w-full max-sm:justify-between">
             {heatmap?.managers?.length > 0 && (
               <FleetManagerPicker
                 managers={heatmap.managers}
@@ -544,7 +582,7 @@ export default function Overview() {
         )}
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 items-stretch lg:items-start">
         {/* Table */}
         <div className="flex-1 min-w-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
           {/* Toolbar contract: search grows on the left, filters in the middle,
@@ -554,7 +592,7 @@ export default function Overview() {
               value={filters.name}
               onChange={(v) => setF("name", v)}
               placeholder={t("overview.brigadir")}
-              className="flex-1 min-w-[150px]"
+              className="flex-1 min-w-[120px] sm:min-w-[150px]"
             />
             <FilterPanel
               sections={brigadirFilterSections({ filters, setF, distinctShifts, distinctStatuses, t, includeName: false })}
@@ -570,7 +608,7 @@ export default function Overview() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-[var(--text-3)] border-b border-[var(--border)] bg-[var(--bg-inner)]">
-                  <th className="text-left px-4 py-2.5">#</th>
+                  <th className="text-left px-4 max-sm:px-3 py-2.5">#</th>
                   <HeadCell label={t("overview.brigadir")} sortKey="name" sort={sort} onSort={onSort}
                     align="left" className="text-left px-2" />
                   <HeadCell label={t("overview.shift")} sortKey="shift" sort={sort} onSort={onSort}
@@ -587,7 +625,7 @@ export default function Overview() {
                     align="right" className="text-right px-2 hidden md:table-cell" />
                   <HeadCell label={t("overview.status")} sortKey="status" sort={sort} onSort={onSort}
                     align="center" className="text-center px-2 hidden sm:table-cell" />
-                  <th className="text-center px-4 py-2.5">{t("overview.workers")}</th>
+                  <th className="text-center px-4 max-sm:px-1 py-2.5">{t("overview.workers")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -598,11 +636,14 @@ export default function Overview() {
                 ) : displayedBrigadirs.map((b, i) => (
                   <tr
                     key={b.manager_id}
-                    className="border-b border-[var(--border)] hover:bg-white/5 cursor-pointer"
+                    className="border-b border-[var(--border)] hover:bg-[var(--bg-inner)] active:bg-[var(--bg-inner)] cursor-pointer"
                     onClick={() => navigate(`/brigadir/${b.manager_id}`)}
                   >
-                    <td className="px-4 py-2.5 text-[var(--text-3)]">{i + 1}</td>
-                    <td className="px-2 py-2.5 font-medium text-[var(--text-1)]">{tl(b.name)}</td>
+                    <td className="px-4 max-sm:px-3 py-2.5 text-[var(--text-3)]">{i + 1}</td>
+                    {/* Phone: «Surname I.» on one line, the full name on long-press. */}
+                    <td className="px-2 py-2.5 font-medium text-[var(--text-1)] max-sm:whitespace-nowrap" title={isMobile ? tl(b.name) : undefined}>
+                      {isMobile ? surnameInitial(tl(b.name)) : tl(b.name)}
+                    </td>
                     <td className="px-2 py-2.5 text-center text-[var(--text-2)] hidden sm:table-cell">S{b.shift}</td>
                     <td className="px-2 py-2.5 text-right hidden md:table-cell" onClick={e => e.stopPropagation()}>
                       <button
@@ -618,20 +659,31 @@ export default function Overview() {
                         {fmtPct(b.baseline_util)}
                       </button>
                     </td>
-                    <td className="px-2 py-2.5 text-right" onClick={e => e.stopPropagation()}>
-                      <button
-                        className={`font-mono font-bold hover:underline underline-offset-2 ${b.net_util >= 1.05 ? "text-amber-400" : b.net_util >= 0.95 ? "text-green-400" : b.net_util >= 0.90 ? "text-yellow-300" : b.net_util >= 0.85 ? "text-orange-400" : "text-red-400"}`}
-                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                        onClick={() => setFormulaModal({
-                          title: `${t("overview.fm.finalActual")}${avgSuffix}`,
-                          value: fmtPct(b.net_util),
-                          formula: `${utilNumbers("net_util", b, approx) || "net_util = prod_actual ÷ (effective_hc × adjusted_available_min)"}\n${t("fm.netAdjustments")}${avgNote}`,
-                          inputs: utilInputs("net_util", b, t),
-                        })}
-                      >
+                    {/* No figure → a muted «—», never a status colour. On a phone the
+                        figure is plain text: the row is the one tap target (→ profile),
+                        and a text-sized formula button inside it is a mis-tap waiting. */}
+                    {b.net_util == null ? (
+                      <td className="px-2 py-2.5 text-right font-mono" style={{ color: "var(--text-4)" }}>—</td>
+                    ) : isMobile ? (
+                      <td className="px-2 py-2.5 text-right font-mono font-bold" style={{ color: toneInk(workloadTone(b.net_util)) }}>
                         {fmtPct(b.net_util)}
-                      </button>
-                    </td>
+                      </td>
+                    ) : (
+                      <td className="px-2 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                        <button
+                          className="font-mono font-bold hover:underline underline-offset-2"
+                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: toneInk(workloadTone(b.net_util)) }}
+                          onClick={() => setFormulaModal({
+                            title: `${t("overview.fm.finalActual")}${avgSuffix}`,
+                            value: fmtPct(b.net_util),
+                            formula: `${utilNumbers("net_util", b, approx) || "net_util = prod_actual ÷ (effective_hc × adjusted_available_min)"}\n${t("fm.netAdjustments")}${avgNote}`,
+                            inputs: utilInputs("net_util", b, t),
+                          })}
+                        >
+                          {fmtPct(b.net_util)}
+                        </button>
+                      </td>
+                    )}
                     <td className="px-2 py-2.5 text-right font-mono hidden md:table-cell" onClick={e => e.stopPropagation()}>
                       <button
                         className={`hover:underline underline-offset-2 ${diffValue(b, diffUnit) > 0 ? "text-orange-400" : "text-green-400"}`}
@@ -682,17 +734,15 @@ export default function Overview() {
                     </td>
                     {/* View workers button */}
                     <td
-                      className="px-4 py-2.5 text-center"
+                      className="px-4 max-sm:px-1 py-2.5 max-sm:py-0 text-center"
                       onClick={(e) => {
                         e.stopPropagation();
                         setModal({ managerId: b.manager_id, dateFrom, dateTo, name: b.name });
                       }}
                     >
                       <button
-                        className="p-1.5 rounded-lg transition-colors"
-                        style={{ color: "var(--text-3)" }}
-                        onMouseEnter={e => { e.currentTarget.style.background = "var(--brand-hover)"; e.currentTarget.style.color = "var(--brand-text)"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-3)"; }}
+                        aria-label={`${t("overview.workers")} — ${tl(b.name)}`}
+                        className="p-1.5 max-sm:w-11 max-sm:h-11 inline-grid place-items-center rounded-lg transition-colors text-[var(--text-3)] hover:bg-[var(--brand-hover)] hover:text-[var(--brand-text)] active:bg-[var(--brand-hover)] active:text-[var(--brand-text)]"
                       >
                         <Eye size={13} />
                       </button>
@@ -706,8 +756,9 @@ export default function Overview() {
 
         {/* Right column: ranking + funnel */}
         <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-6">
-          {/* Ranking chart */}
-          <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
+          {/* Ranking chart — not on a phone: there it repeats the table above
+              row for row (the /shift-daily ruling). */}
+          <div className="max-sm:hidden bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
                 {t("overview.ranking").split("—")[0].trim()} — {RANK_LABELS[rankMode]}
@@ -722,7 +773,7 @@ export default function Overview() {
             </div>
             {isLoading ? (
               <SkeletonChart className="h-64" />
-            ) : filtered.length > 0 ? (
+            ) : ranked.length > 0 ? (
               <BarRankingChart
                 names={chartNames}
                 values={chartVals}
@@ -730,10 +781,15 @@ export default function Overview() {
                 xMin={xMin}
                 xMax={xMax}
                 seriesName={RANK_LABELS[rankMode]}
-                height={Math.max(260, filtered.length * 32 + 60)}
+                height={Math.max(260, ranked.length * 32 + 60)}
               />
             ) : (
               <EmptyState title={t("empty.noRanking")} message={t("empty.uploadToRank")} />
+            )}
+            {!isLoading && unranked.length > 0 && (
+              <div className="mt-2 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                {t("filter.noData")}: {unranked.map((b) => tl(b.name)).join(", ")}
+              </div>
             )}
           </div>
 
@@ -742,13 +798,13 @@ export default function Overview() {
             <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider mb-1">
               {t("overview.funnelTitle")}
             </div>
-            <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+            <div className="text-[10px] max-sm:text-[11px] mb-3 text-[var(--text-4)] max-sm:text-[var(--text-3)]">
               {t("overview.funnelSub")}
             </div>
             {isLoading ? (
               <SkeletonChart className="h-48" />
             ) : brigadirs.length > 0 ? (
-              <DifferenceBreakdown data={fleetFunnel} height={240} diffSegments={compThresholds?.diff_segments} />
+              <DifferenceBreakdown data={fleetFunnel} height={isMobile ? 0 : 240} diffSegments={compThresholds?.diff_segments} />
             ) : (
               <EmptyState title={t("overview.noFunnel")} message={t("overview.noFunnelMsg")} height="h-36" />
             )}

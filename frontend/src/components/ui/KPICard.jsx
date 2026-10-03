@@ -23,9 +23,12 @@ export default function KPICard({
         : { color: "var(--text-1)" };
 
   return (
-    <div className="rounded-xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className="rounded-xl p-4 max-sm:flex max-sm:flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-widest mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
+        {/* Phone: sentence case without the wide tracking — uppercase spaced
+            11px breaks a two-word label into a stack of fragments on a
+            half-width card. Desktop is unchanged. */}
+        <div className="text-[11px] uppercase tracking-widest max-sm:normal-case max-sm:tracking-normal max-sm:text-xs mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
           {label}
           {tooltip && <Tooltip text={tooltip} />}
         </div>
@@ -39,13 +42,13 @@ export default function KPICard({
         )}
       </div>
       <div
-        className={`text-2xl font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
+        className={`max-sm:mt-auto text-2xl max-sm:text-xl max-sm:whitespace-nowrap font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
         style={textStyle}
       >
         {onValueClick ? (
           <button
             onClick={onValueClick}
-            className="hover:underline underline-offset-2"
+            className="hover:underline underline-offset-2 text-left"
             style={{ background: "none", border: "none", padding: 0, color: "inherit", cursor: "pointer" }}
           >
             {value ?? "—"}

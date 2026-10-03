@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { utilColor } from "../../utils/formatters";
+import { contrastText } from "../../utils/statusBands";
 
 export default function BarRankingChart({
   names, values, height = 400,
@@ -67,10 +68,18 @@ export default function BarRankingChart({
           ─────────────────────────────────────────────────────────── */
           let lx, anchor, textFill;
           if (!hasNeg) {
-            // P / A mode — centered inside bar, white text
-            lx       = barX + barW / 2;
-            anchor   = "middle";
-            textFill = "#ffffff";
+            // P / A mode — centered inside the bar in the ink that reads on
+            // that bar (dark on green/yellow, white on red); a bar too short
+            // to hold its label gets it just past its end, in label colour.
+            if (barW >= 40) {
+              lx       = barX + barW / 2;
+              anchor   = "middle";
+              textFill = /^#[0-9a-f]{6}$/i.test(clr) ? contrastText(clr) : "#ffffff";
+            } else {
+              lx       = barX + barW + 5;
+              anchor   = "start";
+              textFill = labelColor;
+            }
           } else if (v < 0) {
             lx = zeroX + 5;  anchor = "start"; textFill = labelColor;  // right of zero
           } else if (v > 0) {
