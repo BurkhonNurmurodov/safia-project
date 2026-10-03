@@ -5,7 +5,6 @@ import {
 import Layout from "../../components/layout/Layout";
 import KPICard from "../../components/ui/KPICard";
 import SearchInput from "../../components/ui/SearchInput";
-import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import { FilterPanel, OptsFilter, PickFilter } from "../../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
@@ -15,7 +14,7 @@ import VfxTable from "../../components/verifix/VfxTable";
 import VfxPhoto from "../../components/verifix/VfxPhoto";
 import PersonCard from "../../components/verifix/PersonCard";
 import { VfxError, StatusDot, CellChip, FetchedAt, RefreshButton } from "../../components/verifix/VfxState";
-import { useVfx, vfxError, fill, num, dmy, C_OK, C_BAD, C_NONE } from "../../components/verifix/vfx";
+import { useVfx, vfxError, fill, num, dmy, shiftISO, C_OK, C_BAD, C_NONE } from "../../components/verifix/vfx";
 
 /* «Xodimlar» — everybody Verifix holds (working by default): their photo,
  * department and org unit (and our cell, where the unit is one), job,
@@ -70,7 +69,7 @@ export default function VfxEmployees() {
   const today = d?.today;
   const name = (map, id) => tx(map?.[id]) || (id ? `#${id}` : "—");
 
-  const all = d?.rows || [];
+  const all = useMemo(() => d?.rows || [], [d]);
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return all.filter((r) => (!divSel.length || divSel.includes(r.div))
@@ -80,7 +79,7 @@ export default function VfxEmployees() {
       && (inCell === "all" || (inCell === "yes") === !!d?.cells?.[r.unit])
       && (face === "all" || (face === "yes") === r.face)
       && (med === "all" || (med === "overdue" ? r.med_next && r.med_next < today
-        : r.med_next && r.med_next >= today && r.med_next <= addDays(today, 30)))
+        : r.med_next && r.med_next >= today && r.med_next <= shiftISO(today, 30)))
       && (!needle || `${r.name} ${tl(r.name)} ${r.id} ${r.code || ""} ${r.phone || ""}`.toLowerCase().includes(needle)));
   }, [all, divSel, unitSel, jobSel, schedSel, inCell, face, med, search, d, today, tl]);
 
@@ -220,11 +219,4 @@ export default function VfxEmployees() {
       {open && <PersonCard id={open} onClose={() => setOpen(null)} />}
     </Layout>
   );
-}
-
-function addDays(iso, n) {
-  if (!iso) return iso;
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

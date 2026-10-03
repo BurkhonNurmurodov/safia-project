@@ -9,7 +9,7 @@ import { useTranslit } from "../../utils/transliterate";
 import VfxPhoto from "./VfxPhoto";
 import { VfxError, AccessNotice, StatusDot, Chip, CellChip } from "./VfxState";
 import {
-  useVfx, vfxError, fill, dmy, dm, hm, hmm, clockOn, DAY_STATUS, C_OK, C_BAD, C_WARN, C_NONE,
+  useVfx, vfxError, fill, dmy, dm, hm, hmm, clockOn, markLabel, DAY_STATUS, C_OK, C_BAD, C_WARN, C_NONE,
 } from "./vfx";
 
 /* One person as Verifix knows them — opened from every page of the section.
@@ -196,12 +196,6 @@ export default function PersonCard({ id, onClose, zIndex }) {
       )}
     </Modal>
   );
-}
-
-export function markLabel(t, m) {
-  if (!m) return "—";
-  const s = t(`vfx.mark.${m}`);
-  return s === `vfx.mark.${m}` ? m : s;
 }
 
 export function TrackType({ type }) {

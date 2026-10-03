@@ -140,6 +140,14 @@ const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Targets = lazyWithReload(() => import("./pages/Targets"));
 const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
 const StaffLive = lazyWithReload(() => import("./pages/StaffLive"));
+// «Verifix (test)» — the attendance system's API, page by page (admin-only).
+const VfxApiMap = lazyWithReload(() => import("./pages/verifix/VfxApiMap"));
+const VfxStructure = lazyWithReload(() => import("./pages/verifix/VfxStructure"));
+const VfxEmployees = lazyWithReload(() => import("./pages/verifix/VfxEmployees"));
+const VfxJobs = lazyWithReload(() => import("./pages/verifix/VfxJobs"));
+const VfxTimesheet = lazyWithReload(() => import("./pages/verifix/VfxTimesheet"));
+const VfxMarks = lazyWithReload(() => import("./pages/verifix/VfxMarks"));
+const VfxOnSite = lazyWithReload(() => import("./pages/verifix/VfxOnSite"));
 const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
@@ -565,6 +573,14 @@ function AppWithLang() {
             <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
             {/* «Verifix to'g'irlash · Jonli» — the lab copy of /staff read live from Verifix; admin-only, no page key. */}
             <Route path="/staff-live" element={<AuthGate><RequireAdmin><StaffLive /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix" element={<Navigate to="/verifix/api" replace />} />
+            <Route path="/verifix/api" element={<AuthGate><RequireAdmin><VfxApiMap /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/structure" element={<AuthGate><RequireAdmin><VfxStructure /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/employees" element={<AuthGate><RequireAdmin><VfxEmployees /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/jobs" element={<AuthGate><RequireAdmin><VfxJobs /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/timesheet" element={<AuthGate><RequireAdmin><VfxTimesheet /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/marks" element={<AuthGate><RequireAdmin><VfxMarks /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/onsite" element={<AuthGate><RequireAdmin><VfxOnSite /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />

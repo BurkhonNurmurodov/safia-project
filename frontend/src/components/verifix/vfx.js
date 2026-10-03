@@ -116,4 +116,12 @@ export const MARK_TYPES = ["F", "R", "T", "P", "Q", "M", "A", "C", "S", "J", "O"
 export const DAY_KINDS = ["W", "R", "A", "H", "N"];
 export const SCHEDULE_KINDS = ["F", "C", "H", "M", "A"];
 
+/** A mark's source letter in words — the letter itself where Verifix sent one
+ * its documentation does not name. */
+export function markLabel(t, m) {
+  if (!m) return "—";
+  const s = t(`vfx.mark.${m}`);
+  return s === `vfx.mark.${m}` ? m : s;
+}
+
 export const isCame = (s) => s === "inside" || s === "break" || s === "left" || s === "no_out";

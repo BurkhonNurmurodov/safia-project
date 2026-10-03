@@ -312,7 +312,9 @@ function MethodViewer({ method, onClose }) {
     }
   }
 
+  // The viewer reads its method once, as it opens.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (canAsk && !missing.length) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -6625,6 +6625,74 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   held by a missing check-out or a pending change; otherwise it closes an hour
   after the unit's last check-out. Only a close by hand is stored.
 
+## «Verifix (test)» — the API, page by page (`/verifix/*`)
+
+From **2026-10-03** (the operator: "build pages to different things we can get
+from Verifix API — absolutely everything possible") a sidebar section of its own
+SHOWS what Verifix's API returns. Phase 1 is built; phase 2 (devices, requests,
+absences, HR moves, timebooks, shifts, incidents, dictionaries, and payroll —
+the operator opened wages on 2026-10-03) waits on more list-only forms in the
+Verifix API role. Personal records (passport, PINFL, family, education) stay off. **Admin-only**, three ways like `/staff-live`
+(`adminOnly` nav entries, `RequireAdmin`, `verify_admin` on every endpoint), no
+page keys. `/staff-live` moved into this section (same data source).
+
+- **`services/verifix_catalog.py` is THE list of what may be called**: the 94
+  READ methods of the Postman collection (path, module, Verifix's own name, the
+  empty-filter body, the documented page size, the params with their default
+  rules, the page that shows it). Nothing outside it can be called, so the
+  section cannot write to Verifix. A new method is one `Method(...)` line.
+- **Private records never leave the server** (the operator opened WAGES and
+  PHOTOS on 2026-10-03, nothing else): `verifix_explore.scrub` drops
+  `passport_*`, PINFL / TIN / pension ids and the `person_*` sub-lists, and
+  masks a card number to its last four digits — on every row, raw viewer
+  included. The 8 methods that serve nothing else (`search_by_npin`,
+  `person_*`) are `blocked`: listed on the map, never called.
+- **Photos** (`GET /api/verifix-test/photo/{sha}?size=96|960`): a person's
+  `identification_photos` and the photo of a day's LAST mark (`photo_sha` on
+  `track$search_last_track` and on «who is inside»). Streamed from
+  `/b/biruni/m:load_image` (then `m:download_file_v2`), resized with Pillow,
+  never stored (an in-memory LRU of resized copies). **Only a hash this process
+  itself handed out as a photo is served** (`_ALLOWED`) — Verifix keeps
+  passport scans behind the same door. The client (`VfxPhoto.jsx`) fetches as a
+  blob, only when scrolled into view, four at a time.
+- **Everything is a GET** — a read of Verifix, never a platform change — so
+  nothing lands in the action register. The one table, `verifix_probes`, is a
+  cache of what each method last answered (status, first-page row count, field
+  NAMES, ms, error), never a row of data.
+- **Errors are answers**: 409 `not_configured` (no login on the card), **424**
+  `{code, message, status}` when Verifix refused or failed — never 502/503,
+  which the client reads as a restart — 404 / 400 for an unknown id or value.
+  `vfxError` + `VfxError` / `AccessNotice` word them; a section the API role
+  does not open says which Verifix form to attach, in place.
+- **Reads are cached** (`_Cache`: per key, loaded once even when two requests
+  ask together; 10 min for the directory, ~1.5 min for today, 10 min for a past
+  day). Every page's «Yangilash» passes `force`. One request spends at most
+  `REQUEST_BUDGET_S` (72 s) on Verifix, so it stays inside Cloudflare's 100 s.
+  The employee list is ~18 pages and a day's report ~30: the first load of a
+  page can take 15–30 s, and the pages say so.
+- **A Verifix node is our cell when its `code` IS a verifix cell code**
+  (`_node_cells`, keyed by `verifix._code_key`); a person sits in their ORG
+  UNIT, else their department (the 2026-10-01 finding). The cell chip prints the
+  code and the brigadir — never the workshop name.
+- **The pages** (`pages/verifix/*`, shared pieces in `components/verifix/`):
+  «API xaritasi» (every method's last answer, a probe-all button asking three
+  at a time, a raw viewer for any method with params, paging and a JSON lens) ·
+  «Tuzilma» (the division tree, people per node, which nodes are our cells,
+  cells missing from Verifix, nodes with people and no cell, the organization
+  card) · «Xodimlar» (everybody, by status, with photo, unit/cell, job,
+  schedule, medical check; a row opens `PersonCard`: facts, 14 days of the
+  report, 3 days of marks, photos, every scrubbed field) · «Lavozim va
+  grafiklar» (jobs, schedules and their coming days, time kinds marked where
+  the parity rule counts them as worked, the production calendar, small lists
+  via `RawPanel`) · «Davomat hisoboti» (one day of `timesheet$export` for
+  everybody, each row through `verifix_live._person` — the live page's own rule
+  — and a day modal of facts by time kind) · «Belgilar» (raw marks of a window
+  of 1–24 h, capped at 12,000 and said so; a mark opens `track_info` and the
+  day's last-mark photo) · «Hozir ishda» (`currently_working_employees` for one
+  location as photo tiles; on a past day, the people who never checked out).
+- Not built: Excel exports, charts, and any write. The phase-2 pages stay
+  readable meanwhile through the API map's raw viewer.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:

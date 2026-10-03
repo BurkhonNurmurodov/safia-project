@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import TableCard, { Th } from "../ui/DataTable";
 import Pagination from "../ui/Pagination";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -34,7 +34,11 @@ export default function VfxTable({
   const persisted = usePersistentState(sortStoreKey || "vfx_tbl_sort_unused", defaultSort);
   const local = useState(defaultSort);
   const [sort, setSort] = sortStoreKey ? persisted : local;
-  const [page, setPage] = useState(1);
+  // A page number belongs to the rows and the sort it was picked under: a new
+  // filter or sort starts again at page 1 without an effect resetting it.
+  const [pg, setPg] = useState({ rows: null, sort: null, n: 1 });
+  const page = pg.rows === rows && pg.sort === sort ? pg.n : 1;
+  const setPage = (n) => setPg({ rows, sort, n });
 
   const col = columns.find((c) => c.key === sort?.key && c.sort);
   const sorted = useMemo(() => {
@@ -52,7 +56,6 @@ export default function VfxTable({
   }, [rows, col, sort?.dir]);
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
-  useEffect(() => { setPage(1); }, [rows, sort?.key, sort?.dir]);
   const shown = sorted.slice((Math.min(page, pageCount) - 1) * pageSize, Math.min(page, pageCount) * pageSize);
 
   const onSort = (k) => setSort((s) => (s?.key === k

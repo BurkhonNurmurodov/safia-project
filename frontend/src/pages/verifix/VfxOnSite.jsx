@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { MapPin, Users, LogIn, Hourglass, ExternalLink, DoorOpen, Building2 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import KPICard from "../../components/ui/KPICard";
@@ -36,18 +36,20 @@ export default function VfxOnSite() {
   const [day, setDay] = useState(today);
   const [q, refresh] = useVfx(["onsite"], "/onsite", { location_id: locId, day }, { enabled: !!locId });
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [pg, setPg] = useState({ sig: "", n: 1 });
   const [person, setPerson] = useState(null);
   const d = q.data;
   const live = day === (d?.today || today);
-  const all = d?.rows || [];
+  const all = useMemo(() => d?.rows || [], [d]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return all;
     return all.filter((r) => `${r.name} ${tl(r.name)} ${r.emp} ${d?.cells?.[r.unit]?.code || ""} ${r.div_name || ""}`.toLowerCase().includes(needle));
   }, [all, search, d, tl]);
-  useEffect(() => { setPage(1); }, [locId, day, search]);
+  const sig = `${locId}|${day}|${search}`;
+  const page = pg.sig === sig ? pg.n : 1;
+  const setPage = (n) => setPg({ sig, n });
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
   const shown = rows.slice((page - 1) * PAGE, page * PAGE);
 

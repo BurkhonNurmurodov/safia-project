@@ -516,6 +516,25 @@ _THUMBS: "OrderedDict[tuple, bytes]" = OrderedDict()
 _THUMBS_MAX = {PHOTO_SMALL: 1500, PHOTO_LARGE: 40}
 _photo_lock = threading.Lock()
 _downloads = threading.BoundedSemaphore(6)
+_photo_http: dict[str, Any] = {"key": None, "client": None}
+
+
+def _photo_client(c: dict) -> httpx.Client:
+    """One pooled client for photo downloads: a page of fifty faces would
+    otherwise open fifty TLS connections to Verifix. Rebuilt when the
+    credential on the card changes."""
+    import hashlib
+    key = hashlib.sha256(f"{c['host']}|{c['filial_id']}|{c['login']}|{c['password']}".encode()).hexdigest()
+    with _photo_lock:
+        if _photo_http["key"] != key:
+            old = _photo_http["client"]
+            _photo_http.update(key=key, client=verifix.client(c))
+            if old is not None:
+                try:
+                    old.close()
+                except Exception:
+                    pass
+        return _photo_http["client"]
 
 
 def _allow(*shas: Optional[str]) -> None:
@@ -546,16 +565,17 @@ def photo(db: Session, sha: str, size: int) -> bytes:
     c = config(db)
     raw = None
     with _downloads:
-        with verifix.client(c) as cl:
-            for path in ("/b/biruni/m:load_image", "/b/biruni/m:download_file_v2"):
-                try:
-                    res = cl.get(f"https://{c['host']}{path}", params={"sha": sha},
-                                 headers={"Accept": "image/*,*/*;q=0.5"})
-                except httpx.HTTPError:
-                    continue
-                if res.status_code == 200 and res.content and len(res.content) < 20_000_000:
-                    raw = res.content
-                    break
+        cl = _photo_client(c)
+        # The photo door the docs name for a mark's photo, then the general file door.
+        for path in ("/b/biruni/m:load_image", "/b/biruni/m:download_file_v2"):
+            try:
+                res = cl.get(f"https://{c['host']}{path}", params={"sha": sha},
+                             headers={"Accept": "image/*,*/*;q=0.5"})
+            except httpx.HTTPError:
+                continue
+            if res.status_code == 200 and res.content and len(res.content) < 20_000_000:
+                raw = res.content
+                break
     if raw is None:
         raise LookupError("not available")
     try:
@@ -790,11 +810,6 @@ def jobs(db: Session, force: bool = False) -> dict:
         if e["status"] == "W":
             by_job[e["job"]] += 1
             by_sched[e["sched"]] += 1
-    groups, groups_err = _try(lambda: _CACHE.get(
-        _key(c, "jobgroups"), 0 if force else TTL_DIR,
-        lambda: [{"id": _s(g.get("job_group_id")), "name": _s(g.get("name")),
-                  "code": _s(g.get("code")) or None, "state": _s(g.get("state")) or "A"}
-                 for g in _list(c, "core/job_group$list", {"job_group_ids": []}, dl)])[0])
     year = verifix_live.now_local().year
 
     def load_calendar():
@@ -820,7 +835,6 @@ def jobs(db: Session, force: bool = False) -> dict:
         "kinds": list(tk.values()),
         "worked_kinds": formula["kinds"] if formula else [],
         "worked_unit": hours.get("unit"),
-        "groups": groups, "groups_error": groups_err,
         "calendar": cal, "calendar_error": cal_err, "year": year,
         "fetched_at": _iso(min(t1, t2, t3, t4)),
     }

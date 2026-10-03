@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  CalendarRange, CalendarCheck, LogIn, UserX, Timer, DoorOpen, CircleDot, Building2, FolderTree, Grid3x3, Clock3,
+  CalendarRange, CalendarCheck, LogIn, UserX, Timer, DoorOpen, CircleDot, Building2, Grid3x3, Clock3,
   UserRound, Check,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
@@ -44,7 +44,7 @@ export default function VfxTimesheet() {
   const [open, setOpen] = useState(null);
   const [person, setPerson] = useState(null);
   const d = q.data;
-  const all = d?.rows || [];
+  const all = useMemo(() => d?.rows || [], [d]);
   const unitName = (r) => tx(d?.divisions?.[r.unit]) || "—";
 
   const rows = useMemo(() => {

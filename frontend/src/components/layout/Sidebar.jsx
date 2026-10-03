@@ -13,7 +13,8 @@ import {
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
-  GraduationCap, PlaySquare, Goal } from "lucide-react";
+  GraduationCap, PlaySquare, Goal, Network, FolderTree, IdCard, Briefcase, CalendarRange,
+  ScanLine, MapPin, ScanFace } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import { useAuth } from "../../context/AuthContext";
@@ -66,9 +67,19 @@ const ALL_LINKS = [
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
   // Laboratory, admin-only until the operator opens it to shift managers.
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
+  // «Verifix (test)» — what Verifix's API returns, one page per kind of data
+  // (2026-10-03). Admin-only, no page keys: every page reads every employee
+  // Verifix holds. The live /staff copy moved in here — same data source.
+  { to: "/verifix/api", adminOnly: true, key: "nav.vfx.api", icon: Network, group: "verifix" },
+  { to: "/verifix/structure", adminOnly: true, key: "nav.vfx.structure", icon: FolderTree, group: "verifix" },
+  { to: "/verifix/employees", adminOnly: true, key: "nav.vfx.employees", icon: IdCard, group: "verifix" },
+  { to: "/verifix/jobs", adminOnly: true, key: "nav.vfx.jobs", icon: Briefcase, group: "verifix" },
+  { to: "/verifix/timesheet", adminOnly: true, key: "nav.vfx.timesheet", icon: CalendarRange, group: "verifix" },
+  { to: "/verifix/marks", adminOnly: true, key: "nav.vfx.marks", icon: ScanLine, group: "verifix" },
+  { to: "/verifix/onsite", adminOnly: true, key: "nav.vfx.onsite", icon: MapPin, group: "verifix" },
   // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
   // changes land in its own tables only. adminOnly, no page key (the /targets pattern).
-  { to: "/staff-live", adminOnly: true, key: "nav.staffLive", icon: Fingerprint, group: "lab" },
+  { to: "/staff-live", adminOnly: true, key: "nav.staffLive", icon: Fingerprint, group: "verifix" },
   // «Ta'lim» — video lessons published to profiles. First entry in its own
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.
@@ -102,6 +113,8 @@ const NAV_GROUPS = [
   // the lab is where pilots live, and lessons are not a pilot. First member of
   // a group built to take the rest of the training surfaces.
   { id: "education", labelKey: "navgrp.education", icon: GraduationCap },
+  // «Verifix (test)» — the attendance system's API, page by page (admin-only).
+  { id: "verifix", labelKey: "navgrp.verifix",    icon: ScanFace },
   { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
   { id: "system" },                                // Активность + catch-all — headerless
 ];

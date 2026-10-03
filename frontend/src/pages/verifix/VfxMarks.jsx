@@ -16,9 +16,9 @@ import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import VfxTable from "../../components/verifix/VfxTable";
 import VfxPhoto from "../../components/verifix/VfxPhoto";
-import PersonCard, { TrackType, markLabel } from "../../components/verifix/PersonCard";
+import PersonCard, { TrackType } from "../../components/verifix/PersonCard";
 import { VfxError, AccessNotice, StatusDot, CellChip, FetchedAt, RefreshButton } from "../../components/verifix/VfxState";
-import { useVfx, vfxError, fill, num, hm, dmy, C_OK, C_BAD, C_WARN, C_NONE } from "../../components/verifix/vfx";
+import { useVfx, vfxError, fill, num, hm, dmy, markLabel, C_OK, C_WARN, C_NONE } from "../../components/verifix/vfx";
 
 /* «Belgilar» — every mark Verifix recorded in a time window, plant-wide:
  * who, when, which way (in · out · checkpoint · break), how (face · card ·
@@ -45,7 +45,7 @@ export default function VfxMarks() {
   const [open, setOpen] = useState(null);
   const [person, setPerson] = useState(null);
   const d = q.data;
-  const all = d?.rows || [];
+  const all = useMemo(() => d?.rows || [], [d]);
   const isManual = (r) => r.mark === "M" || !!r.edited_by;
 
   const rows = useMemo(() => {

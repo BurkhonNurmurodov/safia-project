@@ -69,19 +69,19 @@ function load(sha, size) {
   return { promise: job.promise, cancel };
 }
 
-export function useVfxPhoto(sha, size, enabled = true) {
+function useVfxPhoto(sha, size, enabled = true) {
   const key = sha ? `${sha}:${size}` : "";
-  const [url, setUrl] = useState(() => (key && urls.has(key) ? urls.get(key) : null));
+  const [loaded, setLoaded] = useState({});
   useEffect(() => {
-    if (!sha || !enabled) return undefined;
-    if (urls.has(key)) { setUrl(urls.get(key)); return undefined; }
-    setUrl(null);
+    if (!sha || !enabled || urls.has(key)) return undefined;
     let alive = true;
     const job = load(sha, size);
-    job.promise.then((u) => { if (alive) setUrl(u); });
+    job.promise.then((u) => { if (alive) setLoaded((m) => ({ ...m, [key]: u })); });
     return () => { alive = false; job.cancel(); };
   }, [sha, size, enabled, key]);
-  return url;          // null = loading, "" = failed, string = ready
+  if (!key) return null;
+  if (urls.has(key)) return urls.get(key);
+  return loaded[key] ?? null;          // null = loading, "" = failed, string = ready
 }
 
 export default function VfxPhoto({ sha, name, px = 32, square = false, zoom = false, className = "", title }) {
