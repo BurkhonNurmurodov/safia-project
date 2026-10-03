@@ -17,6 +17,7 @@ import {
   ScanLine, MapPin, ScanFace } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
+import AppUpdateButton from "./AppUpdateButton";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
@@ -586,6 +587,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               </span>
             </a>
           )}
+
+          {/* The Android app's own update (check · download progress ·
+              install), right above «Versiya» — renders nothing outside the app. */}
+          <AppUpdateButton expanded={expanded} />
 
           {/* Which build this is — the last thing on the rail. The
               data-freshness line that used to sit above it is gone. */}

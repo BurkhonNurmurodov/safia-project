@@ -20,9 +20,11 @@
   "use strict";
   if (window.__safiaAndroid) return;
   window.__safiaAndroid = true;
-  // What this APK can do beyond a browser, for the pages to ask
-  // (utils/androidPush.js reads `push`: phone notifications, 1.5.0+).
-  window.__safiaApp = { push: 1 };
+  // What this APK can do beyond a browser, for the pages to ask:
+  // utils/androidPush.js reads `push` (phone notifications, 1.5.0+),
+  // utils/androidUpdate.js reads `update` (the sidebar's window onto the
+  // APK's own update — check, download progress, install — 1.7.0+).
+  window.__safiaApp = { push: 1, update: 1 };
 
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.register) {

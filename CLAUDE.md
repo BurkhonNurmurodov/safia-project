@@ -7208,7 +7208,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.6.0, versionCode 11).
+  **Raise `versionCode` on every release** (current: 1.7.0, versionCode 12).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
@@ -7247,6 +7247,47 @@ daily") **the app downloads every build the site deploys by itself** — see
   - Google Play remains possible later: it needs a developer account, and
     Play App Signing re-signs with Google's key — ADD its fingerprint to
     `ANDROID_ASSET_LINKS` (which `publish` also reads).
+  - **«Yangilanishni tekshirish» — the update button** (1.7.0, 2026-10-03,
+    the operator's request): a sidebar row right above «Versiya», in the app
+    only (`apkUpdateShown()` — `inAndroidApp()` and not the «open as» screen,
+    which has no updater), opening a window that states ONE thing at a time:
+    checking · up to date · nothing published · a new version (size, date) ·
+    downloading (a progress bar, % and MB) · ready to install / the installer
+    was opened · what failed (check · download · SHA mismatch · installer ·
+    the permission setting). The ROW follows the state too — gold
+    «Yangilanish bor» with a dot once a newer APK is known, «Yuklanmoqda…
+    42%» during a download — so a window closed mid-download leaves a trace.
+    `components/layout/AppUpdateButton.jsx` (row + window) over
+    `utils/androidUpdate.js` (the store and both checks).
+  - **ONE state machine behind both ways in** (`AppUpdates.java`): its own
+    half-hourly check + dialog, and the page's requests — `{type:
+    "app-update", op}`, op = status · check · start · cancel · watch ·
+    unwatch. Every request is answered with the WHOLE state as a
+    `safia-app-update` event (`state()`: phase · error · running · latest ·
+    got/total · downloaded · installerOpened · canInstall), kept in ONE page
+    store (`useApkUpdate`), so the row and the window can never disagree. A
+    download started from the app's own dialog shows its progress on the page
+    as well; while the window is open (`watch`, 15-minute expiry) the app's
+    offer dialog stays away, and a check the page asked for never pops it.
+    The page's «start» re-reads `/api/android/latest` before downloading
+    (only the latest file is served, so a window left open across a publish
+    would 404); without the install permission the window says why and
+    «start» goes straight to the setting, the download beginning by itself
+    on return with it on; a download that finishes off screen opens the
+    installer on return (Android refuses background activity starts). A
+    connection that ends early is a download error; only a SHA mismatch is
+    reported (`FailureReport`).
+  - **Older APKs (1.4.0–1.6.x)** have no `window.__safiaApp.update`, so the
+    window asks the server itself — a plain `fetch`, not the api client,
+    whose restart wait would hold «checking» on screen for minutes during a
+    deploy — and compares with the user agent's versionName; a newer one is
+    handed to the phone's browser by an `<a download>` click on the release
+    URL (MainActivity's download listener), with no progress in the window
+    (the browser's notification carries it, and the window says so). The
+    same fallback runs when a 1.7.0 app does not answer within 4 s. **The
+    pages carry the button the moment they deploy; 1.7.0 must still be built
+    and published from the Mac** (`build-release.sh`, `publish-release.sh`),
+    and until it is, every phone runs the fallback.
 - **Phone notifications** from 1.5.0 — see «Phone notifications».
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in

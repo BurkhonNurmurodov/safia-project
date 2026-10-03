@@ -125,7 +125,7 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         bridgeScript = WebBundle.readAsset(this, "app-bridge.js");
-        if (!isSession()) appUpdates = new AppUpdates(this, () -> siteLang);
+        if (!isSession()) appUpdates = new AppUpdates(this, () -> siteLang, this::sendAppUpdate);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DARK);
@@ -360,6 +360,16 @@ public class MainActivity extends ComponentActivity {
                         long id = m.optLong("id");
                         Push.EXEC.execute(() -> Push.poll(getApplicationContext(), true, id));
                         break;
+                    // The APK's own update (utils/androidUpdate.js ↔ AppUpdates): the
+                    // sidebar's «Yangilanishni tekshirish» window. A session screen has
+                    // no updater, and says so rather than leave the window waiting.
+                    case "app-update":
+                        String op = m.optString("op");
+                        runOnUiThread(() -> {
+                            if (appUpdates != null) appUpdates.fromPage(op);
+                            else sendAppUpdate("{\"v\":1,\"phase\":\"unavailable\"}");
+                        });
+                        break;
                     default:
                         break;
                 }
@@ -376,6 +386,15 @@ public class MainActivity extends ComponentActivity {
         runOnUiThread(() -> {
             if (web != null) {
                 web.evaluateJavascript("window.dispatchEvent(new CustomEvent('safia-push',{detail:" + json + "}))", null);
+            }
+        });
+    }
+
+    /** The APK's own update, for the sidebar's update window (utils/androidUpdate.js). */
+    private void sendAppUpdate(String json) {
+        runOnUiThread(() -> {
+            if (web != null) {
+                web.evaluateJavascript("window.dispatchEvent(new CustomEvent('safia-app-update',{detail:" + json + "}))", null);
             }
         });
     }
