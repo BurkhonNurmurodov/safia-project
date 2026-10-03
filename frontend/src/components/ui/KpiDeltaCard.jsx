@@ -73,15 +73,21 @@ export default function KpiDeltaCard({
       ? { color: "#f87171" }
       : { color: "var(--text-1)" };
 
+  // Below `sm` a card is ~140px wide (two to a row), so the desktop layout —
+  // value and delta chip side by side, the previous day beside the sparkline —
+  // pushed the chip out past the card's edge and broke the value over two
+  // lines. On a phone everything STACKS instead: label (sentence case, the
+  // info icon flowing after its last word), value, chip, previous day, then
+  // the sparkline across the card. Desktop is untouched (max-sm: only).
   return (
-    <div className="rounded-xl p-4 flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="text-[11px] uppercase tracking-widest mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
+    <div className="rounded-xl p-4 max-sm:p-3 flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="text-[11px] uppercase tracking-widest mb-1 flex items-center gap-0.5 text-[var(--text-3)] max-sm:block max-sm:normal-case max-sm:tracking-normal max-sm:text-xs max-sm:font-medium max-sm:leading-snug max-sm:mb-1.5 max-sm:text-[var(--text-2)]">
         {label}
         {tooltip && <Tooltip text={tooltip} />}
       </div>
 
-      <div className="flex items-end justify-between gap-2">
-        <div className="text-2xl font-bold font-mono" style={valueStyle}>
+      <div className="flex items-end justify-between gap-2 max-sm:flex-col max-sm:items-start max-sm:gap-1">
+        <div className="text-2xl font-bold font-mono max-sm:text-xl max-sm:leading-tight" style={valueStyle}>
           {onValueClick ? (
             <button
               onClick={onValueClick}
@@ -94,7 +100,7 @@ export default function KpiDeltaCard({
         </div>
         {deltaText && (
           <span
-            className="flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md mb-1 flex-shrink-0"
+            className="flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md mb-1 max-sm:mb-0 max-sm:text-xs flex-shrink-0"
             style={{ color: chipColor, background: `${chipColor}1f` }}
           >
             <Arrow size={12} />
@@ -102,13 +108,15 @@ export default function KpiDeltaCard({
           </span>
         )}
       </div>
-      {sub && <div className="text-[11px] -mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
+      {sub && <div className="text-[11px] max-sm:text-xs -mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
 
-      <div className="flex items-end justify-between gap-2 mt-1">
-        <div className="text-[11px]" style={{ color: "var(--text-4)" }}>
+      <div className="flex items-end justify-between gap-2 mt-1 max-sm:flex-col max-sm:items-stretch max-sm:gap-1.5 max-sm:mt-2">
+        {/* --text-4 on the card is ~2.2:1 — unreadable at arm's length on a
+            phone, so the comparison line steps up to --text-3 there. */}
+        <div className="text-[11px] text-[var(--text-4)] max-sm:text-xs max-sm:text-[var(--text-3)]">
           {prevLabel} {prevValue ?? "—"}
         </div>
-        <div className="w-[55%] max-w-[130px]">
+        <div className="w-[55%] max-w-[130px] max-sm:w-full max-sm:max-w-none">
           <Sparkline values={trend} color={chipColor === FLAT ? "var(--brand)" : chipColor} />
         </div>
       </div>

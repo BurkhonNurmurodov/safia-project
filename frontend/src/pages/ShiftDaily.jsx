@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Layers } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
@@ -23,6 +23,8 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
+import { loadColor } from "../utils/statusBands";
+import useStatusBands from "../hooks/useStatusBands";
 import api from "../utils/api";
 
 // ── date helpers ──────────────────────────────────────────────────────────────
@@ -48,6 +50,10 @@ export default function ShiftDaily() {
   const { tl } = useTranslit();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { pathname } = useLocation();
+  // The bands in force (admin-editable) — subscribing is what keeps loadTone
+  // below answering with them rather than the defaults.
+  useStatusBands();
 
   // Remembered across navigations; an explicit ?date= in the URL (e.g.
   // returning from a drill-down) beats the stored value.
@@ -138,14 +144,17 @@ export default function ShiftDaily() {
   // off «Smena boshi Zagruzka». The ≥100 / <90 tests compare the WHOLE percent
   // printed, the platform's band rule, so a unit the board shows at «100%» is
   // counted as ≥ 100%.
+  // A day with no figure behind it is null — «—» on the card — never 0: a
+  // «0.0 min» or a red «0» on a day nobody closed reads as a measured fact.
+  // Only a cell that carries numbers counts (marker-only cells have none).
   const idleOf = (dStr) => {
-    let idle = 0;
+    let idle = 0, seen = false;
     const data = heatmap?.data || {};
     for (const name of (heatmap?.managers || [])) {
       const c = data[name]?.[dStr];
-      if (c) idle += c.equip_downtime || 0;
+      if (c && typeof c.equip_downtime === "number") { idle += c.equip_downtime; seen = true; }
     }
-    return idle;
+    return seen ? idle : null;
   };
   const loadOf = (iso) => {
     let sum = 0, cnt = 0, over = 0, under = 0;
@@ -157,7 +166,9 @@ export default function ShiftDaily() {
       if (pct >= 100) over++;
       if (pct < 90) under++;
     }
-    return { avg: cnt ? sum / cnt : null, over, under, cnt };
+    return cnt
+      ? { avg: sum / cnt, over, under, cnt }
+      : { avg: null, over: null, under: null, cnt };
   };
   const dayAgg = (iso) => ({ idle: idleOf(toDMY(iso)), ...loadOf(iso) });
 
@@ -175,6 +186,12 @@ export default function ShiftDaily() {
 
   const { cur, prev, trend } = cards;
   const avgDeltaPp = (cur.avg != null && prev.avg != null) ? (cur.avg - prev.avg) * 100 : 0;
+  // Card value / previous / delta when either day may have no figure.
+  const show = (v, fmt) => (v == null ? "—" : fmt(v));
+  const both = (a, b) => a != null && b != null;
+  const idleDelta = both(cur.idle, prev.idle) ? cur.idle - prev.idle : 0;
+  const overDelta = both(cur.over, prev.over) ? cur.over - prev.over : 0;
+  const underDelta = both(cur.under, prev.under) ? cur.under - prev.under : 0;
 
   // ── Planned vs Actual load (selected day) ───────────────────────────────────
   const barNames = brigadirs.map(b => tl(b.name));
@@ -188,16 +205,22 @@ export default function ShiftDaily() {
                                        ? Math.round((b.baseline_util - b.net_util) * 100) : 0;
     return b.net_util != null ? Math.round(b.net_util * 100) : 0;
   };
-  const diffColor = (d) => {
-    if (d < -20) return "#3b82f6";
-    if (d <= 0)  return "#22c55e";
-    if (d <= 5)  return "#eab308";
-    return "#ef4444";
+  // ONE colour scale on the page: P and A bars wear the admin's load bands
+  // (the board's «Smena boshi Zagruzka» column and the KPI cards' 90% line),
+  // P−A wears the comparison diff bands — the load chart's own A colours. The
+  // ranking used to paint the same figure on a scale of its own (utilColor),
+  // so one brigadir's 94% was yellow in the table and orange in the ranking.
+  const segColor = (v, segs) => {
+    let c = segs[0]?.color;
+    for (const s of segs) { if (v >= s.from) c = s.color; else break; }
+    return c;
   };
   const ranked    = [...brigadirs].sort((a, b) => getRankVal(a) - getRankVal(b));
   const rankNames = ranked.map(b => tl(b.name));
   const rankVals  = ranked.map(b => getRankVal(b));
-  const rankColors = rankMode === "diff" ? rankVals.map(diffColor) : undefined;
+  const rankColors = rankMode === "diff"
+    ? rankVals.map((d) => segColor(d, diffSegments))
+    : rankVals.map((v) => loadColor(v / 100));
   const rankXMin = rankMode === "diff" ? (rankVals.length ? Math.min(...rankVals, -5) : -5) : 0;
   const rankXMax = rankMode === "diff" ? (rankVals.length ? Math.max(...rankVals, 10) : 10) : undefined;
   const RANK_LABELS = { planned: t("overview.rankPlanned"), actual: t("overview.rankActual"), diff: t("overview.rankDiff") };
@@ -236,14 +259,20 @@ export default function ShiftDaily() {
   );
 
   return (
-    <Layout title={t("shiftDaily.title")}>
+    // At /shift-daily the page is named what the menu calls it («Smena
+    // kunligi»); a shift-manager reaches the same view through «Kunlik»
+    // (/daily), where the old title still matches the menu.
+    <Layout title={pathname.startsWith("/shift-daily") ? t("nav.shiftDaily") : t("shiftDaily.title")}>
       {/* ONE-ROW filter bar: the day inline, plant / shift inside the shared
           FilterPanel (active narrowings surface as chips), the unit at the
           right edge. The panel stays a DIRECT child of this row — its fit
-          check measures the row's children. */}
+          check measures the row's children. On a phone the stepper takes the
+          first line whole (`fillPhone`) and the filters, their chips and the
+          unit share the second — the chip used to be pushed past the screen's
+          edge with only its icon showing. */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
-        <DayStepper value={date} onChange={setDate} />
-        <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} />
+        <DayStepper value={date} onChange={setDate} fillPhone />
+        <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} chipsWrap />
         <div className="ml-auto">{unitToggle}</div>
       </div>
 
@@ -256,11 +285,11 @@ export default function ShiftDaily() {
             <KpiDeltaCard
               label={t("overview.totalIdle")}
               tooltip={t("overview.tip.totalIdle")}
-              value={fmtTime(cur.idle, unit)}
-              prevValue={fmtTime(prev.idle, unit)}
+              value={show(cur.idle, (v) => fmtTime(v, unit))}
+              prevValue={show(prev.idle, (v) => fmtTime(v, unit))}
               prevLabel={t("shiftDaily.prevDay")}
-              delta={cur.idle - prev.idle}
-              deltaText={signed(cur.idle - prev.idle, (v) => fmtTime(v, unit))}
+              delta={idleDelta}
+              deltaText={signed(idleDelta, (v) => fmtTime(v, unit))}
               higherIsBetter={false}
               trend={trend("idle")}
             />
@@ -273,30 +302,32 @@ export default function ShiftDaily() {
               delta={avgDeltaPp}
               deltaText={signed(avgDeltaPp, (v) => `${v.toFixed(1)}%`)}
               higherIsBetter
-              accent
+              accent={cur.avg != null}
               trend={trend("avg", 100)}
             />
             <KpiDeltaCard
               label={t("overview.over100")}
               tooltip={t("shiftDaily.tip.over100")}
-              value={String(cur.over)}
-              prevValue={String(prev.over)}
+              value={show(cur.over, String)}
+              prevValue={show(prev.over, String)}
               prevLabel={t("shiftDaily.prevDay")}
-              delta={cur.over - prev.over}
-              deltaText={signed(cur.over - prev.over, (v) => String(v))}
+              delta={overDelta}
+              deltaText={signed(overDelta, (v) => String(v))}
               higherIsBetter
               trend={trend("over")}
             />
             <KpiDeltaCard
               label={t("overview.under90")}
               tooltip={t("shiftDaily.tip.under90")}
-              value={String(cur.under)}
-              prevValue={String(prev.under)}
+              value={show(cur.under, String)}
+              prevValue={show(prev.under, String)}
               prevLabel={t("shiftDaily.prevDay")}
-              delta={cur.under - prev.under}
-              deltaText={signed(cur.under - prev.under, (v) => String(v))}
+              delta={underDelta}
+              deltaText={signed(underDelta, (v) => String(v))}
               higherIsBetter={false}
-              danger
+              // Red only when there IS somebody under 90% — a red «0» reads
+              // as an alarm about the one day nothing went wrong.
+              danger={cur.under > 0}
               trend={trend("under")}
             />
           </>
@@ -354,13 +385,17 @@ export default function ShiftDaily() {
             actualLabel={t("shiftDaily.actual")}
             plannedSegments={plannedSegments}
             diffSegments={diffSegments}
+            phoneRows
           />
         ) : (
           <EmptyState title={t("shiftDaily.noData")} message={t("shiftDaily.noDataSub")} height="h-48" />
         )}
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
+      {/* Stacked (below lg) the cards stretch to the column: with
+          `items-start` the table card took its CONTENT width and ran 13px past
+          a 320px screen. Side by side (lg+) they keep their own heights. */}
+      <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
         {/* Table — click a supervisor → their daily page, read-only */}
         {isLoading || hasData ? (
           <BrigadirTable
@@ -378,8 +413,10 @@ export default function ShiftDaily() {
           </div>
         )}
 
-        {/* Ranking — Final Actual */}
-        <div className="w-full lg:w-80 flex-shrink-0">
+        {/* Ranking — Final Actual. Not on a phone (the product owner's call,
+            2026-10-03): there it repeats the table above it row for row and
+            only adds a screen of scrolling. */}
+        <div className="w-full lg:w-80 flex-shrink-0 max-sm:hidden">
           <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">

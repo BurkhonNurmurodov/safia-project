@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
+import useIsMobile from "../../hooks/useIsMobile";
+import { surnameInitial } from "../../utils/personName";
 
 // Planned-vs-Actual workload, one group of bars per supervisor.
 //   group mode → two bars (planned, actual) side by side, growing from the floor
@@ -44,6 +46,104 @@ function shortName(name) {
   return name.length > 13 ? name.slice(0, 12) + "…" : name;
 }
 
+// ── Phone layout (opt-in `phoneRows`, below sm) ─────────────────────────────
+// The column chart gives each brigadir a 60px group, so a 350px phone showed
+// five of them, hid the rest in a sideways scroll nobody could see, ran the
+// two value labels into each other («117%119%») and painted plan and actual in
+// the same colour with a text-only legend. On a phone it is ONE ROW PER
+// BRIGADIR instead: the name (surname first, the platform's phone rule), a grey
+// plan bar over the actual bar in its status colour, and both figures in a
+// right-hand column so they read down the list like a table. P−A mode draws
+// one bar diverging from a zero line. Same inputs, same colours for A, same
+// scale rule as the desktop chart — only the geometry changes.
+const PLAN_NEUTRAL = "var(--text-4)";
+
+function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel, diffSegments, gridColor }) {
+  const rows = names.map((name, i) => {
+    const p = Math.round(planned[i] ?? 0);
+    const a = Math.round(actual[i] ?? 0);
+    const d = p - a;
+    return { name, p, a, d, aColor: colorFor(d, diffSegments, ACTUAL_COLOR) };
+  });
+  const maxGrp = Math.max(110, ...rows.map((r) => Math.max(r.p, r.a)));
+  const maxPos = Math.max(0, ...rows.map((r) => r.d));
+  const maxNeg = Math.max(0, ...rows.map((r) => -r.d));
+  const span = Math.max(1, maxPos + maxNeg);
+  const zero = (maxNeg / span) * 100;
+  const keyColors = [...new Set((diffSegments || []).map((s) => s.color))];
+  const pct = (v) => `${Math.max(0, Math.min(100, v))}%`;
+  const bar = "h-2.5 rounded-[3px] transition-[width,left,background-color] duration-300";
+
+  return (
+    <div>
+      {/* The key the column chart never had: which bar is which. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs" style={{ color: "var(--text-2)" }}>
+        {diffMode ? (
+          <span>{plannedLabel} − {actualLabel}, %</span>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-4 h-2.5 rounded-[3px]" style={{ background: PLAN_NEUTRAL }} />
+              {plannedLabel}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex h-2.5 rounded-[3px] overflow-hidden">
+                {(keyColors.length ? keyColors : [ACTUAL_COLOR]).map((c) => (
+                  <span key={c} className="inline-block w-1.5 h-full" style={{ background: c }} />
+                ))}
+              </span>
+              {actualLabel}
+            </span>
+          </>
+        )}
+      </div>
+      <ul>
+        {rows.map((r) => (
+          <li
+            key={r.name}
+            className="grid grid-cols-[minmax(0,84px)_minmax(0,1fr)] items-center gap-2 py-1.5 border-t first:border-t-0"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span className="text-xs leading-tight break-words" style={{ color: "var(--text-2)" }} title={r.name}>
+              {surnameInitial(r.name)}
+            </span>
+            {diffMode ? (
+              <div className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-1.5">
+                <div className="relative h-2.5">
+                  <div className="absolute -top-1 -bottom-1 w-px" style={{ left: pct(zero), background: gridColor }} />
+                  <div
+                    className={`absolute top-0 ${bar}`}
+                    style={{
+                      left: pct(r.d >= 0 ? zero : zero - (Math.abs(r.d) / span) * 100),
+                      width: pct((Math.abs(r.d) / span) * 100),
+                      background: r.aColor,
+                      minWidth: r.d ? 2 : 0,
+                    }}
+                  />
+                </div>
+                <span className="text-xs font-semibold tabular-nums text-right" style={{ color: "var(--text-1)" }}>
+                  {r.d > 0 ? "+" : ""}{r.d}%
+                </span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-x-1.5 gap-y-1">
+                <div className="h-2.5">
+                  <div className={bar} style={{ width: pct((r.p / maxGrp) * 100), background: PLAN_NEUTRAL }} />
+                </div>
+                <span className="text-[11px] tabular-nums text-right leading-none" style={{ color: "var(--text-3)" }}>{r.p}%</span>
+                <div className="h-2.5">
+                  <div className={bar} style={{ width: pct((r.a / maxGrp) * 100), background: r.aColor }} />
+                </div>
+                <span className="text-xs font-semibold tabular-nums text-right leading-none" style={{ color: "var(--text-1)" }}>{r.a}%</span>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function LoadBarChart({
   names, planned, actual,
   diffMode = false,
@@ -54,17 +154,32 @@ export default function LoadBarChart({
   // logic); diffSegments → A bars, keyed on D = P − A (comparison-table logic).
   plannedSegments = [],
   diffSegments = [],
+  // Opt-in: below sm, one row per brigadir instead of the column chart (see
+  // PhoneRows). Off by default, so any other caller keeps the column chart.
+  phoneRows = false,
 }) {
   const { labelColor, gridColor } = useChartTheme();
+  const isPhone = useIsMobile();
   const wrapRef = useRef(null);
   const [width, setWidth] = useState(600);
 
+  const asRows = phoneRows && isPhone;
   useEffect(() => {
     if (!wrapRef.current) return;
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [asRows]); // the column chart's wrapper only exists outside row mode
+
+  if (asRows) {
+    return (
+      <PhoneRows
+        names={names} planned={planned} actual={actual} diffMode={diffMode}
+        plannedLabel={plannedLabel} actualLabel={actualLabel}
+        diffSegments={diffSegments} gridColor={gridColor}
+      />
+    );
+  }
 
   const n = names.length;
   const PAD_TOP = 22, PAD_BOTTOM = 52, PAD_X = 8;

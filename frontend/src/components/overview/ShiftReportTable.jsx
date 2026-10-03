@@ -161,11 +161,15 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
   );
   return (
     <span className={`flex flex-col leading-tight whitespace-normal ${left ? "items-start text-left" : "items-center text-center"}`}>
-      <span className="text-[10.5px] sm:text-xs" style={active ? { color: "var(--brand-text)" } : undefined}>
+      {/* Phones get ONE line per header: the short label is a single word
+          (the «%» lives on every figure under it) and the caption is ≥11px —
+          «Plan / % / kecha» stacked three lines high and 9.5px captions were
+          the two things nobody could read. */}
+      <span className="text-[11.5px] max-[359px]:text-[11px] max-sm:whitespace-nowrap sm:text-xs" style={active ? { color: "var(--brand-text)" } : undefined}>
         {swap(full, short)}
       </span>
       {cap && (
-        <span className="mt-0.5 text-[9.5px] sm:text-[10.5px] font-normal" style={{ color: "var(--text-3)" }}>
+        <span className="mt-0.5 text-[11px] max-[359px]:text-[10.5px] max-sm:whitespace-nowrap sm:text-[10.5px] font-normal" style={{ color: "var(--text-3)" }}>
           {swap(cap, capShort)}
         </span>
       )}
@@ -176,7 +180,7 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push five columns past a phone's width.
-const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
+const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
 // The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
 // CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
@@ -192,13 +196,13 @@ const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
 // here compiles, loses, and leaves the grid invisible with nothing to show for
 // it. `RULE` is that one declaration and every figure cell carries it.
 const TD_FIG = "text-center align-middle tabular-nums "
-  + "leading-tight text-[11px] sm:text-xs border";
+  + "leading-tight text-xs border";
 const RULE = { borderColor: "var(--bg-card)" };
 // A linked cell moves its padding onto the link, so the whole tile is the
 // target and the row keeps its height. Hover tints with the cell's own INK
 // (`currentColor`), which lightens a white-ink fill and darkens a dark-ink
 // one, in both themes, with no colour of its own.
-const TD_PAD = "px-1 sm:px-2 py-2.5";
+const TD_PAD = "px-1 max-[359px]:px-0.5 sm:px-2 py-2.5";
 const LINK_CLS = "block w-full outline-none transition-colors "
   + "hover:bg-[color-mix(in_srgb,currentColor_14%,transparent)] "
   + "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]";
@@ -392,7 +396,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
           <tr>
             <td
               colSpan={COLS}
-              className="px-2 sm:px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider whitespace-normal"
+              className="px-2 sm:px-3 py-1.5 text-[11px] sm:text-[10.5px] font-semibold uppercase tracking-wider whitespace-normal"
               style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}
             >
               {fill(t("overview.sr.group"), {
@@ -411,10 +415,13 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
               <td className="p-0 align-middle">
                 <Link
                   to={`/brigadir/${r.manager_id}`}
-                  className="block px-2 sm:px-3 py-2 outline-none hover:shadow-[inset_3px_0_0_0_var(--brand)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
+                  className="block px-2 max-[359px]:px-1.5 sm:px-3 py-2 outline-none hover:shadow-[inset_3px_0_0_0_var(--brand)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
                 >
+                  {/* Below 360px the five columns only fit if a very long
+                      surname may break inside the word — the alternative was
+                      the «Xavotir» column cut off at the screen's edge. */}
                   <span
-                    className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
+                    className="block whitespace-normal sm:whitespace-nowrap max-[359px]:[overflow-wrap:anywhere] text-[11.5px] sm:text-xs font-medium leading-snug"
                     style={{ color: "var(--text-1)" }}
                   >
                     {tl(r.name || "")}
@@ -500,7 +507,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
               k="name"
               sort={sort}
               onSort={onSort}
-              cls="align-bottom sm:w-[32%] max-sm:px-2 max-sm:[&_.lucide-chevrons-up-down]:hidden"
+              cls="align-bottom sm:w-[32%] max-sm:px-2 max-[359px]:px-1.5 max-sm:[&_.lucide-chevrons-up-down]:hidden"
               label={<HeadLabel left active={sort?.key === "name"} full={t("overview.sr.colName")} />}
             />
             {[
@@ -547,11 +554,13 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
       )}
 
       {rows.length > 0 && (
-        <div className="mt-2 px-1 flex flex-col gap-1.5 text-[10.5px] leading-snug" style={{ color: "var(--text-3)" }}>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:gap-x-6">
+        <div className="mt-2 px-1 flex flex-col gap-1.5 text-[11px] sm:text-[10.5px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {/* One band per line on a phone, the chips lined up under each
+              other — two to a row left «<80%» wrapped onto a line of its own. */}
+          <div className="grid grid-cols-1 gap-y-1.5 sm:flex sm:flex-wrap sm:gap-x-6 sm:gap-y-1">
             {bandRows.map((b) => (
               <span key={b.key} className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                <span>
+                <span className="max-sm:w-16 max-sm:flex-shrink-0">
                   <span className="sm:hidden">{b.short}</span>
                   <span className="max-sm:hidden">{b.full}</span>
                 </span>
