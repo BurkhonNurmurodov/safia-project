@@ -67,6 +67,12 @@ FORMULA_MIN_N = 50
 OUT_TYPES = {"O"}
 BREAK_TYPES = {"T"}
 DIRECTED = {"I", "O"}
+# Every mark on the 01.10 dump carries a type: «I» (door in), «O» (door out)
+# or «C» — a CHECKPOINT (the gate, 11,361 of 42,963 marks), which says only
+# that the person passed it. A C is never an arrival and never a departure on
+# its own; it is what sits 8–20 min before every «I» and 7–31 min after every
+# «O».
+CHECKPOINT = {"C"}
 # Marks with no direction: once the shift is over, the last of two marks at
 # least this far apart is the departure.
 PAIR_MIN = 30
@@ -289,8 +295,14 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     t_in = in_src = None
     if t_in_rep:
         t_in, in_src = t_in_rep, "report"
-    elif mine:
-        t_in, in_src = mine[0][0], "mark"
+    else:
+        # Only a directed «I» is an arrival. On 01.10 sixteen people with no
+        # report row had NOTHING but checkpoint marks (five taps at the gate
+        # at 14:16, nobody ever inside) and the first mark made them «inside»
+        # / «no check-out» all day on a day the file reads «did not come».
+        first_in = next((m for m in mine if m[1] not in CHECKPOINT | OUT_TYPES), None)
+        if first_in is not None:
+            t_in, in_src = first_in[0], "mark"
     # A mark BEFORE the report's check-in is not this shift's — the previous
     # night's exit was read as today's arrival until 2026-10-02 (the laptop
     # fix, v4.207.1) — so the marks start at the arrival.
@@ -315,19 +327,27 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         else:
             status = "absent"
     else:
+        directed = [m for m in mine if m[1] in DIRECTED | BREAK_TYPES]
+        last_dir = directed[-1] if directed else None
         if t_out_rep and t_out_rep >= t_in:
             t_out, out_src = t_out_rep, "report"
             # The person is BACK and Verifix has not re-read the day yet: a
-            # directed «I» after the report's check-out, or — while the shift
-            # still runs — any mark PAIR_MIN or more after it (the gate a few
-            # minutes after the door is the way out, and moves nothing).
-            if any(m[1] == "I" and m[0] > t_out_rep for m in mine) or (
-                    not shift_over and last is not None
-                    and _mins(t_out_rep, last[0]) >= PAIR_MIN):
+            # directed «I» after the report's check-out, or any mark PAIR_MIN
+            # or more after it (the gate a few minutes after the door is the
+            # way out, and moves nothing). ONLY while the shift still runs:
+            # once it is over the report's check-out is final — on 01.10
+            # sixteen finished days read «no check-out» because the NEXT
+            # day's «I» (02.10 09:52, inside the 12 h the fallback looks at)
+            # was taken as a return.
+            if not shift_over and (
+                    any(m[1] == "I" and m[0] > t_out_rep for m in mine)
+                    or (last is not None and _mins(t_out_rep, last[0]) >= PAIR_MIN)):
                 t_out = out_src = None
-        elif any(m[1] in DIRECTED for m in mine) and last[1] in DIRECTED | BREAK_TYPES:
-            if last[1] in OUT_TYPES | BREAK_TYPES:
-                t_out, out_src = last[0], "mark"
+        elif last_dir is not None:
+            # The last DIRECTED mark decides; a checkpoint after it is the
+            # gate on the way out (or in) and moves nothing.
+            if last_dir[1] in OUT_TYPES | BREAK_TYPES:
+                t_out, out_src = last_dir[0], "mark"
         elif shift_over and late_marks:
             t_out, out_src = late_marks[-1][0], "last_mark"
         # An exit before the shift's end is not a departure yet but a BREAK

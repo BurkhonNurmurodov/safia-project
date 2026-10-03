@@ -91,7 +91,6 @@ async def lifespan(app: FastAPI):
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
-        report_verifix_dump,
         report_checklist_setup,
         report_proof_archive,
         report_proof_review_sep19_20,
@@ -460,13 +459,6 @@ async def lifespan(app: FastAPI):
     # once. Remove this line, `startup.report_sheet_concerns_xlsx` and
     # `services/sheet_concerns_report.py` once it has landed.
     report_sheet_concerns_xlsx()
-    # ⚠ TEMPORARY one-shot (2026-10-02) — everything the Verifix API returns
-    # for 01.10.2026 (every form, every field, the marks, beside the day's
-    # uploaded file), as a workbook in the operator's chat, to fix the live
-    # page's clocks on the data. Scheduled a minute after boot, flag-guarded.
-    # Remove this line, `startup.report_verifix_dump` and
-    # `services/verifix_dump.py` once it has landed.
-    report_verifix_dump()
     # ⚠ TEMPORARY one-shot (2026-09-17) — the leader checklist as production
     # runs it (every level of the task chain, filing times, a proof sample), as
     # ZIP files in the operator's chat, before the new rules go to every unit.

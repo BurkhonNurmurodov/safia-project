@@ -6399,45 +6399,6 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: EVERYTHING the Verifix API returns for 01.10.2026 ──────────────
-# The live «Verifix to'g'irlash» printed every arrival early and every
-# departure late against the Excel the same API feeds (fixed on the two
-# exports alone, v4.201.1). The operator asked, on 2026-10-02, for the raw
-# rows behind them: every form the API user may read, every field, for one
-# day, beside the day's uploaded file — so the next fix is made on the data.
-# Scheduled rather than run inline: it walks ~30 report pages and ~30 pages of
-# marks, and a boot that stalls past /health rolls the deploy back.
-VERIFIX_DUMP_FLAG = "verifix_api_dump_2026_10_01_v1"
-_VERIFIX_DUMP_DELAY_S = 60
-
-
-def report_verifix_dump() -> None:
-    """Everything the Verifix API returns for 01.10.2026, DMed once as a
-    workbook (`services/verifix_dump.py`).
-
-    Flag-guarded like every other errand here: delivered on the first boot
-    after its own deploy and never again; a failed delivery is retried on the
-    next boot and then abandoned. Changing what it reports (another day, a
-    wider window) needs a NEW flag key. Never raises.
-    """
-    try:
-        if not _report_pending(VERIFIX_DUMP_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("verifix-api-dump",
-                    datetime.now(timezone.utc) + timedelta(seconds=_VERIFIX_DUMP_DELAY_S),
-                    _verifix_dump_job)
-    except Exception as exc:
-        print(f"[startup] verifix API dump could not be scheduled: {exc}")
-
-
-def _verifix_dump_job() -> None:
-    from app.services import verifix_dump
-    _send_report_once(VERIFIX_DUMP_FLAG, "verifix API dump 01.10",
-                      verifix_dump.send, UNPRICED_DM_CHAT, verifix_dump.DAY, verifix_dump.DAY)
-
-
 # ── one-shot: clear what the 19 Sep go-live left behind ──────────────────────
 # The operator asked on the morning of 19 Sep for two things to go: the «YANGI
 # TALAB — 19-sentabrdan kuchga kiradi» notice, which now contradicts itself on

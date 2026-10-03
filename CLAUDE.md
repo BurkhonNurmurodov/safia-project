@@ -6568,18 +6568,30 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   (the operator: «wrong times are arriving through the API») while the hours,
   read off the time kinds, were right. A mark decides a clock only where the
   report has not answered yet, and the page SAYS so (`in_src` / `out_src` ≠
-  "report", dotted with a hint): the window's first mark as the arrival; a
-  mark typed «O»/«T» as the departure; else, once the shift is over, the latest
-  mark of ANY type ≥ 30 min after the arrival and ≤ 12 h after the shift's end
-  ("last_mark"). A directed «I» after the report's check-out means the person
-  is back and the report has not caught up — that check-out is dropped; an
-  undirected mark after it is the gate on the way out and moves nothing —
-  unless it comes 30 min or more later while the shift still runs, which is a
-  return (the v4.207.1 rule). A mark before the report's check-in is not this
-  shift's: the previous night's exit was read as today's arrival. The
-  report fills check-outs in LATE — last night's shift had none by noon on
-  2026-10-01 and the whole night read «inside · no check-out» until the
-  fallbacks existed. `diag.in_sources` / `out_sources` count each source.
+  "report", dotted with a hint). **Every mark carries a type** (the 01.10
+  dump, 42,963 marks): «I» (door in), «O» (door out) or «C» — a CHECKPOINT,
+  the gate, 11,361 of them, which sits 8–20 min before every «I» and 7–31 min
+  after every «O» and says only that the person passed it (`CHECKPOINT`).
+  Without a report check-in the arrival is the window's first «I» — never a
+  C: sixteen people on 01.10 had nothing but gate taps and no report row (the
+  file: did not come) and read «inside» / «no check-out» all day. Without a
+  report check-out the last DIRECTED mark decides — an «O»/«T» is the
+  departure, an «I» means inside, a trailing C is the gate and moves nothing;
+  else, once the shift is over, the latest mark of any type ≥ 30 min after
+  the arrival and ≤ 12 h after the shift's end ("last_mark"). WHILE THE SHIFT
+  RUNS a directed «I» after the report's check-out, or any mark 30 min or
+  more after it, means the person is back and the report has not caught up —
+  that check-out is dropped (an undirected mark a few minutes after it is the
+  gate on the way out). ONCE THE SHIFT IS OVER the report's check-out is
+  final: sixteen finished days read «no check-out» on 03.10 because the NEXT
+  day's «I» (02.10 09:52) was taken as a return. A mark before the report's
+  check-in is not this shift's: the previous night's exit was read as today's
+  arrival. The report fills check-outs in LATE — last night's shift had none
+  by noon on 2026-10-01 and the whole night read «inside · no check-out»
+  until the fallbacks existed. Replayed on the 01.10 dump (03.10): 1,493 of
+  1,495 file rows agree with the file to the minute; the two left are the API
+  being newer than the Excel. `diag.in_sources` / `out_sources` count each
+  source.
   Tapping a worker's name opens the raw facts behind the row — the report's
   in/out/begin/end, every mark fetched with its type, the time kinds —
   because both earlier guesses about the night shift were made without them.
@@ -6588,16 +6600,12 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   «Ketgan» at 09:30 on 02.10 over a breakfast. It becomes «Ketgan», with its
   early-leave minutes, once the shift is over, and holds the day open like
   anybody inside.
-- **The raw rows behind 01.10 were DMed once** — `services/verifix_dump.py`,
-  the boot one-shot `startup.report_verifix_dump` (flag
-  `verifix_api_dump_2026_10_01_v1`, scheduled a minute after boot, both
-  entrypoints; another day needs a NEW key): every form the API user may read
-  with every field it returns, the day's report and marks for everybody, and a
-  «Solishtirish» sheet putting the uploaded file, the report, the marks and
-  the live page's own reading side by side per person, with the minute deltas.
-  TEMPORARY — delete the module, the startup pair and BOTH entrypoint calls
-  once the file has landed. The fix above was made on the two exports alone;
-  the next one is made on this.
+- **The raw rows behind 01.10 were DMed once** (`verifix_api_dump_2026_10_01_v1`,
+  03.10 09:35): every form the API user may read with every field, the day's
+  report and marks for everybody, and a «Solishtirish» sheet putting the file,
+  the report, the marks and the live reading side by side. The module and its
+  one-shot were deleted once the file landed; the C / final-check-out rules
+  above were made on it. Another such dump is a new module under a NEW key.
 - Late = more than 5 min after the schedule start, early leave = more than 5
   min before its end. **No check-out is a status of its own (`no_out`), not
   «inside»**: still without an exit an hour after the shift's end. The arrival
