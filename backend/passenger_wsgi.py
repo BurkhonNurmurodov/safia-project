@@ -93,7 +93,6 @@ try:
         report_cell_input_gaps_xlsx,
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
-        report_sheet_concerns_xlsx,
         report_checklist_setup,
         report_proof_archive,
         report_proof_review_sep19_20,
@@ -165,8 +164,6 @@ try:
         add_leader_ai_reviewed_index,
         add_web_credential_password_enc,
         ensure_internal_api_key, reset_arc_mirror,
-        add_worker_concern_failures_column,
-        add_worker_concern_sweep_columns,
         migrate_permission_modes,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
@@ -300,8 +297,6 @@ try:
     # which declines outright without one.
     ensure_internal_api_key()
     reset_arc_mirror()
-    add_worker_concern_failures_column()
-    add_worker_concern_sweep_columns()
     migrate_multi_roles()
     # After migrate_multi_roles — it owns the table's columns; this re-keys it.
     migrate_leader_role_uniqueness()
@@ -405,12 +400,6 @@ try:
     # after this deploy, never again. Remove this line and
     # `shared_wc_report.send_cells_raw_xlsx` once it has landed.
     report_shared_sap_cells_raw_xlsx()
-    # ⚠ TEMPORARY one-shot (2026-09-15) — who still writes concerns in the
-    # «Liderlar Havotirlar» Google sheets in September, as a workbook in the
-    # operator's chat. Scheduled (it re-crawls the sheets first), flag-guarded.
-    # Remove this line, `startup.report_sheet_concerns_xlsx` and
-    # `services/sheet_concerns_report.py` once it has landed.
-    report_sheet_concerns_xlsx()
     # ⚠ TEMPORARY one-shot (2026-09-17) — the leader checklist as production
     # runs it, as ZIP files in the operator's chat. Scheduled, flag-guarded.
     # Remove this line, `startup.report_checklist_setup` and
@@ -557,10 +546,6 @@ try:
     # someone the uploaded file says worked (services/attendance_reconcile).
     from app.services.attendance_watch import register_watch as register_reconcile_watch
     register_reconcile_watch()
-    # Worker-concerns nightly sheet crawl + first-boot fill (mirrored in
-    # app/main.py).
-    from app.services.worker_concerns import register_boot_jobs as register_wc_jobs
-    register_wc_jobs()
     # ARC ticket mirror: quick pass every 15 min, full walk nightly + boot
     # catch-up (mirrored in app/main.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs

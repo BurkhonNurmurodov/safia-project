@@ -18,8 +18,8 @@ passes:
     cannot tell "gone" from "further down than I looked", so it never touches
     ``missing_since``.
 
-Same shape as the worker-concerns crawl (thread + DB claim + heartbeat +
-scheduler): each page commits on its own, so a process death mid-walk loses
+A background crawl in the platform's usual shape (thread + DB claim +
+heartbeat + scheduler): each page commits on its own, so a process death mid-walk loses
 nothing already written and the next pass simply walks again; the claim's
 heartbeat is what makes a dead pass takeover-able instead of a permanent
 «running» that leaves the Refresh button dead.
@@ -321,8 +321,7 @@ def register_boot_jobs() -> None:
     """Quick pass every INTERVAL_MIN minutes, full pass nightly, plus a
     one-shot catch-up a minute after boot (full if no full walk ever
     finished, quick otherwise). Mirrored in passenger_wsgi.py like every
-    other boot job. Skips entirely without credentials — same as the
-    worker-concerns crawl declining without a service-account key."""
+    other boot job. Skips entirely without credentials."""
     if not configured():
         log.info("arc-legacy: no ARC credentials, sync jobs not registered")
         return

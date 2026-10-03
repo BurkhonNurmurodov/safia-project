@@ -4523,43 +4523,6 @@ def migrate_permission_modes() -> None:
         db.close()
 
 
-def add_worker_concern_failures_column() -> None:
-    """2026-08-13: the worker-concerns sync records WHY each unreadable sheet was
-    left stale, not just which cell it was. Existing rows stay NULL until the
-    next crawl rewrites the list — nothing is back-derived, because the reason a
-    past run failed is not recoverable from anything but its log line."""
-    db = SessionLocal()
-    try:
-        db.execute(text(
-            "ALTER TABLE worker_concern_sync ADD COLUMN IF NOT EXISTS failures JSONB"))
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[startup] worker-concern failures column migration skipped: {exc}")
-    finally:
-        db.close()
-
-
-def add_worker_concern_sweep_columns() -> None:
-    """2026-08-14: record what the incremental sync actually saved (how many
-    sheets it skipped) and, when it saved nothing, why — the Drive
-    modifiedTime sweep's own failure. Before this the sweep failing (Drive API
-    disabled on the Google project) looked exactly like the sweep working and
-    finding every sheet changed: both crawl all ~180 sheets, and the reason
-    reached only ``app.log``."""
-    db = SessionLocal()
-    try:
-        for col in ("skipped_sheets INTEGER DEFAULT 0", "sweep_error TEXT"):
-            db.execute(text(
-                f"ALTER TABLE worker_concern_sync ADD COLUMN IF NOT EXISTS {col}"))
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[startup] worker-concern sweep columns migration skipped: {exc}")
-    finally:
-        db.close()
-
-
 def add_leader_photo_client_key() -> None:
     """2026-08-19: one camera shot may reach us twice, and only the PAGE can say
     the two are one shot.
@@ -6289,20 +6252,7 @@ def report_shared_sap_cells_raw_xlsx() -> None:
                       shared_wc_report.send_cells_raw_xlsx, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: who still files worker concerns in the GOOGLE SHEETS ───────────
-# The operator asked, on 2026-09-15, who kept writing concerns in the ~180
-# «Liderlar Havotirlar» sheets during September — /cell-concerns replaced them
-# on 06.09 — as a detailed workbook in their own chat. Unlike the reports above
-# it re-reads its source first: the sheets are crawled nightly, and a file that
-# misses the morning's rows would name somebody as stopped who is not. So the
-# send runs on the scheduler behind one incremental crawl instead of inline — a
-# boot that stalls past /health rolls the deploy back.
-SHEET_CONCERNS_XLSX_FLAG = "sheet_concerns_september_xlsx_2026_09_15_v1"
-SHEET_CONCERNS_FROM = date(2026, 9, 1)
-SHEET_CONCERNS_TO = date(2026, 9, 30)
-_SHEET_CONCERNS_DELAY_S = 120
-
-
+# ── one-shot reports: the shared «still owed?» test ─────────────────────────
 def _report_pending(flag: str) -> bool:
     """`_send_report_once`'s own test, asked BEFORE any work is queued for it:
     False once the report went out, or once its attempts are spent."""
@@ -6319,45 +6269,6 @@ def _report_pending(flag: str) -> bool:
     except ValueError:
         return False
     return tries < _UNPRICED_DM_TRIES
-
-
-def report_sheet_concerns_xlsx() -> None:
-    """Who still files concerns in the Google sheets, DMed once as a workbook.
-
-    Flag-guarded like every other errand here, with one difference: the send
-    runs `_SHEET_CONCERNS_DELAY_S` after boot on the scheduler, behind an
-    incremental crawl (`worker_concerns.run_sync`), because the question is who
-    is STILL writing and the nightly crawl is hours old by the time anybody
-    deploys. A crawl that cannot run — no key, another crawl holding the claim,
-    Google down — costs freshness, never the file: the send goes ahead on the
-    stored rows, and the file prints when the sheets were last read.
-
-    Changing what it reports needs a NEW flag key. Never raises.
-    """
-    try:
-        if not _report_pending(SHEET_CONCERNS_XLSX_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("sheet-concerns-report",
-                    datetime.now(timezone.utc) + timedelta(seconds=_SHEET_CONCERNS_DELAY_S),
-                    _sheet_concerns_job)
-    except Exception as exc:
-        print(f"[startup] sheet concerns XLSX could not be scheduled: {exc}")
-
-
-def _sheet_concerns_job() -> None:
-    import os
-    from app.services import sheet_concerns_report, worker_concerns
-    if os.path.exists(settings.google_credentials_file):
-        try:
-            res = worker_concerns.run_sync()
-            print(f"[startup] sheet concerns XLSX: crawl before send -> {res.get('status')}")
-        except Exception as exc:
-            print(f"[startup] sheet concerns XLSX: crawl before send failed: {exc}")
-    _send_report_once(SHEET_CONCERNS_XLSX_FLAG, "sheet concerns XLSX",
-                      sheet_concerns_report.send_xlsx, UNPRICED_DM_CHAT,
-                      SHEET_CONCERNS_FROM, SHEET_CONCERNS_TO)
 
 
 # ── one-shot: the leader checklist AS PRODUCTION RUNS IT ─────────────────────

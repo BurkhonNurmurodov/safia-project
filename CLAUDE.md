@@ -1809,7 +1809,7 @@ export.
 
 - **Every level counts.** /cell-concerns shows a filing only while it is the
   leader's; this page counts it wherever it now sits — an uplift does not
-  un-file a concern (the rule `sheet_concerns_report` already stated).
+  un-file a concern.
 - **Four statuses, ONE rule — `BUCKET`** (SQL, read by the filter, every
   aggregate, the register, the export and exam tasks 40/41): `done` = resolved
   by whoever held it · `uplifted` («Ko'tarilgan») = handed to the brigadir or
@@ -1825,11 +1825,16 @@ export.
   shift-manager → shift ∩ plant units; supervisor → their unit; leader → the
   rows filed to them (`identity.leader_profile_ids_of`, every record that is
   that person); any other role → nothing. The plant lock rides on top.
-- **The sheet crawl is untouched** — `services/worker_concerns.py` still fills
-  `worker_concerns` nightly (and `sheet_concerns_report` reads it); nothing on
-  this page reads that table, and its Refresh, sync pill and sheet-failure
-  banners are gone with `/refresh`. `/meta` still ships a `sync` stub and the
-  leaders as strings for a tab open on an older bundle.
+- **The Google-sheet sync is GONE** (same day, the operator: «get rid of that
+  sheet»): `services/worker_concerns.py` (the nightly crawl, its Drive sweep and
+  the page's Refresh / sync pill / sheet-failure banners), the one-shot
+  `services/sheet_concerns_report.py`, the three ORM models and their two column
+  migrations, in BOTH entrypoints. **The tables were NOT dropped** —
+  `worker_concerns`, `worker_concern_sync`, `worker_concern_sheet_state` still
+  hold the last crawl's rows and nothing reads them; dropping them is a separate,
+  irreversible decision. `/meta` still ships a `sync` stub and the leaders as
+  strings for a tab open on an older bundle; the «Jurnal» keeps its
+  `sync.worker_concerns_*` labels for the rows already recorded.
 - History is what /cell-concerns holds — workers filed there from 2026-09-06,
   so earlier periods read empty here.
 
@@ -6785,7 +6790,7 @@ re-verifies it on every request. The second is a username + password at
   is still resolved right: `identity.viewer_profile_key` finds the registration
   the token names (`role_ref`) BEFORE narrowing by the token's unit, and
   `concerns._own_profile`, `cell_concerns._leader_cells` and
-  `worker_concerns._leader_lock_names` go through it instead of matching the
+  `worker_concerns._viewer_scope` go through it instead of matching the
   token's (unit, name) themselves — never add a fourth such match.
 - Passwords are PBKDF2-HMAC-SHA256 from the stdlib (`web_auth.hash_password`) —
   deliberately no native dependency on a pipeline that deploys straight to prod.

@@ -2,10 +2,10 @@
 Cell concerns («Yacheyka havotirlari») — the page a WORKER types into.
 
 A PC stands on each production cell with its LEADER's profile open on this page,
-and the cell's workers write their concerns into it directly. It replaces the
-~180 per-cell Google sheets that services/worker_concerns.py crawls for the
-`/worker-concerns` KPI; that page and those sheets are deliberately untouched
-here (the operator's call, 2026-09-04 — «completely new page»).
+and the cell's workers write their concerns into it directly. It replaced the
+~180 per-cell Google sheets the `/worker-concerns` KPI used to read; from
+2026-10-03 that KPI reads THESE rows (routers/worker_concerns.py) and the sheet
+crawl is gone.
 
 WHERE THE ROWS LIVE, and why there is no table of their own
 -----------------------------------------------------------

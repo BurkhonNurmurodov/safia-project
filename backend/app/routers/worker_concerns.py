@@ -6,11 +6,13 @@ THE SOURCE IS THE PLATFORM (from 2026-10-03, the operator's directive). Every
 figure here is read from the ``leader_concerns`` rows a WORKER filed on
 /cell-concerns — ``worker_name IS NOT NULL``, the one marker of a floor filing
 (models.LeaderConcern) — and from nothing else. Until that date the page read
-the ~180 per-cell Google sheets the «Liderlar Havotirlar» registry links
-(services/worker_concerns.py). The floor moved to /cell-concerns on 2026-09-06,
-the sheets were never switched off, and this page went on reporting them. The
-crawl itself is untouched and still fills ``worker_concerns`` nightly (it is
-what sheet_concerns_report reads); nothing on this page reads that table.
+the ~180 per-cell Google sheets the «Liderlar Havotirlar» registry links,
+crawled nightly into ``worker_concerns``. The floor moved to /cell-concerns on
+2026-09-06, the sheets were never switched off, and this page went on reporting
+them. The crawl was removed the same day (the operator: «get rid of that
+sheet»); the three tables it filled — ``worker_concerns``,
+``worker_concern_sync``, ``worker_concern_sheet_state`` — were left in the
+database, unread by anything.
 
 A filing counts here at WHATEVER LEVEL it now sits. /cell-concerns shows a
 concern only while it is still the leader's and drops it the moment it is
