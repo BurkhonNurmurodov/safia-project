@@ -36,6 +36,9 @@ const MODULES = ["core", "start", "pro", "shift", "iiko", "rec", "rep"];
 const PAGE_ROUTE = {
   structure: "/verifix/structure", employees: "/verifix/employees", jobs: "/verifix/jobs",
   timesheet: "/verifix/timesheet", marks: "/verifix/marks", onsite: "/verifix/onsite",
+  devices: "/verifix/devices", requests: "/verifix/requests", absences: "/verifix/absences", hr: "/verifix/hr",
+  timebooks: "/verifix/timebooks", shifts: "/verifix/shifts", incidents: "/verifix/incidents",
+  payroll: "/verifix/payroll", dictionaries: "/verifix/dictionaries",
 };
 // The map's cards, each a set of states — tapping one narrows the table to it.
 const BUCKETS = [

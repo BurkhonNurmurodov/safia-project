@@ -14,7 +14,8 @@ import {
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, FolderTree, IdCard, Briefcase, CalendarRange,
-  ScanLine, MapPin, ScanFace } from "lucide-react";
+  ScanLine, MapPin, ScanFace, Cpu, Inbox, CalendarOff, ArrowRightLeft, BookOpenCheck, CalendarClock,
+  Siren, Banknote, BookMarked } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import AppUpdateButton from "./AppUpdateButton";
@@ -78,6 +79,15 @@ const ALL_LINKS = [
   { to: "/verifix/timesheet", adminOnly: true, key: "nav.vfx.timesheet", icon: CalendarRange, group: "verifix" },
   { to: "/verifix/marks", adminOnly: true, key: "nav.vfx.marks", icon: ScanLine, group: "verifix" },
   { to: "/verifix/onsite", adminOnly: true, key: "nav.vfx.onsite", icon: MapPin, group: "verifix" },
+  { to: "/verifix/devices", adminOnly: true, key: "nav.vfx.devices", icon: Cpu, group: "verifix" },
+  { to: "/verifix/requests", adminOnly: true, key: "nav.vfx.requests", icon: Inbox, group: "verifix" },
+  { to: "/verifix/absences", adminOnly: true, key: "nav.vfx.absences", icon: CalendarOff, group: "verifix" },
+  { to: "/verifix/hr", adminOnly: true, key: "nav.vfx.hr", icon: ArrowRightLeft, group: "verifix" },
+  { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
+  { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
+  { to: "/verifix/incidents", adminOnly: true, key: "nav.vfx.incidents", icon: Siren, group: "verifix" },
+  { to: "/verifix/payroll", adminOnly: true, key: "nav.vfx.payroll", icon: Banknote, group: "verifix" },
+  { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
   // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
   // changes land in its own tables only. adminOnly, no page key (the /targets pattern).
   { to: "/staff-live", adminOnly: true, key: "nav.staffLive", icon: Fingerprint, group: "verifix" },

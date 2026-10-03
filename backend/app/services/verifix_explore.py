@@ -118,6 +118,12 @@ class _Cache:
         self._data: "OrderedDict[tuple, tuple[float, datetime, Any]]" = OrderedDict()
         self._loading: dict[tuple, threading.Lock] = {}
 
+    def peek(self, key: tuple) -> Optional[tuple[Any, datetime, float]]:
+        """(value, when read, age in seconds) without loading — None when absent."""
+        with self._lock:
+            hit = self._data.get(key)
+            return (hit[2], hit[1], time.monotonic() - hit[0]) if hit else None
+
     def get(self, key: tuple, ttl: float, fn: Callable[[], Any]) -> tuple[Any, datetime]:
         started = time.monotonic()
         with self._lock:
@@ -271,15 +277,22 @@ def _mask(v: Any) -> str:
     return f"•••• {digits[-4:]}" if len(digits) >= 4 else "••••"
 
 
+_MASKED = {"card_number", "bank_account_code"}
+
+# A list whose plain `code` is a bank account number (the key is too common to
+# mask everywhere): masked in the raw viewer, as the registers mask it.
+_ACCOUNT_CODE_METHODS = {"pro/bank_account$list"}
+
+
 def scrub(v: Any) -> Any:
-    """Drop passport / PINFL / tax / family records, mask card numbers."""
+    """Drop passport / PINFL / tax / family records, mask card and account numbers."""
     if isinstance(v, dict):
         out = {}
         for k, x in v.items():
             kl = str(k).lower()
             if kl in _PRIVATE or kl.startswith("passport_"):
                 continue
-            if kl == "card_number" and x:
+            if kl in _MASKED and x:
                 out[k] = _mask(x)
                 continue
             out[k] = scrub(x)
@@ -401,6 +414,8 @@ def method_rows(db: Session, key: str, params: Optional[dict], cursor: Optional[
             err = err or "unauthorized"
     ms = int((time.monotonic() - t0) * 1000)
     rows = scrub(rows)
+    if key in _ACCOUNT_CODE_METHODS:
+        rows = [{**r, "code": _mask(r["code"])} if r.get("code") else r for r in rows]
     fields = _fields(rows)
     if not cursor:
         _record(db, key, actor, status=status, rows=len(rows), more=bool(nxt), fields=fields,

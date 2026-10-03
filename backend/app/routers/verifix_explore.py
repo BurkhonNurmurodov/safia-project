@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routers.admin import verify_admin
-from app.services import verifix, verifix_explore as vx
+from app.services import verifix, verifix_explore as vx, verifix_registers as vr
 
 router = APIRouter(prefix="/api/verifix-test", tags=["verifix-test"])
 
@@ -133,6 +133,68 @@ def vx_onsite(location_id: str, day: Optional[date] = None, force: bool = False,
               db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     from app.services.verifix_live import now_local
     return _run(vx.onsite, db, location_id, day or now_local().date(), force)
+
+
+# ── phase 2: the registers (services/verifix_registers.py) ───────────────────
+# A big list is read in the background: an answer may carry `loading: true`
+# with what has arrived so far, and the page asks again until it is in.
+
+@router.get("/devices")
+def vx_devices(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.devices, db, force)
+
+
+@router.get("/requests")
+def vx_requests(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
+                db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.requests, db, begin, end, force)
+
+
+@router.get("/absences")
+def vx_absences(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
+                db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.absences, db, begin, end, force)
+
+
+@router.get("/hr")
+def vx_hr(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
+          db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.hr_moves, db, begin, end, force)
+
+
+@router.get("/timebooks")
+def vx_timebooks(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.timebooks, db, force)
+
+
+@router.get("/timebooks/{timebook_id}")
+def vx_timebook(timebook_id: str, force: bool = False, db: Session = Depends(get_db),
+                _: dict = Depends(verify_admin)):
+    return _run(vr.timebook, db, timebook_id, force)
+
+
+@router.get("/shifts")
+def vx_shifts(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
+              db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.shifts, db, begin, end, force)
+
+
+@router.get("/incidents")
+def vx_incidents(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
+                 db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.incidents, db, begin, end, force)
+
+
+@router.get("/dictionaries")
+def vx_dictionaries(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.dictionaries, db, force)
+
+
+@router.get("/payroll")
+def vx_payroll(tab: str = "wages", begin: Optional[date] = None, end: Optional[date] = None,
+               doc: Optional[str] = None, loc: Optional[str] = None, force: bool = False,
+               db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _run(vr.payroll, db, tab, begin, end, doc, loc, force)
 
 
 @router.get("/photo/{sha}")

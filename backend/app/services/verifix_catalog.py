@@ -26,7 +26,7 @@ link to it. A method with no page is read through the raw viewer alone.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
@@ -256,6 +256,32 @@ METHODS: tuple[Method, ...] = (
            "Работающие сотрудники в локации", None,
            {}, (Param("location_id", INT), Param("report_date", D, "today")), page="onsite"),
 )
+
+# The phase-2 pages (2026-10-03, `verifix_registers`): which page shows each
+# register. A method listed nowhere stays readable through the raw viewer.
+_PAGES2 = {
+    "core/device$employee_statuses": "devices",
+    **dict.fromkeys(("core/request$list", "core/request_kind$list", "core/track_request$list",
+                     "core/overtime_request$list", "core/plan_change$list"), "requests"),
+    **dict.fromkeys(("pro/vacation$list", "pro/recall_vacation$list", "pro/sick_leave$list",
+                     "pro/business_trip$list"), "absences"),
+    **dict.fromkeys(("pro/hiring$list", "pro/transfer$list", "pro/dismissal$list", "pro/schedule_change$list",
+                     "pro/rank_change$list", "start/hiring$list", "start/transfer$list",
+                     "start/schedule_change$list", "start/dismissal$list"), "hr"),
+    **dict.fromkeys(("pro/timebook$list", "pro/timebook$list_details"), "timebooks"),
+    **dict.fromkeys(("shift/shift_group$list", "shift/shift_changes$list", "shift/shift$list"), "shifts"),
+    "pro/incidents$list": "incidents",
+    **dict.fromkeys(("core/dismissal_reason$list", "pro/sick_leave_reason$list", "pro/business_trip_reason$list",
+                     "pro/vacation_type$list", "pro/employment_source$list", "pro/fixed_term_base$list",
+                     "pro/indicator$list", "pro/oper_type$list", "pro/oper_group$list", "pro/currency$list",
+                     "pro/cashbox$list", "core/wage_scale$list", "pro/wage_scale_registry$list",
+                     "core/division_match$list", "core/job_match$list"), "dictionaries"),
+    **dict.fromkeys(("start/wage_change$list", "start/wage_sheet$list", "start/changes/wage$list",
+                     "pro/wage_change$list", "pro/book$list", "pro/one_time_charge$list", "pro/payment$list",
+                     "pro/bank_account$list", "rep/payments_by_time$list", "rep/expenses_by_location$list"),
+                    "payroll"),
+}
+METHODS = tuple(replace(m, page=_PAGES2[m.key]) if m.key in _PAGES2 and not m.page else m for m in METHODS)
 
 BY_KEY: dict[str, Method] = {m.key: m for m in METHODS}
 
