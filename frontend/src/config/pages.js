@@ -91,8 +91,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // leader_concerns at level="leader"; uplifting one is the ordinary escalate,
   // after which it belongs to the brigadir on /concerns and leaves this page.
   "cell-concerns": ["supervisor", "leader"],
-  // Worker-concerns KPI («Ishchi havotirlari») — synced from the per-cell sheets;
-  // supervisors see their unit, leaders their own numbers (server-scoped).
+  // Worker-concerns KPI («Ishchi havotirlari») — over the concerns workers file
+  // on /cell-concerns; supervisors see their unit, leaders their own numbers
+  // (server-scoped).
   "worker-concerns": ["supervisor", "leader"],
   // THE task board — both tiers on one page: shift managers set tasks for
   // brigadirs, brigadirs for leaders, each assignee works their own queue.

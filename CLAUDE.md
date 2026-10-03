@@ -1798,6 +1798,41 @@ rule (imported from `ojidaniya_deck`, never copied), same delivery, same shape.
 - Logged as `export.concerns_deck`. A deadline typed as a huge number is a
   deadline that never comes (`_deadline` catches the overflow).
 
+## «Ishchi havotirlari» reads the CELL CONCERNS (`/worker-concerns`)
+
+From **2026-10-03** (the operator's directive: «use our Cell concerns data, not
+the Excel») the leaders' KPI page reads the concerns workers file on
+`/cell-concerns` — `leader_concerns` rows with `worker_name IS NOT NULL` — and
+no longer the ~180 per-cell Google sheets. `routers/worker_concerns.py` is the
+whole of it; `pages/WorkerConcerns.jsx` keeps its three tabs, its bands and its
+export.
+
+- **Every level counts.** /cell-concerns shows a filing only while it is the
+  leader's; this page counts it wherever it now sits — an uplift does not
+  un-file a concern (the rule `sheet_concerns_report` already stated).
+- **Four statuses, ONE rule — `BUCKET`** (SQL, read by the filter, every
+  aggregate, the register, the export and exam tasks 40/41): `done` = resolved
+  by whoever held it · `uplifted` («Ko'tarilgan») = handed to the brigadir or
+  above and still open (the sheets' «O'tqazish») · `doing` / `todo` («Yangi»,
+  /cell-concerns' word) at the leader step. % = done ÷ total, so a concern the
+  brigadir resolved after an uplift counts as resolved for the leader it was
+  filed to. «deferred», the sheet era's key, is read as `uplifted`.
+- **Attribution is the row's own**: the leader it was filed to
+  (`leader_profile_id`, printed under the CURRENT profile name), its unit
+  (`brigadir_manager_id`), its cell code. Leaders are picked by PROFILE id
+  (`leader_id`, client key `wc_lead_ids`).
+- **Scope**: admin / top-manager / a page grant at "all" → everything;
+  shift-manager → shift ∩ plant units; supervisor → their unit; leader → the
+  rows filed to them (`identity.leader_profile_ids_of`, every record that is
+  that person); any other role → nothing. The plant lock rides on top.
+- **The sheet crawl is untouched** — `services/worker_concerns.py` still fills
+  `worker_concerns` nightly (and `sheet_concerns_report` reads it); nothing on
+  this page reads that table, and its Refresh, sync pill and sheet-failure
+  banners are gone with `/refresh`. `/meta` still ships a `sync` stub and the
+  leaders as strings for a tab open on an older bundle.
+- History is what /cell-concerns holds — workers filed there from 2026-09-06,
+  so earlier periods read empty here.
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its

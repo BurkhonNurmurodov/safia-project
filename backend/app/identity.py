@@ -190,14 +190,22 @@ def viewer_leader_profile_ids(db: Session, payload: dict) -> list[int]:
     for a session whose `profile_key` points at a record that has since been
     renamed or deleted.
     """
+    return leader_profile_ids_of(db, viewer_leader_profile_id(db, payload),
+                                 payload.get("full_name") or "")
+
+
+def leader_profile_ids_of(db: Session, own: Optional[int], also_named: str = "") -> list[int]:
+    """THE same-person rule of ``viewer_leader_profile_ids``, for a caller that
+    holds a leader PROFILE rather than a session (the exam's checker answers
+    «what does this leader's page show» without one). ``also_named`` is a
+    second spelling to match — the session's own name."""
     # Local import: identity.py stays importable from every router, and
     # name_map pulls in the transliterator.
     from app.services.name_map import _name_tokens
 
-    own = viewer_leader_profile_id(db, payload)
     ids: set[int] = {own} if own else set()
 
-    names = {payload.get("full_name") or ""}
+    names = {also_named or ""}
     if own:
         prof = db.query(RoleProfile).filter_by(id=own, role="leader").first()
         if prof:

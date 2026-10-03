@@ -1,6 +1,11 @@
 """
 Worker-concerns («Ishchi havotirlari») sheet sync.
 
+From 2026-10-03 the /worker-concerns page no longer reads what this crawl
+stores: it reads the concerns workers file on /cell-concerns
+(routers/worker_concerns.py). The crawl still runs nightly and its table is
+still what sheet_concerns_report reads.
+
 Source of truth is the «Liderlar Havotirlar» workbook:
 
   * its «Liderlar» registry tab lists ~180 (brigadir, leader, cell) rows, each

@@ -273,21 +273,20 @@ def _unit_zagruzka_yesterday(db, attempt, ctx, chk, *_):
 
 
 def _wc_query(db, attempt):
+    """This month's worker filings, as the examinee's own «Ishchi havotirlari»
+    page reads them (routers/worker_concerns.leader_filings — the same rows,
+    the same person rule)."""
     prof = _prof(db, attempt)
     if prof is None:
         raise NoData("not a leader")
-    from app.routers.worker_concerns import _apply_scope_and_filters
+    from app.identity import leader_profile_ids_of
+    from app.routers.worker_concerns import leader_filings
     today = today_local()
-    payload = {"role": "leader", "role_id": prof.manager_id, "full_name": prof.name,
-               "profile_key": f"leader:{prof.id}"}
     try:
-        q, _sup = _apply_scope_and_filters(
-            db, payload, date_from=today.replace(day=1).isoformat(), date_to=today.isoformat(),
-            factory=None, manager_id=[], leader=[], cell=[], status=[])
+        return leader_filings(db, leader_profile_ids_of(db, prof.id),
+                              today.replace(day=1), today)
     except Exception as e:  # noqa: BLE001
         raise NoData(f"worker concerns: {e}")
-    from app.models import WorkerConcern
-    return q.filter(WorkerConcern.date.isnot(None))
 
 
 def _wc_month_total(db, attempt, ctx, chk, *_):
@@ -295,10 +294,13 @@ def _wc_month_total(db, attempt, ctx, chk, *_):
 
 
 def _wc_month_top_cell(db, attempt, ctx, chk, *_):
-    from app.models import WorkerConcern
-    rows = _wc_query(db, attempt).with_entities(WorkerConcern.reg_cell, WorkerConcern.status).all()
+    from app.routers.worker_concerns import BUCKET
+    from app.models import LeaderConcern
+    rows = _wc_query(db, attempt).with_entities(LeaderConcern.cell_code, BUCKET).all()
     if not rows:
         raise NoData("no rows")
+    # «Open» is the page's «Hal bo'lmagan»: everything not yet resolved,
+    # including a concern handed up the chain — the cells chart counts that.
     per: dict[str, int] = {}
     for code, st in rows:
         if st == "done":

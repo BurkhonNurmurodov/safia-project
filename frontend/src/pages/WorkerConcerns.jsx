@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  RefreshCw, CalendarClock, AlertTriangle, ClipboardList, ShieldCheck,
-  Loader, Loader2, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
-  LayoutGrid, UserRound, CircleDot, ExternalLink, FileSpreadsheet,
+  AlertTriangle, ClipboardList, ShieldCheck,
+  Loader, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
+  LayoutGrid, UserRound, CircleDot, FileSpreadsheet, ArrowUpRight,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -14,6 +15,7 @@ import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
 import Pagination from "../components/ui/Pagination";
 import SearchInput from "../components/ui/SearchInput";
+import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
@@ -22,25 +24,38 @@ import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { usePageAccess } from "../hooks/usePageAccess";
+import { useCapabilities } from "../hooks/useCapabilities";
+import { canAccessPage } from "../config/pages";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { padChartFrom, listChartDays } from "../utils/chartRange";
-import { inTelegram } from "../utils/session";
+
+// The page reads the concerns workers file on «Yacheyka havotirlari»
+// (/cell-concerns) — routers/worker_concerns.py, from 2026-10-03. It used to
+// read the ~180 per-cell Google sheets; nothing here syncs or refreshes now.
 
 // ── status palette ───────────────────────────────────────────────────────────
 // Statuses are SEMANTIC (traffic-light), not categorical: done green, doing
-// yellow, todo red; deferred/other are de-emphasis slates. Never brand gold.
-const ST_KEYS = ["done", "doing", "todo", "deferred", "other"];
+// yellow, todo red; «uplifted» (handed up the chain, still open — no longer the
+// leader's to act on) is a de-emphasis slate. Never brand gold.
+const ST_KEYS = ["done", "doing", "todo", "uplifted"];
 const ST_COLORS = {
-  done: "#22c55e", doing: "#eab308", todo: "#ef4444",
-  deferred: "#94a3b8", other: "#64748b",
+  done: "#22c55e", doing: "#eab308", todo: "#ef4444", uplifted: "#94a3b8",
 };
 const C_OPEN = "#ef4444", C_DONE = "#22c55e", C_DOING = "#eab308";
 const C_WORKERS = "#3b82f6";
 const C_LOWN = "#94a3b8";
 const BRAND = "#C8973F";
+
+// A status filter saved before the switch may still name the sheet era's keys:
+// «deferred» was their word for the same act as «uplifted», «other» has none.
+const cleanStatuses = (sel) =>
+  [...new Set((sel || []).map((s) => (s === "deferred" ? "uplifted" : s)))]
+    .filter((s) => ST_KEYS.includes(s));
 
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
@@ -58,8 +73,8 @@ const fmtDateTime = (iso) => {
     `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-// Sheet names are FULL passport spellings in caps; two tokens are enough to
-// recognize a person and short enough for an axis label.
+// Two tokens are enough to recognize a person and short enough for an axis
+// label (a worker's name is free text, so this is all it ever claims).
 const shortName = (name) => {
   const t = (name || "").trim().split(/\s+/);
   return t.slice(0, 2).join(" ");
@@ -73,66 +88,48 @@ const tipHTML = (label, val, color) => `
     </div>
   </div>`;
 
-// ── статусы sheet vocabulary → four platform languages ───────────────────────
+// ── status words → four platform languages ───────────────────────────────────
+// «todo» is the word /cell-concerns prints for the same rows («Yangi»): the
+// platform knows a concern was not taken into work, never that it was not read.
 const LI = { uz: 0, uz_cyrl: 1, ru: 2, en: 3 };
 const ST_LBL = {
   done:     ["Hal bo'lgan", "Ҳал бўлган", "Решено", "Resolved"],
   doing:    ["Jarayonda", "Жараёнда", "В работе", "In progress"],
-  todo:     ["Ko'rilmagan", "Кўрилмаган", "Не рассмотрено", "Not addressed"],
-  deferred: ["O'tkazilgan", "Ўтказилган", "Перенесено", "Deferred"],
-  other:    ["Boshqa", "Бошқа", "Прочее", "Other"],
+  todo:     ["Yangi", "Янги", "Новый", "New"],
+  uplifted: ["Ko'tarilgan", "Кўтарилган", "Передано выше", "Escalated"],
 };
 
 const TXT = {
   uz: {
-    title: "Ishchi havotirlari", sub: "Ishchilar liderlarga bildirgan havotirlar — liderlar KPI",
+    title: "Ishchi havotirlari", sub: "Ishchilar «Yacheyka havotirlari» sahifasida liderlarga yozgan havotirlar — liderlar KPI",
     vObzor: "Obzor", vLeaders: "Liderlar KPI", vRegister: "Reyestr",
-    refresh: "Yangilash", refreshing: "Yangilanmoqda…", lastSynced: "Oxirgi sinxron", never: "hech qachon",
-    syncSheets: "varaq", syncDone: "Ma'lumotlar yangilandi", syncFailedT: "Sinxronlashda xatolik",
-    syncFailHead: "{n} ta varaq o'qilmadi — bu yacheykalar eski ma'lumotni ko'rsatmoqda",
-    syncStaleSince: "ma'lumot {d} dan", syncNeverRead: "hech qachon o'qilmagan",
-    syncWhy: {
-      header: "Birinchi varaqda «Хавотир» + «Статус» sarlavha qatori yo'q — yangi varaq qo'shilgan yoki sarlavha o'zgartirilgan",
-      permission: "Kirish yopilgan — jadvalni servis akkauntiga qayta ulashing",
-      missing: "Jadval topilmadi — o'chirilgan yoki reyestrdagi havola noto'g'ri",
-      quota: "Google so'rovlar chegarasiga yetildi — keyingi sinxronda o'zi tuzaladi",
-      network: "Aloqa uzildi — qayta urinib ko'ring",
-      other: "Noma'lum xatolik",
-    },
-    syncSkipped: "{n} tasi o'zgarmagan",
-    sweepOffHead: "Tezkor yangilash ishlamayapti: har safar barcha varaqlar qayta o'qilmoqda",
-    sweepWhy: {
-      api_disabled: "qaysi varaq o'zgarganini bilish uchun Google Drive API kerak, u loyihada yoqilmagan",
-      forbidden: "servis akkauntida Drive metama'lumotlarini o'qish huquqi yo'q",
-      network: "Drive'ga ulanib bo'lmadi — keyingi yangilashda o'zi tuzalishi mumkin",
-      other: "Drive'dan o'zgarish vaqtlarini olib bo'lmadi",
-    },
-    sweepEnable: "Drive API'ni yoqish",
     loadFailed: "Ma'lumotlarni yuklab bo'lmadi", retry: "Qayta urinish",
-    emptyTitle: "Hali ma'lumot yo'q", emptyNote: "Google Sheets'dan birinchi sinxronlashni ishga tushiring — ~180 varaq, 2–4 daqiqa.",
+    emptyTitle: "Hali havotir yo'q", emptyNote: "Ishchilar «Yacheyka havotirlari» sahifasida yozgan havotirlar shu yerda hisoblanadi.",
+    emptyGo: "Yacheyka havotirlari",
     kTotal: "Jami havotirlar", kResolved: "Hal bo'lgan", kDoing: "Jarayonda",
-    kOpen: "Hal bo'lmagan", kOpenHint: "hal bo'lganidan tashqari barchasi",
-    kWorkers: "Faol ishchilar", kWorkersHint: "havotir bildirganlar",
-    undatedNote: "ta yozuv sanasi noto'g'ri kiritilgan — davr grafiklari va KPI ga kirmaydi (reyestrda «—» bilan ko'rinadi)",
+    kOpen: "Hal bo'lmagan", kOpenHint: "hal bo'lganidan tashqari barchasi", kOpenUp: "{n} tasi yuqoriga ko'tarilgan",
+    kWorkers: "Faol ishchilar", kWorkersHint: "yozilgan ism bo'yicha",
     secDaily: "Kunlik dinamika", secDailySub: "holatlar bo'yicha, kelib tushgan sana",
     secBrig: "Brigadirlar kesimi", secBrigSub: "tanlangan davr, holatlar bo'yicha",
     secCells: "Yacheykalar — hal bo'lmaganlar TOP", secCellsSub: "eng ko'p ochiq havotirli yacheykalar",
-    secLeaders: "Liderlar KPI", secLeadersSub: "reyestr bo'yicha biriktirilgan lider kesimida",
+    secLeaders: "Liderlar KPI", secLeadersSub: "havotir yuborilgan lider kesimida",
     secRegister: "Havotirlar reyestri",
     colLeader: "Lider", colBrig: "Brigadir", colCells: "Yacheykalar", colTotal: "Jami",
     colDone: "Hal bo'lgan", colDoing: "Jarayonda", colOpen: "Hal bo'lmagan", colPct: "% hal bo'lgan",
-    colDate: "Sana", colCell: "Yacheyka", colOwner: "Ishchi", colText: "Havotir", colStatus: "Holat",
+    colNo: "№", colDate: "Sana", colCell: "Yacheyka", colOwner: "Ishchi", colText: "Havotir", colStatus: "Holat",
     fBrig: "Brigadir", fLeader: "Lider", fCell: "Yacheyka", fStatus: "Holat",
-    searchLeader: "Lider qidirish…", searchReg: "Matn, ishchi yoki lider bo'yicha qidirish…",
+    searchLeader: "Lider qidirish…", searchReg: "Matn, ishchi, lider yoki №",
     rows: "ta", concernsWord: "havotir", leadersWord: "lider", noMatch: "Mos yozuv topilmadi",
     lowN: "kam ma'lumot", lowNHint: "5 tadan kam havotir — reyting uchun yetarli emas",
-    unassigned: "ta havotir reyestrda lidersiz yacheykalarga tegishli — reytingga kirmaydi, reyestrda ko'rinadi",
+    unassigned: "ta havotirda lider ko'rsatilmagan — reytingga kirmaydi, reyestrda ko'rinadi",
+    stUpHint: "Brigadirga (yoki undan yuqoriga) ko'tarilgan, hali hal bo'lmagan",
     bandsTitle: "KPI chegaralari", bandsEdit: "Chegaralarni sozlash",
     bandGreenL: "Yashil chegara (≥ %)", bandYellowL: "Sariq chegara (≥ %)",
     bandsHint: "Sariqdan pasti qizil hisoblanadi. Chegaralar butun platforma uchun bitta.",
     bandsSaved: "Chegaralar saqlandi", bandsErr: "Saqlab bo'lmadi",
-    cancel: "Bekor qilish", save: "Saqlash",
-    mTitle: "Havotir", mLeaderRow: "Varaqdagi lider yozuvi", mBrig: "Brigadir", mRawDate: "Varaqdagi sana",
+    cancel: "Bekor qilish", save: "Saqlash", close: "Yopish",
+    mTitle: "Havotir", mBrig: "Brigadir", mCategory: "Bo'lim", mStep: "Bosqich",
+    mDoneOn: "Hal qilingan sana", mOpen: "«Havotirlar» sahifasida ochish",
     kamBand: "kam ma'lumot",
     pageOf: "sahifa",
     xBtn: "Excel",
@@ -149,58 +146,39 @@ const TXT = {
     xPeriod: "Davr", xPlant: "Zavod", xAllPlants: "Barcha zavodlar",
     xFilters: "Filtrlar", xScopeAll: "Barcha ma'lumotlar (filtrsiz)",
     xGenerated: "Shakllantirildi", xSearch: "Qidiruv",
-    xUnassignedRow: "Lidersiz yacheykalar",
+    xUnassignedRow: "Lidersiz havotirlar",
     xSecKpi: "Asosiy ko'rsatkichlar",
   },
   uz_cyrl: {
-    title: "Ишчи ҳавотирлари", sub: "Ишчилар лидерларга билдирган ҳавотирлар — лидерлар KPI",
+    title: "Ишчи ҳавотирлари", sub: "Ишчилар «Ячейка ҳавотирлари» саҳифасида лидерларга ёзган ҳавотирлар — лидерлар KPI",
     vObzor: "Обзор", vLeaders: "Лидерлар KPI", vRegister: "Реестр",
-    refresh: "Янгилаш", refreshing: "Янгиланмоқда…", lastSynced: "Охирги синхрон", never: "ҳеч қачон",
-    syncSheets: "варақ", syncDone: "Маълумотлар янгиланди", syncFailedT: "Синхронлашда хатолик",
-    syncFailHead: "{n} та варақ ўқилмади — бу ячейкалар эски маълумотни кўрсатмоқда",
-    syncStaleSince: "маълумот {d} дан", syncNeverRead: "ҳеч қачон ўқилмаган",
-    syncWhy: {
-      header: "Биринчи варақда «Хавотир» + «Статус» сарлавҳа қатори йўқ — янги варақ қўшилган ёки сарлавҳа ўзгартирилган",
-      permission: "Кириш ёпилган — жадвални сервис аккаунтига қайта улашинг",
-      missing: "Жадвал топилмади — ўчирилган ёки реестрдаги ҳавола нотўғри",
-      quota: "Google сўровлар чегарасига етилди — кейинги синхронда ўзи тузалади",
-      network: "Алоқа узилди — қайта уриниб кўринг",
-      other: "Номаълум хатолик",
-    },
-    syncSkipped: "{n} таси ўзгармаган",
-    sweepOffHead: "Тезкор янгилаш ишламаяпти: ҳар сафар барча варақлар қайта ўқилмоқда",
-    sweepWhy: {
-      api_disabled: "қайси варақ ўзгарганини билиш учун Google Drive API керак, у лойиҳада ёқилмаган",
-      forbidden: "сервис аккаунтида Drive метамаълумотларини ўқиш ҳуқуқи йўқ",
-      network: "Drive'га уланиб бўлмади — кейинги янгилашда ўзи тузалиши мумкин",
-      other: "Drive'дан ўзгариш вақтларини олиб бўлмади",
-    },
-    sweepEnable: "Drive API'ни ёқиш",
     loadFailed: "Маълумотларни юклаб бўлмади", retry: "Қайта уриниш",
-    emptyTitle: "Ҳали маълумот йўқ", emptyNote: "Google Sheets'дан биринчи синхронлашни ишга туширинг — ~180 варақ, 2–4 дақиқа.",
+    emptyTitle: "Ҳали ҳавотир йўқ", emptyNote: "Ишчилар «Ячейка ҳавотирлари» саҳифасида ёзган ҳавотирлар шу ерда ҳисобланади.",
+    emptyGo: "Ячейка ҳавотирлари",
     kTotal: "Жами ҳавотирлар", kResolved: "Ҳал бўлган", kDoing: "Жараёнда",
-    kOpen: "Ҳал бўлмаган", kOpenHint: "ҳал бўлганидан ташқари барчаси",
-    kWorkers: "Фаол ишчилар", kWorkersHint: "ҳавотир билдирганлар",
-    undatedNote: "та ёзув санаси нотўғри киритилган — давр графиклари ва KPI га кирмайди (реестрда «—» билан кўринади)",
+    kOpen: "Ҳал бўлмаган", kOpenHint: "ҳал бўлганидан ташқари барчаси", kOpenUp: "{n} таси юқорига кўтарилган",
+    kWorkers: "Фаол ишчилар", kWorkersHint: "ёзилган исм бўйича",
     secDaily: "Кунлик динамика", secDailySub: "ҳолатлар бўйича, келиб тушган сана",
     secBrig: "Бригадирлар кесими", secBrigSub: "танланган давр, ҳолатлар бўйича",
     secCells: "Ячейкалар — ҳал бўлмаганлар TOP", secCellsSub: "энг кўп очиқ ҳавотирли ячейкалар",
-    secLeaders: "Лидерлар KPI", secLeadersSub: "реестр бўйича бириктирилган лидер кесимида",
+    secLeaders: "Лидерлар KPI", secLeadersSub: "ҳавотир юборилган лидер кесимида",
     secRegister: "Ҳавотирлар реестри",
     colLeader: "Лидер", colBrig: "Бригадир", colCells: "Ячейкалар", colTotal: "Жами",
     colDone: "Ҳал бўлган", colDoing: "Жараёнда", colOpen: "Ҳал бўлмаган", colPct: "% ҳал бўлган",
-    colDate: "Сана", colCell: "Ячейка", colOwner: "Ишчи", colText: "Ҳавотир", colStatus: "Ҳолат",
+    colNo: "№", colDate: "Сана", colCell: "Ячейка", colOwner: "Ишчи", colText: "Ҳавотир", colStatus: "Ҳолат",
     fBrig: "Бригадир", fLeader: "Лидер", fCell: "Ячейка", fStatus: "Ҳолат",
-    searchLeader: "Лидер қидириш…", searchReg: "Матн, ишчи ёки лидер бўйича қидириш…",
+    searchLeader: "Лидер қидириш…", searchReg: "Матн, ишчи, лидер ёки №",
     rows: "та", concernsWord: "ҳавотир", leadersWord: "лидер", noMatch: "Мос ёзув топилмади",
     lowN: "кам маълумот", lowNHint: "5 тадан кам ҳавотир — рейтинг учун етарли эмас",
-    unassigned: "та ҳавотир реестрда лидерсиз ячейкаларга тегишли — рейтингга кирмайди, реестрда кўринади",
+    unassigned: "та ҳавотирда лидер кўрсатилмаган — рейтингга кирмайди, реестрда кўринади",
+    stUpHint: "Бригадирга (ёки ундан юқорига) кўтарилган, ҳали ҳал бўлмаган",
     bandsTitle: "KPI чегаралари", bandsEdit: "Чегараларни созлаш",
     bandGreenL: "Яшил чегара (≥ %)", bandYellowL: "Сариқ чегара (≥ %)",
     bandsHint: "Сариқдан пасти қизил ҳисобланади. Чегаралар бутун платформа учун битта.",
     bandsSaved: "Чегаралар сақланди", bandsErr: "Сақлаб бўлмади",
-    cancel: "Бекор қилиш", save: "Сақлаш",
-    mTitle: "Ҳавотир", mLeaderRow: "Варақдаги лидер ёзуви", mBrig: "Бригадир", mRawDate: "Варақдаги сана",
+    cancel: "Бекор қилиш", save: "Сақлаш", close: "Ёпиш",
+    mTitle: "Ҳавотир", mBrig: "Бригадир", mCategory: "Бўлим", mStep: "Босқич",
+    mDoneOn: "Ҳал қилинган сана", mOpen: "«Ҳавотирлар» саҳифасида очиш",
     kamBand: "кам маълумот",
     pageOf: "саҳифа",
     xBtn: "Excel",
@@ -217,58 +195,39 @@ const TXT = {
     xPeriod: "Давр", xPlant: "Завод", xAllPlants: "Барча заводлар",
     xFilters: "Филтрлар", xScopeAll: "Барча маълумотлар (филтрсиз)",
     xGenerated: "Шакллантирилди", xSearch: "Қидирув",
-    xUnassignedRow: "Лидерсиз ячейкалар",
+    xUnassignedRow: "Лидерсиз ҳавотирлар",
     xSecKpi: "Асосий кўрсаткичлар",
   },
   ru: {
-    title: "Хавотиры работников", sub: "Опасения, поданные работниками лидерам — KPI лидеров",
+    title: "Хавотиры работников", sub: "Опасения, которые работники пишут лидерам на странице «Хавотиры ячеек» — KPI лидеров",
     vObzor: "Обзор", vLeaders: "KPI лидеров", vRegister: "Реестр",
-    refresh: "Обновить", refreshing: "Обновление…", lastSynced: "Последняя синхронизация", never: "никогда",
-    syncSheets: "листов", syncDone: "Данные обновлены", syncFailedT: "Ошибка синхронизации",
-    syncFailHead: "Не удалось прочитать листов: {n} — эти ячейки показывают прежние данные",
-    syncStaleSince: "данные от {d}", syncNeverRead: "ни разу не прочитан",
-    syncWhy: {
-      header: "На первом листе нет строки заголовков «Хавотир» + «Статус» — добавлен новый лист или переименован заголовок",
-      permission: "Нет доступа — откройте таблицу сервисному аккаунту заново",
-      missing: "Таблица не найдена — удалена или ссылка в реестре неверна",
-      quota: "Достигнут лимит запросов Google — исправится при следующей синхронизации",
-      network: "Сбой связи — попробуйте обновить ещё раз",
-      other: "Неизвестная ошибка",
-    },
-    syncSkipped: "{n} без изменений",
-    sweepOffHead: "Быстрое обновление не работает: каждый раз перечитываются все листы",
-    sweepWhy: {
-      api_disabled: "чтобы понять, какие листы изменились, нужен Google Drive API — он не включён в проекте",
-      forbidden: "у сервисного аккаунта нет прав на чтение метаданных Drive",
-      network: "не удалось связаться с Drive — возможно, исправится при следующем обновлении",
-      other: "не удалось получить из Drive время изменения листов",
-    },
-    sweepEnable: "Включить Drive API",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
-    emptyTitle: "Данных пока нет", emptyNote: "Запустите первую синхронизацию из Google Sheets — ~180 листов, 2–4 минуты.",
+    emptyTitle: "Хавотиров пока нет", emptyNote: "Здесь считаются хавотиры, которые работники пишут на странице «Хавотиры ячеек».",
+    emptyGo: "Хавотиры ячеек",
     kTotal: "Всего хавотиров", kResolved: "Решено", kDoing: "В работе",
-    kOpen: "Не решено", kOpenHint: "всё, кроме решённых",
-    kWorkers: "Активных работников", kWorkersHint: "подавали хавотиры",
-    undatedNote: "записей с нечитаемой датой — не входят в графики периода и KPI (в реестре видны с «—»)",
+    kOpen: "Не решено", kOpenHint: "всё, кроме решённых", kOpenUp: "из них {n} передано выше",
+    kWorkers: "Активных работников", kWorkersHint: "по введённому имени",
     secDaily: "Динамика по дням", secDailySub: "по статусам, дата подачи",
     secBrig: "Разрез по бригадирам", secBrigSub: "выбранный период, по статусам",
     secCells: "Ячейки — топ нерешённых", secCellsSub: "ячейки с наибольшим числом открытых хавотиров",
-    secLeaders: "KPI лидеров", secLeadersSub: "по закреплённому в реестре лидеру",
+    secLeaders: "KPI лидеров", secLeadersSub: "по лидеру, которому подан хавотир",
     secRegister: "Реестр хавотиров",
     colLeader: "Лидер", colBrig: "Бригадир", colCells: "Ячейки", colTotal: "Всего",
     colDone: "Решено", colDoing: "В работе", colOpen: "Не решено", colPct: "% решено",
-    colDate: "Дата", colCell: "Ячейка", colOwner: "Работник", colText: "Хавотир", colStatus: "Статус",
+    colNo: "№", colDate: "Дата", colCell: "Ячейка", colOwner: "Работник", colText: "Хавотир", colStatus: "Статус",
     fBrig: "Бригадир", fLeader: "Лидер", fCell: "Ячейка", fStatus: "Статус",
-    searchLeader: "Поиск лидера…", searchReg: "Поиск по тексту, работнику или лидеру…",
+    searchLeader: "Поиск лидера…", searchReg: "Текст, работник, лидер или №",
     rows: "шт", concernsWord: "хавотиров", leadersWord: "лидеров", noMatch: "Ничего не найдено",
     lowN: "мало данных", lowNHint: "меньше 5 хавотиров — недостаточно для рейтинга",
-    unassigned: "хавотиров относятся к ячейкам без лидера в реестре — не входят в рейтинг, видны в реестре",
+    unassigned: "хавотиров без лидера — не входят в рейтинг, видны в реестре",
+    stUpHint: "Передан бригадиру (или выше) и ещё не решён",
     bandsTitle: "Пороги KPI", bandsEdit: "Настроить пороги",
     bandGreenL: "Зелёный порог (≥ %)", bandYellowL: "Жёлтый порог (≥ %)",
     bandsHint: "Ниже жёлтого — красный. Пороги общие для всей платформы.",
     bandsSaved: "Пороги сохранены", bandsErr: "Не удалось сохранить",
-    cancel: "Отмена", save: "Сохранить",
-    mTitle: "Хавотир", mLeaderRow: "Лидер в строке листа", mBrig: "Бригадир", mRawDate: "Дата в листе",
+    cancel: "Отмена", save: "Сохранить", close: "Закрыть",
+    mTitle: "Хавотир", mBrig: "Бригадир", mCategory: "Отдел", mStep: "Уровень",
+    mDoneOn: "Дата решения", mOpen: "Открыть в «Хавотирах»",
     kamBand: "мало данных",
     pageOf: "страница",
     xBtn: "Excel",
@@ -285,58 +244,39 @@ const TXT = {
     xPeriod: "Период", xPlant: "Завод", xAllPlants: "Все заводы",
     xFilters: "Фильтры", xScopeAll: "Все данные (без фильтров)",
     xGenerated: "Сформирован", xSearch: "Поиск",
-    xUnassignedRow: "Ячейки без лидера",
+    xUnassignedRow: "Хавотиры без лидера",
     xSecKpi: "Ключевые показатели",
   },
   en: {
-    title: "Worker concerns", sub: "Concerns workers raise to their leaders — the leaders' KPI",
+    title: "Worker concerns", sub: "Concerns workers write to their leaders on «Cell concerns» — the leaders' KPI",
     vObzor: "Overview", vLeaders: "Leaders KPI", vRegister: "Register",
-    refresh: "Refresh", refreshing: "Refreshing…", lastSynced: "Last synced", never: "never",
-    syncSheets: "sheets", syncDone: "Data refreshed", syncFailedT: "Sync failed",
-    syncFailHead: "{n} sheet(s) could not be read — these cells still show earlier data",
-    syncStaleSince: "data from {d}", syncNeverRead: "never read",
-    syncWhy: {
-      header: "The first tab has no «Хавотир» + «Статус» header row — a new tab was added or the header renamed",
-      permission: "Access denied — re-share the spreadsheet with the service account",
-      missing: "Spreadsheet not found — deleted, or the registry link is wrong",
-      quota: "Google request quota reached — the next sync should recover on its own",
-      network: "Connection failed — try refreshing again",
-      other: "Unknown error",
-    },
-    syncSkipped: "{n} unchanged",
-    sweepOffHead: "Incremental refresh is off: every sheet is being re-read",
-    sweepWhy: {
-      api_disabled: "telling which sheets changed needs the Google Drive API, and it is not enabled on the project",
-      forbidden: "the service account may not read Drive metadata",
-      network: "Drive could not be reached — the next refresh may recover on its own",
-      other: "modification times could not be read from Drive",
-    },
-    sweepEnable: "Enable the Drive API",
     loadFailed: "Failed to load data", retry: "Retry",
-    emptyTitle: "No data yet", emptyNote: "Run the first sync from Google Sheets — ~180 sheets, 2–4 minutes.",
+    emptyTitle: "No concerns yet", emptyNote: "Concerns workers write on the «Cell concerns» page are counted here.",
+    emptyGo: "Cell concerns",
     kTotal: "Total concerns", kResolved: "Resolved", kDoing: "In progress",
-    kOpen: "Unresolved", kOpenHint: "everything except resolved",
-    kWorkers: "Active workers", kWorkersHint: "submitted concerns",
-    undatedNote: "row(s) with an unreadable date — excluded from period charts and KPI (shown as «—» in the register)",
+    kOpen: "Unresolved", kOpenHint: "everything except resolved", kOpenUp: "{n} of them escalated",
+    kWorkers: "Active workers", kWorkersHint: "by the name typed",
     secDaily: "Daily trend", secDailySub: "by status, filing date",
     secBrig: "By brigadir", secBrigSub: "selected period, by status",
     secCells: "Cells — top unresolved", secCellsSub: "cells with the most open concerns",
-    secLeaders: "Leaders KPI", secLeadersSub: "by the leader registered for each cell",
+    secLeaders: "Leaders KPI", secLeadersSub: "by the leader each concern was filed to",
     secRegister: "Concerns register",
     colLeader: "Leader", colBrig: "Brigadir", colCells: "Cells", colTotal: "Total",
     colDone: "Resolved", colDoing: "In progress", colOpen: "Unresolved", colPct: "% resolved",
-    colDate: "Date", colCell: "Cell", colOwner: "Worker", colText: "Concern", colStatus: "Status",
+    colNo: "№", colDate: "Date", colCell: "Cell", colOwner: "Worker", colText: "Concern", colStatus: "Status",
     fBrig: "Brigadir", fLeader: "Leader", fCell: "Cell", fStatus: "Status",
-    searchLeader: "Search leaders…", searchReg: "Search text, worker or leader…",
+    searchLeader: "Search leaders…", searchReg: "Text, worker, leader or №",
     rows: "rows", concernsWord: "concerns", leadersWord: "leaders", noMatch: "No match",
     lowN: "low data", lowNHint: "fewer than 5 concerns — not enough to rank",
-    unassigned: "concern(s) belong to cells with no registered leader — outside the ranking, visible in the register",
+    unassigned: "concern(s) name no leader — outside the ranking, visible in the register",
+    stUpHint: "Handed to the brigadir (or higher) and not resolved yet",
     bandsTitle: "KPI thresholds", bandsEdit: "Adjust thresholds",
     bandGreenL: "Green threshold (≥ %)", bandYellowL: "Yellow threshold (≥ %)",
     bandsHint: "Below yellow counts as red. Thresholds are platform-wide.",
     bandsSaved: "Thresholds saved", bandsErr: "Could not save",
-    cancel: "Cancel", save: "Save",
-    mTitle: "Concern", mLeaderRow: "Leader as written in the sheet", mBrig: "Brigadir", mRawDate: "Date in the sheet",
+    cancel: "Cancel", save: "Save", close: "Close",
+    mTitle: "Concern", mBrig: "Brigadir", mCategory: "Department", mStep: "Chain step",
+    mDoneOn: "Resolved on", mOpen: "Open in «Concerns»",
     kamBand: "low data",
     pageOf: "page",
     xBtn: "Excel",
@@ -353,19 +293,24 @@ const TXT = {
     xPeriod: "Period", xPlant: "Plant", xAllPlants: "All plants",
     xFilters: "Filters", xScopeAll: "All data (no filters)",
     xGenerated: "Generated", xSearch: "Search",
-    xUnassignedRow: "Cells with no leader",
+    xUnassignedRow: "Concerns with no leader",
     xSecKpi: "Key figures",
   },
 };
 
 export default function WorkerConcerns() {
-  const { lang } = useLang();
+  const { lang, t } = useLang();
   const T = TXT[lang] || TXT.ru;
-  const stL = (k) => (ST_LBL[k] || ST_LBL.other)[LI[lang] ?? LI.ru];
+  const stL = (k) => (ST_LBL[k] || ST_LBL.todo)[LI[lang] ?? LI.ru];
   const { tl } = useTranslit();
   const toast = useToast();
   const qc = useQueryClient();
-  const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
+  const navigate = useNavigate();
+  const { auth } = useAuth();
+  const { access } = usePageAccess();
+  const { capPages, deniedPages } = useCapabilities();
+  const may = (key) => canAccessPage(auth?.role, key, access, capPages, deniedPages);
+  const { chartTheme, gridColor, labelColor, legendColor } = useChartTheme();
   const factorySection = useFactorySection();
 
   const today = localISO(new Date());
@@ -376,34 +321,34 @@ export default function WorkerConcerns() {
   const [dateFrom, setDateFrom] = usePersistentState("wc_date_from", monthStart);
   const [dateTo, setDateTo] = usePersistentState("wc_date_to", today);
   const [mgrSel, setMgrSel] = usePersistentState("wc_mgr_sel", []);
-  const [leadSel, setLeadSel] = usePersistentState("wc_lead_sel", []);
+  // Leaders are picked by PROFILE id since the platform became the source; the
+  // sheet era kept spellings under `wc_lead_sel`, which nothing reads now.
+  const [leadSel, setLeadSel] = usePersistentState("wc_lead_ids", []);
   const [cellSel, setCellSel] = usePersistentState("wc_cell_sel", []);
-  const [stSel, setStSel] = usePersistentState("wc_st_sel", []);
+  const [stSaved, setStSel] = usePersistentState("wc_st_sel", []);
+  const stSel = useMemo(() => cleanStatuses(stSaved), [stSaved]);
   const [q, setQ] = usePersistentState("wc_q", "");
   const [page, setPage] = usePersistentState("wc_page", 1);
   const [regSort, setRegSort] = usePersistentState("wc_reg_sort", "date_desc");
   const [ldSort, setLdSort] = usePersistentState("wc_ld_sort", { key: "total", dir: "desc" });
 
-  // ── meta (options + sync state + bands) ───────────────────────────────────
+  // ── meta (options + bands) ────────────────────────────────────────────────
   const metaQ = useQuery({
     queryKey: ["wc-meta"],
     queryFn: () => api.get("/api/worker-concerns/meta").then((r) => r.data),
-    // While a crawl runs the meta row is the progress feed — poll it.
-    refetchInterval: (query) => (query.state.data?.sync?.running ? 2500 : false),
   });
   const meta = metaQ.data;
-  const sync = meta?.sync;
-  const running = !!sync?.running;
-  const hasData = (sync?.row_count || 0) > 0;
   const bands = meta?.bands || { green: 80, yellow: 50 };
   const minRanked = meta?.min_ranked ?? 5;
+  // Nothing filed in this viewer's scope, ever — not a period with no rows.
+  const noneYet = meta != null && (meta.total || 0) === 0;
 
   // ── request params ────────────────────────────────────────────────────────
   const baseParams = useMemo(() => ({
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     ...(mgrSel.length ? { manager_id: mgrSel } : {}),
-    ...(leadSel.length ? { leader: leadSel } : {}),
+    ...(leadSel.length ? { leader_id: leadSel } : {}),
     ...(cellSel.length ? { cell: cellSel } : {}),
     ...(stSel.length ? { status: stSel } : {}),
   }), [dateFrom, dateTo, mgrSel, leadSel, cellSel, stSel]);
@@ -419,13 +364,13 @@ export default function WorkerConcerns() {
   const statsQ = useQuery({
     queryKey: ["wc-stats", statsParams],
     queryFn: () => api.get("/api/worker-concerns/stats", { params: statsParams }).then((r) => r.data),
-    enabled: hasData,
+    enabled: !noneYet,
     placeholderData: keepPreviousData,
   });
   const leadersQ = useQuery({
     queryKey: ["wc-leaders", params],
     queryFn: () => api.get("/api/worker-concerns/leaders", { params }).then((r) => r.data),
-    enabled: hasData && view === "leaders",
+    enabled: !noneYet && view === "leaders",
     placeholderData: keepPreviousData,
   });
   const listParams = useMemo(
@@ -435,7 +380,7 @@ export default function WorkerConcerns() {
   const listQ = useQuery({
     queryKey: ["wc-list", listParams],
     queryFn: () => api.get("/api/worker-concerns/list", { params: listParams }).then((r) => r.data),
-    enabled: hasData && view === "register",
+    enabled: !noneYet && view === "register",
     placeholderData: keepPreviousData,
   });
 
@@ -449,54 +394,24 @@ export default function WorkerConcerns() {
     }
   }, [filterSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── refresh (incremental crawl — usually seconds, progress polled via meta) ─
-  const refreshMut = useMutation({
-    mutationFn: () => api.post("/api/worker-concerns/refresh").then((r) => r.data),
-    onSuccess: () => {
-      // An incremental sync can finish INSIDE one meta-poll interval, so
-      // `running` may never be observed true — arm the finish detector by
-      // hand or a fast sync would end with no toast and stale tables.
-      prevRunning.current = true;
-      qc.invalidateQueries({ queryKey: ["wc-meta"] });
-    },
-    onError: (e) => toast.error(`${T.syncFailedT}: ${e?.response?.data?.detail || e?.message || ""}`),
-  });
-  const prevRunning = useRef(false);
-  useEffect(() => {
-    if (prevRunning.current && !running) {
-      // A crawl just finished — pull fresh numbers and report the outcome.
-      qc.invalidateQueries({ queryKey: ["wc-stats"] });
-      qc.invalidateQueries({ queryKey: ["wc-leaders"] });
-      qc.invalidateQueries({ queryKey: ["wc-list"] });
-      // The banner below carries the per-sheet causes; the toast just says how
-      // many cells stayed behind, in the viewer's language rather than the
-      // backend's English fallback string.
-      const failed = sync?.failures || [];
-      if (sync?.ok === false) {
-        toast.error(failed.length
-          ? T.syncFailHead.replace("{n}", failed.length)
-          : `${T.syncFailedT}: ${sync?.message || ""}`);
-      } else toast.success(T.syncDone);
-    }
-    prevRunning.current = running;
-    // last_synced flips at completion — it re-runs this effect even when the
-    // sync was too fast for `running` to ever render as true.
-  }, [running, sync?.last_synced]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── filter sections ───────────────────────────────────────────────────────
   const supers = useFactorySupervisors(meta?.supervisors || [], mgrSel, (kept) => setMgrSel(kept || []), "id");
   const supName = useMemo(
     () => Object.fromEntries((meta?.supervisors || []).map((s) => [s.id, s.name])),
     [meta]
   );
-  // A cell is its CODE (utils/cellName.js) — the workshop name is never printed.
-  // The leader is what stands beside it, and the register carries one per row,
-  // so the map only has to answer for the FILTER's option list.
-  const cellLabels = useMemo(() => {
-    const m = {};
-    for (const c of meta?.cells || []) m[c.code] = c.code;
-    return m;
-  }, [meta]);
+  const leaderOpts = meta?.leader_opts || [];
+  const leadName = useMemo(
+    () => Object.fromEntries(leaderOpts.map((l) => [l.id, l.name])),
+    [leaderOpts]
+  );
+  // A pick the viewer can no longer see (a leader whose rows left their
+  // scope) must not narrow the page invisibly — drop it once the list is in.
+  useEffect(() => {
+    if (!meta) return;
+    const kept = leadSel.filter((id) => id in leadName);
+    if (kept.length !== leadSel.length) setLeadSel(kept);
+  }, [meta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sections = useMemo(() => {
     const s = [];
@@ -513,18 +428,19 @@ export default function WorkerConcerns() {
         ),
       });
     }
-    if (!meta?.lock_own_leader && (meta?.leaders || []).length > 0) {
+    if (!meta?.lock_own_leader && leaderOpts.length > 0) {
       s.push({
         key: "leader", icon: UserRound, label: T.fLeader,
         active: leadSel.length > 0,
-        display: leadSel.length === 1 ? tl(shortName(leadSel[0])) : String(leadSel.length),
+        display: leadSel.length === 1 ? tl(shortName(leadName[leadSel[0]] || "")) : String(leadSel.length),
         onClear: () => setLeadSel([]),
         render: () => (
-          <OptsFilter searchable opts={meta.leaders} sel={leadSel} onChange={setLeadSel}
-            render={(n) => tl(n)} />
+          <OptsFilter searchable opts={leaderOpts.map((l) => l.id)} sel={leadSel} onChange={setLeadSel}
+            render={(id) => tl(leadName[id] || String(id))} />
         ),
       });
     }
+    // A cell is its CODE (utils/cellName.js) — the workshop name is never printed.
     if ((meta?.cells || []).length > 0) {
       s.push({
         key: "cell", icon: LayoutGrid, label: T.fCell,
@@ -533,7 +449,7 @@ export default function WorkerConcerns() {
         onClear: () => setCellSel([]),
         render: () => (
           <OptsFilter searchable opts={(meta.cells || []).map((c) => c.code)}
-            sel={cellSel} onChange={setCellSel} render={(c) => cellLabels[c] || c} />
+            sel={cellSel} onChange={setCellSel} render={(c) => c} />
         ),
       });
     }
@@ -547,18 +463,17 @@ export default function WorkerConcerns() {
       ),
     });
     return s;
-  }, [factorySection, meta, mgrSel, leadSel, cellSel, stSel, supers, supName, cellLabels, T, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factorySection, meta, mgrSel, leadSel, cellSel, stSel, supers, supName, leaderOpts, leadName, T, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearAll = () => { setMgrSel([]); setLeadSel([]); setCellSel([]); setStSel([]); };
 
   // ── charts ────────────────────────────────────────────────────────────────
   const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => {
-    if (!hasData) return undefined;
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => { raf2 = requestAnimationFrame(() => setChartsReady(true)); });
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
-  }, [hasData]);
+  }, []);
 
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
   const baseChart = {
@@ -713,19 +628,6 @@ export default function WorkerConcerns() {
   const list = listQ.data;
   const pageCount = Math.max(1, Math.ceil((list?.total || 0) / 50));
 
-  // ── shared bits ───────────────────────────────────────────────────────────
-  const lastSynced = fmtDateTime(sync?.last_synced);
-  // Sheets the last crawl could not read. Each one is a cell whose numbers on
-  // this page are older than the rest — never a silent drop, so it renders.
-  const failures = sync?.failures || [];
-  // Telegram's WebView swallows target=_blank; openLink hands the sheet to the
-  // real browser. In a desktop browser the plain <a> is already correct.
-  const openSheet = (e, url) => {
-    const tg = window?.Telegram?.WebApp;
-    if (!url || !inTelegram() || !tg?.openLink) return;
-    e.preventDefault();
-    try { tg.openLink(url); } catch { window.open(url, "_blank", "noopener"); }
-  };
   // ── Excel export ──────────────────────────────────────────────────────────
   // One file mirrors the whole page: Obzor + Liderlar KPI + Reyestr (ALL
   // matching rows — paging is a screen affordance). When filters make «what
@@ -741,14 +643,13 @@ export default function WorkerConcerns() {
   const activeFilterChips = [];
   if (factorySection?.active && !factorySection.static) activeFilterChips.push(factorySection.display);
   if (mgrSel.length) activeFilterChips.push(`${T.fBrig}: ${mgrSel.length === 1 ? tl(supName[mgrSel[0]] || "") : mgrSel.length}`);
-  if (leadSel.length) activeFilterChips.push(`${T.fLeader}: ${leadSel.length === 1 ? tl(shortName(leadSel[0])) : leadSel.length}`);
+  if (leadSel.length) activeFilterChips.push(`${T.fLeader}: ${leadSel.length === 1 ? tl(shortName(leadName[leadSel[0]] || "")) : leadSel.length}`);
   if (cellSel.length) activeFilterChips.push(`${T.fCell}: ${cellSel.length === 1 ? cellSel[0] : cellSel.length}`);
   if (stSel.length) activeFilterChips.push(`${T.fStatus}: ${stSel.length === 1 ? stL(stSel[0]) : stSel.length}`);
   if (q.trim()) activeFilterChips.push(`${T.xSearch}: «${q.trim()}»`);
   const filtersActive = activeFilterChips.length > 0;
-  // What the «filtered» option will actually put in the register sheet: the
-  // KPI total + the undated rows the range filters let through.
-  const regCount = kpi && !q.trim() ? (kpi.total ?? 0) + (kpi.undated_in_scope ?? 0) : null;
+  // What the «filtered» option will actually put in the register sheet.
+  const regCount = kpi && !q.trim() ? (kpi.total ?? 0) : null;
 
   const buildExportBody = (scope) => {
     const period = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`;
@@ -780,7 +681,7 @@ export default function WorkerConcerns() {
         colOpen: T.colOpen, colPct: T.colPct, colDate: T.colDate,
         colCell: T.colCell, colOwner: T.colOwner, colText: T.colText,
         colStatus: T.colStatus,
-        undatedNote: T.undatedNote, unassignedRow: T.xUnassignedRow,
+        unassignedRow: T.xUnassignedRow,
         lowNHint: T.lowNHint, noMatch: T.noMatch,
         rows: T.rows, concernsWord: T.concernsWord, leadersWord: T.leadersWord,
         bandLegend: {
@@ -794,7 +695,6 @@ export default function WorkerConcerns() {
         { label: T.xPeriod, value: period },
         { label: T.xPlant, value: plantValue },
         { label: T.xFilters, value: scope === "all" ? T.xScopeAll : (activeFilterChips.join(" · ") || "—") },
-        { label: T.lastSynced, value: lastSynced || T.never },
         { label: T.xGenerated, value: fmtDateTime(new Date().toISOString()) },
       ],
     };
@@ -821,49 +721,13 @@ export default function WorkerConcerns() {
     if (filtersActive) { setExportScope("filtered"); setExportOpen(true); }
     else runExport("all");
   };
-  const exportBtn = hasData ? (
+  const exportBtn = meta && !noneYet ? (
     <Button size="lg" variant="secondary" loading={exporting}
       icon={!exporting ? <FileSpreadsheet size={14} /> : null}
       onClick={onExportClick}>
       <span className="hidden sm:inline">{T.xBtn}</span>
     </Button>
   ) : null;
-
-  const refreshBtn = (
-    <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
-      icon={!(running || refreshMut.isPending) ? <RefreshCw size={14} /> : null}
-      onClick={() => refreshMut.mutate()}>
-      {/* Button hides its children while `loading` (overlay spinner keeps the
-          width stable), so the crawl progress lives in the sync pill instead. */}
-      <span className="hidden sm:inline">{T.refresh}</span>
-    </Button>
-  );
-
-  // The last-synced pill doubles as the live progress feed during the crawl —
-  // a 2–4 minute background job with nothing but a spinner reads as frozen.
-  const syncPill = running ? (
-    <>
-      <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />
-      {T.refreshing}
-      <span className="tabular-nums" style={{ color: "var(--text-2)" }}>
-        {sync?.progress_done ?? 0}/{sync?.progress_total || "…"}
-      </span>
-      {T.syncSheets}
-      {/* What the incremental sweep actually bought THIS run. Without it the
-          pill counts to a total with no clue whether that total is every sheet
-          or only the changed ones — the same "3/179" either way. */}
-      {sync?.sweep?.skipped > 0 && (
-        <span className="tabular-nums hidden sm:inline" style={{ color: "var(--text-4)" }}>
-          {" · "}{T.syncSkipped.replace("{n}", sync.sweep.skipped)}
-        </span>
-      )}
-    </>
-  ) : (
-    <>
-      <CalendarClock size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
-      {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
-    </>
-  );
 
   const Kpi = ({ icon: Icon, color, label, value, hint }) => (
     <div className="rounded-2xl px-4 py-3.5" style={cardStyle}>
@@ -895,12 +759,12 @@ export default function WorkerConcerns() {
     </div>
   );
 
-  const StChip = ({ st, raw }) => (
+  const StChip = ({ st }) => (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-medium whitespace-nowrap"
       style={{ background: hexA(ST_COLORS[st] || C_LOWN, 0.12), color: ST_COLORS[st] || C_LOWN, border: `1px solid ${hexA(ST_COLORS[st] || C_LOWN, 0.3)}` }}
-      title={raw || undefined}>
+      title={st === "uplifted" ? T.stUpHint : undefined}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: ST_COLORS[st] || C_LOWN }} />
-      {st === "other" && raw ? raw : stL(st)}
+      {stL(st)}
     </span>
   );
 
@@ -933,110 +797,36 @@ export default function WorkerConcerns() {
 
   const isBoot = metaQ.isLoading;
   const loadError = metaQ.isError;
-  const bodyLoading = hasData && statsQ.isLoading && view === "obzor";
+  const bodyLoading = statsQ.isLoading && view === "obzor";
+  // The «Hal bo'lmagan» card names how much of it already left the leader.
+  const openHint = kpi?.uplifted > 0
+    ? T.kOpenUp.replace("{n}", kpi.uplifted.toLocaleString("ru-RU"))
+    : T.kOpenHint;
 
   return (
     <Layout title={T.title}>
-      {/* header: title + last-synced + refresh */}
+      {/* header: title + export */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{T.title}</h2>
           <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{T.sub}</p>
-          <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }}>
-            {syncPill}
-          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
-            {syncPill}
-          </span>
           {exportBtn}
-          {refreshBtn}
         </div>
       </div>
 
-      {/* Incremental refresh is OFF. The crawl still works, so this is not an
-          error banner — but it is the whole difference between a refresh that
-          takes seconds and one that re-reads ~180 sheets for minutes, and it
-          used to be visible only as a warning line in the server log. Amber,
-          above the fold, naming the cause; admins also get the one link that
-          fixes the usual one (Drive API switched off on the Google project). */}
-      {sync?.sweep && sync.sweep.ok === false && (
-        <div className="rounded-2xl px-4 py-3 text-xs mb-4"
-          style={{ background: hexA(C_DOING, 0.1), color: C_DOING, border: `1px solid ${hexA(C_DOING, 0.33)}` }}>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <span className="inline-flex items-start gap-1.5 min-w-0">
-              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-              <span className="min-w-0">
-                <span className="font-semibold">{T.sweepOffHead}</span>
-                <span style={{ color: "var(--text-2)" }}>
-                  {" — "}{T.sweepWhy[sync.sweep.code] || T.sweepWhy.other}
-                  {sync.sweep.code === "other" && sync.sweep.detail ? ` (${sync.sweep.detail})` : ""}
-                </span>
-              </span>
-            </span>
-            {meta?.is_admin && sync.sweep.url && (
-              <a href={sync.sweep.url} target="_blank" rel="noopener noreferrer"
-                onClick={(e) => openSheet(e, sync.sweep.url)}
-                className="inline-flex items-center gap-1 underline underline-offset-2 flex-shrink-0 font-semibold">
-                {T.sweepEnable}<ExternalLink size={11} />
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* sync problems / load failures — before anything else, with a way out */}
-      {(sync?.ok === false || loadError) && (
+      {/* load failure — before anything else, with a way out */}
+      {loadError && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4"
           style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN, border: `1px solid ${hexA(C_OPEN, 0.33)}` }}>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="inline-flex items-center gap-1.5 min-w-0">
               <AlertTriangle size={14} className="flex-shrink-0" />
-              <span className="min-w-0">
-                {loadError ? T.loadFailed
-                  : failures.length ? T.syncFailHead.replace("{n}", failures.length)
-                  : `${T.syncFailedT}: ${sync?.message || ""}`}
-              </span>
+              <span className="min-w-0">{T.loadFailed}</span>
             </span>
-            {loadError && <Button size="sm" variant="secondary" onClick={() => metaQ.refetch()}>{T.retry}</Button>}
+            <Button size="sm" variant="secondary" onClick={() => metaQ.refetch()}>{T.retry}</Button>
           </div>
-          {/* One line per unreadable sheet: WHICH cell, WHY, how stale its data
-              now is, and a link to the sheet — every cause is fixed in the
-              sheet itself, and a bare cell code told nobody which one it was. */}
-          {!loadError && failures.length > 0 && (
-            <ul className="mt-2 space-y-1.5 max-h-44 overflow-y-auto">
-              {failures.map((f, i) => (
-                <li key={`${f.cell}-${i}`} className="flex items-start gap-2 leading-snug">
-                  <span className="font-semibold flex-shrink-0">
-                    {f.url ? (
-                      <a href={f.url} target="_blank" rel="noopener noreferrer"
-                        onClick={(e) => openSheet(e, f.url)}
-                        className="inline-flex items-center gap-1 underline underline-offset-2">
-                        {f.cell}<ExternalLink size={11} className="flex-shrink-0" />
-                      </a>
-                    ) : f.cell}
-                  </span>
-                  <span className="min-w-0" style={{ color: "var(--text-2)" }}>
-                    {T.syncWhy[f.code] || T.syncWhy.other}
-                    {f.code === "other" && f.detail ? ` — ${f.detail}` : ""}
-                    {/* Age of what the page IS showing for this cell. No
-                        timestamp + no rows = never imported; no timestamp WITH
-                        rows means the date is unknown, which is not the same
-                        claim, so it says nothing rather than guessing. */}
-                    {(f.stale_since || !f.has_rows) && (
-                      <span style={{ color: "var(--text-3)" }}>
-                        {" · "}
-                        {f.stale_since
-                          ? T.syncStaleSince.replace("{d}", fmtDateTime(f.stale_since))
-                          : T.syncNeverRead}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 
@@ -1052,22 +842,19 @@ export default function WorkerConcerns() {
           </div>
           <div className="rounded-2xl p-4" style={cardStyle}><SkeletonBlock className="h-3 w-28 mb-4" /><SkeletonChart className="h-64" /></div>
         </div>
-      ) : !hasData ? (
-        /* never synced (or wiped) — the page's only useful action is the crawl */
-        <div className="rounded-2xl p-10 text-center" style={cardStyle}>
-          <span className="grid place-items-center w-12 h-12 rounded-2xl mx-auto mb-3" style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}>
-            <Megaphone size={22} />
-          </span>
-          <div className="font-semibold mb-1" style={{ color: "var(--text-1)" }}>{T.emptyTitle}</div>
-          <p className="text-xs mb-4" style={{ color: "var(--text-4)" }}>{T.emptyNote}</p>
-          <div className="flex justify-center">{refreshBtn}</div>
-          {running && (
-            <p className="text-xs mt-3 tabular-nums" style={{ color: "var(--text-3)" }}>
-              {sync?.progress_done ?? 0}/{sync?.progress_total || "…"} {T.syncSheets}
-            </p>
-          )}
+      ) : noneYet ? (
+        /* nothing filed in this viewer's scope yet — say where it comes from */
+        <div className="rounded-2xl" style={cardStyle}>
+          <EmptyState icon={Megaphone} height="h-56" showUploadLink={false}
+            title={T.emptyTitle} message={T.emptyNote}
+            action={may("cell-concerns") ? (
+              <Button size="sm" variant="secondary" icon={<ArrowUpRight size={13} />}
+                onClick={() => navigate("/cell-concerns")}>
+                {T.emptyGo}
+              </Button>
+            ) : null} />
         </div>
-      ) : (
+      ) : meta ? (
         <>
           {/* view tabs — switching WHAT you look at, so tabs semantics */}
           <div className="flex items-center gap-2 mb-3">
@@ -1117,17 +904,10 @@ export default function WorkerConcerns() {
                 <Kpi icon={Loader} color={C_DOING} label={T.kDoing}
                   value={(kpi?.doing ?? 0).toLocaleString("ru-RU")} />
                 <Kpi icon={AlertTriangle} color={C_OPEN} label={T.kOpen}
-                  value={(kpi?.open ?? 0).toLocaleString("ru-RU")} hint={T.kOpenHint} />
+                  value={(kpi?.open ?? 0).toLocaleString("ru-RU")} hint={openHint} />
                 <Kpi icon={Users2} color={C_WORKERS} label={T.kWorkers}
                   value={(kpi?.workers ?? 0).toLocaleString("ru-RU")} hint={T.kWorkersHint} />
               </div>
-
-              {(kpi?.undated_in_scope || 0) > 0 && (
-                <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                  <AlertTriangle size={12} style={{ color: C_DOING }} />
-                  {kpi.undated_in_scope.toLocaleString("ru-RU")} {T.undatedNote}
-                </p>
-              )}
 
               <ChartCard icon={<TrendingUp size={13} />} title={T.secDaily} subtitle={T.secDailySub}
                 empty={dailySeries.length === 0} height={280}>
@@ -1201,7 +981,7 @@ export default function WorkerConcerns() {
                     {ldRows.length === 0 ? (
                       <tr><td colSpan={8} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
                     ) : ldRows.map((r) => (
-                      <tr key={r.leader}>
+                      <tr key={r.leader_id ?? r.leader}>
                         <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(r.leader)}</td>
                         <td className="px-3 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>
                           {r.brigadirs.map((b) => tl(shortName(b))).join(", ")}
@@ -1216,7 +996,8 @@ export default function WorkerConcerns() {
                         <td className="px-3 py-2 text-right tabular-nums font-semibold">{r.total}</td>
                         <td className="px-3 py-2 text-right tabular-nums" style={{ color: C_DONE }}>{r.done}</td>
                         <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: r.doing ? C_DOING : "var(--text-4)" }}>{r.doing}</td>
-                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.open ? C_OPEN : "var(--text-4)" }}>{r.open}</td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.open ? C_OPEN : "var(--text-4)" }}
+                          title={r.uplifted ? `${stL("uplifted")}: ${r.uplifted}` : undefined}>{r.open}</td>
                         <td className="px-3 py-2"><PctCell r={r} /></td>
                       </tr>
                     ))}
@@ -1224,21 +1005,11 @@ export default function WorkerConcerns() {
                 </TableCard>
               )}
 
-              {(leadersQ.data?.unassigned || (leadersQ.data?.undated || 0) > 0) && (
-                <div className="space-y-1">
-                  {leadersQ.data?.unassigned && (
-                    <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                      <AlertTriangle size={12} style={{ color: C_DOING }} />
-                      {leadersQ.data.unassigned.total.toLocaleString("ru-RU")} {T.unassigned}
-                    </p>
-                  )}
-                  {(leadersQ.data?.undated || 0) > 0 && (
-                    <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                      <AlertTriangle size={12} style={{ color: C_DOING }} />
-                      {leadersQ.data.undated.toLocaleString("ru-RU")} {T.undatedNote}
-                    </p>
-                  )}
-                </div>
+              {leadersQ.data?.unassigned && (
+                <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+                  <AlertTriangle size={12} style={{ color: C_DOING }} />
+                  {leadersQ.data.unassigned.total.toLocaleString("ru-RU")} {T.unassigned}
+                </p>
               )}
             </div>
           )}
@@ -1257,9 +1028,10 @@ export default function WorkerConcerns() {
                     right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
                       {(list?.total ?? 0).toLocaleString("ru-RU")} {T.rows}
                     </span>}
-                    minWidth={760} wrap>
+                    minWidth={800} wrap>
                     <thead>
                       <tr>
+                        <Th label={T.colNo} align="right" />
                         <Th label={T.colDate} k="date" sort={{ key: "date", dir: regSort === "date_asc" ? "asc" : "desc" }}
                           onSort={() => setRegSort((s) => (s === "date_desc" ? "date_asc" : "date_desc"))} />
                         <Th label={T.colCell} />
@@ -1271,14 +1043,14 @@ export default function WorkerConcerns() {
                     </thead>
                     <tbody>
                       {(list?.rows || []).length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
+                        <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
                       ) : list.rows.map((r) => (
                         <tr key={r.id} className="cursor-pointer" onClick={() => setDetail(r)}>
-                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" title={r.d ? undefined : (r.draw || "")}
-                            style={{ color: r.d ? "var(--text-2)" : "var(--text-4)" }}>
+                          <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>{r.no}</td>
+                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                             {fmtDate(r.d)}
                           </td>
-                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={r.leader ? `${r.cell} · ${tl(r.leader)}` : r.cell}>{r.cell}</td>
+                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={r.leader ? `${r.cell} · ${tl(r.leader)}` : r.cell}>{r.cell || "—"}</td>
                           <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                             {r.leader ? tl(shortName(r.leader)) : "—"}
                           </td>
@@ -1286,7 +1058,7 @@ export default function WorkerConcerns() {
                           <td className="px-3 py-2" style={{ color: "var(--text-2)", minWidth: 260 }}>
                             <span className="line-clamp-2">{r.text}</span>
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap"><StChip st={r.st} raw={r.straw} /></td>
+                          <td className="px-3 py-2 whitespace-nowrap"><StChip st={r.st} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -1297,22 +1069,34 @@ export default function WorkerConcerns() {
             </div>
           )}
         </>
-      )}
+      ) : null}
 
-      {/* row detail — the full text one row at a time */}
+      {/* row detail — the full text one row at a time; the chain, the thread
+          and every action live on /concerns, one tap away */}
       {detail && (
-        <Modal open onClose={() => setDetail(null)} title={T.mTitle}
-          subtitle={detail.leader ? `${detail.cell} · ${tl(detail.leader)}` : detail.cell}
-          icon={<Megaphone size={16} />}>
+        <Modal open onClose={() => setDetail(null)} title={`${T.mTitle} №${detail.no}`}
+          subtitle={detail.leader ? `${detail.cell || "—"} · ${tl(detail.leader)}` : (detail.cell || "—")}
+          icon={<Megaphone size={16} />}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDetail(null)}>{T.close}</Button>
+              {may("concerns") && (
+                <Button icon={<ArrowUpRight size={14} />}
+                  onClick={() => navigate(`/concerns?open=${detail.id}`)}>
+                  {T.mOpen}
+                </Button>
+              )}
+            </>
+          }>
           <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-1)" }}>{detail.text}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs pt-2" style={{ borderTop: "1px solid var(--border)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.colDate}</div>
-              <div style={{ color: "var(--text-2)" }}>{detail.d ? fmtDate(detail.d) : (detail.draw || "—")}</div>
+              <div style={{ color: "var(--text-2)" }}>{fmtDate(detail.d)}</div>
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.colStatus}</div>
-              <StChip st={detail.st} raw={detail.straw} />
+              <StChip st={detail.st} />
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.colOwner}</div>
@@ -1322,16 +1106,24 @@ export default function WorkerConcerns() {
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.colLeader}</div>
               <div style={{ color: "var(--text-2)" }}>{detail.leader ? tl(detail.leader) : "—"}</div>
             </div>
-            {detail.row_leader && detail.row_leader !== detail.leader && (
-              <div>
-                <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mLeaderRow}</div>
-                <div style={{ color: "var(--text-3)" }}>{tl(detail.row_leader)}</div>
-              </div>
-            )}
             <div>
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mBrig}</div>
               <div style={{ color: "var(--text-2)" }}>{tl(shortName(detail.brigadir || "")) || "—"}</div>
             </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mCategory}</div>
+              <div style={{ color: "var(--text-2)" }}>{detail.category ? t(`concerns.category.${detail.category}`) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mStep}</div>
+              <div style={{ color: "var(--text-2)" }}>{t(`concerns.level.${detail.level}`)}</div>
+            </div>
+            {detail.done_on && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mDoneOn}</div>
+                <div style={{ color: "var(--text-2)" }}>{fmtDate(detail.done_on)}</div>
+              </div>
+            )}
           </div>
         </Modal>
       )}

@@ -19,7 +19,7 @@ Workbook (mirrors the page's three views):
 
     Obzor          letterhead · scope · KPI cards · daily dynamics (table +
                    stacked columns) · by-brigadir matrix · top open cells (+bar)
-    Liderlar KPI   band legend · one row per registered leader, % tinted by the
+    Liderlar KPI   band legend · one row per leader the workers filed to, % tinted by the
                    admin-set bands · «unassigned» bucket · totals row
     Reyestr        every matching row (paging is a screen affordance, not a
                    narrowing) · tinted status chips · auto-filter · frozen head
@@ -45,7 +45,10 @@ from app.services.quality_export import (
 # The page's own status palette (semantic traffic-light, never brand gold).
 BLUE = "3B82F6"
 OTHER_INK = "64748B"
-WC_COLOR = {"done": GREEN, "doing": AMBER, "todo": RED,
+# «uplifted» = handed up the chain and still open (routers/worker_concerns);
+# «deferred» / «other» are the sheet era's keys, kept so an old file's words
+# still have a colour.
+WC_COLOR = {"done": GREEN, "doing": AMBER, "todo": RED, "uplifted": SLATE,
             "deferred": SLATE, "other": OTHER_INK}
 WC_TINT = {**TINT, OTHER_INK: "E8ECF1"}
 DATE_FMT = "DD.MM.YYYY"
@@ -514,10 +517,10 @@ def _register_sheet(wb: Workbook, p: dict) -> None:
 
 def build_worker_concerns_workbook(p: dict) -> BytesIO:
     """Assemble the three tabs and hand back the saved workbook."""
-    # Column set for the wide tables: the three core statuses always, deferred /
-    # other only when the scope actually contains them (they are rare).
+    # Column set for the wide tables: the three core statuses always, «uplifted»
+    # only when the scope actually contains it.
     sts = ["done", "doing", "todo"] \
-        + [s for s in ("deferred", "other") if (p.get("status_counts") or {}).get(s)]
+        + [s for s in ("uplifted",) if (p.get("status_counts") or {}).get(s)]
     wb = Workbook()
     wb.remove(wb.active)
     _obzor(wb, p, sts)

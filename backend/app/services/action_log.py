@@ -382,7 +382,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/sheet-sources/{}",                   "sync_export", "sync.sheet_source_set"),
     (("POST",),   "/admin/refresh-sheet/{}",                   "sync_export", "sync.sheet_refreshed"),
     (("POST",),   "/api/quality/refresh",                      "sync_export", "sync.quality_refreshed"),
-    (("POST",),   "/api/worker-concerns/refresh",              "sync_export", "sync.worker_concerns_refreshed"),
     (("POST",),   "/api/kaizen/refresh",                       "sync_export", "sync.kaizen_refreshed"),
     (("POST",),   "/api/arc/refresh",                          "sync_export", "sync.arc_refreshed"),
     (("POST",),   "/api/admin/verifix/test",                   "sync_export", "sync.verifix_tested"),

@@ -9,8 +9,8 @@ their own chat, as a detailed file. It REPORTS and changes nothing.
 
 **Nothing is re-measured.**
 
-* A sheet row is a `worker_concerns` row — the crawl `/worker-concerns` already
-  reads (`services/worker_concerns.py`): only rows with concern text, dated by
+* A sheet row is a `worker_concerns` row — the crawl `/worker-concerns` read
+  until 2026-10-03 (`services/worker_concerns.py`): only rows with concern text, dated by
   the sheet's own «Дата заполнения». A row whose date cannot be read carries
   ``date = None`` there and belongs to no month; those are COUNTED, never
   silently dropped.
