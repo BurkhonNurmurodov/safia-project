@@ -7,8 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *
  * Recessed-track pill look: a RECESSED track (--bg-inner + a subtle border)
  * holds the segments with a small inset; the SELECTED segment is a brand-gold
- * (--brand) pill with a dark --on-brand label (white on this gold is 2.6:1);
- * the rest are transparent with muted
+ * (--brand) pill with a white --on-brand label; the rest are transparent with muted
  * --text-3 labels. No divider lines. This is ALSO the style for page-level
  * "view tabs" (Production view switch, Staff Workers/Requests) — same
  * component, not a hand-rolled copy. Never hand-roll this bar — use this so
