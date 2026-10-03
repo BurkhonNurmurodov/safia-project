@@ -15,7 +15,17 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtPct, fmtTime } from "../../utils/formatters";
 import { diffStatus } from "../../utils/segments";
-import { loadTone } from "../../utils/statusBands";
+import { activeBands } from "../../utils/statusBands";
+
+// The load band of a figure AS PRINTED here (one decimal): «79.6%» sits under
+// an «<80% = red» legend, so it must be red — the whole-percent rounding the
+// board uses (it prints whole percents) would have made it yellow.
+function printedLoadTone(v) {
+  if (v == null || Number.isNaN(v)) return null;
+  const p = Math.round(v * 1000) / 10;
+  const { ok, warn } = activeBands().load;
+  return p >= ok ? "ok" : p >= warn ? "warn" : "bad";
+}
 import {
   utilNumbers, utilInputs, differenceNumbers, differenceInputs,
   differencePctNumbers, hcEquivNumbers, hcEquivInputs, rangeDays,
@@ -297,7 +307,7 @@ export default function BrigadirTable({
                     className="font-mono font-bold hover:underline underline-offset-2"
                     style={{
                       background: "none", border: "none", padding: 0, cursor: "pointer",
-                      color: loadTone(b.net_util) ? `var(--status-${loadTone(b.net_util)})` : "var(--text-3)",
+                      color: printedLoadTone(b.net_util) ? `var(--status-${printedLoadTone(b.net_util)})` : "var(--text-3)",
                     }}
                     onClick={() => setFormulaModal({
                       title: `${t("overview.fm.finalActual")}${avgSuffix}`,

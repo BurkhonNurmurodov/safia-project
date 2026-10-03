@@ -4455,6 +4455,51 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   grid headers); the toolbar's filter chips wrap (`chipsWrap`, which the
   template applies below md) instead of being clipped.
 
+## «Smena kunligi» on a phone (`/shift-daily`, 2026-10-03)
+
+Top management was to be shown the app on a phone and the operator called the
+pages «monstrous» there; this was the first page fixed (perfectionist loop on
+the operator's Galaxy A16 — 384 × 832 — over a mock API with invented data).
+Every change is phone-scoped (`max-sm:` or an opt-in prop) — desktop is
+pixel-identical except the three things below that are not layout. The same
+component serves a shift-manager's `/daily`.
+
+- **The toolbar**: `DayStepper fillPhone` (+ `DateRangePicker fillPhone`) takes
+  the first line whole; `FilterPanel chipsWrap` + the min/soat toggle share
+  the second — the plant chip used to be pushed past the screen's edge.
+- **KPI cards** (`KpiDeltaCard`, shared — PlanOverview and UsersActivity get
+  it too) STACK below sm: sentence-case label with the (i) flowing after it,
+  value, delta chip, the previous day, then the sparkline across the card.
+  The chip used to stick out of the card; the previous-day line is
+  `--text-2` there (`--text-4` was ~2.2:1 on dark).
+- **A day with no figure is «—», never 0** (`idleOf` / `loadOf` return null),
+  and the «< 90%» card is red only when the count is above 0. Desktop too.
+- **The load chart** (`LoadBarChart phoneRows`) is one row per brigadir below
+  sm: name (`surnameInitial`), a grey plan bar over the actual bar, figures in
+  a right-hand column, a real colour key. The actual bar wears the LOAD bands
+  (statusBands) — the colour the same figure has in the table; P−A keeps the
+  comparison diff bands. The column chart had shown 5 of 18 brigadirs with
+  the rest in an invisible sideways scroll, colliding labels, and plan and
+  actual in one colour.
+- **One colour scale for a load figure on the whole page** (desktop too): the
+  brigadir table's «Yakuniy yuk» and the ranking's P/A bars wear the admin's
+  load bands (the board's and the KPI cards'), the ranking's P−A the
+  comparison diff bands. They had two scales of their own (a 119% amber in the
+  table, green in the ranking). The table judges the figure AS PRINTED (one
+  decimal — `printedLoadTone`), so «79.6%» is red under «<80% = red».
+- **The ranking is not shown on a phone** (the operator's call): it repeated
+  the table row for row.
+- The page title at `/shift-daily` is the menu's «Smena kunligi» (desktop
+  too); `/daily` keeps «Kunlik — Smena».
+- Shared fixes that reach every page: the `Tooltip` (i) has a 44px tap pad on
+  phones and is keyboard-reachable (unless it sits inside a button); the
+  filter sheet's per-section clear says «Tozalash», not «Hammasini tozalash»;
+  the header's menu button has an accessible name; the brigadir table's eye
+  button is 44px on a phone with a name.
+- Known and left: at 320px the min/soat toggle wraps to a third toolbar line
+  and a KPI label's (i) can wrap alone; the shared header's bell/avatar/menu
+  buttons are under 44px (global, not asked).
+
 ## Empty days count NOWHERE on `/leaders` (`countCap`)
 
 From **2026-10-02** (the operator: «empty days shouldn't affect any
@@ -7990,7 +8035,12 @@ morning, with «XATO» wherever a brigadir had entered nothing.
 - **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
   sort chevron hidden and the active one stacked under its label, a blank's
   reason as a bare icon (its words are in the legend at every width, since the
-  cell can no longer spare a second line).
+  cell can no longer spare a second line). From 2026-10-03 the five columns
+  fit at **320px** too: the phone header is ONE line per label (the short
+  labels carry no «%» — every figure does — and captions are ≥ 11px), and a
+  name of 13+ letters gets soft hyphens (`softHyphenate`) so it breaks WITH a
+  visible hyphen — a silent break read «Abdurakhmonova» as «Abdurakhmono va»
+  («… and …»). The legend is one band per line on a phone.
 - **Every cell opens WHERE ITS FIGURE COMES FROM, on the scope it was counted
   over** (the operator's rulings, 2026-09-30). The NAME opens `/brigadir/:id`;
   the row itself no longer does, because each cell has a destination of its
@@ -8040,8 +8090,13 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   board is not; days before `ZAGRUZKA_FROM` are absent. The ≥ 100 / < 90 tests
   compare the whole percent printed. The waiting card still reads the heatmap
   (closed days) and the charts below still read `net_util`.
-- Up to two engine runs per configured unit per request, uncached; `staleTime`
-  60 s and a refetch on focus. **It is the LAST thing on the page to fetch**
+- Up to two engine runs per configured unit per request (~2 s, ~850 queries on
+  production-sized data), so from 2026-10-03 the whole answer is **cached
+  60 s server-side** (`routers/shift_report._cache`), keyed by the units in
+  reach, the quality month and each shift's report days — viewers with one
+  scope share an entry, a new shift-day or month is a new key, the figures are
+  the engine's untouched; `staleTime` 60 s and a refetch on focus on the
+  client. **It is the LAST thing on the page to fetch**
   (`pageReady`, handed down by its page): that cost competes with the queries
   the KPI cards and the charts are waiting on — one uvicorn worker — so
   fired together the whole page read as «still loading» for as long as the

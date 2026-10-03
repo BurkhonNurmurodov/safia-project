@@ -572,6 +572,7 @@ function ImpersonationBar() {
 
 export default function Layout({ children, title, subtitle }) {
   useActivityPing(); // heartbeat for the Users-Activity dashboard
+  const { t } = useLang();
   const { pathname } = useLocation();
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -655,6 +656,7 @@ export default function Layout({ children, title, subtitle }) {
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setSidebarOpen(true)}
+                aria-label={t("menu.title")}
                 className="md:hidden p-1.5 rounded-lg flex-shrink-0"
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
               >

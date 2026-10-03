@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import { surnameInitial } from "../../utils/personName";
+import { loadColor, TONE_HEX } from "../../utils/statusBands";
 
 // Planned-vs-Actual workload, one group of bars per supervisor.
 //   group mode → two bars (planned, actual) side by side, growing from the floor
@@ -53,9 +54,12 @@ function shortName(name) {
 // the same colour with a text-only legend. On a phone it is ONE ROW PER
 // BRIGADIR instead: the name (surname first, the platform's phone rule), a grey
 // plan bar over the actual bar in its status colour, and both figures in a
-// right-hand column so they read down the list like a table. P−A mode draws
-// one bar diverging from a zero line. Same inputs, same colours for A, same
-// scale rule as the desktop chart — only the geometry changes.
+// right-hand column so they read down the list like a table. The actual bar
+// wears the admin's LOAD bands (statusBands — the colour the same figure has
+// in the table under it and on the board above), not the plan-gap colour the
+// desktop chart gives it: a 94% painted red here and green in the table was
+// one figure with two verdicts. P−A mode is about the gap, so it keeps the
+// comparison diff bands, diverging from a zero line.
 const PLAN_NEUTRAL = "var(--text-4)";
 
 function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel, diffSegments, gridColor }) {
@@ -63,14 +67,14 @@ function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel
     const p = Math.round(planned[i] ?? 0);
     const a = Math.round(actual[i] ?? 0);
     const d = p - a;
-    return { name, p, a, d, aColor: colorFor(d, diffSegments, ACTUAL_COLOR) };
+    return { name, p, a, d, aColor: loadColor(a / 100), dColor: colorFor(d, diffSegments, ACTUAL_COLOR) };
   });
   const maxGrp = Math.max(110, ...rows.map((r) => Math.max(r.p, r.a)));
   const maxPos = Math.max(0, ...rows.map((r) => r.d));
   const maxNeg = Math.max(0, ...rows.map((r) => -r.d));
   const span = Math.max(1, maxPos + maxNeg);
   const zero = (maxNeg / span) * 100;
-  const keyColors = [...new Set((diffSegments || []).map((s) => s.color))];
+  const keyColors = [TONE_HEX.ok, TONE_HEX.warn, TONE_HEX.bad];
   const pct = (v) => `${Math.max(0, Math.min(100, v))}%`;
   const bar = "h-2.5 rounded-[3px] transition-[width,left,background-color] duration-300";
 
@@ -88,7 +92,7 @@ function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-flex h-2.5 rounded-[3px] overflow-hidden">
-                {(keyColors.length ? keyColors : [ACTUAL_COLOR]).map((c) => (
+                {keyColors.map((c) => (
                   <span key={c} className="inline-block w-1.5 h-full" style={{ background: c }} />
                 ))}
               </span>
@@ -116,7 +120,7 @@ function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel
                     style={{
                       left: pct(r.d >= 0 ? zero : zero - (Math.abs(r.d) / span) * 100),
                       width: pct((Math.abs(r.d) / span) * 100),
-                      background: r.aColor,
+                      background: r.dColor,
                       minWidth: r.d ? 2 : 0,
                     }}
                   />
@@ -130,7 +134,7 @@ function PhoneRows({ names, planned, actual, diffMode, plannedLabel, actualLabel
                 <div className="h-2.5">
                   <div className={bar} style={{ width: pct((r.p / maxGrp) * 100), background: PLAN_NEUTRAL }} />
                 </div>
-                <span className="text-[11px] tabular-nums text-right leading-none" style={{ color: "var(--text-3)" }}>{r.p}%</span>
+                <span className="text-[11px] tabular-nums text-right leading-none" style={{ color: "var(--text-2)" }}>{r.p}%</span>
                 <div className="h-2.5">
                   <div className={bar} style={{ width: pct((r.a / maxGrp) * 100), background: r.aColor }} />
                 </div>

@@ -270,7 +270,7 @@ export default function ShiftDaily() {
           first line whole (`fillPhone`) and the filters, their chips and the
           unit share the second — the chip used to be pushed past the screen's
           edge with only its icon showing. */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
+      <div className="flex flex-wrap items-center gap-2 max-[359px]:gap-1.5 mb-5">
         <DayStepper value={date} onChange={setDate} fillPhone />
         <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} chipsWrap />
         <div className="ml-auto">{unitToggle}</div>

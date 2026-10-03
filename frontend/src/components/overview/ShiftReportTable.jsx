@@ -101,6 +101,17 @@ const DEFAULT_SORT = { key: "name", dir: "asc" };
 const COLS = 5;
 
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
+
+// Soft hyphens inside a VERY long word (13+ letters — longer than the name
+// column holds on a 320px phone; at least four letters kept on each side), so
+// it breaks WITH a visible hyphen instead of pushing the fifth column off the
+// screen — or breaking silently, which turned «Abdurakhmonova» into
+// «Abdurakhmono va…», i.e. «… and …». Shorter words get none: a hyphen is
+// honoured greedily, so «Gulchehra» would split even where it fits a line of
+// its own. Invisible wherever the word fits (always on sm+, no wrapping there).
+const SHY = "\u00AD";
+const softHyphenate = (s) => s.replace(/\S{13,}/g, (w) => [...w]
+  .map((ch, i, a) => (i >= 4 && a.length - i >= 4 ? SHY + ch : ch)).join(""));
 const pctText = (v) => `${Math.round(v * 100)}%`;
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const fill = (s, vars) =>
@@ -419,12 +430,13 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
                 >
                   {/* Below 360px the five columns only fit if a very long
                       surname may break inside the word — the alternative was
-                      the «Xavotir» column cut off at the screen's edge. */}
+                      the «Xavotir» column cut off at the screen's edge — so it
+                      breaks at a soft hyphen, visibly (`softHyphenate`). */}
                   <span
-                    className="block whitespace-normal sm:whitespace-nowrap max-[359px]:[overflow-wrap:anywhere] text-[11.5px] sm:text-xs font-medium leading-snug"
+                    className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
                     style={{ color: "var(--text-1)" }}
                   >
-                    {tl(r.name || "")}
+                    {softHyphenate(tl(r.name || ""))}
                   </span>
                 </Link>
               </td>

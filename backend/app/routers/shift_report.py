@@ -20,6 +20,7 @@ A shift manager whose profile names no shift reads an EMPTY board with
 The period picker beside the table does not reach it. Each column has a fixed
 window — today, yesterday, this month, whole time — and its header prints it.
 """
+import time
 from datetime import date, timedelta
 from typing import List, Optional
 
@@ -37,6 +38,35 @@ from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import supervisor_match
 
 router = APIRouter(prefix="/api/shift-report", tags=["shift-report"])
+
+# The board runs the «Zagruzka fayli» engine twice per configured unit — ~2 s
+# and ~850 queries on production-sized data (measured 2026-10-03) — so every
+# open of the page waited for all of it and the board painted last. The answer
+# is cached for 60 s, keyed by everything it depends on (see the key below).
+# The FIGURES are the engine's, untouched: a viewer may read a board up to 60 s
+# old, the staleness the page's own query (`staleTime` 60 s) already accepts.
+# Viewers with one scope share an entry (every admin and top-manager on «all
+# plants» does). Bounded, in-process, per copy.
+_CACHE_TTL_S = 60
+_CACHE_MAX = 64
+_cache: dict = {}
+
+
+def _cache_get(key):
+    hit = _cache.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    return None
+
+
+def _cache_put(key, value) -> None:
+    now = time.monotonic()
+    if len(_cache) >= _CACHE_MAX:
+        for k in [k for k, (exp, _v) in list(_cache.items()) if exp <= now]:
+            _cache.pop(k, None)
+        while len(_cache) >= _CACHE_MAX:
+            _cache.pop(next(iter(_cache)), None)
+    _cache[key] = (now + _CACHE_TTL_S, value)
 
 
 def _scope(db: Session, payload: dict, factory: Optional[int],
@@ -90,6 +120,18 @@ def get_shift_report(
         return out
     unit_ids = [m.id for m in units]
 
+    # Everything the answer depends on is in the key: the units in reach (the
+    # scope AND the shift filter), the quality month, and each shift's report
+    # days — so a new shift-day or a new month is a new entry, never a stale one.
+    windows = cell_hours.defaults(db)
+    key = (
+        tuple(unit_ids), note, month,
+        tuple((s, *map(str, shift_report.report_days(now, s, windows))) for s in (1, 2, None)),
+    )
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
     # ── O'rt. zagruzka / Bajarilish % — the «Zagruzka fayli» page's own engine,
     # the very call GET /api/production/dashboard makes, so the two figures are
     # its KPI cards' figures by construction. A unit with no production set up
@@ -138,7 +180,6 @@ def get_shift_report(
         .all()
     )
 
-    windows = cell_hours.defaults(db)
     groups: dict = {}
     for m in units:
         groups.setdefault(m.shift if m.shift in (1, 2) else None, []).append(m)
@@ -159,6 +200,7 @@ def get_shift_report(
                 for m in groups[s]
             ],
         })
+    _cache_put(key, out)
     return out
 
 

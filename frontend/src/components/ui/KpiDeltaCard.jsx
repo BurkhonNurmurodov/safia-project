@@ -111,9 +111,10 @@ export default function KpiDeltaCard({
       {sub && <div className="text-[11px] max-sm:text-xs -mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
 
       <div className="flex items-end justify-between gap-2 mt-1 max-sm:flex-col max-sm:items-stretch max-sm:gap-1.5 max-sm:mt-2">
-        {/* --text-4 on the card is ~2.2:1 — unreadable at arm's length on a
-            phone, so the comparison line steps up to --text-3 there. */}
-        <div className="text-[11px] text-[var(--text-4)] max-sm:text-xs max-sm:text-[var(--text-3)]">
+        {/* --text-4 on the card is ~2.2:1 (and --text-3 ~3.5:1) on the dark
+            theme — unreadable at arm's length on a phone, so the comparison
+            line steps up to --text-2 there (≥ 6:1 in both themes). */}
+        <div className="text-[11px] text-[var(--text-4)] max-sm:text-xs max-sm:text-[var(--text-2)]">
           {prevLabel} {prevValue ?? "—"}
         </div>
         <div className="w-[55%] max-w-[130px] max-sm:w-full max-sm:max-w-none">
