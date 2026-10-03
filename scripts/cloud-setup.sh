@@ -226,9 +226,10 @@ ADMIN_TELEGRAM_ID=1
 # does not. No Telegram call can succeed from here anyway.
 TELEGRAM_BOT_TOKEN=123456:LOCAL_DEV_DUMMY
 DATABASE_URL=postgresql://safia:safia@localhost:5432/zagruzka_db
-# WEBAPP_URL is deliberately UNSET: config.is_production is keyed on it, and its
-# http://localhost default is what keeps DEV_AUTH legal (assert_secure_config
-# refuses to boot with the dev bypass on once that URL looks like production).
+# config.is_production is keyed on ENVIRONMENT (default "production"), and the
+# validator refuses to boot with the dev bypass on in production — so this line
+# is what keeps DEV_AUTH legal here.
+ENVIRONMENT=development
 ENV_EOF
     log "wrote backend/.env"
   fi
