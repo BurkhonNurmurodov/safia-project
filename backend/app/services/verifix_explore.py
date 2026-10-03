@@ -75,6 +75,11 @@ PROBE_LIMIT = 20         # rows a probe asks for
 VIEW_LIMIT = 50          # rows the raw viewer asks for per page
 PERSON_DAYS = 14         # days of a person's card
 PHOTO_SMALL, PHOTO_LARGE = 96, 960
+# Marks are SLOW: the first probe on production (2026-10-03) took 24.1 s for 20
+# marks of one hour, plant-wide — every track$list call costs ~25 s whatever its
+# size. Those calls get a longer timeout than the client's 25 s, and a paged
+# read stops BEFORE a call it predicts would cross the request budget.
+SLOW_CALL_S = 45.0
 
 
 class NotConfigured(Exception):
@@ -149,17 +154,32 @@ def _deadline() -> float:
 def _pages(cl: httpx.Client, path: str, body: dict, limit: Optional[int], deadline: float,
            cap: int = MAX_PAGES):
     """Every page of one method. Raises VerifixError("slow") past the deadline
-    or the page cap, so a caller can say a list is partial."""
+    or the page cap, so a caller can say a list is partial.
+
+    A call is not started when the previous one says it would end past the
+    deadline (a ~25 s marks call started at 70 s would cross Cloudflare's
+    100 s). Verifix hands a cursor even with its last page (time kinds: 14 rows
+    and a cursor, 2026-10-03), so an EMPTY page ends the read too."""
     cursor = None
+    took = 0.0
     for _ in range(cap):
-        if time.monotonic() > deadline:
+        now = time.monotonic()
+        if now > deadline or (took and now + took > deadline):
             raise verifix.VerifixError("slow", "stopped at the time limit")
         data, nxt = verifix.call(cl, path, body, limit=limit, cursor=cursor)
-        yield _as_rows(data)
-        if not nxt or nxt == cursor:
+        took = time.monotonic() - now
+        rows = _as_rows(data)
+        yield rows
+        if not rows or not nxt or nxt == cursor:
             return
         cursor = nxt
     raise verifix.VerifixError("slow", "stopped at the page limit")
+
+
+def _slow(cl: httpx.Client) -> httpx.Client:
+    """The longer timeout a marks call needs (see SLOW_CALL_S)."""
+    cl.timeout = httpx.Timeout(SLOW_CALL_S, connect=10.0)
+    return cl
 
 
 def _list(c: dict, path: str, body: dict, deadline: float, limit: Optional[int] = 500) -> list[dict]:
@@ -365,10 +385,14 @@ def method_rows(db: Session, key: str, params: Optional[dict], cursor: Optional[
     err = http = None
     try:
         with verifix.client(c) as cl:
-            data, nxt = verifix.call(cl, m.key, body, limit=size, cursor=cursor)
+            data, nxt = verifix.call(_slow(cl), m.key, body, limit=size, cursor=cursor)
         rows = _as_rows(data)
         status = "ok" if rows else "empty"
         http = 200
+        # Verifix hands a cursor with its last page too: only a FULL page
+        # promises another one (else the map read «14+» for 14 time kinds).
+        if size and len(rows) < size:
+            nxt = None
     except verifix.VerifixError as exc:
         rows, status = [], _classify(exc)
         err, http = (exc.message or exc.code)[:500], exc.status
@@ -763,7 +787,7 @@ def person(db: Session, employee_id: str, force: bool = False) -> dict:
                 "end_datetime": _fmt_dt(now)}
         out = []
         with verifix.client(c) as cl:
-            for page in _pages(cl, "core/track$list", body, verifix.LIMIT_TRACKS, dl, cap=3):
+            for page in _pages(_slow(cl), "core/track$list", body, verifix.LIMIT_TRACKS, dl, cap=3):
                 for t in page:
                     at = _dt(t.get("track_datetime"))
                     out.append({"id": _s(t.get("track_id")), "at": _iso(at),
@@ -960,21 +984,23 @@ def marks(db: Session, day: date, start: int, hours: int, force: bool = False) -
 
     def load():
         rows, partial = [], False
+        t0 = time.monotonic()
         if end <= begin:
-            return rows, partial
+            return rows, partial, 0
         body = {"begin_datetime": _fmt_dt(begin), "end_datetime": _fmt_dt(end)}
         try:
             with verifix.client(c) as cl:
-                for page in _pages(cl, "core/track$list", body, verifix.LIMIT_TRACKS, dl, cap=MARKS_PAGES):
+                for page in _pages(_slow(cl), "core/track$list", body, verifix.LIMIT_TRACKS, dl, cap=MARKS_PAGES):
                     rows.extend(page)
         except verifix.VerifixError as exc:
-            if exc.code != "slow" or not rows:
+            # Pages already read are worth showing: the window says it is partial.
+            if exc.code not in ("slow", "timeout") or not rows:
                 raise
             partial = True
-        return rows, partial
+        return rows, partial, int((time.monotonic() - t0) * 1000)
 
     live = end > now - timedelta(minutes=10)
-    (raw, partial), t2 = _CACHE.get(_key(c, "marks", _fmt_dt(begin), _fmt_dt(end) if not live else "live"),
+    (raw, partial, vfx_ms), t2 = _CACHE.get(_key(c, "marks", _fmt_dt(begin), _fmt_dt(end) if not live else "live"),
                                     0 if force else (45 if live else TTL_PAST), load)
     out = []
     for t in raw:
@@ -996,7 +1022,7 @@ def marks(db: Session, day: date, start: int, hours: int, force: bool = False) -
     _allow(*(r["photo"] for r in out))
     return {
         "day": day.isoformat(), "start": start, "hours": hours,
-        "begin": _iso(begin), "end": _iso(end), "now": _iso(now), "partial": partial,
+        "begin": _iso(begin), "end": _iso(end), "now": _iso(now), "partial": partial, "vfx_ms": vfx_ms,
         "rows": out,
         "divisions": {k: d["name"] for k, d in divs.items()},
         "cells": _node_cells(divs, _cells(db)),

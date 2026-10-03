@@ -35,7 +35,9 @@ export default function VfxMarks() {
   const today = localISO(new Date());
   const [day, setDay] = useState(today);
   const [start, setStart] = useState(() => Math.max(0, new Date().getHours() - 1));
-  const [hours, setHours] = usePersistentState("vfx_marks_hours", 2);
+  // One hour by default: Verifix spends ~25 s on every 1,000 marks (the first
+  // probe, 2026-10-03), so a wider plant-wide window is a slow read.
+  const [hours, setHours] = usePersistentState("vfx_marks_h", 1);
   const [q, refresh] = useVfx(["marks"], "/marks", { day, start, hours });
   const [search, setSearch] = useState("");
   const [types, setTypes] = usePersistentState("vfx_marks_types", []);
@@ -154,6 +156,11 @@ export default function VfxMarks() {
         </div>
         <p className="text-sm" style={{ color: "var(--text-2)" }}>
           {d ? fill(t("vfx.m.window"), { from: `${dmy(d.begin)} ${hm(d.begin)}`, to: `${hm(d.end)}` }) : t("vfx.m.lead")}
+          {d?.vfx_ms > 0 && (
+            <span className="ml-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+              {fill(t("vfx.m.took"), { s: Math.max(1, Math.round(d.vfx_ms / 1000)) })}
+            </span>
+          )}
         </p>
 
         {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
@@ -191,6 +198,7 @@ export default function VfxMarks() {
               empty={all.length ? t("vfx.noMatch") : t("vfx.m.empty")}
               onRowClick={(r) => setOpen(r.id)}
             />
+            {q.isLoading && <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("vfx.m.slow")}</p>}
           </>
         )}
       </div>
