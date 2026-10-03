@@ -43,9 +43,11 @@
   --brand:         #C8973F;
   --brand-rgb:     200,151,63;   /* value-intensity ramps: rgba(var(--brand-rgb), a) */
   --brand-text:    #D4A95C;
-  /* Ink for a label ON a brand-gold fill (the selected segment of a toggle):
-     white on this gold is 2.6:1, this is 7:1 — on both themes' gold. */
-  --on-brand:      #1c1407;
+  /* Ink for a label ON a brand-gold fill (a primary button, the selected
+     segment of a toggle): WHITE, on both themes. A dark label shipped on
+     2026-10-03 for contrast and the operator reverted it the same day — white
+     on the logo gold is the platform's look. */
+  --on-brand:      #ffffff;
   --brand-rose:    #E8A0B0;
   --brand-bg:      rgba(200,151,63,0.12);
   --brand-hover:   rgba(200,151,63,0.20);
@@ -95,17 +97,18 @@
   --skeleton:   rgba(0,0,0,0.07);
 
   /* Brand */
-  --brand:         #B07828;
-  --brand-rgb:     176,120,40;
-  /* Gold TEXT on white needs a deeper shade than the gold fill (#B07828 text
-     read 3.8:1, under 3.3:1 on the brand tint of a filter chip). */
-  --brand-text:    #8A5A14;
-  --on-brand:      #1c1407;
+  /* The fill is the LOGO's gold, the same as the dark theme's (the operator,
+     2026-10-03: it had been a deeper #B07828 here). Gold TEXT keeps a shade
+     deeper, so a gold word on white stays readable. */
+  --brand:         #C8973F;
+  --brand-rgb:     200,151,63;
+  --brand-text:    #B07828;
+  --on-brand:      #ffffff;
   --brand-rose:    #C8687E;
-  --brand-bg:      rgba(176,120,40,0.09);
-  --brand-hover:   rgba(176,120,40,0.15);
-  --brand-border:  rgba(176,120,40,0.25);
-  --brand-ring:    rgba(176,120,40,0.40);
+  --brand-bg:      rgba(200,151,63,0.10);
+  --brand-hover:   rgba(200,151,63,0.17);
+  --brand-border:  rgba(200,151,63,0.30);
+  --brand-ring:    rgba(200,151,63,0.45);
 
   /* KPI accent text — darker shades to hold ≥3:1 contrast on white cards */
   --kpi-red:    #dc2626;
