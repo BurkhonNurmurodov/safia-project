@@ -4433,3 +4433,23 @@ class LiveDayClose(Base):
     day            = Column(Date, nullable=False)
     closed_by_name = Column(String, nullable=True)
     closed_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class VerifixProbe(Base):
+    """What one Verifix API method answered the last time the «Verifix (test)»
+    section asked it (`services/verifix_explore.py`) — one row per method,
+    overwritten on every probe. A cache of Verifix's answer, not a record of
+    anything on the platform: counts, field NAMES and the error text only,
+    never a row of data, so nothing personal lands here (or in a backup)."""
+    __tablename__ = "verifix_probes"
+
+    method    = Column(String, primary_key=True)          # the API path
+    status    = Column(String, nullable=False)            # ok · empty · forbidden · missing · bad_request · error · needs_input
+    rows      = Column(Integer, nullable=True)            # rows on the first page
+    more      = Column(Boolean, nullable=False, default=False)
+    fields    = Column(JSONB, nullable=True)              # field names, one level deep
+    ms        = Column(Integer, nullable=True)
+    http      = Column(Integer, nullable=True)
+    error     = Column(Text, nullable=True)
+    probed_by = Column(String, nullable=True)
+    probed_at = Column(DateTime(timezone=True), server_default=func.now())
