@@ -49,6 +49,7 @@ const ST_COLORS = {
 const C_OPEN = "#ef4444", C_DONE = "#22c55e", C_DOING = "#eab308";
 const C_WORKERS = "#3b82f6";
 const C_LOWN = "#94a3b8";
+const C_NONE = "#64748b";
 const BRAND = "#C8973F";
 
 // A status filter saved before the switch may still name the sheet era's keys:
@@ -112,7 +113,7 @@ const TXT = {
     secDaily: "Kunlik dinamika", secDailySub: "holatlar bo'yicha, kelib tushgan sana",
     secBrig: "Brigadirlar kesimi", secBrigSub: "tanlangan davr, holatlar bo'yicha",
     secCells: "Yacheykalar — hal bo'lmaganlar TOP", secCellsSub: "eng ko'p ochiq havotirli yacheykalar",
-    secLeaders: "Liderlar KPI", secLeadersSub: "havotir yuborilgan lider kesimida",
+    secLeaders: "Liderlar KPI", secLeadersSub: "har bir lider — havotir yuborilgan lider bo'yicha",
     secRegister: "Havotirlar reyestri",
     colLeader: "Lider", colBrig: "Brigadir", colCells: "Yacheykalar", colTotal: "Jami",
     colDone: "Hal bo'lgan", colDoing: "Jarayonda", colOpen: "Hal bo'lmagan", colPct: "% hal bo'lgan",
@@ -121,6 +122,7 @@ const TXT = {
     searchLeader: "Lider qidirish…", searchReg: "Matn, ishchi, lider yoki №",
     rows: "ta", concernsWord: "havotir", leadersWord: "lider", noMatch: "Mos yozuv topilmadi",
     lowN: "kam ma'lumot", lowNHint: "5 tadan kam havotir — reyting uchun yetarli emas",
+    noneN: "havotir yo'q", noneNHint: "Bu davrda ishchilar bu liderga havotir yozmagan",
     unassigned: "ta havotirda lider ko'rsatilmagan — reytingga kirmaydi, reyestrda ko'rinadi",
     stUpHint: "Brigadirga (yoki undan yuqoriga) ko'tarilgan, hali hal bo'lmagan",
     bandsTitle: "KPI chegaralari", bandsEdit: "Chegaralarni sozlash",
@@ -161,7 +163,7 @@ const TXT = {
     secDaily: "Кунлик динамика", secDailySub: "ҳолатлар бўйича, келиб тушган сана",
     secBrig: "Бригадирлар кесими", secBrigSub: "танланган давр, ҳолатлар бўйича",
     secCells: "Ячейкалар — ҳал бўлмаганлар TOP", secCellsSub: "энг кўп очиқ ҳавотирли ячейкалар",
-    secLeaders: "Лидерлар KPI", secLeadersSub: "ҳавотир юборилган лидер кесимида",
+    secLeaders: "Лидерлар KPI", secLeadersSub: "ҳар бир лидер — ҳавотир юборилган лидер бўйича",
     secRegister: "Ҳавотирлар реестри",
     colLeader: "Лидер", colBrig: "Бригадир", colCells: "Ячейкалар", colTotal: "Жами",
     colDone: "Ҳал бўлган", colDoing: "Жараёнда", colOpen: "Ҳал бўлмаган", colPct: "% ҳал бўлган",
@@ -170,6 +172,7 @@ const TXT = {
     searchLeader: "Лидер қидириш…", searchReg: "Матн, ишчи, лидер ёки №",
     rows: "та", concernsWord: "ҳавотир", leadersWord: "лидер", noMatch: "Мос ёзув топилмади",
     lowN: "кам маълумот", lowNHint: "5 тадан кам ҳавотир — рейтинг учун етарли эмас",
+    noneN: "ҳавотир йўқ", noneNHint: "Бу даврда ишчилар бу лидерга ҳавотир ёзмаган",
     unassigned: "та ҳавотирда лидер кўрсатилмаган — рейтингга кирмайди, реестрда кўринади",
     stUpHint: "Бригадирга (ёки ундан юқорига) кўтарилган, ҳали ҳал бўлмаган",
     bandsTitle: "KPI чегаралари", bandsEdit: "Чегараларни созлаш",
@@ -210,7 +213,7 @@ const TXT = {
     secDaily: "Динамика по дням", secDailySub: "по статусам, дата подачи",
     secBrig: "Разрез по бригадирам", secBrigSub: "выбранный период, по статусам",
     secCells: "Ячейки — топ нерешённых", secCellsSub: "ячейки с наибольшим числом открытых хавотиров",
-    secLeaders: "KPI лидеров", secLeadersSub: "по лидеру, которому подан хавотир",
+    secLeaders: "KPI лидеров", secLeadersSub: "все лидеры — по лидеру, которому подан хавотир",
     secRegister: "Реестр хавотиров",
     colLeader: "Лидер", colBrig: "Бригадир", colCells: "Ячейки", colTotal: "Всего",
     colDone: "Решено", colDoing: "В работе", colOpen: "Не решено", colPct: "% решено",
@@ -219,6 +222,7 @@ const TXT = {
     searchLeader: "Поиск лидера…", searchReg: "Текст, работник, лидер или №",
     rows: "шт", concernsWord: "хавотиров", leadersWord: "лидеров", noMatch: "Ничего не найдено",
     lowN: "мало данных", lowNHint: "меньше 5 хавотиров — недостаточно для рейтинга",
+    noneN: "нет хавотиров", noneNHint: "За этот период работники не писали этому лидеру",
     unassigned: "хавотиров без лидера — не входят в рейтинг, видны в реестре",
     stUpHint: "Передан бригадиру (или выше) и ещё не решён",
     bandsTitle: "Пороги KPI", bandsEdit: "Настроить пороги",
@@ -259,7 +263,7 @@ const TXT = {
     secDaily: "Daily trend", secDailySub: "by status, filing date",
     secBrig: "By brigadir", secBrigSub: "selected period, by status",
     secCells: "Cells — top unresolved", secCellsSub: "cells with the most open concerns",
-    secLeaders: "Leaders KPI", secLeadersSub: "by the leader each concern was filed to",
+    secLeaders: "Leaders KPI", secLeadersSub: "every leader — by the leader each concern was filed to",
     secRegister: "Concerns register",
     colLeader: "Leader", colBrig: "Brigadir", colCells: "Cells", colTotal: "Total",
     colDone: "Resolved", colDoing: "In progress", colOpen: "Unresolved", colPct: "% resolved",
@@ -268,6 +272,7 @@ const TXT = {
     searchLeader: "Search leaders…", searchReg: "Text, worker, leader or №",
     rows: "rows", concernsWord: "concerns", leadersWord: "leaders", noMatch: "No match",
     lowN: "low data", lowNHint: "fewer than 5 concerns — not enough to rank",
+    noneN: "no concerns", noneNHint: "No worker wrote to this leader in this period",
     unassigned: "concern(s) name no leader — outside the ranking, visible in the register",
     stUpHint: "Handed to the brigadir (or higher) and not resolved yet",
     bandsTitle: "KPI thresholds", bandsEdit: "Adjust thresholds",
@@ -340,8 +345,9 @@ export default function WorkerConcerns() {
   const meta = metaQ.data;
   const bands = meta?.bands || { green: 80, yellow: 50 };
   const minRanked = meta?.min_ranked ?? 5;
-  // Nothing filed in this viewer's scope, ever — not a period with no rows.
-  const noneYet = meta != null && (meta.total || 0) === 0;
+  // Nothing filed in this viewer's scope, ever, AND no leader to list — a
+  // unit whose leaders have no filings still reads as a table of zeros.
+  const noneYet = meta != null && (meta.total || 0) === 0 && (meta.leader_opts || []).length === 0;
 
   // ── request params ────────────────────────────────────────────────────────
   const baseParams = useMemo(() => ({
@@ -564,12 +570,13 @@ export default function WorkerConcerns() {
 
   // ── leaders table ─────────────────────────────────────────────────────────
   const bandOf = (r) => {
+    if (!r.total) return "none";
     if (!r.ranked || r.pct == null) return "low";
     if (r.pct >= bands.green) return "green";
     if (r.pct >= bands.yellow) return "yellow";
     return "red";
   };
-  const BAND_COLORS = { green: C_DONE, yellow: C_DOING, red: C_OPEN, low: C_LOWN };
+  const BAND_COLORS = { green: C_DONE, yellow: C_DOING, red: C_OPEN, low: C_LOWN, none: C_NONE };
 
   const ldRowsAll = leadersQ.data?.rows || [];
   const ldRows = useMemo(() => {
@@ -601,7 +608,7 @@ export default function WorkerConcerns() {
     setLdSort((s) => ({ key: k, dir: s.key === k && s.dir === "desc" ? "asc" : "desc" }));
 
   const bandCounts = useMemo(() => {
-    const c = { green: 0, yellow: 0, red: 0, low: 0 };
+    const c = { green: 0, yellow: 0, red: 0, low: 0, none: 0 };
     for (const r of ldRowsAll) c[bandOf(r)] += 1;
     return c;
   }, [ldRowsAll, bands]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -771,6 +778,14 @@ export default function WorkerConcerns() {
   const PctCell = ({ r }) => {
     const band = bandOf(r);
     const color = BAND_COLORS[band];
+    if (band === "none") {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-[11px]" title={T.noneNHint}
+          style={{ color: "var(--text-4)" }}>
+          — <span className="text-[10px]">{T.noneN}</span>
+        </span>
+      );
+    }
     if (band === "low") {
       return (
         <span className="inline-flex items-center gap-1.5" title={T.lowNHint}>
@@ -939,6 +954,7 @@ export default function WorkerConcerns() {
                   ["yellow", `${bands.yellow}–${bands.green - 1}%`, bandCounts.yellow],
                   ["red", `< ${bands.yellow}%`, bandCounts.red],
                   ["low", `${T.kamBand} (n<${minRanked})`, bandCounts.low],
+                  ...(bandCounts.none ? [["none", T.noneN, bandCounts.none]] : []),
                 ].map(([band, label, n]) => (
                   <span key={band} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-medium"
                     style={{ background: hexA(BAND_COLORS[band], 0.1), color: BAND_COLORS[band], border: `1px solid ${hexA(BAND_COLORS[band], 0.28)}` }}>

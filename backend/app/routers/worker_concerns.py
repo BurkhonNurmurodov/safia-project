@@ -64,7 +64,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.identity import viewer_leader_profile_ids
-from app.models import AppSetting, LeaderConcern, Manager, RoleProfile
+from app.models import AppSetting, Cell, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
 from app.routers.concerns import _cell_leaders, _no, _shift_unit_ids
@@ -148,22 +148,66 @@ def leader_filings(db: Session, leader_ids: list[int],
     return query
 
 
-def _viewer_scope(db: Session, payload: dict, query):
-    """The viewer locks, before any filter: a query parameter must never widen
-    them. An empty unit or profile list is a real answer — nothing matches."""
+def _viewer_lock(db: Session, payload: dict) -> tuple[Optional[list], Optional[list]]:
+    """THE viewer lock, as data: (units, leaders). None = not narrowed on that
+    axis; a list = narrowed to it, and an EMPTY list is a real answer — nothing
+    matches. The concern rows and the leader roster both apply it, so «which
+    leaders may this viewer see» has one spelling for the two."""
     role = payload.get("role")
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE_KEY):
-        return query
+        return None, None
     if role == "supervisor":
-        return query.filter(LeaderConcern.brigadir_manager_id == payload.get("role_id"))
+        return [payload.get("role_id")], None
     if role == "shift-manager":
-        units = _shift_unit_ids(db, payload.get("role_id"))
-        return query.filter(LeaderConcern.brigadir_manager_id.in_(units) if units else false())
+        return _shift_unit_ids(db, payload.get("role_id")), None
     if role == "leader":
         # Every profile RECORD that is this person, through THE resolver — the
         # token's own (unit, name) names nobody once it outlives a rename.
-        return query.filter(_filed_to(viewer_leader_profile_ids(db, payload)))
-    return query.filter(false())
+        return None, viewer_leader_profile_ids(db, payload)
+    return [], None
+
+
+def _within(column, ids: Optional[list]):
+    """``column IN ids``, with an empty list matching nothing."""
+    return column.in_(ids) if ids else false()
+
+
+def _viewer_scope(db: Session, payload: dict, query):
+    """The viewer lock on the concern rows, before any filter: a query
+    parameter must never widen it."""
+    units, leaders = _viewer_lock(db, payload)
+    if units is not None:
+        query = query.filter(_within(LeaderConcern.brigadir_manager_id, units))
+    if leaders is not None:
+        query = query.filter(_filed_to(leaders))
+    return query
+
+
+def _roster(db: Session, payload: dict, *, factory: Optional[int] = None,
+            manager_id: Optional[list[int]] = None, leader_id: Optional[list[int]] = None,
+            cell: Optional[list[str]] = None) -> list[tuple[int, str, int]]:
+    """Every leader the KPI table names whether or not anybody filed to them —
+    the /leaders roster rule (a leader profile standing in a unit that is not
+    archived), under the same viewer lock as the rows and the page's scope
+    filters: plant, brigadir, leader, and the owners of the picked cells.
+    → [(profile id, name, unit id)]."""
+    q = (db.query(RoleProfile.id, RoleProfile.name, RoleProfile.manager_id)
+         .join(Manager, Manager.id == RoleProfile.manager_id)
+         .filter(RoleProfile.role == "leader", Manager.archived.is_(False)))
+    units, leaders = _viewer_lock(db, payload)
+    if units is not None:
+        q = q.filter(_within(RoleProfile.manager_id, units))
+    if leaders is not None:
+        q = q.filter(_within(RoleProfile.id, leaders))
+    picked = scoped_manager_ids(db, payload, factory, manager_id or [])
+    if picked is not None:
+        q = q.filter(_within(RoleProfile.manager_id, picked))
+    if leader_id:
+        q = q.filter(RoleProfile.id.in_(leader_id))
+    if cell:
+        q = q.filter(RoleProfile.id.in_(
+            select(Cell.leader_id).where(Cell.verifix_code.in_([c.strip() for c in cell]))))
+    return [tuple(r) for r in q.order_by(RoleProfile.name).all()]
 
 
 def _apply_scope_and_filters(
@@ -183,7 +227,7 @@ def _apply_scope_and_filters(
     # a plant it may not belong to.
     units = scoped_manager_ids(db, payload, factory, manager_id)
     if units is not None:
-        query = query.filter(LeaderConcern.brigadir_manager_id.in_(units) if units else false())
+        query = query.filter(_within(LeaderConcern.brigadir_manager_id, units))
     if leader_id:
         query = query.filter(LeaderConcern.leader_profile_id.in_(leader_id))
     if cell:
@@ -368,6 +412,46 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
     }
 
 
+def _cell_key(v: str):
+    return (len(v), v)
+
+
+def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) -> list[dict]:
+    """The KPI table: the leaders the view's concerns were filed to PLUS every
+    roster leader nobody filed to, at zero (the operator, 2026-10-03: «show all
+    leaders, even those with no concerns»). A leader with no filings is shown,
+    never dropped — an empty row says something a missing one cannot. Every row
+    also names the cells its leader owns now (narrowed to a cell pick), so a
+    leader with nothing filed still says where they work."""
+    ids = {r[0] for r in roster} | {r["leader_id"] for r in by_leader}
+    owned: dict[int, set] = {}
+    if ids:
+        picked = {c.strip() for c in cell}
+        for lid, code in (db.query(Cell.leader_id, Cell.verifix_code)
+                          .filter(Cell.leader_id.in_(ids))):
+            if code and (not picked or code in picked):
+                owned.setdefault(lid, set()).add(code)
+    seen = set()
+    out = []
+    for r in by_leader:
+        seen.add(r["leader_id"])
+        cells = set(r["cells"]) | owned.get(r["leader_id"], set())
+        out.append({**r, "cells": sorted(cells, key=_cell_key)})
+    units = _units(db, (mid for _, _, mid in roster))
+    for lid, name, mid in roster:
+        if lid in seen:
+            continue
+        m = units.get(mid)
+        out.append({
+            "leader_id": lid, "leader": name or "—",
+            "brigadirs": [m.name] if m and m.name else [],
+            "cells": sorted(owned.get(lid, set()), key=_cell_key),
+            "total": 0, **_zero(), "open": 0, "pct": None, "ranked": False,
+        })
+    out.sort(key=lambda r: -r["total"])     # stable: the zeros keep name order
+    return out
+
+
 # ── endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/meta")
@@ -376,8 +460,10 @@ def get_meta(
     payload: dict = Depends(require_page(PAGE_KEY)),
 ):
     """Filter options + KPI bands — one boot call for the page. The options
-    are what THIS viewer can read (their locks applied, no filter), so a
-    brigadir, leader or cell offered here always has rows behind it."""
+    are what THIS viewer can read (their locks applied, no filter): the units
+    and leaders of their concerns plus the leader ROSTER, because the KPI
+    table lists every leader in scope — a name the table shows must be one the
+    Lider filter can pick. Cells are the ones concerns name."""
     base = _viewer_scope(db, payload, _filed(db.query(LeaderConcern)))
     unit_ids = {m for (m,) in base.with_entities(LeaderConcern.brigadir_manager_id).distinct() if m}
     leader_rows = base.with_entities(LeaderConcern.leader_profile_id,
@@ -387,8 +473,11 @@ def get_meta(
     for lid, snap in leader_rows:
         if lid and lid not in leader_opts:
             leader_opts[lid] = _named(lnames, lid, snap)
+    for lid, name, mid in _roster(db, payload):
+        leader_opts.setdefault(lid, name or "—")
+        unit_ids.add(mid)
     cells = sorted((c for (c,) in base.with_entities(LeaderConcern.cell_code).distinct() if c),
-                   key=lambda v: (len(v), v))
+                   key=_cell_key)
     units = _units(db, unit_ids)
     total = base.count()
 
@@ -456,13 +545,16 @@ def get_leaders(
     payload: dict = Depends(require_page(PAGE_KEY)),
     flt: dict = Depends(_filter_params),
 ):
-    """The KPI table: one row per leader the workers filed to. Rows with no
-    leader fold into one explicit «unassigned» summary — counted, displayed,
-    never ranked."""
+    """The KPI table: one row per leader in scope — every leader the view's
+    concerns were filed to, and every roster leader nobody filed to, at zero.
+    Concerns with no leader fold into one explicit «unassigned» summary —
+    counted, displayed, never ranked."""
     rows = _apply_scope_and_filters(db, payload, **flt).with_entities(*_AGG_COLS).all()
     agg = _aggregate(db, rows, flt["date_from"], flt["date_to"])
+    roster = _roster(db, payload, factory=flt["factory"], manager_id=flt["manager_id"],
+                     leader_id=flt["leader_id"], cell=flt["cell"])
     return {
-        "rows": agg["leaders"],
+        "rows": _with_roster(db, agg["leaders"], roster, flt["cell"]),
         "bands": get_bands(db),
         "min_ranked": MIN_RANKED,
         "unassigned": agg["unassigned"],
@@ -615,7 +707,9 @@ def export_excel(
         "brigadirs": agg["by_brigadir"],
         "top_cells": top_cells,
         "leaders": {
-            "rows": agg["leaders"],
+            "rows": _with_roster(db, agg["leaders"], _roster(
+                db, payload, factory=f.factory, manager_id=f.manager_id,
+                leader_id=f.leader_id, cell=f.cell), f.cell),
             "unassigned": agg["unassigned"],
             "undated": 0,
             "bands": get_bands(db),

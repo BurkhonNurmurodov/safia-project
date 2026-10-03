@@ -1825,6 +1825,15 @@ export.
   shift-manager → shift ∩ plant units; supervisor → their unit; leader → the
   rows filed to them (`identity.leader_profile_ids_of`, every record that is
   that person); any other role → nothing. The plant lock rides on top.
+- **«Liderlar KPI» lists EVERY leader in scope** (the operator, same day): the
+  leaders the view's concerns were filed to plus the ROSTER — `_roster`, the
+  /leaders rule (a leader profile in a unit that is not archived) under the
+  same `_viewer_lock` as the rows and the page's plant / brigadir / leader /
+  cell filters (a cell pick keeps its current owners). A leader nobody wrote to
+  is a row of zeros marked «havotir yo'q» with a chip of its own, never graded
+  and never «kam ma'lumot»; the status filter does not narrow the roster. The
+  Excel leaders sheet is the same list, and `/meta`'s Lider and Brigadir
+  options include the roster so every name on the table can be picked.
 - **The Google-sheet sync is GONE** (same day, the operator: «get rid of that
   sheet»): `services/worker_concerns.py` (the nightly crawl, its Drive sweep and
   the page's Refresh / sync pill / sheet-failure banners), the one-shot
