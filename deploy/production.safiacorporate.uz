@@ -4,7 +4,7 @@
 # the built React SPA itself (app.main mounts /assets and falls back to
 # index.html), exactly as Passenger did on the old cPanel host. Proxying the lot
 # means no nginx location can accidentally swallow a backend route — this app
-# owns /api, /admin, /bot/webhook, /docs, /assets and bare static files at the
+# owns /api, /admin, /bot/webhook, /assets and bare static files at the
 # document root, and the SPA has its own /admin/* routes on top.
 #
 #   sudo cp /var/www/production/deploy/production.safiacorporate.uz /etc/nginx/sites-available/
@@ -78,6 +78,12 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
+    # Keep API explorers closed before the SPA fallback can answer their paths.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    location ~ ^/(docs|redoc|openapi\.json)(/|$) { return 404; }
+
     # Uploads are large: verifix .xlsx batches, production catalogs, broadcast
     # media — and /admin/db-restore accepts a multi-part database dump the admin
     # UI documents as "~400 MB compressed". The nginx default is 1 MB.
@@ -138,6 +144,9 @@ server {
     # straight from disk, and the API answers a marked JSON 503 that the app
     # retries quietly until a copy is back.
     location @safia_offline {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
         add_header Cache-Control "no-store" always;
         add_header X-Safia-Restarting "1" always;
         default_type application/json;
@@ -151,6 +160,9 @@ server {
     # The SPA shell for the fallback above — a location of its own, so the
     # internal redirect lands on a file and never back on the proxy.
     location = /__safia_offline_index.html {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
         internal;
         add_header Cache-Control "no-store" always;
         add_header X-Safia-Restarting "1" always;
