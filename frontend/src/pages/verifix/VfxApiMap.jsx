@@ -38,7 +38,7 @@ const PAGE_ROUTE = {
   timesheet: "/verifix/timesheet", marks: "/verifix/marks", onsite: "/verifix/onsite",
   devices: "/verifix/devices", requests: "/verifix/requests", absences: "/verifix/absences", hr: "/verifix/hr",
   timebooks: "/verifix/timebooks", shifts: "/verifix/shifts", incidents: "/verifix/incidents",
-  payroll: "/verifix/payroll", dictionaries: "/verifix/dictionaries",
+  dictionaries: "/verifix/dictionaries",
 };
 // The map's cards, each a set of states — tapping one narrows the table to it.
 const BUCKETS = [

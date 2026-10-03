@@ -176,6 +176,9 @@ try:
 
     print("Running startup migrations and seeds...", flush=True)
     Base.metadata.create_all(bind=engine)
+    # A switched-off Verifix method keeps no probe row (wages, 2026-10-03).
+    from app.services.verifix_explore import purge_blocked_probes
+    purge_blocked_probes()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()

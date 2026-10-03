@@ -11,22 +11,21 @@ import { SectionNote, GenericTable } from "../../components/verifix/registers";
 import { useRegister } from "../../components/verifix/registerKit";
 
 /* «Ma'lumotnomalar» — the small lists the registers refer to (reasons,
- * kinds, accrual types, currencies, IIKO matches), each whole and as Verifix
- * sends it. Person-record dictionaries (education, family, languages) are
- * deliberately not here: the operator kept personal records off. */
+ * kinds, IIKO matches), each whole and as Verifix sends it. Person-record
+ * dictionaries (education, family, languages) are deliberately not here — the
+ * operator kept personal records off — and neither are the payroll module's
+ * own lists: wages are off (2026-10-03). */
 
 const GROUPS = [
   ["hr", ["dismissal_reason", "request_kind", "sick_leave_reason", "business_trip_reason", "vacation_type",
     "employment_source", "fixed_term_base"]],
-  ["pay", ["indicator", "oper_type", "oper_group", "currency", "cashbox", "wage_scale", "wage_scale_registry"]],
   ["iiko", ["division_match", "job_match"]],
 ];
 const FORMS = {
   dismissal_reason: "Причины увольнения (API)", request_kind: "Вид отсутствия", sick_leave_reason: "Причины ухода на больничный",
   business_trip_reason: "Причини командировки", vacation_type: "Виды отпусков", employment_source: "Источник занятости",
-  fixed_term_base: "Основания срочного трудового договора", indicator: "Показатели", oper_type: "Начисления и удержания",
-  oper_group: "Начисления и удержания", currency: "Валюты", cashbox: "Список касс", wage_scale: "Тарифные группы",
-  wage_scale_registry: "Реестр тарифных сеток", division_match: "Сопоставление подразделений", job_match: "Сопоставление должностей",
+  fixed_term_base: "Основания срочного трудового договора",
+  division_match: "Сопоставление подразделений", job_match: "Сопоставление должностей",
 };
 
 export default function VfxDictionaries() {

@@ -14,10 +14,12 @@ read what Verifix keeps beyond the people and their marks:
 * **Tabel** — `timebooks` + `timebook`: the timebooks, plan against fact;
 * **Smenalar** — `shifts`: Verifix's own shift planning;
 * **Hodisalar** — `incidents`;
-* **Ma'lumotnomalar** — `dictionaries`: the small lists behind the rest;
-* **Ish haqi** — `payroll`: wage changes, pay sheets, accrual books, one-time
-  charges, payments, bank accounts and the two wage reports (the operator
-  opened wages on 2026-10-03).
+* **Ma'lumotnomalar** — `dictionaries`: the small lists behind the rest.
+
+**No wages.** The operator opened wages on 2026-10-03 and closed them again the
+same day: the «Ish haqi» page is gone, every wage / payroll list is `blocked` in
+the catalog (never called), and the salary carried by HR journals and the pay
+carried by vacations are neither projected nor passed through `scrub`.
 
 **Big lists load in the BACKGROUND.** Most of these methods take no date filter
 and page 100 rows at a time, so a register can be many pages long while one
@@ -29,8 +31,7 @@ keeps the previous rows on screen until the new read is done.
 
 Everything the phase-1 module promises holds here: only catalog READ methods are
 called, rows are projected field by field (nothing private is copied) or passed
-through `verifix_explore.scrub` when shown whole, card AND account numbers leave
-as their last four digits, and nothing is stored.
+through `verifix_explore.scrub` when shown whole, and nothing is stored.
 """
 from __future__ import annotations
 
@@ -54,14 +55,11 @@ FEED_BUDGET_S = 540.0     # one background read stops after nine minutes …
 FEED_PAGES = 400          # … or 400 pages, and says it is partial
 FEEDS_MAX = 40
 READERS = 3               # background reads talking to Verifix at once
-# Lists whose rows carry every line of a document (an accrual book holds one
-# line per person per accrual): read a few documents per page, so one page is
-# never tens of megabytes, and kept as one summary row per document — a
-# document's lines are read when it is opened (`_one`).
-PAGE_SIZE = {
-    "pro/book$list": 2, "pro/payment$list": 10, "pro/one_time_charge$list": 10,
-    "start/wage_sheet$list": 5, "pro/timebook$list": 5,
-}
+# A list whose rows carry every line of a document (a timebook holds a row per
+# person): read a few documents per page, so one page is never tens of
+# megabytes, and kept as one summary row per document — a document's lines are
+# read when it is opened, narrowed by its id.
+PAGE_SIZE = {"pro/timebook$list": 5}
 MAX_WINDOW_DAYS = 400
 STAFF_CHUNK = 500         # pro/employee$list page size, and the ids one call may name
 STAFF_MAX = 4000
@@ -212,13 +210,6 @@ def _first(c: dict, groups: dict, force: bool, wait: float = FEED_WAIT_S) -> dic
         if not moved:
             break
     return {name: {**_snap(st), "tried": tried[name]} for name, st in states.items()}
-
-
-def _one(c: dict, path: str, body: dict, force: bool, wait: float = FEED_WAIT_S) -> dict:
-    """One document's full rows, read on its own (narrowed by its id)."""
-    st = _start(c, path, body, force)
-    _wait([st], wait)
-    return _snap(st)
 
 
 def _meta(s: dict) -> dict:
@@ -654,8 +645,7 @@ def absences(db: Session, begin: Optional[date], end: Optional[date], force: boo
             vacations.append({**_journal(j), **_who(x), "id": tid,
                               "begin": _d_iso(x.get("vacation_begin_date")), "end": _d_iso(x.get("vacation_end_date")),
                               "pbegin": _d_iso(x.get("period_begin_date")), "pend": _d_iso(x.get("period_end_date")),
-                              "tk": _s(x.get("time_kind_id")) or None, "amount": _f(x.get("payroll_amount")),
-                              "net": _f(x.get("payroll_net_amount")), "recalled": recalled.get(tid or "")})
+                              "tk": _s(x.get("time_kind_id")) or None, "recalled": recalled.get(tid or "")})
 
     sick = []
     for j in snaps["sick"]["rows"]:
@@ -718,23 +708,7 @@ def _where(x: dict) -> dict:
             "position": _s(x.get("position_name")) or None}
 
 
-def _pay(x: dict, indicators: dict) -> list[dict]:
-    out = []
-    for o in _kids(x, "oper_types"):
-        for i in _kids(o, "indicators"):
-            v = _f(i.get("indicator_value"))
-            iid = _s(i.get("indicator_id"))
-            if v is not None:
-                out.append({"name": indicators.get(iid) or f"#{iid}", "value": v})
-    return out
-
-
-def _salary(x: dict, key: str = "salary") -> Optional[dict]:
-    v = _f(x.get(key))
-    return {"value": v, "type": _s(x.get("salary_type")) or None} if v is not None else None
-
-
-def _hr_pro(kind: str, rows: list[dict], indicators: dict) -> list[dict]:
+def _hr_pro(kind: str, rows: list[dict]) -> list[dict]:
     out = []
     child = {"hire": "hirings", "transfer": "transfers", "dismissal": "dismissals",
              "schedule": "schedule_changes"}[kind]
@@ -745,11 +719,11 @@ def _hr_pro(kind: str, rows: list[dict], indicators: dict) -> list[dict]:
             if kind == "hire":
                 r.update(date=_d_iso(x.get("hiring_date")), trial=_int(x.get("trial_period")),
                          fixed=_yn(x.get("contract_fixed_term")), expiry=_d_iso(x.get("contract_expiry_date")),
-                         etype=_s(x.get("employment_type_name")) or None, pay=_pay(x, indicators))
+                         etype=_s(x.get("employment_type_name")) or None)
             elif kind == "transfer":
                 r.update(date=_d_iso(x.get("transfer_begin")), until=_d_iso(x.get("transfer_end")),
                          reason=_s(x.get("transfer_reason")) or _s(x.get("transfer_base")) or None,
-                         etype=_s(x.get("employment_type_name")) or None, pay=_pay(x, indicators))
+                         etype=_s(x.get("employment_type_name")) or None)
             elif kind == "dismissal":
                 r.update(date=_d_iso(x.get("dismissal_date")), reason=_s(x.get("dismissal_reason_name")) or None,
                          source=_s(x.get("dismissal_source_name")) or None,
@@ -768,9 +742,9 @@ def _hr_start(kind: str, rows: list[dict]) -> list[dict]:
         r = {"j": _s(x.get("journal_id")) or None, "page": _s(x.get("page_id")) or None,
              **_who(x), **_where(x)}
         if kind == "hire":
-            r.update(date=_d_iso(x.get("hiring_date")), salary=_salary(x))
+            r.update(date=_d_iso(x.get("hiring_date")))
         elif kind == "transfer":
-            r.update(date=_d_iso(x.get("change_date")), salary=_salary(x))
+            r.update(date=_d_iso(x.get("change_date")))
         elif kind == "dismissal":
             r.update(date=_d_iso(x.get("dismissal_date")), reason=_s(x.get("dismissal_reason_name")) or None,
                      note=_s(x.get("note")) or None)
@@ -795,16 +769,14 @@ def hr_moves(db: Session, begin: Optional[date], end: Optional[date], force: boo
         "schedule": [("pro/schedule_change$list", _body("pro/schedule_change$list", span)),
                      ("start/schedule_change$list", _body("start/schedule_change$list"))],
         "rank": [("pro/rank_change$list", _body("pro/rank_change$list"))],
-        "ind": [("pro/indicator$list", _body("pro/indicator$list"))],
     }, force)
-    indicators = _named_map(got["ind"]["rows"], "indicator_id")
     out: dict[str, Any] = {}
     emp_ids: list = []
     node_ids: list = []
     for kind in ("hire", "transfer", "dismissal", "schedule"):
         s = got[kind]
         pro = s["source"].startswith("pro/")
-        rows = _hr_pro(kind, s["rows"], indicators) if pro else _hr_start(kind, s["rows"])
+        rows = _hr_pro(kind, s["rows"]) if pro else _hr_start(kind, s["rows"])
         rows = [r for r in rows if _in(r.get("date"), lo, hi)]
         rows.sort(key=lambda r: r.get("date") or "", reverse=True)
         emp_ids += [r["emp"] for r in rows]
@@ -973,13 +945,6 @@ DICTIONARIES = (
     ("vacation_type", "pro/vacation_type$list"),
     ("employment_source", "pro/employment_source$list"),
     ("fixed_term_base", "pro/fixed_term_base$list"),
-    ("indicator", "pro/indicator$list"),
-    ("oper_type", "pro/oper_type$list"),
-    ("oper_group", "pro/oper_group$list"),
-    ("currency", "pro/currency$list"),
-    ("cashbox", "pro/cashbox$list"),
-    ("wage_scale", "core/wage_scale$list"),
-    ("wage_scale_registry", "pro/wage_scale_registry$list"),
     ("division_match", "core/division_match$list"),
     ("job_match", "core/job_match$list"),
 )
@@ -992,320 +957,3 @@ def dictionaries(db: Session, force: bool = False) -> dict:
     snaps = _gather(c, {k: (p, _body(p)) for k, p in DICTIONARIES}, force)
     lists = {k: {**_meta(s), "rows": vx.scrub(s["rows"])} for k, s in snaps.items()}
     return {"lists": lists, "order": [k for k, _ in DICTIONARIES], "loading": _busy(*snaps.values())}
-
-
-# ── Ish haqi ──────────────────────────────────────────────────────────────────
-
-PAY_TABS = ("wages", "sheets", "book", "charges", "payments", "accounts", "bytime", "expenses")
-
-
-def _detail(out: dict, one: dict, detail: Optional[dict]) -> dict:
-    out["detail"] = detail
-    out["detail_section"] = _meta(one)
-    out["busy"] = out.get("busy") or _busy(one)
-    return out
-
-
-def _pay_wages(db, c, lo, hi, doc, force, loc):
-    got = _first(c, {"w": [
-        ("start/changes/wage$list", _body("start/changes/wage$list", {"begin_date": lo, "end_date": hi})),
-        ("start/wage_change$list", _body("start/wage_change$list")),
-        ("pro/wage_change$list", _body("pro/wage_change$list")),
-    ]}, force)["w"]
-    rows: list[dict] = []
-    generic = False
-    if got["source"] == "start/changes/wage$list":
-        for r in got["rows"]:
-            for w in _kids(r, "wage_changes"):
-                rows.append({"emp": _s(r.get("employee_id")) or None, "name": _s(r.get("employee_name")) or None,
-                             "date": _d_iso(w.get("change_date")), "type": _s(w.get("salary_type")) or None,
-                             "amount": _f(w.get("salary_amount"))})
-    elif got["source"] == "start/wage_change$list":
-        for r in got["rows"]:
-            rows.append({**_who(r), "date": _d_iso(r.get("change_date")), "type": _s(r.get("salary_type")) or None,
-                         "amount": _f(r.get("salary_amount")), "j": _s(r.get("journal_id")) or None})
-    else:
-        rows, generic = _generic(got["rows"], lo, hi), True
-    if not generic:
-        rows = [r for r in rows if _in(r["date"], lo, hi)]
-        # A raise is read against the same person's previous amount.
-        by_emp: dict[str, list] = {}
-        for r in sorted(rows, key=lambda r: r["date"] or ""):
-            by_emp.setdefault(r.get("emp") or r.get("name") or "", []).append(r)
-        for seq in by_emp.values():
-            prev = None
-            for r in seq:
-                r["prev"] = prev
-                prev = r["amount"]
-        rows.sort(key=lambda r: r["date"] or "", reverse=True)
-    return {"section": _meta(got), "rows": rows, "generic": generic,
-            "emp_ids": [r.get("emp") for r in rows] if not generic else []}
-
-
-def _sheet_part(x: dict) -> dict:
-    return {**_who(x), "begin": _d_iso(x.get("part_begin")), "end": _d_iso(x.get("part_end")),
-            "div": _s(x.get("division_id")) or None, "div_name": _s(x.get("division_name")) or None,
-            "job": _s(x.get("job_name")) or None, "sched": _s(x.get("schedule_name")) or None,
-            "accrual": _f(x.get("accrual_amount")), "penalty": _f(x.get("penalty_amount")),
-            "total": _f(x.get("total_amount"))}
-
-
-def _sheet_head(r: dict) -> dict:
-    parts = [_sheet_part(x) for x in _kids(r, "parts")]
-    return {"id": _s(r.get("sheet_id")), "num": _s(r.get("sheet_number")) or None,
-            "date": _d_iso(r.get("sheet_date")), "month": _d_iso(r.get("month")),
-            "begin": _d_iso(r.get("period_begin")), "end": _d_iso(r.get("period_end")),
-            "kind": _s(r.get("period_kind")) or None, "posted": _yn(r.get("posted")),
-            "note": _s(r.get("note")) or None, "people": len({p["emp"] or p["staff"] for p in parts}),
-            "accrual": _sum(parts, "accrual"), "penalty": _sum(parts, "penalty"), "total": _sum(parts, "total")}
-
-
-def _sheet_heads(rows: list) -> list:
-    return [_sheet_head(r) for r in rows if _s(r.get("sheet_id"))]
-
-
-def _pay_sheets(db, c, lo, hi, doc, force, loc):
-    path = "start/wage_sheet$list"
-    span = {"period_begin": lo, "period_end": hi}
-    s = _gather(c, {"s": (path, _body(path, span), _sheet_heads)}, force)["s"]
-    out = {"section": _meta(s), "rows": sorted(s["rows"], key=lambda r: (r["date"] or "", r["num"] or ""), reverse=True)}
-    if doc and doc.isdigit():
-        one = _one(c, path, _body(path, span, sheet_ids=[int(doc)]), force)
-        r = next((x for x in one["rows"] if _s(x.get("sheet_id")) == doc), None)
-        parts = [_sheet_part(x) for x in _kids(r, "parts")] if r else []
-        _detail(out, one, {"head": _sheet_head(r), "parts": parts} if r else None)
-        out.update(emp_ids=[p["emp"] for p in parts], node_ids=[p["div"] for p in parts])
-    return out
-
-
-def _book_head(r: dict) -> dict:
-    ops = _kids(r, "operations")
-    return {"id": _s(r.get("book_id")), "num": _s(r.get("book_number")) or None,
-            "date": _d_iso(r.get("book_date")), "month": _d_iso(r.get("month")),
-            "name": _s(r.get("book_name")) or None, "type": _s(r.get("book_type_name")) or None,
-            "currency": _s(r.get("currency_name")) or None, "posted": _yn(r.get("posted")),
-            "note": _s(r.get("note")) or None,
-            "accrued": _f(r.get("c_accrued_amount")), "deducted": _f(r.get("c_deducted_amount")),
-            "income_tax": _f(r.get("c_income_tax_amount")), "pension": _f(r.get("c_pension_payment_amount")),
-            "social": _f(r.get("c_social_payment_amount")),
-            "lines": len(ops), "people": len({_s(o.get("staff_id")) for o in ops if _s(o.get("staff_id"))})}
-
-
-def _book_heads(rows: list) -> list:
-    return [_book_head(r) for r in rows if _s(r.get("book_id"))]
-
-
-def _oper(opers: dict, oid: str) -> Optional[str]:
-    return opers.get(oid) or (f"#{oid}" if oid else None)
-
-
-def _pay_book(db, c, lo, hi, doc, force, loc):
-    path = "pro/book$list"
-    snaps = _gather(c, {"b": (path, _body(path), _book_heads),
-                        "ot": ("pro/oper_type$list", _body("pro/oper_type$list"))}, force)
-    s = snaps["b"]
-    opers = _named_map(snaps["ot"]["rows"], "oper_type_id")
-    heads = [h for h in s["rows"] if _in(h["date"], lo, hi) or h["id"] == doc]
-    heads.sort(key=lambda r: (r["date"] or "", r["num"] or ""), reverse=True)
-    out = {"section": _meta(s), "rows": heads, "busy": _busy(snaps["ot"])}
-    if doc and doc.isdigit():
-        one = _one(c, path, _body(path, book_ids=[int(doc)]), force)
-        r = next((x for x in one["rows"] if _s(x.get("book_id")) == doc), None)
-        lines = [{"staff": _s(o.get("staff_id")) or None, "oper": _oper(opers, _s(o.get("oper_type_id"))),
-                  "kind": _s(o.get("operation_kind")) or None, "div": _s(o.get("division_id")) or None,
-                  "begin": _d_iso(o.get("begin_date")), "end": _d_iso(o.get("end_date")),
-                  "amount": _f(o.get("amount")), "net": _f(o.get("net_amount")),
-                  "income_tax": _f(o.get("income_tax_amount")), "pension": _f(o.get("pension_payment_amount")),
-                  "social": _f(o.get("social_payment_amount")), "note": _s(o.get("note")) or None}
-                 for o in (_kids(r, "operations") if r else [])]
-        staff, staff_err, staff_loading = _staff(c, [ln["staff"] for ln in lines], force)
-        for ln in lines:
-            who = staff.get(ln["staff"] or "") or {}
-            ln["emp"], ln["name"] = who.get("emp"), who.get("name")
-        _detail(out, one, {"head": _book_head(r), "lines": lines} if r else None)
-        out.update(staff_error=staff_err, busy=out["busy"] or staff_loading,
-                   emp_ids=[ln["emp"] for ln in lines], node_ids=[ln["div"] for ln in lines])
-    return out
-
-
-def _charge_head(r: dict) -> dict:
-    ops = _kids(r, "operations")
-    return {"id": _s(r.get("document_id")), "num": _s(r.get("document_number")) or None,
-            "date": _d_iso(r.get("document_date")), "name": _s(r.get("document_name")) or None,
-            "kind": _s(r.get("document_kind")) or None, "month": _d_iso(r.get("month")),
-            "div": _s(r.get("division_id")) or None, "currency": _s(r.get("currency_name")) or None,
-            "posted": _yn(r.get("posted")), "note": _s(r.get("note")) or None, "base": _s(r.get("base")) or None,
-            "lines": len(ops), "total": round(sum(_f(o.get("amount")) or 0 for o in ops), 2) if ops else None}
-
-
-def _charge_heads(rows: list) -> list:
-    return [_charge_head(r) for r in rows if _s(r.get("document_id"))]
-
-
-def _pay_charges(db, c, lo, hi, doc, force, loc):
-    path = "pro/one_time_charge$list"
-    snaps = _gather(c, {"d": (path, _body(path), _charge_heads),
-                        "ot": ("pro/oper_type$list", _body("pro/oper_type$list"))}, force)
-    s = snaps["d"]
-    opers = _named_map(snaps["ot"]["rows"], "oper_type_id")
-    heads = [h for h in s["rows"] if _in(h["date"], lo, hi) or h["id"] == doc]
-    heads.sort(key=lambda r: (r["date"] or "", r["num"] or ""), reverse=True)
-    out = {"section": _meta(s), "rows": heads, "busy": _busy(snaps["ot"]), "node_ids": [h["div"] for h in heads]}
-    if doc and doc.isdigit():
-        one = _one(c, path, _body(path, document_ids=[int(doc)]), force)
-        r = next((x for x in one["rows"] if _s(x.get("document_id")) == doc), None)
-        lines = [{"emp": _s(o.get("employee_id")) or None, "staff": _s(o.get("staff_id")) or None,
-                  "oper": _oper(opers, _s(o.get("oper_type_id"))), "amount": _f(o.get("amount")),
-                  "note": _s(o.get("note")) or None} for o in (_kids(r, "operations") if r else [])]
-        _detail(out, one, {"head": _charge_head(r), "lines": lines} if r else None)
-        out["emp_ids"] = [ln["emp"] for ln in lines]
-    return out
-
-
-def _payment_heads(rows: list) -> list:
-    out = []
-    for r in rows:
-        pid = _s(r.get("payment_id"))
-        if not pid:
-            continue
-        acct = _s(r.get("bank_account_code"))
-        out.append({"id": pid, "num": _s(r.get("payment_number")) or None, "date": _d_iso(r.get("payment_date")),
-                    "kind": _s(r.get("payment_kind")) or None, "div": _s(r.get("division_id")) or None,
-                    "cur_id": _s(r.get("currency_id")) or None, "box_id": _s(r.get("cashbox_id")) or None,
-                    "account": vx._mask(acct) if acct else None,
-                    "paid": _f(r.get("paid_amount")), "unpaid": _f(r.get("unpaid_amount")),
-                    "status": _s(r.get("status")) or None, "note": _s(r.get("note")) or None,
-                    "people": len(_kids(r, "employees"))})
-    return out
-
-
-def _pay_payments(db, c, lo, hi, doc, force, loc):
-    path = "pro/payment$list"
-    snaps = _gather(c, {"p": (path, _body(path), _payment_heads),
-                        "cb": ("pro/cashbox$list", _body("pro/cashbox$list")),
-                        "cur": ("pro/currency$list", _body("pro/currency$list"))}, force)
-    s = snaps["p"]
-    boxes = _named_map(snaps["cb"]["rows"], "cashbox_id")
-    curs = _named_map(snaps["cur"]["rows"], "currency_id")
-    heads = []
-    for h in s["rows"]:
-        if not (_in(h["date"], lo, hi) or h["id"] == doc):
-            continue
-        heads.append({**h, "currency": curs.get(h["cur_id"] or "") or None,
-                      "via": ({"cashbox": boxes.get(h["box_id"]) or f"#{h['box_id']}"} if h["box_id"]
-                              else {"account": h["account"]} if h["account"] else None)})
-    heads.sort(key=lambda r: (r["date"] or "", r["num"] or ""), reverse=True)
-    out = {"section": _meta(s), "rows": heads, "busy": _busy(snaps["cb"], snaps["cur"])}
-    if doc and doc.isdigit():
-        one = _one(c, path, _body(path, payment_ids=[int(doc)]), force)
-        r = next((x for x in one["rows"] if _s(x.get("payment_id")) == doc), None)
-        lines = [{"emp": _s(e.get("employee_id")) or None, "pay": _f(e.get("pay_amount")),
-                  "limit": _f(e.get("amount_limit")),
-                  "card": vx._mask(e["card_number"]) if _s(e.get("card_number")) else None,
-                  "account": vx._mask(e["bank_account_code"]) if _s(e.get("bank_account_code")) else None,
-                  "note": _s(e.get("note")) or None} for e in (_kids(r, "employees") if r else [])]
-        head = next((h for h in heads if h["id"] == doc), None)
-        _detail(out, one, {"head": head, "lines": lines} if r and head else None)
-        out["emp_ids"] = [ln["emp"] for ln in lines]
-    return out
-
-
-def _pay_accounts(db, c, lo, hi, doc, force, loc):
-    path = "pro/bank_account$list"
-    s = _gather(c, {"a": (path, _body(path))}, force)["a"]
-    rows = [{"id": _s(r.get("bank_account_id")), "emp": _s(r.get("person_id")) or None,
-             "name": _s(r.get("person_name")) or None, "label": _s(r.get("name")) or None,
-             "bank": _s(r.get("bank_name")) or None, "mfo": _s(r.get("bank_code")) or None,
-             "account": vx._mask(r["code"]) if _s(r.get("code")) else None,
-             "card": vx._mask(r["card_number"]) if _s(r.get("card_number")) else None,
-             "currency": _s(r.get("currency_name")) or None, "main": _yn(r.get("is_main")),
-             "state": _s(r.get("state")) or "A", "note": _s(r.get("note")) or None}
-            for r in s["rows"]]
-    return {"section": _meta(s), "rows": rows, "emp_ids": [r["emp"] for r in rows]}
-
-
-def _bt_days(e: dict) -> list[dict]:
-    days = []
-    for d in _kids(e, "days"):
-        ivs = [{"in": _iso(_dt(i.get("input_time"))), "out": _iso(_dt(i.get("output_time"))),
-                "in_loc": _s(i.get("input_location_name")) or None,
-                "out_loc": _s(i.get("output_location_name")) or None,
-                "sec": _int(i.get("turnout_time")), "wage": _f(i.get("wage_amount")),
-                "over_sec": _int(i.get("overtime_time")), "over": _f(i.get("overtime_amount"))}
-               for i in _kids(d, "intervals")]
-        days.append({"date": _d_iso(d.get("date")), "kind": _s(d.get("day_kind")) or None,
-                     "kind_name": _s(d.get("day_kind_name")) or None,
-                     "plan_sec": _int(d.get("plan_time_seconds")), "rate": _f(d.get("wage")),
-                     "sec": sum(i["sec"] or 0 for i in ivs), "over_sec": sum(i["over_sec"] or 0 for i in ivs),
-                     "earned": round(sum((i["wage"] or 0) + (i["over"] or 0) for i in ivs), 2), "intervals": ivs})
-    return days
-
-
-def _bt_person(e: dict, days: list[dict]) -> dict:
-    rates = [d["rate"] for d in days if d["rate"]]
-    return {"emp": _s(e.get("employee_id")) or None, "name": _s(e.get("employee_name")) or None,
-            "days": sum(1 for d in days if d["sec"]),
-            "plan_h": round(sum(d["plan_sec"] or 0 for d in days) / 3600, 2),
-            "work_h": round(sum(d["sec"] for d in days) / 3600, 2),
-            "over_h": round(sum(d["over_sec"] for d in days) / 3600, 2),
-            "earned": round(sum(d["earned"] for d in days), 2), "rate": rates[-1] if rates else None}
-
-
-def _bt_people(rows: list) -> list:
-    out = []
-    for blob in rows:
-        for e in _kids(blob, "employees") or ([blob] if blob.get("employee_id") else []):
-            out.append(_bt_person(e, _bt_days(e)))
-    return out
-
-
-def _pay_bytime(db, c, lo, hi, doc, force, loc):
-    """Pay earned by the clock — one location at a time: the report carries
-    every interval of every day of every person, so the whole plant over a
-    month would be tens of megabytes."""
-    if not (loc and str(loc).isdigit()):
-        return {"section": None, "rows": [], "need_loc": True}
-    path = "rep/payments_by_time$list"
-    span = {"begin_date": lo, "end_date": hi}
-    s = _gather(c, {"t": (path, _body(path, span, location_ids=[int(loc)]), _bt_people)}, force)["t"]
-    people = sorted(s["rows"], key=lambda r: -(r["earned"] or 0))
-    out = {"section": _meta(s), "rows": people, "emp_ids": [r["emp"] for r in people]}
-    if doc and doc.isdigit():
-        one = _one(c, path, _body(path, span, location_ids=[int(loc)], employee_ids=[int(doc)]), force)
-        detail = None
-        for blob in one["rows"]:
-            for e in _kids(blob, "employees") or ([blob] if blob.get("employee_id") else []):
-                if _s(e.get("employee_id")) == doc:
-                    days = _bt_days(e)
-                    detail = {"head": _bt_person(e, days), "days": days}
-        _detail(out, one, detail)
-    return out
-
-
-def _pay_expenses(db, c, lo, hi, doc, force, loc):
-    path = "rep/expenses_by_location$list"
-    body = _body(path, {"begin_date": lo, "end_date": hi})
-    if loc and str(loc).isdigit():
-        body["location_ids"] = [int(loc)]
-    s = _gather(c, {"x": (path, body)}, force)["x"]
-    return {"section": _meta(s), "rows": _flat(s["rows"]), "generic": True}
-
-
-def payroll(db: Session, tab: str, begin: Optional[date], end: Optional[date],
-            doc: Optional[str] = None, loc: Optional[str] = None, force: bool = False) -> dict:
-    """One tab of «Ish haqi»; `doc` asks for one document's lines too."""
-    if tab not in PAY_TABS:
-        raise ValueError("unknown tab")
-    c = vx.config(db)
-    lo, hi = _window(begin, end, 365 if tab in ("wages", "sheets", "book", "charges", "payments") else 30)
-    fn = {"wages": _pay_wages, "sheets": _pay_sheets, "book": _pay_book, "charges": _pay_charges,
-          "payments": _pay_payments, "accounts": _pay_accounts, "bytime": _pay_bytime,
-          "expenses": _pay_expenses}[tab]
-    out = fn(db, c, lo, hi, doc, force, loc)
-    frame = _frame(db, c, out.pop("emp_ids", []) or [], out.pop("node_ids", []) or [])
-    busy = out.pop("busy", False)
-    return {
-        "tab": tab, "window": {"begin": lo.isoformat(), "end": hi.isoformat()}, **out,
-        **frame, "today": _today().isoformat(),
-        "loading": _busy(out["section"]) or busy or frame["directory_loading"],
-    }

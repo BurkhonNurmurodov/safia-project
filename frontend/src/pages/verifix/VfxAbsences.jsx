@@ -14,7 +14,7 @@ import { VfxError, FetchedAt, RefreshButton, Chip } from "../../components/verif
 import { vfxError, fill, num, dmy } from "../../components/verifix/vfx";
 import { RangePicker, SectionNote, Who, Posted, Journal, Muted } from "../../components/verifix/registers";
 import {
-  useRegister, useRange, pickSection, span, money, sk, dash, C_OK, C_WARN,
+  useRegister, useRange, pickSection, span, sk, dash, C_OK, C_WARN,
 } from "../../components/verifix/registerKit";
 
 /* «Yo'qliklar» — vacations (and the recalls that cut them short), sick leaves
@@ -73,8 +73,6 @@ export default function VfxAbsences() {
       { key: "kind", label: t("vfx.ab.col.kind"), sort: (r) => d?.kinds?.[r.tk], render: (r) => <Muted max={180}>{tx(d?.kinds?.[r.tk] || "")}</Muted> },
       { key: "year", label: t("vfx.ab.col.year"), sort: (r) => r.pbegin, hint: t("vfx.ab.col.yearHint"),
         render: (r) => <span className="text-xs tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{span(r.pbegin, r.pend)}</span> },
-      { key: "amount", label: t("vfx.ab.col.amount"), align: "right", firstDir: "desc", sort: (r) => r.amount,
-        hint: t("vfx.ab.col.amountHint"), render: (r) => (r.amount != null ? money(r.amount) : dash) },
       { key: "recalled", label: t("vfx.ab.col.recalled"), sort: (r) => r.recalled,
         render: (r) => (r.recalled ? <Chip color={C_WARN}>{fill(t("vfx.ab.recalledOn"), { d: dmy(r.recalled) })}</Chip> : dash) },
       journal,

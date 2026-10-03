@@ -44,6 +44,9 @@ async def lifespan(app: FastAPI):
     # placeholder signing key or with the dev auth bypass enabled.
     assert_secure_config()
     Base.metadata.create_all(bind=engine)
+    # A switched-off Verifix method keeps no probe row (wages, 2026-10-03).
+    from app.services.verifix_explore import purge_blocked_probes
+    purge_blocked_probes()
     from app.startup import (
         backfill_day_approvals, backfill_day_closures, backfill_deletion_batch_ids,
         seed_admins, seed_languages, seed_managers_and_sources, seed_exchange_tasks,

@@ -31,8 +31,6 @@ export function useRange(store, back, fwd = 0) {
 
 // ── formatting ────────────────────────────────────────────────────────────────
 
-export const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU"));
-
 /** «01.03.2025», «01.03.2025 09:00–13:00» or «01.03.2025 – 31.03.2025». */
 export function span(b, e) {
   if (!b) return "—";

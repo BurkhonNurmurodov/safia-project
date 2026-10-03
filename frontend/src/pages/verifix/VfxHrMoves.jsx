@@ -17,7 +17,7 @@ import {
   RangePicker, SectionNote, SourceNote, Who, Node, Posted, Journal, Muted, GenericTable,
 } from "../../components/verifix/registers";
 import {
-  useRegister, useRange, facet, optsSection, money, sk, dash, C_OK, C_BAD,
+  useRegister, useRange, facet, optsSection, sk, dash, C_OK, C_BAD,
 } from "../../components/verifix/registerKit";
 
 /* «Kadr harakati» — the HR journals of a period: hirings, transfers (which
@@ -89,30 +89,15 @@ export default function VfxHrMoves() {
       </div>
     ) };
   const sched = { key: "sched", label: t("vfx.hr.col.sched"), sort: (r) => r.sched, render: (r) => <Muted max={170}>{tx(r.sched || "")}</Muted> };
-  const pay = { key: "pay", label: t("vfx.hr.col.pay"), align: "right", firstDir: "desc", hint: t("vfx.hr.col.payHint"),
-    sort: (r) => r.salary?.value ?? r.pay?.[0]?.value,
-    render: (r) => {
-      const list = r.salary ? [{ name: null, value: r.salary.value, type: r.salary.type }] : r.pay || [];
-      if (!list.length) return dash;
-      return (
-        <div className="flex flex-col items-end gap-0.5">
-          {list.slice(0, 2).map((p, i) => (
-            <span key={i} className="tabular-nums whitespace-nowrap" title={p.type ? `Verifix: ${p.type}` : undefined}>
-              {p.name && <span className="text-[11px] mr-1" style={{ color: "var(--text-3)" }}>{tx(p.name)}</span>}{money(p.value)}
-            </span>
-          ))}
-        </div>
-      );
-    } };
   const journal = { key: "journal", label: t("vfx.r.journal"), sort: (r) => r.jdate,
     render: (r) => (r.jnum || r.jdate ? <div className="flex flex-col gap-0.5"><Journal r={r} /><Posted v={r.posted} /></div> : dash) };
   const COLS = {
-    hire: [date, who, where, job, sched, pay,
+    hire: [date, who, where, job, sched,
       { key: "contract", label: t("vfx.hr.col.contract"), sort: (r) => r.expiry,
         render: (r) => (r.fixed ? <span className="text-xs tabular-nums">{fill(t("vfx.hr.until"), { d: r.expiry ? dmy(r.expiry) : "—" })}</span>
           : r.trial ? <span className="text-xs">{fill(t("vfx.hr.trial"), { n: r.trial })}</span> : dash) },
       journal],
-    transfer: [date, who, where, job, sched, pay,
+    transfer: [date, who, where, job, sched,
       { key: "until", label: t("vfx.hr.col.until"), sort: (r) => r.until,
         render: (r) => (r.until ? <span className="text-xs tabular-nums">{dmy(r.until)}</span> : dash) },
       journal],

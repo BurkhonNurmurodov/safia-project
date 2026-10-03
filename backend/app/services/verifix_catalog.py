@@ -13,8 +13,10 @@ can probe all of them with one button and the raw viewer can open any of them.
 Three kinds of method are never called:
 
 * **`blocked`** — the passport / PINFL / family / education records (the
-  operator's ruling, 2026-10-03: wages and photos were opened, these were not).
-  They stay on the map, marked «switched off», so the map still says they exist.
+  operator's ruling, 2026-10-03: photos were opened, these were not), and every
+  WAGE and PAYROLL list (`_WAGES`: opened the same day, then closed again by the
+  operator — the «Ish haqi» page was removed with them). They stay on the map,
+  marked «switched off», so the map still says they exist.
 * a required id with no default (`track_info`, `search_last_track`, a vacancy
   test, a timebook's details, one location's people) — probed only once
   somebody types the id in the raw viewer («needs a value»).
@@ -273,15 +275,22 @@ _PAGES2 = {
     "pro/incidents$list": "incidents",
     **dict.fromkeys(("core/dismissal_reason$list", "pro/sick_leave_reason$list", "pro/business_trip_reason$list",
                      "pro/vacation_type$list", "pro/employment_source$list", "pro/fixed_term_base$list",
-                     "pro/indicator$list", "pro/oper_type$list", "pro/oper_group$list", "pro/currency$list",
-                     "pro/cashbox$list", "core/wage_scale$list", "pro/wage_scale_registry$list",
                      "core/division_match$list", "core/job_match$list"), "dictionaries"),
-    **dict.fromkeys(("start/wage_change$list", "start/wage_sheet$list", "start/changes/wage$list",
-                     "pro/wage_change$list", "pro/book$list", "pro/one_time_charge$list", "pro/payment$list",
-                     "pro/bank_account$list", "rep/payments_by_time$list", "rep/expenses_by_location$list"),
-                    "payroll"),
 }
 METHODS = tuple(replace(m, page=_PAGES2[m.key]) if m.key in _PAGES2 and not m.page else m for m in METHODS)
+
+# Wages are OFF (the operator, 2026-10-03 — opened in the morning, closed in the
+# afternoon): every list of pay, the documents pay moves through, the accounts
+# it goes to and the payroll module's own reference lists. Never called, even
+# while a form for one stays attached to the API role.
+_WAGES = frozenset((
+    "start/wage_change$list", "start/wage_sheet$list", "start/changes/wage$list",
+    "pro/wage_change$list", "pro/book$list", "pro/one_time_charge$list", "pro/payment$list",
+    "pro/bank_account$list", "rep/payments_by_time$list", "rep/expenses_by_location$list",
+    "core/wage_scale$list", "pro/wage_scale_registry$list", "pro/oper_type$list", "pro/oper_group$list",
+    "pro/indicator$list", "pro/currency$list", "pro/cashbox$list",
+))
+METHODS = tuple(replace(m, blocked=True, page=None) if m.key in _WAGES else m for m in METHODS)
 
 BY_KEY: dict[str, Method] = {m.key: m for m in METHODS}
 

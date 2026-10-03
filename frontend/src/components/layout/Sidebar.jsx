@@ -15,7 +15,7 @@ import {
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, FolderTree, IdCard, Briefcase, CalendarRange,
   ScanLine, MapPin, ScanFace, Cpu, Inbox, CalendarOff, ArrowRightLeft, BookOpenCheck, CalendarClock,
-  Siren, Banknote, BookMarked } from "lucide-react";
+  Siren, BookMarked } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import AppUpdateButton from "./AppUpdateButton";
@@ -86,7 +86,6 @@ const ALL_LINKS = [
   { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
   { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
   { to: "/verifix/incidents", adminOnly: true, key: "nav.vfx.incidents", icon: Siren, group: "verifix" },
-  { to: "/verifix/payroll", adminOnly: true, key: "nav.vfx.payroll", icon: Banknote, group: "verifix" },
   { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
   // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
   // changes land in its own tables only. adminOnly, no page key (the /targets pattern).

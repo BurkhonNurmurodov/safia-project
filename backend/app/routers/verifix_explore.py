@@ -190,13 +190,6 @@ def vx_dictionaries(force: bool = False, db: Session = Depends(get_db), _: dict 
     return _run(vr.dictionaries, db, force)
 
 
-@router.get("/payroll")
-def vx_payroll(tab: str = "wages", begin: Optional[date] = None, end: Optional[date] = None,
-               doc: Optional[str] = None, loc: Optional[str] = None, force: bool = False,
-               db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vr.payroll, db, tab, begin, end, doc, loc, force)
-
-
 @router.get("/photo/{sha}")
 def vx_photo(sha: str, size: int = 96, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     body = _run(vx.photo, db, sha, size)

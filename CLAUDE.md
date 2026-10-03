@@ -6726,8 +6726,11 @@ from Verifix API — absolutely everything possible") a sidebar section of its o
 SHOWS what Verifix's API returns. Phase 1 (seven pages) and phase 2 (nine
 register pages, the same day — the operator: "start phase 2") are built; a
 register the API role does not open says which Verifix form to attach, in
-place. Personal records (passport, PINFL, family, education) stay off; wages
-were opened on 2026-10-03. **Admin-only**, three ways like `/staff-live`
+place. Personal records (passport, PINFL, family, education) stay off, and so
+do WAGES: opened on 2026-10-03 and closed again the same afternoon (the
+operator, after detaching «Ведомость» from the API role) — the «Ish haqi» page
+was removed and every wage / payroll list is switched off in code, whatever
+the role opens. **Admin-only**, three ways like `/staff-live`
 (`adminOnly` nav entries, `RequireAdmin`, `verify_admin` on every endpoint), no
 page keys. `/staff-live` moved into this section (same data source).
 
@@ -6736,13 +6739,20 @@ page keys. `/staff-live` moved into this section (same data source).
   empty-filter body, the documented page size, the params with their default
   rules, the page that shows it). Nothing outside it can be called, so the
   section cannot write to Verifix. A new method is one `Method(...)` line.
-- **Private records never leave the server** (the operator opened WAGES and
-  PHOTOS on 2026-10-03, nothing else): `verifix_explore.scrub` drops
-  `passport_*`, PINFL / TIN / pension ids and the `person_*` sub-lists, and
-  masks a card number — and a bank account number (`bank_account_code`, and
-  `code` on `pro/bank_account$list`) — to its last four digits, on every row,
-  raw viewer included. The 8 methods that serve nothing else (`search_by_npin`,
-  `person_*`) are `blocked`: listed on the map, never called.
+- **Private records never leave the server** (the operator opened PHOTOS on
+  2026-10-03; wages were opened and closed again the same day):
+  `verifix_explore.scrub` drops `passport_*`, PINFL / TIN / pension ids, the
+  `person_*` sub-lists and every WAGE field carried by an otherwise open list
+  (`_WAGE` + `payroll_*`: a hiring or transfer journal's salary and pay
+  indicators, a vacation's pay), and masks a card or bank account number to its
+  last four digits — on every row, raw viewer included. 25 methods are
+  `blocked` — listed on the map as switched off, never called: the 8 that serve
+  only personal records (`search_by_npin`, `person_*`) and the 17 wage and
+  payroll lists (`verifix_catalog._WAGES`: salary changes and sheets, accrual
+  books, one-time charges, payments, bank accounts, pay by time, expenses by
+  location, wage scales and the payroll module's reference lists). A blocked
+  method keeps no row in `verifix_probes` either: `purge_blocked_probes` runs at
+  boot (both entrypoints) and `methods` drops any it finds.
 - **Photos** (`GET /api/verifix-test/photo/{sha}?size=96|960`): a person's
   `identification_photos` and the photo of a day's LAST mark (`photo_sha` on
   `track$search_last_track` and on «who is inside»). Streamed from
@@ -6797,10 +6807,9 @@ page keys. `/staff-live` moved into this section (same data source).
   schedule and rank changes) · «Tabel» (timebooks, plan against fact, a
   person's days) · «Smenalar» (Verifix's own shift plan; an OPEN shift is one
   with nobody on it — read off the data, not a status letter) · «Hodisalar» ·
-  «Ish haqi» (salary changes, salary sheets, accrual books, one-time charges,
-  payments, bank accounts, pay by time, expenses by location) ·
-  «Ma'lumotnomalar» (the small lists, each whole). Person-record dictionaries
-  are deliberately left out.
+  «Ma'lumotnomalar» (the small lists, each whole). Person-record and payroll
+  dictionaries are deliberately left out. «Ish haqi» shipped with them and was
+  REMOVED the same day (v4.215.0); `/verifix/payroll` redirects to the map.
 - **Big lists load in the BACKGROUND.** Most register methods take no date
   filter and page 100 at a time, while one request must beat Cloudflare's
   100 s. `_start` reads a whole list on its own thread (≤ 400 pages, ≤ 9 min,
@@ -6811,17 +6820,13 @@ page keys. `/staff-live` moved into this section (same data source).
   (`refreshing`) until the new read is done. A read that fails mid-list keeps
   the pages it got and says it is PARTIAL.
 - **Nothing heavy is held whole.** A list whose rows carry every line of a
-  document — accrual books, payments, one-time charges, salary sheets,
-  timebooks — is read a few documents per page (`PAGE_SIZE`) and kept as one
-  SUMMARY row per document (`project`); a document's lines are read when it is
-  opened, narrowed by its id (`_one`). Terminal statuses are kept as tuples.
-  «Pay by time» carries every interval of every person: it is read ONE
-  LOCATION at a time (the busiest by default), never plant-wide.
+  document (timebooks) is read a few documents per page (`PAGE_SIZE`) and kept
+  as one SUMMARY row per document (`project`); a document's lines are read when
+  it is opened, narrowed by its id. Terminal statuses are kept as tuples.
 - **Pro first, Start second.** The two modules are two views of the SAME HR
   journals (one journal id, one page id). `_first` reads the Pro list and, only
   where the role closes it (forbidden / missing), the Start one; the page names
-  which answered (`SourceNote`). Salary changes try `start/changes/wage`, then
-  `start/wage_change`, then `pro/wage_change` (shown field by field).
+  which answered (`SourceNote`).
 - **A request or an accrual line names only a STAFF record** (one person's
   post): `_staff` resolves it through `pro/employee$list` narrowed to those
   ids, and through the hiring journals when that list is closed. Unresolved, a
@@ -6830,7 +6835,7 @@ page keys. `/staff-live` moved into this section (same data source).
   and division lists only if they are in memory (`_dir` + `_Cache.peek`); a
   cold one is read on a thread and the page polls until photos and cell chips
   appear. A status letter Verifix does not document is printed AS the letter
-  (shift status, incident action, pay type), never guessed into a word;
+  (shift status, incident action), never guessed into a word;
   request statuses N · A · C · D are named.
 - Not built: Excel exports, charts, recruitment (`rec/vacancy$*`, readable on
   the raw viewer), and any write.

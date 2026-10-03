@@ -25,10 +25,12 @@ Phase 1 pages, each served by one builder here:
 * **Hozir ishda** — `locations` + `onsite`: who is inside a location now.
 
 **Private records never leave the server.** `scrub` drops passport fields,
-PINFL, the tax and pension ids and the person_* sub-lists (family, education,
-previous jobs, languages), and masks a card number to its last four digits —
-the operator opened wages and photos on 2026-10-03, not these. The methods
-that serve nothing else are `blocked` in the catalog and never called.
+PINFL, the tax and pension ids, the person_* sub-lists (family, education,
+previous jobs, languages) and every WAGE field (a salary on a hiring journal,
+the pay on a vacation), and masks a card number to its last four digits. The
+operator opened photos on 2026-10-03; wages were opened and closed again the
+same day. The methods that serve nothing else are `blocked` in the catalog and
+never called — and their probe rows are deleted (`methods`).
 
 **Photos** (opened 2026-10-03): a person's own photos (`identification_photos`)
 and the photo taken at a mark (`photo_sha` on the last mark of a day and on
@@ -277,6 +279,14 @@ def _mask(v: Any) -> str:
     return f"•••• {digits[-4:]}" if len(digits) >= 4 else "••••"
 
 
+# Pay carried inside lists that are otherwise open (a hiring or transfer
+# journal's salary, a vacation's pay): wages are OFF (2026-10-03).
+_WAGE = {
+    "salary", "salary_amount", "salary_type", "oper_types", "indicators", "charges",
+    "wage", "wage_amount", "wage_changes", "pay_amount", "pay_amount_base", "amount_limit",
+    "overtime_amount", "accrual_amount", "penalty_amount", "total_amount", "net_amount",
+}
+
 _MASKED = {"card_number", "bank_account_code"}
 
 # A list whose plain `code` is a bank account number (the key is too common to
@@ -285,12 +295,13 @@ _ACCOUNT_CODE_METHODS = {"pro/bank_account$list"}
 
 
 def scrub(v: Any) -> Any:
-    """Drop passport / PINFL / tax / family records, mask card and account numbers."""
+    """Drop passport / PINFL / tax / family records and wages, mask card and
+    account numbers."""
     if isinstance(v, dict):
         out = {}
         for k, x in v.items():
             kl = str(k).lower()
-            if kl in _PRIVATE or kl.startswith("passport_"):
+            if kl in _PRIVATE or kl in _WAGE or kl.startswith(("passport_", "payroll_")):
                 continue
             if kl in _MASKED and x:
                 out[k] = _mask(x)
@@ -357,6 +368,19 @@ def _record(db: Session, key: str, actor: str, **vals) -> None:
 def methods(db: Session) -> dict:
     now = verifix_live.now_local()
     probes = {p.method: p for p in db.query(VerifixProbe).all()}
+    # A switched-off method keeps nothing here — not even the row count and
+    # field names an earlier probe recorded (wages were switched off after
+    # they had been probed, 2026-10-03).
+    off = [m.key for m in catalog.METHODS if m.blocked and m.key in probes]
+    if off:
+        try:
+            db.query(VerifixProbe).filter(VerifixProbe.method.in_(off)).delete(synchronize_session=False)
+            db.commit()
+            for k in off:
+                probes.pop(k, None)
+        except Exception:
+            db.rollback()
+            log.exception("verifix explore: could not drop the probes of switched-off methods")
     out = []
     for m in catalog.METHODS:
         d = catalog.describe(m, now)
@@ -370,6 +394,27 @@ def methods(db: Session) -> dict:
         }
         out.append(d)
     return {**meta(db), "methods": out}
+
+
+def purge_blocked_probes() -> int:
+    """At boot: a switched-off method keeps no probe row (the same rule
+    `methods` applies), so switching a list off — wages, 2026-10-03 — also
+    clears what an earlier probe recorded about it. Never raises."""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        off = [m.key for m in catalog.METHODS if m.blocked]
+        n = db.query(VerifixProbe).filter(VerifixProbe.method.in_(off)).delete(synchronize_session=False)
+        db.commit()
+        if n:
+            log.info("verifix explore: dropped %d probe rows of switched-off methods", n)
+        return n
+    except Exception:
+        db.rollback()
+        log.exception("verifix explore: could not drop the probes of switched-off methods")
+        return 0
+    finally:
+        db.close()
 
 
 def method_rows(db: Session, key: str, params: Optional[dict], cursor: Optional[str],

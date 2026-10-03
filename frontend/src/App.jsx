@@ -155,7 +155,6 @@ const VfxHrMoves = lazyWithReload(() => import("./pages/verifix/VfxHrMoves"));
 const VfxTimebooks = lazyWithReload(() => import("./pages/verifix/VfxTimebooks"));
 const VfxShifts = lazyWithReload(() => import("./pages/verifix/VfxShifts"));
 const VfxIncidents = lazyWithReload(() => import("./pages/verifix/VfxIncidents"));
-const VfxPayroll = lazyWithReload(() => import("./pages/verifix/VfxPayroll"));
 const VfxDictionaries = lazyWithReload(() => import("./pages/verifix/VfxDictionaries"));
 const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
@@ -597,7 +596,8 @@ function AppWithLang() {
             <Route path="/verifix/timebooks" element={<AuthGate><RequireAdmin><VfxTimebooks /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/shifts" element={<AuthGate><RequireAdmin><VfxShifts /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/incidents" element={<AuthGate><RequireAdmin><VfxIncidents /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/payroll" element={<AuthGate><RequireAdmin><VfxPayroll /></RequireAdmin></AuthGate>} />
+            {/* «Ish haqi» was removed (wages are off, 2026-10-03): a tab still on it lands on the map. */}
+            <Route path="/verifix/payroll" element={<Navigate to="/verifix/api" replace />} />
             <Route path="/verifix/dictionaries" element={<AuthGate><RequireAdmin><VfxDictionaries /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
