@@ -17,6 +17,10 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
   const triggerRef = useRef(null);
   const tipRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, visible: false });
+  const [nested, setNested] = useState(false);
+  useLayoutEffect(() => {
+    setNested(!!triggerRef.current?.parentElement?.closest("button, a, [role='button']"));
+  }, []);
 
   useLayoutEffect(() => {
     if (!show || !triggerRef.current || !tipRef.current) return;
@@ -54,12 +58,26 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
   return (
     <span
       ref={triggerRef}
-      className="cursor-help ml-0.5 inline-flex items-center flex-shrink-0"
+      // A focus stop of its own, unless it already sits inside a control
+      // (a sortable header button): a focusable inside a button is invalid
+      // and the outer control is the keyboard's target there.
+      role={nested ? undefined : "button"}
+      tabIndex={nested ? undefined : 0}
+      aria-label={!nested && typeof text === "string" ? text : undefined}
+      className="cursor-help ml-0.5 inline-flex items-center flex-shrink-0 relative rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
       style={{ color: "var(--text-4)" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onClick={(e) => { e.stopPropagation(); setShow((v) => !v); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setShow((v) => !v); }
+        else if (e.key === "Escape") setShow(false);
+      }}
     >
+      {/* A finger needs ~44px: the 11px icon alone is a target nobody can hit.
+          The invisible pad grows the tap area on touch screens without moving
+          anything around it (absolutely positioned, phones only). */}
+      <span aria-hidden="true" className="absolute -inset-4 sm:hidden" />
       <Info size={size} />
       {show &&
         createPortal(

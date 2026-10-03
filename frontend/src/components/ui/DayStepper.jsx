@@ -28,6 +28,10 @@ import { useLang } from "../../context/LangContext";
  *              in the next week»). Null = no dot.
  *   marked   – Set of ISO days the calendar flags with a brand dot (days that
  *              hold data) — replaces a second «jump to a date» control.
+ *   fillPhone – below sm the stepper takes its row's whole width and the date
+ *              button stretches between the chevrons, so the controls after
+ *              it start a row of their own instead of being pushed off the
+ *              screen edge (/shift-daily). sm and up: unchanged.
  */
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -47,7 +51,7 @@ function mondayOf(iso) {
 
 export default function DayStepper({
   value, onChange, max = toISO(new Date()), week = false, dotPrev = null, dotNext = null,
-  compactUntil = "sm", marked = null,
+  compactUntil = "sm", marked = null, fillPhone = false,
 }) {
   const { t } = useLang();
   const step = week ? 7 : 1;
@@ -69,7 +73,7 @@ export default function DayStepper({
   );
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
+    <div className={`flex items-center gap-1.5 min-w-0${fillPhone ? " max-sm:w-full" : ""}`}>
       <button
         type="button"
         onClick={() => onChange(addDaysISO(from, -step))}
@@ -92,6 +96,7 @@ export default function DayStepper({
         setDateTo={() => {}}
         triggerClassName="px-3 py-2 text-sm"
         marked={marked}
+        fillPhone={fillPhone}
       />
       <button
         type="button"

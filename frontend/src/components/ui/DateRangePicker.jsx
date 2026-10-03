@@ -148,6 +148,8 @@ export default function DateRangePicker({
   triggerClassName = "px-2.5 py-1.5 text-xs",
   marked = null,       // Set of ISO days to flag with a brand dot (e.g. days that
                        // hold uploaded data) — a hint, never a restriction
+  fillPhone = false,   // below sm: the trigger stretches to the space its row
+                       // gives it (DayStepper's `fillPhone`); sm+ unchanged
 }) {
   const { t } = useLang();
   const [open,     setOpen]     = useState(false);
@@ -339,12 +341,12 @@ export default function DateRangePicker({
   const inputBorder = (active) => `1px solid ${active ? "var(--brand)" : "var(--border-md)"}`;
 
   return (
-    <div className="relative flex-shrink-0" ref={wrapRef}>
+    <div className={`relative flex-shrink-0${fillPhone ? " max-sm:flex-1 max-sm:min-w-0" : ""}`} ref={wrapRef}>
       {/* Trigger */}
       <button
         ref={triggerRef}
         onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-2 rounded-lg transition-colors ${triggerClassName}`}
+        className={`flex items-center gap-2 rounded-lg transition-colors ${triggerClassName}${fillPhone ? " max-sm:w-full max-sm:justify-center" : ""}`}
         style={{
           background: "var(--bg-inner)",
           border: `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,

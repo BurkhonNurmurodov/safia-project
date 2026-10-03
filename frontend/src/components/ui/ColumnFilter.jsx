@@ -536,11 +536,14 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
               {g.items.map(s => (
                 <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{s.label}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{s.label}</p>
+                    {/* Clears THIS section only — «Hammasini tozalash» is the
+                        header's button, and the same words on both read as one
+                        action offered twice. */}
                     {s.active && s.onClear && (
-                      <button onClick={s.onClear} className="text-[10px] flex items-center gap-0.5"
-                        style={{ color: "var(--text-4)" }}>
-                        <X size={10} /> {t("staff.clearAll")}
+                      <button onClick={s.onClear} className="text-[11px] flex items-center gap-0.5 min-h-[32px] px-1"
+                        style={{ color: "var(--text-3)" }}>
+                        <X size={11} /> {t("filter.clear")}
                       </button>
                     )}
                   </div>

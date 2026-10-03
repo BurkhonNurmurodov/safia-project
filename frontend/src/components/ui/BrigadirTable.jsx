@@ -15,6 +15,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtPct, fmtTime } from "../../utils/formatters";
 import { diffStatus } from "../../utils/segments";
+import { loadTone } from "../../utils/statusBands";
 import {
   utilNumbers, utilInputs, differenceNumbers, differenceInputs,
   differencePctNumbers, hcEquivNumbers, hcEquivInputs, rangeDays,
@@ -242,7 +243,7 @@ export default function BrigadirTable({
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[var(--text-3)] border-b border-[var(--border)] bg-[var(--bg-inner)]">
-              <th className="text-left px-4 py-2.5">#</th>
+              <th className="text-left px-4 max-sm:px-3 py-2.5">#</th>
               <HeadCell label={t("overview.brigadir")} sortKey="name" sort={sort} onSort={onSort}
                 align="left" className="text-left px-2" />
               <HeadCell label={t("overview.planned")} tip={t("overview.tip.planned")} sortKey="baseline_util" sort={sort} onSort={onSort}
@@ -257,7 +258,7 @@ export default function BrigadirTable({
                 align="right" className="text-right px-2 hidden md:table-cell" />
               <HeadCell label={t("overview.status")} sortKey="status" sort={sort} onSort={onSort}
                 align="center" className="text-center px-2 hidden sm:table-cell" />
-              <th className="text-center px-4 py-2.5">{t("overview.workers")}</th>
+              <th className="text-center px-4 max-sm:px-1 py-2.5">{t("overview.workers")}</th>
             </tr>
           </thead>
           <tbody>
@@ -271,7 +272,7 @@ export default function BrigadirTable({
                 className="border-b border-[var(--border)] hover:bg-white/5 cursor-pointer"
                 onClick={() => onRowClick?.(b)}
               >
-                <td className="px-4 py-2.5 text-[var(--text-3)]">{i + 1}</td>
+                <td className="px-4 max-sm:px-3 py-2.5 text-[var(--text-3)]">{i + 1}</td>
                 <td className="px-2 py-2.5 font-medium text-[var(--text-1)]">{tl(b.name)}</td>
                 <td className="px-2 py-2.5 text-right hidden md:table-cell" onClick={e => e.stopPropagation()}>
                   <button
@@ -288,9 +289,16 @@ export default function BrigadirTable({
                   </button>
                 </td>
                 <td className="px-2 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                  {/* The admin's load bands (statusBands) — the scale the
+                      «Smena hisoboti» board, the KPI cards and the ranking
+                      wear — instead of a five-step scale of its own, which
+                      painted one figure one colour here and another beside it. */}
                   <button
-                    className={`font-mono font-bold hover:underline underline-offset-2 ${b.net_util >= 1.05 ? "text-amber-400" : b.net_util >= 0.95 ? "text-green-400" : b.net_util >= 0.90 ? "text-yellow-300" : b.net_util >= 0.85 ? "text-orange-400" : "text-red-400"}`}
-                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                    className="font-mono font-bold hover:underline underline-offset-2"
+                    style={{
+                      background: "none", border: "none", padding: 0, cursor: "pointer",
+                      color: loadTone(b.net_util) ? `var(--status-${loadTone(b.net_util)})` : "var(--text-3)",
+                    }}
                     onClick={() => setFormulaModal({
                       title: `${t("overview.fm.finalActual")}${avgSuffix}`,
                       value: fmtPct(b.net_util),
@@ -350,14 +358,18 @@ export default function BrigadirTable({
                   <StatusBadge status={b.status} color={b.statusColor} short />
                 </td>
                 <td
-                  className="px-4 py-2.5 text-center"
+                  className="px-4 max-sm:px-1 py-2.5 max-sm:py-0.5 text-center"
                   onClick={(e) => {
                     e.stopPropagation();
                     setModal({ managerId: b.manager_id, dateFrom, dateTo, name: b.name });
                   }}
                 >
+                  {/* 44px on a phone — a thumb's target — and a name a
+                      screen reader can say. */}
                   <button
-                    className="p-1.5 rounded-lg transition-colors"
+                    aria-label={`${t("overview.workers")} — ${tl(b.name)}`}
+                    title={t("overview.workers")}
+                    className="p-1.5 rounded-lg transition-colors max-sm:w-11 max-sm:h-11 max-sm:inline-grid max-sm:place-items-center"
                     style={{ color: "var(--text-3)" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "var(--brand-hover)"; e.currentTarget.style.color = "var(--brand-text)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-3)"; }}
