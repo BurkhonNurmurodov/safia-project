@@ -22,11 +22,12 @@ Where a person stands is answered the way the agreed live feed will answer it:
   1) unless somebody is still inside long after their shift (a missing
   check-out — decision 5) or a change is pending; then a person closes it.
 
-**The report's own check-in / check-out win wherever it has them** — they are
-what the next morning's file, and so /staff, prints. The raw marks
-(`track$list`) only fill in what the report has not said yet: an arrival it
-does not carry, and a departure it has not written (an «O» mark, else the last
-mark once the shift is over). `diag` says which happened.
+**The clocks are the report's** (`input_time` / `output_time` — the file's own
+clock-in/out, the parity check proved); the raw marks (`track$list`) fill in
+only what the report has not answered yet — the first mark as a provisional
+arrival, an «O»/«T» mark or, once the shift is over, the last mark as a
+provisional departure — and the row says which (`in_src` / `out_src`). An exit
+before the shift's end is a break, not a departure. `diag` counts the sources.
 
 **Hours**: «Отработано» is summed from the time kinds the parity check FOUND
 (`verifix_last_parity.hours`) when that rule matched the files closely enough,
@@ -273,37 +274,39 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     hi = (end + timedelta(hours=6)) if end else datetime.combine(day, time(23, 59, 59))
     mine = sorted(m for m in marks if lo <= m[0] <= hi)
 
-    # The report's own clock is what the next morning's file — and so /staff —
-    # prints (parity check, 27.09.2026: the same in/out on 1,157 of 1,158
-    # rows). Wherever the report has answered, it WINS; the marks only fill in
-    # what it has not said yet. An earlier mark must never replace its arrival
-    # (it took the previous night's exit for today's check-in), and once the
-    # shift is over a later mark must never replace its check-out.
-    rep_in = _dt(d.get("input_time")) if d else None
-    rep_out = _dt(d.get("output_time")) if d else None
-    t_in = rep_in or (mine[0][0] if mine else None)
-    t_out = rep_out
+    # THE clocks are the report's own `input_time` / `output_time`: the parity
+    # check proved them equal to the file's clock-in/out for 1,157 of 1,158
+    # people (27.09). The raw marks are EVERY terminal a person passes — on
+    # 01.10 the first mark of the day sat 8–20 min (up to 2 h) BEFORE the
+    # report's check-in for 70 of 71 people and the last mark 7–31 min AFTER
+    # its check-out for 68 of 71: the gate before the door, the door before the
+    # gate. Taking the earliest and the latest mark (what this did until
+    # 2026-10-02) printed every arrival early and every departure late. A mark
+    # decides a clock only where the report has not answered yet, and says so
+    # (`in_src` / `out_src` other than "report" — dotted on the page).
+    t_in_rep = _dt(d.get("input_time")) if d else None
+    t_out_rep = _dt(d.get("output_time")) if d else None
+    t_in = in_src = None
+    if t_in_rep:
+        t_in, in_src = t_in_rep, "report"
+    elif mine:
+        t_in, in_src = mine[0][0], "mark"
+    # A mark BEFORE the report's check-in is not this shift's — the previous
+    # night's exit was read as today's arrival until 2026-10-02 (the laptop
+    # fix, v4.207.1) — so the marks start at the arrival.
     if t_in:
         mine = [m for m in mine if m[0] >= t_in - timedelta(minutes=1)]
 
-    # Where the departure comes from, in order of trust: the report's own
-    # check-out (Verifix fills it in late — last night's shift had none by
-    # noon, 2026-10-01); a mark the terminal typed as an exit; and, for marks
-    # that carry no direction at all, the last mark once the shift is over.
     last = mine[-1] if mine else None
     shift_over = now >= end if end else now >= datetime.combine(day + timedelta(days=1), time(6))
-    # A mark after the report's check-out, while the shift still runs, is a
-    # person who came back in: the marks decide. After the shift the report is
-    # the record.
-    back_in = (rep_out is not None and last is not None and not shift_over
-               and last[0] > rep_out + timedelta(minutes=1))
-    # Any mark at least PAIR_MIN after the arrival, up to 12 h past the shift's
-    # end, whatever its type: once the shift is over the latest of them is
-    # where the person left.
+    # Without a report check-out (Verifix fills them in late — last night's
+    # shift had none by noon, 2026-10-01): any mark at least PAIR_MIN after
+    # the arrival, up to 12 h past the shift's end, whatever its type — once
+    # the shift is over the latest of them is where the person left.
     far = (end + timedelta(hours=12)) if end else datetime.combine(day + timedelta(days=1), time(14))
     late_marks = sorted(m for m in marks
                         if t_in and m[0] <= far and _mins(t_in, m[0]) >= PAIR_MIN) if t_in else []
-    out_src = None
+    t_out = out_src = None
     if t_in is None:
         if not scheduled:
             status = "off"
@@ -311,20 +314,31 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             status = "not_yet"
         else:
             status = "absent"
-    elif rep_out and not back_in:
-        status, out_src = "left", "report"
-    elif last is not None and any(m[1] in DIRECTED for m in mine) \
-            and last[1] in DIRECTED | BREAK_TYPES:
-        if last[1] in OUT_TYPES:
-            status, t_out, out_src = "left", last[0], "mark"
-        elif last[1] in BREAK_TYPES:
-            status, t_out = "break", None
-        else:
-            status, t_out = "inside", None
-    elif shift_over and late_marks:
-        status, t_out, out_src = "left", late_marks[-1][0], "last_mark"
     else:
-        status, t_out = "inside", None
+        if t_out_rep and t_out_rep >= t_in:
+            t_out, out_src = t_out_rep, "report"
+            # The person is BACK and Verifix has not re-read the day yet: a
+            # directed «I» after the report's check-out, or — while the shift
+            # still runs — any mark PAIR_MIN or more after it (the gate a few
+            # minutes after the door is the way out, and moves nothing).
+            if any(m[1] == "I" and m[0] > t_out_rep for m in mine) or (
+                    not shift_over and last is not None
+                    and _mins(t_out_rep, last[0]) >= PAIR_MIN):
+                t_out = out_src = None
+        elif any(m[1] in DIRECTED for m in mine) and last[1] in DIRECTED | BREAK_TYPES:
+            if last[1] in OUT_TYPES | BREAK_TYPES:
+                t_out, out_src = last[0], "mark"
+        elif shift_over and late_marks:
+            t_out, out_src = late_marks[-1][0], "last_mark"
+        # An exit before the shift's end is not a departure yet but a BREAK
+        # (12 people read «Ketgan» at 09:30 on 02.10, over a breakfast); it
+        # becomes one, with its early-leave minutes, once the shift is over.
+        if t_out is None:
+            status = "inside"
+        elif shift_over:
+            status = "left"
+        else:
+            status = "break"
 
     # Still «inside» an hour after the shift's end with no exit anywhere: the
     # person arrived and never checked out. Not inside any more — its own
@@ -352,7 +366,9 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             hours = sum(facts.get(k, 0.0) for k in formula["kinds"]) / formula["div"]
         else:
             hours = max(0.0, _mins(t_in, t_out) / 60.0)
-    elif status in ("inside", "break") and t_in:
+    elif status == "break" and t_in and t_out:
+        hours, so_far = max(0.0, _mins(t_in, t_out) / 60.0), True
+    elif status == "inside" and t_in:
         hours, so_far = max(0.0, _mins(t_in, min(now, hi)) / 60.0), True
 
     late = early_in = early_out = None
@@ -372,7 +388,7 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         "status": status, "in": t_in, "out": t_out, "begin": begin, "end": end,
         "schedule": schedule, "hours": hours, "so_far": so_far, "late": late,
         "early_in": early_in, "early_out": early_out, "missing": missing,
-        "marks": len(mine), "out_src": out_src,
+        "marks": len(mine), "in_src": in_src, "out_src": out_src,
         "raw": {
             "report": {k: (d or {}).get(k) for k in ("input_time", "output_time", "begin_time",
                                                      "end_time", "day_kind", "plan_time")},
@@ -570,7 +586,8 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             "schedule": person["schedule"],
             "begin": _hm(person["begin"]), "end": _hm(person["end"]),
             "in": _hm(t_in), "out": _hm(t_out),
-            "in_at": _iso(t_in), "out_at": _iso(t_out), "out_src": person["out_src"],
+            "in_at": _iso(t_in), "out_at": _iso(t_out),
+            "in_src": person["in_src"], "out_src": person["out_src"],
             "status": status,
             "hours": hours_u, "hours_total": round(hours, 2) if hours is not None else None,
             "share": round(share, 3) if t_in else None,
@@ -639,6 +656,7 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
         "diag": {"employees": len(ids), "report_rows": len(ts),
                  "marks": sum(type_counts.values()), "mark_types": dict(type_counts),
                  "directed": directed,
+                 "in_sources": dict(Counter(r["in_src"] for r in rows if r["in_src"])),
                  "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"]))},
     }
 

@@ -681,6 +681,12 @@ export default function StaffLive() {
                           })}
                         </div>
                         <div className="mt-0.5 tabular-nums">
+                          {fill(t("staffLive.diagIn"), {
+                            report: data.diag?.in_sources?.report || 0,
+                            mark: data.diag?.in_sources?.mark || 0,
+                          })}
+                        </div>
+                        <div className="mt-0.5 tabular-nums">
                           {fill(t("staffLive.diagOut"), {
                             report: data.diag?.out_sources?.report || 0,
                             mark: data.diag?.out_sources?.mark || 0,
@@ -748,14 +754,18 @@ export default function StaffLive() {
                           {r.begin && r.end ? `${r.begin}–${r.end}` : tx(r.schedule) || "—"}
                         </td>
                         <td className="px-3 py-2 tabular-nums">
-                          {r.in || "—"}
+                          {r.in
+                            ? (r.in_src && r.in_src !== "report"
+                              ? <span title={t("staffLive.inMark")} className="underline decoration-dotted underline-offset-2">{r.in}</span>
+                              : r.in)
+                            : "—"}
                           {r.late ? <span className="ml-1.5"><Chip color="#eab308">{fill(t("staffLive.lateMin"), { n: r.late })}</Chip></span> : null}
                           {r.early_in ? <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>{fill(t("staffLive.earlyIn"), { n: r.early_in })}</span> : null}
                         </td>
                         <td className="px-3 py-2 tabular-nums">
                           {r.out
-                            ? (r.out_src === "last_mark"
-                              ? <span title={t("staffLive.outLastMark")} className="underline decoration-dotted underline-offset-2">{r.out}</span>
+                            ? (r.out_src && r.out_src !== "report"
+                              ? <span title={t(r.out_src === "last_mark" ? "staffLive.outLastMark" : "staffLive.outMark")} className="underline decoration-dotted underline-offset-2">{r.out}</span>
                               : r.out)
                             : (r.status === "inside" || r.status === "break" ? <span style={{ color: "#22c55e" }}>{t("staffLive.stillInside")}</span> : "—")}
                           {r.early_out ? <span className="ml-1.5"><Chip color="#eab308">{fill(t("staffLive.earlyOut"), { n: r.early_out })}</Chip></span> : null}

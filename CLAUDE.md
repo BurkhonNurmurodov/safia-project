@@ -6556,25 +6556,48 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   (the operator found the old table under the new date's label confusing).
   The day before the one on screen is prefetched — stepping back is the
   common move.
-- **The report's own check-in and check-out WIN wherever it has them**
-  (2026-10-02, the operator: «/staff is correct, fix /staff-live»). They are
-  what the next morning's file — and so /staff — prints (the parity check: the
-  same clock on 1,157 of 1,158 rows). The marks only fill in what the report
-  has not said yet. Until then an EARLIER mark replaced the report's arrival
-  (a night worker's exit from the previous night became today's check-in, a
-  pass through another terminal moved it earlier) and a LATER mark replaced
-  its check-out. One exception: a mark after the report's check-out while the
-  shift is still running is a person who came back in, so the marks decide.
-- **A departure comes from, in order of trust**: the report's own check-out;
-  a mark typed «O» (per PERSON, while their LAST mark is a directed one — «O»
-  left, «T» on a break, «I» inside); else, once the shift is over, the latest
+- **The clocks are the REPORT's** (2026-10-02, the operator: «/staff is
+  correct, fix /staff-live») — `input_time` / `output_time` of «Отчёт по
+  посещениям», which the parity check proved equal to the file's clock-in/out
+  for 1,157 of 1,158 people (27.09). The raw marks (`track$list`) are EVERY
+  terminal a person passes: on 01.10 the first mark of the day sat 8–20 min
+  (up to 2 h) BEFORE the report's check-in for 70 of 71 people and the last
+  mark 7–31 min AFTER its check-out for 68 of 71 — the gate before the door,
+  the door before the gate. Until 2026-10-02 the page took the earliest and
+  the latest mark, so every arrival printed early and every departure late
+  (the operator: «wrong times are arriving through the API») while the hours,
+  read off the time kinds, were right. A mark decides a clock only where the
+  report has not answered yet, and the page SAYS so (`in_src` / `out_src` ≠
+  "report", dotted with a hint): the window's first mark as the arrival; a
+  mark typed «O»/«T» as the departure; else, once the shift is over, the latest
   mark of ANY type ≥ 30 min after the arrival and ≤ 12 h after the shift's end
-  (`out_src` "last_mark", dotted on the page). Tapping a worker's name opens
-  the raw facts behind the row — the report's in/out/begin/end, every mark
-  fetched with its type, the time kinds — because both earlier guesses about
-  the night shift were made without them. The report fills check-outs in LATE — last night's shift had none by
-  noon on 2026-10-01 and the whole night read «inside · no check-out» until
-  this order existed. `diag.out_sources` counts each source.
+  ("last_mark"). A directed «I» after the report's check-out means the person
+  is back and the report has not caught up — that check-out is dropped; an
+  undirected mark after it is the gate on the way out and moves nothing —
+  unless it comes 30 min or more later while the shift still runs, which is a
+  return (the v4.207.1 rule). A mark before the report's check-in is not this
+  shift's: the previous night's exit was read as today's arrival. The
+  report fills check-outs in LATE — last night's shift had none by noon on
+  2026-10-01 and the whole night read «inside · no check-out» until the
+  fallbacks existed. `diag.in_sources` / `out_sources` count each source.
+  Tapping a worker's name opens the raw facts behind the row — the report's
+  in/out/begin/end, every mark fetched with its type, the time kinds —
+  because both earlier guesses about the night shift were made without them.
+- **An exit before the shift's end is a BREAK, not a departure** («Tanaffusda»,
+  the exit time in the Out column, hours up to it marked *): 12 people read
+  «Ketgan» at 09:30 on 02.10 over a breakfast. It becomes «Ketgan», with its
+  early-leave minutes, once the shift is over, and holds the day open like
+  anybody inside.
+- **The raw rows behind 01.10 were DMed once** — `services/verifix_dump.py`,
+  the boot one-shot `startup.report_verifix_dump` (flag
+  `verifix_api_dump_2026_10_01_v1`, scheduled a minute after boot, both
+  entrypoints; another day needs a NEW key): every form the API user may read
+  with every field it returns, the day's report and marks for everybody, and a
+  «Solishtirish» sheet putting the uploaded file, the report, the marks and
+  the live page's own reading side by side per person, with the minute deltas.
+  TEMPORARY — delete the module, the startup pair and BOTH entrypoint calls
+  once the file has landed. The fix above was made on the two exports alone;
+  the next one is made on this.
 - Late = more than 5 min after the schedule start, early leave = more than 5
   min before its end. **No check-out is a status of its own (`no_out`), not
   «inside»**: still without an exit an hour after the shift's end. The arrival
