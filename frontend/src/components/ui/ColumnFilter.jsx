@@ -394,7 +394,7 @@ function GroupCaption({ label, first }) {
 function CountBadge({ n }) {
   return (
     <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
-      style={{ background: "var(--brand)", color: "#fff", lineHeight: 1.2 }}>
+      style={{ background: "var(--brand)", color: "var(--on-brand)", lineHeight: 1.2 }}>
       {n}
     </span>
   );
@@ -456,25 +456,46 @@ function FilterChip({ s, onOpen, className = "", wide = false }) {
       <button
         type="button"
         onClick={inert ? undefined : onOpen}
-        className="flex items-center gap-1.5 pl-2.5 text-xs font-medium min-w-0"
+        // The body fills the chip's height (it was the 16 px of its text line)
+        // and, where the chips wrap, reaches the same 44 px pad as the ✕.
+        className="relative self-stretch flex items-center gap-1.5 pl-2.5 text-xs font-medium min-w-0"
         style={{ color: "inherit", paddingRight: clearable ? 2 : 10, cursor: inert ? "default" : "pointer" }}
         title={typeof text === "string" ? text : undefined}
-        aria-label={typeof s.label === "string" ? s.label : undefined}
+        // The section AND its value: «Zavod» alone names the control, not
+        // what it is narrowed to.
+        aria-label={typeof s.label === "string"
+          ? (typeof text === "string" && text !== s.label ? `${s.label}: ${text}` : s.label)
+          : undefined}
       >
         {Icon && <Icon size={12} style={{ flexShrink: 0, opacity: 0.85 }} />}
         {/* `wide`: the chip sits on a line of its own below md (see
             `chipsWrap`), so a person's name gets room to be read rather than
             the 130px a chip squeezed beside the trigger can spare. */}
         <span className={`truncate whitespace-nowrap ${wide ? "max-w-[130px] max-md:max-w-[240px]" : "max-w-[130px]"}`}>{text}</span>
+        {!inert && (
+          <span aria-hidden="true" className={`absolute inset-x-0 ${
+            wide === "always" ? "-top-[7px] -bottom-[7px]"
+              : wide ? "top-0 bottom-0 max-md:-top-[7px] max-md:-bottom-[7px]" : "top-0 bottom-0"}`} />
+        )}
       </button>
       {clearable && (
         <button
           type="button"
           onClick={s.onClear}
-          aria-label={`${typeof s.label === "string" ? s.label : ""} — ${t("staff.clearAll")}`}
-          className="flex items-center justify-center h-full pl-1 pr-2 rounded-r-full"
+          // It clears THIS section — «Hammasini tozalash» (clear all) is the
+          // panel's own button, and the two must not sound alike.
+          aria-label={`${typeof s.label === "string" ? s.label : ""} — ${t("filter.clear")}`}
+          className="relative flex items-center justify-center h-full pl-1.5 pr-2.5 max-md:pl-3 max-md:pr-4 rounded-r-full"
           style={{ color: "inherit" }}
         >
+          {/* A finger needs ~44px: a 12px ✕ in a 30px chip is a target nobody
+              hits. The pad reaches into the gap beside the chip and, where
+              the chips WRAP (an overflow-visible row), above and below it —
+              never over the chip's own label, which opens the panel. In a
+              scrolling strip a taller pad would make the strip scroll. */}
+          <span aria-hidden="true" className={`absolute left-0 -right-1.5 ${
+            wide === "always" ? "-top-[7px] -bottom-[7px]"
+              : wide ? "top-0 bottom-0 max-md:-top-[7px] max-md:-bottom-[7px]" : "top-0 bottom-0"}`} />
           <X size={12} />
         </button>
       )}
@@ -924,9 +945,13 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
           collapsed chips do not fit beside its controls (/kelish). */}
       {hasChips && (
         <div
-          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center${
-            chipsWrap === "always" ? " flex-auto flex-wrap overflow-visible"
-              : chipsWrap ? " max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : ""}`}
+          // A wrapping strip is NOT a scroller: `overflow-x-auto` beside
+          // `overflow-visible` still made it one (one axis scrolling turns the
+          // other's `visible` into `auto`), which clipped the chips' 44 px tap
+          // pads to the strip's own height.
+          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 no-scrollbar self-center ${
+            chipsWrap === "always" ? "flex-auto flex-wrap overflow-visible"
+              : chipsWrap ? "overflow-x-auto max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : "overflow-x-auto"}`}
         >
           {statics.map(s => <FilterChip key={s.key} s={s} wide={chipsWrap} />)}
           {/* A pinned section carries its state in its own trigger from md+ —

@@ -76,7 +76,9 @@ export default function Modal({
               <div className="min-w-0">
                 <div className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>{title}</div>
                 {subtitle && (
-                  <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-4)" }}>{subtitle}</div>
+                  // Readable (it often names WHO — a brigadir, a cell) and
+                  // never cut: a touch screen has no hover to read the rest.
+                  <div className="text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>{subtitle}</div>
                 )}
               </div>
             </div>

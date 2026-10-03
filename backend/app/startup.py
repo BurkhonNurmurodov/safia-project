@@ -2614,17 +2614,33 @@ def add_concern_worker_name() -> None:
     """
     db = SessionLocal()
     try:
-        db.execute(text(
-            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS worker_name VARCHAR"
-        ))
-        db.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_leader_concerns_worker_name "
-            "ON leader_concerns (worker_name)"
-        ))
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[startup] concern worker_name migration skipped: {exc}")
+        try:
+            db.execute(text(
+                "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS worker_name VARCHAR"
+            ))
+            db.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_leader_concerns_worker_name "
+                "ON leader_concerns (worker_name)"
+            ))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] concern worker_name migration skipped: {exc}")
+        # «Ishchi havotirlari» reads worker filings by period (and its
+        # comparison reads a second period): a partial index on the filing day
+        # of exactly those rows, so neither walks the whole concerns table. A
+        # step of its own: built inside the ALTER TABLE's transaction it would
+        # hold that statement's ACCESS EXCLUSIVE lock (reads blocked) for the
+        # whole build, and a failed build would roll the column step back too.
+        try:
+            db.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_leader_concerns_worker_entry "
+                "ON leader_concerns (entry_date) WHERE worker_name IS NOT NULL"
+            ))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] concern worker_entry index skipped: {exc}")
     finally:
         db.close()
 

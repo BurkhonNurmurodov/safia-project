@@ -30,28 +30,40 @@ from typing import Any, Optional
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
-from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
+from openpyxl.formatting.rule import DataBarRule
 from openpyxl.styles import Alignment, Border, Font
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services.quality_export import (
     AMBER, BAND, BOX, BRAND, BRAND_SOFT, FONT, GREEN, INK, INK_FAINT, INK_SOFT,
-    NUM, PANEL, PCT1, RED, RIGHT, SLATE, TINT,
+    NUM, PANEL, PCT0, RED, RIGHT, SLATE, TINT,
     _banner, _block, _fill, _head_row, _kpi_cards, _meta_strip, _section,
     _sheet, _side,
 )
 
 # The page's own status palette (semantic traffic-light, never brand gold).
+# «todo» is not started — GREY, the platform's word for it, never red (red is a
+# fault). «uplifted» = handed up the chain and still open (routers/
+# worker_concerns): a darker slate, told apart from «todo» on the page by its
+# icon. «deferred» / «other» are the sheet era's keys, kept so an old file's
+# words still have a colour.
 BLUE = "3B82F6"
 OTHER_INK = "64748B"
-# «uplifted» = handed up the chain and still open (routers/worker_concerns);
-# «deferred» / «other» are the sheet era's keys, kept so an old file's words
-# still have a colour.
-WC_COLOR = {"done": GREEN, "doing": AMBER, "todo": RED, "uplifted": SLATE,
-            "deferred": SLATE, "other": OTHER_INK}
+WC_COLOR = {"done": GREEN, "doing": AMBER, "todo": SLATE, "uplifted": OTHER_INK,
+            "deferred": OTHER_INK, "other": OTHER_INK}
 WC_TINT = {**TINT, OTHER_INK: "E8ECF1"}
 DATE_FMT = "DD.MM.YYYY"
+
+
+def whole_pct(done: int, total: int) -> Optional[int]:
+    """THE whole percent of ``done`` out of ``total`` — rounded half UP from the
+    raw counts, exactly once. The page prints this integer (``pct0`` on every
+    payload) and judges its band by it, and the file does both with the same
+    integer: Python's ``round`` rounds halves to EVEN (5 of 8 read 62% here and
+    63% on screen), and rounding the one-decimal figure a second time made
+    17 of 19 read 90%."""
+    return (200 * done + total) // (2 * total) if total else None
 
 
 def _pd(s: Any) -> Optional[date]:
@@ -148,13 +160,16 @@ def _daily_block(ws: Worksheet, row: int, c1: int, p: dict, sts: list[str]) -> i
 
 
 def _brig_block(ws: Worksheet, row: int, c1: int, p: dict, sts: list[str]) -> int:
-    """Per-brigadir status matrix with a data bar on the totals and the KPI
-    bands' red→amber→green scale on the resolution %."""
+    """Per-brigadir status matrix with a data bar on the totals and the % in
+    its band's flat tint — the page's own verdict (`_band_of`): a unit with too
+    few concerns, or a period too short to judge, is not graded. A colour SCALE
+    painted 79% near-green here while the page called it yellow."""
     lbl = p.get("labels") or {}
     brig = p.get("brigadirs") or []
     if not brig:
         return row
     bands = (p.get("leaders") or {}).get("bands") or {"green": 80, "yellow": 50}
+    plain = bool((p.get("leaders") or {}).get("plain"))
     c2 = c1 + 3 + len(sts) + 1                   # name(3) + statuses + total + %
     row = _section(ws, row, c1, c2, lbl.get("secBrig", ""), lbl.get("secBrigSub", ""))
     head = [(lbl.get("colBrig", ""), 3)] + [(_st_label(p, s), 1) for s in sts] \
@@ -176,8 +191,13 @@ def _brig_block(ws: Worksheet, row: int, c1: int, p: dict, sts: list[str]) -> in
         _block(ws, row, c1 + 3 + len(sts), row, c1 + 3 + len(sts), b.get("total"),
                fill=bg, border=BOX, align=RIGHT, fmt=NUM,
                font=Font(name=FONT, size=9.5, bold=True, color=INK))
-        _block(ws, row, c2, row, c2, b.get("pct"), fill=bg, border=BOX, align=RIGHT,
-               fmt=PCT1, font=Font(name=FONT, size=9.5, color=INK_SOFT))
+        bb = _band_of(b, bands, plain)
+        bc = _BAND_COLOR[bb]
+        graded = bb in ("green", "yellow", "red")
+        _block(ws, row, c2, row, c2, whole_pct(b.get("done") or 0, b.get("total") or 0),
+               fill=_fill(WC_TINT.get(bc, BAND)) if graded else bg, border=BOX, align=RIGHT,
+               fmt=PCT0, font=Font(name=FONT, size=9.5, bold=graded,
+                                   color=bc if graded else INK_SOFT))
         row += 1
     last = row - 1
     tot_col = get_column_letter(c1 + 3 + len(sts))
@@ -185,12 +205,6 @@ def _brig_block(ws: Worksheet, row: int, c1: int, p: dict, sts: list[str]) -> in
         f"{tot_col}{first}:{tot_col}{last}",
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color=BRAND, showValue=True))
-    pct_col = get_column_letter(c2)
-    ws.conditional_formatting.add(
-        f"{pct_col}{first}:{pct_col}{last}",
-        ColorScaleRule(start_type="num", start_value=0, start_color=TINT[RED],
-                       mid_type="num", mid_value=bands["yellow"], mid_color=TINT[AMBER],
-                       end_type="num", end_value=bands["green"], end_color=TINT[GREEN]))
     return row + 1
 
 
@@ -260,7 +274,8 @@ def _obzor(wb: Workbook, p: dict, sts: list[str]) -> None:
     row = _kpi_cards(ws, row, C1, [
         {"value": k.get("total", 0), "label": lbl.get("kTotal", ""), "color": BRAND},
         {"value": k.get("done", 0), "label": lbl.get("kResolved", ""),
-         "hint": f'{k["pct"]}%' if k.get("pct") is not None else "", "color": GREEN},
+         "hint": f'{whole_pct(k.get("done") or 0, k["total"])}%' if k.get("total") else "",
+         "color": GREEN},
         {"value": k.get("doing", 0), "label": lbl.get("kDoing", ""), "color": AMBER},
         {"value": k.get("open", 0), "label": lbl.get("kOpen", ""),
          "hint": lbl.get("kOpenHint", ""), "color": RED},
@@ -282,17 +297,28 @@ def _obzor(wb: Workbook, p: dict, sts: list[str]) -> None:
 
 # ── Liderlar KPI ─────────────────────────────────────────────────────────────
 
-def _band_of(r: dict, bands: dict) -> str:
-    if not r.get("ranked") or r.get("pct") is None:
+def _band_of(r: dict, bands: dict, plain: bool = False) -> str:
+    """The page's rule (utils/statusBands.js): a % is judged by the WHOLE
+    percent the reader sees, and the file prints the whole percent too — so
+    one leader can never be green on screen and yellow in the workbook. A
+    period too short to judge (`plain`, the router's SHORT_PERIOD_DAYS) grades
+    nobody, here as on the page."""
+    if not r.get("total"):
+        return "none"
+    if not r.get("ranked"):
         return "low"
-    if r["pct"] >= bands["green"]:
+    if plain:
+        return "plain"
+    p = whole_pct(r.get("done") or 0, r["total"])
+    if p >= bands["green"]:
         return "green"
-    if r["pct"] >= bands["yellow"]:
+    if p >= bands["yellow"]:
         return "yellow"
     return "red"
 
 
-_BAND_COLOR = {"green": GREEN, "yellow": AMBER, "red": RED, "low": SLATE}
+_BAND_COLOR = {"green": GREEN, "yellow": AMBER, "red": RED, "low": SLATE, "none": SLATE,
+               "plain": INK}
 
 
 def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
@@ -335,6 +361,12 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     row += 1
     _block(ws, row, C1, row, C2, lbl.get("lowNHint", ""),
            font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
+    if ld.get("plain") and lbl.get("shortNote"):
+        # The scale above is the rule; this period is too short to be judged
+        # by it, and the page says so in the same words.
+        row += 1
+        _block(ws, row, C1, row, C2, lbl["shortNote"],
+               font=Font(name=FONT, size=8.5, italic=True, color=INK_SOFT))
     row += 2
 
     row = _section(ws, row, C1, C2, lbl.get("secLeaders", ""),
@@ -377,13 +409,15 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                fill=bg, border=BOX, align=RIGHT, fmt=NUM,
                font=Font(name=FONT, size=9.5, bold=True,
                          color=RED if r.get("open") else INK_FAINT))
-        band = _band_of(r, bands)
+        band = _band_of(r, bands, bool(ld.get("plain")))
         bc = _BAND_COLOR[band]
-        _block(ws, row, C2, row, C2, r.get("pct"), fill=_fill(WC_TINT.get(bc, BAND)),
+        _block(ws, row, C2, row, C2,
+               whole_pct(r.get("done") or 0, r["total"]) if r.get("total") else "—",
+               fill=_fill(WC_TINT.get(bc, BAND)),
                border=BOX, align=Alignment(horizontal="center", vertical="center"),
-               fmt=PCT1,
+               fmt=PCT0,
                font=Font(name=FONT, size=9.5, bold=True,
-                         color=bc if band != "low" else INK_SOFT))
+                         color=bc if band not in ("low", "none") else INK_SOFT))
         row += 1
     last_data = row - 1
 
@@ -434,9 +468,9 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
         _block(ws, row, C1 + 4 + len(sts), row, C1 + 4 + len(sts), tot - done,
                fill=bg, border=top, align=RIGHT, fmt=NUM, font=bold)
         _block(ws, row, C2, row, C2,
-               round(done * 100 / tot, 1) if tot else None, fill=bg, border=top,
+               whole_pct(done, tot), fill=bg, border=top,
                align=Alignment(horizontal="center", vertical="center"),
-               fmt=PCT1, font=bold)
+               fmt=PCT0, font=bold)
         row += 1
 
     if ld.get("undated"):
@@ -466,6 +500,9 @@ def _register_sheet(wb: Workbook, p: dict) -> None:
     C1, C2 = 2, 8
 
     row = _banner(ws, 2, C1, C2, p.get("title") or "", p.get("subtitle") or "")
+    # The register is the one sheet the status pick and the text search
+    # narrow, so it names its OWN scope; the overview's strip names the KPI's.
+    row = _meta_strip(ws, row, C1, C2, p.get("register_meta") or p.get("meta") or [])
     row = _section(ws, row, C1, C2, lbl.get("secRegister", ""),
                    f'{_n(len(reg))} {lbl.get("rows", "")}')
     head = [lbl.get("colDate", ""), lbl.get("colCell", ""), lbl.get("colBrig", ""),

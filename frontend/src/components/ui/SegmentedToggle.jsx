@@ -7,13 +7,18 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *
  * Recessed-track pill look: a RECESSED track (--bg-inner + a subtle border)
  * holds the segments with a small inset; the SELECTED segment is a brand-gold
- * (--brand) pill with a white label; the rest are transparent with muted
+ * (--brand) pill with a dark --on-brand label (white on this gold is 2.6:1);
+ * the rest are transparent with muted
  * --text-3 labels. No divider lines. This is ALSO the style for page-level
  * "view tabs" (Production view switch, Staff Workers/Requests) — same
  * component, not a hand-rolled copy. Never hand-roll this bar — use this so
  * every toggle shares the app's button height. Outer heights mirror Button:
  *   size="md" (default) → 38px  (= Button md / toolbar baseline)
  *   size="sm"           → 30px  (= Button sm)
+ *   size="lg"           → 52px  — a phone's page-level view tabs, where the
+ *                         toggle IS the navigation: each SEGMENT is the 44px
+ *                         touch target (the track's inset is not tappable);
+ *                         toolbars keep md
  *
  * THE TRACK CAN NEVER OVERFLOW ITS CONTAINER. Labels are `whitespace-nowrap`,
  * so an option set that is wider than the box it sits in used to run straight
@@ -42,7 +47,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *   options   – array of either [value, label] tuples or
  *               { value, label, title, disabled } objects. `label` may be a
  *               string or a node (e.g. an icon for icon-only segments).
- *   size      – "md" (default) | "sm"
+ *   size      – "md" (default) | "sm" | "lg"
  *   fill      – when true, the track spans its container full-width and every
  *               segment grows to an equal share (flex-1). Use for form-panel
  *               fields (stacked in a flex column) so the pill fills the row
@@ -69,7 +74,9 @@ export default function SegmentedToggle({
   // track border on every side; with the segment padding below the OUTER height
   // lands exactly on Button md 38px / Button sm 30px so toggles align with the
   // rest of the toolbar controls.
-  const seg = size === "sm" ? "px-2.5 py-[2px] text-xs" : "px-3 py-[6px] text-xs";
+  const seg = size === "sm" ? "px-2.5 py-[2px] text-xs"
+    : size === "lg" ? "px-4 py-[12px] text-sm"
+    : "px-3 py-[6px] text-xs";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
@@ -204,7 +211,7 @@ export default function SegmentedToggle({
               className={`${fill ? "flex-1" : "flex-shrink-0"} inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
               style={
                 active
-                  ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
+                  ? { background: "var(--brand)", color: "var(--on-brand)", fontWeight: 600 }
                   : { background: "transparent", color: "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
               }
             >

@@ -1,4 +1,14 @@
+import { createContext, useContext } from "react";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+
+// What the enclosing TableCard tells its header cells. A `pageScroll` table
+// scrolls with Layout's <main>, whose padding a `top: 0` sticky cell would
+// stop short of — the header then hangs `--main-pad` below the screen edge
+// with rows sliding past above it. Every Th offsets itself from here, so no
+// caller has to remember the rule (Kelish draws its own cells and its own
+// offset).
+const TableCtx = createContext({ pageScroll: false });
+const STICK_TO_MAIN = { top: "calc(var(--main-pad, 0px) * -1)" };
 
 /**
  * Canonical data-table kit — THE template for every generic data table,
@@ -28,14 +38,17 @@ export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm" })
   return (
     <div className={`flex items-center justify-between gap-2 flex-wrap ${lg ? "px-3 sm:px-6 py-3.5 sm:py-4" : "px-4 py-2.5"}`}
       style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className={`flex items-center min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
-        {Icon && <Icon size={lg ? 22 : 14} strokeWidth={lg ? 1.8 : 2} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
+      {/* The icon sits on the TITLE's line, whatever the subtitle under it
+          does — centred on the whole block, a subtitle that wraps left it
+          beside the subtitle instead. */}
+      <div className={`flex items-start min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
+        {Icon && <Icon size={lg ? 22 : 14} strokeWidth={lg ? 1.8 : 2} className={`flex-shrink-0 ${lg ? "-mt-0.5" : "mt-px"}`} style={{ color: "var(--brand-text)" }} />}
         <div className="min-w-0">
           <div className={lg ? "text-[15px] font-semibold leading-tight" : "text-xs font-semibold uppercase tracking-wider"}
             style={{ color: lg ? "var(--text-1)" : "var(--text-3)" }}>{title}</div>
           {subtitle && (
             <div className={lg ? "text-xs mt-0.5" : "text-[11px] mt-0.5"}
-              style={{ color: lg ? "var(--text-2)" : "var(--text-4)" }}>{subtitle}</div>
+              style={{ color: lg ? "var(--text-2)" : "var(--text-3)" }}>{subtitle}</div>
           )}
         </div>
       </div>
@@ -60,6 +73,7 @@ export function SortIcon({ active, dir }) {
  *   cls    – extra classes (e.g. responsive "hidden sm:table-cell")
  */
 export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, cls = "", filter }) {
+  const { pageScroll } = useContext(TableCtx);
   const sortable = !!(k && onSort);
   const active = sortable && sort?.key === k;
   const alignCls = align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
@@ -70,7 +84,7 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
       onClick={sortable ? () => onSort(k) : undefined}
       aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
       className={`sticky top-0 z-10 px-3 py-2.5 font-semibold select-none whitespace-nowrap transition-colors ${sortable ? "cursor-pointer hover:bg-[var(--bg-accent)]" : ""} ${alignCls} ${cls}`}
-      style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+      style={{ background: "var(--bg-inner)", color: "var(--text-3)", ...(pageScroll ? STICK_TO_MAIN : null) }}
     >
       <span className={`inline-flex items-center gap-1 ${justify}`}>
         {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
@@ -132,6 +146,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *               keeps focus when it opens or shuts the card.
  *   children  – <thead> + <tbody>
  */
+const PAGE_SCROLL = { pageScroll: true };
+const NO_PAGE_SCROLL = { pageScroll: false };
+
 export default function TableCard({
   icon,
   title,
@@ -167,7 +184,7 @@ export default function TableCard({
           className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)", ...(minWidth ? { minWidth } : {}) }}
         >
-          {children}
+          <TableCtx.Provider value={pageScroll ? PAGE_SCROLL : NO_PAGE_SCROLL}>{children}</TableCtx.Provider>
         </table>
       </div>}
       {!collapsed && mobile != null && !mobileCards && (

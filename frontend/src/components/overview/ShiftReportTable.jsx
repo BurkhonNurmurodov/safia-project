@@ -79,6 +79,7 @@ import {
   loadTone, vypTone, resolvedTone, concernsTone, toneFill, toneTint,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
+import { softHyphenate } from "../../utils/personName";
 
 const REASON_ICON = {
   not_configured: PackageX,
@@ -102,16 +103,8 @@ const COLS = 5;
 
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
 
-// Soft hyphens inside a VERY long word (13+ letters — longer than the name
-// column holds on a 320px phone; at least four letters kept on each side), so
-// it breaks WITH a visible hyphen instead of pushing the fifth column off the
-// screen — or breaking silently, which turned «Abdurakhmonova» into
-// «Abdurakhmono va…», i.e. «… and …». Shorter words get none: a hyphen is
-// honoured greedily, so «Gulchehra» would split even where it fits a line of
-// its own. Invisible wherever the word fits (always on sm+, no wrapping there).
-const SHY = "\u00AD";
-const softHyphenate = (s) => s.replace(/\S{13,}/g, (w) => [...w]
-  .map((ch, i, a) => (i >= 4 && a.length - i >= 4 ? SHY + ch : ch)).join(""));
+// A name longer than its column breaks WITH a visible hyphen (utils/personName
+// `softHyphenate`) instead of pushing the fifth column off a 320px screen.
 const pctText = (v) => `${Math.round(v * 100)}%`;
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const fill = (s, vars) =>

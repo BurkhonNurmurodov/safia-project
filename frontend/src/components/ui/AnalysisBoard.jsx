@@ -146,21 +146,39 @@ export function NoChart({ height, text }) {
 //   parts  [{ key, label, color }] — the stack segments, read off row[key]
 //   badge  a node rendered before the name (a LevelChip, a tier chip, …)
 //   extra  an optional node rendered before the total (a red overdue mark)
-export function RankedBar({ row, max, parts, unit, badge, extra }) {
-  return (
-    <div className="min-w-0">
+//   onClick  optional — the whole row becomes a button (a ≥44px tap target on
+//            touch): a ranked row that opens what it counts
+//   value    optional — what the row prints at its end instead of row.total
+//            (a node, e.g. a band chip); the bar still scales by row.total
+//   full     optional — every bar spans the track: the row's MIX, not its
+//            volume. For a list ranked by a SHARE (a % resolved), where a
+//            volume-scaled bar would contradict the order it sits in.
+// `wrap` lets the label take a second line instead of being cut — for a list
+// of PEOPLE on a phone, where a clipped name has no hover to finish it.
+export function RankedBar({ row, max, parts, unit, badge, extra, onClick, value, full = false, wrap = false }) {
+  const body = (
+    <>
       <div className="flex items-center gap-2 mb-1">
         {badge}
-        <span className="flex-1 truncate text-xs" style={{ color: "var(--text-1)" }} title={row.title}>
+        <span className={`flex-1 min-w-0 text-xs ${wrap ? "line-clamp-2 break-words" : "truncate"}`} style={{ color: "var(--text-1)" }} title={row.title}>
           {row.label}
         </span>
         {extra}
-        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
-          {row.total}
-        </span>
+        {value ?? (
+          <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+            {row.total}
+          </span>
+        )}
       </div>
-      <StackBar row={row} max={max} parts={parts} unit={unit} />
-    </div>
+      <StackBar row={row} max={full ? row.total : max} parts={parts} unit={unit} />
+    </>
+  );
+  if (!onClick) return <div className="min-w-0">{body}</div>;
+  return (
+    <button type="button" onClick={onClick}
+      className="block w-[calc(100%+1rem)] min-w-0 text-left rounded-lg -mx-2 px-2 py-1.5 min-h-[44px] transition-colors hover:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">
+      {body}
+    </button>
   );
 }
 
@@ -193,15 +211,28 @@ export function StackBar({ row, max, parts, unit }) {
 // modal.
 // `extra` appends one more key after the segments — a mark that is not a
 // segment (the red overdue flag a row carries beside its total).
-export function StackLegend({ parts, extra }) {
+// `className` replaces the default centred row (a phone's 2×2 grid, say).
+// A part may carry an `icon` (a lucide component): the swatch becomes a filled
+// badge in the part's colour with the icon inside (in `glyph`, default near
+// black), so two parts of similar colour still differ by SHAPE while the badge
+// keeps the colour that matches their bar segment (/worker-concerns: «Yangi»
+// and «Ko'tarilgan» are both slate).
+export function StackLegend({ parts, extra, className }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
-      {parts.map((p) => (
-        <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
-          {p.label}
-        </span>
-      ))}
+    <div className={className ?? "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4"}>
+      {parts.map((p) => {
+        const Icon = p.icon;
+        return (
+          <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+            {Icon ? (
+              <span aria-hidden className="grid place-items-center w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ background: p.color }}>
+                <Icon size={9} strokeWidth={3} style={{ color: p.glyph || "#0f172a" }} />
+              </span>
+            ) : <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />}
+            {p.label}
+          </span>
+        );
+      })}
       {extra}
     </div>
   );
@@ -211,9 +242,10 @@ export function StackLegend({ parts, extra }) {
 // neighbour and a modal shows all of them — same component both times, so the
 // two can never drift into two different boards. `badge` / `extra` are
 // per-row render functions here.
-export function RankedList({ rows, max, parts, unit, badge, extra }) {
+// `onRowClick(row)` / `value(row)` / `full` pass through to RankedBar.
+export function RankedList({ rows, max, parts, unit, badge, extra, onRowClick, value, full = false, wrap = false }) {
   return (
-    <div className="space-y-3">
+    <div className={onRowClick ? "space-y-1.5" : "space-y-3"}>
       {rows.map((r) => (
         <RankedBar
           key={r.key}
@@ -223,6 +255,10 @@ export function RankedList({ rows, max, parts, unit, badge, extra }) {
           unit={unit}
           badge={badge ? badge(r) : null}
           extra={extra ? extra(r) : null}
+          value={value ? value(r) : undefined}
+          onClick={onRowClick ? () => onRowClick(r) : undefined}
+          full={full}
+          wrap={wrap}
         />
       ))}
     </div>

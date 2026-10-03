@@ -15,11 +15,20 @@ export default function EmptyState({
   // otherwise the only escape from "nothing matches" is guessing which of six
   // filters to reopen. Rendered under the message, above the upload link.
   action = null,
+  // "danger" — the section FAILED, which must not read as «nothing here»: the
+  // glyph sits in a red tint chip instead of the quiet grey of an empty state.
+  tone = "neutral",
 }) {
   const navigate = useNavigate();
   return (
     <div className={`flex flex-col items-center justify-center ${height} gap-3`}>
-      <Icon size={28} style={{ color: "var(--text-4)" }} />
+      {tone === "danger" ? (
+        <span className="grid place-items-center w-11 h-11 rounded-full" style={{ background: "rgba(239,68,68,0.12)" }}>
+          <Icon size={22} style={{ color: "var(--status-bad)" }} aria-hidden />
+        </span>
+      ) : (
+        <Icon size={28} style={{ color: "var(--text-4)" }} />
+      )}
       <div className="text-center">
         <div className="text-sm font-medium" style={{ color: "var(--text-2)" }}>{title}</div>
         <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{message}</div>

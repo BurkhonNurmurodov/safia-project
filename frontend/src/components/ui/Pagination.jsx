@@ -33,7 +33,7 @@ export default function Pagination({ page, pageCount, total, pageSize, onPage })
 
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap px-1 pt-3">
-      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
         {from}–{to} {t("pager.of")} {total.toLocaleString("ru-RU")}
       </span>
       {/* Below sm every button is a 36px square: the 26px desktop buttons
@@ -46,7 +46,7 @@ export default function Pagination({ page, pageCount, total, pageSize, onPage })
         </Button>
         {nums.map((n, i) =>
           n === "…" ? (
-            <span key={`gap-${i}`} className="px-1 text-[11px]" style={{ color: "var(--text-4)" }}>…</span>
+            <span key={`gap-${i}`} className="px-1 text-[11px]" style={{ color: "var(--text-3)" }}>…</span>
           ) : (
             <Button key={n} size="sm" variant={n === page ? "primary" : "ghost"} onClick={() => onPage(n)}
               aria-current={n === page ? "page" : undefined}

@@ -25,3 +25,14 @@ export const surnameInitial = (name) => {
   if (p.length < 2) return p[0] || String(name ?? "");
   return `${p[0]} ${p[1][0].toUpperCase()}.`;
 };
+
+// Soft hyphens inside a VERY long word (13+ letters — longer than a name
+// column holds on a 320px phone; at least four letters kept on each side), so
+// it breaks WITH a visible hyphen instead of being cut or breaking silently,
+// which turned «Abdurakhmonova» into «Abdurakhmono va…», i.e. «… and …».
+// Shorter words get none: a hyphen is honoured greedily, so «Gulchehra» would
+// split even where it fits a line of its own. Invisible wherever the word fits.
+// (The «Smena hisoboti» board's name column and /worker-concerns' phone rows.)
+const SHY = "\u00AD";
+export const softHyphenate = (s) => String(s ?? "").replace(/\S{13,}/g, (w) => [...w]
+  .map((ch, i, a) => (i >= 4 && a.length - i >= 4 ? SHY + ch : ch)).join(""));

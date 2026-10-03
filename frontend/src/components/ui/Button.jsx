@@ -16,7 +16,8 @@ const iconEl = (icon, size) =>
  * Use this instead of hand-styling <button> so all pages stay consistent.
  *
  * Props:
- *   variant   – "primary" (brand gold, white text — the main action)
+ *   variant   – "primary" (brand gold, dark --on-brand text — the main action;
+ *               white on this gold is 2.6:1, under AA)
  *               "secondary" (neutral card bg — cancel / less important)
  *               "danger" (red — destructive confirm)
  *               "success" (Excel green — spreadsheet / export actions)
@@ -46,7 +47,7 @@ const iconEl = (icon, size) =>
  *   className – extra classes (layout only — colors come from the variant)
  */
 const SOLID = {
-  primary:   { background: "var(--brand)",    color: "#fff", border: "1px solid transparent" },
+  primary:   { background: "var(--brand)",    color: "var(--on-brand)", border: "1px solid transparent" },
   secondary: { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" },
   danger:    { background: "#ef4444",         color: "#fff", border: "1px solid transparent" },
   success:   { background: "#217346",         color: "#fff", border: "1px solid transparent" },

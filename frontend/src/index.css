@@ -27,7 +27,10 @@
   --border-md:  rgba(255,255,255,0.10);
   --text-1:     #f3f4f6;
   --text-2:     #9ca3af;
-  --text-3:     #6b7280;
+  /* Secondary text holds WCAG AA (4.5:1) on every dark surface — card, inner,
+     accent. #6b7280 read 3.5:1 on the card, so every section title, legend,
+     table header and hint on the platform failed it (2026-10-03). */
+  --text-3:     #858c99;
   --text-4:     #4b5563;
   --input-bg:   #12151f;
   --hover-bg:   rgba(255,255,255,0.05);
@@ -40,6 +43,9 @@
   --brand:         #C8973F;
   --brand-rgb:     200,151,63;   /* value-intensity ramps: rgba(var(--brand-rgb), a) */
   --brand-text:    #D4A95C;
+  /* Ink for a label ON a brand-gold fill (the selected segment of a toggle):
+     white on this gold is 2.6:1, this is 7:1 — on both themes' gold. */
+  --on-brand:      #1c1407;
   --brand-rose:    #E8A0B0;
   --brand-bg:      rgba(200,151,63,0.12);
   --brand-hover:   rgba(200,151,63,0.20);
@@ -80,7 +86,8 @@
   --border-md:  rgba(0,0,0,0.12);
   --text-1:     #111827;
   --text-2:     #374151;
-  --text-3:     #6b7280;
+  /* AA on the cream inner / accent surfaces too (#6b7280 read 4.3:1 there). */
+  --text-3:     #5c6370;
   --text-4:     #9ca3af;
   --input-bg:   #f0ece4;
   --hover-bg:   rgba(0,0,0,0.04);
@@ -90,7 +97,10 @@
   /* Brand */
   --brand:         #B07828;
   --brand-rgb:     176,120,40;
-  --brand-text:    #B07828;
+  /* Gold TEXT on white needs a deeper shade than the gold fill (#B07828 text
+     read 3.8:1, under 3.3:1 on the brand tint of a filter chip). */
+  --brand-text:    #8A5A14;
+  --on-brand:      #1c1407;
   --brand-rose:    #C8687E;
   --brand-bg:      rgba(176,120,40,0.09);
   --brand-hover:   rgba(176,120,40,0.15);
