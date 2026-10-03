@@ -92,7 +92,10 @@ export default function BarRankingChart({
           }
 
           const labelStr  = v > 0 && hasNeg ? `+${v}%` : `${v}%`;
-          const shortName = name.length > 20 ? name.slice(0, 19) + "…" : name;
+          // Cut to what the name column can hold (~6.3px a char at 11px), so a
+          // long name is never clipped by the SVG's left edge.
+          const fit = Math.floor((NAME_W - 14) / 6.3);
+          const shortName = name.length > fit ? name.slice(0, fit - 1) + "…" : name;
 
           return (
             <g key={name}>

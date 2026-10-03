@@ -151,7 +151,7 @@ export default function DifferenceBreakdown({ data, height = 260, diffSegments, 
           <span className="font-mono font-semibold" style={{ color: "var(--text-1)" }}>{Math.round(n * 100)}%</span>
         </div>
         <div className="text-right flex-shrink-0">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+          <div className="text-[10px] max-sm:text-[11px] uppercase tracking-wider text-[var(--text-4)] max-sm:text-[var(--text-3)]">
             {t("profile.diff.total")}
           </div>
           <div className="text-lg font-bold font-mono" style={{ color: segColor(total, segs) }}>

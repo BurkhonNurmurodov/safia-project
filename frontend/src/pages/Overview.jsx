@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Eye, ChevronsUpDown, ChevronUp, ChevronDown, Layers, UserRound } from "lucide-react";
+import { AlertTriangle, Eye, ChevronsUpDown, ChevronUp, ChevronDown, Layers, UserRound, Users } from "lucide-react";
+import { SectionHead } from "../components/ui/DataTable";
 import FormulaModal from "../components/ui/FormulaModal";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -28,7 +29,7 @@ import { fmtPct, fmtTime } from "../utils/formatters";
 import { diffStatus } from "../utils/segments";
 import { utilNumbers, utilInputs, differenceNumbers, differenceInputs, differencePctNumbers, hcEquivNumbers, hcEquivInputs, avgWorkloadNumbers, rangeDays } from "../utils/formulas";
 import { padChartParams } from "../utils/chartRange";
-import { loadTone, TONE_HEX } from "../utils/statusBands";
+import { loadTone, TONE_HEX, activeBands } from "../utils/statusBands";
 import useStatusBands from "../hooks/useStatusBands";
 import useIsMobile from "../hooks/useIsMobile";
 import { surnameInitial } from "../utils/personName";
@@ -68,6 +69,9 @@ function workloadTone(v) {
 // Ink for text (theme-aware: 700 shades on light) and hex for a bar fill.
 const toneInk = (tone) => (tone ? `var(--status-${tone})` : "var(--text-4)");
 const toneHex = (tone) => (tone === "over" ? OVER_HEX : tone ? TONE_HEX[tone] : "#6b7280");
+// A figure over capacity carries a ▲ as well as its colour: on light paper the
+// amber ink sits close to the red, and colour must never be the only cue.
+const fmtWorkload = (v) => (workloadTone(v) === "over" ? `▲ ${fmtPct(v)}` : fmtPct(v));
 
 // Numeric value of the Difference cell in the chosen unit, or null when the
 // inputs needed for that unit aren't present.
@@ -121,7 +125,7 @@ function HeadCell({ label, tip, sortKey, sort, onSort, align = "right", classNam
       <span className={`inline-flex items-center gap-1 ${justify}`}>
         <button
           onClick={() => onSort(sortKey)}
-          className="inline-flex items-center gap-0.5 select-none transition-colors hover:text-[var(--text-1)]"
+          className={`inline-flex items-center gap-0.5 select-none transition-colors hover:text-[var(--text-1)] ${align === "right" ? "text-right justify-end" : align === "center" ? "text-center" : "text-left"}`}
           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit" }}
         >
           {label}
@@ -513,7 +517,7 @@ export default function Overview() {
             <KPICard
               label={t("overview.under90")}
               value={summary?.count_under_90 ?? "—"}
-              danger
+              color={summary?.count_under_90 > 0 ? "var(--status-bad)" : undefined}
               tooltip={t("overview.tip.under90")}
               onValueClick={() => setFormulaModal({
                 title: t("overview.fm.under90"),
@@ -539,13 +543,19 @@ export default function Overview() {
               {t("overview.fleetTrend")}
             </div>
             <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {lineMode === "planned" ? t("overview.fleetTrendPlanned")
-               : lineMode === "actual" ? t("overview.fleetTrendActual")
-               : t("overview.fleetTrendDiff")}
+              {/* With nobody picked the chart draws the fleet AVERAGE alone, and
+                  the subtitle says so instead of promising a line per brigadir. */}
+              {t((fleetSel.size === 0 ? {
+                planned: "overview.fleetTrendAvgPlanned", actual: "overview.fleetTrendAvgActual", diff: "overview.fleetTrendAvgDiff",
+              } : {
+                planned: "overview.fleetTrendPlanned", actual: "overview.fleetTrendActual", diff: "overview.fleetTrendDiff",
+              })[lineMode])}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end max-sm:w-full max-sm:justify-between">
+          <div className="flex items-center gap-2 flex-wrap justify-end max-sm:w-full max-sm:flex-col max-sm:items-stretch">
             {heatmap?.managers?.length > 0 && (
+              // Phone: the picker opens its row from the left, like the toggle under it.
+              <div className="max-sm:[&>div]:justify-start">
               <FleetManagerPicker
                 managers={heatmap.managers}
                 selected={fleetSel}
@@ -554,12 +564,17 @@ export default function Overview() {
                 onToggleAvg={() => setFleetAvg((v) => !v)}
                 onClearAll={() => setFleetSel(new Set())}
               />
+              </div>
             )}
             <SegmentedToggle
               className="flex-shrink-0"
+              fill={isMobile}
               value={lineMode}
               onChange={setLineMode}
-              options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
+              // A phone has no hover to expand «P / A»: it spells them out.
+              options={isMobile
+                ? [["planned", t("profile.diff.planned")], ["actual", t("profile.diff.final")], ["diff", t("overview.diff")]]
+                : [["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
             />
           </div>
         </div>
@@ -585,6 +600,15 @@ export default function Overview() {
       <div className="flex flex-col lg:flex-row gap-6 items-stretch lg:items-start">
         {/* Table */}
         <div className="flex-1 min-w-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <SectionHead
+            icon={Users}
+            title={t("overview.tableTitle")}
+            right={!isLoading && (
+              <span className="text-xs font-mono tabular-nums" style={{ color: "var(--text-3)" }}>
+                {filtered.length !== rows.length ? `${filtered.length} / ${rows.length}` : rows.length}
+              </span>
+            )}
+          />
           {/* Toolbar contract: search grows on the left, filters in the middle,
               the unit toggle pinned right — one aligned row, no dead gap. */}
           <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
@@ -625,7 +649,12 @@ export default function Overview() {
                     align="right" className="text-right px-2 hidden md:table-cell" />
                   <HeadCell label={t("overview.status")} sortKey="status" sort={sort} onSort={onSort}
                     align="center" className="text-center px-2 hidden sm:table-cell" />
-                  <th className="text-center px-4 max-sm:px-1 py-2.5">{t("overview.workers")}</th>
+                  <th className="text-center px-4 max-sm:px-1 py-2.5">
+                    {/* Phone: the column's own eye icon heads it (the word is too
+                        wide for a 320px row); the word stays for screen readers. */}
+                    <span className="max-sm:sr-only">{t("overview.workers")}</span>
+                    <Eye size={13} aria-hidden="true" className="sm:hidden inline-block" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -663,13 +692,13 @@ export default function Overview() {
                         figure is plain text: the row is the one tap target (→ profile),
                         and a text-sized formula button inside it is a mis-tap waiting. */}
                     {b.net_util == null ? (
-                      <td className="px-2 py-2.5 text-right font-mono" style={{ color: "var(--text-4)" }}>—</td>
+                      <td className="px-2 py-2.5 text-right font-mono" style={{ color: "var(--text-3)" }}>—</td>
                     ) : isMobile ? (
-                      <td className="px-2 py-2.5 text-right font-mono font-bold" style={{ color: toneInk(workloadTone(b.net_util)) }}>
-                        {fmtPct(b.net_util)}
+                      <td className="px-2 py-2.5 text-right font-mono font-bold whitespace-nowrap" style={{ color: toneInk(workloadTone(b.net_util)) }}>
+                        {fmtWorkload(b.net_util)}
                       </td>
                     ) : (
-                      <td className="px-2 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-2 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <button
                           className="font-mono font-bold hover:underline underline-offset-2"
                           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: toneInk(workloadTone(b.net_util)) }}
@@ -680,13 +709,13 @@ export default function Overview() {
                             inputs: utilInputs("net_util", b, t),
                           })}
                         >
-                          {fmtPct(b.net_util)}
+                          {fmtWorkload(b.net_util)}
                         </button>
                       </td>
                     )}
-                    <td className="px-2 py-2.5 text-right font-mono hidden md:table-cell" onClick={e => e.stopPropagation()}>
+                    <td className="px-2 py-2.5 text-right font-mono whitespace-nowrap hidden md:table-cell" onClick={e => e.stopPropagation()}>
                       <button
-                        className={`hover:underline underline-offset-2 ${diffValue(b, diffUnit) > 0 ? "text-orange-400" : "text-green-400"}`}
+                        className={`hover:underline underline-offset-2 ${diffValue(b, diffUnit) == null ? "text-[var(--text-3)]" : diffValue(b, diffUnit) > 0 ? "text-orange-400" : "text-green-400"}`}
                         style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
                         onClick={() => setFormulaModal(diffModal(b))}
                       >
@@ -752,6 +781,34 @@ export default function Overview() {
               </tbody>
             </table>
           </div>
+          {/* What the «Yakuniy yuk» colours mean — the bands in force (admin-
+              editable), under the list so it never moves a row. */}
+          {!isLoading && filtered.length > 0 && (() => {
+            const { ok, warn } = activeBands().load;
+            const items = [
+              ["over", `▲ ≥${OVER_PCT}% · ${t("overview.legendOver")}`],
+              ["ok", `≥${ok}%`],
+              ["warn", `${warn}–${ok - 1}%`],
+              ["bad", `<${warn}%`],
+              [null, `— ${t("filter.noData")}`],
+            ];
+            return (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-[var(--border)] text-[11px]" style={{ color: "var(--text-3)" }}>
+                <span>{t("overview.finalWorkload")}:</span>
+                {items.map(([tone, label]) => (
+                  <span key={label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    {tone && <span aria-hidden="true" className="w-2 h-2 rounded-full" style={{ background: toneHex(tone) }} />}
+                    <span style={{ color: tone ? toneInk(tone) : "var(--text-3)" }}>{label}</span>
+                  </span>
+                ))}
+                {/* Phone only, on a line of its own: the eye column has no word
+                    over it there, and it is not one of the colour bands. */}
+                <span className="sm:hidden basis-full inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <Eye size={12} aria-hidden="true" /> {t("overview.legendWorkers")}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Right column: ranking + funnel */}

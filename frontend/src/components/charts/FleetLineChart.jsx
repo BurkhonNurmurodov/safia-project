@@ -7,6 +7,7 @@ import { useDragSelect } from "../../hooks/useDragSelect";
 import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { ticksForWidth } from "../../utils/chartRange";
 import useElementWidth from "../../hooks/useElementWidth";
+import useIsMobile from "../../hooks/useIsMobile";
 
 // Per-manager identity colors — the shared generic-first category order.
 const LINE_COLORS = CATEGORY_COLORS;
@@ -195,7 +196,12 @@ export default function FleetLineChart({
   heatmapSegments = DEFAULT_HEATMAP_SEGMENTS,
   diffSegments    = DEFAULT_DIFF_SEGMENTS,
 }) {
-  const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  const { chartTheme, gridColor, labelColor: themeLabel, legendColor, tooltipTheme } = useChartTheme();
+  // Phone: the axis is the only key to the plot, so it reads at 11px in a
+  // darker grey (10px #9ca3af on white was ~2.5:1). Desktop is unchanged.
+  const isMobile = useIsMobile();
+  const labelColor = isMobile ? (chartTheme.mode === "dark" ? "#9ca3af" : "#6b7280") : themeLabel;
+  const axisPx = isMobile ? "11px" : "10px";
   const { t } = useLang();
   const apexRef = useRef(null);
   // Measured before paint and kept in sync by a ResizeObserver. This one number
@@ -242,6 +248,13 @@ export default function FleetLineChart({
 
   const yBands = buildYBands(activeSegs);
 
+  // Phone axis thinning (see the xaxis formatter): a «27.09» at 11px is ~30px,
+  // so neighbouring labels need ≥40px between their centres; the plot is the
+  // width less ~50px of y-axis. Step 1 = every day already fits.
+  const catIndex = new Map(dates.map((d, k) => [d.slice(0, 5), k]));
+  const phoneStep = wrapW && dates.length > 1
+    ? Math.max(1, Math.ceil((40 * (dates.length - 1)) / Math.max(1, wrapW - 50)))
+    : 1;
   const options = {
     chart: {
       type: "area",
@@ -275,7 +288,17 @@ export default function FleetLineChart({
         rotateAlways: false,
         hideOverlappingLabels: true,
         trim: false,
-        style: { colors: labelColor, fontSize: "10px" },
+        style: { colors: labelColor, fontSize: axisPx },
+        // Phone: Apex does not thin a category axis by tickAmount, so the
+        // labels are thinned here to what the measured width holds at 11px —
+        // every step-th day, counted back from the LAST so the newest date is
+        // always named. The tooltip keeps every day (its own formatter below).
+        ...(isMobile && phoneStep > 1 ? {
+          formatter: (v) => {
+            const i = catIndex.get(v);
+            return i == null || (dates.length - 1 - i) % phoneStep === 0 ? v : "";
+          },
+        } : {}),
       },
       axisBorder: { show: false },
       axisTicks: { show: false },
@@ -283,7 +306,7 @@ export default function FleetLineChart({
     yaxis: {
       labels: {
         formatter: (v) => v == null ? "—" : isDiff ? `${v > 0 ? "+" : ""}${v}%` : `${v}%`,
-        style: { colors: labelColor, fontSize: "10px" },
+        style: { colors: labelColor, fontSize: axisPx },
       },
     },
     annotations: {
@@ -295,6 +318,7 @@ export default function FleetLineChart({
     grid: { borderColor: gridColor },
     tooltip: {
       theme: tooltipTheme,
+      x: { formatter: (v) => v },
       y: { formatter: (v) => v == null ? "—" : isDiff ? `${v > 0 ? "+" : ""}${v}%` : `${v}%` },
     },
     legend: {

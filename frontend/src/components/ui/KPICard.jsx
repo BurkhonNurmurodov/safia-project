@@ -23,14 +23,26 @@ export default function KPICard({
         : { color: "var(--text-1)" };
 
   return (
-    <div className="rounded-xl p-4 max-sm:flex max-sm:flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className="relative rounded-xl p-4 max-sm:flex max-sm:flex-col max-sm:active:bg-[var(--bg-inner)]" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between gap-2">
         {/* Phone: sentence case without the wide tracking — uppercase spaced
             11px breaks a two-word label into a stack of fragments on a
             half-width card. Desktop is unchanged. */}
-        <div className="text-[11px] uppercase tracking-widest max-sm:normal-case max-sm:tracking-normal max-sm:text-xs mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
-          {label}
-          {tooltip && <Tooltip text={tooltip} />}
+        <div className="text-[11px] uppercase tracking-widest max-sm:normal-case max-sm:tracking-normal max-sm:text-xs mb-1 min-w-0" style={{ color: "var(--text-3)" }}>
+          {/* The (i) is bound to the label's LAST word, so on a phone it follows
+              the text instead of floating alone at the card's edge. Above the
+              stretched value button, so it still opens itself. */}
+          {(() => {
+            const info = tooltip && <span className="relative z-10 inline-flex align-middle"><Tooltip text={tooltip} /></span>;
+            if (typeof label !== "string" || !info) return <>{label}{info}</>;
+            const cut = label.lastIndexOf(" ");
+            return (
+              <>
+                {cut > 0 && label.slice(0, cut + 1)}
+                <span className="whitespace-nowrap">{label.slice(cut + 1)}{info}</span>
+              </>
+            );
+          })()}
         </div>
         {Icon && (
           <span
@@ -42,13 +54,15 @@ export default function KPICard({
         )}
       </div>
       <div
-        className={`max-sm:mt-auto text-2xl max-sm:text-xl max-sm:whitespace-nowrap font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
+        className={`max-sm:mt-auto text-2xl ${String(value ?? "").length > 7 ? "max-sm:text-lg" : "max-sm:text-xl"} font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
         style={textStyle}
       >
         {onValueClick ? (
           <button
             onClick={onValueClick}
-            className="hover:underline underline-offset-2 text-left"
+            // Phone: the button stretches over the whole card (after:inset-0), so
+            // the card — not a 14px figure — is what a thumb taps.
+            className="hover:underline underline-offset-2 text-left max-sm:after:absolute max-sm:after:inset-0 max-sm:after:content-[''] max-sm:after:rounded-xl"
             style={{ background: "none", border: "none", padding: 0, color: "inherit", cursor: "pointer" }}
           >
             {value ?? "—"}
