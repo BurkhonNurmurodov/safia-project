@@ -75,7 +75,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
       <span className={`inline-flex items-center gap-1 ${justify}`}>
         {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
         {label}
-        {sortable && <SortIcon active={active} dir={sort.dir} />}
+        {/* `sort` is null on a table nobody has sorted yet (Verifix's raw
+            registers keep the order Verifix sent): no dir to read then. */}
+        {sortable && <SortIcon active={active} dir={sort?.dir} />}
         {/* Optional per-column filter funnel (Google-Sheets style). Its own click
             must not fall through to the header's sort toggle. */}
         {filter && (
