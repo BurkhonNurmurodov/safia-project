@@ -428,6 +428,25 @@ def _formula(db: Session) -> Optional[dict]:
             "share": round(exact / n, 3)}
 
 
+def _gate_after(marks: list, mark: tuple, first: bool = False):
+    """A gate checkpoint after this mark: the person crossed the perimeter
+    after it. On the way IN the gate comes before the door's «I» (8–20 min),
+    so a checkpoint AFTER an «I» can only be the way out. `first` returns that
+    checkpoint instead of yes / no."""
+    gate = next((m for m in sorted(marks) if m[1] in CHECKPOINT and m[0] > mark[0]), None)
+    return gate if first else gate is not None
+
+
+def _exit_before(directed: list, entry: tuple) -> Optional[tuple]:
+    """The door exit just before an «I» on the way out (production door «O»,
+    then a corridor / locker-room «I», then the gate): the directed mark right
+    before it, when that is an «O»/«T» no more than PAIR_MIN earlier."""
+    prev = [m for m in directed if m[0] < entry[0]]
+    if prev and prev[-1][1] in OUT_TYPES | BREAK_TYPES and _mins(prev[-1][0], entry[0]) <= PAIR_MIN:
+        return prev[-1]
+    return None
+
+
 def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             formula: Optional[dict]) -> dict:
     d = (rec or {}).get("days") or []
@@ -481,7 +500,7 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     far = (end + timedelta(hours=12)) if end else datetime.combine(day + timedelta(days=1), time(14))
     late_marks = sorted(m for m in marks
                         if t_in and m[0] <= far and _mins(t_in, m[0]) >= PAIR_MIN) if t_in else []
-    t_out = out_src = None
+    t_out = out_src = held = None
     if t_in is None:
         if not scheduled:
             status = "off"
@@ -497,28 +516,45 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
             # The report's check-out is the person's LAST exit so far, and it
             # moves only when they go out again — a return in between shows in
             # the marks first. So while the shift runs the DIRECTED marks after
-            # it decide: the last «I» = back inside, a later «O»/«T» = out
-            # again. A checkpoint after it is the GATE on the way home and says
-            # nothing. Until 2026-10-04 any mark PAIR_MIN or more after the
-            # check-out read as a return, and the gate sits 7–31 min after the
-            # door (the 01.10 dump) — longer after a change of clothes — so
-            # people gone since 18:04 / 18:17 read «inside» at 20:09 while
-            # Verifix showed them out. ONLY while the shift still runs: once
-            # it is over the report's check-out is final — on 01.10 sixteen
-            # finished days read «no check-out» because the NEXT day's «I»
-            # (02.10 09:52, inside the 12 h the fallback looks at) was taken
-            # as a return.
+            # it may move it: a later «O»/«T» = out again, at that mark; an «I»
+            # = back inside, but only while nothing follows it — a GATE
+            # checkpoint after the entry means the person then crossed the
+            # perimeter, i.e. the «I» was a door on the way out (a corridor,
+            # the locker room), not a return. Until 2026-10-04 any «I» after
+            # the check-out — and before that any mark 30+ min after it —
+            # read as a return, and the people Verifix showed out since 18:04 /
+            # 18:17 (all of cell 6712) read «inside» all evening. ONLY while
+            # the shift still runs: once it is over the report's check-out is
+            # final — on 01.10 sixteen finished days read «no check-out»
+            # because the NEXT day's «I» (02.10 09:52, inside the 12 h the
+            # fallback looks at) was taken as a return.
             after = [m for m in directed if m[0] > t_out_rep + timedelta(minutes=1)]
             if not shift_over and after:
                 if after[-1][1] in OUT_TYPES | BREAK_TYPES:
                     t_out, out_src = after[-1][0], "mark"
+                elif _gate_after(mine, after[-1]):
+                    exit_ = _exit_before(after, after[-1])
+                    if exit_ is not None:
+                        t_out, out_src = exit_[0], "mark"
                 else:
                     t_out = out_src = None
+                    held = "back"
         elif last_dir is not None:
-            # The last DIRECTED mark decides; a checkpoint after it is the
-            # gate on the way out (or in) and moves nothing.
+            # The last DIRECTED mark decides: an «O»/«T» is the departure; an
+            # «I» means inside — unless a gate checkpoint follows it, which is
+            # the person crossing the perimeter after it (the same reading as
+            # above). A checkpoint after an «O» is the gate on the way out and
+            # moves nothing.
             if last_dir[1] in OUT_TYPES | BREAK_TYPES:
                 t_out, out_src = last_dir[0], "mark"
+            elif _gate_after(mine, last_dir):
+                # Left at the door exit just before that «I» when there is one,
+                # else at the gate itself — never at the «I», which may be the
+                # morning's arrival.
+                exit_ = _exit_before(directed, last_dir) or _gate_after(mine, last_dir, first=True)
+                t_out, out_src = exit_[0], "gate"
+            else:
+                held = "no_report_out"
         elif shift_over and late_marks:
             t_out, out_src = late_marks[-1][0], "last_mark"
         # An exit before the shift's end is not a departure yet but a BREAK
@@ -583,13 +619,14 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         "schedule": schedule, "hours": hours, "so_far": so_far, "late": late,
         "early_in": early_in, "early_out": early_out, "missing": missing,
         "marks": len(mine), "in_src": in_src, "out_src": out_src,
+        "held": held if status == "inside" else None,
         "raw": {
             "report": {k: (d or {}).get(k) for k in ("input_time", "output_time", "begin_time",
                                                      "end_time", "day_kind", "plan_time")},
             "facts": facts,
             "window": [_iso(lo), _iso(hi)],
             "marks": [[m[0].strftime("%d.%m %H:%M"), m[1], lo <= m[0] <= hi]
-                      for m in sorted(marks)[:40]],
+                      for m in sorted(marks)[-60:]],
             "marks_total": len(marks),
         },
     }
@@ -785,6 +822,7 @@ def _build(*, day: date, now: datetime, manager_id: int, ids: list[str], store: 
             "in": _hm(t_in), "out": _hm(t_out),
             "in_at": _iso(t_in), "out_at": _iso(t_out),
             "in_src": person["in_src"], "out_src": person["out_src"],
+            "held": person["held"] if status == "inside" else None,
             "status": status,
             "hours": hours_u, "hours_total": round(hours, 2) if hours is not None else None,
             "share": round(share, 3) if t_in else None,
@@ -846,7 +884,11 @@ def _build(*, day: date, now: datetime, manager_id: int, ids: list[str], store: 
                  "marks": sum(type_counts.values()), "mark_types": dict(type_counts),
                  "directed": any(t in DIRECTED for t in type_counts),
                  "in_sources": dict(Counter(r["in_src"] for r in rows if r["in_src"])),
-                 "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"]))},
+                 "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"])),
+                 # Why each «inside» row has no check-out: the report's was set
+                 # aside for a door entry after it ("back"), or the report has
+                 # none yet and the last door mark is an entry ("no_report_out").
+                 "held": dict(Counter(r["held"] for r in rows if r.get("held")))},
     }
 
 

@@ -736,8 +736,17 @@ export default function StaffLive() {
                             report: data.diag?.out_sources?.report || 0,
                             mark: data.diag?.out_sources?.mark || 0,
                             last: data.diag?.out_sources?.last_mark || 0,
+                            gate: data.diag?.out_sources?.gate || 0,
                           })}
                         </div>
+                        {(data.diag?.held?.back || data.diag?.held?.no_report_out) ? (
+                          <div className="mt-0.5 tabular-nums">
+                            {fill(t("staffLive.diagHeld"), {
+                              back: data.diag.held.back || 0,
+                              none: data.diag.held.no_report_out || 0,
+                            })}
+                          </div>
+                        ) : null}
                         {data.diag && !data.diag.directed && data.diag.marks > 0 && (
                           <div className="mt-0.5">{t("staffLive.diagUndirected")}</div>
                         )}
@@ -810,7 +819,7 @@ export default function StaffLive() {
                         <td className="px-3 py-2 tabular-nums">
                           {r.out
                             ? (r.out_src && r.out_src !== "report"
-                              ? <span title={t(r.out_src === "last_mark" ? "staffLive.outLastMark" : "staffLive.outMark")} className="underline decoration-dotted underline-offset-2">{r.out}</span>
+                              ? <span title={t(r.out_src === "last_mark" ? "staffLive.outLastMark" : r.out_src === "gate" ? "staffLive.outGate" : "staffLive.outMark")} className="underline decoration-dotted underline-offset-2">{r.out}</span>
                               : r.out)
                             : (r.status === "inside" || r.status === "break" ? <span style={{ color: "#22c55e" }}>{t("staffLive.stillInside")}</span> : "—")}
                           {r.early_out ? <span className="ml-1.5"><Chip color="#eab308">{fill(t("staffLive.earlyOut"), { n: r.early_out })}</Chip></span> : null}

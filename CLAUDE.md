@@ -7147,17 +7147,22 @@ who is inside, who left, who has not come, late and early, hours so far, with a
   C: sixteen people on 01.10 had nothing but gate taps and no report row (the
   file: did not come) and read «inside» / «no check-out» all day. Without a
   report check-out the last DIRECTED mark decides — an «O»/«T» is the
-  departure, an «I» means inside, a trailing C is the gate and moves nothing;
-  else, once the shift is over, the latest mark of any type ≥ 30 min after
-  the arrival and ≤ 12 h after the shift's end ("last_mark"). WHILE THE SHIFT
-  RUNS only the DIRECTED marks after the report's check-out move it (the
-  check-out is the LAST exit so far; a return shows in the marks first): the
-  last of them an «I» = back inside, the check-out dropped; an «O»/«T» = out
-  again, at that mark. A C after it is the gate on the way home and moves
-  nothing — until 2026-10-04 any mark 30+ min after the check-out read as a
-  return, and since the gate sits up to 31+ min after the door (a change of
-  clothes), people gone since 18:04 / 18:17 read «inside» at 20:09 while
-  Verifix showed them out. ONCE THE SHIFT IS OVER the report's check-out is
+  departure, an «I» means inside UNLESS a gate C follows it (source "gate":
+  the door «O» just before that «I» when there is one within 30 min, else the
+  gate itself); a C after an «O» is the gate and moves nothing; else, once the
+  shift is over, the latest mark of any type ≥ 30 min after the arrival and
+  ≤ 12 h after the shift's end ("last_mark"). WHILE THE SHIFT RUNS only the
+  DIRECTED marks after the report's check-out move it (the check-out is the
+  LAST exit so far; a return shows in the marks first): the last of them an
+  «O»/«T» = out again, at that mark; an «I» = back inside, the check-out
+  dropped — but only while NO gate C follows that «I». **A gate C after an «I»
+  is the way OUT** (on the way in the gate comes BEFORE the door), so that «I»
+  was a door on the way home (corridor, locker room), not a return. Until
+  2026-10-04 any «I» after the check-out (and before that any mark 30+ min
+  after it) read as a return, and the 6712 packers Verifix showed out since
+  18:04 / 18:17 read «inside» all evening. `diag.held` names why each «inside»
+  row has no check-out (`back` = an entry after the report's · `no_report_out`
+  = none in the report yet), printed under Diagnostics. ONCE THE SHIFT IS OVER the report's check-out is
   final: sixteen finished days read «no check-out» on 03.10 because the NEXT
   day's «I» (02.10 09:52) was taken as a return. A mark before the report's
   check-in is not this shift's: the previous night's exit was read as today's
