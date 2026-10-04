@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -1468,11 +1468,12 @@ def approvals_calendar(year: int = Query(..., ge=2000, le=2100), month: int = Qu
     start = date(year, month, 1)
     end = date(year + (month == 12), (month % 12) + 1, 1)
     read_days = set()
-    # A read covers this unit when the job read every workload cell (`all_at`)
-    # or the unit's own read stamped it — and only a unit with workload cells
-    # has any read at all.
-    covers = or_(LiveVerifixRead.data.has_key("all_at"),
-                 LiveVerifixRead.data["units"].has_key(str(mid)))
+    # A read covers this unit when it stamped the unit (`units`: its own read,
+    # or a job pass that read it) — a v1 row's `all_at` still means the job read
+    # every unit then — and only a unit with workload cells has any read at all.
+    covers = or_(LiveVerifixRead.data["units"].has_key(str(mid)),
+                 and_(LiveVerifixRead.data.has_key("all_at"),
+                      ~LiveVerifixRead.data.contains({"v": 2})))
     q = db.query(LiveVerifixRead.key).filter(
         LiveVerifixRead.key >= f"day:{start.isoformat()}", LiveVerifixRead.key < f"day:{end.isoformat()}",
         covers)

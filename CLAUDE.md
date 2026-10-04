@@ -7270,10 +7270,14 @@ rights — over a different source, and it is being built to REPLACE /staff.
   never for a day already closed; once per unit-day even if somebody comes back.
   The standing line names the people inside under ANOTHER unit's name apart
   («ichkarida 34 kishi (+2 boshqa brigada nomida)» — the strip counts only the
-  unit's own), and for whoever may close (an admin, the unit's own brigadir) it
-  carries ««Tasdiqlash»da yopish», which opens that tab on this unit and month
-  by writing the live calendar's own remembered keys first (`goClose` in
-  `StaffPage`; /staff's calendar keys are untouched).
+  unit's own, and with none of them inside it says «faqat boshqa brigada
+  nomidagi N kishi»). For whoever may close (an admin, the unit's own brigadir)
+  it carries ««Tasdiqlash»da yopish» once everybody has left — the only state
+  the close endpoint accepts; before that a line says the day closes there once
+  everybody has gone. The button writes the live calendar's own remembered keys
+  (unit, month, and `staff_live_approvals_focus` = the day — `goClose` in
+  `StaffPage`; /staff's keys are untouched): the calendar rings that day and
+  opens its close dialog, whose title names the date (live only).
 - **Hardening of 2026-10-05** (a fresh-eyes review of the test page, every fix
   approved one by one):
   - **A write never reads Verifix in the middle of itself.** `_ctx_for` (an
@@ -7291,24 +7295,40 @@ rights — over a different source, and it is being built to REPLACE /staff.
     one-way move.
   - **A future date is refused** (`error: "future"`, 400 on writes): reading it
     stored an empty day that every unit's calendar then showed «open». The
-    calendar counts a day only where the read covers the unit (`all_at`, or the
-    unit's own stamp) and only for a unit with workload cells.
+    calendar counts a day only where the read stamped the unit (`units[m]` —
+    its own read, or a job pass that read it; a v1 row's `all_at`, which then
+    meant every unit) and only for a unit with workload cells.
   - **The minute job reads each day only for the shift whose day it is**, plus
     a shift opening within `LOOKAHEAD_H` (4 h — `_person`'s window, so early
     arrivals are not missed). It read every shift's people for every due day: a
     night that had not started every minute, a finished day shift every 10 min.
+    So `all_at` is only the job's pacing stamp now: the job stamps `units[m]`
+    for each unit it read (row `v` 2; upgrading a v1 row hands its `all_at` to
+    every unit first), and **a unit's read time is the OLDEST `at` among its
+    own people** (`_covered_at(data, unit, ids)` — each person carries the
+    start of the read that last replaced them). A day-wide stamp showed a
+    skipped unit as just read and swallowed its «Yangilash». A person the last
+    passes skipped gets their whole day's marks when the job reads them again.
   - **«Yangilash»** keeps the job's 10-minute directory (it re-read the whole
     plant first), is ignored within `FORCE_MIN_S` (30 s) of the unit's last
-    read, and only ONE read per (unit, day) runs at a time (`_unit_lock`; a
-    viewer with a stored read is served it, one with none waits).
+    read, and only ONE read per (unit, day) runs at a time (`_unit_lock`). A
+    request that finds one running is served the stored read at once when it
+    already holds all the unit's people; otherwise it waits up to `WAIT_S`
+    (60 s, holding no DB connection) and serves what that read stored — never
+    a Verifix read of its own after waiting (wait + read would pass
+    Cloudflare's 100 s). Still incomplete → `read_error`; nothing → `busy`.
   - **A direct delete of a worker the brigadir already asked to delete approves
     THAT request** instead of writing a second row; a replaced batch is
     rejected only within its own unit.
   - The table puts «Holat» right after the name (a phone and a 1024 px laptop
     never showed it); the label wraps on a phone. The floating «N qator» pill is
     gone on this page (the strip counts). The «boshqa brigada nomidagi soatlar»
-    section follows the search and the strip; «hozir shu yerda» shows only while
-    the person is inside or on a break. Live chips take the `--status-*` ink
+    section follows every filter of the table and the strip (`liveMatchExtra`:
+    every such person came by a move, «Belgisiz» = their `no_out` status, they
+    carry no late / early flags); «hozir shu yerda» shows only while the person
+    is inside or on a break. On this page the name search also matches the name
+    AS PRINTED (`tl` — a name stored in Cyrillic is shown in Latin);
+    `matchesFilters` takes it as an argument, so /staff's search is unchanged. Live chips take the `--status-*` ink
     over an 8 % tint mixed on the CARD (AA in both themes).
   - Not changed: the KPI cards still follow the strip with no «filtrlangan»
     badge, early arrival still rounds the seconds (`early_arrival_min` can sit

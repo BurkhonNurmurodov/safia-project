@@ -40,7 +40,7 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/Co
 import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
 import {
   LiveHeader, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  liveMatch, liveFilterOptions,
+  liveMatch, liveMatchExtra, liveFilterOptions,
 } from "../components/staff/LiveBits";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -214,8 +214,14 @@ const cellDisplay = (c, tl) => {
 // ONE row predicate for every filtered view of the day — the table, the KPI
 // cards and the role chips. `skipRoles` drops the job_titles clause: the chips
 // ARE that filter, so they must count against everything EXCEPT themselves.
-function matchesFilters(w, f, skipRoles = false) {
-  if (f.worker     && !w.worker_name?.toLowerCase().includes(f.worker.toLowerCase())) return false;
+// `shown` (live only) is the name as printed: a name stored in Cyrillic is
+// shown in Latin, and the search must find what the reader sees.
+function matchesFilters(w, f, skipRoles = false, shown = null) {
+  if (f.worker) {
+    const q = f.worker.toLowerCase();
+    if (!w.worker_name?.toLowerCase().includes(q)
+      && !(shown && (shown(w.worker_name) || "").toLowerCase().includes(q))) return false;
+  }
   if (!skipRoles && f.job_titles.length && !f.job_titles.includes(w.job_title || "")) return false;
   if (f.cells.length      && !f.cells.includes(w._cell?.code   || ""))               return false;
   if (f.schedules.length  && !f.schedules.includes(w.schedule   || ""))              return false;
@@ -593,18 +599,19 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // Every summary here describes the rows ON SCREEN, not the whole day: cards
   // reading the unfiltered day sat directly above a table obeying the filters,
   // and the two disagreed with nothing on screen saying why.
+  const shownName = S.live ? tl : null;
   const workers = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters) && (!S.live || liveMatch(w, liveFilter))),
+    () => allWorkers.filter(w => matchesFilters(w, filters, false, shownName) && (!S.live || liveMatch(w, liveFilter))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, filters, liveFilter]
+    [allWorkers, filters, liveFilter, lang]
   );
   // The chips ARE the job_titles filter, so they count against every OTHER
   // filter only. Counted off `workers`, picking one role would erase every
   // other chip and leave no way back to a second one.
   const chipBase = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters, true) && (!S.live || liveMatch(w, liveFilter))),
+    () => allWorkers.filter(w => matchesFilters(w, filters, true, shownName) && (!S.live || liveMatch(w, liveFilter))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, filters, liveFilter]
+    [allWorkers, filters, liveFilter, lang]
   );
 
   // PEOPLE, not rows. A worker split across two of the unit's cells is TWO
@@ -701,12 +708,15 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     });
   }
 
-  // Live: the people standing here under another unit's name follow the same
-  // search and status strip as the table above them — «Kechikkan» listed two
-  // people who were not late. The section hides when none of them match.
+  // Live: the people standing here under another unit's name follow every
+  // filter and the status strip of the table above them — «Kechikkan» listed
+  // two people who were not late. The section hides when none of them match.
   const extrasShown = useMemo(() => (data?.extras || []).filter(x =>
-    (!filters.worker || (x.worker_name || "").toLowerCase().includes(filters.worker.toLowerCase()))
-    && liveMatch(x, liveFilter)), [data?.extras, filters.worker, liveFilter]);
+    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null, hours_worked: x.hours },
+      filters, false, shownName)
+    && liveMatchExtra(x, liveFilter)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data?.extras, filters, liveFilter, lang]);
 
   const sortedWorkers = nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
@@ -4108,6 +4118,19 @@ function ApprovalsCalendar({ role, supervisors }) {
   });
   const days = data?.days || {};
 
+  // Live: the standing line's shortcut (`goClose`) names the day it came from.
+  // Read once at mount: that day is ringed, and its close dialog — which then
+  // names the date — opens by itself once the calendar says it is open.
+  const [focusIso] = useState(() => {
+    if (!S.live) return null;
+    try {
+      const v = localStorage.getItem(S.pk("staff_approvals_focus"));
+      localStorage.removeItem(S.pk("staff_approvals_focus"));
+      return v ? JSON.parse(v) : null;
+    } catch { return null; }
+  });
+  const focusDone = useRef(false);
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: S.qk("staff-approvals-calendar") });
     qc.invalidateQueries({ queryKey: S.qk("approved-cells") });
@@ -4135,6 +4158,19 @@ function ApprovalsCalendar({ role, supervisors }) {
     // Never "" — an empty error renders nothing and the dialog just sits there.
     onError: (e) => setAskErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
   });
+
+  useEffect(() => {
+    if (!focusIso || focusDone.current || !data) return;
+    focusDone.current = true;
+    if (days[focusIso]?.status === "open" && (role === "supervisor" || isAdmin) && focusIso <= todayIso) {
+      // Once, when the calendar's answer arrives — nothing to derive in render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAskErr(""); setAsk({ kind: "close", iso: focusIso });
+    } else {
+      document.querySelector(`[data-day-iso="${focusIso}"]`)?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusIso, data]);
 
   const cells = buildMonthCells(view.year, view.month);
   const prevMonth = () => setView(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 });
@@ -4215,6 +4251,7 @@ function ApprovalsCalendar({ role, supervisors }) {
               return (
                 <button
                   key={iso}
+                  data-day-iso={iso}
                   disabled={!clickable}
                   onClick={() => onDayClick(iso, status)}
                   title={title}
@@ -4223,6 +4260,7 @@ function ApprovalsCalendar({ role, supervisors }) {
                     ...STATUS_STYLE[status],
                     opacity: future ? 0.4 : 1,
                     cursor: clickable ? "pointer" : "default",
+                    ...(iso === focusIso ? { outline: "2px solid var(--brand)", outlineOffset: 2 } : null),
                   }}
                   onMouseEnter={e => { if (clickable) e.currentTarget.style.transform = "scale(1.05)"; }}
                   onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
@@ -4244,7 +4282,8 @@ function ApprovalsCalendar({ role, supervisors }) {
         open={!!ask}
         onCancel={() => { setAskErr(""); setAsk(null); }}
         onConfirm={() => (ask?.kind === "close" ? closeMut : reopenMut).mutate(ask.iso)}
-        title={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
+        title={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")
+          + (S.live && ask?.iso ? ` · ${ask.iso.split("-").reverse().join(".")}` : "")}
         // The close carries the «leaders entered N ojidaniya today» line — a
         // question, never a gate. Mounted with the dialog, so the day-summary
         // is fetched for the one day being closed, not for the whole month.
@@ -4520,6 +4559,7 @@ export function StaffPage() {
       localStorage.setItem(S.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
       const [y, m] = String(selectedDate).split("-").map(Number);
       if (y && m) localStorage.setItem(S.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
+      localStorage.setItem(S.pk("staff_approvals_focus"), JSON.stringify(selectedDate));
     } catch { /* storage unavailable — the calendar opens where it was */ }
     setTab("approvals");
   }

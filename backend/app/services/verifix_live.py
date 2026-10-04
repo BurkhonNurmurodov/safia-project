@@ -70,6 +70,9 @@ STALE_S = 180            # the page reads Verifix itself when a running day's re
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
 FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
+WAIT_S = 60              # a request waits this long for another read of its unit-day (+ the
+                         # rest of the request stays inside Cloudflare's 100 s)
+BUSY_MESSAGE = "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."
 LOOKAHEAD_H = 4          # a shift's people are read this long before it opens (`_person`'s window)
 NOTICE_WINDOW_MIN = 180  # «everybody left» is told only while the last exit is this recent
 MISSING_AFTER_MIN = 60   # still inside this long past the shift's end = no check-out
@@ -337,14 +340,18 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
 
 
 def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
-              unit_id: Optional[int] = None) -> dict:
+              unit_id: Optional[int] = None, units_read=(), all_units=()) -> dict:
     """Read `ids` on `day` from Verifix and fold them into the day's stored read.
 
-    `unit_id` None = the job's read of every workload cell: the marks read since
-    the last one only (all of them every `TRACKS_FULL_S`), and the whole day's
-    time stamped as `all_at`. A unit's read («Yangilash», or a day nobody stored)
+    `unit_id` None = the job's read: the marks read since the last one only
+    (all of them every `TRACKS_FULL_S`; whole for anybody the last passes
+    skipped), `all_at` = the job's pacing stamp, and `units[m]` stamped for each
+    unit in `units_read` — the job reads only the units whose day it is (v2; in
+    a v1 row `all_at` meant every unit, so upgrading one hands that stamp to
+    each of `all_units`). A unit's read («Yangilash», or a day nobody stored)
     reads its people whole and stamps `units[unit_id]`. Each person is replaced
-    only by a read that STARTED later than the one stored for them."""
+    only by a read that STARTED later than the one stored for them, and carries
+    that read's start (`at`) — what `_covered_at` reads."""
     key = _day_key(day)
     started = now_local()
     t0 = _time.monotonic()
@@ -357,7 +364,9 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
     incremental = (unit_id is None and m_to is not None and m_full is not None
                    and (started - m_full).total_seconds() < TRACKS_FULL_S)
     m_from = max(lo, m_to - timedelta(minutes=TRACKS_OVERLAP_MIN)) if incremental else lo
-    fresh = [i for i in ids if i not in old_emps] if incremental else []
+    # Whole for the people the last passes skipped (a unit whose shift-day it
+    # was not): their stored marks stop before the incremental window opens.
+    fresh = [i for i in ids if i not in old_emps or _read_before(old_emps[i], m_from)] if incremental else []
     db.rollback()                                   # no transaction held across the API calls
 
     num = [int(i) for i in ids if i.isdigit()]
@@ -385,9 +394,16 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
             m = marks.get(eid, [])
         uniq = {(x[0], x[1]): x for x in m}
         emps[eid] = {"at": at_iso, "ts": ts.get(eid), "m": [uniq[k] for k in sorted(uniq)]}
-    cur["v"] = 1
     cur["emps"] = emps
     if unit_id is None:
+        units = dict(cur.get("units") or {})
+        if int(cur.get("v") or 1) < 2 and cur.get("all_at"):
+            for m in all_units:
+                units.setdefault(str(m), cur["all_at"])
+        for m in units_read:
+            units[str(m)] = at_iso
+        cur["units"] = units
+        cur["v"] = 2
         cur["all_at"] = at_iso
         cur["m_to"] = hi.isoformat(timespec="seconds")
         if not incremental:
@@ -395,6 +411,7 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
         row.read_at = datetime.now(timezone.utc)
         row.ms = int((_time.monotonic() - t0) * 1000)
     else:
+        cur.setdefault("v", 1)
         units = dict(cur.get("units") or {})
         units[str(unit_id)] = at_iso
         cur["units"] = units
@@ -404,9 +421,30 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
     return cur
 
 
-def _covered_at(data: dict, unit_id: int) -> Optional[datetime]:
-    """When this unit's people were last read: the whole read or the unit's own."""
-    stamps = [x for x in (data.get("all_at"), (data.get("units") or {}).get(str(unit_id))) if x]
+def _read_before(emp: dict, t: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(emp.get("at") or "") < t
+    except ValueError:
+        return True
+
+
+def _covered_at(data: dict, unit_id: int, ids=()) -> Optional[datetime]:
+    """When this unit's people were last read: the OLDEST read among them —
+    each person carries the start of the read that last replaced them, and the
+    job reads only the units whose shift-day it is, so a day-wide stamp would
+    claim units it skipped. A unit with nobody: its own stamp (v1 rows: the
+    job's `all_at`, which then covered every unit). None = nothing read."""
+    store = data.get("emps") or {}
+    ats = []
+    for i in ids:
+        try:
+            ats.append(datetime.fromisoformat(store[i]["at"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if ids:
+        return min(ats) if ats else None
+    stamps = [x for x in ((data.get("units") or {}).get(str(unit_id)),
+                          data.get("all_at") if int(data.get("v") or 1) < 2 else None) if x]
     return datetime.fromisoformat(max(stamps)) if stamps else None
 
 
@@ -764,7 +802,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     row = _row(db, key)
     data = (row.data or {}) if row else {}
     store = data.get("emps") or {}
-    covered = _covered_at(data, manager_id)
+    covered = _covered_at(data, manager_id, ids)
     now = now_local()
     if stored_only:
         if covered is None:
@@ -780,13 +818,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     read_error = None
     if force or stale:
         lk = _unit_lock((manager_id, day))
-        # Another read of this unit-day is running: with something stored,
-        # serve it; with nothing, wait for that read to finish first.
-        got = (lk.acquire(timeout=verifix.BUDGET_S + 15) if covered is None
-               else lk.acquire(blocking=False))
-        if not got and covered is None:
-            return {"error": "busy", "message": "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."}
-        if got:
+        if lk.acquire(blocking=False):
             try:
                 data = _read_day(db, cfg, day, ids, unit_id=manager_id)
             except verifix.VerifixError as exc:
@@ -796,8 +828,27 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
                 read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
             finally:
                 lk.release()
+        elif covered is None or any(i not in store for i in ids):
+            # Another read of this unit-day is fetching people the stored read
+            # lacks: wait for it — holding no connection — and serve what it
+            # stored. Never a second Verifix read on top of it (a wait plus a
+            # read of our own would outlast Cloudflare's 100 s).
+            asked = datetime.now(timezone.utc)
+            db.rollback()
+            if lk.acquire(timeout=WAIT_S):
+                lk.release()
+            row = _row(db, key)
+            data = (row.data or {}) if row else {}
+            failed = (row.error if row and row.error and row.error_at and row.error_at >= asked else None)
+            busy = failed or BUSY_MESSAGE
+            if _covered_at(data, manager_id, ids) is None:
+                return {"error": "busy", "message": busy}
+            if any(i not in (data.get("emps") or {}) for i in ids):
+                read_error = {"message": busy, "at": _iso(now_local())}
+        # else: another read is running and the stored one already holds
+        # everybody (it is only old, or «Yangilash» was pressed) — serve it.
         store = data.get("emps") or {}
-        covered = _covered_at(data, manager_id)
+        covered = _covered_at(data, manager_id, ids)
         now = now_local()
     elif row and row.error and row.error_at and (row.read_at is None or row.error_at > row.read_at):
         read_error = {"message": row.error, "at": _iso(_local(row.error_at))}
@@ -938,10 +989,11 @@ def _pass(db: Session) -> None:
         last = datetime.fromisoformat(row.data["all_at"]) if row and (row.data or {}).get("all_at") else None
         if last is not None and (now_local() - last).total_seconds() < every - 15:
             continue
-        ids = sorted({eid for eid, (m, _) in homes.items() if reads(m, day)} | _doc_ids(db, day))
+        read_units = {m for m in with_cells if reads(m, day)}
+        ids = sorted({eid for eid, (m, _) in homes.items() if m in read_units} | _doc_ids(db, day))
         t0 = _time.monotonic()
         try:
-            _read_day(db, cfg, day, ids)
+            _read_day(db, cfg, day, ids, units_read=read_units, all_units=with_cells)
         except verifix.VerifixError as exc:
             _note_error(db, key, exc)
             log.warning("staff-live: reading %s failed (%s: %s)", day, exc.code, exc.message)

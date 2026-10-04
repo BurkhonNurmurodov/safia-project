@@ -80,6 +80,18 @@ export function liveMatch(w, f) {
   }
 }
 
+// The people standing here under another unit's name carry a status and no
+// clock flags: every one of them came by a move, and «no check-out» is their
+// status — read through `liveMatch` they vanished under «Ko'chirilgan».
+export function liveMatchExtra(x, f) {
+  switch (f) {
+    case "moved": return true;
+    case "missing": return x.status === "no_out";
+    case "late": case "early": case "absent": return false;
+    default: return liveMatch(x, f);
+  }
+}
+
 export function liveFilterOptions(rows, t) {
   const primary = rows.filter((w) => !w.split_of);
   return LIVE_FILTERS.map((f) => [f, `${t(`staffLive.f.${f}`)} · ${primary.filter((w) => liveMatch(w, f)).length}`]);
@@ -96,7 +108,8 @@ function readAt(live) {
 // `counts` splits «inside» into this unit's own people and those standing here
 // under another unit's name — the strip counts only the first, so the line
 // says the second out loud. `onGoClose` (only for those who may close the day)
-// opens «Tasdiqlash» on this unit and month: the day closes there.
+// opens «Tasdiqlash» on this day — offered once everybody has left, the only
+// state the close endpoint accepts; before that the line says when it can.
 function CloseLine({ close, counts, onGoClose }) {
   const { t } = useLang();
   if (!close) return null;
@@ -109,7 +122,9 @@ function CloseLine({ close, counts, onGoClose }) {
       : s === "open"
         ? (close.n > 0
           ? (counts?.extra_inside > 0
-            ? fill(t("staffLive.close.openExtra"), { n: counts.inside, x: counts.extra_inside })
+            ? (counts.inside > 0
+              ? fill(t("staffLive.close.openExtra"), { n: counts.inside, x: counts.extra_inside })
+              : fill(t("staffLive.close.openOnlyExtra"), { x: counts.extra_inside }))
             : fill(t("staffLive.close.open"), { n: close.n }))
           : fill(t("staffLive.close.openExpected"), { e: close.expected }))
         : t("staffLive.close.waiting");
@@ -122,6 +137,9 @@ function CloseLine({ close, counts, onGoClose }) {
         : <Unlock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />}
       <div className="min-w-[12rem] flex-1">
         <div>{text}</div>
+        {onGoClose && (s === "open" || s === "waiting") && (
+          <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{t("staffLive.close.where")}</div>
+        )}
         {open && (close.missing > 0 || close.pending > 0 || close.notified_at) && (
           <div className="flex items-center gap-1.5 flex-wrap mt-1">
             {close.missing > 0 && <LiveChip color="#ef4444">{fill(t("staffLive.close.missingNote"), { n: close.missing })}</LiveChip>}
@@ -134,7 +152,7 @@ function CloseLine({ close, counts, onGoClose }) {
           </div>
         )}
       </div>
-      {s !== "closed" && onGoClose && (
+      {s === "all_left" && onGoClose && (
         <Button size="md" variant="secondary" className="flex-shrink-0 self-center max-sm:ml-[23px]" onClick={onGoClose}>
           {t("staffLive.close.go")} <ArrowRight size={14} />
         </Button>
