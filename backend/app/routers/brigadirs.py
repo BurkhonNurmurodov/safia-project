@@ -39,7 +39,12 @@ def build_metrics_list(
     use_confirmed_only: bool = False,
     require_closed: bool = True,
 ):
-    managers = db.query(Manager).filter(Manager.archived.is_(False))
+    # A unit whose загрузка is switched OFF on its profile page
+    # (`managers.zagruzka_on`) takes no part in it: every table, card and
+    # average built here — /zagruzka, Overview, /summary, the brigadir profile
+    # — leaves it out. Nothing is deleted; switching it back on restores it.
+    managers = db.query(Manager).filter(Manager.archived.is_(False),
+                                        Manager.zagruzka_on.is_(True))
     if shift:
         managers = managers.filter(Manager.shift == shift)
     if manager_ids:
@@ -468,6 +473,9 @@ def get_brigadir_profile(
     return {
         "manager_id": mgr.id,
         "name": mgr.name,
+        # OFF = no загрузка is calculated for this unit, so the page says that
+        # instead of drawing empty charts that read as «no data yet».
+        "zagruzka_on": bool(mgr.zagruzka_on),
         "shift": mgr.shift,
         "daily": daily,
         "latest": {

@@ -62,6 +62,7 @@ try:
         migrate_cell_in_load_column,
         add_cell_shift_times,
         add_cell_archive,
+        add_manager_kind_columns,
         add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
@@ -108,6 +109,7 @@ try:
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
+        check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -185,6 +187,7 @@ try:
     from app.services.verifix_explore import purge_blocked_probes
     purge_blocked_probes()
     # First: every ORM read of a profile selects these two columns.
+    add_manager_kind_columns()
     add_leader_kind_columns()
     add_last_seen_column()
     add_tg_name_column()
@@ -504,6 +507,12 @@ try:
     # Remove this line, `startup.sync_leaders_from_verifix` and
     # `services/verifix_leader_sync.py` once the report has landed.
     sync_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
+    # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
+    # which and which Verifix brigadirs have no unit here. Remove this line,
+    # `startup.check_supervisor_kinds` and `services/verifix_supervisor_check.py`
+    # once it has been sent.
+    check_supervisor_kinds()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

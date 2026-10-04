@@ -320,6 +320,10 @@ _T = {
     "l.leader": ("Lider", "Лидер", "Лидер", "Leader"),
     "l.leader_kind": ("Lavozim (Verifix)", "Лавозим (Verifix)", "Должность (Verifix)",
                       "Position (Verifix)"),
+    "l.supervisor_kind": ("Lavozim (Verifix)", "Лавозим (Verifix)", "Должность (Verifix)",
+                          "Position (Verifix)"),
+    "l.zagruzka_on": ("Zagruzka hisoblanadi", "Загрузка ҳисобланади", "Загрузка считается",
+                      "Load is calculated"),
     "l.cells": ("Yacheykalar", "Ячейкалар", "Ячейки", "Cells"),
     "l.note": ("Izoh", "Изоҳ", "Примечание", "Note"),
     "l.category": ("Kategoriya", "Категория", "Категория", "Category"),
@@ -349,6 +353,9 @@ _T = {
     "v.leader_kind.leader": ("Lider", "Лидер", "Лидер", "Leader"),
     "v.leader_kind.acting": ("Lider o'rnida", "Лидер ўрнида", "Вместо лидера",
                              "In place of a leader"),
+    "v.supervisor_kind.supervisor": ("Brigadir", "Бригадир", "Бригадир", "Supervisor"),
+    "v.supervisor_kind.acting": ("Brigadir o'rnida", "Бригадир ўрнида", "Вместо бригадира",
+                                 "In place of a supervisor"),
 }
 
 

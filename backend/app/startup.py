@@ -1731,6 +1731,37 @@ def add_cell_archive() -> None:
         db.close()
 
 
+def add_manager_kind_columns() -> None:
+    """2026-10-04: a supervisor unit says whether its brigadir IS one on
+    Verifix (``managers.supervisor_kind`` + ``supervisor_kind_meta`` —
+    ``services/supervisor_kind.py``) and whether its загрузка is calculated at
+    all (``managers.zagruzka_on``).
+
+    ``zagruzka_on`` is added DEFAULT TRUE — so every unit that exists today keeps
+    its загрузка exactly as it was, the operator's call — and only THEN is the
+    default turned to FALSE, so a unit created from now on starts out of the
+    загрузка until somebody switches it on. Both happen once: the column's
+    absence is the guard, and a second boot finds it and does nothing. Runs
+    FIRST at boot: every ORM read of a unit selects these columns."""
+    db = SessionLocal()
+    try:
+        have = {r[0] for r in db.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'managers'")).fetchall()}
+        db.execute(text("ALTER TABLE managers ADD COLUMN IF NOT EXISTS supervisor_kind VARCHAR(12)"))
+        db.execute(text("ALTER TABLE managers ADD COLUMN IF NOT EXISTS supervisor_kind_meta JSONB"))
+        if "zagruzka_on" not in have:
+            db.execute(text(
+                "ALTER TABLE managers ADD COLUMN zagruzka_on BOOLEAN NOT NULL DEFAULT TRUE"))
+            db.execute(text("ALTER TABLE managers ALTER COLUMN zagruzka_on SET DEFAULT FALSE"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] manager kind / zagruzka migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_kind_columns() -> None:
     """2026-10-04: a leader profile says whether the person IS a leader on
     Verifix or fills a leader's place (``role_profiles.leader_kind``) and where
@@ -3750,7 +3781,8 @@ def seed_managers_and_sources() -> None:
             for mgr_id, name, shift in MANAGERS:
                 existing = db.query(Manager).filter(Manager.id == mgr_id).first()
                 if not existing:
-                    db.add(Manager(id=mgr_id, name=name, shift=shift))
+                    # The original production units: their загрузка counts.
+                    db.add(Manager(id=mgr_id, name=name, shift=shift, zagruzka_on=True))
                     print(f"[startup] Added manager {mgr_id}: {name}")
             db.add(AppSetting(key=MANAGERS_SEEDED_FLAG, value="1"))
 
@@ -7102,6 +7134,36 @@ def _leader_sync_job() -> None:
     from app.services import verifix_leader_sync
     _send_report_once(LEADER_SYNC_FLAG, "Verifix leader sync",
                       verifix_leader_sync.send, UNPRICED_DM_CHAT)
+
+
+# ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
+# The operator, the same day: «check the supervisors if they're actually
+# supervisor or not and put a switch like on the leaders also for them … report
+# me if there're supervisors whose profile is not created». Fills
+# `managers.supervisor_kind` once from Verifix's API (never over a value set by
+# hand) and DMs the report (`services/verifix_supervisor_check.py`).
+SUPERVISOR_KIND_FLAG = "supervisor_kind_verifix_check_2026_10_04_v1"
+_SUPERVISOR_KIND_DELAY_S = 120
+
+
+def check_supervisor_kinds() -> None:
+    """Fill every unit's Brigadir / Brigadir o'rnida from Verifix, once, and report. Never raises."""
+    try:
+        if not _report_pending(SUPERVISOR_KIND_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("supervisor-kind-verifix-check",
+                    datetime.now(timezone.utc) + timedelta(seconds=_SUPERVISOR_KIND_DELAY_S),
+                    _supervisor_kind_job)
+    except Exception as exc:
+        print(f"[startup] supervisor Verifix check could not be scheduled: {exc}")
+
+
+def _supervisor_kind_job() -> None:
+    from app.services import verifix_supervisor_check
+    _send_report_once(SUPERVISOR_KIND_FLAG, "supervisor Verifix check",
+                      verifix_supervisor_check.send, UNPRICED_DM_CHAT)
 
 
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────

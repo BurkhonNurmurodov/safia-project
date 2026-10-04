@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Calendar } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Calendar, Gauge } from "lucide-react";
+import EmptyState from "../components/ui/EmptyState";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TripleSpeedometer from "../components/charts/TripleSpeedometer";
@@ -249,6 +250,20 @@ export default function BrigadirProfile() {
     );
   }
   if (!data) return <Layout title={t("profile.title")}><div className="text-[var(--text-2)] text-sm">{t("profile.notFound")}</div></Layout>;
+  // The unit's загрузка is switched off on its profile page (managers.zagruzka_on).
+  if (data.zagruzka_on === false) {
+    return (
+      <Layout title={tl(data.name)}>
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-[var(--text-2)] hover:text-[var(--text-1)] text-sm mb-5 transition-colors">
+          <ArrowLeft size={15} /> {t("profile.back")}
+        </button>
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
+          <EmptyState icon={Gauge} title={t("profile.zagruzka.offChip")}
+                      message={t("brigadir.zagruzkaOff")} showUploadLink={false} />
+        </div>
+      </Layout>
+    );
+  }
 
   const { name, shift, latest, daily } = data;
   // Status from D = P − A (План − Итог), colored live by the admin thresholds.

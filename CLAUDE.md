@@ -217,6 +217,57 @@ the matched NAME, job, cell, status, or why nobody was found).
   the module, both startup pairs and their calls once nothing is pending; the
   columns, `leader_kind.py` and the switch STAY.
 
+## A brigadir on Verifix, and whether the unit's загрузка counts (`supervisor_kind`, `zagruzka_on`)
+
+From **2026-10-04** (the operator's directive, after the leaders got theirs)
+every supervisor unit carries two switches in its profile page's Details card,
+drafts like every field there (the page's one Save):
+
+- **«Lavozim (Verifix)»: «Brigadir» / «Brigadir o'rnida»** (ru «Бригадир» /
+  «Вместо бригадира», en «Supervisor» / «In place of a supervisor») —
+  `managers.supervisor_kind` ("supervisor" | "acting" | NULL) beside
+  `supervisor_kind_meta` (leader_kind's shape: `src`, `at`, `by`, `vfx`).
+  `services/supervisor_kind.py` is THE definition (`KINDS`,
+  `is_supervisor_job` — «Бригадир», never an assistant / deputy / «и.о.»,
+  `set_manual`, `info`). A REGISTER only: nothing scores or routes by it. The
+  note under it is the leaders' `LeaderKindNote`; the Profiles list carries a
+  column and a filter («profiles_f_supkind», apart from the leaders' one).
+- **«Zagruzka hisoblanadi»: Ha / Yo'q** — `managers.zagruzka_on`. OFF = the unit
+  takes NO part in the загрузка: `build_metrics_list` skips it, so every
+  /zagruzka table, Overview, /summary, Smena kunligi's cards, the brigadir
+  profile and the Daily performance block leave it out (the last two say
+  «Zagruzka hisoblanmaydi» instead of drawing empty charts); the shift report
+  and `/api/shift-report/start-load` leave it out; /zagruzka-cell's picker drops
+  it. Nothing is deleted — switching it back on restores every figure.
+  Deliberately NOT gated: /production, Plan Bajarish, Plan Prognoz and its call
+  DMs, /live, the leader auto-checks, the ojidaniya pages.
+- **Every unit that existed on 2026-10-04 is ON; a unit created later starts
+  OFF** (the operator: «switch on by default for those who already exist»).
+  `startup.add_manager_kind_columns` adds the column DEFAULT TRUE and only then
+  sets the default to FALSE, once (the column's absence is the guard); the
+  `MANAGERS` seed writes TRUE. The create form asks («Zagruzka hisoblanadi»,
+  default «Yo'q», with a hint) rather than leaving a production unit out
+  silently. A role switch into supervisor creates the unit OFF. The Verifix-ID
+  re-key copies EVERY column now — `factory_id` was silently dropped before.
+- **Filled once from Verifix** — `services/verifix_supervisor_check.py`
+  (TEMPORARY, flag `supervisor_kind_verifix_check_2026_10_04_v1`,
+  `startup.check_supervisor_kinds`, both entrypoints, ~120 s after boot), DMed
+  as text + a workbook. Strict name match (`leader_verifix_check._match`);
+  several namesakes are narrowed to the one standing in the unit's Verifix
+  WORKSHOP (the parent of its cells, where Verifix keeps the brigadir), else to
+  the one with a brigadir's job; a name the strict rules miss is looked for in
+  that workshop alone — the same first name (or it with a -bek/-jon/-xon/-oy
+  ending: «Sanjar» = SANJARBEK) and a surname ≥ 0.75 alike. A value set by
+  hand is never overwritten. It also lists every Verifix brigadir with no unit
+  here — their workshop, the people under it and our cells there. Dry run
+  (11 Sep units × the 1 Oct dump): 19 «Brigadir», 2 «Brigadir o'rnida»
+  (Murodali Ochilov, Turdimurodov Nodirjon — «Лидер» on Verifix), one person
+  for both Suvonov Elshod units, and 9 Verifix brigadirs with no unit (supply,
+  staff kitchen, Keles cleaning, washing ×2, cold rooms «Цех -22», the
+  finished-goods freezers, «Цех - 3» over 1911). Delete it and its startup pair
+  once the report has landed — before `leader_verifix_check`, which it imports;
+  the columns, `supervisor_kind.py` and both switches STAY.
+
 ## Supervisors read `/cells` — their own unit, read-only
 
 From **2026-09-14** (the operator's directive) the cells register opens to the

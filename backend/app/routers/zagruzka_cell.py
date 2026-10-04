@@ -186,7 +186,8 @@ def _pick_manager(db: Session, payload: dict, manager_id: Optional[int],
             status_code=404,
             detail="No unit is visible to you under the current factory filter.",
         )
-    q = db.query(Manager).filter(Manager.archived.is_(False))
+    # A unit whose загрузка is switched OFF has none to reconcile here.
+    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
     if scoped is not None:
         q = q.filter(Manager.id.in_(scoped))
     units = q.order_by(Manager.name).all()

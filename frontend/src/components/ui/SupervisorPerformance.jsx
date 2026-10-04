@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronDown, ChevronUp, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Gauge, Send, Trash2 } from "lucide-react";
+import EmptyState from "./EmptyState";
 import TripleSpeedometer from "../charts/TripleSpeedometer";
 import DifferenceBreakdown from "./DifferenceBreakdown";
 import SegmentedToggle from "./SegmentedToggle";
@@ -214,6 +215,12 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
     );
   }
   if (!data) return <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("profile.notFound")}</div>;
+  // The unit's загрузка is switched off on its profile page (managers.zagruzka_on):
+  // say so, rather than drawing empty gauges that read as «no data yet».
+  if (data.zagruzka_on === false) {
+    return <EmptyState icon={Gauge} title={t("profile.zagruzka.offChip")}
+                       message={t("brigadir.zagruzkaOff")} showUploadLink={false} />;
+  }
 
   const { name, shift, latest, daily } = data;
   const sortedDates = daily.map(d => d.date);

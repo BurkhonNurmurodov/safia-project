@@ -720,7 +720,7 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
 // check — the Verifix name included, so a wrong match is visible to the very
 // person correcting it. A flipped switch is a draft like every field here: the
 // page's one Save commits it.
-function LeaderKindNote({ info }) {
+function LeaderKindNote({ info, unsetKey = "profile.leaderKind.unset" }) {
   const { t, lang } = useLang();
   const lines = [];
   const vfx = info?.vfx;
@@ -743,7 +743,7 @@ function LeaderKindNote({ info }) {
       .replace("{by}", info.by || "—")
       .replace("{date}", fmtDateTime(info.at, lang) ?? ""));
   }
-  if (!lines.length) lines.push(t("profile.leaderKind.unset"));
+  if (!lines.length) lines.push(t(unsetKey));
   return lines.map((l, i) => <span key={i} className="block">{l}</span>);
 }
 
@@ -762,6 +762,8 @@ function sameProfileForm(a, b) {
   const cells = (f) => [...(f.cells || [])].map(String).sort().join("|");
   if (cells(a) !== cells(b)) return false;
   if ((a.leader_kind ?? null) !== (b.leader_kind ?? null)) return false;
+  if ((a.supervisor_kind ?? null) !== (b.supervisor_kind ?? null)) return false;
+  if ((a.zagruzka_on ?? null) !== (b.zagruzka_on ?? null)) return false;
   return NAME_LANGS.every((l) => (a.overrides?.[l] || "").trim() === (b.overrides?.[l] || "").trim());
 }
 
@@ -786,7 +788,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const itemSig = JSON.stringify([
     item.id, item.name, item.shift ?? null, item.manager_id ?? null,
     item.cells ?? null, item.name_uz_cyrl ?? null, item.name_ru ?? null, item.name_en ?? null,
-    item.leader_kind ?? null,
+    item.leader_kind ?? null, item.supervisor_kind ?? null, item.zagruzka_on ?? null,
   ]);
   useEffect(() => {
     const ov = {};
@@ -801,6 +803,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       cells: item.cells ?? [],
       verifix_id: ptype === "supervisor" ? item.id : "",
       leader_kind: item.leader_kind ?? null,
+      supervisor_kind: item.supervisor_kind ?? null,
+      // A brigadir unit only; a bundle reading an older payload has no field
+      // and must not offer to switch a unit off by accident.
+      zagruzka_on: ptype === "supervisor" ? item.zagruzka_on !== false : null,
       overrides: ov,
     };
     setForm(seeded);
@@ -955,6 +961,15 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     if (ptype === "supervisor" && Number(form.verifix_id) !== item.id) {
       body.new_verifix_id = Number(form.verifix_id);
     }
+    // The brigadir's two switches, each sent only when it moved — a save of the
+    // name must not restamp who decided the kind (services/supervisor_kind.py).
+    if (ptype === "supervisor" && form.supervisor_kind
+        && form.supervisor_kind !== (item.supervisor_kind ?? null)) {
+      body.supervisor_kind = form.supervisor_kind;
+    }
+    if (ptype === "supervisor" && form.zagruzka_on !== (item.zagruzka_on !== false)) {
+      body.zagruzka_on = form.zagruzka_on;
+    }
     updateMut.mutate(body);
   }
 
@@ -1097,6 +1112,45 @@ function EditCard({ ptype, item, data, notify, onDone }) {
                 {t("admin.profiles.verifixWarn")}
               </p>
             )}
+          </FormField>
+        )}
+
+        {/* «Brigadir / Brigadir o'rnida» — the leaders' switch, for the unit's
+            brigadir (services/supervisor_kind.py). */}
+        {effType === "supervisor" && !roleChanged && (
+          <FormField label={t("profile.supKind.label")}
+                     hint={<LeaderKindNote info={item.supervisor_kind_info}
+                                           unsetKey="profile.supKind.unset" />}>
+            <SegmentedToggle
+              fill
+              ariaLabel={t("profile.supKind.label")}
+              value={form.supervisor_kind ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, supervisor_kind: v }))}
+              options={[
+                { value: "supervisor", label: t("profile.supKind.supervisor"),
+                  title: t("profile.supKind.supervisorTitle") },
+                { value: "acting", label: t("profile.supKind.acting"),
+                  title: t("profile.supKind.actingTitle") },
+              ]}
+            />
+          </FormField>
+        )}
+
+        {/* Is this unit's загрузка calculated at all (managers.zagruzka_on)?
+            OFF takes it out of every загрузка table, card and average. */}
+        {effType === "supervisor" && !roleChanged && form.zagruzka_on != null && (
+          <FormField label={t("profile.zagruzka.label")}
+                     hint={t(form.zagruzka_on ? "profile.zagruzka.onHint" : "profile.zagruzka.offHint")}>
+            <SegmentedToggle
+              fill
+              ariaLabel={t("profile.zagruzka.label")}
+              value={form.zagruzka_on ? "on" : "off"}
+              onChange={(v) => setForm((f) => ({ ...f, zagruzka_on: v === "on" }))}
+              options={[
+                { value: "on", label: t("profile.zagruzka.on") },
+                { value: "off", label: t("profile.zagruzka.off") },
+              ]}
+            />
           </FormField>
         )}
 
@@ -1954,6 +2008,12 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
             )}
             {ptype === "leader" && item.leader_kind === "acting" && (
               <StatusTag color="#94a3b8">{t("profile.leaderKind.acting")}</StatusTag>
+            )}
+            {ptype === "supervisor" && item.supervisor_kind === "acting" && (
+              <StatusTag color="#94a3b8">{t("profile.supKind.acting")}</StatusTag>
+            )}
+            {ptype === "supervisor" && item.zagruzka_on === false && (
+              <StatusTag color="#94a3b8">{t("profile.zagruzka.offChip")}</StatusTag>
             )}
           </>
         }

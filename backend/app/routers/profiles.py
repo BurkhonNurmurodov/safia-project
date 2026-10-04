@@ -56,7 +56,7 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
-from app.services import action_log, cell_hours, leader_kind, wc_group
+from app.services import action_log, cell_hours, leader_kind, supervisor_kind, wc_group
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
 from app.models import (
@@ -577,6 +577,12 @@ def admin_list_profiles(db: Session = Depends(get_db),
         sup_bindings = [binding(r) for r in by_key.get(("supervisor", m.id), [])]
         supervisors.append({
             "id": m.id, "name": m.name, "shift": m.shift, "archived": bool(m.archived),
+            # A brigadir on Verifix or running the unit in one's place, where
+            # that answer came from (services/supervisor_kind.py), and whether
+            # the unit's загрузка is calculated at all.
+            "supervisor_kind": m.supervisor_kind,
+            "supervisor_kind_info": supervisor_kind.info(m),
+            "zagruzka_on": bool(m.zagruzka_on),
             "has_data": _manager_has_data(db, m.id),
             "bindings": sup_bindings,
             "profile_key": f"supervisor:{m.id}",
@@ -675,6 +681,9 @@ class CreateProfilePayload(BaseModel):
     manager_id: Optional[int] = None        # leader → supervisor unit
     cells:      Optional[list[str]] = None  # leader → owned cell codes (optional)
     verifix_id: Optional[int] = None        # supervisor → managers.id
+    # supervisor → is the unit's загрузка calculated? A new unit starts OFF
+    # unless the form says otherwise (models.Manager.zagruzka_on).
+    zagruzka_on: Optional[bool] = None
 
 
 @router.post("/admin")
@@ -695,18 +704,22 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
             raise HTTPException(status_code=400, detail="Shift must be 1 or 2")
         if db.query(Manager).filter_by(id=payload.verifix_id).first():
             raise HTTPException(status_code=409, detail="Verifix ID already in use")
-        db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False))
+        zon = bool(payload.zagruzka_on)
+        db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False,
+                       zagruzka_on=zon))
         db.commit()
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.created",
                         details=[("role", tv("role.supervisor")), ("name", name),
                                  ("shift", payload.shift),
-                                 ("verifix_code", payload.verifix_id)])
+                                 ("verifix_code", payload.verifix_id),
+                                 ("zagruzka_on", zon)])
         action_log.enrich(
             target_kind="profile", target_id=profile_key("supervisor", payload.verifix_id),
             target_name=name, unit_id=payload.verifix_id, unit_name=name,
             details=[("role", "supervisor"), ("name", name),
                      ("shift", payload.shift),
-                     ("verifix_code", payload.verifix_id)],
+                     ("verifix_code", payload.verifix_id),
+                     ("zagruzka_on", zon)],
         )
         return {"ok": True, "id": payload.verifix_id}
 
@@ -1522,6 +1535,8 @@ class UpdateProfilePayload(BaseModel):
     archived:       Optional[bool] = None       # supervisor only
     overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
     leader_kind:    Optional[str] = None        # leader → "leader" | "acting" (None = untouched)
+    supervisor_kind: Optional[str] = None       # supervisor → "supervisor" | "acting" (None = untouched)
+    zagruzka_on:    Optional[bool] = None       # supervisor → is the unit's загрузка calculated
 
 
 _NAME_LANG_COLS = ("name_uz_cyrl", "name_ru", "name_en")
@@ -1564,7 +1579,16 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         mgr = db.query(Manager).filter_by(id=pid).first()
         if not mgr:
             raise HTTPException(status_code=404, detail="Unit not found")
-        old = {"name": mgr.name, "shift": mgr.shift, "archived": bool(mgr.archived)}
+        if payload.supervisor_kind is not None and payload.supervisor_kind not in supervisor_kind.KINDS:
+            raise HTTPException(status_code=400, detail="Invalid supervisor kind")
+        old = {"name": mgr.name, "shift": mgr.shift, "archived": bool(mgr.archived),
+               "supervisor_kind": mgr.supervisor_kind, "zagruzka_on": bool(mgr.zagruzka_on)}
+        if payload.supervisor_kind is not None and payload.supervisor_kind != mgr.supervisor_kind:
+            # The person's answer, from the profile page's switch — what
+            # Verifix said stays beside it (services/supervisor_kind.py).
+            supervisor_kind.set_manual(mgr, payload.supervisor_kind, caller.get("full_name"))
+        if payload.zagruzka_on is not None:
+            mgr.zagruzka_on = bool(payload.zagruzka_on)
         if payload.name is not None:
             _rename_profile(db, "supervisor", pid, payload.name)
         if payload.shift in (1, 2):
@@ -1578,16 +1602,22 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
             new_id = _rekey_manager_id(db, mgr, payload.new_verifix_id)
         # Read BEFORE commit: the rekey path deleted mgr's row, so a post-commit
         # attribute refresh would explode on the vanished id.
-        new_vals = (("name", mgr.name), ("shift", mgr.shift), ("archived", bool(mgr.archived)))
+        new_vals = (("name", mgr.name), ("shift", mgr.shift), ("archived", bool(mgr.archived)),
+                    ("supervisor_kind", mgr.supervisor_kind),
+                    ("zagruzka_on", bool(mgr.zagruzka_on)))
         db.commit()
         diff = [(k, old[k], v) for k, v in new_vals if old[k] != v]
         if new_id != pid:
             diff.append(("verifix_code", pid, new_id))
         if diff:
+            # The admins' DM words the two kinds in each reader's language.
+            def word(k):
+                return tv(f"v.supervisor_kind.{k}") if k else None
             alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.updated",
                             details=[("role", tv("role.supervisor")),
                                      ("profile", old["name"])],
-                            changes=diff)
+                            changes=[(f, word(o), word(n)) if f == "supervisor_kind" else (f, o, n)
+                                     for f, o, n in diff])
         nv = dict(new_vals)
         action_log.enrich(
             target_kind="profile", target_id=profile_key("supervisor", new_id),
@@ -1668,7 +1698,12 @@ def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
         raise HTTPException(status_code=409, detail="Verifix ID already in use")
 
     old_id = mgr.id
-    db.add(Manager(id=new_id, name=mgr.name, shift=mgr.shift, archived=mgr.archived))
+    # Every column of the unit travels with it — the plant, the brigadir's
+    # Verifix kind and the загрузка switch included.
+    db.add(Manager(id=new_id, name=mgr.name, shift=mgr.shift, archived=mgr.archived,
+                   factory_id=mgr.factory_id, supervisor_kind=mgr.supervisor_kind,
+                   supervisor_kind_meta=mgr.supervisor_kind_meta,
+                   zagruzka_on=bool(mgr.zagruzka_on)))
     db.flush()
     for table, col in _MANAGER_REKEY_REFS:
         db.execute(text(f"UPDATE {table} SET {col} = :new WHERE {col} = :old"),

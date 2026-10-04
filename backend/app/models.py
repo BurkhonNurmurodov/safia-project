@@ -53,6 +53,20 @@ class Manager(Base):
     # visible only on the «All factories» tab, where an admin can see it needs
     # assigning, rather than padding some factory's numbers.
     factory_id = Column(Integer, ForeignKey("factories.id"), nullable=True, index=True)
+    # 2026-10-04 (the operator's directive), the brigadir's twin of
+    # `role_profiles.leader_kind`: is the person a BRIGADIR on Verifix
+    # ("supervisor") or running the unit while Verifix lists them under another
+    # job ("acting")? NULL = not determined. `services/supervisor_kind.py` is THE
+    # definition; the meta says who set it and what Verifix said.
+    supervisor_kind      = Column(String(12), nullable=True)
+    supervisor_kind_meta = Column(JSONB, nullable=True)
+    # 2026-10-04: is this unit's загрузка calculated at all? OFF = the unit takes
+    # no part in it — `build_metrics_list` (every загрузка table, Overview, the
+    # brigadir profile, /summary), the shift report and /zagruzka-cell leave it
+    # out; nothing is deleted. Every unit that existed that day was switched ON
+    # (`startup.add_manager_kind_columns`); a unit created later starts OFF until
+    # somebody says its загрузка counts.
+    zagruzka_on = Column(Boolean, nullable=False, server_default="false", default=False)
 
     attendance = relationship("Attendance", back_populates="manager")
     comments = relationship("Comment", back_populates="manager")

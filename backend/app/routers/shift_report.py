@@ -110,7 +110,9 @@ def get_shift_report(
     if empty_scope(ids):
         return out
 
-    q = db.query(Manager).filter(Manager.archived.is_(False))
+    # A unit whose загрузка is switched OFF (`managers.zagruzka_on`) is not on
+    # the production board and not in the start-load cards.
+    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
     if ids is not None:
         q = q.filter(Manager.id.in_(ids))
     if shift in (1, 2):
@@ -241,7 +243,9 @@ def get_start_load(
     ids, _note = _scope(db, payload, factory, manager_id)
     if empty_scope(ids):
         return out
-    q = db.query(Manager).filter(Manager.archived.is_(False))
+    # A unit whose загрузка is switched OFF (`managers.zagruzka_on`) is not on
+    # the production board and not in the start-load cards.
+    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
     if ids is not None:
         q = q.filter(Manager.id.in_(ids))
     if shift in (1, 2):
