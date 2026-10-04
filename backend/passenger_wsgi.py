@@ -103,6 +103,7 @@ try:
         report_filling_times,
         report_t11_proofs,
         report_dispute_queue,
+        report_wc_plan_history,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -470,6 +471,11 @@ try:
     # `startup.report_dispute_queue` and `services/dispute_queue_report.py`
     # once it has been sent.
     report_dispute_queue()
+    # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
+    # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
+    # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
+    # and `services/wc_plan_history_report.py` once it has landed.
+    report_wc_plan_history()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

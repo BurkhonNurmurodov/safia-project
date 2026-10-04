@@ -6853,6 +6853,37 @@ def _dispute_queue_job() -> None:
                       dispute_queue_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: did work centre A1437 ever carry a plan on Suvonov Elshod OF? ──
+# The operator asked on 2026-10-04, looking at the A1437 card on «Zagruzka
+# fayli» (O.soni —, Shtat 0, 0 min). It READS and writes nothing but its flag:
+# the unit's stored SAP rows, its minutes, its catalog (today's and every frozen
+# version), people pins, the plant-wide фаза file, the other units carrying the
+# code and the Jurnal — a text answer plus a workbook
+# (`services/wc_plan_history_report.py`). Changing what it sends needs a NEW key.
+WC_PLAN_HISTORY_FLAG = "wc_plan_history_a1437_suvonov_2026_10_04_v1"
+_WC_PLAN_HISTORY_DELAY_S = 75
+
+
+def report_wc_plan_history() -> None:
+    """A1437's plan history on Suvonov Elshod OF, DMed once. Never raises."""
+    try:
+        if not _report_pending(WC_PLAN_HISTORY_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("wc-plan-history-a1437",
+                    datetime.now(timezone.utc) + timedelta(seconds=_WC_PLAN_HISTORY_DELAY_S),
+                    _wc_plan_history_job)
+    except Exception as exc:
+        print(f"[startup] A1437 plan-history report could not be scheduled: {exc}")
+
+
+def _wc_plan_history_job() -> None:
+    from app.services import wc_plan_history_report
+    _send_report_once(WC_PLAN_HISTORY_FLAG, "A1437 plan-history report",
+                      wc_plan_history_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
