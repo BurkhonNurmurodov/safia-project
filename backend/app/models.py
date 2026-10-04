@@ -4371,8 +4371,9 @@ class VerifixAttendanceDay(Base):
     file (`services/verifix_attendance.py`, TEST from 2026-10-04). Only the
     cells counted in the загрузка (`cells.in_load`) are read. Saved apart:
     nothing else on the platform reads these two tables — `attendance`, the
-    «Davomat» batches, the загрузка and every figure stay the file's. A re-read
-    replaces the day."""
+    «Davomat» batches, the загрузка and every figure stay the file's. A read
+    names the cells it asks about (the picker, 2026-10-04) and replaces THOSE
+    cells' rows; every other cell already read for the day stays."""
     __tablename__ = "vfx_attendance_days"
 
     id              = Column(Integer, primary_key=True, autoincrement=True)
@@ -4388,6 +4389,11 @@ class VerifixAttendanceDay(Base):
     # Where Verifix placed, at the read, each person the uploaded Excel has in a
     # counted cell but the read did not return (folded name → {why, code, date}).
     notes           = Column(JSONB, nullable=True)
+    # When each cell was last read and whether that read ran out of time
+    # (code key → {code, at, by, partial}). NULL on a day read before cells
+    # could be picked: every code in `codes` was then read at `fetched_at`.
+    # `codes`, `fetched_*` and `partial` are kept as the day's roll-up of it.
+    cell_reads      = Column(JSONB, nullable=True)
 
     rows = relationship("VerifixAttendanceRow", back_populates="day",
                         cascade="all, delete-orphan", passive_deletes=True)

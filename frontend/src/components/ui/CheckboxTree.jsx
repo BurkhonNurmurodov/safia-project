@@ -15,11 +15,14 @@ import { Check, ChevronRight, Minus } from "lucide-react";
  *
  * Props:
  *   groups   – [{ key, label, icon, children:[…] }]; a child may be a leaf
- *              { key, label, sub, disabled, hint } or another branch with its
- *              own `children`. `sub` renders muted under the label; `hint`
- *              renders as a right-aligned chip on ANY leaf — a reason on
+ *              { key, label, sub, disabled, hint, hintTone } or another branch
+ *              with its own `children`. `sub` renders muted under the label;
+ *              `hint` renders as a right-aligned chip on ANY leaf — a reason on
  *              disabled rows ("no registered users"), or a count/badge on
  *              selectable ones (the Permissions tree shows grants held).
+ *              `hintTone: "warn"` paints that chip amber, for a hint that
+ *              names a problem (a Verifix cell whose last read ran out of
+ *              time) rather than a plain fact.
  *   selected – array of selected LEAF keys (controlled)
  *   onChange – (nextSelectedArray) => void
  *   filter   – search string: matches leaf label/sub; a branch-label match
@@ -114,7 +117,13 @@ function TreeNode({ node, depth, sel, expanded, toggleExpand, toggleLeaf, toggle
         {node.hint && (
           <span
             className="ml-auto flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
-            style={{ background: "var(--bg-accent)", color: "var(--text-4)", border: "1px solid var(--border)" }}
+            style={node.hintTone === "warn"
+              ? {
+                  background: "color-mix(in srgb, var(--status-warn) 12%, transparent)",
+                  color: "var(--status-warn)",
+                  border: "1px solid color-mix(in srgb, var(--status-warn) 35%, transparent)",
+                }
+              : { background: "var(--bg-accent)", color: "var(--text-4)", border: "1px solid var(--border)" }}
           >
             {node.hint}
           </span>

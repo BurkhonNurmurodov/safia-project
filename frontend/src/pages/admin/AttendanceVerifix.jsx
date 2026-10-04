@@ -2,10 +2,11 @@
  * «Davomat (Verifix)» — the «Davomat» tab's TEST twin (2026-10-04).
  *
  * The same day, in the same supervisor → cell → worker layout, with ONE button
- * where the upload was: «Verifix'dan olish» reads the day's report from
- * Verifix's API for the cells counted in the загрузка («Zagruzkada
- * hisoblanadi» on /cells) and stores it apart
- * (backend `services/verifix_attendance.py`). Nothing else on the platform
+ * where the upload was: «Verifix'dan olish» opens a plant → shift → brigadir →
+ * cell tree of the cells counted in the загрузка («Zagruzkada hisoblanadi» on
+ * /cells; `VerifixCellPicker.jsx`), reads the ticked ones from Verifix's API
+ * and stores them apart — replacing those cells only, so one cell can be read
+ * again without the plant (backend `services/verifix_attendance.py`). Nothing else on the platform
  * reads what is stored here — real attendance, the загрузка and every figure
  * stay the uploaded file's — so the page has no ticks, no moves, no edits and
  * no Save. Beside each person it shows what the uploaded Excel said for them
@@ -30,6 +31,8 @@ import SearchInput from "../../components/ui/SearchInput";
 import { SkeletonCard } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { Chip, Section, Stat } from "./AttendanceUpload";
+import VerifixCellPicker from "./VerifixCellPicker";
+import { codeKey } from "../../components/verifix/vfx";
 
 const QK = "attendance-verifix";
 
@@ -65,6 +68,7 @@ function fetchError(e, t) {
   if (code === "not_configured") return t("attVfx.notConfigured");
   if (code === "slow" || code === "timeout") return t("attVfx.errSlow");
   if (code === "future") return t("attVfx.errFuture");
+  if (code === "no_cells") return t("attVfx.errNoCells");
   const msg = typeof res?.detail === "string" ? res.detail : (e?.message || "—");
   return fill(t("attVfx.errVerifix"), { msg });
 }
@@ -289,7 +293,7 @@ function DiffTable({ diffs, t, tl }) {
 }
 
 export default function AttendanceVerifix() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast({ position: "bottom" });
@@ -297,6 +301,8 @@ export default function AttendanceVerifix() {
   const [date, setDate] = usePersistentState("attvfx_date", todayISO());
   const [expandedCells, setExpandedCells] = usePersistentState("attvfx_expanded", []);
   const [search, setSearch] = useState("");
+  // The cell picker: null = closed, else the codes it opens with ticked.
+  const [pickInit, setPickInit] = useState(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: [QK, date],
@@ -305,10 +311,15 @@ export default function AttendanceVerifix() {
   });
 
   const fetchMut = useMutation({
-    mutationFn: (day) => api.post("/api/attendance-verifix/fetch", { date: day }).then((r) => r.data),
-    onSuccess: (payload, day) => {
+    mutationFn: ({ day, codes }) =>
+      api.post("/api/attendance-verifix/fetch", { date: day, codes }).then((r) => r.data),
+    onSuccess: (payload, { day }) => {
       qc.setQueryData([QK, day], payload);
-      toast.success(fill(t("attVfx.fetchedToast"), { n: payload?.totals?.workers ?? 0 }));
+      // What THIS read did — the page's totals cover every cell of the day.
+      const read = payload?.read;
+      const missed = (read?.partial_cells ?? 0) + (read?.unread_cells ?? 0);
+      if (read?.partial && missed) toast.warning(fill(t("attVfx.partialToast"), { n: missed }));
+      else toast.success(fill(t("attVfx.fetchedToast"), { cells: read?.cells ?? 0, n: read?.rows ?? 0 }));
     },
     onError: (e) => toast.error(fetchError(e, t)),
   });
@@ -317,6 +328,14 @@ export default function AttendanceVerifix() {
   const fetched = status === "fetched" || status === "partial";
   const excel = !!data?.excel;
   const totals = data?.totals;
+
+  // Every cell the picker offers, and the ones whose last read ran out of time
+  // (by code key: the register's spelling of a code may have changed since).
+  const pickCodes = useMemo(() => (data?.pick?.cells || []).map((c) => c.code), [data]);
+  const partialPick = useMemo(() => {
+    const want = new Set((data?.partial_codes || []).map(codeKey));
+    return pickCodes.filter((c) => want.has(codeKey(c)));
+  }, [data, pickCodes]);
 
   const filtered = useMemo(() => {
     if (!fetched) return { sections: [], unassigned: [] };
@@ -337,16 +356,24 @@ export default function AttendanceVerifix() {
     setExpandedCells((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   }, [setExpandedCells]);
 
-  // The cell row's Excel verdict: how many of its people differ from the file.
+  // The cell row's chips: a read that ran out of time, then the Excel verdict —
+  // how many of its people differ from the file.
   const cellExtra = useCallback((cell) => {
-    if (!excel || !cell.excel) return null;
-    const tip = fill(t("attVfx.excelTip"), {
-      present: cell.excel.present, workers: cell.excel.workers, hours: fmtNum(cell.excel.hours, 1),
-    });
-    if (cell.excel.workers === 0) return <Chip tone="neutral" title={tip}>{t("attVfx.notInExcel")}</Chip>;
-    return cell.differ
-      ? <Chip tone="warn" icon={AlertTriangle} title={tip}>{fill(t("attVfx.diffCell"), { n: cell.differ })}</Chip>
-      : <Chip tone="ok" icon={CheckCircle2} title={tip}>{t("attVfx.sameCell")}</Chip>;
+    const part = cell.read?.partial
+      ? <Chip tone="warn" icon={RefreshCw} title={t("attVfx.partialCellTip")}>{t("attVfx.partialCell")}</Chip>
+      : null;
+    let verdict = null;
+    if (excel && cell.excel) {
+      const tip = fill(t("attVfx.excelTip"), {
+        present: cell.excel.present, workers: cell.excel.workers, hours: fmtNum(cell.excel.hours, 1),
+      });
+      if (cell.excel.workers === 0) verdict = <Chip tone="neutral" title={tip}>{t("attVfx.notInExcel")}</Chip>;
+      else verdict = cell.differ
+        ? <Chip tone="warn" icon={AlertTriangle} title={tip}>{fill(t("attVfx.diffCell"), { n: cell.differ })}</Chip>
+        : <Chip tone="ok" icon={CheckCircle2} title={tip}>{t("attVfx.sameCell")}</Chip>;
+    }
+    if (!part && !verdict) return null;
+    return <>{part}{verdict}</>;
   }, [excel, t]);
 
   const noop = useCallback(() => {}, []);
@@ -385,7 +412,7 @@ export default function AttendanceVerifix() {
           <Chip tone="brand" icon={RefreshCw}>{t("attVfx.fetching")}</Chip>
         ) : fetched ? (
           <Chip tone={status === "partial" ? "warn" : "ok"} icon={status === "partial" ? AlertTriangle : CheckCircle2}
-                title={data.fetched_by ? tl(data.fetched_by) : undefined}>
+                title={fill(t("attVfx.fetchedTip"), { by: data.fetched_by ? tl(data.fetched_by) : "—", n: data.cells_asked ?? 0 })}>
             {status === "partial" ? t("attVfx.partial") : fill(t("attVfx.fetched"), { at: fmtAt(data.fetched_at) })}
           </Chip>
         ) : (
@@ -399,9 +426,9 @@ export default function AttendanceVerifix() {
         <Button
           size="lg"
           icon={fetched ? <RefreshCw size={14} /> : <CloudDownload size={14} />}
-          onClick={() => fetchMut.mutate(date)}
+          onClick={() => setPickInit(pickCodes)}
           loading={busy}
-          disabled={!data || data.configured === false || data.cells_counted === 0}
+          disabled={!data || data.configured === false || data.cells_counted === 0 || !pickCodes.length}
           className="whitespace-nowrap"
         >
           {fetched ? t("attVfx.refetch") : t("attVfx.fetch")}
@@ -416,10 +443,18 @@ export default function AttendanceVerifix() {
       )}
 
       {status === "partial" && (
-        <div className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-xl px-3.5 py-3"
              style={{ background: "color-mix(in srgb, #eab308 12%, transparent)", border: "1px solid color-mix(in srgb, #eab308 35%, transparent)" }}>
-          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#eab308" }} />
-          <div className="text-[11px]" style={{ color: "var(--text-2)" }}>{t("attVfx.partialMsg")}</div>
+          <AlertTriangle size={15} className="flex-shrink-0" style={{ color: "#eab308" }} />
+          <div className="text-[11px] flex-1 min-w-[200px]" style={{ color: "var(--text-2)" }}>
+            {fill(t("attVfx.partialMsg"), { n: (data.partial_codes || []).length })}
+          </div>
+          {partialPick.length > 0 && (
+            <Button size="sm" variant="secondary" icon={<RefreshCw size={12} />}
+                    disabled={busy} onClick={() => setPickInit(partialPick)}>
+              {t("attVfx.pick.rereadPartial")}
+            </Button>
+          )}
         </div>
       )}
 
@@ -499,6 +534,24 @@ export default function AttendanceVerifix() {
             </div>
           )}
         </div>
+      )}
+
+      {pickInit && data?.pick && (
+        <VerifixCellPicker
+          pick={data.pick}
+          initial={pickInit}
+          dateLabel={date.split("-").reverse().join(".")}
+          hasReads={fetched}
+          onClose={() => setPickInit(null)}
+          onConfirm={(codes) => {
+            setPickInit(null);
+            fetchMut.mutate({ day: date, codes });
+          }}
+          t={t}
+          tl={tl}
+          lang={lang}
+          fmtAt={fmtAt}
+        />
       )}
 
       {toast.node}

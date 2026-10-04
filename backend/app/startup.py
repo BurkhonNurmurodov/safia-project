@@ -1765,11 +1765,13 @@ def add_manager_kind_columns() -> None:
 def add_vfx_attendance_notes() -> None:
     """2026-10-04: «Davomat (Verifix)» keeps, per read day, where Verifix placed
     the people the uploaded Excel has but the read did not return —
-    ``vfx_attendance_days.notes``. Pure DDL, idempotent, no flag; a fresh box
-    gets it from create_all."""
+    ``vfx_attendance_days.notes`` — and, since cells can be picked, when each
+    cell was last read — ``cell_reads``. Pure DDL, idempotent, no flag; a fresh
+    box gets both from create_all."""
     db = SessionLocal()
     try:
         db.execute(text("ALTER TABLE vfx_attendance_days ADD COLUMN IF NOT EXISTS notes JSONB"))
+        db.execute(text("ALTER TABLE vfx_attendance_days ADD COLUMN IF NOT EXISTS cell_reads JSONB"))
         db.commit()
     except Exception as exc:
         db.rollback()

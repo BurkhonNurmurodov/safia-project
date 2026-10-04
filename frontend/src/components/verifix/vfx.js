@@ -50,6 +50,12 @@ export function vfxError(err) {
 
 // ── formatting ────────────────────────────────────────────────────────────────
 
+/** '0811' and '811' are one cell — the twin of the backend's `verifix._code_key`. */
+export const codeKey = (code) => {
+  const s = String(code ?? "").trim();
+  return /^\d+$/.test(s) ? (s.replace(/^0+/, "") || "0") : s.toUpperCase();
+};
+
 export const hm = (iso) => (iso ? iso.slice(11, 16) : "");
 export const dmy = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
 export const dm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");

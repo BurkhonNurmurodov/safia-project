@@ -32,6 +32,14 @@ checked against the file it would replace.
 Who is asked about: every employee — any status — whose org unit names a
 counted cell and who was hired by the day and not dismissed before it, so a
 past day still finds the people who have left since.
+
+**A read names its cells** (the picker, 2026-10-04): the button opens a plant →
+shift → brigadir → cell tree of the counted cells (`pick`), and the read asks
+Verifix about the ticked ones only. It replaces THOSE cells' rows and leaves
+every other cell already read for the day as it was, so one cell can be read
+again without reading the plant. `cell_reads` says when each cell was last
+read and whether that read ran out of time — the day is partial while any
+cell is.
 """
 from __future__ import annotations
 
@@ -46,8 +54,8 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AttendanceBatch, AttendanceBatchRow, Cell, EditRequest, HrDocument, Manager,
-    VerifixAttendanceDay, VerifixAttendanceRow,
+    AttendanceBatch, AttendanceBatchRow, Cell, EditRequest, Factory, HrDocument, Manager,
+    RoleProfile, VerifixAttendanceDay, VerifixAttendanceRow,
 )
 from app.services import verifix, verifix_live, verifix_parity
 from app.services.attendance_sheet import clock_metrics
@@ -85,6 +93,10 @@ _MARK_RE = re.compile(r"^\s*(?!xx:)([^\d\s(]+)")
 
 class NotConfigured(Exception):
     """No Verifix login on the admin «Verifix» card."""
+
+
+class NoCells(Exception):
+    """The read names no cell that is counted in the загрузка."""
 
 
 # ── small helpers ─────────────────────────────────────────────────────────────
@@ -132,6 +144,49 @@ def hours_rule(db: Session) -> dict:
     if f:
         return {"kinds": f["kinds"], "names": f["names"], "div": f["div"], "source": "parity"}
     return dict(DEFAULT_RULE)
+
+
+def _reads(vday: Optional[VerifixAttendanceDay]) -> dict[str, dict]:
+    """code key → {code, at, by, partial}: when each cell of the day was last
+    read. A day read before cells could be picked carries no `cell_reads` —
+    every code it asked about was read then, in that one pass."""
+    if vday is None:
+        return {}
+    if vday.cell_reads is not None:
+        return {verifix._code_key(k): dict(v) for k, v in vday.cell_reads.items()}
+    at = vday.fetched_at.isoformat() if vday.fetched_at else None
+    return {verifix._code_key(c): {"code": c, "at": at, "by": vday.fetched_by_name,
+                                   "partial": bool(vday.partial)}
+            for c in (vday.codes or [])}
+
+
+def pick(db: Session, reads: dict[str, dict]) -> dict:
+    """What the «Verifix'dan olish» picker offers: every cell counted in the
+    загрузка, with the plant, shift and brigadir it nests under (a cell follows
+    its brigadir's unit, the platform's one rule for the plant) and when it was
+    last read for the day on screen."""
+    managers = {m.id: m for m in db.query(Manager).all()}
+    leaders = dict(db.query(RoleProfile.id, RoleProfile.name)
+                   .filter(RoleProfile.role == "leader").all())
+    cells = []
+    for c in db.query(Cell).filter(Cell.in_load.is_(True)).order_by(Cell.verifix_code).all():
+        if not c.verifix_code:
+            continue
+        m = managers.get(c.manager_id)
+        cells.append({
+            "code": c.verifix_code,
+            "manager_id": m.id if m else None,
+            "manager_name": m.name if m else None,
+            "shift": m.shift if m else None,
+            "factory_id": m.factory_id if m else None,
+            "leader": leaders.get(c.leader_id),
+            "archived": c.archived_at is not None,
+            "read": reads.get(verifix._code_key(c.verifix_code)),
+        })
+    factories = [{"id": f.id, "code": f.code, "name_uz": f.name_uz, "name_uz_cyrl": f.name_uz_cyrl,
+                  "name_ru": f.name_ru, "name_en": f.name_en}
+                 for f in db.query(Factory).order_by(Factory.sort_order, Factory.id).all()]
+    return {"cells": cells, "factories": factories}
 
 
 # ── reading Verifix ───────────────────────────────────────────────────────────
@@ -213,70 +268,105 @@ def _row(rec: dict, d: dict, rule: dict) -> dict:
     }
 
 
-def fetch_day(db: Session, day: date, by: str = "") -> dict:
-    """Read one day from Verifix for the counted cells and store it, replacing
-    what an earlier read stored. Raises NotConfigured / verifix.VerifixError."""
+def fetch_day(db: Session, day: date, by: str = "", codes: Optional[list] = None) -> dict:
+    """Read one day from Verifix for the picked cells — every counted cell when
+    `codes` is None — and store them, replacing what an earlier read stored for
+    THOSE cells; the day's other cells stay. Raises NotConfigured / NoCells /
+    verifix.VerifixError."""
     cfg = verifix.config(db, with_password=True)
     if not (cfg["login"] and cfg.get("password") and cfg["filial_id"]):
         raise NotConfigured()
     counted = _counted(db)
+    if codes is None:
+        asked = counted
+    else:
+        want = {verifix._code_key(c) for c in codes if str(c or "").strip()}
+        asked = {k: v for k, v in counted.items() if k in want}
+    if not asked:
+        raise NoCells()
     rule = hours_rule(db)
     # One budget for the whole request, so it answers inside Cloudflare's 100 s.
     deadline = _time.monotonic() + verifix.BUDGET_S
 
     rows: list[dict] = []
+    returned: set[int] = set()
     partial = False
-    directory = None
-    if counted:
-        directory = _directory(cfg, deadline)
-        units, emps = directory["units"], directory["emps"]
-        ids: dict[int, str] = {}
-        for eid, (unit, hired, dismissed, *_rest) in emps.items():
-            key = units.get(unit)
-            if key not in counted or not eid.isdigit():
-                continue
-            if (hired and hired > day) or (dismissed and dismissed < day):
-                continue
-            ids[int(eid)] = key
-        # An empty employee filter means EVERYBODY — never send one.
-        chunks = [sorted(ids)[i:i + ID_CHUNK] for i in range(0, len(ids), ID_CHUNK)]
-        try:
-            with verifix.client(cfg) as cl:
-                for chunk in chunks:
-                    body = {"period_begin_date": verifix._dmy(day),
-                            "period_end_date": verifix._dmy(day),
-                            "division_ids": [], "employee_ids": chunk}
-                    for page in verifix.each_page(cl, "core/timesheet$export", body,
-                                                  limit=verifix.LIMIT_TIMESHEET, deadline=deadline):
-                        for rec in page:
-                            eid = str(rec.get("employee_id") or "")
-                            key = ids.get(int(eid)) if eid.isdigit() else None
-                            if key is None:
-                                continue
-                            for d in rec.get("days") or []:
-                                if _day(d.get("date")) == day:
-                                    rows.append({"code": counted[key][0], "employee_id": eid,
-                                                 **_row(rec, d, rule)})
-        except verifix.VerifixError as exc:
-            # Out of time with rows in hand: keep them and say the day is partial.
-            if exc.code != "slow" or not rows:
-                raise
-            partial = True
+    directory = _directory(cfg, deadline)
+    units, emps = directory["units"], directory["emps"]
+    ids: dict[int, str] = {}
+    for eid, (unit, hired, dismissed, *_rest) in emps.items():
+        key = units.get(unit)
+        if key not in asked or not eid.isdigit():
+            continue
+        if (hired and hired > day) or (dismissed and dismissed < day):
+            continue
+        ids[int(eid)] = key
+    # An empty employee filter means EVERYBODY — never send one.
+    chunks = [sorted(ids)[i:i + ID_CHUNK] for i in range(0, len(ids), ID_CHUNK)]
+    try:
+        with verifix.client(cfg) as cl:
+            for chunk in chunks:
+                body = {"period_begin_date": verifix._dmy(day),
+                        "period_end_date": verifix._dmy(day),
+                        "division_ids": [], "employee_ids": chunk}
+                for page in verifix.each_page(cl, "core/timesheet$export", body,
+                                              limit=verifix.LIMIT_TIMESHEET, deadline=deadline):
+                    for rec in page:
+                        eid = str(rec.get("employee_id") or "")
+                        key = ids.get(int(eid)) if eid.isdigit() else None
+                        if key is None:
+                            continue
+                        returned.add(int(eid))
+                        for d in rec.get("days") or []:
+                            if _day(d.get("date")) == day:
+                                rows.append({"code": asked[key][0], "employee_id": eid,
+                                             **_row(rec, d, rule)})
+    except verifix.VerifixError as exc:
+        # Out of time with rows in hand: keep them and say the day is partial.
+        if exc.code != "slow" or not rows:
+            raise
+        partial = True
+    # Out of time, a cell is judged by its own people: all of them came back →
+    # read whole; some → read PARTIALLY; none (time ran out before its page) →
+    # not read at all, and whatever an earlier read stored for it stays.
+    untouched: set[str] = set()
+    partial_keys: set[str] = set()
+    if partial:
+        people: dict[str, set[int]] = defaultdict(set)
+        for eid, key in ids.items():
+            people[key].add(eid)
+        untouched = {k for k, e in people.items() if not (e & returned)}
+        partial_keys = {k for k, e in people.items() if e - returned} - untouched
+    done = {k: v for k, v in asked.items() if k not in untouched}
 
+    now = datetime.now(timezone.utc)
     vday = db.query(VerifixAttendanceDay).filter(VerifixAttendanceDay.date == day).first()
     if vday is None:
         vday = VerifixAttendanceDay(date=day)
         db.add(vday)
         db.flush()
-    else:
-        db.query(VerifixAttendanceRow).filter(VerifixAttendanceRow.day_id == vday.id).delete(
+    # Read before anything moves: a day stored before cells could be picked is
+    # seeded from its own columns.
+    reads = _reads(vday)
+    stored = set(reads)
+    # The cells read now lose their earlier rows; every other cell's stay.
+    stale = [rid for rid, code in (db.query(VerifixAttendanceRow.id, VerifixAttendanceRow.verifix_code)
+                                   .filter(VerifixAttendanceRow.day_id == vday.id).all())
+             if code and verifix._code_key(code) in done]
+    if stale:
+        db.query(VerifixAttendanceRow).filter(VerifixAttendanceRow.id.in_(stale)).delete(
             synchronize_session=False)
-    vday.fetched_at = datetime.now(timezone.utc)
+    for key, (code, _cid) in done.items():
+        reads[key] = {"code": code, "at": now.isoformat(), "by": by or None,
+                      "partial": key in partial_keys}
+    vday.cell_reads = reads
+    vday.codes = sorted({r["code"] for r in reads.values() if r.get("code")})
+    vday.partial = any(r.get("partial") for r in reads.values())
+    vday.fetched_at = now
     vday.fetched_by_name = by or None
-    vday.partial = partial
-    vday.codes = sorted(code for code, _ in counted.values())
     vday.hours_rule = rule
-    vday.notes = _file_only_notes(db, day, counted, rows, directory)
+    vday.notes = {**(vday.notes or {}),
+                  **_file_only_notes(db, day, done, counted, stored, rows, directory)}
     for r in rows:
         db.add(VerifixAttendanceRow(
             day_id=vday.id, verifix_code=r["code"], employee_id=r["employee_id"],
@@ -286,16 +376,18 @@ def fetch_day(db: Session, day: date, by: str = "") -> dict:
             status=r["status"],
         ))
     db.commit()
-    return {"cells": len(counted), "rows": len(rows), "partial": partial}
+    return {"cells": len(done), "rows": len(rows), "partial": partial,
+            "partial_cells": len(partial_keys), "unread_cells": len(untouched)}
 
 
-def _file_only_notes(db: Session, day: date, counted: dict, rows: list,
-                     directory: Optional[dict]) -> dict:
-    """Why the read did not return somebody the uploaded Excel has in a counted
-    cell: where Verifix placed them at the read. Folded name → {why, code, date}."""
+def _file_only_notes(db: Session, day: date, asked: dict, counted: dict, stored: set,
+                     rows: list, directory: Optional[dict]) -> dict:
+    """Why the read did not return somebody the uploaded Excel has in a cell it
+    asked about: where Verifix placed them at the read. Folded name →
+    {why, code, date}. `stored` = the cells read for the day before this read."""
     if not directory:
         return {}
-    frows = _file_side(db, day, set(counted)) or []
+    frows = _file_side(db, day, set(asked)) or []
     got_full = {verifix_parity._keys(r["worker_name"])[0] for r in rows}
     got_two = Counter(verifix_parity._keys(r["worker_name"])[1] for r in rows)
     units, emps = directory["units"], directory["emps"]
@@ -328,6 +420,9 @@ def _file_only_notes(db: Session, day: date, counted: dict, rows: list,
             note = {"why": "vfx_no_cell"}
         elif key not in counted:
             note = {"why": "vfx_other_cell", "code": registry.get(key, key)}
+        elif key not in asked and key not in stored:
+            # A counted cell nobody has read for this day: reading it finds them.
+            note = {"why": "vfx_unread_cell", "code": registry.get(key, key)}
         else:
             note = {"why": "vfx_no_day"}
         out[full] = note
@@ -474,12 +569,14 @@ def _match(vrows: list[dict], frows: list[dict]) -> None:
 def payload(db: Session, day: date) -> dict:
     counted_now = _counted(db)
     cfg = verifix.config(db)
+    vday = db.query(VerifixAttendanceDay).filter(VerifixAttendanceDay.date == day).first()
+    reads = _reads(vday)
     base = {
         "date": day.isoformat(),
         "configured": bool(cfg["login"] and cfg["password_set"] and cfg["filial_id"]),
         "cells_counted": len(counted_now),
+        "pick": pick(db, reads),
     }
-    vday = db.query(VerifixAttendanceDay).filter(VerifixAttendanceDay.date == day).first()
     if vday is None:
         return {**base, "status": "none"}
 
@@ -547,6 +644,7 @@ def payload(db: Session, day: date) -> dict:
                           "hours": round(sum(f["hours"] or 0 for f in fon), 2)}
         c["differ"] = sum(1 for r in vr if r["same"] is False or (file_rows is not None and r["file"] is None))
         c["differ"] += len(c["file_rows"])
+        c["read"] = reads.get(key)
         c["rows"] = [strip(r) for r in sorted(vr, key=lambda r: (r["worker_name"] or "").lower())]
         c["file_rows"] = [strip({**f, "file_only": True})
                           for f in sorted(c["file_rows"], key=lambda r: (r["worker_name"] or "").lower())]
@@ -617,6 +715,9 @@ def payload(db: Session, day: date) -> dict:
             if not f.get("_unmatched"):
                 continue
             n = notes.get(f["_full"])
+            # «In a cell nobody has read» stops being true once that cell is read.
+            if n and n.get("why") == "vfx_unread_cell" and verifix._code_key(n.get("code")) in reads:
+                n = {"why": "vfx_no_day"}
             diffs.append({
                 "id": f["id"], "worker_name": f["worker_name"], "code": show(f["key"], f["code"]),
                 "vfx": None,
@@ -633,6 +734,8 @@ def payload(db: Session, day: date) -> dict:
         "fetched_at": vday.fetched_at.isoformat() if vday.fetched_at else None,
         "fetched_by": vday.fetched_by_name,
         "cells_asked": len(keys),
+        # The cells whose last read ran out of time — what «read them again» picks.
+        "partial_codes": sorted(r["code"] for r in reads.values() if r.get("partial") and r.get("code")),
         "hours_rule": vday.hours_rule,
         "excel": file_rows is not None,
         "sections": out_sections,

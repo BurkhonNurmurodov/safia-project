@@ -6963,8 +6963,32 @@ worker layout, with ONE button — «Verifix'dan olish» — where the upload wa
 - **Only the cells counted in the загрузка** — `cells.in_load` («Zagruzkada
   hisoblanadi», see its section) at the moment of the read; the stored day
   keeps the codes it asked about.
+- **The button opens a CELL PICKER** (2026-10-04, the operator's request) —
+  `pages/admin/VerifixCellPicker.jsx`, the Broadcast page's `CheckboxTree`
+  nested plant → shift → brigadir → cell (brigadir-less cells in a trailing
+  branch), every counted cell ticked by default, search, select-all of what is
+  on screen, and one-press «only not read» / «only partly read» presets. The
+  tree comes on the day's payload (`pick`: the counted cells with unit, shift,
+  plant, leader and when each was last read; `verifix_attendance.pick`).
+  `POST /fetch` takes `codes`; absent = every counted cell (a tab from before
+  the picker), none counted among them = 400 `no_cells`.
+- **A read replaces THE CELLS IT READ, never the day** — every other cell
+  already read for the day stays, so one cell can be read again without the
+  plant. `vfx_attendance_days.cell_reads` (code key → `{code, at, by,
+  partial}`, migration `add_vfx_attendance_notes`) says when each cell was last
+  read; `codes`, `fetched_*` and `partial` are its roll-up (`fetched_at` = the
+  latest read). A day stored before this has no `cell_reads` and reads as one
+  pass of its `codes` (`_reads`).
+- **Out of time, each cell is judged by its own people** (`returned` against
+  the employees asked): all came back → whole; some → PARTIAL (its rows are
+  replaced and it wears a «Qisman» chip); none → not read at all, and what an
+  earlier read stored for it stays. The day is partial while any cell is; the
+  banner names how many and «Qisman olinganlarni qayta olish» opens the picker
+  on exactly those. The POST answer carries `read` (this read's cells, rows,
+  partial / unread counts) beside the day's payload, whose totals cover every
+  cell. A person in a counted cell nobody has read yet is `vfx_unread_cell`.
 - **Saved apart, and NOTHING reads it** — `vfx_attendance_days` /
-  `vfx_attendance_rows`; a re-read replaces the day. `attendance`, the
+  `vfx_attendance_rows`. `attendance`, the
   «Davomat» batches, the загрузка and every figure stay the file's, so the
   page has no tick, move, edit or Save. Wiring it into anything is a separate
   decision.

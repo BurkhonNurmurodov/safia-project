@@ -9,6 +9,7 @@ Errors are answers, the «Verifix (test)» convention: 409 ``not_configured``
 refused or failed — never 502/503, which the client reads as a restart.
 """
 from datetime import date as date_t, datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -37,27 +38,36 @@ def get_day(date: str = Query(...), db: Session = Depends(get_db),
 
 class FetchBody(BaseModel):
     date: str
+    # The cells picked in the tree. Absent = every counted cell, which is what a
+    # tab still open on the bundle before the picker sends.
+    codes: Optional[list[str]] = None
 
 
 @router.post("/fetch")
 def fetch_day(body: FetchBody, db: Session = Depends(get_db),
               payload: dict = Depends(verify_admin)):
-    """Read the day from Verifix (the counted cells only) and store it apart,
-    replacing an earlier read of the same day. Up to ~70 s."""
+    """Read the day from Verifix for the picked cells (counted ones only) and
+    store them apart, replacing what an earlier read stored for those cells;
+    the day's other cells stay. Up to ~70 s."""
     d = _parse_date(body.date)
     if d > datetime.now(verifix.TZ).date():
         raise HTTPException(status_code=400, detail={
             "code": "future", "message": "A day that has not come yet has nothing to read"})
     try:
-        res = va.fetch_day(db, d, by=payload.get("full_name") or "")
+        res = va.fetch_day(db, d, by=payload.get("full_name") or "", codes=body.codes)
     except va.NotConfigured:
         raise HTTPException(status_code=409, detail={
             "code": "not_configured", "message": "No Verifix login on the admin «Verifix» card"})
+    except va.NoCells:
+        raise HTTPException(status_code=400, detail={
+            "code": "no_cells", "message": "None of the picked cells is counted in the загрузка"})
     except verifix.VerifixError as exc:
         raise HTTPException(status_code=424, detail={
             "code": exc.code, "message": (exc.message or exc.code)[:500], "status": exc.status})
     details = [("cells", res["cells"]), ("workers", res["rows"])]
     if res["partial"]:
-        details.append(("partial", True))
+        details += [("partial", True), ("partial_cells", res["partial_cells"]),
+                    ("unread_cells", res["unread_cells"])]
     action_log.enrich(day=d, details=details)
-    return va.payload(db, d)
+    # `read` says what THIS read did — the payload's totals cover the whole day.
+    return {**va.payload(db, d), "read": res}
