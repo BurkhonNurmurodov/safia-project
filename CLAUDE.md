@@ -7342,7 +7342,10 @@ rights — over a different source, and it is being built to REPLACE /staff.
     badge, early arrival still rounds the seconds (`early_arrival_min` can sit
     one minute off `early_in`), a no-check-out day still carries no lateness
     (`late` is None for `no_out` — the operator, 2026-10-05: «do not care about
-    late comers», so it stays), and nothing /staff shares was touched.
+    late comers», so it stays), the other-brigade section's «Soat» column
+    prints the hours counted here (after the first unit's early minutes) while
+    the table's «Soat» filter reads the clocked hours — left as is (the
+    operator, 2026-10-05) — and nothing /staff shares was touched.
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 
