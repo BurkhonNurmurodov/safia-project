@@ -184,7 +184,9 @@ manual | verifix, `at`, `by` — and `vfx`, what Verifix said at its last check:
 the matched NAME, job, cell, status, or why nobody was found).
 
 - **`services/leader_kind.py` is THE definition** (`KINDS`, `set_manual`, `out`).
-  A REGISTER only: nothing scores, filters or routes by it yet.
+  A REGISTER, with ONE reader that ranks by it: «Ishchi havotirlari»
+  (/worker-concerns) ranks only `"leader"` profiles from 2026-10-04 (see that
+  section). Nothing else scores, filters or routes by it.
 - **The switch** is a `SegmentedToggle` in the admin profile page's Details card
   (leaders only), a draft like every field there: the page's one Save sends
   `leader_kind` on `PUT /api/profiles/admin/leader/{id}` only when it moved, and
@@ -1853,12 +1855,25 @@ structure changed the same day — see the redesign bullets below).
   leader's; this page counts it wherever it now sits — an uplift does not
   un-file a concern.
 - **Four statuses, ONE rule — `BUCKET`** (SQL, read by the filter, every
-  aggregate, the register, the export and exam tasks 40/41): `done` = resolved
-  by whoever held it · `uplifted` («Ko'tarilgan») = handed to the brigadir or
-  above and still open (the sheets' «O'tqazish») · `doing` / `todo` («Yangi»,
-  /cell-concerns' word) at the leader step. % = done ÷ total, so a concern the
-  brigadir resolved after an uplift counts as resolved for the leader it was
-  filed to. «deferred», the sheet era's key, is read as `uplifted`.
+  aggregate, the register, the export and exam tasks 40/41): `uplifted`
+  («Ko'tarilgan») = handed to the brigadir or above, WHATEVER became of it
+  after — still open there or resolved there (the sheets' «O'tqazish») ·
+  `done` = resolved at the leader step · `doing` / `todo` («Yangi»,
+  /cell-concerns' word) at the leader step. «deferred», the sheet era's key, is
+  read as `uplifted`.
+- **An uplifted concern is out of the leader's rating** (the operator,
+  2026-10-04 — it was counted until then, a brigadir's resolution crediting the
+  leader). Every % — leader, unit, headline, the change line (`_previous`), the
+  workbook — is `done ÷ rated`, rated = total − uplifted (`_rated` /
+  `_figures`, client `ratedOf`); `MIN_RANKED` counts rated concerns. «Ochiq» /
+  `open` = doing + todo, what still waits on the LEADER — the ranking, the
+  cells card, the leader dialog's list (`OPEN_KEYS`) and exam task 41. The
+  register prints a resolved-above row as «Ko'tarilgan» plus «yuqorida hal
+  qilingan» (`ConcernStatus`); a leader's own «Brigadirda» list asks `/list`
+  with `open_only` so it holds only the unresolved. The ranking shows the
+  uplifted count as `↑N` under «Jami» and the headline/dialog say «N kept by
+  the leader … M escalated — not in the %» (`OfLine`). Level moves only on an
+  escalate or a return, so a concern sent back down is the leader's again.
 - **Attribution is the row's own**: the leader it was filed to
   (`leader_profile_id`, printed under the CURRENT profile name), its unit
   (`brigadir_manager_id`), its cell code. Leaders are picked by PROFILE id
@@ -1876,6 +1891,14 @@ structure changed the same day — see the redesign bullets below).
   and never «kam ma'lumot»; the status filter does not narrow the roster. The
   Excel leaders sheet is the same list, and `/meta`'s Lider and Brigadir
   options include the roster so every name on the table can be picked.
+- **Only a LEADER on Verifix is ranked** (the operator, 2026-10-04: «rank only
+  those who are actually leaders») — `role_profiles.leader_kind == "leader"`
+  (`RANKED_KIND`, applied in `_with_roster`, which serves `kind` on every
+  leader row). «Lider o'rnida» and not-determined profiles stay on the table,
+  unranked and ungraded, in a group of their own after «kam ma'lumot»
+  («Reytingga kirmaydi — Verifixda lider lavozimida emas», a `KindTag` on each
+  row, band `nl`); the workbook appends the kind to the name. Their concerns
+  still count in the headline, the units and the cells.
 - **The Google-sheet sync is GONE** (same day, the operator: «get rid of that
   sheet»): `services/worker_concerns.py` (the nightly crawl, its Drive sweep and
   the page's Refresh / sync pill / sheet-failure banners), the one-shot
@@ -1911,7 +1934,7 @@ structure changed the same day — see the redesign bullets below).
   that card (full width on a phone — it is the job they came to do),
   «Yacheykalarim» (every cell they own, by open concerns) and the trend. Exam
   tasks 40 and 41 read straight off it.
-- **ONE whole percent, computed once: `pct0`** = `whole_pct(done, total)`
+- **ONE whole percent, computed once: `pct0`** = `whole_pct(done, rated)`
   (`services/worker_concerns_export.py`), half UP from the raw counts, on every
   payload beside the old one-decimal `pct`. The page prints and bands by it, the
   workbook prints and bands the same integer; order uses the exact ratio. Never

@@ -18,7 +18,10 @@ show it and a later check can tell a person's choice from its own::
 A value set by hand (``src == "manual"``) is never overwritten by a Verifix
 check; the check only records what Verifix said beside it.
 
-It is a REGISTER: nothing on the platform scores, filters or routes by it yet.
+It has ONE reader that ranks by it: «Ishchi havotirlari» (/worker-concerns)
+ranks only ``"leader"`` profiles (routers/worker_concerns.RANKED_KIND, from
+2026-10-04) — «Lider o'rnida» and not-determined rows stay listed, unranked.
+Nothing else scores, filters or routes by it.
 """
 from __future__ import annotations
 

@@ -299,11 +299,12 @@ def _wc_month_top_cell(db, attempt, ctx, chk, *_):
     rows = _wc_query(db, attempt).with_entities(LeaderConcern.cell_code, BUCKET).all()
     if not rows:
         raise NoData("no rows")
-    # «Open» is the page's «Hal bo'lmagan»: everything not yet resolved,
-    # including a concern handed up the chain — the cells chart counts that.
+    # «Open» is the page's: what still waits on the leader («Yangi» +
+    # «Jarayonda»). A concern handed up the chain is not theirs any more, and
+    # the cells chart does not count it (routers/worker_concerns._open).
     per: dict[str, int] = {}
     for code, st in rows:
-        if st == "done":
+        if st not in ("doing", "todo"):
             continue
         per[code or "—"] = per.get(code or "—", 0) + 1
     if not per:

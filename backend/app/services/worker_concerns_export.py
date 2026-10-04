@@ -44,9 +44,9 @@ from app.services.quality_export import (
 
 # The page's own status palette (semantic traffic-light, never brand gold).
 # «todo» is not started — GREY, the platform's word for it, never red (red is a
-# fault). «uplifted» = handed up the chain and still open (routers/
-# worker_concerns): a darker slate, told apart from «todo» on the page by its
-# icon. «deferred» / «other» are the sheet era's keys, kept so an old file's
+# fault). «uplifted» = handed up the chain, resolved above or not (routers/
+# worker_concerns) and out of every %: a darker slate, told apart from «todo»
+# on the page by its icon. «deferred» / «other» are the sheet era's keys, kept so an old file's
 # words still have a colour.
 BLUE = "3B82F6"
 OTHER_INK = "64748B"
@@ -64,6 +64,19 @@ def whole_pct(done: int, total: int) -> Optional[int]:
     63% on screen), and rounding the one-decimal figure a second time made
     17 of 19 read 90%."""
     return (200 * done + total) // (2 * total) if total else None
+
+
+def _rated(r: dict) -> int:
+    """What a % is taken over — the total less what was handed up (routers/
+    worker_concerns._rated; a payload that predates it falls back to that
+    arithmetic)."""
+    if r.get("rated") is not None:
+        return r["rated"]
+    return (r.get("total") or 0) - (r.get("uplifted") or 0)
+
+
+def _pct_of(r: dict) -> Optional[int]:
+    return whole_pct(r.get("done") or 0, _rated(r))
 
 
 def _pd(s: Any) -> Optional[date]:
@@ -194,7 +207,7 @@ def _brig_block(ws: Worksheet, row: int, c1: int, p: dict, sts: list[str]) -> in
         bb = _band_of(b, bands, plain)
         bc = _BAND_COLOR[bb]
         graded = bb in ("green", "yellow", "red")
-        _block(ws, row, c2, row, c2, whole_pct(b.get("done") or 0, b.get("total") or 0),
+        _block(ws, row, c2, row, c2, _pct_of(b),
                fill=_fill(WC_TINT.get(bc, BAND)) if graded else bg, border=BOX, align=RIGHT,
                fmt=PCT0, font=Font(name=FONT, size=9.5, bold=graded,
                                    color=bc if graded else INK_SOFT))
@@ -274,7 +287,7 @@ def _obzor(wb: Workbook, p: dict, sts: list[str]) -> None:
     row = _kpi_cards(ws, row, C1, [
         {"value": k.get("total", 0), "label": lbl.get("kTotal", ""), "color": BRAND},
         {"value": k.get("done", 0), "label": lbl.get("kResolved", ""),
-         "hint": f'{whole_pct(k.get("done") or 0, k["total"])}%' if k.get("total") else "",
+         "hint": f'{_pct_of(k)}%' if _rated(k) else "",
          "color": GREEN},
         {"value": k.get("doing", 0), "label": lbl.get("kDoing", ""), "color": AMBER},
         {"value": k.get("open", 0), "label": lbl.get("kOpen", ""),
@@ -305,11 +318,17 @@ def _band_of(r: dict, bands: dict, plain: bool = False) -> str:
     nobody, here as on the page."""
     if not r.get("total"):
         return "none"
+    # A leader row names its Verifix kind; a profile that is not a leader on
+    # Verifix is listed, never graded (the router's RANKED_KIND).
+    if "kind" in r and r["kind"] != "leader":
+        return "nl"
     if not r.get("ranked"):
         return "low"
     if plain:
         return "plain"
-    p = whole_pct(r.get("done") or 0, r["total"])
+    p = _pct_of(r)
+    if p is None:
+        return "low"
     if p >= bands["green"]:
         return "green"
     if p >= bands["yellow"]:
@@ -318,7 +337,7 @@ def _band_of(r: dict, bands: dict, plain: bool = False) -> str:
 
 
 _BAND_COLOR = {"green": GREEN, "yellow": AMBER, "red": RED, "low": SLATE, "none": SLATE,
-               "plain": INK}
+               "nl": SLATE, "plain": INK}
 
 
 def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
@@ -361,6 +380,10 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     row += 1
     _block(ws, row, C1, row, C2, lbl.get("lowNHint", ""),
            font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
+    if lbl.get("rateNote"):
+        row += 1
+        _block(ws, row, C1, row, C2, lbl["rateNote"],
+               font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
     if ld.get("plain") and lbl.get("shortNote"):
         # The scale above is the rule; this period is too short to be judged
         # by it, and the page says so in the same words.
@@ -384,9 +407,15 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                align=Alignment(horizontal="center", vertical="center"),
                font=Font(name=FONT, size=10, color=INK_FAINT))
         row += 1
+    kind_lbl = lbl.get("kindLabels") or {}
     for i, r in enumerate(rows):
         bg = _fill(PANEL if i % 2 == 0 else BAND)
-        _block(ws, row, C1, row, C1, r.get("leader") or "—", fill=bg, border=BOX,
+        name = r.get("leader") or "—"
+        if "kind" in r and r["kind"] != "leader":
+            tag = kind_lbl.get(r["kind"] or "none")
+            if tag:
+                name = f"{name} — {tag}"
+        _block(ws, row, C1, row, C1, name, fill=bg, border=BOX,
                align=Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1),
                font=Font(name=FONT, size=9.5, bold=True, color=INK))
         _block(ws, row, C1 + 1, row, C1 + 1, ", ".join(r.get("brigadirs") or []) or "—",
@@ -411,13 +440,14 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                          color=RED if r.get("open") else INK_FAINT))
         band = _band_of(r, bands, bool(ld.get("plain")))
         bc = _BAND_COLOR[band]
+        pct = _pct_of(r)
         _block(ws, row, C2, row, C2,
-               whole_pct(r.get("done") or 0, r["total"]) if r.get("total") else "—",
+               pct if pct is not None else "—",
                fill=_fill(WC_TINT.get(bc, BAND)),
                border=BOX, align=Alignment(horizontal="center", vertical="center"),
                fmt=PCT0,
                font=Font(name=FONT, size=9.5, bold=True,
-                         color=bc if band not in ("low", "none") else INK_SOFT))
+                         color=bc if band not in ("low", "none", "nl") else INK_SOFT))
         row += 1
     last_data = row - 1
 
@@ -439,7 +469,7 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                    border=BOX, align=RIGHT, fmt=NUM,
                    font=Font(name=FONT, size=9.5, italic=True, color=INK_SOFT))
         _block(ws, row, C1 + 4 + len(sts), row, C1 + 4 + len(sts),
-               (ua.get("total") or 0) - (ua.get("done") or 0), fill=bg, border=BOX,
+               (ua.get("doing") or 0) + (ua.get("todo") or 0), fill=bg, border=BOX,
                align=RIGHT, fmt=NUM,
                font=Font(name=FONT, size=9.5, italic=True, color=INK_SOFT))
         _block(ws, row, C2, row, C2, "—", fill=bg, border=BOX,
@@ -450,10 +480,10 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     if rows or ua:
         top = Border(left=_side(), right=_side(),
                      top=_side(BRAND, "medium"), bottom=_side())
-        tot = sum(r.get("total") or 0 for r in rows) + ((ua or {}).get("total") or 0)
-        done = sum(r.get("done") or 0 for r in rows) + ((ua or {}).get("done") or 0)
-        sums = {s: sum(r.get(s) or 0 for r in rows) + ((ua or {}).get(s) or 0)
-                for s in sts}
+        everyone = rows + ([ua] if ua else [])
+        tot = sum(r.get("total") or 0 for r in everyone)
+        sums = {s: sum(r.get(s) or 0 for r in everyone)
+                for s in ("done", "doing", "todo", "uplifted")}
         bg = _fill(BRAND_SOFT)
         bold = Font(name=FONT, size=10, bold=True, color=INK)
         _block(ws, row, C1, row, C1, lbl.get("colTotal", ""), fill=bg, border=top,
@@ -465,10 +495,11 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
         for j, s in enumerate(sts):
             _block(ws, row, C1 + 4 + j, row, C1 + 4 + j, sums[s], fill=bg, border=top,
                    align=RIGHT, fmt=NUM, font=bold)
-        _block(ws, row, C1 + 4 + len(sts), row, C1 + 4 + len(sts), tot - done,
+        _block(ws, row, C1 + 4 + len(sts), row, C1 + 4 + len(sts),
+               sums["doing"] + sums["todo"],
                fill=bg, border=top, align=RIGHT, fmt=NUM, font=bold)
         _block(ws, row, C2, row, C2,
-               whole_pct(done, tot), fill=bg, border=top,
+               whole_pct(sums["done"], tot - sums["uplifted"]), fill=bg, border=top,
                align=Alignment(horizontal="center", vertical="center"),
                fmt=PCT0, font=bold)
         row += 1

@@ -14,22 +14,24 @@ sheet»); the three tables it filled — ``worker_concerns``,
 ``worker_concern_sync``, ``worker_concern_sheet_state`` — were left in the
 database, unread by anything.
 
-A filing counts here at WHATEVER LEVEL it now sits. /cell-concerns shows a
-concern only while it is still the leader's and drops it the moment it is
-uplifted; this page measures what became of every concern a worker raised, and
-an uplift does not un-file one (the rule sheet_concerns_report already states).
-So the page's statuses are read off two columns:
+Every filing is LISTED here at whatever level it now sits — /cell-concerns
+drops a concern the moment it is uplifted, this page does not. But only what
+stayed with the LEADER is held against them (the operator, 2026-10-04: «if
+they have uplifted the concern to their supervisor, it shouldn't affect their
+rating»). So the page's statuses are read off two columns:
 
-  done     — resolved, by whoever held it then
-  uplifted — handed up the chain (brigadir or above) and not resolved yet —
-             the sheets' «O'tqazish», on the platform the escalate
+  uplifted — handed up the chain (brigadir or above), whatever became of it
+             after: still open there, or resolved there — the sheets'
+             «O'tqazish», on the platform the escalate. Out of every %.
+  done     — resolved at the leader step
   doing    — in work at the leader step
   todo     — still waiting at the leader step
 
 ``BUCKET`` is that rule as SQL and its only spelling: the filter, every
 aggregate, the register and the export read the same expression, so
 «resolved» can never mean two things on one page. Every percentage is
-done ÷ total, computed here.
+done ÷ rated, rated = total − uplifted (``_rated``), computed here; «open» is
+what still waits on the leader (doing + todo).
 
 Attribution is the ROW's own, never a registry lookup: the LEADER the worker
 filed to (``leader_profile_id`` — the cell's owner at filing time, the person
@@ -38,9 +40,12 @@ was filed under (``brigadir_manager_id``) and the CELL it names. A cell handed
 to another leader later does not take its history with it. A row with no leader
 surfaces as an explicit «unassigned» bucket — counted, never ranked.
 
-Leaders with fewer than MIN_RANKED concerns in the window are reported but
-flagged unranked — a leader with one concern must not out-rank one with a
-hundred at 93%.
+Leaders with fewer than MIN_RANKED rated concerns in the window are reported
+but flagged unranked — a leader with one concern must not out-rank one with a
+hundred at 93%. So is every profile that is not a LEADER on Verifix
+(``role_profiles.leader_kind`` other than "leader" — «Lider o'rnida» or not
+determined, services/leader_kind.py): the operator, 2026-10-04, «rank only
+those who are actually leaders». Their rows stay on the table, unranked.
 
 Scoping (the page opens to supervisor + leader by default), narrowed the way
 /concerns narrows these same rows:
@@ -109,15 +114,20 @@ def _today() -> date_cls:
     return datetime.now(ZoneInfo(PLANT_TZ)).date()
 
 _LEVEL = func.coalesce(LeaderConcern.level, "supervisor")
-# THE status rule (module docstring). Order matters: a resolved concern is
-# «done» wherever it was resolved, and only an OPEN one is told apart by where
-# it sits. An unknown stored status reads as «todo», /cell-concerns' own rule.
+# THE status rule (module docstring). Order matters: a concern handed up the
+# chain is «uplifted» whatever its status — resolved above or not, it is no
+# longer the leader's — and only what stayed at the leader step is told apart
+# by its status. A concern sent back down is the leader's again (level moves
+# with every escalate and return, never with a status change). An unknown
+# stored status reads as «todo», /cell-concerns' own rule.
 BUCKET = case(
-    (LeaderConcern.status == "done", "done"),
     (_LEVEL != "leader", UPLIFTED),
+    (LeaderConcern.status == "done", "done"),
     (LeaderConcern.status == "doing", "doing"),
     else_="todo",
 )
+# Only a leader on Verifix is ranked (module docstring; services/leader_kind).
+RANKED_KIND = "leader"
 
 # The register's order: newest filing first, the register number breaking a
 # day's ties — the order /cell-concerns lists the same rows in.
@@ -354,6 +364,34 @@ def _pct(done: int, total: int) -> Optional[float]:
     return round(done * 100 / total, 1) if total else None
 
 
+def _rated(v: dict) -> int:
+    """What a % is taken over: every concern that stayed at the leader step —
+    the total less what was handed up (module docstring)."""
+    return sum(v.get(s) or 0 for s in STATUSES) - (v.get(UPLIFTED) or 0)
+
+
+def _open(v: dict) -> int:
+    """What still waits on the LEADER — an uplifted concern is not theirs."""
+    return (v.get("doing") or 0) + (v.get("todo") or 0)
+
+
+def _figures(v: dict) -> dict:
+    """The derived counts every aggregate row carries, from ONE rule."""
+    r = _rated(v)
+    return {"rated": r, "open": _open(v), "pct": _pct(v.get("done") or 0, r),
+            "pct0": whole_pct(v.get("done") or 0, r)}
+
+
+def _leader_kinds(db: Session, ids) -> dict[int, Optional[str]]:
+    """profile id → ``leader_kind`` (services/leader_kind.py); a profile since
+    deleted is absent, i.e. not a leader anybody can rank."""
+    ids = sorted({i for i in ids if i})
+    if not ids:
+        return {}
+    return dict(db.query(RoleProfile.id, RoleProfile.leader_kind)
+                .filter(RoleProfile.id.in_(ids)).all())
+
+
 def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]) -> dict:
     """KPI · daily · per brigadir · per cell · per leader, from one row walk.
 
@@ -413,11 +451,12 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
     for mid, v in brig.items():
         m = units.get(mid)
         t = sum(v.values())
+        f = _figures(v)
         by_brigadir.append({
             "name": unit_name(mid) or "—", "manager_id": mid,
             "shift": m.shift if m else None, "factory_id": m.factory_id if m else None,
-            "total": t, **v, "pct": _pct(v["done"], t), "pct0": whole_pct(v["done"], t),
-            "leaders": len(unit_leaders.get(mid, ())), "ranked": t >= MIN_RANKED,
+            "total": t, **v, **f,
+            "leaders": len(unit_leaders.get(mid, ())), "ranked": f["rated"] >= MIN_RANKED,
         })
     by_brigadir.sort(key=lambda r: -r["total"])
 
@@ -433,34 +472,32 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
         top = min(v["by_leader"].items(), key=lambda kv: (-kv[1], kv[0]))[0] if v["by_leader"] else None
         leader = live_leader or (_named(lnames, top, snap_leader.get(top)) if top else "")
         top_cells.append({"code": code or "—", "cell_id": cid, "leader": leader,
-                          "total": t, "open": t - v["done"],
+                          "total": t, "open": _open(v),
                           **{s: v[s] for s in STATUSES}})
     top_cells.sort(key=lambda r: (-r["open"], -r["total"], r["code"]))
 
     by_leader = []
     for lid, g in leaders.items():
         t = sum(g[s] for s in STATUSES)
+        counts = {s: g[s] for s in STATUSES}
         by_leader.append({
             "leader_id": lid,
             "leader": _named(lnames, lid, snap_leader.get(lid)) or "—",
             "brigadirs": sorted(n for n in (unit_name(m) for m in g["units"]) if n),
             "cells": sorted(g["cells"], key=lambda v: (len(v), v)),
-            "total": t, **{s: g[s] for s in STATUSES},
-            "open": t - g["done"], "pct": _pct(g["done"], t), "pct0": whole_pct(g["done"], t),
-            "ranked": t >= MIN_RANKED,
+            "total": t, **counts, **_figures(counts),
         })
     by_leader.sort(key=lambda r: -r["total"])
     ua_total = sum(unassigned.values())
 
     return {
-        "kpi": {**kpi, "total": total, "open": total - kpi["done"],
-                "pct": _pct(kpi["done"], total), "pct0": whole_pct(kpi["done"], total),
-                "workers": len(workers)},
+        "kpi": {**kpi, "total": total, **_figures(kpi), "workers": len(workers)},
         "daily": daily,
         "by_brigadir": by_brigadir,
         "top_cells": top_cells,
         "leaders": by_leader,
-        "unassigned": {**unassigned, "total": ua_total} if ua_total else None,
+        "unassigned": ({**unassigned, "total": ua_total, **_figures(unassigned)}
+                       if ua_total else None),
     }
 
 
@@ -474,7 +511,11 @@ def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) ->
     leaders, even those with no concerns»). A leader with no filings is shown,
     never dropped — an empty row says something a missing one cannot. Every row
     also names the cells its leader owns now (narrowed to a cell pick), so a
-    leader with nothing filed still says where they work."""
+    leader with nothing filed still says where they work.
+
+    THE ranking rule lives here, the one door every leader row passes: a row is
+    ``ranked`` when its profile is a leader on Verifix (``kind``) AND it has
+    MIN_RANKED rated concerns behind it."""
     ids = {r[0] for r in roster} | {r["leader_id"] for r in by_leader}
     owned: dict[int, set] = {}
     if ids:
@@ -483,12 +524,15 @@ def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) ->
                           .filter(Cell.leader_id.in_(ids))):
             if code and (not picked or code in picked):
                 owned.setdefault(lid, set()).add(code)
+    kinds = _leader_kinds(db, ids)
     seen = set()
     out = []
     for r in by_leader:
         seen.add(r["leader_id"])
         cells = set(r["cells"]) | owned.get(r["leader_id"], set())
-        out.append({**r, "cells": sorted(cells, key=_cell_key)})
+        kind = kinds.get(r["leader_id"])
+        out.append({**r, "cells": sorted(cells, key=_cell_key), "kind": kind,
+                    "ranked": kind == RANKED_KIND and r["rated"] >= MIN_RANKED})
     units = _units(db, (mid for _, _, mid in roster))
     for lid, name, mid in roster:
         if lid in seen:
@@ -498,7 +542,8 @@ def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) ->
             "leader_id": lid, "leader": name or "—",
             "brigadirs": [m.name] if m and m.name else [],
             "cells": sorted(owned.get(lid, set()), key=_cell_key),
-            "total": 0, **_zero(), "open": 0, "pct": None, "pct0": None, "ranked": False,
+            "total": 0, **_zero(), "rated": 0, "open": 0, "pct": None, "pct0": None,
+            "kind": kinds.get(lid), "ranked": False,
         })
     out.sort(key=lambda r: -r["total"])     # stable: the zeros keep name order
     return out
@@ -506,20 +551,23 @@ def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) ->
 
 def _ranking_order(rows: list[dict]) -> list[dict]:
     """The ranking's DEFAULT order — ranked leaders by their exact share
-    resolved (best first, more concerns first on a tie), then the ones with
-    too few concerns to rank, then the ones nobody filed to. The file follows
-    the order the page SENDS (`_in_order`); this is only for a request that
-    sent none, or for a leader the page did not list."""
+    resolved (best first, more concerns first on a tie), then the leaders with
+    too few concerns to rank, then the profiles that are not leaders on
+    Verifix, then the ones nobody filed to — the page's groups. The file
+    follows the order the page SENDS (`_in_order`); this is only for a request
+    that sent none, or for a leader the page did not list."""
     def name(r):
         return (r.get("leader") or "").casefold()
 
     def key(r):
-        t = r["total"]
+        t, rated = r["total"], r.get("rated") or 0
         if t and r["ranked"]:
-            return (0, -(r["done"] / t), -t, name(r))
-        if t:
+            return (0, -(r["done"] / rated), -rated, name(r))
+        if t and r.get("kind") == RANKED_KIND:
             return (1, 0, -t, name(r))
-        return (2, 0, 0, name(r))
+        if t:
+            return (2, 0, -t, name(r))
+        return (3, 0, 0, name(r))
     return sorted(rows, key=key)
 
 
@@ -735,13 +783,16 @@ def _previous(db: Session, payload: dict, flt: dict, lock=None,
     # A resolved concern that carries no date of its own resolution cannot be
     # shown to have been resolved BY THEN, so it is not counted as such (the
     # filing day would credit it with a resolution on the day it was raised).
+    # Rated the way the period itself is (BUCKET): what was handed up is out
+    # of both halves, read off where each concern sits today.
     resolved_on = func.coalesce(func.date(func.timezone(PLANT_TZ, LeaderConcern.done_at)),
                                 LeaderConcern.completion_date)
-    done_then = (LeaderConcern.status == "done") & (resolved_on <= as_of)
+    rated = BUCKET != UPLIFTED
+    done_then = rated & (LeaderConcern.status == "done") & (resolved_on <= as_of)
     total, done = (
         _apply_scope_and_filters(db, payload, **{**flt, "date_from": p_lo, "date_to": p_hi},
                                  lock=lock, units=units)
-        .with_entities(func.count(LeaderConcern.id),
+        .with_entities(func.count(case((rated, LeaderConcern.id))),
                        func.count(case((done_then, LeaderConcern.id))))
         .one()
     )
@@ -809,13 +860,18 @@ def get_list(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=200),
     sort: str = Query("date_desc"),
+    open_only: bool = Query(False),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE_KEY)),
     flt: dict = Depends(_filter_params),
 ):
     """The paginated register. The full concern text rides along — 50 rows a
-    page keeps the payload phone-friendly without a second per-row fetch."""
+    page keeps the payload phone-friendly without a second per-row fetch.
+    ``open_only`` keeps what nobody has resolved yet — a leader's own «with the
+    brigadir» list, where «uplifted» alone would list what was resolved above."""
     query = _apply_scope_and_filters(db, payload, **flt, q=q)
+    if open_only:
+        query = query.filter(func.coalesce(LeaderConcern.status, "") != "done")
     total = query.count()
     items = (query.with_entities(LeaderConcern, BUCKET)
              .order_by(*(_ORDER.get(sort) or _ORDER["date_desc"]))

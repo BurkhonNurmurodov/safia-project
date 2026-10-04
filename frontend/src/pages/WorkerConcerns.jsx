@@ -55,11 +55,12 @@ import { TXT, ST_LBL, LI, fill } from "./workerConcernsText";
 // theme's --status-* inks, which hold AA contrast on both themes. «todo» —
 // nobody has started it — is GREY, the platform's word for «not started»
 // (/cell-concerns and /concerns print the same rows so): red is a fault, not a
-// state. «uplifted» (handed up the chain, not resolved yet — no longer the
-// leader's to act on) is a darker slate, and every status carries its own
-// ICON, so the two greys differ by shape and not by shade alone.
+// state. «uplifted» (handed up the chain — resolved above since or not, no
+// longer the leader's, and out of every %) is a darker slate, and every status
+// carries its own ICON, so the two greys differ by shape and not by shade alone.
 const ST_KEYS = ["done", "doing", "todo", "uplifted"];
-const OPEN_KEYS = ["doing", "todo", "uplifted"];
+// What still waits on the LEADER — the «Ochiq» count and every open list.
+const OPEN_KEYS = ["doing", "todo"];
 const SLATE = "#94a3b8";
 const SLATE_DARK = "#64748b";
 const ST_FILL = { done: TONE_HEX.ok, doing: TONE_HEX.warn, todo: SLATE, uplifted: SLATE_DARK };
@@ -71,7 +72,7 @@ const ST_GLYPH = { done: "#052e16", doing: "#422006", todo: "#0f172a", uplifted:
 const BAND_TONE = { green: "ok", yellow: "warn", red: "bad" };
 const BAND_INK = {
   green: "var(--status-ok)", yellow: "var(--status-warn)", red: "var(--status-bad)",
-  low: "var(--text-2)", none: "var(--text-2)", plain: "var(--text-1)",
+  low: "var(--text-2)", nl: "var(--text-2)", none: "var(--text-2)", plain: "var(--text-1)",
 };
 // A period shorter than this is not colour-graded: its newest concerns have
 // not had the time to be resolved, so every leader would read red on the
@@ -116,9 +117,18 @@ const twoWords = (name) => (name || "").trim().split(/\s+/).slice(0, 2).join(" "
 // counts, and the very integer the Excel file prints. `pct` (one decimal) only
 // stands in for a backend that predates it.
 const whole = (r) => (r?.pct0 ?? (r?.pct == null ? null : Math.round(r.pct)));
+// What a % is taken over: every concern that stayed with the leader — the
+// total less what was handed up (routers/worker_concerns._rated). The operator,
+// 2026-10-04: an uplifted concern must not move a leader's rating.
+const ratedOf = (r) => r?.rated ?? ((r?.total || 0) - (r?.uplifted || 0));
 // The exact share resolved — for ORDER only: two whole percents can tie where
 // the fractions behind them do not.
-const ratio = (r) => (r?.total ? r.done / r.total : -1);
+const ratio = (r) => (ratedOf(r) ? r.done / ratedOf(r) : -1);
+// Only a leader on Verifix is ranked (services/leader_kind.py). A leader row
+// names its kind; any other row (a unit, the headline) carries none.
+const notLeader = (r) => r?.kind !== undefined && r.kind !== "leader";
+// A concern nobody has resolved yet, wherever it sits.
+const unresolved = (c) => (c.status ? c.status !== "done" : c.st !== "done");
 // A leader row's key — its profile id, else its name. The Excel export is sent
 // the screen's order in these (routers/worker_concerns._row_key).
 const rankKey = (r) => (r.leader_id != null ? String(r.leader_id) : (r.leader || ""));
@@ -152,9 +162,11 @@ const fillAround = (str, vars, key, node) => {
 
 // The band a % is judged by — the WHOLE percent the reader sees, never the raw
 // fraction (utils/statusBands.js's rule), and only with enough concerns behind
-// it: 1 of 1 is noise, not performance.
+// it: 1 of 1 is noise, not performance. A profile that is not a leader on
+// Verifix is never graded («nl»).
 const bandOf = (row, bands, plain = false) => {
   if (!row.total) return "none";
+  if (notLeader(row)) return "nl";
   const p = whole(row);
   if (!row.ranked || p == null) return "low";
   if (plain) return "plain";
@@ -175,10 +187,58 @@ function PctChip({ pct, band, big = false }) {
       style={{
         background: tone ? toneTint(tone) : "var(--bg-inner)",
         color: BAND_INK[band],
-        border: band === "low" ? "1px dashed var(--border-md)" : "1px solid transparent",
+        border: band === "low" || band === "nl" ? "1px dashed var(--border-md)" : "1px solid transparent",
       }}>
       {pct == null ? "—" : `${pct}%`}
     </span>
+  );
+}
+
+// The status of ONE concern — and, for one handed up and resolved there since,
+// a line saying so: «Ko'tarilgan» alone would read as still open.
+function ConcernStatus({ T, stL, c, inline = false }) {
+  const up = c.st === "uplifted";
+  const doneAbove = up && c.status === "done";
+  return (
+    <>
+      <StChip st={c.st} label={stL(c.st)} hint={up ? T.stUpHint : undefined} />
+      {doneAbove && (
+        <span className={`${inline ? "inline-flex" : "flex mt-1"} items-center gap-1 text-[11px]`} style={{ color: "var(--status-ok)" }}>
+          <CheckCheck size={12} strokeWidth={2.4} aria-hidden className="flex-shrink-0" />
+          {T.upDone}
+        </span>
+      )}
+    </>
+  );
+}
+
+// «Lider o'rnida» / «Lavozimi aniqlanmagan» — why a row is listed and not ranked.
+function KindTag({ T, kind }) {
+  return (
+    <span className="inline-flex items-center px-1.5 py-px rounded-md text-[11px] font-medium whitespace-nowrap align-middle"
+      style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
+      {kind === "acting" ? T.kindActing : T.kindNone}
+    </span>
+  );
+}
+
+// «X of Y resolved» — Y is what stayed with the leader, and what was handed up
+// is named beside it, so the reader can see why Y is not the total.
+function OfLine({ T, r, className = "text-sm", color = "var(--text-2)" }) {
+  const up = r.uplifted || 0;
+  return (
+    <>
+      <p className={className} style={{ color }}>
+        {up ? fill(T.hOfRated, { done: n0(r.done), rated: n0(ratedOf(r)) })
+          : fill(T.hOf, { done: n0(r.done), total: n0(r.total) })}
+      </p>
+      {up > 0 && (
+        <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--text-2)" }}>
+          <ArrowUp size={12} strokeWidth={2.4} aria-hidden className="flex-shrink-0" style={{ color: SLATE_DARK }} />
+          {fill(T.hUpOut, { u: n0(up) })}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -367,9 +427,7 @@ function Headline({ T, stL, kpi, prev, days, band, facts }) {
             <div className="text-5xl font-bold tabular-nums leading-none tracking-tight mt-2.5" style={{ color: BAND_INK[band] }}>
               {pct == null ? "—" : `${pct}%`}
             </div>
-            <p className="text-sm mt-2" style={{ color: "var(--text-2)" }}>
-              {fill(T.hOf, { done: n0(kpi.done), total: n0(kpi.total) })}
-            </p>
+            <div className="mt-2"><OfLine T={T} r={kpi} /></div>
             {band === "low" && <p className="text-xs mt-1" style={{ color: "var(--text-2)" }}>{T.hLow}</p>}
             {band === "plain" && <p className="text-xs mt-1 max-w-xs" style={{ color: "var(--text-2)" }}>{fill(T.hShort, { n: days })}</p>}
             <DeltaLine T={T} pct={pct} prev={prev} days={days} graded={!!BAND_TONE[band]} />
@@ -434,9 +492,10 @@ function SpanCell({ narrow, wide, className = "", style, children }) {
 
 // The ranking's groups in on-screen order — ONE function, read by the card and
 // by the Excel export, which follows the screen (`leader_order`): ranked
-// leaders by the exact share resolved, then the ones with too few concerns to
-// rank, then the ones nobody filed to. Names tie-break in the reader's own
-// alphabet (tl), the way they are printed.
+// leaders by the exact share resolved, then the leaders with too few concerns
+// to rank, then the profiles that are not leaders on Verifix (listed, never
+// ranked — the operator, 2026-10-04), then the ones nobody filed to. Names
+// tie-break in the reader's own alphabet (tl), the way they are printed.
 function rankGroups(rows, sort, tl) {
   const name = (r) => tl(r.leader);
   const rankOf = new Map();
@@ -456,8 +515,10 @@ function rankGroups(rows, sort, tl) {
   return {
     rankOf,
     ranked: rows.filter((r) => r.total > 0 && r.ranked).sort(cmp),
-    low: rows.filter((r) => r.total > 0 && !r.ranked)
+    low: rows.filter((r) => r.total > 0 && !r.ranked && !notLeader(r))
       .sort((a, b) => (byColumn ? cmp(a, b) : (b.total - a.total) || name(a).localeCompare(name(b)))),
+    nl: rows.filter((r) => r.total > 0 && notLeader(r))
+      .sort((a, b) => (byColumn ? cmp(a, b) : (ratio(b) - ratio(a)) || (b.total - a.total) || name(a).localeCompare(name(b)))),
     none: rows.filter((r) => !r.total).sort((a, b) => name(a).localeCompare(name(b))),
   };
 }
@@ -471,7 +532,7 @@ function RankingCard({
   const { rankOf } = g;
   const rankedCount = rankOf.size;
   const bandCounts = useMemo(() => {
-    const c = { green: 0, yellow: 0, red: 0, low: 0, none: 0 };
+    const c = { green: 0, yellow: 0, red: 0, low: 0, nl: 0, none: 0 };
     for (const r of rows) c[bandOf(r, bands)] += 1;
     return c;
   }, [rows, bands]);
@@ -484,6 +545,7 @@ function RankingCard({
   const groups = [
     { key: "ranked", rows: g.ranked.filter(match) },
     { key: "low", caption: T.gLow, rows: g.low.filter(match) },
+    { key: "nl", caption: T.gNotLeader, rows: g.nl.filter(match) },
     { key: "none", caption: T.gNone, rows: showNone ? g.none.filter(match) : [] },
   ];
   const noneCount = g.none.filter(match).length;
@@ -497,8 +559,8 @@ function RankingCard({
     budget -= take.length;
     return { ...x, rows: take };
   });
-  const hiddenOnPhone = groups[0].rows.length + groups[1].rows.length
-    - phoneGroups[0].rows.length - phoneGroups[1].rows.length;
+  const hiddenOnPhone = groups.reduce((n, x, i) => (x.key === "none" ? n
+    : n + x.rows.length - phoneGroups[i].rows.length), 0);
 
   const brigOf = (r) => (r.brigadirs || []).map((b) => surnameInitial(tl(b))).join(", ");
   const cellsOf = (r) => (r.cells || []).join(", ");
@@ -570,10 +632,11 @@ function RankingCard({
           </span>
           <span className="flex-1 min-w-0">
             <span className="block text-sm font-medium leading-snug" style={{ color: "var(--text-1)" }}>{tl(twoWords(r.leader))}</span>
+            {notLeader(r) && <span className="block mt-1"><KindTag T={T} kind={r.kind} /></span>}
             {sub(r) && <span className="block text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>{sub(r)}</span>}
             {r.total > 0 && (
               <span className="block text-xs mt-0.5 tabular-nums" style={{ color: "var(--text-2)" }}>
-                {fillAround(T.rowTotOpen, { t: n0(r.total) }, "o", (
+                {fillAround(r.uplifted ? T.rowTotUpOpen : T.rowTotOpen, { t: n0(r.total), u: n0(r.uplifted) }, "o", (
                   <span style={r.open ? { color: "var(--status-bad)", fontWeight: 600 } : undefined}>{n0(r.open)}</span>
                 ))}
               </span>
@@ -621,8 +684,8 @@ function RankingCard({
             {!oneUnit && <Th label={T.xLabels.colBrig} cls="hidden xl:table-cell w-[22%]" />}
             <Th label={T.xLabels.colCells} cls="hidden xl:table-cell w-[16%]" />
             <Th label={T.colTotal} k="total" sort={sort} onSort={onSort} align="right" cls="w-[88px]" />
-            <Th label={T.colOpen} k="open" sort={sort} onSort={onSort} align="right" cls="w-[120px]" />
-            <Th label={T.colPct} k="pct" sort={sort} onSort={onSort} align="right" cls="w-[132px]" />
+            <Th label={T.colOpen} k="open" sort={sort} onSort={onSort} align="right" cls="w-[120px]" hint={T.colOpenHint} />
+            <Th label={T.colPct} k="pct" sort={sort} onSort={onSort} align="right" cls="w-[132px]" hint={T.colPctHint} />
           </tr>
         </thead>
         <tbody>
@@ -647,6 +710,7 @@ function RankingCard({
                       style={{ color: "var(--text-1)" }}>
                       {tl(r.leader)}
                     </button>
+                    {notLeader(r) && <span className="ml-2"><KindTag T={T} kind={r.kind} /></span>}
                     {(brig || (r.cells || []).length > 0) && (
                       <div className="xl:hidden text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>
                         {brig}{brig && (r.cells || []).length ? " · " : ""}<CellCodes codes={r.cells} cellIds={cellIds} />
@@ -662,7 +726,17 @@ function RankingCard({
                   <td className="px-3 py-2.5 hidden xl:table-cell text-sm break-words" style={{ color: "var(--text-2)" }}>
                     {(r.cells || []).length ? <CellCodes codes={r.cells} cellIds={cellIds} /> : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-sm tabular-nums" style={{ color: r.total ? "var(--text-1)" : "var(--text-2)" }}>{n0(r.total)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums" style={{ color: r.total ? "var(--text-1)" : "var(--text-2)" }}>
+                    {n0(r.total)}
+                    {r.uplifted > 0 && (
+                      <span className="flex items-center justify-end gap-0.5 text-xs mt-0.5" style={{ color: "var(--text-2)" }}
+                        title={fill(T.hUpOut, { u: n0(r.uplifted) })}>
+                        <ArrowUp size={12} strokeWidth={2.4} aria-hidden style={{ color: SLATE_DARK }} />
+                        <span className="sr-only">{stL("uplifted")}:</span>
+                        {n0(r.uplifted)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-right text-sm tabular-nums"
                     style={r.open ? { color: "var(--status-bad)", fontWeight: 600 } : { color: "var(--text-2)" }}>{n0(r.open)}</td>
                   <td className="px-3 py-2.5 text-right"><PctChip pct={whole(r)} band={bandOf(r, bands, plain)} /></td>
@@ -691,13 +765,13 @@ function ConcernRows({ T, stL, tl, rows, today, onOpen, showLeader }) {
   return (
     <ul className="divide-y divide-[var(--border)]">
       {rows.map((c) => {
-        const age = c.d && OPEN_KEYS.includes(c.st) ? daysBetween(c.d, today) : null;
+        const age = c.d && unresolved(c) ? daysBetween(c.d, today) : null;
         return (
           <li key={c.id}>
             <button type="button" onClick={() => onOpen(c)}
               className="w-full text-left py-3 px-1 -mx-1 rounded-lg transition-colors hover:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:bg-[var(--bg-inner)]">
               <span className="flex items-center gap-2 flex-wrap">
-                <StChip st={c.st} label={stL(c.st)} hint={c.st === "uplifted" ? T.stUpHint : undefined} />
+                <ConcernStatus T={T} stL={stL} c={c} inline />
                 <span className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
                   №{c.no} · {fmtShort(c.d)}{age != null ? ` · ${age === 0 ? T.ageToday : fill(T.ageDays, { n: age })}` : ""}
                 </span>
@@ -729,7 +803,7 @@ function LeaderModal({ T, stL, tl, row, rank, rankedCount, bands, plain, cellIds
   const band = bandOf(row, bands, plain);
   const brig = (row.brigadirs || []).map((b) => tl(b)).join(", ");
   const standing = rank ? fill(T.lmRank, { r: rank, n: rankedCount })
-    : row.total ? T.lmUnranked : T.lmNone;
+    : !row.total ? T.lmNone : notLeader(row) ? T.lmNotLeader : T.lmUnranked;
   const open = openQ.data;
   return (
     <Modal open onClose={onClose} zIndex={zIndex} maxWidth="max-w-xl" icon={<UserRound size={16} />}
@@ -745,10 +819,11 @@ function LeaderModal({ T, stL, tl, row, rank, rankedCount, bands, plain, cellIds
       <div className="flex items-center gap-3 flex-wrap">
         <PctChip pct={whole(row)} band={band} big />
         <div className="min-w-0">
-          {row.total > 0 && (
-            <div className="text-sm" style={{ color: "var(--text-1)" }}>{fill(T.hOf, { done: n0(row.done), total: n0(row.total) })}</div>
-          )}
-          <div className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>{standing}</div>
+          {row.total > 0 && <OfLine T={T} r={row} color="var(--text-1)" />}
+          <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: "var(--text-2)" }}>
+            {notLeader(row) && <KindTag T={T} kind={row.kind} />}
+            {standing}
+          </div>
         </div>
       </div>
       {row.total > 0 && <StatusSplit counts={row} stL={stL} upHint={T.stUpHint} />}
@@ -809,9 +884,9 @@ function UnitsCard({ T, tl, units, bands, minRanked, parts, onPick, plain }) {
       name: tl(u.name),
       title: `${tl(u.name)} · ${fill(T.uLeaders, { n: u.leaders ?? 0 })}`,
       total: u.total, done: u.done, doing: u.doing, todo: u.todo, uplifted: u.uplifted,
-      pct: u.pct, pct0: u.pct0, ranked: u.ranked ?? (u.total >= minRanked),
+      rated: ratedOf(u), pct: u.pct, pct0: u.pct0, ranked: u.ranked ?? (ratedOf(u) >= minRanked),
     }));
-    const ranked = all.filter((u) => u.ranked).sort((a, b) => (ratio(b) - ratio(a)) || (b.total - a.total));
+    const ranked = all.filter((u) => u.ranked).sort((a, b) => (ratio(b) - ratio(a)) || (b.rated - a.rated));
     const low = all.filter((u) => !u.ranked).sort((a, b) => b.total - a.total);
     return [...ranked.map((u, i) => ({ ...u, rank: i + 1 })), ...low];
   }, [units, tl, minRanked, T]);
@@ -1074,7 +1149,7 @@ function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort
                   {r.leader ? surnameInitial(tl(r.leader)) : "—"}
                 </td>
               )}
-              <td className="px-3 py-2.5"><StChip st={r.st} label={stL(r.st)} hint={r.st === "uplifted" ? T.stUpHint : undefined} /></td>
+              <td className="px-3 py-2.5"><ConcernStatus T={T} stL={stL} c={r} /></td>
             </tr>
           ))}
         </tbody>
@@ -1199,7 +1274,8 @@ export default function WorkerConcerns() {
     placeholderData: keepPreviousData,
   });
   const myUpParams = useMemo(
-    () => ({ ...kpiParams, status: ["uplifted"], sort: "date_asc", page: 1, page_size: 10 }),
+    // Still unresolved only: «uplifted» also holds what was resolved above.
+    () => ({ ...kpiParams, status: ["uplifted"], open_only: true, sort: "date_asc", page: 1, page_size: 10 }),
     [kpiParams]
   );
   const myUpQ = useQuery({
@@ -1425,7 +1501,7 @@ export default function WorkerConcerns() {
       register_meta: metaFor(activeFilterChips),
       // The leaders as the screen lists them — the file follows this order.
       leader_order: onRating && leadersQ.data
-        ? (({ ranked, low, none }) => [...ranked, ...low, ...none].map(rankKey))(rankGroups(ldRows, rankSort, tl))
+        ? (({ ranked, low, nl, none }) => [...ranked, ...low, ...nl, ...none].map(rankKey))(rankGroups(ldRows, rankSort, tl))
         : [],
     };
   };
@@ -1466,7 +1542,7 @@ export default function WorkerConcerns() {
   }
   // 9 — a short period shows its figures but grades nobody (SHORT_PERIOD_DAYS)
   const plain = days > 0 && days < (meta?.short_days ?? SHORT_PERIOD_DAYS);
-  const headBand = kpi ? bandOf({ ...kpi, ranked: kpi.total >= minRanked }, bands, plain) : "none";
+  const headBand = kpi ? bandOf({ ...kpi, ranked: ratedOf(kpi) >= minRanked }, bands, plain) : "none";
 
   // A leader's cells: every cell they own, the quiet ones too, by open concerns.
   const myCells = useMemo(() => {
@@ -1732,7 +1808,7 @@ export default function WorkerConcerns() {
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm pt-3" style={{ borderTop: "1px solid var(--border)" }}>
             {[
               [T.colDate, fmtDate(detail.d)],
-              [T.colStatus, <StChip key="s" st={detail.st} label={stL(detail.st)} hint={detail.st === "uplifted" ? T.stUpHint : undefined} />],
+              [T.colStatus, <ConcernStatus key="s" T={T} stL={stL} c={detail} />],
               [T.colCell, detail.cell ? <CellCodes key="c" codes={[detail.cell]} cellIds={{ [detail.cell]: detail.cell_id }} /> : "—"],
               [T.colWorker, tl(detail.owner || "") || "—"],
               [T.colLeader, detail.leader ? tl(detail.leader) : "—"],
