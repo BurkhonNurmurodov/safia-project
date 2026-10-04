@@ -577,6 +577,9 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         "hours_worked": _r(hours, 4),
         "early_arrival_min": float(early) if p["in"] is not None else None,
         "effective_hours": _r(eff, 4),
+        # Not checked in while the shift still runs: «absent» from its first
+        # minute, but on a day nobody came to `busy` keeps them due.
+        "still_due": p["status"] == "absent" and p["end"] is not None and ctx.now < p["end"],
         "verifix_code": code,
         "hc_weight": None,
         "split_of": None,
@@ -649,13 +652,19 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
         h = w.unit_hours.get(manager_id) if w.stints else None
         if h is None or h <= 0:
             continue
+        raw_h = h
+        early = w.early_min if (w.first_unit == manager_id and w.p["in"] is not None) else 0.0
         if w.first_unit == manager_id:
-            h = max(0.0, h - w.early_min / 60.0)      # part1_eff: early leaves with the name
+            h = max(0.0, h - w.early_min / 60.0)      # part1_eff: the first unit's hours lose the early minutes
         holder = (ctx.units.get(w.winner) or {}).get("name") if w.winner else None
         here = is_here(w, manager_id)
         mine = _stints_at(w, manager_id)
         extras.append({
             "employee_id": eid, "id": row_id(eid), "worker_name": w.name, "hours": round(h, 2),
+            # what the table's filters read, as on a named row: the clocked
+            # hours, the early minutes counted here (the first unit's), and
+            # the hours that remain once they are taken off
+            "hours_worked": round(raw_h, 4), "early_arrival_min": float(early), "effective_hours": round(h, 4),
             "named_at": holder, "named_at_id": w.winner,
             "reason": w.reason or "moved", "so_far": w.p["so_far"],
             # Standing here now: this unit files the worker's next move, and a
@@ -806,9 +815,16 @@ def last_exit(day_rows: dict, day: date) -> Optional[datetime]:
 
 def busy(day_rows: dict) -> list:
     """Who keeps the day open: inside, out on a break, or still due — and the
-    people standing here whose name is elsewhere. The close is refused on them."""
+    people standing here whose name is elsewhere. The close is refused on them
+    (`close_state.closable` is its negation). On a day nobody has come to yet,
+    anybody whose shift is still running is due: a worker reads «absent» from
+    the shift's first minute, and late check-ins (a terminal syncing late, a
+    stalled read) must not leave a day closable three minutes into its shift."""
     out = [r for r in day_rows["workers"]
            if r.get("split_of") is None and r["status"] in ("inside", "break", "not_yet")]
     out += [x for x in day_rows.get("extras") or []
             if x.get("here") and x.get("status") in ("inside", "break")]
+    c = day_rows["counts"]
+    if not (c["came"] or c.get("extra_came")):
+        out += [r for r in day_rows["workers"] if r.get("split_of") is None and r.get("still_due")]
     return out

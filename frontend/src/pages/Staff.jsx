@@ -712,10 +712,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // filter and the status strip of the table above them — «Kechikkan» listed
   // two people who were not late. The section hides when none of them match.
   const extrasShown = useMemo(() => (data?.extras || []).filter(x =>
-    // Their hours are what counts here (no lunch rule applies to a stint), and
-    // early arrival left with the name (part1_eff) — 0, not «no answer».
-    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null, hours_worked: x.hours,
-      effective_hours: x.hours, early_arrival_min: 0 }, filters, false, shownName)
+    // The row carries the clocked hours, the early minutes counted here (the
+    // first unit's) and the effective hours, as a named row does; a payload
+    // from before those fields falls back to the hours it shows.
+    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null,
+      hours_worked: x.hours_worked ?? x.hours, effective_hours: x.effective_hours ?? x.hours,
+      early_arrival_min: x.early_arrival_min ?? 0 }, filters, false, shownName)
     && liveMatchExtra(x, liveFilter)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.extras, filters, liveFilter, lang]);

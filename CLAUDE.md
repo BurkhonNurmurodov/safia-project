@@ -7276,7 +7276,11 @@ rights — over a different source, and it is being built to REPLACE /staff.
   `close.closable` on the payload, `not live_staff.busy()`: everybody left, or
   nobody came and nobody is still due («Hech kim kelmadi — kunni yopish
   mumkin.»); otherwise a line says the day closes there once everybody has
-  gone. The client never re-derives the rule. The button writes the live calendar's own remembered keys
+  gone. The client never re-derives the rule. On a day nobody has come to,
+  anybody whose shift is still running counts as due (`still_due` on the row —
+  a worker reads «absent» from the shift's first minute, and check-ins that
+  reach the read late must not make a running day closable), so such a day
+  closes only once its shift is over. The button writes the live calendar's own remembered keys
   (unit, month, and `staff_live_approvals_focus` = the day — `goClose` in
   `StaffPage`; /staff's keys are untouched): the calendar rings that day and
   opens its close dialog, whose title names the date (live only).
@@ -7326,8 +7330,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
     never showed it); the label wraps on a phone. The floating «N qator» pill is
     gone on this page (the strip counts). The «boshqa brigada nomidagi soatlar»
     section follows every filter of the table and the strip (its rows carry the
-    schedule; their hours stand for effective hours and their early arrival is
-    0 — it left with the name; `liveMatchExtra`:
+    schedule, the clocked hours, the early minutes counted there — the first
+    unit's — and the effective hours, as a named row does; `liveMatchExtra`:
     every such person came by a move, «Belgisiz» = their `no_out` status, they
     carry no late / early flags); «hozir shu yerda» shows only while the person
     is inside or on a break. On this page the name search also matches the name
@@ -7337,8 +7341,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
   - Not changed: the KPI cards still follow the strip with no «filtrlangan»
     badge, early arrival still rounds the seconds (`early_arrival_min` can sit
     one minute off `early_in`), a no-check-out day still carries no lateness
-    (`late` is None for `no_out` — pending the operator's note), and nothing
-    /staff shares was touched.
+    (`late` is None for `no_out` — the operator, 2026-10-05: «do not care about
+    late comers», so it stays), and nothing /staff shares was touched.
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 
