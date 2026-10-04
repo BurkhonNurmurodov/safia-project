@@ -206,9 +206,14 @@ the matched NAME, job, cell, status, or why nobody was found).
   The JOB decides — a title naming «Лидер» (not an assistant, deputy or «и.о.»)
   → leader, any other → acting; not found / ambiguous / not working → NULL and
   listed. A value set by hand is never overwritten. Text + workbook went to the
-  operator's chat (`UNPRICED_DM_CHAT`). Delete the module, the startup pair and
-  both calls once it has been sent; the columns, `leader_kind.py` and the switch
-  STAY.
+  operator's chat (`UNPRICED_DM_CHAT`). Names the operator then tied by hand
+  live in `leader_verifix_check.PINS` (profile → exact Verifix name; a pin wins
+  over every rule) and are applied by a pins-only pass,
+  `startup.check_leader_kind_pins`, whose flag is derived from the pin set — so a
+  new pin re-runs it once and DMs a short confirmation (first: «Sarimsoqova
+  Arapat Qosimjonovna» = SARIMSAQOVA ARAPATXON QOSIMJONOVNA, v4.217.4). Delete
+  the module, both startup pairs and their calls once nothing is pending; the
+  columns, `leader_kind.py` and the switch STAY.
 
 ## Supervisors read `/cells` — their own unit, read-only
 
@@ -6853,9 +6858,14 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
 From **2026-10-03** (the operator: "build pages to different things we can get
 from Verifix API — absolutely everything possible") a sidebar section of its own
 SHOWS what Verifix's API returns. Phase 1 (seven pages) and phase 2 (nine
-register pages, the same day — the operator: "start phase 2") are built; a
+register pages, the same day — the operator: "start phase 2") were built; a
 register the API role does not open says which Verifix form to attach, in
-place. Personal records (passport, PINFL, family, education) stay off, and so
+place. **On 2026-10-04 the operator removed seven of them** — «Tuzilma»,
+«Belgilar», «Hozir ishda», «Qurilmalar», «So'rovlar», «Yo'qliklar»,
+«Hodisalar» — with their endpoints and builders, and **kept the permissions**:
+none of their methods was blocked, so each stays on the map and readable
+through its raw viewer (the catalog simply names no page for it), and the
+Verifix API role was not touched. Their old URLs redirect to the map. Personal records (passport, PINFL, family, education) stay off, and so
 do WAGES: opened on 2026-10-03 and closed again the same afternoon (the
 operator, after detaching «Ведомость» from the API role) — the «Ish haqi» page
 was removed and every wage / payroll list is switched off in code, whatever
@@ -6884,7 +6894,7 @@ page keys. `/staff-live` moved into this section (same data source).
   boot (both entrypoints) and `methods` drops any it finds.
 - **Photos** (`GET /api/verifix-test/photo/{sha}?size=96|960`): a person's
   `identification_photos` and the photo of a day's LAST mark (`photo_sha` on
-  `track$search_last_track` and on «who is inside»). Streamed from
+  `track$search_last_track`, on the person card). Streamed from
   `/b/biruni/m:load_image` (then `m:download_file_v2`), resized with Pillow,
   never stored (an in-memory LRU of resized copies). **Only a hash this process
   itself handed out as a photo is served** (`_ALLOWED`) — Verifix keeps
@@ -6912,30 +6922,21 @@ page keys. `/staff-live` moved into this section (same data source).
 - **The pages** (`pages/verifix/*`, shared pieces in `components/verifix/`):
   «API xaritasi» (every method's last answer, a probe-all button asking three
   at a time, a raw viewer for any method with params, paging and a JSON lens) ·
-  «Tuzilma» (the division tree, people per node, which nodes are our cells,
-  cells missing from Verifix, nodes with people and no cell, the organization
-  card) · «Xodimlar» (everybody, by status, with photo, unit/cell, job,
+  «Xodimlar» (everybody, by status, with photo, unit/cell, job,
   schedule, medical check; a row opens `PersonCard`: facts, 14 days of the
   report, 3 days of marks, photos, every scrubbed field) · «Lavozim va
   grafiklar» (jobs, schedules and their coming days, time kinds marked where
   the parity rule counts them as worked, the production calendar, small lists
   via `RawPanel`) · «Davomat hisoboti» (one day of `timesheet$export` for
   everybody, each row through `verifix_live._person` — the live page's own rule
-  — and a day modal of facts by time kind) · «Belgilar» (raw marks of a window
-  of 1–24 h, capped at 12,000 and said so; a mark opens `track_info` and the
-  day's last-mark photo) · «Hozir ishda» (`currently_working_employees` for one
-  location as photo tiles; on a past day, the people who never checked out).
+  — and a day modal of facts by time kind).
 - **Phase 2 — the registers** (`services/verifix_registers.py`, shared pieces in
   `components/verifix/registers.jsx` (components) + `registerKit.js` (hooks,
-  formatters, filter builders)): «Qurilmalar» (`device$employee_statuses`:
-  terminals, and per person whether their record, face photo and card are on
-  each — who cannot clock in where) · «So'rovlar» (absence, mark, overtime and
-  schedule-change requests with their status) · «Yo'qliklar» (vacations with
-  their recalls, sick leaves, trips; who is away TODAY) · «Kadr harakati»
+  formatters, filter builders)): «Kadr harakati»
   (hirings, transfers — the org unit a person moved to, by date — dismissals,
   schedule and rank changes) · «Tabel» (timebooks, plan against fact, a
   person's days) · «Smenalar» (Verifix's own shift plan; an OPEN shift is one
-  with nobody on it — read off the data, not a status letter) · «Hodisalar» ·
+  with nobody on it — read off the data, not a status letter) ·
   «Ma'lumotnomalar» (the small lists, each whole). Person-record and payroll
   dictionaries are deliberately left out. «Ish haqi» shipped with them and was
   REMOVED the same day (v4.215.0); `/verifix/payroll` redirects to the map.
@@ -6956,16 +6957,11 @@ page keys. `/staff-live` moved into this section (same data source).
   journals (one journal id, one page id). `_first` reads the Pro list and, only
   where the role closes it (forbidden / missing), the Start one; the page names
   which answered (`SourceNote`).
-- **A request or an accrual line names only a STAFF record** (one person's
-  post): `_staff` resolves it through `pro/employee$list` narrowed to those
-  ids, and through the hiring journals when that list is closed. Unresolved, a
-  row reads «Shtat #id».
 - **The directory is never waited for.** A register uses the phase-1 employee
   and division lists only if they are in memory (`_dir` + `_Cache.peek`); a
   cold one is read on a thread and the page polls until photos and cell chips
   appear. A status letter Verifix does not document is printed AS the letter
-  (shift status, incident action), never guessed into a word;
-  request statuses N · A · C · D are named.
+  (shift status), never guessed into a word.
 - Not built: Excel exports, charts, recruitment (`rec/vacancy$*`, readable on
   the raw viewer), and any write.
 
