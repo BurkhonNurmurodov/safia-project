@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import api from "../../utils/api";
+import { useStaffApi } from "../../context/StaffApiContext";
 import { cellLabel } from "../../utils/cellName";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -233,6 +234,7 @@ function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
 // ── panel ─────────────────────────────────────────────────────────────────────
 
 export default function CellPlacementPanel({ managerId, selectedDate, canEdit = false }) {
+  const S = useStaffApi();
   const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
@@ -256,9 +258,9 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   const enabled = !!managerId && !!selectedDate;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: [QK, managerId, selectedDate],
+    queryKey: S.qk(QK, managerId, selectedDate),
     queryFn: () => api
-      .get("/api/staff/cell-placement", { params: { manager_id: managerId, attend_date: selectedDate } })
+      .get(`${S.base}/cell-placement`, { params: { manager_id: managerId, attend_date: selectedDate } })
       .then((r) => r.data),
     enabled,
     retry: 1,
@@ -537,16 +539,16 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   const pending = payload.moves.length + payload.splits.length + payload.unsplits.length;
 
   const saveMut = useMutation({
-    mutationFn: () => api.put("/api/staff/cell-placement", payload).then((r) => r.data),
+    mutationFn: () => api.put(`${S.base}/cell-placement`, payload).then((r) => r.data),
     onSuccess: (res) => {
       resetDraft();
-      qc.invalidateQueries({ queryKey: [QK, managerId, selectedDate] });
+      qc.invalidateQueries({ queryKey: S.qk(QK, managerId, selectedDate) });
       // The tab badge and the close button's warning both read `needs_cell` off
       // the day-state endpoint, and the whole point of a placement is to bring
       // that number down — leaving it stale would show the operator a refusal
       // they have already cleared.
-      qc.invalidateQueries({ queryKey: ["daily-approval"] });
-      qc.invalidateQueries({ queryKey: ["staff-attendance"] });
+      qc.invalidateQueries({ queryKey: S.qk("daily-approval") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-attendance") });
       toast.success(t("cellPlace.saved")
         .replace("{moved}", res?.moved ?? 0)
         .replace("{split}", res?.split ?? 0)

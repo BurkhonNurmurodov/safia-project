@@ -574,8 +574,8 @@ function AppWithLang() {
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
             <Route path="/targets" element={<AuthGate><RequireAdmin><Targets /></RequireAdmin></AuthGate>} />
             <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
-            {/* «Verifix to'g'irlash · Jonli» — the lab copy of /staff read live from Verifix; admin-only, no page key. */}
-            <Route path="/staff-live" element={<AuthGate><RequireAdmin><StaffLive /></RequireAdmin></AuthGate>} />
+            {/* «Verifix to'g'irlash · Jonli» — /staff with Verifix as the source (lab); page key staff-live. */}
+            <Route path="/staff-live" element={<AuthGate><RequirePage page="staff-live"><StaffLive /></RequirePage></AuthGate>} />
             <Route path="/verifix" element={<Navigate to="/verifix/api" replace />} />
             <Route path="/verifix/api" element={<AuthGate><RequireAdmin><VfxApiMap /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/employees" element={<AuthGate><RequireAdmin><VfxEmployees /></RequireAdmin></AuthGate>} />

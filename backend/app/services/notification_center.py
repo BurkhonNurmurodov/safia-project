@@ -68,6 +68,14 @@ _EXACT = {
     # Attendance and the day close.
     "day_closed": "day", "day_reopened": "day", "verifix_uploaded": "day",
     "live_all_left": "day",
+    # The lab «Verifix to'g'irlash · Jonli» (/staff-live) — /staff's twins.
+    "live_exchange_created": "approvals", "live_exchange_approved": "approvals",
+    "live_exchange_cancelled": "approvals", "live_role_change_new": "approvals",
+    "live_role_change_approved": "approvals", "live_role_change_cancelled": "approvals",
+    "live_document_rejected": "approvals", "live_delete_request": "approvals",
+    "live_delete_approved": "approvals", "live_delete_rejected": "approvals",
+    "live_request_undone": "approvals",
+    "live_record_deleted": "day", "live_day_closed": "day", "live_day_reopened": "day",
     "admin_record_edited": "day", "admin_record_deleted": "day",
     "idle_request_new": "idle",
     "education_lesson_new": "learning",
@@ -217,6 +225,13 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
         if not mid.isdigit() or not d:
             return "/staff"
         return f"/staff?tab=workers&unit={mid}&date={d}"
+    if kind in ("live_doc", "live_batch"):     # StaffLive.jsx reads ?tab=
+        return "/staff-live?tab=requests"
+    if kind == "live_day":                     # "<manager id>:<YYYY-MM-DD>"
+        mid, _, d = sid.partition(":")
+        if not mid.isdigit() or not d:
+            return "/staff-live"
+        return f"/staff-live?tab=workers&unit={mid}&date={d}"
     if kind == "idle":                         # IdleCell.jsx reads ?date=
         return f"/idle-cell?date={sid}"
     if kind == "page" and sid in ("/production", "/concerns", "/notifications"):

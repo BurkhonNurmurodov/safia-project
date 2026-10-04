@@ -245,6 +245,97 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\nДень можно закрыть."),
         "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\nThe day can be closed."),
     },
+    # ── the LAB «Verifix to'g'irlash · Jonli» (/staff-live, routers/staff_live) ─
+    # /staff's documents, deletions and day close over the live Verifix read.
+    # Own keys, each title marked «Jonli», so a lab document is never read as
+    # a real one. Sent only once the page is opened to somebody but admins, and
+    # only to people who can open it (the operator, 2026-10-04). `{time}` is
+    # the exchange's clock («14:30» or «14:30–16:00»); blank for a whole-day
+    # move, which drops the line.
+    "live_exchange_created": {
+        "uz": ("Jonli · {actor_name} xodim almashinuvi yaratdi", "{count} xodim → {target} | Sana: {date}\nVaqt: {time}"),
+        "uz_cyrl": ("Жонли · {actor_name} ходим алмашинуви яратди", "{count} ходим → {target} | Сана: {date}\nВақт: {time}"),
+        "ru": ("Онлайн · новый обмен сотрудниками от {actor_name}", "{count} сотр. → {target} | Дата: {date}\nВремя: {time}"),
+        "en": ("Live · new worker exchange from {actor_name}", "{count} worker(s) → {target} | Date: {date}\nTime: {time}"),
+    },
+    "live_exchange_approved": {
+        "uz": ("Jonli · xodim almashinuvi tasdiqlandi", "{count} xodim → {target} | Sana: {date}\nVaqt: {time}"),
+        "uz_cyrl": ("Жонли · ходим алмашинуви тасдиқланди", "{count} ходим → {target} | Сана: {date}\nВақт: {time}"),
+        "ru": ("Онлайн · обмен сотрудниками одобрен", "{count} сотр. → {target} | Дата: {date}\nВремя: {time}"),
+        "en": ("Live · worker exchange approved", "{count} worker(s) → {target} | Date: {date}\nTime: {time}"),
+    },
+    "live_exchange_cancelled": {
+        "uz": ("Jonli · xodim almashinuvi bekor qilindi", "{count} xodim → {target} | Sana: {date}\nVaqt: {time}"),
+        "uz_cyrl": ("Жонли · ходим алмашинуви бекор қилинди", "{count} ходим → {target} | Сана: {date}\nВақт: {time}"),
+        "ru": ("Онлайн · обмен сотрудниками отменён", "{count} сотр. → {target} | Дата: {date}\nВремя: {time}"),
+        "en": ("Live · worker exchange cancelled", "{count} worker(s) → {target} | Date: {date}\nTime: {time}"),
+    },
+    "live_role_change_new": {
+        "uz": ("Jonli · {actor_name} lavozim o'zgarishi hujjati yubordi", "{count} xodim → {new_role} | Sana: {date}"),
+        "uz_cyrl": ("Жонли · {actor_name} лавозим ўзгариши ҳужжати юборди", "{count} ходим → {new_role} | Сана: {date}"),
+        "ru": ("Онлайн · документ смены должности от {actor_name}", "{count} сотр. → {new_role} | Дата: {date}"),
+        "en": ("Live · role change document from {actor_name}", "{count} employee(s) → {new_role} | Date: {date}"),
+    },
+    "live_role_change_approved": {
+        "uz": ("Jonli · lavozim o'zgarishi tasdiqlandi", "{count} xodim → {new_role} | Sana: {date}"),
+        "uz_cyrl": ("Жонли · лавозим ўзгариши тасдиқланди", "{count} ходим → {new_role} | Сана: {date}"),
+        "ru": ("Онлайн · смена должности проведена", "{count} сотр. → {new_role} | Дата: {date}"),
+        "en": ("Live · role change posted", "{count} employee(s) → {new_role} | Date: {date}"),
+    },
+    "live_role_change_cancelled": {
+        "uz": ("Jonli · lavozim o'zgarishi bekor qilindi", "{count} xodim → {new_role} | Sana: {date}"),
+        "uz_cyrl": ("Жонли · лавозим ўзгариши бекор қилинди", "{count} ходим → {new_role} | Сана: {date}"),
+        "ru": ("Онлайн · смена должности отменена", "{count} сотр. → {new_role} | Дата: {date}"),
+        "en": ("Live · role change cancelled", "{count} employee(s) → {new_role} | Date: {date}"),
+    },
+    "live_document_rejected": {
+        "uz": ("Jonli · {actor_name} hujjatingizni rad etdi", "{doc_label} | Sana: {date}"),
+        "uz_cyrl": ("Жонли · {actor_name} ҳужжатингизни рад этди", "{doc_label} | Сана: {date}"),
+        "ru": ("Онлайн · {actor_name} отклонил(а) ваш документ", "{doc_label} | Дата: {date}"),
+        "en": ("Live · {actor_name} rejected your document", "{doc_label} | Date: {date}"),
+    },
+    "live_record_deleted": {
+        "uz": ("Jonli · admin xodimni kundan o'chirdi", "{count} xodim: {worker_name} | Sana: {date} | Kim: {admin_name}"),
+        "uz_cyrl": ("Жонли · админ ходимни кундан ўчирди", "{count} ходим: {worker_name} | Сана: {date} | Ким: {admin_name}"),
+        "ru": ("Онлайн · администратор удалил сотрудника из дня", "{count} сотр.: {worker_name} | Дата: {date} | Кто: {admin_name}"),
+        "en": ("Live · an admin removed workers from the day", "{count} worker(s): {worker_name} | Date: {date} | By: {admin_name}"),
+    },
+    "live_delete_request": {
+        "uz": ("Jonli · {supervisor_name} o'chirish so'rovi yubordi", "{count} xodim: {worker_name} | Sana: {date}"),
+        "uz_cyrl": ("Жонли · {supervisor_name} ўчириш сўрови юборди", "{count} ходим: {worker_name} | Сана: {date}"),
+        "ru": ("Онлайн · запрос на удаление от {supervisor_name}", "{count} сотр.: {worker_name} | Дата: {date}"),
+        "en": ("Live · delete request from {supervisor_name}", "{count} worker(s): {worker_name} | Date: {date}"),
+    },
+    "live_delete_approved": {
+        "uz": ("Jonli · o'chirish so'rovi tasdiqlandi", "{count} xodim: {worker_name} | Sana: {date} | Tasdiqladi: {processor_name}"),
+        "uz_cyrl": ("Жонли · ўчириш сўрови тасдиқланди", "{count} ходим: {worker_name} | Сана: {date} | Тасдиқлади: {processor_name}"),
+        "ru": ("Онлайн · запрос на удаление одобрен", "{count} сотр.: {worker_name} | Дата: {date} | Одобрил(а): {processor_name}"),
+        "en": ("Live · delete request approved", "{count} worker(s): {worker_name} | Date: {date} | By: {processor_name}"),
+    },
+    "live_delete_rejected": {
+        "uz": ("Jonli · o'chirish so'rovi rad etildi", "{count} xodim: {worker_name} | Sana: {date} | Rad etdi: {processor_name}"),
+        "uz_cyrl": ("Жонли · ўчириш сўрови рад этилди", "{count} ходим: {worker_name} | Сана: {date} | Рад этди: {processor_name}"),
+        "ru": ("Онлайн · запрос на удаление отклонён", "{count} сотр.: {worker_name} | Дата: {date} | Отклонил(а): {processor_name}"),
+        "en": ("Live · delete request rejected", "{count} worker(s): {worker_name} | Date: {date} | By: {processor_name}"),
+    },
+    "live_request_undone": {
+        "uz": ("Jonli · o'chirish bekor qilindi", "Xodim: {worker_name} | Sana: {date} | Bekor qildi: {undoer} — xodim kunga qaytdi"),
+        "uz_cyrl": ("Жонли · ўчириш бекор қилинди", "Ходим: {worker_name} | Сана: {date} | Бекор қилди: {undoer} — ходим кунга қайтди"),
+        "ru": ("Онлайн · удаление отменено", "Сотрудник: {worker_name} | Дата: {date} | Отменил(а): {undoer} — сотрудник снова в дне"),
+        "en": ("Live · deletion undone", "Worker: {worker_name} | Date: {date} | By: {undoer} — the worker is back on the day"),
+    },
+    "live_day_closed": {
+        "uz": ("Jonli · kun yopildi", "Sana: {date} | Yopdi: {closer_name}"),
+        "uz_cyrl": ("Жонли · кун ёпилди", "Сана: {date} | Ёпди: {closer_name}"),
+        "ru": ("Онлайн · день закрыт", "Дата: {date} | Закрыл(а): {closer_name}"),
+        "en": ("Live · day closed", "Date: {date} | Closed by: {closer_name}"),
+    },
+    "live_day_reopened": {
+        "uz": ("Jonli · kun qayta ochildi: {reopener_name}", "Sana: {date} — kun yana ochiq, o'zgarishlar kiritish mumkin"),
+        "uz_cyrl": ("Жонли · кун қайта очилди: {reopener_name}", "Сана: {date} — кун яна очиқ, ўзгаришлар киритиш мумкин"),
+        "ru": ("Онлайн · день переоткрыт: {reopener_name}", "Дата: {date} — день снова открыт, изменения можно вносить"),
+        "en": ("Live · day re-opened by {reopener_name}", "Date: {date} — the day is open again and can be changed"),
+    },
     "day_reopened": {
         "uz": ("Kun qayta ochildi: {reopener_name}", "Sana: {date} — kun yana ochiq, ma'lumotlar yopilgunga qadar ko'rinmaydi"),
         "uz_cyrl": ("Кун қайта очилди: {reopener_name}", "Сана: {date} — кун яна очиқ, маълумотлар ёпилгунга қадар кўринмайди"),

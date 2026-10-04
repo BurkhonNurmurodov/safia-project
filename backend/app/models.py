@@ -4317,7 +4317,12 @@ class KelishRosterEvent(Base):
 
 
 class LiveStaffEvent(Base):
-    """A change made on the LAB copy of «Verifix to'g'irlash» (`/staff-live`,
+    """RETIRED 2026-10-04 — read and written by nothing since the lab page took
+    /staff's documents (`LiveDocument`, `LiveDeletion`, `LivePlacement`). The
+    table and its test rows are left in place; dropping them is a decision of
+    its own.
+
+    A change made on the LAB copy of «Verifix to'g'irlash» (`/staff-live`,
     admin-only, from 2026-10-01): a worker moved to another unit, their role
     changed, or their cell changed — from a stated wall-clock moment of one
     shift-day. NOTHING on the platform reads this table except that page: real
@@ -4408,6 +4413,104 @@ class LiveAllLeftNotice(Base):
     pending    = Column(Integer, nullable=True)                    # changes awaiting approval
     last_out   = Column(DateTime, nullable=True)                   # Tashkent wall clock
     sent_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveDocument(Base):
+    """A document filed on the LAB «Verifix to'g'irlash · Jonli» (`/staff-live`)
+    — the twin of `HrDocument` over the LIVE Verifix source (from 2026-10-04,
+    the operator: «structure this page just like Verifix edit … the only
+    difference should be the source»). Lab only for now, built to replace the
+    real one: nothing outside that page reads it, and the shapes are
+    `HrDocument`'s so the switch is a change of table, not of rule.
+
+    `doc_type`: people_exchange | role_change. `status`: draft | approved |
+    rejected — HrDocument's three. `day` is the SENDING unit's shift-day.
+    The payload names workers by Verifix `employee_id` (the API carries one,
+    the Excel never did) with `worker_name` as a snapshot; an exchange carries
+    `target_type` (supervisor | task), `target_manager_id` / `task_name`,
+    `transfer_time` and `return_time` ("HH:MM" on the shift-day) exactly as
+    HrDocument's does. Nothing is APPLIED: an approved document is read on
+    every request (`services/live_staff`), so the live day re-derives itself
+    each minute — that is what lets a moved worker's name follow the bigger
+    side while the shift is still running."""
+    __tablename__ = "live_documents"
+
+    id                      = Column(Integer, primary_key=True, autoincrement=True)
+    doc_type                = Column(String, nullable=False)
+    manager_id              = Column(Integer, nullable=False, index=True)
+    supervisor_name         = Column(String, nullable=True)
+    day                     = Column(Date, nullable=False, index=True)
+    payload                 = Column(JSONB, nullable=False, default=dict)
+    status                  = Column(String, nullable=False, default="draft")
+    created_by_telegram_id  = Column(BigInteger, nullable=True)
+    created_by_name         = Column(String, nullable=True)
+    created_by_role         = Column(String, nullable=True)
+    approved_by_telegram_id = Column(BigInteger, nullable=True)
+    approved_by_name        = Column(String, nullable=True)
+    approved_at             = Column(DateTime(timezone=True), nullable=True)
+    created_at              = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at              = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LiveDocumentHistory(Base):
+    """`HrDocumentHistory`'s twin for `live_documents` — created · edited ·
+    approved · cancelled · rejected, with who and when."""
+    __tablename__ = "live_document_history"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    document_id       = Column(Integer, nullable=False, index=True)
+    action            = Column(String, nullable=False)
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    actor_name        = Column(String, nullable=True)
+    detail            = Column(JSONB, nullable=True)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveDeletion(Base):
+    """A worker taken OFF a unit's live day — the twin of a deletion
+    `EditRequest` (`changes._action = "delete"`) on the lab page. A brigadir
+    files `pending` rows in a batch; an admin / shift-manager approves or
+    rejects them; an admin's own deletion is written `approved` at once.
+    `undone` restores the worker. Keyed by Verifix `employee_id` for one
+    (unit, shift-day): an approved row hides the worker — named or nameless
+    hours — from that unit's day and from no other."""
+    __tablename__ = "live_deletions"
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id                 = Column(String, nullable=True, index=True)
+    manager_id               = Column(Integer, nullable=False, index=True)
+    day                      = Column(Date, nullable=False, index=True)
+    employee_id              = Column(String, nullable=False)
+    worker_name              = Column(String, nullable=True)
+    original                 = Column(JSONB, nullable=True)
+    status                   = Column(String, nullable=False, default="pending")
+    supervisor_telegram_id   = Column(BigInteger, nullable=True)
+    supervisor_name          = Column(String, nullable=True)
+    initiated_by             = Column(String, nullable=True)          # "admin" for a direct deletion
+    processed_by_telegram_id = Column(BigInteger, nullable=True)
+    processed_by_name        = Column(String, nullable=True)
+    processed_at             = Column(DateTime(timezone=True), nullable=True)
+    created_at               = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LivePlacement(Base):
+    """Which cell a worker stood in on a unit's live day, when the Verifix org
+    unit does not say it — an exchange arrival (who comes cell-less, the /staff
+    rule) or a worker the brigadir moved — and a split across two of the unit's
+    cells at a clock time. The twin of `attendance.verifix_code` + the split
+    halves on /staff's «Yacheykalar» tab, one row per (unit, day, worker)."""
+    __tablename__ = "live_placements"
+    __table_args__ = (UniqueConstraint("manager_id", "day", "employee_id", name="uq_live_placement"),)
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id   = Column(Integer, nullable=False, index=True)
+    day          = Column(Date, nullable=False)
+    employee_id  = Column(String, nullable=False)
+    verifix_code = Column(String, nullable=False)                     # the cell (the FIRST half's when split)
+    second_code  = Column(String, nullable=True)                      # the cell the second half moved to
+    split_at     = Column(String, nullable=True)                      # "HH:MM"
+    updated_by   = Column(String, nullable=True)
+    updated_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class VerifixProbe(Base):

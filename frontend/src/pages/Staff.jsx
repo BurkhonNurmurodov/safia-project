@@ -37,6 +37,11 @@ import { cellLabel } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
+import {
+  LiveHeader, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
+  liveMatch, liveFilterOptions,
+} from "../components/staff/LiveBits";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -121,6 +126,37 @@ export function clockOutMin(clock) {
   if (!clock || !String(clock).includes("-")) return null;
   const parts = String(clock).trim().split("-");
   return parseHHMM(parts[parts.length - 1]);
+}
+
+// "HH:MM" from minutes (an overnight minute past 1440 wraps to the clock).
+export function minToHHMM(m) {
+  const v = ((Math.round(m) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
+}
+
+// The live page's move-time window: from the earliest arrival among the picked
+// workers to NOW — or to the latest exit when everybody picked is already out
+// (a past day, or a worker who left). Overnight clocks are carried past 1440
+// like the file page's window.
+function liveWindow(sels, live) {
+  if (!sels.length) return null;
+  const nowM = live?.is_today ? parseHHMM((live.now || "").slice(11, 16)) : null;
+  const starts = [], ends = [];
+  sels.forEach(w => {
+    const s = parseHHMM(w.clock_in);
+    if (s == null) return;
+    // Inside → up to now; out on a break → up to that exit (a move cannot be
+    // timed after the worker went out); gone → up to the check-out.
+    const out = w.status === "inside" ? null : w.clock_out;
+    let e = out ? parseHHMM(out) : (nowM ?? parseHHMM(w.end));
+    if (e == null) return;
+    if (e < s) e += 1440;
+    starts.push(s);
+    ends.push(e);
+  });
+  if (!starts.length) return null;
+  const lo = Math.min(...starts), hi = Math.max(...ends);
+  return hi >= lo ? { lo, hi } : null;
 }
 
 // The ROLE half of the load rule — mirrors CALC_ROWS_FILTER in backend
@@ -239,6 +275,8 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
 export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preSelected, replaceBatchId, onClose, onDeleted }) {
+  const S = useStaffApi();
+  const K = S.rowKey;
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
@@ -248,15 +286,16 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
   const [saveError, setSaveError] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["staff-attendance", managerId, date],
-    queryFn: () => api.get("/api/staff/attendance", {
+    queryKey: S.qk("staff-attendance", managerId, date),
+    queryFn: () => api.get(`${S.base}/attendance`, {
       params: { attend_date: date, ...(isAdmin ? { manager_id: managerId } : {}) },
     }).then(r => r.data),
     enabled: !!date && !!managerId,
   });
 
   const allWorkers = useMemo(() => {
-    const raw = data?.workers ?? [];
+    // Live: one line per worker — the second half of a split names them again.
+    const raw = (data?.workers ?? []).filter(w => !S.live || !w.split_of);
     return [...raw].sort((a, b) => (a.worker_name || "").localeCompare(b.worker_name || ""));
   }, [data]);
 
@@ -267,13 +306,13 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
   [allWorkers, query]);
 
   const allFilteredSelected =
-    filtered.length > 0 && filtered.every(w => selected.has(w.worker_name));
+    filtered.length > 0 && filtered.every(w => selected.has(K(w)));
 
   function toggleAll() {
     setSelected(prev => {
       const next = new Set(prev);
-      if (allFilteredSelected) filtered.forEach(w => next.delete(w.worker_name));
-      else                      filtered.forEach(w => next.add(w.worker_name));
+      if (allFilteredSelected) filtered.forEach(w => next.delete(K(w)));
+      else                      filtered.forEach(w => next.add(K(w)));
       return next;
     });
   }
@@ -300,15 +339,15 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
     setSaving(true);
     setSaveError("");
     try {
-      await api.post("/api/staff/attendance/bulk-delete", {
+      await api.post(`${S.base}/attendance/bulk-delete`, {
         manager_id: managerId,
         attend_date: date,
         worker_names: [...selected],
         ...(replaceBatchId ? { replace_batch_id: replaceBatchId } : {}),
       });
-      qc.invalidateQueries({ queryKey: ["staff-attendance"] });
-      qc.invalidateQueries({ queryKey: ["staff-deleted"] });
-      qc.invalidateQueries({ queryKey: ["staff-documents"] });
+      qc.invalidateQueries({ queryKey: S.qk("staff-attendance") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-deleted") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
       onDeleted(isAdmin ? "success" : "request");
       onClose();
     } catch (e) {
@@ -389,12 +428,12 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
               {t("staff.noWorkersFound")}
             </div>
           ) : filtered.map(w => {
-            const checked = selected.has(w.worker_name);
+            const checked = selected.has(K(w));
             return (
               <div
-                key={w.worker_name}
-                {...dragRow(w.worker_name)}
-                onClick={() => toggleOne(w.worker_name)}
+                key={K(w)}
+                {...dragRow(K(w))}
+                onClick={() => toggleOne(K(w))}
                 className="flex items-center px-5 py-2.5 cursor-pointer transition-colors"
                 style={{
                   borderBottom: "1px solid var(--border)",
@@ -408,7 +447,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
                     type="checkbox"
                     className="cb-danger"
                     checked={checked}
-                    onChange={() => toggleOne(w.worker_name)}
+                    onChange={() => toggleOne(K(w))}
                     onClick={e => e.stopPropagation()}
                     style={{ cursor: "pointer" }}
                   />
@@ -434,16 +473,22 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 // ── Attendance Table ───────────────────────────────────────────────────────────
 
 export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
+  const S = useStaffApi();
   const { t } = useLang();
   // `lang` is read only as a memo KEY: `tl` is a new function on every render,
   // so the language is what those memos actually depend on.
   const { tl, tx, lang } = useTranslit();
-  const [rawFilters, setFilters]        = usePersistentState("staff_workers_filters", INIT_FILTERS);
+  const [rawFilters, setFilters]        = usePersistentState(S.pk("staff_workers_filters"), INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
   const [exporting, setExporting]       = useState(false);
   const [exportDone, setExportDone]     = useState(false);
-  const [nameAsc, setNameAsc]           = usePersistentState("staff_workers_name_sort", true);
-  const [isCollapsed, setIsCollapsed]   = usePersistentState("staff_workers_table_collapsed", false);
+  const [nameAsc, setNameAsc]           = usePersistentState(S.pk("staff_workers_name_sort"), true);
+  const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
+  // Live only: the status strip over the table, and the row an admin opened to
+  // see the Verifix read behind it.
+  const [liveFilter, setLiveFilter]     = usePersistentState("staff_live_workers_status", "all");
+  const [openRaw, setOpenRaw]           = useState(null);
+  const qc = useQueryClient();
 
   // Restored values are old data: merge over the CURRENT shape so a filter
   // added since the visit that saved them can't crash the predicates.
@@ -460,12 +505,23 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     setFilters(INIT_FILTERS);
   }, [selectedDate, managerId]);
 
+  const attKey = S.qk("staff-attendance", managerId, selectedDate);
+  const fetchAtt = (force) => api.get(`${S.base}/attendance`, {
+    params: { attend_date: selectedDate, ...(pickSupervisor ? { manager_id: managerId } : {}),
+      ...(force ? { force: true } : {}) },
+  }).then(r => r.data);
   const { data, isLoading } = useQuery({
-    queryKey: ["staff-attendance", managerId, selectedDate],
-    queryFn: () => api.get("/api/staff/attendance", {
-      params: { attend_date: selectedDate, ...(pickSupervisor ? { manager_id: managerId } : {}) },
-    }).then(r => r.data),
+    queryKey: attKey,
+    queryFn: () => fetchAtt(false),
     enabled: !!selectedDate && !!managerId,
+    // Live: the server reads Verifix every minute and stores it, so this poll
+    // is a database read — it follows the stored read, it does not cause one.
+    ...(S.live ? { refetchInterval: 60_000, refetchIntervalInBackground: false, staleTime: 30_000 } : {}),
+  });
+  // «Yangilash»: the unit read from Verifix NOW, not the stored read.
+  const refresh = useMutation({
+    mutationFn: () => fetchAtt(true),
+    onSuccess: (res) => qc.setQueryData(attKey, res),
   });
 
   // ── Yacheyka column ────────────────────────────────────────────────────────
@@ -476,7 +532,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const { data: cellDates = [] } = useQuery({
     queryKey: ["cell-attendance-dates"],
     queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
-    enabled: !!selectedDate,
+    enabled: !S.live && !!selectedDate,
     staleTime: 120_000,
     retry: false,
   });
@@ -537,15 +593,17 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   // reading the unfiltered day sat directly above a table obeying the filters,
   // and the two disagreed with nothing on screen saying why.
   const workers = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters)),
-    [allWorkers, filters]
+    () => allWorkers.filter(w => matchesFilters(w, filters) && (!S.live || liveMatch(w, liveFilter))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWorkers, filters, liveFilter]
   );
   // The chips ARE the job_titles filter, so they count against every OTHER
   // filter only. Counted off `workers`, picking one role would erase every
   // other chip and leave no way back to a second one.
   const chipBase = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters, true)),
-    [allWorkers, filters]
+    () => allWorkers.filter(w => matchesFilters(w, filters, true) && (!S.live || liveMatch(w, liveFilter))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWorkers, filters, liveFilter]
   );
 
   // PEOPLE, not rows. A worker split across two of the unit's cells is TWO
@@ -649,7 +707,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     : workers;
 
   const exportMutation = useMutation({
-    mutationFn: (rows) => exportXlsx("/api/staff/attendance/export", {
+    mutationFn: (rows) => exportXlsx(`${S.base}/attendance/export`, {
       body: {
         manager_id:  managerId,
         attend_date: selectedDate,
@@ -692,6 +750,10 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
   return (
     <div>
+      {S.live && (
+        <LiveHeader data={data} refreshing={refresh.isPending}
+          onRefresh={managerId ? () => refresh.mutate() : null} />
+      )}
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -786,6 +848,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {S.live && (
+          <div className="mt-3">
+            <SegmentedToggle value={liveFilter} onChange={setLiveFilter}
+              options={liveFilterOptions(allWorkers, t)} />
           </div>
         )}
       </div>
@@ -886,11 +955,22 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={v => setF("schedules", v)} />
                   </ColFilter>
                 </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colClock")} active={filters.clock.length > 0}>
-                    <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} />
-                  </ColFilter>
-                </th>
+                {S.live ? (
+                  <>
+                    <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.in")}</span>
+                    </th>
+                    <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.out")}</span>
+                    </th>
+                  </>
+                ) : (
+                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                    <ColFilter label={t("staff.colClock")} active={filters.clock.length > 0}>
+                      <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} />
+                    </ColFilter>
+                  </th>
+                )}
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
                     <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
@@ -909,15 +989,30 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       onMin={v => setF("eff_min", v)} onMax={v => setF("eff_max", v)} />
                   </ColFilter>
                 </th>
+                {S.live && (
+                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.status")}</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {sortedWorkers.map(w => (
-                <tr key={w.worker_name} className="border-b hover:bg-white/5"
+                <Fragment key={S.live ? w.id : w.worker_name}>
+                <tr className="border-b hover:bg-white/5"
                   style={{ borderColor: "var(--border)" }}>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                      <span>{tl(w.worker_name)}</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 sm:flex-wrap">
+                      {S.live && w.raw ? (
+                        <button type="button" className="text-left underline decoration-dotted underline-offset-2"
+                          style={{ color: "var(--text-1)" }} title={t("staffLive.rawHint")}
+                          onClick={() => setOpenRaw(v => (v === w.id ? null : w.id))}>
+                          {tl(w.worker_name)}
+                        </button>
+                      ) : (
+                        <span>{tl(w.worker_name)}</span>
+                      )}
+                      {S.live && <LiveRowNotes w={w} />}
                       {w.on_task && (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap self-start"
                           title={t("staff.onTask")}
@@ -942,17 +1037,36 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     </td>
                   )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
+                  {S.live ? (
+                    <>
+                      <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}><LiveClockIn w={w} /></td>
+                      <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}><LiveClockOut w={w} /></td>
+                    </>
+                  ) : (
+                    <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
+                  )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.hours_worked != null ? w.hours_worked : "—"}
+                    {w.hours_worked != null ? (S.live ? Math.round(w.hours_worked * 100) / 100 : w.hours_worked) : "—"}
+                    {S.live && w.so_far && w.hours_worked != null ? <span style={{ color: "var(--text-3)" }}>*</span> : null}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {w.early_arrival_min != null ? w.early_arrival_min : "—"}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.effective_hours != null ? w.effective_hours : "—"}
+                    {w.effective_hours != null ? (S.live ? Math.round(w.effective_hours * 100) / 100 : w.effective_hours) : "—"}
                   </td>
+                  {S.live && (
+                    <td className="px-3 py-2"><LiveStatusChip status={w.status} /></td>
+                  )}
                 </tr>
+                {S.live && openRaw === w.id && w.raw && (
+                  <tr>
+                    <td colSpan={showCellCol ? 10 : 9} className="px-3 py-2" style={{ background: "var(--bg-inner)" }}>
+                      <LiveRaw raw={w.raw} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -976,8 +1090,11 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         document.body,
       )}
 
+      {S.live && <LiveExtras extras={data?.extras} />}
+      {S.live && <LiveFooter data={data} />}
+
       {/* Extra hours note */}
-      {(data?.extra_hours ?? 0) > 0 && (
+      {!S.live && (data?.extra_hours ?? 0) > 0 && (
         <div className="px-4 py-2.5 flex justify-end border-t" style={{ borderColor: "var(--border)" }}>
           <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
             {t("staff.extraHoursNote").replace("{n}", data.extra_hours)}
@@ -1330,6 +1447,8 @@ export function DeletionStatusBadge({ status }) {
 // ── Role Change create / edit screen (full-screen overlay) ────────────────────
 
 export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
+  const S = useStaffApi();
+  const K = S.rowKey;
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
@@ -1350,7 +1469,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
   // plain-clicked anchor and the target (inclusive), in the shown order.
   function handleRowClick(e, name) {
     if (e.shiftKey && rangeAnchor.current && rangeAnchor.current !== name) {
-      const names = filtered.map(w => w.worker_name);
+      const names = filtered.map(K);
       const a = names.indexOf(rangeAnchor.current);
       const b = names.indexOf(name);
       if (a !== -1 && b !== -1) {
@@ -1369,40 +1488,46 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
   }
 
   const { data: roleOpts = { job_titles: [] } } = useQuery({
-    queryKey: ["field-options"],
-    queryFn: () => api.get("/api/staff/field-options").then(r => r.data),
+    queryKey: S.qk("field-options"),
+    queryFn: () => api.get(`${S.base}/field-options`).then(r => r.data),
     staleTime: 300_000,
   });
 
   // Edit mode: pull the full document (the list row carries no employees array)
   const { data: detail } = useQuery({
-    queryKey: ["staff-document", editDoc?.id],
-    queryFn: () => api.get(`/api/staff/documents/${editDoc.id}`).then(r => r.data),
+    queryKey: S.qk("staff-document", editDoc?.id),
+    queryFn: () => api.get(`${S.base}/documents/${editDoc.id}`).then(r => r.data),
     enabled: isEdit,
   });
   useEffect(() => {
     if (isEdit && detail && !initialised.current) {
       setNewRole(detail.new_role || "");
-      setSelected(new Set((detail.employees || []).map(e => e.worker_name)));
+      setSelected(new Set((detail.employees || []).map(K)));
       initialised.current = true;
     }
   }, [isEdit, detail]);
 
   const { data: attData, isLoading } = useQuery({
-    queryKey: ["staff-attendance", mgrId, date],
-    queryFn: () => api.get("/api/staff/attendance", {
+    queryKey: S.qk("staff-attendance", mgrId, date),
+    queryFn: () => api.get(`${S.base}/attendance`, {
       params: { attend_date: date, ...(isAdmin ? { manager_id: mgrId } : {}) },
     }).then(r => r.data),
     enabled: !!date && !!mgrId,
   });
 
-  const employees = attData?.workers ?? [];
+  // Live: only a worker who CAME can be re-titled (the operator, 2026-10-04),
+  // one line each.
+  const employees = useMemo(
+    () => (attData?.workers ?? []).filter(w => !S.live || (w.clock_in && !w.split_of)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [attData]
+  );
   const filtered = useMemo(
     () => employees.filter(w => !query || w.worker_name?.toLowerCase().includes(query.toLowerCase())),
     [employees, query]
   );
 
-  const allShownSelected = filtered.length > 0 && filtered.every(w => selected.has(w.worker_name));
+  const allShownSelected = filtered.length > 0 && filtered.every(w => selected.has(K(w)));
 
   function toggle(name) {
     setSelected(s => {
@@ -1423,8 +1548,8 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
   function toggleAllShown() {
     setSelected(s => {
       const n = new Set(s);
-      if (allShownSelected) filtered.forEach(w => n.delete(w.worker_name));
-      else                  filtered.forEach(w => n.add(w.worker_name));
+      if (allShownSelected) filtered.forEach(w => n.delete(K(w)));
+      else                  filtered.forEach(w => n.add(K(w)));
       return n;
     });
   }
@@ -1436,19 +1561,19 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/api/staff/documents/${editDoc.id}`, {
+        await api.put(`${S.base}/documents/${editDoc.id}`, {
           new_role: newRole, employees: [...selected],
         });
       } else {
-        await api.post("/api/staff/documents", {
+        await api.post(`${S.base}/documents`, {
           doc_type: "role_change", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
           new_role: newRole, employees: [...selected],
         });
       }
-      qc.invalidateQueries({ queryKey: ["staff-documents"] });
-      qc.invalidateQueries({ queryKey: ["staff-documents-pending-count"] });
-      qc.invalidateQueries({ queryKey: ["staff-attendance"] });
+      qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-documents-pending-count") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-attendance") });
       onSaved();
     } catch (e) {
       setError(e?.response?.data?.detail || t("staff.failedSave"));
@@ -1525,11 +1650,11 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
               </thead>
               <tbody>
                 {filtered.map(w => {
-                  const on = selected.has(w.worker_name);
+                  const on = selected.has(K(w));
                   return (
-                    <tr key={w.worker_name}
-                      {...dragRow(w.worker_name)}
-                      onClick={(e) => handleRowClick(e, w.worker_name)}
+                    <tr key={K(w)}
+                      {...dragRow(K(w))}
+                      onClick={(e) => handleRowClick(e, K(w))}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
                       <td className="px-3 py-2 text-center">
@@ -1552,6 +1677,8 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 // ── People Exchange create / edit screen (full-screen overlay) ────────────────
 
 export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
+  const S = useStaffApi();
+  const K = S.rowKey;
   const { t } = useLang();
   // `lang` is read only as a memo KEY — see AttendanceTable.
   const { tl, tx, lang } = useTranslit();
@@ -1581,22 +1708,22 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
   // Move-to options: other open-day supervisors + tasks already created today
   const { data: supTargets = [] } = useQuery({
-    queryKey: ["exchange-targets", mgrId, date],
-    queryFn: () => api.get("/api/staff/exchange-targets", {
+    queryKey: S.qk("exchange-targets", mgrId, date),
+    queryFn: () => api.get(`${S.base}/exchange-targets`, {
       params: { attend_date: date, ...(isAdmin ? { manager_id: mgrId } : {}) },
     }).then(r => r.data),
     enabled: !!date,
   });
   const { data: taskData = { tasks: [] } } = useQuery({
-    queryKey: ["exchange-tasks", date],
-    queryFn: () => api.get("/api/staff/tasks", { params: { attend_date: date } }).then(r => r.data),
+    queryKey: S.qk("exchange-tasks", date),
+    queryFn: () => api.get(`${S.base}/tasks`, { params: { attend_date: date } }).then(r => r.data),
     enabled: !!date,
   });
 
   // Edit mode: hydrate target + selection from the document
   const { data: detail } = useQuery({
-    queryKey: ["staff-document", editDoc?.id],
-    queryFn: () => api.get(`/api/staff/documents/${editDoc.id}`).then(r => r.data),
+    queryKey: S.qk("staff-document", editDoc?.id),
+    queryFn: () => api.get(`${S.base}/documents/${editDoc.id}`).then(r => r.data),
     enabled: isEdit,
   });
   useEffect(() => {
@@ -1605,7 +1732,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
         setTarget(`sup:${detail.target_manager_id}`);
       } else if (detail.target_type === "task" && detail.task_name)
         setTarget(`task:${detail.task_name}`);
-      setSelected(new Set((detail.employees || []).map(e => e.worker_name)));
+      setSelected(new Set((detail.employees || []).map(K)));
       if (detail.transfer_time) { setUseTime(true); setTransferTime(detail.transfer_time); }
       if (detail.return_time)   { setUseReturn(true); setReturnTime(detail.return_time); }
       initialised.current = true;
@@ -1613,19 +1740,31 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   }, [isEdit, detail]);
 
   const { data: attData, isLoading } = useQuery({
-    queryKey: ["staff-attendance", mgrId, date],
-    queryFn: () => api.get("/api/staff/attendance", {
+    queryKey: S.qk("staff-attendance", mgrId, date),
+    queryFn: () => api.get(`${S.base}/attendance`, {
       params: { attend_date: date, ...(isAdmin ? { manager_id: mgrId } : {}) },
     }).then(r => r.data),
     enabled: !!date && !!mgrId,
   });
 
-  const employees = attData?.workers ?? [];
+  // Live: who THIS unit may move — a worker who came and stands here now
+  // (named here, or carried here as additional hours while the name sits on the
+  // sender's day): the unit where the worker IS files the next move (the
+  // operator, 2026-10-04). The server re-checks it at the move's own time.
+  const employees = useMemo(() => {
+    const rows = attData?.workers ?? [];
+    if (!S.live) return rows;
+    const named = rows.filter(w => w.clock_in && w.here && !w.split_of);
+    const carried = (attData?.extras ?? []).filter(x => x.here && x.clock_in)
+      .map(x => ({ ...x, _carried: true }));
+    return [...named, ...carried];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attData]);
   const filtered = useMemo(
     () => employees.filter(w => !query || w.worker_name?.toLowerCase().includes(query.toLowerCase())),
     [employees, query]
   );
-  const allShownSelected = filtered.length > 0 && filtered.every(w => selected.has(w.worker_name));
+  const allShownSelected = filtered.length > 0 && filtered.every(w => selected.has(K(w)));
 
   const targetOptions = useMemo(() => {
     const opts = [];
@@ -1656,7 +1795,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // window stays a real span; the picker renders these as wall-clock (mod 24h). The
   // wheel picker is bounded to this; null when no worker has a clock-out yet.
   const timeWindow = useMemo(() => {
-    const sels = employees.filter(w => selected.has(w.worker_name));
+    const sels = employees.filter(w => selected.has(K(w)));
+    if (S.live) return liveWindow(sels, attData?.live);
     const starts = [], outs = [];
     sels.forEach(w => {
       const s = scheduleStartMin(w.schedule) ?? clockInMin(w.clock_in_out);
@@ -1669,7 +1809,18 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     const lo = Math.min(...starts);
     const hi = Math.max(...outs);
     return hi >= lo ? { lo, hi } : null;
-  }, [employees, selected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees, selected, attData]);
+
+  // Live: a move is timed by default, at NOW clamped into the window — the
+  // usual case is «they are going over right now» (decided 2026-10-04).
+  const timeTouched = useRef(false);
+  useEffect(() => {
+    if (!S.live || isEdit || timeTouched.current || !timeWindow) return;
+    setUseTime(true);
+    setTransferTime(minToHHMM(timeWindow.hi));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeWindow, isEdit]);
 
   // Keep the picked time valid as the selection changes. Wait for the roster to
   // load first, so a hydrated edit-mode time isn't cleared during the fetch.
@@ -1714,7 +1865,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // currently shown. The anchor stays put so the range can be re-extended.
   function handleRowClick(e, name) {
     if (e.shiftKey && rangeAnchor.current && rangeAnchor.current !== name) {
-      const names = filtered.map(w => w.worker_name);
+      const names = filtered.map(K);
       const a = names.indexOf(rangeAnchor.current);
       const b = names.indexOf(name);
       if (a !== -1 && b !== -1) {
@@ -1743,8 +1894,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   function toggleAllShown() {
     setSelected(s => {
       const n = new Set(s);
-      if (allShownSelected) filtered.forEach(w => n.delete(w.worker_name));
-      else                  filtered.forEach(w => n.add(w.worker_name));
+      if (allShownSelected) filtered.forEach(w => n.delete(K(w)));
+      else                  filtered.forEach(w => n.add(K(w)));
       return n;
     });
   }
@@ -1774,10 +1925,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     setRemoveError("");
     setRemovingTask(true);
     try {
-      await api.post("/api/staff/tasks/delete", { name: taskToRemove });
+      await api.post(`${S.base}/tasks/delete`, { name: taskToRemove });
       // Clear the picker if it pointed at the task we just removed
       if (target === `task:${taskToRemove}`) setTarget("");
-      qc.invalidateQueries({ queryKey: ["exchange-tasks"] });
+      qc.invalidateQueries({ queryKey: S.qk("exchange-tasks") });
       setTaskToRemove(null);
     } catch (e) {
       setRemoveError(e?.response?.data?.detail || t("staff.failedRemove"));
@@ -1800,17 +1951,17 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt, return_time: rt });
+        await api.put(`${S.base}/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt, return_time: rt });
       } else {
-        await api.post("/api/staff/documents", {
+        await api.post(`${S.base}/documents`, {
           doc_type: "people_exchange", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
           ...tgt, employees: [...selected], transfer_time: tt, return_time: rt,
         });
       }
-      qc.invalidateQueries({ queryKey: ["staff-documents"] });
-      qc.invalidateQueries({ queryKey: ["staff-documents-pending-count"] });
-      qc.invalidateQueries({ queryKey: ["staff-attendance"] });
+      qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-documents-pending-count") });
+      qc.invalidateQueries({ queryKey: S.qk("staff-attendance") });
       onSaved();
     } catch (e) {
       setError(e?.response?.data?.detail || t("staff.failedSave"));
@@ -1845,7 +1996,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
           <StyledSelect
             value={target}
-            onChange={(v) => { setTarget(v); setTargetCell(""); }}
+            onChange={setTarget}
             options={targetOptions}
             placeholder={t("staff.selectTargetOpt")}
             className="flex-1 min-w-[220px] text-xs"
@@ -1875,7 +2026,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                 type="button"
                 role="switch"
                 aria-checked={useTime}
-                onClick={() => setUseTime(v => !v)}
+                onClick={() => { timeTouched.current = true; setUseTime(v => !v); }}
                 className="relative inline-flex items-center rounded-full transition-colors flex-shrink-0"
                 style={{
                   width: 36, height: 20,
@@ -1914,7 +2065,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               lo={timeWindow?.lo}
               hi={timeWindow?.hi}
               value={transferTime}
-              onConfirm={(v) => { setTransferTime(v); setPickerOpen(false); }}
+              onConfirm={(v) => { timeTouched.current = true; setTransferTime(v); setPickerOpen(false); }}
               onClose={() => setPickerOpen(false)}
             />
           </div>
@@ -2002,17 +2153,24 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               </thead>
               <tbody>
                 {filtered.map(w => {
-                  const on = selected.has(w.worker_name);
+                  const on = selected.has(K(w));
                   return (
-                    <tr key={w.worker_name}
-                      {...dragRow(w.worker_name)}
-                      onClick={(e) => handleRowClick(e, w.worker_name)}
+                    <tr key={K(w)}
+                      {...dragRow(K(w))}
+                      onClick={(e) => handleRowClick(e, K(w))}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
                       <td className="px-3 py-2 text-center">
                         <input type="checkbox" checked={on} readOnly />
                       </td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(w.worker_name)}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>
+                        {tl(w.worker_name)}
+                        {w._carried && (
+                          <span className="ml-2 text-[11px]" style={{ color: "var(--text-3)" }}>
+                            {t("staffLive.pick.carried").replace("{unit}", w.named_at ? tl(w.named_at) : "—")}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tx(w.job_title) || "—"}</td>
                     </tr>
                   );
@@ -2055,11 +2213,12 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 // ── View modal ────────────────────────────────────────────────────────────────
 
 export function DocumentViewModal({ docId, onClose }) {
+  const S = useStaffApi();
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const { data: doc, isLoading } = useQuery({
-    queryKey: ["staff-document", docId],
-    queryFn: () => api.get(`/api/staff/documents/${docId}`).then(r => r.data),
+    queryKey: S.qk("staff-document", docId),
+    queryFn: () => api.get(`${S.base}/documents/${docId}`).then(r => r.data),
     enabled: !!docId,
   });
 
@@ -2182,10 +2341,11 @@ const HISTORY_TKEY = {
 };
 
 function DocumentHistoryModal({ docId, onClose }) {
+  const S = useStaffApi();
   const { t } = useLang();
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["staff-document-history", docId],
-    queryFn: () => api.get(`/api/staff/documents/${docId}/history`).then(r => r.data),
+    queryKey: S.qk("staff-document-history", docId),
+    queryFn: () => api.get(`${S.base}/documents/${docId}/history`).then(r => r.data),
     enabled: !!docId,
   });
 
@@ -2823,6 +2983,7 @@ function FilterButton({ activeCount, anyFilterActive, clearAllFilters, children 
 }
 
 function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoading, onEdit }) {
+  const S = useStaffApi();
   const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
@@ -2847,15 +3008,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const [expandedId, setExpandedId] = useState(null);
   const [viewId, setViewId]         = useState(null);
   const [historyId, setHistoryId]   = useState(null);
-  const [typeFilter, setTypeFilter]             = usePersistentState("staff_requests_type_filter", []);
-  const [statusFilter, setStatusFilter]         = usePersistentState("staff_requests_status_filter", "all"); // all | pending | yes | no
-  const [supervisorFilter, setSupervisorFilter] = usePersistentState("staff_requests_supervisor_filter", []);
-  const [approverFilter, setApproverFilter]     = usePersistentState("staff_requests_approver_filter", []);
-  const [dateFilter, setDateFilter]             = usePersistentState("staff_requests_date_filter", ""); // single ISO date, "" = all
-  const [createdFilter, setCreatedFilter]       = usePersistentState("staff_requests_created_filter", ""); // single ISO date (creation day), "" = all
+  const [typeFilter, setTypeFilter]             = usePersistentState(S.pk("staff_requests_type_filter"), []);
+  const [statusFilter, setStatusFilter]         = usePersistentState(S.pk("staff_requests_status_filter"), "all"); // all | pending | yes | no
+  const [supervisorFilter, setSupervisorFilter] = usePersistentState(S.pk("staff_requests_supervisor_filter"), []);
+  const [approverFilter, setApproverFilter]     = usePersistentState(S.pk("staff_requests_approver_filter"), []);
+  const [dateFilter, setDateFilter]             = usePersistentState(S.pk("staff_requests_date_filter"), ""); // single ISO date, "" = all
+  const [createdFilter, setCreatedFilter]       = usePersistentState(S.pk("staff_requests_created_filter"), ""); // single ISO date (creation day), "" = all
   const [sheetOpen, setSheetOpen]               = useState(false);
-  const [sortCol, setSortCol]                   = usePersistentState("staff_requests_sort_col", null);  // "created"|"date"|"supervisor"|"type"|"status"|"approver"
-  const [sortDir, setSortDir]                   = usePersistentState("staff_requests_sort_dir", "asc"); // "asc"|"desc"
+  const [sortCol, setSortCol]                   = usePersistentState(S.pk("staff_requests_sort_col"), null);  // "created"|"date"|"supervisor"|"type"|"status"|"approver"
+  const [sortDir, setSortDir]                   = usePersistentState(S.pk("staff_requests_sort_dir"), "asc"); // "asc"|"desc"
 
   function handleSort(col) {
     if (sortCol !== col) { setSortCol(col); setSortDir("asc"); }
@@ -2865,15 +3026,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const [editingBatch, setEditingBatch] = useState(null);
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["staff-documents"] });
-    qc.invalidateQueries({ queryKey: ["staff-documents-pending-count"] });
-    qc.invalidateQueries({ queryKey: ["staff-attendance"] });
+    qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
+    qc.invalidateQueries({ queryKey: S.qk("staff-documents-pending-count") });
+    qc.invalidateQueries({ queryKey: S.qk("staff-attendance") });
   };
-  const single = (id, action) => api.post(`/api/staff/documents/${id}/${action}`).then(invalidate);
+  const single = (id, action) => api.post(`${S.base}/documents/${id}/${action}`).then(invalidate);
 
   const batchMutation = useMutation({
     mutationFn: ({ batchId, action, ids }) =>
-      api.post(`/api/staff/requests/batch/${batchId}/${action}`, ids ? { ids } : {}),
+      api.post(`${S.base}/requests/batch/${batchId}/${action}`, ids ? { ids } : {}),
     onSuccess: invalidate,
   });
 
@@ -2905,7 +3066,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
 
     const calls  = [];
     const docIds = take.filter(x => !x.r.isDeletion).map(x => x.doc.id);
-    if (docIds.length) calls.push(api.post("/api/staff/documents/bulk", { ids: docIds, action }));
+    if (docIds.length) calls.push(api.post(`${S.base}/documents/bulk`, { ids: docIds, action }));
     // Deletion requests live in the other queue and have no hard delete: they
     // are approved, withdrawn by the unit that filed them, or rejected.
     // Solo/legacy rows carry no batch_id — addressed as solo-{id}.
@@ -2913,7 +3074,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
       const bid = doc.batch_id || `solo-${doc.id}`;
       const batchAction = action === "approve" ? "approve"
         : r.isCreatorRole ? "withdraw" : "reject";
-      calls.push(api.post(`/api/staff/requests/batch/${bid}/${batchAction}`));
+      calls.push(api.post(`${S.base}/requests/batch/${bid}/${batchAction}`));
     });
     await Promise.all(calls);
     invalidate();
@@ -3339,7 +3500,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                             <div className="flex flex-wrap items-center gap-2">
                               {!isDeletion && <ActionBtn icon={Eye} label={t("staff.view")} onClick={() => setViewId(doc.id)} />}
                               {canEdit && <ActionBtn icon={Pencil} label={t("staff.edit")} onClick={() => isDeletion
-                                ? setEditingBatch({ managerId: doc.manager_id, managerName: doc.manager_name || doc.supervisor_name, date: doc.date, preSelected: (doc.workers || []).filter(w => w.status === "pending").map(w => w.worker_name), batchId: doc.batch_id })
+                                ? setEditingBatch({ managerId: doc.manager_id, managerName: doc.manager_name || doc.supervisor_name, date: doc.date, preSelected: (doc.workers || []).filter(w => w.status === "pending").map(S.rowKey), batchId: doc.batch_id })
                                 : onEdit(doc)} />}
                               {canApprove && <ActionBtn icon={Check}  label={t("staff.post")}   color="#16a34a"
                                 loading={busyKey === `${rowKey(doc)}:post`} disabled={!!busyKey}
@@ -3899,6 +4060,7 @@ function buildMonthCells(year, month) {
 }
 
 function ApprovalsCalendar({ role, supervisors }) {
+  const S = useStaffApi();
   const qc = useQueryClient();
   const { auth } = useAuth();
   const { t } = useLang();
@@ -3909,16 +4071,16 @@ function ApprovalsCalendar({ role, supervisors }) {
   const canReopen = isAdmin || can(CAP.DAY_REOPEN);
   const crossUnit = isAdmin || canAll(CAP.DAY_REOPEN);
 
-  const [selManagerId, setSelManagerId] = usePersistentState("staff_approvals_manager_id", null);
+  const [selManagerId, setSelManagerId] = usePersistentState(S.pk("staff_approvals_manager_id"), null);
   const effManagerId = crossUnit ? selManagerId : auth?.role_id;
 
   const now = new Date();
-  const [view, setView] = usePersistentState("staff_approvals_month", { year: now.getFullYear(), month: now.getMonth() });
+  const [view, setView] = usePersistentState(S.pk("staff_approvals_month"), { year: now.getFullYear(), month: now.getMonth() });
   const todayIso = monthIso(now.getFullYear(), now.getMonth(), now.getDate());
 
   const { data, isLoading } = useQuery({
-    queryKey: ["staff-approvals-calendar", effManagerId, view.year, view.month],
-    queryFn: () => api.get("/api/staff/approvals/calendar", {
+    queryKey: S.qk("staff-approvals-calendar", effManagerId, view.year, view.month),
+    queryFn: () => api.get(`${S.base}/approvals/calendar`, {
       params: { manager_id: effManagerId, year: view.year, month: view.month + 1 },
     }).then(r => r.data),
     enabled: !!effManagerId,
@@ -3926,9 +4088,9 @@ function ApprovalsCalendar({ role, supervisors }) {
   const days = data?.days || {};
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["staff-approvals-calendar"] });
-    qc.invalidateQueries({ queryKey: ["approved-cells"] });
-    qc.invalidateQueries({ queryKey: ["daily-approval"] });
+    qc.invalidateQueries({ queryKey: S.qk("staff-approvals-calendar") });
+    qc.invalidateQueries({ queryKey: S.qk("approved-cells") });
+    qc.invalidateQueries({ queryKey: S.qk("daily-approval") });
   };
   // Telegram's iOS WebView silently suppresses window.confirm, so a
   // confirm-gated calendar day did nothing at all on the primary device. Both
@@ -3938,7 +4100,7 @@ function ApprovalsCalendar({ role, supervisors }) {
   const [ask, setAsk] = useState(null);   // {kind: "close"|"reopen", iso} | null
   const [askErr, setAskErr] = useState("");
   const closeMut = useMutation({
-    mutationFn: (date) => api.post("/api/staff/daily/close", { manager_id: effManagerId, date }),
+    mutationFn: (date) => api.post(`${S.base}/daily/close`, { manager_id: effManagerId, date }),
     onSuccess: () => { setAsk(null); setAskErr(""); invalidate(); },
     // Never "" — an empty error renders nothing and the dialog just sits there.
     onError: (e) => {
@@ -3947,7 +4109,7 @@ function ApprovalsCalendar({ role, supervisors }) {
     },
   });
   const reopenMut = useMutation({
-    mutationFn: (date) => api.post("/api/staff/approvals/reopen", { manager_id: effManagerId, date }),
+    mutationFn: (date) => api.post(`${S.base}/approvals/reopen`, { manager_id: effManagerId, date }),
     onSuccess: () => { setAsk(null); setAskErr(""); invalidate(); },
     // Never "" — an empty error renders nothing and the dialog just sits there.
     onError: (e) => setAskErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
@@ -4097,8 +4259,30 @@ function readStaffLink(q) {
   if (/^\d+$/.test(unit || "")) out.staff_selected_manager_id = Number(unit);
   return Object.keys(out).length ? out : null;
 }
+// The same link, written into the LIVE page's own keys (its tab, date and unit
+// are remembered apart from /staff's).
+function readStaffLiveLink(q) {
+  const out = readStaffLink(q);
+  return out ? Object.fromEntries(Object.entries(out).map(([k, v]) => [LIVE_STAFF_API.pk(k), v])) : null;
+}
+
+// The live page's first day: the shift-day running now — before 08:00 that is
+// still yesterday's (a night shift's small hours belong to the evening it
+// opened). Only a default; the picked day is remembered like /staff's.
+function liveDefaultDay() {
+  const d = new Date();
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function Staff() {
+  return <StaffPage />;
+}
+
+// THE «Verifix to'g'irlash» page — /staff, and (inside a live
+// StaffApiProvider) /staff-live, which differs only in the source.
+export function StaffPage() {
+  const S = useStaffApi();
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -4116,12 +4300,16 @@ export default function Staff() {
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
   // Before the persisted state below: a link writes it first.
-  useUrlScope(readStaffLink);
-  const [rawTab, setTab] = usePersistentState("staff_tab", role === "shift-manager" ? "requests" : "workers");
+  useUrlScope(S.live ? readStaffLiveLink : readStaffLink);
+  const [rawTab, setTab] = usePersistentState(S.pk("staff_tab"), role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
-  const [selectedDate, setSelectedDate] = usePersistentState("staff_selected_date", "");
-  const [selectedManagerId, setSelectedManagerId] = usePersistentState("staff_selected_manager_id", null);
+  const [selectedDate, setSelectedDate] = usePersistentState(S.pk("staff_selected_date"), "");
+  const [selectedManagerId, setSelectedManagerId] = usePersistentState(S.pk("staff_selected_manager_id"), null);
+  useEffect(() => {
+    if (S.live && !selectedDate) setSelectedDate(liveDefaultDay());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // …and a link followed while this page is ALREADY open: the route is not
   // keyed, so useUrlScope (mount-only) would never see it.
   const staffLoc = useLocation();
@@ -4145,8 +4333,8 @@ export default function Staff() {
   const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
   const { data: supervisors = [] } = useQuery({
-    queryKey: ["staff-supervisors"],
-    queryFn: () => api.get("/api/staff/supervisors").then(r => r.data),
+    queryKey: S.qk("staff-supervisors"),
+    queryFn: () => api.get(`${S.base}/supervisors`).then(r => r.data),
     enabled: isManagerView,
     staleTime: 120_000,
   });
@@ -4158,8 +4346,8 @@ export default function Staff() {
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
   const { data: dayState } = useQuery({
-    queryKey: ["daily-approval", supervisorManagerIdEarly, selectedDate],
-    queryFn: () => api.get("/api/staff/approvals/day", {
+    queryKey: S.qk("daily-approval", supervisorManagerIdEarly, selectedDate),
+    queryFn: () => api.get(`${S.base}/approvals/day`, {
       params: { attend_date: selectedDate, manager_id: supervisorManagerIdEarly },
     }).then(r => r.data),
     enabled: !!supervisorManagerIdEarly && !!selectedDate,
@@ -4176,7 +4364,7 @@ export default function Staff() {
   const { data: cellDates = [] } = useQuery({
     queryKey: ["cell-attendance-dates"],
     queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
-    enabled: isManagerView,
+    enabled: isManagerView && !S.live,
     staleTime: 120_000,
     retry: false,
   });
@@ -4211,7 +4399,7 @@ export default function Staff() {
   // the leader are stored alongside the key so the trigger can label the cell
   // even on a date whose payload doesn't carry it (the body then explains, not
   // the label).
-  const [rawSelCell, setSelCell] = usePersistentState("staff_selected_cell", null);
+  const [rawSelCell, setSelCell] = usePersistentState(S.pk("staff_selected_cell"), null);
   const selCell = isManagerView && rawSelCell && typeof rawSelCell === "object" && rawSelCell.key
     ? rawSelCell
     : null;
@@ -4227,8 +4415,8 @@ export default function Staff() {
   }
 
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
-    queryKey: ["staff-documents"],
-    queryFn: () => api.get("/api/staff/documents").then(r => r.data),
+    queryKey: S.qk("staff-documents"),
+    queryFn: () => api.get(`${S.base}/documents`).then(r => r.data),
     refetchInterval: 30_000,
   });
 
@@ -4268,8 +4456,8 @@ export default function Staff() {
   // No new documents once the day is closed — supervisors check their own day,
   // admins the selected supervisor's (backend ignores manager_id for supervisors)
   const { data: dayInfo } = useQuery({
-    queryKey: ["daily-approval", supervisorManagerId, selectedDate],
-    queryFn: () => api.get("/api/staff/approvals/day", {
+    queryKey: S.qk("daily-approval", supervisorManagerId, selectedDate),
+    queryFn: () => api.get(`${S.base}/approvals/day`, {
       params: { attend_date: selectedDate, manager_id: supervisorManagerId },
     }).then(r => r.data),
     enabled: canCreate && !!supervisorManagerId && !!selectedDate,
@@ -4305,7 +4493,7 @@ export default function Staff() {
   }
 
   return (
-    <Layout title={t("nav.staff")}>
+    <Layout title={t(S.live ? "nav.staffLive" : "nav.staff")}>
       {/* Tabs — the shared view-tab template. NO overflow wrapper: the template
           caps itself at its container, scrolls, and scrolls the SELECTED segment
           into view; a bare wrapper hides that and leaves nothing looking picked. */}

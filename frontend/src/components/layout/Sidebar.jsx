@@ -81,9 +81,10 @@ const ALL_LINKS = [
   { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
   { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
   { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
-  // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
-  // changes land in its own tables only. adminOnly, no page key (the /targets pattern).
-  { to: "/staff-live", adminOnly: true, key: "nav.staffLive", icon: Fingerprint, group: "verifix" },
+  // «Verifix to'g'irlash · Jonli» — /staff with Verifix as the source; a lab copy whose
+  // documents land in its own tables only. Page key `staff-live`, admin-only by default
+  // until the operator opens it on the Access tab.
+  { to: "/staff-live", page: "staff-live", key: "nav.staffLive", icon: Fingerprint, group: "verifix" },
   // «Ta'lim» — video lessons published to profiles. First entry in its own
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.

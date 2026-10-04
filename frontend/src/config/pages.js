@@ -37,6 +37,7 @@ export const PAGES = [
   { key: "plan",     route: "/plan",     labelKey: "nav.planFulfillment" },
   { key: "downtime", route: "/downtime", labelKey: "nav.idleTime" },
   { key: "staff",    route: "/staff",    labelKey: "nav.staff" },
+  { tier: "test", key: "staff-live", route: "/staff-live", labelKey: "nav.staffLive" },
   { key: "daily",    route: "/daily",    labelKey: "nav.daily" },
   { key: "shift-daily", route: "/shift-daily", labelKey: "nav.shiftDaily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
@@ -74,6 +75,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // applied server-side on every endpoint the page calls).
   downtime: ["shift-manager", "idle-owner"],
   staff:    ["shift-manager", "supervisor"],
+  // «Verifix to'g'irlash · Jonli» — /staff over the live Verifix read (lab).
+  // Admin-only until the operator opens it; /staff's rights inside.
+  "staff-live": [],
   daily:    ["shift-manager", "supervisor"],
   production: ["top-manager", "shift-manager"], // opened 2026-09-30 for the «Smena hisoboti» cell links
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable

@@ -1,12 +1,14 @@
 """The LIVE «Verifix to'g'irlash» — attendance read straight from Verifix (lab).
 
-A lab copy of /staff (`/staff-live`, admin-only, from 2026-10-01): who came, who
-is inside, who left and who has not come, read from Verifix's API on demand
-instead of the next-morning Excel (memory: verifix-api-integration). Everything
-a person DOES there — moving a worker, changing a role, placing someone in a
-cell, closing a day by hand — is written to the lab's own tables
-(`live_staff_events`, `live_day_closes`) and nothing else on the platform reads
-them: real attendance, documents, day closes and the загрузка are untouched.
+The READ half of `/staff-live` (admin-only by default, page key `staff-live`):
+who came, who is inside, who left and who has not come, read from Verifix's
+API every minute instead of the next-morning Excel (memory:
+verifix-api-integration). The other half — /staff's rows, documents, deletions,
+cell placements and the day close laid over this read — is
+`services/live_staff.py` (from 2026-10-04, the operator: «structure this page
+just like Verifix edit … the only difference should be the source»). Nothing
+outside the page reads either: real attendance, documents, day closes and the
+загрузка are untouched.
 
 Where a person stands is answered the way the agreed live feed will answer it:
 
@@ -15,19 +17,15 @@ Where a person stands is answered the way the agreed live feed will answer it:
   codes sit on org units (first connection test, 2026-10-01: 0 of 2,942 rows
   by division, 1,606 by org unit). **Only cells counted in the загрузка**
   (`cells.in_load`, from 2026-10-04): a person in any other cell is on no page;
-* an APPROVED move / role change / cell change counts from the time it states,
-  never from its approval (decision 4); a pending one is shown; a move is
-  approved together with the receiving cell, so nobody arrives cell-less
-  (decision 6);
-* **a day closes only BY HAND** (from 2026-10-04, the operator — decision 1's
-  automatic close is gone): once everybody who came has left, the unit's
-  brigadir is told so once (`LiveAllLeftNotice`, `_notify_all_left`).
+* **a day closes only BY HAND** (from 2026-10-04, the operator); once everybody
+  who came has left, the unit's brigadir is told so once (`LiveAllLeftNotice`,
+  `_notify_all_left`).
 
 **The last read is STORED** (`live_verifix_reads`, from 2026-10-04): a job reads
 Verifix every minute for every workload cell's people (`run_pass`), the page
-reads the database, and «Yangilash» reads one unit now (`force`). The page reads
-Verifix itself only for a day nobody stored yet, or when the stored read of a
-running day is older than `STALE_S` (a job that stopped).
+reads the database, and «Yangilash» reads one unit now (`day_read(force=True)`).
+The page reads Verifix itself only for a day nobody stored yet, or when the
+stored read of a running day is older than `STALE_S` (a job that stopped).
 
 **The clocks are the report's** (`input_time` / `output_time` — the file's own
 clock-in/out, the parity check proved); the raw marks (`track$list`) fill in
@@ -42,8 +40,6 @@ the sources.
 **Hours**: «Отработано» is summed from the time kinds the parity check FOUND
 (`verifix_last_parity.hours`) when that rule matched the files closely enough,
 else the clock span. Someone still inside is counted up to now and marked so.
-A row split by a move or a role change is shared out by the clock, the rule
-`staff._split_hours` uses: the halves always add up to the whole.
 """
 from __future__ import annotations
 
@@ -51,16 +47,14 @@ import logging
 import re
 import threading
 import time as _time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models import (
-    Cell, LiveAllLeftNotice, LiveDayClose, LiveStaffEvent, LiveVerifixRead, Manager,
-)
+from app.models import Cell, LiveAllLeftNotice, LiveDayClose, LiveVerifixRead, Manager
 from app.services import cell_hours, live_overview, verifix, verifix_parity
 
 log = logging.getLogger(__name__)
@@ -667,19 +661,6 @@ def _homes(directory: dict, cells: dict) -> dict[str, tuple[int, str]]:
     return out
 
 
-def _events(db: Session, day: date) -> list:
-    return (db.query(LiveStaffEvent).filter(LiveStaffEvent.day == day)
-            .order_by(LiveStaffEvent.at, LiveStaffEvent.id).all())
-
-
-def _unit_ids(manager_id: int, homes: dict, events: list) -> list[str]:
-    ids = {eid for eid, (mid, _) in homes.items() if mid == manager_id}
-    for ev in events:
-        if ev.status in ("approved", "pending") and manager_id in (ev.from_manager_id, ev.to_manager_id):
-            ids.add(ev.employee_id)
-    return sorted(ids)
-
-
 def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:
     """The shift-day on the clock for a unit of this shift (`/live`'s rule)."""
     now = now or datetime.now(TZ)
@@ -699,207 +680,30 @@ def event_at(db: Session, day: date, shift: Optional[int], hhmm: str) -> datetim
     return at
 
 
-def _timeline(home_unit: Optional[int], home_cell: Optional[str], home_role: str,
-              events: list) -> list[tuple[Optional[datetime], Optional[int], Optional[str], str]]:
-    """[(from, unit, cell, role)] — what was in force from each moment on."""
-    out = [(None, home_unit, home_cell, home_role)]
-    for ev in events:
-        _, unit, cell, role = out[-1]
-        if ev.kind == "move":
-            unit, cell = ev.to_manager_id, ev.to_cell or None
-        elif ev.kind == "cell":
-            cell = ev.to_cell or cell
-        elif ev.kind == "role":
-            role = ev.to_role or role
-        out.append((ev.at, unit, cell, role))
-    return out
-
-
-def _at(tl: list, moment: datetime) -> tuple:
-    cur = tl[0]
-    for step in tl[1:]:
-        if step[0] <= moment:
-            cur = step
-    return cur
-
-
-def _overlap_in_unit(tl: list, unit: int, a: datetime, b: datetime) -> tuple[float, Optional[datetime], Optional[datetime]]:
-    """Minutes of [a, b] spent in `unit`, and where that stretch starts / ends."""
-    total, first, last = 0.0, None, None
-    for i, (frm, u, _, _) in enumerate(tl):
-        seg_a = max(a, frm) if frm else a
-        nxt = tl[i + 1][0] if i + 1 < len(tl) else None
-        seg_b = min(b, nxt) if nxt else b
-        if u == unit and seg_b > seg_a:
-            total += _mins(seg_a, seg_b)
-            first = first or seg_a
-            last = seg_b
-    return total, first, last
-
-
-# ── the unit's day ────────────────────────────────────────────────────────────
-
-def _build(*, day: date, now: datetime, manager_id: int, ids: list[str], store: dict,
-           directory: dict, homes: dict, cells: dict, units: dict, events: list,
-           formula: Optional[dict], close_rec: Optional[LiveDayClose],
-           notice: Optional[LiveAllLeftNotice]) -> dict:
-    """One unit's day out of the stored read — the rows, the counts and where the
-    day stands. Pure: no Verifix, no writes; the page and the job read it alike."""
-    emps = directory.get("emps") or {}
-    approved: dict[str, list] = defaultdict(list)
-    pending: dict[str, list] = defaultdict(list)
-    for ev in events:
-        if ev.status == "approved":
-            approved[ev.employee_id].append(ev)
-        elif ev.status == "pending":
-            pending[ev.employee_id].append(ev)
-
-    type_counts: Counter = Counter()
-    n_report = 0
-    rows = []
-    for eid in ids:
-        entry = store.get(eid) or {}
-        rec = entry.get("ts")
-        n_report += 1 if rec else 0
-        marks = [(datetime.fromisoformat(x[0]), x[1]) for x in entry.get("m") or []]
-        type_counts.update(t for _, t in marks)
-        person = _person(day, now, rec, marks, formula)
-        home_unit, home_cell = homes.get(eid, (None, None))
-        role0 = (rec or {}).get("job") or (emps.get(eid) or {}).get("job") or ""
-        tl = _timeline(home_unit, home_cell, role0, approved.get(eid, []))
-        t_in, t_out = person["in"], person["out"]
-        moment = min(now, person["end"]) if person["end"] and person["end"] < now else now
-        unit_now = _at(tl, now)[1]
-        if t_in:
-            stop = t_out or min(now, (person["end"] + timedelta(hours=6)) if person["end"] else now)
-            span = max(_mins(t_in, stop), 0.0)
-            mins_u, seg_a, seg_b = _overlap_in_unit(tl, manager_id, t_in, stop)
-            share = (mins_u / span) if span > 0 else (1.0 if _at(tl, t_in)[1] == manager_id else 0.0)
-            in_unit = mins_u > 0 or share > 0
-        else:
-            ref = person["begin"] or moment
-            in_unit, share, seg_a, seg_b = _at(tl, ref)[1] == manager_id, 0.0, None, None
-        touches = any(manager_id in (ev.from_manager_id, ev.to_manager_id)
-                      for ev in approved.get(eid, []) + pending.get(eid, []))
-        if not in_unit and not touches:
-            continue
-
-        # Status as THIS unit sees it.
-        status = person["status"]
-        moved = None
-        moves = [ev for ev in approved.get(eid, []) if ev.kind == "move"]
-        if moves:
-            last_mv = moves[-1]
-            if unit_now != manager_id and last_mv.from_manager_id == manager_id:
-                moved = {"dir": "out", "unit": (units.get(last_mv.to_manager_id) or {}).get("name"),
-                         "at": _hm(last_mv.at)}
-                status = "moved_out"
-            elif unit_now == manager_id and last_mv.to_manager_id == manager_id:
-                moved = {"dir": "in", "unit": (units.get(last_mv.from_manager_id) or {}).get("name"),
-                         "at": _hm(last_mv.at)}
-
-        end_state = next((st for st in reversed(tl) if st[1] == manager_id), tl[0])
-        roles = [(s[0], s[3]) for s in tl]
-        role_changes = [{"at": _hm(frm), "role": r} for frm, r in roles[1:] if r != roles[0][1]]
-        cell_changes = [{"at": _hm(s[0]), "cell": s[2]} for s in tl[1:] if s[2] != tl[0][2]]
-        hours = person["hours"]
-        hours_u = round(hours * share, 2) if hours is not None and t_in else None
-        cell_key = end_state[2]
-        cell = cells.get(cell_key) if cell_key else None
-        arrived_here = t_in is not None and seg_a is not None and abs(_mins(seg_a, t_in)) < 1
-        left_here = t_out is not None and seg_b is not None and abs(_mins(seg_b, t_out)) < 1
-        rows.append({
-            "employee_id": eid,
-            "name": (rec or {}).get("name") or (emps.get(eid) or {}).get("name") or f"#{eid}",
-            "role": end_state[3] or role0,
-            "role0": role0,
-            "role_changes": role_changes,
-            "cell": cell["code"] if cell else (cell_key.zfill(4) if cell_key and cell_key.isdigit() else cell_key),
-            "cell_id": cell["id"] if cell else None,
-            "cell_changes": cell_changes,
-            "schedule": person["schedule"],
-            "begin": _hm(person["begin"]), "end": _hm(person["end"]),
-            "in": _hm(t_in), "out": _hm(t_out),
-            "in_at": _iso(t_in), "out_at": _iso(t_out),
-            "in_src": person["in_src"], "out_src": person["out_src"],
-            "held": person["held"] if status == "inside" else None,
-            "status": status,
-            "hours": hours_u, "hours_total": round(hours, 2) if hours is not None else None,
-            "share": round(share, 3) if t_in else None,
-            "so_far": person["so_far"],
-            "from": _hm(seg_a) if seg_a and t_in and not arrived_here else None,
-            "until": (_hm(seg_b) if seg_b and (t_out or seg_b < now) and not left_here
-                      and status not in ("moved_out", "inside", "break", "no_out") else None),
-            "late": person["late"] if arrived_here else None,
-            "early_in": person["early_in"] if arrived_here else None,
-            "early_out": person["early_out"] if left_here else None,
-            "missing": person["missing"] and unit_now == manager_id,
-            "moved": moved,
-            "pending": [_event_out(ev, units) for ev in pending.get(eid, [])],
-            "marks": person["marks"],
-            "raw": person["raw"],
-        })
-
-    counts = Counter(r["status"] for r in rows)
-    # An arrival without an exit is still an ARRIVAL (the operator's call,
-    # 2026-10-01): it counts as came, and the missing exit is what is flagged.
-    came = sum(1 for r in rows if r["in"])
-    inside = counts["inside"] + counts["break"]
-    missing = sum(1 for r in rows if r["missing"])
-    late = sum(1 for r in rows if r["late"])
-    early_out = sum(1 for r in rows if r["early_out"])
-    pend = sum(1 for ev in events if ev.status == "pending"
-               and manager_id in (ev.from_manager_id, ev.to_manager_id))
-    outs = [datetime.fromisoformat(r["out_at"]) for r in rows if r["status"] == "left" and r["out_at"]]
-    outs += [ev.at for eid in ids for ev in approved.get(eid, [])
-             if ev.kind == "move" and ev.from_manager_id == manager_id and ev.at <= now]
-    last_out = max(outs) if outs else None
-
-    # A day closes only BY HAND (the operator, 2026-10-04). «Everybody left» is
-    # what the brigadir is told: somebody came, nobody is inside or on a
-    # break, and nobody is still due to come. A missing check-out does not
-    # hold it — the person is not inside, and the notice names how many.
-    if close_rec:
-        close = {"state": "closed", "at": _iso(_local(close_rec.closed_at)),
-                 "by": close_rec.closed_by_name}
-    elif not came:
-        close = {"state": "waiting"}
-    elif inside == 0 and counts["not_yet"] == 0:
-        close = {"state": "all_left", "last_out": _iso(last_out)}
-    else:
-        close = {"state": "open", "n": inside, "expected": counts["not_yet"]}
-    close["missing"] = missing
-    close["pending"] = pend
-    close["notified_at"] = _iso(_local(notice.sent_at)) if notice and notice.sent_at else None
-
-    return {
-        "rows": rows,
-        "counts": {"total": len(rows), "came": came, "inside": inside, "left": counts["left"],
-                   "absent": counts["absent"], "not_yet": counts["not_yet"], "off": counts["off"],
-                   "moved_out": counts["moved_out"], "late": late, "early_out": early_out,
-                   "missing": missing,
-                   "hours": round(sum(r["hours"] or 0 for r in rows), 1)},
-        "close": close,
-        "diag": {"employees": len(ids), "report_rows": n_report,
-                 "marks": sum(type_counts.values()), "mark_types": dict(type_counts),
-                 "directed": any(t in DIRECTED for t in type_counts),
-                 "in_sources": dict(Counter(r["in_src"] for r in rows if r["in_src"])),
-                 "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"])),
-                 # Why each «inside» row has no check-out: the report's was set
-                 # aside for a door entry after it ("back"), or the report has
-                 # none yet and the last door mark is an entry ("no_report_out").
-                 "held": dict(Counter(r["held"] for r in rows if r.get("held")))},
-    }
-
-
 def _configured(cfg: dict) -> bool:
     return bool(cfg["login"] and cfg.get("password") and cfg["filial_id"])
 
 
-def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = False) -> dict:
-    """The unit's day off the STORED read. Verifix is asked only on «Yangilash»
-    (`force`), for a day nobody stored yet, or when a running day's read is
-    older than `STALE_S` — the job that keeps it fresh has stopped."""
+def _doc_ids(db: Session, day: date) -> set[str]:
+    """Everybody a live document of the day names — read with the day even if
+    Verifix has since moved them out of the workload cells."""
+    from app.models import LiveDocument
+    out: set[str] = set()
+    for (pl,) in db.query(LiveDocument.payload).filter(
+            LiveDocument.day == day, LiveDocument.status.in_(("draft", "approved"))):
+        for e in (pl or {}).get("employees") or []:
+            if e.get("employee_id"):
+                out.add(str(e["employee_id"]))
+    return out
+
+
+def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = False) -> dict:
+    """The stored read behind one unit's day (`services/live_staff` builds the
+    rows), read from Verifix first only when it has to be: «Yangilash»
+    (`force`), a day nobody stored yet, somebody of this unit missing from it,
+    or a running day's read older than `STALE_S` — the job that keeps it fresh
+    has stopped. An error comes back as {"error": code[, "message"]}; with a
+    stored read in hand a failed re-read keeps it and says so (`read_error`)."""
     cfg = verifix.config(db, with_password=True)
     if not _configured(cfg):
         return {"error": "not_configured"}
@@ -907,20 +711,16 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
     unit = units.get(manager_id)
     if not unit:
         return {"error": "no_unit"}
-    unit_codes = sorted((c for c in cells.values() if c["manager_id"] == manager_id),
-                        key=lambda c: c["code"])
-    if not unit_codes:
+    if not any(c["manager_id"] == manager_id for c in cells.values()):
         return {"error": "no_cells"}
     today = shift_day(db, unit["shift"])
     day = day or today
-
     try:
         directory, dir_at = _directory(db, cfg, 120 if force else DIR_FALLBACK_S)
     except verifix.VerifixError as exc:
         return {"error": exc.code, "message": exc.message}
     homes = _homes(directory, cells)
-    events = _events(db, day)
-    ids = _unit_ids(manager_id, homes, events)
+    ids = sorted({eid for eid, (mid, _) in homes.items() if mid == manager_id} | _doc_ids(db, day))
 
     key = _day_key(day)
     row = _row(db, key)
@@ -941,84 +741,12 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
             read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
         store = data.get("emps") or {}
         covered = _covered_at(data, manager_id)
-        events = _events(db, day)
         now = now_local()
     elif row and row.error and row.error_at and (row.read_at is None or row.error_at > row.read_at):
         read_error = {"message": row.error, "at": _iso(_local(row.error_at))}
-
-    close_rec = (db.query(LiveDayClose)
-                 .filter(LiveDayClose.manager_id == manager_id, LiveDayClose.day == day).first())
-    notice = (db.query(LiveAllLeftNotice)
-              .filter(LiveAllLeftNotice.manager_id == manager_id, LiveAllLeftNotice.day == day).first())
-    formula = _formula(db)
-    view = _build(day=day, now=now, manager_id=manager_id, ids=ids, store=store,
-                  directory=directory, homes=homes, cells=cells, units=units, events=events,
-                  formula=formula, close_rec=close_rec, notice=notice)
-    view.update({
-        "day": day.isoformat(), "today": today.isoformat(), "is_today": day == today,
-        "unit": {"id": manager_id, "name": unit["name"], "shift": unit["shift"]},
-        "now": _iso(now), "pulled_at": _iso(covered), "directory_at": _iso(dir_at),
-        "read_error": read_error,
-        # The job keeps each unit's CURRENT shift-day read; an earlier day stays
-        # as it was last read until somebody presses «Yangilash».
-        "auto": {"on": day == today, "every": HOT_S},
-        "cells": [{"code": c["code"], "id": c["id"]} for c in unit_codes],
-        "formula": ({"names": formula["names"], "share": formula["share"]} if formula else None),
-        "rules": {"missing_after": MISSING_AFTER_MIN, "late_grace": LATE_GRACE_MIN,
-                  "early_grace": EARLY_GRACE_MIN},
-    })
-    return view
-
-
-def _event_out(ev: LiveStaffEvent, units: dict) -> dict:
-    return {
-        "id": ev.id, "day": ev.day.isoformat(), "employee_id": ev.employee_id,
-        "worker_name": ev.worker_name, "kind": ev.kind, "at": _hm(ev.at), "at_iso": _iso(ev.at),
-        "from_manager_id": ev.from_manager_id, "to_manager_id": ev.to_manager_id,
-        "from_unit": (units.get(ev.from_manager_id) or {}).get("name"),
-        "to_unit": (units.get(ev.to_manager_id) or {}).get("name"),
-        "from_cell": ev.from_cell, "to_cell": ev.to_cell,
-        "from_role": ev.from_role, "to_role": ev.to_role,
-        "note": ev.note, "status": ev.status,
-        "created_by": ev.created_by_name,
-        "created_at": ev.created_at.astimezone(TZ).isoformat(timespec="minutes") if ev.created_at else None,
-        "decided_by": ev.decided_by_name,
-        "decided_at": ev.decided_at.astimezone(TZ).isoformat(timespec="minutes") if ev.decided_at else None,
-    }
-
-
-def events_for(db: Session, day: date, manager_id: Optional[int] = None) -> list[dict]:
-    _, units = _registry(db)
-    q = db.query(LiveStaffEvent).filter(LiveStaffEvent.day == day)
-    if manager_id:
-        q = q.filter((LiveStaffEvent.from_manager_id == manager_id)
-                     | (LiveStaffEvent.to_manager_id == manager_id))
-    return [_event_out(ev, units) for ev in q.order_by(LiveStaffEvent.at, LiveStaffEvent.id).all()]
-
-
-def meta(db: Session) -> dict:
-    """The units that own a workload cell, with those cells (move targets), and
-    the job titles (role changes)."""
-    cells, units = _registry(db)
-    by_unit = defaultdict(list)
-    for c in cells.values():
-        if c["manager_id"] in units:
-            by_unit[c["manager_id"]].append(c["code"])
-    jobs: list[str] = []
-    cfg = verifix.config(db, with_password=True)
-    if _configured(cfg):
-        try:
-            directory, _ = _directory(db, cfg, DIR_FALLBACK_S)
-            jobs = sorted({j for j in (directory.get("jobs") or {}).values() if j})
-        except verifix.VerifixError:
-            jobs = []
-    return {
-        "units": sorted(({"id": mid, "name": u["name"], "shift": u["shift"],
-                          "cells": sorted(by_unit[mid])} for mid, u in units.items() if mid in by_unit),
-                        key=lambda u: (u["shift"] or 9, u["name"] or "")),
-        "jobs": jobs,
-        "every": HOT_S,
-    }
+    return {"day": day, "today": today, "unit": unit, "directory": directory,
+            "dir_at": dir_at, "store": store, "covered": covered, "now": now,
+            "read_error": read_error}
 
 
 # ── the minute job ────────────────────────────────────────────────────────────
@@ -1044,14 +772,13 @@ def _due_days(db: Session, shifts: set, now_tz: datetime) -> dict[date, float]:
     return out
 
 
-def _notify_all_left(db: Session, manager_id: int, day: date, view: dict,
+def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, close: dict,
                      last_out: datetime) -> bool:
     """Tell the unit's brigadir, ONCE, that everybody who came has left. The row
     is committed first: it is what keeps a second pass from sending it again."""
     from sqlalchemy.exc import IntegrityError
-    c, cl = view["counts"], view["close"]
-    db.add(LiveAllLeftNotice(manager_id=manager_id, day=day, came=c["came"],
-                             missing=c["missing"], pending=cl["pending"], last_out=last_out))
+    db.add(LiveAllLeftNotice(manager_id=manager_id, day=day, came=counts["came"],
+                             missing=counts["missing"], pending=close["pending"], last_out=last_out))
     try:
         db.commit()
     except IntegrityError:
@@ -1060,10 +787,10 @@ def _notify_all_left(db: Session, manager_id: int, day: date, view: dict,
     try:
         from app.routers.staff import _notify_supervisor_all
         _notify_supervisor_all(db, manager_id, "live_all_left", {
-            "date": day.strftime("%d.%m.%Y"), "came": c["came"], "last_out": _hm(last_out),
+            "date": day.strftime("%d.%m.%Y"), "came": counts["came"], "last_out": _hm(last_out),
             # A line whose one value is blank is dropped (`_render_body`).
-            "missing": c["missing"] or "", "pending": cl["pending"] or "",
-        }, "info")
+            "missing": counts["missing"] or "", "pending": close["pending"] or "",
+        }, "info", subject=("live_day", f"{manager_id}:{day.isoformat()}"))
         db.commit()
     except Exception:  # noqa: BLE001 — a DM that fails must not stop the pass
         db.rollback()
@@ -1071,40 +798,46 @@ def _notify_all_left(db: Session, manager_id: int, day: date, view: dict,
     return True
 
 
-def _notices(db: Session, day: date, units: dict, unit_days: dict, cells: dict,
-             directory: dict, homes: dict) -> int:
+def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
     """Every unit whose current shift-day this is and whose people have all
     left gets its notice — while the last exit is recent (`NOTICE_WINDOW_MIN`),
     so a deploy in the afternoon never tells last night's brigadirs."""
+    from app.services import live_staff
     row = _row(db, _day_key(day))
     store = ((row.data or {}).get("emps") or {}) if row else {}
     if not store:
         return 0
+    # Nothing is said while the page is admin-only, and only to a brigadir who
+    # can open it — the notice is not written either, so the day is told once
+    # the page is opened (the operator: «as soon as we open this page»).
+    if not live_staff.lab_open(db):
+        return 0
+    from app import identity
+    from app.permissions import get_page_access
+    access = get_page_access(db)
     done = {m for (m,) in db.query(LiveAllLeftNotice.manager_id).filter(LiveAllLeftNotice.day == day)}
     closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == day)}
-    events = _events(db, day)
-    formula = _formula(db)
-    now = now_local()
+    ctx = live_staff.load(db, day, directory, store)
+    now = ctx.now
     sent = 0
     for mid, d in unit_days.items():
         if d != day or mid in done or mid in closed:
             continue
-        ids = _unit_ids(mid, homes, events)
-        if not ids:
+        if not live_staff.can_open(db, identity.profile_key("supervisor", mid), access):
             continue
-        view = _build(day=day, now=now, manager_id=mid, ids=ids, store=store, directory=directory,
-                      homes=homes, cells=cells, units=units, events=events, formula=formula,
-                      close_rec=None, notice=None)
-        cl = view["close"]
+        ud = live_staff.unit_day(ctx, mid)
+        if not ud["workers"] and not ud["extras"]:
+            continue
+        cl = live_staff.close_state(ud, day, None, None, live_staff.pending_count(db, mid, day))
         if cl["state"] != "all_left" or not cl.get("last_out"):
             continue
         last_out = datetime.fromisoformat(cl["last_out"])
         if (now - last_out).total_seconds() > NOTICE_WINDOW_MIN * 60:
             continue
-        if _notify_all_left(db, mid, day, view, last_out):
+        if _notify_all_left(db, mid, day, ud["counts"], cl, last_out):
             sent += 1
             log.info("staff-live: unit %s told everybody left on %s (last %s, came %s)",
-                     mid, day, _hm(last_out), view["counts"]["came"])
+                     mid, day, _hm(last_out), ud["counts"]["came"])
     return sent
 
 
@@ -1133,9 +866,7 @@ def _pass(db: Session) -> None:
         last = datetime.fromisoformat(row.data["all_at"]) if row and (row.data or {}).get("all_at") else None
         if last is not None and (now_local() - last).total_seconds() < every - 15:
             continue
-        events = _events(db, day)
-        ids = sorted(set(homes) | {ev.employee_id for ev in events
-                                   if ev.status in ("approved", "pending")})
+        ids = sorted(set(homes) | _doc_ids(db, day))
         t0 = _time.monotonic()
         try:
             _read_day(db, cfg, day, ids)
@@ -1144,7 +875,7 @@ def _pass(db: Session) -> None:
             log.warning("staff-live: reading %s failed (%s: %s)", day, exc.code, exc.message)
             continue
         log.info("staff-live: read %s — %d people in %.1f s", day, len(ids), _time.monotonic() - t0)
-        sent += _notices(db, day, units, unit_days, cells, directory, homes)
+        sent += _notices(db, day, unit_days, directory)
     if sent:
         from app.services import action_log
         action_log.record_system("attendance", "lab.live_all_left_notified", db,
