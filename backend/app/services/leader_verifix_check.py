@@ -77,6 +77,17 @@ _NOT_LEADER_RE = re.compile(
 
 KIND_WORD = {"leader": "Lider", "acting": "Lider o'rnida", None: "Aniqlanmadi"}
 
+# Profile → Verifix employee, as the OPERATOR named them after the first report
+# (2026-10-04): people the strict matcher could not tie and a person could. A
+# pin wins over every rule above — it is a human saying these two are one
+# person. Folded on both sides (`_name_tokens`), so spelling or alphabet drift
+# still lands. Adding one re-runs the pin pass by itself: its flag is derived
+# from this dict (`startup.check_leader_kind_pins`).
+PINS = {
+    "Sarimsoqova Arapat Qosimjonovna": "SARIMSAQOVA ARAPATXON QOSIMJONOVNA",
+}
+_PIN_KEYS = {" ".join(_name_tokens(k)): " ".join(_name_tokens(v)) for k, v in PINS.items()}
+
 
 def is_leader_job(job: str) -> bool:
     j = job or ""
@@ -153,6 +164,17 @@ def _match(toks: list[str], own: set, unit: set, working: tuple, gone: tuple,
     if len(toks) < 2:
         return {"reason": "short_name"}
     full, two = " ".join(toks), " ".join(toks[:2])
+    pinned = _PIN_KEYS.get(full)
+    if pinned:
+        hits = working[0].get(pinned) or []
+        if len(hits) == 1:
+            return {"emp": hits[0], "how": "pin"}
+        if hits:
+            return {"reason": "ambiguous", "cands": hits}
+        gone_hits = gone[0].get(pinned) or []
+        if gone_hits:
+            return {"reason": "not_working", "cands": gone_hits}
+        return {"reason": "pin_not_found"}
     cands = working[0].get(full) or []
     if cands:
         hit, by = _narrow(cands, own, unit)
@@ -190,8 +212,14 @@ def _cell_key(code) -> str | None:
     return verifix._code_key(s) if s else None
 
 
-def run(db: Session) -> dict:
-    """Read Verifix, decide every leader profile, SAVE, and return the report."""
+def pinned_profiles(db: Session) -> list[RoleProfile]:
+    return [p for p in db.query(RoleProfile).filter(RoleProfile.role == "leader").all()
+            if " ".join(_name_tokens(p.name)) in _PIN_KEYS]
+
+
+def run(db: Session, only: set[int] | None = None) -> dict:
+    """Read Verifix, decide every leader profile (or just ``only``), SAVE, and
+    return the report."""
     people = _people(db)
     working_rows = [p for p in people if p["status"] == "W"]
     working, gone = _index(working_rows), _index([p for p in people if p["status"] != "W"])
@@ -221,6 +249,8 @@ def run(db: Session) -> dict:
 
     profiles = (db.query(RoleProfile).filter(RoleProfile.role == "leader")
                 .order_by(RoleProfile.name).all())
+    if only is not None:
+        profiles = [p for p in profiles if p.id in only]
     checked_at = leader_kind.now_iso()
     results = []
     for prof in profiles:
@@ -257,8 +287,10 @@ def run(db: Session) -> dict:
         r["shared"] = bool(r["emp"] and by_emp[r["emp"]["id"]] > 1)
 
     matched_ids = {r["emp"]["id"] for r in results if r["emp"]}
-    orphans = sorted((x for k in vfx_leaders for x in vfx_leaders[k] if x["id"] not in matched_ids),
-                     key=lambda x: (x["cell"] or "", x["name"]))
+    # Leaders with no profile mean something only when every profile was read.
+    orphans = [] if only is not None else sorted(
+        (x for k in vfx_leaders for x in vfx_leaders[k] if x["id"] not in matched_ids),
+        key=lambda x: (x["cell"] or "", x["name"]))
     names = {p.id: p.name for p in profiles}
     for x in orphans:
         owner = cell_owner.get(x["cell"])
@@ -334,6 +366,8 @@ def _reason_text(r: dict) -> str:
     if why == "namesake":
         return ("Verifix has the same surname and first name with ANOTHER patronymic: "
                 + "; ".join(_who(x) for x in r["cands"][:3]))
+    if why == "pin_not_found":
+        return "no working or former employee carries exactly the pinned Verifix name"
     if why == "not_working":
         x = r["cands"][0]
         gone = f", dismissed {date.fromisoformat(x['dismissed']):%d.%m.%Y}" if x.get("dismissed") else ""
@@ -462,7 +496,8 @@ def _sheet(wb: Workbook, title: str, head: list[str], rows: list[list]) -> None:
 
 _HOW = {"full": "to'liq ism", "two": "familiya + ism", "cell": "yacheyka bo'yicha",
         "unit": "brigada yacheykalari bo'yicha", "swap": "ism + familiya (teskari)",
-        "near": "familiya boshqacha yozilgan, o'z yacheykasida"}
+        "near": "familiya boshqacha yozilgan, o'z yacheykasida",
+        "pin": "operator ko'rsatgan"}
 _SAVED = {"set": "ha (Verifix)", "manual": "yo'q — qo'lda belgilangan", "none": "yo'q"}
 
 
@@ -528,6 +563,55 @@ def _why(exc: Exception) -> str:
     if isinstance(exc, verifix.VerifixError):
         return f"Verifix answered «{exc.code}» {exc.message or ''}".strip()
     return f"{type(exc).__name__}: {exc}"[:300]
+
+
+def pins_text(rep: dict) -> str:
+    def e(v) -> str:
+        return html.escape(str(v), quote=False)
+    L = [f"<b>Leaders on Verifix — your corrections applied</b> · {rep['at']:%d.%m.%Y %H:%M}", ""]
+    for r in rep["results"]:
+        L.append(f"<b>{e(r['p'].name)}</b> — {e(_line_place(r))}")
+        x = r["emp"]
+        if x:
+            cell = x["cell_raw"] or x["cell"]
+            L.append(f"→ Verifix: {e(x['name'])} · «{e(x['job'] or '—')}»"
+                     + (f" · cell {e(cell)}" if cell else ""))
+        else:
+            L.append(f"→ {e(_reason_text(r))}")
+        if r["saved"] == "set":
+            L.append(f"Saved: <b>{KIND_WORD[r['kind']]}</b>")
+        elif r["saved"] == "manual":
+            L.append(f"Left as set by hand: <b>{KIND_WORD[r['p'].leader_kind]}</b>")
+        else:
+            L.append("Nothing saved — set it by hand on the profile page.")
+        L.append("")
+    return "\n".join(L).strip()
+
+
+def send_pins(db: Session, chat_id: int, *_window) -> int:
+    """Apply ``PINS`` — only the pinned profiles — and DM what each became."""
+    if not settings.telegram_bot_token:
+        raise RuntimeError("telegram bot token not configured")
+    ids = {p.id for p in pinned_profiles(db)}
+    if not ids:
+        _post("sendMessage", {"chat_id": chat_id, "text":
+              "Leaders on Verifix: no leader profile carries the corrected names "
+              + "; ".join(PINS) + " — nothing was changed."})
+        return 1
+    try:
+        rep = run(db, only=ids)
+    except Exception as exc:
+        db.rollback()
+        try:
+            _post("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"Leader corrections on Verifix could not run: {_why(exc)}. "
+                        "Nothing was saved; it tries again on the next deploy."})
+        except Exception:
+            pass
+        raise
+    _post("sendMessage", {"chat_id": chat_id, "text": pins_text(rep), "parse_mode": "HTML"})
+    return 1
 
 
 def send(db: Session, chat_id: int, *_window) -> int:

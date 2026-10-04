@@ -7005,6 +7005,41 @@ def _leader_kind_job() -> None:
                       leader_verifix_check.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the operator's corrections to that check ───────────────────────
+# After the first report the operator named the Verifix employee of profiles
+# the strict matcher could not tie (`leader_verifix_check.PINS`). This pass
+# applies ONLY those, saves each kind and DMs one short confirmation. Its flag
+# is derived from the pins themselves, so a pin added later re-runs it once
+# with no key to remember; deleting the module (with `check_leader_kinds`) ends it.
+_LEADER_KIND_PINS_DELAY_S = 100
+
+
+def check_leader_kind_pins() -> None:
+    """Apply the operator's Verifix name pins, once per pin set. Never raises."""
+    try:
+        import hashlib
+        import json
+        from app.services.leader_verifix_check import PINS
+        digest = hashlib.sha1(json.dumps(sorted(PINS.items()), ensure_ascii=False)
+                              .encode("utf-8")).hexdigest()[:10]
+        flag = f"leader_kind_verifix_pins_{digest}"
+        if not PINS or not _report_pending(flag):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("leader-kind-verifix-pins",
+                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_KIND_PINS_DELAY_S),
+                    _leader_kind_pins_job, args=(flag,))
+    except Exception as exc:
+        print(f"[startup] leader Verifix pins could not be scheduled: {exc}")
+
+
+def _leader_kind_pins_job(flag: str) -> None:
+    from app.services import leader_verifix_check
+    _send_report_once(flag, "leader Verifix pins",
+                      leader_verifix_check.send_pins, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

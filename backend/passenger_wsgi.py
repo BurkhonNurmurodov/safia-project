@@ -105,7 +105,7 @@ try:
         report_t11_proofs,
         report_dispute_queue,
         report_wc_plan_history,
-        check_leader_kinds,
+        check_leader_kinds, check_leader_kind_pins,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -487,6 +487,9 @@ try:
     # is which. Remove this line, `startup.check_leader_kinds` and
     # `services/leader_verifix_check.py` once it has been sent.
     check_leader_kinds()
+    # …and the operator's name corrections to it (`leader_verifix_check.PINS`),
+    # once per pin set. Goes with the line above.
+    check_leader_kind_pins()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
