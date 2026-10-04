@@ -524,7 +524,7 @@ function rankGroups(rows, sort, tl) {
 }
 
 function RankingCard({
-  T, tl, rows, cellIds, bands, minRanked, isAdmin, onEditBands, onOpen,
+  T, stL, tl, rows, cellIds, bands, minRanked, isAdmin, onEditBands, onOpen,
   sort, onSort, q, setQ, showNone, setShowNone, loading, error, onRetry, dim,
   oneUnit, plain, days,
 }) {
@@ -1732,7 +1732,7 @@ export default function WorkerConcerns() {
                       <UnitsCard T={T} tl={tl} units={units} bands={bands} minRanked={minRanked} parts={parts}
                         onPick={pickUnit} plain={plain} />
                     )}
-                    <RankingCard T={T} tl={tl} rows={ldRows} cellIds={cellIds} bands={bands} minRanked={minRanked}
+                    <RankingCard T={T} stL={stL} tl={tl} rows={ldRows} cellIds={cellIds} bands={bands} minRanked={minRanked}
                       isAdmin={!!meta.is_admin} onEditBands={openBands}
                       onOpen={openLeader}
                       sort={rankSort}
