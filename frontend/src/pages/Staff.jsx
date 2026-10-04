@@ -481,7 +481,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const [rawFilters, setFilters]        = usePersistentState(S.pk("staff_workers_filters"), INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
   const [exporting, setExporting]       = useState(false);
-  const [exportDone, setExportDone]     = useState(false);
+  // The export's «sent» notice — the shared Toast, never a pasted fixed box.
+  const exportToast                     = useToast();
   const [nameAsc, setNameAsc]           = usePersistentState(S.pk("staff_workers_name_sort"), true);
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
   // Live only: the status strip over the table, and the row an admin opened to
@@ -723,8 +724,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     setExporting(true);
     try {
       await exportMutation.mutateAsync(rows);
-      setExportDone(true);
-      setTimeout(() => setExportDone(false), 4000);
+      exportToast.success(t("staff.exportToast"));
     } finally {
       setExporting(false);
     }
@@ -794,12 +794,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
           <KPICard
             label={t("staff.kpiCame")}
             value={cameToWorkCount}
-            sub={`${t("staff.of")} ${totalWorkers} ${t("staff.total")} · ${fmtPct(cameRatio)}`}
+            sub={`${t("staff.ofTotal").replace("{n}", totalWorkers)} · ${fmtPct(cameRatio)}`}
           />
           <KPICard
             label={t("staff.kpiCountedZagruzka")}
             value={zagruzkaCount}
-            sub={`${t("staff.of")} ${zagruzkaRoleTotal} ${t("staff.total")}`}
+            sub={`${t("staff.ofTotal").replace("{n}", zagruzkaRoleTotal)}`}
           />
           <KPICard
             label={t("staff.kpiTotalHours")}
@@ -894,25 +894,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         </button>
       </div>
 
-      {/* Export success toast — fixed top-right, outside normal flow */}
-      {exportDone && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed",
-            top: 16,
-            right: 16,
-            zIndex: 9999,
-            background: "#22c55e",
-            color: "#fff",
-            maxWidth: 320,
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t("staff.exportToast")}</span>
-        </div>
-      )}
+      {exportToast.node}
 
       {workers.length === 0 ? (
         <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>
@@ -1200,12 +1182,12 @@ export function CellDayView({ date, cellSel, hasCellData }) {
           <KPICard
             label={t("staff.kpiCame")}
             value={worked.length}
-            sub={`${t("staff.of")} ${allRows.length} ${t("staff.total")} · ${fmtPct(cameRatio)}`}
+            sub={`${t("staff.ofTotal").replace("{n}", allRows.length)} · ${fmtPct(cameRatio)}`}
           />
           <KPICard
             label={t("staff.kpiCountedZagruzka")}
             value={zagRows.length}
-            sub={`${t("staff.of")} ${zagAll.length} ${t("staff.total")}`}
+            sub={`${t("staff.ofTotal").replace("{n}", zagAll.length)}`}
           />
           <KPICard
             label={t("staff.kpiTotalHours")}
@@ -1711,7 +1693,13 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const [returnTime, setReturnTime]     = useState("");     // "HH:MM" (must be > transferTime)
   const [returnPickerOpen, setReturnPickerOpen] = useState(false);
   const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState("");
+  // A save's refusal belongs to the inputs it judged: it is kept beside a
+  // signature of them and shown only while they still match, so picking the
+  // receiver it asked for (or changing the workers or the time) clears it.
+  const inputsSig = [target, newTask, [...selected].join("\u0001"), useTime, transferTime, useReturn, returnTime].join("\u0002");
+  const [errorState, setErrorState] = useState(null);   // { msg, sig }
+  const error = errorState && errorState.sig === inputsSig ? errorState.msg : "";
+  const setError = (msg) => setErrorState(msg ? { msg, sig: inputsSig } : null);
   const [taskToRemove, setTaskToRemove] = useState(null);  // admin-only task removal
   const [removingTask, setRemovingTask]  = useState(false);
   const [removeError, setRemoveError]    = useState("");
@@ -4058,7 +4046,7 @@ function DatePicker({ value, onChange, availableDates, placeholder }) {
               onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              Clear date
+              {t("staff.clearDate")}
             </button>
           )}
         </div>
@@ -4349,7 +4337,9 @@ export function StaffPage() {
 
   // ── Delete modal state ────────────────────────────────────────────────────
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteToast, setDeleteToast] = useState(null); // null | "success" | "request"
+  // What a deletion did: removed (success — never red, which reads as a
+  // failure) or sent for approval (info).
+  const deleteToast = useToast();
 
   // Admins and shift-managers pick a supervisor to view. The backend scopes the
   // list to the shift-manager's own shift (admins see everyone).
@@ -4511,8 +4501,8 @@ export function StaffPage() {
 
   function handleDeleted(toastKey) {
     setTab("requests");
-    setDeleteToast(toastKey);
-    setTimeout(() => setDeleteToast(null), 4000);
+    if (toastKey === "success") deleteToast.success(t("staff.deleteSuccess"));
+    else deleteToast.info(t("staff.deleteRequestSent"));
   }
 
   return (
@@ -4573,21 +4563,7 @@ export function StaffPage() {
         />
       </div>
 
-      {/* Delete toast */}
-      {deleteToast && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed", top: 16, right: 16, zIndex: 9999,
-            background: deleteToast === "success" ? "#ef4444" : "#C8973F",
-            color: "#fff", maxWidth: 320,
-            boxShadow: `0 8px 24px ${deleteToast === "success" ? "rgba(239,68,68,.35)" : "rgba(200,151,63,.35)"}`,
-          }}
-        >
-          <Trash2 size={15} style={{ flexShrink: 0 }} />
-          <span>{deleteToast === "success" ? t("staff.deleteSuccess") : t("staff.deleteRequestSent")}</span>
-        </div>
-      )}
+      {deleteToast.node}
 
       {/* Workers tab */}
       {tab === "workers" && showWorkersTab && (
