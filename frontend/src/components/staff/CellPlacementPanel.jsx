@@ -11,7 +11,6 @@ import { cellLabel } from "../../utils/cellName";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import Button from "../ui/Button";
-import CellLink from "../ui/CellLink";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import EmptyState from "../ui/EmptyState";
 import FormField from "../ui/FormField";
@@ -847,8 +846,9 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
               className="flex items-center gap-2 px-2 sm:px-3 py-2 flex-wrap"
               style={{ background: "var(--bg-inner)" }}
             >
-              {/* Expansion is its own control, so the code beside it can stay a
-                  CellLink — nested interactive elements are not a thing. */}
+              {/* Expansion is its own control. The code beside it is plain text,
+                  never a CellLink: every placement on this tab is a draft until
+                  Save, and one tap onto /cells/:id would throw them all away. */}
               <button
                 type="button"
                 onClick={() => toggleExpand(b.code)}
@@ -862,13 +862,12 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <CellLink
-                    id={b.cellId}
+                  <span
                     className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded"
                     style={{ background: "var(--bg-card)", color: "var(--brand-text)" }}
                   >
                     {b.code}
-                  </CellLink>
+                  </span>
                   {b.leader && (
                     <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>{tl(b.leader)}</span>
                   )}
