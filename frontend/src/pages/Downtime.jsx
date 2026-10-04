@@ -69,6 +69,9 @@ const seasonMatrix = (labels, colTotals, catCol) => {
   return { labels, colTotals, matrix };
 };
 
+// Who may open «Xarajat» — the twin of COST_ROLES in routers/downtime.py.
+const COST_ROLES = ["admin", "shift-manager"];
+
 export default function Downtime() {
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { factory } = useFactory();
@@ -85,7 +88,14 @@ export default function Downtime() {
   // mean charted here (see components/idle/CategoryMatrix). Every filter and
   // both toggles below narrow BOTH views; only the period control differs,
   // because a matrix is selected a month at a time.
-  const [view, setView] = usePersistentState("downtime_view", "analysis"); // "analysis" | "percat" | "cost"
+  const [savedView, setView] = usePersistentState("downtime_view", "analysis"); // "analysis" | "percat" | "cost"
+  // «Xarajat» is offered to admins and shift managers only — the backend
+  // refuses every cost endpoint to anybody else (COST_ROLES in
+  // routers/downtime.py, keep the two in step). A «cost» value saved before the
+  // rule reads as the Analysis tab, so nobody lands on a tab they cannot open.
+  const { auth } = useAuth();
+  const canCost = COST_ROLES.includes(auth?.role);
+  const view = savedView === "cost" && !canCost ? "analysis" : savedView;
   const percat = view === "percat";
   // «Xarajat» is a self-contained tab: its own filters, its own fetch, its own
   // modals. The page's shared toolbar and the stopped/scope toggles below it
@@ -123,7 +133,6 @@ export default function Downtime() {
   // «Haftalik hisobot» — the PPTX deck. Admin only, and deliberately NOT
   // driven by the filters on screen: it is a fixed weekly report about one
   // plant, so the confirm writes its whole scope out before anything is built.
-  const { auth } = useAuth();
   const isAdmin = auth?.role === "admin";
   const [deckAsk, setDeckAsk] = useState(false);
   const [deckBusy, setDeckBusy] = useState(false);
@@ -951,7 +960,7 @@ export default function Downtime() {
           options={[
             ["analysis", t("downtime.viewAnalysis")],
             ["percat", t("downtime.viewPerCat")],
-            ["cost", t("downtime.viewCost")],
+            ...(canCost ? [["cost", t("downtime.viewCost")]] : []),
           ]}
         />
       </div>

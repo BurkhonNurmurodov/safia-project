@@ -1327,13 +1327,26 @@ def export_downtime_deck(
 # is a SUM rather than the headcount-weighted mean every KPI reads, so its
 # minutes deliberately do not match the «Tahlil» tab's — the same relationship
 # «Toifalar bo'yicha» already has, and the card says so before anybody reads a
-# figure. Scoped exactly as the page is (`scoped_manager_ids`), so a supervisor
-# reads their own unit's bill and nobody else's.
+# figure. Readable by admins and shift managers only (`COST_ROLES`, below), and
+# scoped as the page is (`scoped_manager_ids`), so a shift manager prices their
+# own shift ∩ plant.
 # ═════════════════════════════════════════════════════════════════════════════
 
 # The tree is bounded by cells × categories, not by days, but the EVENT query
 # is not — so the period is capped, the same 400 days the page's own export is.
 _COST_MAX_DAYS = 400
+
+# WHO may read what waiting cost (the operator, 2026-10-04): admins and shift
+# managers, nobody else — a supervisor, a leader, a top-manager or a «Kutish
+# mas'uli» who can open /downtime keeps the other two tabs and loses this one.
+# Checked in every cost endpoint, never merely by hiding the tab: the endpoints
+# are reachable without the UI. `COST_ROLES` in pages/Downtime.jsx is the twin.
+COST_ROLES = ("admin", "shift-manager")
+
+
+def _require_cost_viewer(payload: dict) -> None:
+    if payload.get("role") not in COST_ROLES:
+        raise HTTPException(status_code=403, detail="cost_forbidden")
 
 
 def _cost_scope(db: Session, payload: dict, factory: Optional[int],
@@ -1414,6 +1427,7 @@ def get_downtime_cost(
     — a wait the cell worked through cost nothing, so there is no second half of
     this measure to switch to.
     """
+    _require_cost_viewer(payload)
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, shift, manager_id)
     # The reader's category picks INTERSECTED with whatever they are locked to.
@@ -1464,6 +1478,7 @@ def get_downtime_cost_entries(
     `manager_id` is a query parameter, so the scope is re-decided here: a viewer
     who cannot see the unit in the table cannot read its events either.
     """
+    _require_cost_viewer(payload)
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, None, [manager_id])
     if manager_id not in ids:
@@ -1498,6 +1513,7 @@ def get_wage_rates(
     """Readable by everyone who can open the tab — the rate is derivable from
     any priced row anyway, so hiding it would only make the figures
     unexplainable. Writing is a different decision; see below."""
+    _require_cost_viewer(payload)
     return {"periods": wage_rate.load(db),
             "can_edit": payload.get("role") == "admin"}
 
@@ -1572,6 +1588,7 @@ def export_downtime_cost(
     through the same `ojidaniya_cost.build` the screen reads, so the file can
     never state a number the tab it was pressed on does not.
     """
+    _require_cost_viewer(payload)
     try:
         d1, d2 = date.fromisoformat(body.date_from), date.fromisoformat(body.date_to)
     except ValueError:

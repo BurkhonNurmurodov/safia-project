@@ -2317,9 +2317,14 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   do not carry, and switching tabs must not rewrite what they were showing.
   Sections: `useFactorySection()` → smena → brigadir → yacheyka (cascading, with
   `note`/`empty`, and a pick the narrowed list drops) → toifa.
-- **Visible to everyone who can open /downtime**, scoped as the page is: a
-  supervisor reads their own unit's bill. Only the RATE is admin-only, checked in
-  the endpoint and not merely by hiding the ⚙.
+- **Admins and shift managers ONLY** (from 2026-10-04, the operator's
+  directive — it was everyone who can open /downtime). `COST_ROLES` in
+  `routers/downtime.py` is checked by all four cost endpoints (403
+  `cost_forbidden`); the page offers the tab only to those roles and reads a
+  saved «cost» view as «Tahlil» for anybody else. Supervisors, leaders,
+  top-managers and «Kutish mas'uli» keep the other two tabs. Scoped as the page
+  is: a shift manager prices their shift ∩ plant. Only the RATE is admin-only,
+  checked in the endpoint and not merely by hiding the ⚙.
 - **The cell code is NOT a `CellLink` here**: the row is a disclosure, and a link
   inside it would navigate away mid-drill-down — the `IdleCell` accordion's own
   reasoning. And cost carries **no traffic-light colour**: no threshold for
