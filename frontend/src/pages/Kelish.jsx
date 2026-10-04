@@ -413,6 +413,9 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   const stale = !!data && weekQ.isPlaceholderData;      // last week on screen while the next one loads
   const days = data?.days || [];
   const openAny = days.some((d) => d.editable);
+  // «+» / «−» decide who is ON the list — the brigadir's and the admin's,
+  // never the leader's (the operator, 2026-10-04). The server says which.
+  const canRoster = openAny && !!data?.can_roster;
   const locked = !!data && !openAny;
 
   const view = useMemo(() => {
@@ -754,7 +757,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           <div className="hidden pointer-fine:block mt-1.5" style={{ color: "var(--text-2)" }}>{t("kelish.kbdHint")}</div>
         )}
       </div>
-      {openAny && view.length > 0 && (
+      {canRoster && view.length > 0 && (
         <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" size="lg" icon={<Plus size={17} />} className={ICON_BTN} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
@@ -949,8 +952,8 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           {data && view.length === 0 && (
             <tr>
               <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
-                {openAny ? t("kelish.emptyList") : t("kelish.emptyListRO")}
-                {openAny && (
+                {canRoster ? t("kelish.emptyList") : t("kelish.emptyListRO")}
+                {canRoster && (
                   <div className="mt-4 flex justify-center">
                     <Button variant="primary" size="lg" icon={<Plus size={16} />} onClick={openAdd}>{t("kelish.add")}</Button>
                   </div>

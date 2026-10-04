@@ -7935,7 +7935,12 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   null on `PUT /mark`; a 4.173.0 tab only ever sent a word). Each tap saves itself (per-worker request chain, optimistic, a version guard
   so an older answer never repaints a newer tap). A mark set by anybody but the
   cell's leader says who set it («belgiladi: …»).
-- **«+» / «−» at the table's foot** (TableCard's `footer`). «+» puts a name on
+- **«+» / «−» at the table's foot** (TableCard's `footer`) — **the brigadir's
+  and the admin's only, never a leader's** (the operator, 2026-10-04): a leader
+  marks the list, the unit decides who is on it. `can_roster` on `/week` and
+  `/list` (`_can_roster`: admin, or the cell's own unit's supervisor) hides the
+  buttons, and `POST /workers` + `/workers/remove` answer 403 `read_only` for
+  anybody else. «+» puts a name on
   the list and «−» (checkboxes, then «O'chirish» bottom-left, a danger confirm)
   takes names off — each PERMANENTLY until the other undoes it, both from the
   cell's CURRENT shift-day. `kelish_roster_events` is append-only and the state

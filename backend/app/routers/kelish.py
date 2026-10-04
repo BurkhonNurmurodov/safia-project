@@ -13,9 +13,12 @@ Page key ``kelish`` — ADMIN-ONLY until the operator opens it
 roles it will be opened to, so opening it is a tick on the Access tab and
 nothing more (the operator's rulings, 2026-09-28):
 
-  * a LEADER reads and fills the cells they own (`cells.leader_id`);
+  * a LEADER reads and fills the cells they own (`cells.leader_id`) — marks
+    only: «+» / «−» (who is ON the list) is not theirs (the operator,
+    2026-10-04; `can_roster`);
   * a SUPERVISOR reads and fills every cell of their own unit — they fill in
-    for an absent leader, and the list then says who marked the worker;
+    for an absent leader, and the list then says who marked the worker — and
+    is the one who adds and removes workers;
   * a SHIFT-MANAGER reads their shift ∩ plant; a TOP-MANAGER reads everything;
     neither fills;
   * an ADMIN reads and fills everything, so the page can be tried before it is
@@ -79,6 +82,13 @@ def _can_edit(ctx: dict, mid: Optional[int], lid: Optional[int]) -> bool:
             or (mid is not None and mid in ctx["edit_units"]))
 
 
+def _can_roster(ctx: dict, mid: Optional[int]) -> bool:
+    """«+» / «−» — who goes ON the list is the unit's own business (the
+    operator, 2026-10-04): admin and the cell's own brigadir. A leader marks
+    the list and never changes who is on it."""
+    return ctx["edit_all"] or (mid is not None and mid in ctx["edit_units"])
+
+
 def _refuse(status: int, code: str, **extra):
     """A refusal the page can read by CODE (`detail_raw.code`) and word itself."""
     raise HTTPException(status_code=status, detail={"code": code, **extra})
@@ -113,12 +123,20 @@ def _cell(db: Session, payload: dict, cell_id: int) -> dict:
         cell_hours.defaults(db), mgr.shift if mgr else None, now)
     return {"ctx": ctx, "c": c, "mgr": mgr, "leader": leader, "now": now,
             "today": today, "tomorrow": tomorrow, "frame": frame,
-            "can_edit": _can_edit(ctx, c.manager_id, c.leader_id)}
+            "can_edit": _can_edit(ctx, c.manager_id, c.leader_id),
+            "can_roster": _can_roster(ctx, c.manager_id)}
 
 
 def _editable(db: Session, payload: dict, cell_id: int) -> dict:
     x = _cell(db, payload, cell_id)
     if not x["can_edit"]:
+        _refuse(403, "read_only")
+    return x
+
+
+def _roster_editable(db: Session, payload: dict, cell_id: int) -> dict:
+    x = _editable(db, payload, cell_id)
+    if not x["can_roster"]:
         _refuse(403, "read_only")
     return x
 
@@ -295,9 +313,10 @@ def get_week(
         "today": today.isoformat(),
         "tomorrow": tomorrow.isoformat(),
         "can_edit": x["can_edit"],
+        "can_roster": x["can_roster"],
         "days": out_days,
         "rows": rows,
-        "removed": kelish.removed(events) if open_any else [],
+        "removed": kelish.removed(events) if open_any and x["can_roster"] else [],
         "source": {"from": lo.isoformat(), "to": hi.isoformat(),
                    "last_upload": last.isoformat() if last else None},
         "quiet_days": kelish.QUIET_DAYS,
@@ -341,10 +360,11 @@ def get_list(
         "tomorrow": tomorrow.isoformat(),
         "when": kelish.when(d, today, x["frame"], x["now"]),
         "can_edit": x["can_edit"],
+        "can_roster": x["can_roster"],
         "editable": editable,
         "rows": rows,
         "counts": kelish.counts(rows),
-        "removed": kelish.removed(events) if editable else [],
+        "removed": kelish.removed(events) if editable and x["can_roster"] else [],
         "source": {"from": lo.isoformat(), "to": hi.isoformat(),
                    "last_upload": last.isoformat() if last else None},
         "quiet_days": kelish.QUIET_DAYS,
@@ -417,7 +437,7 @@ def add_worker(body: AddIn, db: Session = Depends(get_db),
     """«+» — put a name on the cell's list from today on, until «−» takes it
     off. A name that is somebody «−» took off brings THAT worker back rather
     than adding a second row for them."""
-    x = _editable(db, payload, body.cell_id)
+    x = _roster_editable(db, payload, body.cell_id)
     c, today = x["c"], x["today"]
     name = kelish.clean_name(body.name)
     if len(name) < 3:
@@ -457,7 +477,7 @@ def remove_workers(body: RemoveIn, db: Session = Depends(get_db),
                    payload: dict = Depends(require_page(PAGE))):
     """«−» — take workers off the cell's list from today on. Their answers for
     today and tomorrow go with them; earlier days keep theirs."""
-    x = _editable(db, payload, body.cell_id)
+    x = _roster_editable(db, payload, body.cell_id)
     c, today = x["c"], x["today"]
     keys = list(dict.fromkeys(k for k in (body.keys or []) if k))[:_REMOVE_MAX]
     if not keys:
