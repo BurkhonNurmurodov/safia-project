@@ -268,6 +268,41 @@ drafts like every field there (the page's one Save):
   once the report has landed — before `leader_verifix_check`, which it imports;
   the columns, `supervisor_kind.py` and both switches STAY.
 
+## A cell's «Zagruzkada hisoblanadi» (`cells.in_load`)
+
+From **2026-10-04** (the operator's directive, right after the units got their
+switch) a cell says on the cells register whether it counts in the загрузка —
+`cells.in_load`, a column that has existed since 2026-07-31 but could be set
+only from /cells/:id, and only by an admin.
+
+- **Where**: the cell form (`CellFormModal`, ONE form for /cells and
+  /cells/:id), a «Zagruzka» column, a filter section and a phone-card line on
+  /cells, a «Zagruzka» column in the register's workbook, and the switch on
+  /cells/:id. Written through the register's own `PUT
+  /api/profiles/admin/cells/{id}` (`in_load`), so it is **CAP_CELLS_MANAGE**
+  like every other field of a cell (it was role-admin only); a grantee's flip
+  DMs the admins (`l.in_load`). The old `PUT /api/cell-attendance/registry`
+  stays only for a tab still open on an older bundle.
+- **A cell follows its brigadir until somebody sets it.** A create that names
+  no value takes its unit's `zagruzka_on` (`profiles._unit_counts`; no brigadir
+  → off), which is what the /profile inline create and an older tab get; the
+  form pre-fills it from the brigadir picked and says so, and an edit that keeps
+  the brigadir keeps the cell's own value. Flipping a unit's switch does NOT
+  flip its cells, and a cell that gets a brigadir through a cascade (a leader's
+  unit move, «Davomat» «Doimiy qilish») keeps the value it had.
+- **Turned on once** by `startup.turn_on_cells_of_counted_units` (flag
+  `cells_in_load_from_units_2026_10_04_v1`, claimed in the same transaction as
+  the write, both entrypoints): every cell of a non-archived unit whose
+  `zagruzka_on` is set, archived cells included. Nothing is turned off —
+  brigadir-less cells keep what they had. On the 11 Sep copy: 150 on, 5 left
+  off (all brigadir-less); on production the cell sync's brigadir-less service
+  cells stay off as well.
+- **A REGISTER: no загрузка figure reads it yet.** The загрузка, `idle_source`
+  and /zagruzka-cell ignore it by their own sections; its one reader is the
+  «Zagruzkada hisoblanadigan» count on /staff's cell view. Making an OFF cell
+  leave the загрузка (its share of its work centre's minutes and typed people)
+  moves numbers on every загрузка page — **ask the operator before wiring it**.
+
 ## Supervisors read `/cells` — their own unit, read-only
 
 From **2026-09-14** (the operator's directive) the cells register opens to the
@@ -4283,8 +4318,9 @@ enrolled by hand, one, several or all at once, on the ltasks admin destination.
   `cell_id` lookup must use `IS NULL`, never `== None`.
 - **Which cells: plain OWNERSHIP** (`cells.leader_id`), automatically — assign
   one on `/cells` and the checklist follows. `in_load` is deliberately NOT
-  consulted: it answers whether a cell counts toward the загрузка, a different
-  question about a different register, and it is unticked on all 108 cells.
+  consulted: it answers whether a cell counts toward the загрузка (the
+  register's «Zagruzkada hisoblanadi»), a different question about a
+  different register.
 - **A leader with no cell files NOTHING** on a switched unit and the bot says
   so («Sizga yacheyka biriktirilmagan»), rather than showing an empty menu.
   Enrolment is REFUSED for a unit whose leaders own no cells at all, naming the

@@ -63,6 +63,7 @@ try:
         add_cell_shift_times,
         add_cell_archive,
         add_manager_kind_columns,
+        turn_on_cells_of_counted_units,
         add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
@@ -202,6 +203,8 @@ try:
     migrate_cells_leaders_columns()
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
+    # Every cell of a unit whose загрузка is calculated starts ON (once).
+    turn_on_cells_of_counted_units()
     add_cell_shift_times()
     add_cell_archive()
     add_wc_groups()

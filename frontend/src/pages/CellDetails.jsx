@@ -17,7 +17,6 @@ import { SectionHead } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
-import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import api from "../utils/api";
@@ -34,9 +33,9 @@ import api from "../utils/api";
  * anyone who can see a cell somewhere may open its card (the backend read,
  * /api/profiles/cells/:id/details, is gated the same way). Everyone gets the
  * same read-only view; holders of admin.cells.manage additionally get the
- * shared CellFormModal (codes / names / owners — the same form as /cells),
- * and full admins get the in_load toggle (its writer,
- * PUT /api/cell-attendance/registry, is role-admin-only server-side).
+ * shared CellFormModal (codes / names / owners — the same form as /cells)
+ * and the «Zagruzkada hisoblanadi» (in_load) switch, written through the
+ * register's own PUT /api/profiles/admin/cells/:id.
  */
 
 // ── shared building blocks (Profile.jsx design language) ─────────────────────
@@ -165,11 +164,8 @@ export default function CellDetails() {
   const navigate = useNavigate();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
-  const { auth } = useAuth();
-  // in_load's only writer (PUT /api/cell-attendance/registry) is hard
-  // role-admin server-side — a cells-manage grantee would 403 on it, so the
-  // toggle is gated on the role, not on the capability.
-  const isAdmin = auth?.role === "admin";
+  // «Zagruzkada hisoblanadi» is written through the register's own PUT
+  // (CAP_CELLS_MANAGE) from 2026-10-04, like every other field of a cell.
   const { can, isLoading: capLoading } = useCapabilities();
   const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
   const qc = useQueryClient();
@@ -193,10 +189,10 @@ export default function CellDetails() {
   });
 
   const inLoadMut = useMutation({
-    mutationFn: (val) =>
-      api.put("/api/cell-attendance/registry", { changes: [{ cell_id: Number(id), in_load: val }] }),
+    mutationFn: (val) => api.put(`/api/profiles/admin/cells/${id}`, { in_load: val }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cell-details", id] });
+      qc.invalidateQueries({ queryKey: ["admin-cells"] });
       toast.success(t("cellPage.saved"));
     },
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
@@ -415,7 +411,7 @@ export default function CellDetails() {
                   icon={LayoutGrid}
                   label={t("cellPage.inLoad")}
                   hint={t("cellPage.inLoadHint")}
-                  control={isAdmin
+                  control={canEdit
                     ? <SegmentedToggle
                         size="sm"
                         ariaLabel={t("cellPage.inLoad")}
@@ -426,8 +422,8 @@ export default function CellDetails() {
                           if (want !== Boolean(c.in_load)) inLoadMut.mutate(want);
                         }}
                         options={[
-                          { value: "1", label: t("cellPage.inLoadOn") },
-                          { value: "0", label: t("cellPage.inLoadOff") },
+                          { value: "1", label: t("profile.zagruzka.on") },
+                          { value: "0", label: t("profile.zagruzka.off") },
                         ]}
                       />
                     : <Tag color={c.in_load ? GREEN : GREY}>

@@ -5,6 +5,7 @@ import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import FormField from "./ui/FormField";
 import StyledSelect from "./ui/StyledSelect";
+import SegmentedToggle from "./ui/SegmentedToggle";
 import LangTextInput from "./ui/LangTextInput";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -21,6 +22,12 @@ import GroupBadge from "./ui/GroupBadge";
  * `units` / `leaders` are the option lists GET /api/profiles/admin/cells
  * returns beside the register. `onSaved` fires after a successful write —
  * the caller invalidates its own queries there; the modal closes itself.
+ *
+ * «Zagruzkada hisoblanadi» (`in_load`) follows the brigadir until somebody
+ * sets it here: a new cell, or one moved to another brigadir in this form,
+ * takes the unit's own «Zagruzka hisoblanadi» (`units[].zagruzka_on`) — what
+ * the server applies to a create that names no value — and an edit that keeps
+ * the brigadir keeps the cell's own value.
  */
 
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
@@ -42,13 +49,20 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
           name_workshop_ru: item.name_workshop_ru || "",
           name_workshop_en: item.name_workshop_en || "",
+          in_load: !!item.in_load,
         }
       : {
           verifix_code: "", sap_code: "", wc_group: "", manager_id: "", leader_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
-          name_workshop_ru: "", name_workshop_en: "",
+          name_workshop_ru: "", name_workshop_en: "", in_load: false,
         });
   const [formError, setFormError] = useState("");
+  // Has the «Zagruzkada hisoblanadi» switch been set by hand in this form?
+  const [loadTouched, setLoadTouched] = useState(false);
+  const initialUnit = mode === "edit" && item?.manager_id ? String(item.manager_id) : "";
+  const unitCounts = (mid) => !!units.find((u) => String(u.id) === String(mid))?.zagruzka_on;
+  const followsUnit = !loadTouched && (mode === "add" || String(form.manager_id || "") !== initialUnit);
+  const inLoad = followsUnit ? unitCounts(form.manager_id) : !!form.in_load;
 
   const fail = (e) => setFormError(cellWriteError(e, t));
   const done = () => { onSaved?.(); onClose(); };
@@ -86,6 +100,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       name_workshop_en: form.name_workshop_en || "",
       manager_id: form.manager_id ? Number(form.manager_id) : 0,
       leader_id: form.leader_id ? Number(form.leader_id) : 0,
+      in_load: inLoad,
     };
     if (mode === "add") createMut.mutate(body);
     else updateMut.mutate(body);
@@ -196,6 +211,20 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           options={[
             { value: "", label: t("admin.profiles.cellUnassigned") },
             ...leaders.map((l) => ({ value: String(l.id), label: tl(l.name), title: tl(l.name) })),
+          ]}
+        />
+      </FormField>
+      <FormField label={t("cellPage.inLoad")}
+                 hint={followsUnit && form.manager_id ? t("admin.profiles.cellInLoadFollows") : undefined}>
+        <SegmentedToggle
+          fill
+          className="mt-1"
+          ariaLabel={t("cellPage.inLoad")}
+          value={inLoad ? "on" : "off"}
+          onChange={(v) => { setLoadTouched(true); setForm((f) => ({ ...f, in_load: v === "on" })); }}
+          options={[
+            { value: "on", label: t("profile.zagruzka.on") },
+            { value: "off", label: t("profile.zagruzka.off") },
           ]}
         />
       </FormField>

@@ -15,10 +15,11 @@ Scoping mirrors idle_cell.py: admins/top-managers and a ``page.view.staff``
 leaders their own. Rows whose «Код подразделения» matched no cell (cell_id NULL)
 are only visible to the all-scope viewers — nobody else can be shown to own them.
 
-``PUT /registry`` is the lone survivor of the deleted «Sozlash» tab and the ONLY
-writer of ``Cell.in_load`` — the tick that decides which cells the загрузка
-counts. It is now driven one cell at a time from /cells/:id, so it is gated on
-``cells`` and hard-limited to role admin on top.
+``PUT /registry`` is the lone survivor of the deleted «Sozlash» tab. From
+2026-10-04 ``Cell.in_load`` («Zagruzkada hisoblanadi») is written by the cells
+register itself (``PUT /api/profiles/admin/cells/{id}``, CAP_CELLS_MANAGE) —
+its form, the /cells/:id switch — and this endpoint stays only for a tab still
+open on an older bundle, gated on ``cells`` and hard-limited to role admin.
 """
 from datetime import datetime
 
@@ -192,10 +193,9 @@ def day_attendance(
 
 
 # ── Which cells count toward the load ─────────────────────────────────────────
-# The bulk «Sozlash» table died with the /cell-attendance page; /cells/:id ticks
-# one cell at a time through this same endpoint, so `in_load` still has exactly
-# one writer. The read side went with the table — every reader already gets the
-# flag on the cell record it was looking at anyway.
+# The bulk «Sozlash» table died with the /cell-attendance page. /cells/:id used
+# to tick one cell at a time through this endpoint; from 2026-10-04 it writes
+# through the register's own PUT, and this one is kept for older bundles only.
 
 @router.put("/registry")
 def save_load_registry(

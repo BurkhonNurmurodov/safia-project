@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
-  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle, Archive, ArchiveRestore,
+  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -145,6 +145,26 @@ function GroupMark({ c, issue, t, placeholder = true }) {
   return placeholder ? <span style={{ color: "var(--text-4)" }}>—</span> : null;
 }
 
+// «Zagruzkada hisoblanadi» (`in_load`): plain when the cell counts, a grey chip
+// when it does not — the exception is the one the eye should find (the
+// brigadir list's own «Zagruzka» column). `long` spells it out for a phone card,
+// where no column header says what the word is about.
+function LoadMark({ on, t, long = false }) {
+  if (on) {
+    return (
+      <span className="whitespace-nowrap text-[var(--text-2)]">
+        {t(long ? "cellPage.inLoadOn" : "admin.profiles.cellZagOn")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.25)" }}>
+      {t(long ? "cellPage.inLoadOff" : "admin.profiles.cellZagOff")}
+    </span>
+  );
+}
+
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
 // the mobile card so both surfaces read identically. Clicks must not bubble:
 // the row/card underneath navigates to the cell page.
@@ -234,6 +254,10 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
             ? <span className="truncate min-w-0 text-[var(--text-2)]">{tl(c.leader)}</span>
             : <span className="truncate min-w-0" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
         </div>
+        <div className="flex items-center gap-2 text-xs min-w-0">
+          <Gauge size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <LoadMark on={c.in_load} t={t} long />
+        </div>
       </div>
     </div>
   );
@@ -273,6 +297,9 @@ export default function Cells() {
   // Archived (closed) cells are hidden by default; "archived" shows only them.
   const [fStatus, setFStatus] = usePersistentState("cells_filter_status", "active"); // active · archived · all
   const statusSel = ["active", "archived", "all"].includes(fStatus) ? fStatus : "active";
+  // «Zagruzkada hisoblanadi»: "" all · "on" counted · "off" not counted.
+  const [fZag, setFZag] = usePersistentState("cells_filter_zag", "");
+  const zagSel = ["", "on", "off"].includes(fZag) ? fZag : "";
 
   // Set when the server narrowed the register to the viewer's OWN unit — a
   // supervisor who opens the page through their role (backend
@@ -346,10 +373,12 @@ export default function Cells() {
       if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
       if (statusSel === "active" && c.archived_at) return false;
       if (statusSel === "archived" && !c.archived_at) return false;
+      if (zagSel === "on" && !c.in_load) return false;
+      if (zagSel === "off" && c.in_load) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, brigadirSel, leaderSel, statusSel, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, statusSel, zagSel, lang, tl]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
@@ -360,6 +389,7 @@ export default function Cells() {
         case "wc_group":   return c.wc_group || "";
         case "supervisor": return tl(c.supervisor) || "";
         case "owner":      return tl(c.leader) || "";
+        case "in_load":    return c.in_load ? "0" : "1";
         default:           return c.verifix_code || "";
       }
     };
@@ -387,6 +417,7 @@ export default function Cells() {
             wc_group: c.wc_group || "",
             supervisor: c.supervisor ? tl(c.supervisor) : "",
             leader: c.leader ? tl(c.leader) : "",
+            in_load: !!c.in_load,
           })),
         },
         fallbackName: "cells_register.xlsx",
@@ -395,7 +426,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 6 : 5;
+  const colSpan = canEdit ? 7 : 6;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -406,6 +437,11 @@ export default function Cells() {
     { value: "active", label: t("admin.profiles.cellStatusActive") },
     { value: "archived", label: t("admin.profiles.cellStatusArchived") },
     { value: "all", label: t("admin.profiles.cellStatusAll") },
+  ];
+  const zagOpts = [
+    { value: "", label: t("admin.profiles.cellStatusAll") },
+    { value: "on", label: t("admin.profiles.cellZagOn") },
+    { value: "off", label: t("admin.profiles.cellZagOff") },
   ];
   const leaderFilterOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllLeaders") },
@@ -500,6 +536,15 @@ export default function Cells() {
                   ),
                 },
                 {
+                  key: "zag", icon: Gauge, label: t("admin.profiles.colZagruzka"),
+                  active: zagSel !== "",
+                  display: zagSel !== "" ? (zagOpts.find((o) => o.value === zagSel)?.label || "") : "",
+                  onClear: () => setFZag(""),
+                  render: ({ close } = {}) => (
+                    <PickFilter close={close} opts={zagOpts} value={zagSel} onChange={setFZag} />
+                  ),
+                },
+                {
                   key: "status", icon: Archive, label: t("admin.profiles.cellFilterStatus"),
                   active: statusSel !== "active",
                   display: statusSel !== "active" ? (statusOpts.find((o) => o.value === statusSel)?.label || "") : "",
@@ -545,12 +590,13 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[20%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[14%]" />
-            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[22%]" />
-            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[22%]" />
-            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[12%]" />}
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[17%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[12%]" />
+            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[9%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[20%]" />
+            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[20%]" />
+            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[11%]" />
+            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[11%]" />}
           </tr>
         </thead>
         <tbody>
@@ -590,6 +636,9 @@ export default function Cells() {
                 {c.leader
                   ? <span className="text-[var(--text-2)]">{tl(c.leader)}</span>
                   : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                <LoadMark on={c.in_load} t={t} />
               </td>
               {canEdit && (
                 <td className="px-3 py-2">

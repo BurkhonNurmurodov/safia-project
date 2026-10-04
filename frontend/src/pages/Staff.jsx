@@ -1046,8 +1046,8 @@ export function CellDayView({ date, cellSel, hasCellData }) {
 
   const worked    = allRows.filter(r => r.status === "worked");
   const cameRatio = allRows.length ? worked.length / allRows.length : null;
-  // The load slice by the by-cell rule: the cell must be ticked «Zagruzka
-  // hisobida» on its /cells/:id page AND the row must hold a load role.
+  // The load slice by the by-cell rule: the cell must be «Zagruzkada
+  // hisoblanadi» on the cells register AND the row must hold a load role.
   const zagAll  = cellInfo?.in_load === true
     ? allRows.filter(r => LOAD_ROLE_RE.test(r.job_title || ""))
     : [];

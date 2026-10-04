@@ -1762,6 +1762,53 @@ def add_manager_kind_columns() -> None:
         db.close()
 
 
+CELLS_IN_LOAD_FLAG = "cells_in_load_from_units_2026_10_04_v1"
+
+
+def turn_on_cells_of_counted_units() -> None:
+    """2026-10-04 (the operator's directive): a cell says on the /cells register
+    whether it counts in the загрузка — «Zagruzkada hisoblanadi»,
+    ``cells.in_load`` — and every cell of a unit whose загрузка is calculated
+    (``managers.zagruzka_on``, unit not archived) starts ON, archived cells of
+    such a unit included. A cell with no brigadir, or of a unit switched off,
+    keeps what it holds: this only ever turns cells ON.
+
+    Once. The flag is claimed in the same transaction as the write, so two
+    copies booting together (blue-green) cannot both act; changing what this
+    does needs a NEW flag key. Runs after add_manager_kind_columns and
+    migrate_cell_in_load_column."""
+    from app.services import action_log
+
+    db = SessionLocal()
+    try:
+        claimed = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, '1') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"),
+            {"k": CELLS_IN_LOAD_FLAG}).first()
+        if not claimed:
+            db.rollback()
+            return
+        turned = db.execute(text(
+            "UPDATE cells c SET in_load = TRUE FROM managers m "
+            "WHERE c.manager_id = m.id AND m.zagruzka_on IS TRUE "
+            "AND m.archived IS FALSE AND c.in_load IS FALSE "
+            "RETURNING c.id")).fetchall()
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cells in загрузка not turned on: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] cells in загрузка: {len(turned)} turned on")
+    action_log.record_system(
+        "org", "org.cells_in_load_on",
+        details=[("cells", len(turned))],
+        reason=("Operator directive: every cell of a unit whose загрузка is "
+                "calculated is counted in the загрузка"),
+    )
+
+
 def add_leader_kind_columns() -> None:
     """2026-10-04: a leader profile says whether the person IS a leader on
     Verifix or fills a leader's place (``role_profiles.leader_kind``) and where
