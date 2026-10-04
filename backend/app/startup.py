@@ -7040,6 +7040,39 @@ def _leader_kind_pins_job(flag: str) -> None:
                       leader_verifix_check.send_pins, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: make the cells register the same as Verifix's ─────────────────
+# The operator asked on 2026-10-04 for our cells to be Verifix's: rename ours to
+# Verifix's names, create the cells Verifix has open and we do not, archive the
+# ones Verifix closed or no longer has, and report every mismatch. The Verifix
+# login lives only on the server, so it runs there, once, and DMs the result
+# (`services/verifix_cell_sync.py` — which subdivision counts as a cell, and the
+# guards that stop it on a cut answer, are explained there). Scheduled, not
+# inline: the employee list is ~18 pages and a boot that stalls past /health
+# rolls the deploy back.
+CELL_SYNC_FLAG = "verifix_cell_sync_2026_10_04_v1"
+_CELL_SYNC_DELAY_S = 150
+
+
+def sync_cells_from_verifix() -> None:
+    """Rename / create / archive cells to match Verifix, once, and report it. Never raises."""
+    try:
+        if not _report_pending(CELL_SYNC_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("verifix-cell-sync",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CELL_SYNC_DELAY_S),
+                    _cell_sync_job)
+    except Exception as exc:
+        print(f"[startup] Verifix cell sync could not be scheduled: {exc}")
+
+
+def _cell_sync_job() -> None:
+    from app.services import verifix_cell_sync
+    _send_report_once(CELL_SYNC_FLAG, "Verifix cell sync",
+                      verifix_cell_sync.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

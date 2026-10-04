@@ -106,6 +106,7 @@ try:
         report_dispute_queue,
         report_wc_plan_history,
         check_leader_kinds, check_leader_kind_pins,
+        sync_cells_from_verifix,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -490,6 +491,12 @@ try:
     # …and the operator's name corrections to it (`leader_verifix_check.PINS`),
     # once per pin set. Goes with the line above.
     check_leader_kind_pins()
+    # ⚠ TEMPORARY one-shot (2026-10-04) — makes the cells register Verifix's:
+    # renames ours to Verifix's names, creates the cells Verifix has open and we
+    # do not, archives the ones it closed, and DMs the operator every mismatch.
+    # Remove this line, `startup.sync_cells_from_verifix` and
+    # `services/verifix_cell_sync.py` once the report has landed.
+    sync_cells_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

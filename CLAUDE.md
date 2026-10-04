@@ -259,6 +259,47 @@ marks them with a grey «Arxivda · date» chip, and `/cells/:id` carries a bann
 Deliberately NOT done: no other page or picker reads the flag yet — an archived
 cell still counts wherever it counted (it carries no new data once closed).
 
+## The cells register follows Verifix (`verifix_cell_sync`, 2026-10-04)
+
+From **2026-10-04** (the operator: «our cells should be the same as on
+Verifix») a TEMPORARY one-shot made the register Verifix's —
+`services/verifix_cell_sync.py`, `startup.sync_cells_from_verifix` (flag
+`verifix_cell_sync_2026_10_04_v1`, both entrypoints, ~150 s after boot), DMed
+to the operator as text + a workbook.
+
+- **A Verifix cell** is a coded subdivision that no employee, of any status,
+  holds as their DEPARTMENT (`division_id`) — the «отдел» level our cells sit
+  on. Five departments carry a code (0006, 0012, 111, 112, 400) and are not
+  cells. Open = state «A», closed = «P» (on the 1 Oct dump no passive one had a
+  working employee).
+- **Renamed** to Verifix's name with the code in front left out (A0061 is
+  «0611 Обработка яиц» → «Обработка яиц»): ru takes it, a non-empty uz_cyrl
+  takes it, a Latin uz / en is cleared (it translated the old name).
+- **Created** — every OPEN Verifix cell the register lacked, the way the
+  attendance upload registers an unseen code: no brigadir, no leader, out of
+  the загрузка, ru name only. The brigadir stays a person's call on /cells (it
+  moves attendance and загрузка); the report names Verifix's parent and the
+  unit its sibling cells belong to here.
+- **Archived** (`archived_by` «Verifix (avtomatik)») — every active cell that
+  Verifix closed or does not have. Changes no figure.
+- **Reported only**: a brigadir other than the unit holding ≥ 2/3 of the cells
+  under the same Verifix parent (a bare majority would flag six cells falsely —
+  both Suvonov Elshod units share «Цех - 4»), a cell archived here but open in
+  Verifix (not restored), coded departments, codes spelled two ways, one code
+  on two cells.
+- **Guards** — nothing changes when Verifix hands over < 100 subdivisions or
+  < 1,000 employees, finds < 80 % of our active cells open, or the pass would
+  archive more than max(15, 10 %) or create more than 150 cells.
+- Every old value is kept in app setting `verifix_cell_sync_2026_10_04` and in
+  the workbook. Delete the module, the startup pair and both entrypoint calls
+  once the report has landed — the cells it wrote stay.
+- Dry run (11 Sep register × the 1 Oct API dump): 46 created (washing
+  0020–0037, raw-material warehouse 0110–0114, supply 09xx / 1411 / 1412 /
+  9432, cold rooms 1511 / 3411 / 3511 / 8011, staff kitchen 7711 / 7721, plus
+  1614, 2531, 7231, 8211, 8218, 8322, 9424), 6 archived (1622, 2812, 4114,
+  6831, 7016, 7621), 133 renamed, 2 brigadir differences (0811 — the 26 Sep
+  ruling; 7015 has none).
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts
