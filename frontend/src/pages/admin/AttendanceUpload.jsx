@@ -72,7 +72,9 @@ function errText(e, fallback) {
 
 // ── small pieces ──────────────────────────────────────────────────────────────
 
-function Chip({ tone = "neutral", icon: Icon, children, title }) {
+// Exported for «Davomat (Verifix)» (AttendanceVerifix.jsx), the test twin of
+// this tab — one look for both.
+export function Chip({ tone = "neutral", icon: Icon, children, title }) {
   const colors = {
     ok:      "#22c55e",
     warn:    "#eab308",
@@ -93,7 +95,7 @@ function Chip({ tone = "neutral", icon: Icon, children, title }) {
   );
 }
 
-function Stat({ label, value, tone }) {
+export function Stat({ label, value, tone }) {
   return (
     <div
       className="rounded-xl px-3 py-2 min-w-0"
@@ -380,6 +382,7 @@ function WorkerTable({ cell, locked, t, tl, tx, onEdit, onDelete, onAdd, onRever
 function CellRow({
   cell, locked, expanded, dragging, t,
   onToggleExpand, onToggleTick, onDragStart, menuItems,
+  bare = false, extra = null,
 }) {
   const dim = !cell.included;
   return (
@@ -391,7 +394,8 @@ function CellRow({
       }}
     >
       <div className="flex items-center gap-2 px-2 sm:px-3 py-2">
-        <button
+        {/* `bare`: a read-only twin of this tab has no routing to drag or tick. */}
+        {!bare && <button
           type="button"
           onPointerDown={(e) => !locked && onDragStart(e, cell)}
           title={t("attUp.dragHint")}
@@ -404,14 +408,14 @@ function CellRow({
           }}
         >
           <GripVertical size={14} />
-        </button>
+        </button>}
 
-        <Tick
+        {!bare && <Tick
           checked={cell.included}
           disabled={locked || !cell.manager_id}
           onChange={(v) => onToggleTick(cell, v)}
           title={cell.manager_id ? t("attUp.tickHint") : t("attUp.tickNeedsSupervisor")}
-        />
+        />}
 
         <button
           type="button"
@@ -436,6 +440,7 @@ function CellRow({
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          {extra}
           <span className="hidden sm:inline text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
             {cell.present}/{cell.workers} <span className="hidden md:inline">{t("attUp.people")}</span>
           </span>
@@ -454,10 +459,10 @@ function CellRow({
 
 // ── supervisor section ────────────────────────────────────────────────────────
 
-function Section({
+export function Section({
   section, orphan, locked, t, tl, expandedCells, dragCode, dropTarget,
   sectionRef, onToggleExpand, onToggleTick, onDragStart, cellMenuItems, sectionMenuItems,
-  renderWorkers,
+  renderWorkers, bare = false, cellExtra, orphanHint,
 }) {
   const isDropTarget = dropTarget != null && dropTarget === (section.manager_id ?? "none");
   const dayTone = section.day_state === "open" ? "ok"
@@ -495,7 +500,7 @@ function Section({
           </div>
           <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
             {orphan
-              ? t("attUp.noSupervisorHint")
+              ? (orphanHint ?? t("attUp.noSupervisorHint"))
               : `${section.totals.included}/${section.totals.cells} ${t("attUp.cellsWord")} · ${section.totals.present}/${section.totals.workers} ${t("attUp.people")} · ${fmtNum(section.totals.hours, 1)} ${t("attUp.hoursShort")}`}
           </div>
         </div>
@@ -520,6 +525,8 @@ function Section({
             onToggleTick={onToggleTick}
             onDragStart={onDragStart}
             menuItems={cellMenuItems}
+            bare={bare}
+            extra={cellExtra ? cellExtra(cell) : null}
           />
           {expandedCells.includes(cell.verifix_code) && renderWorkers(cell, section)}
         </div>

@@ -4365,6 +4365,54 @@ class LiveDayClose(Base):
     closed_at      = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class VerifixAttendanceDay(Base):
+    """One DAY of attendance read straight from Verifix on the admin «Davomat
+    (Verifix)» tab — the «Davomat» upload's twin with a button instead of a
+    file (`services/verifix_attendance.py`, TEST from 2026-10-04). Only the
+    cells counted in the загрузка (`cells.in_load`) are read. Saved apart:
+    nothing else on the platform reads these two tables — `attendance`, the
+    «Davomat» batches, the загрузка and every figure stay the file's. A re-read
+    replaces the day."""
+    __tablename__ = "vfx_attendance_days"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    date            = Column(Date, nullable=False, unique=True, index=True)
+    fetched_at      = Column(DateTime(timezone=True), nullable=True)
+    fetched_by_name = Column(String, nullable=True)
+    # The read stopped on the time budget: some people may be missing.
+    partial         = Column(Boolean, nullable=False, default=False)
+    # The cell codes asked about (counted in the загрузка at the read) and the
+    # «Отработано» rule the hours were summed by ({kinds, names, div, source}).
+    codes           = Column(JSONB, nullable=True)
+    hours_rule      = Column(JSONB, nullable=True)
+
+    rows = relationship("VerifixAttendanceRow", back_populates="day",
+                        cascade="all, delete-orphan", passive_deletes=True)
+
+
+class VerifixAttendanceRow(Base):
+    """One worker's day as Verifix's report gave it, in the shape of an
+    `attendance_batch_rows` row (what the Excel would have held) plus the
+    Verifix employee id. Placed in a cell by the employee's org unit."""
+    __tablename__ = "vfx_attendance_rows"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    day_id            = Column(Integer, ForeignKey("vfx_attendance_days.id", ondelete="CASCADE"),
+                               nullable=False, index=True)
+    verifix_code      = Column(String, nullable=True, index=True)
+    employee_id       = Column(String, nullable=True)
+    worker_name       = Column(String)
+    job_title         = Column(String)
+    schedule          = Column(String)
+    clock_in_out      = Column(String)
+    hours_worked      = Column(Numeric(10, 4), nullable=True)
+    early_arrival_min = Column(Numeric(10, 2), nullable=True)
+    effective_hours   = Column(Numeric(10, 4), nullable=True)
+    status            = Column(String, nullable=True)   # 'worked' | the day cell's mark
+
+    day = relationship("VerifixAttendanceDay", back_populates="rows")
+
+
 class VerifixProbe(Base):
     """What one Verifix API method answered the last time the «Verifix (test)»
     section asked it (`services/verifix_explore.py`) — one row per method,

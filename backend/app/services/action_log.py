@@ -117,6 +117,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/attendance-batch/rows/{}",             "attendance", "attendance.row_deleted"),
     (("PUT",),    "/api/attendance-batch/cells",               "attendance", "attendance.cells_decided"),
     (("POST",),   "/api/attendance-batch/save",                "attendance", "attendance.draft_saved"),
+    (("POST",),   "/api/attendance-verifix/fetch",             "attendance", "attendance.verifix_fetched"),
     (("DELETE",), "/api/attendance-batch",                     "attendance", "attendance.draft_discarded"),
     (("POST",),   "/admin/upload",                             "attendance", "attendance.verifix_uploaded"),
     (("POST",),   "/admin/delete-attendance",                  "attendance", "attendance.day_cleanup"),

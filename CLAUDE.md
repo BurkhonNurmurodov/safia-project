@@ -6944,6 +6944,54 @@ reads it yet except the card's own test, so no figure on the platform moves.
 - Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
 
+## «Davomat (Verifix)» — the attendance upload read from Verifix (`/admin/upload?tab=attverifix`, TEST)
+
+From **2026-10-04** (the operator's request) the admin panel carries a twin of
+«Davomat» directly under it: the same day in the same supervisor → cell →
+worker layout, with ONE button — «Verifix'dan olish» — where the upload was.
+`services/verifix_attendance.py` (`fetch_day`, `payload`),
+`routers/attendance_verifix.py` (`GET /api/attendance-verifix?date=`,
+`POST /api/attendance-verifix/fetch`), `pages/admin/AttendanceVerifix.jsx`.
+
+- **Only the cells counted in the загрузка** — `cells.in_load` («Zagruzkada
+  hisoblanadi», see its section) at the moment of the read; the stored day
+  keeps the codes it asked about.
+- **Saved apart, and NOTHING reads it** — `vfx_attendance_days` /
+  `vfx_attendance_rows`; a re-read replaces the day. `attendance`, the
+  «Davomat» batches, the загрузка and every figure stay the file's, so the
+  page has no tick, move, edit or Save. Wiring it into anything is a separate
+  decision.
+- **A row is built the way `attendance_sheet` builds one**, from
+  `core/timesheet$export` (the report the Excel is exported from), placed by
+  the employee's CURRENT org unit: the day cell «08:01 - 17:13 (8.14)» (in –
+  out + «Явка» in brackets; «xx:xx» for a missing side, and then no hours, as
+  in the file); hours = «Отработано» = «Явка» + «Свободное время» in minutes,
+  two decimals, unless the parity check stored a rule of its own
+  (`verifix_live._formula`); no clock → the absence kind's letter, «X» for a
+  plain «Отсутствие»; early arrival and effective hours by `clock_metrics`.
+  Asked about: every employee, any status, whose org unit names a counted
+  cell, hired by the day and not dismissed before it. An empty `employee_ids`
+  is never sent — Verifix reads it as everybody.
+- **Checked against the 1 Oct dump** (11 Sep register, 151 counted cells):
+  1,566 rows; of 1,475 matched by name to that day's file, 1,470 identical
+  hours and day cell; 91 only in Verifix (cells no uploaded file covered that
+  day), 2 only in the Excel; per-cell hours equal to the file's.
+- **The page compares with the uploaded Excel** of the same day
+  (`attendance_batch_rows`, admin edits included): an «Excel» column per
+  person (✓ same · amber differs · «Excel'da yo'q»), people only the file has
+  appended, «Excel'da: 7313» when the file put the person in another cell
+  (matched in the same cell first, then anywhere in the day), a verdict chip
+  per cell and three comparison stats. A day with no uploaded file says so.
+- One request, `verifix.BUDGET_S` (70 s) for everything; the directory
+  (divisions + every employee, ~20 calls) is cached 10 min, so the next day
+  read is ~16 calls. Out of time with rows in hand → stored and marked
+  partial; without → 424 `slow` and the page asks to press again. 409
+  `not_configured`, 400 `future`. Admin-only and NOT grantable (no `capKey`,
+  `verify_admin`). Logged as `attendance.verifix_fetched`.
+- It reuses «Davomat»'s `Section` / `Chip` / `Stat`, exported from
+  `AttendanceUpload.jsx`; `Section` gained `bare`, `cellExtra` and
+  `orphanHint`, whose defaults leave «Davomat» exactly as it was.
+
 ## The live «Verifix to'g'irlash» (`/staff-live`, Laboratory)
 
 From **2026-10-01** (the operator's request, every part asked and picked) a LAB
