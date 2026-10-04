@@ -712,8 +712,10 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // filter and the status strip of the table above them — «Kechikkan» listed
   // two people who were not late. The section hides when none of them match.
   const extrasShown = useMemo(() => (data?.extras || []).filter(x =>
-    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null, hours_worked: x.hours },
-      filters, false, shownName)
+    // Their hours are what counts here (no lunch rule applies to a stint), and
+    // early arrival left with the name (part1_eff) — 0, not «no answer».
+    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null, hours_worked: x.hours,
+      effective_hours: x.hours, early_arrival_min: 0 }, filters, false, shownName)
     && liveMatchExtra(x, liveFilter)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.extras, filters, liveFilter, lang]);
@@ -4162,12 +4164,13 @@ function ApprovalsCalendar({ role, supervisors }) {
   useEffect(() => {
     if (!focusIso || focusDone.current || !data) return;
     focusDone.current = true;
+    // The day takes focus FIRST: the dialog hands focus back to whatever held
+    // it, and the shortcut that did is gone with the tab it sat on.
+    document.querySelector(`[data-day-iso="${focusIso}"]`)?.focus();
     if (days[focusIso]?.status === "open" && (role === "supervisor" || isAdmin) && focusIso <= todayIso) {
       // Once, when the calendar's answer arrives — nothing to derive in render.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setAskErr(""); setAsk({ kind: "close", iso: focusIso });
-    } else {
-      document.querySelector(`[data-day-iso="${focusIso}"]`)?.focus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusIso, data]);

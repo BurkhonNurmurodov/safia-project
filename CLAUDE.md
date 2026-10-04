@@ -7272,9 +7272,11 @@ rights — over a different source, and it is being built to REPLACE /staff.
   («ichkarida 34 kishi (+2 boshqa brigada nomida)» — the strip counts only the
   unit's own, and with none of them inside it says «faqat boshqa brigada
   nomidagi N kishi»). For whoever may close (an admin, the unit's own brigadir)
-  it carries ««Tasdiqlash»da yopish» once everybody has left — the only state
-  the close endpoint accepts; before that a line says the day closes there once
-  everybody has gone. The button writes the live calendar's own remembered keys
+  it carries ««Tasdiqlash»da yopish» wherever the close endpoint accepts it —
+  `close.closable` on the payload, `not live_staff.busy()`: everybody left, or
+  nobody came and nobody is still due («Hech kim kelmadi — kunni yopish
+  mumkin.»); otherwise a line says the day closes there once everybody has
+  gone. The client never re-derives the rule. The button writes the live calendar's own remembered keys
   (unit, month, and `staff_live_approvals_focus` = the day — `goClose` in
   `StaffPage`; /staff's keys are untouched): the calendar rings that day and
   opens its close dialog, whose title names the date (live only).
@@ -7323,7 +7325,9 @@ rights — over a different source, and it is being built to REPLACE /staff.
   - The table puts «Holat» right after the name (a phone and a 1024 px laptop
     never showed it); the label wraps on a phone. The floating «N qator» pill is
     gone on this page (the strip counts). The «boshqa brigada nomidagi soatlar»
-    section follows every filter of the table and the strip (`liveMatchExtra`:
+    section follows every filter of the table and the strip (its rows carry the
+    schedule; their hours stand for effective hours and their early arrival is
+    0 — it left with the name; `liveMatchExtra`:
     every such person came by a move, «Belgisiz» = their `no_out` status, they
     carry no late / early flags); «hozir shu yerda» shows only while the person
     is inside or on a break. On this page the name search also matches the name

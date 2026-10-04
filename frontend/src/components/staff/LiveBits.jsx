@@ -108,8 +108,9 @@ function readAt(live) {
 // `counts` splits «inside» into this unit's own people and those standing here
 // under another unit's name — the strip counts only the first, so the line
 // says the second out loud. `onGoClose` (only for those who may close the day)
-// opens «Tasdiqlash» on this day — offered once everybody has left, the only
-// state the close endpoint accepts; before that the line says when it can.
+// opens «Tasdiqlash» on this day — offered where the close endpoint accepts it
+// (`close.closable`: nobody inside, on a break or still due — everybody left,
+// or nobody came and nobody is due); before that the line says when it can.
 function CloseLine({ close, counts, onGoClose }) {
   const { t } = useLang();
   if (!close) return null;
@@ -127,8 +128,10 @@ function CloseLine({ close, counts, onGoClose }) {
               : fill(t("staffLive.close.openOnlyExtra"), { x: counts.extra_inside }))
             : fill(t("staffLive.close.open"), { n: close.n }))
           : fill(t("staffLive.close.openExpected"), { e: close.expected }))
-        : t("staffLive.close.waiting");
+        : t(close.closable ? "staffLive.close.waitingClosable" : "staffLive.close.waiting");
   const open = s === "open" || s === "all_left";
+  // A payload from before `closable` existed: «everybody left» was the rule.
+  const closable = close.closable ?? s === "all_left";
   return (
     <div className="rounded-xl px-3 py-2 flex flex-wrap items-start gap-2 text-[13px]"
       style={{ background: `${tone}14`, border: `1px solid ${tone}55`, color: "var(--text-1)" }}>
@@ -137,7 +140,7 @@ function CloseLine({ close, counts, onGoClose }) {
         : <Unlock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />}
       <div className="min-w-[12rem] flex-1">
         <div>{text}</div>
-        {onGoClose && (s === "open" || s === "waiting") && (
+        {onGoClose && !closable && (s === "open" || s === "waiting") && (
           <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{t("staffLive.close.where")}</div>
         )}
         {open && (close.missing > 0 || close.pending > 0 || close.notified_at) && (
@@ -152,8 +155,10 @@ function CloseLine({ close, counts, onGoClose }) {
           </div>
         )}
       </div>
-      {s === "all_left" && onGoClose && (
-        <Button size="md" variant="secondary" className="flex-shrink-0 self-center max-sm:ml-[23px]" onClick={onGoClose}>
+      {closable && onGoClose && (
+        // A phone gives it a row of its own, and a long label (ru) wraps.
+        <Button size="md" variant="secondary" onClick={onGoClose}
+          className="flex-shrink-0 self-center max-sm:flex-shrink max-sm:ml-[23px] max-sm:max-w-[calc(100%-23px)] max-sm:text-left max-sm:justify-start">
           {t("staffLive.close.go")} <ArrowRight size={14} />
         </Button>
       )}

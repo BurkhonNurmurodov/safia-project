@@ -661,7 +661,8 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
             # Standing here now: this unit files the worker's next move, and a
             # worker still inside keeps the day open.
             "here": here, "status": w.p["status"] if here else "moved_out",
-            "job_title": w.role, "verifix_code": (ctx.placements[(manager_id, eid)].verifix_code
+            "job_title": w.role, "schedule": w.schedule,
+            "verifix_code": (ctx.placements[(manager_id, eid)].verifix_code
                                                   if (manager_id, eid) in ctx.placements else None),
             "clock_in": _hm(mine[0].start) if mine else None,
             "clock_out": (_hm(w.p["out"]) if here else _hm(mine[-1].end)) if mine else None,
@@ -773,6 +774,10 @@ def close_state(day_rows: dict, day: date, close_rec: Optional[LiveDayClose],
     else:
         out = {"state": "open", "n": c["inside"] + c.get("extra_inside", 0),
                "expected": c["not_yet"]}
+    # What `close_day` refuses on (besides people with no cell, which its
+    # refusal names): the page offers the close exactly where this is true —
+    # «everybody left», and a day nobody came to with nobody still due.
+    out["closable"] = not close_rec and not busy(day_rows)
     out["missing"] = c["missing"]
     out["pending"] = pending
     out["notified_at"] = (_iso(verifix_live._local(notice.sent_at))
