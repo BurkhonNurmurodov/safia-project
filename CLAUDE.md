@@ -7926,7 +7926,14 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   and no `start` means today. The `DayStepper week rolling` steps 7 days back
   and never past today (a picked day becomes the first column); a cell whose
   today is earlier than the latest keeps its offset from its own. `date=`
-  (the calendar week) stays for a 4.216 tab. `GET /api/kelish/week` builds each day's list with the very
+  (the calendar week) stays for a 4.216 tab.
+  **The list STARTS on 4 Oct 2026** (the operator, same day): every mark
+  saved before a cell's first column at the request — 4 Oct for a day unit,
+  3 Oct for a night unit, whose night was still its today — was cleared once
+  (`startup.purge_kelish_marks_before_start`, flag
+  `kelish_marks_start_2026_10_04_v1`, both entrypoints; the deleted rows kept
+  as JSON in `kelish_marks_start_2026_10_04_backup`; one «Jurnal» row
+  `kelish.marks_cleared`). Marks only — the «+» / «−» events stand. `GET /api/kelish/week` builds each day's list with the very
   `roster` a single day uses (`kelish.week` lays them side by side), so a square
   on screen is a square `PUT /mark` accepts; each slot carries the key its OWN
   day's list uses (`k`). `GET /list` stays for a tab open on an older bundle.

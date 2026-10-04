@@ -1463,6 +1463,76 @@ def purge_pre_september_appeals() -> None:
         )
 
 
+KELISH_START_FLAG = "kelish_marks_start_2026_10_04_v1"
+KELISH_START_BACKUP = "kelish_marks_start_2026_10_04_backup"
+
+
+def purge_kelish_marks_before_start() -> None:
+    """2026-10-04, the operator: «Ish grafigi» STARTS today — every mark saved
+    on an earlier day (admins trying the page out while it is admin-only) is
+    cleared, so the days before the first column read empty.
+
+    «Today» is each cell's own first column at the request (14:20 Tashkent,
+    `kelish.shift_days`): 4 October for a day unit and an unassigned cell,
+    3 October for a NIGHT unit — its night opened 3 Oct 20:00 and is still its
+    today, editable, until 20:00. Fixed dates, never the clock at boot: a pass
+    that only lands tomorrow must not clear what was filled in today.
+
+    Marks only: the «+» / «−» roster events are left as they are. The deleted
+    rows are kept as JSON in `KELISH_START_BACKUP`, so nothing is beyond
+    recovery. ONE transaction with the flag inside it; changing what it
+    clears needs a NEW flag key."""
+    import json
+    from datetime import date, timedelta
+
+    from app.models import Cell, KelishMark, Manager
+    from app.services import action_log
+
+    start = date(2026, 10, 4)
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=KELISH_START_FLAG).first():
+            return
+        night = {cid for (cid,) in db.query(Cell.id)
+                 .join(Manager, Manager.id == Cell.manager_id)
+                 .filter(Manager.shift == 2).all()}
+        gone = [m for m in db.query(KelishMark).filter(KelishMark.day < start).all()
+                if m.day < (start - timedelta(days=1) if m.cell_id in night else start)]
+        if gone:
+            db.add(AppSetting(key=KELISH_START_BACKUP, value=json.dumps([{
+                "id": m.id, "cell_id": m.cell_id, "day": m.day.isoformat(),
+                "worker_key": m.worker_key, "worker_name": m.worker_name,
+                "status": m.status, "set_by_key": m.set_by_key,
+                "set_by_name": m.set_by_name,
+                "set_at": m.set_at.isoformat() if m.set_at else None,
+            } for m in gone], ensure_ascii=False)))
+            (db.query(KelishMark)
+             .filter(KelishMark.id.in_([m.id for m in gone]))
+             .delete(synchronize_session=False))
+        db.add(AppSetting(key=KELISH_START_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] kelish marks before the start skipped: {exc}")
+        return
+    finally:
+        db.close()
+
+    cells = len({m.cell_id for m in gone})
+    print(f"[startup] kelish: {len(gone)} mark(s) before the start cleared "
+          f"on {cells} cell(s)")
+    if gone:
+        action_log.record_system(
+            "attendance", "kelish.marks_cleared",
+            details=[("marks", len(gone)), ("cells", cells),
+                     ("before", start.isoformat()),
+                     ("night_before", (start - timedelta(days=1)).isoformat())],
+            reason=("Operator directive: «Ish grafigi» starts on 4 October "
+                    "2026 — marks saved on earlier days cleared (copy kept "
+                    "in app_settings)"),
+        )
+
+
 def add_attendance_split_columns() -> None:
     """2026-08-30: one worker-day may be SPLIT across two of the unit's own
     cells, so an attendance row has to be able to say it is a FRACTION of a

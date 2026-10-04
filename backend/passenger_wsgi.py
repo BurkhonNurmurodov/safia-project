@@ -68,7 +68,7 @@ try:
         add_leader_task_cell,
         add_late_proof_provenance,
         add_late_proof_timing,
-        migrate_dispute_stages, purge_pre_september_appeals,
+        migrate_dispute_stages, purge_pre_september_appeals, purge_kelish_marks_before_start,
         backfill_appeal_threads, repair_appeal_threads,
         merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
@@ -208,6 +208,8 @@ try:
     # After the dispute stage columns and the action register it reports
     # into. One-shot: pre-September objections + late proofs, deleted.
     purge_pre_september_appeals()
+    # One-shot: «Ish grafigi» starts 4 Oct 2026 — earlier marks cleared.
+    purge_kelish_marks_before_start()
     # After the purge, so appeals it deletes never get a thread written.
     backfill_appeal_threads()
     repair_appeal_threads()
