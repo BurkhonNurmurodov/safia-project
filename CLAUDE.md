@@ -6989,6 +6989,23 @@ worker layout, with ONE button — «Verifix'dan olish» — where the upload wa
   appended, «Excel'da: 7313» when the file put the person in another cell
   (matched in the same cell first, then anywhere in the day), a verdict chip
   per cell and three comparison stats. A day with no uploaded file says so.
+- **«Farqlar» names WHY each person differs** (2026-10-04, the operator asked
+  to confirm the differences come from exchanges and HR documents). They
+  cannot: people exchanges, role-change documents and edit requests write
+  `attendance`, and the uploaded rows this page compares with are written by
+  the «Davomat» tab alone. So every differing person is listed with both sides
+  and a reason from the data — `moved` (Verifix's current department ≠ the
+  file's cell), `edited` / `manual` (changed on «Davomat»), `mark` (the file's
+  «О»/«X» against Verifix's, e.g. an «Отгул» removed in Verifix after the
+  export), `came`, `filled` (Verifix filled a missing mark later), `unfilled`,
+  `clock`, `hours`; only in Verifix → `not_in_excel` or `excel_other` (the file
+  has them in an uncounted cell); only in the file → where Verifix placed them
+  at the read, kept on the day (`vfx_attendance_days.notes`:
+  `vfx_other_cell`, `vfx_dismissed`, `vfx_hired_later`, `vfx_no_cell`,
+  `vfx_no_day`, `vfx_missing`, `vfx_ambiguous`; `vfx_unknown` for a read made
+  before notes existed). Beside each, for reference only, the platform's own
+  changes to that person's day (`_events`: approved exchange · role change ·
+  edit request). Matching is by folded name, as everywhere here.
 - One request, `verifix.BUDGET_S` (70 s) for everything; the directory
   (divisions + every employee, ~20 calls) is cached 10 min, so the next day
   read is ~16 calls. Out of time with rows in hand → stored and marked

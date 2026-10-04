@@ -65,6 +65,7 @@ try:
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
+        add_vfx_attendance_notes,
         add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
@@ -208,6 +209,7 @@ try:
     turn_on_cells_of_counted_units()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
+    add_vfx_attendance_notes()
     add_cell_shift_times()
     add_cell_archive()
     add_wc_groups()

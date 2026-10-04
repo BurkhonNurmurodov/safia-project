@@ -4385,6 +4385,9 @@ class VerifixAttendanceDay(Base):
     # «Отработано» rule the hours were summed by ({kinds, names, div, source}).
     codes           = Column(JSONB, nullable=True)
     hours_rule      = Column(JSONB, nullable=True)
+    # Where Verifix placed, at the read, each person the uploaded Excel has in a
+    # counted cell but the read did not return (folded name → {why, code, date}).
+    notes           = Column(JSONB, nullable=True)
 
     rows = relationship("VerifixAttendanceRow", back_populates="day",
                         cascade="all, delete-orphan", passive_deletes=True)

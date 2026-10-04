@@ -9,13 +9,16 @@
  * reads what is stored here — real attendance, the загрузка and every figure
  * stay the uploaded file's — so the page has no ticks, no moves, no edits and
  * no Save. Beside each person it shows what the uploaded Excel said for them
- * that day, so a past day can be checked against the file.
+ * that day, so a past day can be checked against the file — and «Farqlar»
+ * lists every person the two disagree on, with what differs and the platform's
+ * own changes to that person's day (exchange, role change, edit request).
  */
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, CheckCircle2, CloudDownload, FlaskConical, RefreshCw, TriangleAlert,
 } from "lucide-react";
+import TableCard, { Th } from "../../components/ui/DataTable";
 
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -165,6 +168,123 @@ function VfxWorkerTable({ cell, excel, t, tl, tx }) {
         </table>
       </div>
     </div>
+  );
+}
+
+// One side of a difference: the day cell and the hours.
+function Side({ s, t }) {
+  if (!s) return <span style={{ color: "var(--text-4)" }}>—</span>;
+  return (
+    <span className="whitespace-nowrap">
+      <span className="font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{s.clock || "—"}</span>
+      {s.hours != null && (
+        <span className="tabular-nums font-semibold ml-1.5" style={{ color: "var(--text-1)" }}>
+          {fmtNum(s.hours, 2)} {t("attUp.hoursShort")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Reasons that say the RECORD differs (amber) against those that only say a
+// person is on one side (neutral).
+const DATA_REASONS = new Set(["moved", "edited", "manual", "mark", "came", "filled", "unfilled", "clock", "hours", "unknown"]);
+
+// A reason's value: a cell code, «О → —» (Excel → Verifix) or an ISO date.
+const whyValue = (v) => {
+  if (v == null || v === "") return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(v);
+};
+
+function ReasonChip({ why, t }) {
+  const [code, v] = why;
+  const val = whyValue(v);
+  return (
+    <Chip tone={DATA_REASONS.has(code) ? "warn" : "neutral"} title={code === "mark" ? t("attVfx.markTip") : undefined}>
+      {t(`attVfx.why.${code}`)}{val ? ` · ${val}` : ""}
+    </Chip>
+  );
+}
+
+function EventChip({ ev, t, tl }) {
+  if (ev.kind === "exchange") {
+    const label = fill(t(ev.task ? "attVfx.ev.exchangeTask" : "attVfx.ev.exchange"),
+                       { to: ev.task ? (ev.to || "—") : tl(ev.to || "—") });
+    return (
+      <Chip tone="brand" title={`#${ev.doc}${ev.from ? ` · ${tl(ev.from)}` : ""}`}>
+        {label}{ev.time ? ` · ${ev.time}` : ""}
+      </Chip>
+    );
+  }
+  if (ev.kind === "role") {
+    return <Chip tone="brand" title={`#${ev.doc}${ev.old ? ` · ${ev.old}` : ""}`}>{fill(t("attVfx.ev.role"), { role: ev.role || "—" })}</Chip>;
+  }
+  return <Chip tone="brand" title={(ev.fields || []).join(", ")}>{t("attVfx.ev.edit")}</Chip>;
+}
+
+// Every person the two sides disagree on — the list a check is read from.
+function DiffTable({ diffs, t, tl }) {
+  const counts = useMemo(() => {
+    const c = new Map();
+    for (const d of diffs) for (const [code] of d.why) c.set(code, (c.get(code) || 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]);
+  }, [diffs]);
+  const withEvents = diffs.filter((d) => d.events.length).length;
+  return (
+    <TableCard
+      icon={AlertTriangle}
+      title={fill(t("attVfx.diffTitle"), { n: diffs.length })}
+      wrap
+      minWidth={960}
+      maxHeight="60vh"
+      toolbar={
+        <div className="w-full space-y-2">
+          <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("attVfx.diffNote")}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {counts.map(([code, n]) => (
+              <span key={code} className="inline-flex items-center gap-1">
+                <ReasonChip why={[code, null]} t={t} />
+                <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{n}</span>
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1">
+              <Chip tone="brand">{t("attVfx.colEvents")}</Chip>
+              <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{withEvents}</span>
+            </span>
+          </div>
+        </div>
+      }
+    >
+      <thead>
+        <tr>
+          <Th label={t("attUp.colWorker")} />
+          <Th label={t("attVfx.colCell")} />
+          <Th label="Verifix" />
+          <Th label={t("attVfx.colExcel")} />
+          <Th label={t("attVfx.colWhy")} />
+          <Th label={t("attVfx.colEvents")} />
+        </tr>
+      </thead>
+      <tbody>
+        {diffs.map((d) => (
+          <tr key={d.id}>
+            <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(d.worker_name)}</td>
+            <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: "var(--brand-text)" }}>{d.code || "—"}</td>
+            <td className="px-3 py-2"><Side s={d.vfx} t={t} /></td>
+            <td className="px-3 py-2"><Side s={d.excel} t={t} /></td>
+            <td className="px-3 py-2">
+              <div className="flex flex-wrap gap-1">{d.why.map((w, i) => <ReasonChip key={i} why={w} t={t} />)}</div>
+            </td>
+            <td className="px-3 py-2">
+              {d.events.length
+                ? <div className="flex flex-wrap gap-1">{d.events.map((ev, i) => <EventChip key={i} ev={ev} t={t} tl={tl} />)}</div>
+                : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </TableCard>
   );
 }
 
@@ -329,6 +449,10 @@ export default function AttendanceVerifix() {
             </>
           )}
         </div>
+      )}
+
+      {fetched && excel && (data.diffs?.length ?? 0) > 0 && (
+        <DiffTable diffs={data.diffs} t={t} tl={tl} />
       )}
 
       {/* Body */}

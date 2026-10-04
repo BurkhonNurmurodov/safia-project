@@ -36,8 +36,9 @@ past day still finds the people who have left since.
 from __future__ import annotations
 
 import logging
+import re
 import time as _time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
@@ -45,7 +46,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AttendanceBatch, AttendanceBatchRow, Cell, Manager,
+    AttendanceBatch, AttendanceBatchRow, Cell, EditRequest, HrDocument, Manager,
     VerifixAttendanceDay, VerifixAttendanceRow,
 )
 from app.services import verifix, verifix_live, verifix_parity
@@ -74,6 +75,12 @@ ABSENCE_MARK = {"26": "X", "28": "ПО", "29": "В", "30": "Б", "31": "О",
 
 # The file prints hours to two decimals (the parity check's tolerance).
 EXACT_H = 0.011
+
+# «07:55 - 17:02 (8.4)» / «08:00 - xx:xx» → the two sides, a missing one as None.
+_PAIR_RE = re.compile(r"(\d{1,2}:\d{2}|xx:xx)\s*[-–—]\s*(\d{1,2}:\d{2}|xx:xx)")
+# A day cell that is a MARK — «X», «О», or «О (07:59 - 17:07)», an absence the
+# export printed over the clocks (and counted no hours for).
+_MARK_RE = re.compile(r"^\s*(?!xx:)([^\d\s(]+)")
 
 
 class NotConfigured(Exception):
@@ -130,7 +137,8 @@ def hours_rule(db: Session) -> dict:
 # ── reading Verifix ───────────────────────────────────────────────────────────
 
 def _directory(cfg: dict, deadline: float) -> dict:
-    """Org units carrying a code, and every employee's org unit + dates."""
+    """Org units carrying a code, and every employee's org unit, dates, folded
+    name keys and status — (unit, hired, dismissed, full, two, status)."""
     key = ("vfx-attendance-dir", cfg["host"], cfg["filial_id"])
 
     def load() -> dict:
@@ -149,8 +157,12 @@ def _directory(cfg: dict, deadline: float) -> dict:
                 for e in page:
                     eid = str(e.get("employee_id") or "")
                     if eid:
+                        name = " ".join(str(x).strip() for x in (
+                            e.get("last_name"), e.get("first_name"), e.get("middle_name")) if x)
+                        full, two = verifix_parity._keys(name)
                         emps[eid] = (str(e.get("org_unit_id") or ""),
-                                     _day(e.get("hiring_date")), _day(e.get("dismissal_date")))
+                                     _day(e.get("hiring_date")), _day(e.get("dismissal_date")),
+                                     full, two, str(e.get("status") or ""))
         return {"units": units, "emps": emps}
 
     return verifix_live._cached(key, DIR_TTL, load)[0]
@@ -214,11 +226,12 @@ def fetch_day(db: Session, day: date, by: str = "") -> dict:
 
     rows: list[dict] = []
     partial = False
+    directory = None
     if counted:
         directory = _directory(cfg, deadline)
         units, emps = directory["units"], directory["emps"]
         ids: dict[int, str] = {}
-        for eid, (unit, hired, dismissed) in emps.items():
+        for eid, (unit, hired, dismissed, *_rest) in emps.items():
             key = units.get(unit)
             if key not in counted or not eid.isdigit():
                 continue
@@ -263,6 +276,7 @@ def fetch_day(db: Session, day: date, by: str = "") -> dict:
     vday.partial = partial
     vday.codes = sorted(code for code, _ in counted.values())
     vday.hours_rule = rule
+    vday.notes = _file_only_notes(db, day, counted, rows, directory)
     for r in rows:
         db.add(VerifixAttendanceRow(
             day_id=vday.id, verifix_code=r["code"], employee_id=r["employee_id"],
@@ -273,6 +287,126 @@ def fetch_day(db: Session, day: date, by: str = "") -> dict:
         ))
     db.commit()
     return {"cells": len(counted), "rows": len(rows), "partial": partial}
+
+
+def _file_only_notes(db: Session, day: date, counted: dict, rows: list,
+                     directory: Optional[dict]) -> dict:
+    """Why the read did not return somebody the uploaded Excel has in a counted
+    cell: where Verifix placed them at the read. Folded name → {why, code, date}."""
+    if not directory:
+        return {}
+    frows = _file_side(db, day, set(counted)) or []
+    got_full = {verifix_parity._keys(r["worker_name"])[0] for r in rows}
+    got_two = Counter(verifix_parity._keys(r["worker_name"])[1] for r in rows)
+    units, emps = directory["units"], directory["emps"]
+    by_full: dict[str, list] = defaultdict(list)
+    by_two: dict[str, list] = defaultdict(list)
+    for eid, e in emps.items():
+        by_full[e[3]].append(eid)
+        by_two[e[4]].append(eid)
+    registry = {verifix._code_key(c): c for (c,) in db.query(Cell.verifix_code).all() if c}
+    out: dict[str, dict] = {}
+    for f in frows:
+        full, two = verifix_parity._keys(f.worker_name or "")
+        if full in got_full or got_two.get(two) == 1:
+            continue
+        cands = by_full.get(full) or []
+        if len(cands) != 1:
+            alt = by_two.get(two) or []
+            cands = alt if not cands or len(alt) == 1 else cands
+        if len(cands) != 1:
+            out[full] = {"why": "vfx_missing" if not cands else "vfx_ambiguous"}
+            continue
+        unit, hired, dismissed, _f, _t, _st = emps[cands[0]]
+        key = units.get(unit)
+        note: dict = {}
+        if dismissed and dismissed < day:
+            note = {"why": "vfx_dismissed", "date": dismissed.isoformat()}
+        elif hired and hired > day:
+            note = {"why": "vfx_hired_later", "date": hired.isoformat()}
+        elif key is None:
+            note = {"why": "vfx_no_cell"}
+        elif key not in counted:
+            note = {"why": "vfx_other_cell", "code": registry.get(key, key)}
+        else:
+            note = {"why": "vfx_no_day"}
+        out[full] = note
+    return out
+
+
+def _events(db: Session, day: date) -> dict:
+    """The platform's own changes to that day, by folded worker name: approved
+    people exchanges and role changes (/staff documents) and approved edit
+    requests. They change `attendance` — never the uploaded rows this page
+    compares with — and are shown beside a difference for that reason."""
+    names = {m.id: m.name for m in db.query(Manager.id, Manager.name).all()}
+    out: dict[str, list] = defaultdict(list)
+    docs = (db.query(HrDocument)
+            .filter(HrDocument.date == day, HrDocument.status == "approved",
+                    HrDocument.doc_type.in_(("people_exchange", "role_change"))).all())
+    for doc in docs:
+        p = doc.payload or {}
+        for e in p.get("employees") or []:
+            full = verifix_parity._keys(e.get("worker_name") or "")[0]
+            if doc.doc_type == "people_exchange":
+                task = p.get("target_type") == "task"
+                out[full].append({"kind": "exchange", "doc": doc.id, "task": task,
+                                  "to": p.get("task_name") if task else p.get("target_manager_name"),
+                                  "from": names.get(e.get("old_manager_id")),
+                                  "time": p.get("transfer_time")})
+            else:
+                out[full].append({"kind": "role", "doc": doc.id,
+                                  "role": p.get("new_role"), "old": e.get("old_role")})
+    for er in (db.query(EditRequest)
+               .filter(EditRequest.date == day, EditRequest.status == "approved").all()):
+        full = verifix_parity._keys(er.worker_name or "")[0]
+        out[full].append({"kind": "edit", "id": er.id, "fields": sorted((er.changes or {}).keys())})
+    return out
+
+
+def _sides(clock: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    m = _PAIR_RE.search(clock or "")
+    if not m:
+        return None, None
+    return tuple(None if x == "xx:xx" else x for x in (m.group(1), m.group(2)))
+
+
+def _mark_of(clock: Optional[str]) -> Optional[str]:
+    """The mark a day cell carries («X», «О»…), None for a clock."""
+    m = _MARK_RE.match(clock or "")
+    return m.group(1) if m else None
+
+
+def _reasons(v: dict, f: dict) -> list:
+    """What differs between a Verifix row and the Excel row it was matched to."""
+    out: list = []
+    if f.get("cell"):
+        out.append(["moved", f["cell"]])
+    if f.get("manual"):
+        out.append(["manual", None])
+    elif f.get("edited"):
+        out.append(["edited", None])
+    if not _same(v, f):
+        vin, vout = _sides(v["clock_in_out"])
+        fin, fout = _sides(f["clock"])
+        v_any, f_any = bool(vin or vout), bool(fin or fout)
+        v_full, f_full = bool(vin and vout), bool(fin and fout)
+        vm, fm = _mark_of(v["clock_in_out"]), _mark_of(f["clock"])
+        if vm != fm:
+            out.append(["mark", f"{fm or '—'} → {vm or '—'}"])
+        elif v_any != f_any:
+            out.append(["came", None])
+        elif v_full and not f_full:
+            out.append(["filled", None])
+        elif f_full and not v_full:
+            out.append(["unfilled", None])
+        elif v_full and (vin, vout) != (fin, fout):
+            out.append(["clock", None])
+        elif v_full:
+            out.append(["hours", None])
+        else:
+            out.append(["mark", None])
+    return out or [["unknown", None]]
 
 
 # ── the page's payload ────────────────────────────────────────────────────────
@@ -330,7 +464,8 @@ def _match(vrows: list[dict], frows: list[dict]) -> None:
             free.discard(i)
             f = frows[i]
             v["file"] = {"hours": f["hours"], "clock": f["clock"], "status": f["status"],
-                         "cell": f["code"] if f["key"] != v["key"] else None}
+                         "cell": f["code"] if f["key"] != v["key"] else None,
+                         "edited": f["edited"], "manual": f["manual"]}
             v["same"] = _same(v, v["file"]) and f["key"] == v["key"]
     for i in sorted(free):
         frows[i]["_unmatched"] = True
@@ -365,6 +500,7 @@ def payload(db: Session, day: date) -> dict:
         "id": f"f{r.id}", "key": verifix._code_key(r.verifix_code), "code": r.verifix_code,
         "worker_name": r.worker_name, "job_title": r.job_title, "schedule": r.schedule,
         "clock": r.clock_in_out, "hours": _fnum(r.hours_worked), "status": r.status,
+        "edited": bool(r.edited), "manual": bool(r.manual),
     } for r in (file_rows or [])]
     if file_rows is not None:
         _match(vrows, frows)
@@ -442,6 +578,54 @@ def payload(db: Session, day: date) -> dict:
                              "cells": cs, "totals": totals(cs)})
     out_sections.sort(key=lambda s: (s["manager_name"] or "").lower())
 
+    # Every person on whom the two sides disagree, with what differs and the
+    # platform's own changes to that person's day.
+    diffs: list = []
+    if file_rows is not None:
+        events = _events(db, day)
+        notes = vday.notes or {}
+        # Where the Excel has somebody it does not put in a counted cell.
+        elsewhere: dict[str, str] = {}
+        batch = db.query(AttendanceBatch.id).filter(AttendanceBatch.date == day).first()
+        if batch:
+            for name, code in (db.query(AttendanceBatchRow.worker_name, AttendanceBatchRow.verifix_code)
+                               .filter(AttendanceBatchRow.batch_id == batch[0]).all()):
+                if (verifix._code_key(code) if code else None) not in keys:
+                    elsewhere.setdefault(verifix_parity._keys(name or "")[0], code or "—")
+
+        def show(key: str, code: str) -> str:
+            reg = registry.get(key)
+            return reg.verifix_code if reg else code
+
+        for v in vrows:
+            if v["file"] is None:
+                other = elsewhere.get(v["_full"])
+                why = [["excel_other", other]] if other else [["not_in_excel", None]]
+            elif v["same"]:
+                continue
+            else:
+                why = _reasons(v, v["file"])
+            f = v["file"]
+            diffs.append({
+                "id": v["id"], "worker_name": v["worker_name"], "code": show(v["key"], v["code"]),
+                "vfx": {"clock": v["clock_in_out"], "hours": v["hours_worked"], "status": v["status"]},
+                "excel": ({"clock": f["clock"], "hours": f["hours"], "status": f["status"],
+                           "code": f["cell"]} if f else None),
+                "why": why, "events": events.get(v["_full"], []),
+            })
+        for f in frows:
+            if not f.get("_unmatched"):
+                continue
+            n = notes.get(f["_full"])
+            diffs.append({
+                "id": f["id"], "worker_name": f["worker_name"], "code": show(f["key"], f["code"]),
+                "vfx": None,
+                "excel": {"clock": f["clock"], "hours": f["hours"], "status": f["status"], "code": None},
+                "why": [[n["why"], n.get("code") or n.get("date")]] if n else [["vfx_unknown", None]],
+                "events": events.get(f["_full"], []),
+            })
+        diffs.sort(key=lambda d: (str(d["code"] or ""), (d["worker_name"] or "").lower()))
+
     matched = [v for v in vrows if v["file"] is not None]
     return {
         **base,
@@ -453,6 +637,7 @@ def payload(db: Session, day: date) -> dict:
         "excel": file_rows is not None,
         "sections": out_sections,
         "unassigned": unassigned,
+        "diffs": diffs,
         "totals": {
             **totals(cells),
             "supervisors": len(out_sections), "unassigned": len(unassigned),
