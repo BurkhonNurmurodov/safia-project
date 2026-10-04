@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter, XCircle,
+  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -1017,7 +1017,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap self-start"
                           title={t("staff.onTask")}
                           style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--border-md)" }}>
-                          🗂 {w.on_task}
+                          <FolderOpen size={11} className="inline-block align-[-1px] mr-1" aria-hidden="true" />{w.on_task}
                         </span>
                       )}
                     </div>
@@ -1403,6 +1403,18 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
 
 // ── Да / Нет binary status pill ───────────────────────────────────────────────
 
+// A people-exchange recipient in the «Ko'chirish» picker: an icon saying what
+// KIND of recipient it is (a supervisor, a task, a new task) beside its name.
+// The name truncates; the icon never shrinks.
+function TargetLabel({ Icon, text }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full align-middle">
+      <Icon size={13} className="flex-shrink-0" style={{ color: "var(--text-3)" }} aria-hidden="true" />
+      <span className="truncate min-w-0">{text}</span>
+    </span>
+  );
+}
+
 function YesNoBadge({ approved }) {
   const { t } = useLang();
   return (
@@ -1768,10 +1780,20 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
   const targetOptions = useMemo(() => {
     const opts = [];
-    supTargets.forEach(s => opts.push({ value: `sup:${s.manager_id}`, label: `👤 ${tl(s.full_name)}` }));
-    (taskData.tasks || []).forEach(name => opts.push({ value: `task:${name}`, label: `🗂 ${name}`, removable: isAdmin, taskName: name }));
+    supTargets.forEach(s => opts.push({
+      value: `sup:${s.manager_id}`, title: tl(s.full_name),
+      label: <TargetLabel Icon={User} text={tl(s.full_name)} />,
+    }));
+    (taskData.tasks || []).forEach(name => opts.push({
+      value: `task:${name}`, title: name,
+      label: <TargetLabel Icon={FolderOpen} text={name} />,
+      removable: isAdmin, taskName: name,
+    }));
     // Creating a brand-new task is admin-only; supervisors may only pick existing ones.
-    if (isAdmin) opts.push({ value: "__new__", label: `＋ ${t("staff.newTask")}` });
+    if (isAdmin) opts.push({
+      value: "__new__", title: t("staff.newTask"),
+      label: <TargetLabel Icon={Plus} text={t("staff.newTask")} />,
+    });
     return opts;
   }, [supTargets, taskData, tl, t, isAdmin]);
 
@@ -2192,8 +2214,9 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       message={
         <>
           {t("staff.removeTaskBody")}
-          <span className="block text-sm font-semibold mt-2" style={{ color: "var(--text-1)" }}>
-            🗂 {taskToRemove}
+          <span className="flex items-center gap-1.5 text-sm font-semibold mt-2" style={{ color: "var(--text-1)" }}>
+            <FolderOpen size={14} className="flex-shrink-0" style={{ color: "var(--text-3)" }} aria-hidden="true" />
+            <span className="min-w-0 break-words">{taskToRemove}</span>
           </span>
           {removeError && (
             <span className="block mt-3" style={{ color: "#ef4444" }}>{removeError}</span>
@@ -2242,10 +2265,10 @@ export function DocumentViewModal({ docId, onClose }) {
               <div className="text-xs">
                 <div className="font-semibold mb-1.5" style={{ color: "var(--text-2)" }}>
                   {t("staff.moveTo")}{" "}
-                  <span style={{ color: "var(--brand-text)" }}>
+                  <span className="inline-flex items-center gap-1 align-bottom" style={{ color: "var(--brand-text)" }}>
                     {doc.target_type === "supervisor"
-                      ? `👤 ${tl(doc.target_manager_name) || "—"}`
-                      : `🗂 ${doc.task_name || "—"}`}
+                      ? <><User size={12} className="flex-shrink-0" aria-hidden="true" />{tl(doc.target_manager_name) || "—"}</>
+                      : <><FolderOpen size={12} className="flex-shrink-0" aria-hidden="true" />{doc.task_name || "—"}</>}
                   </span>
                 </div>
                 {doc.transfer_time && (
