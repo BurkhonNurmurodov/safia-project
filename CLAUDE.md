@@ -300,6 +300,38 @@ to the operator as text + a workbook.
   6831, 7016, 7621), 133 renamed, 2 brigadir differences (0811 — the 26 Sep
   ruling; 7015 has none).
 
+## Leaders × Verifix (`verifix_leader_sync`, 2026-10-04)
+
+The same day, the same comparison for leaders — with the operator's limit:
+«don't delete or archive yet, report me; if there are leaders, create leader
+profiles for them». TEMPORARY one-shot `services/verifix_leader_sync.py`,
+`startup.sync_leaders_from_verifix` (flag `verifix_leader_sync_2026_10_04_v1`,
+~180 s after boot — after the cell sync — both entrypoints), DMed as text + a
+workbook. Nothing is deleted, archived or renamed.
+
+- **A Verifix leader** = a WORKING employee whose job `is_leader_job`
+  («Лидер», «Лидер АХО», «Лидер/отправка»). Profile ↔ person through
+  `leader_verifix_check._match`, unchanged (strict names + the operator's pins).
+- **Created** only where the person's cell gives one clean place: an active
+  cell of ours with a brigadir, no leader of its own, no leader profile Verifix
+  places in it, no second profileless Verifix leader in it, and no profile with
+  the same surname + first name anywhere. The profile takes the cell's unit and
+  the cell, the Verifix name in Latin Title Case, kind «Lider» (src verifix).
+  It is on the unit's roster at once — «not filed» in the digest until the
+  person registers in the bot.
+- **Reported only**: profileless Verifix leaders that could not be placed (cell
+  without a brigadir, cell with a leader, uncoded subdivision, department),
+  profiles Verifix lacks (archive candidates), «Lider o'rnida», names spelled
+  differently, another cell / another brigadir in Verifix, archived cells.
+- Dry run (11 Sep profiles × the 1 Oct dump, after the cell sync): 0 created —
+  36 profileless leaders stand in cells with no brigadir (the new service
+  cells), 16 in subdivisions Verifix gave no code (dispatch zones 47xx,
+  finished-goods freezers 1711/1721/1811/1821, «Алмата Фабрика», «Корзинка»),
+  3 in cells led by another profile, 1 in a department, 1 beside a profile on
+  0822; 3 profiles not in Verifix, 8 «Lider o'rnida», 6 spelled differently.
+- Delete it (before `leader_verifix_check`, whose matching it imports) with its
+  startup pair and both entrypoint calls once the report has landed.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts

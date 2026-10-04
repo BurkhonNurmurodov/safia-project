@@ -7073,6 +7073,37 @@ def _cell_sync_job() -> None:
                       verifix_cell_sync.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: leaders × Verifix — create the missing profiles, report the rest
+# The operator's follow-up the same day: «do the same with leaders, but don't
+# delete or archive yet — report me; if there are leaders, create leader
+# profiles for them». Runs after the cell sync (the profiles it creates take a
+# cell that sync may have created), on the server, once, and DMs the report
+# (`services/verifix_leader_sync.py` says who counts as a leader and when a
+# profile is created). Nothing is deleted, archived or renamed.
+LEADER_SYNC_FLAG = "verifix_leader_sync_2026_10_04_v1"
+_LEADER_SYNC_DELAY_S = 180
+
+
+def sync_leaders_from_verifix() -> None:
+    """Create the leader profiles Verifix says are missing, once, and report. Never raises."""
+    try:
+        if not _report_pending(LEADER_SYNC_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("verifix-leader-sync",
+                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_SYNC_DELAY_S),
+                    _leader_sync_job)
+    except Exception as exc:
+        print(f"[startup] Verifix leader sync could not be scheduled: {exc}")
+
+
+def _leader_sync_job() -> None:
+    from app.services import verifix_leader_sync
+    _send_report_once(LEADER_SYNC_FLAG, "Verifix leader sync",
+                      verifix_leader_sync.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

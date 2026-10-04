@@ -107,6 +107,7 @@ try:
         report_wc_plan_history,
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
+        sync_leaders_from_verifix,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -497,6 +498,12 @@ try:
     # Remove this line, `startup.sync_cells_from_verifix` and
     # `services/verifix_cell_sync.py` once the report has landed.
     sync_cells_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-04) — leaders × Verifix: creates the leader
+    # profiles Verifix says are missing (only where the cell gives a clean
+    # place) and DMs every other difference; deletes, archives, renames nothing.
+    # Remove this line, `startup.sync_leaders_from_verifix` and
+    # `services/verifix_leader_sync.py` once the report has landed.
+    sync_leaders_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
