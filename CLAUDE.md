@@ -7268,6 +7268,53 @@ rights — over a different source, and it is being built to REPLACE /staff.
   written before that, so the day is told once it is). Only while the last exit
   is within `NOTICE_WINDOW_MIN` (3 h), so a deploy never tells a finished night;
   never for a day already closed; once per unit-day even if somebody comes back.
+  The standing line names the people inside under ANOTHER unit's name apart
+  («ichkarida 34 kishi (+2 boshqa brigada nomida)» — the strip counts only the
+  unit's own), and for whoever may close (an admin, the unit's own brigadir) it
+  carries ««Tasdiqlash»da yopish», which opens that tab on this unit and month
+  by writing the live calendar's own remembered keys first (`goClose` in
+  `StaffPage`; /staff's calendar keys are untouched).
+- **Hardening of 2026-10-05** (a fresh-eyes review of the test page, every fix
+  approved one by one):
+  - **A write never reads Verifix in the middle of itself.** `_ctx_for` (an
+    approval's «does the move still hold», an un-post's dependants) reads
+    `day_read(stored_only=True)`: no Verifix call, no commit, no rollback.
+    `_read_day` / `_note_error` own the session's transaction, so a stale read
+    there rolled the caller's pending changes back — an admin's own document
+    filed during a Verifix outage answered 201 «approved» and did not exist.
+  - **The closed-day guard checks the day BUILT** (`rd["day"]`), not the date
+    sent: an empty date means today, and `_closed(None)` let it through
+    (create, bulk delete, placement). Close / reopen refuse an empty date
+    (400), the calendar bounds year and month (422), `approvals/day` with no
+    date answers for the shift-day now, and a return time that is not a time,
+    or comes without a transfer time, is refused (400) instead of filing a
+    one-way move.
+  - **A future date is refused** (`error: "future"`, 400 on writes): reading it
+    stored an empty day that every unit's calendar then showed «open». The
+    calendar counts a day only where the read covers the unit (`all_at`, or the
+    unit's own stamp) and only for a unit with workload cells.
+  - **The minute job reads each day only for the shift whose day it is**, plus
+    a shift opening within `LOOKAHEAD_H` (4 h — `_person`'s window, so early
+    arrivals are not missed). It read every shift's people for every due day: a
+    night that had not started every minute, a finished day shift every 10 min.
+  - **«Yangilash»** keeps the job's 10-minute directory (it re-read the whole
+    plant first), is ignored within `FORCE_MIN_S` (30 s) of the unit's last
+    read, and only ONE read per (unit, day) runs at a time (`_unit_lock`; a
+    viewer with a stored read is served it, one with none waits).
+  - **A direct delete of a worker the brigadir already asked to delete approves
+    THAT request** instead of writing a second row; a replaced batch is
+    rejected only within its own unit.
+  - The table puts «Holat» right after the name (a phone and a 1024 px laptop
+    never showed it); the label wraps on a phone. The floating «N qator» pill is
+    gone on this page (the strip counts). The «boshqa brigada nomidagi soatlar»
+    section follows the search and the strip; «hozir shu yerda» shows only while
+    the person is inside or on a break. Live chips take the `--status-*` ink
+    over an 8 % tint mixed on the CARD (AA in both themes).
+  - Not changed: the KPI cards still follow the strip with no «filtrlangan»
+    badge, early arrival still rounds the seconds (`early_arrival_min` can sit
+    one minute off `early_in`), a no-check-out day still carries no lateness
+    (`late` is None for `no_out` — pending the operator's note), and nothing
+    /staff shares was touched.
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 

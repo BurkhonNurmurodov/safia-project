@@ -30,9 +30,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -162,7 +162,8 @@ class _NoDay(HTTPException):
 
     def __init__(self, rd: dict):
         code = rd.get("error")
-        status = 409 if code in ("not_configured", "no_cells", "no_unit") else 424
+        status = (400 if code == "future"
+                  else 409 if code in ("not_configured", "no_cells", "no_unit", "busy") else 424)
         super().__init__(status_code=status, detail={
             "code": code, "message": rd.get("message") or code})
 
@@ -694,7 +695,9 @@ def _ctx_for(db: Session, doc: LiveDocument, reads: Optional[dict] = None):
     when there is no read to check against."""
     reads = reads if reads is not None else {}
     key = (doc.manager_id, doc.day)
-    rd = reads.get(key) or verifix_live.day_read(db, doc.manager_id, doc.day)
+    # Stored read only: this runs inside a write (an approval, an un-post),
+    # and a Verifix read here would roll the caller's pending changes back.
+    rd = reads.get(key) or verifix_live.day_read(db, doc.manager_id, doc.day, stored_only=True)
     if rd.get("error"):
         return None
     reads[key] = rd
@@ -821,7 +824,11 @@ def _exchange_payload(db: Session, caller: dict, body, d: date, mid: int, *, ctx
     ttime = _hhmm(body.transfer_time) if body.transfer_time else None
     if body.transfer_time and not ttime:
         raise HTTPException(status_code=400, detail="time must be HH:MM")
+    if body.return_time and not ttime:
+        raise HTTPException(status_code=400, detail="Qaytish vaqti faqat ko'chirish vaqti bilan beriladi")
     rtime = _hhmm(body.return_time) if (ttime and body.return_time) else None
+    if body.return_time and not rtime:
+        raise HTTPException(status_code=400, detail="time must be HH:MM")
     shift = (ctx.units.get(mid) or {}).get("shift")
     T = live_staff._at(ctx, shift, ttime) if ttime else None
     if ttime and T is None:
@@ -928,6 +935,7 @@ def create_document(body: DocCreateBody, db: Session = Depends(get_db), caller: 
     _assert_open(db, mid, _day_of(body.attend_date))
     rd, ctx, ud = _build(db, mid, _day_of(body.attend_date))
     d = rd["day"]
+    _assert_open(db, mid, d)            # the day BUILT — an empty date means today
     payload = (_exchange_payload(db, caller, body, d, mid, ctx=ctx, ud=ud)
                if body.doc_type == "people_exchange" else _role_payload(body, ud))
     doc = LiveDocument(doc_type=body.doc_type, manager_id=mid, supervisor_name=mgr_name, day=d,
@@ -1187,6 +1195,7 @@ def bulk_delete(body: BulkDeleteBody, db: Session = Depends(get_db), caller: dic
     _assert_open(db, mid, d)
     rd, ctx, ud = _build(db, mid, d)
     d = rd["day"]
+    _assert_open(db, mid, d)            # the day BUILT — an empty date means today
     rows = _named(ud)
     batch = str(uuid4())
     now = datetime.now(timezone.utc)
@@ -1194,16 +1203,29 @@ def bulk_delete(body: BulkDeleteBody, db: Session = Depends(get_db), caller: dic
     created: list[str] = []
     if not direct and body.replace_batch_id:
         for r in db.query(LiveDeletion).filter(LiveDeletion.batch_id == body.replace_batch_id,
+                                               LiveDeletion.manager_id == mid,
                                                LiveDeletion.status == "pending").all():
             r.status = "rejected"
         db.flush()
-    pending = {r.employee_id for r in db.query(LiveDeletion).filter(
+    pending = {r.employee_id: r for r in db.query(LiveDeletion).filter(
         LiveDeletion.manager_id == mid, LiveDeletion.day == d, LiveDeletion.status == "pending")}
     for eid in ids:
         r = rows.get(eid)
         if not r:
             continue
         if not direct and eid in pending:
+            continue
+        if direct and eid in pending:
+            # The brigadir already asked for this one: the direct delete IS the
+            # answer to that request. A second, approved row beside it would
+            # leave the pending one to be approved later — two approved
+            # deletions of one worker, and undoing one would not restore them.
+            req = pending[eid]
+            req.status = "approved"
+            req.processed_by_telegram_id = _tg(caller)
+            req.processed_by_name = _who(caller)
+            req.processed_at = now
+            created.append(r["worker_name"])
             continue
         db.add(LiveDeletion(
             batch_id=batch, manager_id=mid, day=d, employee_id=eid, worker_name=r["worker_name"],
@@ -1411,8 +1433,11 @@ def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = 
     """The day-close state of one unit-day (`staff.approval_day`)."""
     mid = _read_unit(db, caller, manager_id)
     d = _day_of(attend_date)
-    closure = _closed(db, mid, d) if d else None
-    pending = live_staff.pending_count(db, mid, d) if d else 0
+    if d is None:                       # the day the page shows with no date: the shift-day now
+        unit = db.query(Manager).filter(Manager.id == mid).first()
+        d = verifix_live.shift_day(db, unit.shift if unit else None)
+    closure = _closed(db, mid, d)
+    pending = live_staff.pending_count(db, mid, d)
     unplaced: list = []
     if closure is None:
         try:
@@ -1422,7 +1447,7 @@ def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = 
             unplaced = []
     state = "open" if closure is None else ("closed" if pending else "confirmed")
     return {
-        "manager_id": mid, "date": attend_date, "state": state, "closed": closure is not None,
+        "manager_id": mid, "date": d.isoformat(), "state": state, "closed": closure is not None,
         "closed_by": closure.closed_by_name if closure else None,
         "closed_at": closure.closed_at.isoformat() if closure and closure.closed_at else None,
         "pending_requests": pending,
@@ -1433,7 +1458,8 @@ def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = 
 
 
 @router.get("/approvals/calendar")
-def approvals_calendar(year: int, month: int, manager_id: Optional[int] = None,
+def approvals_calendar(year: int = Query(..., ge=2000, le=2100), month: int = Query(..., ge=1, le=12),
+                       manager_id: Optional[int] = None,
                        db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """Per-day close state for a month (`staff.approvals_calendar`): a day with
     a stored Verifix read is «open» until closed by hand; closed with nothing
@@ -1442,8 +1468,15 @@ def approvals_calendar(year: int, month: int, manager_id: Optional[int] = None,
     start = date(year, month, 1)
     end = date(year + (month == 12), (month % 12) + 1, 1)
     read_days = set()
-    for (key,) in db.query(LiveVerifixRead.key).filter(
-            LiveVerifixRead.key >= f"day:{start.isoformat()}", LiveVerifixRead.key < f"day:{end.isoformat()}"):
+    # A read covers this unit when the job read every workload cell (`all_at`)
+    # or the unit's own read stamped it — and only a unit with workload cells
+    # has any read at all.
+    covers = or_(LiveVerifixRead.data.has_key("all_at"),
+                 LiveVerifixRead.data["units"].has_key(str(mid)))
+    q = db.query(LiveVerifixRead.key).filter(
+        LiveVerifixRead.key >= f"day:{start.isoformat()}", LiveVerifixRead.key < f"day:{end.isoformat()}",
+        covers)
+    for (key,) in (q if verifix_live.unit_cells(db, mid) else []):
         try:
             read_days.add(date.fromisoformat(key[4:]))
         except ValueError:
@@ -1489,6 +1522,8 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     else:
         raise HTTPException(status_code=403, detail="Only supervisors or admins can close a day")
     d = _day_of(body.date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
     unit = db.query(Manager).filter(Manager.id == mid).first()
     if d > verifix_live.shift_day(db, unit.shift if unit else None):
         raise HTTPException(status_code=400, detail="Cannot close a future date")
@@ -1536,6 +1571,8 @@ def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict =
     if not _cap_covers(db, caller, CAP_DAY_REOPEN, body.manager_id):
         raise HTTPException(status_code=403, detail="Only an admin can re-open a closed day")
     d = _day_of(body.date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
     row = _closed(db, body.manager_id, d)
     if row:
         closer = row.closed_by_name
@@ -1649,6 +1686,7 @@ def save_cell_placement(body: PlacementBody, db: Session = Depends(get_db),
         raise HTTPException(status_code=409, detail="Day is already closed")
     rd, ctx, ud = _build(db, mid, d)
     d = rd["day"]
+    _assert_open(db, mid, d)            # the day BUILT — an empty date means today
     by_id = {r["id"]: r for r in ud["workers"]}
     valid = {c["code"] for c in ctx.cells.values() if c["manager_id"] == mid} | \
             {r["verifix_code"] for r in ud["workers"] if r.get("verifix_code")}

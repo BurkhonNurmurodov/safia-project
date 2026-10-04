@@ -69,6 +69,8 @@ HOT_AFTER_MIN = 120      # a shift stays «running» for the reads this long pas
 STALE_S = 180            # the page reads Verifix itself when a running day's read is older
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
+FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
+LOOKAHEAD_H = 4          # a shift's people are read this long before it opens (`_person`'s window)
 NOTICE_WINDOW_MIN = 180  # «everybody left» is told only while the last exit is this recent
 MISSING_AFTER_MIN = 60   # still inside this long past the shift's end = no check-out
 LATE_GRACE_MIN = 5       # minutes a check-in may trail the schedule start
@@ -697,13 +699,37 @@ def _doc_ids(db: Session, day: date) -> set[str]:
     return out
 
 
-def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = False) -> dict:
+_unit_locks: dict[tuple, threading.Lock] = {}
+_unit_locks_guard = threading.Lock()
+
+
+def _unit_lock(key: tuple) -> threading.Lock:
+    """One lock per (unit, day): two viewers of a stale unit, or the parallel
+    queries of one page load, must not start the same Verifix read twice."""
+    with _unit_locks_guard:
+        lk = _unit_locks.get(key)
+        if lk is None:
+            if len(_unit_locks) > 1000:            # forget the idle ones
+                for k in [k for k, v in _unit_locks.items() if not v.locked()]:
+                    _unit_locks.pop(k, None)
+            lk = _unit_locks[key] = threading.Lock()
+        return lk
+
+
+def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = False,
+             stored_only: bool = False) -> dict:
     """The stored read behind one unit's day (`services/live_staff` builds the
     rows), read from Verifix first only when it has to be: «Yangilash»
     (`force`), a day nobody stored yet, somebody of this unit missing from it,
     or a running day's read older than `STALE_S` — the job that keeps it fresh
     has stopped. An error comes back as {"error": code[, "message"]}; with a
-    stored read in hand a failed re-read keeps it and says so (`read_error`)."""
+    stored read in hand a failed re-read keeps it and says so (`read_error`).
+
+    `stored_only` never calls Verifix and never commits or rolls back: it is
+    what a WRITE request's checks read (an approval's «does the move still
+    hold»). A read in the middle of a write would roll the caller's pending
+    changes back — `_read_day` and `_note_error` own the session's transaction
+    — and the request would then report a save that never happened."""
     cfg = verifix.config(db, with_password=True)
     if not _configured(cfg):
         return {"error": "not_configured"}
@@ -715,10 +741,22 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         return {"error": "no_cells"}
     today = shift_day(db, unit["shift"])
     day = day or today
-    try:
-        directory, dir_at = _directory(db, cfg, 120 if force else DIR_FALLBACK_S)
-    except verifix.VerifixError as exc:
-        return {"error": exc.code, "message": exc.message}
+    # A date that has not come yet has nothing in Verifix: reading it would
+    # only store an empty day, which every unit's calendar then shows «open».
+    if day > now_local().date():
+        return {"error": "future"}
+    if stored_only:
+        drow = _row(db, "dir")
+        if not drow or not drow.data:
+            return {"error": "no_read"}
+        directory, dir_at = drow.data, _local(drow.read_at)
+    else:
+        try:
+            # «Yangilash» keeps the directory the job refreshes every DIR_TTL:
+            # re-reading the whole plant's employees first doubled the press.
+            directory, dir_at = _directory(db, cfg, DIR_TTL if force else DIR_FALLBACK_S)
+        except verifix.VerifixError as exc:
+            return {"error": exc.code, "message": exc.message}
     homes = _homes(directory, cells)
     ids = sorted({eid for eid, (mid, _) in homes.items() if mid == manager_id} | _doc_ids(db, day))
 
@@ -728,17 +766,36 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     store = data.get("emps") or {}
     covered = _covered_at(data, manager_id)
     now = now_local()
+    if stored_only:
+        if covered is None:
+            return {"error": "no_read"}
+        return {"day": day, "today": today, "unit": unit, "directory": directory,
+                "dir_at": dir_at, "store": store, "covered": covered, "now": now,
+                "read_error": None}
     stale = (covered is None or any(i not in store for i in ids)
              or (day == today and (now - covered).total_seconds() > STALE_S))
+    # A press this soon after the last read serves that read.
+    if force and covered is not None and (now - covered).total_seconds() < FORCE_MIN_S:
+        force = False
     read_error = None
     if force or stale:
-        try:
-            data = _read_day(db, cfg, day, ids, unit_id=manager_id)
-        except verifix.VerifixError as exc:
-            _note_error(db, key, exc)
-            if covered is None:
-                return {"error": exc.code, "message": exc.message}
-            read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
+        lk = _unit_lock((manager_id, day))
+        # Another read of this unit-day is running: with something stored,
+        # serve it; with nothing, wait for that read to finish first.
+        got = (lk.acquire(timeout=verifix.BUDGET_S + 15) if covered is None
+               else lk.acquire(blocking=False))
+        if not got and covered is None:
+            return {"error": "busy", "message": "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."}
+        if got:
+            try:
+                data = _read_day(db, cfg, day, ids, unit_id=manager_id)
+            except verifix.VerifixError as exc:
+                _note_error(db, key, exc)
+                if covered is None:
+                    return {"error": exc.code, "message": exc.message}
+                read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
+            finally:
+                lk.release()
         store = data.get("emps") or {}
         covered = _covered_at(data, manager_id)
         now = now_local()
@@ -859,6 +916,21 @@ def _pass(db: Session) -> None:
     shifts = {units[m]["shift"] or 1 for m in with_cells}
     by_shift = {s: shift_day(db, s, now_tz) for s in shifts}
     unit_days = {m: by_shift[units[m]["shift"] or 1] for m in with_cells}
+    defaults = cell_hours.defaults(db)
+
+    def reads(m: int, day: date) -> bool:
+        """This unit's people belong in the read of `day`: it is the unit's
+        current shift-day, or the unit's shift opens on it within LOOKAHEAD_H
+        (early arrivals). Reading every shift's people for every due day read
+        a night that had not started every minute, and a finished day shift
+        every ten minutes."""
+        if unit_days[m] == day:
+            return True
+        win = defaults.get(units[m]["shift"] or 1) or ("08:00", "20:00")
+        start = datetime.combine(day, time(0)) + timedelta(minutes=cell_hours._to_min(win[0]) or 0)
+        now = now_local()
+        return now < start <= now + timedelta(hours=LOOKAHEAD_H)
+
     sent = 0
     for day, every in sorted(_due_days(db, shifts, now_tz).items(), key=lambda kv: kv[1]):
         key = _day_key(day)
@@ -866,7 +938,7 @@ def _pass(db: Session) -> None:
         last = datetime.fromisoformat(row.data["all_at"]) if row and (row.data or {}).get("all_at") else None
         if last is not None and (now_local() - last).total_seconds() < every - 15:
             continue
-        ids = sorted(set(homes) | _doc_ids(db, day))
+        ids = sorted({eid for eid, (m, _) in homes.items() if reads(m, day)} | _doc_ids(db, day))
         t0 = _time.monotonic()
         try:
             _read_day(db, cfg, day, ids)

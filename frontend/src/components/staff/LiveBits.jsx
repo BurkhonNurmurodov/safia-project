@@ -5,7 +5,7 @@
 // worker carried here while their name sits on another unit's day, and (for
 // admins) what the read held.
 import {
-  AlertTriangle, FlaskConical, Info, Loader2, Lock, RefreshCw, Unlock, ArrowRightLeft,
+  AlertTriangle, ArrowRight, FlaskConical, Info, Loader2, Lock, RefreshCw, Unlock, ArrowRightLeft,
 } from "lucide-react";
 import Button from "../ui/Button";
 import { useLang } from "../../context/LangContext";
@@ -29,11 +29,19 @@ export const STATUS_TONE = {
   no_out: "#ef4444",
 };
 
+// A chip's TEXT takes the theme's status ink (CLAUDE.md: --status-ok/warn/bad
+// are the AA shades of the traffic light); the hex only tints the fill. The
+// raw #eab308 as text on its own tint read 1.7:1 in the light theme. The tint
+// is mixed over the CARD, never over whatever the chip sits on: inside the
+// amber standing line a translucent amber stacked on amber fell under AA again.
+const INK = { "#22c55e": "var(--status-ok)", "#eab308": "var(--status-warn)", "#ef4444": "var(--status-bad)" };
+
 export function LiveChip({ color, children, dashed = false, title }) {
   return (
     <span title={title}
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap"
-      style={{ background: `${color}1f`, color, border: `1px ${dashed ? "dashed" : "solid"} ${color}66` }}>
+      style={{ background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`, color: INK[color] || "var(--text-2)",
+        border: `1px ${dashed ? "dashed" : "solid"} ${color}66` }}>
       {children}
     </span>
   );
@@ -43,8 +51,11 @@ export function LiveStatusChip({ status }) {
   const { t } = useLang();
   const color = STATUS_TONE[status] || "#94a3b8";
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap" style={{ color: "var(--text-2)" }}>
-      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+    // On a phone the label may take two lines: «Chiqish belgisi yo'q» on one
+    // line pushed the status column past a 320px screen.
+    <span className="inline-flex items-center max-sm:items-start gap-1.5 text-xs whitespace-nowrap max-sm:whitespace-normal"
+      style={{ color: "var(--text-2)" }}>
+      <span className="w-2 h-2 rounded-full flex-shrink-0 max-sm:mt-[4px]" style={{ background: color }} />
       {t(`staffLive.st.${status}`)}
     </span>
   );
@@ -82,7 +93,11 @@ function readAt(live) {
   return p.slice(0, 10) === (live.now || "").slice(0, 10) ? time : `${p.slice(8, 10)}.${p.slice(5, 7)} ${time}`;
 }
 
-function CloseLine({ close }) {
+// `counts` splits «inside» into this unit's own people and those standing here
+// under another unit's name — the strip counts only the first, so the line
+// says the second out loud. `onGoClose` (only for those who may close the day)
+// opens «Tasdiqlash» on this unit and month: the day closes there.
+function CloseLine({ close, counts, onGoClose }) {
   const { t } = useLang();
   if (!close) return null;
   const s = close.state;
@@ -92,18 +107,21 @@ function CloseLine({ close }) {
     : s === "all_left"
       ? fill(t("staffLive.close.all_left"), { last: hhmm(close.last_out) || "—" })
       : s === "open"
-        ? (close.n > 0 ? fill(t("staffLive.close.open"), { n: close.n })
+        ? (close.n > 0
+          ? (counts?.extra_inside > 0
+            ? fill(t("staffLive.close.openExtra"), { n: counts.inside, x: counts.extra_inside })
+            : fill(t("staffLive.close.open"), { n: close.n }))
           : fill(t("staffLive.close.openExpected"), { e: close.expected }))
         : t("staffLive.close.waiting");
   const open = s === "open" || s === "all_left";
   return (
-    <div className="rounded-xl px-3 py-2 flex items-start gap-2 text-[13px]"
+    <div className="rounded-xl px-3 py-2 flex flex-wrap items-start gap-2 text-[13px]"
       style={{ background: `${tone}14`, border: `1px solid ${tone}55`, color: "var(--text-1)" }}>
       {s === "closed"
         ? <Lock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />
         : <Unlock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />}
-      <div className="min-w-0">
-        <div>{text}{s !== "closed" ? ` ${t("staffLive.close.where")}` : ""}</div>
+      <div className="min-w-[12rem] flex-1">
+        <div>{text}</div>
         {open && (close.missing > 0 || close.pending > 0 || close.notified_at) && (
           <div className="flex items-center gap-1.5 flex-wrap mt-1">
             {close.missing > 0 && <LiveChip color="#ef4444">{fill(t("staffLive.close.missingNote"), { n: close.missing })}</LiveChip>}
@@ -116,11 +134,16 @@ function CloseLine({ close }) {
           </div>
         )}
       </div>
+      {s !== "closed" && onGoClose && (
+        <Button size="md" variant="secondary" className="flex-shrink-0 self-center max-sm:ml-[23px]" onClick={onGoClose}>
+          {t("staffLive.close.go")} <ArrowRight size={14} />
+        </Button>
+      )}
     </div>
   );
 }
 
-export function LiveHeader({ data, onRefresh, refreshing }) {
+export function LiveHeader({ data, onRefresh, refreshing, onGoClose }) {
   const { t } = useLang();
   const live = data?.live;
   return (
@@ -154,7 +177,9 @@ export function LiveHeader({ data, onRefresh, refreshing }) {
           <span>
             {data.error === "not_configured" ? t("staffLive.err.not_configured")
               : data.error === "no_cells" ? t("staffLive.err.no_cells")
-                : fill(t("staffLive.err.generic"), { msg: data.message || data.error })}
+                : data.error === "future" ? t("staffLive.err.future")
+                  : data.error === "busy" ? t("staffLive.err.busy")
+                    : fill(t("staffLive.err.generic"), { msg: data.message || data.error })}
           </span>
         </div>
       )}
@@ -165,7 +190,7 @@ export function LiveHeader({ data, onRefresh, refreshing }) {
           <span>{fill(t("staffLive.readError"), { at: hhmm(live.read_error.at), msg: live.read_error.message || "" })}</span>
         </div>
       )}
-      {live && <CloseLine close={live.close} />}
+      {live && <CloseLine close={live.close} counts={live.counts} onGoClose={onGoClose} />}
     </div>
   );
 }
@@ -291,10 +316,12 @@ export function LiveExtras({ extras }) {
                   {x.named_at ? tl(x.named_at) : <span style={{ color: "var(--text-3)" }}>{t(`staffLive.ex.r.${x.reason}`)}</span>}
                 </td>
                 <td className="px-3 py-2">
-                  {x.here
+                  {/* «hozir shu yerda» only while they ARE here: `here` is also
+                      true for somebody who ended the day here and has left. */}
+                  {x.here && (x.status === "inside" || x.status === "break")
                     ? <span className="inline-flex items-center gap-2"><LiveStatusChip status={x.status} />
                       <LiveChip color="#22c55e">{t("staffLive.ex.here")}</LiveChip></span>
-                    : <LiveStatusChip status="moved_out" />}
+                    : <LiveStatusChip status={x.here ? x.status : "moved_out"} />}
                 </td>
               </tr>
             ))}

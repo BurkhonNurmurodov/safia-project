@@ -472,7 +472,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 // ── Attendance Table ───────────────────────────────────────────────────────────
 
-export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
+export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose }) {
   const S = useStaffApi();
   const { t } = useLang();
   // `lang` is read only as a memo KEY: `tl` is a new function on every render,
@@ -700,6 +700,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     });
   }
 
+  // Live: the people standing here under another unit's name follow the same
+  // search and status strip as the table above them — «Kechikkan» listed two
+  // people who were not late. The section hides when none of them match.
+  const extrasShown = useMemo(() => (data?.extras || []).filter(x =>
+    (!filters.worker || (x.worker_name || "").toLowerCase().includes(filters.worker.toLowerCase()))
+    && liveMatch(x, liveFilter)), [data?.extras, filters.worker, liveFilter]);
+
   const sortedWorkers = nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
         ? (tl(a.worker_name) || "").localeCompare(tl(b.worker_name) || "")
@@ -752,7 +759,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     <div>
       {S.live && (
         <LiveHeader data={data} refreshing={refresh.isPending}
-          onRefresh={managerId ? () => refresh.mutate() : null} />
+          onRefresh={managerId ? () => refresh.mutate() : null} onGoClose={onGoClose} />
       )}
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
@@ -937,6 +944,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     </button>
                   </div>
                 </th>
+                {/* Live: the status sits right after the name — it is the
+                    question the page is opened for, and at the far end of the
+                    row a phone and a 1024px laptop never showed it. */}
+                {S.live && (
+                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.status")}</span>
+                  </th>
+                )}
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colRole")} active={filters.job_titles.length > 0}>
                     <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tx(o) || o} />
@@ -989,11 +1004,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       onMin={v => setF("eff_min", v)} onMax={v => setF("eff_max", v)} />
                   </ColFilter>
                 </th>
-                {S.live && (
-                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.status")}</span>
-                  </th>
-                )}
               </tr>
             </thead>
             <tbody>
@@ -1022,6 +1032,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       )}
                     </div>
                   </td>
+                  {S.live && (
+                    <td className="px-3 py-2"><LiveStatusChip status={w.status} /></td>
+                  )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
                   {/* Code only — the workshop name is four words of Russian per
                       row and pushed every column after it off a phone. It stays
@@ -1055,9 +1068,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {w.effective_hours != null ? (S.live ? Math.round(w.effective_hours * 100) / 100 : w.effective_hours) : "—"}
                   </td>
-                  {S.live && (
-                    <td className="px-3 py-2"><LiveStatusChip status={w.status} /></td>
-                  )}
                 </tr>
                 {S.live && openRaw === w.id && w.raw && (
                   <tr>
@@ -1076,7 +1086,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
       {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
           animation (fill-mode both) keeps a transform, which would make it the
           containing block for position:fixed and pin the badge to the page. */}
-      {!isCollapsed && createPortal(
+      {!isCollapsed && !S.live && createPortal(
         <div
           className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
           style={{
@@ -1090,7 +1100,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         document.body,
       )}
 
-      {S.live && <LiveExtras extras={data?.extras} />}
+      {S.live && <LiveExtras extras={extrasShown} />}
       {S.live && <LiveFooter data={data} />}
 
       {/* Extra hours note */}
@@ -4509,6 +4519,21 @@ export function StaffPage() {
     setTab("requests");
   }
 
+  // Live: the standing line's «close in Tasdiqlash» — only for those who may
+  // close the day (an admin, or the unit's own brigadir; the endpoint refuses
+  // everybody else). The calendar reads its unit and month from its OWN
+  // remembered keys when it mounts, so they are pointed at this unit-day first;
+  // the keys are the live page's (`S.pk`), so /staff's calendar is untouched.
+  const canCloseDay = role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id);
+  function goClose() {
+    try {
+      localStorage.setItem(S.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
+      const [y, m] = String(selectedDate).split("-").map(Number);
+      if (y && m) localStorage.setItem(S.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
+    } catch { /* storage unavailable — the calendar opens where it was */ }
+    setTab("approvals");
+  }
+
   function handleDeleted(toastKey) {
     setTab("requests");
     setDeleteToast(toastKey);
@@ -4638,6 +4663,7 @@ export function StaffPage() {
                 managerId={supervisorManagerId}
                 selectedDate={selectedDate}
                 pickSupervisor={isManagerView}
+                onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
               />
             )}
           </div>
