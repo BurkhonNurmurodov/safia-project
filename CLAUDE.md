@@ -173,6 +173,43 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   role rows and every checklist day to Aripova without touching the cell, and
   marked her already-sent digests as including them so nothing was re-sent.
 
+## A leader on Verifix, or in place of one (`leader_kind`)
+
+From **2026-10-04** (the operator's directive) every leader profile says
+whether the person IS a leader on Verifix or does a leader's work while Verifix
+lists them under another job: «Lider» / «Lider o'rnida» (ru «Вместо лидера»,
+en «In place of a leader») — `role_profiles.leader_kind` ("leader" | "acting",
+NULL = not determined) beside `leader_kind_meta` (JSONB: who set it — `src`
+manual | verifix, `at`, `by` — and `vfx`, what Verifix said at its last check:
+the matched NAME, job, cell, status, or why nobody was found).
+
+- **`services/leader_kind.py` is THE definition** (`KINDS`, `set_manual`, `out`).
+  A REGISTER only: nothing scores, filters or routes by it yet.
+- **The switch** is a `SegmentedToggle` in the admin profile page's Details card
+  (leaders only), a draft like every field there: the page's one Save sends
+  `leader_kind` on `PUT /api/profiles/admin/leader/{id}` only when it moved, and
+  a person's choice is stamped `src: manual`. Under it `LeaderKindNote` prints
+  what Verifix said — the Verifix name included, so a wrong match is visible —
+  and who set it by hand; the header carries a grey «Lider o'rnida» chip. The
+  change rides `identity.profile_edited` as a `leader_kind` row; a grantee's
+  flip DMs the admins (`l.leader_kind`).
+- **It was filled ONCE from Verifix's API** — the API, not the attendance files
+  (the operator's words) — by `services/leader_verifix_check.py` (TEMPORARY,
+  flag `leader_kind_verifix_check_2026_10_04_v1`, `startup.check_leader_kinds`,
+  both entrypoints, ~100 s after boot). It reads `employee$list` (every status),
+  `job$list` and `division$list` through `verifix_explore`'s loaders and ties a
+  profile to ONE employee by name, strictly: folded full name → surname + first
+  name with no clashing patronymic → namesakes narrowed by the leader's own
+  cells, then the unit's → a first-name-first profile swapped → a surname-only
+  typo with the SAME first name standing in the leader's own cell. Never a
+  fuzzy match saved: the scorer pairs «Inomova Saydora» with «Inomova Dildora».
+  The JOB decides — a title naming «Лидер» (not an assistant, deputy or «и.о.»)
+  → leader, any other → acting; not found / ambiguous / not working → NULL and
+  listed. A value set by hand is never overwritten. Text + workbook went to the
+  operator's chat (`UNPRICED_DM_CHAT`). Delete the module, the startup pair and
+  both calls once it has been sent; the columns, `leader_kind.py` and the switch
+  STAY.
+
 ## Supervisors read `/cells` — their own unit, read-only
 
 From **2026-09-14** (the operator's directive) the cells register opens to the
