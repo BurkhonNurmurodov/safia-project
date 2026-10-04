@@ -303,12 +303,18 @@ only from /cells/:id, and only by an admin.
   6621 2531 7231 0036 1613 1614 and «Kuxnya», read as the service kitchens
   0037 / 7711 / 7721 (not the production «Кухня горячая / блинчик» cells 8611
   8613 8622 8623). Only turns OFF; on the 11 Sep copy 9 of them were on. The
-  «Davomat (Verifix)» test reads none of them from then on.
+  «Davomat» tab's Verifix read offers none of them from then on.
 - **A REGISTER: no загрузка figure reads it yet.** The загрузка, `idle_source`
   and /zagruzka-cell ignore it by their own sections; its one reader is the
   «Zagruzkada hisoblanadigan» count on /staff's cell view. Making an OFF cell
   leave the загрузка (its share of its work centre's minutes and typed people)
   moves numbers on every загрузка page — **ask the operator before wiring it**.
+- **…but it decides what «Davomat» READS (2026-10-04).** «Verifix'dan olish»
+  offers and reads only these cells (`verifix_attendance.counted`), so a cell
+  switched off here takes in no attendance on any day read after that — its
+  people reach no supervisor through the tab. Nothing moved on the day: the OFF
+  list was built as the cells the Excel did not carry. See «Davomat reads
+  Verifix».
 
 ## Supervisors read `/cells` — their own unit, read-only
 
@@ -742,11 +748,13 @@ wrote under the Latin spelling.
 ## A worker belongs to a CELL, and the supervisor says which
 
 From **2026-08-30** the cell on a worker's row is answered in two places, and
-only two: the daily file, and the receiving supervisor.
+only two: the day's read (Verifix from 2026-10-04, the daily file before), and
+the receiving supervisor.
 
-- **The file still assigns the cell.** «Код подразделения» resolves to a cell,
-  the admin «Davomat» Save writes it onto every worker, and nothing about that
-  changed. Almost every row is placed before a supervisor ever looks at it.
+- **The read still assigns the cell.** The employee's Verifix org unit — the
+  «Код подразделения» of the Excel days — resolves to a cell, the admin
+  «Davomat» Save writes it onto every worker, and nothing about that changed.
+  Almost every row is placed before a supervisor ever looks at it.
 - **An accepted people-exchange assigns NO cell.** The sender picks the
   receiving SUPERVISOR and nothing more; on approval the moved row's
   `verifix_code` becomes NULL. The old flow made the sender choose one of the
@@ -7013,94 +7021,65 @@ reads it yet except the card's own test, so no figure on the platform moves.
 - Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
 
-## «Davomat (Verifix)» — the attendance upload read from Verifix (`/admin/upload?tab=attverifix`, TEST)
+## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
-From **2026-10-04** (the operator's request) the admin panel carries a twin of
-«Davomat» directly under it: the same day in the same supervisor → cell →
-worker layout, with ONE button — «Verifix'dan olish» — where the upload was.
-`services/verifix_attendance.py` (`fetch_day`, `payload`),
-`routers/attendance_verifix.py` (`GET /api/attendance-verifix?date=`,
-`POST /api/attendance-verifix/fetch`), `pages/admin/AttendanceVerifix.jsx`.
+From **2026-10-04** (the operator: «no more Excel documents for the загрузка»)
+the admin «Davomat» tab no longer takes the «Отчёт по посещениям сотрудников»
+Excel. Its one button, «Verifix'dan olish», opens a plant → shift → brigadir →
+cell tree (`pages/admin/VerifixCellPicker.jsx`, the Broadcast page's
+`CheckboxTree`) and reads the ticked cells from Verifix's API
+(`services/verifix_attendance.py`, `core/timesheet$export` — the report the
+Excel was exported from). `POST /api/attendance-batch/verifix` merges what came
+back into the day's batch through the SAME `_merge_file` an upload went through,
+so everything after the read — routing, ticks, admin edits, «Doimiy qilish»,
+per-read undo, Save and its notifications — is the file flow's own and did not
+change. `POST /upload` is gone; the days the files fed stay as they were.
 
-- **Only the cells counted in the загрузка** — `cells.in_load` («Zagruzkada
-  hisoblanadi», see its section) at the moment of the read; the stored day
-  keeps the codes it asked about.
-- **The button opens a CELL PICKER** (2026-10-04, the operator's request) —
-  `pages/admin/VerifixCellPicker.jsx`, the Broadcast page's `CheckboxTree`
-  nested plant → shift → brigadir → cell (brigadir-less cells in a trailing
-  branch), every counted cell ticked by default, search, select-all of what is
-  on screen, and one-press «only not read» / «only partly read» presets. The
-  tree comes on the day's payload (`pick`: the counted cells with unit, shift,
-  plant, leader and when each was last read; `verifix_attendance.pick`).
-  `POST /fetch` takes `codes`; absent = every counted cell (a tab from before
-  the picker), none counted among them = 400 `no_cells`.
-- **A read replaces THE CELLS IT READ, never the day** — every other cell
-  already read for the day stays, so one cell can be read again without the
-  plant. `vfx_attendance_days.cell_reads` (code key → `{code, at, by,
-  partial}`, migration `add_vfx_attendance_notes`) says when each cell was last
-  read; `codes`, `fetched_*` and `partial` are its roll-up (`fetched_at` = the
-  latest read). A day stored before this has no `cell_reads` and reads as one
-  pass of its `codes` (`_reads`).
-- **Out of time, each cell is judged by its own people** (`returned` against
-  the employees asked): all came back → whole; some → PARTIAL (its rows are
-  replaced and it wears a «Qisman» chip); none → not read at all, and what an
-  earlier read stored for it stays. The day is partial while any cell is; the
-  banner names how many and «Qisman olinganlarni qayta olish» opens the picker
-  on exactly those. The POST answer carries `read` (this read's cells, rows,
-  partial / unread counts) beside the day's payload, whose totals cover every
-  cell. A person in a counted cell nobody has read yet is `vfx_unread_cell`.
-- **Saved apart, and NOTHING reads it** — `vfx_attendance_days` /
-  `vfx_attendance_rows`. `attendance`, the
-  «Davomat» batches, the загрузка and every figure stay the file's, so the
-  page has no tick, move, edit or Save. Wiring it into anything is a separate
-  decision.
-- **A row is built the way `attendance_sheet` builds one**, from
-  `core/timesheet$export` (the report the Excel is exported from), placed by
-  the employee's CURRENT org unit: the day cell «08:01 - 17:13 (8.14)» (in –
-  out + «Явка» in brackets; «xx:xx» for a missing side, and then no hours, as
-  in the file); hours = «Отработано» = «Явка» + «Свободное время» in minutes,
-  two decimals, unless the parity check stored a rule of its own
-  (`verifix_live._formula`); no clock → the absence kind's letter, «X» for a
-  plain «Отсутствие»; early arrival and effective hours by `clock_metrics`.
-  Asked about: every employee, any status, whose org unit names a counted
-  cell, hired by the day and not dismissed before it. An empty `employee_ids`
-  is never sent — Verifix reads it as everybody.
-- **Checked against the 1 Oct dump** (11 Sep register, 151 counted cells):
-  1,566 rows; of 1,475 matched by name to that day's file, 1,470 identical
-  hours and day cell; 91 only in Verifix (cells no uploaded file covered that
-  day), 2 only in the Excel; per-cell hours equal to the file's.
-- **The page compares with the uploaded Excel** of the same day
-  (`attendance_batch_rows`, admin edits included): an «Excel» column per
-  person (✓ same · amber differs · «Excel'da yo'q»), people only the file has
-  appended, «Excel'da: 7313» when the file put the person in another cell
-  (matched in the same cell first, then anywhere in the day), a verdict chip
-  per cell and three comparison stats. A day with no uploaded file says so.
-- **«Farqlar» names WHY each person differs** (2026-10-04, the operator asked
-  to confirm the differences come from exchanges and HR documents). They
-  cannot: people exchanges, role-change documents and edit requests write
-  `attendance`, and the uploaded rows this page compares with are written by
-  the «Davomat» tab alone. So every differing person is listed with both sides
-  and a reason from the data — `moved` (Verifix's current department ≠ the
-  file's cell), `edited` / `manual` (changed on «Davomat»), `mark` (the file's
-  «О»/«X» against Verifix's, e.g. an «Отгул» removed in Verifix after the
-  export), `came`, `filled` (Verifix filled a missing mark later), `unfilled`,
-  `clock`, `hours`; only in Verifix → `not_in_excel` or `excel_other` (the file
-  has them in an uncounted cell); only in the file → where Verifix placed them
-  at the read, kept on the day (`vfx_attendance_days.notes`:
-  `vfx_other_cell`, `vfx_dismissed`, `vfx_hired_later`, `vfx_no_cell`,
-  `vfx_no_day`, `vfx_missing`, `vfx_ambiguous`; `vfx_unknown` for a read made
-  before notes existed). Beside each, for reference only, the platform's own
-  changes to that person's day (`_events`: approved exchange · role change ·
-  edit request). Matching is by folded name, as everywhere here.
-- One request, `verifix.BUDGET_S` (70 s) for everything; the directory
-  (divisions + every employee, ~20 calls) is cached 10 min, so the next day
-  read is ~16 calls. Out of time with rows in hand → stored and marked
-  partial; without → 424 `slow` and the page asks to press again. 409
-  `not_configured`, 400 `future`. Admin-only and NOT grantable (no `capKey`,
-  `verify_admin`). Logged as `attendance.verifix_fetched`.
-- It reuses «Davomat»'s `Section` / `Chip` / `Stat`, exported from
-  `AttendanceUpload.jsx`; `Section` gained `bare`, `cellExtra` and
-  `orphanHint`, whose defaults leave «Davomat» exactly as it was.
+- **Only the cells counted in the загрузка** (`cells.in_load`, «Zagruzkada
+  hisoblanadi») are offered and read — the scope the test tab ran on — all of
+  them ticked when the tree opens (brigadir-less ones in a trailing branch).
+  Search, select-all of what is on screen, «only not read yet»; each cell names
+  when the day last took it in («olingan …», «Excel …» for a file of the days
+  before), off the read that last supplied it (`GET /verifix-pick`).
+- **A row is built the way the Excel parser built one** — current org unit →
+  cell, the «08:01 - 17:13 (8.14)» day cell with «Явка» in brackets, hours =
+  «Отработано» («Явка» + «Свободное время», or the parity rule), absence
+  letters, early arrival by `clock_metrics`. Proven on the test tab before the
+  switch: 1,470 of 1,475 people identical on the 1 Oct dump, 1,486 of 1,497 on
+  the first production read; what differed was a department moved in Verifix,
+  a mark removed after the export, one day split across two cells and one
+  dismissal. Verifix also carries the cells nobody uploaded a file for, so a
+  read can bring people the Excel days never had.
+- **A read merges, cell by cell.** The ticked cells get Verifix's rows; rows an
+  admin edited or added survive (the newer value goes to `file_values` — the
+  revert badge); routing and the tick are untouched; every cell not ticked is
+  left alone. A ticked cell Verifix has nobody in any more is EMPTIED
+  (`_merge_file(cover=…)`): a file simply did not mention such a cell, a read
+  must say so or the people who moved out would count twice.
+- **Out of time (`verifix.BUDGET_S`, 70 s), only cells read in FULL are taken
+  in.** A cell with anybody asked about and not returned is dropped from the
+  read and left as the day held it — half a cell would reach the supervisor on
+  the next Save. `verifix_result.unread` names those cells and the read summary
+  offers «Ularni olish» on exactly them (the directory is cached 10 min, so the
+  second try is faster).
+- **Each read is one «upload» row** — `attendance_upload_files.source =
+  "verifix"` (NULL = a file; migration `add_attendance_upload_source`, both
+  entrypoints), `filename` «Verifix» — listed under «Kun manbalari» beside the
+  Excel files of the days before, removable on its own. A read that finds
+  nobody and changes nothing records nothing.
+- Errors are answers, the «Verifix (test)» convention: 409 `not_configured`,
+  400 `future` / `no_cells`, 424 `{code, message, status}` from Verifix — never
+  502/503. Admin-only like the rest of the tab; logged as
+  `attendance.verifix_read`.
+- **Brigadirs' own rows are not read, as the file did not deliver them either.**
+  The Excel's cell-less rows were meant to put each brigadir on their own page
+  by name (`_cellless_by_manager`), but `_merge_file` skips cell-less rows — 0
+  such batch rows and 0 `is_supervisor` attendance rows on the 28 Aug and 11
+  Sep copies. Reading them from Verifix is a separate decision.
+- **The «Davomat (Verifix)» test tab is GONE** — `AttendanceVerifix.jsx`,
+  `routers/attendance_verifix.py`, its models and strings. Its two tables,
+  `vfx_attendance_days` / `vfx_attendance_rows`, are left in the database,
+  unread; dropping them is a separate decision.
 
 ## The live «Verifix to'g'irlash» (`/staff-live`, Laboratory)
 

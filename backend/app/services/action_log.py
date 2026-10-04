@@ -107,7 +107,7 @@ SOURCES = ("telegram", "web", "bot", "system")
 
 _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # ── attendance & the day ──────────────────────────────────────────────────
-    (("POST",),   "/api/attendance-batch/upload",              "attendance", "attendance.batch_uploaded"),
+    (("POST",),   "/api/attendance-batch/verifix",             "attendance", "attendance.verifix_read"),
     (("DELETE",), "/api/attendance-batch/uploads/{}",          "attendance", "attendance.batch_file_removed"),
     (("DELETE",), "/api/attendance-batch/cell-day",            "attendance", "attendance.cell_day_wiped"),
     (("DELETE",), "/api/attendance-batch/supervisor-day",      "attendance", "attendance.unit_day_wiped"),
@@ -117,7 +117,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/attendance-batch/rows/{}",             "attendance", "attendance.row_deleted"),
     (("PUT",),    "/api/attendance-batch/cells",               "attendance", "attendance.cells_decided"),
     (("POST",),   "/api/attendance-batch/save",                "attendance", "attendance.draft_saved"),
-    (("POST",),   "/api/attendance-verifix/fetch",             "attendance", "attendance.verifix_fetched"),
     (("DELETE",), "/api/attendance-batch",                     "attendance", "attendance.draft_discarded"),
     (("POST",),   "/admin/upload",                             "attendance", "attendance.verifix_uploaded"),
     (("POST",),   "/admin/delete-attendance",                  "attendance", "attendance.day_cleanup"),

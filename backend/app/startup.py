@@ -1762,20 +1762,19 @@ def add_manager_kind_columns() -> None:
         db.close()
 
 
-def add_vfx_attendance_notes() -> None:
-    """2026-10-04: «Davomat (Verifix)» keeps, per read day, where Verifix placed
-    the people the uploaded Excel has but the read did not return —
-    ``vfx_attendance_days.notes`` — and, since cells can be picked, when each
-    cell was last read — ``cell_reads``. Pure DDL, idempotent, no flag; a fresh
-    box gets both from create_all."""
+def add_attendance_upload_source() -> None:
+    """2026-10-04: the «Davomat» day is read from Verifix instead of an Excel
+    file, so an upload record says which it was — ``attendance_upload_files.
+    source`` ("verifix"; NULL = a file). Pure DDL, idempotent, no flag; a fresh
+    box gets it from create_all. (This replaced the «Davomat (Verifix)» test
+    tab's own column step; that tab's two tables are left in place, unread.)"""
     db = SessionLocal()
     try:
-        db.execute(text("ALTER TABLE vfx_attendance_days ADD COLUMN IF NOT EXISTS notes JSONB"))
-        db.execute(text("ALTER TABLE vfx_attendance_days ADD COLUMN IF NOT EXISTS cell_reads JSONB"))
+        db.execute(text("ALTER TABLE attendance_upload_files ADD COLUMN IF NOT EXISTS source VARCHAR(10)"))
         db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[startup] vfx attendance notes column skipped: {exc}")
+        print(f"[startup] attendance upload source column skipped: {exc}")
     finally:
         db.close()
 

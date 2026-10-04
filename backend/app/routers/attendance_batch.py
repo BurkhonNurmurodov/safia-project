@@ -1,26 +1,29 @@
-"""Single-file attendance ingest — the admin «Davomat» tab.
+"""Single-day attendance ingest — the admin «Davomat» tab.
 
-Replaces uploading one verifix workbook per supervisor: the «Отчёт по посещениям
-сотрудников» export carries every worker row tagged with a «Код подразделения»
-(a cell's verifix code) that resolves to the cell's supervisor.
+Every worker row of the day is tagged with a «Код подразделения» (a cell's
+verifix code) that resolves to the cell's supervisor. Until 2026-10-04 the rows
+came from the «Отчёт по посещениям сотрудников» Excel export; from then on they
+are READ FROM VERIFIX'S API (`POST /verifix`, `services/verifix_attendance.py`)
+for the cells the admin picks — the operator: «no more Excel documents for the
+загрузка». The upload endpoint is gone; the days it fed stay as they were.
 
 Two phases, deliberately:
 
-    upload  →  the file MERGES into the day's batch. Nothing is in `attendance`
-               yet, no supervisor has been told anything.
+    read    →  the picked cells MERGE into the day's batch. Nothing is in
+               `attendance` yet, no supervisor has been told anything.
     adjust  →  the admin ticks cells in/out, drags cells between supervisors,
                edits/adds/deletes worker rows.
     save    →  the batch is projected into `attendance` for the supervisors whose
                data actually changed, and only THEY are notified.
 
-A DATE IS FED BY SEVERAL FILES. The export is taken per «Орг. единица» group, so
-one day arrives as several workbooks covering different cells. Uploading never
-replaces the day: cells a file doesn't mention keep their routing, ticks and row
-edits untouched. When a file DOES re-supply a cell, the newer rows win — except
-that the cell's routing/tick and the admin's own row work survive, because those
-are decisions the file knows nothing about. A row an admin edited keeps the
-admin's value and stores what the file said in `file_values`, so the tab can flag
-it and offer a revert instead of losing the newer number silently.
+A DATE IS FED BY SEVERAL READS — a read names the cells it covers, and an Excel
+export used to be taken per «Орг. единица» group. Reading never replaces the
+day: cells a read doesn't name keep their routing, ticks and row edits
+untouched. When a read DOES re-supply a cell, the newer rows win — except that
+the cell's routing/tick and the admin's own row work survive, because those are
+decisions the source knows nothing about. A row an admin edited keeps the
+admin's value and stores what the source said in `file_values`, so the tab can
+flag it and offer a revert instead of losing the newer number silently.
 
 `AttendanceBatchCell.pending` is what keeps repeat Saves cheap and safe: it marks
 a cell whose state has not reached `attendance` yet, so Save only rewrites (and
@@ -40,7 +43,7 @@ import re
 from datetime import date as date_t, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -51,12 +54,10 @@ from app.models import (
     AttendanceUploadFile, Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
 from app.routers.admin import verify_admin
-from app.services import action_log, wc_group
-from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
+from app.services import action_log, verifix, verifix_attendance, wc_group
 from app.services.day_state import day_state
 from app.services.kpi_calculator import is_direct_role
 from app.services.name_map import supervisor_match
-from app.upload_guard import validate_spreadsheet
 
 log = logging.getLogger(__name__)
 
@@ -530,6 +531,9 @@ def _batch_payload(db: Session, batch: AttendanceBatch, d: date_t) -> dict:
                 "cells_replaced": u.cells_replaced,
                 "rows_added":     u.rows_added,
                 "cells_now":      sum(1 for bc in batch.cells if bc.upload_id == u.id),
+                # "verifix" = a read of Verifix's API; "file" = an Excel upload
+                # (every read before 2026-10-04).
+                "source":         u.source or "file",
             }
             for u in sorted(batch.uploads, key=lambda x: (x.uploaded_at or datetime.min.replace(tzinfo=timezone.utc)))
         ],
@@ -690,25 +694,32 @@ def get_day(
     return _legacy_payload(db, d)
 
 
-# ── upload (merge) ────────────────────────────────────────────────────────────
+# ── read (merge) ──────────────────────────────────────────────────────────────
 
 def _merge_file(db: Session, batch: AttendanceBatch, upload: AttendanceUploadFile,
-                parsed: dict, known: dict):
-    """Fold one workbook into the day. Returns (added, replaced, rows_added,
-    kept_edits) — `added`/`replaced` are cell codes, for the upload summary.
+                parsed: dict, known: dict, cover=()):
+    """Fold one read into the day. Returns (added, replaced, rows_added,
+    kept_edits) — `added`/`replaced` are cell codes, for the read summary.
 
-    Cells this file does not mention are never touched. For a cell it DOES bring:
+    Cells this read does not name are never touched. For a cell it DOES bring:
       * the cell's supervisor and tick are left exactly as the admin set them —
-        the file has no opinion about routing;
-      * file-supplied rows are replaced by the newer ones;
+        the source has no opinion about routing;
+      * source-supplied rows are replaced by the newer ones;
       * rows the admin edited, and rows the admin added by hand, SURVIVE. When
-        the newer file disagrees with an edited row, the file's version is kept
-        in `file_values` so the tab can flag it and offer a revert.
+        the newer read disagrees with an edited row, its version is kept in
+        `file_values` so the tab can flag it and offer a revert.
+
+    `cover` = the codes the read answered for even where it brought no row. An
+    Excel file simply did not mention an empty cell; a Verifix read of a cell
+    nobody stands in any more must empty it, or the people who moved out would
+    be counted in the old cell and the new one at once.
     """
-    org_units = parsed["org_units"]
+    org_units = parsed.get("org_units") or {}
     by_code: dict = {}
     for r in parsed["rows"]:
         by_code.setdefault(r["verifix_code"], []).append(r)
+    for code in cover:
+        by_code.setdefault(code, [])
 
     existing_cells = {bc.verifix_code: bc for bc in batch.cells}
     added, replaced, rows_added, kept_edits = [], [], 0, 0
@@ -719,6 +730,8 @@ def _merge_file(db: Session, batch: AttendanceBatch, upload: AttendanceUploadFil
         cell = known.get(code)
         bc = existing_cells.get(code)
         if bc is None:
+            if not new_rows:
+                continue        # nothing to show here and nothing to empty
             bc = AttendanceBatchCell(
                 batch_id=batch.id,
                 verifix_code=code,
@@ -787,145 +800,153 @@ def _merge_file(db: Session, batch: AttendanceBatch, upload: AttendanceUploadFil
     return added, replaced, rows_added, kept_edits
 
 
-@router.post("/upload")
-async def upload(
-    files: list[UploadFile] = File(...),
+@router.get("/verifix-pick")
+def verifix_pick(
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """What the «Verifix'dan olish» tree offers for the day: the cells counted in
+    the загрузка, nested by plant → shift → brigadir, and when the day last took
+    each one in (`read`: {at, source}) — off the read that last supplied the
+    cell, so a cell read twice says when it was read last."""
+    d = _parse_date(date)
+    reads: dict = {}
+    batch = _batch_for(db, d)
+    if batch:
+        ups = {u.id: u for u in batch.uploads}
+        for bc in batch.cells:
+            u = ups.get(bc.upload_id)
+            if u is None or not bc.verifix_code:
+                continue
+            reads[verifix._code_key(bc.verifix_code)] = {
+                "at": u.uploaded_at.isoformat() if u.uploaded_at else None,
+                "source": u.source or "file",
+            }
+    return verifix_attendance.pick(db, reads)
+
+
+class VerifixBody(BaseModel):
+    date: str
+    # The cells picked in the tree. Absent = every cell counted in the загрузка.
+    codes: Optional[list[str]] = None
+
+
+@router.post("/verifix")
+def read_verifix(
+    body: VerifixBody,
     db: Session = Depends(get_db),
     payload: dict = Depends(verify_admin),
 ):
-    """MERGE one export into its day. Writes nothing to `attendance` and notifies
-    nobody — that is what /save is for.
+    """READ the day from Verifix for the picked cells and MERGE it into the
+    day's batch exactly as an uploaded export was merged (`_merge_file`): the
+    cells it read get Verifix's rows, admin-edited and hand-added rows survive,
+    routing and ticks are left alone, every other cell is untouched — and
+    nothing reaches `attendance` or anybody's chat until Save. Up to ~70 s.
 
-    A day is normally fed by several files (one per «Орг. единица» group), so an
-    upload only ever adds to the day. It never disturbs cells another file
-    contributed, and never resets routing or ticks the admin has already made.
+    A cell Verifix answered for with nobody in it is emptied (`cover`). Out of
+    time, a cell Verifix did not finish is NOT taken in — half a cell would
+    reach the supervisor on the next Save — and is left exactly as it was;
+    `unread` names those cells and the tab offers them again.
 
-    Unknown «Код подразделения» values auto-register as supervisor-less cells
-    (named from the file's «Орг. единица» line) so they surface in the tab's
-    "no supervisor" section, unticked, ready to be dragged onto a supervisor.
+    Errors are answers, the «Verifix (test)» convention: 409 `not_configured`,
+    400 `future` / `no_cells`, 424 `{code, message, status}` when Verifix
+    refused or failed — never 502/503, which the client reads as a restart.
     """
-    if not files:
-        raise HTTPException(status_code=400, detail="No file uploaded")
-    if len(files) > 1:
-        raise HTTPException(status_code=400, detail="Bitta faylni yuklang")
-    f = files[0]
-
-    content = await f.read()
-    validate_spreadsheet(f, content)          # extension + magic bytes
-
+    d = _parse_date(body.date)
+    if d > datetime.now(verifix.TZ).date():
+        raise HTTPException(status_code=400, detail={
+            "code": "future", "message": "A day that has not come yet has nothing to read"})
     try:
-        parsed = parse_attendance_workbook(content, f.filename or "")
-    except AttendanceSheetError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001 — a broken export must not 500
-        log.exception("attendance workbook parse failed: %s", f.filename)
-        raise HTTPException(status_code=400, detail=f"Faylni o'qib bo'lmadi: {e}")
+        res = verifix_attendance.read_day(db, d, codes=body.codes)
+    except verifix_attendance.NotConfigured:
+        raise HTTPException(status_code=409, detail={
+            "code": "not_configured", "message": "No Verifix login on the admin «Verifix» card"})
+    except verifix_attendance.NoCells:
+        raise HTTPException(status_code=400, detail={
+            "code": "no_cells", "message": "None of the picked cells is counted in the загрузка"})
+    except verifix.VerifixError as exc:
+        raise HTTPException(status_code=424, detail={
+            "code": exc.code, "message": (exc.message or exc.code)[:500], "status": exc.status})
 
-    if parsed["day_count"] != 1:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Fayl {parsed['day_count']} kunni qamrab olgan. "
-                "Bir martada faqat BITTA kunlik hisobotni yuklang."
-            ),
-        )
-
-    d = parsed["period_from"]
-    codes = sorted({r["verifix_code"] for r in parsed["rows"] if r["verifix_code"]})
-    if not codes:
-        raise HTTPException(status_code=400, detail="Faylda «Код подразделения» yo'q")
-
-    # Auto-register unknown cells: supervisor-less, out of the load, named from
-    # the header line. They land in the "no supervisor" bucket, unticked.
-    known = _cell_catalog(db, codes)
-    created = []
-    for code in codes:
-        if code in known:
-            continue
-        cell = Cell(
-            verifix_code=code,
-            name_workshop_ru=parsed["org_units"].get(code),
-            manager_id=None,
-            in_load=False,
-        )
-        db.add(cell)
-        known[code] = cell
-        created.append(code)
-    if created:
-        db.flush()
-
+    read = res["read"]
+    known = _cell_catalog(db, read)
+    now = datetime.now(timezone.utc)
     batch = _batch_for(db, d)
     if batch is None:
         batch = AttendanceBatch(
             date=d,
             status="draft",
-            source_filename=f.filename,
-            export_ts=parsed["export_ts"],
+            source_filename="Verifix",
+            export_ts=now,
             uploaded_by=_admin_tg_id(payload),
             uploaded_by_name=_admin_name(payload),
         )
         db.add(batch)
         db.flush()
 
-    upload_row = AttendanceUploadFile(
+    read_row = AttendanceUploadFile(
         batch_id=batch.id,
-        filename=f.filename,
-        export_ts=parsed["export_ts"],
+        filename="Verifix",
+        export_ts=now,
         uploaded_by=_admin_tg_id(payload),
         uploaded_by_name=_admin_name(payload),
+        source="verifix",
     )
-    db.add(upload_row)
+    db.add(read_row)
     db.flush()
 
-    added, replaced, rows_added, kept_edits = _merge_file(db, batch, upload_row, parsed, known)
-    upload_row.cells_added = len(added)
-    upload_row.cells_replaced = len(replaced)
-    upload_row.rows_added = rows_added
-    db.flush()
-    db.refresh(batch)
-
-    # Staged, never live: the merged cells are marked pending by `_merge_file`
-    # and reach `attendance` only when the admin presses Save. Uploading a second
-    # file into an already-saved day therefore changes nobody's numbers until
-    # that Save — and then only the supervisors this file actually touched.
-    try:
-        db.commit()
-    except IntegrityError:
-        # Two admins uploading at the same moment: one of them loses the race on
-        # `cells.verifix_code` / the one-batch-per-date constraint.
-        db.rollback()
-        log.warning("attendance batch upload raced for %s", d)
-        raise HTTPException(
-            status_code=409,
-            detail="Bir vaqtda boshqa yuklama bo'ldi — qayta urinib ko'ring",
-        )
-    db.refresh(batch)
-
-    matched, unmatched = _cellless_by_manager(db, batch)
-
-    result = _batch_payload(db, batch, d)
-    result["upload_result"] = {
-        "upload_id":      upload_row.id,
-        "filename":       f.filename,
+    added, replaced, rows_added, kept_edits = _merge_file(
+        db, batch, read_row, {"rows": res["rows"]}, known, cover=read)
+    summary = {
+        "cells":          len(read),
+        "asked":          res["asked"],
+        "rows":           len(res["rows"]),
         "cells_added":    added,
         "cells_replaced": replaced,
         "rows_added":     rows_added,
         "kept_edits":     kept_edits,
-        "created_cells":  created,
-        # Brigadirs found by name among the cell-less rows, and the cell-less
-        # names that reached no supervisor. The second list is the one worth
-        # reading: a brigadir whose name is spelled a new way silently stays
-        # off their own page, and without this nothing would ever say so.
-        "brigadirs":      sum(len(v) for v in matched.values()),
-        "unmatched":      unmatched,
+        "unread":         res["unread"],
+        "rule":           res["rule"],
     }
-    action_log.enrich(
-        target_kind="batch", target_id=batch.id, target_name=f.filename, day=d,
-        details=[("file", f.filename), ("date", str(d)),
-                 ("rows", len(parsed["rows"])), ("added", rows_added),
-                 ("cells", len(added) + len(replaced))],
-    )
-    return result
+    if not added and not replaced:
+        # Verifix had nobody in the picked cells for this day and the day holds
+        # none of them either: there is nothing to record, not even a read.
+        db.rollback()
+        batch = _batch_for(db, d)
+        out = _batch_payload(db, batch, d) if batch else _legacy_payload(db, d)
+        out["verifix_result"] = {**summary, "upload_id": None}
+        return out
+
+    read_row.cells_added = len(added)
+    read_row.cells_replaced = len(replaced)
+    read_row.rows_added = rows_added
+    db.flush()
+
+    # Staged, never live: the merged cells are marked pending by `_merge_file`
+    # and reach `attendance` only when the admin presses Save.
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two admins reading the same day at the same moment: one of them loses
+        # the race on the one-batch-per-date constraint.
+        db.rollback()
+        log.warning("attendance batch verifix read raced for %s", d)
+        raise HTTPException(
+            status_code=409,
+            detail="Bir vaqtda boshqa o'qish bo'ldi — qayta urinib ko'ring",
+        )
+    db.refresh(batch)
+
+    out = _batch_payload(db, batch, d)
+    out["verifix_result"] = {**summary, "upload_id": read_row.id}
+    details = [("date", str(d)), ("cells", len(read)), ("rows", len(res["rows"])),
+               ("added", rows_added), ("kept_edits", kept_edits)]
+    if res["unread"]:
+        details.append(("unread_cells", len(res["unread"])))
+    action_log.enrich(target_kind="batch", target_id=batch.id, target_name="Verifix", day=d,
+                      details=details)
+    return out
 
 
 @router.delete("/uploads/{upload_id}")

@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
-  ClipboardList, CircleSlash, GraduationCap, Fingerprint, CloudDownload,
+  ClipboardList, CircleSlash, GraduationCap, Fingerprint,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -22,7 +22,6 @@ import PageAccess from "./PageAccess";
 import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
 import AttendanceUpload from "./AttendanceUpload";
-import AttendanceVerifix from "./AttendanceVerifix";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import ActionHistory from "./ActionHistory";
@@ -78,7 +77,6 @@ export const ADMIN_NAV = [
   // the загрузка's cells only, saved apart (a TEST: nothing reads it). No
   // capKey: it reads attendance with the platform's Verifix login, so like the
   // «Verifix» card it is admin-only and never grantable.
-  { id: "attverifix",   group: "daily",  Icon: CloudDownload,  labelKey: "admin.tabAttVerifix",   descKey: "admin.desc.attverifix" },
   { id: "data",         group: "daily",  Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   { id: "production",   group: "daily",  Icon: Factory,        labelKey: "admin.tabProduction",   descKey: "admin.desc.production" },
 
@@ -155,7 +153,6 @@ export const ADMIN_NAV = [
 
 const VIEWS = {
   attendance:   AttendanceUpload,
-  attverifix:   AttendanceVerifix,
   data:         DataSources,
   production:   ProductionUpload,
   users:        UsersManagement,

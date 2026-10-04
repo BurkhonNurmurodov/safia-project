@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, attendance_verifix, turnover
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, turnover
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
-        add_vfx_attendance_notes,
+        add_attendance_upload_source,
         add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
@@ -207,7 +207,7 @@ async def lifespan(app: FastAPI):
     turn_on_cells_of_counted_units()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
-    add_vfx_attendance_notes()
+    add_attendance_upload_source()
     add_cell_shift_times()
     add_cell_archive()
     add_wc_groups()
@@ -982,7 +982,6 @@ app.include_router(cell_attendance.router)
 # `attendance`. Under /api/*, so the global initData guard already covers it;
 # every route is additionally admin-gated by verify_admin.
 app.include_router(attendance_batch.router)
-app.include_router(attendance_verifix.router)
 # Per-cell загрузка TEST twin of /zagruzka, hard-locked to one supervisor —
 # self-gates via require_page("zagruzka-cell") (admin-only by default).
 app.include_router(zagruzka_cell.router)

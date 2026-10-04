@@ -744,18 +744,19 @@ class CellAttendance(Base):
 class AttendanceBatch(Base):
     """One DAY of «Отчёт по посещениям сотрудников» data, staged for review.
 
-    The single-file attendance flow is deliberately two-phase: the admin uploads,
-    ADJUSTS (ticks cells in/out, drags cells between supervisors, edits worker
-    rows), and only then presses Save — which is the moment anything reaches the
-    `attendance` table and the supervisors get their Telegram notification.
-    Nothing here is visible to a supervisor before that.
+    The single-file attendance flow is deliberately two-phase: the admin reads
+    the day in, ADJUSTS (ticks cells in/out, drags cells between supervisors,
+    edits worker rows), and only then presses Save — which is the moment
+    anything reaches the `attendance` table and the supervisors get their
+    Telegram notification. Nothing here is visible to a supervisor before that.
 
-    One batch per DATE (unique), but a date is fed by MANY files: the export is
-    taken per «Орг. единица» group, so a day arrives as several workbooks each
-    covering different cells. An upload therefore MERGES into the day's batch —
-    it never replaces it. Cells a file doesn't mention are left completely alone,
-    with their routing, ticks and row edits intact. `AttendanceUploadFile` records
-    each contributing file so one can be pulled back out on its own.
+    One batch per DATE (unique), but a date is fed by MANY reads. Until
+    2026-10-04 they were Excel exports (one per «Орг. единица» group); from then
+    on they are reads of Verifix's API for the cells the admin picked
+    (`services/verifix_attendance.py`). Either way a read MERGES into the day's
+    batch — it never replaces it. Cells a read doesn't name are left completely
+    alone, with their routing, ticks and row edits intact. `AttendanceUploadFile`
+    records each contributing read so one can be pulled back out on its own.
 
     After Save the batch is KEPT: it stays the editable source of truth for that
     day, which is what lets an unticked cell be re-ticked later — its worker rows
@@ -785,9 +786,10 @@ class AttendanceBatch(Base):
 
 
 class AttendanceUploadFile(Base):
-    """One workbook contributed to a day. Cells and rows point back at the file
-    that last supplied them, which is what makes «remove this upload» able to
-    take out exactly its cells and leave every other file's alone."""
+    """One read contributed to a day — an Excel workbook until 2026-10-04, a
+    Verifix read since. Cells and rows point back at the read that last supplied
+    them, which is what makes «remove this upload» able to take out exactly its
+    cells and leave every other read's alone."""
     __tablename__ = "attendance_upload_files"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -801,6 +803,9 @@ class AttendanceUploadFile(Base):
     cells_added   = Column(Integer, nullable=False, default=0)
     cells_replaced = Column(Integer, nullable=False, default=0)
     rows_added    = Column(Integer, nullable=False, default=0)
+    # "verifix" for a read of Verifix's API; NULL = an Excel file (every read
+    # before 2026-10-04).
+    source        = Column(String(10), nullable=True)
 
     batch = relationship("AttendanceBatch", back_populates="uploads")
 
@@ -4363,63 +4368,6 @@ class LiveDayClose(Base):
     day            = Column(Date, nullable=False)
     closed_by_name = Column(String, nullable=True)
     closed_at      = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class VerifixAttendanceDay(Base):
-    """One DAY of attendance read straight from Verifix on the admin «Davomat
-    (Verifix)» tab — the «Davomat» upload's twin with a button instead of a
-    file (`services/verifix_attendance.py`, TEST from 2026-10-04). Only the
-    cells counted in the загрузка (`cells.in_load`) are read. Saved apart:
-    nothing else on the platform reads these two tables — `attendance`, the
-    «Davomat» batches, the загрузка and every figure stay the file's. A read
-    names the cells it asks about (the picker, 2026-10-04) and replaces THOSE
-    cells' rows; every other cell already read for the day stays."""
-    __tablename__ = "vfx_attendance_days"
-
-    id              = Column(Integer, primary_key=True, autoincrement=True)
-    date            = Column(Date, nullable=False, unique=True, index=True)
-    fetched_at      = Column(DateTime(timezone=True), nullable=True)
-    fetched_by_name = Column(String, nullable=True)
-    # The read stopped on the time budget: some people may be missing.
-    partial         = Column(Boolean, nullable=False, default=False)
-    # The cell codes asked about (counted in the загрузка at the read) and the
-    # «Отработано» rule the hours were summed by ({kinds, names, div, source}).
-    codes           = Column(JSONB, nullable=True)
-    hours_rule      = Column(JSONB, nullable=True)
-    # Where Verifix placed, at the read, each person the uploaded Excel has in a
-    # counted cell but the read did not return (folded name → {why, code, date}).
-    notes           = Column(JSONB, nullable=True)
-    # When each cell was last read and whether that read ran out of time
-    # (code key → {code, at, by, partial}). NULL on a day read before cells
-    # could be picked: every code in `codes` was then read at `fetched_at`.
-    # `codes`, `fetched_*` and `partial` are kept as the day's roll-up of it.
-    cell_reads      = Column(JSONB, nullable=True)
-
-    rows = relationship("VerifixAttendanceRow", back_populates="day",
-                        cascade="all, delete-orphan", passive_deletes=True)
-
-
-class VerifixAttendanceRow(Base):
-    """One worker's day as Verifix's report gave it, in the shape of an
-    `attendance_batch_rows` row (what the Excel would have held) plus the
-    Verifix employee id. Placed in a cell by the employee's org unit."""
-    __tablename__ = "vfx_attendance_rows"
-
-    id                = Column(Integer, primary_key=True, autoincrement=True)
-    day_id            = Column(Integer, ForeignKey("vfx_attendance_days.id", ondelete="CASCADE"),
-                               nullable=False, index=True)
-    verifix_code      = Column(String, nullable=True, index=True)
-    employee_id       = Column(String, nullable=True)
-    worker_name       = Column(String)
-    job_title         = Column(String)
-    schedule          = Column(String)
-    clock_in_out      = Column(String)
-    hours_worked      = Column(Numeric(10, 4), nullable=True)
-    early_arrival_min = Column(Numeric(10, 2), nullable=True)
-    effective_hours   = Column(Numeric(10, 4), nullable=True)
-    status            = Column(String, nullable=True)   # 'worked' | the day cell's mark
-
-    day = relationship("VerifixAttendanceDay", back_populates="rows")
 
 
 class VerifixProbe(Base):

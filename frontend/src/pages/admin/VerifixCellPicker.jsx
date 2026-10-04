@@ -1,15 +1,16 @@
 /**
- * The cell picker behind «Verifix'dan olish» on «Davomat (Verifix)»
- * (2026-10-04). The cells counted in the загрузка, nested plant → shift →
- * brigadir → cell in the platform's one CheckboxTree (the Broadcast picker's),
- * so a read can ask Verifix about one cell, one brigadir, one shift or one
- * plant instead of the whole list.
+ * The cell picker behind «Verifix'dan olish» on the admin «Davomat» tab
+ * (2026-10-04 — the day is read from Verifix, no more Excel). The cells
+ * counted in the загрузка, nested plant → shift → brigadir → cell in the
+ * platform's one CheckboxTree (the Broadcast picker's), so a read can ask
+ * Verifix about one cell, one brigadir, one shift or one plant instead of the
+ * whole list.
  *
- * A read replaces the ticked cells only — every other cell already read for
- * the day stays as it was — and the dialog says so whenever the day holds a
- * read. Each cell says when it was last read («olingan 04.10 18:20»), amber
- * when that read ran out of time, so the gaps of a day can be read again
- * without re-reading the plant.
+ * A read merges the ticked cells only — every other cell of the day stays as
+ * it was — and the dialog says so whenever the day already holds a read. Each
+ * cell says when the day last took it in («olingan 04.10 18:20», «Excel …» for
+ * a file of the days before), so the gaps of a day — and the cells a read out
+ * of time did not finish — can be read again without re-reading the plant.
  */
 import { useMemo, useState } from "react";
 import { Clock, CloudDownload, Factory, UserX, Users } from "lucide-react";
@@ -34,17 +35,12 @@ function buildGroups(pick, { t, tl, lang, fmtAt }) {
   const orphans = [];
   const leaf = (c) => {
     const r = c.read;
-    let hint;
-    let hintTone;
-    if (r?.partial) {
-      hint = fill(t("attVfx.pick.partialHint"), { at: fmtAt(r.at) });
-      hintTone = "warn";
-    } else if (r?.at) {
-      hint = fill(t("attVfx.pick.readHint"), { at: fmtAt(r.at) });
-    }
+    const hint = r?.at
+      ? fill(t(r.source === "file" ? "attVfx.pick.fileHint" : "attVfx.pick.readHint"), { at: fmtAt(r.at) })
+      : undefined;
     const sub = [c.leader ? tl(c.leader) : null, c.archived ? t("attVfx.pick.archived") : null]
       .filter(Boolean).join(" · ");
-    return { key: c.code, label: c.code, sub: sub || undefined, hint, hintTone };
+    return { key: c.code, label: c.code, sub: sub || undefined, hint };
   };
 
   for (const c of pick?.cells || []) {
@@ -118,7 +114,6 @@ export default function VerifixCellPicker({
   );
   const cells = useMemo(() => pick?.cells || [], [pick]);
   const unread = useMemo(() => cells.filter((c) => !c.read).map((c) => c.code), [cells]);
-  const partial = useMemo(() => cells.filter((c) => c.read?.partial).map((c) => c.code), [cells]);
 
   const n = selected.length;
   const filtered = !!filter.trim();
@@ -162,11 +157,6 @@ export default function VerifixCellPicker({
           {hasReads && unread.length > 0 && unread.length < allKeys.length && (
             <Button variant="ghost" size="sm" onClick={() => setSelected(unread)}>
               {fill(t("attVfx.pick.onlyUnread"), { n: unread.length })}
-            </Button>
-          )}
-          {partial.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setSelected(partial)}>
-              {fill(t("attVfx.pick.onlyPartial"), { n: partial.length })}
             </Button>
           )}
         </div>

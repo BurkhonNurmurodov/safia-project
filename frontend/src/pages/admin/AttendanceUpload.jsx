@@ -1,22 +1,27 @@
 /**
- * «Davomat» admin tab — the single-file attendance ingest.
+ * «Davomat» admin tab — the day's attendance, read from Verifix.
  *
- * ONE «Отчёт по посещениям сотрудников» export covers the whole factory. Each
- * worker row carries a «Код подразделения» (a cell's verifix code) which
- * resolves to that cell's supervisor, so the page is a two-phase review:
+ * Each worker row carries a «Код подразделения» (a cell's verifix code) which
+ * resolves to that cell's supervisor. From 2026-10-04 the rows are READ FROM
+ * VERIFIX (the operator: «no more Excel documents for the загрузка»):
+ * «Verifix'dan olish» opens a plant → shift → brigadir → cell tree of the cells
+ * counted in the загрузка (`VerifixCellPicker.jsx`) and reads the ticked ones —
+ * what the «Отчёт по посещениям сотрудников» Excel used to bring. The page is
+ * a two-phase review:
  *
- *   upload  → the file MERGES into the day. Nothing is in `attendance`, no
- *             supervisor has been notified.
+ *   read    → the picked cells MERGE into the day. Nothing is in `attendance`,
+ *             no supervisor has been notified.
  *   adjust  → one section per supervisor, one ROW PER CELL. The row's checkbox
  *             says "these people count for this supervisor"; the row can be
  *             dragged into another supervisor's section (or back out to the
  *             "no supervisor" bucket at the top).
  *   save    → writes attendance and notifies the supervisors that changed.
  *
- * A DAY IS FED BY SEVERAL FILES (the export is taken per «Орг. единица» group),
- * so uploading never replaces the day and there is no "replace existing?" prompt.
- * Cells another file brought keep their routing, ticks and row edits. Each file
- * is listed and can be pulled back out on its own. Every change stays STAGED —
+ * A DAY IS FED BY SEVERAL READS (each names its cells; the Excel files of the
+ * days before were taken per «Орг. единица» group), so reading never replaces
+ * the day and there is no "replace existing?" prompt. Cells another read
+ * brought keep their routing, ticks and row edits. Each read is listed and can
+ * be pulled back out on its own. Every change stays STAGED —
  * the amber "N cells not saved" badge is the call to action — because Save is the
  * only moment data goes live and supervisors are told.
  *
@@ -27,12 +32,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useDropzone } from "react-dropzone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRightLeft, CalendarClock, Check, CheckCircle2, ChevronDown,
-  ChevronRight, GripVertical, Lock, LockOpen, MoreVertical, Pencil, Pin, Plus,
-  Save, Trash2, TriangleAlert, Undo2, Upload, UserPlus, Users, X,
+  ChevronRight, CloudDownload, GripVertical, Lock, LockOpen, MoreVertical, Pencil, Pin,
+  Plus, RefreshCw, Save, Trash2, TriangleAlert, Undo2, UserPlus, Users, X,
   FileSpreadsheet, FileWarning,
 } from "lucide-react";
 
@@ -49,6 +53,8 @@ import Modal from "../../components/ui/Modal";
 import SearchInput from "../../components/ui/SearchInput";
 import StyledSelect from "../../components/ui/StyledSelect";
 import { SkeletonCard } from "../../components/ui/Skeleton";
+import { codeKey } from "../../components/verifix/vfx";
+import VerifixCellPicker from "./VerifixCellPicker";
 
 const QK = "attendance-batch";
 
@@ -62,6 +68,33 @@ function fmtNum(v, digits = 1) {
   return Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+const fill = (s, vars) => String(s ?? "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
+
+// When a read happened, on the plant's wall clock (never the browser's).
+const fmtAt = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.day}.${p.month} ${p.hour}:${p.minute}`;
+};
+
+// A refused Verifix read → one sentence the admin can act on. utils/api.js
+// flattens a dict detail to its `message` and keeps the object as `detail_raw`.
+function verifixError(e, t) {
+  const res = e?.response?.data;
+  const code = res?.detail_raw?.code ?? res?.detail?.code;
+  if (code === "not_configured") return t("attVfx.notConfigured");
+  if (code === "slow" || code === "timeout") return t("attVfx.errSlow");
+  if (code === "future") return t("attVfx.errFuture");
+  if (code === "no_cells") return t("attVfx.errNoCells");
+  const msg = typeof res?.detail === "string" ? res.detail : (e?.message || "—");
+  return fill(t("attVfx.errVerifix"), { msg });
+}
+
 /** Server error → a string we can actually show. FastAPI details may be objects. */
 function errText(e, fallback) {
   const d = e?.response?.data?.detail;
@@ -72,9 +105,7 @@ function errText(e, fallback) {
 
 // ── small pieces ──────────────────────────────────────────────────────────────
 
-// Exported for «Davomat (Verifix)» (AttendanceVerifix.jsx), the test twin of
-// this tab — one look for both.
-export function Chip({ tone = "neutral", icon: Icon, children, title }) {
+function Chip({ tone = "neutral", icon: Icon, children, title }) {
   const colors = {
     ok:      "#22c55e",
     warn:    "#eab308",
@@ -95,7 +126,7 @@ export function Chip({ tone = "neutral", icon: Icon, children, title }) {
   );
 }
 
-export function Stat({ label, value, tone }) {
+function Stat({ label, value, tone }) {
   return (
     <div
       className="rounded-xl px-3 py-2 min-w-0"
@@ -223,8 +254,14 @@ function UploadsList({ uploads, t, tl, busy, onRemove }) {
       </button>
       {open && uploads.map((u) => (
         <div key={u.id} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: "1px solid var(--border)" }}>
+          {u.source === "verifix"
+            ? <CloudDownload size={13} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+            : <FileSpreadsheet size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />}
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-mono truncate" style={{ color: "var(--text-1)" }}>{u.filename || "—"}</div>
+            <div className={`text-xs truncate ${u.source === "verifix" ? "font-semibold" : "font-mono"}`}
+                 style={{ color: "var(--text-1)" }}>
+              {u.source === "verifix" ? "Verifix" : (u.filename || "—")}
+            </div>
             <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
               {u.uploaded_at ? new Date(u.uploaded_at).toLocaleString() : "—"}
               {u.uploaded_by ? ` · ${tl(u.uploaded_by)}` : ""}
@@ -382,7 +419,6 @@ function WorkerTable({ cell, locked, t, tl, tx, onEdit, onDelete, onAdd, onRever
 function CellRow({
   cell, locked, expanded, dragging, t,
   onToggleExpand, onToggleTick, onDragStart, menuItems,
-  bare = false, extra = null,
 }) {
   const dim = !cell.included;
   return (
@@ -394,8 +430,7 @@ function CellRow({
       }}
     >
       <div className="flex items-center gap-2 px-2 sm:px-3 py-2">
-        {/* `bare`: a read-only twin of this tab has no routing to drag or tick. */}
-        {!bare && <button
+        <button
           type="button"
           onPointerDown={(e) => !locked && onDragStart(e, cell)}
           title={t("attUp.dragHint")}
@@ -408,14 +443,14 @@ function CellRow({
           }}
         >
           <GripVertical size={14} />
-        </button>}
+        </button>
 
-        {!bare && <Tick
+        <Tick
           checked={cell.included}
           disabled={locked || !cell.manager_id}
           onChange={(v) => onToggleTick(cell, v)}
           title={cell.manager_id ? t("attUp.tickHint") : t("attUp.tickNeedsSupervisor")}
-        />}
+        />
 
         <button
           type="button"
@@ -440,7 +475,6 @@ function CellRow({
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {extra}
           <span className="hidden sm:inline text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
             {cell.present}/{cell.workers} <span className="hidden md:inline">{t("attUp.people")}</span>
           </span>
@@ -459,10 +493,10 @@ function CellRow({
 
 // ── supervisor section ────────────────────────────────────────────────────────
 
-export function Section({
+function Section({
   section, orphan, locked, t, tl, expandedCells, dragCode, dropTarget,
   sectionRef, onToggleExpand, onToggleTick, onDragStart, cellMenuItems, sectionMenuItems,
-  renderWorkers, bare = false, cellExtra, orphanHint,
+  renderWorkers,
 }) {
   const isDropTarget = dropTarget != null && dropTarget === (section.manager_id ?? "none");
   const dayTone = section.day_state === "open" ? "ok"
@@ -500,7 +534,7 @@ export function Section({
           </div>
           <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
             {orphan
-              ? (orphanHint ?? t("attUp.noSupervisorHint"))
+              ? t("attUp.noSupervisorHint")
               : `${section.totals.included}/${section.totals.cells} ${t("attUp.cellsWord")} · ${section.totals.present}/${section.totals.workers} ${t("attUp.people")} · ${fmtNum(section.totals.hours, 1)} ${t("attUp.hoursShort")}`}
           </div>
         </div>
@@ -525,8 +559,6 @@ export function Section({
             onToggleTick={onToggleTick}
             onDragStart={onDragStart}
             menuItems={cellMenuItems}
-            bare={bare}
-            extra={cellExtra ? cellExtra(cell) : null}
           />
           {expandedCells.includes(cell.verifix_code) && renderWorkers(cell, section)}
         </div>
@@ -550,8 +582,8 @@ export default function AttendanceUpload() {
   const [savePreview, setSavePreview] = useState(null);
   const [rowForm, setRowForm] = useState(null);        // {mode, row?, cell}
   const [moveFor, setMoveFor] = useState(null);        // cell awaiting a "move to"
-  const [uploadSummary, setUploadSummary] = useState(null);
-  const [uploading, setUploading] = useState(false);
+  const [readSummary, setReadSummary] = useState(null); // what the last Verifix read did
+  const [pickInit, setPickInit] = useState(null);       // the cell picker: null = closed, else the codes ticked
 
   const toastTimer = useRef(null);
   const say = useCallback((text, tone = "ok") => {
@@ -572,6 +604,14 @@ export default function AttendanceUpload() {
     queryKey: [QK, "managers"],
     queryFn: () => api.get("/api/attendance-batch/managers").then((r) => r.data),
     staleTime: 300_000,
+  });
+
+  // What «Verifix'dan olish» offers: the counted cells and when this day last
+  // took each in. Fetched with the day, so the tree opens at once.
+  const { data: pick } = useQuery({
+    queryKey: [QK, "pick", date],
+    queryFn: () => api.get("/api/attendance-batch/verifix-pick", { params: { date } }).then((r) => r.data),
+    staleTime: 60_000,
   });
 
   const applyData = useCallback((payload) => {
@@ -659,27 +699,29 @@ export default function AttendanceUpload() {
     onError: onMutError,
   });
 
-  // ── upload ─────────────────────────────────────────────────────────────────
-  // A day is fed by SEVERAL files (one per «Орг. единица» group), so an upload
-  // always merges: no "replace existing?" prompt, and cells the file doesn't
-  // mention keep their routing, ticks and row edits untouched.
-  const doUpload = useCallback(async (file) => {
-    setUploading(true);
-    const form = new FormData();
-    form.append("files", file);
-    try {
-      const { data: payload } = await api.post("/api/attendance-batch/upload", form);
-      setDate(payload.date);
-      qc.setQueryData([QK, payload.date], payload);
+  // ── read from Verifix ──────────────────────────────────────────────────────
+  // A day is fed by SEVERAL reads, so a read always merges: no "replace
+  // existing?" prompt, and cells it doesn't name keep their routing, ticks and
+  // row edits untouched. Up to a minute — the picker closes at once and the
+  // button carries the wait.
+  const readMut = useMutation({
+    mutationFn: ({ day, codes }) =>
+      api.post("/api/attendance-batch/verifix", { date: day, codes }).then((r) => r.data),
+    onMutate: () => say(t("attVfx.fetching"), "info"),
+    onSuccess: (payload, { day }) => {
+      qc.setQueryData([QK, day], payload);
+      qc.invalidateQueries({ queryKey: [QK, "pick", day] });
       qc.invalidateQueries({ queryKey: [QK, "dates"] });
-      setUploadSummary(payload.upload_result || null);
-      say(t("attUp.uploaded").replace("{date}", payload.date));
-    } catch (e) {
-      say(errText(e, t("attUp.uploadFailed")), "danger");
-    } finally {
-      setUploading(false);
-    }
-  }, [qc, say, setDate, t]);
+      const r = payload.verifix_result || {};
+      setReadSummary(r);
+      const missed = r.unread?.length ?? 0;
+      if (missed) say(fill(t("attVfx.partialToast"), { n: missed }), "warn");
+      else if (!r.upload_id) say(t("attVfx.readNothing"), "warn");
+      else say(fill(t("attVfx.fetchedToast"), { cells: r.cells ?? 0, n: r.rows ?? 0 }));
+    },
+    onError: (e) => say(verifixError(e, t), "danger"),
+  });
+  const reading = readMut.isPending;
 
   const removeUploadMut = useMutation({
     mutationFn: (uploadId) => api.delete(`/api/attendance-batch/uploads/${uploadId}`, {
@@ -687,7 +729,8 @@ export default function AttendanceUpload() {
     }).then((r) => r.data),
     onSuccess: (payload) => {
       applyData(payload);
-      setUploadSummary(null);
+      setReadSummary(null);
+      qc.invalidateQueries({ queryKey: [QK, "pick", date] });
       const r = payload.removed || {};
       say(t("attUp.uploadRemoved")
         .replace("{cells}", r.cells_removed?.length ?? 0)
@@ -696,25 +739,15 @@ export default function AttendanceUpload() {
     onError: onMutError,
   });
 
-  const onDrop = useCallback((accepted) => {
-    if (accepted.length) doUpload(accepted[0]);
-  }, [doUpload]);
-
-  // A wrong-type drop used to do nothing at all — no row, no error, no shake —
-  // which reads either as "it worked" or as "the app is broken".
-  const onDropRejected = useCallback(() => {
-    say(t("admin.upload.onlyXlsx"), "danger");
-  }, [say, t]);
-
-  const { getRootProps, getInputProps, isDragActive, open: openFilePicker } = useDropzone({
-    onDrop,
-    onDropRejected,
-    accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
-    multiple: false,
-    noClick: true,
-    noKeyboard: true,
-    disabled: uploading,
-  });
+  // Every cell the picker offers, and a list of codes narrowed to those (by
+  // code key: the register's spelling of a code may have changed since).
+  const pickCodes = useMemo(() => (pick?.cells || []).map((c) => c.code), [pick]);
+  const codesIn = useCallback((list) => {
+    const want = new Set((list || []).map(codeKey));
+    return pickCodes.filter((c) => want.has(codeKey(c)));
+  }, [pickCodes]);
+  const future = date > todayISO();
+  const canRead = !!pick && pick.configured !== false && pickCodes.length > 0 && !future;
 
   // ── drag between sections ──────────────────────────────────────────────────
   const sectionRefs = useRef({});
@@ -914,8 +947,7 @@ export default function AttendanceUpload() {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div {...getRootProps()} className="space-y-4">
-      <input {...getInputProps()} />
+    <div className="space-y-4">
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -936,11 +968,14 @@ export default function AttendanceUpload() {
         <Button
           size="lg"
           variant="secondary"
-          icon={<Upload size={14} />}
-          onClick={openFilePicker}
-          loading={uploading}
+          icon={<CloudDownload size={14} />}
+          onClick={() => setPickInit(pickCodes)}
+          loading={reading}
+          disabled={!canRead}
+          title={future ? t("attVfx.errFuture") : undefined}
+          className="whitespace-nowrap"
         >
-          {t("attUp.upload")}
+          {t("attVfx.fetch")}
         </Button>
         {!locked && status !== "none" && (
           <Button
@@ -957,64 +992,64 @@ export default function AttendanceUpload() {
         )}
       </div>
 
-      {/* Drop overlay */}
-      {isDragActive && (
-        <div
-          className="rounded-xl border-2 border-dashed p-8 text-center text-sm"
-          style={{ borderColor: "var(--brand)", background: "var(--brand-bg)", color: "var(--brand-text)" }}
-        >
-          {t("attUp.dropActive")}
-        </div>
+      {pick && pick.configured === false && (
+        <div className="text-[11px] px-1" style={{ color: "#eab308" }}>{t("attVfx.notConfigured")}</div>
+      )}
+      {pick && pick.configured !== false && pickCodes.length === 0 && (
+        <div className="text-[11px] px-1" style={{ color: "#eab308" }}>{t("attVfx.noCells")}</div>
       )}
 
-      {/* What the last upload actually did — merges are invisible otherwise. */}
-      {uploadSummary && (
+      {/* What the last read actually did — merges are invisible otherwise. */}
+      {readSummary && (
         <div
           className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
           style={{ background: "color-mix(in srgb, #22c55e 10%, transparent)", border: "1px solid color-mix(in srgb, #22c55e 30%, transparent)" }}
         >
-          <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#22c55e" }} />
+          <CloudDownload size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#22c55e" }} />
           <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
-              {uploadSummary.filename}
+            <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>
+              {fill(t("attVfx.readTitle"), { cells: readSummary.cells ?? 0, n: readSummary.rows ?? 0 })}
             </div>
-            <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
-              {t("attUp.mergeSummary")
-                .replace("{added}", uploadSummary.cells_added?.length ?? 0)
-                .replace("{updated}", uploadSummary.cells_replaced?.length ?? 0)
-                .replace("{rows}", uploadSummary.rows_added ?? 0)}
-            </div>
-            {uploadSummary.created_cells?.length > 0 && (
-              <div className="text-[11px]" style={{ color: "#eab308" }}>
-                {t("attUp.mergeNewCells").replace("{n}", uploadSummary.created_cells.length)}
-                {": "}{uploadSummary.created_cells.join(", ")}
-              </div>
-            )}
-            {uploadSummary.kept_edits > 0 && (
-              <div className="text-[11px]" style={{ color: "#eab308" }}>
-                {t("attUp.mergeKeptEdits").replace("{n}", uploadSummary.kept_edits)}
-              </div>
-            )}
-            {uploadSummary.brigadirs > 0 && (
+            {readSummary.upload_id ? (
               <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
-                {t("attUp.mergeBrigadirs").replace("{n}", uploadSummary.brigadirs)}
+                {t("attUp.mergeSummary")
+                  .replace("{added}", readSummary.cells_added?.length ?? 0)
+                  .replace("{updated}", readSummary.cells_replaced?.length ?? 0)
+                  .replace("{rows}", readSummary.rows_added ?? 0)}
+              </div>
+            ) : (
+              <div className="text-[11px]" style={{ color: "#eab308" }}>{t("attVfx.readNothing")}</div>
+            )}
+            {readSummary.kept_edits > 0 && (
+              <div className="text-[11px]" style={{ color: "#eab308" }}>
+                {t("attUp.mergeKeptEdits").replace("{n}", readSummary.kept_edits)}
               </div>
             )}
-            {/* A cell-less name that reached no supervisor. Almost always a
-                brigadir spelled a new way — they stay off their own page, and
-                nothing else on this screen would ever mention it. */}
-            {uploadSummary.unmatched?.length > 0 && (
-              <div className="text-[11px]" style={{ color: "#eab308" }}>
-                {t("attUp.mergeUnmatched").replace("{n}", uploadSummary.unmatched.length)}
-                {": "}{uploadSummary.unmatched.join(", ")}
+            {/* A cell Verifix did not finish was left as it was — say so, and
+                offer exactly those cells again. */}
+            {readSummary.unread?.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "#eab308" }}>
+                <span>{fill(t("attVfx.unreadMsg"), { n: readSummary.unread.length })}</span>
+                {codesIn(readSummary.unread).length > 0 && (
+                  <Button size="sm" variant="ghost" icon={<RefreshCw size={12} />} disabled={reading}
+                          onClick={() => setPickInit(codesIn(readSummary.unread))}>
+                    {t("attVfx.readUnread")}
+                  </Button>
+                )}
+              </div>
+            )}
+            {readSummary.rule?.names?.length > 0 && (
+              <div className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                {fill(t("attVfx.hoursRule"), { kinds: readSummary.rule.names.join(" + ") })}
               </div>
             )}
           </div>
           <button
             type="button"
-            onClick={() => setUploadSummary(null)}
+            onClick={() => setReadSummary(null)}
             className="p-1 rounded-md flex-shrink-0"
             style={{ color: "var(--text-4)" }}
+            aria-label={t("notif.close")}
           >
             <X size={13} />
           </button>
@@ -1065,7 +1100,9 @@ export default function AttendanceUpload() {
             tone: "danger",
             title: t("attUp.removeUploadTitle"),
             message: t("attUp.removeUploadMsg")
-              .replace("{file}", u.filename || "—")
+              .replace("{file}", u.source === "verifix"
+                ? `Verifix · ${fmtAt(u.uploaded_at)}`
+                : (u.filename || "—"))
               .replace("{n}", u.cells_now),
             confirmLabel: t("attUp.removeUpload"),
             onConfirm: () => { removeUploadMut.mutate(u.id); setConfirm(null); },
@@ -1127,11 +1164,13 @@ export default function AttendanceUpload() {
           className="rounded-xl px-4 py-12 text-center"
           style={{ background: "var(--bg-card)", border: "1px dashed var(--border-md)" }}
         >
-          <Upload size={26} className="mx-auto mb-3" style={{ color: "var(--text-4)" }} />
+          <CloudDownload size={26} className="mx-auto mb-3" style={{ color: "var(--text-4)" }} />
           <div className="text-sm font-semibold" style={{ color: "var(--text-2)" }}>{t("attUp.emptyTitle")}</div>
-          <div className="text-xs mt-1 mb-4" style={{ color: "var(--text-4)" }}>{t("attUp.emptyMsg")}</div>
-          <Button size="lg" icon={<Upload size={14} />} onClick={openFilePicker} loading={uploading}>
-            {t("attUp.upload")}
+          <div className="text-xs mt-1 mb-4" style={{ color: "var(--text-3)" }}>{t("attUp.emptyMsg")}</div>
+          <Button size="lg" icon={<CloudDownload size={14} />} onClick={() => setPickInit(pickCodes)}
+                  loading={reading} disabled={!canRead}
+                  title={future ? t("attVfx.errFuture") : undefined}>
+            {t("attVfx.fetch")}
           </Button>
         </div>
       )}
@@ -1211,7 +1250,8 @@ export default function AttendanceUpload() {
       <Toast
         open={!!toast}
         message={toast?.text}
-        tone={toast?.tone === "danger" ? "error" : toast?.tone === "warn" ? "warning" : "success"}
+        tone={toast?.tone === "danger" ? "error" : toast?.tone === "warn" ? "warning"
+          : toast?.tone === "info" ? "info" : "success"}
         position="bottom"
         duration={0}
         closable={false}
@@ -1291,6 +1331,25 @@ export default function AttendanceUpload() {
           busy={saveMut.isPending}
           onClose={() => setSavePreview(null)}
           onConfirm={() => saveMut.mutate()}
+        />
+      )}
+
+      {/* «Verifix'dan olish» — which cells to read. */}
+      {pickInit && pick && (
+        <VerifixCellPicker
+          pick={pick}
+          initial={pickInit}
+          dateLabel={date.split("-").reverse().join(".")}
+          hasReads={(data?.uploads?.length ?? 0) > 0}
+          onClose={() => setPickInit(null)}
+          onConfirm={(codes) => {
+            setPickInit(null);
+            readMut.mutate({ day: date, codes });
+          }}
+          t={t}
+          tl={tl}
+          lang={lang}
+          fmtAt={fmtAt}
         />
       )}
     </div>
