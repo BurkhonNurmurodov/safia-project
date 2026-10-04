@@ -28,18 +28,22 @@ import { exportXlsx } from "../utils/exportXlsx";
 
 /**
  * «Verifix to'g'irlash · Jonli» — the LAB copy of /staff (admin-only, from
- * 2026-10-01). The unit's day is read straight from Verifix (`/api/staff-live`,
+ * 2026-10-01). The unit's day as Verifix tells it (`/api/staff-live`,
  * `services/verifix_live.py`): who is inside, who left, who has not come, late
- * and early, hours so far — with a refresh button and an auto-refresh.
+ * and early, hours so far — for the cells counted in the загрузка only.
  *
- * Moves, role changes, cell placements and closing a day work here the way
- * the agreed live flow will (memory: verifix-api-integration): a change counts
- * from the time it states, a move is approved with its receiving cell, and the
- * day closes by itself an hour after the last check-out. All of it lands in
+ * From 2026-10-04 the server reads Verifix every minute and STORES the read;
+ * this page reads the stored one (every minute, cheap) and «Yangilash» reads
+ * the unit from Verifix now. A day closes by hand only; once everybody who
+ * came has left, the unit's brigadir is told so once.
+ *
+ * Moves, role changes and cell placements work here the way the agreed live
+ * flow will (memory: verifix-api-integration): a change counts from the time
+ * it states, a move is approved with its receiving cell. All of it lands in
  * the lab's own tables — the real /staff, attendance and загрузка never see it.
  */
 
-const AUTO_MS = 120_000;
+const AUTO_MS = 60_000;
 const fill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 const hhmm = (iso) => (iso ? iso.slice(11, 16) : "");
 const n1 = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("ru-RU"));
@@ -47,6 +51,13 @@ const shiftISO = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + n);
   return localISO(d);
+};
+// When the shown read was taken: the time, with the date when it is not today's.
+const readAt = (v) => {
+  const p = v?.pulled_at || "";
+  if (!p) return "";
+  const time = p.slice(11, 16);
+  return p.slice(0, 10) === (v.now || "").slice(0, 10) ? time : `${p.slice(8, 10)}.${p.slice(5, 7)} ${time}`;
 };
 const fetchView = (managerId, day, force = false) => api.get("/api/staff-live/view", {
   params: { manager_id: managerId, ...(day ? { day } : {}), ...(force ? { force: true } : {}) },
@@ -87,28 +98,50 @@ function StatusChip({ status, t }) {
 }
 
 // ── the close bar ─────────────────────────────────────────────────────────────
+// A day closes BY HAND only (2026-10-04). The bar says where it stands — open,
+// everybody who came has left, closed — and what still needs a person.
 function CloseBar({ close, t, onClose, onReopen, onRequests, busy }) {
   if (!close) return null;
   const s = close.state;
-  const tone = s === "closed_manual" || s === "closed_auto" ? "#22c55e"
-    : s === "held_missing" ? "#ef4444" : s === "held_pending" || s === "closing" ? "#eab308" : "#94a3b8";
-  const text = fill(t(`staffLive.close.${s}`), {
-    at: hhmm(close.at), last: hhmm(close.last_out), n: close.n, by: close.by || "—",
-  });
+  const tone = s === "closed" ? "#22c55e" : s === "all_left" ? "#eab308" : "#94a3b8";
+  const text = s === "closed"
+    ? fill(t("staffLive.close.closed_manual"), { at: hhmm(close.at), by: close.by || "—" })
+    : s === "all_left"
+      ? fill(t("staffLive.close.all_left"), { last: hhmm(close.last_out) || "—" })
+      : s === "open"
+        ? (close.n > 0 ? fill(t("staffLive.close.open"), { n: close.n })
+          : fill(t("staffLive.close.openExpected"), { e: close.expected }))
+        : t("staffLive.close.waiting");
+  const open = s === "open" || s === "all_left";
   return (
-    <div className="rounded-xl px-3 py-2.5 flex items-center gap-3 flex-wrap min-h-[52px]"
+    <div className="rounded-xl px-3 py-2.5 flex items-center gap-x-3 gap-y-2 flex-wrap min-h-[52px]"
       style={{ background: `${tone}14`, border: `1px solid ${tone}55` }}>
-      {s === "closed_manual" || s === "closed_auto"
+      {s === "closed"
         ? <Lock size={16} style={{ color: tone }} className="flex-shrink-0" />
         : <Unlock size={16} style={{ color: tone }} className="flex-shrink-0" />}
-      <span className="text-sm flex-1 min-w-[200px]" style={{ color: "var(--text-1)" }}>{text}</span>
-      {s === "held_pending" && (
+      <div className="flex-1 min-w-[200px]">
+        <div className="text-sm" style={{ color: "var(--text-1)" }}>{text}</div>
+        {open && (close.missing > 0 || close.pending > 0 || close.notified_at) && (
+          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+            {close.missing > 0 && <Chip color="#ef4444">{fill(t("staffLive.close.missingNote"), { n: close.missing })}</Chip>}
+            {close.pending > 0 && <Chip color="#eab308">{fill(t("staffLive.close.pendingNote"), { n: close.pending })}</Chip>}
+            {close.notified_at && (
+              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                {fill(t("staffLive.close.notified"), { time: hhmm(close.notified_at) })}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {open && close.pending > 0 && (
         <Button size="md" variant="secondary" onClick={onRequests}>{t("staffLive.tab.requests")}</Button>
       )}
-      {s === "closed_manual" ? (
+      {s === "closed" ? (
         <Button size="md" variant="secondary" loading={busy} onClick={onReopen}>{t("staffLive.close.reopen")}</Button>
-      ) : s !== "closed_auto" && s !== "waiting" ? (
-        <Button size="md" variant="primary" loading={busy} onClick={onClose}>{t("staffLive.close.closeNow")}</Button>
+      ) : open ? (
+        <Button size="md" variant={s === "all_left" ? "primary" : "secondary"} loading={busy} onClick={onClose}>
+          {t("staffLive.close.closeNow")}
+        </Button>
       ) : null}
     </div>
   );
@@ -411,7 +444,6 @@ export default function StaffLive() {
   const [tab, setTab] = usePersistentState("staff_live_tab", "workers");
   const [unitId, setUnitId] = usePersistentState("staff_live_unit", null);
   const [day, setDay] = useState(null);                      // null = the unit's shift-day
-  const [auto, setAuto] = usePersistentState("staff_live_auto", "on");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState(null);                // {mode, row}
@@ -430,13 +462,15 @@ export default function StaffLive() {
 
   // No placeholder from the previous key: a new date or brigadir shows a
   // skeleton at once, never the last day's table under the new day's label.
+  // The server reads Verifix every minute and stores it, so this poll is a
+  // database read — it follows the stored read, it does not cause one.
   const viewKey = ["staff-live-view", unitId, day];
   const view = useQuery({
     queryKey: viewKey,
     queryFn: () => fetchView(unitId, day),
     enabled: !!unitId,
-    staleTime: 60_000,
-    refetchInterval: auto === "on" ? AUTO_MS : false,
+    staleTime: 30_000,
+    refetchInterval: AUTO_MS,
     refetchIntervalInBackground: false,
   });
   const data = view.data && !view.data.error && view.data.unit?.id === unitId ? view.data : null;
@@ -568,14 +602,17 @@ export default function StaffLive() {
         disabled={!unitId} onClick={() => refresh.mutate()}>
         {t("staffLive.refresh")}
       </Button>
-      <SegmentedToggle value={auto} onChange={setAuto}
-        options={[["on", t("staffLive.autoOn")], ["off", t("staffLive.autoOff")]]} />
       {unitId && (
         <span className="text-xs tabular-nums inline-flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-          {(view.isFetching || refresh.isPending) && <Loader2 size={13} className="animate-spin" />}
-          {view.isFetching || refresh.isPending
+          {refresh.isPending && <Loader2 size={13} className="animate-spin" />}
+          {refresh.isPending
             ? t("staffLive.loading")
-            : data ? fill(t("staffLive.updated"), { time: (data.pulled_at || "").slice(11, 16) }) : ""}
+            : data
+              ? [
+                data.pulled_at ? fill(t("staffLive.updated"), { time: readAt(data) }) : t("staffLive.notReadYet"),
+                t(data.auto?.on ? "staffLive.autoNote" : "staffLive.storedNote"),
+              ].join(" · ")
+              : ""}
         </span>
       )}
     </div>
@@ -604,7 +641,8 @@ export default function StaffLive() {
             <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
             <span>
               {error === "not_configured" ? t("staffLive.err.not_configured")
-                : fill(t("staffLive.err.generic"), { msg: view.data?.message || error })}
+                : error === "no_cells" ? t("staffLive.err.no_cells")
+                  : fill(t("staffLive.err.generic"), { msg: view.data?.message || error })}
             </span>
           </div>
         ) : !data ? (
@@ -619,6 +657,13 @@ export default function StaffLive() {
           </div>
         ) : (
           <>
+            {data.read_error && (
+              <div className="rounded-xl px-3 py-2 text-xs flex gap-2"
+                style={{ background: "#eab30814", border: "1px solid #eab30855", color: "var(--text-1)" }}>
+                <AlertTriangle size={14} className="flex-shrink-0 mt-px" style={{ color: "#eab308" }} />
+                <span>{fill(t("staffLive.readError"), { at: hhmm(data.read_error.at), msg: data.read_error.message || "" })}</span>
+              </div>
+            )}
             <CloseBar close={data.close} t={t} busy={closeDay.isPending || reopenDay.isPending}
               onClose={() => setConfirmClose(true)} onReopen={() => reopenDay.mutate()}
               onRequests={() => setTab("requests")} />
@@ -668,7 +713,7 @@ export default function StaffLive() {
                       </div>
                       <div>{fill(t("staffLive.rules"), {
                         late: data.rules?.late_grace, early: data.rules?.early_grace,
-                        miss: data.rules?.missing_after, close: data.rules?.close_after,
+                        miss: data.rules?.missing_after,
                       })}</div>
                       <div>
                         <div className="inline-flex items-center gap-1 font-semibold">

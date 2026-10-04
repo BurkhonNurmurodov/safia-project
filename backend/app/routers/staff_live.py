@@ -1,8 +1,9 @@
 """The LIVE «Verifix to'g'irlash» (lab) — `/staff-live`, admin-only.
 
-The doors over ``app.services.verifix_live``: a unit's day as Verifix tells it
-right now, the changes made on it (move · role · cell), their approval, and a
-day closed by hand. Every write lands in the lab's own tables
+The doors over ``app.services.verifix_live``: a unit's day as the last stored
+Verifix read tells it (a job reads every minute; `force` reads the unit now),
+the changes made on it (move · role · cell), their approval, and a day closed
+by hand — the only way one closes. Every write lands in the lab's own tables
 (`live_staff_events`, `live_day_closes`); nothing on the real /staff, the
 attendance, the documents or the загрузка reads them.
 
@@ -77,8 +78,8 @@ class EventIn(BaseModel):
 
 
 def _unit_cells(db: Session, manager_id: int) -> set[str]:
-    from app.models import Cell
-    return {c for (c,) in db.query(Cell.verifix_code).filter(Cell.manager_id == manager_id).all() if c}
+    """The unit's cells counted in the загрузка — the only cells this page takes."""
+    return verifix_live.unit_cells(db, manager_id)
 
 
 @router.post("/events")

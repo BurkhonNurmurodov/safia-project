@@ -7086,24 +7086,42 @@ change. `POST /upload` is gone; the days the files fed stay as they were.
 From **2026-10-01** (the operator's request, every part asked and picked) a LAB
 copy of /staff read straight from Verifix instead of the next-morning Excel:
 who is inside, who left, who has not come, late and early, hours so far, with a
-«Yangilash» button and a 2-minute auto-refresh; tabs Xodimlar · So'rovlar ·
-Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
+«Yangilash» button; tabs Xodimlar · So'rovlar · Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
 `verify_admin` on every endpoint), no page key.
 
 - **`services/verifix_live.py` is THE definition**; `routers/staff_live.py` is
   the door (`/api/staff-live/meta · view · events · close`).
-- **Nothing else reads its two tables** (`live_staff_events`,
-  `live_day_closes`): real attendance, documents, the day close and the
+- **Nothing else reads its four tables** (`live_staff_events`,
+  `live_day_closes`, `live_verifix_reads`, `live_all_left_notices`): real attendance, documents, the day close and the
   загрузка are untouched by anything done here. It is the agreed live flow
   (memory `verifix-api-integration`, decisions 1 and 4–7) tried before it is
   built for real.
 - **A worker belongs to the brigadir (on /cells) of the cell their Verifix ORG
-  UNIT's code names** — never the division (the parity check's finding).
-- **Reads**: the working-employee directory (`employee$list` with
-  `statuses ["W"]`, divisions, jobs — cached 10 min), then `timesheet$export` and
-  `track$list` for the unit's employees ONLY (an empty `employee_ids` filter
-  means everyone, so an empty unit makes no call) — cached 60 s (10 min for a
-  day already over), forced by «Yangilash».
+  UNIT's code names** — never the division (the parity check's finding) — and
+  **only cells counted in the загрузка** (`cells.in_load`, from 2026-10-04, the
+  operator): `_registry` takes no other cell, so a person in any other cell is on
+  no page, a move or placement may name only such a cell (`unit_cells`), and a
+  unit with none is not offered (`no_cells` for a saved pick).
+- **The last read is STORED and a job keeps it fresh** (from 2026-10-04, the
+  operator: «save the last download in the database, auto-refresh every
+  minute»). `live_verifix_reads`: `dir` (divisions · jobs · working employees,
+  re-read every `DIR_TTL` 10 min) and `day:YYYY-MM-DD` — every workload cell's
+  people on one shift-day: per employee the trimmed report row and the marks,
+  each stamped with the time its read STARTED (`emps[eid].at`), and an older
+  read never overwrites a newer one. The job (`run_pass`, `staff-live-read`,
+  every minute, both entrypoints, jobs-lock copy only) reads each shift's
+  CURRENT shift-day every minute while the shift runs and `HOT_AFTER_MIN` (2 h)
+  past its end, every 10 min after that until the next shift-day; the marks are
+  read incrementally (`TRACKS_OVERLAP_MIN` back from the last read's end) and
+  whole every `TRACKS_FULL_S` (15 min). An empty `employee_ids` filter means
+  everyone, so no call is made for nobody. **The page reads the database**
+  (polls it every minute — a DB read, not a Verifix one) and reads Verifix
+  itself only on «Yangilash» (the unit, now), for a day nobody stored yet, or
+  when a running day's read is older than `STALE_S` (3 min — a stopped job); a
+  failed read keeps the stored one on screen with the failure named
+  (`read_error`). The Auto / Manual toggle is gone. **Consequence to know:** ~17
+  Verifix calls a minute (the timesheet in pages of 100 + the new marks), all
+  day, whether or not anybody has the page open.
 - **A new date or brigadir never shows the previous one's table**: no
   placeholder data, a skeleton at once, a spinner while anything is fetching
   (the operator found the old table under the new date's label confusing).
@@ -7174,9 +7192,19 @@ Yacheykalar. Admin-only three ways (`adminOnly` nav entry, `RequireAdmin`,
   (`event_at`) — never from their approval. A move and a role change wait for
   approval; a move is approved WITH the receiving cell. A cell placement inside
   the unit applies at once.
-- **The day close is derived on every read**: open while anybody is inside;
-  held by a missing check-out or a pending change; otherwise it closes an hour
-  after the unit's last check-out. Only a close by hand is stored.
+- **A day closes BY HAND only** (from 2026-10-04, the operator — the automatic
+  close an hour after the last check-out is gone). The bar reads `open`
+  (somebody inside or on a break, or still due), `all_left` (somebody came,
+  nobody is inside, nobody is due — a missing check-out does not hold it, it is
+  named), `waiting` (nobody came) or `closed`. **The brigadir is TOLD**: the
+  first job pass that finds a unit's current shift-day `all_left` writes
+  `live_all_left_notices` (unique per unit-day, committed before the message)
+  and sends `live_all_left` («Kelganlarning hammasi ishdan ketdi», category
+  «day», no link — supervisors cannot open this page) to the unit's
+  supervisor profile, with the missing check-outs and pending changes as lines
+  of their own. Only while the last exit is within `NOTICE_WINDOW_MIN` (3 h),
+  so a deploy never tells a finished night; never for a day already closed;
+  once per unit-day even if somebody comes back.
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 

@@ -4355,11 +4355,10 @@ class LiveStaffEvent(Base):
 
 
 class LiveDayClose(Base):
-    """A unit's day closed BY HAND on the lab copy (`/staff-live`). The automatic
-    close is not stored — it is derived on every read from the data (an hour
-    after the unit's last check-out, held by a missing check-out or a pending
-    change), so it can never disagree with the figures beside it. Lab only:
-    the real day close (`/staff`) knows nothing about this table."""
+    """A unit's day closed BY HAND on the lab copy (`/staff-live`) — the only way
+    a day closes there (from 2026-10-04 nothing closes one by itself; the
+    brigadir is TOLD instead, `LiveAllLeftNotice`). Lab only: the real day close
+    (`/staff`) knows nothing about this table."""
     __tablename__ = "live_day_closes"
     __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_day_close"),)
 
@@ -4368,6 +4367,47 @@ class LiveDayClose(Base):
     day            = Column(Date, nullable=False)
     closed_by_name = Column(String, nullable=True)
     closed_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveVerifixRead(Base):
+    """The LAST read of Verifix behind `/staff-live`, kept in the database
+    (from 2026-10-04) so the page opens on it at once and every app copy reads
+    the same answer. A job reads Verifix every minute
+    (`verifix_live.run_pass`); the page's «Yangilash» reads one unit now.
+
+    `key`: "dir" — the directory (divisions · jobs · working employees), or
+    "day:YYYY-MM-DD" — one shift-day of every workload cell's people: per
+    employee the report row and the marks, each with the time it was read
+    (`data.emps[eid].at`), so an older read never overwrites a newer one.
+    Nothing but that page reads it."""
+    __tablename__ = "live_verifix_reads"
+
+    key        = Column(String, primary_key=True)
+    data       = Column(JSONB, nullable=False, default=dict)
+    read_at    = Column(DateTime(timezone=True), nullable=True)   # last successful whole read
+    ms         = Column(Integer, nullable=True)                    # how long it took
+    error      = Column(String, nullable=True)                     # the last failed read, if newer
+    error_at   = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LiveAllLeftNotice(Base):
+    """«Everybody who came has left» — told ONCE per (unit, shift-day) to the
+    unit's brigadir by the `/staff-live` job (from 2026-10-04, the operator:
+    the day is never closed by itself, the brigadir is told when to close it).
+    The row is written before the message goes, so two passes can never send
+    it twice. Lab only."""
+    __tablename__ = "live_all_left_notices"
+    __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_all_left"),)
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, nullable=False, index=True)
+    day        = Column(Date, nullable=False)
+    came       = Column(Integer, nullable=True)
+    missing    = Column(Integer, nullable=True)                    # no check-out
+    pending    = Column(Integer, nullable=True)                    # changes awaiting approval
+    last_out   = Column(DateTime, nullable=True)                   # Tashkent wall clock
+    sent_at    = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class VerifixProbe(Base):

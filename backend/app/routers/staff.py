@@ -236,6 +236,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("День закрыт", "Дата: {date} | Закрыл(а): {closer_name}"),
         "en": ("Day closed", "Date: {date} | Closed by: {closer_name}"),
     },
+    # The LAB copy of «Verifix to'g'irlash» (/staff-live, services/verifix_live):
+    # told once per unit-day when everybody who came has left — the day is
+    # closed by hand, never by itself.
+    "live_all_left": {
+        "uz": ("Kelganlarning hammasi ishdan ketdi", "Sana: {date} | Kelganlar: {came} | Oxirgi ketgan: {last_out}\nChiqish belgisi yo'q: {missing}\nTasdiq kutayotgan o'zgarishlar: {pending}\nKunni yopish mumkin."),
+        "uz_cyrl": ("Келганларнинг ҳаммаси ишдан кетди", "Сана: {date} | Келганлар: {came} | Охирги кетган: {last_out}\nЧиқиш белгиси йўқ: {missing}\nТасдиқ кутаётган ўзгаришлар: {pending}\nКунни ёпиш мумкин."),
+        "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\nДень можно закрыть."),
+        "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\nThe day can be closed."),
+    },
     "day_reopened": {
         "uz": ("Kun qayta ochildi: {reopener_name}", "Sana: {date} — kun yana ochiq, ma'lumotlar yopilgunga qadar ko'rinmaydi"),
         "uz_cyrl": ("Кун қайта очилди: {reopener_name}", "Сана: {date} — кун яна очиқ, маълумотлар ёпилгунга қадар кўринмайди"),

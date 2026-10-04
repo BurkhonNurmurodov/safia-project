@@ -67,6 +67,7 @@ _EXACT = {
     "request_undone": "approvals", "document_rejected": "approvals",
     # Attendance and the day close.
     "day_closed": "day", "day_reopened": "day", "verifix_uploaded": "day",
+    "live_all_left": "day",
     "admin_record_edited": "day", "admin_record_deleted": "day",
     "idle_request_new": "idle",
     "education_lesson_new": "learning",

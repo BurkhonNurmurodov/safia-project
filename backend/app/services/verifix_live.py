@@ -13,14 +13,21 @@ Where a person stands is answered the way the agreed live feed will answer it:
 * **unit** = the brigadir (on /cells) of the cell their Verifix ORG UNIT
   («отдел») names by its code — the org unit, never the division: the cell
   codes sit on org units (first connection test, 2026-10-01: 0 of 2,942 rows
-  by division, 1,606 by org unit);
+  by division, 1,606 by org unit). **Only cells counted in the загрузка**
+  (`cells.in_load`, from 2026-10-04): a person in any other cell is on no page;
 * an APPROVED move / role change / cell change counts from the time it states,
-  never from its approval (decision 4); a pending one is shown and holds the
-  day's close; a move is approved together with the receiving cell, so nobody
-  arrives cell-less (decision 6);
-* the day closes by itself an hour after the unit's last check-out (decision
-  1) unless somebody is still inside long after their shift (a missing
-  check-out — decision 5) or a change is pending; then a person closes it.
+  never from its approval (decision 4); a pending one is shown; a move is
+  approved together with the receiving cell, so nobody arrives cell-less
+  (decision 6);
+* **a day closes only BY HAND** (from 2026-10-04, the operator — decision 1's
+  automatic close is gone): once everybody who came has left, the unit's
+  brigadir is told so once (`LiveAllLeftNotice`, `_notify_all_left`).
+
+**The last read is STORED** (`live_verifix_reads`, from 2026-10-04): a job reads
+Verifix every minute for every workload cell's people (`run_pass`), the page
+reads the database, and «Yangilash» reads one unit now (`force`). The page reads
+Verifix itself only for a day nobody stored yet, or when the stored read of a
+running day is older than `STALE_S` (a job that stopped).
 
 **The clocks are the report's** (`input_time` / `output_time` — the file's own
 clock-in/out, the parity check proved); the raw marks (`track$list`) fill in
@@ -42,22 +49,30 @@ import re
 import threading
 import time as _time
 from collections import Counter, defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Callable, Optional
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models import Cell, LiveDayClose, LiveStaffEvent, Manager
+from app.models import (
+    Cell, LiveAllLeftNotice, LiveDayClose, LiveStaffEvent, LiveVerifixRead, Manager,
+)
 from app.services import cell_hours, live_overview, verifix, verifix_parity
 
 log = logging.getLogger(__name__)
 
 TZ = verifix.TZ
 
-DIR_TTL = 600            # divisions / jobs / employees — the directory, seconds
-PULL_TTL = 60            # one unit-day's timesheet + marks, seconds
-PAST_TTL = 600           # …for a day already over, which barely changes
-CLOSE_AFTER_MIN = 60     # decision 1: an hour after the unit's last check-out
+DIR_TTL = 600            # divisions / jobs / employees — the job re-reads the directory, seconds
+DIR_FALLBACK_S = 3600    # …and the page reads it itself only when the stored one is older
+HOT_S = 60               # a running shift-day is read again this often (the job's tick)
+COOL_S = 600             # …a shift-day whose shift is over (Verifix fills check-outs late)
+HOT_AFTER_MIN = 120      # a shift stays «running» for the reads this long past its end
+STALE_S = 180            # the page reads Verifix itself when a running day's read is older
+TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
+TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
+NOTICE_WINDOW_MIN = 180  # «everybody left» is told only while the last exit is this recent
 MISSING_AFTER_MIN = 60   # still inside this long past the shift's end = no check-out
 LATE_GRACE_MIN = 5       # minutes a check-in may trail the schedule start
 EARLY_GRACE_MIN = 5      # minutes a check-out may precede the schedule end
@@ -156,98 +171,239 @@ def _schedule_window(name: str, day: date) -> tuple[Optional[datetime], Optional
     return b, e
 
 
-# ── the directory: divisions, jobs, working employees ─────────────────────────
+# ── reading Verifix ───────────────────────────────────────────────────────────
 
-def _directory(cfg: dict, ttl: float = DIR_TTL) -> tuple[dict, datetime]:
-    key = ("dir", cfg["host"], cfg["filial_id"])
-
-    def load() -> dict:
-        deadline = _time.monotonic() + verifix.BUDGET_S
-        divs: dict[str, dict] = {}
-        jobs: dict[str, str] = {}
-        emps: dict[str, dict] = {}
-        with verifix.client(cfg) as cl:
-            for page in verifix.each_page(cl, "core/division$list", {"division_ids": []},
-                                          limit=verifix.LIMIT_LIST, deadline=deadline):
-                for d in page:
-                    did = str(d.get("division_id") or "")
-                    code = str(d.get("code") or "").strip()
-                    divs[did] = {"code": verifix._code_key(code) if code else None,
-                                 "raw": code, "name": d.get("name") or ""}
-            for page in verifix.each_page(cl, "core/job$list", {"job_ids": []},
-                                          limit=verifix.LIMIT_LIST, deadline=deadline):
-                for j in page:
-                    jobs[str(j.get("job_id") or "")] = j.get("name") or ""
-            body = {"employee_ids": [], "statuses": ["W"], "npins": []}
-            try:
-                pages = list(verifix.each_page(cl, "core/employee$list", body,
-                                               limit=verifix.LIMIT_LIST, deadline=deadline))
-            except verifix.VerifixError as exc:
-                if exc.code != "http":
-                    raise
-                # A server that will not filter by status: take everyone, keep «W».
-                body["statuses"] = []
-                pages = list(verifix.each_page(cl, "core/employee$list", body,
-                                               limit=verifix.LIMIT_LIST, deadline=deadline))
-            for page in pages:
-                for e in page:
-                    eid = str(e.get("employee_id") or "")
-                    if not eid or (e.get("status") or "W") != "W":
-                        continue
-                    name = " ".join(str(x).strip() for x in (e.get("last_name"), e.get("first_name"),
-                                                            e.get("middle_name")) if x).strip()
-                    emps[eid] = {"name": name, "unit": str(e.get("org_unit_id") or ""),
-                                 "div": str(e.get("division_id") or ""),
-                                 "job": jobs.get(str(e.get("job_id") or ""), "")}
-        return {"divs": divs, "jobs": jobs, "emps": emps}
-
-    return _cached(key, ttl, load)
+def _read_directory(cfg: dict) -> dict:
+    """Divisions, jobs and every WORKING employee — the directory."""
+    deadline = _time.monotonic() + verifix.BUDGET_S
+    divs: dict[str, dict] = {}
+    jobs: dict[str, str] = {}
+    emps: dict[str, dict] = {}
+    with verifix.client(cfg) as cl:
+        for page in verifix.each_page(cl, "core/division$list", {"division_ids": []},
+                                      limit=verifix.LIMIT_LIST, deadline=deadline):
+            for d in page:
+                did = str(d.get("division_id") or "")
+                code = str(d.get("code") or "").strip()
+                divs[did] = {"code": verifix._code_key(code) if code else None,
+                             "raw": code, "name": d.get("name") or ""}
+        for page in verifix.each_page(cl, "core/job$list", {"job_ids": []},
+                                      limit=verifix.LIMIT_LIST, deadline=deadline):
+            for j in page:
+                jobs[str(j.get("job_id") or "")] = j.get("name") or ""
+        body = {"employee_ids": [], "statuses": ["W"], "npins": []}
+        try:
+            pages = list(verifix.each_page(cl, "core/employee$list", body,
+                                           limit=verifix.LIMIT_LIST, deadline=deadline))
+        except verifix.VerifixError as exc:
+            if exc.code != "http":
+                raise
+            # A server that will not filter by status: take everyone, keep «W».
+            body["statuses"] = []
+            pages = list(verifix.each_page(cl, "core/employee$list", body,
+                                           limit=verifix.LIMIT_LIST, deadline=deadline))
+        for page in pages:
+            for e in page:
+                eid = str(e.get("employee_id") or "")
+                if not eid or (e.get("status") or "W") != "W":
+                    continue
+                name = " ".join(str(x).strip() for x in (e.get("last_name"), e.get("first_name"),
+                                                        e.get("middle_name")) if x).strip()
+                emps[eid] = {"name": name, "unit": str(e.get("org_unit_id") or ""),
+                             "div": str(e.get("division_id") or ""),
+                             "job": jobs.get(str(e.get("job_id") or ""), "")}
+    return {"divs": divs, "jobs": jobs, "emps": emps}
 
 
-def _pull(cfg: dict, ids: list[str], day: date, ttl: float = PULL_TTL) -> tuple[dict, datetime]:
-    """The day's report rows and raw marks for these employees only."""
-    key = ("pull", cfg["host"], cfg["filial_id"], day.isoformat(), tuple(sorted(ids)))
+# What `_person` and the raw view read of a report day — nothing else is kept.
+_DAY_KEYS = ("date", "input_time", "output_time", "begin_time", "end_time", "day_kind", "plan_time")
 
-    def load() -> dict:
-        ts: dict[str, dict] = {}
-        tracks: dict[str, list] = defaultdict(list)
-        if not ids:
-            return {"ts": ts, "tracks": tracks}
-        num_ids = [int(i) for i in ids if i.isdigit()]
-        deadline = _time.monotonic() + verifix.BUDGET_S
-        with verifix.client(cfg) as cl:
-            body = {"period_begin_date": verifix._dmy(day), "period_end_date": verifix._dmy(day),
-                    "division_ids": [], "employee_ids": num_ids}
-            for page in verifix.each_page(cl, "core/timesheet$export", body,
-                                          limit=verifix.LIMIT_TIMESHEET, deadline=deadline):
-                for r in page:
-                    eid = str(r.get("employee_id") or "")
-                    if not eid:
-                        continue
-                    rec = ts.setdefault(eid, {"name": r.get("employee_name") or "",
-                                              "job": r.get("job_name") or "",
-                                              "schedule": r.get("schedule_name") or "",
-                                              "days": []})
-                    for d in r.get("days") or []:
-                        if _d(d.get("date")) == day:
-                            rec["days"].append(d)
-            # A night shift runs into the next morning: read its marks too.
-            begin = datetime.combine(day, time(0))
-            end = min(datetime.combine(day + timedelta(days=1), time(14, 0)), now_local())
-            if end > begin:
-                tbody = {"employee_ids": num_ids,
-                         "begin_datetime": begin.strftime("%d.%m.%Y %H:%M:%S"),
-                         "end_datetime": end.strftime("%d.%m.%Y %H:%M:%S")}
-                for page in verifix.each_page(cl, "core/track$list", tbody,
-                                              limit=verifix.LIMIT_TRACKS, deadline=deadline):
-                    for t in page:
-                        eid = str(t.get("employee_id") or "")
-                        at = _dt(t.get("track_datetime"))
-                        if eid and at:
-                            tracks[eid].append((at, str(t.get("track_type") or "").upper()))
-        return {"ts": ts, "tracks": dict(tracks)}
 
-    return _cached(key, ttl, load)
+def _trim_day(d: dict) -> dict:
+    out = {k: d.get(k) for k in _DAY_KEYS}
+    out["facts"] = [{"time_kind_id": f.get("time_kind_id"), "fact_value": f.get("fact_value")}
+                    for f in d.get("facts") or [] if f.get("fact_value")]
+    return out
+
+
+def _read_timesheet(cl, ids: list[int], day: date, deadline: float) -> dict[str, dict]:
+    ts: dict[str, dict] = {}
+    body = {"period_begin_date": verifix._dmy(day), "period_end_date": verifix._dmy(day),
+            "division_ids": [], "employee_ids": ids}
+    for page in verifix.each_page(cl, "core/timesheet$export", body,
+                                  limit=verifix.LIMIT_TIMESHEET, deadline=deadline):
+        for r in page:
+            eid = str(r.get("employee_id") or "")
+            if not eid:
+                continue
+            rec = ts.setdefault(eid, {"name": r.get("employee_name") or "",
+                                      "job": r.get("job_name") or "",
+                                      "schedule": r.get("schedule_name") or "",
+                                      "days": []})
+            for d in r.get("days") or []:
+                if _d(d.get("date")) == day:
+                    rec["days"].append(_trim_day(d))
+    return ts
+
+
+def _read_marks(cl, ids: list[int], frm: datetime, to: datetime,
+                deadline: float) -> dict[str, list]:
+    """Every mark of these people in [frm, to], as ["YYYY-MM-DDTHH:MM:SS", type]."""
+    marks: dict[str, list] = defaultdict(list)
+    if not ids or to <= frm:
+        return marks
+    body = {"employee_ids": ids,
+            "begin_datetime": frm.strftime("%d.%m.%Y %H:%M:%S"),
+            "end_datetime": to.strftime("%d.%m.%Y %H:%M:%S")}
+    for page in verifix.each_page(cl, "core/track$list", body,
+                                  limit=verifix.LIMIT_TRACKS, deadline=deadline):
+        for t in page:
+            eid = str(t.get("employee_id") or "")
+            at = _dt(t.get("track_datetime"))
+            if eid and at:
+                marks[eid].append([at.isoformat(timespec="seconds"),
+                                   str(t.get("track_type") or "").upper()])
+    return marks
+
+
+def _marks_window(day: date, now: datetime) -> tuple[datetime, datetime]:
+    """A night shift runs into the next morning: its marks are read until 14:00."""
+    return datetime.combine(day, time(0)), min(datetime.combine(day + timedelta(days=1), time(14)), now)
+
+
+# ── the stored reads (`live_verifix_reads`) ───────────────────────────────────
+
+def _day_key(day: date) -> str:
+    return f"day:{day.isoformat()}"
+
+
+def _row(db: Session, key: str, lock: bool = False) -> Optional[LiveVerifixRead]:
+    q = db.query(LiveVerifixRead).filter(LiveVerifixRead.key == key)
+    return (q.with_for_update() if lock else q).first()
+
+
+def _locked_row(db: Session, key: str) -> LiveVerifixRead:
+    """The row, locked for this transaction — created first when missing, so two
+    writers (the job and a «Yangilash») can never race on its insert."""
+    db.execute(pg_insert(LiveVerifixRead).values(key=key, data={})
+               .on_conflict_do_nothing(index_elements=["key"]))
+    return _row(db, key, lock=True)
+
+
+def _local(ts: Optional[datetime]) -> Optional[datetime]:
+    """A stored timestamptz → Tashkent wall clock, naive (the page's clock)."""
+    if ts is None:
+        return None
+    return ts.astimezone(TZ).replace(tzinfo=None) if ts.tzinfo else ts
+
+
+def _note_error(db: Session, key: str, exc: Exception) -> None:
+    try:
+        db.rollback()
+        row = _locked_row(db, key)
+        row.error = (f"{getattr(exc, 'code', '')}: {getattr(exc, 'message', '') or exc}")[:300]
+        row.error_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:  # noqa: BLE001 — recording a failure must not fail the caller
+        db.rollback()
+        log.exception("staff-live: could not record the failed read of %s", key)
+
+
+def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[datetime]]:
+    """The stored directory, read from Verifix again when older than `max_age`.
+    A failed re-read falls back to the stored one; with none, it raises."""
+    row = _row(db, "dir")
+    at = _local(row.read_at) if row else None
+    if row and row.data and at and (now_local() - at).total_seconds() <= max_age:
+        return row.data, at
+    t0 = _time.monotonic()
+    try:
+        data = _read_directory(cfg)
+    except verifix.VerifixError as exc:
+        _note_error(db, "dir", exc)
+        if row and row.data:
+            log.warning("staff-live: directory re-read failed (%s), using the stored one", exc.code)
+            return row.data, at
+        raise
+    row = _locked_row(db, "dir")
+    row.data, row.read_at = data, datetime.now(timezone.utc)
+    row.ms, row.error, row.error_at = int((_time.monotonic() - t0) * 1000), None, None
+    db.commit()
+    return data, _local(row.read_at)
+
+
+def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
+              unit_id: Optional[int] = None) -> dict:
+    """Read `ids` on `day` from Verifix and fold them into the day's stored read.
+
+    `unit_id` None = the job's read of every workload cell: the marks read since
+    the last one only (all of them every `TRACKS_FULL_S`), and the whole day's
+    time stamped as `all_at`. A unit's read («Yangilash», or a day nobody stored)
+    reads its people whole and stamps `units[unit_id]`. Each person is replaced
+    only by a read that STARTED later than the one stored for them."""
+    key = _day_key(day)
+    started = now_local()
+    t0 = _time.monotonic()
+    row = _row(db, key)
+    old = (row.data or {}) if row else {}
+    old_emps = old.get("emps") or {}
+    lo, hi = _marks_window(day, started)
+    m_to = datetime.fromisoformat(old["m_to"]) if old.get("m_to") else None
+    m_full = datetime.fromisoformat(old["m_full_at"]) if old.get("m_full_at") else None
+    incremental = (unit_id is None and m_to is not None and m_full is not None
+                   and (started - m_full).total_seconds() < TRACKS_FULL_S)
+    m_from = max(lo, m_to - timedelta(minutes=TRACKS_OVERLAP_MIN)) if incremental else lo
+    fresh = [i for i in ids if i not in old_emps] if incremental else []
+    db.rollback()                                   # no transaction held across the API calls
+
+    num = [int(i) for i in ids if i.isdigit()]
+    deadline = _time.monotonic() + verifix.BUDGET_S
+    with verifix.client(cfg) as cl:
+        ts = _read_timesheet(cl, num, day, deadline) if num else {}
+        marks = _read_marks(cl, num, m_from, hi, deadline)
+        whole = _read_marks(cl, [int(i) for i in fresh if i.isdigit()], lo, hi, deadline) if fresh else {}
+
+    at_iso = started.isoformat(timespec="seconds")
+    from_iso = m_from.isoformat(timespec="seconds")
+    fresh_set = set(fresh)
+    row = _locked_row(db, key)
+    cur = dict(row.data or {})
+    emps = dict(cur.get("emps") or {})
+    for eid in ids:
+        prev = emps.get(eid)
+        if prev and (prev.get("at") or "") > at_iso:
+            continue                                # a newer read already stands
+        if eid in fresh_set:
+            m = whole.get(eid, [])
+        elif incremental and prev:
+            m = [x for x in prev.get("m") or [] if x[0] < from_iso] + marks.get(eid, [])
+        else:
+            m = marks.get(eid, [])
+        uniq = {(x[0], x[1]): x for x in m}
+        emps[eid] = {"at": at_iso, "ts": ts.get(eid), "m": [uniq[k] for k in sorted(uniq)]}
+    cur["v"] = 1
+    cur["emps"] = emps
+    if unit_id is None:
+        cur["all_at"] = at_iso
+        cur["m_to"] = hi.isoformat(timespec="seconds")
+        if not incremental:
+            cur["m_full_at"] = at_iso
+        row.read_at = datetime.now(timezone.utc)
+        row.ms = int((_time.monotonic() - t0) * 1000)
+    else:
+        units = dict(cur.get("units") or {})
+        units[str(unit_id)] = at_iso
+        cur["units"] = units
+    row.data = cur
+    row.error, row.error_at = None, None
+    db.commit()
+    return cur
+
+
+def _covered_at(data: dict, unit_id: int) -> Optional[datetime]:
+    """When this unit's people were last read: the whole read or the unit's own."""
+    stamps = [x for x in (data.get("all_at"), (data.get("units") or {}).get(str(unit_id))) if x]
+    return datetime.fromisoformat(max(stamps)) if stamps else None
 
 
 # ── one person's day ──────────────────────────────────────────────────────────
@@ -424,14 +580,49 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
 # ── who belongs where ─────────────────────────────────────────────────────────
 
 def _registry(db: Session) -> tuple[dict, dict]:
-    """code key → {id, code, manager_id}; manager id → {name, shift}."""
+    """code key → {id, code, manager_id} for the cells COUNTED IN THE ЗАГРУЗКА
+    (`cells.in_load` — the operator, 2026-10-04: this page takes no other
+    cell); manager id → {name, shift} for every live unit."""
     cells = {}
-    for cid, code, mid in db.query(Cell.id, Cell.verifix_code, Cell.manager_id).all():
+    for cid, code, mid in (db.query(Cell.id, Cell.verifix_code, Cell.manager_id)
+                           .filter(Cell.in_load.is_(True)).all()):
         if code:
             cells[verifix._code_key(code)] = {"id": cid, "code": code, "manager_id": mid}
     units = {m.id: {"name": m.name, "shift": m.shift}
              for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
     return cells, units
+
+
+def unit_cells(db: Session, manager_id: int) -> set[str]:
+    """The unit's workload cells, by their stored code — what a move or a
+    placement on this page may name."""
+    return {c["code"] for c in _registry(db)[0].values() if c["manager_id"] == manager_id}
+
+
+def _homes(directory: dict, cells: dict) -> dict[str, tuple[int, str]]:
+    """employee id → (unit, cell code key) for everybody whose org unit is a
+    workload cell with a brigadir."""
+    divs = directory.get("divs") or {}
+    out: dict[str, tuple[int, str]] = {}
+    for eid, e in (directory.get("emps") or {}).items():
+        code = (divs.get(e.get("unit")) or {}).get("code")
+        cell = cells.get(code) if code else None
+        if cell and cell["manager_id"]:
+            out[eid] = (cell["manager_id"], code)
+    return out
+
+
+def _events(db: Session, day: date) -> list:
+    return (db.query(LiveStaffEvent).filter(LiveStaffEvent.day == day)
+            .order_by(LiveStaffEvent.at, LiveStaffEvent.id).all())
+
+
+def _unit_ids(manager_id: int, homes: dict, events: list) -> list[str]:
+    ids = {eid for eid, (mid, _) in homes.items() if mid == manager_id}
+    for ev in events:
+        if ev.status in ("approved", "pending") and manager_id in (ev.from_manager_id, ev.to_manager_id):
+            ids.add(ev.employee_id)
+    return sorted(ids)
 
 
 def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:
@@ -493,32 +684,13 @@ def _overlap_in_unit(tl: list, unit: int, a: datetime, b: datetime) -> tuple[flo
 
 # ── the unit's day ────────────────────────────────────────────────────────────
 
-def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = False) -> dict:
-    cfg = verifix.config(db, with_password=True)
-    if not (cfg["login"] and cfg.get("password") and cfg["filial_id"]):
-        return {"error": "not_configured"}
-    cells, units = _registry(db)
-    unit = units.get(manager_id)
-    if not unit:
-        return {"error": "no_unit"}
-    today = shift_day(db, unit["shift"])
-    day = day or today
-    now = now_local()
-
-    try:
-        directory, dir_at = _directory(cfg, ttl=120 if force else DIR_TTL)
-    except verifix.VerifixError as exc:
-        return {"error": exc.code, "message": exc.message}
-    divs, emps = directory["divs"], directory["emps"]
-
-    def home_of(eid: str) -> tuple[Optional[int], Optional[str]]:
-        e = emps.get(eid)
-        code = divs.get(e["unit"], {}).get("code") if e else None
-        cell = cells.get(code) if code else None
-        return (cell["manager_id"], code) if cell else (None, None)
-
-    events = (db.query(LiveStaffEvent).filter(LiveStaffEvent.day == day)
-              .order_by(LiveStaffEvent.at, LiveStaffEvent.id).all())
+def _build(*, day: date, now: datetime, manager_id: int, ids: list[str], store: dict,
+           directory: dict, homes: dict, cells: dict, units: dict, events: list,
+           formula: Optional[dict], close_rec: Optional[LiveDayClose],
+           notice: Optional[LiveAllLeftNotice]) -> dict:
+    """One unit's day out of the stored read — the rows, the counts and where the
+    day stands. Pure: no Verifix, no writes; the page and the job read it alike."""
+    emps = directory.get("emps") or {}
     approved: dict[str, list] = defaultdict(list)
     pending: dict[str, list] = defaultdict(list)
     for ev in events:
@@ -527,30 +699,17 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
         elif ev.status == "pending":
             pending[ev.employee_id].append(ev)
 
-    ids = {eid for eid in emps if home_of(eid)[0] == manager_id}
-    for ev in events:
-        if ev.status in ("approved", "pending") and manager_id in (ev.from_manager_id, ev.to_manager_id):
-            ids.add(ev.employee_id)
-    ids = sorted(ids)
-
-    try:
-        pulled, pulled_at = _pull(cfg, ids, day,
-                                  ttl=0 if force else (PAST_TTL if day < today else PULL_TTL))
-    except verifix.VerifixError as exc:
-        return {"error": exc.code, "message": exc.message}
-    ts, tracks = pulled["ts"], pulled["tracks"]
-
-    type_counts = Counter(t for marks in tracks.values() for _, t in marks)
-    directed = any(t in DIRECTED for t in type_counts)
-    formula = _formula(db)
-    close_rec = (db.query(LiveDayClose)
-                 .filter(LiveDayClose.manager_id == manager_id, LiveDayClose.day == day).first())
-
+    type_counts: Counter = Counter()
+    n_report = 0
     rows = []
     for eid in ids:
-        rec = ts.get(eid)
-        person = _person(day, now, rec, tracks.get(eid, []), formula)
-        home_unit, home_cell = home_of(eid)
+        entry = store.get(eid) or {}
+        rec = entry.get("ts")
+        n_report += 1 if rec else 0
+        marks = [(datetime.fromisoformat(x[0]), x[1]) for x in entry.get("m") or []]
+        type_counts.update(t for _, t in marks)
+        person = _person(day, now, rec, marks, formula)
+        home_unit, home_cell = homes.get(eid, (None, None))
         role0 = (rec or {}).get("job") or (emps.get(eid) or {}).get("job") or ""
         tl = _timeline(home_unit, home_cell, role0, approved.get(eid, []))
         t_in, t_out = person["in"], person["out"]
@@ -640,27 +799,24 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
              if ev.kind == "move" and ev.from_manager_id == manager_id and ev.at <= now]
     last_out = max(outs) if outs else None
 
+    # A day closes only BY HAND (the operator, 2026-10-04). «Everybody left» is
+    # what the brigadir is told: somebody came, nobody is inside or on a
+    # break, and nobody is still due to come. A missing check-out does not
+    # hold it — the person is not inside, and the notice names how many.
     if close_rec:
-        close = {"state": "closed_manual", "at": _iso(close_rec.closed_at.astimezone(TZ).replace(tzinfo=None)
-                                                       if close_rec.closed_at else None),
+        close = {"state": "closed", "at": _iso(_local(close_rec.closed_at)),
                  "by": close_rec.closed_by_name}
     elif not came:
         close = {"state": "waiting"}
-    elif missing:
-        close = {"state": "held_missing", "n": missing}
-    elif pend:
-        close = {"state": "held_pending", "n": pend}
-    elif inside:
-        close = {"state": "open", "n": inside}
+    elif inside == 0 and counts["not_yet"] == 0:
+        close = {"state": "all_left", "last_out": _iso(last_out)}
     else:
-        at = last_out + timedelta(minutes=CLOSE_AFTER_MIN) if last_out else now
-        close = {"state": "closed_auto" if now >= at else "closing", "at": _iso(at),
-                 "last_out": _iso(last_out)}
+        close = {"state": "open", "n": inside, "expected": counts["not_yet"]}
+    close["missing"] = missing
+    close["pending"] = pend
+    close["notified_at"] = _iso(_local(notice.sent_at)) if notice and notice.sent_at else None
 
     return {
-        "day": day.isoformat(), "today": today.isoformat(), "is_today": day == today,
-        "unit": {"id": manager_id, "name": unit["name"], "shift": unit["shift"]},
-        "now": _iso(now), "pulled_at": _iso(pulled_at), "directory_at": _iso(dir_at),
         "rows": rows,
         "counts": {"total": len(rows), "came": came, "inside": inside, "left": counts["left"],
                    "absent": counts["absent"], "not_yet": counts["not_yet"], "off": counts["off"],
@@ -668,17 +824,90 @@ def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = F
                    "missing": missing,
                    "hours": round(sum(r["hours"] or 0 for r in rows), 1)},
         "close": close,
-        "cells": sorted(({"code": c["code"], "id": c["id"]} for c in cells.values()
-                         if c["manager_id"] == manager_id), key=lambda c: c["code"]),
-        "formula": ({"names": formula["names"], "share": formula["share"]} if formula else None),
-        "rules": {"close_after": CLOSE_AFTER_MIN, "missing_after": MISSING_AFTER_MIN,
-                  "late_grace": LATE_GRACE_MIN, "early_grace": EARLY_GRACE_MIN},
-        "diag": {"employees": len(ids), "report_rows": len(ts),
+        "diag": {"employees": len(ids), "report_rows": n_report,
                  "marks": sum(type_counts.values()), "mark_types": dict(type_counts),
-                 "directed": directed,
+                 "directed": any(t in DIRECTED for t in type_counts),
                  "in_sources": dict(Counter(r["in_src"] for r in rows if r["in_src"])),
                  "out_sources": dict(Counter(r["out_src"] for r in rows if r["out_src"]))},
     }
+
+
+def _configured(cfg: dict) -> bool:
+    return bool(cfg["login"] and cfg.get("password") and cfg["filial_id"])
+
+
+def unit_view(db: Session, manager_id: int, day: Optional[date], force: bool = False) -> dict:
+    """The unit's day off the STORED read. Verifix is asked only on «Yangilash»
+    (`force`), for a day nobody stored yet, or when a running day's read is
+    older than `STALE_S` — the job that keeps it fresh has stopped."""
+    cfg = verifix.config(db, with_password=True)
+    if not _configured(cfg):
+        return {"error": "not_configured"}
+    cells, units = _registry(db)
+    unit = units.get(manager_id)
+    if not unit:
+        return {"error": "no_unit"}
+    unit_codes = sorted((c for c in cells.values() if c["manager_id"] == manager_id),
+                        key=lambda c: c["code"])
+    if not unit_codes:
+        return {"error": "no_cells"}
+    today = shift_day(db, unit["shift"])
+    day = day or today
+
+    try:
+        directory, dir_at = _directory(db, cfg, 120 if force else DIR_FALLBACK_S)
+    except verifix.VerifixError as exc:
+        return {"error": exc.code, "message": exc.message}
+    homes = _homes(directory, cells)
+    events = _events(db, day)
+    ids = _unit_ids(manager_id, homes, events)
+
+    key = _day_key(day)
+    row = _row(db, key)
+    data = (row.data or {}) if row else {}
+    store = data.get("emps") or {}
+    covered = _covered_at(data, manager_id)
+    now = now_local()
+    stale = (covered is None or any(i not in store for i in ids)
+             or (day == today and (now - covered).total_seconds() > STALE_S))
+    read_error = None
+    if force or stale:
+        try:
+            data = _read_day(db, cfg, day, ids, unit_id=manager_id)
+        except verifix.VerifixError as exc:
+            _note_error(db, key, exc)
+            if covered is None:
+                return {"error": exc.code, "message": exc.message}
+            read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
+        store = data.get("emps") or {}
+        covered = _covered_at(data, manager_id)
+        events = _events(db, day)
+        now = now_local()
+    elif row and row.error and row.error_at and (row.read_at is None or row.error_at > row.read_at):
+        read_error = {"message": row.error, "at": _iso(_local(row.error_at))}
+
+    close_rec = (db.query(LiveDayClose)
+                 .filter(LiveDayClose.manager_id == manager_id, LiveDayClose.day == day).first())
+    notice = (db.query(LiveAllLeftNotice)
+              .filter(LiveAllLeftNotice.manager_id == manager_id, LiveAllLeftNotice.day == day).first())
+    formula = _formula(db)
+    view = _build(day=day, now=now, manager_id=manager_id, ids=ids, store=store,
+                  directory=directory, homes=homes, cells=cells, units=units, events=events,
+                  formula=formula, close_rec=close_rec, notice=notice)
+    view.update({
+        "day": day.isoformat(), "today": today.isoformat(), "is_today": day == today,
+        "unit": {"id": manager_id, "name": unit["name"], "shift": unit["shift"]},
+        "now": _iso(now), "pulled_at": _iso(covered), "directory_at": _iso(dir_at),
+        "read_error": read_error,
+        # The job keeps each unit's CURRENT shift-day read; an earlier day stays
+        # as it was last read until somebody presses «Yangilash».
+        "auto": {"on": day == today, "every": HOT_S},
+        "cells": [{"code": c["code"], "id": c["id"]} for c in unit_codes],
+        "formula": ({"names": formula["names"], "share": formula["share"]} if formula else None),
+        "rules": {"missing_after": MISSING_AFTER_MIN, "late_grace": LATE_GRACE_MIN,
+                  "early_grace": EARLY_GRACE_MIN},
+    })
+    return view
 
 
 def _event_out(ev: LiveStaffEvent, units: dict) -> dict:
@@ -708,23 +937,178 @@ def events_for(db: Session, day: date, manager_id: Optional[int] = None) -> list
 
 
 def meta(db: Session) -> dict:
-    """Units with their cells (move targets) and the job titles (role changes)."""
+    """The units that own a workload cell, with those cells (move targets), and
+    the job titles (role changes)."""
     cells, units = _registry(db)
     by_unit = defaultdict(list)
     for c in cells.values():
-        if c["manager_id"]:
+        if c["manager_id"] in units:
             by_unit[c["manager_id"]].append(c["code"])
     jobs: list[str] = []
     cfg = verifix.config(db, with_password=True)
-    if cfg["login"] and cfg.get("password") and cfg["filial_id"]:
+    if _configured(cfg):
         try:
-            directory, _ = _directory(cfg)
-            jobs = sorted({j for j in directory["jobs"].values() if j})
+            directory, _ = _directory(db, cfg, DIR_FALLBACK_S)
+            jobs = sorted({j for j in (directory.get("jobs") or {}).values() if j})
         except verifix.VerifixError:
             jobs = []
     return {
         "units": sorted(({"id": mid, "name": u["name"], "shift": u["shift"],
-                          "cells": sorted(by_unit.get(mid, []))} for mid, u in units.items()),
+                          "cells": sorted(by_unit[mid])} for mid, u in units.items() if mid in by_unit),
                         key=lambda u: (u["shift"] or 9, u["name"] or "")),
         "jobs": jobs,
+        "every": HOT_S,
     }
+
+
+# ── the minute job ────────────────────────────────────────────────────────────
+
+_pass_lock = threading.Lock()
+
+
+def _due_days(db: Session, shifts: set, now_tz: datetime) -> dict[date, float]:
+    """The shift-days the job keeps read, and how often: each shift's CURRENT
+    day every minute while the shift runs and `HOT_AFTER_MIN` past its end (the
+    late check-outs, the «no check-out» turn, the notice), every `COOL_S` after
+    that until the next shift-day starts."""
+    out: dict[date, float] = {}
+    defaults = cell_hours.defaults(db)
+    for shift in shifts:
+        win = defaults.get(shift) or ("08:00", "20:00")
+        fr = live_overview.shift_frame(now_tz, shift, win)
+        day = date.fromisoformat(fr["day"])
+        ends = datetime.fromisoformat(fr["ends_at"])
+        hot = fr["state"] == "running" or now_tz < ends + timedelta(minutes=HOT_AFTER_MIN)
+        every = HOT_S if hot else COOL_S
+        out[day] = min(out.get(day, every), every)
+    return out
+
+
+def _notify_all_left(db: Session, manager_id: int, day: date, view: dict,
+                     last_out: datetime) -> bool:
+    """Tell the unit's brigadir, ONCE, that everybody who came has left. The row
+    is committed first: it is what keeps a second pass from sending it again."""
+    from sqlalchemy.exc import IntegrityError
+    c, cl = view["counts"], view["close"]
+    db.add(LiveAllLeftNotice(manager_id=manager_id, day=day, came=c["came"],
+                             missing=c["missing"], pending=cl["pending"], last_out=last_out))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    try:
+        from app.routers.staff import _notify_supervisor_all
+        _notify_supervisor_all(db, manager_id, "live_all_left", {
+            "date": day.strftime("%d.%m.%Y"), "came": c["came"], "last_out": _hm(last_out),
+            # A line whose one value is blank is dropped (`_render_body`).
+            "missing": c["missing"] or "", "pending": cl["pending"] or "",
+        }, "info")
+        db.commit()
+    except Exception:  # noqa: BLE001 — a DM that fails must not stop the pass
+        db.rollback()
+        log.exception("staff-live: the «everybody left» notice to unit %s failed", manager_id)
+    return True
+
+
+def _notices(db: Session, day: date, units: dict, unit_days: dict, cells: dict,
+             directory: dict, homes: dict) -> int:
+    """Every unit whose current shift-day this is and whose people have all
+    left gets its notice — while the last exit is recent (`NOTICE_WINDOW_MIN`),
+    so a deploy in the afternoon never tells last night's brigadirs."""
+    row = _row(db, _day_key(day))
+    store = ((row.data or {}).get("emps") or {}) if row else {}
+    if not store:
+        return 0
+    done = {m for (m,) in db.query(LiveAllLeftNotice.manager_id).filter(LiveAllLeftNotice.day == day)}
+    closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == day)}
+    events = _events(db, day)
+    formula = _formula(db)
+    now = now_local()
+    sent = 0
+    for mid, d in unit_days.items():
+        if d != day or mid in done or mid in closed:
+            continue
+        ids = _unit_ids(mid, homes, events)
+        if not ids:
+            continue
+        view = _build(day=day, now=now, manager_id=mid, ids=ids, store=store, directory=directory,
+                      homes=homes, cells=cells, units=units, events=events, formula=formula,
+                      close_rec=None, notice=None)
+        cl = view["close"]
+        if cl["state"] != "all_left" or not cl.get("last_out"):
+            continue
+        last_out = datetime.fromisoformat(cl["last_out"])
+        if (now - last_out).total_seconds() > NOTICE_WINDOW_MIN * 60:
+            continue
+        if _notify_all_left(db, mid, day, view, last_out):
+            sent += 1
+            log.info("staff-live: unit %s told everybody left on %s (last %s, came %s)",
+                     mid, day, _hm(last_out), view["counts"]["came"])
+    return sent
+
+
+def _pass(db: Session) -> None:
+    cfg = verifix.config(db, with_password=True)
+    if not _configured(cfg):
+        return
+    cells, units = _registry(db)
+    with_cells = {c["manager_id"] for c in cells.values() if c["manager_id"] in units}
+    if not with_cells:
+        return
+    try:
+        directory, _ = _directory(db, cfg, DIR_TTL)
+    except verifix.VerifixError as exc:
+        log.warning("staff-live: no directory (%s: %s)", exc.code, exc.message)
+        return
+    homes = {eid: h for eid, h in _homes(directory, cells).items() if h[0] in with_cells}
+    now_tz = datetime.now(TZ)
+    shifts = {units[m]["shift"] or 1 for m in with_cells}
+    by_shift = {s: shift_day(db, s, now_tz) for s in shifts}
+    unit_days = {m: by_shift[units[m]["shift"] or 1] for m in with_cells}
+    sent = 0
+    for day, every in sorted(_due_days(db, shifts, now_tz).items(), key=lambda kv: kv[1]):
+        key = _day_key(day)
+        row = _row(db, key)
+        last = datetime.fromisoformat(row.data["all_at"]) if row and (row.data or {}).get("all_at") else None
+        if last is not None and (now_local() - last).total_seconds() < every - 15:
+            continue
+        events = _events(db, day)
+        ids = sorted(set(homes) | {ev.employee_id for ev in events
+                                   if ev.status in ("approved", "pending")})
+        t0 = _time.monotonic()
+        try:
+            _read_day(db, cfg, day, ids)
+        except verifix.VerifixError as exc:
+            _note_error(db, key, exc)
+            log.warning("staff-live: reading %s failed (%s: %s)", day, exc.code, exc.message)
+            continue
+        log.info("staff-live: read %s — %d people in %.1f s", day, len(ids), _time.monotonic() - t0)
+        sent += _notices(db, day, units, unit_days, cells, directory, homes)
+    if sent:
+        from app.services import action_log
+        action_log.record_system("attendance", "lab.live_all_left_notified", db,
+                                 details=[("units", sent)])
+
+
+def run_pass() -> None:
+    """The minute job: read Verifix for every workload cell's people on the
+    shift-days in play, store it, tell brigadirs whose people have all left.
+    Never two at once (one process; the scheduler runs jobs in one copy)."""
+    if not _pass_lock.acquire(blocking=False):
+        return
+    try:
+        from app.database import SessionLocal
+        with SessionLocal() as db:
+            _pass(db)
+    except Exception:  # noqa: BLE001 — the next minute tries again
+        log.exception("staff-live: the minute read failed")
+    finally:
+        _pass_lock.release()
+
+
+def register_jobs() -> None:
+    """Every minute (mirrored in passenger_wsgi.py). A box with no Verifix login
+    runs a pass that returns on its first query."""
+    from app.scheduler import schedule_interval
+    schedule_interval("staff-live-read", run_pass, minutes=1)

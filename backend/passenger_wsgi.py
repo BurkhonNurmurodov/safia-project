@@ -619,6 +619,10 @@ try:
     # «Kadrlar qo'nimsizligi»: the nightly Verifix read + month closing (mirrors main.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
     register_turnover_jobs()
+    # The live «Verifix to'g'irlash» (/staff-live): read Verifix every minute,
+    # store it, tell a brigadir once everybody who came has left (mirrored).
+    from app.services.verifix_live import register_jobs as register_staff_live_jobs
+    register_staff_live_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
