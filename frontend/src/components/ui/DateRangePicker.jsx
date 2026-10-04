@@ -140,6 +140,9 @@ export default function DateRangePicker({
   // path below is untouched by it.
   month = false,
   max = null,          // ISO upper bound — days after it are muted/unpickable
+  min = null,          // month mode only: ISO lower bound — months that end
+                       // before it are muted/unpickable (a register that
+                       // starts on a known month, /turnover)
   weekday = false,     // single mode: prefix the trigger label with the weekday
   compactLabel = false, // show a numeric dd.mm.yy label below sm, verbose above —
                         // for tight mobile toolbars where the spelled-out month
@@ -259,6 +262,7 @@ export default function DateRangePicker({
   const [navY, setNavY] = useState(selY);
   useEffect(() => { if (open && month) setNavY(selY); }, [open, month, selY]);
   const nextYearOk = !max || mFirst(navY + 1, 0) <= max;
+  const prevYearOk = !min || mLast(navY - 1, 11) >= min;
   const pickMonth = (y, m) => {
     const to = mLast(y, m);
     setDateFrom(mFirst(y, m));
@@ -270,8 +274,9 @@ export default function DateRangePicker({
   const monthBody = (
     <div className="p-3">
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => setNavY((y) => y - 1)} aria-label={t("filter.prev")}
-          className="p-1.5 rounded-lg hover:bg-white/10" style={{ color: "var(--text-3)" }}>
+        <button onClick={() => prevYearOk && setNavY((y) => y - 1)} disabled={!prevYearOk}
+          aria-label={t("filter.prev")}
+          className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30" style={{ color: "var(--text-3)" }}>
           <ChevronLeft size={16} />
         </button>
         <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{navY}</span>
@@ -283,7 +288,7 @@ export default function DateRangePicker({
       </div>
       <div className="grid grid-cols-3 gap-1.5">
         {Array.from({ length: 12 }, (_, i) => {
-          const off = !!max && mFirst(navY, i) > max;
+          const off = (!!max && mFirst(navY, i) > max) || (!!min && mLast(navY, i) < min);
           const on  = navY === selY && i === selM;
           return (
             <button key={i} onClick={() => !off && pickMonth(navY, i)} disabled={off}

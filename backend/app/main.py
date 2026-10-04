@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, attendance_verifix
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, attendance_verifix, turnover
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -403,6 +403,11 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.exam import register_jobs as register_exam_jobs
     register_exam_jobs()
+    # «Kadrlar qo'nimsizligi»: read Verifix's directory nightly at 23:40 (a
+    # month's last read takes its list of working people), close ended
+    # months at 09:05, catch up after boot (mirrored in passenger_wsgi.py).
+    from app.services.turnover_sync import register_jobs as register_turnover_jobs
+    register_turnover_jobs()
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —
@@ -998,6 +1003,10 @@ app.include_router(shift_report.router)
 # «Kelish ro'yxati» (`/kelish`) — the T11 staff list; every route self-gates via
 # require_page("kelish") (admin-only by default), so no admin guard here.
 app.include_router(kelish.router)
+# «Kadrlar qo'nimsizligi» (`/turnover`) — the leaders' turnover KPI; reads
+# self-gate via require_page("turnover") (admin-only by default), the
+# refresh / close / reopen routes via verify_admin, so no admin guard here.
+app.include_router(turnover.router)
 app.include_router(android.router)
 app.include_router(push.router)
 app.include_router(education.router)

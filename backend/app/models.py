@@ -4440,3 +4440,117 @@ class VerifixProbe(Base):
     error     = Column(Text, nullable=True)
     probed_by = Column(String, nullable=True)
     probed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (/turnover) ──────────
+# From 2026-10-04 (the operator: "ignore the past — from October HR calculates
+# the KPIs on the IMS"): HR's «Текучесть» = people who LEFT a cell in a month ÷
+# people WORKING there on the month's last day × 12, scored 1–5 per leader.
+# Verifix keeps only where a person works TODAY, so the platform keeps the
+# history itself: a nightly copy of the directory, every dismissal it has seen,
+# and each month's end-of-month list frozen once. `services/turnover.py` is THE
+# rule; `services/turnover_sync.py` fills these tables. Nothing here stores a
+# phone, a birthday, a passport, a PINFL or pay — names, dates, unit, job only.
+
+class TurnoverPerson(Base):
+    """The Verifix directory as the last complete read gave it — one row per
+    employee (their latest employment). Replaced whole by every read; what
+    the current month counts as «working now»."""
+    __tablename__ = "turnover_people"
+
+    employee_id = Column(String, primary_key=True)
+    staff_id    = Column(String, nullable=True)      # the employment cycle
+    name        = Column(String, nullable=False)
+    status      = Column(String(2), nullable=True)   # W working · D dismissed · U hired for a future date
+    hired       = Column(Date, nullable=True)
+    dismissed   = Column(Date, nullable=True)
+    unit_id     = Column(String, nullable=True)      # Verifix org unit («отдел»)
+    unit_name   = Column(String, nullable=True)
+    code        = Column(String, nullable=True, index=True)   # the unit's cell code as Verifix gives it
+    job         = Column(String, nullable=True)
+
+
+class TurnoverLeaver(Base):
+    """One ended employment, as soon as a read sees it — kept even when the
+    person is re-hired later (Verifix's directory then forgets the earlier
+    dismissal). Keyed by the employment cycle (`s<staff_id>`), so a dismissal
+    that is UNDONE in Verifix (same cycle working again) is marked cancelled
+    rather than counted."""
+    __tablename__ = "turnover_leavers"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    key          = Column(String, nullable=False, unique=True)
+    employee_id  = Column(String, nullable=False, index=True)
+    staff_id     = Column(String, nullable=True)
+    name         = Column(String, nullable=False)
+    hired        = Column(Date, nullable=True)
+    dismissed    = Column(Date, nullable=False, index=True)
+    unit_id      = Column(String, nullable=True)
+    unit_name    = Column(String, nullable=True)
+    code         = Column(String, nullable=True)
+    job          = Column(String, nullable=True)
+    reason       = Column(String, nullable=True)     # from Verifix's dismissal journal, when it answers
+    note         = Column(Text, nullable=True)
+    first_seen   = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen    = Column(DateTime(timezone=True), server_default=func.now())
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class TurnoverMonth(Base):
+    """A month whose end-of-month list has been taken and/or that is closed.
+    `cell_map` freezes who led and owned each cell at the month's end, so a
+    later reassignment on /cells never moves a closed month."""
+    __tablename__ = "turnover_months"
+
+    month         = Column(Date, primary_key=True)          # the month's first day
+    roster_at     = Column(DateTime(timezone=True), nullable=True)
+    roster_source = Column(String(10), nullable=True)       # "read" | "approx"
+    cell_map      = Column(JSONB, nullable=True)
+    status        = Column(String(10), nullable=False, default="captured")   # captured | closed
+    closed_at     = Column(DateTime(timezone=True), nullable=True)
+    closed_by     = Column(String, nullable=True)
+    rule          = Column(JSONB, nullable=True)            # the rule a closed month was scored by
+    reopened_at   = Column(DateTime(timezone=True), nullable=True)
+    reopened_by   = Column(String, nullable=True)
+
+
+class TurnoverMonthPerson(Base):
+    """A closed or captured month's people: `roster` = working on the last day
+    (taken by the read at the month's end), `leaver` = left in the month
+    (written when the month closes). Every figure of such a month is derived
+    from these rows, so each one can be listed name by name."""
+    __tablename__ = "turnover_month_people"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    month       = Column(Date, nullable=False, index=True)
+    kind        = Column(String(8), nullable=False)          # roster | leaver
+    employee_id = Column(String, nullable=False)
+    staff_id    = Column(String, nullable=True)
+    name        = Column(String, nullable=False)
+    code        = Column(String, nullable=True)
+    unit_name   = Column(String, nullable=True)
+    job         = Column(String, nullable=True)
+    hired       = Column(Date, nullable=True)
+    dismissed   = Column(Date, nullable=True)
+    reason      = Column(String, nullable=True)
+    note        = Column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_turnover_month_people_mk", "month", "kind"),)
+
+
+class TurnoverRead(Base):
+    """One read of Verifix's directory for the turnover KPI — when, why, how
+    many people, and what failed. The page names the last one."""
+    __tablename__ = "turnover_reads"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    started_at  = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    trigger     = Column(String, nullable=True)       # night · boot · admin:<name>
+    ok          = Column(Boolean, nullable=True)
+    error       = Column(Text, nullable=True)
+    employees   = Column(Integer, nullable=True)
+    in_cells    = Column(Integer, nullable=True)
+    leavers     = Column(Integer, nullable=True)      # ended employments seen from START on
+    reasons     = Column(String(12), nullable=True)   # ok · closed · error
+    captured    = Column(String, nullable=True)       # months whose list this read took

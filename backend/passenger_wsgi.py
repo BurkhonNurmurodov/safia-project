@@ -614,6 +614,9 @@ try:
     # «Imtihon»: the exam's two daily jobs (mirrors main.py).
     from app.services.exam import register_jobs as register_exam_jobs
     register_exam_jobs()
+    # «Kadrlar qo'nimsizligi»: the nightly Verifix read + month closing (mirrors main.py).
+    from app.services.turnover_sync import register_jobs as register_turnover_jobs
+    register_turnover_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
