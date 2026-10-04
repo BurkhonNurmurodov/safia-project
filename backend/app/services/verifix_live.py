@@ -34,7 +34,10 @@ clock-in/out, the parity check proved); the raw marks (`track$list`) fill in
 only what the report has not answered yet — the first mark as a provisional
 arrival, an «O»/«T» mark or, once the shift is over, the last mark as a
 provisional departure — and the row says which (`in_src` / `out_src`). An exit
-before the shift's end is a break, not a departure. `diag` counts the sources.
+before the shift's end is a break, not a departure; while the shift runs only a
+DIRECTED mark after the report's check-out (an «I» = back, an «O» = out again)
+moves it — a checkpoint after it is the gate on the way home. `diag` counts
+the sources.
 
 **Hours**: «Отработано» is summed from the time kinds the parity check FOUND
 (`verifix_last_parity.hours`) when that rule matched the files closely enough,
@@ -144,6 +147,11 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
 
 def _mins(a: datetime, b: datetime) -> float:
     return (b - a).total_seconds() / 60.0
+
+
+def _minute(dt: datetime) -> datetime:
+    """The clock as the page prints it — seconds dropped."""
+    return dt.replace(second=0, microsecond=0)
 
 
 _SCHED_PAIR = re.compile(r"(\d{1,2})[:\-.](\d{2})")
@@ -465,7 +473,6 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     if t_in:
         mine = [m for m in mine if m[0] >= t_in - timedelta(minutes=1)]
 
-    last = mine[-1] if mine else None
     shift_over = now >= end if end else now >= datetime.combine(day + timedelta(days=1), time(6))
     # Without a report check-out (Verifix fills them in late — last night's
     # shift had none by noon, 2026-10-01): any mark at least PAIR_MIN after
@@ -487,18 +494,26 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
         last_dir = directed[-1] if directed else None
         if t_out_rep and t_out_rep >= t_in:
             t_out, out_src = t_out_rep, "report"
-            # The person is BACK and Verifix has not re-read the day yet: a
-            # directed «I» after the report's check-out, or any mark PAIR_MIN
-            # or more after it (the gate a few minutes after the door is the
-            # way out, and moves nothing). ONLY while the shift still runs:
-            # once it is over the report's check-out is final — on 01.10
-            # sixteen finished days read «no check-out» because the NEXT
-            # day's «I» (02.10 09:52, inside the 12 h the fallback looks at)
-            # was taken as a return.
-            if not shift_over and (
-                    any(m[1] == "I" and m[0] > t_out_rep for m in mine)
-                    or (last is not None and _mins(t_out_rep, last[0]) >= PAIR_MIN)):
-                t_out = out_src = None
+            # The report's check-out is the person's LAST exit so far, and it
+            # moves only when they go out again — a return in between shows in
+            # the marks first. So while the shift runs the DIRECTED marks after
+            # it decide: the last «I» = back inside, a later «O»/«T» = out
+            # again. A checkpoint after it is the GATE on the way home and says
+            # nothing. Until 2026-10-04 any mark PAIR_MIN or more after the
+            # check-out read as a return, and the gate sits 7–31 min after the
+            # door (the 01.10 dump) — longer after a change of clothes — so
+            # people gone since 18:04 / 18:17 read «inside» at 20:09 while
+            # Verifix showed them out. ONLY while the shift still runs: once
+            # it is over the report's check-out is final — on 01.10 sixteen
+            # finished days read «no check-out» because the NEXT day's «I»
+            # (02.10 09:52, inside the 12 h the fallback looks at) was taken
+            # as a return.
+            after = [m for m in directed if m[0] > t_out_rep + timedelta(minutes=1)]
+            if not shift_over and after:
+                if after[-1][1] in OUT_TYPES | BREAK_TYPES:
+                    t_out, out_src = after[-1][0], "mark"
+                else:
+                    t_out = out_src = None
         elif last_dir is not None:
             # The last DIRECTED mark decides; a checkpoint after it is the
             # gate on the way out (or in) and moves nothing.
@@ -547,15 +562,18 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
     elif status == "inside" and t_in:
         hours, so_far = max(0.0, _mins(t_in, min(now, hi)) / 60.0), True
 
+    # Counted on the clocks AS PRINTED (whole minutes, Verifix's own way —
+    # «Опоздал на 3 мин» at 12:03): off the seconds, a check-in at 07:50:40
+    # read «07:50 · 9 min early» against an 08:00 start.
     late = early_in = early_out = None
     if begin and t_in and status != "no_out":
-        delta = _mins(begin, t_in)
+        delta = _mins(_minute(begin), _minute(t_in))
         if delta > LATE_GRACE_MIN:
             late = round(delta)
         elif delta < 0:
             early_in = round(-delta)
     if end and t_out and status == "left":
-        delta = _mins(t_out, end)
+        delta = _mins(_minute(t_out), _minute(end))
         if delta > EARLY_GRACE_MIN:
             early_out = round(delta)
     missing = status == "no_out"

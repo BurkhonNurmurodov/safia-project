@@ -1,0 +1,1 @@
+import{t as e}from"./api-GWyzEZDB.js";import{c as r}from"./Toast-D7R_epTT.js";import{n,s as o}from"./statusBands-Dia1jIc_.js";function p(){const{data:t}=r({queryKey:["status-bands"],queryFn:()=>e.get("/api/status-bands").then(s=>{var a;return o((a=s.data)===null||a===void 0?void 0:a.bands)}),staleTime:3e5,refetchOnWindowFocus:!1});return t||n}export{p as t};

@@ -7150,10 +7150,14 @@ who is inside, who left, who has not come, late and early, hours so far, with a
   departure, an «I» means inside, a trailing C is the gate and moves nothing;
   else, once the shift is over, the latest mark of any type ≥ 30 min after
   the arrival and ≤ 12 h after the shift's end ("last_mark"). WHILE THE SHIFT
-  RUNS a directed «I» after the report's check-out, or any mark 30 min or
-  more after it, means the person is back and the report has not caught up —
-  that check-out is dropped (an undirected mark a few minutes after it is the
-  gate on the way out). ONCE THE SHIFT IS OVER the report's check-out is
+  RUNS only the DIRECTED marks after the report's check-out move it (the
+  check-out is the LAST exit so far; a return shows in the marks first): the
+  last of them an «I» = back inside, the check-out dropped; an «O»/«T» = out
+  again, at that mark. A C after it is the gate on the way home and moves
+  nothing — until 2026-10-04 any mark 30+ min after the check-out read as a
+  return, and since the gate sits up to 31+ min after the door (a change of
+  clothes), people gone since 18:04 / 18:17 read «inside» at 20:09 while
+  Verifix showed them out. ONCE THE SHIFT IS OVER the report's check-out is
   final: sixteen finished days read «no check-out» on 03.10 because the NEXT
   day's «I» (02.10 09:52) was taken as a return. A mark before the report's
   check-in is not this shift's: the previous night's exit was read as today's
@@ -7178,7 +7182,9 @@ who is inside, who left, who has not come, late and early, hours so far, with a
   one-shot were deleted once the file landed; the C / final-check-out rules
   above were made on it. Another such dump is a new module under a NEW key.
 - Late = more than 5 min after the schedule start, early leave = more than 5
-  min before its end. **No check-out is a status of its own (`no_out`), not
+  min before its end — counted on the clocks AS PRINTED, whole minutes
+  (Verifix's way: a check-in at 07:50:40 read «07:50 · 9 min early» against
+  08:00 until 2026-10-04). **No check-out is a status of its own (`no_out`), not
   «inside»**: still without an exit an hour after the shift's end. The arrival
   is KEPT — it shows in the In column and counts as came (the operator's call,
   2026-10-01), although Verifix's own day view reads such a day «Не пришла»
