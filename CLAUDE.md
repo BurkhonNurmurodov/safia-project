@@ -12,7 +12,7 @@ or copy-paste its markup into a page.
 |---|---|---|
 | Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. |
 | Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. |
-| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). |
+| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. The subtitle is readable text (`--text-2`, 12px) and WRAPS: it often names who a record belongs to (a brigadir, a cell), and a phone has no hover to finish a cut line. |
 | Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). Carries `role=dialog`, a focus trap, Escape-to-cancel and initial focus on the SAFE button. `error` renders the failure INSIDE the dialog — a mutation that fails must leave the dialog standing with the reason on it, never close and fire `alert()`. `challenge` (+ `challengeLabel`) demands the operator retype a string before confirm enables: use it for anything no undo can reach (full-DB restore → `RESTORE`, whole-day attendance wipe → the date). `cancelLabel` defaults to `common.cancel`. |
@@ -7917,10 +7917,16 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   the cell's tomorrow, else the cells list's `progress`, which is refetched
   1.5 s after a burst of taps goes quiet (never once per tap).
 - **It is read as a WEEK REGISTER** (from 2026-09-29, the operator's
-  directive): one row per worker, one column per day of a calendar week
-  (Monday → Sunday — the PLANT's current week by default, `this_week` on
-  `/cells`; the `DayStepper week` steps it, never past the week holding the
-  cell's tomorrow). `GET /api/kelish/week` builds each day's list with the very
+  directive): one row per worker, one column per day of a week whose FIRST
+  column is always the cell's TODAY (from 2026-10-04, the operator's call —
+  it was Monday → Sunday, which put tomorrow's list in the NEXT week every
+  Sunday), so the two open lists are always columns 1–2. Each cell's own
+  shift-day today (`today` on `/cells`; a night unit's at 15:00 is yesterday's
+  date); `GET /week?start=` answers seven days from `start`, clamped to today,
+  and no `start` means today. The `DayStepper week rolling` steps 7 days back
+  and never past today (a picked day becomes the first column); a cell whose
+  today is earlier than the latest keeps its offset from its own. `date=`
+  (the calendar week) stays for a 4.216 tab. `GET /api/kelish/week` builds each day's list with the very
   `roster` a single day uses (`kelish.week` lays them side by side), so a square
   on screen is a square `PUT /mark` accepts; each slot carries the key its OWN
   day's list uses (`k`). `GET /list` stays for a tab open on an older bundle.

@@ -25,9 +25,10 @@ THE rules, all the operator's (2026-09-28):
   * Only TODAY and TOMORROW — the unit's shift-day frame, the rule `/live` and
     «Smena hisoboti» run on — are editable. Earlier days are read-only; later
     ones are not offered.
-  * The page reads a whole calendar WEEK at once (from 2026-09-29, `week`):
-    each day's list exactly as a single day would be built, laid side by side
-    as one row per worker. The file is read ONCE for the whole run of days
+  * The page reads a WEEK at once (from 2026-09-29, `week`) — seven days whose
+    first is the cell's TODAY (from 2026-10-04; it was Monday → Sunday, which
+    put tomorrow's list in the next week every Sunday): each day's list exactly
+    as a single day would be built, laid side by side as one row per worker. The file is read ONCE for the whole run of days
     (`file_workers_days`) — one window query per day cost ~0.3 s apiece.
   * A tap cycles empty → yes → no → empty (the third tap CLEARS — the
     operator's call, 2026-09-28). An unmarked worker is the absence of a row,
@@ -350,9 +351,13 @@ def find(rows: list[dict], key: str) -> Optional[dict]:
 # ── the week ──────────────────────────────────────────────────────────────────
 
 def week_of(day: date) -> list[date]:
-    """The calendar week `day` falls in, Monday → Sunday."""
-    mon = day - timedelta(days=day.weekday())
-    return [mon + timedelta(days=i) for i in range(7)]
+    """The calendar week `day` falls in, Monday → Sunday (a 4.216 tab's week)."""
+    return days_from(day - timedelta(days=day.weekday()))
+
+
+def days_from(first: date) -> list[date]:
+    """Seven days from `first` — the page's week, whose first day is TODAY."""
+    return [first + timedelta(days=i) for i in range(7)]
 
 
 def week(code: str, days: list[date], files: dict, events: list, marks: dict,

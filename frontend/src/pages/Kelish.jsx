@@ -4,8 +4,10 @@
  *
  * One list per CELL per shift-day: every worker the ORIGINAL Verifix upload
  * filed under the cell in the last 30 days, and beside each name whether they
- * are coming. The page lays a calendar week (Monday → Sunday — this week by
- * default, ‹ › step a week) across those lists like the spreadsheet it
+ * are coming. The page lays a week across those lists — seven days whose FIRST
+ * is always the cell's TODAY (the operator's call, 2026-10-04; it was Monday →
+ * Sunday, which put tomorrow's list in the next week every Sunday), ‹ steps
+ * seven days back, › never past today — like the spreadsheet it
  * replaced (2026-09-30, the operator: «more like the Excel»): names down the
  * left, one column per day, and EVERY cell the same size — an open day is
  * never wider than the rest. The answer is the cell's own fill —
@@ -33,7 +35,7 @@
  * remove, which is the moment it matters.
  *
  * The server decides every one of those questions and ships the answers
- * (`days[].state / editable / when`, `can_edit`, `this_week`), so the page
+ * (`days[].state / editable / when`, `can_edit`, each cell's `today`), so the page
  * derives nothing from the viewer's role or the browser's clock. Rules and
  * scope: backend `services/kelish.py` + `routers/kelish.py`.
  *
@@ -126,6 +128,9 @@ const addDays = (iso, n) => {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
+
+// Days from `a` to `b`, both ISO dates.
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 // "2026-09-29" → "29.09"
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
@@ -397,7 +402,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   const weekKey = ["kelish-week", cell.id, weekFrom];
   const weekQ = useQuery({
     queryKey: weekKey,
-    queryFn: () => api.get("/api/kelish/week", { params: { cell_id: cell.id, date: weekFrom } }).then((r) => r.data),
+    queryFn: () => api.get("/api/kelish/week", { params: { cell_id: cell.id, start: weekFrom } }).then((r) => r.data),
     enabled: open && !!weekFrom,
     // Keep the grid while the WEEK changes (the cell never does on this card).
     placeholderData: keepPreviousData,
@@ -1100,7 +1105,7 @@ export default function Kelish() {
   const { ready } = useFactory();
   const factorySection = useFactorySection();
 
-  const [week, setWeek] = useState(null);                 // a Monday; null = the plant's current week
+  const [week, setWeek] = useState(null);                 // the shown week's first day; null = today
   const [unitPick, setUnitPick] = usePersistentState("kelish.unit", null);
   const [shiftPick, setShiftPick] = usePersistentState("kelish.shift", null);
   // The open card whose head has scrolled away while its week is still on
@@ -1122,8 +1127,6 @@ export default function Kelish() {
   const scopeKind = cellsQ.data?.scope?.kind;
   const scopeAll = scopeKind === "all";
   const hasOrphans = cells.some((c) => !c.manager_id);
-  const thisWeek = cellsQ.data?.this_week || null;
-  const weekFrom = week || thisWeek;
 
   const unitList = useMemo(
     () => units.filter((u) => !shiftPick || u.shift === shiftPick),
@@ -1138,13 +1141,16 @@ export default function Kelish() {
   // One cell, or a leader's few, open by themselves — the /idle-cell rule.
   const autoOpen = cellsShown.length === 1 || (scopeKind === "leader" && cellsShown.length <= 3);
 
-  // The week stepper spans every cell listed: it steps as far as the latest
-  // cell's tomorrow, and a dot points to the side an open day lies on.
-  const maxDay = cellsShown.reduce((m, c) => (c.tomorrow && c.tomorrow > m ? c.tomorrow : m), "");
-  const weekTo = weekFrom ? addDays(weekFrom, 6) : "";
-  const dotPrev = weekFrom && cellsShown.some((c) => c.today && c.today < weekFrom) ? t("kelish.dotHere") : null;
-  const dotNext = weekTo && cellsShown.some((c) => c.tomorrow && c.tomorrow > weekTo) ? t("kelish.dotHere") : null;
-  const pickWeek = (iso) => setWeek(iso === thisWeek ? null : iso);
+  // The week's first column is TODAY — each cell's own, off the server's
+  // shift-day frame (a night unit's today at 15:00 is yesterday's date). The
+  // stepper reads the latest of them and never steps past it; a cell whose
+  // today is earlier keeps the same offset from its own, so «current» starts
+  // every card on its own today. A dot on › says the open lists are that way.
+  const today = cellsShown.reduce((m, c) => (c.today && c.today > m ? c.today : m), "");
+  const weekFrom = week && today && week < today ? week : today;
+  const fromOf = (c) => (!week || !c.today || !today ? c.today : addDays(weekFrom, daysBetween(today, c.today)));
+  const dotNext = weekFrom && today && addDays(weekFrom, 6) < addDays(today, 1) ? t("kelish.dotHere") : null;
+  const pickWeek = (iso) => setWeek(iso >= today ? null : iso);
 
   // ── the filter bar (only where there is something to choose) ─────────────
   const unitName = (id) => (id === NONE ? t("kelish.noUnit") : tl(units.find((u) => u.id === id)?.name || ""));
@@ -1223,7 +1229,7 @@ export default function Kelish() {
         <span id="kelish-kbd" className="sr-only">{t("kelish.kbdHint")}</span>
         {cellsShown.map((c) => (
           <CellWeek
-            key={c.id} cell={c} weekFrom={weekFrom} autoOpen={autoOpen}
+            key={c.id} cell={c} weekFrom={fromOf(c)} autoOpen={autoOpen}
             onAway={onAway} toast={toast} t={t} tl={tl} tx={tx}
           />
         ))}
@@ -1240,8 +1246,8 @@ export default function Kelish() {
           <div className="flex flex-wrap items-center gap-2">
             {cellsShown.length > 0 && weekFrom && (
               <DayStepper
-                week compactUntil="xl" value={weekFrom} onChange={pickWeek} max={maxDay || undefined}
-                dotPrev={dotPrev} dotNext={dotNext}
+                week rolling compactUntil="xl" value={weekFrom} onChange={pickWeek} max={today}
+                dotNext={dotNext}
               />
             )}
             {sections.length > 0 && (

@@ -2,8 +2,9 @@
 `/api/kelish` — the «Kelish ro'yxati» page (`/kelish`): the T11 staff list,
 one list per cell per shift-day, each worker marked coming or not (a tap
 cycles empty → yes → no → empty). The page reads a calendar WEEK of those
-lists at once (`GET /week`, from 2026-09-29); `GET /list` — one day — stays
-for a tab still open on an older bundle.
+lists at once (`GET /week`, from 2026-09-29) — seven days starting from the
+cell's TODAY (from 2026-10-04); `GET /list` — one day — stays for a tab still
+open on an older bundle.
 
 `services/kelish.py` computes; this module decides who may see and change what.
 
@@ -233,23 +234,32 @@ def list_cells(
 @router.get("/week")
 def get_week(
     cell_id: int,
+    start: Optional[str] = None,
     day: Optional[str] = Query(None, alias="date"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """One cell's lists for the calendar week `date` falls in (Monday →
-    Sunday; default: the plant's current week), one row per worker.
+    """One cell's lists for SEVEN days from `start`, one row per worker — and
+    with no `start`, from the cell's own TODAY (the operator's call,
+    2026-10-04: the first column is always today, so today and tomorrow — the
+    two open lists — are always the first two columns). A `start` after the
+    cell's today is answered from today, never refused: the page steps by
+    seven days and a stale step must not blank it.
+
+    `date` (no `start`) is the calendar week it falls in, Monday → Sunday —
+    what a tab still open on a 4.216 bundle asks for.
 
     Each day is exactly the list `GET /list` would build for it. A day after
-    the cell's tomorrow has no list yet (`state: "future"`); a week that begins
-    after it is answered with the week tomorrow falls in, never refused — the
-    page steps by weeks and a stale step must not blank it. Only today and
+    the cell's tomorrow has no list yet (`state: "future"`). Only today and
     tomorrow are `editable`, and only for a viewer who may fill this cell."""
     x = _cell(db, payload, cell_id)
     c, today, tomorrow, now = x["c"], x["today"], x["tomorrow"], x["now"]
-    days = kelish.week_of(_day(day, now.date()))
-    if days[0] > tomorrow:
-        days = kelish.week_of(tomorrow)
+    if start or not day:
+        days = kelish.days_from(min(_day(start, today), today))
+    else:
+        days = kelish.week_of(_day(day, now.date()))
+        if days[0] > tomorrow:
+            days = kelish.week_of(tomorrow)
     listed = [d for d in days if d <= tomorrow]
 
     files = kelish.file_workers_days(db, listed)

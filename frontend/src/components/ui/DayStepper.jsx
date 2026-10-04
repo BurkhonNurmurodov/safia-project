@@ -12,6 +12,10 @@ import { useLang } from "../../context/LangContext";
  * register): the chevrons step ±7 days, the label is the Monday → Sunday span
  * (numeric below sm), and any day picked in the calendar lands on its week's
  * Monday — so `value` and every `onChange` are always a Monday.
+ * `week rolling` drops the Monday: the span is `value` → `value` + 6, a picked
+ * day becomes its first day, and «next» stops at `max` instead of refusing a
+ * step that would pass it — the register whose first column is always TODAY
+ * (/kelish, from 2026-10-04).
  *
  * Props:
  *   value    – ISO date "YYYY-MM-DD" (with `week`: any day of the week)
@@ -50,14 +54,16 @@ function mondayOf(iso) {
 }
 
 export default function DayStepper({
-  value, onChange, max = toISO(new Date()), week = false, dotPrev = null, dotNext = null,
+  value, onChange, max = toISO(new Date()), week = false, rolling = false, dotPrev = null, dotNext = null,
   compactUntil = "sm", marked = null, fillPhone = false,
 }) {
   const { t } = useLang();
   const step = week ? 7 : 1;
-  const from = week ? mondayOf(value) : value;
+  const roll = week && rolling;
+  const from = week && !roll ? mondayOf(value) : value;
   const to = week ? addDaysISO(from, 6) : value;
-  const atMax = max != null && (week ? addDaysISO(from, step) > max : value >= max);
+  const atMax = max != null && (week && !roll ? addDaysISO(from, step) > max : from >= max);
+  const nextFrom = roll && max != null && addDaysISO(from, step) > max ? max : addDaysISO(from, step);
   const prevLabel = [t(week ? "ui.dayStepper.prevWeek" : "ui.dayStepper.prev"), dotPrev].filter(Boolean).join(" · ");
   const nextLabel = [t(week ? "ui.dayStepper.nextWeek" : "ui.dayStepper.next"), dotNext].filter(Boolean).join(" · ");
   // Square 38px chevrons: the toolbar baseline every control beside them sits
@@ -92,7 +98,7 @@ export default function DayStepper({
         max={max}
         dateFrom={from}
         dateTo={to}
-        setDateFrom={(v) => v && onChange(week ? mondayOf(v) : v)}
+        setDateFrom={(v) => v && onChange(week && !roll ? mondayOf(v) : v)}
         setDateTo={() => {}}
         triggerClassName="px-3 py-2 text-sm"
         marked={marked}
@@ -100,7 +106,7 @@ export default function DayStepper({
       />
       <button
         type="button"
-        onClick={() => onChange(addDaysISO(from, step))}
+        onClick={() => onChange(nextFrom)}
         disabled={atMax}
         aria-label={nextLabel}
         title={nextLabel}
