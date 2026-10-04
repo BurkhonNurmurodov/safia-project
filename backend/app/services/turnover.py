@@ -41,7 +41,14 @@ its own history — `services/turnover_sync.py` reads the directory every night:
   again; dismissals typed in later are shown as late, not counted. An admin
   may close earlier, or reopen — a month reopened by hand is closed by hand.
 
-Nothing before `START_MONTH` is computed (the operator's ruling).
+Nothing before `START_MONTH` is computed BY ITSELF (the operator's ruling,
+"ignore the past"). A PAST month (from `PAST_FROM`) is computed on an admin's
+press and SAVED (the operator, the same day: "a button, saved, then it says
+update"): `save_past` takes today's Verifix directory — leavers by their
+dismissal date (re-hired ones from the dismissal journal), working people by
+their hire / dismissal dates — and freezes it like a closed month. Verifix
+keeps no past placement, so the working people stand in their CURRENT unit:
+such a month is approximate and says so. «Yangilash» re-runs it on a fresh read.
 """
 from __future__ import annotations
 
@@ -61,6 +68,7 @@ from app.models import (
 from app.services import verifix
 
 START_MONTH = date(2026, 10, 1)
+PAST_FROM = date(2025, 1, 1)      # the earliest month an admin may compute by hand
 CLOSE_DAY = 5
 CLOSE_HOUR = 9
 CAPTURE_FROM = time(23, 0)      # a read at or after this on a month's last day takes its list
@@ -248,6 +256,7 @@ def _p(row, kind: str) -> dict:
         "name": row.name, "code": row.code, "unit": row.unit_name, "job": row.job,
         "hired": row.hired, "dismissed": getattr(row, "dismissed", None),
         "reason": getattr(row, "reason", None), "note": getattr(row, "note", None),
+        "approx": getattr(row, "approx", None),
     }
 
 
@@ -327,14 +336,16 @@ def read_info(db: Session) -> dict:
 # ── a month's state ───────────────────────────────────────────────────────────
 
 def month_state(db: Session, m: date, now: Optional[datetime] = None) -> tuple[str, Optional[TurnoverMonth]]:
-    """before · future · open · closing · closed."""
+    """before · past · saved · future · open · closing · closed."""
     now = now or local(now_aware())
     cur = month_start(now.date())
-    if m < START_MONTH:
+    if m < PAST_FROM:
         return "before", None
     if m > cur:
         return "future", None
     row = db.get(TurnoverMonth, m)
+    if m < START_MONTH:
+        return ("saved", row) if row and row.roster_source == "past" else ("past", row)
     if row and row.status == "closed":
         return "closed", row
     if row and row.roster_at:
@@ -438,6 +449,72 @@ def reopen(db: Session, m: date, by: str, at: Optional[datetime] = None) -> dict
     return {"month": ym(m)}
 
 
+def save_past(db: Session, m: date, journal: Optional[list[dict]], by: str,
+              at: Optional[datetime] = None) -> dict:
+    """Compute a PAST month from the directory as just read and save it frozen,
+    like a closed month. Leavers: every latest employment whose dismissal date
+    falls in the month, plus the dismissal-journal lines of people re-hired
+    since (`approx`: placed by today's unit). Working: everyone employed on the
+    last day by their hire / dismissal dates, in their CURRENT unit."""
+    at = at or now_aware()
+    if not (PAST_FROM <= m < START_MONTH):
+        raise Refused("not_past")
+    d = last_day(m)
+    roster = mirror_roster(db, d)
+    rows = (db.query(TurnoverPerson)
+            .filter(TurnoverPerson.dismissed >= m, TurnoverPerson.dismissed <= d).all())
+    leavers = [_p(r, "leaver") for r in rows]
+    by_staff = {p["staff_id"]: p for p in leavers if p.get("staff_id")}
+    by_pair = {(p["employee_id"], p["dismissed"]): p for p in leavers}
+    lines = [j for j in (journal or []) if j.get("date") and m <= j["date"] <= d]
+    current = {}
+    want = {j["employee_id"] for j in lines if j.get("employee_id")}
+    if want:
+        current = {r.employee_id: r for r in db.query(TurnoverPerson)
+                   .filter(TurnoverPerson.employee_id.in_(want)).all()}
+    extra = 0
+    for j in lines:
+        hit = (by_staff.get(j["staff_id"]) if j.get("staff_id") else None) \
+            or by_pair.get((j.get("employee_id"), j["date"]))
+        if hit is not None:
+            hit["reason"] = j.get("reason") or hit.get("reason")
+            hit["note"] = j.get("note") or hit.get("note")
+            continue
+        cur = current.get(j.get("employee_id"))
+        p = {"kind": "leaver", "employee_id": j.get("employee_id") or "", "staff_id": j.get("staff_id"),
+             "name": (cur.name if cur else None) or j.get("name") or "—",
+             "code": cur.code if cur else None, "unit": cur.unit_name if cur else None,
+             "job": cur.job if cur else None, "hired": None, "dismissed": j["date"],
+             "reason": j.get("reason"), "note": j.get("note"), "approx": True}
+        leavers.append(p)
+        if p["staff_id"]:
+            by_staff[p["staff_id"]] = p
+        by_pair[(p["employee_id"], p["dismissed"])] = p
+        extra += 1
+    row = db.get(TurnoverMonth, m)
+    if row is None:
+        row = TurnoverMonth(month=m, status="closed")
+        db.add(row)
+    db.query(TurnoverMonthPerson).filter(TurnoverMonthPerson.month == m).delete()
+    db.bulk_insert_mappings(TurnoverMonthPerson, [{
+        "month": m, "kind": p["kind"], "employee_id": p["employee_id"], "staff_id": p.get("staff_id"),
+        "name": p["name"], "code": p.get("code"), "unit_name": p.get("unit"), "job": p.get("job"),
+        "hired": p.get("hired"), "dismissed": p.get("dismissed"), "reason": p.get("reason"),
+        "note": p.get("note"), "approx": p.get("approx"),
+    } for p in [*roster, *leavers]])
+    row.status = "closed"
+    row.roster_at = at
+    row.roster_source = "past"
+    row.cell_map = cell_map(db)
+    row.closed_at = at
+    row.closed_by = by
+    row.rule = rule(db)
+    row.reopened_at = None
+    row.reopened_by = None
+    db.flush()
+    return {"month": ym(m), "working": len(roster), "leavers": len(leavers), "rehired": extra}
+
+
 def auto_close(db: Session, at: Optional[datetime] = None) -> list[str]:
     """Close every ended month whose closing hour has passed — except one an
     admin reopened by hand, which an admin closes again."""
@@ -526,12 +603,14 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             continue
         out_leavers.append({
             "key": event_key(p.get("staff_id"), p["employee_id"], p.get("dismissed")),
+            "cell_key": k,
             "name": p["name"], "code": (c or {}).get("code") or p.get("code"), "unit": p.get("unit"),
             "cell_id": (c or {}).get("id"), "job": p.get("job"),
             "hired": p["hired"].isoformat() if p.get("hired") else None,
             "left": p["dismissed"].isoformat() if p.get("dismissed") else None,
             "days": _tenure(p.get("hired"), p.get("dismissed")),
             "reason": p.get("reason"), "note": p.get("note"), "counted": counted,
+            "approx": bool(p.get("approx")),
             "leader_id": (c or {}).get("leader_id"), "leader": (c or {}).get("leader"),
             "brigadir": (c or {}).get("brigadir"), "manager_id": (c or {}).get("manager_id"),
         })
@@ -630,6 +709,12 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
                     "dropped": dropped, "late": []}
         return {"roster": mirror_roster(db, d), "leavers": leavers, "cmap": cell_map(db),
                 "rule": rule(db), "as_of": d, "source": "approx", "dropped": 0, "late": []}
+    if state == "saved":
+        frozen = _frozen(db, m, "leaver")
+        roster, dropped = _drop_leavers(_frozen(db, m, "roster"), frozen)
+        return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db),
+                "rule": (row.rule if row and row.rule else rule(db)), "as_of": d, "source": "past",
+                "dropped": dropped, "late": []}
     # closed — everything from the frozen rows; what Verifix says SINCE the
     # close is listed beside them (added = a dismissal typed in later, gone = a
     # counted dismissal Verifix no longer has), never counted.
@@ -673,7 +758,7 @@ def month_payload(db: Session, m: date, scope: Optional[dict] = None,
     state, row = month_state(db, m, now)
     cfg = verifix.config(db)
     base = {
-        "month": ym(m), "start": ym(START_MONTH), "state": state,
+        "month": ym(m), "start": ym(START_MONTH), "past_from": ym(PAST_FROM), "state": state,
         "configured": bool(cfg.get("login") and cfg.get("password_set")
                            and cfg.get("password_readable") is not False and cfg.get("filial_id")),
         "read": read_info(db),
@@ -681,7 +766,7 @@ def month_payload(db: Session, m: date, scope: Optional[dict] = None,
         "close_at": close_at(m).isoformat(timespec="minutes"),
         "now": now.isoformat(timespec="minutes"),
     }
-    if state in ("before", "future"):
+    if state in ("before", "future", "past"):
         return {**base, "rule": rule(db)}
     inp = _inputs(db, m, state, row, now)
     agg = aggregate(inp["roster"], inp["leavers"], inp["cmap"], inp["rule"], scope)
@@ -695,6 +780,8 @@ def month_payload(db: Session, m: date, scope: Optional[dict] = None,
         "roster_source": inp["source"], "roster_at": iso(roster_at), "roster_late_days": late_days,
         "dropped": inp["dropped"], "late": inp["late"],
         "closed": None if not (row and row.status == "closed") else {"at": iso(row.closed_at), "by": row.closed_by},
+        "saved": None if state != "saved" else {"at": iso(row.closed_at), "by": row.closed_by},
+        "approx_left": sum(1 for x in agg["leavers"] if x.get("approx")),
         "reopened": None if not (row and row.reopened_at) else {"at": iso(row.reopened_at), "by": row.reopened_by},
         "options": options(inp["cmap"]),
     }
@@ -705,7 +792,7 @@ def people_of(db: Session, m: date, keys: Iterable[str], at: Optional[datetime] 
     at = at or now_aware()
     now = local(at)
     state, row = month_state(db, m, now)
-    if state in ("before", "future"):
+    if state in ("before", "future", "past"):
         return {"working": {}}
     inp = _inputs(db, m, state, row, now)
     want = {k for k in keys if k}

@@ -129,6 +129,24 @@ def reopen_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = Dep
     return out
 
 
+@router.post("/compute")
+def compute_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+    """A PAST month (before the automatic start): read Verifix now, compute
+    the month and save it — «Hisoblash» the first time, «Yangilash» after."""
+    m = _month(body.month)
+    if not (turnover.PAST_FROM <= m < turnover.START_MONTH):
+        raise HTTPException(status_code=409, detail={"code": "not_past",
+                                                     "message": "only months before the automatic start"})
+    if not turnover_sync.configured(db):
+        raise HTTPException(status_code=409, detail={"code": "not_configured",
+                                                     "message": "Verifix is not connected"})
+    if turnover_sync.running(db):
+        return {"started": False, "reason": "busy", **turnover.read_info(db)}
+    started = turnover_sync.start_read(f"compute:{turnover.ym(m)}", month=m, by=_who(admin))
+    action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m))
+    return {"started": started, "reason": None if started else "busy", **turnover.read_info(db)}
+
+
 class ExportIn(BaseModel):
     month: str
     factory: Optional[int] = None
@@ -158,7 +176,7 @@ def export_xlsx(
     scope = {"factory": body.factory, "shift": body.shift if body.shift in (1, 2) else None,
              "managers": {int(x) for x in body.managers}}
     pay = turnover.month_payload(db, m, scope)
-    if pay.get("state") in ("before", "future"):
+    if pay.get("state") in ("before", "future", "past"):
         raise HTTPException(status_code=409, detail={"code": "no_month", "message": "nothing to export"})
     keys = [c["key"] for c in pay.get("cells") or []]
     working = turnover.people_of(db, m, keys)["working"] if keys else {}

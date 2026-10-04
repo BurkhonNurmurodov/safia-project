@@ -1931,6 +1931,25 @@ def add_idle_interval_client_key() -> None:
         db.close()
 
 
+def add_turnover_month_people_approx() -> None:
+    """2026-10-04: ``turnover_month_people`` gains ``approx`` — a saved PAST
+    month's leaver Verifix's directory no longer shows as dismissed (re-hired
+    since), found in the dismissal journal and placed by today's unit
+    (`services/turnover.save_past`). The table shipped without it in v4.230.1,
+    and `create_all` never adds a column. Nullable, no default: NULL is «placed
+    by the unit Verifix recorded», what every row written before meant. Pure
+    DDL and idempotent, so no one-shot flag."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE turnover_month_people ADD COLUMN IF NOT EXISTS approx BOOLEAN"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] turnover approx migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_cleaners() -> None:
     """2026-09-29: ``cell_ojidaniya_intervals`` gains ``cleaners`` — the
     «Tozalovchilar» count a Tozalash (Cat H) entry must now carry: how many

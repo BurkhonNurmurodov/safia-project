@@ -391,6 +391,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/turnover/read",                        "sync_export", "sync.turnover_read"),
     (("POST",),   "/api/turnover/export.xlsx",                 "sync_export", "export.turnover"),
     (("POST",),   "/api/turnover/close",                       "leader_review", "turnover.month_closed"),
+    (("POST",),   "/api/turnover/compute",                     "leader_review", "turnover.month_computed"),
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
     (("POST",),   "/api/staff-live/events/{}/decide",          "attendance", "lab.live_event_decided"),
     (("POST",),   "/api/staff-live/events",                    "attendance", "lab.live_event_created"),

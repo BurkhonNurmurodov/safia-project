@@ -2170,6 +2170,68 @@ structure changed the same day — see the redesign bullets below).
   the ranking card's header. Alternating row shading on the wide table was
   proposed and declined by the operator.
 
+## «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (`/turnover`)
+
+From **2026-10-04** (the operator: "ignore the past — from October HR
+calculates the KPIs on the IMS; this is the 2nd of 5") HR's «Текучесть» is
+computed month by month from Verifix. Page key `turnover`, **admin-only until
+the operator opens it** (HR is who it is for); refresh / close / reopen /
+compute are admin-only in the endpoint. `services/turnover.py` is THE rule,
+`services/turnover_sync.py` the Verifix read, `services/turnover_export.py` the
+workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
+`pages/turnoverText.js`, four languages) and `components/turnover/`.
+
+- **The formula is HR's July file** («кпи Лидеров июл 2026», decoded and
+  recomputed to the cached values on all 205 rows): cell turnover = people who
+  LEFT in the month ÷ people WORKING on its last day × 12, scored by HR's bands
+  (≤ 50 → 5, ≤ 60 → 4, ≤ 70 → 3, ≤ 85 → 2, above → 1), KPI points = score × 0.2.
+  The rate is rounded to one decimal and judged as printed.
+- **Left** = every employment whose Verifix dismissal date is in the month, any
+  reason, counted in the cell they left from. **Working** = employed on the last
+  day (hired by it, not dismissed by it), in their cell that day; anyone whose
+  same employment ended in the month is never in it. **Cell** = the Verifix org
+  unit's `code`, else the digits its NAME starts with (15 units — dispatch 47xx,
+  freezers 17xx/18xx, 0611 — carry the code only in the name), matched to
+  /cells; a unit that is anybody's DEPARTMENT (`division_id`) is never a cell.
+  A code /cells lacks counts toward nobody and is NAMED on the page.
+- **A leader with several cells gets ONE figure**: Σ left ÷ Σ working × 12 (HR
+  averaged the cells, then overwrote the average by hand). Leader = /cells at
+  the month's end. Cells with no leader, codes not on /cells, units that are not
+  cells and leaders whose cells hold nobody are each counted and said in the
+  «Hech kimning baliga…» card — never silently dropped.
+- **Verifix keeps only TODAY's placement** (and a re-hire erases the earlier
+  dismissal from its directory), so the platform keeps its own history: a
+  nightly read at **23:40** (+ a boot catch-up when the last good read is
+  > 6 h old, + the admin's «Verifix'dan yangilash») replaces `turnover_people`
+  (the directory: name, status, dates, unit, job — nothing else) and records
+  every ended employment from the start in `turnover_leavers` (keyed by the
+  cycle id; the same cycle working again = cancelled). Reasons come from the
+  dismissal journal (`pro/` else `start/dismissal$list`) and never move a figure.
+- **Month life**: the current month is computed from the last read («so far»,
+  provisional); the first complete read at or after **23:00 on the last day**
+  TAKES the month's working list + the cell → leader map (`turnover_months`,
+  `turnover_month_people` kind roster) — the exact denominator; the month stays
+  open for late dismissal orders until the **5th at 09:00**, then closes by
+  itself (`auto_close`, daily 09:05) and its leavers freeze too. A dismissal
+  typed in later is listed as late, never counted. An admin may close earlier
+  or reopen; a month reopened by hand is closed by hand.
+- **Past months** (the operator, same day: "a button, saved, then it says
+  update"): from **January 2025** to September 2026 a month is computed on an
+  admin's «Hisoblash» and SAVED; the button then reads «Yangilash» and recomputes
+  on a fresh read (`POST /compute` → `save_past`). Built from today's directory:
+  leavers by dismissal date, re-hired ones from the dismissal journal (`approx`,
+  placed by today's unit, marked ≈); working people by their CURRENT unit,
+  leaders by today's /cells — so a saved past month is approximate and the page
+  says so. `PAST_FROM` / `START_MONTH` are the two floors.
+- `turnover_month_people.approx` arrived after the tables shipped (v4.230.1,
+  swept in by another session's auto-commit), so `startup.add_turnover_month_people_approx`
+  adds it — any further column on these tables needs the same.
+- **Measured on the 1 Oct dump** (September, 11 Sep /cells): 1,584 working and
+  95 left in registered cells, plant rate 72.0%; 41 leaders scored 1, 61 scored
+  5 — the score is near binary because 116 of 136 leader cells have < 15 people
+  (one leaver > 85%). Most «not on /cells» units of that copy were created by the
+  4 Oct cell sync; the dispatch zones and freezers were not.
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its

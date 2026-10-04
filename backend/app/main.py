@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
         add_education_thumb_url,
         add_idle_interval_client_key,
         add_idle_interval_cleaners,
+        add_turnover_month_people_approx,
         add_leader_task_cell,
         add_late_proof_provenance,
         add_late_proof_timing,
@@ -213,6 +214,7 @@ async def lifespan(app: FastAPI):
     add_education_thumb_url()
     add_idle_interval_client_key()
     add_idle_interval_cleaners()
+    add_turnover_month_people_approx()
     add_leader_task_cell()
     add_late_proof_provenance()
     add_late_proof_timing()

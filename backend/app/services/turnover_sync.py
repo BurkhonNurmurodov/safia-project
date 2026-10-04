@@ -203,9 +203,51 @@ def _reasons(db, cl, deadline: float, today: date) -> str:
     return "ok"
 
 
-def run_read(trigger: str) -> dict:
+def _month_journal(cl, deadline: float, m: date, today: date) -> Optional[list[dict]]:
+    """Every dismissal-journal line dated in month `m` — the leavers Verifix's
+    directory no longer shows (re-hired since), and everybody's reason. None
+    when the API role does not open the journal (the month is then computed
+    without the re-hired, and says so)."""
+    d = turnover.last_day(m)
+    out: list[dict] = []
+
+    def line(x: dict, note_key: str) -> None:
+        dd = _date(x.get("dismissal_date"))
+        if dd and m <= dd <= d:
+            out.append({"staff_id": vx._s(x.get("staff_id")) or None,
+                        "employee_id": vx._s(x.get("employee_id")) or None,
+                        "name": vx._s(x.get("employee_name")) or None, "date": dd,
+                        "reason": vx._s(x.get("dismissal_reason_name")) or None,
+                        "note": vx._s(x.get(note_key)) or None})
+    try:
+        body = {"journal_ids": [], "journal_begin_date": _dmy(m - timedelta(days=31)),
+                "journal_end_date": _dmy(min(today, d + timedelta(days=92)))}
+        for j in _rows(cl, "pro/dismissal$list", body, 100, deadline):
+            if vx._s(j.get("journal_posted")) == "N":
+                continue
+            for x in j.get("dismissals") or []:
+                if isinstance(x, dict):
+                    line(x, "dismissal_note")
+        return out
+    except verifix.VerifixError as exc:
+        if vx._classify(exc) not in CLOSED:
+            raise
+    try:
+        for x in _rows(cl, "start/dismissal$list", {"journal_ids": []}, 500, deadline):
+            line(x, "note")
+        return out
+    except verifix.VerifixError as exc:
+        if vx._classify(exc) in CLOSED:
+            return None
+        raise
+
+
+def run_read(trigger: str, month: Optional[date] = None, by: Optional[str] = None) -> dict:
     """One complete read. Refuses while another read runs (this process or a
-    second copy during a deploy). Never raises."""
+    second copy during a deploy). Never raises.
+
+    With `month` (a PAST month, an admin's «Hisoblash» / «Yangilash») the read
+    then computes that month and saves it (`turnover.save_past`)."""
     if not _lock.acquire(blocking=False):
         return {"started": False, "reason": "busy"}
     db = SessionLocal()
@@ -244,6 +286,16 @@ def run_read(trigger: str) -> dict:
             # The reasons are a garnish: a failure there keeps the directory.
             rd.reasons = _reasons(db, cl, deadline, turnover.local(at).date())
             db.commit()
+            if month is not None:
+                journal = _month_journal(cl, deadline, month, turnover.local(at).date())
+                saved = turnover.save_past(db, month, journal, by or trigger, at)
+                db.commit()
+                action_log.record_system("leader_review", "turnover.month_computed", db=None,
+                                         target_kind="month", target_id=saved["month"],
+                                         target_name=saved["month"],
+                                         details=[("by", by or trigger), ("working", saved["working"]),
+                                                  ("leavers", saved["leavers"]), ("rehired", saved["rehired"]),
+                                                  ("journal", "ok" if journal is not None else "closed")])
         captured = turnover.capture_due(db, at)
         rd.finished_at = turnover.now_aware()
         rd.ok = True
@@ -286,11 +338,12 @@ def _fail(db, rd: Optional[TurnoverRead], error: str) -> None:
         log.exception("turnover: could not record the failed read")
 
 
-def start_read(trigger: str) -> bool:
-    """The admin's «Yangilash»: a read on a thread of its own."""
+def start_read(trigger: str, month: Optional[date] = None, by: Optional[str] = None) -> bool:
+    """The admin's buttons: a read (and, with `month`, a past month computed
+    and saved) on a thread of its own."""
     if _lock.locked():
         return False
-    threading.Thread(target=run_read, args=(trigger,), name="turnover-read", daemon=True).start()
+    threading.Thread(target=run_read, args=(trigger, month, by), name="turnover-read", daemon=True).start()
     return True
 
 

@@ -4504,7 +4504,7 @@ class TurnoverMonth(Base):
 
     month         = Column(Date, primary_key=True)          # the month's first day
     roster_at     = Column(DateTime(timezone=True), nullable=True)
-    roster_source = Column(String(10), nullable=True)       # "read" | "approx"
+    roster_source = Column(String(10), nullable=True)       # "read" | "approx" | "past"
     cell_map      = Column(JSONB, nullable=True)
     status        = Column(String(10), nullable=False, default="captured")   # captured | closed
     closed_at     = Column(DateTime(timezone=True), nullable=True)
@@ -4534,6 +4534,9 @@ class TurnoverMonthPerson(Base):
     dismissed   = Column(Date, nullable=True)
     reason      = Column(String, nullable=True)
     note        = Column(Text, nullable=True)
+    # A past month's leaver Verifix's directory no longer shows as dismissed
+    # (re-hired since): found in the dismissal journal, placed by TODAY's unit.
+    approx      = Column(Boolean, nullable=True)
 
     __table_args__ = (Index("ix_turnover_month_people_mk", "month", "kind"),)
 
