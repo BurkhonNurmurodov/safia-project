@@ -252,7 +252,7 @@ export default function Broadcast() {
   // Pin each DM at the top of the recipient's chat. It travels WITH the message
   // (draft restore, duplicate) because it is part of how this message is
   // delivered; the send time does not, because a time goes stale.
-  const [pin, setPin] = useState(false);
+  const [pin, setPin] = useState(true);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelError, setCancelError] = useState("");
   const [draftOffer, setDraftOffer] = useState(() => readDraft());
@@ -413,7 +413,7 @@ export default function Broadcast() {
     setSelected([]);
     setSchedMode("now");
     setSchedDate("");
-    setPin(false);
+    setPin(true);
     setDupNote("");
     dropDraft();
   };

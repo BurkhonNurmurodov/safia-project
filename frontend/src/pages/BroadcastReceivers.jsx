@@ -34,7 +34,7 @@ export default function BroadcastReceivers() {
 
   const [selected, setSelected] = useState([]);
   const [treeFilter, setTreeFilter] = useState("");
-  const [pin, setPin] = useState(false);
+  const [pin, setPin] = useState(true);
   const [result, setResult] = useState(null); // { sent, failed, total, pin, pin_failed }
   const [countdown, setCountdown] = useState(CLOSE_SEC);
   const toast = useToast();
