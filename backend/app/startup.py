@@ -1809,6 +1809,59 @@ def turn_on_cells_of_counted_units() -> None:
     )
 
 
+CELLS_IN_LOAD_OFF_FLAG = "cells_in_load_off_2026_10_04_v1"
+# The operator's list (2026-10-04): cells NOT counted in the загрузка. Their
+# «Kuxnya» is read as the service kitchens — 0037 «Кухня» (АХО, Келес; its
+# Verifix name carries no code) and the staff kitchen 7711 / 7721. The
+# production «Кухня горячая / блинчик» cells (8611, 8613, 8622, 8623) were not
+# named and are left as they are.
+CELLS_IN_LOAD_OFF = ("0812", "0822", "2511", "1911", "4511", "2611", "2612", "6611",
+                     "1511", "3411", "3511", "8011", "6621", "2531", "7231", "0036",
+                     "0037", "7711", "7721", "1613", "1614")
+
+
+def untick_cells_in_load() -> None:
+    """2026-10-04 (the operator): any cell of ``CELLS_IN_LOAD_OFF`` switched on
+    («Zagruzkada hisoblanadi», ``cells.in_load``) is switched off — once. Only
+    ever turns OFF and touches nothing else. The flag is claimed in the same
+    transaction as the write, so two copies booting together cannot both act,
+    and a cell switched back on later stays on; changing the list needs a NEW
+    flag key. Runs after turn_on_cells_of_counted_units."""
+    from app.services import action_log
+    from app.services.verifix import _code_key
+
+    want = {_code_key(c) for c in CELLS_IN_LOAD_OFF}
+    db = SessionLocal()
+    try:
+        claimed = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, '1') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"),
+            {"k": CELLS_IN_LOAD_OFF_FLAG}).first()
+        if not claimed:
+            db.rollback()
+            return
+        hits = [(cid, code) for cid, code in db.execute(text(
+            "SELECT id, verifix_code FROM cells WHERE in_load IS TRUE")).fetchall()
+            if code and _code_key(code) in want]
+        if hits:
+            db.execute(text("UPDATE cells SET in_load = FALSE WHERE id = ANY(:ids)"),
+                       {"ids": [cid for cid, _ in hits]})
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cells not taken out of the загрузка: {exc}")
+        return
+    finally:
+        db.close()
+    codes = sorted(code for _, code in hits)
+    print(f"[startup] cells taken out of the загрузка: {', '.join(codes) or 'none was on'}")
+    action_log.record_system(
+        "org", "org.cells_in_load_off",
+        details=[("cells", len(codes)), ("codes", ", ".join(codes) or None)],
+        reason="Operator directive: these cells are not counted in the загрузка",
+    )
+
+
 def add_leader_kind_columns() -> None:
     """2026-10-04: a leader profile says whether the person IS a leader on
     Verifix or fills a leader's place (``role_profiles.leader_kind``) and where

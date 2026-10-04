@@ -297,6 +297,13 @@ only from /cells/:id, and only by an admin.
   brigadir-less cells keep what they had. On the 11 Sep copy: 150 on, 5 left
   off (all brigadir-less); on production the cell sync's brigadir-less service
   cells stay off as well.
+- **The operator's OFF list, applied once** — `startup.untick_cells_in_load`
+  (flag `cells_in_load_off_2026_10_04_v1`, after the turn-on, both
+  entrypoints): 0812 0822 2511 1911 4511 2611 2612 6611 1511 3411 3511 8011
+  6621 2531 7231 0036 1613 1614 and «Kuxnya», read as the service kitchens
+  0037 / 7711 / 7721 (not the production «Кухня горячая / блинчик» cells 8611
+  8613 8622 8623). Only turns OFF; on the 11 Sep copy 9 of them were on. The
+  «Davomat (Verifix)» test reads none of them from then on.
 - **A REGISTER: no загрузка figure reads it yet.** The загрузка, `idle_source`
   and /zagruzka-cell ignore it by their own sections; its one reader is the
   «Zagruzkada hisoblanadigan» count on /staff's cell view. Making an OFF cell
