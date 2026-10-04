@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
         migrate_cell_in_load_column,
         add_cell_shift_times,
         add_cell_archive,
+        add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
         add_idle_interval_cleaners,
@@ -104,6 +105,7 @@ async def lifespan(app: FastAPI):
         report_t11_proofs,
         report_dispute_queue,
         report_wc_plan_history,
+        check_leader_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -177,6 +179,8 @@ async def lifespan(app: FastAPI):
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
     from app.onetime_purge_test_units import purge_test_units
+    # First: every ORM read of a profile selects these two columns.
+    add_leader_kind_columns()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()
@@ -523,6 +527,11 @@ async def lifespan(app: FastAPI):
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
     # and `services/wc_plan_history_report.py` once it has landed.
     report_wc_plan_history()
+    # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
+    # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
+    # is which. Remove this line, `startup.check_leader_kinds` and
+    # `services/leader_verifix_check.py` once it has been sent.
+    check_leader_kinds()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

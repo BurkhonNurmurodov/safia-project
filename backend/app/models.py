@@ -414,6 +414,15 @@ class RoleProfile(Base):
     # a ROW belongs to; this says where a PERSON works, exactly as `shift` does.
     factory_id = Column(Integer, ForeignKey("factories.id"), nullable=True)
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
+    # leaders only (2026-10-04): is this person a LEADER on Verifix, or filling
+    # a leader's place while Verifix lists them under another job? "leader" |
+    # "acting"; NULL = not determined yet. `services/leader_kind.py` is THE
+    # definition — the switch on the profile page writes it, and so did the
+    # one-shot Verifix check.
+    leader_kind      = Column(String(10), nullable=True)
+    # Where that answer came from and what Verifix said, for the profile page:
+    # {"src": "verifix" | "manual", "at", "by", "vfx": {...}} — see leader_kind.out.
+    leader_kind_meta = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

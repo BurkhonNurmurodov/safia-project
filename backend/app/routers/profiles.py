@@ -56,7 +56,7 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
-from app.services import action_log, cell_hours, wc_group
+from app.services import action_log, cell_hours, leader_kind, wc_group
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
 from app.models import (
@@ -616,6 +616,10 @@ def admin_list_profiles(db: Session = Depends(get_db),
             item["manager_id"] = p.manager_id
             item["supervisor"] = mgr_names.get(p.manager_id)
             item["cells"] = cells_by_leader.get(p.id, [])
+            # A leader on Verifix, or filling a leader's place — and where that
+            # answer came from (services/leader_kind.py).
+            item["leader_kind"] = p.leader_kind
+            item["leader_kind_info"] = leader_kind.out(p)
             item["bindings"] = [
                 binding(r) for r in by_key.get(("leader", p.manager_id), [])
                 if r.full_name == p.name
@@ -1517,6 +1521,7 @@ class UpdateProfilePayload(BaseModel):
     new_verifix_id: Optional[int] = None        # supervisor → re-key managers.id
     archived:       Optional[bool] = None       # supervisor only
     overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
+    leader_kind:    Optional[str] = None        # leader → "leader" | "acting" (None = untouched)
 
 
 _NAME_LANG_COLS = ("name_uz_cyrl", "name_ru", "name_en")
@@ -1595,8 +1600,12 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     p = db.query(RoleProfile).filter_by(id=pid).first()
     if not p or p.role != ptype:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if payload.leader_kind is not None and (ptype != "leader"
+                                            or payload.leader_kind not in leader_kind.KINDS):
+        raise HTTPException(status_code=400, detail="Invalid leader kind")
 
-    old = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id}
+    old = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
+           "leader_kind": p.leader_kind}
     if payload.name is not None:
         _rename_profile(db, ptype, pid, payload.name)
     _apply_name_columns(p, payload)
@@ -1616,7 +1625,12 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                           follow_unit=p.manager_id != old["manager_id"])
     if payload.overrides:
         _apply_overrides(db, p.name, payload.overrides)
-    new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id}
+    if payload.leader_kind is not None and payload.leader_kind != p.leader_kind:
+        # The person's answer, from the profile page's switch — what Verifix
+        # said stays beside it (services/leader_kind.py).
+        leader_kind.set_manual(p, payload.leader_kind, caller.get("full_name"))
+    new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
+                "leader_kind": p.leader_kind}
     db.commit()
     diff = [(k, old[k], new_vals[k]) for k in ("name", "shift") if old[k] != new_vals[k]]
     if old["manager_id"] != new_vals["manager_id"]:
@@ -1624,11 +1638,18 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                      unit_name(db, new_vals["manager_id"])))
     if ptype == "leader" and payload.cells is not None:
         diff.append(("cells", None, ", ".join(payload.cells) or None))
+    if old["leader_kind"] != new_vals["leader_kind"]:
+        diff.append(("leader_kind", old["leader_kind"], new_vals["leader_kind"]))
     if diff:
+        # The admins' DM words the two kinds in each reader's language.
+        def word(k):
+            return tv(f"v.leader_kind.{k}") if k else None
+        alert_diff = [(f, word(o), word(n)) if f == "leader_kind" else (f, o, n)
+                      for f, o, n in diff]
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.updated",
                         details=[("role", tv("role." + ptype)),
                                  ("profile", old["name"])],
-                        changes=diff)
+                        changes=alert_diff)
     action_log.enrich(
         target_kind="profile", target_id=profile_key(ptype, pid),
         target_name=new_vals["name"], unit_id=new_vals["manager_id"],

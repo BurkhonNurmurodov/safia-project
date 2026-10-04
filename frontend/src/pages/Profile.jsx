@@ -14,6 +14,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
 import StyledSelect from "../components/ui/StyledSelect";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import LangTextInput from "../components/ui/LangTextInput";
 import ProfileAvatar, { useMyProfileDetails } from "../components/ui/ProfileAvatar";
 import CellLink from "../components/ui/CellLink";
@@ -713,6 +714,39 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
   );
 }
 
+// ── ADMIN: «Lider / Lider o'rnida» — what stands behind the saved answer ──────
+
+// Under the switch: who decided the SAVED kind and what Verifix said at its last
+// check — the Verifix name included, so a wrong match is visible to the very
+// person correcting it. A flipped switch is a draft like every field here: the
+// page's one Save commits it.
+function LeaderKindNote({ info }) {
+  const { t, lang } = useLang();
+  const lines = [];
+  const vfx = info?.vfx;
+  if (vfx) {
+    const when = fmtDateTime(vfx.checked_at, lang) ?? "";
+    if (vfx.found) {
+      lines.push(t("profile.leaderKind.vfxFound")
+        .replace("{job}", vfx.job || "—")
+        .replace("{name}", vfx.name || "—")
+        .replace("{cell}", vfx.cell ? ` · ${vfx.cell}` : "")
+        .replace("{date}", when));
+    } else {
+      const key = `profile.leaderKind.vfx.${vfx.reason}`;
+      const text = t(key) === key ? t("profile.leaderKind.vfx.not_found") : t(key);
+      lines.push(text.replace("{n}", vfx.count ?? "").replace("{date}", when));
+    }
+  }
+  if (info?.src === "manual") {
+    lines.push(t("profile.leaderKind.manual")
+      .replace("{by}", info.by || "—")
+      .replace("{date}", fmtDateTime(info.at, lang) ?? ""));
+  }
+  if (!lines.length) lines.push(t("profile.leaderKind.unset"));
+  return lines.map((l, i) => <span key={i} className="block">{l}</span>);
+}
+
 // ── ADMIN: edit form (ported from the old Profiles-tab modal) ─────────────────
 
 // Field-by-field so a value that only differs by type (12 vs "12") or by cell
@@ -727,6 +761,7 @@ function sameProfileForm(a, b) {
   if (String(a.verifix_id ?? "") !== String(b.verifix_id ?? "")) return false;
   const cells = (f) => [...(f.cells || [])].map(String).sort().join("|");
   if (cells(a) !== cells(b)) return false;
+  if ((a.leader_kind ?? null) !== (b.leader_kind ?? null)) return false;
   return NAME_LANGS.every((l) => (a.overrides?.[l] || "").trim() === (b.overrides?.[l] || "").trim());
 }
 
@@ -751,6 +786,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const itemSig = JSON.stringify([
     item.id, item.name, item.shift ?? null, item.manager_id ?? null,
     item.cells ?? null, item.name_uz_cyrl ?? null, item.name_ru ?? null, item.name_en ?? null,
+    item.leader_kind ?? null,
   ]);
   useEffect(() => {
     const ov = {};
@@ -764,6 +800,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       manager_id: item.manager_id ?? "",
       cells: item.cells ?? [],
       verifix_id: ptype === "supervisor" ? item.id : "",
+      leader_kind: item.leader_kind ?? null,
       overrides: ov,
     };
     setForm(seeded);
@@ -910,6 +947,11 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     if (ptype === "shift-manager" || ptype === "supervisor") body.shift = Number(form.shift);
     if (ptype === "leader" && form.manager_id) body.manager_id = Number(form.manager_id);
     if (ptype === "leader") body.cells = cellList;
+    // Sent only when it moved: a save of the name must not restamp who
+    // decided the kind (services/leader_kind.py).
+    if (ptype === "leader" && form.leader_kind && form.leader_kind !== (item.leader_kind ?? null)) {
+      body.leader_kind = form.leader_kind;
+    }
     if (ptype === "supervisor" && Number(form.verifix_id) !== item.id) {
       body.new_verifix_id = Number(form.verifix_id);
     }
@@ -1020,6 +1062,24 @@ function EditCard({ ptype, item, data, notify, onDone }) {
                 ))}
               </div>
             )}
+          </FormField>
+        )}
+
+        {effType === "leader" && !roleChanged && (
+          <FormField label={t("profile.leaderKind.label")}
+                     hint={<LeaderKindNote info={item.leader_kind_info} />}>
+            <SegmentedToggle
+              fill
+              ariaLabel={t("profile.leaderKind.label")}
+              value={form.leader_kind ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, leader_kind: v }))}
+              options={[
+                { value: "leader", label: t("profile.leaderKind.leader"),
+                  title: t("profile.leaderKind.leaderTitle") },
+                { value: "acting", label: t("profile.leaderKind.acting"),
+                  title: t("profile.leaderKind.actingTitle") },
+              ]}
+            />
           </FormField>
         )}
 
@@ -1891,6 +1951,9 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
             <StatusTag color={bsMap[bs].color}>{bsMap[bs].label}</StatusTag>
             {ptype === "supervisor" && item.archived && (
               <StatusTag color="#94a3b8">{t("admin.profiles.archived")}</StatusTag>
+            )}
+            {ptype === "leader" && item.leader_kind === "acting" && (
+              <StatusTag color="#94a3b8">{t("profile.leaderKind.acting")}</StatusTag>
             )}
           </>
         }

@@ -1731,6 +1731,25 @@ def add_cell_archive() -> None:
         db.close()
 
 
+def add_leader_kind_columns() -> None:
+    """2026-10-04: a leader profile says whether the person IS a leader on
+    Verifix or fills a leader's place (``role_profiles.leader_kind``) and where
+    that answer came from (``leader_kind_meta``) — ``services/leader_kind.py``.
+    NULL = not determined, which every existing row is, so nothing moves. Pure
+    DDL, idempotent, no flag. Runs FIRST at boot: every ORM read of a profile
+    selects these columns."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind VARCHAR(10)"))
+        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind_meta JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader kind migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_client_key() -> None:
     """2026-09-07: ``cell_ojidaniya_intervals`` gains ``client_key`` — the
     idempotency handle for the live start/finish recorder on /idle-cell.
@@ -6952,6 +6971,38 @@ def _wc_plan_history_job() -> None:
     from app.services import wc_plan_history_report
     _send_report_once(WC_PLAN_HISTORY_FLAG, "A1437 plan-history report",
                       wc_plan_history_report.send, UNPRICED_DM_CHAT)
+
+
+# ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
+# The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
+# every leader profile to be filled from Verifix's API (not the attendance
+# files) and the result DMed to them. Production's Verifix login lives only on
+# the server, so it runs here: it reads Verifix, SAVES `role_profiles.
+# leader_kind` (never over a value somebody set by hand) and sends text + a
+# workbook (`services/leader_verifix_check.py`). Changing what it does needs a
+# NEW key.
+LEADER_KIND_FLAG = "leader_kind_verifix_check_2026_10_04_v1"
+_LEADER_KIND_DELAY_S = 100
+
+
+def check_leader_kinds() -> None:
+    """Fill every leader profile's kind from Verifix, once, and report it. Never raises."""
+    try:
+        if not _report_pending(LEADER_KIND_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("leader-kind-verifix-check",
+                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_KIND_DELAY_S),
+                    _leader_kind_job)
+    except Exception as exc:
+        print(f"[startup] leader Verifix check could not be scheduled: {exc}")
+
+
+def _leader_kind_job() -> None:
+    from app.services import leader_verifix_check
+    _send_report_once(LEADER_KIND_FLAG, "leader Verifix check",
+                      leader_verifix_check.send, UNPRICED_DM_CHAT)
 
 
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────

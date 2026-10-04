@@ -318,6 +318,8 @@ _T = {
     "l.sap_code": ("SAP kodi", "SAP коди", "Код SAP", "SAP code"),
     "l.wc_group": ("Guruh", "Гуруҳ", "Группа", "Group"),
     "l.leader": ("Lider", "Лидер", "Лидер", "Leader"),
+    "l.leader_kind": ("Lavozim (Verifix)", "Лавозим (Verifix)", "Должность (Verifix)",
+                      "Position (Verifix)"),
     "l.cells": ("Yacheykalar", "Ячейкалар", "Ячейки", "Cells"),
     "l.note": ("Izoh", "Изоҳ", "Примечание", "Note"),
     "l.category": ("Kategoriya", "Категория", "Категория", "Category"),
@@ -344,6 +346,9 @@ _T = {
     "v.draft": ("qoralama", "қоралама", "черновик", "draft"),
     "v.rejected": ("rad etilgan", "рад этилган", "отклонён", "rejected"),
     "v.removed": ("o'chirildi", "ўчирилди", "удалён", "removed"),
+    "v.leader_kind.leader": ("Lider", "Лидер", "Лидер", "Leader"),
+    "v.leader_kind.acting": ("Lider o'rnida", "Лидер ўрнида", "Вместо лидера",
+                             "In place of a leader"),
 }
 
 
