@@ -109,18 +109,6 @@ export function Node({ id, name, frame }) {
   );
 }
 
-const REQ_TONE = { N: C_WARN, A: C_OK, C: C_OK, D: C_BAD, R: C_BAD };
-
-/** A request's status — the word where Verifix's letter is known, the
- * letter itself where it is not. */
-export function ReqStatus({ code }) {
-  const { t } = useLang();
-  if (!code) return dash;
-  const k = `vfx.rq.st.${code}`;
-  const s = t(k);
-  return <StatusDot color={REQ_TONE[code] || C_NONE} label={s === k ? code : s} title={`Verifix: ${code}`} />;
-}
-
 /** A journal posted («проведён») or still a draft. */
 export function Posted({ v }) {
   const { t } = useLang();

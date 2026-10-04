@@ -51,13 +51,6 @@ export const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
 /** «Mart 2025» — the month a document is FOR, from its first day. */
 export const monthLabel = (t, iso) => (iso ? `${t(`cal.m${Number(iso.slice(5, 7)) - 1}`)} ${iso.slice(0, 4)}` : "—");
 
-/** A request's status in words — the letter itself where Verifix's letter is not known. */
-export const reqLabel = (t, code) => {
-  const k = `vfx.rq.st.${code}`;
-  const s = t(k);
-  return s === k ? code : s;
-};
-
 export const dash = h("span", { style: { color: "var(--text-4)" } }, "—");
 
 export const sk = h(SkeletonBlock, { className: "h-7 w-16 mt-1" });

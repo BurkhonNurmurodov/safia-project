@@ -34,11 +34,8 @@ import {
 
 const MODULES = ["core", "start", "pro", "shift", "iiko", "rec", "rep"];
 const PAGE_ROUTE = {
-  structure: "/verifix/structure", employees: "/verifix/employees", jobs: "/verifix/jobs",
-  timesheet: "/verifix/timesheet", marks: "/verifix/marks", onsite: "/verifix/onsite",
-  devices: "/verifix/devices", requests: "/verifix/requests", absences: "/verifix/absences", hr: "/verifix/hr",
-  timebooks: "/verifix/timebooks", shifts: "/verifix/shifts", incidents: "/verifix/incidents",
-  dictionaries: "/verifix/dictionaries",
+  employees: "/verifix/employees", jobs: "/verifix/jobs", timesheet: "/verifix/timesheet", hr: "/verifix/hr",
+  timebooks: "/verifix/timebooks", shifts: "/verifix/shifts", dictionaries: "/verifix/dictionaries",
 };
 // The map's cards, each a set of states — tapping one narrows the table to it.
 const BUCKETS = [
@@ -151,8 +148,8 @@ export default function VfxApiMap() {
         : <span style={{ color: "var(--text-4)" }}>—</span>),
     },
     {
-      key: "page", label: t("vfx.api.col.page"), sort: (m) => m.page || null,
-      render: (m) => (m.page ? (
+      key: "page", label: t("vfx.api.col.page"), sort: (m) => (PAGE_ROUTE[m.page] ? m.page : null),
+      render: (m) => (PAGE_ROUTE[m.page] ? (
         <Link to={PAGE_ROUTE[m.page]} onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-0.5 text-xs font-medium hover:underline underline-offset-2"
           style={{ color: "var(--brand-text)" }}>

@@ -13,16 +13,15 @@ Phase 1 pages, each served by one builder here:
 * **API xaritasi** — `methods` + `method_rows`: every read method, what it
   answered the last time (works · empty · no access · not on this Verifix ·
   needs a value · switched off), and any method's first page as a raw table;
-* **Tuzilma** — `structure`: the division tree, which node is one of OUR cells
-  (a division `code` IS a verifix cell code — connection test, 2026-10-01) and
-  how many working people sit in each;
 * **Xodimlar** — `employees` + `person`: the people, and one person's card;
 * **Lavozim va grafiklar** — `jobs` + `schedule_days`;
 * **Davomat hisoboti** — `timesheet`: «Отчёт по посещениям» for one day, every
   row read through `verifix_live._person`, the live page's own rule, so the two
-  pages can never call one person's day two different things;
-* **Belgilar** — `marks` + `track_detail`: the raw marks of a time window;
-* **Hozir ishda** — `locations` + `onsite`: who is inside a location now.
+  pages can never call one person's day two different things.
+
+«Tuzilma», «Belgilar» and «Hozir ishda» were removed on 2026-10-04 (the
+operator); the methods behind them stay open in the catalog, so the API map's
+raw viewer still reads them.
 
 **Private records never leave the server.** `scrub` drops passport fields,
 PINFL, the tax and pension ids, the person_* sub-lists (family, education,
@@ -33,8 +32,8 @@ same day. The methods that serve nothing else are `blocked` in the catalog and
 never called — and their probe rows are deleted (`methods`).
 
 **Photos** (opened 2026-10-03): a person's own photos (`identification_photos`)
-and the photo taken at a mark (`photo_sha` on the last mark of a day and on
-«who is inside»). `photo` streams them through this server, resized, from
+and the photo taken at a person's last mark of a day (`photo_sha`, on their
+card). `photo` streams them through this server, resized, from
 Verifix's file door; it serves only a hash this process has itself handed out
 as a PHOTO (`_ALLOWED`), so it cannot be turned into a fetcher for any other
 file Verifix keeps. Nothing is stored — a small in-memory cache of the resized
@@ -72,7 +71,6 @@ TTL_TODAY = 90           # today's report / marks / who is inside
 TTL_PAST = 600           # a finished day barely changes
 REQUEST_BUDGET_S = 72.0  # one request's Verifix time: + one 25 s call stays under Cloudflare's 100 s
 MAX_PAGES = 60
-MARKS_PAGES = 12         # one marks window holds at most 12,000 marks
 PROBE_LIMIT = 20         # rows a probe asks for
 VIEW_LIMIT = 50          # rows the raw viewer asks for per page
 PERSON_DAYS = 14         # days of a person's card
@@ -685,61 +683,6 @@ def photo(db: Session, sha: str, size: int) -> bytes:
     return out
 
 
-# ── Tuzilma ───────────────────────────────────────────────────────────────────
-
-def _filial(c: dict, dl: float, force: bool) -> Optional[dict]:
-    def load():
-        with verifix.client(c) as cl:
-            data, _ = verifix.call(cl, "core/filial$info", {})
-        rows = _as_rows(data)
-        return scrub(rows[0]) if rows else None
-    return _CACHE.get(_key(c, "filial"), 0 if force else TTL_DIR, load)[0]
-
-
-def structure(db: Session, force: bool = False) -> dict:
-    c = config(db)
-    dl = _deadline()
-    divs, t1 = _divisions(c, dl, force)
-    emps, t2 = _employees(c, dl, force)
-    cells = _cells(db)
-    direct: Counter = Counter()
-    lost = 0
-    for e in emps.values():
-        if e["status"] != "W":
-            continue
-        node = e["unit"] if e["unit"] in divs else (e["div"] if e["div"] in divs else None)
-        if node:
-            direct[node] += 1
-        else:
-            lost += 1
-    nodes = [{**d, "people": direct.get(d["id"], 0),
-              "cell": cells.get(d["code"]) if d["code"] else None} for d in divs.values()]
-    theirs = {d["code"] for d in divs.values() if d["code"]}
-    missing = sorted(cells[k]["code"] for k in set(cells) - theirs)
-    groups, groups_err = _try(lambda: _CACHE.get(
-        _key(c, "divgroups"), 0 if force else TTL_DIR,
-        lambda: [{"id": _s(g.get("division_group_id")), "name": _s(g.get("name")),
-                  "code": _s(g.get("code")) or None, "state": _s(g.get("state")) or "A"}
-                 for g in _list(c, "core/division_group$list", {"division_group_ids": []}, dl)])[0])
-    filial, filial_err = _try(lambda: _filial(c, dl, force))
-    if filial:
-        _allow(_s(filial.get("photo_sha")))
-    return {
-        "nodes": nodes,
-        "summary": {
-            "total": len(nodes), "active": sum(1 for n in nodes if n["state"] == "A"),
-            "coded": sum(1 for n in nodes if n["code"]),
-            "cells": len(cells), "cells_found": len(set(cells) & theirs),
-            "cells_missing": missing[:40], "cells_missing_n": len(missing),
-            "people": sum(direct.values()), "people_lost": lost,
-            "unplaced_nodes": sum(1 for n in nodes if n["people"] and not n["cell"]),
-        },
-        "groups": groups, "groups_error": groups_err,
-        "filial": filial, "filial_error": filial_err,
-        "fetched_at": _iso(min(t1, t2)),
-    }
-
-
 # ── Xodimlar ──────────────────────────────────────────────────────────────────
 
 def employees(db: Session, status: str = "W", force: bool = False) -> dict:
@@ -1024,172 +967,4 @@ def timesheet(db: Session, day: date, force: bool = False) -> dict:
         "fact_unit": "min" if hours.get("unit") == "min" else "sec",
         "fetched_at": _iso(t3),
         "directory_at": _iso(min(t1, t2)),
-    }
-
-
-# ── Belgilar ──────────────────────────────────────────────────────────────────
-
-def marks(db: Session, day: date, start: int, hours: int, force: bool = False) -> dict:
-    """Every mark of one time window, plant-wide."""
-    c = config(db)
-    dl = _deadline()
-    now = verifix_live.now_local()
-    start = max(0, min(23, start))
-    hours = max(1, min(24, hours))
-    begin = datetime.combine(day, dtime(start))
-    end = min(begin + timedelta(hours=hours), now)
-    emps, t1 = _employees(c, dl, False)
-    divs, _ = _divisions(c, dl, False)
-    locs, _ = _locations(c, dl, False)
-
-    def load():
-        rows, partial = [], False
-        t0 = time.monotonic()
-        if end <= begin:
-            return rows, partial, 0
-        body = {"begin_datetime": _fmt_dt(begin), "end_datetime": _fmt_dt(end)}
-        try:
-            with verifix.client(c) as cl:
-                for page in _pages(_slow(cl), "core/track$list", body, verifix.LIMIT_TRACKS, dl, cap=MARKS_PAGES):
-                    rows.extend(page)
-        except verifix.VerifixError as exc:
-            # Pages already read are worth showing: the window says it is partial.
-            if exc.code not in ("slow", "timeout") or not rows:
-                raise
-            partial = True
-        return rows, partial, int((time.monotonic() - t0) * 1000)
-
-    live = end > now - timedelta(minutes=10)
-    (raw, partial, vfx_ms), t2 = _CACHE.get(_key(c, "marks", _fmt_dt(begin), _fmt_dt(end) if not live else "live"),
-                                    0 if force else (45 if live else TTL_PAST), load)
-    out = []
-    for t in raw:
-        eid = _s(t.get("employee_id"))
-        e = emps.get(eid) or {}
-        created = _s(t.get("created_by"))
-        modified = _s(t.get("modified_by"))
-        out.append({
-            "id": _s(t.get("track_id")), "at": _iso(_dt(t.get("track_datetime"))),
-            "emp": eid, "name": e.get("name") or (f"#{eid}" if eid else None),
-            "unit": e.get("unit") or None, "div": _s(t.get("division_id")) or e.get("div") or None,
-            "photo": e.get("photo"),
-            "type": _s(t.get("track_type")) or None, "mark": _s(t.get("mark_type")) or None,
-            "loc": _s(t.get("location_id")) or None,
-            "by": _s(t.get("created_by_name")) or None,
-            "edited_by": (_s(t.get("modified_by_name")) or None) if modified and modified != created else None,
-        })
-    out.sort(key=lambda r: r["at"] or "", reverse=True)
-    _allow(*(r["photo"] for r in out))
-    return {
-        "day": day.isoformat(), "start": start, "hours": hours,
-        "begin": _iso(begin), "end": _iso(end), "now": _iso(now), "partial": partial, "vfx_ms": vfx_ms,
-        "rows": out,
-        "divisions": {k: d["name"] for k, d in divs.items()},
-        "cells": _node_cells(divs, _cells(db)),
-        "locations": {k: v["name"] for k, v in locs.items()},
-        "fetched_at": _iso(t2), "directory_at": _iso(t1),
-    }
-
-
-def track_detail(db: Session, track_id: str, employee_id: Optional[str], day: Optional[date]) -> dict:
-    """One mark as Verifix describes it, and the person's last mark of that
-    day — the one mark whose PHOTO the API hands out."""
-    if not track_id.isdigit():
-        raise LookupError("unknown mark")
-    c = config(db)
-
-    def info():
-        with verifix.client(c) as cl:
-            data, _ = verifix.call(cl, "core/track$track_info", {"track_id": int(track_id)})
-        rows = _as_rows(data)
-        return scrub(rows[0]) if rows else None
-
-    inf, inf_err = _try(info)
-    last, last_err = None, None
-    if employee_id and employee_id.isdigit() and day:
-        def last_mark():
-            with verifix.client(c) as cl:
-                data, _ = verifix.call(cl, "core/track$search_last_track",
-                                       {"employee_id": int(employee_id), "track_date": _dmy(day)})
-            rows = _as_rows(data)
-            if not rows:
-                return None
-            t = rows[0]
-            sha = _s(t.get("photo_sha")) or None
-            _allow(sha)
-            return {"id": _s(t.get("track_id")), "at": _iso(_dt(t.get("track_datetime"))),
-                    "type": _s(t.get("track_type")) or None, "photo": sha,
-                    "device": _s(t.get("device_id")) or None}
-        last, last_err = _try(last_mark)
-    return {"info": inf, "info_error": inf_err, "last": last, "last_error": last_err}
-
-
-# ── Hozir ishda ───────────────────────────────────────────────────────────────
-
-def locations(db: Session, force: bool = False) -> dict:
-    c = config(db)
-    dl = _deadline()
-    locs, t1 = _locations(c, dl, force)
-    emps, _ = _employees(c, dl, False)
-    rows = []
-    for k, loc in locs.items():
-        working = sum(1 for eid in loc["employees"] if (emps.get(eid) or {}).get("status") == "W")
-        rows.append({"id": k, "name": loc["name"], "address": loc["address"], "latlng": loc["latlng"],
-                     "code": loc["code"], "state": loc["state"], "assigned": len(loc["employees"]),
-                     "working": working, "divisions": loc["divisions"][:12],
-                     "divisions_n": len(loc["divisions"])})
-    rows.sort(key=lambda r: (-r["working"], r["name"]))
-    return {"rows": rows, "default_id": rows[0]["id"] if rows else None, "fetched_at": _iso(t1)}
-
-
-def onsite(db: Session, location_id: str, day: date, force: bool = False) -> dict:
-    """«Работающие сотрудники в локации» — everybody with an arrival and no
-    departure at this location on this day. On a past day that is the people
-    who never checked out."""
-    if not location_id.isdigit():
-        raise LookupError("unknown location")
-    c = config(db)
-    dl = _deadline()
-    now = verifix_live.now_local()
-    emps, t1 = _employees(c, dl, False)
-    divs, _ = _divisions(c, dl, False)
-    locs, _ = _locations(c, dl, False)
-
-    def load():
-        out = []
-        body = {"location_id": int(location_id), "report_date": _dmy(day)}
-        with verifix.client(c) as cl:
-            for page in _pages(cl, "rep/currently_working_employees$list", body, None, dl, cap=20):
-                out.extend(page)
-        return out
-
-    raw, t2 = _CACHE.get(_key(c, "onsite", location_id, day.isoformat()),
-                         0 if force else (45 if day >= now.date() else TTL_PAST), load)
-    rows = []
-    for r in raw:
-        eid = _s(r.get("employee_id"))
-        e = emps.get(eid) or {}
-        last = r.get("last_track") if isinstance(r.get("last_track"), dict) else {}
-        at = _dt(last.get("track_datetime"))
-        sha = _s(last.get("photo_sha")) or None
-        rows.append({
-            "emp": eid, "name": _s(r.get("employee_name")) or e.get("name") or f"#{eid}",
-            "div_name": _s(r.get("division_name")) or None, "job_name": _s(r.get("job_name")) or None,
-            "unit": e.get("unit") or None, "div": _s(r.get("division_id")) or e.get("div") or None,
-            "at": _iso(at), "type": _s(last.get("track_type")) or None,
-            "device": _s(last.get("device_id")) or None, "track": _s(last.get("track_id")) or None,
-            "photo": sha, "face": e.get("photo"),
-            "minutes": int((now - at).total_seconds() // 60) if at and day >= now.date() else None,
-        })
-    rows.sort(key=lambda x: x["at"] or "", reverse=True)
-    _allow(*(r["photo"] for r in rows), *(r["face"] for r in rows))
-    loc = locs.get(location_id)
-    return {
-        "location": {"id": location_id, "name": loc["name"], "address": loc["address"],
-                     "latlng": loc["latlng"], "assigned": len(loc["employees"])} if loc else None,
-        "day": day.isoformat(), "today": now.date().isoformat(), "now": _iso(now),
-        "rows": rows,
-        "divisions": {k: d["name"] for k, d in divs.items()},
-        "cells": _node_cells(divs, _cells(db)),
-        "fetched_at": _iso(t2), "directory_at": _iso(t1),
     }

@@ -13,9 +13,8 @@ import {
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
-  GraduationCap, PlaySquare, Goal, Network, FolderTree, IdCard, Briefcase, CalendarRange,
-  ScanLine, MapPin, ScanFace, Cpu, Inbox, CalendarOff, ArrowRightLeft, BookOpenCheck, CalendarClock,
-  Siren, BookMarked } from "lucide-react";
+  GraduationCap, PlaySquare, Goal, Network, IdCard, Briefcase, CalendarRange,
+  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import AppUpdateButton from "./AppUpdateButton";
@@ -73,19 +72,12 @@ const ALL_LINKS = [
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds. The live /staff copy moved in here — same data source.
   { to: "/verifix/api", adminOnly: true, key: "nav.vfx.api", icon: Network, group: "verifix" },
-  { to: "/verifix/structure", adminOnly: true, key: "nav.vfx.structure", icon: FolderTree, group: "verifix" },
   { to: "/verifix/employees", adminOnly: true, key: "nav.vfx.employees", icon: IdCard, group: "verifix" },
   { to: "/verifix/jobs", adminOnly: true, key: "nav.vfx.jobs", icon: Briefcase, group: "verifix" },
   { to: "/verifix/timesheet", adminOnly: true, key: "nav.vfx.timesheet", icon: CalendarRange, group: "verifix" },
-  { to: "/verifix/marks", adminOnly: true, key: "nav.vfx.marks", icon: ScanLine, group: "verifix" },
-  { to: "/verifix/onsite", adminOnly: true, key: "nav.vfx.onsite", icon: MapPin, group: "verifix" },
-  { to: "/verifix/devices", adminOnly: true, key: "nav.vfx.devices", icon: Cpu, group: "verifix" },
-  { to: "/verifix/requests", adminOnly: true, key: "nav.vfx.requests", icon: Inbox, group: "verifix" },
-  { to: "/verifix/absences", adminOnly: true, key: "nav.vfx.absences", icon: CalendarOff, group: "verifix" },
   { to: "/verifix/hr", adminOnly: true, key: "nav.vfx.hr", icon: ArrowRightLeft, group: "verifix" },
   { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
   { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
-  { to: "/verifix/incidents", adminOnly: true, key: "nav.vfx.incidents", icon: Siren, group: "verifix" },
   { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
   // «Verifix to'g'irlash · Jonli» — /staff read straight from Verifix; a lab copy whose
   // changes land in its own tables only. adminOnly, no page key (the /targets pattern).

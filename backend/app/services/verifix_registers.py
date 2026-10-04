@@ -1,20 +1,18 @@
 """«Verifix (test)» phase 2 — the registers Verifix keeps (admin-only).
 
-From 2026-10-03 (the operator: "start phase 2") nine more pages of the section
+From 2026-10-03 (the operator: "start phase 2") more pages of the section
 read what Verifix keeps beyond the people and their marks:
 
-* **Qurilmalar** — `devices`: every terminal, and per person whether their
-  record, face photo and card are loaded on it (`device$employee_statuses`);
-* **So'rovlar** — `requests`: absence, mark, overtime and schedule-change
-  requests with their status;
-* **Yo'qliklar** — `absences`: vacations (and recalls), sick leaves, trips;
 * **Kadr harakati** — `hr_moves`: hirings, transfers, dismissals, schedule and
   rank changes — the Pro module's journals, else the Start module's (the same
   journals seen two ways: one journal id, one page id);
 * **Tabel** — `timebooks` + `timebook`: the timebooks, plan against fact;
 * **Smenalar** — `shifts`: Verifix's own shift planning;
-* **Hodisalar** — `incidents`;
 * **Ma'lumotnomalar** — `dictionaries`: the small lists behind the rest.
+
+«Qurilmalar», «So'rovlar», «Yo'qliklar» and «Hodisalar» were removed on
+2026-10-04 (the operator); their methods stay open in the catalog and readable
+on the API map's raw viewer.
 
 **No wages.** The operator opened wages on 2026-10-03 and closed them again the
 same day: the «Ish haqi» page is gone, every wage / payroll list is `blocked` in
@@ -61,8 +59,6 @@ READERS = 3               # background reads talking to Verifix at once
 # read when it is opened, narrowed by its id.
 PAGE_SIZE = {"pro/timebook$list": 5}
 MAX_WINDOW_DAYS = 400
-STAFF_CHUNK = 500         # pro/employee$list page size, and the ids one call may name
-STAFF_MAX = 4000
 DIR_RETRY_S = 120.0       # a directory read that failed is not retried sooner
 CLOSED = ("forbidden", "missing", "bad_request")   # a fallback method may still answer
 
@@ -287,50 +283,6 @@ def _frame(db: Session, c: dict, emp_ids: Iterable[Optional[str]], node_ids: Ite
     return {"people": people, "cells": cells, "divisions": divisions, "directory_loading": l1 or l2}
 
 
-def _staff(c: dict, staff_ids: Iterable[Optional[str]], force: bool,
-           wait: float = 6.0) -> tuple[dict, Optional[dict], bool]:
-    """staff id → the person behind it. Requests and accrual books name only a
-    STAFF record (one person's post); the Pro employee list narrowed to those
-    ids says whose it is — and the hiring journals do too, when that list is
-    closed to the role. → (map, error, still loading)."""
-    ids = sorted({int(s) for s in staff_ids if s and str(s).isdigit()})[:STAFF_MAX]
-    if not ids:
-        return {}, None, False
-    states = [_start(c, "pro/employee$list",
-                     _body("pro/employee$list", staff_ids=ids[i:i + STAFF_CHUNK]), force)
-              for i in range(0, len(ids), STAFF_CHUNK)]
-    _wait(states, wait)
-    out: dict[str, dict] = {}
-    err = None
-    loading = False
-    for st in states:
-        s = _snap(st)
-        loading = loading or s["loading"]
-        err = err or s["error"]
-        for r in s["rows"]:
-            sid = _s(r.get("staff_id"))
-            if sid:
-                out[sid] = {"emp": _s(r.get("employee_id")) or None,
-                            "name": _s(r.get("employee_name")) or vx._name(r) or None,
-                            "div": _s(r.get("division_id")) or None, "unit": _s(r.get("org_unit_id")) or None,
-                            "job": _s(r.get("job_name")) or None}
-    if err and not out and err["code"] in CLOSED:
-        st = _start(c, "start/hiring$list", _body("start/hiring$list"), force)
-        _wait([st], wait)
-        s = _snap(st)
-        loading = loading or s["loading"]
-        want = {str(i) for i in ids}
-        for r in s["rows"]:
-            sid = _s(r.get("staff_id"))
-            if sid in want and sid not in out:
-                out[sid] = {"emp": _s(r.get("employee_id")) or None, "name": _s(r.get("staff_name")) or None,
-                            "div": _s(r.get("division_id")) or None, "unit": None,
-                            "job": _s(r.get("job_name")) or None}
-        if out:
-            err = None
-    return out, err, loading
-
-
 # ── values ────────────────────────────────────────────────────────────────────
 
 def _today() -> date:
@@ -348,34 +300,8 @@ def _window(begin: Optional[date], end: Optional[date], back: int = 30, fwd: int
     return lo, hi
 
 
-def _when(raw: Any) -> Optional[str]:
-    """A Verifix date or date-time: '2025-01-31', or '2025-01-31T09:00' when it
-    carries a clock."""
-    dt = _dt(raw)
-    if dt is not None:
-        return dt.isoformat(timespec="minutes")
-    return _d_iso(raw)
-
-
 def _in(iso: Optional[str], lo: date, hi: date) -> bool:
     return bool(iso) and lo.isoformat() <= iso[:10] <= hi.isoformat()
-
-
-def _overlaps(b: Optional[str], e: Optional[str], lo: date, hi: date) -> bool:
-    b = (b or e or "")[:10]
-    e = (e or b or "")[:10]
-    return bool(b) and b <= hi.isoformat() and e >= lo.isoformat()
-
-
-def _covers(b: Optional[str], e: Optional[str], day: str) -> bool:
-    return bool(b) and b[:10] <= day <= (e or b)[:10]
-
-
-def _days(b: Optional[str], e: Optional[str]) -> Optional[int]:
-    try:
-        return (date.fromisoformat((e or b)[:10]) - date.fromisoformat(b[:10])).days + 1
-    except (TypeError, ValueError):
-        return None
 
 
 def _f(v: Any) -> Optional[float]:
@@ -450,158 +376,7 @@ def _named_map(rows: list[dict], id_key: str, name_key: str = "name") -> dict[st
     return {_s(r.get(id_key)): _s(r.get(name_key)) for r in rows if _s(r.get(id_key))}
 
 
-# ── Qurilmalar ────────────────────────────────────────────────────────────────
-
-ON_DEVICE, PHOTO_ON, CARD_ON = 1, 2, 4
-
-
-def _dev_rows(rows: list) -> list:
-    """A (person, terminal) row as a small tuple: the list runs to tens of
-    thousands and a dict per row would hold ten times the memory."""
-    out = []
-    for r in rows:
-        eid, did = _s(r.get("employee_id")), _s(r.get("device_id"))
-        if not eid or not did:
-            continue
-        flags = ((ON_DEVICE if _yn(r.get("employee_is_on_device")) else 0)
-                 | (PHOTO_ON if _yn(r.get("photo_is_on_device")) else 0)
-                 | (CARD_ON if _yn(r.get("rfid_is_on_device")) else 0))
-        out.append((eid, _s(r.get("employee_name")), did, _s(r.get("device_name")),
-                    _s(r.get("location_id")), _s(r.get("location_name")), flags,
-                    _s(r.get("last_photo_upload_command_response_code")),
-                    _s(r.get("last_photo_upload_command_response"))[:240]))
-    return out
-
-
-def devices(db: Session, force: bool = False) -> dict:
-    """Every (person, terminal) pair Verifix tracks, as compact rows
-    [employee, device, flags, upload code] — flags: 1 the person is on the
-    terminal, 2 their face photo is, 4 their card is."""
-    c = vx.config(db)
-    path = "core/device$employee_statuses"
-    s = _gather(c, {"st": (path, _body(path), _dev_rows)}, force)["st"]
-    devs: dict[str, dict] = {}
-    names: dict[str, str] = {}
-    codes: dict[str, str] = {}
-    rows = []
-    for eid, ename, did, dname, loc, lname, flags, code, resp in s["rows"]:
-        if eid not in names:
-            names[eid] = ename
-        if did not in devs:
-            devs[did] = {"id": did, "name": dname or f"#{did}", "loc": loc or None, "loc_name": lname or None}
-        if code and code not in codes:
-            codes[code] = resp
-        rows.append([eid, did, flags, code or None])
-    frame = _frame(db, c, names)
-    return {
-        "section": _meta(s), "rows": rows, "names": names, "codes": codes,
-        "devices": sorted(devs.values(), key=lambda d: ((d["loc_name"] or "~"), d["name"])),
-        **frame, "today": _today().isoformat(),
-        "loading": _busy(s) or frame["directory_loading"],
-    }
-
-
-# ── So'rovlar ─────────────────────────────────────────────────────────────────
-
-def requests(db: Session, begin: Optional[date], end: Optional[date], force: bool = False) -> dict:
-    """Absence, mark, overtime and schedule-change requests of a period."""
-    c = vx.config(db)
-    lo, hi = _window(begin, end, 30)
-    snaps = _gather(c, {
-        "absence": ("core/request$list", _body("core/request$list",
-                                               {"request_begin_date": lo, "request_end_date": hi})),
-        "kinds": ("core/request_kind$list", _body("core/request_kind$list")),
-        "track": ("core/track_request$list", _body("core/track_request$list")),
-        "overtime": ("core/overtime_request$list", _body("core/overtime_request$list")),
-        "plan": ("core/plan_change$list", _body("core/plan_change$list")),
-    }, force)
-
-    kinds = {}
-    for k in snaps["kinds"]["rows"]:
-        kid = _s(k.get("request_kind_id"))
-        if kid:
-            kinds[kid] = {"name": _s(k.get("name")) or f"#{kid}", "tk": _s(k.get("time_kind_id")) or None,
-                          "limited": _yn(k.get("annually_limited")), "limit": _int(k.get("annual_day_limit")),
-                          "state": _s(k.get("state")) or "A"}
-
-    absence = []
-    for r in snaps["absence"]["rows"]:
-        absence.append({
-            "id": _s(r.get("request_id")), "kind": _s(r.get("request_kind_id")) or None,
-            "staff": _s(r.get("staff_id")) or None, "emp": _s(r.get("employee_id")) or None,
-            "begin": _when(r.get("begin_time")), "end": _when(r.get("end_time")),
-            "type": _s(r.get("request_type")) or None, "status": _s(r.get("status")) or None,
-            "note": _s(r.get("note")) or None, "mnote": _s(r.get("manager_note")) or None,
-            "barcode": _s(r.get("barcode")) or None,
-        })
-
-    track = []
-    for r in snaps["track"]["rows"]:
-        at = _iso(_dt(r.get("track_datetime")))
-        if at and not _in(at, lo, hi):
-            continue
-        track.append({
-            "id": _s(r.get("request_id")), "emp": _s(r.get("employee_id")) or None,
-            "staff": _s(r.get("staff_id")) or None, "at": at, "type": _s(r.get("track_type")) or None,
-            "status": _s(r.get("status")) or None, "note": _s(r.get("note")) or None,
-            "mnote": _s(r.get("manager_note")) or None, "loc": _s(r.get("location_id")) or None,
-            "track": _s(r.get("track_id")) or None,
-        })
-
-    overtime = []
-    for r in snaps["overtime"]["rows"]:
-        d = _d_iso(r.get("request_date"))
-        if d and not _in(d, lo, hi):
-            continue
-        overtime.append({
-            "id": _s(r.get("request_id")), "date": d, "emp": _s(r.get("employee_id")) or None,
-            "staff": _s(r.get("staff_id")) or None, "minutes": _int(r.get("overtime")),
-            "kinds": [_s(k.get("name")) for k in _kids(r, "time_kinds") if _s(k.get("name"))],
-            "mode": _s(r.get("mode")) or None, "status": _s(r.get("status")) or None,
-            "note": _s(r.get("note")) or None, "mnote": _s(r.get("manager_note")) or None,
-            "shifts": [{"name": _s(x.get("shift_name")) or None, "minutes": _int(x.get("request_time"))}
-                       for x in _kids(r, "shifts")],
-        })
-
-    plan = []
-    for r in snaps["plan"]["rows"]:
-        days = [{"date": _d_iso(d.get("change_date")), "swap": _d_iso(d.get("swapped_date")),
-                 "kind": _s(d.get("day_kind")) or None, "begin": _iso(_dt(d.get("begin_time"))),
-                 "end": _iso(_dt(d.get("end_time"))), "plan": _int(d.get("plan_time"))}
-                for d in _kids(r, "change_days")]
-        created = _iso(_dt(r.get("created_on")))
-        if not (_in(created, lo, hi) or any(_in(d["date"], lo, hi) for d in days)):
-            continue
-        plan.append({
-            "id": _s(r.get("change_id")), "staff": _s(r.get("staff_id")) or None,
-            "kind": _s(r.get("change_kind")) or None, "status": _s(r.get("status")) or None,
-            "created": created, "note": _s(r.get("note")) or None, "mnote": _s(r.get("manager_note")) or None,
-            "days": sorted(days, key=lambda d: d["date"] or ""),
-        })
-
-    staff, staff_err, staff_loading = _staff(
-        c, [r["staff"] for r in absence if not r["emp"]] + [r["staff"] for r in plan], force)
-    for r in absence + plan:
-        who = staff.get(r.get("staff") or "")
-        if who and not r.get("emp"):
-            r["emp"] = who["emp"]
-        r["name"] = (who or {}).get("name")
-    emp_ids = [r.get("emp") for r in absence + track + overtime + plan]
-    frame = _frame(db, c, emp_ids)
-    return {
-        "window": {"begin": lo.isoformat(), "end": hi.isoformat()},
-        "absence": {**_meta(snaps["absence"]), "rows": absence},
-        "track": {**_meta(snaps["track"]), "rows": track},
-        "overtime": {**_meta(snaps["overtime"]), "rows": overtime},
-        "plan": {**_meta(snaps["plan"]), "rows": plan},
-        "kinds": kinds, "kinds_error": snaps["kinds"]["error"],
-        "staff_error": staff_err,
-        **frame, "today": _today().isoformat(),
-        "loading": _busy(*snaps.values()) or staff_loading or frame["directory_loading"],
-    }
-
-
-# ── Yo'qliklar ────────────────────────────────────────────────────────────────
+# ── journals ──────────────────────────────────────────────────────────────────
 
 def _journal(j: dict) -> dict:
     posted = j.get("journal_posted") if j.get("journal_posted") is not None else j.get("posted")
@@ -612,90 +387,6 @@ def _journal(j: dict) -> dict:
 def _who(x: dict) -> dict:
     return {"emp": _s(x.get("employee_id")) or None, "staff": _s(x.get("staff_id")) or None,
             "name": _s(x.get("employee_name")) or _s(x.get("staff_name")) or None}
-
-
-def absences(db: Session, begin: Optional[date], end: Optional[date], force: bool = False) -> dict:
-    """Vacations (with their recalls), sick leaves and business trips that
-    touch the period — and who is away TODAY, whatever the period."""
-    c = vx.config(db)
-    lo, hi = _window(begin, end, 15, 15)
-    snaps = _gather(c, {
-        "vacation": ("pro/vacation$list", _body("pro/vacation$list")),
-        "recall": ("pro/recall_vacation$list", _body("pro/recall_vacation$list")),
-        "sick": ("pro/sick_leave$list", _body("pro/sick_leave$list")),
-        "trip": ("pro/business_trip$list", _body("pro/business_trip$list")),
-        "tk": ("core/time_kind$list", _body("core/time_kind$list")),
-    }, force)
-    today = _today().isoformat()
-
-    recalls = []
-    for j in snaps["recall"]["rows"]:
-        for x in _kids(j, "recall_vacations"):
-            recalls.append({**_journal(j), **_who(x), "id": _s(x.get("page_id")) or None,
-                            "date": _d_iso(x.get("recall_date")), "vbegin": _d_iso(x.get("vacation_begin_date")),
-                            "vend": _d_iso(x.get("vacation_end_date")),
-                            "vnum": _s(x.get("vacation_journal_number")) or None,
-                            "timeoff": _s(x.get("timeoff_id")) or None})
-    recalled = {r["timeoff"]: r["date"] for r in recalls if r["timeoff"] and r["date"]}
-
-    vacations = []
-    for j in snaps["vacation"]["rows"]:
-        for x in _kids(j, "vacations"):
-            tid = _s(x.get("timeoff_id")) or None
-            vacations.append({**_journal(j), **_who(x), "id": tid,
-                              "begin": _d_iso(x.get("vacation_begin_date")), "end": _d_iso(x.get("vacation_end_date")),
-                              "pbegin": _d_iso(x.get("period_begin_date")), "pend": _d_iso(x.get("period_end_date")),
-                              "tk": _s(x.get("time_kind_id")) or None, "recalled": recalled.get(tid or "")})
-
-    sick = []
-    for j in snaps["sick"]["rows"]:
-        for x in _kids(j, "sick_leaves"):
-            sick.append({**_journal(j), **_who(x), "id": _s(x.get("timeoff_id")) or None,
-                         "begin": _d_iso(x.get("sick_leave_begin_date")), "end": _d_iso(x.get("sick_leave_end_date")),
-                         "reason": _s(x.get("reason_name")) or None, "coef": _f(x.get("sick_leave_coefficient")),
-                         "tk": _s(x.get("time_kind_id")) or None})
-
-    trips = []
-    for j in snaps["trip"]["rows"]:
-        for x in _kids(j, "business_trips"):
-            trips.append({**_journal(j), **_who(x), "id": _s(x.get("timeoff_id")) or None,
-                          "begin": _d_iso(x.get("trip_begin_date")), "end": _d_iso(x.get("trip_end_date")),
-                          "regions": [_s(n) for n in (x.get("region_names") or []) if _s(n)]
-                          or ([_s(x.get("region_name"))] if _s(x.get("region_name")) else []),
-                          "legal": _s(x.get("legal_person_name")) or None,
-                          "reason": _s(x.get("trip_reason_name")) or None})
-
-    def vac_end(v):     # a recalled vacation ends the day before the recall
-        if v["recalled"]:
-            try:
-                return (date.fromisoformat(v["recalled"]) - timedelta(days=1)).isoformat()
-            except ValueError:
-                pass
-        return v["end"]
-
-    away = {
-        "vacation": len({v["emp"] or v["staff"] for v in vacations if _covers(v["begin"], vac_end(v), today)}),
-        "sick": len({v["emp"] or v["staff"] for v in sick if _covers(v["begin"], v["end"], today)}),
-        "trip": len({v["emp"] or v["staff"] for v in trips if _covers(v["begin"], v["end"], today)}),
-    }
-    for rows in (vacations, sick, trips):
-        for r in rows:
-            r["days"] = _days(r["begin"], r["end"])
-            r["now"] = _covers(r["begin"], vac_end(r) if "recalled" in r else r["end"], today)
-    keep = lambda rows: [r for r in rows if _overlaps(r["begin"], r["end"], lo, hi)]   # noqa: E731
-    vacations, sick, trips = keep(vacations), keep(sick), keep(trips)
-    recalls = [r for r in recalls if _in(r["date"], lo, hi)]
-    frame = _frame(db, c, [r["emp"] for r in vacations + sick + trips])
-    return {
-        "window": {"begin": lo.isoformat(), "end": hi.isoformat()},
-        "vacation": {**_meta(snaps["vacation"]), "rows": vacations},
-        "recall": {**_meta(snaps["recall"]), "rows": recalls},
-        "sick": {**_meta(snaps["sick"]), "rows": sick},
-        "trip": {**_meta(snaps["trip"]), "rows": trips},
-        "away": away, "kinds": _named_map(snaps["tk"]["rows"], "time_kind_id"),
-        **frame, "today": today,
-        "loading": _busy(*snaps.values()) or frame["directory_loading"],
-    }
 
 
 # ── Kadr harakati ─────────────────────────────────────────────────────────────
@@ -906,32 +597,6 @@ def shifts(db: Session, begin: Optional[date], end: Optional[date], force: bool 
         "changes": {**_meta(snaps["changes"]), "rows": changes},
         **frame, "today": _today().isoformat(),
         "loading": _busy(*snaps.values()) or frame["directory_loading"],
-    }
-
-
-# ── Hodisalar ─────────────────────────────────────────────────────────────────
-
-def incidents(db: Session, begin: Optional[date], end: Optional[date], force: bool = False) -> dict:
-    c = vx.config(db)
-    lo, hi = _window(begin, end, 90)
-    path = "pro/incidents$list"
-    s = _gather(c, {"inc": (path, _body(path, {"begin_date": lo, "end_date": hi}))}, force)["inc"]
-    rows = []
-    for x in s["rows"]:
-        rows.append({"id": _s(x.get("event_id")), "date": _d_iso(x.get("event_date")),
-                     "num": _s(x.get("event_number")) or None, "type": _s(x.get("event_type_name")) or None,
-                     "type_id": _s(x.get("event_type_id")) or None,
-                     "emp": _s(x.get("person_id")) or None, "name": _s(x.get("person_name")) or None,
-                     "staff": _s(x.get("staff_id")) or None,
-                     "resp": _s(x.get("responsible_person_name")) or None,
-                     "resp_id": _s(x.get("responsible_person_id")) or None,
-                     "action": _s(x.get("action")) or None, "note": _s(x.get("note")) or None})
-    rows.sort(key=lambda r: (r["date"] or "", r["num"] or ""), reverse=True)
-    frame = _frame(db, c, [r["emp"] for r in rows] + [r["resp_id"] for r in rows])
-    return {
-        "window": {"begin": lo.isoformat(), "end": hi.isoformat()},
-        "section": _meta(s), "rows": rows, **frame, "today": _today().isoformat(),
-        "loading": _busy(s) or frame["directory_loading"],
     }
 
 

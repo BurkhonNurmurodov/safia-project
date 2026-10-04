@@ -75,11 +75,6 @@ def vx_method_rows(key: str, params: Optional[str] = None, cursor: Optional[str]
     return _run(vx.method_rows, db, key, given, cursor, limit, _who(admin))
 
 
-@router.get("/structure")
-def vx_structure(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vx.structure, db, force)
-
-
 @router.get("/employees")
 def vx_employees(status: str = "W", force: bool = False, db: Session = Depends(get_db),
                  _: dict = Depends(verify_admin)):
@@ -110,51 +105,9 @@ def vx_timesheet(day: Optional[date] = None, force: bool = False, db: Session = 
     return _run(vx.timesheet, db, day or now_local().date(), force)
 
 
-@router.get("/marks")
-def vx_marks(day: Optional[date] = None, start: int = 0, hours: int = 2, force: bool = False,
-             db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    from app.services.verifix_live import now_local
-    return _run(vx.marks, db, day or now_local().date(), start, hours, force)
-
-
-@router.get("/marks/{track_id}")
-def vx_track(track_id: str, employee_id: Optional[str] = None, day: Optional[date] = None,
-             db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vx.track_detail, db, track_id, employee_id, day)
-
-
-@router.get("/locations")
-def vx_locations(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vx.locations, db, force)
-
-
-@router.get("/onsite")
-def vx_onsite(location_id: str, day: Optional[date] = None, force: bool = False,
-              db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    from app.services.verifix_live import now_local
-    return _run(vx.onsite, db, location_id, day or now_local().date(), force)
-
-
 # ── phase 2: the registers (services/verifix_registers.py) ───────────────────
 # A big list is read in the background: an answer may carry `loading: true`
 # with what has arrived so far, and the page asks again until it is in.
-
-@router.get("/devices")
-def vx_devices(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vr.devices, db, force)
-
-
-@router.get("/requests")
-def vx_requests(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
-                db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vr.requests, db, begin, end, force)
-
-
-@router.get("/absences")
-def vx_absences(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
-                db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vr.absences, db, begin, end, force)
-
 
 @router.get("/hr")
 def vx_hr(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
@@ -177,12 +130,6 @@ def vx_timebook(timebook_id: str, force: bool = False, db: Session = Depends(get
 def vx_shifts(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
               db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     return _run(vr.shifts, db, begin, end, force)
-
-
-@router.get("/incidents")
-def vx_incidents(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
-                 db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    return _run(vr.incidents, db, begin, end, force)
 
 
 @router.get("/dictionaries")

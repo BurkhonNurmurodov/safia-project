@@ -142,19 +142,12 @@ const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
 const StaffLive = lazyWithReload(() => import("./pages/StaffLive"));
 // «Verifix (test)» — the attendance system's API, page by page (admin-only).
 const VfxApiMap = lazyWithReload(() => import("./pages/verifix/VfxApiMap"));
-const VfxStructure = lazyWithReload(() => import("./pages/verifix/VfxStructure"));
 const VfxEmployees = lazyWithReload(() => import("./pages/verifix/VfxEmployees"));
 const VfxJobs = lazyWithReload(() => import("./pages/verifix/VfxJobs"));
 const VfxTimesheet = lazyWithReload(() => import("./pages/verifix/VfxTimesheet"));
-const VfxMarks = lazyWithReload(() => import("./pages/verifix/VfxMarks"));
-const VfxOnSite = lazyWithReload(() => import("./pages/verifix/VfxOnSite"));
-const VfxDevices = lazyWithReload(() => import("./pages/verifix/VfxDevices"));
-const VfxRequests = lazyWithReload(() => import("./pages/verifix/VfxRequests"));
-const VfxAbsences = lazyWithReload(() => import("./pages/verifix/VfxAbsences"));
 const VfxHrMoves = lazyWithReload(() => import("./pages/verifix/VfxHrMoves"));
 const VfxTimebooks = lazyWithReload(() => import("./pages/verifix/VfxTimebooks"));
 const VfxShifts = lazyWithReload(() => import("./pages/verifix/VfxShifts"));
-const VfxIncidents = lazyWithReload(() => import("./pages/verifix/VfxIncidents"));
 const VfxDictionaries = lazyWithReload(() => import("./pages/verifix/VfxDictionaries"));
 const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
@@ -583,21 +576,17 @@ function AppWithLang() {
             <Route path="/staff-live" element={<AuthGate><RequireAdmin><StaffLive /></RequireAdmin></AuthGate>} />
             <Route path="/verifix" element={<Navigate to="/verifix/api" replace />} />
             <Route path="/verifix/api" element={<AuthGate><RequireAdmin><VfxApiMap /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/structure" element={<AuthGate><RequireAdmin><VfxStructure /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/employees" element={<AuthGate><RequireAdmin><VfxEmployees /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/jobs" element={<AuthGate><RequireAdmin><VfxJobs /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/timesheet" element={<AuthGate><RequireAdmin><VfxTimesheet /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/marks" element={<AuthGate><RequireAdmin><VfxMarks /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/onsite" element={<AuthGate><RequireAdmin><VfxOnSite /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/devices" element={<AuthGate><RequireAdmin><VfxDevices /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/requests" element={<AuthGate><RequireAdmin><VfxRequests /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/absences" element={<AuthGate><RequireAdmin><VfxAbsences /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/hr" element={<AuthGate><RequireAdmin><VfxHrMoves /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/timebooks" element={<AuthGate><RequireAdmin><VfxTimebooks /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/shifts" element={<AuthGate><RequireAdmin><VfxShifts /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/incidents" element={<AuthGate><RequireAdmin><VfxIncidents /></RequireAdmin></AuthGate>} />
-            {/* «Ish haqi» was removed (wages are off, 2026-10-03): a tab still on it lands on the map. */}
-            <Route path="/verifix/payroll" element={<Navigate to="/verifix/api" replace />} />
+            {/* Removed pages land on the map: «Ish haqi» (wages are off, 2026-10-03) and seven
+                more on 2026-10-04 — their methods stay readable on the map's raw viewer. */}
+            {["payroll", "structure", "marks", "onsite", "devices", "requests", "absences", "incidents"].map((p) => (
+              <Route key={p} path={`/verifix/${p}`} element={<Navigate to="/verifix/api" replace />} />
+            ))}
             <Route path="/verifix/dictionaries" element={<AuthGate><RequireAdmin><VfxDictionaries /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
