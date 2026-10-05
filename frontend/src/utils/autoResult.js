@@ -1,4 +1,4 @@
-/* What an AUTOMATIC check (#1, #8, #9 — services/leader_auto.py) found at its
+/* What an AUTOMATIC check (#1, #8, #9, #11 — services/leader_auto.py) found at its
  * hour, as plain lines in the reader's language.
  *
  * The reason sentinel (`__auto__|HH:MM|code`, utils/leaderReason.js) says WHEN
@@ -23,6 +23,11 @@ const T_ALL = {
     pctBare: "Bajarilishi: {v}",
     concerns: "Yozilgan xavotirlar: {n} ta ({from} – {to})",
     late: "Tekshiruv {n} daqiqa kechikib o'tkazilgan",
+    kelish: "Ish grafigi: {cells}",
+    kelishNoPlan: "Rejasi yo'q, tekshirilmadi: {codes}",
+    kelishEmpty: "Ro'yxati bo'sh, tekshirilmadi: {codes}",
+    kelishNone: "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
+    kToday: "bugungi", kTomorrow: "ertangi",
   },
   uz_cyrl: {
     plan: "Режа киритилган позициялар: {a} / {b}",
@@ -32,6 +37,11 @@ const T_ALL = {
     pctBare: "Бажарилиши: {v}",
     concerns: "Ёзилган хавотирлар: {n} та ({from} – {to})",
     late: "Текширув {n} дақиқа кечикиб ўтказилган",
+    kelish: "Иш графиги: {cells}",
+    kelishNoPlan: "Режаси йўқ, текширилмади: {codes}",
+    kelishEmpty: "Рўйхати бўш, текширилмади: {codes}",
+    kelishNone: "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
+    kToday: "бугунги", kTomorrow: "эртанги",
   },
   ru: {
     plan: "Позиции с планом: {a} / {b}",
@@ -41,6 +51,11 @@ const T_ALL = {
     pctBare: "Выполнение: {v}",
     concerns: "Записано обеспокоенностей: {n} ({from} – {to})",
     late: "Проверка прошла с опозданием на {n} мин",
+    kelish: "График работы: {cells}",
+    kelishNoPlan: "Нет плана, не проверялись: {codes}",
+    kelishEmpty: "Список пуст, не проверялись: {codes}",
+    kelishNone: "Нет ячеек с планом — проверять было нечего",
+    kToday: "на сегодня", kTomorrow: "на завтра",
   },
   en: {
     plan: "Positions with a plan: {a} / {b}",
@@ -50,6 +65,11 @@ const T_ALL = {
     pctBare: "Fulfilment: {v}",
     concerns: "Concerns written: {n} ({from} – {to})",
     late: "The check ran {n} min late",
+    kelish: "Work schedule: {cells}",
+    kelishNoPlan: "No plan, not checked: {codes}",
+    kelishEmpty: "Empty list, not checked: {codes}",
+    kelishNone: "No cell had a plan — there was no list to check",
+    kToday: "today's", kTomorrow: "tomorrow's",
   },
 };
 
@@ -67,6 +87,16 @@ const pctLine = (T, v, f) => (f.target == null
   ? put(T.pctBare, { v }) : put(T.pct, { v, target: pct(f.target) }));
 
 const codes = (list) => list.slice(0, 8).join(", ");
+
+// #11 «Ish grafigi»: what the check read on each list it judged — the twin of
+// `leader_auto.staff_list_cells`. A cell whose type is fixed shows that one
+// list; one not fixed yet shows both, since either would have passed.
+const pair = (v) => (Array.isArray(v) ? `${v[0] ?? 0}/${v[1] ?? 0}` : "0/0");
+const staffCells = (T, lists) => lists.slice(0, 8).map((it) => {
+  const k = it.kind === "today" || it.kind === "tomorrow" ? it.kind : null;
+  if (k) return `${it.cell} (${k === "today" ? T.kToday : T.kTomorrow}): ${pair(it[k])}`;
+  return `${it.cell}: ${T.kToday} ${pair(it.today)}, ${T.kTomorrow} ${pair(it.tomorrow)}`;
+}).join(" · ");
 
 export function autoResultLines(facts, lang) {
   const f = facts && typeof facts === "object" ? facts : {};
@@ -86,6 +116,13 @@ export function autoResultLines(facts, lang) {
     out.push(pctLine(T, `${pct(f.pct)}%`, f));
   }
   if (f.found != null) out.push(put(T.concerns, { n: f.found, from: f.from || "—", to: f.to || "—" }));
+  if (Array.isArray(f.lists)) {
+    const lists = f.lists.filter((x) => x && typeof x === "object");
+    if (lists.length) out.push(put(T.kelish, { cells: staffCells(T, lists) }));
+    if (Array.isArray(f.no_plan) && f.no_plan.length) out.push(put(T.kelishNoPlan, { codes: codes(f.no_plan) }));
+    if (Array.isArray(f.empty) && f.empty.length) out.push(put(T.kelishEmpty, { codes: codes(f.empty) }));
+    if (!lists.length && !(f.no_plan || []).length && !(f.empty || []).length) out.push(T.kelishNone);
+  }
   if (f.late_by_min) out.push(put(T.late, { n: f.late_by_min }));
   return out;
 }

@@ -234,7 +234,8 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
         return f"/staff-live?tab=workers&unit={mid}&date={d}"
     if kind == "idle":                         # IdleCell.jsx reads ?date=
         return f"/idle-cell?date={sid}"
-    if kind == "page" and sid in ("/production", "/concerns", "/notifications"):
+    if kind == "page" and sid in ("/production", "/concerns", "/notifications",
+                                  "/kelish"):
         return sid
     if kind == "lesson":
         return "/education"

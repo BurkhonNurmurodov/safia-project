@@ -48,7 +48,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, ChevronDown, Clock, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
+  Check, ChevronDown, Clock, ListChecks, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
@@ -61,6 +61,7 @@ import FormField from "../components/ui/FormField";
 import Modal from "../components/ui/Modal";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../components/ui/Skeleton";
+import StyledSelect from "../components/ui/StyledSelect";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useToast } from "../components/ui/Toast";
 import { useFactory, useFactoryParams } from "../context/FactoryContext";
@@ -296,6 +297,54 @@ function DayHead({ day, t }) {
 
 // One line under the grid: on an open week it is the tap cycle itself, which
 // is also the whole legend; on a closed one, the three answers.
+// Which list checklist task #11's automatic check judges for this cell —
+// «today» or «tomorrow», fixed by the check on the cell's first check day
+// (services/leader_auto.py, `staff_list`). Shown on every card, under the grid
+// (a line above it would move the rows); an ADMIN may change it.
+function KindLine({ cellId, kind, canSet, t, toast, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const k = kind?.kind || "";
+  const word = k === "today" ? t("kelish.kindToday") : k === "tomorrow" ? t("kelish.kindTomorrow") : t("kelish.kindNone");
+  const how = !kind ? ""
+    : kind.src === "manual" ? fill(t("kelish.kindManual"), { by: kind.by || "—" })
+    : fill(t("kelish.kindAuto"), { d: dm(kind.decided_on) });
+  const save = async (v) => {
+    if (v === k) return;
+    setSaving(true);
+    try {
+      await api.put("/api/kelish/kind", { cell_id: cellId, kind: v || null });
+      onSaved?.();
+    } catch {
+      toast?.error?.(t("kelish.kindErr"));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5" style={{ color: "var(--text-2)" }}>
+      <ListChecks size={12} className="flex-shrink-0" aria-hidden="true" />
+      <span>{t("kelish.kindLabel")}:</span>
+      {canSet ? (
+        <StyledSelect
+          value={k}
+          onChange={save}
+          disabled={saving}
+          triggerClassName="px-2.5 py-1.5 text-xs"
+          options={[
+            { value: "", label: t("kelish.kindUnset") },
+            { value: "today", label: t("kelish.kindToday") },
+            { value: "tomorrow", label: t("kelish.kindTomorrow") },
+          ]}
+        />
+      ) : (
+        <span className="font-semibold" style={{ color: "var(--text-1)" }}>{word}</span>
+      )}
+      {canSet && !k && <span style={{ color: "var(--text-3)" }}>{t("kelish.kindNone")}</span>}
+      {how && <span style={{ color: "var(--text-3)" }}>· {how}</span>}
+    </div>
+  );
+}
+
 function Legend({ open, gaps = false, t }) {
   const arrow = <span aria-hidden="true" style={{ color: "var(--text-3)" }}>→</span>;
   // Each step carries the arrow AFTER it, so a narrow footer breaks the cycle
@@ -745,6 +794,13 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           so the cycle reads as one line instead of three beside them. */}
       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
         {view.length > 0 && <Legend open={openAny} gaps={closedGaps} t={t} />}
+        <KindLine
+          cellId={cell.id} kind={data.kind} canSet={!!data.can_set_kind} t={t} toast={toast}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["kelish-week", cell.id] });
+            qc.invalidateQueries({ queryKey: ["kelish-cells"] });
+          }}
+        />
         {nightLine && (
           <div className="flex items-start gap-1.5 mt-1.5" style={{ color: "var(--text-2)" }}>
             <Clock size={12} className="flex-shrink-0 mt-0.5" aria-hidden="true" />

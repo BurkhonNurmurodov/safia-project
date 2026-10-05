@@ -776,6 +776,32 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "2. A concern your workers wrote to your cell counts as well.\n"
                "At {time} the system checks it itself — no photo needed."),
     },
+    "leader_auto_soon_staff_list": {
+        "uz": ("Avtomatik tekshiruv: {time}",
+               "📋 Vazifa: {task}\n🕐 Tekshiruv: {time} · {date}\n"
+               "📍 Qayerda: «Ish grafigi» sahifasi\n"
+               "1. Yacheykangiz kartasini oching.\n"
+               "2. Ro'yxatdagi har bir xodim uchun «Keladi» yoki «Kelmaydi» ni belgilang — rejasi bor har bir yacheykangizda.\n"
+               "Tizim {time} da ro'yxatni o'zi tekshiradi — rasm yubormaysiz."),
+        "uz_cyrl": ("Автоматик текширув: {time}",
+                    "📋 Вазифа: {task}\n🕐 Текширув: {time} · {date}\n"
+                    "📍 Қаерда: «Иш графиги» саҳифаси\n"
+                    "1. Ячейкангиз картасини очинг.\n"
+                    "2. Рўйхатдаги ҳар бир ходим учун «Келади» ёки «Келмайди» ни белгиланг — режаси бор ҳар бир ячейкангизда.\n"
+                    "Тизим {time} да рўйхатни ўзи текширади — расм юбормайсиз."),
+        "ru": ("Автоматическая проверка: {time}",
+               "📋 Задача: {task}\n🕐 Проверка: {time} · {date}\n"
+               "📍 Где: страница «График работы»\n"
+               "1. Откройте карточку своей ячейки.\n"
+               "2. Отметьте каждого работника в списке: «Выйдет» или «Не выйдет» — в каждой вашей ячейке с планом.\n"
+               "В {time} система сама проверит список — фото не нужно."),
+        "en": ("Automatic check at {time}",
+               "📋 Task: {task}\n🕐 Check: {time} · {date}\n"
+               "📍 Where: the «Work schedule» page\n"
+               "1. Open your cell's card.\n"
+               "2. Mark every worker on the list «Coming» or «Not coming» — in each of your cells that has a plan.\n"
+               "At {time} the system checks the list itself — no photo needed."),
+    },
     "leader_auto_passed": {
         "uz": ("Vazifa bajarildi", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
         "uz_cyrl": ("Вазифа бажарилди", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),

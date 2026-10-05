@@ -4316,6 +4316,29 @@ class KelishRosterEvent(Base):
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class KelishCellKind(Base):
+    """Which list a cell's staff list is JUDGED on by checklist task #11's
+    automatic check (`leader_auto`, check `staff_list`, from 2026-10-05):
+    «today» (the shift-day being checked) or «tomorrow» (the one after).
+
+    The operator's rule: it is fixed on the cell's FIRST check day that has a
+    plan — tomorrow's list filled (with or without today's) → «tomorrow»; only
+    today's → «today»; neither → the task fails that day and the type is decided
+    on the next check day. No row = not decided yet, and until then either list
+    passes. `src` "auto" (the check decided it) | "manual" (an admin set it on
+    «Ish grafigi»); an admin's value is never overwritten by the check.
+    """
+    __tablename__ = "kelish_cell_kinds"
+
+    cell_id    = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), primary_key=True)
+    kind       = Column(String(10), nullable=False)          # "today" | "tomorrow"
+    decided_on = Column(Date, nullable=True)                 # the check day it was fixed on
+    src        = Column(String(10), nullable=False, default="auto")   # auto | manual
+    by_key     = Column(String, nullable=True)
+    by_name    = Column(String, nullable=True)
+    set_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class LiveStaffEvent(Base):
     """RETIRED 2026-10-04 — read and written by nothing since the lab page took
     /staff's documents (`LiveDocument`, `LiveDeletion`, `LivePlacement`). The

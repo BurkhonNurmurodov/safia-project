@@ -156,10 +156,11 @@ DEFAULT_PAGE_ACCESS = {
     # to their own shift ∩ plant server-side whatever the query string says.
     "live": [],
     # «Kelish ro'yxati» — the T11 staff list (routers/kelish.py): per cell, who is
-    # coming today and tomorrow. Admin-only until the operator opens it; the
-    # reach for leader (own cells), supervisor (own unit, fills too) and
-    # shift-manager (reads their shift) is already enforced server-side.
-    "kelish": [],
+    # coming today and tomorrow. Opened 2026-10-05 with checklist task #11's
+    # automatic check (`startup.open_kelish_page` added the same roles to a
+    # stored matrix): leader (own cells), supervisor (own unit, fills too) and
+    # shift-manager (reads their shift) — reach enforced server-side.
+    "kelish": ["leader", "supervisor", "shift-manager"],
     # «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (routers/turnover.py),
     # month by month from Verifix, from October 2026. Admin-only until the
     # operator opens it (HR is who it is for); it lists who left and why.

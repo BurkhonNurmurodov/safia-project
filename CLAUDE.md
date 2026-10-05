@@ -8446,6 +8446,35 @@ says; a supervisor or leader would see their own unit only).
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
 
+## Task #11 is checked ON «Ish grafigi» (`staff_list`, from 2026-10-05)
+
+From **shift 1's day of 5 Oct 2026 and shift 2's night of 5→6 Oct** (the
+operator's hard switch) checklist task #11 is an automatic check —
+`leader_auto` check `staff_list` (`_check_staff_list`), `CHECK_FROM` its own
+floor (`owns` is the test both closes ask), asked at the END of the shift
+(unit `deadline` 20:00 / 08:00), warned 30 min before (card: `/kelish`).
+
+- **Cells checked**: every cell the leader leads that has a plan that day (#1's
+  `cell_planned`); a cell with no plan, or a plan and an empty list, is skipped;
+  no checked cell = PASS. **A cell passes** when every worker on its list is
+  «Keladi» or «Kelmaydi» — who marked them does not matter. **The task passes**
+  when every checked cell does; a per-cell unit gets ONE verdict for the leader.
+- **Today or tomorrow, per CELL** (`KelishCellKind`, `kelish_cell_kinds`):
+  fixed by the check on the cell's first check day with a plan — tomorrow's
+  list filled (whatever today's) → «tomorrow», only today's → «today», neither →
+  fail and decide later; until fixed either list counts. «Today» = the checklist
+  day, «tomorrow» = the day after (a night checked at 08:00: the night that
+  ended / the one opening that evening). Shown on each /kelish card (`KindLine`),
+  an ADMIN edits it (`PUT /api/kelish/kind`).
+- Read AT THE HOUR: a pass more than `LATE_GRACE` late reads marks, «+»/«−» and
+  the file as they stood then (`file_workers_days(as_of=)`).
+- **Transition** (TEMPORARY `services/leader_auto_t11.py`): 4 Oct (S1) and the
+  4→5 night (S2) stayed screenshot tasks and a table filled by the shift's end
+  granted full points (`LeaderTaskOverride`, reports re-sent). On 5 Oct (S1),
+  reached mid-day, an answer filed by screenshot before the switch stands and
+  a filled table grants the points (`_staff_list_filed`).
+- /kelish opened to leader · supervisor · shift-manager (`open_kelish_page`).
+
 ## «Ish grafigi» — the T11 staff list (`/kelish`)
 
 Named «Kelish ro'yxati» until **2026-09-30**, when the operator renamed it

@@ -62,6 +62,7 @@ PAGE = {
     "plan_staffing": "/production",
     "plan_pct": "/production",
     "concerns": "/concerns",
+    "staff_list": "/kelish",
 }
 
 _WD = {
@@ -417,6 +418,114 @@ L: dict[str, dict] = {
 }
 
 
+# #11 «Ish grafigi» (from 2026-10-05). Kept beside the dict rather than inside
+# each language block so the four read as one table. Page and control names are
+# the UI's own: `nav.kelish`, `kelish.yes`, `kelish.no`.
+_STAFF_LIST = {
+    "uz": {
+        "where": "«Ish grafigi» sahifasi",
+        "k_today": "bugungi", "k_tomorrow": "ertangi",
+        "either": "bugungi {t} · ertangi {w}",
+        "gap_none": ("Bugun rejasi bor yacheykangiz yo'q — tekshiriladigan "
+                     "ro'yxat yo'q."),
+        "gap_missing": "Hali belgilanmagan xodimlar bor: {codes}.",
+        "gap_ok": "✅ Ro'yxatlar to'liq belgilangan — {time} gacha shunday qolsin.",
+        "steps": [
+            "«Ish grafigi» sahifasini oching va yacheykangiz kartasini bosing.",
+            ("Ro'yxatdagi har bir xodim katagini bosing: «Keladi» (yashil) yoki "
+             "«Kelmaydi» (qizil). Kim belgilagani muhim emas — ro'yxat to'liq "
+             "bo'lsin."),
+            ("Rejasi bor har bir yacheykangizda shunday qiling — qaysi kun "
+             "ro'yxati hisoblanishi yuqorida yozilgan."),
+            "Hammasi {time} gacha.",
+        ],
+    },
+    "uz_cyrl": {
+        "where": "«Иш графиги» саҳифаси",
+        "k_today": "бугунги", "k_tomorrow": "эртанги",
+        "either": "бугунги {t} · эртанги {w}",
+        "gap_none": ("Бугун режаси бор ячейкангиз йўқ — текшириладиган рўйхат "
+                     "йўқ."),
+        "gap_missing": "Ҳали белгиланмаган ходимлар бор: {codes}.",
+        "gap_ok": "✅ Рўйхатлар тўлиқ белгиланган — {time} гача шундай қолсин.",
+        "steps": [
+            "«Иш графиги» саҳифасини очинг ва ячейкангиз картасини босинг.",
+            ("Рўйхатдаги ҳар бир ходим катагини босинг: «Келади» (яшил) ёки "
+             "«Келмайди» (қизил). Ким белгилагани муҳим эмас — рўйхат тўлиқ "
+             "бўлсин."),
+            ("Режаси бор ҳар бир ячейкангизда шундай қилинг — қайси кун "
+             "рўйхати ҳисобланиши юқорида ёзилган."),
+            "Ҳаммаси {time} гача.",
+        ],
+    },
+    "ru": {
+        "where": "Страница «График работы»",
+        "k_today": "на сегодня", "k_tomorrow": "на завтра",
+        "either": "на сегодня {t} · на завтра {w}",
+        "gap_none": "Сегодня у ваших ячеек нет плана — проверять нечего.",
+        "gap_missing": "Есть неотмеченные работники: {codes}.",
+        "gap_ok": "✅ Списки отмечены полностью — пусть так и останется до {time}.",
+        "steps": [
+            "Откройте «График работы» и нажмите карточку своей ячейки.",
+            ("Нажмите клетку каждого работника в списке: «Выйдет» (зелёная) или "
+             "«Не выйдет» (красная). Неважно, кто отметил, — список должен быть "
+             "полным."),
+            ("Так — в каждой вашей ячейке с планом; какой день считается, "
+             "написано выше."),
+            "Всё — до {time}.",
+        ],
+    },
+    "en": {
+        "where": "The «Work schedule» page",
+        "k_today": "today's", "k_tomorrow": "tomorrow's",
+        "either": "today's {t} · tomorrow's {w}",
+        "gap_none": "None of your cells has a plan today — there is no list to check.",
+        "gap_missing": "Workers still unmarked: {codes}.",
+        "gap_ok": "✅ The lists are fully marked — keep them so until {time}.",
+        "steps": [
+            "Open «Work schedule» and tap your cell's card.",
+            ("Tap every worker on the list: «Coming» (green) or «Not coming» "
+             "(red). Who marks them does not matter — the list must be complete."),
+            ("Do this for every cell of yours that has a plan — which day's "
+             "list counts is shown above."),
+            "All of it by {time}.",
+        ],
+    },
+}
+_BTN_KELISH = {"uz": "Ish grafigini ochish", "uz_cyrl": "Иш графигини очиш",
+               "ru": "Открыть график работы", "en": "Open the work schedule"}
+for _lang, _words in _STAFF_LIST.items():
+    L[_lang]["staff_list"] = _words
+    L[_lang]["common"]["btn_kelish"] = _BTN_KELISH[_lang]
+
+
+def _staff_rows(f: dict, t: dict, hhmm: str) -> tuple[list[tuple[str, str]], str]:
+    """#11's state block: one row per cell the check will read, with the list
+    it will judge and how much of it is marked."""
+    days = f.get("days") or []
+    dm = {k: (str(d)[8:10] + "." + str(d)[5:7]) for k, d in
+          zip(("today", "tomorrow"), days)}
+    rows, missing = [], []
+    items = [it for it in (f.get("lists") or []) if isinstance(it, dict)]
+    for it in items[:10]:
+        kind = it.get("kind")
+        if kind in ("today", "tomorrow"):
+            m, n = (it.get(kind) or [0, 0])[:2]
+            val = f"{t['k_' + kind]} ({dm.get(kind, '')}): <b>{m}/{n}</b>"
+        else:
+            tt, ww = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
+            val = _esc(t["either"].format(t=f"{tt[0]}/{tt[1]}", w=f"{ww[0]}/{ww[1]}"))
+        val = ("✅ " if it.get("ok") else "") + val
+        rows.append((str(it.get("cell") or "—"), val))
+        if not it.get("ok"):
+            missing.append(str(it.get("cell") or "—"))
+    if not items:
+        return rows, t["gap_none"]
+    if missing:
+        return rows, t["gap_missing"].format(codes=", ".join(missing[:8]))
+    return rows, t["gap_ok"].format(time=hhmm)
+
+
 def _esc(v) -> str:
     """Element content only; `quote=False` keeps Uzbek apostrophes literal
     (the `forecast_rich._esc` rule). Every attribute here is a literal."""
@@ -528,6 +637,8 @@ def _state_rows(check: str, snap: dict, t: dict, c: dict, hhmm: str
         if untyped:
             return rows, t["gap_untyped"].format(n=len(untyped), codes=codes)
         return rows, t["gap_ok"].format(time=hhmm)
+    if check == "staff_list":
+        return _staff_rows(f, t, hhmm)
     if check == "concerns":
         n = int(f.get("found") or 0)
         rows = [(t["found"], f"<b>{n}</b> {_esc(c['pcs'])}".strip())]
@@ -621,7 +732,8 @@ def markup(check: str, lang: str = "uz"):
     from telebot import types
     c = _t(lang)["common"]
     page = PAGE.get(check, "/production")
-    label = c["btn_concerns"] if page == "/concerns" else c["btn_production"]
+    label = (c["btn_concerns"] if page == "/concerns"
+             else c["btn_kelish"] if page == "/kelish" else c["btn_production"])
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(
         label, web_app=types.WebAppInfo(

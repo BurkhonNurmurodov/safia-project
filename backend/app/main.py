@@ -124,6 +124,8 @@ async def lifespan(app: FastAPI):
         register_leader_temp_hours,
         add_leader_auto_checks,
         register_leader_auto_sep20,
+        register_leader_auto_t11,
+        open_kelish_page,
         report_auto_schema,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -629,6 +631,13 @@ async def lifespan(app: FastAPI):
     # production's catalog from outside — see its docstring.
     report_auto_schema()
     register_leader_auto_sep20()
+    # ⚠ TEMPORARY (05.10.2026): task #11 becomes the «Ish grafigi» automatic
+    # check, /kelish opens to leaders/brigadirs/shift-managers, and the 4 Oct
+    # transition grant runs. Delete these two lines, `startup.open_kelish_page`
+    # (keep the access it wrote), `startup.register_leader_auto_t11` + its two
+    # jobs and `services/leader_auto_t11.py` once all three flags are set.
+    open_kelish_page()
+    register_leader_auto_t11()
     # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
     # early so leaders can read them and prepare. Descriptions only: nothing
     # they are scored by changes until the two passes above fire on the 19th.

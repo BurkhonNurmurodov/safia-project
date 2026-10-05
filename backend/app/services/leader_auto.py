@@ -161,7 +161,17 @@ LATE_GRACE = timedelta(minutes=5)
 # `LeaderTaskDef.auto_check`. A value not in here is a misconfiguration and
 # `is_auto` answers False for it, so the task stays an ordinary proof task
 # instead of becoming one nobody on earth can answer.
-CHECKS = ("plan_staffing", "concerns", "plan_pct")
+CHECKS = ("plan_staffing", "concerns", "plan_pct", "staff_list")
+
+# A check that joined after `AUTO_FROM` judges nothing before its own first day.
+# Same reasoning as the floor itself: the config chain is not versioned, so an
+# OPEN day from before the switch resolves the task as automatic too — and must
+# be closed the way it was filed, by the ordinary per-task close, never handed a
+# verdict under a rule it was not filed under. `owns` is the one test for it.
+#
+# `staff_list` (#11, «Ish grafigi») — the operator's hard switch: shift 1's day
+# of 5 Oct 2026 and shift 2's night of 5→6 Oct (whose checklist day is the 5th).
+CHECK_FROM = {"staff_list": "2026-10-05"}
 
 # Outcomes. `passed` / `failed` move the score; `skipped` never does — it means
 # this module declined to answer, and something else owns the day.
@@ -224,6 +234,22 @@ def is_auto(cfg_entry: dict | None) -> bool:
     e = cfg_entry or {}
     return (e.get("proof_kind") == "auto"
             and parse_check(e.get("auto_check")) is not None)
+
+
+def check_floor(check: str | None) -> str:
+    """The first checklist day `check` judges (`CHECK_FROM`, else `AUTO_FROM`)."""
+    return max(AUTO_FROM, CHECK_FROM.get(str(check or ""), AUTO_FROM))
+
+
+def owns(cfg_entry: dict | None, date) -> bool:
+    """Does this module decide this task on this checklist day? `is_auto` AND
+    the day is on or after the check's own floor. Everything that would
+    otherwise close an automatic task (the per-task and day-level closes) asks
+    this, so a task this module will not judge is never left without a closer."""
+    if not is_auto(cfg_entry):
+        return False
+    parsed = parse_check((cfg_entry or {}).get("auto_check"))
+    return str(date)[:10] >= check_floor(parsed[0] if parsed else None)
 
 
 def auto_tasks(cfg: dict) -> dict[int, dict]:
@@ -489,10 +515,101 @@ def _check_concerns(ctx: _Ctx, target: float | None) -> Verdict:
     return Verdict(PASSED if n else FAILED, "ok" if n else "no_concern", facts)
 
 
+def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
+    """#11 «Ish grafigi» — every worker on the staff list of EVERY one of the
+    leader's cells that has a plan today is marked «Keladi» or «Kelmaydi»
+    (the operator's rules, 4—5 Oct 2026).
+
+    * Only cells with a plan that day — #1's own reading (`cell_planned`) — are
+      checked; a cell with a plan and nobody on its list is skipped too. No
+      checked cell at all is a PASS: there was no list to fill.
+    * Which list: the check day's («today», the shift-day being checked) or the
+      next one's («tomorrow») — per CELL, fixed on its first check day with a
+      plan: tomorrow's filled (whatever today's) → «tomorrow»; only today's →
+      «today»; neither → the task fails and the type is fixed on a later day.
+      Until it is fixed either list passes (`KelishCellKind`).
+    * Who marked a worker does not matter — only whether the list is filled.
+
+    Read AT THE HOUR: a pass within `LATE_GRACE` reads the lists as they are;
+    a later one (an outage, a transition grant) reads them as they stood at the
+    hour — marks set by then, «+»/«−» made by then, the file as read by then.
+    """
+    from app.services import kelish
+    d = _as_date(ctx.date)
+    days = (d, d + timedelta(days=1))
+    rows = (ctx.dashboard.get("rows") or []) if ctx.pairs else []
+    cells = sorted(ctx.cells, key=lambda c: (c.verifix_code or "", c.id))
+    planned = [c for c in cells if cell_planned(rows, c)]
+    facts: dict = {"days": [x.isoformat() for x in days], "lists": [],
+                   "no_plan": sorted(cell_label(c) for c in cells
+                                     if c not in planned),
+                   "empty": []}
+    if not planned:
+        return Verdict(PASSED, "ok", facts)
+
+    cutoff = ctx.due if (ctx.now - ctx.due) > LATE_GRACE else None
+    # The check fixes a cell's type only when it is the real verdict at (or
+    # after) the hour of a day under this rule — never from the warning card.
+    decide = ctx.now >= ctx.due and str(ctx.date)[:10] >= check_floor("staff_list")
+    files = kelish.file_workers_days(ctx.db, list(days), as_of=cutoff)
+    ids = [c.id for c in planned]
+    events = kelish.load_events(ctx.db, ids)
+    marks = kelish.load_marks_days(ctx.db, ids, list(days))
+    kinds = kelish.load_kinds(ctx.db, ids)
+
+    all_ok = True
+    for c in planned:
+        label = cell_label(c)
+        ev = [e for e in events.get(c.id, [])
+              if cutoff is None or (e.created_at is not None and e.created_at <= cutoff)]
+        got = {}
+        for name, day in zip(kelish.KINDS, days):
+            fw, last = files[day]
+            mk = marks.get(c.id, {}).get(day, {})
+            if cutoff is not None:
+                mk = {k: m for k, m in mk.items()
+                      if m.set_at is not None and m.set_at <= cutoff}
+            lst = (kelish.roster(c.verifix_code, day, fw, last, ev, mk)
+                   if c.verifix_code else [])
+            n = len(lst)
+            m_ = sum(1 for r in lst if r["mark"] in kelish.STATUSES)
+            got[name] = (m_, n)
+        full = {k: (n > 0 and m_ == n) for k, (m_, n) in got.items()}
+        kr = kinds.get(c.id)
+        kind = kr.kind if kr is not None and kr.kind in kelish.KINDS else None
+        item = {"cell": label, "kind": kind,
+                "today": list(got["today"]), "tomorrow": list(got["tomorrow"])}
+        if kind is not None:
+            if got[kind][1] == 0:
+                facts["empty"].append(label)
+                continue
+            ok = full[kind]
+        else:
+            if got["today"][1] == 0 and got["tomorrow"][1] == 0:
+                facts["empty"].append(label)
+                continue
+            pick = ("tomorrow" if full["tomorrow"]
+                    else "today" if full["today"] else None)
+            ok = pick is not None
+            if pick is not None:
+                if decide and kelish.decide_kind(ctx.db, c.id, pick, d):
+                    item["kind"], item["decided"] = pick, True
+                else:
+                    item["would_be"] = pick
+        item["ok"] = ok
+        all_ok = all_ok and ok
+        facts["lists"].append(item)
+    if not facts["lists"]:
+        return Verdict(PASSED, "ok", facts)
+    return Verdict(PASSED if all_ok else FAILED,
+                   "ok" if all_ok else "not_filled", facts)
+
+
 _RUNNERS = {
     "plan_staffing": _check_plan_staffing,
     "plan_pct": _check_plan_pct,
     "concerns": _check_concerns,
+    "staff_list": _check_staff_list,
 }
 
 
@@ -748,6 +865,7 @@ _WHY = {
     # so such a DM would have arrived reading «not_checked» at a leader.
     "not_checked": "Tekshiruv o'tkazilmadi — tizimda nosozlik",
     "no_data": "Ma'lumot o'qilmadi",
+    "not_filled": "«Ish grafigi»da hamma xodim belgilanmagan",
 }
 
 
@@ -761,6 +879,8 @@ def _facts_line(v: Verdict) -> str:
         if len(f.get("by_cell") or []) > 1 and f.get("best"):
             return f"{f['best']}: {f.get('best_pct')}%"
         return f"{f['pct']}%"
+    if "lists" in f:
+        return staff_list_cells(f) or "—"
     if v.code == "no_staffing" and f.get("untyped"):
         return ", ".join(str(x) for x in f["untyped"][:6])
     if "found" in f:
@@ -839,6 +959,8 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
         if parsed is None:
             continue
         check, target = parsed
+        if str(date)[:10] < check_floor(check):
+            continue          # an older day keeps the rule it was filed under
         if moved:
             hhmm = leader_temp_hours.move_clock(m.shift, hhmm, moved.minutes)
             due = leader_close.due_at({"deadline": hhmm}, m.shift, date) or due
@@ -953,7 +1075,8 @@ def measured(db: Session, leader_id: int, date: str, task_id: int,
 # diagnostic the ledger grows later does not ride every register row.
 _RESULT_KEYS = ("lines", "with_plan", "cells", "untyped", "filled", "target",
                 "pct", "by_cell", "best", "best_pct", "found", "from", "to",
-                "checked_at", "late_by_min")
+                "checked_at", "late_by_min", "days", "lists", "no_plan", "empty",
+                "granted")
 
 
 def results_for(db: Session, entry_ids) -> dict[int, dict]:
@@ -1029,9 +1152,37 @@ def result_lines(facts: dict | None, lang: str = "uz",
     if f.get("found") is not None:
         out.append(L["concerns"].format(n=f["found"], frm=f.get("from") or "—",
                                         to=f.get("to") or "—"))
+    if isinstance(f.get("lists"), list):
+        if f["lists"]:
+            out.append(L["kelish"].format(cells=staff_list_cells(f, lang)))
+        if f.get("no_plan"):
+            out.append(L["kelish_noplan"].format(codes=", ".join(map(str, f["no_plan"][:8]))))
+        if f.get("empty"):
+            out.append(L["kelish_empty"].format(codes=", ".join(map(str, f["empty"][:8]))))
+        if not f["lists"] and not f.get("no_plan") and not f.get("empty"):
+            out.append(L["kelish_none"])
     if f.get("late_by_min"):
         out.append(L["late"].format(n=f["late_by_min"]))
     return out
+
+
+def staff_list_cells(f: dict, lang: str = "uz") -> str:
+    """«4321 (ertangi): 12/12 · 4322: bugungi 3/11, ertangi 0/11» — what #11's
+    check read on each list it judged. The client twin is `utils/autoResult.js`."""
+    L = _RESULT_TEXT.get(lang) or _RESULT_TEXT["uz"]
+    parts = []
+    for it in (f.get("lists") or [])[:8]:
+        if not isinstance(it, dict):
+            continue
+        kind = it.get("kind")
+        if kind in ("today", "tomorrow"):
+            m, n = (it.get(kind) or [0, 0])[:2]
+            parts.append(f"{it.get('cell')} ({L['k_' + kind]}): {m}/{n}")
+        else:
+            t, w = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
+            parts.append(f"{it.get('cell')}: {L['k_today']} {t[0]}/{t[1]}, "
+                         f"{L['k_tomorrow']} {w[0]}/{w[1]}")
+    return " · ".join(parts)
 
 
 def _pct_line(L: dict, v: str, f: dict, show_target: bool) -> str:
@@ -1055,28 +1206,48 @@ _RESULT_TEXT = {
            "pct": "Bajarilishi: {v} (kerak: {target}%)",
            "pct_bare": "Bajarilishi: {v}",
            "concerns": "Yozilgan xavotirlar: {n} ta ({frm} – {to})",
-           "late": "Tekshiruv {n} daqiqa kechikib o'tkazilgan"},
+           "late": "Tekshiruv {n} daqiqa kechikib o'tkazilgan",
+           "kelish": "Ish grafigi: {cells}",
+           "kelish_noplan": "Rejasi yo'q, tekshirilmadi: {codes}",
+           "kelish_empty": "Ro'yxati bo'sh, tekshirilmadi: {codes}",
+           "kelish_none": "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
+           "k_today": "bugungi", "k_tomorrow": "ertangi"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
                 "untyped": "Одамлар сони киритилмаган: {codes}",
                 "pct": "Бажарилиши: {v} (керак: {target}%)",
                 "pct_bare": "Бажарилиши: {v}",
                 "concerns": "Ёзилган хавотирлар: {n} та ({frm} – {to})",
-                "late": "Текширув {n} дақиқа кечикиб ўтказилган"},
+                "late": "Текширув {n} дақиқа кечикиб ўтказилган",
+                "kelish": "Иш графиги: {cells}",
+                "kelish_noplan": "Режаси йўқ, текширилмади: {codes}",
+                "kelish_empty": "Рўйхати бўш, текширилмади: {codes}",
+                "kelish_none": "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
+                "k_today": "бугунги", "k_tomorrow": "эртанги"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
            "untyped": "Не внесено количество людей: {codes}",
            "pct": "Выполнение: {v} (нужно: {target}%)",
            "pct_bare": "Выполнение: {v}",
            "concerns": "Записано обеспокоенностей: {n} ({frm} – {to})",
-           "late": "Проверка прошла с опозданием на {n} мин"},
+           "late": "Проверка прошла с опозданием на {n} мин",
+           "kelish": "График работы: {cells}",
+           "kelish_noplan": "Нет плана, не проверялись: {codes}",
+           "kelish_empty": "Список пуст, не проверялись: {codes}",
+           "kelish_none": "Нет ячеек с планом — проверять было нечего",
+           "k_today": "на сегодня", "k_tomorrow": "на завтра"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
            "untyped": "Headcount missing: {codes}",
            "pct": "Fulfilment: {v} (needed: {target}%)",
            "pct_bare": "Fulfilment: {v}",
            "concerns": "Concerns written: {n} ({frm} – {to})",
-           "late": "The check ran {n} min late"},
+           "late": "The check ran {n} min late",
+           "kelish": "Work schedule: {cells}",
+           "kelish_noplan": "No plan, not checked: {codes}",
+           "kelish_empty": "Empty list, not checked: {codes}",
+           "kelish_none": "No cell had a plan — there was no list to check",
+           "k_today": "today's", "k_tomorrow": "tomorrow's"},
 }
 
 
@@ -1244,6 +1415,15 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         return _measure_without_day(db, row, m, prof, date, check, target,
                                     due, now, tally, shared)
 
+    if check == "staff_list":
+        filed = (db.query(LeaderTaskEntry)
+                 .filter_by(day_id=day.id, task_id=tid).first())
+        if filed is not None and not str(filed.reason or "").startswith(
+                leader_tasks.AUTO_PREFIX):
+            return _staff_list_filed(db, row, m, prof, date, day, filed, td,
+                                     check, target, due, hhmm, now, tally,
+                                     leader_close, shared)
+
     if day.closed_at is not None:
         if row.code == "day_closed":
             return False, None
@@ -1361,6 +1541,69 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
               cell_id if v.code == "started_late" else None)
         if v.code == "no_sap_code" and not _already_alerted(db, prof.id, date, tid):
             _alert_admins(db, prof, m, td, date)
+    return True, fresh
+
+
+def _grant(db: Session, day: LeaderTaskDay, task_id: int, prof,
+           by: str) -> str | None:
+    """Give one checklist task its full weight through the ordinary admin
+    overlay (`LeaderTaskOverride`, done) — reversible on the day report like any
+    ruling. Returns the report uid when a grant was written; None when an
+    override already stands there (a person's ruling is the newer statement)."""
+    from app.models import LeaderTaskOverride
+    from app.services import leader_bot
+    uid = leader_bot.day_uid(day.id)
+    if db.query(LeaderTaskOverride.id).filter_by(uid=uid, task_id=task_id).first():
+        return None
+    db.add(LeaderTaskOverride(
+        uid=uid, task_id=task_id, date=str(day.date)[:10],
+        leader=(getattr(prof, "name", "") or "")[:160] or None, done=True,
+        set_by=by[:160], set_at=datetime.now(timezone.utc)))
+    return uid
+
+
+def _staff_list_filed(db, row, m, prof, date, day, entry, td, check, target,
+                      due, hhmm, now, tally, leader_close,
+                      shared: Verdict | None) -> tuple[bool, Verdict | None]:
+    """#11 on the day the switch landed: the leader answered it by SCREENSHOT
+    before the task became automatic (the switch reached shift 1 mid-day on
+    5 Oct 2026). Their answer STANDS — this module never writes over one — and
+    the «Ish grafigi» check still runs at the hour: a filled table grants the
+    task its full weight (the operator's transition rule — either counts), so
+    nobody loses a point to the switch landing late. A table not filled leaves
+    the screenshot to be judged as it always was."""
+    if shared is not None:
+        v, fresh = Verdict(shared.outcome, shared.code, dict(shared.facts)), None
+    else:
+        v = fresh = evaluate(db, prof=prof, manager=m, shift=m.shift, date=date,
+                             cell=None, check=check, target=target, due=due,
+                             now=now)
+    if v.outcome == SKIPPED and now < due + GIVE_UP:
+        row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
+        row.facts = v.facts
+        tally["skipped"] += 1
+        return True, fresh
+    uid = (_grant(db, day, entry.task_id, prof, "Ish grafigi to'ldirilgan")
+           if v.done else None)
+    row.checked_at = now
+    row.outcome, row.code = (PASSED, "ok") if v.done else (SKIPPED, "already_filed")
+    row.facts = dict(v.facts, filed=True, granted=bool(uid))
+    row.entry_id = entry.id
+    db.commit()
+    if entry.closed_at is None and day.closed_at is None:
+        cfg = leader_tasks.effective_leader_config(db, prof, m.shift, day=date)
+        leader_close.close_task(db, day=day, entry=entry, cfg=cfg,
+                                actor=f"avtomatik · {prof.name}")
+    tally["skipped" if not v.done else PASSED] += 1
+    if v.done and not _already_told(db, row):
+        _tell(db, prof, td, v, hhmm, date)
+    if uid:
+        try:
+            from app.services import leader_reports
+            leader_reports.resend_if_changed(db, uid)
+        except Exception:                              # noqa: BLE001
+            db.rollback()
+            logger.exception("auto check: corrected report for %s failed", uid)
     return True, fresh
 
 

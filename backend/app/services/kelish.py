@@ -52,7 +52,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import KelishMark, KelishRosterEvent
+from app.models import KelishCellKind, KelishMark, KelishRosterEvent
 from app.services import live_overview
 from app.services.cell_lookup import norm_code
 from app.services.name_map import _name_tokens
@@ -144,6 +144,12 @@ _ROWS_SQL = text("""
 """)
 _UPLOADS_SQL = text(
     "SELECT DISTINCT date FROM attendance_batches WHERE date BETWEEN :lo AND :hi")
+# The rows a list could be built from AS IT STOOD at a moment (`as_of`): a row a
+# later read supplied is left out, so a worker the file named only after that
+# moment is not on the list then. A row no read supplied (an admin's edit or
+# hand-added row) carries no upload and is kept — there is no time to judge it by.
+_AS_OF_SQL = (" AND (r.upload_id IS NULL OR r.upload_id IN ("
+              "SELECT u.id FROM attendance_upload_files u WHERE u.uploaded_at <= :asof))")
 
 
 def window(day: date) -> tuple[date, date]:
@@ -151,7 +157,8 @@ def window(day: date) -> tuple[date, date]:
     return day - timedelta(days=WINDOW_DAYS), day - timedelta(days=1)
 
 
-def file_workers_days(db: Session, days: Iterable[date]) -> dict:
+def file_workers_days(db: Session, days: Iterable[date],
+                      as_of: Optional[datetime] = None) -> dict:
     """THE file reader: for each of `days`, every worker the original upload
     filed in that day's window, keyed by `worker_key`, each on the cell of their
     MOST RECENT row:
@@ -169,13 +176,22 @@ def file_workers_days(db: Session, days: Iterable[date]) -> dict:
     window query's `ORDER BY date DESC, id DESC` had it; spellings folding to
     one key are then merged exactly as before (the later row places the
     worker, the later of the two «came» days stands), walked in name order so
-    a tie always resolves the same way."""
+    a tie always resolves the same way.
+
+    `as_of` builds the lists as the file stood at that moment (`_AS_OF_SQL`) —
+    what checklist task #11's check reads when it judges an hour already gone
+    (`leader_auto`, check `staff_list`)."""
     want = sorted(set(days))
     if not want:
         return {}
     lo, hi = window(want[0])[0], window(want[-1])[1]
     raw: dict[str, list] = {}
-    for n, code, job, d, rid, worked in db.execute(_ROWS_SQL, {"lo": lo, "hi": hi}):
+    if as_of is not None:
+        sql = text(str(_ROWS_SQL.text) + _AS_OF_SQL)
+        params = {"lo": lo, "hi": hi, "asof": as_of}
+    else:
+        sql, params = _ROWS_SQL, {"lo": lo, "hi": hi}
+    for n, code, job, d, rid, worked in db.execute(sql, params):
         raw.setdefault(n, []).append((d, rid, code, job, bool(worked)))
     uploads = sorted(r[0] for r in db.execute(_UPLOADS_SQL, {"lo": lo, "hi": hi}))
 
@@ -477,3 +493,63 @@ def drop_marks(db: Session, cell_id: int, keys: list[str], since: date) -> int:
             .filter(KelishMark.cell_id == cell_id, KelishMark.day >= since,
                     KelishMark.worker_key.in_(keys))
             .delete(synchronize_session=False))
+
+
+# ── which list task #11 judges (`KelishCellKind`) ─────────────────────────────
+
+KINDS = ("today", "tomorrow")
+
+
+def load_kinds(db: Session, cell_ids: Iterable[int]) -> dict[int, KelishCellKind]:
+    """{cell_id: KelishCellKind} — a cell with no row is not decided yet."""
+    ids = list(set(cell_ids))
+    if not ids:
+        return {}
+    return {k.cell_id: k for k in
+            db.query(KelishCellKind).filter(KelishCellKind.cell_id.in_(ids))}
+
+
+def kind_out(k: Optional[KelishCellKind]) -> Optional[dict]:
+    """A cell's type as the page reads it."""
+    if k is None:
+        return None
+    return {"kind": k.kind, "src": k.src,
+            "decided_on": k.decided_on.isoformat() if k.decided_on else None,
+            "by": k.by_name,
+            "at": k.set_at.isoformat() if k.set_at else None}
+
+
+def decide_kind(db: Session, cell_id: int, kind: str, day: date) -> bool:
+    """The check fixing a cell's type on its first check day — written only
+    while the cell has none, so neither a second pass nor an admin's own value
+    is ever overwritten. Flushes; the caller commits."""
+    if kind not in KINDS:
+        return False
+    if db.query(KelishCellKind.cell_id).filter_by(cell_id=cell_id).first():
+        return False
+    try:
+        with db.begin_nested():
+            db.add(KelishCellKind(cell_id=cell_id, kind=kind, decided_on=day,
+                                  src="auto", by_name="Tizim (avtomatik)"))
+    except IntegrityError:
+        return False            # a parallel pass fixed it first — theirs stands
+    return True
+
+
+def set_kind(db: Session, cell_id: int, kind: Optional[str],
+             by_key: Optional[str], by_name: Optional[str]) -> Optional[KelishCellKind]:
+    """An admin setting (or clearing, `kind=None`) a cell's type. Commits."""
+    row = db.query(KelishCellKind).filter_by(cell_id=cell_id).first()
+    if kind is None:
+        if row is not None:
+            db.delete(row)
+        db.commit()
+        return None
+    if row is None:
+        row = KelishCellKind(cell_id=cell_id)
+        db.add(row)
+    row.kind, row.src = kind, "manual"
+    row.by_key, row.by_name = by_key, by_name
+    row.set_at = datetime.now(timezone.utc)
+    db.commit()
+    return row

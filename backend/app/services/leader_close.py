@@ -646,7 +646,8 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
             # too would leave that task with no closer at all and hold its
             # checklist open forever. Below the floor it is an ordinary task
             # and this pass closes it exactly as it always did.
-            if leader_auto.is_auto(s) and str(day.date)[:10] >= leader_auto.AUTO_FROM:
+            # `owns` carries each check's own floor too (#11 joined on 5 Oct).
+            if leader_auto.owns(s, day.date):
                 continue
             # NOT YET STARTED. The operator's reading of the 26 Aug night, and
             # the one that explains why the day closed at 22:36 rather than at
@@ -802,7 +803,7 @@ def close_expired_days(db: Session, prof, shift: int,
                     day_id=day.id, task_id=tid, done=False,
                     reason=(leader_tasks.auto_reason(
                         task_deadline(s, shift), "not_checked")
-                        if leader_auto.is_auto(s) else reason)))
+                        if leader_auto.owns(s, day.date) else reason)))
         db.flush()
         from app.services import leader_late_proof   # cycle: see reset_task
         day.closed_at = now

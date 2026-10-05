@@ -8,10 +8,9 @@ open on an older bundle.
 
 `services/kelish.py` computes; this module decides who may see and change what.
 
-Page key ``kelish`` — ADMIN-ONLY until the operator opens it
-(`permissions.DEFAULT_PAGE_ACCESS`). The reach below is already written for the
-roles it will be opened to, so opening it is a tick on the Access tab and
-nothing more (the operator's rulings, 2026-09-28):
+Page key ``kelish`` — opened 2026-10-05 to leader, supervisor and
+shift-manager (`permissions.DEFAULT_PAGE_ACCESS`, `startup.open_kelish_page`).
+The reach (the operator's rulings, 2026-09-28):
 
   * a LEADER reads and fills the cells they own (`cells.leader_id`) — marks
     only: «+» / «−» (who is ON the list) is not theirs (the operator,
@@ -24,7 +23,11 @@ nothing more (the operator's rulings, 2026-09-28):
   * an ADMIN reads and fills everything, so the page can be tried before it is
     opened. `page.view.kelish` at "all" widens reading, never filling.
 
-Checklist task #11 is NOT touched: nothing here scores anything.
+From 2026-10-05 checklist task #11 is DECIDED on these lists — an automatic
+check at the end of the shift (`leader_auto`, check `staff_list`). Each cell
+carries which list it is judged on, «today» or «tomorrow» (`KelishCellKind`,
+fixed by the check on the cell's first check day), shown on its card; an ADMIN
+may change it (`PUT /kind`).
 """
 from datetime import date
 from typing import Optional
@@ -208,6 +211,7 @@ def list_cells(
     want = _day(day, None) if day else None
     windows = cell_hours.defaults(db)
     events = kelish.load_events(db, [c.id for c in cells])
+    kinds = kelish.load_kinds(db, [c.id for c in cells])
 
     rows, by_day = [], {}
     for c in cells:
@@ -221,6 +225,7 @@ def list_cells(
             "shift": m.shift if m else None,
             "today": today.isoformat(), "tomorrow": tomorrow.isoformat(),
             "can_edit": _can_edit(ctx, c.manager_id, c.leader_id),
+            "kind": kelish.kind_out(kinds.get(c.id)),
             "progress": None, "_day": d,
         })
         if d is not None:
@@ -298,6 +303,7 @@ def get_week(
             "counts": cnt,
         })
     open_any = any(d["editable"] for d in out_days)
+    kind = kelish.kind_out(kelish.load_kinds(db, [c.id]).get(c.id))
     src = listed[-1]
     lo, hi = kelish.window(src)
     last = files[src][1]
@@ -314,6 +320,8 @@ def get_week(
         "tomorrow": tomorrow.isoformat(),
         "can_edit": x["can_edit"],
         "can_roster": x["can_roster"],
+        "kind": kind,
+        "can_set_kind": x["ctx"]["role"] == "admin",
         "days": out_days,
         "rows": rows,
         "removed": kelish.removed(events) if open_any and x["can_roster"] else [],
@@ -517,3 +525,34 @@ def remove_workers(body: RemoveIn, db: Session = Depends(get_db),
                  ("worker", ", ".join(names[:25]) + ("…" if len(names) > 25 else ""))],
     )
     return {"removed": len(names), "names": names}
+
+
+class KindIn(BaseModel):
+    cell_id: int
+    # "today" | "tomorrow" | null — null puts the cell back to «not decided»,
+    # and the check fixes it again on the next check day.
+    kind: Optional[str] = None
+
+
+@router.put("/kind")
+def put_kind(body: KindIn, db: Session = Depends(get_db),
+             payload: dict = Depends(require_page(PAGE))):
+    """Which list task #11 judges for this cell — ADMIN only (the operator,
+    2026-10-05: «shown, and an admin can edit it»)."""
+    if payload.get("role") != "admin":
+        _refuse(403, "read_only")
+    x = _cell(db, payload, body.cell_id)
+    kind = body.kind or None
+    if kind is not None and kind not in kelish.KINDS:
+        _refuse(400, "bad_kind")
+    c = x["c"]
+    before = kelish.kind_out(kelish.load_kinds(db, [c.id]).get(c.id))
+    by_key, by_name = _actor(db, payload)
+    row = kelish.set_kind(db, c.id, kind, by_key, by_name)
+    action_log.enrich(
+        target_kind="cell", target_id=c.id, target_name=c.verifix_code,
+        unit_id=c.manager_id,
+        details=[("cell", c.verifix_code)],
+        changes=[("kind", (before or {}).get("kind") or "—", kind or "—")],
+    )
+    return {"kind": kelish.kind_out(row)}

@@ -8994,3 +8994,188 @@ def _nodirjon_fix_dm(text: str) -> None:
             data={"chat_id": UNPRICED_DM_CHAT, "text": text[:4000]}, timeout=20)
     except Exception as exc:
         print(f"[startup] Nodirjon unit fix DM failed: {exc}")
+
+
+# ── #11 «Ish grafigi» becomes an automatic check (2026-10-05) ────────────────
+#
+# TEMPORARY. `services/leader_auto_t11.py` is the rollout; `leader_auto`'s
+# `staff_list` check is the feature and STAYS. Three flags, three deliveries:
+# the page opened, the switch, and the 4 Oct transition grant.
+
+KELISH_PAGE_FLAG = "kelish_page_open_2026_10_05_v1"
+KELISH_PAGE_ROLES = ("leader", "supervisor", "shift-manager")
+LEADER_AUTO_T11_FLAG = "leader_auto_t11_switch_2026_10_05_v1"
+LEADER_AUTO_T11_GRANT_FLAG = "leader_auto_t11_grant_2026_10_04_v1"
+
+
+def open_kelish_page() -> None:
+    """2026-10-05 (the operator): «Ish grafigi» (/kelish) opens to leaders and
+    brigadirs, who fill it, and to shift-managers, who read it — the page task
+    #11 is now checked on. A stored per-page list shadows
+    ``DEFAULT_PAGE_ACCESS``, so this ADDS the three roles to the stored
+    "kelish" list once (the ``open_production_page_to_managers`` shape); the
+    FLAG protects a later uncheck on the Access tab."""
+    import json
+    from app.permissions import SETTING_KEY
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=KELISH_PAGE_FLAG).first():
+            return
+        row = db.query(AppSetting).filter_by(key=SETTING_KEY).first()
+        if row:
+            try:
+                stored = json.loads(row.value or "{}")
+            except (ValueError, TypeError):
+                stored = None
+            if isinstance(stored, dict):
+                roles = stored.get("kelish")
+                if not isinstance(roles, list):
+                    roles = []
+                add = [r for r in KELISH_PAGE_ROLES if r not in roles]
+                if add:
+                    stored["kelish"] = roles + add
+                    row.value = json.dumps(stored)
+                    print(f"[startup] opened /kelish to {add} (was {roles})")
+        db.add(AppSetting(key=KELISH_PAGE_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] /kelish access not opened: {exc}")
+    finally:
+        db.close()
+
+
+def register_leader_auto_t11() -> None:
+    """Arm the switch (a minute after boot) and the 4 Oct transition grant
+    (four minutes after). Called on EVERY boot — only the flags stop a second
+    run. Never raises."""
+    try:
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        now = datetime.now(timezone.utc)
+        db = SessionLocal()
+        try:
+            if not db.query(AppSetting).filter_by(key=LEADER_AUTO_T11_FLAG).first():
+                schedule_at("leader-auto-t11-switch", now + timedelta(seconds=60),
+                            _leader_auto_t11_job)
+                print("[startup] #11 auto check: switch armed")
+            if not db.query(AppSetting).filter_by(key=LEADER_AUTO_T11_GRANT_FLAG).first():
+                schedule_at("leader-auto-t11-grant", now + timedelta(minutes=4),
+                            _leader_auto_t11_grant_job)
+                print("[startup] #11 auto check: 4 Oct grant armed")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] #11 auto check could not be armed: {exc}")
+
+
+def _t11_dm(text: str) -> None:
+    try:
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] #11 auto check report not delivered: {exc}")
+
+
+def _leader_auto_t11_job() -> None:
+    import html
+    from app.services import action_log, leader_auto_t11 as t11
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_AUTO_T11_FLAG).first():
+            return
+        out = t11.apply(db)
+        db.add(AppSetting(key=LEADER_AUTO_T11_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        action_log.record_system(
+            "leader_config", "ltask.auto_applied", db=db,
+            details=[("tasks", "#11"), ("check", t11.CHECK),
+                     ("units", out["units"]),
+                     ("skipped", len(out["skipped"]) or None),
+                     ("leader_overrides", len(out["leaders"]) or None)])
+        db.commit()
+        print(f"[startup] #11 auto check applied: {out}")
+        text = ("⚙️ <b>#11 «Ish grafigi» — avtomatik tekshiruv yoqildi</b>\n"
+                f"{out['units']} ta brigada · tekshiruv: smena 1 — 20:00, "
+                "smena 2 — 08:00 (30 daqiqa oldin eslatma).\n"
+                "Liderlar bu vazifaga endi rasm yubormaydi.")
+        if out["skipped"]:
+            text += ("\n⚠️ Vazifalarni bittalab yopmaydigan brigadalar "
+                     "o'tkazilmadi: " + esc(", ".join(out["skipped"][:15])))
+        if out["no_shift"]:
+            text += ("\n⚠️ Smenasi yo'q brigadalar o'tkazilmadi: "
+                     + esc(", ".join(out["no_shift"][:15])))
+        if out["leaders"]:
+            text += ("\n\nO'z sozlamasi bor liderlar ham o'tkazildi:\n<pre>"
+                     + esc("\n".join(out["leaders"][:15])) + "</pre>")
+        _t11_dm(text)
+    except Exception as exc:
+        print(f"[startup] #11 auto check FAILED: {exc}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _t11_dm("\U0001F6D1 <b>#11 avtomatik tekshiruv to'liq o'rnatilmadi</b>\n"
+                "Keyingi qayta ishga tushishda takrorlanadi.\n"
+                f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
+def _leader_auto_t11_grant_job() -> None:
+    import html
+    from app.services import action_log, leader_auto_t11 as t11
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_AUTO_T11_GRANT_FLAG).first():
+            return
+        out = t11.grant(db)
+        db.add(AppSetting(key=LEADER_AUTO_T11_GRANT_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        action_log.record_system(
+            "leader_review", "checklist.auto_points_restored", db=db,
+            details=[("task", "#11"), ("days", "04.10 S1 · 04→05.10 S2"),
+                     ("count", len(out["granted"])),
+                     ("not_filled", out["not_filled"] or None),
+                     ("no_checklist", len(out["no_checklist"]) or None),
+                     ("reports", out["resent"] or None),
+                     ("errors", out["errors"] or None)])
+        db.commit()
+        print(f"[startup] #11 transition grant: {out}")
+        text = ("✅ <b>#11 o'tish kuni: «Ish grafigi» to'ldirganlarga ball</b>\n"
+                "04.10 (smena 1) va 04→05.10 kechasi (smena 2): smena oxirigacha "
+                "ro'yxatni to'ldirgan liderlarga vazifa to'liq ball bilan "
+                "hisoblandi.\n"
+                f"Ball berildi: {len(out['granted'])} ta lider · "
+                f"allaqachon bajarilgan: {out['already']} · "
+                f"to'ldirilmagan: {out['not_filled']} · "
+                f"tuzatilgan hisobot yuborildi: {out['resent']}")
+        if out["granted"]:
+            text += "\n<pre>" + esc("\n".join(out["granted"][:40])) + "</pre>"
+        if out["no_checklist"]:
+            text += ("\n⚠️ Ro'yxati to'ldirilgan, lekin chek-listi yo'q "
+                     "(ball berib bo'lmadi):\n<pre>"
+                     + esc("\n".join(out["no_checklist"][:20])) + "</pre>")
+        if out["errors"]:
+            text += f"\n⚠️ O'qib bo'lmadi: {out['errors']} ta lider"
+        _t11_dm(text)
+    except Exception as exc:
+        print(f"[startup] #11 transition grant FAILED: {exc}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _t11_dm("\U0001F6D1 <b>#11 o'tish kuni bali berilmadi</b>\n"
+                f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
