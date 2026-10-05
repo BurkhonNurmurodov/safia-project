@@ -27,17 +27,22 @@ export const CATEGORY_ICON = {
 
 // Same order as notif_queue.KIND_ORDER — the page lists its sections so.
 export const QUEUE_KINDS = [
-  "hr_doc", "edit_batch", "edit_request", "late_day", "dispute", "late_proof",
-  "concern", "task",
+  "hr_doc", "live_doc", "edit_batch", "live_batch", "edit_request", "late_day",
+  "dispute", "late_proof", "concern", "task",
 ];
 
+// The /staff-live twins of hr_doc and edit_batch — the same record over the
+// live Verifix read, told apart by a «Jonli» tag on the row, never by colour.
+export const LIVE_KINDS = { live_doc: "hr_doc", live_batch: "edit_batch" };
+export const isLiveKind = (kind) => kind in LIVE_KINDS;
+
 const QUEUE_ICON = {
-  edit_batch: Trash2, edit_request: PencilLine, late_day: CalendarClock,
+  edit_batch: Trash2, live_batch: Trash2, edit_request: PencilLine, late_day: CalendarClock,
   dispute: Scale, late_proof: Clock, concern: MessageSquareWarning, task: ListTodo,
 };
 
 export const queueIcon = (item) =>
-  item.kind === "hr_doc"
+  item.kind === "hr_doc" || item.kind === "live_doc"
     ? (item.fields?.doc_type === "role_change" ? UserCog : ArrowLeftRight)
     : (QUEUE_ICON[item.kind] || Clock);
 
@@ -118,17 +123,21 @@ export function nameList(names, { t, tl, tx, people = true, max = 3 }) {
 }
 
 /**
- * What one queue item says: {title, sub, subTone, quote, meta[], urgent}. Names go
- * through `tl` (people) and every other stored text through `tx`, the
- * platform's split — English spells NAMES only.
+ * What one queue item says: {title, sub, subTone, quote, meta[], urgent, tag}.
+ * Names go through `tl` (people) and every other stored text through `tx`,
+ * the platform's split — English spells NAMES only. `tag` is the «Jonli» mark
+ * a /staff-live twin wears beside its title (the live kinds render exactly as
+ * the /staff kind they mirror, with that one addition).
  */
 export function queueText(item, { t, tl, tx, lang }) {
   const f = item.fields || {};
   const meta = [];
   const push = (v) => { if (v) meta.push(v); };
   let title = "", sub = "", quote = "", urgent = false, subTone = null;
+  const tag = isLiveKind(item.kind) ? t("notif.q.live") : "";
   switch (item.kind) {
     case "hr_doc":
+    case "live_doc":
       title = f.doc_type === "role_change"
         ? fmt(t("notif.q.roleChange"), { n: f.count, role: tx(f.new_role || "—") })
         : fmt(t("notif.q.exchange"), {
@@ -138,12 +147,14 @@ export function queueText(item, { t, tl, tx, lang }) {
       push(f.by ? fmt(t("notif.q.sentBy"), { by: tl(f.by) }) : "");
       if (f.unit && f.unit !== f.by) push(tl(f.unit));
       push(fmtDate(f.date));
+      push(f.time);   // a live move's clock («09:30–12:00»); blank = the whole day
       if (f.stale_days != null) {
         sub = fmt(t("notif.q.stale"), { n: f.stale_days, max: f.stale_max });
         subTone = "warn";
       }
       break;
     case "edit_batch":
+    case "live_batch":
       title = fmt(t("notif.q.deletion"), { n: f.count });
       quote = nameList(f.workers, { t, tl, tx });
       push(tl(f.unit));
@@ -191,7 +202,7 @@ export function queueText(item, { t, tl, tx, lang }) {
     default:
       title = item.kind;
   }
-  return { title, sub, subTone, quote, meta, urgent };
+  return { title, sub, subTone, quote, meta, urgent, tag };
 }
 
 /** The headline of a feed entry. A folded group's («Yopilgan kunlar: 15 ta»)

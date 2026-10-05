@@ -433,6 +433,17 @@ FOLD = {
     "new_delete_request":        ("supervisor_name", None),
     "admin_record_edited":       ("worker_name",     None),
     "admin_record_deleted":      ("worker_name",     None),
+    # /staff-live's twins (routers/staff_live): the same params as the keys
+    # above them, written with the live mark in the title.
+    "live_day_closed":           ("closer_name",     None),
+    "live_day_reopened":         ("reopener_name",   None),
+    "live_exchange_created":     ("actor_name",      "count"),
+    "live_exchange_approved":    ("target",          "count"),
+    "live_exchange_cancelled":   ("target",          "count"),
+    "live_role_change_new":      ("actor_name",      "count"),
+    "live_role_change_approved": ("new_role",        "count"),
+    "live_delete_request":       ("supervisor_name", None),
+    "live_record_deleted":       ("worker_name",     None),
     "leader_day_report_clean":   ("leader",          None),
     "idle_request_new":          ("leader_name",     None),
 }
@@ -455,11 +466,21 @@ FOLD_TITLES = {
     "new_delete_request": ("O'chirish so'rovlari: {n} ta", "Ўчириш сўровлари: {n} та", "Запросы на удаление: {n}", "Deletion requests: {n}"),
     "admin_record_edited": ("Admin tahrirlagan yozuvlar: {n} ta", "Админ таҳрирлаган ёзувлар: {n} та", "Записи, изменённые админом: {n}", "Records edited by an admin: {n}"),
     "admin_record_deleted": ("Admin o'chirgan yozuvlar: {n} ta", "Админ ўчирган ёзувлар: {n} та", "Записи, удалённые админом: {n}", "Records deleted by an admin: {n}"),
+    # The live page's groups carry the mark its bell rows carry («Jonli · »).
+    "live_day_closed": ("Jonli · Yopilgan kunlar: {n} ta", "Жонли · Ёпилган кунлар: {n} та", "Онлайн · Закрытых дней: {n}", "Live · Days closed: {n}"),
+    "live_day_reopened": ("Jonli · Qayta ochilgan kunlar: {n} ta", "Жонли · Қайта очилган кунлар: {n} та", "Онлайн · Переоткрытых дней: {n}", "Live · Days reopened: {n}"),
+    "live_exchange_created": ("Jonli · Xodim almashinuvi hujjatlari: {n} ta", "Жонли · Ходим алмашинуви ҳужжатлари: {n} та", "Онлайн · Документы обмена сотрудниками: {n}", "Live · Worker exchange documents: {n}"),
+    "live_exchange_approved": ("Jonli · Tasdiqlangan almashinuvlar: {n} ta", "Жонли · Тасдиқланган алмашинувлар: {n} та", "Онлайн · Одобренные обмены: {n}", "Live · Exchanges approved: {n}"),
+    "live_exchange_cancelled": ("Jonli · Bekor qilingan almashinuvlar: {n} ta", "Жонли · Бекор қилинган алмашинувлар: {n} та", "Онлайн · Отменённые обмены: {n}", "Live · Exchanges cancelled: {n}"),
+    "live_role_change_new": ("Jonli · Lavozim o'zgarishi hujjatlari: {n} ta", "Жонли · Лавозим ўзгариши ҳужжатлари: {n} та", "Онлайн · Документы о смене должности: {n}", "Live · Role change documents: {n}"),
+    "live_role_change_approved": ("Jonli · Tasdiqlangan lavozim o'zgarishlari: {n} ta", "Жонли · Тасдиқланган лавозим ўзгаришлари: {n} та", "Онлайн · Одобренные смены должности: {n}", "Live · Role changes approved: {n}"),
+    "live_delete_request": ("Jonli · O'chirish so'rovlari: {n} ta", "Жонли · Ўчириш сўровлари: {n} та", "Онлайн · Запросы на удаление: {n}", "Live · Deletion requests: {n}"),
+    "live_record_deleted": ("Jonli · Admin o'chirgan yozuvlar: {n} ta", "Жонли · Админ ўчирган ёзувлар: {n} та", "Онлайн · Записи, удалённые админом: {n}", "Live · Records deleted by an admin: {n}"),
     "leader_day_report_clean": ("Toza lider hisobotlari: {n} ta", "Тоза лидер ҳисоботлари: {n} та", "Чистые отчёты лидеров: {n}", "Clean leader reports: {n}"),
     "idle_request_new": ("Yangi kutishlar: {n} ta", "Янги кутишлар: {n} та", "Новые ожидания: {n}", "New waiting entries: {n}"),
 }
 _LANG_AT = {"uz": 0, "uz_cyrl": 1, "ru": 2, "en": 3}
-_COUNT_DISTINCT = ("day_closed", "day_reopened")
+_COUNT_DISTINCT = ("day_closed", "day_reopened", "live_day_closed", "live_day_reopened")
 
 
 def fold_title(nkey: str, n: int, lang: str) -> Optional[str]:
@@ -792,7 +813,8 @@ def _push_decisions(db: Session, payload: dict, lang: str) -> dict[str, list[dic
     at = _LANG_AT.get(lang, 0)
     w = {k: v[at] for k, v in _ACT_WORDS.items()}
     out: dict[str, list[dict]] = {}
-    for source in (notif_queue._hr_docs, notif_queue._edit_requests, notif_queue._edit_batches):
+    for source in (notif_queue._hr_docs, notif_queue._live_docs, notif_queue._edit_requests,
+                   notif_queue._edit_batches, notif_queue._live_batches):
         try:
             with db.begin_nested():
                 items = source(db, payload)

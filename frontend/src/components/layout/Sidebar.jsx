@@ -14,7 +14,8 @@ import {
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, IdCard, Briefcase, CalendarRange,
-  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, UserMinus } from "lucide-react";
+  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, UserMinus,
+  Radio } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import AppUpdateButton from "./AppUpdateButton";
@@ -41,6 +42,12 @@ const ALL_LINKS = [
   // /downtime page reads, so it sits beside it in Production, not in the lab.
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
+  // «Verifix to'g'irlash · Jonli» — /staff over the live Verifix read, built to
+  // replace it: the same page, the same rights inside, a different source. Page
+  // key `staff-live`, opened on the Access tab like any page (admin-only until
+  // then). While both pages exist the label keeps «· Jonli»; the icon is its own
+  // (Radio, the live feed) so the two rows differ by more than that suffix.
+  { to: "/staff-live", page: "staff-live", key: "nav.staffLive", icon: Radio, group: "people" },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
@@ -71,7 +78,8 @@ const ALL_LINKS = [
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
-  // Verifix holds. The live /staff copy moved in here — same data source.
+  // Verifix holds. (/staff-live sat here until 2026-10-05; it is a «people»
+  // page now, beside the /staff it replaces.)
   { to: "/verifix/api", adminOnly: true, key: "nav.vfx.api", icon: Network, group: "verifix" },
   { to: "/verifix/employees", adminOnly: true, key: "nav.vfx.employees", icon: IdCard, group: "verifix" },
   { to: "/verifix/jobs", adminOnly: true, key: "nav.vfx.jobs", icon: Briefcase, group: "verifix" },
@@ -80,10 +88,6 @@ const ALL_LINKS = [
   { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
   { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
   { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
-  // «Verifix to'g'irlash · Jonli» — /staff with Verifix as the source; a lab copy whose
-  // documents land in its own tables only. Page key `staff-live`, admin-only by default
-  // until the operator opens it on the Access tab.
-  { to: "/staff-live", page: "staff-live", key: "nav.staffLive", icon: Fingerprint, group: "verifix" },
   // «Ta'lim» — video lessons published to profiles. First entry in its own
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.
@@ -154,13 +158,29 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   });
   const pendingCount = pendingData?.count ?? 0;
 
+  // The live page's own queue (its drafts and deletion requests, in the
+  // live_* tables). Asked only while this viewer may OPEN /staff-live —
+  // decided once, from the very inputs the links filter below reads — so
+  // the badge never polls a page the nav does not show (a 403 every 30 s).
+  const liveVisible = canAccessPage(auth?.role, "staff-live", access, capPages, deniedPages);
+  const { data: livePendingData } = useQuery({
+    queryKey: ["staff-live-documents-pending-count"],
+    queryFn: () => api.get("/api/staff-live/documents/pending-count").then(r => r.data),
+    enabled: showBadge && liveVisible,
+    refetchInterval: 30_000,
+  });
+  const livePendingCount = livePendingData?.count ?? 0;
+
   // One map, so a link carries a badge by BEING in it — the old code tested
   // `to === "/staff"` in three places, which is why a second badge could not
-  // exist without a fourth. (The /idle-cell badge lived here until
-  // 2026-08-22; a leader's ojidaniya now counts on save, so there is no queue
-  // left to count.)
+  // exist without a fourth. The /staff-live badge (2026-10-05) is exactly
+  // that second entry: one line here and nothing anywhere else — the row,
+  // the rail dot and the group header all read the map. (The /idle-cell
+  // badge lived here until 2026-08-22; a leader's ojidaniya now counts on
+  // save, so there is no queue left to count.)
   const BADGES = {
     "/staff": showBadge ? pendingCount : 0,
+    "/staff-live": showBadge ? livePendingCount : 0,
   };
   const badgeFor = (to) => BADGES[to] || 0;
 
@@ -413,8 +433,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             if (!items.length) return null;
             const collapsed = Boolean(g.labelKey) && openGroup !== g.id;
             const activeInside = items.some(l => isLinkActive(l.to));
-            // Pending Verifix work must stay visible with «Люди» collapsed —
-            // the count bubbles up onto the group header.
+            // Pending Verifix work (/staff and /staff-live) must stay visible
+            // with «Люди» collapsed — the counts bubble up onto the group header.
             const groupBadge = collapsed
               ? items.reduce((n, l) => n + badgeFor(l.to), 0) : 0;
             const GroupIcon = g.icon;
@@ -443,8 +463,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                   >
                     <span className="relative flex-shrink-0">
                       <GroupIcon size={16} />
-                      {/* Closed on the rail while /staff carries pending Verifix
-                          work — keep the dot rather than hiding the queue. */}
+                      {/* Closed on the rail while /staff or /staff-live carries
+                          pending work — keep the dot rather than hiding the queue. */}
                       {groupBadge > 0 && !expanded && (
                         <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
                       )}

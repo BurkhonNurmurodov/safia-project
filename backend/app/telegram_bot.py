@@ -1643,10 +1643,12 @@ def _caller_name(call: types.CallbackQuery) -> str:
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ap:"))
 def _approval_callback(call: types.CallbackQuery):
     """Inline approve/reject. callback_data: ``ap:<kind>:<a|r>:<ref>`` where kind
-    ∈ reg|er|eb|hr. Admins may act on every kind; a non-admin (the receiving
-    supervisor of a people-exchange) may act only on a request we explicitly
-    sent them a confirm button for. reg/er/eb are never sent to supervisors, so
-    the notice check keeps those admin-only."""
+    ∈ reg|er|eb|hr|ll|ld, or lv|lb for the live «Verifix to'g'irlash» page's
+    document / deletion batch (`app.approvals`). Admins may act on every kind;
+    a non-admin (the receiving supervisor of a people-exchange, a grantee who
+    can open the live page) may act only on a request we explicitly sent them a
+    confirm button for. reg/er/eb/lb are never sent to supervisors, so the
+    notice check keeps those admin-only (plus a requests grantee)."""
     try:
         _, code, act, ref = call.data.split(":", 3)
     except ValueError:
