@@ -7233,7 +7233,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
   `components/staff/LiveBits.jsx` and renders under `S.live`: the read line +
   «Yangilash» + read errors + the day's standing (closed in «Tasdiqlash», as on
   /staff), the status strip (Hammasi · Ichkarida · Ketgan · Kelmagan ·
-  Kechikkan · Erta ketgan · Belgisiz · Ko'chirilgan) and a Status column,
+  Erta ketgan · Belgisiz · Ko'chirilgan — «Kechikkan» is gone, a saved pick of
+  it reads as Hammasi) and a Status column,
   **Keldi and Ketdi as two columns — Ketdi is written only once the worker is
   out of this unit** (left, or moved on at that minute; empty while inside or on
   a break), «hours carried here under another unit's name», the rules and (admins)
@@ -7268,8 +7269,15 @@ rights — over a different source, and it is being built to REPLACE /staff.
   with 2 decimals, summary figures with 1. A day that cannot be shown (an
   error, nobody on the unit's cells) is ONE block with the reason and one
   action (`LiveDayState`: «Qayta urinish» for Verifix down — Verifix's own
-  text to admins only), never figures of 0 above empty filters. Late and early
-  leave are WORDS under the time («34 daq kech», «160 daq erta»), and a time a
+  text to admins only), never figures of 0 above empty filters. **Lateness
+  is not printed anywhere on the page** (the operator, 2026-10-05: «no one
+  cares about late comers») — not under «Keldi», not on the strip, not in the
+  rules text; the backend still computes `late` and nothing reads it. **Every
+  table row is ONE line high** (same day): early leave and a missing check-out
+  are words AFTER the time on its own line («15:20 · 160 daq erta»), a move or
+  a pending change sits on the name's line on a wide table (on a narrow one it
+  joins the job-title line every row carries), and the pending chip is
+  `leading-4` so it fits the text line. A time a
   mark stood in for wears a muted «≈» (a dotted underline means a cell link).
   The unit is picked in a required `FilterPanel` section (no ✕, the name
   shortened «Ergashev M. · S2»; a remembered unit the list no longer offers is

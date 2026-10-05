@@ -42,7 +42,7 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter, FilterPanel, PickFilter } 
 import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
 import {
   LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, n2 as liveN2,
+  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, LIVE_FILTERS, n2 as liveN2,
 } from "../components/staff/LiveBits";
 import useIsMobile from "../hooks/useIsMobile";
 import DayStepper from "../components/ui/DayStepper";
@@ -504,7 +504,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
   // Live only: the status strip over the table, and the row an admin opened to
   // see the Verifix read behind it.
-  const [liveFilter, setLiveFilter]     = usePersistentState("staff_live_workers_status", "all");
+  const [liveFilterSaved, setLiveFilter] = usePersistentState("staff_live_workers_status", "all");
+  // A filter the strip no longer offers (the retired «Kechikkan») reads as all.
+  const liveFilter = LIVE_FILTERS.includes(liveFilterSaved) ? liveFilterSaved : "all";
   const [openRaw, setOpenRaw]           = useState(null);
   // Live: below lg (a phone, a tablet held upright) the rows read as a list —
   // the table needs a laptop's width.
@@ -1353,13 +1355,21 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
         <Fragment key={w.id}>
           <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
             <td className={`${td} !whitespace-normal`}>
-              <LiveName w={w} open={openRaw === w.id}
-                onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
-              {/* Under the name: the job title while the table has no column
-                  for it, and a move / a pending change whatever its width. */}
-              <div className={`mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs ${
-                w.moved || w.pending?.length > 0 ? "" : "@min-[56rem]:hidden"}`} style={{ color: "var(--text-3)" }}>
-                <span className="@min-[56rem]:hidden">{tx(w.job_title) || "—"}</span>
+              {/* Every row is one height (the operator, 2026-10-05). A wide
+                  table keeps a move / a pending change on the name's own line;
+                  a narrow one carries the job title under every name, and the
+                  notes join that line. */}
+              <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                <LiveName w={w} open={openRaw === w.id}
+                  onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+                {(w.moved || w.pending?.length > 0) && (
+                  <span className="hidden @min-[56rem]:inline-flex items-center gap-x-2 text-xs" style={{ color: "var(--text-3)" }}>
+                    <LiveRowNotes w={w} />
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs @min-[56rem]:hidden" style={{ color: "var(--text-3)" }}>
+                <span>{tx(w.job_title) || "—"}</span>
                 <LiveRowNotes w={w} />
               </div>
             </td>

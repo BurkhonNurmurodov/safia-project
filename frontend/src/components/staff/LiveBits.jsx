@@ -48,7 +48,7 @@ const INK = { "#22c55e": "var(--status-ok)", "#eab308": "var(--status-warn)", "#
 export function LiveChip({ color, children, dashed = false, title }) {
   return (
     <span title={title}
-      className="inline-flex items-center gap-1 px-1.5 py-px rounded-md text-[11px] font-medium whitespace-nowrap tabular-nums"
+      className="inline-flex items-center gap-1 px-1.5 py-px rounded-md text-[11px] leading-4 font-medium whitespace-nowrap tabular-nums"
       style={{ background: `color-mix(in srgb, ${color} 10%, var(--bg-card))`, color: INK[color] || "var(--text-2)",
         border: `1px ${dashed ? "dashed" : "solid"} color-mix(in srgb, ${color} 35%, transparent)` }}>
       {children}
@@ -70,17 +70,17 @@ export function LiveStatusChip({ status }) {
 }
 
 // ── the status strip ─────────────────────────────────────────────────────────
-// The old live page's eight filters, kept on /staff's table (the operator's
-// call): a status is a fact about the worker right now, a flag (late, left
-// early, no check-out) is a fact about their clock.
-export const LIVE_FILTERS = ["all", "inside", "left", "absent", "late", "early", "missing", "moved"];
+// The old live page's filters, kept on /staff's table (the operator's call): a
+// status is a fact about the worker right now, a flag (left early, no
+// check-out) is a fact about their clock. Lateness is not offered — nobody
+// reads it (the operator, 2026-10-05: «do not mention them»).
+export const LIVE_FILTERS = ["all", "inside", "left", "absent", "early", "missing", "moved"];
 
 export function liveMatch(w, f) {
   switch (f) {
     case "inside": return w.status === "inside" || w.status === "break";
     case "left": return w.status === "left";
     case "absent": return w.status === "absent" || w.status === "not_yet";
-    case "late": return !!w.late;
     case "early": return !!w.early_out;
     case "missing": return !!w.missing;
     case "moved": return w.status === "moved_out" || w.moved?.dir === "in" || !!w.on_task;
@@ -95,7 +95,7 @@ export function liveMatchExtra(x, f) {
   switch (f) {
     case "moved": return true;
     case "missing": return x.status === "no_out";
-    case "late": case "early": case "absent": return false;
+    case "early": case "absent": return false;
     default: return liveMatch(x, f);
   }
 }
@@ -347,9 +347,10 @@ function MarkTime({ time, tip }) {
   );
 }
 
-// The clock cells. Late / early leave are WORDS under the time («34 daq
-// kech»): «+34 daq» beside an arrival read as extra time. `inline` (a phone
-// row) puts them after the time instead.
+// The clock cells, ONE line each so every row is one height (the operator,
+// 2026-10-05). Lateness is not printed at all; early leave and a missing
+// check-out are WORDS after the time («160 daq erta») — «−160 daq» beside a
+// departure read as a sum.
 function ClockNote({ tone, children }) {
   return <span className="text-xs whitespace-nowrap" style={{ color: tone }}>{children}</span>;
 }
@@ -358,10 +359,7 @@ export function LiveClockIn({ w, inline = false }) {
   const { t } = useLang();
   if (!w.clock_in) return <span style={{ color: "var(--text-4)" }}>—</span>;
   const time = w.in_src && w.in_src !== "report" ? <MarkTime time={w.clock_in} tip={t("staffLive.inMark")} /> : w.clock_in;
-  const note = w.late ? <ClockNote tone="var(--status-warn)">{fill(t("staffLive.lateBy"), { n: w.late })}</ClockNote> : null;
-  return inline
-    ? <span className="inline-flex items-center gap-1.5 whitespace-nowrap">{time}{note && <>{" · "}{note}</>}</span>
-    : <span className="flex flex-col">{<span>{time}</span>}{note}</span>;
+  return inline ? <span className="whitespace-nowrap">{time}</span> : time;
 }
 
 // Clock Out is written only once the worker is OUT of this unit (the operator,
@@ -374,13 +372,13 @@ export function LiveClockOut({ w, inline = false }) {
     ? (w.out_src && w.out_src !== "report"
       ? <MarkTime time={out} tip={t(w.out_src === "last_mark" ? "staffLive.outLastMark" : w.out_src === "gate" ? "staffLive.outGate" : "staffLive.outMark")} />
       : out)
-    : (inline ? null : <span style={{ color: "var(--text-4)" }}>—</span>);
+    : null;
   // The status column already says «Chiqish belgisi yo'q» for that row.
   const note = w.early_out
     ? <ClockNote tone="var(--status-warn)">{fill(t("staffLive.earlyBy"), { n: w.early_out })}</ClockNote>
     : w.missing && w.status !== "no_out" ? <ClockNote tone="var(--status-bad)">{t("staffLive.missing")}</ClockNote> : null;
-  if (inline) return time || note ? <span className="inline-flex items-center gap-1.5 whitespace-nowrap">{time}{time && note && " · "}{note}</span> : null;
-  return <span className="flex flex-col">{<span>{time}</span>}{note}</span>;
+  if (time || note) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap">{time}{time && note && " · "}{note}</span>;
+  return inline ? null : <span style={{ color: "var(--text-4)" }}>—</span>;
 }
 
 // The name as the row's first cell, SHORT — the surname's initial and the
@@ -586,9 +584,7 @@ export function LiveFooter({ data }) {
           <p>{t(live.formula ? "staffLive.hoursPlain" : "staffLive.hoursClockPlain")}</p>
           <p>{t("staffLive.soFarNote")}</p>
           <p>{fill(t("staffLive.moveRule"), { min: live.rules?.min_moved_hours ?? 2 })}</p>
-          <p>{fill(t("staffLive.rules"), {
-            late: live.rules?.late_grace, early: live.rules?.early_grace, miss: live.rules?.missing_after,
-          })}</p>
+          <p>{fill(t("staffLive.rules"), { early: live.rules?.early_grace, miss: live.rules?.missing_after })}</p>
           {d && (
             <div className="pt-2 tabular-nums space-y-0.5">
               <div className="font-semibold" style={{ color: "var(--text-2)" }}>{t("staffLive.diag")}</div>
