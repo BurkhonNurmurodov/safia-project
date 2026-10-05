@@ -1,19 +1,27 @@
 // The pieces only the LIVE «Verifix to'g'irlash» adds to /staff's Workers tab
-// (`/staff-live`, the lab — `StaffApiContext` decides). Everything else on that
-// page is /staff's own component; these say what only a live source can say:
-// when the stored Verifix read was taken, who is inside right now, the hours a
-// worker carried here while their name sits on another unit's day, and (for
-// admins) what the read held.
+// (`/staff-live` — `StaffApiContext` decides). Everything else on that page is
+// /staff's own component; these say what only a live source can say: when the
+// stored Verifix read was taken, where the day stands, who is inside right now,
+// the hours a worker carried here while their name sits on another unit's day,
+// and (for admins) what the read held.
+//
+// The look (2026-10-05, the operator: «I must know how it looks on
+// production»): no lab notice, no box around every sentence — the day's
+// standing and the read's freshness share one header line, the summary is
+// three figures on the card itself, the rules fold away under one link, and a
+// phone reads a list instead of a ten-column table scrolled sideways.
+import { useState } from "react";
 import {
-  AlertTriangle, ArrowRight, FlaskConical, Info, Loader2, Lock, RefreshCw, Unlock, ArrowRightLeft,
+  AlertTriangle, ArrowRight, ChevronDown, Info, Lock, RefreshCw, Unlock,
 } from "lucide-react";
 import Button from "../ui/Button";
+import CellLink from "../ui/CellLink";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 
 export const fill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 export const hhmm = (iso) => (iso ? String(iso).slice(11, 16) : "");
-const n2 = (v) => (v == null ? "—" : String(Math.round(v * 100) / 100));
+export const n2 = (v) => (v == null ? "—" : String(Math.round(v * 100) / 100));
 
 // A row's status — the traffic light for what is wrong (no check-out, not
 // come), green for inside, slate for everything that is simply over.
@@ -32,16 +40,15 @@ export const STATUS_TONE = {
 // A chip's TEXT takes the theme's status ink (CLAUDE.md: --status-ok/warn/bad
 // are the AA shades of the traffic light); the hex only tints the fill. The
 // raw #eab308 as text on its own tint read 1.7:1 in the light theme. The tint
-// is mixed over the CARD, never over whatever the chip sits on: inside the
-// amber standing line a translucent amber stacked on amber fell under AA again.
+// is mixed over the CARD, never over whatever the chip sits on.
 const INK = { "#22c55e": "var(--status-ok)", "#eab308": "var(--status-warn)", "#ef4444": "var(--status-bad)" };
 
 export function LiveChip({ color, children, dashed = false, title }) {
   return (
     <span title={title}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap"
-      style={{ background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`, color: INK[color] || "var(--text-2)",
-        border: `1px ${dashed ? "dashed" : "solid"} ${color}66` }}>
+      className="inline-flex items-center gap-1 px-1.5 py-px rounded-md text-[11px] font-medium whitespace-nowrap tabular-nums"
+      style={{ background: `color-mix(in srgb, ${color} 10%, var(--bg-card))`, color: INK[color] || "var(--text-2)",
+        border: `1px ${dashed ? "dashed" : "solid"} color-mix(in srgb, ${color} 35%, transparent)` }}>
       {children}
     </span>
   );
@@ -53,9 +60,9 @@ export function LiveStatusChip({ status }) {
   return (
     // On a phone the label may take two lines: «Chiqish belgisi yo'q» on one
     // line pushed the status column past a 320px screen.
-    <span className="inline-flex items-center max-sm:items-start gap-1.5 text-xs whitespace-nowrap max-sm:whitespace-normal"
+    <span className="inline-flex items-center max-sm:items-start gap-1.5 whitespace-nowrap max-sm:whitespace-normal"
       style={{ color: "var(--text-2)" }}>
-      <span className="w-2 h-2 rounded-full flex-shrink-0 max-sm:mt-[4px]" style={{ background: color }} />
+      <span className="w-2 h-2 rounded-full flex-shrink-0 max-sm:mt-[5px]" style={{ background: color }} />
       {t(`staffLive.st.${status}`)}
     </span>
   );
@@ -97,7 +104,7 @@ export function liveFilterOptions(rows, t) {
   return LIVE_FILTERS.map((f) => [f, `${t(`staffLive.f.${f}`)} · ${primary.filter((w) => liveMatch(w, f)).length}`]);
 }
 
-// ── the header: lab note, the read, the day's standing ───────────────────────
+// ── the header: where the day stands, and how fresh the read is ──────────────
 function readAt(live) {
   const p = live?.pulled_at || "";
   if (!p) return "";
@@ -111,11 +118,11 @@ function readAt(live) {
 // opens «Tasdiqlash» on this day — offered where the close endpoint accepts it
 // (`close.closable`: nobody inside, on a break or still due — everybody left,
 // or nobody came and nobody is due); before that the line says when it can.
-function CloseLine({ close, counts, onGoClose }) {
+function Standing({ close, counts, onGoClose }) {
   const { t } = useLang();
-  if (!close) return null;
+  if (!close) return <div className="flex-1" />;
   const s = close.state;
-  const tone = s === "closed" ? "#22c55e" : s === "all_left" ? "#eab308" : "#94a3b8";
+  const tone = s === "closed" ? "var(--status-ok)" : s === "all_left" ? "var(--status-warn)" : "var(--text-3)";
   const text = s === "closed"
     ? fill(t("staffLive.close.closed_manual"), { at: hhmm(close.at), by: close.by || "—" })
     : s === "all_left"
@@ -132,36 +139,70 @@ function CloseLine({ close, counts, onGoClose }) {
   const open = s === "open" || s === "all_left";
   // A payload from before `closable` existed: «everybody left» was the rule.
   const closable = close.closable ?? s === "all_left";
+  const notes = open ? [
+    close.missing > 0 && { tone: "var(--status-bad)", text: fill(t("staffLive.close.missingNote"), { n: close.missing }) },
+    close.pending > 0 && { tone: "var(--status-warn)", text: fill(t("staffLive.close.pendingNote"), { n: close.pending }) },
+    close.notified_at && { tone: "var(--text-3)", text: fill(t("staffLive.close.notified"), { time: hhmm(close.notified_at) }) },
+  ].filter(Boolean) : [];
   return (
-    <div className="rounded-xl px-3 py-2 flex flex-wrap items-start gap-2 text-[13px]"
-      style={{ background: `${tone}14`, border: `1px solid ${tone}55`, color: "var(--text-1)" }}>
-      {s === "closed"
-        ? <Lock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />
-        : <Unlock size={15} style={{ color: tone }} className="flex-shrink-0 mt-0.5" />}
-      <div className="min-w-[12rem] flex-1">
-        <div>{text}</div>
-        {onGoClose && !closable && (s === "open" || s === "waiting") && (
-          <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{t("staffLive.close.where")}</div>
-        )}
-        {open && (close.missing > 0 || close.pending > 0 || close.notified_at) && (
-          <div className="flex items-center gap-1.5 flex-wrap mt-1">
-            {close.missing > 0 && <LiveChip color="#ef4444">{fill(t("staffLive.close.missingNote"), { n: close.missing })}</LiveChip>}
-            {close.pending > 0 && <LiveChip color="#eab308">{fill(t("staffLive.close.pendingNote"), { n: close.pending })}</LiveChip>}
-            {close.notified_at && (
-              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
-                {fill(t("staffLive.close.notified"), { time: hhmm(close.notified_at) })}
-              </span>
-            )}
-          </div>
-        )}
+    <div className="flex-1 min-w-0 flex flex-wrap items-start gap-x-4 gap-y-2">
+      <div className="flex items-start gap-2.5 min-w-[14rem] flex-1">
+        {s === "closed"
+          ? <Lock size={16} style={{ color: tone }} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
+          : <Unlock size={16} style={{ color: tone }} className="flex-shrink-0 mt-0.5" aria-hidden="true" />}
+        <div className="min-w-0">
+          <div className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{text}</div>
+          {onGoClose && !closable && (s === "open" || s === "waiting") && (
+            <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{t("staffLive.close.where")}</div>
+          )}
+          {notes.length > 0 && (
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs mt-1">
+              {notes.map((x, i) => <span key={i} style={{ color: x.tone }}>{x.text}</span>)}
+            </div>
+          )}
+        </div>
       </div>
       {closable && onGoClose && (
-        // A phone gives it a row of its own, and a long label (ru) wraps.
+        // A phone gives it a row of its own (under the text), and a long
+        // label (ru) wraps instead of running off the card.
         <Button size="md" variant="secondary" onClick={onGoClose}
-          className="flex-shrink-0 self-center max-sm:flex-shrink max-sm:ml-[23px] max-sm:max-w-[calc(100%-23px)] max-sm:text-left max-sm:justify-start">
-          {t("staffLive.close.go")} <ArrowRight size={14} />
+          className="flex-shrink-0 max-sm:ml-[26px] max-sm:max-w-[calc(100%-26px)] max-sm:text-left max-sm:justify-start">
+          {t("staffLive.close.go")} <ArrowRight size={14} aria-hidden="true" />
         </Button>
       )}
+    </div>
+  );
+}
+
+// How fresh the read is. Today's day is read by the minute job, so it says
+// «Jonli» with a breathing dot; a past day is the read that was stored.
+function Freshness({ live, onRefresh, refreshing }) {
+  const { t } = useLang();
+  const at = readAt(live);
+  const isLive = !!live?.auto?.on;
+  const failed = !!live?.read_error;
+  const dot = failed ? "#eab308" : isLive ? "#22c55e" : "#94a3b8";
+  const label = refreshing
+    ? t("staffLive.refreshing")
+    : !live?.pulled_at
+      ? t("staffLive.notReadYet")
+      : isLive ? fill(t("staffLive.liveAt"), { time: at }) : fill(t("staffLive.readAt"), { time: at });
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0 max-sm:w-full">
+      <span className="inline-flex items-center gap-2 text-xs tabular-nums whitespace-nowrap"
+        style={{ color: "var(--text-2)" }}
+        title={isLive ? fill(t("staffLive.liveTitle"), { time: at || "—" }) : undefined}>
+        <span className="relative inline-flex w-2 h-2" aria-hidden="true">
+          {isLive && !failed && !refreshing && (
+            <span className="absolute inset-0 rounded-full live-dot" style={{ background: dot, opacity: 0.5 }} />
+          )}
+          <span className="relative w-2 h-2 rounded-full" style={{ background: dot }} />
+        </span>
+        <span role="status">{label}</span>
+      </span>
+      <Button size="lg" variant="secondary" disabled={!onRefresh} loading={refreshing}
+        onClick={onRefresh} aria-label={t("staffLive.refresh")} title={t("staffLive.refresh")}
+        className="!px-0 w-[38px] max-sm:ml-auto" icon={<RefreshCw size={15} />} />
     </div>
   );
 }
@@ -170,33 +211,16 @@ export function LiveHeader({ data, onRefresh, refreshing, onGoClose }) {
   const { t } = useLang();
   const live = data?.live;
   return (
-    <div className="px-3 pt-3 space-y-2">
-      <div className="rounded-xl px-3 py-2 text-[12px] flex gap-2"
-        style={{ background: "var(--bg-inner)", border: "1px dashed var(--border-md)", color: "var(--text-2)" }}>
-        <FlaskConical size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
-        <span>{t("staffLive.lab")}</span>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button size="lg" variant="secondary" icon={<RefreshCw size={14} />} loading={refreshing}
-          disabled={!onRefresh} onClick={onRefresh}>
-          {t("staffLive.refresh")}
-        </Button>
-        <span className="text-xs tabular-nums inline-flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-          {refreshing && <Loader2 size={13} className="animate-spin" />}
-          {refreshing
-            ? t("staffLive.loading")
-            : live
-              ? [
-                live.pulled_at ? fill(t("staffLive.updated"), { time: readAt(live) }) : t("staffLive.notReadYet"),
-                t(live.auto?.on ? "staffLive.autoNote" : "staffLive.storedNote"),
-              ].join(" · ")
-              : ""}
-        </span>
+    <>
+      <div className="px-4 pt-4 flex flex-wrap items-start gap-x-6 gap-y-3">
+        <Standing close={live?.close} counts={live?.counts} onGoClose={onGoClose} />
+        {live && <Freshness live={live} onRefresh={onRefresh} refreshing={refreshing} />}
       </div>
       {data?.error && (
-        <div className="rounded-xl px-3 py-2.5 text-sm flex gap-2"
-          style={{ background: "#ef444414", border: "1px solid #ef444455", color: "var(--text-1)" }}>
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+        <div className="mx-4 mt-3 rounded-lg px-3 py-2.5 text-sm flex gap-2"
+          style={{ background: "color-mix(in srgb, #ef4444 8%, var(--bg-card))",
+            border: "1px solid color-mix(in srgb, #ef4444 30%, transparent)", color: "var(--text-1)" }}>
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: "var(--status-bad)" }} aria-hidden="true" />
           <span>
             {data.error === "not_configured" ? t("staffLive.err.not_configured")
               : data.error === "no_cells" ? t("staffLive.err.no_cells")
@@ -207,13 +231,55 @@ export function LiveHeader({ data, onRefresh, refreshing, onGoClose }) {
         </div>
       )}
       {live?.read_error && (
-        <div className="rounded-xl px-3 py-2 text-xs flex gap-2"
-          style={{ background: "#eab30814", border: "1px solid #eab30855", color: "var(--text-1)" }}>
-          <AlertTriangle size={14} className="flex-shrink-0 mt-px" style={{ color: "#eab308" }} />
+        <div className="mx-4 mt-3 text-xs flex gap-2" style={{ color: "var(--status-warn)" }}>
+          <AlertTriangle size={14} className="flex-shrink-0 mt-px" aria-hidden="true" />
           <span>{fill(t("staffLive.readError"), { at: hhmm(live.read_error.at), msg: live.read_error.message || "" })}</span>
         </div>
       )}
-      {live && <CloseLine close={live.close} counts={live.counts} onGoClose={onGoClose} />}
+    </>
+  );
+}
+
+// ── the day in three figures ─────────────────────────────────────────────────
+// On the card itself, no boxes: who came, who counts in the загрузка, and the
+// загрузка's hours. They count the rows ON SCREEN (the /staff rule), so a
+// narrowed view says so beside them.
+function Stat({ label, children, sub, className = "" }) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className="text-xs" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-1 text-xl sm:text-2xl font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>
+        {children}
+      </div>
+      {sub && <div className="text-xs mt-0.5 tabular-nums" style={{ color: "var(--text-3)" }}>{sub}</div>}
+    </div>
+  );
+}
+
+export function LiveSummary({ came, total, counted, countedOf, hours, avg, soFar, filtered, schedule = null }) {
+  const { t } = useLang();
+  const pct = total > 0 ? Math.round((came / total) * 100) : null;
+  const of = (n) => <span className="text-sm sm:text-base font-normal" style={{ color: "var(--text-3)" }}> / {n}</span>;
+  return (
+    <div className="px-4 pt-5">
+      {/* A phone: two figures on the first line, the hours (and their
+          average) on a line of their own instead of a three-line sub. */}
+      <div className={`grid grid-cols-2 gap-x-4 gap-y-4 sm:gap-8 ${schedule ? "sm:grid-cols-4 sm:max-w-4xl" : "sm:grid-cols-3 sm:max-w-3xl"}`}>
+        <Stat label={t("staffLive.sum.came")} sub={pct != null ? `${pct}%` : null}>{came}{of(total)}</Stat>
+        <Stat label={t("staffLive.sum.counted")}>{counted}{of(countedOf)}</Stat>
+        <Stat className={schedule ? "" : "max-sm:col-span-2"} label={t("staffLive.sum.hours")}
+          sub={avg != null ? [fill(t("staffLive.sum.avg"), { n: n2(avg) }), soFar && t("staffLive.sum.soFar")].filter(Boolean).join(" · ") : null}>
+          {counted ? n2(Math.round(hours * 10) / 10) : "—"}
+        </Stat>
+        {schedule && (
+          <Stat label={t("staffLive.sum.schedule")}>
+            <span className="text-lg sm:text-xl">{schedule}</span>
+          </Stat>
+        )}
+      </div>
+      {filtered && (
+        <div className="mt-2 text-xs" style={{ color: "var(--brand-text)" }}>{filtered}</div>
+      )}
     </div>
   );
 }
@@ -225,7 +291,7 @@ export function LiveRowNotes({ w }) {
   return (
     <>
       {w.moved && (
-        <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+        <span className="text-xs whitespace-nowrap" style={{ color: "var(--text-3)" }}>
           {fill(t(w.moved.dir === "out" ? "staffLive.movedOut" : "staffLive.movedIn"),
             { unit: w.moved.task ? w.moved.unit : tl(w.moved.unit || "—"), t: w.moved.at })}
         </span>
@@ -265,8 +331,67 @@ export function LiveClockOut({ w }) {
           : out)
         : <span style={{ color: "var(--text-4)" }}>—</span>}
       {w.early_out ? <LiveChip color="#eab308">{fill(t("staffLive.earlyOut"), { n: w.early_out })}</LiveChip> : null}
-      {w.missing ? <LiveChip color="#ef4444">{t("staffLive.missing")}</LiveChip> : null}
+      {/* The status column already says «Chiqish belgisi yo'q» for that row. */}
+      {w.missing && w.status !== "no_out" ? <LiveChip color="#ef4444">{t("staffLive.missing")}</LiveChip> : null}
     </span>
+  );
+}
+
+// The name as the row's first cell. For an admin it opens the Verifix read
+// behind the row — a button that looks like the name until it is pointed at.
+export function LiveName({ w, open, onToggle, className = "" }) {
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  if (!onToggle || !w.raw) return <span className={className} style={{ color: "var(--text-1)" }}>{tl(w.worker_name)}</span>;
+  return (
+    <button type="button" aria-expanded={open} onClick={onToggle} title={t("staffLive.rawHint")}
+      className={`text-left rounded-sm hover:underline underline-offset-2 focus-visible:underline ${className}`}
+      style={{ color: "var(--text-1)" }}>
+      {tl(w.worker_name)}
+    </button>
+  );
+}
+
+// ── a phone reads a list, not a ten-column table scrolled sideways ───────────
+// One worker per row: the name and status first (the question the page is
+// opened for), then role · cell, then the clock and the hours. A worker who
+// never clocked in has no clock line — their schedule says what was expected.
+export function LivePhoneList({ rows, openRaw, setOpenRaw, isAdmin }) {
+  const { t } = useLang();
+  const { tx } = useTranslit();
+  return (
+    <ul>
+      {rows.map((w) => (
+        <li key={w.id} className="px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 text-[15px] leading-snug">
+              <LiveName w={w} open={openRaw === w.id}
+                onToggle={isAdmin ? () => setOpenRaw((v) => (v === w.id ? null : w.id)) : null} />
+            </div>
+            <span className="text-[13px] flex-shrink-0 max-w-[45%]"><LiveStatusChip status={w.status} /></span>
+          </div>
+          <div className="mt-0.5 text-xs flex flex-wrap items-center gap-x-1.5 gap-y-1" style={{ color: "var(--text-3)" }}>
+            <span>{tx(w.job_title) || "—"}</span>
+            {w._cell && <><span aria-hidden="true">·</span>
+              <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-3)" }}>{w._cell.code}</CellLink></>}
+            {!w.clock_in && w.schedule && <><span aria-hidden="true">·</span><span className="tabular-nums">{tx(w.schedule)}</span></>}
+            <LiveRowNotes w={w} />
+          </div>
+          {w.clock_in && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] tabular-nums" style={{ color: "var(--text-2)" }}>
+              <span className="inline-flex items-center gap-1.5"><span style={{ color: "var(--text-3)" }}>{t("staffLive.c.in")}</span><LiveClockIn w={w} /></span>
+              <span className="inline-flex items-center gap-1.5"><span style={{ color: "var(--text-3)" }}>{t("staffLive.c.out")}</span><LiveClockOut w={w} /></span>
+              <span className="ml-auto" style={{ color: "var(--text-1)" }}>
+                {w.hours_worked != null ? `${n2(w.hours_worked)} ${t("daily.hrs")}` : "—"}
+              </span>
+            </div>
+          )}
+          {isAdmin && openRaw === w.id && w.raw && (
+            <div className="mt-2 rounded-lg p-2.5" style={{ background: "var(--bg-inner)" }}><LiveRaw raw={w.raw} /></div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -299,111 +424,137 @@ export function LiveRaw({ raw }) {
 // the name moves there and the sender keeps its hours as additional. These are
 // those hours, each with where the name is now — and «hozir shu yerda» for a
 // worker standing here, whom this unit files the next move for.
-export function LiveExtras({ extras }) {
+function ExtraStatus({ x }) {
+  const { t } = useLang();
+  // «hozir shu yerda» only while they ARE here: `here` is also true for
+  // somebody who ended the day here and has left.
+  return x.here && (x.status === "inside" || x.status === "break")
+    ? <span className="inline-flex items-center gap-2 flex-wrap"><LiveStatusChip status={x.status} />
+      <LiveChip color="#22c55e">{t("staffLive.ex.here")}</LiveChip></span>
+    : <LiveStatusChip status={x.here ? x.status : "moved_out"} />;
+}
+
+export function LiveExtras({ extras, phone = false }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   if (!extras?.length) return null;
   const total = extras.reduce((s, x) => s + (x.hours || 0), 0);
+  const named = (x) => (x.named_at ? tl(x.named_at) : t(`staffLive.ex.r.${x.reason}`));
   return (
     <div className="border-t" style={{ borderColor: "var(--border)" }}>
-      <div className="px-3 pt-3 pb-1 flex items-center gap-2">
-        <ArrowRightLeft size={14} style={{ color: "var(--brand-text)" }} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-          {t("staffLive.ex.title")}
-        </span>
-        <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
+      <div className="px-4 pt-4 pb-1 flex items-baseline gap-3">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("staffLive.ex.title")}</h3>
+        <span className="ml-auto text-xs tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
           {fill(t("staffLive.ex.total"), { n: n2(total) })}
         </span>
       </div>
-      <div className="px-3 pb-2 text-[11px]" style={{ color: "var(--text-3)" }}>{t("staffLive.ex.sub")}</div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr style={{ background: "var(--bg-inner)" }}>
-              {["worker", "hours", "named", "status"].map((k) => (
-                <th key={k} className="text-left px-3 py-2 border-b text-[11px] font-semibold"
-                  style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-                  {t(`staffLive.ex.c.${k}`)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {extras.map((x) => (
-              <tr key={x.employee_id} className="border-b" style={{ borderColor: "var(--border)" }}>
-                <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(x.worker_name)}</td>
-                <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-1)" }}>
-                  {n2(x.hours)}{x.so_far ? <span style={{ color: "var(--text-3)" }}>*</span> : null}
-                </td>
-                <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                  {x.named_at ? tl(x.named_at) : <span style={{ color: "var(--text-3)" }}>{t(`staffLive.ex.r.${x.reason}`)}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {/* «hozir shu yerda» only while they ARE here: `here` is also
-                      true for somebody who ended the day here and has left. */}
-                  {x.here && (x.status === "inside" || x.status === "break")
-                    ? <span className="inline-flex items-center gap-2"><LiveStatusChip status={x.status} />
-                      <LiveChip color="#22c55e">{t("staffLive.ex.here")}</LiveChip></span>
-                    : <LiveStatusChip status={x.here ? x.status : "moved_out"} />}
-                </td>
+      <p className="px-4 pb-3 text-xs max-w-[75ch]" style={{ color: "var(--text-3)" }}>{t("staffLive.ex.sub")}</p>
+      {phone ? (
+        <ul className="border-t" style={{ borderColor: "var(--border)" }}>
+          {extras.map((x) => (
+            <li key={x.employee_id} className="px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-[15px] leading-snug min-w-0" style={{ color: "var(--text-1)" }}>{tl(x.worker_name)}</span>
+                <span className="text-[13px] tabular-nums flex-shrink-0" style={{ color: "var(--text-1)" }}>
+                  {n2(x.hours)} {t("daily.hrs")}
+                </span>
+              </div>
+              <div className="mt-1 text-xs" style={{ color: "var(--text-3)" }}>
+                {t("staffLive.ex.c.named")}: {named(x)}
+              </div>
+              <div className="mt-1.5 text-[13px]"><ExtraStatus x={x} /></div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr style={{ background: "var(--bg-inner)" }}>
+                {["worker", "hours", "named", "status"].map((k) => (
+                  <th key={k} scope="col"
+                    className={`${k === "hours" ? "text-right" : "text-left"} px-4 py-2.5 border-y text-xs font-semibold`}
+                    style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
+                    {t(`staffLive.ex.c.${k}`)}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── the footer: how the hours are counted, and (admins) what the read held ───
-export function LiveFooter({ data }) {
-  const { t } = useLang();
-  const { tx } = useTranslit();
-  const live = data?.live;
-  if (!live) return null;
-  const d = live.diag;
-  return (
-    <div className="px-3 py-3 border-t text-[11px] space-y-1" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-      {(data.workers || []).some((w) => w.so_far) && <div>{t("staffLive.soFarNote")}</div>}
-      <div>
-        {live.formula
-          ? fill(t("staffLive.hoursRule"), {
-            kinds: live.formula.names.map((k) => tx(k)).join(" + "),
-            pct: `${Math.round((live.formula.share || 0) * 100)}%`,
-          })
-          : t("staffLive.hoursClock")}
-      </div>
-      <div>{fill(t("staffLive.moveRule"), { min: live.rules?.min_moved_hours ?? 2 })}</div>
-      <div>{fill(t("staffLive.rules"), {
-        late: live.rules?.late_grace, early: live.rules?.early_grace, miss: live.rules?.missing_after,
-      })}</div>
-      {d && (
-        <div>
-          <div className="inline-flex items-center gap-1 font-semibold"><Info size={11} /> {t("staffLive.diag")}</div>
-          <div className="mt-1 tabular-nums">
-            {fill(t("staffLive.diagLine"), {
-              e: d.employees, r: d.report_rows, m: d.marks,
-              types: Object.entries(d.mark_types || {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—",
-            })}
-          </div>
-          <div className="mt-0.5 tabular-nums">
-            {fill(t("staffLive.diagIn"), { report: d.in_sources?.report || 0, mark: d.in_sources?.mark || 0 })}
-          </div>
-          <div className="mt-0.5 tabular-nums">
-            {fill(t("staffLive.diagOut"), {
-              report: d.out_sources?.report || 0, mark: d.out_sources?.mark || 0,
-              last: d.out_sources?.last_mark || 0, gate: d.out_sources?.gate || 0,
-            })}
-          </div>
-          {(d.held?.back || d.held?.no_report_out) ? (
-            <div className="mt-0.5 tabular-nums">
-              {fill(t("staffLive.diagHeld"), { back: d.held.back || 0, none: d.held.no_report_out || 0 })}
-            </div>
-          ) : null}
-          {!d.directed && d.marks > 0 && <div className="mt-0.5">{t("staffLive.diagUndirected")}</div>}
+            </thead>
+            <tbody>
+              {extras.map((x) => (
+                <tr key={x.employee_id} className="border-b" style={{ borderColor: "var(--border)" }}>
+                  <td className="px-4 py-2.5" style={{ color: "var(--text-1)" }}>{tl(x.worker_name)}</td>
+                  <td className="px-4 py-2.5 tabular-nums text-right" style={{ color: "var(--text-1)" }}>{n2(x.hours)}</td>
+                  <td className="px-4 py-2.5" style={{ color: x.named_at ? "var(--text-2)" : "var(--text-3)" }}>{named(x)}</td>
+                  <td className="px-4 py-2.5"><ExtraStatus x={x} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
 
+// ── the footer: how the hours are counted, and (admins) what the read held ───
+// Folded under one link: a reader who wants the rules opens them; everybody
+// else is not handed five lines of small print under every table.
+export function LiveFooter({ data }) {
+  const { t } = useLang();
+  const { tx } = useTranslit();
+  const [open, setOpen] = useState(false);
+  const live = data?.live;
+  if (!live) return null;
+  const d = live.diag;
+  return (
+    <div className="px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="inline-flex items-center gap-1.5 min-h-[32px] text-xs rounded-md hover:underline underline-offset-2"
+        style={{ color: "var(--text-3)" }}>
+        <Info size={14} aria-hidden="true" />
+        {t("staffLive.rulesTitle")}
+        <ChevronDown size={14} aria-hidden="true" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 200ms" }} />
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5 text-xs max-w-[80ch]" style={{ color: "var(--text-3)" }}>
+          <p>{t("staffLive.soFarNote")}</p>
+          <p>
+            {live.formula
+              ? fill(t("staffLive.hoursRule"), {
+                kinds: live.formula.names.map((k) => tx(k)).join(" + "),
+                pct: `${Math.round((live.formula.share || 0) * 100)}%`,
+              })
+              : t("staffLive.hoursClock")}
+          </p>
+          <p>{fill(t("staffLive.moveRule"), { min: live.rules?.min_moved_hours ?? 2 })}</p>
+          <p>{fill(t("staffLive.rules"), {
+            late: live.rules?.late_grace, early: live.rules?.early_grace, miss: live.rules?.missing_after,
+          })}</p>
+          {d && (
+            <div className="pt-2 tabular-nums space-y-0.5">
+              <div className="font-semibold" style={{ color: "var(--text-2)" }}>{t("staffLive.diag")}</div>
+              <div>
+                {fill(t("staffLive.diagLine"), {
+                  e: d.employees, r: d.report_rows, m: d.marks,
+                  types: Object.entries(d.mark_types || {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—",
+                })}
+              </div>
+              <div>{fill(t("staffLive.diagIn"), { report: d.in_sources?.report || 0, mark: d.in_sources?.mark || 0 })}</div>
+              <div>
+                {fill(t("staffLive.diagOut"), {
+                  report: d.out_sources?.report || 0, mark: d.out_sources?.mark || 0,
+                  last: d.out_sources?.last_mark || 0, gate: d.out_sources?.gate || 0,
+                })}
+              </div>
+              {(d.held?.back || d.held?.no_report_out) ? (
+                <div>{fill(t("staffLive.diagHeld"), { back: d.held.back || 0, none: d.held.no_report_out || 0 })}</div>
+              ) : null}
+              {!d.directed && d.marks > 0 && <div>{t("staffLive.diagUndirected")}</div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -7107,7 +7107,41 @@ rights — over a different source, and it is being built to REPLACE /staff.
   out of this unit** (left, or moved on at that minute; empty while inside or on
   a break), «hours carried here under another unit's name», the rules and (admins)
   Diagnostics + the raw Verifix facts behind a row. Never fork a /staff
-  component for the live page: add the difference behind `S.live`.
+  component for the live page: add the difference behind `S.live`. **The one
+  exception is the Workers tab's RENDER** (2026-10-05): `AttendanceTable` still
+  computes every row, filter, count and the export for both pages, and on the
+  live page hands them to `LiveWorkersView` (same file) to draw — a render that
+  had grown twenty interleaved `S.live` branches is a second page hiding inside
+  the first. /staff's own render carries no live branch any more.
+- **It looks like the page it will replace — no lab notice** (2026-10-05, the
+  operator: «remove all test warnings … I must know how it looks on
+  production»). The title is «Verifix to'g'irlash» (the nav entry keeps
+  «· Jonli» while both pages exist). The card opens with ONE line: the day's
+  standing (+ «Tasdiqlash»da yopish» when closable) on the left, the read's
+  freshness on the right — «Jonli · 09:40» with a breathing dot while the
+  minute job reads the day, «Oxirgi o'qish …» for a past day — and «Yangilash»
+  as a 38px icon button. Then three figures on the card itself, no boxes
+  (Ishga kelganlar · Zagruzkada hisoblanadi · Zagruzka soatlari, «o'rtacha …
+  · hozirgacha»), plus «Smena jadvali» when the whole unit shares one schedule
+  — the Jadval column is then dropped (it returns, with its filter, when
+  schedules differ). No KPI cards, no role chips, no «Xodimlar» header with a
+  collapse button. Numbers are right-aligned, «hozirgacha» replaced the `*` on
+  every row inside, the «no check-out» chip in Ketdi is dropped where the
+  status already says it, and the rules + Diagnostics fold under one «Soat va
+  holatlar qanday hisoblanadi» link. A phone reads a LIST (`LivePhoneList`:
+  name + status, role · cell, Keldi · Ketdi · soat), not the table scrolled
+  sideways. Column filters use `ColFilter quiet` (the label is the trigger, the
+  glyph shows on hover/focus/when filtering, always on touch).
+- **It opens on the unit's CURRENT shift-day**, never a day remembered from an
+  earlier visit — `GET /api/staff-live/today?manager_id=` (`verifix_live.shift_day`,
+  reads nothing from Verifix) names it, because the browser cannot: the plant
+  runs on Tashkent's clock and a night unit's day is yesterday's date until its
+  next shift opens. `autoDay` holds until the reader picks a day (a link naming
+  a date counts as picking); while it holds, switching units follows each
+  unit's own day, and the table waits (skeleton) rather than flash the first
+  guess. The day control is `DayStepper` capped at that day, with «Bugungi
+  smena» back to it. Opening «Tasdiqlash» carries the unit (and its month) into
+  the calendar, which kept a unit of its own before.
 - **`routers/staff_live.py` is /api/staff's twin** — the same paths under
   `/api/staff-live`, the same shapes and the same rights per role (supervisor
   own unit, shift-manager shift ∩ plant, admin everything; `_native_can_approve`
@@ -7232,7 +7266,7 @@ rights — over a different source, and it is being built to REPLACE /staff.
   in/out/begin/end, every mark fetched with its type, the time kinds —
   because both earlier guesses about the night shift were made without them.
 - **An exit before the shift's end is a BREAK, not a departure** («Tanaffusda»,
-  the exit time in the Out column, hours up to it marked *): 12 people read
+  the exit time in the Out column, hours counted up to it): 12 people read
   «Ketgan» at 09:30 on 02.10 over a breakfast. It becomes «Ketgan», with its
   early-leave minutes, once the shift is over, and holds the day open like
   anybody inside.
@@ -7253,7 +7287,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
   15:07). It carries no hours and holds the day close.
   Hours = the «Отработано» kinds the parity check found (used when it matched ≥
   90% of ≥ 50 person-days), else the clock span; someone inside counts so far
-  (marked *). A split row shares its hours by the clock.
+  (the summary says «hozirgacha»; rows no longer carry a `*`). A split row
+  shares its hours by the clock.
 - **A day closes BY HAND only**, in «Tasdiqlash» (the automatic close an hour
   after the last check-out is gone, 2026-10-04). The standing line reads `open`
   (somebody inside or on a break, or still due), `all_left` (somebody came,

@@ -8,7 +8,10 @@ import { useDragSelect } from "../../hooks/useDragSelect";
 
 // A column header with a popover filter. Pass `label` to render it next to the
 // trigger, or omit it when the header already renders its own (sortable) label.
-export function ColFilter({ label, active, children }) {
+// `quiet` makes the whole label the trigger and shows the filter glyph only
+// while the header is pointed at, focused or filtered (always on touch, where
+// nothing can be pointed at) — a row of ten glyphs read as noise (/staff-live).
+export function ColFilter({ label, active, children, quiet = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const popRef = useRef(null);
@@ -43,7 +46,20 @@ export function ColFilter({ label, active, children }) {
     };
   }, [open]);
   return (
-    <div ref={ref} className="relative inline-flex items-center gap-1 select-none">
+    <div ref={ref} className="relative inline-flex items-center gap-1 select-none group/cf">
+      {quiet ? (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+          className="inline-flex items-center gap-1 rounded py-0.5 -my-0.5 font-[inherit]"
+          style={{ color: active ? "var(--brand-text)" : "var(--text-3)" }}
+        >
+          {label}
+          <SlidersHorizontal size={11} aria-hidden="true"
+            className={active || open ? "" : "opacity-0 group-hover/cf:opacity-100 group-focus-within/cf:opacity-100 pointer-coarse:opacity-60 transition-opacity"} />
+        </button>
+      ) : (<>
       {label && <span style={{ color: "var(--text-3)" }}>{label}</span>}
       <button
         onClick={() => setOpen(o => !o)}
@@ -55,6 +71,7 @@ export function ColFilter({ label, active, children }) {
       >
         <SlidersHorizontal size={10} />
       </button>
+      </>)}
       {open && pos && createPortal(
         <div
           ref={popRef}

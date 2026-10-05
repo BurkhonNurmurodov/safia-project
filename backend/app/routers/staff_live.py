@@ -362,6 +362,21 @@ def delete_task(body: TaskDeleteBody, db: Session = Depends(get_db), caller: dic
     return {"ok": True}
 
 
+# ── the day the page opens on ────────────────────────────────────────────────
+
+@router.get("/today")
+def unit_today(manager_id: Optional[int] = None, db: Session = Depends(get_db),
+               caller: dict = Depends(_page)):
+    """The unit's shift-day on the clock — the day the page opens on. The
+    browser cannot say it: the plant runs on Tashkent's clock, and a night
+    unit's day is yesterday's date until its next shift opens. Reads nothing
+    from Verifix."""
+    mid = _read_unit(db, caller, manager_id)
+    unit = db.query(Manager).filter(Manager.id == mid).first()
+    return {"manager_id": mid,
+            "date": verifix_live.shift_day(db, unit.shift if unit else None).isoformat()}
+
+
 # ── attendance (the Workers tab) ─────────────────────────────────────────────
 
 @router.get("/attendance")

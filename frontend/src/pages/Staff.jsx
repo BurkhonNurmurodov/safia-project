@@ -39,9 +39,11 @@ import { exportXlsx } from "../utils/exportXlsx";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
 import {
-  LiveHeader, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  liveMatch, liveMatchExtra, liveFilterOptions,
+  LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
+  LiveName, LivePhoneList, liveMatch, liveMatchExtra, liveFilterOptions, n2 as liveN2,
 } from "../components/staff/LiveBits";
+import useIsMobile from "../hooks/useIsMobile";
+import DayStepper from "../components/ui/DayStepper";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -478,7 +480,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 // ── Attendance Table ───────────────────────────────────────────────────────────
 
-export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose }) {
+export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose, dayPending = false }) {
   const S = useStaffApi();
   const { t } = useLang();
   // `lang` is read only as a memo KEY: `tl` is a new function on every render,
@@ -495,6 +497,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // see the Verifix read behind it.
   const [liveFilter, setLiveFilter]     = usePersistentState("staff_live_workers_status", "all");
   const [openRaw, setOpenRaw]           = useState(null);
+  // Live: a phone reads a list instead of the ten-column table.
+  const isPhone = useIsMobile();
   const qc = useQueryClient();
 
   // Restored values are old data: merge over the CURRENT shape so a filter
@@ -520,7 +524,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   const { data, isLoading } = useQuery({
     queryKey: attKey,
     queryFn: () => fetchAtt(false),
-    enabled: !!selectedDate && !!managerId,
+    enabled: !!selectedDate && !!managerId && !dayPending,
     // Live: the server reads Verifix every minute and stores it, so this poll
     // is a database read — it follows the stored read, it does not cause one.
     ...(S.live ? { refetchInterval: 60_000, refetchIntervalInBackground: false, staleTime: 30_000 } : {}),
@@ -759,6 +763,39 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     );
   }
 
+  if (S.live) {
+    return (
+      <LiveWorkersView
+        data={data} loading={isLoading || !data || dayPending}
+        refreshing={refresh.isPending} onRefresh={managerId ? () => refresh.mutate() : null}
+        onGoClose={onGoClose} isPhone={isPhone}
+        workers={workers} allWorkers={allWorkers} sortedWorkers={sortedWorkers}
+        filters={filters} setF={setF} setFilters={setFilters} activeFilter={activeFilter}
+        liveFilter={liveFilter} setLiveFilter={setLiveFilter}
+        nameAsc={nameAsc} setNameAsc={setNameAsc} showCellCol={showCellCol}
+        distinctJobTitles={distinctJobTitles} distinctSchedules={distinctSchedules}
+        cellCodes={cellCodes} cellLabels={cellLabels}
+        openRaw={openRaw} setOpenRaw={setOpenRaw} extrasShown={extrasShown}
+        summary={{
+          came: cameToWorkCount, total: totalWorkers, counted: zagruzkaCount, countedOf: zagruzkaRoleTotal,
+          hours: totalWorkedHours, avg: avgWorkedHours,
+          soFar: zagruzkaWorkers.some((w) => w.so_far),
+        }}
+        exportToast={exportToast} exporting={exporting} onExport={() => setShowExport(true)}
+        exportModal={showExport && (
+          <ExportModal
+            filteredCount={workers.length}
+            totalCount={allWorkers.length}
+            hasFilter={activeFilter || liveFilter !== "all"}
+            onExport={handleExport}
+            onClose={() => setShowExport(false)}
+            exporting={exporting}
+          />
+        )}
+      />
+    );
+  }
+
   // Guard covers: (a) query fetching, (b) the one render where enabled just
   // became true but React Query hasn't set isLoading yet (data still undefined)
   if (isLoading || !data) return (
@@ -771,10 +808,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
 
   return (
     <div>
-      {S.live && (
-        <LiveHeader data={data} refreshing={refresh.isPending}
-          onRefresh={managerId ? () => refresh.mutate() : null} onGoClose={onGoClose} />
-      )}
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -872,12 +905,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
           </div>
         )}
 
-        {S.live && (
-          <div className="mt-3">
-            <SegmentedToggle value={liveFilter} onChange={setLiveFilter}
-              options={liveFilterOptions(allWorkers, t)} />
-          </div>
-        )}
       </div>
 
       {/* Collapsible body — toolbar + table + footer */}
@@ -940,14 +967,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                     </button>
                   </div>
                 </th>
-                {/* Live: the status sits right after the name — it is the
-                    question the page is opened for, and at the far end of the
-                    row a phone and a 1024px laptop never showed it. */}
-                {S.live && (
-                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                    <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.status")}</span>
-                  </th>
-                )}
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colRole")} active={filters.job_titles.length > 0}>
                     <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tx(o) || o} />
@@ -966,22 +985,11 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                     <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={v => setF("schedules", v)} />
                   </ColFilter>
                 </th>
-                {S.live ? (
-                  <>
-                    <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                      <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.in")}</span>
-                    </th>
-                    <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                      <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{t("staffLive.c.out")}</span>
-                    </th>
-                  </>
-                ) : (
-                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                    <ColFilter label={t("staff.colClock")} active={filters.clock.length > 0}>
-                      <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} />
-                    </ColFilter>
-                  </th>
-                )}
+                <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                  <ColFilter label={t("staff.colClock")} active={filters.clock.length > 0}>
+                    <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} />
+                  </ColFilter>
+                </th>
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
                     <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
@@ -1004,21 +1012,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
             </thead>
             <tbody>
               {sortedWorkers.map(w => (
-                <Fragment key={S.live ? w.id : w.worker_name}>
+                <Fragment key={w.worker_name}>
                 <tr className="border-b hover:bg-white/5"
                   style={{ borderColor: "var(--border)" }}>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 sm:flex-wrap">
-                      {S.live && w.raw ? (
-                        <button type="button" className="text-left underline decoration-dotted underline-offset-2"
-                          style={{ color: "var(--text-1)" }} title={t("staffLive.rawHint")}
-                          onClick={() => setOpenRaw(v => (v === w.id ? null : w.id))}>
-                          {tl(w.worker_name)}
-                        </button>
-                      ) : (
-                        <span>{tl(w.worker_name)}</span>
-                      )}
-                      {S.live && <LiveRowNotes w={w} />}
+                      <span>{tl(w.worker_name)}</span>
                       {w.on_task && (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap self-start"
                           title={t("staff.onTask")}
@@ -1028,9 +1027,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                       )}
                     </div>
                   </td>
-                  {S.live && (
-                    <td className="px-3 py-2"><LiveStatusChip status={w.status} /></td>
-                  )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
                   {/* Code only — the workshop name is four words of Russian per
                       row and pushed every column after it off a phone. It stays
@@ -1046,32 +1042,17 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                     </td>
                   )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
-                  {S.live ? (
-                    <>
-                      <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}><LiveClockIn w={w} /></td>
-                      <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}><LiveClockOut w={w} /></td>
-                    </>
-                  ) : (
-                    <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
-                  )}
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.hours_worked != null ? (S.live ? Math.round(w.hours_worked * 100) / 100 : w.hours_worked) : "—"}
-                    {S.live && w.so_far && w.hours_worked != null ? <span style={{ color: "var(--text-3)" }}>*</span> : null}
+                    {w.hours_worked != null ? w.hours_worked : "—"}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {w.early_arrival_min != null ? w.early_arrival_min : "—"}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.effective_hours != null ? (S.live ? Math.round(w.effective_hours * 100) / 100 : w.effective_hours) : "—"}
+                    {w.effective_hours != null ? w.effective_hours : "—"}
                   </td>
                 </tr>
-                {S.live && openRaw === w.id && w.raw && (
-                  <tr>
-                    <td colSpan={showCellCol ? 10 : 9} className="px-3 py-2" style={{ background: "var(--bg-inner)" }}>
-                      <LiveRaw raw={w.raw} />
-                    </td>
-                  </tr>
-                )}
                 </Fragment>
               ))}
             </tbody>
@@ -1082,7 +1063,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
       {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
           animation (fill-mode both) keeps a transform, which would make it the
           containing block for position:fixed and pin the badge to the page. */}
-      {!isCollapsed && !S.live && createPortal(
+      {!isCollapsed && createPortal(
         <div
           className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
           style={{
@@ -1096,11 +1077,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
         document.body,
       )}
 
-      {S.live && <LiveExtras extras={extrasShown} />}
-      {S.live && <LiveFooter data={data} />}
-
       {/* Extra hours note */}
-      {!S.live && (data?.extra_hours ?? 0) > 0 && (
+      {(data?.extra_hours ?? 0) > 0 && (
         <div className="px-4 py-2.5 flex justify-end border-t" style={{ borderColor: "var(--border)" }}>
           <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
             {t("staff.extraHoursNote").replace("{n}", data.extra_hours)}
@@ -1125,6 +1103,213 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   );
 }
 
+
+// ── The live Workers tab (/staff-live) ────────────────────────────────────────
+// The SAME rows, filters, counts and export as /staff's table above it — every
+// number is computed by AttendanceTable — drawn the way the page will look once
+// it replaces /staff (2026-10-05): the day's standing and the read's freshness
+// on one line, three figures, the status strip and the search, then the table
+// (a list on a phone), the extra hours and the rules folded under one link.
+function LiveWorkersView({
+  data, loading, refreshing, onRefresh, onGoClose, isPhone,
+  workers, allWorkers, sortedWorkers, filters, setF, setFilters, activeFilter, liveFilter, setLiveFilter,
+  nameAsc, setNameAsc, showCellCol, distinctJobTitles, distinctSchedules, cellCodes, cellLabels,
+  openRaw, setOpenRaw, extrasShown, summary, exportToast, exporting, onExport, exportModal,
+}) {
+  const { t } = useLang();
+  const { tx } = useTranslit();
+
+  if (loading) return (
+    <div className="p-4 space-y-5" aria-busy="true">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2 flex-1"><SkeletonBlock className="h-4 w-64 max-w-full" /><SkeletonBlock className="h-3 w-80 max-w-full" /></div>
+        <SkeletonBlock className="h-[38px] w-40 rounded-lg" />
+      </div>
+      <div className="grid grid-cols-3 gap-4 sm:gap-8 sm:max-w-3xl">
+        {[0, 1, 2].map((i) => <div key={i} className="space-y-2"><SkeletonBlock className="h-3 w-24" /><SkeletonBlock className="h-7 w-20" /></div>)}
+      </div>
+      <SkeletonBlock className="h-[38px] w-full sm:w-[640px] rounded-xl" />
+      <SkeletonBlock className="h-[38px] w-full rounded-xl" />
+      <SkeletonTable rows={8} cols={6} />
+    </div>
+  );
+
+  const narrowed = activeFilter || liveFilter !== "all";
+  const shownRows = workers.filter((w) => !w.split_of).length;
+  const allRows = allWorkers.filter((w) => !w.split_of).length;
+  const th = "px-3 first:pl-4 last:pr-4 py-2.5 border-b text-xs font-semibold whitespace-nowrap align-bottom";
+  // The figures' headers may take two lines («Erta kelish, daq») — their
+  // columns hold three digits; the name column is the one that needs room.
+  const thNum = "px-3 first:pl-4 last:pr-4 py-2.5 border-b text-xs font-semibold text-right align-bottom";
+  const thStyle = { borderColor: "var(--border)", color: "var(--text-3)" };
+  const td = "px-3 first:pl-4 last:pr-4 py-2.5";
+  // One schedule for the whole unit (the usual case) is said once, in the
+  // summary, instead of on every row; several keep the column (and its filter).
+  const schedules = [...new Set(allWorkers.map((w) => w.schedule).filter(Boolean))];
+  const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
+  const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
+
+  return (
+    <div>
+      <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} />
+      {!data?.error && (
+        <LiveSummary {...summary} schedule={oneSchedule ? tx(oneSchedule) : null}
+          filtered={narrowed ? liveFill(t("staffLive.sum.filtered"), { n: shownRows, m: allRows }) : null} />
+      )}
+
+      <div className="px-4 pt-5 pb-4 space-y-3">
+        <SegmentedToggle value={liveFilter} onChange={setLiveFilter} options={liveFilterOptions(allWorkers, t)} />
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <SearchInput value={filters.worker} onChange={(v) => setF("worker", v)} placeholder={t("staff.searchByName")} />
+          </div>
+          {activeFilter && (
+            <Button size="lg" variant="ghost" onClick={() => setFilters(INIT_FILTERS)} className="flex-shrink-0">
+              {t("staff.clearFilters")}
+            </Button>
+          )}
+          <Button size="lg" variant="secondary" onClick={onExport} disabled={exporting || allWorkers.length === 0}
+            loading={exporting} icon={<Download size={15} />} aria-label={t("staff.export")}
+            className="flex-shrink-0 max-sm:!px-0 max-sm:w-[38px]">
+            <span className="max-sm:hidden">{t("staff.export")}</span>
+          </Button>
+        </div>
+      </div>
+
+      {exportToast.node}
+
+      {workers.length === 0 ? (
+        <div className="border-t px-4 py-10 text-center text-sm" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
+          {narrowed ? t("staff.noMatch") : t("staff.noData")}
+        </div>
+      ) : isPhone ? (
+        <div className="border-t" style={{ borderColor: "var(--border)" }}>
+          <LivePhoneList rows={sortedWorkers} openRaw={openRaw} setOpenRaw={setOpenRaw} isAdmin />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr style={{ background: "var(--bg-inner)" }}>
+                <th scope="col" className={`${th} text-left border-t min-w-[14rem]`} style={thStyle}>
+                  <div className="flex items-center gap-1.5">
+                    <ColFilter quiet label={t("staff.colWorker")} active={!!filters.worker}>
+                      <TxtFilter value={filters.worker} onChange={(v) => setF("worker", v)} />
+                    </ColFilter>
+                    <button type="button" onClick={() => setNameAsc((p) => (p === null ? true : p ? false : null))}
+                      className="grid place-items-center w-5 h-5 rounded"
+                      style={{ color: nameAsc === null ? "var(--text-4)" : "var(--text-2)" }}
+                      aria-label={t("common.sortAZ")} title={t("common.sortAZ")}>
+                      {nameAsc === null ? <ChevronsUpDown size={12} /> : nameAsc ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  </div>
+                </th>
+                {/* The status sits right after the name — it is the question
+                    the page is opened for. */}
+                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.status")}</th>
+                <th scope="col" className={`${th} text-left border-t min-w-[11rem]`} style={thStyle}>
+                  <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
+                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
+                  </ColFilter>
+                </th>
+                {showCellCol && (
+                  <th scope="col" className={`${th} text-left border-t`} style={thStyle}>
+                    <ColFilter quiet label={t("staff.colCell")} active={filters.cells.length > 0}>
+                      <OptsFilter searchable opts={cellCodes} sel={filters.cells} onChange={(v) => setF("cells", v)}
+                        render={(c) => cellLabels.get(c) || c} />
+                    </ColFilter>
+                  </th>
+                )}
+                {!oneSchedule && (
+                  <th scope="col" className={`${th} text-left border-t`} style={thStyle}>
+                    <ColFilter quiet label={t("staff.colSchedule")} active={filters.schedules.length > 0}>
+                      <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={(v) => setF("schedules", v)} />
+                    </ColFilter>
+                  </th>
+                )}
+                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.in")}</th>
+                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.out")}</th>
+                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
+                  <ColFilter quiet label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
+                    <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
+                      onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
+                  </ColFilter>
+                </th>
+                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
+                  <ColFilter quiet label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
+                    <RngFilter minV={filters.early_min} maxV={filters.early_max}
+                      onMin={(v) => setF("early_min", v)} onMax={(v) => setF("early_max", v)} />
+                  </ColFilter>
+                </th>
+                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
+                  <ColFilter quiet label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
+                    <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
+                      onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
+                  </ColFilter>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedWorkers.map((w) => (
+                <Fragment key={w.id}>
+                  <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
+                    <td className={td}>
+                      <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                        <LiveName w={w} open={openRaw === w.id}
+                          onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+                        <LiveRowNotes w={w} />
+                      </div>
+                    </td>
+                    <td className={td}><LiveStatusChip status={w.status} /></td>
+                    <td className={td} style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
+                    {/* Code only — the workshop name is four words of Russian
+                        per row; it stays in the tooltip and the filter. */}
+                    {showCellCol && (
+                      <td className={td} title={w._cell?.full || ""}>
+                        {w._cell ? (
+                          <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</CellLink>
+                        ) : (
+                          <span style={{ color: "var(--text-4)" }}>—</span>
+                        )}
+                      </td>
+                    )}
+                    {!oneSchedule && (
+                      <td className={`${td} whitespace-nowrap tabular-nums`} style={{ color: "var(--text-3)" }}>{tx(w.schedule) || "—"}</td>
+                    )}
+                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
+                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
+                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+                      {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                    </td>
+                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-2)" }}>
+                      {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
+                    </td>
+                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+                      {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                    </td>
+                  </tr>
+                  {openRaw === w.id && w.raw && (
+                    <tr>
+                      <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
+                        <LiveRaw raw={w.raw} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <LiveExtras extras={extrasShown} phone={isPhone} />
+      <LiveFooter data={data} />
+      {exportModal}
+    </div>
+  );
+}
+
+const liveFill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 
 // ── Cell day view (Workers tab) ───────────────────────────────────────────────
 // Read-only roster of ONE cell out of the by-cell attendance import — shown when
@@ -4331,12 +4516,16 @@ function readStaffLiveLink(q) {
   return out ? Object.fromEntries(Object.entries(out).map(([k, v]) => [LIVE_STAFF_API.pk(k), v])) : null;
 }
 
-// The live page's first day: the shift-day running now — before 08:00 that is
-// still yesterday's (a night shift's small hours belong to the evening it
-// opened). Only a default; the picked day is remembered like /staff's.
+// The live page's first guess at its day, before the server has named the
+// unit's own (`GET /today`): the plant's date — Tashkent's clock, never the
+// browser's — and before 08:00 still yesterday's (a night shift's small hours
+// belong to the evening it opened).
 function liveDefaultDay() {
-  const d = new Date();
-  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  const d = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00`);
+  if (Number(parts.hour) < 8) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
@@ -4371,8 +4560,15 @@ export function StaffPage() {
   // back (separate keys from the Daily page — each page remembers its own).
   const [selectedDate, setSelectedDate] = usePersistentState(S.pk("staff_selected_date"), "");
   const [selectedManagerId, setSelectedManagerId] = usePersistentState(S.pk("staff_selected_manager_id"), null);
+  // Live: the page opens on the unit's CURRENT shift-day — never a day
+  // remembered from an earlier visit (a live page reopened tomorrow showing
+  // today is a page showing yesterday) — unless a link named one. `autoDay`
+  // holds until the reader picks a day; while it holds, switching units
+  // follows each unit's own shift-day (a night unit's is yesterday's date
+  // until its next shift opens), which only the server can say.
+  const [autoDay, setAutoDay] = useState(() => S.live && !new URLSearchParams(window.location.search).get("date"));
   useEffect(() => {
-    if (S.live && !selectedDate) setSelectedDate(liveDefaultDay());
+    if (S.live && (autoDay || !selectedDate)) setSelectedDate(liveDefaultDay());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // …and a link followed while this page is ALREADY open: the route is not
@@ -4383,7 +4579,10 @@ export function StaffPage() {
     const v = readStaffLink(new URLSearchParams(staffLoc.search));
     if (!v) return;
     if (v.staff_tab) setTab(v.staff_tab);
-    if (v.staff_selected_date) setSelectedDate(v.staff_selected_date);
+    if (v.staff_selected_date) {
+      setSelectedDate(v.staff_selected_date);
+      if (S.live) setAutoDay(false);
+    }
     if (v.staff_selected_manager_id != null) setSelectedManagerId(v.staff_selected_manager_id);
     staffNav({ pathname: staffLoc.pathname }, { replace: true });
   }, [staffLoc.search, staffLoc.pathname, staffNav, setTab, setSelectedDate, setSelectedManagerId]);
@@ -4496,6 +4695,52 @@ export function StaffPage() {
   const supervisorManagerId = role === "supervisor"
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
+  // Live: the unit's shift-day on the clock, from the server (see `autoDay`).
+  const { data: liveToday, isError: todayFailed } = useQuery({
+    queryKey: S.qk("staff-today", supervisorManagerId),
+    queryFn: () => api.get(`${S.base}/today`, { params: { manager_id: supervisorManagerId } }).then(r => r.data),
+    enabled: S.live && !!supervisorManagerId,
+    staleTime: 60_000,
+    refetchInterval: S.live ? 5 * 60_000 : false,
+  });
+  const todayIso = liveToday?.manager_id === supervisorManagerId ? liveToday.date : null;
+  useEffect(() => {
+    if (S.live && autoDay && todayIso && todayIso !== selectedDate) setSelectedDate(todayIso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayIso, autoDay]);
+  // Still on the first guess while the server's answer is on its way: the
+  // table waits rather than flash a day it is about to leave.
+  const dayPending = S.live && autoDay && !!supervisorManagerId && !todayFailed && todayIso !== selectedDate;
+  function pickDate(d) {
+    if (S.live) setAutoDay(false);
+    setSelectedDate(d);
+  }
+  // The live stepper: ‹ day › up to the unit's own today, plus a way back to it.
+  const liveMax = todayIso || liveDefaultDay();
+  const dayControl = S.live ? (
+    <>
+      <DayStepper value={selectedDate || liveMax} onChange={pickDate} max={liveMax} fillPhone />
+      {!autoDay && todayIso && selectedDate !== todayIso && (
+        <Button size="lg" variant="ghost" onClick={() => setAutoDay(true)}>{t("staffLive.backToday")}</Button>
+      )}
+    </>
+  ) : (
+    <DatePicker value={selectedDate} onChange={setSelectedDate} />
+  );
+  // Live: the calendar shows the unit the other tabs show — it keeps its own
+  // remembered unit otherwise, and opened on «pick a brigadir» after a unit
+  // had just been read on Xodimlar.
+  function changeTab(v) {
+    if (S.live && v === "approvals" && supervisorManagerId) {
+      try {
+        localStorage.setItem(S.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
+        const [y, m] = String(selectedDate).split("-").map(Number);
+        if (y && m) localStorage.setItem(S.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
+      } catch { /* storage unavailable — the calendar opens where it was */ }
+    }
+    setTab(v);
+  }
+
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
   // A shift-manager already reads every unit on their shift, so hiding the
@@ -4576,7 +4821,7 @@ export function StaffPage() {
   }
 
   return (
-    <Layout title={t(S.live ? "nav.staffLive" : "nav.staff")}>
+    <Layout title={t("nav.staff")}>
       {/* Tabs — the shared view-tab template. NO overflow wrapper: the template
           caps itself at its container, scrolls, and scrolls the SELECTED segment
           into view; a bare wrapper hides that and leaves nothing looking picked. */}
@@ -4584,7 +4829,7 @@ export function StaffPage() {
         <SegmentedToggle
           asTabs
           value={tab}
-          onChange={setTab}
+          onChange={changeTab}
           options={[
             ...(showWorkersTab ? [{ value: "workers", label: t("staff.tabWorkers") }] : []),
             {
@@ -4649,7 +4894,7 @@ export function StaffPage() {
                 onCellChange={pickCell}
               />
             )}
-            <DatePicker value={selectedDate} onChange={setSelectedDate} />
+            {dayControl}
             {/* The cell view is read-only import data — no documents, no
                 day-close state; both controls belong to the verifix flow. */}
             {canCreateHere && !selCell && (
@@ -4661,7 +4906,8 @@ export function StaffPage() {
                 role={role}
               />
             )}
-            {dayClosed && !selCell && (
+            {/* Live: the card's own header line already says the day is closed. */}
+            {dayClosed && !selCell && !S.live && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("staff.dayClosedBadge")}
@@ -4684,6 +4930,7 @@ export function StaffPage() {
                 managerId={supervisorManagerId}
                 selectedDate={selectedDate}
                 pickSupervisor={isManagerView}
+                dayPending={dayPending}
                 onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
               />
             )}
@@ -4722,7 +4969,7 @@ export function StaffPage() {
                 supervisors={supervisors}
               />
             )}
-            <DatePicker value={selectedDate} onChange={setSelectedDate} />
+            {dayControl}
             {dayClosed && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
