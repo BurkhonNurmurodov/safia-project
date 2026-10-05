@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
-  Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
+  Factory, Gauge, ClipboardCheck, Sparkles, BotMessageSquare, Activity, ShieldAlert, ListTodo,
  
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
@@ -26,6 +26,8 @@ import { canAccessPage } from "../../config/pages";
 
 const ALL_LINKS = [
   { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
+  // «Yordamchi» — the AI assistant's full page (the panel opens from the header).
+  { to: "/assistant", page: "assistant", key: "nav.assistant", icon: BotMessageSquare, group: "top" },
   { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2, group: "prod" },
   { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy, group: "lab" },
   // Admin-only gamification & rewards design preview («Safia Honors») — demo

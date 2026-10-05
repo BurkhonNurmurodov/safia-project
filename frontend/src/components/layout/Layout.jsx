@@ -8,6 +8,7 @@ import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Load
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationBell from "../notifications/NotificationBell";
+import { AssistantButton } from "../assistant/AssistantPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
@@ -641,7 +642,10 @@ export default function Layout({ children, title, subtitle }) {
           anything else. */}
       <div
         className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}
-        style={{ paddingLeft: "var(--tg-safe-left, 0px)", paddingRight: "var(--tg-safe-right, 0px)" }}
+        // `--assistant-dock`: «Yordamchi»'s panel, docked on a wide screen,
+        // takes the right edge — the column narrows rather than hide under it.
+        style={{ paddingLeft: "var(--tg-safe-left, 0px)",
+                 paddingRight: "calc(var(--tg-safe-right, 0px) + var(--assistant-dock, 0px))" }}
       >
         {/* Header */}
         <header
@@ -680,6 +684,8 @@ export default function Layout({ children, title, subtitle }) {
 
             {/* Right: bell · language · theme · ghost(admin) · account */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              {/* «Yordamchi» — the AI assistant's side panel (admins for now). */}
+              <AssistantButton />
               {/* Notifications — standalone bell in the header */}
               <NotificationBell />
 

@@ -54,7 +54,7 @@ import {
 const PAGE_SIZE = 50;
 const POLL_MS = 30_000;
 
-const SOURCES = ["telegram", "web", "bot", "system"];
+const SOURCES = ["telegram", "web", "bot", "system", "assistant"];
 const OUTCOMES = ["done", "refused", "denied", "error"];
 const LEVELS = ["", "rich", "auto"];
 

@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, turnover
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, turnover, assistant
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -871,9 +871,10 @@ class SecurityHeadersMiddleware:
         # leader's camera app wrote — and `camera=()` denies getUserMedia
         # outright, no prompt, no error a user could act on. `self` keeps every
         # embedder out: a mini-app iframe (web.telegram.org) still only gets the
-        # camera if Telegram's own `allow` attribute delegates it. Microphone and
-        # geolocation stay fully denied.
-        (b"permissions-policy", b"camera=(self), microphone=(), geolocation=()"),
+        # camera if Telegram's own `allow` attribute delegates it. The MICROPHONE
+        # joined on the same terms on 2026-10-05, for «Yordamchi»'s voice
+        # messages. Geolocation stays fully denied.
+        (b"permissions-policy", b"camera=(self), microphone=(self), geolocation=()"),
     ]
 
     def __init__(self, app):
@@ -1075,6 +1076,10 @@ app.include_router(staff_live.router)
 # «Verifix (test)» — admin-only pages showing what Verifix's API returns; reads
 # only (services/verifix_explore.py, the read-method catalog in verifix_catalog).
 app.include_router(verifix_explore.router)
+# «Yordamchi» — the AI assistant. Answers about the platform and does the
+# user's work THROUGH their own session (services/assistant_api.py), so it can
+# never reach further than the person typing. Page key `assistant`.
+app.include_router(assistant.router)
 
 
 @app.get("/health")

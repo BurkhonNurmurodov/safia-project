@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "staff-live", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "turnover", "education", "exam"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "staff-live", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "turnover", "education", "exam", "assistant"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -177,6 +177,12 @@ DEFAULT_PAGE_ACCESS = {
     # «Imtihon» — the dashboard exam. Leaders sit it; a supervisor reads their
     # unit's results on the same page. Admins assign from /admin/upload?tab=exam.
     "exam": ["supervisor", "leader"],
+    # «Yordamchi» — the AI assistant (routers/assistant.py). Admin-only until
+    # the operator opens it (2026-10-05: "only visible for admins for now").
+    # It acts through the viewer's own session, so opening it to a role gives
+    # that role nothing it could not already do by hand. A tab an admin opened
+    # AS somebody else also gets it — the way to test it inside their rights.
+    "assistant": [],
 }
 
 

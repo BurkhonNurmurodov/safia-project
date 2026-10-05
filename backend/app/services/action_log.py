@@ -96,7 +96,10 @@ CATEGORIES = (
 DANGER = "danger"
 
 OUTCOMES = ("done", "refused", "denied", "error")
-SOURCES = ("telegram", "web", "bot", "system")
+# "assistant": a change «Yordamchi» made for the user, through their own
+# session, after they pressed Confirm (services/assistant_api.py). The request
+# carries a SIGNED run mark, so the label is a fact, not a header anybody can send.
+SOURCES = ("telegram", "web", "bot", "system", "assistant")
 
 
 # ── the route table ───────────────────────────────────────────────────────────
@@ -106,6 +109,8 @@ SOURCES = ("telegram", "web", "bot", "system")
 # with holes is a register that quietly loses whole features.
 
 _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
+    # ── «Yordamchi» — the assistant's own Gemini key (the chats are skipped) ──
+    (("PUT",),    "/api/assistant/settings",                   "config", "config.assistant_key_set"),
     # ── attendance & the day ──────────────────────────────────────────────────
     (("POST",),   "/api/attendance-batch/verifix",             "attendance", "attendance.verifix_read"),
     (("DELETE",), "/api/attendance-batch/uploads/{}",          "attendance", "attendance.batch_file_removed"),
@@ -487,6 +492,10 @@ _SKIP = (
     # The Android app renewing its own session (at most once a day). The
     # sign-in that started it is recorded; a renewal changes nobody's access.
     "/api/auth/web/refresh",
+    # «Yordamchi»: talking to the assistant changes nothing by itself — every
+    # change it makes is its own request, recorded with source "assistant".
+    "/api/assistant/messages", "/api/assistant/runs/", "/api/assistant/files",
+    "/api/assistant/threads", "/api/assistant/transcribe",
 )
 
 _PREFIXES = ("/api/", "/admin/")
@@ -578,6 +587,19 @@ def _client_ip(headers: dict, scope) -> Optional[str]:
             return v[:64]
     peer = (scope.get("client") or (None, None))[0]
     return str(peer)[:64] if peer else None
+
+
+def _assistant_mark(scope) -> Optional[int]:
+    """The run id of a request «Yordamchi» made for the user — only when the
+    signed mark checks out."""
+    for k, v in scope.get("headers", []):
+        if k.lower() == b"x-assistant-run":
+            try:
+                from app.services.assistant_api import verify_run
+                return verify_run(v.decode("latin-1"))
+            except Exception:
+                return None
+    return None
 
 
 def _decode(scope) -> tuple[Optional[dict], bool, Optional[str]]:
@@ -976,6 +998,10 @@ class ActionLogMiddleware:
             row["actor_telegram_id"] = int((payload or {}).get("sub"))
         except (TypeError, ValueError):
             pass
+        mark = _assistant_mark(scope)
+        if mark:
+            row["source"] = "assistant"
+            row["details"].append(("assistant_run", mark))
 
         status: Optional[int] = None
 

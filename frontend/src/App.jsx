@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
 import { FactoryProvider } from "./context/FactoryContext";
 import { ExamProvider } from "./context/ExamContext";
+import { AssistantProvider } from "./context/AssistantContext";
+import AssistantPanel from "./components/assistant/AssistantPanel";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GhostProvider } from "./context/GhostContext";
@@ -154,6 +156,7 @@ const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
 const Notifications = lazyWithReload(() => import("./pages/Notifications"));
+const Assistant = lazyWithReload(() => import("./pages/Assistant"));
 const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundary";
@@ -480,6 +483,13 @@ function AppWithLang() {
               current task and the bottom strip. Above the routes because Layout
               remounts per navigation; inside the router because it watches it. */}
           <ExamProvider>
+          {/* «Yordamchi» — the AI assistant. Above the routes for the same
+              reason as the exam engine: Layout remounts per navigation, and a
+              conversation (and the side panel holding it) must survive the
+              user moving between pages. Inside the exam provider, which hides
+              it for the length of an exam. */}
+          <AssistantProvider>
+          <AssistantPanel />
           {/* Scoped ABOVE the routes and BELOW the shell: a page that throws
               is caught here, keeps the session alive, and clears itself the
               moment the user navigates somewhere else — no reload, nothing
@@ -595,6 +605,9 @@ function AppWithLang() {
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />
             {/* The bell's full page — auth-only like /profile: every session has notifications. */}
             <Route path="/notifications" element={<AuthGate><Notifications /></AuthGate>} />
+            {/* Access is the SERVER's answer (/api/assistant/me): the
+                `assistant` page, or a tab an admin opened as somebody else. */}
+            <Route path="/assistant" element={<AuthGate><Assistant /></AuthGate>} />
             {/* Admin management view of one profile — where the Profiles tab
                 rows navigate instead of opening an edit modal. */}
             <Route path="/profile/:ptype/:pid" element={<AuthGate><RequireProfilesManage><Profile /></RequireProfilesManage></AuthGate>} />
@@ -635,6 +648,7 @@ function AppWithLang() {
           </Routes>
           </Suspense>
           </ScopedErrorBoundary>
+          </AssistantProvider>
           </ExamProvider>
          </FactoryProvider>
         </FilterProvider>

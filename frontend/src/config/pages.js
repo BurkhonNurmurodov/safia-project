@@ -60,6 +60,8 @@ export const PAGES = [
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
   { key: "exam", route: "/exam", labelKey: "nav.exam" },
+  // «Yordamchi» — last on purpose: never anybody's landing page.
+  { key: "assistant", route: "/assistant", labelKey: "nav.assistant" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -131,6 +133,8 @@ export const DEFAULT_PAGE_ACCESS = {
   education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
   // «Imtihon» — the dashboard exam (backend twin: permissions.DEFAULT_PAGE_ACCESS).
   exam: ["supervisor", "leader"],
+  // «Yordamchi» — the AI assistant. Admin-only until the operator opens it.
+  assistant: [],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

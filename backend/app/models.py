@@ -4682,3 +4682,90 @@ class TurnoverRead(Base):
     leavers     = Column(Integer, nullable=True)      # ended employments seen from START on
     reasons     = Column(String(12), nullable=True)   # ok · closed · error
     captured    = Column(String, nullable=True)       # months whose list this read took
+
+
+# ── «Yordamchi» — the AI assistant (services/assistant.py) ────────────────────
+# A chat that answers questions about the platform and does the user's work
+# THROUGH THE USER'S OWN SESSION: every read and every change it makes is an
+# ordinary request to an ordinary endpoint, carrying the user's own token, so
+# it can never reach further than the person typing. Four tables, all owned
+# by the acting PROFILE (`owner_key`, identity.profile_key) — and, in a tab an
+# admin opened AS somebody else, also by that admin (`opened_by`), so a test
+# chat never lands in the real person's history.
+
+class AssistantThread(Base):
+    """One conversation. Its title is the first question, cut short."""
+    __tablename__ = "assistant_threads"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    owner_key  = Column(String, nullable=False, index=True)
+    # The admin's Telegram id when the session was opened «as» this profile
+    # («Shu profil sifatida ochish»); NULL for the person's own session.
+    opened_by  = Column(String, nullable=True, index=True)
+    title      = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssistantMessage(Base):
+    """What the chat SHOWS: a user's message, or the assistant's reply.
+
+    An assistant message is a live object while its run works — `data` carries
+    the steps it has taken, a plan waiting for Confirm, page links and files —
+    so a poll reads one row per reply and never reassembles anything.
+    """
+    __tablename__ = "assistant_messages"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id  = Column(Integer, ForeignKey("assistant_threads.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    run_id     = Column(Integer, nullable=True)
+    role       = Column(String, nullable=False)          # user | assistant
+    text       = Column(Text, nullable=True)
+    data       = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssistantRun(Base):
+    """The engine's state for ONE reply: the Gemini transcript of this turn
+    (model parts kept verbatim — function calls carry thought signatures the
+    model demands back), a plan waiting on the user, and what it cost."""
+    __tablename__ = "assistant_runs"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id    = Column(Integer, ForeignKey("assistant_threads.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    message_id   = Column(Integer, nullable=True)        # the assistant message it writes
+    owner_key    = Column(String, nullable=False, index=True)
+    # running | awaiting_confirm | executing | done | error | cancelled | interrupted
+    status       = Column(String, nullable=False, default="running", index=True)
+    contents     = Column(JSONB, nullable=True)
+    plan         = Column(JSONB, nullable=True)
+    context      = Column(JSONB, nullable=True)
+    usage        = Column(JSONB, nullable=True)
+    model        = Column(String, nullable=True)
+    error        = Column(Text, nullable=True)
+    cancel_asked = Column(Boolean, nullable=False, default=False)
+    heartbeat_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at  = Column(DateTime(timezone=True), nullable=True)
+
+
+class AssistantFile(Base):
+    """A file in a chat: one the user ATTACHED (`upload`) or one the assistant
+    MADE or fetched for them (`export`). Bytes in the database, not on disk:
+    both blue-green copies read the same rows. Owner-only, always."""
+    __tablename__ = "assistant_files"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    owner_key  = Column(String, nullable=False, index=True)
+    opened_by  = Column(String, nullable=True)
+    thread_id  = Column(Integer, ForeignKey("assistant_threads.id", ondelete="CASCADE"),
+                        nullable=True, index=True)
+    kind       = Column(String, nullable=False)          # upload | export
+    name       = Column(String, nullable=False)
+    mime       = Column(String, nullable=False)
+    size       = Column(Integer, nullable=False)
+    data       = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

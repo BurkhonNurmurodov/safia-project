@@ -68,7 +68,7 @@ Other UI conventions:
   precision is lost, because every bucket is still named in the tooltip.
   Reference wiring: `FleetLineChart.jsx` and `components/arc/ArcAnalysis.jsx`.
 - ApexCharts custom tooltips (`tooltip: { custom: … }`) draw their own glassy box, but ApexCharts still wraps them in a themed box → a white halo / extra layer around the tooltip. EVERY such chart MUST carry `apx-bare-tip` on an ancestor to strip that wrapper: `<ReactApexChart className="apx-bare-tip" … />` (react-apexcharts forwards `className` to the container div), or on an existing wrapper div. Default `theme`-only tooltips don't need it. See the `.apx-bare-tip` rule in `index.css`.
-- **On a phone the app header is the title, the bell and the avatar** (below md). Language, theme and ghost mode live in the profile popover there (`PhonePrefs` in `Layout.jsx`, three `SegmentedToggle`s); from md up they stay on the bar. Three utility icons had left a page title ~100px and cut it («AI qaroriga nor…») on every page. Ghost mode stays on the phone bar while it is ON — a state that silences the team must be visible without opening anything. `Layout`'s optional `subtitle` puts a second line under the title; a page uses it to name WHAT is on screen once its own heading has scrolled away (the appeal chat), keyed so the change fades in.
+- **On a phone the app header is the title, the bell and the avatar** (below md). Language, theme and ghost mode live in the profile popover there (`PhonePrefs` in `Layout.jsx`, three `SegmentedToggle`s); from md up they stay on the bar. Three utility icons had left a page title ~100px and cut it («AI qaroriga nor…») on every page. Ghost mode stays on the phone bar while it is ON — a state that silences the team must be visible without opening anything. The one other icon on a phone bar is «Yordamchi»'s, and only for those who may use it (admins today) — it opens the assistant, which is a primary action, not a preference. `Layout`'s optional `subtitle` puts a second line under the title; a page uses it to name WHAT is on screen once its own heading has scrolled away (the appeal chat), keyed so the change fades in.
 - **A dead Telegram bridge is never a crash.** Android drops the Java object behind `window.TelegramWebviewProxy` when it tears a mini app down, and every `Telegram.WebApp` call after that throws «Java object is gone» synchronously from its caller — on a slow link that can happen before React mounts (AuthProvider's `ready()` crashed `/proof/camera` that way, 2026-09-21). The inline script above the SDK tag in `index.html` wraps the proxy once, and the SDK looks it up at call time, so all ~40 call sites are covered. Never call the proxy raw, never move that script below the SDK tag, and never add per-call try/catch for this instead.
 
 ## Admin panel structure
@@ -9369,6 +9369,92 @@ destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
   restore never depends on which list the CURRENT bundle happens to be
   carrying — a leftover park from an older, shorter list is unparked by the
   list it was parked with.
+
+## «Yordamchi» — the AI assistant (`/assistant`, the header panel)
+
+From **2026-10-05** (the operator's rulings, asked in three rounds) an AI
+assistant answers anything about the platform and does the user's work for
+them — «Yordamchi» (ru «Помощник», en «Assistant»). Gemini's latest PRO
+model (`gemini-pro-latest`); voice is transcribed by `gemini-flash-latest`.
+Page key `assistant`, **admin-only until the operator opens it** — plus any
+tab an admin opened AS somebody else (the `imp` claim), which is how it is
+tested inside another person's permissions. Never during an exam (the client
+hides it, the server refuses `X-Exam-Attempt`).
+
+- **It acts THROUGH THE USER'S OWN SESSION — there is no second permission
+  model.** `services/assistant_api.call` makes an ordinary in-process request
+  (`httpx.ASGITransport`) to an ordinary endpoint with the headers the user's
+  own request carried (`FORWARD`: token, initData, ghost mode, IP, UA). Every
+  permission check, factory lock, row scope and closed-day lock applies to it
+  by the same code; a 403 is relayed as «you may not». Never give it a token
+  of its own.
+- **`assistant_api.access_of` is THE policy** on top of that, per concrete
+  request (method + path + body): `read` (every GET — runs), `export` (a file
+  the page would hand over — runs; a download in a browser, a DM in
+  Telegram), `write` (any other change — NEVER runs directly), `blocked`,
+  `hidden`. **Off-limits even with a Confirm** (the operator's answers):
+  `danger`; logins, passwords, API keys and platform settings (`credentials`,
+  `settings` — `PUT /admin/settings` is open for the colour-band keys alone,
+  «Rules & configuration»); mass messages (broadcasts, lessons, notices,
+  forecast calls); **deleting anything** (every DELETE, every action key
+  naming a removal, a deletion request's APPROVAL); people & access (profiles,
+  roles, page access, capabilities, factory assignments, idle owners); the
+  exam; and any route the action register cannot classify. **Allowed after
+  Confirm**: tasks, concerns, comments, ojidaniya entries, appeal rulings,
+  attendance & HR documents, production data (ПЛАН/ФАКТ, people, Ish grafigi,
+  catalog, an attached SAP file), rules & configuration (checklist settings,
+  wage rates, colour bands, the cells register, shift times). It classifies
+  by the action register's category (`action_log.classify`), so a new endpoint
+  lands in a class the day it ships; `_RULES` holds the exceptions.
+- **Changes wait for the user.** The model must call `propose_changes`; the
+  run PAUSES (`awaiting_confirm`) with a plan card, every change ticked; the
+  user unticks what they do not want and presses «Tasdiqlash (n)». Each
+  change is then made in order, re-checked against the policy WITH its body,
+  and its result (✓ / ✗ with the server's reason / skipped) is handed back so
+  the model reports what really happened. A new message while a plan waits
+  cancels it (`superseded`) — nothing changes.
+- **Every change it makes is in the Jurnal** under the user, with source
+  «Yordamchi orqali» (`assistant`) — set only when the `X-Assistant-Run`
+  header carries a valid HMAC (`sign_run` / `verify_run`), so the label cannot
+  be forged. Talking to it is not recorded (`_SKIP`); its key save is.
+- **Knowledge = this rule book** (`services/assistant_docs.py`): `CLAUDE.md`
+  + `docs/zagruzka-and-ojidaniya.md`, split by `##` section, developer-only
+  sections dropped (`_SKIP_PREFIXES`), the contents in the system prompt and
+  a BM25 search over Latin-folded, stem-cut words (`search_docs` / `read_doc`).
+  **Re-check that choice before opening it to non-admins** — the rule book
+  names internal decisions. Live data: `api.index_text()` (every path it may
+  use, by area) + `find_endpoints` / `describe_endpoint` (docstrings, params,
+  body schema from the route itself).
+- **Gemini key**: its own sealed key (`assistant_gemini_api_key`, admin card
+  on the assistant's ⚙), else the proof reviewer's — so a busy chat day never
+  spends the quota the photo reviews need. Usage (tokens per run) is shown
+  there for the month.
+- **Engine** (`services/assistant.py`): an asyncio task on the server loop;
+  the whole state is in `assistant_runs` (Gemini contents kept VERBATIM —
+  Gemini 3 function calls carry thought signatures it validates), so a
+  Confirm landing on the other blue-green copy resumes there. A run that
+  stops heart-beating (a deploy) reads «interrupted» (`heal`). ≤ 18 model
+  steps and 7 minutes per reply, ≤ 2 running per person, 8 overall.
+  Earlier turns are replayed as TEXT (asked / answered / plan summary), never
+  tool traffic.
+- **Chats belong to the acting PROFILE** (`owner_key`) and, in an «open as»
+  tab, to the admin who opened it (`opened_by`) — only their author ever
+  sees them. Files (`assistant_files`, bytes in the DB, owner-only): images,
+  PDF, xlsx (read into rows), csv/txt, ≤ 20 MB, ≤ 5 per message; out:
+  `make_excel` or an export endpoint. Voice: a 16 kHz WAV recorded in the
+  page (`useVoiceRecorder`, not MediaRecorder — Gemini reads neither WebM nor
+  MP4), sent at once, its transcript is the user's bubble. The microphone is
+  allowed for this origin (`permissions-policy`); the Android app grants only
+  the camera, so the mic is hidden there until an APK says `__safiaApp.mic`.
+- **UI**: `context/AssistantContext.jsx` (above the routes, like the exam);
+  `components/assistant/` — `AssistantPanel` (the header button; the panel
+  DOCKS at ≥ 1280px through `--assistant-dock`, which Layout's column pads
+  by; overlays below; full screen on a phone), `Chat` (shared by panel and
+  page; polls every second while a run works, never at rest), `Message`,
+  `PlanCard`, `Composer`, `Markdown` (React nodes only, never innerHTML),
+  `ThreadList`, `AssistantSettings`; `pages/Assistant.jsx` is the full page.
+  The page context sent with each message: route, query, global filters,
+  plant, and the pages this person can open.
 
 ## Workflow
 
