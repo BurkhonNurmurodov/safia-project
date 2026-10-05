@@ -630,6 +630,235 @@ def get_stats(
     }
 
 
+# ── analysis (the «Tahlil» mode) ─────────────────────────────────────────────
+# /arc's analysis, over this register: the SAME response shape, so the page
+# renders it with /arc's own component (components/arc/ArcAnalysis.jsx, given
+# this endpoint). Every figure goes through _apply_filters and _derived, so the
+# charts count exactly the rows the table lists. Where /arc reads its own
+# columns this reads the legacy twins: «done» is `is_closed`, a category's norm
+# is `category_deadline_hours`, the «where from» ranking is the warehouse
+# (bo'linma, from 29 Sep 2026) and the crews are IT's `master_name`.
+
+_GRANS = ("day", "week", "month")
+_TREND_MAX_BUCKETS = 400
+_TOP = 12
+_TOP_LEADERS = 14
+
+
+def _py_trunc(d: date_cls, gran: str) -> date_cls:
+    """date_trunc's bucket start in Python (weeks start Monday, as in SQL)."""
+    if gran == "week":
+        return d - timedelta(days=d.weekday())
+    if gran == "month":
+        return d.replace(day=1)
+    return d
+
+
+def _next_bucket(d: date_cls, gran: str) -> date_cls:
+    if gran == "week":
+        return d + timedelta(weeks=1)
+    if gran == "month":
+        return (d.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return d + timedelta(days=1)
+
+
+@router.get("/analysis")
+def get_analysis(
+    view: str = Query("all"),
+    gran: str = Query("day"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+    f: dict = Depends(_filters),
+):
+    """Aggregates behind the analysis charts, per view, over the filtered set."""
+    R = ArcLegacyRequest
+    D = _derived()
+    if gran not in _GRANS:
+        gran = "day"
+    base = _apply_filters(db.query(R), f, D, db)
+
+    def _sum(cond):
+        return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
+
+    # ── flow trend: filed vs closed per bucket, Tashkent wall clock. The trend
+    # ALONE widens a very short period to the 7-day chart minimum.
+    f_trend = dict(f)
+    lo_d = hi_d = None
+    try:
+        if f.get("date_from"):
+            lo_d = date_cls.fromisoformat(f["date_from"][:10])
+        if f.get("date_to"):
+            hi_d = date_cls.fromisoformat(f["date_to"][:10])
+    except ValueError:
+        pass
+    if lo_d and hi_d and (hi_d - lo_d).days + 1 < 7:
+        lo_d = hi_d - timedelta(days=6)
+        f_trend["date_from"] = lo_d.isoformat()
+    tbase = _apply_filters(db.query(R), f_trend, D, db)
+
+    def _bucket(col):
+        return func.date_trunc(gran, func.timezone("Asia/Tashkent", col))
+
+    created_b = _bucket(R.created_at)
+    made = {k.date(): int(n) for k, n in
+            (tbase.filter(R.created_at.isnot(None))
+             .with_entities(created_b, func.count(R.id)).group_by(created_b).all())
+            if k is not None}
+    closed_b = _bucket(D["closed_at"])
+    shut = {k.date(): int(n) for k, n in
+            (tbase.filter(D["is_closed"])
+             .with_entities(closed_b, func.count(R.id)).group_by(closed_b).all())
+            if k is not None}
+    span = sorted(set(made) | set(shut)
+                  | ({_py_trunc(lo_d, gran)} if lo_d else set())
+                  | ({_py_trunc(hi_d, gran)} if hi_d else set()))
+    trend: list[dict] = []
+    if span:
+        cur, last = span[0], span[-1]
+        while cur <= last and len(trend) < 20_000:
+            trend.append({"d": cur.isoformat(), "created": made.get(cur, 0),
+                          "closed": shut.get(cur, 0)})
+            cur = _next_bucket(cur, gran)
+    trend = trend[-_TREND_MAX_BUCKETS:]
+
+    # ── the category mix + deadline discipline (both views), one grouped pass.
+    # `cwd` = closures that HAD a deadline — the only rows a timeliness verdict
+    # exists for; `allowed_h` is the category's own norm.
+    closed_with_due = and_(D["is_closed"], D["due"].isnot(None))
+    late_closed = and_(closed_with_due, D["late"])
+    hours_closed = case((D["is_closed"], D["hours_to_close"]), else_=None)
+    categories = [
+        {"id": cid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "cwd": _n(cw), "late": _n(lt), "closed_n": _n(hn),
+         "avg_h": round(float(av), 1) if av is not None else None,
+         "median_h": round(float(md), 1) if md is not None else None,
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, dn, op, ov, cc, cw, lt, hn, av, md, ft in (
+            base.with_entities(R.category_id, R.category_name, func.count(R.id),
+                               _sum(D["is_closed"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               _sum(closed_with_due), _sum(late_closed),
+                               _sum(hours_closed.isnot(None)),
+                               func.avg(hours_closed),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_deadline_hours))
+            .group_by(R.category_id, R.category_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    st = base.with_entities(
+        func.count(R.id), _sum(D["is_closed"]), _sum(D["is_open"]),
+        _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+        _sum(closed_with_due), _sum(late_closed),
+        func.avg(hours_closed),
+    ).one()
+    sla_totals = {"total": _n(st[0]), "done": _n(st[1]), "open": _n(st[2]),
+                  "overdue": _n(st[3]), "cancelled": _n(st[4]),
+                  "cwd": _n(st[5]), "late": _n(st[6]),
+                  "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
+
+    out: dict[str, Any] = {"gran": gran, "trend": trend,
+                           "categories": categories, "sla_totals": sla_totals}
+
+    if view == "cells":
+        # Per-code counts once; the top cells and both owner rollups read off
+        # this pass, joined to the org chart through the SAME org_index the
+        # filter panel uses.
+        code = D["cell_code"]
+        crows = (base.filter(code.isnot(None))
+                 .with_entities(code, func.count(R.id), _sum(D["is_closed"]),
+                                _sum(D["is_open"]), _sum(D["overdue_now"]),
+                                _sum(D["is_cancelled"]))
+                 .group_by(code).all())
+        org = arc_cells.org_index(db, [c for c, *_ in crows])
+        by_code = org["by_code"]
+        cells = sorted(
+            ({"code": c, "total": int(n), "done": _n(dn), "open": _n(op),
+              "overdue": _n(ov), "cancelled": _n(cc)}
+             for c, n, dn, op, ov, cc in crows),
+            key=lambda x: -x["total"])
+        top_cells = cells[:_TOP]
+        out["cells"] = top_cells
+        out["cells_n"] = len(cells)
+        out["cells_map"] = arc_cells.cells_for(db, [c["code"] for c in top_cells])
+
+        def rollup(key: str, catalog: dict) -> list[dict]:
+            agg: dict = {}
+            for c, n, dn, op, ov, cc in crows:
+                k = (by_code.get(c) or {}).get(key)
+                a = agg.setdefault(k, {"total": 0, "done": 0, "open": 0,
+                                       "overdue": 0, "cancelled": 0})
+                a["total"] += int(n)
+                a["done"] += _n(dn)
+                a["open"] += _n(op)
+                a["overdue"] += _n(ov)
+                a["cancelled"] += _n(cc)
+            rows = []
+            for k, a in agg.items():
+                info = catalog.get(k) if k is not None else None
+                # k None = codes the org chart cannot place — its own bucket.
+                rows.append({"id": k, "name": (info or {}).get("name"), **a})
+            rows.sort(key=lambda x: (-x["total"], (x["name"] or "").lower()))
+            return rows
+
+        sups = rollup("manager_id", org["managers"])
+        out["sups"] = sups[:40]
+        out["sups_n"] = len(sups)
+        leaders = rollup("leader_id", org["leaders"])
+        out["leaders"] = leaders[:_TOP_LEADERS]
+        out["leaders_n"] = len(leaders)
+        return out
+
+    # ── the register view: where from (the warehouse), how fast, which crew ──
+    divisions = [
+        {"id": wid or name, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc)}
+        for wid, name, n, dn, op, ov, cc in (
+            base.filter(R.warehouse_name.isnot(None))
+            .with_entities(R.warehouse_id, R.warehouse_name, func.count(R.id),
+                           _sum(D["is_closed"]), _sum(D["is_open"]),
+                           _sum(D["overdue_now"]), _sum(D["is_cancelled"]))
+            .group_by(R.warehouse_id, R.warehouse_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out["divisions"] = divisions[:_TOP]
+    out["divisions_n"] = len(divisions)
+
+    speed = [
+        {"id": cid, "name": name, "closed": _n(n),
+         "median_h": round(float(m), 1),
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, m, ft in (
+            base.with_entities(R.category_id, R.category_name,
+                               _sum(hours_closed.isnot(None)),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_deadline_hours))
+            .group_by(R.category_id, R.category_name).all())
+        if _n(n) > 0 and m is not None
+    ]
+    speed.sort(key=lambda x: -x["closed"])
+    out["speed"] = speed[:10]
+    out["speed_n"] = len(speed)
+
+    # IT's crews (`master_name` — «Бригада2», «Бригада ремонт» …). NULL is the
+    # not-yet-assigned pile, shown as its own row.
+    brigadas = [
+        {"id": mid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "median_h": round(float(m), 1) if m is not None else None}
+        for mid, name, n, dn, op, ov, cc, m in (
+            base.with_entities(R.master_id, R.master_name, func.count(R.id),
+                               _sum(D["is_closed"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               func.percentile_cont(0.5).within_group(hours_closed))
+            .group_by(R.master_id, R.master_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out["brigadas"] = brigadas[:_TOP]
+    out["brigadas_n"] = len(brigadas)
+    return out
+
+
 @router.get("/requests/{remote_id}")
 def get_request(
     remote_id: str,

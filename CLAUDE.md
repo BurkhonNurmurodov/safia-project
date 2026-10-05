@@ -8399,9 +8399,15 @@ untouched.
   `cells_only` + the brigadir / lider / all owner toggle, `hidden_no_cell` /
   `hidden_unassigned` named on the card). The org chain (shift → brigadir →
   leader → cell) narrows both tabs; its option lists come off `/meta` over the
-  whole mirror, like every other list on this page (no `/facets`, no analysis
-  mode). A ticket filed before 29 Sep names no cell, so the cells tab over an
-  older period is empty and says why (`arcl.cellsSince`).
+  whole mirror, like every other list on this page (no `/facets`). A ticket
+  filed before 29 Sep names no cell, so the cells tab over an older period is
+  empty and says why (`arcl.cellsSince`).
+- **«Ma'lumotlar / Tahlil» mode, as on /arc** (2026-10-05) — /arc's own
+  `components/arc/ArcAnalysis.jsx`, given `endpoint="/api/arc-legacy/analysis"`
+  (+ `queryKey` / `prefPrefix`, defaults /arc's). That endpoint answers in
+  /arc's exact shape over this register: «done» = `is_closed`, a category's
+  norm = `category_deadline_hours`, «TOP bo'linmalar» = the warehouse (so only
+  tickets from 29 Sep), the crews = IT's `master_name`.
 - Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
   `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
 

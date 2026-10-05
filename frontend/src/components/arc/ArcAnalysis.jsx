@@ -35,6 +35,11 @@ import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus"
 // overdue — the palette every page here already taught) — and a bar with a
 // goal marker for speed-vs-allowance, where «the bar crossed the line» IS the
 // verdict.
+//
+// /arc-legacy renders the same component over its own register (from
+// 2026-10-05): `endpoint` names its `/analysis`, which answers in this exact
+// shape, and `queryKey` / `prefPrefix` keep its cache and remembered toggles
+// apart from /arc's. Every other prop default is /arc's own, unchanged.
 
 // «Filed» is an EVENT series, not a status, so it takes a categorical hue the
 // status palette does not use; «closed» keeps the done-green the whole page
@@ -406,7 +411,10 @@ function SpeedTable({ rows, right }) {
   );
 }
 
-export default function ArcAnalysis({ view, filters, enabled }) {
+export default function ArcAnalysis({
+  view, filters, enabled,
+  endpoint = "/api/arc/analysis", queryKey = "arc-analysis", prefPrefix = "arc_an",
+}) {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, gridColor, labelColor, legendColor } = useChartTheme();
@@ -424,15 +432,15 @@ export default function ArcAnalysis({ view, filters, enabled }) {
     return Number.isNaN(d) ? null : Math.round(d) + 1;
   }, [filters.date_from, filters.date_to]);
   const autoGran = span == null ? "month" : span <= 92 ? "day" : span <= 400 ? "week" : "month";
-  const [granPick, setGranPick] = usePersistentState("arc_an_gran", "");
+  const [granPick, setGranPick] = usePersistentState(`${prefPrefix}_gran`, "");
   const gran = granPick || autoGran;
   // Units chart dimension — brigadir or lider, the Quality «acc» toggle model.
-  const [dim, setDim] = usePersistentState("arc_an_dim", "sup");
+  const [dim, setDim] = usePersistentState(`${prefPrefix}_dim`, "sup");
 
   const viewKey = view === "cells" ? "cells" : "all";
   const anQ = useQuery({
-    queryKey: ["arc-analysis", viewKey, gran, filters],
-    queryFn: () => api.get("/api/arc/analysis", { params: { ...filters, view: viewKey, gran } }).then((r) => r.data),
+    queryKey: [queryKey, viewKey, gran, filters],
+    queryFn: () => api.get(endpoint, { params: { ...filters, view: viewKey, gran } }).then((r) => r.data),
     enabled,
     placeholderData: keepPreviousData,
   });

@@ -16,7 +16,7 @@ import {
   RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Store, UserCog, Tag,
   CircleDot, Layers, Siren, AlertTriangle, PackageCheck, Camera, FileText, ExternalLink,
   MapPin, Phone, Check, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound,
-  PlugZap, Zap, ListChecks, Radar, Boxes, Wrench, Clock, Link2Off, Building2,
+  PlugZap, Zap, ListChecks, Radar, Boxes, Wrench, Clock, Link2Off, Building2, BarChart3,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -42,6 +42,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import LegacyApiPanel from "../components/arc/LegacyApiPanel";
+import ArcAnalysis from "../components/arc/ArcAnalysis";
 import { inTelegram } from "../utils/session";
 import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatusLegacy";
 
@@ -207,6 +208,9 @@ export default function ArcLegacy() {
   // «Yacheykalar bo'yicha» opens on the cells a brigadir is on («manager»);
   // «leader» reads one level down, «all» lifts the narrowing (/arc's rule).
   const [owner, setOwner] = usePersistentState("arcl_owner", "manager");
+  // Which MODE the open tab is read in — the table («Ma'lumotlar») or /arc's
+  // charts («Tahlil»). Both read the SAME filtered tickets.
+  const [mode, setMode] = usePersistentState("arcl_mode", "data");
   const [dateFrom, setDateFrom] = usePersistentState("arcl_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arcl_date_to", "");
   const [state, setState] = usePersistentState("arcl_state", "all");
@@ -330,6 +334,7 @@ export default function ArcLegacy() {
       qc.invalidateQueries({ queryKey: ["arcl-stats"] });
       qc.invalidateQueries({ queryKey: ["arcl-list"] });
       qc.invalidateQueries({ queryKey: ["arcl-meta"] });
+      qc.invalidateQueries({ queryKey: ["arcl-analysis"] });
       if (sync?.ok === false) toast.error(`${t("arcl.syncFailed")}: ${sync?.message || ""}`);
       else toast.success(t("arcl.syncDone"));
     }
@@ -1174,11 +1179,12 @@ export default function ArcLegacy() {
               onClick={runExport}>
               <span className="hidden sm:inline">{t("arcl.export")}</span>
             </Button>
-            {/* The register's columns only — the cells tab is a fixed set.
-                Hidden below `sm:` — that is where TableCard swaps the table for
-                the stacked cards, and a picker over a table nobody can see is a
-                control with no effect. */}
-            {tab === "all" && <ColumnsPicker
+            {/* The register's columns only — the cells tab is a fixed set, and
+                in analysis mode there is no table to configure. Hidden below
+                `sm:` — that is where TableCard swaps the table for the stacked
+                cards, and a picker over a table nobody can see is a control
+                with no effect. */}
+            {tab === "all" && mode === "data" && <ColumnsPicker
               className="ml-auto hidden sm:block"
               columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
@@ -1194,21 +1200,32 @@ export default function ArcLegacy() {
               : kpiTiles.map((k) => <KPICard key={k.label} {...k} />)}
           </div>
 
-          {/* WHICH cells the cells tab answers for — the ones a brigadir is on
-              (the default), the ones a lider is on, or every cell. A scope, so
-              it narrows every figure on the page; it belongs to that tab's
-              question alone. */}
-          {tab === "cells" && (
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {/* data / analysis mode, under the KPI strip so the headline numbers
+              stay on screen either way — and, on the cells tab, WHICH cells
+              that tab answers for (a brigadir is on them — the default — a
+              lider is, or every cell). Both are /arc's controls, in /arc's
+              place; the owner scope narrows every figure in both modes. */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <SegmentedToggle value={mode} onChange={setMode}
+              options={[
+                { value: "data", label: (<span className="inline-flex items-center gap-1.5"><ClipboardList size={12} />{t("arcl.modeData")}</span>) },
+                { value: "analysis", label: (<span className="inline-flex items-center gap-1.5"><BarChart3 size={12} />{t("arcl.modeAnalysis")}</span>) },
+              ]} />
+            {tab === "cells" && (
               <SegmentedToggle value={owner} onChange={setOwner}
                 options={[
                   { value: "manager", label: (<span className="inline-flex items-center gap-1.5"><Wrench size={12} />{t("arcl.ownerManager")}</span>), title: t("arcl.ownerManagerHint") },
                   { value: "leader", label: (<span className="inline-flex items-center gap-1.5"><UserCog size={12} />{t("arcl.ownerLeader")}</span>), title: t("arcl.ownerLeaderHint") },
                   { value: "all", label: (<span className="inline-flex items-center gap-1.5"><Boxes size={12} />{t("arcl.ownerAll")}</span>), title: t("arcl.ownerAllHint") },
                 ]} />
-            </div>
-          )}
+            )}
+          </div>
 
+          {mode === "analysis" ? (
+            <ArcAnalysis view={tab} filters={filters} enabled={configured && hasData}
+              endpoint="/api/arc-legacy/analysis" queryKey="arcl-analysis" prefPrefix="arcl_an" />
+          ) : (
+          <>
           {/* ONE table for both views — same rows, filters, page and sort; only
               the columns differ. */}
           <TableCard
@@ -1278,6 +1295,8 @@ export default function ArcLegacy() {
             </tbody>
           </TableCard>
           <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+          </>
+          )}
         </>
       )}
 
