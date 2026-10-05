@@ -1,6 +1,7 @@
 """The LIVE «Verifix to'g'irlash» day — /staff's rows, built from Verifix.
 
-`/staff-live` is the lab copy of /staff with ONE difference, the source (the
+`/staff-live` is /staff over the live Verifix read, built to replace it, with ONE
+difference, the source (the
 operator, 2026-10-04: «structure this page just like Verifix edit … the same
 rule applies for everything … the only difference should be the source»). On
 /staff a unit's day is `attendance` rows the admin's next-day «Verifix'dan
@@ -8,9 +9,10 @@ olish» read wrote; here it is the STORED live read (`live_verifix_reads`, a job
 reads Verifix every minute — `verifix_live`) folded into the same row shape:
 worker, role, cell, schedule, clock in · clock out, hours, early arrival,
 effective hours, plus what only a live source can say (status, late, early
-leave, a missing check-out). Lab only for now, built to replace the real one:
-the documents live in their own tables (`LiveDocument`, `LiveDeletion`,
-`LivePlacement`) and nothing outside the page reads them.
+leave, a missing check-out). The documents live in their own tables
+(`LiveDocument`, `LiveDeletion`, `LivePlacement`); the Telegram approval cards,
+the bell queue and the sidebar badge read them (2026-10-05), the загрузка and
+the real day-close ladder do not yet — that switch is a separate decision.
 
 **Nothing is applied — every document is READ on every request.** /staff
 applies an approved document to `attendance` once and reverts it on cancel.

@@ -68,7 +68,7 @@ _EXACT = {
     # Attendance and the day close.
     "day_closed": "day", "day_reopened": "day", "verifix_uploaded": "day",
     "live_all_left": "day",
-    # The lab «Verifix to'g'irlash · Jonli» (/staff-live) — /staff's twins.
+    # The live «Verifix to'g'irlash · Jonli» (/staff-live) — /staff's twins.
     "live_exchange_created": "approvals", "live_exchange_approved": "approvals",
     "live_exchange_cancelled": "approvals", "live_role_change_new": "approvals",
     "live_role_change_approved": "approvals", "live_role_change_cancelled": "approvals",

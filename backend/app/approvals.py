@@ -43,6 +43,20 @@ class AlreadyHandled(Exception):
     decided in the web app). The callback answers with a soft toast."""
 
 
+class Refused(Exception):
+    """A decision the core REFUSED for a stated reason while the request is
+    still open — a worker another approved document has since moved on
+    (`not_here`), a move that would break one already approved (`breaks`), a
+    draft past `STALE_APPROVE_DAYS` (`doc_too_old`). Not a race and not
+    "already handled": nothing was decided, the card keeps its buttons, and
+    the tapper is shown the endpoint's own words (`message`) — the same
+    sentence the page prints for that refusal."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
 # ── i18n ────────────────────────────────────────────────────────────────────
 
 _KIND_CODE = {"edit_request": "er", "edit_batch": "eb", "hr_document": "hr",
@@ -272,7 +286,10 @@ def _edit_request_data(db, req) -> dict:
     }
 
 
-def _hr_document_data(db, doc) -> dict:
+def _document_data(db, doc, day, transfer_time) -> dict:
+    """The facts of a document card, for an HrDocument and a LiveDocument alike
+    — they carry one payload shape and differ only in the day column and in
+    how a move's clock is spelled, which the two callers hand in."""
     mgr = db.query(Manager).filter_by(id=doc.manager_id).first()
     payload = doc.payload or {}
     # An exchange names WHO receives the people — the supervisor, or the task
@@ -287,13 +304,17 @@ def _hr_document_data(db, doc) -> dict:
         "doc_type":  doc.doc_type,
         "kind":      doc.doc_type,
         "unit":      unit,
-        "date":      doc.date,
+        "date":      day,
         "creator":   doc.created_by_name or "",
         "new_role":  payload.get("new_role"),
         "target":    target or "—",
-        "transfer_time": payload.get("transfer_time"),
+        "transfer_time": transfer_time,
         "employees": payload.get("employees", []),
     }
+
+
+def _hr_document_data(db, doc) -> dict:
+    return _document_data(db, doc, doc.date, (doc.payload or {}).get("transfer_time"))
 
 
 # ── Renderers (data dict + admin language → message body) ─────────────────────
@@ -379,14 +400,11 @@ def _live_document_data(db, doc) -> dict:
     """`_hr_document_data` over a LiveDocument: the day column is `day`, and
     a move's clock prints «HH:MM» or «HH:MM–HH:MM» when a return time is set
     (the shape the page's own notices print)."""
-    data = _hr_document_data(db, doc)
-    data["date"] = doc.day
     payload = doc.payload or {}
     ttime = payload.get("transfer_time") or ""
     if ttime and payload.get("return_time"):
         ttime = f"{ttime}–{payload['return_time']}"
-    data["transfer_time"] = ttime
-    return data
+    return _document_data(db, doc, doc.day, ttime)
 
 
 def _with_live_mark(text: str, lang: str) -> str:
@@ -1099,6 +1117,11 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
             return
         toast = _L(lang, "toast_approved") if status == "approved" else _L(lang, "toast_rejected")
         bot.answer_callback_query(call.id, toast)
+    except Refused as r:
+        # Telegram caps a callback answer at 200 characters; the reason is
+        # the server's own sentence, cut at a word when it is longer.
+        bot.answer_callback_query(call.id, _short(r.message) or _L(lang, "toast_error"),
+                                  show_alert=True)
     except AlreadyHandled:
         bot.answer_callback_query(call.id, _L(lang, "toast_already"), show_alert=True)
     except Exception:
@@ -1112,6 +1135,22 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
 def _get_caller_lang(call) -> str:
     from app.telegram_bot import _get_lang
     return _get_lang(call.from_user.id)
+
+
+_CALLBACK_TEXT_MAX = 200   # Telegram's limit on answerCallbackQuery.text
+
+
+def _short(text, limit: int = _CALLBACK_TEXT_MAX) -> str:
+    """``text`` cut to ``limit`` characters at a word boundary with an
+    ellipsis, for a callback answer. Never raises on a non-string."""
+    t = str(text or "").strip()
+    if len(t) <= limit:
+        return t
+    cut = t[: limit - 1]
+    sp = cut.rfind(" ")
+    if sp > limit // 2:
+        cut = cut[:sp]
+    return cut.rstrip() + "…"
 
 
 def _decide_edit_request(req_id: int, status: str, caller: dict) -> None:
@@ -1251,15 +1290,22 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
     Telegram door and the page can never disagree about one document. The
     caller is `_caller_for_doc`'s — an admin, else the RECEIVING supervisor of
     an exchange (it reads only `doc.payload`, which a LiveDocument carries in
-    /staff's shape) — re-checked against the page's `_can_approve`."""
+    /staff's shape) — else a documents-approve GRANTEE, built as
+    `_grantee_caller` builds one for an er/eb tap: `send_live_document_to_admins`
+    addresses the card to such a grantee (through `_live_openers`), and a
+    button sent to somebody whose tap can only ever answer «already handled»
+    is worse than no button. Whoever it is, the page's own `_can_approve`
+    (`_native_can_approve` or `_granted_over`) is the server-side authority."""
     from fastapi import HTTPException
+    from app.capabilities import CAP_DOCUMENTS_APPROVE
     from app.models import LiveDocument
     from app.routers import staff_live
     with SessionLocal() as db:
         doc = db.query(LiveDocument).filter_by(id=doc_id).first()
         if not doc:
             raise AlreadyHandled()
-        caller = _caller_for_doc(call, doc, db)
+        caller = (_caller_for_doc(call, doc, db)
+                  or _grantee_caller(call, CAP_DOCUMENTS_APPROVE))
         if caller is None or (caller["role"] != "admin"
                               and not staff_live._can_approve(doc, caller, db)):
             raise AlreadyHandled()
@@ -1275,9 +1321,15 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
                 db.commit()
                 staff_live._tell_rejected(db, doc, caller)
         except HTTPException as e:
-            # 404 / 409 — gone, already decided, too old, no longer standing
-            # here: somebody got there first. Anything else is a real error
+            # A STRUCTURED 409 (`{code, message}`: `not_here`, `breaks`,
+            # `doc_too_old`) is a refusal of a document still open — nothing
+            # was decided, the card stays, the tapper reads the reason the
+            # page would print. A plain-string 409 («Rejected documents cannot
+            # be posted», «Only draft documents can be rejected») or a 404 is
+            # a race: somebody got there first. Anything else is a real error
             # and reaches the generic toast.
+            if e.status_code == 409 and isinstance(e.detail, dict) and e.detail.get("message"):
+                raise Refused(str(e.detail["message"]))
             if e.status_code in (404, 409):
                 raise AlreadyHandled()
             raise

@@ -4394,10 +4394,10 @@ class LiveStaffEvent(Base):
 
 
 class LiveDayClose(Base):
-    """A unit's day closed BY HAND on the lab copy (`/staff-live`) — the only way
+    """A unit's day closed BY HAND on the live page (`/staff-live`) — the only way
     a day closes there (from 2026-10-04 nothing closes one by itself; the
-    brigadir is TOLD instead, `LiveAllLeftNotice`). Lab only: the real day close
-    (`/staff`) knows nothing about this table."""
+    brigadir is TOLD instead, `LiveAllLeftNotice`). The real day-close ladder
+    (`/staff`, `DayApproval`) knows nothing about this table yet."""
     __tablename__ = "live_day_closes"
     __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_day_close"),)
 
@@ -4435,7 +4435,7 @@ class LiveAllLeftNotice(Base):
     unit's brigadir by the `/staff-live` job (from 2026-10-04, the operator:
     the day is never closed by itself, the brigadir is told when to close it).
     The row is written before the message goes, so two passes can never send
-    it twice. Lab only."""
+    it twice."""
     __tablename__ = "live_all_left_notices"
     __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_all_left"),)
 
@@ -4450,12 +4450,13 @@ class LiveAllLeftNotice(Base):
 
 
 class LiveDocument(Base):
-    """A document filed on the LAB «Verifix to'g'irlash · Jonli» (`/staff-live`)
-    — the twin of `HrDocument` over the LIVE Verifix source (from 2026-10-04,
-    the operator: «structure this page just like Verifix edit … the only
-    difference should be the source»). Lab only for now, built to replace the
-    real one: nothing outside that page reads it, and the shapes are
-    `HrDocument`'s so the switch is a change of table, not of rule.
+    """A document filed on «Verifix to'g'irlash · Jonli» (`/staff-live`) — the
+    twin of `HrDocument` over the LIVE Verifix source (from 2026-10-04, the
+    operator: «structure this page just like Verifix edit … the only difference
+    should be the source»). Built to replace the real one: the page, its
+    Telegram approval cards and the bell queue read it, the загрузка does not
+    yet, and the shapes are `HrDocument`'s so the switch is a change of table,
+    not of rule.
 
     `doc_type`: people_exchange | role_change. `status`: draft | approved |
     rejected — HrDocument's three. `day` is the SENDING unit's shift-day.
@@ -4502,7 +4503,7 @@ class LiveDocumentHistory(Base):
 
 class LiveDeletion(Base):
     """A worker taken OFF a unit's live day — the twin of a deletion
-    `EditRequest` (`changes._action = "delete"`) on the lab page. A brigadir
+    `EditRequest` (`changes._action = "delete"`) on the live page. A brigadir
     files `pending` rows in a batch; an admin / shift-manager approves or
     rejects them; an admin's own deletion is written `approved` at once.
     `undone` restores the worker. Keyed by Verifix `employee_id` for one

@@ -1,4 +1,4 @@
-"""The LIVE «Verifix to'g'irlash» (lab) — `/staff-live`, the /staff API over Verifix.
+"""The LIVE «Verifix to'g'irlash» — `/staff-live`, the /staff API over Verifix.
 
 From 2026-10-04 (the operator: «structure this page just like Verifix edit …
 the same rule applies for everything as that page … the only difference should
