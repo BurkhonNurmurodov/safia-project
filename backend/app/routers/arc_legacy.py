@@ -33,15 +33,16 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Float, Text, and_, case, cast, false, func, not_, or_
+from sqlalchemy import (Boolean, DateTime, Float, Integer, String, Text, and_,
+                        case, cast, false, func, not_, null, or_, select, union_all)
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
-from app.models import ArcLegacyRequest, ArcLegacySyncMeta
+from app.models import ArcLegacyRequest, ArcLegacySyncMeta, ArcRequest
 from app.permissions import require_page
 from app.translit import transliterate
-from app.services import action_log, arc_cells, arc_legacy_client, arc_legacy_discovery
+from app.services import action_log, arc_cells, arc_client, arc_hidden, arc_legacy_client, arc_legacy_discovery
 from app.services.arc_legacy_export import build_arc_legacy_workbook
 from app.services.arc_legacy_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -56,6 +57,105 @@ _TASHKENT = timezone(timedelta(hours=5))
 
 NOT_CONFIGURED_MSG = ("The old ARC API is not connected. Add ARC_USERNAME/ARC_PASSWORD "
                       "(or USERNAME/PASSWORD) to the backend .env.")
+
+
+# ── the register: BOTH apps, one row source ──────────────────────────────────
+# From 2026-10-05 (the operator: «merge these 2 pages into one») this router is
+# /arc's. Its rows are the new app's mirror (`arc_legacy_requests`, still
+# synced) UNION ALL the old app's (`arc_requests`, whose sync was stopped the
+# same day — frozen as they last stood). Nothing is copied: the old rows are
+# projected onto the new table's columns at read time, so the new mirror, its
+# sync, its attribute census and its API panel never see them.
+#
+# An old row is told apart by a NEGATIVE id (−arc_requests.id, so the two id
+# spaces cannot meet in the session's identity map) and a remote_id prefixed
+# «arc:». Its projection, column by column:
+#   status            → normalized_status: 0 new · 1 in_progress · 3 done ·
+#                       4 cancelled · 6 done_unconfirmed («handled, waiting on
+#                       the author» — counted done, as the old page did)
+#   finished_at       → completed_at (3) / finished_at (3, 6) / cancelled_at (4)
+#   created + ftime h → deadline (the old page's derived due moment)
+#   brigada           → master (IT's crew) · user → client (who filed it)
+#   division          → warehouse (the bo'linma; its trailing digits are the cell)
+# Category and crew are keyed by NAME on both sides (`category_id` /
+# `master_id` carry the name), so «Вентиляция» in either app is one option,
+# one chart bar, one filter pick. IT's TEST categories stay out, as on the old
+# page (services/arc_hidden).
+
+OLD_PREFIX = "arc:"
+_HOUR_S = 3600.0
+_REGISTER = None
+
+
+def _old_status():
+    A = ArcRequest
+    return case((A.status == 0, "new"), (A.status == 1, "in_progress"),
+                (A.status == 3, "done"), (A.status == 4, "cancelled"),
+                (A.status == 6, "done_unconfirmed"),
+                else_=func.concat("status_", cast(A.status, String)))
+
+
+def _R():
+    """The register's row source — both apps as one ``ArcLegacyRequest``-shaped
+    subquery, aliased so every read below queries it exactly as it queried the
+    new app's table. Built once; the construct holds no session state."""
+    global _REGISTER
+    if _REGISTER is not None:
+        return _REGISTER
+    N, A = ArcLegacyRequest, ArcRequest
+    when = lambda cond, val: case((cond, val), else_=None)   # noqa: E731
+    by_name = {
+        "category_id": func.coalesce(N.category_name, N.category_id),
+        "master_id": func.coalesce(N.master_name, N.master_id),
+    }
+    old = {
+        "id": -A.id,
+        "remote_id": func.concat(OLD_PREFIX, A.remote_id),
+        "request_num": A.request_num,
+        "description": A.description,
+        "category_id": func.coalesce(A.category_name, cast(A.category_id, String)),
+        "category_name": A.category_name,
+        "category_is_urgent": A.category_urgent,
+        "category_deadline_hours": A.category_ftime,
+        "deadline": when(A.category_ftime > 0,
+                         A.created_at + func.make_interval(0, 0, 0, 0, 0, 0, A.category_ftime * _HOUR_S)),
+        "master_id": func.coalesce(A.brigada_name, cast(A.brigada_id, String)),
+        "master_name": A.brigada_name,
+        "status": A.status,
+        "normalized_status": _old_status(),
+        "created_at": A.created_at,
+        # Denied is decided by the STATUS, as on the old page: 267 denied rows
+        # carry no finished_at, and a NULL here would count them open forever.
+        # Their moment is the one the status history recorded, else the filing.
+        "cancelled_at": when(A.status == 4, func.coalesce(
+            A.finished_at,
+            when(A.update_time["4"].astext.op("~")(r"^\d{4}-\d{2}-\d{2}"),
+                 cast(A.update_time["4"].astext, DateTime(timezone=True))),
+            A.created_at)),
+        "finished_at": when(A.status.in_((3, 6)), A.finished_at),
+        "completed_at": when(A.status == 3, A.finished_at),
+        "extra_phone": A.user_phone,
+        "deny_reason": A.deny_reason,
+        "client_name": A.user_name,
+        "warehouse_id": A.division_id,
+        "warehouse_name": A.division_name,
+        "raw": A.raw,
+        "first_seen_at": A.first_seen_at,
+        "synced_at": A.synced_at,
+        "missing_since": A.missing_since,
+    }
+    cols = list(N.__table__.columns)
+    new_sel = select(*[by_name.get(c.name, c).label(c.name) if c.name in by_name else c
+                       for c in cols])
+    old_sel = (select(*[(old[c.name] if c.name in old else cast(null(), c.type)).label(c.name)
+                        for c in cols])
+               .where(not_(arc_hidden.hidden_clause())))
+    # adapt_on_names: the projected columns (a coalesce, a case) have no lineage
+    # back to the table, so the alias must match them by NAME or the ORM treats
+    # them as unloaded and tries to fetch the row from the real table.
+    _REGISTER = aliased(N, union_all(new_sel, old_sel).subquery("arc_register"),
+                        adapt_on_names=True)
+    return _REGISTER
 
 
 # ── derived semantics (THE one definition) ───────────────────────────────────
@@ -73,7 +173,7 @@ def _derived() -> dict[str, Any]:
     hours_to_close= (closed_at − created_at) in hours, when closed
     cell_code     = the four digits the warehouse name carries, else NULL
     """
-    R = ArcLegacyRequest
+    R = _R()
     closed_at = func.coalesce(R.completed_at, R.finished_at)
     is_cancelled = R.cancelled_at.isnot(None)
     is_open = and_(closed_at.is_(None), not_(is_cancelled))
@@ -95,7 +195,7 @@ def _derived() -> dict[str, Any]:
         "late": late,
         "overdue_now": overdue_now,
         "hours_to_close": hours_to_close,
-        "cell_code": arc_cells.warehouse_code_expr(),
+        "cell_code": arc_cells.warehouse_code_expr(R),
     }
 
 
@@ -141,6 +241,7 @@ def _filters(
     overdue: str = Query("all"),
     sap: str = Query("all"),
     state: str = Query("all"),
+    source: str = Query("all"),
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
     cells_only: bool = Query(False),
@@ -150,6 +251,7 @@ def _filters(
             "category": category, "branch": branch, "master": master,
             "cell": cell, "shift": shift, "manager": manager, "leader": leader,
             "urgent": urgent, "overdue": overdue, "sap": sap, "state": state,
+            "source": source,
             "q": q, "include_missing": include_missing, "cells_only": cells_only,
             "owner_scope": _owner_scope(owner_scope)}
 
@@ -177,7 +279,7 @@ def _tri(value: str, expr) -> Optional[Any]:
 def _apply_filters(query, f: dict, D: dict, db: Session):
     """The one place the filter set becomes WHERE clauses; list, stats and
     export all go through it."""
-    R = ArcLegacyRequest
+    R = _R()
     if not f.get("include_missing"):
         query = query.filter(R.missing_since.is_(None))
     lo = _day_start(f.get("date_from"))
@@ -245,6 +347,12 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
         query = query.filter(D["overdue_now"])
     elif ov == "no":
         query = query.filter(not_(D["overdue_now"]))
+    # Which app: the old one's rows carry negative ids (see _R).
+    src = f.get("source") or "all"
+    if src == "old":
+        query = query.filter(R.id < 0)
+    elif src == "new":
+        query = query.filter(R.id >= 0)
     state = f.get("state") or "all"
     if state == "open":
         query = query.filter(D["is_open"])
@@ -271,7 +379,7 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
 def _sort_expr(sort: Optional[str], D: dict):
     """«key:dir» → ORDER BY terms. Unknown keys fall back to created_at:desc.
     «deadline» (and «due») sort by the effective due moment the table shows."""
-    R = ArcLegacyRequest
+    R = _R()
     key, _, direction = (sort or "created_at:desc").partition(":")
     desc = (direction or "desc").lower() != "asc"
     cols = {
@@ -322,7 +430,10 @@ _ROW_COLS = (
 def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = False) -> dict:
     """A row + its derived facts (as computed by the SAME SQL the filters
     use, never re-derived in Python)."""
-    out: dict[str, Any] = {"id": r.remote_id}
+    out: dict[str, Any] = {"id": r.remote_id,
+                           # Which app the ticket was filed in — «old» rows are
+                           # the frozen old app (negative ids, see _R).
+                           "source": "old" if (r.id or 0) < 0 else "new"}
     for c in _ROW_COLS:
         v = getattr(r, c)
         out[c] = _iso(v) if isinstance(v, datetime) else v
@@ -344,7 +455,7 @@ def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = Fa
 
 def _rows_query(db: Session, f: dict, D: dict):
     """The register query: the entity plus its derived facts, filtered."""
-    query = db.query(ArcLegacyRequest, *[D[k].label(k) for k in _ROW_DERIVED])
+    query = db.query(_R(), *[D[k].label(k) for k in _ROW_DERIVED])
     return _apply_filters(query, f, D, db)
 
 
@@ -400,7 +511,7 @@ def _options(db: Session) -> dict:
     by ``normalized_status`` ALONE (one colour per value via min): the page keys
     the list by value, and one status carrying two colours upstream would
     otherwise render as two identical rows."""
-    R = ArcLegacyRequest
+    R = _R()
     base = db.query(R).filter(R.missing_since.is_(None))
     statuses = [
         {"value": ns, "label": ns, "color": col, "count": n}
@@ -446,8 +557,8 @@ def _cell_options(db: Session, base) -> dict:
     person — the warehouse names no cell, names one the registry has never
     heard of, or the cell has nobody assigned. All three render a blank owner
     column, so all three are what that option picks (arc_cells.org_codes)."""
-    R = ArcLegacyRequest
-    code = arc_cells.warehouse_code_expr()
+    R = _R()
+    code = arc_cells.warehouse_code_expr(R)
     rows = base.with_entities(code.label("code"), func.count(R.id)).group_by(code).all()
     codes = {c for c, _ in rows if c}
     known = arc_cells.cells_for(db, codes)
@@ -540,7 +651,7 @@ def get_stats(
     f: dict = Depends(_filters),
 ):
     """KPI figures over exactly the rows /list shows for the same filters."""
-    R = ArcLegacyRequest
+    R = _R()
     D = _derived()
     base = _apply_filters(db.query(R), f, D, db)
 
@@ -630,6 +741,235 @@ def get_stats(
     }
 
 
+# ── analysis (the «Tahlil» mode) ─────────────────────────────────────────────
+# /arc's analysis, over this register: the SAME response shape, so the page
+# renders it with /arc's own component (components/arc/ArcAnalysis.jsx, given
+# this endpoint). Every figure goes through _apply_filters and _derived, so the
+# charts count exactly the rows the table lists. Where /arc reads its own
+# columns this reads the legacy twins: «done» is `is_closed`, a category's norm
+# is `category_deadline_hours`, the «where from» ranking is the warehouse
+# (bo'linma, from 29 Sep 2026) and the crews are IT's `master_name`.
+
+_GRANS = ("day", "week", "month")
+_TREND_MAX_BUCKETS = 400
+_TOP = 12
+_TOP_LEADERS = 14
+
+
+def _py_trunc(d: date_cls, gran: str) -> date_cls:
+    """date_trunc's bucket start in Python (weeks start Monday, as in SQL)."""
+    if gran == "week":
+        return d - timedelta(days=d.weekday())
+    if gran == "month":
+        return d.replace(day=1)
+    return d
+
+
+def _next_bucket(d: date_cls, gran: str) -> date_cls:
+    if gran == "week":
+        return d + timedelta(weeks=1)
+    if gran == "month":
+        return (d.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return d + timedelta(days=1)
+
+
+@router.get("/analysis")
+def get_analysis(
+    view: str = Query("all"),
+    gran: str = Query("day"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+    f: dict = Depends(_filters),
+):
+    """Aggregates behind the analysis charts, per view, over the filtered set."""
+    R = _R()
+    D = _derived()
+    if gran not in _GRANS:
+        gran = "day"
+    base = _apply_filters(db.query(R), f, D, db)
+
+    def _sum(cond):
+        return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
+
+    # ── flow trend: filed vs closed per bucket, Tashkent wall clock. The trend
+    # ALONE widens a very short period to the 7-day chart minimum.
+    f_trend = dict(f)
+    lo_d = hi_d = None
+    try:
+        if f.get("date_from"):
+            lo_d = date_cls.fromisoformat(f["date_from"][:10])
+        if f.get("date_to"):
+            hi_d = date_cls.fromisoformat(f["date_to"][:10])
+    except ValueError:
+        pass
+    if lo_d and hi_d and (hi_d - lo_d).days + 1 < 7:
+        lo_d = hi_d - timedelta(days=6)
+        f_trend["date_from"] = lo_d.isoformat()
+    tbase = _apply_filters(db.query(R), f_trend, D, db)
+
+    def _bucket(col):
+        return func.date_trunc(gran, func.timezone("Asia/Tashkent", col))
+
+    created_b = _bucket(R.created_at)
+    made = {k.date(): int(n) for k, n in
+            (tbase.filter(R.created_at.isnot(None))
+             .with_entities(created_b, func.count(R.id)).group_by(created_b).all())
+            if k is not None}
+    closed_b = _bucket(D["closed_at"])
+    shut = {k.date(): int(n) for k, n in
+            (tbase.filter(D["is_closed"])
+             .with_entities(closed_b, func.count(R.id)).group_by(closed_b).all())
+            if k is not None}
+    span = sorted(set(made) | set(shut)
+                  | ({_py_trunc(lo_d, gran)} if lo_d else set())
+                  | ({_py_trunc(hi_d, gran)} if hi_d else set()))
+    trend: list[dict] = []
+    if span:
+        cur, last = span[0], span[-1]
+        while cur <= last and len(trend) < 20_000:
+            trend.append({"d": cur.isoformat(), "created": made.get(cur, 0),
+                          "closed": shut.get(cur, 0)})
+            cur = _next_bucket(cur, gran)
+    trend = trend[-_TREND_MAX_BUCKETS:]
+
+    # ── the category mix + deadline discipline (both views), one grouped pass.
+    # `cwd` = closures that HAD a deadline — the only rows a timeliness verdict
+    # exists for; `allowed_h` is the category's own norm.
+    closed_with_due = and_(D["is_closed"], D["due"].isnot(None))
+    late_closed = and_(closed_with_due, D["late"])
+    hours_closed = case((D["is_closed"], D["hours_to_close"]), else_=None)
+    categories = [
+        {"id": cid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "cwd": _n(cw), "late": _n(lt), "closed_n": _n(hn),
+         "avg_h": round(float(av), 1) if av is not None else None,
+         "median_h": round(float(md), 1) if md is not None else None,
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, dn, op, ov, cc, cw, lt, hn, av, md, ft in (
+            base.with_entities(R.category_id, R.category_name, func.count(R.id),
+                               _sum(D["is_closed"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               _sum(closed_with_due), _sum(late_closed),
+                               _sum(hours_closed.isnot(None)),
+                               func.avg(hours_closed),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_deadline_hours))
+            .group_by(R.category_id, R.category_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    st = base.with_entities(
+        func.count(R.id), _sum(D["is_closed"]), _sum(D["is_open"]),
+        _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+        _sum(closed_with_due), _sum(late_closed),
+        func.avg(hours_closed),
+    ).one()
+    sla_totals = {"total": _n(st[0]), "done": _n(st[1]), "open": _n(st[2]),
+                  "overdue": _n(st[3]), "cancelled": _n(st[4]),
+                  "cwd": _n(st[5]), "late": _n(st[6]),
+                  "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
+
+    out: dict[str, Any] = {"gran": gran, "trend": trend,
+                           "categories": categories, "sla_totals": sla_totals}
+
+    if view == "cells":
+        # Per-code counts once; the top cells and both owner rollups read off
+        # this pass, joined to the org chart through the SAME org_index the
+        # filter panel uses.
+        code = D["cell_code"]
+        crows = (base.filter(code.isnot(None))
+                 .with_entities(code, func.count(R.id), _sum(D["is_closed"]),
+                                _sum(D["is_open"]), _sum(D["overdue_now"]),
+                                _sum(D["is_cancelled"]))
+                 .group_by(code).all())
+        org = arc_cells.org_index(db, [c for c, *_ in crows])
+        by_code = org["by_code"]
+        cells = sorted(
+            ({"code": c, "total": int(n), "done": _n(dn), "open": _n(op),
+              "overdue": _n(ov), "cancelled": _n(cc)}
+             for c, n, dn, op, ov, cc in crows),
+            key=lambda x: -x["total"])
+        top_cells = cells[:_TOP]
+        out["cells"] = top_cells
+        out["cells_n"] = len(cells)
+        out["cells_map"] = arc_cells.cells_for(db, [c["code"] for c in top_cells])
+
+        def rollup(key: str, catalog: dict) -> list[dict]:
+            agg: dict = {}
+            for c, n, dn, op, ov, cc in crows:
+                k = (by_code.get(c) or {}).get(key)
+                a = agg.setdefault(k, {"total": 0, "done": 0, "open": 0,
+                                       "overdue": 0, "cancelled": 0})
+                a["total"] += int(n)
+                a["done"] += _n(dn)
+                a["open"] += _n(op)
+                a["overdue"] += _n(ov)
+                a["cancelled"] += _n(cc)
+            rows = []
+            for k, a in agg.items():
+                info = catalog.get(k) if k is not None else None
+                # k None = codes the org chart cannot place — its own bucket.
+                rows.append({"id": k, "name": (info or {}).get("name"), **a})
+            rows.sort(key=lambda x: (-x["total"], (x["name"] or "").lower()))
+            return rows
+
+        sups = rollup("manager_id", org["managers"])
+        out["sups"] = sups[:40]
+        out["sups_n"] = len(sups)
+        leaders = rollup("leader_id", org["leaders"])
+        out["leaders"] = leaders[:_TOP_LEADERS]
+        out["leaders_n"] = len(leaders)
+        return out
+
+    # ── the register view: where from (the warehouse), how fast, which crew ──
+    divisions = [
+        {"id": wid or name, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc)}
+        for wid, name, n, dn, op, ov, cc in (
+            base.filter(R.warehouse_name.isnot(None))
+            .with_entities(R.warehouse_id, R.warehouse_name, func.count(R.id),
+                           _sum(D["is_closed"]), _sum(D["is_open"]),
+                           _sum(D["overdue_now"]), _sum(D["is_cancelled"]))
+            .group_by(R.warehouse_id, R.warehouse_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out["divisions"] = divisions[:_TOP]
+    out["divisions_n"] = len(divisions)
+
+    speed = [
+        {"id": cid, "name": name, "closed": _n(n),
+         "median_h": round(float(m), 1),
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, m, ft in (
+            base.with_entities(R.category_id, R.category_name,
+                               _sum(hours_closed.isnot(None)),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_deadline_hours))
+            .group_by(R.category_id, R.category_name).all())
+        if _n(n) > 0 and m is not None
+    ]
+    speed.sort(key=lambda x: -x["closed"])
+    out["speed"] = speed[:10]
+    out["speed_n"] = len(speed)
+
+    # IT's crews (`master_name` — «Бригада2», «Бригада ремонт» …). NULL is the
+    # not-yet-assigned pile, shown as its own row.
+    brigadas = [
+        {"id": mid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "median_h": round(float(m), 1) if m is not None else None}
+        for mid, name, n, dn, op, ov, cc, m in (
+            base.with_entities(R.master_id, R.master_name, func.count(R.id),
+                               _sum(D["is_closed"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               func.percentile_cont(0.5).within_group(hours_closed))
+            .group_by(R.master_id, R.master_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out["brigadas"] = brigadas[:_TOP]
+    out["brigadas_n"] = len(brigadas)
+    return out
+
+
 @router.get("/requests/{remote_id}")
 def get_request(
     remote_id: str,
@@ -638,12 +978,30 @@ def get_request(
 ):
     """One ticket, derived facts and the raw API item included."""
     D = _derived()
-    tup = (db.query(ArcLegacyRequest, *[D[k].label(k) for k in _ROW_DERIVED])
-           .filter(ArcLegacyRequest.remote_id == remote_id).first())
+    R = _R()
+    tup = (db.query(R, *[D[k].label(k) for k in _ROW_DERIVED])
+           .filter(R.remote_id == remote_id).first())
     if not tup:
         raise HTTPException(status_code=404, detail="Request not found")
     out = _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_raw=True)
     out["cells"] = _cells_map(db, [out])
+    if out["source"] == "old":
+        # What the old app knew and the shared columns cannot carry: when a
+        # crew took it, every attachment, and the moment each status was
+        # entered (oldest first, in the register's own status words).
+        a = (db.query(ArcRequest)
+             .filter(ArcRequest.remote_id == remote_id[len(OLD_PREFIX):]).first())
+        if a is not None:
+            out["started_at"] = _iso(a.started_at)
+            out["files"] = [
+                {"id": f.get("id"), "url": arc_client.file_url(f.get("href") or f.get("url"))}
+                for f in (a.files or []) if isinstance(f, dict) and (f.get("href") or f.get("url"))
+            ]
+            words = {"0": "new", "1": "in_progress", "3": "done", "4": "cancelled",
+                     "6": "done_unconfirmed"}
+            steps = [{"status": words.get(str(k), f"status_{k}"), "at": str(v).replace(" ", "T", 1)}
+                     for k, v in (a.update_time or {}).items() if v]
+            out["timeline"] = sorted(steps, key=lambda x: str(x["at"]))
     return out
 
 
@@ -691,6 +1049,7 @@ class ArcExportBody(BaseModel):
     overdue: str = "all"
     sap: str = "all"
     state: str = "all"
+    source: str = "all"
     q: Optional[str] = None
     include_missing: bool = False
     cells_only: bool = False
@@ -724,7 +1083,7 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
         vals = f.get(key) or []
         if vals:
             parts.append(f"{key}={','.join(str(v) for v in vals)}")
-    for key in ("urgent", "overdue", "sap", "state"):
+    for key in ("urgent", "overdue", "sap", "state", "source"):
         if (f.get(key) or "all") != "all":
             parts.append(f"{key}={f[key]}")
     if f.get("include_missing"):
@@ -751,7 +1110,7 @@ def export_xlsx(
     f = {k: getattr(body, k) for k in
          ("date_from", "date_to", "status", "category", "branch", "master",
           "cell", "shift", "manager", "leader", "urgent", "overdue", "sap",
-          "state", "q", "include_missing", "cells_only")}
+          "state", "source", "q", "include_missing", "cells_only")}
     f["owner_scope"] = _owner_scope(body.owner_scope)
     D = _derived()
     query = _rows_query(db, f, D)
@@ -759,10 +1118,12 @@ def export_xlsx(
     # The cell column is the code, already on the row; its two OWNERS are
     # resolved off the one cells map and spelled as the screen spells them.
     cells = _cells_map(db, rows)
+    src_words = {"old": body.labels.get("_old") or "old", "new": body.labels.get("_new") or "new"}
     for r in rows:
         c = cells.get(r.get("cell_code"))
         r["sup_name"] = transliterate((c or {}).get("sup") or "", body.lang)
         r["leader_name"] = transliterate((c or {}).get("leader") or "", body.lang)
+        r["source_label"] = src_words.get(r.get("source"), r.get("source"))
     bio = build_arc_legacy_workbook(rows, body.columns, body.labels)
 
     today = datetime.now(_TASHKENT).date().isoformat()

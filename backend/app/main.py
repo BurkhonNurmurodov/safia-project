@@ -115,6 +115,8 @@ async def lifespan(app: FastAPI):
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
+        sync_cells_and_leaders_from_verifix,
+        set_profile_photos_from_verifix,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -187,6 +189,7 @@ async def lifespan(app: FastAPI):
         drop_paused_shift_reviews,
         queue_shift2_backlog,
         fix_nodirjon_leader_unit,
+        move_sanjarbek_checklist_shift,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -582,6 +585,18 @@ async def lifespan(app: FastAPI):
     # Remove this line, `startup.sync_leaders_from_verifix` and
     # `services/verifix_leader_sync.py` once the report has landed.
     sync_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every Verifix cell (the name-coded
+    # ones too) and a profile for every Verifix leader without one, connected
+    # only where safe; DMs every mismatch. Remove this line,
+    # `startup.sync_cells_and_leaders_from_verifix` and
+    # `services/verifix_cells_leaders_sync.py` once the report has landed.
+    sync_cells_and_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every leader's and brigadir's Verifix
+    # photo as their profile photo (by the Verifix tie the checks above stored;
+    # a photo somebody set is kept) and a DM of who got one. Remove this line,
+    # `startup.set_profile_photos_from_verifix` and
+    # `services/verifix_profile_photos.py` once the report has landed.
+    set_profile_photos_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,
@@ -651,6 +666,8 @@ async def lifespan(app: FastAPI):
     # and flag-guarded. Remove this line, `startup.fix_nodirjon_leader_unit`
     # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
     fix_nodirjon_leader_unit()
+    # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
+    move_sanjarbek_checklist_shift()
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the

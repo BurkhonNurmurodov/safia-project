@@ -1212,7 +1212,14 @@ def refresh(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """Walk every page of the API in the background; the meta poll is the
-    progress feed. Offered to every profile that can open the page."""
+    progress feed. Offered to every profile that can open the page.
+
+    Retired 2026-10-05: the old app's mirror is frozen (arc_sync.RETIRED) and
+    /arc reads both apps through /api/arc-legacy. A tab still open on the old
+    page is told so instead of starting a walk."""
+    from app.services.arc_sync import RETIRED
+    if RETIRED:
+        raise HTTPException(status_code=410, detail="The old ARC app is no longer synced — reload the page.")
     if not arc_client.configured():
         raise HTTPException(status_code=400, detail=NOT_CONFIGURED_MSG)
     meta = db.query(ArcSyncMeta).filter_by(id=1).first()

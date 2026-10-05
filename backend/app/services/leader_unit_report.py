@@ -151,7 +151,10 @@ def _time_up_at(db: Session, prof: RoleProfile, shift: int | None, date: str,
 
     Seated on the SHIFT by `due_at`, so a night's «09:00» is the morning after.
     None only when the date cannot be read."""
-    from app.services import leader_close
+    from app.services import leader_close, leader_shift
+    # A leader whose checklist runs on the other shift that day is out of time
+    # on THAT shift's hours (services/leader_shift); everybody else on the unit's.
+    shift = leader_shift.day_shift(db, prof.id, date, shift)
     day_end = leader_close.due_at(None, shift, date)
     if not per_task:
         return day_end

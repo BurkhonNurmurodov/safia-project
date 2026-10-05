@@ -747,6 +747,45 @@ function LeaderKindNote({ info, unsetKey = "profile.leaderKind.unset" }) {
   return lines.map((l, i) => <span key={i} className="block">{l}</span>);
 }
 
+// ── ADMIN: «Chek-list smenasi» — the shift a leader's checklist runs on ───────
+
+// The plant's calendar day, Tashkent, `offset` days on — a switch saved now
+// takes effect from tomorrow (services/leader_shift.tomorrow).
+const tashkentDay = (offset = 0) =>
+  new Date(Date.now() + 5 * 3600e3 + offset * 864e5).toISOString().slice(0, 10);
+const dmy = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join(".") : "");
+
+// The shift in force from TOMORROW on — what the switch shows and edits. A
+// switch still waiting for its date is that date's shift; null = unit's.
+function clShiftTarget(cs) {
+  if (!cs) return null;
+  const unit = cs.unit_shift ?? null;
+  if (cs.next) return cs.next.shift ?? unit;
+  return cs.value ?? unit;
+}
+
+// Under the switch: the brigade's own shift, the shift in force today when it
+// is another, a switch still waiting for its date, and — while the draft moved
+// — when the saved value will start to count.
+function ClShiftNote({ cs, draft }) {
+  const { t } = useLang();
+  const unit = cs?.unit_shift ?? null;
+  const today = tashkentDay();
+  const lines = [];
+  if (cs?.value != null && cs.value !== unit) {
+    const since = [...(cs.history || [])].filter((e) => e.from <= today).pop()?.from;
+    lines.push(t("profile.clShift.now").replace("{n}", cs.value)
+      .replace("{date}", dmy(since)).replace("{u}", unit ?? "—"));
+  }
+  if (cs?.next) {
+    lines.push(t("profile.clShift.next").replace("{date}", dmy(cs.next.from))
+      .replace("{n}", cs.next.shift ?? unit ?? "—"));
+  }
+  if (draft) lines.push(t("profile.clShift.draft").replace("{date}", dmy(tashkentDay(1))));
+  if (!lines.length) lines.push(t("profile.clShift.unit").replace("{n}", unit ?? "—"));
+  return lines.map((l, i) => <span key={i} className="block">{l}</span>);
+}
+
 // ── ADMIN: edit form (ported from the old Profiles-tab modal) ─────────────────
 
 // Field-by-field so a value that only differs by type (12 vs "12") or by cell
@@ -762,6 +801,7 @@ function sameProfileForm(a, b) {
   const cells = (f) => [...(f.cells || [])].map(String).sort().join("|");
   if (cells(a) !== cells(b)) return false;
   if ((a.leader_kind ?? null) !== (b.leader_kind ?? null)) return false;
+  if ((a.checklist_shift ?? null) !== (b.checklist_shift ?? null)) return false;
   if ((a.supervisor_kind ?? null) !== (b.supervisor_kind ?? null)) return false;
   if ((a.zagruzka_on ?? null) !== (b.zagruzka_on ?? null)) return false;
   return NAME_LANGS.every((l) => (a.overrides?.[l] || "").trim() === (b.overrides?.[l] || "").trim());
@@ -789,6 +829,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     item.id, item.name, item.shift ?? null, item.manager_id ?? null,
     item.cells ?? null, item.name_uz_cyrl ?? null, item.name_ru ?? null, item.name_en ?? null,
     item.leader_kind ?? null, item.supervisor_kind ?? null, item.zagruzka_on ?? null,
+    item.checklist_shift ?? null,
   ]);
   useEffect(() => {
     const ov = {};
@@ -803,6 +844,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       cells: item.cells ?? [],
       verifix_id: ptype === "supervisor" ? item.id : "",
       leader_kind: item.leader_kind ?? null,
+      checklist_shift: clShiftTarget(item.checklist_shift),
       supervisor_kind: item.supervisor_kind ?? null,
       // A brigadir unit only; a bundle reading an older payload has no field
       // and must not offer to switch a unit off by accident.
@@ -958,6 +1000,12 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     if (ptype === "leader" && form.leader_kind && form.leader_kind !== (item.leader_kind ?? null)) {
       body.leader_kind = form.leader_kind;
     }
+    // Sent only when it moved: the server starts it from TOMORROW
+    // (services/leader_shift), and a name save must not add a history entry.
+    if (ptype === "leader" && form.checklist_shift
+        && form.checklist_shift !== clShiftTarget(item.checklist_shift)) {
+      body.checklist_shift = form.checklist_shift;
+    }
     if (ptype === "supervisor" && Number(form.verifix_id) !== item.id) {
       body.new_verifix_id = Number(form.verifix_id);
     }
@@ -1093,6 +1141,25 @@ function EditCard({ ptype, item, data, notify, onDone }) {
                   title: t("profile.leaderKind.leaderTitle") },
                 { value: "acting", label: t("profile.leaderKind.acting"),
                   title: t("profile.leaderKind.actingTitle") },
+              ]}
+            />
+          </FormField>
+        )}
+
+        {/* The shift this leader's CHECKLIST runs on — their brigade's, or the
+            other one (services/leader_shift). Takes effect from tomorrow. */}
+        {effType === "leader" && !roleChanged && item.checklist_shift && (
+          <FormField label={t("profile.clShift.label")}
+                     hint={<ClShiftNote cs={item.checklist_shift}
+                                        draft={form.checklist_shift !== base?.checklist_shift} />}>
+            <SegmentedToggle
+              fill
+              ariaLabel={t("profile.clShift.label")}
+              value={form.checklist_shift ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, checklist_shift: v }))}
+              options={[
+                { value: 1, label: t("profile.clShift.s1") },
+                { value: 2, label: t("profile.clShift.s2") },
               ]}
             />
           </FormField>

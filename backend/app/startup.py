@@ -1911,11 +1911,16 @@ def add_leader_kind_columns() -> None:
     that answer came from (``leader_kind_meta``) — ``services/leader_kind.py``.
     NULL = not determined, which every existing row is, so nothing moves. Pure
     DDL, idempotent, no flag. Runs FIRST at boot: every ORM read of a profile
-    selects these columns."""
+    selects these columns.
+
+    2026-10-05: also ``checklist_shift`` — the dated shift a leader's checklist
+    runs on when it is not their unit's (``services/leader_shift.py``). NULL =
+    the unit's shift, i.e. every existing row reads exactly as before."""
     db = SessionLocal()
     try:
         db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind VARCHAR(10)"))
         db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind_meta JSONB"))
+        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS checklist_shift JSONB"))
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -7329,6 +7334,85 @@ def _leader_sync_job() -> None:
                       verifix_leader_sync.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: EVERY Verifix cell, and a profile for every Verifix leader ────
+# The operator on 2026-10-05: «Download every single cell, and create leader
+# profiles for those leaders who don't have a profile on our platform. For
+# connecting them, report me mismatches and do not connect not safe ones yet.»
+# The 4 Oct passes could not see the cells Verifix numbers only in their NAME,
+# and created a leader only where it could also connect them (none). This pass
+# creates every missing cell and every missing leader, connects a leader only
+# where nothing disputes the cell, and DMs everything else
+# (`services/verifix_cells_leaders_sync.py`). Runs after the earlier one-shots.
+CELLS_LEADERS_FLAG = "verifix_cells_leaders_2026_10_05_v1"
+_CELLS_LEADERS_DELAY_S = 210
+
+
+def sync_cells_and_leaders_from_verifix() -> None:
+    """Every Verifix cell and leader onto the platform, once, and report. Never raises."""
+    try:
+        if not _report_pending(CELLS_LEADERS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("verifix-cells-leaders-sync",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CELLS_LEADERS_DELAY_S),
+                    _cells_leaders_job)
+    except Exception as exc:
+        print(f"[startup] Verifix cells + leaders sync could not be scheduled: {exc}")
+
+
+def _cells_leaders_job() -> None:
+    from app.services import verifix_cells_leaders_sync
+    _send_report_once(CELLS_LEADERS_FLAG, "Verifix cells + leaders sync",
+                      verifix_cells_leaders_sync.send, UNPRICED_DM_CHAT)
+
+
+# ── one-shot: every leader's and brigadir's Verifix photo on their profile ──
+# The operator on 2026-10-05: «put pictures of the leaders and supervisors on
+# Verifix as profile picture on IMS». Uses the Verifix tie the 4–5 Oct checks
+# already stored on each profile, never overwrites a photo somebody set, and
+# DMs who got one and why the rest did not (`services/verifix_profile_photos.py`).
+# Runs after the 5 Oct leader pass, so the leader profiles it created get theirs.
+PROFILE_PHOTOS_FLAG = "verifix_profile_photos_2026_10_05_v1"
+_PROFILE_PHOTOS_DELAY_S = 300
+# While the 5 Oct pass still has to run, wait for it — at most this many times.
+_PROFILE_PHOTOS_WAITS = 6
+_PROFILE_PHOTOS_WAIT_S = 120
+
+
+def set_profile_photos_from_verifix() -> None:
+    """Every tied leader's and brigadir's Verifix photo, once, and report. Never raises."""
+    try:
+        if not _report_pending(PROFILE_PHOTOS_FLAG):
+            return
+        if not _schedule_profile_photos(_PROFILE_PHOTOS_DELAY_S, 0):
+            print("[startup] Verifix profile photos could not be scheduled")
+    except Exception as exc:
+        print(f"[startup] Verifix profile photos could not be scheduled: {exc}")
+
+
+def _schedule_profile_photos(delay_s: int, waited: int) -> bool:
+    from datetime import timedelta
+    from app.scheduler import schedule_at
+    return schedule_at(f"verifix-profile-photos-{waited}",
+                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
+                       _profile_photos_job, args=(waited,))
+
+
+def _profile_photos_job(waited: int = 0) -> None:
+    # The 5 Oct pass creates leader profiles; photos taken before it lands
+    # would miss them. Its flag is set once its report is out.
+    if waited < _PROFILE_PHOTOS_WAITS and _report_pending(CELLS_LEADERS_FLAG):
+        try:
+            if _schedule_profile_photos(_PROFILE_PHOTOS_WAIT_S, waited + 1):
+                return
+        except Exception:
+            pass
+    from app.services import verifix_profile_photos
+    _send_report_once(PROFILE_PHOTOS_FLAG, "Verifix profile photos",
+                      verifix_profile_photos.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
 # The operator, the same day: «check the supervisors if they're actually
 # supervisor or not and put a switch like on the leaders also for them … report
@@ -9008,6 +9092,80 @@ def fix_nodirjon_leader_unit() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] Nodirjon unit fix skipped: {exc}")
+    finally:
+        db.close()
+
+
+# ── one-shot: Jumaniyazov Sanjarbek's checklist runs on shift 1 (2026-10-06) ──
+# The operator, 5 Oct 2026: his brigadir is on shift 2 while his cell works
+# shift 1, so his checklist moves to shift 1's hours and standard from the day
+# shift of 6 October on (services/leader_shift). Written with the same writer
+# the profile page's «Chek-list smenasi» switch uses, so the page shows it and
+# an admin changes it there. Never raises; refuses unless exactly one leader
+# profile is him. Changing what it does needs a NEW flag key.
+SANJARBEK_SHIFT_FLAG = "leader_checklist_shift_jumaniyazov_2026_10_06_v1"
+SANJARBEK_SHIFT_FROM = "2026-10-06"
+
+
+def move_sanjarbek_checklist_shift() -> None:
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=SANJARBEK_SHIFT_FLAG).first()
+        if row is not None and (row.value or "").startswith(("done", "blocked")):
+            return
+        from app.services import leader_shift
+
+        def mark(value: str) -> None:
+            nonlocal row
+            if row is None:
+                row = AppSetting(key=SANJARBEK_SHIFT_FLAG, value=value)
+                db.add(row)
+            else:
+                row.value = value
+            db.commit()
+
+        found = [p for p in db.query(RoleProfile).filter(RoleProfile.role == "leader").all()
+                 if "jumaniy" in (p.name or "").lower() and "sanjar" in (p.name or "").lower()]
+        if len(found) != 1:
+            mark("blocked")
+            names = ", ".join(f"{p.name} (#{p.id})" for p in found) or "yo'q"
+            print(f"[startup] Sanjarbek checklist shift refused: {len(found)} match(es): {names}")
+            _nodirjon_fix_dm(
+                "Jumaniyazov Sanjarbek chek-listini 1-smenaga o'tkazib bo'lmadi: "
+                f"lider profili aniq topilmadi ({names}). Profil sahifasidagi "
+                "«Chek-list smenasi» orqali qo'lda o'rnating.")
+            return
+        prof = found[0]
+        unit = db.query(Manager).filter_by(id=prof.manager_id).first()
+        unit_sh = unit.shift if unit else None
+        start = max(SANJARBEK_SHIFT_FROM, leader_shift.tomorrow())
+        leader_shift.set_from(prof, None if unit_sh == 1 else 1, start,
+                              by="Operator · 2026-10-05")
+        mark(f"done:{prof.id}:{start}")
+        leader_shift.forget()
+        print(f"[startup] Sanjarbek checklist shift: profile #{prof.id} on shift 1 "
+              f"from {start} (unit {unit.name if unit else '—'}, shift {unit_sh})")
+        from app.services import action_log
+        action_log.record_system(
+            "leader_config", "checklist.leader_shift_set",
+            target_kind="profile", target_id=f"leader:{prof.id}",
+            target_name=prof.name, unit_id=prof.manager_id,
+            unit_name=unit.name if unit else None,
+            details=[("shift", 1), ("from", start), ("unit_shift", unit_sh)],
+            reason=("Operator: his cell works shift 1 while his brigadir is on "
+                    "shift 2 — his checklist follows shift 1's hours and standard"),
+        )
+        _nodirjon_fix_dm(
+            f"{prof.name}: chek-listi {start[8:10]}.{start[5:7]}.{start[:4]} dan "
+            "1-smena bo'yicha ishlaydi — kun kalendar kuni, vazifa vaqtlari va "
+            "AI tekshiruvi 1-smena standartiga, avtomatik tekshiruvlar 1-smena "
+            "soatlarida (10:00, 14:00, 17:00, 20:00). Brigadasi o'zgarmadi: "
+            f"{unit.name if unit else '—'} ({unit_sh}-smena). O'tgan kunlar qayta "
+            "baholanmaydi. Profil sahifasida «Chek-list smenasi» orqali o'zgartirish "
+            "mumkin.")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] Sanjarbek checklist shift skipped: {exc}")
     finally:
         db.close()
 

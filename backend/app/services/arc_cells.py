@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from typing import Iterable, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.models import ArcLegacyRequest, ArcRequest, Cell, Manager, RoleProfile
@@ -89,12 +89,22 @@ def warehouse_code(warehouse_name: Optional[str]) -> Optional[str]:
     return m.group(1) if m else cell_code(warehouse_name)
 
 
-def warehouse_code_expr():
-    """:func:`warehouse_code` as SQL over ``ArcLegacyRequest.warehouse_name`` —
+def warehouse_code_expr(entity=None):
+    """:func:`warehouse_code` as SQL over ``<entity>.warehouse_name`` —
     NULL for a ticket whose warehouse names no cell (or that carries none: every
-    ticket filed before the field existed)."""
-    name = func.btrim(ArcLegacyRequest.warehouse_name)
-    return func.coalesce(func.substring(name, _SQL_LEAD), func.substring(name, _SQL))
+    ticket filed before the field existed).
+
+    ``entity`` is the /arc register's row source: since 2026-10-05 that is the
+    union of both apps (routers/arc_legacy._R), where a row from the OLD app
+    carries a NEGATIVE id and its division name in ``warehouse_name``. Such a
+    row is read by the old rule alone — the trailing group — so its cell is
+    exactly the one the old /arc page named. The default is the new app's own
+    table, where no id is negative."""
+    E = entity if entity is not None else ArcLegacyRequest
+    name = func.btrim(E.warehouse_name)
+    trailing = func.substring(name, _SQL)
+    return case((E.id < 0, trailing),
+                else_=func.coalesce(func.substring(name, _SQL_LEAD), trailing))
 
 
 def cells_for(db: Session, codes: Iterable[str]) -> dict[str, dict]:

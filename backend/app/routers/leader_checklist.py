@@ -52,8 +52,8 @@ from app.routers.leaders import (
 from app.security import require_auth
 from app.services import (
     action_log, leader_ai, leader_auto, leader_bot, leader_cells,
-    leader_checklist, leader_close, leader_dispute, leader_late_proof,
-    leader_proof, leader_reports, leader_tasks,
+    leader_checklist, leader_close, leader_dispute, leader_late_proof, leader_load,
+    leader_proof, leader_reports, leader_shift, leader_tasks,
 )
 from app.services.name_map import leader_match, supervisor_match
 
@@ -258,12 +258,22 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
         # A checklist that does not exist yet has nothing to show and nothing
         # to file: the next day is opened by its own shift, not by a calendar.
         date = today
+    # The shift THAT day runs on — a leader whose checklist moved to the other
+    # shift (services/leader_shift) has past days on the old one.
+    unit_sh = mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
+    if date != today and leader_shift.moved(db, prof.id):
+        shift = leader_shift.shift_on(db, prof.id, date, unit_sh)
     is_today = date == today
     now = datetime.now(timezone.utc)
     files = _holds(db, payload, prof)
 
     # ── which checklist: one per cell on a switched unit ─────────────────────
-    owed = leader_cells.expected_days(db, prof, date)          # [None] | [ids] | []
+    # A leader with no counted cell who filed nothing since 1 October owes no
+    # checklist at all (`leader_load`) — said, like `noCell`, not shown as a
+    # list of tasks nobody will ask them for.
+    no_load = leader_load.exempt(db, prof, date)
+    owed = ([None] if no_load
+            else leader_cells.expected_days(db, prof, date))   # [None] | [ids] | []
     per_cell = owed != [None]
     cells: list[dict] = []
     if per_cell:
@@ -291,7 +301,9 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
     if day is not None:
         source, uid = "bot", leader_bot.day_uid(day.id)
         if day.closed_at is not None:
-            args = (shift, prof.manager_id, date)
+            # Which collection layer counts is a fact about the UNIT's form
+            # (leader_bot.merges), so it is asked with the unit's shift.
+            args = (unit_sh, prof.manager_id, date)
             overrides = leader_bot.source_overrides(db)
             counted = leader_bot.merges(
                 *args, leader_bot.camera_units(db), leader_bot.bot_from_floors(db),
@@ -484,6 +496,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
         # operator's ruling, `leader_cells.expected_days`) — said, not shown
         # as an empty list.
         "noCell": per_cell and not cells,
+        "noLoad": no_load,
         "perTask": per_task,
         "filing": {"deadline": leader_tasks.deadline_hhmm(shift)},
         "source": source,
@@ -501,12 +514,12 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
             # Filing is the leader's alone, and only on the checklist that is
             # still being filed — today's, and not once it is closed.
             "file": bool(files and is_today and not (day and day.closed_at)
-                         and not (per_cell and cell_id is None)),
+                         and not (per_cell and cell_id is None) and not no_load),
             "object": may_object and appealable,
             "admin": payload.get("role") == "admin",
         },
         "closeDay": ({"ready": not missing, "missing": missing}
-                     if (is_today and not per_task and files) else None),
+                     if (is_today and not per_task and files and not no_load) else None),
         "tasks": tasks,
     }
 
@@ -587,6 +600,8 @@ def _filing_ctx(db: Session, payload: dict, leader, cell, task=None):
     cid = _own_cell(db, prof, cid)
     shift = leader_proof.leader_shift(db, prof)
     date = leader_tasks.effective_date(shift)
+    if leader_load.exempt(db, prof, date):
+        raise HTTPException(status_code=409, detail="no_load")
     if leader_cells.is_per_cell(db, prof.manager_id, date) and cid is None:
         # A switched unit files one checklist PER CELL; a write naming none
         # would open the cell-less day that belongs to nothing.

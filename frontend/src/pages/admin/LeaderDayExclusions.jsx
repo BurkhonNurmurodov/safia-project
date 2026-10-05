@@ -307,6 +307,9 @@ export default function LeaderDayExclusions() {
         // costs nobody anything, so offering it here would be an exclusion with
         // nothing to do — and a hundred of them would bury the days that matter.
         if (p.cutoff && d >= p.cutoff) continue;
+        // …or a day they owed nothing for: no cell of theirs counts in the
+        // загрузка and they filed nothing since 1 October (`leader_load`).
+        if (p.no_load_from && d >= p.no_load_from) continue;
         out.push({
           // Not a register row and never pretends to be one: it exists only in
           // this list, until an admin turns one into a decision.

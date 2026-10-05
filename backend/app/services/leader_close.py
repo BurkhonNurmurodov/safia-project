@@ -38,7 +38,7 @@ from app.models import (
     LeaderTaskMedia, Manager, RoleProfile,
 )
 from app.services import (
-    action_log, leader_ai, leader_auto, leader_proof, leader_tasks,
+    action_log, leader_ai, leader_auto, leader_proof, leader_shift, leader_tasks,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,17 @@ def _shift_pos(shift: int | None, clock: str,
     if opens is not None and leader_ai.overnight((lo, clock)):
         days += 1
     return days, clock
+
+
+def _entry_shift(cfg_entry: dict | None, shift: int | None) -> int | None:
+    """The shift to seat this task's hours on: the one its window was resolved
+    against (`effective_leader_config` carries it as `shift`), else the
+    caller's. They are the same for every leader whose checklist runs on their
+    unit's shift; for one moved to the other shift (services/leader_shift) the
+    entry knows the day's shift and a caller holding the unit's does not — and
+    a window seated on the wrong shift is the 26 Aug defect again."""
+    got = (cfg_entry or {}).get("shift")
+    return got if got in (1, 2) else shift
 
 
 def closing_time(cfg_entry: dict | None,
@@ -153,6 +164,7 @@ def closing_time(cfg_entry: dict | None,
     `per_task_units`, and both other readers are per-task surfaces. The 2026-08-15
     ruling (the deadline is informational) stands everywhere else.
     """
+    shift = _entry_shift(cfg_entry, shift)
     day_hh = leader_tasks.deadline_hhmm(shift)
     own = opens = None
     admin = leader_ai.hhmm((cfg_entry or {}).get("deadline"))
@@ -216,6 +228,7 @@ def due_at(cfg_entry: dict | None, shift: int | None,
     None when the day or the clock cannot be read; the caller decides what an
     unreadable deadline means (`past_deadline`: not past).
     """
+    shift = _entry_shift(cfg_entry, shift)
     hhmm, opens = closing_time(cfg_entry, shift)
     try:
         h, m = (int(x) for x in hhmm.split(":"))
@@ -238,6 +251,7 @@ def starts_at(cfg_entry: dict | None, shift: int | None,
     **whose own start time had not come yet**. A task nobody could have begun is
     not a task somebody failed to finish.
     """
+    shift = _entry_shift(cfg_entry, shift)
     win = (cfg_entry or {}).get("window") or ()
     if len(win) != 2:
         return None                     # a bare deadline bounds the END only
@@ -600,6 +614,11 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
         if not prof:
             continue
         shift = shifts.get(day.manager_id)
+        # A leader whose checklist was moved to the other shift is closed on
+        # the shift THAT day runs on (services/leader_shift); everybody else on
+        # their unit's, exactly as before.
+        if leader_shift.moved(db, day.leader_id):
+            shift = leader_shift.shift_on(db, day.leader_id, day.date, shift)
         # Resolved on THIS day's own date. Unstated, the config answers for the
         # day happening RIGHT NOW on that shift — which for a stale open day is
         # a later date than the one being closed, so a task activated since
@@ -720,7 +739,8 @@ AUTOCLOSE_SHIFTS = (2,)
 
 
 def close_expired_days(db: Session, prof, shift: int,
-                       *, actor: str | None = None) -> int:
+                       *, actor: str | None = None,
+                       only_shifts: tuple | None = None) -> int:
     """Finalize this leader's expired open days. Returns how many closed.
 
     THE definition of a day-level auto-close: the bot's /tasks entry
@@ -745,11 +765,28 @@ def close_expired_days(db: Session, prof, shift: int,
     # against it: a day closed by the sweep must be measured by the same
     # checklist the leader would have been shown.
     leader_tasks.promote_due(db, shift, today)
+    # Each day dies on ITS shift's hour. For everybody that is `shift`; a leader
+    # whose checklist was moved to the other shift (services/leader_shift) can
+    # hold days of both, so the query is pruned by the later cutoff and each day
+    # is then held to its own. `only_shifts` is the sweep's bound
+    # (`AUTOCLOSE_SHIFTS`), applied to the DAY's shift rather than the unit's.
+    unit_sh = shift
+    day_shift = lambda d: shift                               # noqa: E731
+    if leader_shift.moved(db, prof.id):
+        unit_sh = leader_shift.unit_shift(db, prof.manager_id)
+        day_shift = lambda d: leader_shift.shift_on(          # noqa: E731
+            db, prof.id, d, unit_sh)
+        cut = max(leader_tasks.expired_through(sh) for sh in leader_shift.SHIFTS)
+    else:
+        cut = leader_tasks.expired_through(shift)
     stale = (db.query(LeaderTaskDay)
              .filter(LeaderTaskDay.leader_id == prof.id,
-                     LeaderTaskDay.date <= leader_tasks.expired_through(shift),
+                     LeaderTaskDay.date <= cut,
                      LeaderTaskDay.closed_at.is_(None))
              .all())
+    stale = [d for d in stale
+             if str(d.date) <= leader_tasks.expired_through(day_shift(str(d.date)))
+             and (only_shifts is None or day_shift(str(d.date)) in only_shifts)]
     # A day holding a task an ADMIN reopened is not an abandoned day — it is a
     # day somebody deliberately put back into play, and every such day is past
     # its deadline by construction (nothing reopens a day still inside its
@@ -782,13 +819,14 @@ def close_expired_days(db: Session, prof, shift: int,
     # share a date.
     cfgs: dict[str, dict] = {}
     now = datetime.now(timezone.utc)
-    reason = leader_tasks.missed_reason(shift)
     closed: list[tuple] = []
     for day in stale:
+        dsh = day_shift(str(day.date))
+        reason = leader_tasks.missed_reason(dsh)
         cfg = cfgs.get(str(day.date))
         if cfg is None:
             cfg = cfgs[str(day.date)] = leader_tasks.effective_leader_config(
-                db, prof, shift, day=str(day.date))
+                db, prof, dsh, day=str(day.date))
         have = {e.task_id for e in
                 db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
         for tid, s in cfg.items():
@@ -802,7 +840,7 @@ def close_expired_days(db: Session, prof, shift: int,
                 db.add(LeaderTaskEntry(
                     day_id=day.id, task_id=tid, done=False,
                     reason=(leader_tasks.auto_reason(
-                        task_deadline(s, shift), "not_checked")
+                        task_deadline(s, dsh), "not_checked")
                         if leader_auto.owns(s, day.date) else reason)))
         db.flush()
         from app.services import leader_late_proof   # cycle: see reset_task
@@ -816,7 +854,7 @@ def close_expired_days(db: Session, prof, shift: int,
         # expires them, and re-reading four columns per day to describe the
         # work would make the audit trail cost a query round for every close.
         closed.append((day.id, day.manager_id, day.date,
-                       round(float(day.completion or 0))))
+                       round(float(day.completion or 0)), dsh))
     db.commit()
 
     # The register learns what the deadline did — one row per day actually
@@ -825,14 +863,14 @@ def close_expired_days(db: Session, prof, shift: int,
     # sweep) and both are the platform acting, not the leader: nobody pressed
     # anything, and a score that moved with no button behind it is precisely
     # the change an operator later cannot explain.
-    deadline = leader_tasks.deadline_hhmm(shift)
-    for did, mid, dday, score in closed:
+    for did, mid, dday, score, dsh in closed:
         action_log.record_system(
             "leader_review", "checklist.day_autoclosed", db=db,
             target_kind="day", target_id=did, target_name=prof.name,
             unit_id=mid or prof.manager_id, day=dday,
-            details=[("leader", prof.name), ("shift", shift),
-                     ("score", score), ("deadline", deadline)],
+            details=[("leader", prof.name), ("shift", dsh),
+                     ("score", score),
+                     ("deadline", leader_tasks.deadline_hhmm(dsh))],
             reason="deadline",
         )
 
@@ -885,6 +923,13 @@ def sweep_expired_days(db: Session) -> int:
     profs = {p.id: p for p in db.query(RoleProfile)
              .filter(RoleProfile.role == "leader",
                      RoleProfile.manager_id.in_(units)).all()}
+    # A leader whose checklist was moved onto a swept shift from a unit that is
+    # not on one (services/leader_shift) owes the same close; `close_expired_days`
+    # holds each of their days to its own shift either way.
+    extra = set(leader_shift.moved_ids(db)) - set(profs)
+    if extra:
+        profs.update({p.id: p for p in db.query(RoleProfile).filter(
+            RoleProfile.role == "leader", RoleProfile.id.in_(extra)).all()})
     if not profs:
         return 0
     shifts = {m.id: m.shift for m in
@@ -894,6 +939,9 @@ def sweep_expired_days(db: Session) -> int:
     # same hour. The widest cutoff prunes the query; each leader is then held to
     # their own.
     cutoff = {sh: leader_tasks.expired_through(sh) for sh in set(shifts.values())}
+    if leader_shift.has_any(db):
+        cutoff.update({sh: leader_tasks.expired_through(sh)
+                       for sh in leader_shift.SHIFTS})
     if not cutoff:
         return 0
     open_by_leader = {
@@ -913,7 +961,8 @@ def sweep_expired_days(db: Session) -> int:
             # `close_expired_days` applies that leader's own cutoff, so a day
             # inside its window is still never touched by this pass.
             done += close_expired_days(db, prof, shift,
-                                       actor=f"deadline · {prof.name}")
+                                       actor=f"deadline · {prof.name}",
+                                       only_shifts=AUTOCLOSE_SHIFTS)
         except Exception:
             logger.exception("day auto-close sweep failed for leader %s", lid)
             db.rollback()

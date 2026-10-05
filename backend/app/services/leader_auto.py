@@ -118,7 +118,7 @@ from app.models import (
 )
 from app.services import (
     action_log, cell_lookup, leader_cells, leader_exclusions, leader_proof,
-    leader_tasks, wc_group, zagruzka_source,
+    leader_shift, leader_tasks, wc_group, zagruzka_source,
 )
 
 logger = logging.getLogger(__name__)
@@ -673,7 +673,7 @@ def _open_day_dates(db: Session, manager_id: int, now: datetime) -> set[str]:
 
 
 def _unit_due(db: Session, manager: Manager, defs: dict[int, LeaderTaskDef],
-              date: str) -> dict[int, tuple[datetime, str]]:
+              date: str, rows: dict | None = None) -> dict[int, tuple[datetime, str]]:
     """`{task_id: (due, "HH:MM")}` at the UNIT level, in one query.
 
     The pass's own cheap gate: with nothing due it must cost a query per unit
@@ -683,12 +683,17 @@ def _unit_due(db: Session, manager: Manager, defs: dict[int, LeaderTaskDef],
     a check is a statement about a shift and two leaders of one brigade asked the
     same question at two different hours could not be compared. `self_check`
     names any that exist rather than letting them sit unread.
+
+    `rows` replaces the unit's level — the shift's standard, for a leader whose
+    checklist runs on the other shift that day (services/leader_shift), with
+    `manager` read as running on that shift (`leader_shift.AsShift`).
     """
     from app.models import LeaderTaskSetting
     from app.services import leader_ai, leader_close
-    rows = {r.task_id: r for r in db.query(LeaderTaskSetting).filter(
-        LeaderTaskSetting.manager_id == manager.id,
-        LeaderTaskSetting.task_id.in_(list(defs))).all()}
+    if rows is None:
+        rows = {r.task_id: r for r in db.query(LeaderTaskSetting).filter(
+            LeaderTaskSetting.manager_id == manager.id,
+            LeaderTaskSetting.task_id.in_(list(defs))).all()}
     out: dict[int, tuple[datetime, str]] = {}
     for tid, td in defs.items():
         s = rows.get(tid)
@@ -721,8 +726,21 @@ def check_hour(db: Session, manager_id: int | None, shift: int | None,
         m = db.query(Manager).filter(Manager.id == manager_id).first()
         td = db.query(LeaderTaskDef).filter(LeaderTaskDef.id == task_id).first()
         if m is not None and td is not None:
-            night = date or leader_tasks.effective_date(m.shift)
-            got = _unit_due(db, m, {task_id: td}, night)
+            rows = None
+            if leader_id and leader_shift.moved(db, leader_id):
+                # A leader whose checklist runs on the other shift that day is
+                # checked at that shift's standard hour (`run` does the same).
+                night = date
+                if not night:
+                    prof = db.query(RoleProfile).filter_by(id=leader_id).first()
+                    night = (leader_shift.current(db, prof)[1] if prof
+                             else leader_tasks.effective_date(m.shift))
+                sh = leader_shift.shifted(db, leader_id, night, m.shift)
+                if sh:
+                    m, rows = leader_shift.AsShift(m, sh), leader_shift.standard(db, sh)
+            else:
+                night = date or leader_tasks.effective_date(m.shift)
+            got = _unit_due(db, m, {task_id: td}, night, rows=rows)
             if task_id in got:
                 moved = leader_temp_hours.for_leader(db, leader_id, night)
                 if moved:
@@ -910,6 +928,7 @@ def run(db: Session, now: datetime | None = None) -> dict:
     if not units or not defs:
         return tally
     managers = db.query(Manager).filter(Manager.id.in_(units)).all()
+    moved = set(leader_shift.moved_ids(db))
 
     for m in managers:
         if getattr(m, "archived", False):
@@ -934,9 +953,53 @@ def run(db: Session, now: datetime | None = None) -> dict:
                                    RoleProfile.manager_id == m.id)
                            .order_by(RoleProfile.name).all())
             for prof in leaders:
+                # A leader whose checklist runs on the other shift that day is
+                # answered on their own shift below, never on the unit's hours.
+                if prof.id in moved and leader_shift.shifted(db, prof.id, date, m.shift):
+                    continue
                 _run_leader(db, m, prof, date, live, defs, now, tally,
                             leader_close)
+    if moved:
+        _run_moved(db, managers, moved, defs, now, tally, leader_close)
     return tally
+
+
+def _open_leader_dates(db: Session, leader_id: int, now: datetime) -> set[str]:
+    """`_open_day_dates` for one leader — the stale days of a moved leader."""
+    floor = max(AUTO_FROM,
+                (now - timedelta(days=OPEN_DAY_LOOKBACK)).strftime("%Y-%m-%d"))
+    return {str(d) for (d,) in db.query(LeaderTaskDay.date).filter(
+        LeaderTaskDay.leader_id == leader_id,
+        LeaderTaskDay.closed_at.is_(None),
+        LeaderTaskDay.date >= floor).distinct().all()}
+
+
+def _run_moved(db, managers, moved, defs, now, tally, leader_close) -> None:
+    """The checks of leaders whose checklist runs on the OTHER shift than their
+    unit's (services/leader_shift): their days, at that shift's standard hours,
+    with their unit read as running on that shift. Days still on the unit's
+    shift were answered by the unit's pass."""
+    by_id = {m.id: m for m in managers if not getattr(m, "archived", False)}
+    for prof in (db.query(RoleProfile)
+                 .filter(RoleProfile.role == "leader",
+                         RoleProfile.id.in_(moved)).all()):
+        m = by_id.get(prof.manager_id)
+        if m is None:
+            continue
+        dates = {leader_shift.current(db, prof, now)[1]}
+        dates |= _open_leader_dates(db, prof.id, now)
+        for date in sorted(d for d in dates if str(d)[:10] >= AUTO_FROM):
+            sh = leader_shift.shifted(db, prof.id, date, m.shift)
+            if sh is None:
+                continue
+            mm = leader_shift.AsShift(m, sh)
+            due_by_task = _unit_due(db, mm, defs, date,
+                                    rows=leader_shift.standard(db, sh))
+            live = {tid: dt for tid, dt in due_by_task.items()
+                    if now >= dt[0] - WARN_BEFORE}
+            if live:
+                _run_leader(db, mm, prof, date, live, defs, now, tally,
+                            leader_close)
 
 
 def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None:

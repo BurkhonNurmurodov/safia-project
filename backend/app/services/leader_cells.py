@@ -101,10 +101,9 @@ def filing_cells(db: Session, prof: RoleProfile) -> list[Cell]:
     operator's ruling (2026-09-02) is that every assigned cell counts
     automatically, so a cell appears here the moment it is assigned on `/cells`
     and disappears the moment it is released, with no second flag to keep in
-    step. `in_load` is not consulted: that flag answers whether a cell counts
-    toward the production загрузка, which is a different question about a
-    different register, and on the current data it is unticked on all 108 cells
-    — reading it would switch every leader to filing nothing.
+    step. `in_load` is not consulted HERE: whether a leader owes anything at all
+    because none of their cells counts in the загрузка is `leader_load`'s
+    question, asked by `expected_days` before this list is.
 
     An EMPTY list is a real answer, not a missing one: a leader with no cell
     files nothing on a switched unit (see `expected_days`).
@@ -135,11 +134,15 @@ def expected_days(db: Session, prof: RoleProfile, date: str | None,
         not per-cell            -> [None]      one cell-less day, exactly as before
         per-cell, has cells     -> [ids…]      one complete checklist per cell
         per-cell, has NO cells  -> []          files nothing (the operator's ruling)
+        no counted cell and nothing filed since 1 Oct -> []   (`leader_load`)
 
     `date` is the SHIFT's effective date. Pass `floor` or `shift_floors` to
     avoid a query per leader when walking many.
     """
     if not prof:
+        return []
+    from app.services import leader_load
+    if leader_load.exempt(db, prof, date):
         return []
     mid = getattr(prof, "manager_id", None)
     if floor is None:

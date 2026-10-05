@@ -115,6 +115,8 @@ try:
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
+        sync_cells_and_leaders_from_verifix,
+        set_profile_photos_from_verifix,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -123,6 +125,7 @@ try:
         register_leader_rules_sep26,
         register_leader_temp_hours,
         fix_nodirjon_leader_unit,
+        move_sanjarbek_checklist_shift,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -528,6 +531,18 @@ try:
     # Remove this line, `startup.sync_leaders_from_verifix` and
     # `services/verifix_leader_sync.py` once the report has landed.
     sync_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every Verifix cell (the name-coded
+    # ones too) and a profile for every Verifix leader without one, connected
+    # only where safe; DMs every mismatch. Remove this line,
+    # `startup.sync_cells_and_leaders_from_verifix` and
+    # `services/verifix_cells_leaders_sync.py` once the report has landed.
+    sync_cells_and_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every leader's and brigadir's Verifix
+    # photo as their profile photo (by the Verifix tie the checks above stored;
+    # a photo somebody set is kept) and a DM of who got one. Remove this line,
+    # `startup.set_profile_photos_from_verifix` and
+    # `services/verifix_profile_photos.py` once the report has landed.
+    set_profile_photos_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,
@@ -595,6 +610,8 @@ try:
     # days stamped with Aripova Manzura's unit go back to his own unit. Remove
     # with `startup.fix_nodirjon_leader_unit` (mirrored in the FastAPI lifespan).
     fix_nodirjon_leader_unit()
+    # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
+    move_sanjarbek_checklist_shift()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

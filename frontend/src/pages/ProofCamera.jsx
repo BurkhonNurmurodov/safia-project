@@ -72,6 +72,32 @@ const OPEN_TIMEOUT_MS = 45 * 1000;
 // viewfinder SAYS it is still opening and why, so waiting is a thing being
 // done rather than a thing that has broken.
 const OPEN_SLOW_MS = 9 * 1000;
+// A `getUserMedia` that has gone this long with NO answer is not slow, it is
+// stuck — and stuck in a way this page cannot undo. Chrome serves a page's
+// camera requests ONE AT A TIME, so every later request (the silent re-open,
+// the «Qayta urinish» button) queues behind the one nobody answered and can
+// never be served either: the 2026-10-05 report waited 45 s on a request that
+// raised no sheet and got no answer, and its Retry could only have waited
+// another 45. A RELOAD is a new page — the WebView cancels a request whose page
+// went away — so the camera is asked again from a clean line. Done by itself
+// once (never on a page that is already such a reload) and by Retry whenever a
+// request is still hanging. Past the slowest open that ever succeeded (17.4 s,
+// 2026-09-18), so a slow camera is never reloaded out from under itself.
+const HUNG_RELOAD_MS = 20 * 1000;
+// Where the reload leaves a note for the page it opens. sessionStorage survives
+// a reload and dies with the WebView, so a page Telegram opens fresh from the
+// bot starts with its own one automatic reload; the age bound is for a WebView
+// Telegram reuses.
+const RELOAD_KEY = "proof.camera.hungReload";
+const RELOAD_FRESH_MS = 10 * 60 * 1000;
+
+/** The note a hung-open reload left for this page, or null. */
+function readHungReload() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || "null");
+    return r && Date.now() - (r.at || 0) < RELOAD_FRESH_MS ? r : null;
+  } catch { return null; }
+}
 // «The camera is busy» is a fact about another app or another page, not about
 // this camera, and the fix for it is to ask again a moment later. These are the
 // names Chrome gives it; `NotAllowedError` is deliberately not among them,
@@ -513,11 +539,30 @@ export default function ProofCamera() {
   const pageIdRef = useRef(Math.random().toString(36).slice(2, 10));
   // Which check put the failure screen up, and what it saw when it did.
   const failRef = useRef({ kind: null, error: null, stall: null });
-  const opensRef = useRef({ total: 0, hidden: 0, lastMs: null, openedAt: 0, remembered: false });
+  // Whether THIS page is a reload made to clear a camera request that hung on
+  // the page before — read once, at mount. It travels in the failure report,
+  // and it is what spends this page's one automatic reload.
+  const [reloadNote] = useState(readHungReload);
+  const reloadRef = useRef(reloadNote);
+  const opensRef = useRef({
+    total: 0, hidden: 0, lastMs: null, openedAt: 0, remembered: false,
+    reload: reloadNote ? { why: reloadNote.why, waited: reloadNote.waited, path: reloadNote.path } : null,
+  });
+  // Every getUserMedia this page has asked and not yet heard back from, the
+  // first one's start and the last one's path. A non-zero count means the page's
+  // place in Chrome's line is taken, and only a reload gives it back.
+  const gumPendingRef = useRef({ n: 0, at: 0, path: "" });
+  // Whether something is in front of the page right now (it may be «Allow
+  // camera?» itself) and when the page last got its focus back.
+  const blurredRef = useRef(false);
+  const focusBackRef = useRef(0);
+  const reloadingRef = useRef(false);
   // The report's hold on a clone of the stream. A new open releases it first.
   const probeHoldRef = useRef(null);
 
   const [mode, setMode] = useState("live");   // live | review | slot
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const [shot, setShot] = useState(null);     // { url, blob, ms, ar }
   const [viewing, setViewing] = useState(null);
   const [retakeSlot, setRetakeSlot] = useState(null);
@@ -529,6 +574,7 @@ export default function ProofCamera() {
   const [camBusy, setCamBusy] = useState(false);   // opening: black, but not broken
   const [camSlow, setCamSlow] = useState(false);  // opening, and taking long enough to say so
   const [reported, setReported] = useState(false); // the server has this failure's report
+  const [reloading, setReloading] = useState(false); // clearing a hung request with a fresh page
   const [facing, setFacing] = useState("environment");
   const [devices, setDevices] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -719,6 +765,37 @@ export default function ProofCamera() {
     }
   }, [note]);
 
+  /** Clear a camera request that will never be answered, by reloading the page.
+   *
+   *  `why` is "auto" (the page's own one try), "retry" (the leader pressed the
+   *  button) or "back on screen". An automatic reload whose note cannot be
+   *  written is NOT made: the note is the only thing stopping the next page
+   *  from reloading itself too, and a loop of reloads is worse than one
+   *  failure screen. Nothing is lost by it — shots waiting to upload live in
+   *  IndexedDB and go up when the page opens again, and the URL already names
+   *  the task on screen. */
+  const reloadPage = useCallback((why) => {
+    if (reloadingRef.current) return true;
+    const p = gumPendingRef.current;
+    const waited = p.n ? Math.round((performance.now() - p.at) / 1000) : null;
+    try {
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ at: Date.now(), why, waited, path: p.path }));
+    } catch {
+      if (why !== "retry") {
+        note("reload", `${why} · not made — the page cannot leave the next one a note`);
+        return false;
+      }
+    }
+    reloadingRef.current = true;
+    note("reload", `${why} · the camera request${p.path ? ` (${p.path})` : ""} `
+      + (waited != null ? `had no answer for ${waited} s` : "never finished"));
+    setReloading(true);
+    // A beat for the line on screen to be read: a page that blinks and comes
+    // back with no word reads as something having gone wrong.
+    setTimeout(() => window.location.reload(), 600);
+    return true;
+  }, [note]);
+
   const startCamera = useCallback(async (want = facing, why = "start") => {
     // A failure report may be holding a clone of the old stream, and a clone
     // keeps the camera source alive underneath the open about to start.
@@ -732,7 +809,7 @@ export default function ProofCamera() {
       deferredRef.current = true;
       return;
     }
-    if (startingRef.current) return;
+    if (startingRef.current || reloadingRef.current) return;
     startingRef.current = true;
     const attempt = ++attemptRef.current;
     const mine = () => attemptRef.current === attempt;
@@ -766,8 +843,12 @@ export default function ProofCamera() {
       accessState().then((a) => { if (mine()) note("access", accessLine(a)); }).catch(() => {});
     }, OPEN_SLOW_MS);
     slowRef.current = slow;
+    let hungTimer = null;
     const deadline = setTimeout(() => {
       if (!mine()) return;
+      // From here the failure screen owns the open: a reload now would take the
+      // report being gathered with it, and «Qayta urinish» reloads anyway.
+      clearTimeout(hungTimer);
       startingRef.current = false;
       setCamBusy(false);
       setCamSlow(false);
@@ -776,9 +857,28 @@ export default function ProofCamera() {
         hidden: document.visibilityState !== "visible", at: Date.now(),
       };
       note("open", `no answer in ${OPEN_TIMEOUT_MS / 1000} s → failure screen`);
-      setCamErr("stalled");
+      // Its own screen: «the camera opened and sent no picture» is the
+      // stalled-stream screen, and here the camera never opened at all.
+      setCamErr("hung");
     }, OPEN_TIMEOUT_MS);
     deadlineRef.current = deadline;
+    // The request nobody answers: once it has hung for HUNG_RELOAD_MS, a fresh
+    // page asks again. Never while something is in front of the page — that
+    // may be «Allow camera?» itself, with the leader reading it — nor in the
+    // seconds after they come back from it, when an answer is on its way; never
+    // off screen (`settleReturn` owns a return) or over a shot not yet saved.
+    const checkHung = () => {
+      if (!mine() || !gumPendingRef.current.n || camErrRef.current) return;
+      const later = document.visibilityState !== "visible" || modeRef.current !== "live"
+        || blurredRef.current || performance.now() - focusBackRef.current < 3000;
+      if (later) { hungTimer = setTimeout(checkHung, 2000); return; }
+      if (reloadRef.current) {
+        note("reload", "not again — this page is already a reload of a page whose camera request hung");
+        return;
+      }
+      reloadPage("auto");
+    };
+    hungTimer = setTimeout(checkHung, HUNG_RELOAD_MS);
     // Every getUserMedia of this attempt, timed and recorded: which path
     // opened the camera, and how long Android took to answer, is half of any
     // failure report.
@@ -788,6 +888,10 @@ export default function ProofCamera() {
       // result line, so without this the timeline of a hung open named no step
       // at all and could not say whether the camera was even asked for.
       note("ask", path);
+      const pend = gumPendingRef.current;
+      if (!pend.n) pend.at = g0;
+      pend.n += 1;
+      pend.path = path;
       try {
         const s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
         const st = s.getVideoTracks()[0]?.getSettings?.() || {};
@@ -797,6 +901,8 @@ export default function ProofCamera() {
         note("gum", `${path} → ${e?.name || "error"} in ${Math.round(performance.now() - g0)} ms`
           + (e?.message ? ` · ${e.message}` : ""));
         throw e;
+      } finally {
+        pend.n = Math.max(0, pend.n - 1);
       }
     };
     try {
@@ -971,11 +1077,20 @@ export default function ProofCamera() {
     } finally {
       clearTimeout(deadline);
       clearTimeout(slow);
+      clearTimeout(hungTimer);
       if (mine()) { startingRef.current = false; setCamBusy(false); setCamSlow(false); }
       finished();
     }
-  }, [facing, pickLens, note, releaseCamera]);
+  }, [facing, pickLens, note, releaseCamera, reloadPage]);
   startCameraRef.current = startCamera;
+
+  // «Qayta urinish». After an open that never answered — the «hung» screen, or
+  // any request still unanswered — asking again on this page only joins the
+  // queue behind it, so the button reloads the page instead.
+  const retry = useCallback(() => {
+    if (camErrRef.current === "hung" || gumPendingRef.current.n) { reloadPage("retry"); return; }
+    startCamera(facing, "retry button");
+  }, [reloadPage, startCamera, facing]);
 
   useEffect(() => {
     if (!task || dayClosed) return undefined;
@@ -1131,6 +1246,15 @@ export default function ProofCamera() {
 
   /* ── when the camera fails, the device says why — utils/cameraDiag ────── */
 
+  // A page opened by a hung-open reload says so first: whether a fresh page
+  // clears the hang is exactly what the next report has to answer.
+  useEffect(() => {
+    const r = reloadRef.current;
+    if (!r) return;
+    note("reload", `this page is a reload (${r.why}) · the camera request on the page before `
+      + (r.waited != null ? `had no answer for ${r.waited} s` : "never finished"));
+  }, [note]);
+
   // The page's own comings and goings, into the recorder: a camera that stops
   // right after Telegram minimized the page is a different failure from one
   // that never started on a page nobody left.
@@ -1140,8 +1264,15 @@ export default function ProofCamera() {
     // Focus, not visibility: Telegram's permission sheet leaves the page
     // VISIBLE and merely takes focus from it, so this is the only signal the
     // page has that the leader was asked anything at all.
-    const lost = () => note("focus", "lost — something is in front of the page");
-    const back = () => note("focus", "back on the page");
+    const lost = () => {
+      blurredRef.current = true;
+      note("focus", "lost — something is in front of the page");
+    };
+    const back = () => {
+      blurredRef.current = false;
+      focusBackRef.current = performance.now();
+      note("focus", "back on the page");
+    };
     const tg = tgApp();
     const on = () => note("telegram", "activated");
     const off = () => note("telegram", "deactivated");
@@ -1340,10 +1471,13 @@ export default function ProofCamera() {
       return;
     }
     // Drop the open that never finished, and start one the leader can answer.
+    // If its getUserMedia is STILL unanswered, a new one here would only queue
+    // behind it — a fresh page asks from a clean line, once per page.
+    if (gumPendingRef.current.n && !reloadRef.current && reloadPage("back on screen")) return;
     attemptRef.current += 1;
     startingRef.current = false;
     startCamera(facing, "back on screen");
-  }, [task, dayClosed, ensureCamera, startCamera, facing, note]);
+  }, [task, dayClosed, ensureCamera, startCamera, facing, note, reloadPage]);
 
   useEffect(() => {
     const arm = () => {
@@ -1723,7 +1857,14 @@ export default function ProofCamera() {
               {/* Past OPEN_SLOW_MS, why. A silent black rectangle is what sends
                   a leader back to the bot to open the task again — and that new
                   page is one more holder of the camera they are waiting for. */}
-              {camSlow ? (
+              {/* A page about to reload itself says so: a screen that blinks
+                  and comes back with no word reads as something breaking. */}
+              {reloading ? (
+                <div className="text-[12px] leading-snug max-w-[17rem]"
+                  style={{ color: "rgba(255,255,255,0.75)" }}>
+                  {t("proof.cam.reloading")}
+                </div>
+              ) : camSlow ? (
                 <div className="text-[12px] leading-snug max-w-[17rem]"
                   style={{ color: "rgba(255,255,255,0.55)" }}>
                   {t("proof.cam.openingSlow")}
@@ -1756,7 +1897,9 @@ export default function ProofCamera() {
                 style={{ color: "rgba(255,255,255,0.65)" }}>
                 {noCamera && onDesktop()
                   ? t("proof.cam.noneDesktopMsg")
-                  : t(`proof.cam.${camErr}Msg`)}
+                  : camErr === "hung" && reloadNote
+                    ? t("proof.cam.hungAgainMsg")
+                    : t(`proof.cam.${camErr}Msg`)}
               </p>
               {/* On a device with NO camera — a leader who opened the proof
                   from Telegram on a computer — «Qayta urinish» is a button that
@@ -1768,13 +1911,12 @@ export default function ProofCamera() {
                   <Button size="lg" className="w-full" onClick={exit}>
                     <X size={16} /> {t("proof.gate.close")}
                   </Button>
-                  <Button size="md" variant="ghost" className="w-full"
-                    onClick={() => startCamera(facing, "retry button")}>
+                  <Button size="md" variant="ghost" className="w-full" onClick={retry}>
                     <RefreshCw size={15} /> {t("proof.cam.retry")}
                   </Button>
                 </div>
               ) : (
-                <Button size="lg" onClick={() => startCamera(facing, "retry button")}>
+                <Button size="lg" onClick={retry} loading={reloading}>
                   <RefreshCw size={16} /> {t("proof.cam.retry")}
                 </Button>
               )}

@@ -50,6 +50,9 @@ _MISSING = {"NotFoundError", "DevicesNotFoundError"}
 # What the leader was looking at, in the words on their screen.
 _SCREEN = {
     "stalled": "«Kamera tasvir bermayapti»",
+    # From 2026-10-05 the 45 s open deadline has a screen of its own — it used to
+    # borrow «no picture», which describes a camera that opened.
+    "hung": "«Kamera javob bermadi»",
     # From 2026-09-18: the page ASKED the other camera pages of that Telegram to
     # let go, one answered that it still holds the camera, and the leader was
     # shown that and told to close it. So this row is not «we do not know why» —
@@ -211,6 +214,11 @@ def _stalled_step(c: dict) -> str:
     access = _after_open(c, "access")
     lost = any(f.startswith("lost") for f in focus)
     back = lost and focus[-1].startswith("back")
+    # The open's first focus row is the BASELINE. A page that did not have
+    # focus when it asked has none to lose, so the absence of a «lost» row
+    # proves nothing there: a sheet over it leaves no trace either. Read as
+    # «nothing came up» on 2026-10-05, on a tablet whose page never had focus.
+    unfocused = bool(focus) and focus[0].startswith("not on the page")
 
     if asked:
         step = (f"The page asked Android for the camera ({_t(asked[-1], 40)}) and no answer ever came.")
@@ -227,6 +235,10 @@ def _stalled_step(c: dict) -> str:
     elif lost:
         who = ("Telegram's «Allow camera?» sheet came up and was answered, and the camera still never "
                "opened — so the request stalled below Telegram, in Android.")
+    elif focus and unfocused:
+        who = ("The page did not have focus when it asked (a WebView nobody has tapped yet often has none), so "
+               "focus cannot tell whether «Allow camera?» came up — a sheet over it would have left no trace "
+               "either; either way nothing answered the request.")
     elif focus:
         who = ("Nothing ever came up in front of the page — it never lost focus — so «Allow camera?» was "
                "never shown and nothing answered the request either.")
@@ -354,6 +366,11 @@ def verdict(cam) -> str:
                          "open hanging.")
         else:
             parts.append(_stalled_step(c))
+        reload = _d(_d(c.get("opens")).get("reload"))
+        if reload:
+            parts.append("This page was itself a reload made to clear the same hang on the page before, so a "
+                         "fresh page did not help: what holds the request is outside the page — Telegram or "
+                         "Android. The leader was told to close Telegram completely and open the task again.")
         worked = _worked_before(c)
         if worked:
             parts.append(worked)
@@ -547,6 +564,14 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
                  f" ({_t(opens.get('hidden'), 4) or '0'} asked for while the page was hidden)"
                  + (f" · the last took {_t(opens.get('lastMs'), 6)} ms" if _num(opens.get("lastMs")) is not None else "")
                  + (f" · page open {_ago(env.get('uptime'))}" if _num(env.get("uptime")) is not None else ""))
+    reload = _d(opens.get("reload"))
+    if reload:
+        how = {"auto": "by itself", "retry": "from «Qayta urinish»",
+               "back on screen": "when it came back on screen"}.get(str(reload.get("why")), _t(reload.get("why"), 20))
+        waited = _num(reload.get("waited"))
+        L.append(f"This page is a reload, made {how}: the camera request on the page before"
+                 + (f" ({_t(reload.get('path'), 40)})" if reload.get("path") else "")
+                 + (f" had no answer for {_fmt(waited)} s" if waited is not None else " never finished"))
 
     # ── the probes ─────────────────────────────────────────────────────────
     L += ["", "<b>Probes</b>"]

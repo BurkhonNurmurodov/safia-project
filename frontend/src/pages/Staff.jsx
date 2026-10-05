@@ -42,7 +42,7 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter, FilterPanel, PickFilter } 
 import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
 import {
   LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, n2 as liveN2,
+  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, LIVE_FILTERS, n2 as liveN2,
 } from "../components/staff/LiveBits";
 import useIsMobile from "../hooks/useIsMobile";
 import DayStepper from "../components/ui/DayStepper";
@@ -504,7 +504,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
   // Live only: the status strip over the table, and the row an admin opened to
   // see the Verifix read behind it.
-  const [liveFilter, setLiveFilter]     = usePersistentState("staff_live_workers_status", "all");
+  const [liveFilterSaved, setLiveFilter] = usePersistentState("staff_live_workers_status", "all");
+  // A filter the strip no longer offers (the retired «Kechikkan») reads as all.
+  const liveFilter = LIVE_FILTERS.includes(liveFilterSaved) ? liveFilterSaved : "all";
   const [openRaw, setOpenRaw]           = useState(null);
   // Live: below lg (a phone, a tablet held upright) the rows read as a list —
   // the table needs a laptop's width.
@@ -1187,16 +1189,18 @@ function LiveWorkersView({
       </div>
       <SkeletonBlock className="h-[38px] w-full sm:w-[640px] rounded-xl" />
       <SkeletonBlock className="h-[38px] w-full rounded-xl" />
-      <SkeletonTable rows={8} cols={6} />
+      <SkeletonTable rows={8} cols={7} />
     </div>
   );
 
   const narrowed = activeFilter || liveFilter !== "all";
   // ONE header line: every label on one baseline, never wrapped (a header
-  // three lines tall is mostly empty space). Columns take their content's
-  // width and a trailing spacer takes what is left, so on a wide screen a
-  // name stays next to its status and the figures instead of every column
-  // stretching apart; figure headers sit right-aligned over their figures.
+  // three lines tall is mostly empty space). The columns share the card's
+  // whole width — a trailing spacer that kept them at their content's width
+  // left a blank band down the right of a wide screen (the operator,
+  // 2026-10-05) — and figure headers sit right-aligned over their figures.
+  // The last VISIBLE column takes the card's 16px edge: below 72rem the two
+  // figure columns after «Soat» are hidden, and `last:` still names them.
   const th = "h-10 px-3 first:pl-4 last:pr-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
   const thNum = th.replace("text-left", "text-right");
   const thStyle = { borderColor: "var(--border)", color: "var(--text-3)" };
@@ -1252,15 +1256,14 @@ function LiveWorkersView({
           <LivePhoneList rows={sortedWorkers} openRaw={openRaw} setOpenRaw={setOpenRaw} isAdmin oneSchedule={!!oneSchedule} />
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="@container overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead>
               <tr style={{ background: "var(--bg-inner)" }}>
-                {/* The job title rides under the name: as a column of its own it
-                    cost ~180px a laptop does not have. The name header SORTS
-                    (the search above already filters by name); the job title
-                    keeps its filter. */}
-                <th scope="col" className={`${th} min-w-[14rem] min-[1400px]:min-w-[20rem]`} style={thStyle}
+                {/* The name header SORTS (the search above already filters by
+                    name). While the table is too narrow for a Lavozim column
+                    the job title rides under the name, and its filter here. */}
+                <th scope="col" className={th} style={thStyle}
                   aria-sort={nameAsc === null ? "none" : nameAsc ? "ascending" : "descending"}>
                   <span className="inline-flex items-center gap-1.5">
                     <button type="button" onClick={() => setNameAsc((p) => (p === null ? true : p ? false : null))}
@@ -1271,15 +1274,25 @@ function LiveWorkersView({
                         ? <ChevronsUpDown size={12} aria-hidden="true" style={{ color: "var(--text-4)" }} />
                         : nameAsc ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
                     </button>
-                    <span aria-hidden="true" style={{ color: "var(--text-4)" }}>/</span>
-                    <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                      <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
-                    </ColFilter>
+                    <span className="inline-flex items-center gap-1.5 @min-[56rem]:hidden">
+                      <span aria-hidden="true" style={{ color: "var(--text-4)" }}>/</span>
+                      <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
+                        <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
+                      </ColFilter>
+                    </span>
                   </span>
                 </th>
                 {/* The status sits right after the name — it is the question
                     the page is opened for. */}
                 <th scope="col" className={th} style={thStyle}>{t("staffLive.c.status")}</th>
+                {/* The job title is a column of its own (the operator,
+                    2026-10-05) once the TABLE is wide enough — measured on the
+                    table, not the screen: an open sidebar takes 170px. */}
+                <th scope="col" className={`${th} hidden @min-[56rem]:table-cell`} style={thStyle}>
+                  <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
+                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
+                  </ColFilter>
+                </th>
                 {showCellCol && (
                   <th scope="col" className={th} style={thStyle}>
                     <ColFilter quiet label={t("staff.colCell")} active={filters.cells.length > 0}>
@@ -1297,25 +1310,24 @@ function LiveWorkersView({
                 )}
                 <th scope="col" className={th} style={thStyle}>{t("staffLive.c.in")}</th>
                 <th scope="col" className={th} style={thStyle}>{t("staffLive.c.out")}</th>
-                <th scope="col" className={thNum} style={thStyle}>
+                <th scope="col" className={`${thNum} @max-[72rem]:pr-4`} style={thStyle}>
                   <ColFilter quiet align="right" label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
                     <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
                       onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} hidden xl:table-cell`} style={thStyle}>
+                <th scope="col" className={`${thNum} hidden @min-[72rem]:table-cell`} style={thStyle}>
                   <ColFilter quiet align="right" label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
                     <RngFilter minV={filters.early_min} maxV={filters.early_max}
                       onMin={(v) => setF("early_min", v)} onMax={(v) => setF("early_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} hidden xl:table-cell`} style={thStyle}>
+                <th scope="col" className={`${thNum} hidden @min-[72rem]:table-cell`} style={thStyle}>
                   <ColFilter quiet align="right" label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
                     <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
                       onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
                   </ColFilter>
                 </th>
-                <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
             <LiveRows rows={sortedWorkers} showCellCol={showCellCol} oneSchedule={!!oneSchedule}
@@ -1342,15 +1354,33 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
       {sortedWorkers.map((w) => (
         <Fragment key={w.id}>
           <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
-            <td className={`${td} !whitespace-normal max-w-[24rem]`}>
-              <LiveName w={w} open={openRaw === w.id}
-                onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
-              <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
+            <td className={`${td} !whitespace-normal`}>
+              {/* Every row is one height (the operator, 2026-10-05). A wide
+                  table keeps a move / a pending change on the name's own line;
+                  a narrow one carries the job title under every name, and the
+                  notes join that line. */}
+              <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                <LiveName w={w} open={openRaw === w.id}
+                  onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+                {(w.moved || w.pending?.length > 0) && (
+                  <span className="hidden @min-[56rem]:inline-flex items-center gap-x-2 text-xs" style={{ color: "var(--text-3)" }}>
+                    <LiveRowNotes w={w} />
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs @min-[56rem]:hidden" style={{ color: "var(--text-3)" }}>
                 <span>{tx(w.job_title) || "—"}</span>
                 <LiveRowNotes w={w} />
               </div>
             </td>
             <td className={td}><LiveStatusChip status={w.status} /></td>
+            {/* One line, never wrapped (only the name may): a long title is
+                cut with «…» and read whole on hover. */}
+            <td className={`${td} hidden @min-[56rem]:table-cell`} style={{ color: "var(--text-2)" }} title={tx(w.job_title) || undefined}>
+              {w.job_title
+                ? <span className="block max-w-[12rem] truncate">{tx(w.job_title)}</span>
+                : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
             {/* Code only — the workshop name is four words of Russian
                 per row; it stays in the tooltip and the filter. */}
             {showCellCol && (
@@ -1367,21 +1397,23 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
             )}
             <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
             <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
-            <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+            <td className={`${td} tabular-nums text-right @max-[72rem]:pr-4`} style={{ color: "var(--text-1)" }}>
               {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
             </td>
-            <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-2)" }}>
+            <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-2)" }}>
               {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
             </td>
-            <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-1)" }}>
+            <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-1)" }}>
               {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
             </td>
-            <td aria-hidden="true" className="p-0" />
           </tr>
           {openRaw === w.id && w.raw && (
             <tr>
               <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
-                <LiveRaw raw={w.raw} />
+                {/* Sized BY the columns, never sizing them: `cols` counts the
+                    columns a narrow card hides, and a wide panel spread over
+                    those would hand them a share of the width. */}
+                <div className="[contain:inline-size]"><LiveRaw raw={w.raw} /></div>
               </td>
             </tr>
           )}

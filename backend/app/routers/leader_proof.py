@@ -122,6 +122,11 @@ def _camera_cfg(db: Session, prof: RoleProfile, task_id: int) -> tuple[dict, dic
     or the register would carry proofs collected under a rule that no longer
     applies to them.
     """
+    from app.services import leader_load
+    if leader_load.exempt(db, prof):
+        # No counted cell and nothing filed since 1 October: no checklist is
+        # owed, and a shot would file one (`services/leader_load.py`).
+        raise HTTPException(status_code=409, detail="no_load")
     cfg = effective_leader_config(db, prof, leader_proof.leader_shift(db, prof))
     entry = cfg.get(task_id)
     if not entry or not entry.get("enabled"):

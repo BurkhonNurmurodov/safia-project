@@ -173,6 +173,48 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   role rows and every checklist day to Aripova without touching the cell, and
   marked her already-sent digests as including them so nothing was re-sent.
 
+## A leader's CHECKLIST may run on the other shift (`leader_shift`, 2026-10-05)
+
+The operator's case: Jumaniyazov Sanjarbek leads a cell that works shift 1
+while his brigadir is on shift 2. A leader's checklist used to take every clock
+from the UNIT's shift; a leader profile may now name the shift its checklist
+runs on, from a date (`role_profiles.checklist_shift`, a JSONB timeline
+`[{from, shift: 1|2|null, at, by}]`, null = the unit's). Set on the admin
+profile page («Chek-list smenasi», two options; the unit's own shift is stored
+as "follow the unit"), always from TOMORROW. His was set once by
+`startup.move_sanjarbek_checklist_shift` (flag
+`leader_checklist_shift_jumaniyazov_2026_10_06_v1`, both entrypoints): shift 1
+from 2026-10-06.
+
+- **`services/leader_shift.py` is THE definition** — `current` (the shift +
+  date being filed now), `shift_on` / `shifted` / `day_shift` (a date's shift),
+  `standard` (a shift's rules), `chain` (the levels a resolver walks),
+  `AsShift` (a unit read as running on another shift). Everybody without a
+  timeline short-circuits and reads exactly what they read before.
+- **What follows the leader's shift**: the checklist date (`_lt_shift`,
+  `leader_proof.leader_shift`), the day close (`close_expired_days` holds each
+  day to ITS shift; the sweep's `AUTOCLOSE_SHIFTS` bound is applied to the
+  day's shift), task windows / deadlines / closing hours
+  (`effective_leader_config` recomputes the shift for the day; the
+  `leader_close` time functions seat hours on the entry's own `shift`), the AI
+  (new review rows are STAMPED with the day's shift; `date_rule_for`,
+  `criteria_for`, `sync_date_flags` and `routers/leader_ai._levels` walk the
+  shifted chain), the automatic checks (`leader_auto._run_moved`, `check_hour`),
+  «Vazifalar», the digest's "time up", the admin day views.
+- **On a shifted day the unit's level is the shift's STANDARD** — per task and
+  field the value most of that shift's units resolve to, the admin page's
+  derived «Smena N» level (`shiftTpl`), cached 60 s. Unit-level example photos
+  are skipped. The leader's own level applies, except a window or deadline that
+  does not fit the day's shift.
+- **What does NOT follow it**: the unit the leader belongs to (digest, concerns,
+  загрузка, Monitoring pool and its shift filter, the register row's `shift`),
+  and the collection layer (`leader_bot.merges` / `training` keep the UNIT's
+  shift — a shift-1 reading there would drop his bot days from the register).
+- **Dated, so history never moves**: days before `from` keep the unit's shift;
+  verdicts keep the shift they were stamped with.
+- A switch to the NIGHT shift leaves a gap (00:00–17:00 of its first date)
+  where no day is open; `current` then answers the shift-2 date before it.
+
 ## A leader on Verifix, or in place of one (`leader_kind`)
 
 From **2026-10-04** (the operator's directive) every leader profile says
@@ -430,6 +472,84 @@ workbook. Nothing is deleted, archived or renamed.
   0822; 3 profiles not in Verifix, 8 «Lider o'rnida», 6 spelled differently.
 - Delete it (before `leader_verifix_check`, whose matching it imports) with its
   startup pair and both entrypoint calls once the report has landed.
+
+## Every Verifix cell, every Verifix leader (`verifix_cells_leaders_sync`, 2026-10-05)
+
+The operator, the day after the two passes above: «Download every single cell,
+and create leader profiles for those leaders who don't have a profile on our
+platform. For connecting them, report me mismatches and do not connect not
+safe ones yet.» TEMPORARY one-shot `services/verifix_cells_leaders_sync.py`,
+`startup.sync_cells_and_leaders_from_verifix` (flag
+`verifix_cells_leaders_2026_10_05_v1`, ~210 s after boot, both entrypoints),
+DMed as text + a workbook; the record is in app setting
+`verifix_cells_leaders_2026_10_05`. Nothing is deleted or archived.
+
+- **Cells: the 4 Oct rule PLUS name-coded subdivisions** — no `code`, a NAME
+  that starts with exactly four digits («4711 Зона отправки», the freezers
+  1711 / 1721 / 1811 / 1821; `turnover.unit_code` already read them so). Taken
+  only when not a department, no cell stands under it (a workshop), its number
+  is neither another cell's code nor the number a coded cell is named with
+  («0611 Обработка яиц» is A0061), and — to be created — open with somebody
+  working there. CREATED the 4 Oct way (no brigadir, no leader, out of the
+  загрузка, ru name), RENAMED to Verifix's name, and a cell the 4 Oct pass
+  itself archived («Verifix (avtomatik)») that Verifix has open is RESTORED.
+  Reported only: archive candidates (NOT archived), cells archived by a person
+  that Verifix has open, codes on two subdivisions, name-coded subdivisions
+  left out and why, and every subdivision people work in with no code at all —
+  those cannot be cells until Verifix gives them a code.
+- **Leaders: every working Verifix leader with no profile gets one** («Lider»,
+  source Verifix, the Verifix name in Latin Title Case) — EXCEPT where they may
+  already be on the platform, which is reported and not created: a leader
+  profile Verifix could not find with their surname + first name (either
+  order), or the same first name and a surname ≥ 0.75 alike, or their cell's
+  own leader when Verifix could not find that profile; a brigadir unit,
+  shift-/top-manager, admin or guest with that name (or the unit the 4 Oct
+  supervisor check tied to this very person); two Verifix leaders sharing a
+  full name; a one-word name. A namesake of a profile Verifix DID tie to
+  somebody else is created, with the namesake named.
+- **Connected only where safe**: the profile takes the cell's brigadir and the
+  cell when the cell is ours, active, has a brigadir (unit not archived), has
+  no leader, no profile of ours that Verifix places there and no second
+  profileless leader. Everything else is created with NO unit and NO cell —
+  which keeps it off every roster, digest, checklist, auto check and the
+  registration picker (they all read leaders by unit) until a person connects
+  it: the profile page, brigadir + cell, one Save (`_set_leader_cells` moves
+  the cell to the profile's unit). The report names per person what stood in
+  the way and the Verifix brigadir standing over their subdivision (and the
+  unit here the 4 Oct check tied that brigadir to).
+- Existing profiles are not touched; their mismatches are in the workbook.
+- Delete the module, its startup pair and both entrypoint calls once the report
+  has landed — BEFORE `verifix_cell_sync`, `verifix_leader_sync` and
+  `leader_verifix_check`, whose helpers it imports.
+
+## Leaders' and brigadirs' photos come from Verifix (`verifix_profile_photos`, 2026-10-05)
+
+The operator: «put pictures of the leaders and supervisors on Verifix as
+profile picture on IMS». TEMPORARY one-shot `services/verifix_profile_photos.py`,
+`startup.set_profile_photos_from_verifix` (flag
+`verifix_profile_photos_2026_10_05_v1`, ~300 s after boot, after the 5 Oct
+leader pass so the profiles it created are covered, both entrypoints), DMed
+as text + a workbook; the record (no bytes) is app setting
+`verifix_profile_photos_2026_10_05`.
+
+- **Who a profile is on Verifix is the tie the checks STORED** —
+  `role_profiles.leader_kind_meta.vfx.id` (the 4 Oct leader check, its pins,
+  the 5 Oct created profiles) and `managers.supervisor_kind_meta.vfx.id` (the
+  4 Oct brigadir check): the tie each profile page already names. Nothing is
+  matched afresh; an untied profile is listed with the check's reason.
+- **A photo somebody set is kept.** A tie whose Verifix name no longer looks
+  like the profile (`name_map._pair_score`, either order — a profile renamed
+  to another person) is refused. A Verifix list under 1,000 people writes
+  nothing.
+- The employee's MAIN identification photo, fetched by
+  `verifix_explore.download` (the «Verifix (test)» photo doors, split out of
+  `photo`), squared with the head kept in frame (top 0.35) and stored through
+  **`services/profile_photo.py` — THE way a profile photo is written**
+  (`square_jpeg` + `store`; the admin upload uses it too, byte for byte as
+  before). All photos land in one transaction with the record.
+- Delete the module, its startup trio and both entrypoint calls once the report
+  has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
+  photos and `profile_photo.py` stay.
 
 ## A work centre is NOT unique — a cell is
 
@@ -4301,6 +4421,25 @@ SERVER's; the phone never authors it.
     is in the fingerprint: leaders on identical tablets share a user agent); at
     most three reports per page. The leader sees one muted line,
     `proof.cam.reported`, and only once the server HAS the report.
+  - **A camera request nobody answers is cleared by a RELOAD, never by asking
+    again** (2026-10-05, a Galaxy Tab A9: `getUserMedia` asked, 45 s, no
+    answer, no sheet). Chrome serves a page's camera requests one at a time,
+    so a Retry on the same page only queues behind the stuck one; a reload is
+    a new page and the WebView cancels the old request. So: once a request
+    has hung `HUNG_RELOAD_MS` (20 s — past the slowest open that ever
+    succeeded, 17.4 s) with the page visible, in live mode and nothing in
+    front of it (no `blur`, or focus back ≥ 3 s), the page reloads ITSELF,
+    once — the note in sessionStorage (`proof.camera.hungReload`, 10 min) is
+    what stops the next page reloading too, and an automatic reload whose
+    note cannot be written is not made. `settleReturn` reloads the same way
+    when the request it waited on is still unanswered. The 45 s deadline now
+    has its own screen, «Kamera javob bermadi» (`hung`, not «no picture»);
+    its Retry always reloads, and on a page that is already such a reload the
+    screen says to close Telegram completely and reopen the task. The report
+    prints «This page is a reload…» (`opens.reload`) and says a fresh page did
+    not help. **Focus proves nothing on a page that never had it**: the same
+    report's open began with focus «not on the page» and no blur ever came,
+    so `_stalled_step` no longer reads that as «nothing came up».
   - **Reading a screenshot of this page without a report:** the stamp sits on
     the picture box, and the box is shaped by `camAR`. A SQUARE box is Chrome's
     2×2 black placeholder — the frame a video renders when its stream ENDS
@@ -5662,6 +5801,40 @@ had no way to make the night cost nobody anything.
   ever DMed a score for it.
 
 Related memory: `leader-day-exclusions`.
+
+## A leader with no cell in the загрузка owes nothing (`leader_load`)
+
+From **2026-10-05** (the operator: «no cell on workload and didn't submit
+anything in October») a leader is EXEMPT — files no daily checklist and leaves
+the Monitoring ranking — when BOTH hold: none of their cells carries
+«Zagruzkada hisoblanadi» (`cells.in_load`; a leader with no cell at all
+included), and they have filed nothing on or after `leader_load.FROM`
+(2026-10-01) — no bot `LeaderTaskDay` of any state, no Google-Form row the
+register resolves to them. A leader with one counted cell, or one who filed in
+October, files and is ranked as before.
+
+- **`services/leader_load.py` is THE definition** — `FROM`, `exempt_ids`
+  (kept 60 s; `forget()` is called by the cell register writers and
+  `_set_leader_cells`), `exempt(db, prof, date)` (always False before `FROM`),
+  `with_cuts`. Nothing is stored: it is the CURRENT cells register applied from
+  `FROM` on, so switching a cell on puts its leader back on the hook — for the
+  days since `FROM` too, because `in_load` keeps no history.
+- **Owing**: `leader_cells.expected_days` answers `[]`, so the automatic checks
+  neither warn nor judge them, the brigadir's digest does not list them as «not
+  filed», and the auto-check report skips them.
+- **Filing is refused, not just not asked**, because one answer would make them
+  «filed in October» again: the bot's `/tasks`, its buttons and the shared
+  `leader_checklist.save_answer` / `current_day(create=True)`; the «Chek-list»
+  tab (`noLoad` notice, `rights.file` false, writes 409 `no_load`); the camera
+  page (`_camera_cfg`, 409 `no_load`).
+- **Ranking**: the roster carries `no_load_from` (also in the «Mening o'rnim»
+  pool tuple), folded by `buildCutLeaders` like a cutoff, and the server's
+  census of cut names / units reads `with_cuts` — so a unit whose every leader
+  is exempt leaves the unit ranking from `FROM`. Days filed before `FROM` keep
+  counting. The exclusions tab's «Topshirilmagan» skips those days, and the
+  cutoffs tab names the rule under the leader (nothing to lift there).
+- Not changed: a per-cell unit's leader with at least one counted cell still
+  files a checklist for every cell they own, counted or not.
 
 ## A LEADER who stops counting (`/admin/upload?tab=ltcutoff`)
 
@@ -7128,7 +7301,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
   `components/staff/LiveBits.jsx` and renders under `S.live`: the read line +
   «Yangilash» + read errors + the day's standing (closed in «Tasdiqlash», as on
   /staff), the status strip (Hammasi · Ichkarida · Ketgan · Kelmagan ·
-  Kechikkan · Erta ketgan · Belgisiz · Ko'chirilgan) and a Status column,
+  Erta ketgan · Belgisiz · Ko'chirilgan — «Kechikkan» is gone, a saved pick of
+  it reads as Hammasi) and a Status column,
   **Keldi and Ketdi as two columns — Ketdi is written only once the worker is
   out of this unit** (left, or moved on at that minute; empty while inside or on
   a break), «hours carried here under another unit's name», the rules and (admins)
@@ -7163,8 +7337,15 @@ rights — over a different source, and it is being built to REPLACE /staff.
   with 2 decimals, summary figures with 1. A day that cannot be shown (an
   error, nobody on the unit's cells) is ONE block with the reason and one
   action (`LiveDayState`: «Qayta urinish» for Verifix down — Verifix's own
-  text to admins only), never figures of 0 above empty filters. Late and early
-  leave are WORDS under the time («34 daq kech», «160 daq erta»), and a time a
+  text to admins only), never figures of 0 above empty filters. **Lateness
+  is not printed anywhere on the page** (the operator, 2026-10-05: «no one
+  cares about late comers») — not under «Keldi», not on the strip, not in the
+  rules text; the backend still computes `late` and nothing reads it. **Every
+  table row is ONE line high** (same day): early leave and a missing check-out
+  are words AFTER the time on its own line («15:20 · 160 daq erta»), a move or
+  a pending change sits on the name's line on a wide table (on a narrow one it
+  joins the job-title line every row carries), and the pending chip is
+  `leading-4` so it fits the text line. A time a
   mark stood in for wears a muted «≈» (a dotted underline means a cell link).
   The unit is picked in a required `FilterPanel` section (no ✕, the name
   shortened «Ergashev M. · S2»; a remembered unit the list no longer offers is
@@ -7179,11 +7360,25 @@ rights — over a different source, and it is being built to REPLACE /staff.
   glyph shows on hover/focus/when filtering, always on touch, and hangs OUTSIDE
   the label so a header lines up with its column — `align="right"` for figures).
   The table header is ONE 40px line, never wrapped, every label on one baseline;
-  columns take their content's width and a trailing spacer takes the rest, so a
-  wide screen keeps a name beside its status instead of stretching every column
-  apart. «Xodim» sorts (the search box above is the name filter); the job title
-  rides under the name with its filter in the same header («Xodim / Lavozim»);
-  the early-arrival and effective-hours columns appear from xl (1280) up.
+  the columns SHARE the card's whole width (the operator, 2026-10-05: the
+  trailing spacer that kept them at their content's width left a blank band
+  down the right of a wide screen — gone from both tables, the extra hours'
+  too); the last VISIBLE column takes the 16px edge (`@max-[72rem]:pr-4` on
+  «Soat», since `last:` still names the hidden columns), and the admin's raw
+  row is `[contain:inline-size]`, sized by the columns and never sizing them.
+  **A worker is SHORT — «A. Sardor»** (`liveShortName` = `shortPerson(…,
+  {nameCase: true})`: the surname's initial and the given name, Verifix's
+  capitals in ordinary case), the full name on hover, in the table, the phone
+  list and the extra-hours section; the search and the export keep the full
+  name. «Xodim» sorts (the search box above is the name filter). **The job
+  title is a «Lavozim» column of its own, right after «Holat»** (the operator,
+  2026-10-05 — one line, cut with «…» past 12rem, whole on hover). Which
+  columns show is decided by the TABLE's width (`@container` on its scroller),
+  never the screen's, because an open sidebar takes 170px: «Lavozim» from 56rem
+  (below that the title rides under the name again, its filter in the name
+  header «Xodim / Lavozim»), early arrival and effective hours from 72rem.
+  Consequence to know: on a 1280 laptop with the sidebar open the table now
+  shows «Lavozim» and not those two columns (it showed the two before).
 - **It opens on the unit's CURRENT shift-day**, never a day remembered from an
   earlier visit — `GET /api/staff-live/today?manager_id=` (`_unit_today` over
   `verifix_live.day_frame`, reads nothing from Verifix, 404 for a unit that
@@ -8070,6 +8265,41 @@ daily") **the app downloads every build the site deploys by itself** — see
   (the proof camera is reachable only from the bot's buttons, which open in
   Telegram), instant delivery (Firebase), and the Fullscreen API on `/live`.
 
+## ARC is ONE page (`/arc`, from 2026-10-05)
+
+The operator: «merge these 2 pages into one» — and, asked, keep the old app's
+tickets in the same table but «stop the old app's sync». So:
+
+- **`/arc` renders the page that was `/arc-legacy`** (`pages/Arc.jsx`, moved;
+  the old `/arc` page file is deleted) and `/arc-legacy` redirects to it. It
+  keeps that page's endpoints (`/api/arc-legacy/*`), query keys (`arcl-*`),
+  saved filters (`arcl_*`) and strings (`arcl.*`).
+- **Its rows are BOTH apps, read as one** — `routers/arc_legacy._R()`: the new
+  app's mirror (`arc_legacy_requests`, still synced) UNION ALL the old app's
+  (`arc_requests`), projected at read time onto the new table's columns and
+  aliased (`adapt_on_names=True`, or the ORM lazy-loads projected columns from
+  the real table and fails). Nothing is copied, so the new mirror's sync,
+  attribute census and API panel never see the old rows. An old row has a
+  NEGATIVE id and an `arc:`-prefixed remote_id; its status maps to the new
+  app's slugs (0 new · 1 in_progress · 3 done · 4 cancelled — by STATUS, 267
+  denied rows have no finished_at · 6 done_unconfirmed), its due moment is
+  created + `category_ftime` hours, brigada → master, user → client, division
+  → warehouse (cell = the TRAILING digits only, the old page's rule). IT's
+  test categories stay out (`arc_hidden`). Category and crew are keyed by NAME
+  on both sides, so one category is one option and one chart bar; the saved
+  picks moved to `arcl_category2` / `arcl_master2`.
+- **The old app is frozen.** `arc_sync.RETIRED`: no boot catch-up, no
+  15-minute pass, no nightly walk; `POST /api/arc/refresh` answers 410. Its
+  tables, its router (read-only, for a tab still open on the old bundle) and
+  its modules stay — they are the old history. An old ticket still open stays
+  open on the page for good (the operator was told).
+- **«Ilova» (`source`: new / old)** is a column, a filter and an export column;
+  the ticket window shows an old row's start time, every attachment and its
+  status history (read from `arc_requests` on open). Status slugs are printed
+  through `arcl.st.<slug>`, an unknown one as sent.
+- The two sections below describe each app's mirror and are still accurate for
+  it; where they talk about «the page», read `/arc`.
+
 ## ARC tickets (`/arc`, page key `arc`)
 
 A mirror of «АРС Фабрика» from IT's **internal read-only API**
@@ -8425,9 +8655,15 @@ untouched.
   `cells_only` + the brigadir / lider / all owner toggle, `hidden_no_cell` /
   `hidden_unassigned` named on the card). The org chain (shift → brigadir →
   leader → cell) narrows both tabs; its option lists come off `/meta` over the
-  whole mirror, like every other list on this page (no `/facets`, no analysis
-  mode). A ticket filed before 29 Sep names no cell, so the cells tab over an
-  older period is empty and says why (`arcl.cellsSince`).
+  whole mirror, like every other list on this page (no `/facets`). A ticket
+  filed before 29 Sep names no cell, so the cells tab over an older period is
+  empty and says why (`arcl.cellsSince`).
+- **«Ma'lumotlar / Tahlil» mode, as on /arc** (2026-10-05) — /arc's own
+  `components/arc/ArcAnalysis.jsx`, given `endpoint="/api/arc-legacy/analysis"`
+  (+ `queryKey` / `prefPrefix`, defaults /arc's). That endpoint answers in
+  /arc's exact shape over this register: «done» = `is_closed`, a category's
+  norm = `category_deadline_hours`, «TOP bo'linmalar» = the warehouse (so only
+  tickets from 29 Sep), the crews = IT's `master_name`.
 - Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
   `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
 

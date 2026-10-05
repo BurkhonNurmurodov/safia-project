@@ -416,9 +416,20 @@ def run_sync(mode: str = "full") -> dict:
         db.close()
 
 
+# 2026-10-05 (the operator: merge the two ARC pages, «stop the old app's
+# sync»): the old app's mirror is FROZEN as it last stood. /arc now reads the
+# new app's mirror plus these rows (routers/arc_legacy._R); nothing walks the
+# internal API any more — no boot catch-up, no 15-minute pass, no nightly walk,
+# no Refresh. The tables and this module stay: they are the old history.
+RETIRED = True
+
+
 def start_sync_thread(mode: str = "full") -> bool:
     """Kick a pass in a daemon thread. False when one is already running
-    (either this process's thread or another process's fresh DB claim)."""
+    (either this process's thread or another process's fresh DB claim) — and
+    always False since the mirror was frozen (:data:`RETIRED`)."""
+    if RETIRED:
+        return False
     if not _thread_lock.acquire(blocking=False):
         return False
 
@@ -436,7 +447,11 @@ def register_boot_jobs() -> None:
     """Quick pass every INTERVAL_MIN minutes, full pass nightly, plus a
     one-shot catch-up a minute after boot (full if no full walk ever
     finished, quick otherwise). Mirrored in passenger_wsgi.py like every
-    other boot job. Skips entirely without a key."""
+    other boot job. Skips entirely without a key — and, since 2026-10-05,
+    always: the old app's mirror is frozen (:data:`RETIRED`)."""
+    if RETIRED:
+        log.info("arc: the old app's mirror is frozen (2026-10-05) — no sync jobs")
+        return
     if not configured():
         log.info("arc: no internal API key, sync jobs not registered")
         return
