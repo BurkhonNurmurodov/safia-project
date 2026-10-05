@@ -115,6 +115,7 @@ async def lifespan(app: FastAPI):
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
+        sync_cells_and_leaders_from_verifix,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -582,6 +583,12 @@ async def lifespan(app: FastAPI):
     # Remove this line, `startup.sync_leaders_from_verifix` and
     # `services/verifix_leader_sync.py` once the report has landed.
     sync_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every Verifix cell (the name-coded
+    # ones too) and a profile for every Verifix leader without one, connected
+    # only where safe; DMs every mismatch. Remove this line,
+    # `startup.sync_cells_and_leaders_from_verifix` and
+    # `services/verifix_cells_leaders_sync.py` once the report has landed.
+    sync_cells_and_leaders_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,

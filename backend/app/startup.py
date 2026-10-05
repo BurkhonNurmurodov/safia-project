@@ -7329,6 +7329,39 @@ def _leader_sync_job() -> None:
                       verifix_leader_sync.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: EVERY Verifix cell, and a profile for every Verifix leader ────
+# The operator on 2026-10-05: «Download every single cell, and create leader
+# profiles for those leaders who don't have a profile on our platform. For
+# connecting them, report me mismatches and do not connect not safe ones yet.»
+# The 4 Oct passes could not see the cells Verifix numbers only in their NAME,
+# and created a leader only where it could also connect them (none). This pass
+# creates every missing cell and every missing leader, connects a leader only
+# where nothing disputes the cell, and DMs everything else
+# (`services/verifix_cells_leaders_sync.py`). Runs after the earlier one-shots.
+CELLS_LEADERS_FLAG = "verifix_cells_leaders_2026_10_05_v1"
+_CELLS_LEADERS_DELAY_S = 210
+
+
+def sync_cells_and_leaders_from_verifix() -> None:
+    """Every Verifix cell and leader onto the platform, once, and report. Never raises."""
+    try:
+        if not _report_pending(CELLS_LEADERS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("verifix-cells-leaders-sync",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CELLS_LEADERS_DELAY_S),
+                    _cells_leaders_job)
+    except Exception as exc:
+        print(f"[startup] Verifix cells + leaders sync could not be scheduled: {exc}")
+
+
+def _cells_leaders_job() -> None:
+    from app.services import verifix_cells_leaders_sync
+    _send_report_once(CELLS_LEADERS_FLAG, "Verifix cells + leaders sync",
+                      verifix_cells_leaders_sync.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
 # The operator, the same day: «check the supervisors if they're actually
 # supervisor or not and put a switch like on the leaders also for them … report

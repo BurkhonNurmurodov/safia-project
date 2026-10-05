@@ -431,6 +431,55 @@ workbook. Nothing is deleted, archived or renamed.
 - Delete it (before `leader_verifix_check`, whose matching it imports) with its
   startup pair and both entrypoint calls once the report has landed.
 
+## Every Verifix cell, every Verifix leader (`verifix_cells_leaders_sync`, 2026-10-05)
+
+The operator, the day after the two passes above: «Download every single cell,
+and create leader profiles for those leaders who don't have a profile on our
+platform. For connecting them, report me mismatches and do not connect not
+safe ones yet.» TEMPORARY one-shot `services/verifix_cells_leaders_sync.py`,
+`startup.sync_cells_and_leaders_from_verifix` (flag
+`verifix_cells_leaders_2026_10_05_v1`, ~210 s after boot, both entrypoints),
+DMed as text + a workbook; the record is in app setting
+`verifix_cells_leaders_2026_10_05`. Nothing is deleted or archived.
+
+- **Cells: the 4 Oct rule PLUS name-coded subdivisions** — no `code`, a NAME
+  that starts with exactly four digits («4711 Зона отправки», the freezers
+  1711 / 1721 / 1811 / 1821; `turnover.unit_code` already read them so). Taken
+  only when not a department, no cell stands under it (a workshop), its number
+  is neither another cell's code nor the number a coded cell is named with
+  («0611 Обработка яиц» is A0061), and — to be created — open with somebody
+  working there. CREATED the 4 Oct way (no brigadir, no leader, out of the
+  загрузка, ru name), RENAMED to Verifix's name, and a cell the 4 Oct pass
+  itself archived («Verifix (avtomatik)») that Verifix has open is RESTORED.
+  Reported only: archive candidates (NOT archived), cells archived by a person
+  that Verifix has open, codes on two subdivisions, name-coded subdivisions
+  left out and why, and every subdivision people work in with no code at all —
+  those cannot be cells until Verifix gives them a code.
+- **Leaders: every working Verifix leader with no profile gets one** («Lider»,
+  source Verifix, the Verifix name in Latin Title Case) — EXCEPT where they may
+  already be on the platform, which is reported and not created: a leader
+  profile Verifix could not find with their surname + first name (either
+  order), or the same first name and a surname ≥ 0.75 alike, or their cell's
+  own leader when Verifix could not find that profile; a brigadir unit,
+  shift-/top-manager, admin or guest with that name (or the unit the 4 Oct
+  supervisor check tied to this very person); two Verifix leaders sharing a
+  full name; a one-word name. A namesake of a profile Verifix DID tie to
+  somebody else is created, with the namesake named.
+- **Connected only where safe**: the profile takes the cell's brigadir and the
+  cell when the cell is ours, active, has a brigadir (unit not archived), has
+  no leader, no profile of ours that Verifix places there and no second
+  profileless leader. Everything else is created with NO unit and NO cell —
+  which keeps it off every roster, digest, checklist, auto check and the
+  registration picker (they all read leaders by unit) until a person connects
+  it: the profile page, brigadir + cell, one Save (`_set_leader_cells` moves
+  the cell to the profile's unit). The report names per person what stood in
+  the way and the Verifix brigadir standing over their subdivision (and the
+  unit here the 4 Oct check tied that brigadir to).
+- Existing profiles are not touched; their mismatches are in the workbook.
+- Delete the module, its startup pair and both entrypoint calls once the report
+  has landed — BEFORE `verifix_cell_sync`, `verifix_leader_sync` and
+  `leader_verifix_check`, whose helpers it imports.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts
