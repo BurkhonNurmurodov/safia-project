@@ -14,6 +14,15 @@ Registrations keep their own machinery in ``telegram_bot`` (RegistrationNotice
 + notify_admins_of_decision); this module covers the kinds that previously had
 no Telegram message tracking at all.
 
+The live «Verifix to'g'irlash» (`/staff-live`, `routers.staff_live`) has the
+same two cards — ``live_document`` (``lv``) and ``live_batch`` (``lb``) — over
+its own tables (``LiveDocument`` / ``LiveDeletion``). They are rendered by the
+/staff renderers with a «live» mark on the header line, so a card is never read
+as a /staff one while both pages exist; they go out only once the page is open
+to somebody but admins (``live_staff.lab_open``) and, beyond the admins, only to
+a recipient who can open it (``_live_openers``). Every decision path on that
+page retires them through :func:`edit_admin_notices` exactly as /staff does.
+
 Import discipline: this module imports ``bot``/helpers from ``telegram_bot`` at
 load time, but staff cores only lazily inside functions — ``telegram_bot`` and
 ``routers.staff`` never import this module at load time, so there is no cycle.
@@ -34,10 +43,27 @@ class AlreadyHandled(Exception):
     decided in the web app). The callback answers with a soft toast."""
 
 
+class Refused(Exception):
+    """A decision the core REFUSED for a stated reason while the request is
+    still open — a worker another approved document has since moved on
+    (`not_here`), a move that would break one already approved (`breaks`), a
+    draft past `STALE_APPROVE_DAYS` (`doc_too_old`). Not a race and not
+    "already handled": nothing was decided, the card keeps its buttons, and
+    the tapper is shown the endpoint's own words (`message`) — the same
+    sentence the page prints for that refusal."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
 # ── i18n ────────────────────────────────────────────────────────────────────
 
 _KIND_CODE = {"edit_request": "er", "edit_batch": "eb", "hr_document": "hr",
-              "leader_late": "ll", "leader_dispute": "ld"}
+              "leader_late": "ll", "leader_dispute": "ld",
+              # the live «Verifix to'g'irlash» twins (codes stay 2 chars:
+              # callback_data is ap:<code>:<a|r>:<ref>)
+              "live_document": "lv", "live_batch": "lb"}
 _CODE_KIND = {v: k for k, v in _KIND_CODE.items()}
 
 _MONTHS = {
@@ -59,6 +85,7 @@ _LABELS = {
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "hdr_dispute_auto": "⚖️ Avtomatik tekshiruv natijasiga norozilik",
+        "live_mark":     "Jonli",
         "auto_verdict":  "Avtomatik tekshiruv",
         "task":          "Vazifa",
         "ai_verdict":    "AI xulosasi",
@@ -106,6 +133,7 @@ _LABELS = {
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "hdr_dispute_auto": "⚖️ Возражение на результат автоматической проверки",
+        "live_mark":     "онлайн",
         "auto_verdict":  "Автоматическая проверка",
         "task":          "Задача",
         "ai_verdict":    "Заключение ИИ",
@@ -153,6 +181,7 @@ _LABELS = {
         "hdr_late":      "⏰ Request to open a late report",
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "hdr_dispute_auto": "⚖️ Objection to an automatic check",
+        "live_mark":     "Live",
         "auto_verdict":  "Automatic check",
         "task":          "Task",
         "ai_verdict":    "AI verdict",
@@ -257,7 +286,10 @@ def _edit_request_data(db, req) -> dict:
     }
 
 
-def _hr_document_data(db, doc) -> dict:
+def _document_data(db, doc, day, transfer_time) -> dict:
+    """The facts of a document card, for an HrDocument and a LiveDocument alike
+    — they carry one payload shape and differ only in the day column and in
+    how a move's clock is spelled, which the two callers hand in."""
     mgr = db.query(Manager).filter_by(id=doc.manager_id).first()
     payload = doc.payload or {}
     # An exchange names WHO receives the people — the supervisor, or the task
@@ -272,13 +304,17 @@ def _hr_document_data(db, doc) -> dict:
         "doc_type":  doc.doc_type,
         "kind":      doc.doc_type,
         "unit":      unit,
-        "date":      doc.date,
+        "date":      day,
         "creator":   doc.created_by_name or "",
         "new_role":  payload.get("new_role"),
         "target":    target or "—",
-        "transfer_time": payload.get("transfer_time"),
+        "transfer_time": transfer_time,
         "employees": payload.get("employees", []),
     }
+
+
+def _hr_document_data(db, doc) -> dict:
+    return _document_data(db, doc, doc.date, (doc.payload or {}).get("transfer_time"))
 
 
 # ── Renderers (data dict + admin language → message body) ─────────────────────
@@ -355,6 +391,36 @@ def _render_hr_document(data, lang) -> str:
     return "\n".join(lines)
 
 
+# ── The live «Verifix to'g'irlash» twins ─────────────────────────────────────
+# Same facts, same body, one difference on the header line: the «live» mark,
+# so a card about a LiveDocument is never mistaken for one about an HrDocument
+# while both pages exist. The body is the /staff renderer's own — never a copy.
+
+def _live_document_data(db, doc) -> dict:
+    """`_hr_document_data` over a LiveDocument: the day column is `day`, and
+    a move's clock prints «HH:MM» or «HH:MM–HH:MM» when a return time is set
+    (the shape the page's own notices print)."""
+    payload = doc.payload or {}
+    ttime = payload.get("transfer_time") or ""
+    if ttime and payload.get("return_time"):
+        ttime = f"{ttime}–{payload['return_time']}"
+    return _document_data(db, doc, doc.day, ttime)
+
+
+def _with_live_mark(text: str, lang: str) -> str:
+    """Append « · <live mark>» to the header (first) line of a rendered card."""
+    head, sep, rest = text.partition("\n")
+    return f"{head} · {_L(lang, 'live_mark')}{sep}{rest}"
+
+
+def _render_live_document(data, lang) -> str:
+    return _with_live_mark(_render_hr_document(data, lang), lang)
+
+
+def _render_live_batch(data, lang) -> str:
+    return _with_live_mark(_render_edit_batch(data, lang), lang)
+
+
 def _leader_late_data(db, req) -> dict:
     """Facts of a request to open a voided leader-day. The score is the mean of
     the day's checklist rows — what the day will actually count for if opened,
@@ -412,13 +478,17 @@ def _approve_reject_kb(code: str, ref, lang: str, panel: str = "/staff"):
 
 def _broadcast(db, kind: str, ref, data: dict, render_fn,
                extra_recipients: set[int] | None = None,
-               panel: str = "/staff", kb_fn=None) -> None:
+               panel: str = "/staff", kb_fn=None) -> set[int]:
+    """Send the card to every recipient and record one ApprovalNotice per
+    message. Returns the Telegram ids the card actually REACHED (a failed send
+    is not in it), so a caller can spare exactly those people a second DM
+    about the same request; every older caller ignores the return."""
     # Ghost Mode (admin header toggle): an admin testing functions must not blast
     # approve/reject button-messages at every other admin. The record is still
     # created; nobody is pinged. See app.notify_ctx.
     from app.notify_ctx import notifications_suppressed
     if notifications_suppressed():
-        return
+        return set()
     from app.telegram_bot import bot, _admin_ids, _get_lang
     code = _KIND_CODE[kind]
     # Admins always receive the message; ``extra_recipients`` are the non-admin
@@ -426,6 +496,7 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn,
     # anyone who is both. ApprovalNotice.admin_telegram_id holds the recipient id
     # for either kind, so the shared cross-edit reaches all of them.
     recipients = set(_admin_ids()) | set(extra_recipients or ())
+    reached: set[int] = set()
     for recipient_id in sorted(recipients):
         lang = _get_lang(recipient_id)
         text = render_fn(data, lang)
@@ -440,7 +511,9 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn,
             kind=kind, ref=str(ref), admin_telegram_id=recipient_id,
             message_id=sent.message_id, text=text,
         ))
+        reached.add(recipient_id)
     db.commit()
+    return reached
 
 
 def _exchange_supervisor_recipients(db, doc) -> set[int]:
@@ -512,6 +585,81 @@ def send_hr_document_to_admins(db, doc) -> None:
                                      db, CAP_DOCUMENTS_APPROVE, doc.manager_id,
                                      payload.get("target_manager_id"),
                                      skip_telegram_id=doc.created_by_telegram_id)))
+
+
+def _live_openers(db, telegram_ids) -> set[int]:
+    """Of these accounts, the ones that may OPEN the live page: an admin, or
+    any approved registration of theirs resolving to a profile the page is
+    open to (`live_staff.can_open` — its role on the Access tab or a grant,
+    and no personal deny). A card whose panel button lands on «no access» is
+    worse than no card, which is why a non-admin confirmer is filtered here
+    and never merely offered the button."""
+    ids = {int(t) for t in (telegram_ids or ()) if t}
+    if not ids:
+        return set()
+    from app import identity
+    from app.permissions import get_page_access
+    from app.services import live_staff
+    from app.telegram_bot import _admin_ids
+    out = ids & _admin_ids()
+    rest = ids - out
+    if not rest:
+        return out
+    access = get_page_access(db)
+    rows = (db.query(TelegramUserRole)
+            .filter(TelegramUserRole.telegram_id.in_(rest),
+                    TelegramUserRole.status == "approved")
+            .order_by(TelegramUserRole.id).all())
+    for r in rows:
+        if r.telegram_id in out:
+            continue
+        key = r.profile_key or identity.role_row_profile_key(db, r)
+        if key and live_staff.can_open(db, key, access):
+            out.add(r.telegram_id)
+    return out
+
+
+def send_live_document_to_admins(db, doc) -> set[int]:
+    """The one-tap card for a LiveDocument draft — `send_hr_document_to_admins`
+    for the live page: admins (unioned in by `_broadcast`), the receiving
+    supervisor and a documents-approve grantee over either end of the move,
+    the non-admins among them only where they can open the page. Nothing goes
+    out while the page is admin-only. Returns who the card reached."""
+    from app.capabilities import CAP_DOCUMENTS_APPROVE
+    from app.services import live_staff
+    if not live_staff.lab_open(db):
+        return set()
+    payload = doc.payload or {}
+    extra = (_exchange_supervisor_recipients(db, doc)
+             | _grantee_recipients(db, CAP_DOCUMENTS_APPROVE, doc.manager_id,
+                                   payload.get("target_manager_id"),
+                                   skip_telegram_id=doc.created_by_telegram_id))
+    return _broadcast(db, "live_document", doc.id, _live_document_data(db, doc),
+                      _render_live_document, extra_recipients=_live_openers(db, extra),
+                      panel="/staff-live?tab=requests")
+
+
+def send_live_batch_to_admins(db, batch_id, manager_id, day, supervisor_name,
+                              worker_names) -> set[int]:
+    """The one-tap card for a brigadir's live deletion batch —
+    `send_edit_batch_to_admins` for the live page, under the same rules as
+    `send_live_document_to_admins`. Returns who the card reached."""
+    from app.capabilities import CAP_REQUESTS_APPROVE
+    from app.services import live_staff
+    if not live_staff.lab_open(db):
+        return set()
+    mgr = db.query(Manager).filter_by(id=manager_id).first()
+    data = {
+        "unit":       mgr.name if mgr else f"#{manager_id}",
+        "date":       day,
+        "supervisor": supervisor_name,
+        "count":      len(worker_names),
+        "workers":    list(worker_names),
+    }
+    return _broadcast(db, "live_batch", batch_id, data, _render_live_batch,
+                      extra_recipients=_live_openers(
+                          db, _grantee_recipients(db, CAP_REQUESTS_APPROVE, manager_id)),
+                      panel="/staff-live?tab=requests")
 
 
 def _leader_dispute_data(db, d) -> dict:
@@ -754,6 +902,46 @@ def _log_hr_document(db, caller: dict, doc, status: str) -> None:
         logger.debug("action log: HR-document decision not recorded", exc_info=True)
 
 
+def _log_live_document(db, caller: dict, doc, status: str) -> None:
+    """The live twin of `_log_hr_document`, under the SAME action keys the
+    page's own approve / reject endpoints carry (`action_log.ROUTES`), built
+    from the page's own row fields (`staff_live._log_doc`)."""
+    try:
+        from app.routers.staff_live import _log_doc
+        action_log.record_bot(
+            db, _tid(caller), "documents",
+            "lab.live_document_approved" if status == "approved"
+            else "lab.live_document_rejected",
+            actor_name=caller.get("full_name"), actor_role=caller.get("role"),
+            **_log_doc(doc, [("status", "draft", status)]),
+        )
+    except Exception:
+        logger.debug("action log: live-document decision not recorded", exc_info=True)
+
+
+def _log_live_batch(db, caller: dict, batch_token, status: str, count: int) -> None:
+    """The live twin of `_log_edit_batch`, under the page's own batch keys."""
+    try:
+        from app.models import LiveDeletion
+        from app.routers.staff_live import _batch_filter
+        r = db.query(LiveDeletion).filter(_batch_filter(str(batch_token))).first()
+        unit_id = r.manager_id if r else None
+        action_log.record_bot(
+            db, _tid(caller), "attendance",
+            "lab.live_request_batch_approved" if status == "approved"
+            else "lab.live_request_batch_rejected",
+            actor_name=caller.get("full_name"), actor_role=caller.get("role"),
+            target_kind="batch", target_id=batch_token,
+            unit_id=unit_id, unit_name=_unit_name(db, unit_id),
+            day=r.day if r else None,
+            details=[("count", count),
+                     ("brigadir", r.supervisor_name if r else None)],
+            changes=[("status", "pending", status)],
+        )
+    except Exception:
+        logger.debug("action log: live-batch decision not recorded", exc_info=True)
+
+
 def _log_leader_late(db, call, req, status: str, decided_by: str) -> None:
     try:
         action_log.record_bot(
@@ -890,22 +1078,28 @@ def recipient_has_notice_for_code(code: str, ref, telegram_id: int) -> bool:
 
 
 def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
-    """Dispatch a staff/HR approval tap. ``code`` ∈ er|eb|hr, ``status`` ∈
-    approved|rejected. Answers the callback with a toast in every outcome."""
+    """Dispatch a staff/HR approval tap. ``code`` ∈ er|eb|hr|ll|ld (the /staff
+    and leader kinds) or lv|lb (the live page's document / deletion batch),
+    ``status`` ∈ approved|rejected. Answers the callback with a toast in every
+    outcome."""
     from app.telegram_bot import bot
     lang = _get_caller_lang(call)
     try:
-        if code in ("er", "eb"):
+        if code in ("er", "eb", "lb"):
             caller = _caller_for_request(call)
             if caller is None:
                 bot.answer_callback_query(call.id, _L(lang, "toast_no_rights"), show_alert=True)
                 return
             if code == "er":
                 _decide_edit_request(int(ref), status, caller)
-            else:
+            elif code == "eb":
                 _decide_edit_batch(ref, status, caller)
+            else:
+                _decide_live_batch(ref, status, caller)
         elif code == "hr":
             _decide_hr_document(int(ref), status, call)
+        elif code == "lv":
+            _decide_live_document(int(ref), status, call)
         elif code == "ll":
             _decide_leader_late(int(ref), status, call)
         elif code == "ld":
@@ -923,6 +1117,11 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
             return
         toast = _L(lang, "toast_approved") if status == "approved" else _L(lang, "toast_rejected")
         bot.answer_callback_query(call.id, toast)
+    except Refused as r:
+        # Telegram caps a callback answer at 200 characters; the reason is
+        # the server's own sentence, cut at a word when it is longer.
+        bot.answer_callback_query(call.id, _short(r.message) or _L(lang, "toast_error"),
+                                  show_alert=True)
     except AlreadyHandled:
         bot.answer_callback_query(call.id, _L(lang, "toast_already"), show_alert=True)
     except Exception:
@@ -936,6 +1135,22 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
 def _get_caller_lang(call) -> str:
     from app.telegram_bot import _get_lang
     return _get_lang(call.from_user.id)
+
+
+_CALLBACK_TEXT_MAX = 200   # Telegram's limit on answerCallbackQuery.text
+
+
+def _short(text, limit: int = _CALLBACK_TEXT_MAX) -> str:
+    """``text`` cut to ``limit`` characters at a word boundary with an
+    ellipsis, for a callback answer. Never raises on a non-string."""
+    t = str(text or "").strip()
+    if len(t) <= limit:
+        return t
+    cut = t[: limit - 1]
+    sp = cut.rfind(" ")
+    if sp > limit // 2:
+        cut = cut[:sp]
+    return cut.rstrip() + "…"
 
 
 def _decide_edit_request(req_id: int, status: str, caller: dict) -> None:
@@ -1067,3 +1282,74 @@ def _decide_hr_document(doc_id: int, status: str, call) -> None:
         db.commit()
         _log_hr_document(db, caller, doc, status)
     edit_admin_notices("hr_document", doc_id, status, caller.get("full_name"))
+
+
+def _decide_live_document(doc_id: int, status: str, call) -> None:
+    """Settle a LiveDocument from its inline card through `routers.staff_live`'s
+    own cores (`_approve` / `_reject`, then the page's own notices), so the
+    Telegram door and the page can never disagree about one document. The
+    caller is `_caller_for_doc`'s — an admin, else the RECEIVING supervisor of
+    an exchange (it reads only `doc.payload`, which a LiveDocument carries in
+    /staff's shape) — else a documents-approve GRANTEE, built as
+    `_grantee_caller` builds one for an er/eb tap: `send_live_document_to_admins`
+    addresses the card to such a grantee (through `_live_openers`), and a
+    button sent to somebody whose tap can only ever answer «already handled»
+    is worse than no button. Whoever it is, the page's own `_can_approve`
+    (`_native_can_approve` or `_granted_over`) is the server-side authority."""
+    from fastapi import HTTPException
+    from app.capabilities import CAP_DOCUMENTS_APPROVE
+    from app.models import LiveDocument
+    from app.routers import staff_live
+    with SessionLocal() as db:
+        doc = db.query(LiveDocument).filter_by(id=doc_id).first()
+        if not doc:
+            raise AlreadyHandled()
+        caller = (_caller_for_doc(call, doc, db)
+                  or _grantee_caller(call, CAP_DOCUMENTS_APPROVE))
+        if caller is None or (caller["role"] != "admin"
+                              and not staff_live._can_approve(doc, caller, db)):
+            raise AlreadyHandled()
+        try:
+            if status == "approved":
+                if doc.status == "approved":
+                    raise AlreadyHandled()
+                staff_live._approve(doc, caller, db)
+                db.commit()
+                staff_live._notify_doc(db, doc, "approved", int(caller["sub"]))
+            else:  # rejected → the draft stays, as a rejected record
+                staff_live._reject(doc, caller, db)
+                db.commit()
+                staff_live._tell_rejected(db, doc, caller)
+        except HTTPException as e:
+            # A STRUCTURED 409 (`{code, message}`: `not_here`, `breaks`,
+            # `doc_too_old`) is a refusal of a document still open — nothing
+            # was decided, the card stays, the tapper reads the reason the
+            # page would print. A plain-string 409 («Rejected documents cannot
+            # be posted», «Only draft documents can be rejected») or a 404 is
+            # a race: somebody got there first. Anything else is a real error
+            # and reaches the generic toast.
+            if e.status_code == 409 and isinstance(e.detail, dict) and e.detail.get("message"):
+                raise Refused(str(e.detail["message"]))
+            if e.status_code in (404, 409):
+                raise AlreadyHandled()
+            raise
+        _log_live_document(db, caller, doc, status)
+    edit_admin_notices("live_document", doc_id, status, caller.get("full_name"))
+
+
+def _decide_live_batch(batch_token: str, status: str, caller: dict) -> None:
+    """Settle a live deletion batch from its inline card through the page's
+    one batch core (`staff_live.process_batch`), which decides every pending
+    row, tells the unit and retires the card itself; the retirement here is
+    the belt to that brace (a no-op once the notices are gone)."""
+    from fastapi import HTTPException
+    from app.routers import staff_live
+    with SessionLocal() as db:
+        try:
+            n = staff_live.process_batch(batch_token, status, caller, db)
+        except HTTPException as e:
+            if e.status_code in (404, 409):
+                raise AlreadyHandled()
+            raise
+        _log_live_batch(db, caller, batch_token, status, n)
+    edit_admin_notices("live_batch", batch_token, status, caller.get("full_name"))

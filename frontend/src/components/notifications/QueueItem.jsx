@@ -32,10 +32,13 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
   const [confirmError, setConfirmError] = useState(null);
 
   const Icon = queueIcon(item);
-  const { title, sub, subTone, quote, meta, urgent } = queueText(item, { t, tl, tx, lang });
+  const { title, sub, subTone, quote, meta, urgent, tag } = queueText(item, { t, tl, tx, lang });
   const metaLine = [...meta, timeAgo(item.since, t)].filter(Boolean).join(" · ");
   const actions = item.actions || [];
   const isChat = item.kind === "dispute" || item.kind === "late_proof";
+  // A deletion batch — /staff's or /staff-live's — approves by deleting rows,
+  // so its approve confirm says so and wears the danger tone.
+  const deletes = item.kind === "edit_batch" || item.kind === "live_batch";
 
   const call = (a) => api.request({ method: a.method || "post", url: a.url, data: a.body ?? undefined });
 
@@ -82,7 +85,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
     }
     return {
       title: t("notif.confirm.approveTitle"),
-      text: item.kind === "edit_batch" ? t("notif.confirm.deleteText") : t("notif.confirm.rejectText"),
+      text: deletes ? t("notif.confirm.deleteText") : t("notif.confirm.rejectText"),
     };
   };
 
@@ -108,6 +111,16 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
           {urgent && (
             <span className="flex-shrink-0 mt-0.5">
               <StatusChip tone="hot" icon={Flame}>{t("notif.q.urgent")}</StatusChip>
+            </span>
+          )}
+          {tag && (
+            /* The «Jonli» mark: a neutral tag — the live page is a source, not
+               a status, so it borrows no traffic-light tone. */
+            <span
+              className="flex-shrink-0 mt-0.5 inline-flex items-center text-[11px] font-medium px-1.5 py-px rounded-md whitespace-nowrap"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+            >
+              {tag}
             </span>
           )}
         </div>
@@ -172,7 +185,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
 
       <ConfirmDialog
         open={!!confirm}
-        tone={confirm?.id === "reject" || item.kind === "edit_batch" ? "danger" : "warning"}
+        tone={confirm?.id === "reject" || deletes ? "danger" : "warning"}
         title={confirmCopy(confirm).title}
         message={<><span className="block font-medium mb-1" style={{ color: "var(--text-1)" }}>{title}</span>{confirmCopy(confirm).text}</>}
         confirmLabel={confirm?.id === "reject" ? t("notif.reject") : t("notif.approve")}

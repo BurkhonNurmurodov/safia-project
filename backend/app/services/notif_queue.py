@@ -14,7 +14,9 @@ the queue can never offer a decision the endpoint behind it refuses:
 source                    whose turn
 ========================  ======================================================
 HR documents (draft)      ``staff._scope_documents`` ∩ ``_can_approve_doc``
+live documents (draft)    ``staff_live._scope_docs`` ∩ ``_can_approve`` — /staff-live's
 deletion requests         admin + shift-manager, ``_scope_deletion_requests``
+live deletion batches     admin + shift-manager, ``staff_live._scope_deletions``
 edit requests             admin + shift-manager covering the unit
 late checklist days       admin (``leaders._may_decide``)
 objections, late proofs   the brigadir at stage 1 (own unit), admins at stage 2
@@ -25,6 +27,13 @@ tasks                     status «todo», assigned to the viewer
 An ADMIN's turn on objections and late proofs is the admin stage only, the
 reading the queue tabs on /leaders badge — an admin CAN rule stage 1, but a row
 sitting with a brigadir is not waiting on an admin.
+
+The two LIVE sources (the «Verifix to'g'irlash» page over the live Verifix
+read, /staff-live) are /staff's twins read off ``routers.staff_live``'s own
+scope and rights helpers, and they are listed only for a viewer who can OPEN
+that page (``live_staff.can_open`` — an admin always, anybody else once the
+operator has opened it to their role or granted it to them): a decision whose
+link lands on «no access» is worse than none.
 
 Inline actions are DESCRIBED here (method + url + whether it needs a confirm +
 how to undo it) and executed by the client against the very endpoints /staff
@@ -52,12 +61,13 @@ logger = logging.getLogger(__name__)
 # Decisions somebody else is blocked on rank above the viewer's own work list,
 # so one objection is never buried under ninety concerns.
 _RANK = {
-    "hr_doc": 0, "edit_batch": 0, "edit_request": 0, "late_day": 0,
-    "dispute": 0, "late_proof": 0, "concern": 1, "task": 1,
+    "hr_doc": 0, "live_doc": 0, "edit_batch": 0, "live_batch": 0, "edit_request": 0,
+    "late_day": 0, "dispute": 0, "late_proof": 0, "concern": 1, "task": 1,
 }
-# The order the page lists its sections in.
-KIND_ORDER = ("hr_doc", "edit_batch", "edit_request", "late_day", "dispute",
-              "late_proof", "concern", "task")
+# The order the page lists its sections in — each live twin right after the
+# /staff kind it mirrors (notifMeta.QUEUE_KINDS is the client copy).
+KIND_ORDER = ("hr_doc", "live_doc", "edit_batch", "live_batch", "edit_request", "late_day",
+              "dispute", "late_proof", "concern", "task")
 
 _CAP = 300   # per source — a register, not a dump; the page says when it is cut
 
@@ -172,6 +182,123 @@ def _edit_batches(db: Session, payload: dict) -> list[dict]:
                 _action("approve", f"/api/staff/requests/batch/{token}/approve",
                         tone="success", confirm=True, body={}),
                 _action("reject", f"/api/staff/requests/batch/{token}/reject",
+                        tone="danger", confirm=True),
+            ],
+        })
+    return out[:_CAP]
+
+
+def _live_open(db: Session, payload: dict) -> bool:
+    """The viewer can open /staff-live — the one gate both live sources sit
+    behind. An admin always may; anybody else only once the page is opened to
+    their PROFILE (`live_staff.can_open`: their role on the Access tab, or a
+    grant, and no personal deny), which is the same test the page's own bell
+    rows are addressed by. Resolved from the JWT the way every permission check
+    is (`identity.viewer_profile_key`)."""
+    if payload.get("role") == "admin":
+        return True
+    from app.identity import viewer_profile_key
+    from app.permissions import get_page_access
+    from app.services import live_staff
+    key = viewer_profile_key(db, payload)
+    return bool(key) and live_staff.can_open(db, key, get_page_access(db))
+
+
+def _live_docs(db: Session, payload: dict) -> list[dict]:
+    """`_hr_docs` over the live page's documents (`LiveDocument`, /staff-live):
+    the same scope, rights and stale rule, read off `routers.staff_live`'s own
+    helpers and never re-spelled, so the queue offers exactly what that page's
+    approve door accepts."""
+    if not _live_open(db, payload):
+        return []
+    from app.models import LiveDocument
+    from app.routers import staff_live as sl
+    q = sl._scope_docs(db.query(LiveDocument).filter(LiveDocument.status == "draft"), payload, db)
+    docs = q.order_by(LiveDocument.created_at.desc()).limit(_CAP).all()
+    if not docs:
+        return []
+    units = _unit_names(db, [d.manager_id for d in docs])
+    out = []
+    for doc in docs:
+        if not sl._can_approve(doc, payload, db):
+            continue   # visible is not decidable: a supervisor sees own drafts
+        s = sl._serialize(doc, units.get(doc.manager_id))
+        # The live approve door refuses a draft older than STALE_APPROVE_DAYS
+        # (`staff_live._approve`, on the document's day) — no Approve button
+        # that can only fail; the row says why and Reject is what is left.
+        age = (date.today() - doc.day).days if doc.day else 0
+        stale = age > sl.STALE_APPROVE_DAYS
+        actions = [] if stale else [
+            _action("approve", f"/api/staff-live/documents/{doc.id}/approve", tone="success",
+                    undo={"method": "post", "url": f"/api/staff-live/documents/{doc.id}/cancel"}),
+        ]
+        if sl._may_reject(doc, payload, db):
+            actions.append(_action("reject", f"/api/staff-live/documents/{doc.id}/reject",
+                                   tone="danger", confirm=True))
+        # «09:30» or «09:30–12:00» — a move with a clock; blank = the whole day.
+        time = s.get("transfer_time") or ""
+        if time and s.get("return_time"):
+            time += f"–{s['return_time']}"
+        out.append({
+            "key": f"live_doc:{doc.id}", "kind": "live_doc", "id": doc.id,
+            "since": _iso(doc.created_at),
+            "link": "/staff-live?tab=requests",
+            "fields": {
+                "doc_type": doc.doc_type,
+                "count": s["employee_count"],
+                "new_role": s["new_role"],
+                "target": s["target_manager_name"],
+                "task": s["task_name"],
+                "unit": s["supervisor_name"],
+                "date": s["date"],
+                "time": time or None,
+                "by": doc.created_by_name,
+                "stale_days": age if stale else None,
+                "stale_max": sl.STALE_APPROVE_DAYS,
+            },
+            "actions": actions,
+        })
+    return out
+
+
+def _live_batches(db: Session, payload: dict) -> list[dict]:
+    """`_edit_batches` over the live page's deletion requests (`LiveDeletion`,
+    pending rows grouped by batch) — admin and shift-manager, the two roles
+    `staff_live._decide_deletions` admits by role."""
+    if payload.get("role") not in ("admin", "shift-manager"):
+        return []
+    if not _live_open(db, payload):
+        return []
+    from app.routers import staff_live as sl
+    rows = [r for r in sl._scope_deletions(payload, db) if r.status == "pending"]
+    if not rows:
+        return []
+    batches: dict[str, list] = {}
+    for r in rows:
+        token = r.batch_id or f"solo-{r.id}"
+        batches.setdefault(token, []).append(r)
+    units = _unit_names(db, [r.manager_id for r in rows])
+    out = []
+    for token, reqs in batches.items():
+        first = min(reqs, key=lambda r: r.created_at or r.id)
+        names = [r.worker_name for r in reqs if r.worker_name]
+        out.append({
+            "key": f"live_batch:{token}", "kind": "live_batch", "id": token,
+            "since": _iso(first.created_at),
+            "link": "/staff-live?tab=requests",
+            "fields": {
+                "count": len(reqs),
+                "workers": names[:6],
+                "unit": units.get(first.manager_id) or first.supervisor_name,
+                "date": first.day.isoformat() if first.day else None,
+                "by": first.supervisor_name,
+            },
+            # Approving takes the workers off the unit's day; rejecting ends
+            # the request. Neither has a way back from here, so both ask first.
+            "actions": [
+                _action("approve", f"/api/staff-live/requests/batch/{token}/approve",
+                        tone="success", confirm=True, body={}),
+                _action("reject", f"/api/staff-live/requests/batch/{token}/reject",
                         tone="danger", confirm=True),
             ],
         })
@@ -379,8 +506,8 @@ def _tasks(db: Session, payload: dict) -> list[dict]:
     } for t in rows]
 
 
-_SOURCES = (_hr_docs, _edit_batches, _edit_requests, _late_days, _disputes,
-            _late_proofs, _concerns, _tasks)
+_SOURCES = (_hr_docs, _live_docs, _edit_batches, _live_batches, _edit_requests,
+            _late_days, _disputes, _late_proofs, _concerns, _tasks)
 
 
 def build(db: Session, payload: dict) -> list[dict]:

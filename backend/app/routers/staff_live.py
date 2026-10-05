@@ -1,4 +1,4 @@
-"""The LIVE «Verifix to'g'irlash» (lab) — `/staff-live`, the /staff API over Verifix.
+"""The LIVE «Verifix to'g'irlash» — `/staff-live`, the /staff API over Verifix.
 
 From 2026-10-04 (the operator: «structure this page just like Verifix edit …
 the same rule applies for everything as that page … the only difference should
@@ -15,12 +15,19 @@ page renders /staff's own components with a different API base. What differs:
 * **who may be exchanged or re-titled**: only a worker who CAME (has a clock-in),
   whether still inside or already gone (the operator, 2026-10-04).
 
-Lab for now and built to replace /staff: the documents live in `live_documents`
-/ `live_document_history` / `live_deletions` / `live_placements` /
-`live_day_closes`, and nothing else on the platform reads them. Page key
-`staff-live`, admin-only until the operator opens it on the Access tab; inside,
-each role has exactly /staff's rights (own unit for a supervisor, shift ∩ plant
-for a shift-manager). Its notifications (bell + Telegram) start once the page is
+Built to replace /staff, and from 2026-10-05 it carries the doors /staff has
+beside the page itself: the Telegram one-tap approval CARDS for a draft
+document and a brigadir's deletion batch (`approvals.send_live_document_to_admins`
+/ `send_live_batch_to_admins`, callback codes `lv` / `lb`), retired on every
+decision path here through `_retire` / `_forget` / `_settle_batch_card`; the
+bell queue and the badge. The documents still live in their own tables —
+`live_documents` / `live_document_history` / `live_deletions` /
+`live_placements` / `live_day_closes` — and nothing else on the platform reads
+them: the actual replacement (the day-close ladder and the attendance pipeline
+reading the live day) is a separate decision. Page key `staff-live`, admin-only
+until the operator opens it on the Access tab; inside, each role has exactly
+/staff's rights (own unit for a supervisor, shift ∩ plant for a shift-manager).
+Its notifications (bell + Telegram, the cards included) start once the page is
 opened to anybody but admins, and reach only people who can open it.
 """
 import logging
@@ -189,11 +196,14 @@ def _named(ud: dict) -> dict:
 
 def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: bool = True,
             supervisors: tuple = (), profiles: tuple = (), actor: Optional[int] = None,
-            subject=None, ntype: str = "info") -> None:
+            subject=None, ntype: str = "info", dm_skip: tuple = ()) -> None:
     """One bell row per addressed PROFILE + a DM per holder (the
     `_notify_all_parties` shape): admins, the shift-managers answerable for
     `units`, the supervisors of `supervisors`, and any `profiles`; the actor's
-    own profile is skipped. Never raises — a notice must not undo a decision."""
+    own profile is skipped. `dm_skip` are Telegram ids that keep the bell row
+    but get NO DM — they were just handed the one-tap card about the same
+    request (/staff's `admin_dm=False`). Never raises — a notice must not undo
+    a decision."""
     if notifications_suppressed():
         return
     try:
@@ -231,7 +241,7 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
                 continue
             from app.telegram_bot import send_tg_notification
             for tid in holders:
-                if tid == actor or tid in dmed:
+                if tid == actor or tid in dmed or tid in dm_skip:
                     continue
                 dmed.add(tid)
                 lang = _get_user_lang(db, tid)
@@ -286,8 +296,63 @@ def _notify_doc(db: Session, doc: LiveDocument, event: str, actor: int) -> None:
     target = pl.get("target_manager_id") if exch and pl.get("target_type") == "supervisor" else None
     # A draft waits on its approvers; a decision is news to the units too.
     sups = (doc.manager_id, target) if event != "created" else ((target,) if target else ())
+    carded: set = set()
+    if event == "created":
+        # The CARD first: whoever may decide the draft (admins, the receiving
+        # supervisor, a documents grantee who can open the page) gets the
+        # one-tap card, keeps the bell row and is spared a second DM about it
+        # (`dm_skip`). A card that fails costs the card, never the notice.
+        try:
+            from app.approvals import send_live_document_to_admins
+            carded = set(send_live_document_to_admins(db, doc) or ())
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("staff-live: approval card for document %s failed", doc.id)
     _notify(db, nkey, _doc_params(doc), units=(doc.manager_id,), supervisors=sups,
-            actor=actor, subject=("live_doc", doc.id))
+            actor=actor, subject=("live_doc", doc.id), dm_skip=tuple(carded))
+
+
+# ── the Telegram cards (`app.approvals`, codes lv / lb) ──────────────────────
+# A draft document and a brigadir's deletion batch each put a one-tap card in
+# front of whoever may decide them. Every decision path on this page retires
+# the card — AFTER its commit, never inside the transaction, because
+# `edit_admin_notices` opens a session of its own. All three never raise: a
+# card that cannot be edited must not undo the decision it reports.
+
+def _retire(kind: str, ref, status: str, who: Optional[str]) -> None:
+    """Edit every recipient's card for (kind, ref) with the outcome and drop
+    its buttons; the notices are forgotten with it."""
+    try:
+        from app.approvals import edit_admin_notices
+        edit_admin_notices(kind, str(ref), status, who or None)
+    except Exception:  # noqa: BLE001
+        log.exception("staff-live: could not retire the %s card %s", kind, ref)
+
+
+def _forget(kind: str, ref) -> None:
+    """Drop the tracked cards for (kind, ref) without editing them — the record
+    itself is gone (a deleted document), so there is no outcome to print."""
+    try:
+        from app.approvals import forget_notices
+        forget_notices(kind, str(ref))
+    except Exception:  # noqa: BLE001
+        log.exception("staff-live: could not forget the %s card %s", kind, ref)
+
+
+def _settle_batch_card(db: Session, token: Optional[str], who: Optional[str]) -> None:
+    """Once NOTHING in a deletion batch is pending, retire its card with the
+    batch's outcome as `list_documents` prints it — «approved» when any row
+    was applied (approved / undone), else «rejected». A batch still waiting on
+    some of its rows keeps its card. A live row always carries a batch id, so
+    a card's ref is always the uuid; a `solo-` token names no card."""
+    if not token or str(token).startswith("solo-"):
+        return
+    statuses = {st for (st,) in db.query(LiveDeletion.status)
+                .filter(LiveDeletion.batch_id == str(token)).all()}
+    if not statuses or "pending" in statuses:
+        return
+    _retire("live_batch", token,
+            "approved" if statuses & {"approved", "undone"} else "rejected", who)
 
 
 # ── meta ─────────────────────────────────────────────────────────────────────
@@ -1039,6 +1104,7 @@ def approve_document(doc_id: int, db: Session = Depends(get_db), caller: dict = 
     db.commit()
     action_log.enrich(**_log_doc(doc, [("status", "draft", "approved")]))
     _notify_doc(db, doc, "approved", _tg(caller))
+    _retire("live_document", doc_id, "approved", _who(caller))
     return {"ok": True, "status": doc.status}
 
 
@@ -1051,6 +1117,7 @@ def reject_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
     db.commit()
     action_log.enrich(**_log_doc(doc, [("status", "draft", "rejected")]))
     _tell_rejected(db, doc, caller)
+    _retire("live_document", doc_id, "rejected", _who(caller))
     return {"ok": True, "status": doc.status}
 
 
@@ -1084,6 +1151,7 @@ def delete_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
         db.commit()
         action_log.enrich(action="lab.live_document_rejected", **_log_doc(doc, [("status", "draft", "rejected")]))
         _tell_rejected(db, doc, caller)
+        _retire("live_document", doc_id, "rejected", _who(caller))
         return {"ok": True, "status": doc.status}
     elif caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
         raise HTTPException(status_code=403, detail="Not allowed to delete this document")
@@ -1098,6 +1166,10 @@ def delete_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
     action_log.enrich(**log_fields)
     if was_approved:
         _notify_doc(db, snapshot, "cancelled", _tg(caller))
+    # The record is gone: nothing to print on a card that may still stand
+    # (an approved document's card was retired at its approval; this is the
+    # backstop for one that was not).
+    _forget("live_document", doc_id)
     return {"ok": True}
 
 
@@ -1110,6 +1182,7 @@ class DocBulkBody(BaseModel):
 def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     docs = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.id.in_(body.ids)).all()
     done, refused, notify, rejected = 0, [], [], []
+    forgotten: list[int] = []        # deleted outright — their cards are dropped
     reads: dict = {}
     if body.action in ("cancel", "delete"):
         # Newest approval first: a move that depends on another was approved
@@ -1153,6 +1226,7 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
                 if not _can_approve(doc, caller, db) or _depended(doc):
                     continue
                 db.query(LiveDocumentHistory).filter(LiveDocumentHistory.document_id == doc.id).delete()
+                forgotten.append(doc.id)
                 db.delete(doc)
             elif doc.status == "draft":
                 if not _may_reject(doc, caller, db):
@@ -1163,15 +1237,26 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
                 if caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
                     continue
                 db.query(LiveDocumentHistory).filter(LiveDocumentHistory.document_id == doc.id).delete()
+                forgotten.append(doc.id)
                 db.delete(doc)
         else:
             raise HTTPException(status_code=400, detail="Unknown action")
         done += 1
+    # Ids before the commit expires the instances — the cards are settled after it.
+    approved_ids = [doc.id for doc, event in notify if event == "approved"]
+    rejected_ids = [doc.id for doc in rejected]
     db.commit()
     for doc, event in notify:
         _notify_doc(db, doc, event, _tg(caller))
     for doc in rejected:
         _tell_rejected(db, doc, caller)
+    who = _who(caller)
+    for doc_id in approved_ids:
+        _retire("live_document", doc_id, "approved", who)
+    for doc_id in rejected_ids:
+        _retire("live_document", doc_id, "rejected", who)
+    for doc_id in forgotten:
+        _forget("live_document", doc_id)
     action_log.enrich(target_kind="batch", target_id=",".join(str(i) for i in body.ids[:20]),
                       details=[("mode", body.action), ("count", done),
                                ("skipped", max(len(body.ids) - done, 0))])
@@ -1236,6 +1321,7 @@ def bulk_delete(body: BulkDeleteBody, db: Session = Depends(get_db), caller: dic
         db.flush()
     pending = {r.employee_id: r for r in db.query(LiveDeletion).filter(
         LiveDeletion.manager_id == mid, LiveDeletion.day == d, LiveDeletion.status == "pending")}
+    touched: set = set()      # pending batches a direct delete answered rows of
     for eid in ids:
         r = rows.get(eid)
         if not r:
@@ -1252,6 +1338,8 @@ def bulk_delete(body: BulkDeleteBody, db: Session = Depends(get_db), caller: dic
             req.processed_by_telegram_id = _tg(caller)
             req.processed_by_name = _who(caller)
             req.processed_at = now
+            if req.batch_id:
+                touched.add(req.batch_id)
             created.append(r["worker_name"])
             continue
         db.add(LiveDeletion(
@@ -1279,8 +1367,26 @@ def bulk_delete(body: BulkDeleteBody, db: Session = Depends(get_db), caller: dic
             _notify(db, "live_record_deleted", params, units=(mid,), supervisors=(mid,),
                     actor=_tg(caller), subject=("live_day", f"{mid}:{d.isoformat()}"))
         else:
+            # The CARD first: admins and the requests grantees who can open the
+            # page get the one-tap card and keep the bell row, with no second
+            # DM about it (`dm_skip`). A card that fails costs the card, never
+            # the notice.
+            carded: set = set()
+            try:
+                from app.approvals import send_live_batch_to_admins
+                carded = set(send_live_batch_to_admins(db, batch, mid, d, _who(caller), created) or ())
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("staff-live: approval card for deletion batch %s failed", batch)
             _notify(db, "live_delete_request", params, units=(mid,), actor=_tg(caller),
-                    subject=("live_batch", batch))
+                    subject=("live_batch", batch), dm_skip=tuple(carded))
+    # A replaced batch's requests were just rejected: its card says so.
+    if not direct and body.replace_batch_id:
+        _settle_batch_card(db, body.replace_batch_id, _who(caller))
+    # A direct delete that answered a pending request: once nothing in that
+    # request's batch is pending, its card is settled (as applied).
+    for token in sorted(touched):
+        _settle_batch_card(db, token, _who(caller))
     return {"ok": True, "affected": len(created)}
 
 
@@ -1330,34 +1436,41 @@ def _tell_decided(db: Session, reqs: list, action: str, caller: dict) -> None:
                 subject=("live_batch", token), ntype="success" if action == "approved" else "warning")
 
 
-@router.post("/requests/batch/{batch_id}/approve")
-def approve_batch(batch_id: str, body: BatchBody, db: Session = Depends(get_db),
-                  caller: dict = Depends(_page)):
-    q = db.query(LiveDeletion).filter(_batch_filter(batch_id), LiveDeletion.status == "pending")
-    if body.ids:
-        q = q.filter(LiveDeletion.id.in_(body.ids))
+def process_batch(token: str, status: str, caller: dict, db: Session,
+                  ids: Optional[List[int]] = None) -> int:
+    """THE decision on a deletion batch, shared by the two HTTP doors and the
+    Telegram card (`approvals._decide_live_batch`): decide every pending row of
+    the batch (or the `ids` among them — 404 with none), commit, tell the unit,
+    and settle the card once nothing in the batch is pending. Returns how many
+    rows were decided. Rights are `_decide_deletions`' (403 is the caller's)."""
+    q = db.query(LiveDeletion).filter(_batch_filter(token), LiveDeletion.status == "pending")
+    if ids:
+        q = q.filter(LiveDeletion.id.in_(ids))
     reqs = q.all()
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
-    _decide_deletions(reqs, "approved", caller, db)
+    _decide_deletions(reqs, status, caller, db)
     db.commit()
+    _tell_decided(db, reqs, status, caller)
+    _settle_batch_card(db, token, _who(caller))
+    return len(reqs)
+
+
+@router.post("/requests/batch/{batch_id}/approve")
+def approve_batch(batch_id: str, body: BatchBody, db: Session = Depends(get_db),
+                  caller: dict = Depends(_page)):
+    n = process_batch(batch_id, "approved", caller, db, ids=body.ids)
     action_log.enrich(target_kind="batch", target_id=batch_id,
-                      details=[("count", len(reqs))], changes=[("status", "pending", "approved")])
-    _tell_decided(db, reqs, "approved", caller)
-    return {"ok": True, "approved": len(reqs)}
+                      details=[("count", n)], changes=[("status", "pending", "approved")])
+    return {"ok": True, "approved": n}
 
 
 @router.post("/requests/batch/{batch_id}/reject")
 def reject_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    reqs = db.query(LiveDeletion).filter(_batch_filter(batch_id), LiveDeletion.status == "pending").all()
-    if not reqs:
-        raise HTTPException(status_code=404, detail="No pending requests found in batch")
-    _decide_deletions(reqs, "rejected", caller, db)
-    db.commit()
+    n = process_batch(batch_id, "rejected", caller, db)
     action_log.enrich(target_kind="batch", target_id=batch_id,
-                      details=[("count", len(reqs))], changes=[("status", "pending", "rejected")])
-    _tell_decided(db, reqs, "rejected", caller)
-    return {"ok": True, "rejected": len(reqs)}
+                      details=[("count", n)], changes=[("status", "pending", "rejected")])
+    return {"ok": True, "rejected": n}
 
 
 @router.post("/requests/batch/{batch_id}/withdraw")
@@ -1377,6 +1490,7 @@ def withdraw_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = 
     db.commit()
     action_log.enrich(target_kind="batch", target_id=batch_id,
                       details=[("count", len(reqs))], changes=[("status", "pending", "withdrawn")])
+    _settle_batch_card(db, batch_id, _who(caller))
     return {"ok": True, "withdrawn": len(reqs)}
 
 
@@ -1397,10 +1511,12 @@ def withdraw_request(req_id: int, db: Session = Depends(get_db), caller: dict = 
         raise HTTPException(status_code=409, detail="Can only withdraw pending requests")
     if role == "supervisor" and not ((rid and r.manager_id == rid) or r.supervisor_telegram_id == _tg(caller)):
         raise HTTPException(status_code=403, detail="Not your request")
+    token = r.batch_id
     r.status = "rejected"
     db.commit()
     action_log.enrich(target_kind="request", target_id=req_id, target_name=r.worker_name,
                       unit_id=r.manager_id, day=r.day, changes=[("status", "pending", "withdrawn")])
+    _settle_batch_card(db, token, _who(caller))
     return {"ok": True}
 
 
@@ -1409,11 +1525,13 @@ def approve_request(req_id: int, db: Session = Depends(get_db), caller: dict = D
     r = _one_request(db, req_id)
     if r.status != "pending":
         raise HTTPException(status_code=409, detail="Request already processed")
+    token = r.batch_id
     _decide_deletions([r], "approved", caller, db)
     db.commit()
     action_log.enrich(target_kind="request", target_id=req_id, target_name=r.worker_name,
                       unit_id=r.manager_id, day=r.day, changes=[("status", "pending", "approved")])
     _tell_decided(db, [r], "approved", caller)
+    _settle_batch_card(db, token, _who(caller))
     return {"ok": True, "status": "approved"}
 
 
@@ -1422,11 +1540,13 @@ def reject_request(req_id: int, db: Session = Depends(get_db), caller: dict = De
     r = _one_request(db, req_id)
     if r.status != "pending":
         raise HTTPException(status_code=409, detail="Request already processed")
+    token = r.batch_id
     _decide_deletions([r], "rejected", caller, db)
     db.commit()
     action_log.enrich(target_kind="request", target_id=req_id, target_name=r.worker_name,
                       unit_id=r.manager_id, day=r.day, changes=[("status", "pending", "rejected")])
     _tell_decided(db, [r], "rejected", caller)
+    _settle_batch_card(db, token, _who(caller))
     return {"ok": True, "status": "rejected"}
 
 

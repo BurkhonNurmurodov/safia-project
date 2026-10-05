@@ -236,7 +236,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("День закрыт", "Дата: {date} | Закрыл(а): {closer_name}"),
         "en": ("Day closed", "Date: {date} | Closed by: {closer_name}"),
     },
-    # The LAB copy of «Verifix to'g'irlash» (/staff-live, services/verifix_live):
+    # The live «Verifix to'g'irlash» (/staff-live, services/verifix_live):
     # told once per unit-day when everybody who came has left — the day is
     # closed by hand, never by itself.
     "live_all_left": {
@@ -245,10 +245,10 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\nДень можно закрыть."),
         "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\nThe day can be closed."),
     },
-    # ── the LAB «Verifix to'g'irlash · Jonli» (/staff-live, routers/staff_live) ─
+    # ── the live «Verifix to'g'irlash · Jonli» (/staff-live, routers/staff_live) ─
     # /staff's documents, deletions and day close over the live Verifix read.
-    # Own keys, each title marked «Jonli», so a lab document is never read as
-    # a real one. Sent only once the page is opened to somebody but admins, and
+    # Own keys, each title marked «Jonli», so a live document is never read as
+    # a /staff one while both pages exist. Sent only once the page is opened to somebody but admins, and
     # only to people who can open it (the operator, 2026-10-04). `{time}` is
     # the exchange's clock («14:30» or «14:30–16:00»); blank for a whole-day
     # move, which drops the line.

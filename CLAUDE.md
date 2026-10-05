@@ -7294,7 +7294,7 @@ change. `POST /upload` is gone; the days the files fed stay as they were.
   `vfx_attendance_days` / `vfx_attendance_rows`, are left in the database,
   unread; dropping them is a separate decision.
 
-## The live «Verifix to'g'irlash» (`/staff-live`, Laboratory)
+## The live «Verifix to'g'irlash» (`/staff-live`)
 
 From **2026-10-01** a LAB copy of /staff read straight from Verifix instead of
 the next-morning Excel. From **2026-10-04** (the operator: «structure this page
@@ -7661,6 +7661,62 @@ rights — over a different source, and it is being built to REPLACE /staff.
     any wrappable column shrank to its narrowest word («Chiqish / belgisi /
     yo'q» at 1024).
 
+- **Ready to use (2026-10-05, the operator: «make the live page ready to use,
+  ready to replace Verifix edit»).** Every door /staff has outside its own page
+  now exists for the live page, so opening it is ONE switch — the Access tab
+  (`staff-live` → supervisor + shift-manager, the roles «staff» holds) — and
+  nothing else. Built in one pass and verified end to end on a local copy (a
+  draft filed, carded, tapped, retired; a batch filed, carded, decided):
+  - **The bot's one-tap cards** (`approvals.py`): kinds `live_document` (code
+    `lv`) and `live_batch` (`lb`) beside `hr_document` / `edit_batch` — the
+    same renderers with « · Jonli» on the header line, the «Open panel» button
+    onto `/staff-live?tab=requests`, `_broadcast` returning who it reached.
+    Recipients: admins, the RECEIVING supervisor of an exchange and the
+    documents / requests grantees over the unit — a non-admin only when
+    `live_staff.can_open` admits one of their profiles (`_live_openers`), and
+    nothing at all while `lab_open` is false. The tap runs the live router's
+    own cores (`_approve` / `_reject` / `process_batch`), writes the register
+    row under the web endpoint's key (`lab.live_document_approved` …) and
+    `edit_admin_notices`; a structured 409 from `_approve` (`not_here`,
+    `breaks`, `doc_too_old`) is answered as an ALERT with the server's own
+    sentence (`approvals.Refused`, cut at a word to Telegram's 200 chars) and
+    the card keeps its buttons — never «already handled». A documents grantee
+    who is neither admin nor receiver taps through `_grantee_caller`, so the
+    card they were sent can be acted on (the /staff `hr` card still cannot —
+    parity there is a separate change). `staff_live.py`: `_notify` takes
+    `dm_skip` (bell row kept, no DM — a card recipient is not DMed twice; the
+    /staff `admin_dm=False` rule), `_notify_doc("created")` sends the card
+    FIRST, and every decision path retires its card after `db.commit()` —
+    `_retire` / `_forget` for documents, `_settle_batch_card` for a batch once
+    NO row is pending (approved if any row is approved/undone, else rejected —
+    the `list_documents` rule), including a replaced batch, a direct delete
+    that answers a pending request, the single-request doors and the bot tap.
+    `process_batch` is the ONE batch core (the HTTP doors and the `lb` tap).
+  - **The bell's «Sizdan kutilmoqda» and the phone** (`notif_queue._live_docs`
+    / `_live_batches`, keys `live_doc:<id>` / `live_batch:<uuid>` — the very
+    subjects the live rows carry, so `_push_decisions` attaches buttons;
+    `_live_open` gates them on `can_open` of the viewer's profile, admins
+    always; the stale rule on `doc.day`; actions on the live endpoints, approve
+    with undo → cancel). `KIND_ORDER` / `_RANK` and `notifMeta.QUEUE_KINDS`
+    carry the two kinds right after their twins; `QueueItem` draws a neutral
+    «Jonli» chip, `live_batch` asks like `edit_batch`. FOLD gained the nine
+    live twins (`live_day_closed` … `live_record_deleted`) with four-language
+    titles prefixed «Jonli ·»; `_COUNT_DISTINCT` the two day keys; the
+    `open_units` chip stays `day_closed`'s own.
+  - **The nav**: the entry sits in the «people» group right AFTER /staff with
+    its own icon (`Radio`) and its own 30 s pending-count badge
+    (`/api/staff-live/documents/pending-count`, the second entry in Sidebar's
+    one `BADGES` map, polled only while the viewer may open the page); it left
+    the «Verifix (test)» group and the Access tab's TEST chip (`tier` dropped in
+    `config/pages.js`). The label keeps «· Jonli» while both pages exist.
+  - **Still NOT done, deliberately — the replacement itself**: the загрузка,
+    `build_metrics_list`, `/production`'s lock, `/idle-cell`'s lock, the gap
+    reports and the admin «Davomat» Save all read `attendance` + `DayApproval`;
+    a live document or a live day close moves none of them. Retiring /staff
+    means pointing that ladder at the live tables (or the admin read replaying
+    live documents) — ask before wiring it. `/daily` for a supervisor still
+    renders the file source.
+
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 
 From **2026-10-03** (the operator: "build pages to different things we can get
@@ -7679,7 +7735,8 @@ operator, after detaching «Ведомость» from the API role) — the «Is
 was removed and every wage / payroll list is switched off in code, whatever
 the role opens. **Admin-only**, three ways like `/staff-live`
 (`adminOnly` nav entries, `RequireAdmin`, `verify_admin` on every endpoint), no
-page keys. `/staff-live` moved into this section (same data source).
+page keys. `/staff-live` sat in this section until 2026-10-05; it is a «people»
+page beside the /staff it replaces now.
 
 - **`services/verifix_catalog.py` is THE list of what may be called**: the 94
   READ methods of the Postman collection (path, module, Verifix's own name, the

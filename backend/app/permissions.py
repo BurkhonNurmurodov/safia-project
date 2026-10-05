@@ -59,10 +59,12 @@ DEFAULT_PAGE_ACCESS = {
     "downtime": ["shift-manager", "idle-owner"],
     "staff":    ["shift-manager", "supervisor"],
     # «Verifix to'g'irlash · Jonli» (`/staff-live`, routers/staff_live.py) —
-    # /staff over the live Verifix read, built to replace it (2026-10-04). Lab:
-    # admin-only until the operator opens it; inside, each role has exactly
-    # /staff's rights, enforced server-side. Its bell + Telegram notices start
-    # only once this list (or a per-person grant) names somebody.
+    # /staff over the live Verifix read, built to replace it (2026-10-04) and
+    # ready to use from 2026-10-05 (bot cards, bell queue, badge). Admin-only
+    # until the operator opens it HERE, on the Access tab — the same roles as
+    # «staff» when it is; inside, each role has exactly /staff's rights,
+    # enforced server-side. Its bell + Telegram notices and cards start only
+    # once this list (or a per-person grant) names somebody.
     "staff-live": [],
     "daily":    ["shift-manager", "supervisor"],
     # «Smena kunligi» — the shift dashboard `/daily` already forks to for a

@@ -1,6 +1,6 @@
 // Which «Verifix to'g'irlash» a tree of /staff components is talking to.
 //
-// `/staff-live` (the lab, 2026-10-04) is /staff with ONE difference — the
+// `/staff-live` (2026-10-04, built to replace /staff) is /staff with ONE difference — the
 // source (the operator: «the same rule applies for everything … the only
 // difference should be the source»). So it renders /staff's own components,
 // and this context is all that tells them apart: the API base, a prefix that

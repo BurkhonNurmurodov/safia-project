@@ -1,4 +1,4 @@
-"""The LIVE «Verifix to'g'irlash» — attendance read straight from Verifix (lab).
+"""The LIVE «Verifix to'g'irlash» — attendance read straight from Verifix.
 
 The READ half of `/staff-live` (admin-only by default, page key `staff-live`):
 who came, who is inside, who left and who has not come, read from Verifix's
@@ -115,7 +115,7 @@ def _cached(key: tuple, ttl: float, fn: Callable[[], Any]) -> tuple[Any, datetim
     stamp = now_local()
     with _lock:
         _cache[key] = (_time.monotonic(), stamp, val)
-        if len(_cache) > 200:                      # a lab page; keep it bounded
+        if len(_cache) > 200:                      # keep it bounded
             for k in sorted(_cache, key=lambda k: _cache[k][0])[:100]:
                 _cache.pop(k, None)
     return val, stamp
