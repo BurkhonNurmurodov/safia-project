@@ -1193,10 +1193,12 @@ function LiveWorkersView({
 
   const narrowed = activeFilter || liveFilter !== "all";
   // ONE header line: every label on one baseline, never wrapped (a header
-  // three lines tall is mostly empty space). Columns take their content's
-  // width and a trailing spacer takes what is left, so on a wide screen a
-  // name stays next to its status and the figures instead of every column
-  // stretching apart; figure headers sit right-aligned over their figures.
+  // three lines tall is mostly empty space). The columns share the card's
+  // whole width — a trailing spacer that kept them at their content's width
+  // left a blank band down the right of a wide screen (the operator,
+  // 2026-10-05) — and figure headers sit right-aligned over their figures.
+  // The last VISIBLE column takes the card's 16px edge: below 72rem the two
+  // figure columns after «Soat» are hidden, and `last:` still names them.
   const th = "h-10 px-3 first:pl-4 last:pr-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
   const thNum = th.replace("text-left", "text-right");
   const thStyle = { borderColor: "var(--border)", color: "var(--text-3)" };
@@ -1205,7 +1207,7 @@ function LiveWorkersView({
   // summary, instead of on every row; several keep the column (and its filter).
   const schedules = [...new Set(allWorkers.map((w) => w.schedule).filter(Boolean))];
   const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
-  const cols = 9 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
+  const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
 
   // The day cannot be shown, or holds nobody: the reason and the one thing to
   // do about it — not figures of 0, eight empty filters and a search box.
@@ -1259,7 +1261,7 @@ function LiveWorkersView({
                 {/* The name header SORTS (the search above already filters by
                     name). While the table is too narrow for a Lavozim column
                     the job title rides under the name, and its filter here. */}
-                <th scope="col" className={`${th} min-w-[14rem] min-[1400px]:min-w-[20rem]`} style={thStyle}
+                <th scope="col" className={th} style={thStyle}
                   aria-sort={nameAsc === null ? "none" : nameAsc ? "ascending" : "descending"}>
                   <span className="inline-flex items-center gap-1.5">
                     <button type="button" onClick={() => setNameAsc((p) => (p === null ? true : p ? false : null))}
@@ -1306,7 +1308,7 @@ function LiveWorkersView({
                 )}
                 <th scope="col" className={th} style={thStyle}>{t("staffLive.c.in")}</th>
                 <th scope="col" className={th} style={thStyle}>{t("staffLive.c.out")}</th>
-                <th scope="col" className={thNum} style={thStyle}>
+                <th scope="col" className={`${thNum} @max-[72rem]:pr-4`} style={thStyle}>
                   <ColFilter quiet align="right" label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
                     <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
                       onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
@@ -1324,7 +1326,6 @@ function LiveWorkersView({
                       onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
                   </ColFilter>
                 </th>
-                <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
             <LiveRows rows={sortedWorkers} showCellCol={showCellCol} oneSchedule={!!oneSchedule}
@@ -1351,7 +1352,7 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
       {sortedWorkers.map((w) => (
         <Fragment key={w.id}>
           <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
-            <td className={`${td} !whitespace-normal max-w-[24rem]`}>
+            <td className={`${td} !whitespace-normal`}>
               <LiveName w={w} open={openRaw === w.id}
                 onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
               {/* Under the name: the job title while the table has no column
@@ -1386,7 +1387,7 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
             )}
             <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
             <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
-            <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+            <td className={`${td} tabular-nums text-right @max-[72rem]:pr-4`} style={{ color: "var(--text-1)" }}>
               {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
             </td>
             <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-2)" }}>
@@ -1395,12 +1396,14 @@ const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRa
             <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-1)" }}>
               {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
             </td>
-            <td aria-hidden="true" className="p-0" />
           </tr>
           {openRaw === w.id && w.raw && (
             <tr>
               <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
-                <LiveRaw raw={w.raw} />
+                {/* Sized BY the columns, never sizing them: `cols` counts the
+                    columns a narrow card hides, and a wide panel spread over
+                    those would hand them a share of the width. */}
+                <div className="[contain:inline-size]"><LiveRaw raw={w.raw} /></div>
               </td>
             </tr>
           )}

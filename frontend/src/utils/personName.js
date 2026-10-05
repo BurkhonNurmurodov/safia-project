@@ -9,10 +9,18 @@
 // ONE definition — the ARC register's owner columns and the ARC analysis
 // charts both read it, and two spellings of «how a name shortens» is how a
 // chart row and the table cell it drills into stop looking like one person.
-export const shortPerson = (name) => {
+//
+// `nameCase` also writes an ALL-CAPS given name in ordinary case — Verifix
+// spells every name in capitals, «ABDAKIMOV SARDOR …» → «A. Sardor»
+// (/staff-live). A word already carrying a lowercase letter is left as typed.
+const wordCase = (w) => (w === w.toUpperCase() && w !== w.toLowerCase()
+  ? w.toLowerCase().replace(/(^|-)(\p{L})/gu, (_, a, b) => a + b.toUpperCase())
+  : w);
+export const shortPerson = (name, { nameCase = false } = {}) => {
   const p = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (p.length < 2) return p[0] || "";
-  return `${p[0][0].toUpperCase()}. ${p[1]}`;
+  const cased = (w) => (nameCase ? wordCase(w) : w);
+  if (p.length < 2) return cased(p[0] || "");
+  return `${p[0][0].toUpperCase()}. ${cased(p[1])}`;
 };
 
 // The other way round — the SURNAME kept whole and the given name down to an

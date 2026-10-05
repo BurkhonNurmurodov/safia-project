@@ -7284,9 +7284,17 @@ rights — over a different source, and it is being built to REPLACE /staff.
   glyph shows on hover/focus/when filtering, always on touch, and hangs OUTSIDE
   the label so a header lines up with its column — `align="right"` for figures).
   The table header is ONE 40px line, never wrapped, every label on one baseline;
-  columns take their content's width and a trailing spacer takes the rest, so a
-  wide screen keeps a name beside its status instead of stretching every column
-  apart. «Xodim» sorts (the search box above is the name filter). **The job
+  the columns SHARE the card's whole width (the operator, 2026-10-05: the
+  trailing spacer that kept them at their content's width left a blank band
+  down the right of a wide screen — gone from both tables, the extra hours'
+  too); the last VISIBLE column takes the 16px edge (`@max-[72rem]:pr-4` on
+  «Soat», since `last:` still names the hidden columns), and the admin's raw
+  row is `[contain:inline-size]`, sized by the columns and never sizing them.
+  **A worker is SHORT — «A. Sardor»** (`liveShortName` = `shortPerson(…,
+  {nameCase: true})`: the surname's initial and the given name, Verifix's
+  capitals in ordinary case), the full name on hover, in the table, the phone
+  list and the extra-hours section; the search and the export keep the full
+  name. «Xodim» sorts (the search box above is the name filter). **The job
   title is a «Lavozim» column of its own, right after «Holat»** (the operator,
   2026-10-05 — one line, cut with «…» past 12rem, whole on hover). Which
   columns show is decided by the TABLE's width (`@container` on its scroller),

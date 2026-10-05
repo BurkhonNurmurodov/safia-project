@@ -16,6 +16,7 @@ import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import { shortPerson } from "../../utils/personName";
 
 export const fill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 export const hhmm = (iso) => (iso ? String(iso).slice(11, 16) : "");
@@ -382,17 +383,24 @@ export function LiveClockOut({ w, inline = false }) {
   return <span className="flex flex-col">{<span>{time}</span>}{note}</span>;
 }
 
-// The name as the row's first cell. For an admin it opens the Verifix read
-// behind the row — a button that looks like the name until it is pointed at.
+// The name as the row's first cell, SHORT — the surname's initial and the
+// given name, «A. Sardor» (the operator, 2026-10-05); the full Verifix name is
+// on hover, and the search still matches it. For an admin it opens the Verifix
+// read behind the row — a button that looks like the name until pointed at.
+export const liveShortName = (full) => shortPerson(full, { nameCase: true });
+
 export function LiveName({ w, open, onToggle, className = "" }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  if (!onToggle || !w.raw) return <span className={className} style={{ color: "var(--text-1)" }}>{tl(w.worker_name)}</span>;
+  const full = tl(w.worker_name);
+  if (!onToggle || !w.raw) return (
+    <span className={`whitespace-nowrap ${className}`} style={{ color: "var(--text-1)" }} title={full}>{liveShortName(full)}</span>
+  );
   return (
-    <button type="button" aria-expanded={open} onClick={onToggle} title={t("staffLive.rawHint")}
-      className={`text-left rounded-sm hover:underline underline-offset-2 live-focus ${className}`}
+    <button type="button" aria-expanded={open} onClick={onToggle} title={`${full}\n${t("staffLive.rawHint")}`}
+      className={`text-left whitespace-nowrap rounded-sm hover:underline underline-offset-2 live-focus ${className}`}
       style={{ color: "var(--text-1)" }}>
-      {tl(w.worker_name)}
+      {liveShortName(full)}
     </button>
   );
 }
@@ -496,8 +504,8 @@ export function LiveExtras({ extras, phone = false }) {
   if (!extras?.length) return null;
   const total = extras.reduce((s, x) => s + (x.hours || 0), 0);
   const named = (x) => (x.named_at ? tl(x.named_at) : t(`staffLive.ex.r.${x.reason}`));
-  const th = "h-10 px-3 first:pl-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
-  const td = "px-3 first:pl-4 py-2.5 whitespace-nowrap";
+  const th = "h-10 px-3 first:pl-4 last:pr-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
+  const td = "px-3 first:pl-4 last:pr-4 py-2.5 whitespace-nowrap";
   return (
     <div className="border-t" style={{ borderColor: "var(--border)" }}>
       <div className="px-4 pt-4 pb-1 flex items-baseline gap-3">
@@ -512,7 +520,7 @@ export function LiveExtras({ extras, phone = false }) {
           {extras.map((x) => (
             <li key={x.employee_id} className="px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[15px] leading-snug min-w-0" style={{ color: "var(--text-1)" }}>{tl(x.worker_name)}</span>
+                <span className="text-[15px] leading-snug min-w-0" style={{ color: "var(--text-1)" }} title={tl(x.worker_name)}>{liveShortName(tl(x.worker_name))}</span>
                 <span className="text-[13px] tabular-nums flex-shrink-0" style={{ color: "var(--text-1)" }}>
                   {n2(x.hours)} {t("daily.hrs")}
                 </span>
@@ -530,21 +538,19 @@ export function LiveExtras({ extras, phone = false }) {
           <table className="w-full text-[13px]">
             <thead>
               <tr style={{ background: "var(--bg-inner)" }}>
-                <th scope="col" className={`${th} min-w-[14rem] min-[1400px]:min-w-[20rem]`} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staffLive.ex.c.worker")}</th>
+                <th scope="col" className={th} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staffLive.ex.c.worker")}</th>
                 <th scope="col" className={th} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staffLive.ex.c.status")}</th>
                 <th scope="col" className={th} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staffLive.ex.c.named")}</th>
                 <th scope="col" className={th.replace("text-left", "text-right")} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staffLive.ex.c.hours")}</th>
-                <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
             <tbody>
               {extras.map((x) => (
                 <tr key={x.employee_id} className="border-b" style={{ borderColor: "var(--border)" }}>
-                  <td className={`${td} !whitespace-normal max-w-[24rem]`} style={{ color: "var(--text-1)" }}>{tl(x.worker_name)}</td>
+                  <td className={td} style={{ color: "var(--text-1)" }} title={tl(x.worker_name)}>{liveShortName(tl(x.worker_name))}</td>
                   <td className={td}><LiveStatusChip status={extraStatus(x)} /></td>
                   <td className={td} style={{ color: x.named_at ? "var(--text-2)" : "var(--text-3)" }}>{named(x)}</td>
                   <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>{n2(x.hours)}</td>
-                  <td aria-hidden="true" className="p-0" />
                 </tr>
               ))}
             </tbody>
