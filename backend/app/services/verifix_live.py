@@ -67,6 +67,8 @@ HOT_S = 60               # a running shift-day is read again this often (the job
 COOL_S = 600             # …a shift-day whose shift is over (Verifix fills check-outs late)
 HOT_AFTER_MIN = 120      # a shift stays «running» for the reads this long past its end
 STALE_S = 180            # the page reads Verifix itself when a running day's read is older
+ERROR_BACKOFF_S = 60     # …but not within this long of a read of the day that FAILED: a
+                         # Verifix outage must not turn every viewer's poll into a retry
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
 FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
@@ -701,11 +703,17 @@ def _homes(directory: dict, cells: dict) -> dict[str, tuple[int, str]]:
     return out
 
 
-def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:
-    """The shift-day on the clock for a unit of this shift (`/live`'s rule)."""
+def day_frame(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> dict:
+    """The shift frame on the clock for a unit of this shift (`/live`'s rule):
+    which shift-day it is, and when the next one opens (`next_start_at`)."""
     now = now or datetime.now(TZ)
     win = cell_hours.defaults(db).get(shift or 1) or ("08:00", "20:00")
-    return date.fromisoformat(live_overview.shift_frame(now, shift or 1, win)["day"])
+    return live_overview.shift_frame(now, shift or 1, win)
+
+
+def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:
+    """The shift-day on the clock for a unit of this shift."""
+    return date.fromisoformat(day_frame(db, shift, now)["day"])
 
 
 def event_at(db: Session, day: date, shift: Optional[int], hhmm: str) -> datetime:
@@ -815,8 +823,17 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     # A press this soon after the last read serves that read.
     if force and covered is not None and (now - covered).total_seconds() < FORCE_MIN_S:
         force = False
+    # A read of this day failed moments ago (Verifix down, the proxy refusing):
+    # serve what is stored and say so, rather than every poll trying again.
+    failed_at = (_local(row.error_at) if row and row.error and row.error_at
+                 and (row.read_at is None or row.error_at > row.read_at) else None)
+    backoff = (not force and failed_at is not None
+               and (now - failed_at).total_seconds() < ERROR_BACKOFF_S)
+    if backoff and stale and covered is None:
+        code, _, msg = (row.error or "").partition(": ")
+        return {"error": code or "unreachable", "message": msg or row.error}
     read_error = None
-    if force or stale:
+    if (force or stale) and not backoff:
         lk = _unit_lock((manager_id, day))
         if lk.acquire(blocking=False):
             try:

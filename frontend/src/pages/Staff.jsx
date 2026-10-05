@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, Fragment } from "react";
+import { useState, useMemo, useRef, useEffect, useDeferredValue, memo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen,
+  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen, UserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -36,11 +36,13 @@ import { fmtPct, fmtNum } from "../utils/formatters";
 import { cellLabel } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
-import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { surnameInitial } from "../utils/personName";
+import { isWebSession } from "../utils/session";
+import { ColFilter, TxtFilter, OptsFilter, RngFilter, FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
 import {
   LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  LiveName, LivePhoneList, liveMatch, liveMatchExtra, liveFilterOptions, n2 as liveN2,
+  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, n2 as liveN2,
 } from "../components/staff/LiveBits";
 import useIsMobile from "../hooks/useIsMobile";
 import DayStepper from "../components/ui/DayStepper";
@@ -246,39 +248,45 @@ function isFilterActive(f) {
 // ── Export Confirmation Modal ──────────────────────────────────────────────────
 
 function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, exporting }) {
+  const { t } = useLang();
+  // A browser downloads the file, Telegram DMs it (`exportXlsx`) — the dialog
+  // promises what will actually happen.
+  const web = isWebSession();
   return (
     <Modal
       onClose={onClose}
-      title="Export to Excel"
+      title={t("staff.exportTitle")}
       icon={<Download size={15} className="flex-shrink-0 text-[var(--brand-text)]" />}
       maxWidth="max-w-sm"
       footer={hasFilter ? (
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="secondary" size="sm" onClick={() => onExport(false)} disabled={exporting}>
-            All rows ({totalCount})
+            {fillT(t("staff.exportAllN"), { n: totalCount })}
           </Button>
           <Button size="sm" loading={exporting} onClick={() => onExport(true)}>
-            Filtered rows ({filteredCount})
+            {fillT(t("staff.exportFilteredN"), { n: filteredCount })}
           </Button>
         </>
       ) : (
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
           <Button size="sm" loading={exporting} onClick={() => onExport(false)}>
-            Export & Send
+            {t(web ? "staff.exportGoDownload" : "staff.exportGoSend")}
           </Button>
         </>
       )}
     >
-      <p className="text-xs" style={{ color: "var(--text-3)" }}>
+      <p className="text-sm" style={{ color: "var(--text-2)" }}>
         {hasFilter
-          ? "You have active filters applied. What would you like to export?"
-          : `Export ${totalCount} workers for this date and send to your Telegram chat?`}
+          ? t("staff.exportAsk")
+          : fillT(t(web ? "staff.exportOneDownload" : "staff.exportOneSend"), { n: totalCount })}
       </p>
     </Modal>
   );
 }
+
+const fillT = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
@@ -480,7 +488,8 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 // ── Attendance Table ───────────────────────────────────────────────────────────
 
-export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose, dayPending = false }) {
+export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose, onGoRequests, onToday,
+  dayPending = false, dayError = null, onDayRetry }) {
   const S = useStaffApi();
   const { t } = useLang();
   // `lang` is read only as a memo KEY: `tl` is a new function on every render,
@@ -501,6 +510,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // the table needs a laptop's width.
   const isPhone = useIsMobile(1024);
   const qc = useQueryClient();
+  const { auth: tableAuth } = useAuth();
 
   // Restored values are old data: merge over the CURRENT shape so a filter
   // added since the visit that saved them can't crash the predicates.
@@ -511,10 +521,15 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
 
   // Reset filters whenever the date or supervisor changes (skip the first run —
   // it would clobber the value restored from the previous visit)
-  const filtersResetMounted = useRef(false);
+  // A change from NOTHING to a day or unit is the page finding its scope (the
+  // live page learns its day from the server), not the reader moving it — the
+  // filters restored from the last visit stay.
+  const filtersScope = useRef([selectedDate, managerId]);
   useEffect(() => {
-    if (!filtersResetMounted.current) { filtersResetMounted.current = true; return; }
-    setFilters(INIT_FILTERS);
+    const [d0, m0] = filtersScope.current;
+    filtersScope.current = [selectedDate, managerId];
+    if ((d0 && d0 !== selectedDate) || (m0 != null && m0 !== managerId)) setFilters(INIT_FILTERS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, managerId]);
 
   const attKey = S.qk("staff-attendance", managerId, selectedDate);
@@ -528,13 +543,20 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     enabled: !!selectedDate && !!managerId && !dayPending,
     // Live: the server reads Verifix every minute and stores it, so this poll
     // is a database read — it follows the stored read, it does not cause one.
-    ...(S.live ? { refetchInterval: 60_000, refetchIntervalInBackground: false, staleTime: 30_000 } : {}),
+    // A day that is over does not change: it is read on focus, not polled.
+    ...(S.live ? {
+      refetchInterval: (q) => (q.state.data?.live && !q.state.data.live.is_today ? false : 60_000),
+      refetchIntervalInBackground: false, staleTime: 30_000,
+    } : {}),
   });
-  // «Yangilash»: the unit read from Verifix NOW, not the stored read.
+  // «Yangilash»: the unit read from Verifix NOW, not the stored read. Its
+  // answer is stored under the unit-day it was ASKED for — the reader may have
+  // stepped to another day while it was on its way.
   const refresh = useMutation({
     mutationFn: () => fetchAtt(true),
-    onSuccess: (res) => qc.setQueryData(attKey, res),
+    onSuccess: (res, key) => qc.setQueryData(key, res),
   });
+  const refreshNow = () => refresh.mutate(attKey);
 
   // ── Yacheyka column ────────────────────────────────────────────────────────
   // On a date that has a by-cell attendance upload, every worker also shows the
@@ -605,18 +627,35 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // reading the unfiltered day sat directly above a table obeying the filters,
   // and the two disagreed with nothing on screen saying why.
   const shownName = S.live ? tl : null;
-  const workers = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters, false, shownName) && (!S.live || liveMatch(w, liveFilter))),
+  // Live: typing in the search stays instant on a unit of a thousand people —
+  // the rows follow the typed text a beat later.
+  const deferredWorker = useDeferredValue(filters.worker);
+  // Keyed on every filter BUT the typed text, so a keystroke changes nothing
+  // here until the deferred text catches up.
+  const { worker: _typed, ...otherFilters } = filters;
+  const otherKey = JSON.stringify(otherFilters);
+  const rowFilters = useMemo(
+    () => (S.live ? { ...otherFilters, worker: deferredWorker } : filters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, filters, liveFilter, lang]
+    [S.live ? otherKey : filters, deferredWorker]);
+  const workers = useMemo(
+    () => allWorkers.filter(w => matchesFilters(w, rowFilters, false, shownName) && (!S.live || liveMatch(w, liveFilter))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWorkers, rowFilters, liveFilter, lang]
   );
+  // Live: the day's people — a day-off row is on no filter of the strip, so it
+  // is in no count either (the strip, the figures and the export said 42, 45
+  // and 45 for one day).
+  const dayRows = useMemo(() => (S.live ? allWorkers.filter(w => w.status !== "off") : allWorkers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWorkers]);
   // The chips ARE the job_titles filter, so they count against every OTHER
   // filter only. Counted off `workers`, picking one role would erase every
   // other chip and leave no way back to a second one.
   const chipBase = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, filters, true, shownName) && (!S.live || liveMatch(w, liveFilter))),
+    () => allWorkers.filter(w => matchesFilters(w, rowFilters, true, shownName) && (!S.live || liveMatch(w, liveFilter))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, filters, liveFilter, lang]
+    [allWorkers, rowFilters, liveFilter, lang]
   );
 
   // PEOPLE, not rows. A worker split across two of the unit's cells is TWO
@@ -629,7 +668,11 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   const roundHc   = (n) => Math.round(n * 100) / 100;
 
   const totalWorkers = roundHc(headcount(workers));
-  const cameWorkers = useMemo(() => workers.filter(hasWorked), [workers]);
+  // Live: a worker CAME once they clocked in — the operator's rule, so somebody
+  // with no check-out (no hours yet, or none ever) is still somebody who came.
+  const cameWorkers = useMemo(() => workers.filter(S.live ? (w => !!w.clock_in) : hasWorked),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workers]);
   const cameToWorkCount = roundHc(headcount(cameWorkers));
   // Count of workers who came to work, broken down by exact job_title,
   // sorted by count desc then title. Blank titles are skipped so each entry
@@ -727,11 +770,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.extras, filters, liveFilter, lang]);
 
-  const sortedWorkers = nameAsc !== null
+  const sortedWorkers = useMemo(() => (nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
         ? (tl(a.worker_name) || "").localeCompare(tl(b.worker_name) || "")
         : (tl(b.worker_name) || "").localeCompare(tl(a.worker_name) || ""))
-    : workers;
+    : workers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workers, nameAsc, lang]);
 
   const exportMutation = useMutation({
     mutationFn: (rows) => exportXlsx(`${S.base}/attendance/export`, {
@@ -745,19 +790,23 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   });
 
   async function handleExport(useFiltered) {
-    const rows = useFiltered ? workers : allWorkers;
+    const rows = useFiltered ? workers : dayRows;
     setShowExport(false);
     setExporting(true);
     try {
-      await exportMutation.mutateAsync(rows);
-      exportToast.success(t("staff.exportToast"));
+      const via = await exportMutation.mutateAsync(rows);
+      exportToast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"));
     } finally {
       setExporting(false);
     }
   }
 
-  if (!selectedDate || !managerId) {
-    return (
+  if ((!selectedDate || !managerId) && !(S.live && managerId && (dayPending || dayError))) {
+    return S.live ? (
+      <div className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-3)" }}>
+        {t("staffLive.pickUnit")}
+      </div>
+    ) : (
       <div className="flex items-center justify-center py-16 text-sm" style={{ color: "var(--text-4)" }}>
         {pickSupervisor ? t("staff.selectSupDateToView") : t("staff.selectDateToView")}
       </div>
@@ -767,10 +816,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   if (S.live) {
     return (
       <LiveWorkersView
-        data={data} loading={isLoading || !data || dayPending}
-        refreshing={refresh.isPending} onRefresh={managerId ? () => refresh.mutate() : null}
-        onGoClose={onGoClose} isPhone={isPhone}
-        workers={workers} allWorkers={allWorkers} sortedWorkers={sortedWorkers}
+        data={data} loading={isLoading || !data || dayPending} dayError={dayError} onDayRetry={onDayRetry}
+        refreshing={refresh.isPending && JSON.stringify(refresh.variables) === JSON.stringify(attKey)}
+        onRefresh={managerId ? refreshNow : null}
+        onGoClose={onGoClose} onGoRequests={onGoRequests} onToday={onToday} isPhone={isPhone}
+        isAdmin={tableAuth?.role === "admin"}
+        workers={workers} allWorkers={dayRows} sortedWorkers={sortedWorkers}
         filters={filters} setF={setF} setFilters={setFilters} activeFilter={activeFilter}
         liveFilter={liveFilter} setLiveFilter={setLiveFilter}
         nameAsc={nameAsc} setNameAsc={setNameAsc} showCellCol={showCellCol}
@@ -785,8 +836,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
         exportToast={exportToast} exporting={exporting} onExport={() => setShowExport(true)}
         exportModal={showExport && (
           <ExportModal
-            filteredCount={workers.length}
-            totalCount={allWorkers.length}
+            filteredCount={workers.filter(w => !w.split_of).length}
+            totalCount={dayRows.filter(w => !w.split_of).length}
             hasFilter={activeFilter || liveFilter !== "all"}
             onExport={handleExport}
             onClose={() => setShowExport(false)}
@@ -1112,7 +1163,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
 // on one line, three figures, the status strip and the search, then the table
 // (a list on a phone), the extra hours and the rules folded under one link.
 function LiveWorkersView({
-  data, loading, refreshing, onRefresh, onGoClose, isPhone,
+  data, loading, dayError, onDayRetry, refreshing, onRefresh, onGoClose, onGoRequests, onToday, isPhone, isAdmin,
   workers, allWorkers, sortedWorkers, filters, setF, setFilters, activeFilter, liveFilter, setLiveFilter,
   nameAsc, setNameAsc, showCellCol, distinctJobTitles, distinctSchedules, cellCodes, cellLabels,
   openRaw, setOpenRaw, extrasShown, summary, exportToast, exporting, onExport, exportModal,
@@ -1120,14 +1171,19 @@ function LiveWorkersView({
   const { t } = useLang();
   const { tx } = useTranslit();
 
+  // The unit's day could not be named (the server did not answer `/today`):
+  // say so, with the way to ask again — never a skeleton that never ends.
+  if (dayError) return (
+    <LiveDayState data={{ error: "day", message: dayError }} onRetry={onDayRetry} isAdmin={isAdmin} />
+  );
   if (loading) return (
     <div className="p-4 space-y-5" aria-busy="true">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2 flex-1"><SkeletonBlock className="h-4 w-64 max-w-full" /><SkeletonBlock className="h-3 w-80 max-w-full" /></div>
         <SkeletonBlock className="h-[38px] w-40 rounded-lg" />
       </div>
-      <div className="grid grid-cols-3 gap-4 sm:gap-8 sm:max-w-3xl">
-        {[0, 1, 2].map((i) => <div key={i} className="space-y-2"><SkeletonBlock className="h-3 w-24" /><SkeletonBlock className="h-7 w-20" /></div>)}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-8 sm:max-w-3xl">
+        {[0, 1, 2].map((i) => <div key={i} className={`space-y-2 ${i === 2 ? "max-sm:col-span-2" : ""}`}><SkeletonBlock className="h-3 w-24" /><SkeletonBlock className="h-7 w-20" /><SkeletonBlock className="h-3 w-28" /></div>)}
       </div>
       <SkeletonBlock className="h-[38px] w-full sm:w-[640px] rounded-xl" />
       <SkeletonBlock className="h-[38px] w-full rounded-xl" />
@@ -1136,8 +1192,6 @@ function LiveWorkersView({
   );
 
   const narrowed = activeFilter || liveFilter !== "all";
-  const shownRows = workers.filter((w) => !w.split_of).length;
-  const allRows = allWorkers.filter((w) => !w.split_of).length;
   // ONE header line: every label on one baseline, never wrapped (a header
   // three lines tall is mostly empty space). Columns take their content's
   // width and a trailing spacer takes what is left, so on a wide screen a
@@ -1153,13 +1207,20 @@ function LiveWorkersView({
   const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
   const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
 
+  // The day cannot be shown, or holds nobody: the reason and the one thing to
+  // do about it — not figures of 0, eight empty filters and a search box.
+  if (data?.error || allWorkers.length === 0) return (
+    <div>
+      {!data?.error && <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} onGoRequests={onGoRequests} />}
+      <LiveDayState data={data} empty={!data?.error} onRetry={onRefresh} retrying={refreshing} onToday={onToday} isAdmin={isAdmin} />
+      {exportToast.node}
+    </div>
+  );
+
   return (
     <div>
-      <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} />
-      {!data?.error && (
-        <LiveSummary {...summary} schedule={oneSchedule ? tx(oneSchedule) : null}
-          filtered={narrowed ? liveFill(t("staffLive.sum.filtered"), { n: shownRows, m: allRows }) : null} />
-      )}
+      <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} onGoRequests={onGoRequests} />
+      <LiveSummary {...summary} schedule={oneSchedule ? tx(oneSchedule) : null} filtered={narrowed} />
 
       <div className="px-4 pt-5 pb-4 space-y-3">
         <SegmentedToggle value={liveFilter} onChange={setLiveFilter} options={liveFilterOptions(allWorkers, t)} />
@@ -1184,11 +1245,11 @@ function LiveWorkersView({
 
       {workers.length === 0 ? (
         <div className="border-t px-4 py-10 text-center text-sm" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-          {narrowed ? t("staff.noMatch") : t("staff.noData")}
+          {t("staff.noMatch")}
         </div>
       ) : isPhone ? (
         <div className="border-t" style={{ borderColor: "var(--border)" }}>
-          <LivePhoneList rows={sortedWorkers} openRaw={openRaw} setOpenRaw={setOpenRaw} isAdmin />
+          <LivePhoneList rows={sortedWorkers} openRaw={openRaw} setOpenRaw={setOpenRaw} isAdmin oneSchedule={!!oneSchedule} />
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -1257,56 +1318,8 @@ function LiveWorkersView({
                 <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
-            <tbody>
-              {sortedWorkers.map((w) => (
-                <Fragment key={w.id}>
-                  <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
-                    <td className={`${td} !whitespace-normal max-w-[24rem]`}>
-                      <LiveName w={w} open={openRaw === w.id}
-                        onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
-                      <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
-                        <span>{tx(w.job_title) || "—"}</span>
-                        <LiveRowNotes w={w} />
-                      </div>
-                    </td>
-                    <td className={`${td} max-xl:!whitespace-normal`}><LiveStatusChip status={w.status} wrap /></td>
-                    {/* Code only — the workshop name is four words of Russian
-                        per row; it stays in the tooltip and the filter. */}
-                    {showCellCol && (
-                      <td className={td} title={w._cell?.full || ""}>
-                        {w._cell ? (
-                          <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</CellLink>
-                        ) : (
-                          <span style={{ color: "var(--text-4)" }}>—</span>
-                        )}
-                      </td>
-                    )}
-                    {!oneSchedule && (
-                      <td className={`${td} whitespace-nowrap tabular-nums`} style={{ color: "var(--text-3)" }}>{tx(w.schedule) || "—"}</td>
-                    )}
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
-                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
-                      {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
-                    </td>
-                    <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-2)" }}>
-                      {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
-                    </td>
-                    <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-1)" }}>
-                      {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
-                    </td>
-                    <td aria-hidden="true" className="p-0" />
-                  </tr>
-                  {openRaw === w.id && w.raw && (
-                    <tr>
-                      <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
-                        <LiveRaw raw={w.raw} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
+            <LiveRows rows={sortedWorkers} showCellCol={showCellCol} oneSchedule={!!oneSchedule}
+              openRaw={openRaw} setOpenRaw={setOpenRaw} cols={cols} td={td} />
           </table>
         </div>
       )}
@@ -1317,6 +1330,66 @@ function LiveWorkersView({
     </div>
   );
 }
+
+// The table's rows, apart from the view around them: the search box re-renders
+// the view on every keystroke, and a thousand rows must not re-render with it
+// (they follow the deferred text a beat later).
+const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRaw, setOpenRaw, cols, td }) {
+  const { tx } = useTranslit();
+  const sortedWorkers = rows;
+  return (
+    <tbody>
+      {sortedWorkers.map((w) => (
+        <Fragment key={w.id}>
+          <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
+            <td className={`${td} !whitespace-normal max-w-[24rem]`}>
+              <LiveName w={w} open={openRaw === w.id}
+                onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+              <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
+                <span>{tx(w.job_title) || "—"}</span>
+                <LiveRowNotes w={w} />
+              </div>
+            </td>
+            <td className={td}><LiveStatusChip status={w.status} /></td>
+            {/* Code only — the workshop name is four words of Russian
+                per row; it stays in the tooltip and the filter. */}
+            {showCellCol && (
+              <td className={td} title={w._cell?.full || ""}>
+                {w._cell ? (
+                  <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</CellLink>
+                ) : (
+                  <span style={{ color: "var(--text-4)" }}>—</span>
+                )}
+              </td>
+            )}
+            {!oneSchedule && (
+              <td className={`${td} whitespace-nowrap tabular-nums`} style={{ color: "var(--text-3)" }}>{tx(w.schedule) || "—"}</td>
+            )}
+            <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
+            <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
+            <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+              {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+            <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-2)" }}>
+              {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+            <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-1)" }}>
+              {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+            <td aria-hidden="true" className="p-0" />
+          </tr>
+          {openRaw === w.id && w.raw && (
+            <tr>
+              <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
+                <LiveRaw raw={w.raw} />
+              </td>
+            </tr>
+          )}
+        </Fragment>
+      ))}
+    </tbody>
+  );
+});
 
 const liveFill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 
@@ -1531,46 +1604,66 @@ const DOC_TYPES = [
 
 // ── "Создать" dropdown (Workers toolbar) ──────────────────────────────────────
 
-export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected, role }) {
+export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected, role, className = "", compactPhone = false }) {
+  const S = useStaffApi();
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const trigger = useRef(null);
+  const menu = useRef(null);
   useEffect(() => {
     function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+  // A type that does not exist yet is not offered on the live page.
+  const types = S.live ? DOC_TYPES.filter(dt => dt.enabled) : DOC_TYPES;
+  const items = () => [...(menu.current?.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])') || [])];
+  useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
+  function onKey(e) {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); setOpen(false); trigger.current?.focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    else if (e.key === "Home") { e.preventDefault(); list[0]?.focus(); }
+    else if (e.key === "End") { e.preventDefault(); list[list.length - 1]?.focus(); }
+    else if (e.key === "Tab") setOpen(false);
+  }
+  const item = "w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 transition-colors outline-none hover:bg-[var(--bg-inner)] focus-visible:bg-[var(--bg-inner)] aria-disabled:hover:bg-transparent aria-disabled:cursor-not-allowed";
 
   return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
-        style={{ background: "var(--brand)", color: "#fff" }}
-      >
-        <Plus size={14} /> {t("staff.create")}
-        <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
-      </button>
+    <div ref={ref} className={`relative flex-shrink-0 ${className}`}>
+      {/* `compactPhone`: below sm the button is a 38px «+» (named for screen
+          readers) so it shares the row with the unit chip on a 320px phone. */}
+      <Button ref={trigger} size="lg" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
+        aria-label={t("staff.create")} icon={<Plus size={15} />}
+        className={compactPhone ? "max-sm:!px-0 max-sm:w-[38px]" : ""}
+        onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}>
+        <span className={compactPhone ? "max-sm:hidden" : ""}>{t("staff.create")}</span>
+        <ChevronDown size={14} aria-hidden="true" className={compactPhone ? "max-sm:hidden" : ""}
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </Button>
       {open && (
-        <div className="absolute top-full right-0 mt-1.5 z-50 rounded-xl overflow-hidden"
+        <div ref={menu} role="menu" aria-label={t("staff.create")} onKeyDown={onKey}
+          className="absolute top-full right-0 mt-1.5 z-50 rounded-xl overflow-hidden py-1"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)",
                    boxShadow: "0 8px 24px rgba(0,0,0,0.18)", minWidth: 230, maxWidth: "calc(100vw - 24px)" }}>
-          {DOC_TYPES.map(dt => {
+          {types.map(dt => {
             const blocked = !dt.enabled || disabled;
             return (
               <button
                 key={dt.id}
-                disabled={blocked}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                aria-disabled={blocked || undefined}
                 onClick={() => { if (!blocked) { onSelect(dt.id); setOpen(false); } }}
-                className="w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors"
-                style={{ color: blocked ? "var(--text-4)" : "var(--text-1)", cursor: blocked ? "not-allowed" : "pointer" }}
-                onMouseEnter={e => { if (!blocked) e.currentTarget.style.background = "var(--bg-inner)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                className={`${item} justify-between`}
+                style={{ color: blocked ? "var(--text-4)" : "var(--text-1)" }}
                 title={!dt.enabled ? t("staff.comingSoon") : (disabled ? disabledHint : "")}
               >
-                <span className="flex flex-col">
-                  <span>{t(DOC_TYPE_TKEY[dt.id])}</span>
-                </span>
+                <span>{t(DOC_TYPE_TKEY[dt.id])}</span>
                 {!dt.enabled && (
                   <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-full"
                     style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>{t("staff.soon")}</span>
@@ -1581,20 +1674,21 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
 
           {/* Delete workers */}
           <button
-            disabled={disabled}
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            aria-disabled={disabled || undefined}
             onClick={() => { if (!disabled) { onDeleteSelected(); setOpen(false); } }}
-            className="w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 transition-colors"
-            style={{
-              color: disabled ? "var(--text-4)" : "#ef4444",
-              cursor: disabled ? "not-allowed" : "pointer",
-            }}
-            onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = "var(--bg-inner)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+            className={item}
+            style={{ color: disabled ? "var(--text-4)" : "var(--status-bad)" }}
             title={disabled ? disabledHint : ""}
           >
-            <Trash2 size={13} />
+            <Trash2 size={13} aria-hidden="true" />
             {t("staff.deleteWorkers")}
           </button>
+          {disabled && disabledHint && (
+            <p className="px-3 pt-1 pb-2 text-xs border-t" style={{ color: "var(--text-3)", borderColor: "var(--border)" }}>{disabledHint}</p>
+          )}
         </div>
       )}
     </div>
@@ -4525,19 +4619,6 @@ function readStaffLiveLink(q) {
   return out ? Object.fromEntries(Object.entries(out).map(([k, v]) => [LIVE_STAFF_API.pk(k), v])) : null;
 }
 
-// The live page's first guess at its day, before the server has named the
-// unit's own (`GET /today`): the plant's date — Tashkent's clock, never the
-// browser's — and before 08:00 still yesterday's (a night shift's small hours
-// belong to the evening it opened).
-function liveDefaultDay() {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date()).map((x) => [x.type, x.value]));
-  const d = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00`);
-  if (Number(parts.hour) < 8) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export default function Staff() {
   return <StaffPage />;
 }
@@ -4567,7 +4648,7 @@ export function StaffPage() {
   const [rawTab, setTab] = usePersistentState(S.pk("staff_tab"), role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
-  const [selectedDate, setSelectedDate] = usePersistentState(S.pk("staff_selected_date"), "");
+  const [storedDate, setSelectedDate] = usePersistentState(S.pk("staff_selected_date"), "");
   const [selectedManagerId, setSelectedManagerId] = usePersistentState(S.pk("staff_selected_manager_id"), null);
   // Live: the page opens on the unit's CURRENT shift-day — never a day
   // remembered from an earlier visit (a live page reopened tomorrow showing
@@ -4576,10 +4657,6 @@ export function StaffPage() {
   // follows each unit's own shift-day (a night unit's is yesterday's date
   // until its next shift opens), which only the server can say.
   const [autoDay, setAutoDay] = useState(() => S.live && !new URLSearchParams(window.location.search).get("date"));
-  useEffect(() => {
-    if (S.live && (autoDay || !selectedDate)) setSelectedDate(liveDefaultDay());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   // …and a link followed while this page is ALREADY open: the route is not
   // keyed, so useUrlScope (mount-only) would never see it.
   const staffLoc = useLocation();
@@ -4607,12 +4684,20 @@ export function StaffPage() {
   // list to the shift-manager's own shift (admins see everyone).
   const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
-  const { data: supervisors = [] } = useQuery({
+  const { data: supervisors = [], isSuccess: supervisorsLoaded } = useQuery({
     queryKey: S.qk("staff-supervisors"),
     queryFn: () => api.get(`${S.base}/supervisors`).then(r => r.data),
     enabled: isManagerView,
     staleTime: 120_000,
   });
+  // Live: a remembered unit the list no longer offers (its cells left the
+  // загрузка) is dropped — the picker read «pick a brigadir» over a page
+  // showing that unit's error.
+  useEffect(() => {
+    if (S.live && supervisorsLoaded && selectedManagerId != null
+        && !supervisors.some(s => s.manager_id === selectedManagerId)) setSelectedManagerId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supervisorsLoaded, supervisors, selectedManagerId]);
 
   // How many of this unit's workers still have no cell — the number the day
   // close will REFUSE on. It rides the day-state endpoint the close itself
@@ -4620,6 +4705,30 @@ export function StaffPage() {
   const supervisorManagerIdEarly = role === "supervisor"
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
+  // Live: the unit's shift-day on the clock, from the server — never guessed
+  // in the browser. Until it answers the page has NO day, so nothing that
+  // depends on one is asked (a guess fired real reads for a night not begun).
+  // It is asked again when the next shift-day opens (`next_in_s`), not polled.
+  const { data: liveToday, error: todayError, refetch: refetchToday } = useQuery({
+    queryKey: S.qk("staff-today", supervisorManagerIdEarly),
+    queryFn: () => api.get(`${S.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
+    enabled: S.live && !!supervisorManagerIdEarly,
+    staleTime: 60_000,
+    retry: 1,
+    refetchInterval: (q) => {
+      const n = q.state.data?.next_in_s;
+      return n != null ? Math.min(n + 5, 6 * 3600) * 1000 : false;
+    },
+  });
+  const todayIso = liveToday?.manager_id === supervisorManagerIdEarly ? liveToday.date : null;
+  const selectedDate = S.live && autoDay ? (todayIso || "") : storedDate;
+  useEffect(() => {
+    if (S.live && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayIso, autoDay]);
+  const dayPending = S.live && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError;
+  const dayError = S.live && autoDay && !todayIso && todayError
+    ? (todayError?.response?.data?.detail || todayError?.message || "error") : null;
   const { data: dayState } = useQuery({
     queryKey: S.qk("daily-approval", supervisorManagerIdEarly, selectedDate),
     queryFn: () => api.get(`${S.base}/approvals/day`, {
@@ -4704,33 +4813,43 @@ export function StaffPage() {
   const supervisorManagerId = role === "supervisor"
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
-  // Live: the unit's shift-day on the clock, from the server (see `autoDay`).
-  const { data: liveToday, isError: todayFailed } = useQuery({
-    queryKey: S.qk("staff-today", supervisorManagerId),
-    queryFn: () => api.get(`${S.base}/today`, { params: { manager_id: supervisorManagerId } }).then(r => r.data),
-    enabled: S.live && !!supervisorManagerId,
-    staleTime: 60_000,
-    refetchInterval: S.live ? 5 * 60_000 : false,
-  });
-  const todayIso = liveToday?.manager_id === supervisorManagerId ? liveToday.date : null;
-  useEffect(() => {
-    if (S.live && autoDay && todayIso && todayIso !== selectedDate) setSelectedDate(todayIso);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIso, autoDay]);
-  // Still on the first guess while the server's answer is on its way: the
-  // table waits rather than flash a day it is about to leave.
-  const dayPending = S.live && autoDay && !!supervisorManagerId && !todayFailed && todayIso !== selectedDate;
   function pickDate(d) {
     if (S.live) setAutoDay(false);
     setSelectedDate(d);
   }
-  // The live stepper: ‹ day › up to the unit's own today, plus a way back to it.
-  const liveMax = todayIso || liveDefaultDay();
+  // Live: the unit is picked in the FilterPanel — the platform's scope zone,
+  // on the 38px toolbar baseline — never a hand-rolled dropdown above it.
+  const unitOpts = useMemo(() => [...supervisors]
+    .sort((a, b) => (a.shift || 0) - (b.shift || 0) || tl(a.full_name).localeCompare(tl(b.full_name)))
+    .map(s => ({ value: String(s.manager_id), label: `${tl(s.full_name)} (S${s.shift})` })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supervisors, lang]);
+  const unitSel = supervisors.find(s => s.manager_id === selectedManagerId);
+  const unitPicker = S.live && isManagerView ? (
+    // Required: the page shows one unit, so there is no «clear» (`anyActive`
+    // false) — and the name shortens («Ergashev M. · S2») rather than being
+    // cut off in the 150px trigger.
+    <FilterPanel anyActive={false} sections={[{
+      key: "unit", icon: UserRound, label: t("staff.colSupervisor"),
+      active: !!unitSel,
+      display: unitSel ? `${surnameInitial(tl(unitSel.full_name))} · S${unitSel.shift}` : "",
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close} opts={unitOpts}
+          value={selectedManagerId != null ? String(selectedManagerId) : ""}
+          onChange={(v) => pickSupervisorId(Number(v))} />
+      ),
+    }]} />
+  ) : null;
+  // The live stepper: ‹ day › up to the unit's own today, plus a way back to
+  // it. While the server has not named the day it holds the stepper's place.
+  const liveMax = todayIso || storedDate || null;
   const dayControl = S.live ? (
     <>
-      <DayStepper value={selectedDate || liveMax} onChange={pickDate} max={liveMax} fillPhone />
+      {selectedDate
+        ? <DayStepper value={selectedDate} onChange={pickDate} max={liveMax} fillPhone />
+        : dayPending ? <SkeletonBlock className="h-[38px] w-[268px] max-sm:w-full rounded-xl" /> : null}
       {!autoDay && todayIso && selectedDate !== todayIso && (
-        <Button size="lg" variant="ghost" onClick={() => setAutoDay(true)}>{t("staffLive.backToday")}</Button>
+        <Button size="lg" variant="secondary" onClick={() => setAutoDay(true)}>{t("staffLive.backToday")}</Button>
       )}
     </>
   ) : (
@@ -4794,10 +4913,10 @@ export function StaffPage() {
       : t("staff.createHint");
 
   function startCreate(docType = "role_change") {
-    setDocCreate({ mode: "create", docType });
+    setDocCreate({ mode: "create", docType, date: selectedDate });
   }
   function startEdit(doc) {
-    setDocCreate({ mode: "edit", doc });
+    setDocCreate({ mode: "edit", doc, date: selectedDate });
   }
   function closeCreate() {
     setDocCreate(null);
@@ -4893,7 +5012,7 @@ export function StaffPage() {
       {tab === "workers" && showWorkersTab && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            {isManagerView && (
+            {S.live ? <>{dayControl}{unitPicker}</> : isManagerView && (
               <SupervisorSelect
                 value={selectedManagerId}
                 onChange={pickSupervisorId}
@@ -4903,15 +5022,17 @@ export function StaffPage() {
                 onCellChange={pickCell}
               />
             )}
-            {dayControl}
+            {!S.live && dayControl}
             {/* The cell view is read-only import data — no documents, no
                 day-close state; both controls belong to the verifix flow. */}
             {canCreateHere && !selCell && (
               <CreateMenu
+                className={S.live ? "ml-auto" : ""}
+                compactPhone={S.live && isManagerView}
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
                 disabledHint={createHint}
-                onDeleteSelected={() => setShowDeleteModal(true)}
+                onDeleteSelected={() => setShowDeleteModal(selectedDate)}
                 role={role}
               />
             )}
@@ -4940,7 +5061,11 @@ export function StaffPage() {
                 selectedDate={selectedDate}
                 pickSupervisor={isManagerView}
                 dayPending={dayPending}
+                dayError={dayError}
+                onDayRetry={() => refetchToday()}
                 onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
+                onGoRequests={S.live ? () => changeTab("requests") : undefined}
+                onToday={S.live ? () => setAutoDay(true) : undefined}
               />
             )}
           </div>
@@ -4971,14 +5096,16 @@ export function StaffPage() {
               cell picker and CreateMenu are deliberately NOT here: they belong
               to the read-only import view and the document flow. */}
           <div className="flex flex-wrap items-center gap-2">
-            {isManagerView && (
-              <SupervisorSelect
-                value={selectedManagerId}
-                onChange={pickSupervisorId}
-                supervisors={supervisors}
-              />
-            )}
-            {dayControl}
+            {S.live ? <>{dayControl}{unitPicker}</> : <>
+              {isManagerView && (
+                <SupervisorSelect
+                  value={selectedManagerId}
+                  onChange={pickSupervisorId}
+                  supervisors={supervisors}
+                />
+              )}
+              {dayControl}
+            </>}
             {dayClosed && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
@@ -5009,7 +5136,7 @@ export function StaffPage() {
           <Cmp
             role={role}
             managerId={supervisorManagerId}
-            selectedDate={selectedDate}
+            selectedDate={docCreate.date || selectedDate}
             editDoc={editing}
             onClose={closeCreate}
             onSaved={onSavedDoc}
@@ -5026,7 +5153,7 @@ export function StaffPage() {
               ? (auth?.name || "")
               : (supervisors.find(s => s.manager_id === selectedManagerId)?.name || "")
           }
-          date={selectedDate}
+          date={showDeleteModal}
           isAdmin={canDeleteRowsDirectly}
           onClose={() => setShowDeleteModal(false)}
           onDeleted={handleDeleted}

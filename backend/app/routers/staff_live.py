@@ -364,17 +364,29 @@ def delete_task(body: TaskDeleteBody, db: Session = Depends(get_db), caller: dic
 
 # ── the day the page opens on ────────────────────────────────────────────────
 
+def _unit_today(db: Session, mid: int) -> tuple[date, int]:
+    """THE unit's shift-day on the clock, and the seconds until its next one
+    opens — 404 for a unit that does not exist (no shift is ever assumed)."""
+    unit = db.query(Manager).filter(Manager.id == mid).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+    now = datetime.now(verifix_live.TZ)
+    fr = verifix_live.day_frame(db, unit.shift, now)
+    nxt = datetime.fromisoformat(fr["next_start_at"])
+    return date.fromisoformat(fr["day"]), max(0, int((nxt - now).total_seconds()))
+
+
 @router.get("/today")
 def unit_today(manager_id: Optional[int] = None, db: Session = Depends(get_db),
                caller: dict = Depends(_page)):
     """The unit's shift-day on the clock — the day the page opens on. The
     browser cannot say it: the plant runs on Tashkent's clock, and a night
-    unit's day is yesterday's date until its next shift opens. Reads nothing
-    from Verifix."""
+    unit's day is yesterday's date until its next shift opens. `next_in_s`
+    is when that changes, so the page asks again then instead of polling.
+    Reads nothing from Verifix."""
     mid = _read_unit(db, caller, manager_id)
-    unit = db.query(Manager).filter(Manager.id == mid).first()
-    return {"manager_id": mid,
-            "date": verifix_live.shift_day(db, unit.shift if unit else None).isoformat()}
+    d, next_in = _unit_today(db, mid)
+    return {"manager_id": mid, "date": d.isoformat(), "next_in_s": next_in}
 
 
 # ── attendance (the Workers tab) ─────────────────────────────────────────────
@@ -1447,19 +1459,18 @@ def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = 
                  db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """The day-close state of one unit-day (`staff.approval_day`)."""
     mid = _read_unit(db, caller, manager_id)
-    d = _day_of(attend_date)
-    if d is None:                       # the day the page shows with no date: the shift-day now
-        unit = db.query(Manager).filter(Manager.id == mid).first()
-        d = verifix_live.shift_day(db, unit.shift if unit else None)
+    d = _day_of(attend_date) or _unit_today(db, mid)[0]   # no date: the shift-day now
     closure = _closed(db, mid, d)
     pending = live_staff.pending_count(db, mid, d)
     unplaced: list = []
     if closure is None:
-        try:
-            _, _, ud = _build(db, mid, d)
-            unplaced = live_staff.unplaced(ud["workers"])
-        except _NoDay:
-            unplaced = []
+        # The STORED read only: a status badge must never start a Verifix read
+        # (a day nobody has read yet simply counts nobody unplaced — the close
+        # itself re-checks against a full read).
+        rd = verifix_live.day_read(db, mid, d, stored_only=True)
+        if not rd.get("error"):
+            ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+            unplaced = live_staff.unplaced(live_staff.unit_day(ctx, mid)["workers"])
     state = "open" if closure is None else ("closed" if pending else "confirmed")
     return {
         "manager_id": mid, "date": d.isoformat(), "state": state, "closed": closure is not None,
@@ -1540,8 +1551,7 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     d = _day_of(body.date)
     if d is None:
         raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
-    unit = db.query(Manager).filter(Manager.id == mid).first()
-    if d > verifix_live.shift_day(db, unit.shift if unit else None):
+    if d > _unit_today(db, mid)[0]:
         raise HTTPException(status_code=400, detail="Cannot close a future date")
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")

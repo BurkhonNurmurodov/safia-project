@@ -7120,12 +7120,31 @@ rights — over a different source, and it is being built to REPLACE /staff.
   standing (+ «Tasdiqlash»da yopish» when closable) on the left, the read's
   freshness on the right — «Jonli · 09:40» with a breathing dot while the
   minute job reads the day, «Oxirgi o'qish …» for a past day — and «Yangilash»
-  as a 38px icon button. Then three figures on the card itself, no boxes
-  (Ishga kelganlar · Zagruzkada hisoblanadi · Zagruzka soatlari, «o'rtacha …
-  · hozirgacha»), plus «Smena jadvali» when the whole unit shares one schedule
-  — the Jadval column is then dropped (it returns, with its filter, when
-  schedules differ). No KPI cards, no role chips, no «Xodimlar» header with a
-  collapse button. Numbers are right-aligned, «hozirgacha» replaced the `*` on
+  as a 38px icon button (on a phone the button sits beside the sentence and the
+  clock under it). Then three figures on the card itself, no boxes: each is ONE
+  number over ONE sub-line that is always there and names its base — «42
+  kishidan · 93%» («filtrdagi …» while a filter is on: the filter caveat lives
+  there, never as a line inserted above the strip), «zagruzka lavozimidagi 38
+  kishidan», «o'rtacha 3.5 soat · hozirgacha» — so nothing above the strip moves
+  when a filter changes; «Ishga kelganlar» counts everybody who CLOCKED IN (a
+  no-check-out row carries no hours, and /staff's `hasWorked` dropped them).
+  A day-off row is in no count (no strip filter shows it): the strip, the
+  figures and the export's «Hammasi» count one set. «Smena jadvali: …» is a
+  plain line under the figures when the whole unit shares one schedule — the
+  Jadval column is then dropped (it returns, with its filter, when schedules
+  differ). No KPI cards, no role chips (the operator, 2026-10-05), no
+  «Xodimlar» header with a collapse button. Rows and their totals print hours
+  with 2 decimals, summary figures with 1. A day that cannot be shown (an
+  error, nobody on the unit's cells) is ONE block with the reason and one
+  action (`LiveDayState`: «Qayta urinish» for Verifix down — Verifix's own
+  text to admins only), never figures of 0 above empty filters. Late and early
+  leave are WORDS under the time («34 daq kech», «160 daq erta»), and a time a
+  mark stood in for wears a muted «≈» (a dotted underline means a cell link).
+  The unit is picked in a required `FilterPanel` section (no ✕, the name
+  shortened «Ergashev M. · S2»; a remembered unit the list no longer offers is
+  dropped), «Yaratish» is the `Button` template with a keyboard menu (a 38px
+  «+» on a phone beside the unit chip), and the page hides document types that
+  do not exist yet. Numbers are right-aligned, «hozirgacha» replaced the `*` on
   every row inside, the «no check-out» chip in Ketdi is dropped where the
   status already says it, and the rules + Diagnostics fold under one «Soat va
   holatlar qanday hisoblanadi» link. A phone reads a LIST (`LivePhoneList`:
@@ -7140,14 +7159,21 @@ rights — over a different source, and it is being built to REPLACE /staff.
   rides under the name with its filter in the same header («Xodim / Lavozim»);
   the early-arrival and effective-hours columns appear from xl (1280) up.
 - **It opens on the unit's CURRENT shift-day**, never a day remembered from an
-  earlier visit — `GET /api/staff-live/today?manager_id=` (`verifix_live.shift_day`,
-  reads nothing from Verifix) names it, because the browser cannot: the plant
-  runs on Tashkent's clock and a night unit's day is yesterday's date until its
-  next shift opens. `autoDay` holds until the reader picks a day (a link naming
-  a date counts as picking); while it holds, switching units follows each
-  unit's own day, and the table waits (skeleton) rather than flash the first
-  guess. The day control is `DayStepper` capped at that day, with «Bugungi
-  smena» back to it. Opening «Tasdiqlash» carries the unit (and its month) into
+  earlier visit — `GET /api/staff-live/today?manager_id=` (`_unit_today` over
+  `verifix_live.day_frame`, reads nothing from Verifix, 404 for a unit that
+  does not exist) names it, because the browser cannot: the plant runs on
+  Tashkent's clock and a night unit's day is yesterday's date until its next
+  shift opens. **There is no guess**: until it answers the page has no day and
+  asks nothing that needs one (a browser guess once fired `approvals/day` for a
+  night not begun); it answers `next_in_s`, and the page asks again exactly when
+  the next shift-day opens instead of polling. `autoDay` holds until the reader
+  picks a day (a link naming a date counts as picking); while it holds,
+  switching units follows each unit's own day. Saved filters are reset only
+  when the reader moves from one day or unit to another, never when the page
+  first learns its day. The delete dialog and the document forms keep the day
+  they were opened on, and «Yangilash» stores its answer under the unit-day it
+  was asked for. A day that is over is not polled (read on focus). The day
+  control is `DayStepper` capped at that day, with «Bugungi smena» back to it. Opening «Tasdiqlash» carries the unit (and its month) into
   the calendar, which kept a unit of its own before.
 - **`routers/staff_live.py` is /api/staff's twin** — the same paths under
   `/api/staff-live`, the same shapes and the same rights per role (supervisor
@@ -7221,7 +7247,10 @@ rights — over a different source, and it is being built to REPLACE /staff.
   itself only on «Yangilash» (the unit, now), for a day nobody stored yet, or
   when a running day's read is older than `STALE_S` (3 min — a stopped job); a
   failed read keeps the stored one on screen with the failure named
-  (`read_error`). The Auto / Manual toggle is gone. **Consequence to know:** ~17
+  (`read_error`), and for `ERROR_BACKOFF_S` (60 s) after a failed read of a day
+  the requests serve the stored read instead of trying Verifix again (a Verifix
+  outage had turned every viewer's poll into a Verifix call; «Yangilash» still
+  tries). `approvals/day` (the badge and day state) reads the STORED read only. The Auto / Manual toggle is gone. **Consequence to know:** ~17
   Verifix calls a minute (the timesheet in pages of 100 + the new marks), all
   day, whether or not anybody has the page open.
 - **The clocks are the REPORT's** (2026-10-02, the operator: «/staff is
@@ -7375,8 +7404,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
     schedule, the clocked hours, the early minutes counted there — the first
     unit's — and the effective hours, as a named row does; `liveMatchExtra`:
     every such person came by a move, «Belgisiz» = their `no_out` status, they
-    carry no late / early flags); «hozir shu yerda» shows only while the person
-    is inside or on a break. On this page the name search also matches the name
+    carry no late / early flags); one status per person — «Ichkarida» there
+    already means «here now» (somebody no longer here reads «Ko'chirilgan»). On this page the name search also matches the name
     AS PRINTED (`tl` — a name stored in Cyrillic is shown in Latin);
     `matchesFilters` takes it as an argument, so /staff's search is unchanged. Live chips take the `--status-*` ink
     over an 8 % tint mixed on the CARD (AA in both themes).
@@ -7388,6 +7417,14 @@ rights — over a different source, and it is being built to REPLACE /staff.
     prints the hours counted here (after the first unit's early minutes) while
     the table's «Soat» filter reads the clocked hours — left as is (the
     operator, 2026-10-05) — and nothing /staff shares was touched.
+  - **Round 2 of the same day** changed two shared pieces /staff sees: the
+    export dialog is in four languages and says where the file goes (download
+    in a browser, Telegram inside it — the toast follows `exportXlsx`'s answer),
+    and «Yaratish» (`CreateMenu`) is the `Button` template (38px, bold) with a
+    real menu (arrows, Home/End, Escape, the disabled reason as text). In the
+    table only the NAME may wrap: the trailing spacer took every spare pixel, so
+    any wrappable column shrank to its narrowest word («Chiqish / belgisi /
+    yo'q» at 1024).
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 
