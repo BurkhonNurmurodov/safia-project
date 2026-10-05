@@ -108,6 +108,7 @@ _KNOWN_FIELDS = {
     "deny_reason", "sended_to_sap", "photo_report", "comment_report",
     "document_url", "has_other_active_branch_requests",
     "other_active_branch_requests_count", "client_name",
+    "warehouse_id", "warehouse_name",
 }
 
 # Endpoints worth a knock even with no spec: a 200 says the route exists and

@@ -3,13 +3,20 @@
 // page of its own: its own endpoints (/api/arc-legacy), query keys (arcl-*),
 // saved filters (arcl_*), column prefs (arcl.list.cols) and strings (arcl.*),
 // so nothing here can collide with the current /arc page.
+//
+// From 5 Oct 2026 it is TWO tabs over one register, exactly as /arc is:
+// «Barcha so'rovlar» and «Yacheykalar bo'yicha». A ticket reaches our cell
+// through the new app's `warehouse_name` (from 29 Sep 2026, the cell's Verifix
+// code in front — services/arc_cells.warehouse_code_expr), which the backend
+// serves as `cell_code` with a `cells` map naming each cell's brigadir and
+// leader.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Store, UserCog, Tag,
   CircleDot, Layers, Siren, AlertTriangle, PackageCheck, Camera, FileText, ExternalLink,
   MapPin, Phone, Check, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound,
-  PlugZap, Zap, ListChecks, Radar,
+  PlugZap, Zap, ListChecks, Radar, Boxes, Wrench, Clock, Link2Off, Building2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -23,6 +30,10 @@ import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th } from "../components/ui/DataTable";
+import CellLink from "../components/ui/CellLink";
+import { cellLabel } from "../utils/cellName";
+import { shortPerson } from "../utils/personName";
+import { useTranslit } from "../utils/transliterate";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -36,6 +47,11 @@ import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcS
 
 // ── constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
+// «This warehouse names no cell» (or the ticket carries none — every ticket
+// filed before 29 Sep 2026) — the twin of services/arc_cells.NO_CELL.
+const NO_CELL = "none";
+// «This ticket reaches no brigadir / no leader» — services/arc_cells.NO_OWNER.
+const NO_OWNER = "none";
 const COL_PREF_KEY = "arcl.list.cols";
 const TZ = "Asia/Tashkent";
 
@@ -47,6 +63,10 @@ const COLS = [
   { key: "num",         labelKey: "arcl.colNum",         icon: Hash,          sortKey: "request_num" },
   { key: "created",     labelKey: "arcl.colCreated",     icon: CalendarClock, sortKey: "created_at" },
   { key: "branch",      labelKey: "arcl.colBranch",      icon: Store,         sortKey: "branch_name" },
+  // The workshop the ticket is about, and the cell its code names — side by
+  // side, because the cell is read OUT of that name.
+  { key: "warehouse",   labelKey: "arcl.colWarehouse",   icon: Building2,     sortKey: "warehouse_name" },
+  { key: "cell",        labelKey: "arcl.colCell",        icon: Boxes,         sortKey: "cell_code" },
   { key: "category",    labelKey: "arcl.colCategory",    icon: Tag,           sortKey: "category_name" },
   { key: "description", labelKey: "arcl.colDescription", icon: FileText },
   { key: "master",      labelKey: "arcl.colMaster",      icon: UserCog,       sortKey: "master_name" },
@@ -60,6 +80,26 @@ const COLS = [
 ];
 // The ticket number and its status are the row's identity — never hideable.
 const LOCKED_COLS = new Set(["num", "status"]);
+
+// «Yacheykalar bo'yicha» is the SAME register read through another question —
+// whose cell is this ticket on, and where does it stand — so it is a fixed,
+// curated column set (/arc's CELL_COLS), not offered to the ColumnsPicker: a
+// curated answer the reader can dismantle column by column is not one. The
+// IT-side columns (branch, master, client) give way to our org chart; they stay
+// one press away in the row's modal. `sup` and `leader` come off the payload's
+// cells map, so no SQL orders by them and they carry no sortKey.
+const CELL_COLS = [
+  { key: "num",         labelKey: "arcl.colNum",         icon: Hash,          sortKey: "request_num" },
+  { key: "sup",         labelKey: "arcl.colSup",         icon: Wrench },
+  { key: "leader",      labelKey: "arcl.colLeader",      icon: UserCog },
+  { key: "cell",        labelKey: "arcl.colCell",        icon: Boxes,         sortKey: "cell_code" },
+  { key: "category",    labelKey: "arcl.colCategory",    icon: Tag,           sortKey: "category_name" },
+  { key: "description", labelKey: "arcl.colDescription", icon: FileText },
+  { key: "status",      labelKey: "arcl.colStatus",      icon: CircleDot,     sortKey: "normalized_status" },
+  { key: "due",         labelKey: "arcl.colDue",         icon: Timer,         sortKey: "deadline" },
+  { key: "closed",      labelKey: "arcl.colClosed",      icon: CheckCircle2,  sortKey: "closed_at" },
+  { key: "hours",       labelKey: "arcl.colHours",       icon: Hourglass,     sortKey: "hours_to_close", align: "right" },
+];
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
@@ -150,7 +190,8 @@ function Fact({ label, children, full = false }) {
 }
 
 export default function ArcLegacy() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -160,6 +201,12 @@ export default function ArcLegacy() {
   // No default period. A register answers «what do we have?», and a 30-day
   // window is a filter the reader never chose — it made a full mirror look
   // like a thin one. Both bounds empty = every ticket ever filed.
+  // Which VIEW is on screen — the register («all») or the same tickets read by
+  // the production cell their warehouse names («cells»).
+  const [tab, setTab] = usePersistentState("arcl_tab", "all");
+  // «Yacheykalar bo'yicha» opens on the cells a brigadir is on («manager»);
+  // «leader» reads one level down, «all» lifts the narrowing (/arc's rule).
+  const [owner, setOwner] = usePersistentState("arcl_owner", "manager");
   const [dateFrom, setDateFrom] = usePersistentState("arcl_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arcl_date_to", "");
   const [state, setState] = usePersistentState("arcl_state", "all");
@@ -167,6 +214,13 @@ export default function ArcLegacy() {
   const [catSel, setCatSel] = usePersistentState("arcl_category", []);
   const [branch, setBranch] = usePersistentState("arcl_branch", "");
   const [master, setMaster] = usePersistentState("arcl_master", "");
+  // The org chain — shift → brigadir → leader → cell — carried onto IT's
+  // tickets by the cell code. Brigadir and leader are multi-select and one of
+  // their values is NO_OWNER, «Biriktirilmagan».
+  const [cell, setCell] = usePersistentState("arcl_cell", "");
+  const [shift, setShift] = usePersistentState("arcl_shift", "");
+  const [sups, setSups] = usePersistentState("arcl_sups", []);
+  const [leaders, setLeaders] = usePersistentState("arcl_leaders", []);
   const [urgent, setUrgent] = usePersistentState("arcl_urgent", "all");
   const [overdue, setOverdue] = usePersistentState("arcl_overdue", "all");
   const [sap, setSap] = usePersistentState("arcl_sap", "all");
@@ -200,11 +254,23 @@ export default function ArcLegacy() {
     ...(catSel.length ? { category: catSel } : {}),
     ...(branch ? { branch: [branch] } : {}),
     ...(master ? { master: [master] } : {}),
+    ...(cell ? { cell: [cell] } : {}),
+    ...(shift ? { shift: [shift] } : {}),
+    ...(sups.length ? { manager: sups } : {}),
+    ...(leaders.length ? { leader: leaders } : {}),
     ...(urgent !== "all" ? { urgent } : {}),
     ...(overdue !== "all" ? { overdue } : {}),
     ...(sap !== "all" ? { sap } : {}),
+    // The cells tab asks whose cell a ticket is on — a ticket whose warehouse
+    // names none cannot answer, so that tab narrows to the ones that do, and
+    // (unless lifted) to the cells an owner is on. Both ride the SHARED filter
+    // set, so the table, the KPI strip and the export describe the same rows;
+    // what they hide is counted back on /stats and named on the card.
+    ...(tab === "cells" ? { cells_only: true } : {}),
+    ...(tab === "cells" && owner !== "all" ? { owner_scope: owner } : {}),
     q: q.trim() || undefined,
-  }), [dateFrom, dateTo, state, statusSel, catSel, branch, master, urgent, overdue, sap, q]);
+  }), [tab, owner, dateFrom, dateTo, state, statusSel, catSel, branch, master, cell, shift, sups, leaders,
+       urgent, overdue, sap, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
     () => ({ ...filters, page, page_size: PAGE_SIZE, sort: sortParam }),
@@ -299,10 +365,22 @@ export default function ArcLegacy() {
     qc.setQueryData(["ui-pref", COL_PREF_KEY], value);
     saveCols.mutate(value);
   };
+  // «Barcha so'rovlar» is the reader's own arrangement; «Yacheykalar bo'yicha»
+  // the fixed curated set.
   const visibleCols = useMemo(() => {
+    if (tab === "cells") return CELL_COLS;
     const hiddenSet = new Set(colCfg.hidden);
     return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
-  }, [colCfg]);
+  }, [colCfg, tab]);
+  // One sort serves both views; a switch that lands on a key the new view has
+  // no column for falls back to newest-first rather than an order nobody can
+  // see or undo.
+  useEffect(() => {
+    const offered = new Set(visibleCols.map((c) => c.sortKey).filter(Boolean));
+    if (!offered.has(sort.key) && sort.key !== "created_at") {
+      setSort({ key: "created_at", dir: "desc" });
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── option lookups ────────────────────────────────────────────────────────
   const statusOpts = options.statuses || [];
@@ -314,6 +392,61 @@ export default function ArcLegacy() {
   const masterOpts = options.masters || [];
   const masterById = useMemo(() => Object.fromEntries(masterOpts.map((m) => [m.id, m])), [masterOpts]);
   const statusLabel = (v) => statusByValue[v]?.label || v || "—";
+
+  // ── the org chain: shift → brigadir → leader → cell (/arc's wiring) ───────
+  // Each level lists only what the levels ABOVE it leave, and says so. Every
+  // option carries its own place in the chain (`sh`, `mgr`, `lead`), so the
+  // narrowing is done here, off the one /meta payload.
+  const cellOpts = options.cells || [];
+  const cellByCode = useMemo(() => Object.fromEntries(cellOpts.map((c) => [c.code, c])), [cellOpts]);
+  const org = options.org || {};
+  const supAll = org.managers || [];
+  const leadAll = org.leaders || [];
+  const optsReady = !!meta;
+  // One level's picks against one row's owner — the twin of arc_cells._owner_ok.
+  const ownerOk = (sel, value) => (!sel.length ? true
+    : value == null || value === "" ? sel.includes(NO_OWNER) : sel.includes(String(value)));
+  const supOpts = useMemo(
+    () => supAll.filter((m) => !shift || String(m.shift) === shift),
+    [supAll, shift]);
+  const leadOpts = useMemo(
+    () => leadAll.filter((l) => (!shift || String(l.shift) === shift) && ownerOk(sups, l.manager_id)),
+    [leadAll, shift, sups]);
+  // Narrowed to a NAMED unit? A ticket naming no cell reaches no unit, so it
+  // can never satisfy such a pick — but it IS what «Biriktirilmagan» picks.
+  const orgNamed = !!shift || sups.some((v) => v !== NO_OWNER) || leaders.some((v) => v !== NO_OWNER);
+  const cellPickOpts = useMemo(
+    () => cellOpts.filter((o) => (!shift || String(o.sh) === shift)
+      && ownerOk(sups, o.mgr) && ownerOk(leaders, o.lead)),
+    [cellOpts, shift, sups, leaders]);
+  const supById = useMemo(() => Object.fromEntries(supAll.map((m) => [String(m.id), m])), [supAll]);
+  const leadById = useMemo(() => Object.fromEntries(leadAll.map((l) => [String(l.id), l])), [leadAll]);
+  // A pick the shortened list no longer offers is DROPPED — a control naming a
+  // value the page cannot show is worse than a reset. Only once /meta has
+  // answered (before it every list is empty), and never NO_OWNER, which names
+  // no unit.
+  const keepPicks = (sel, opts) =>
+    sel.filter((v) => v === NO_OWNER || opts.some((o) => String(o.id) === v));
+  useEffect(() => {
+    if (!optsReady) return;
+    const keep = keepPicks(sups, supOpts);
+    if (keep.length !== sups.length) setSups(keep);
+  }, [optsReady, supOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!optsReady) return;
+    const keep = keepPicks(leaders, leadOpts);
+    if (keep.length !== leaders.length) setLeaders(keep);
+  }, [optsReady, leadOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!optsReady || !cell) return;
+    // «No cell» cannot survive a pick naming a unit, nor the cells tab, which
+    // shows only tickets that name a cell.
+    if (cell === NO_CELL ? (orgNamed || tab === "cells")
+      : !cellPickOpts.some((o) => o.code === cell)) setCell("");
+  }, [optsReady, cellPickOpts, orgNamed, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The chip / option text for one cell: its code, plus its leader.
+  const cellDisplay = (code) => (code === NO_CELL ? t("arcl.cNoCell")
+    : cellLabel(code, tl(cellByCode[code]?.cell?.leader || "")));
 
   // Three-way yes/no/all toggle used by urgent, overdue and SAP.
   const yesNoOpts = [["all", t("general.all")], ["yes", t("common.yes")], ["no", t("common.no")]];
@@ -332,7 +465,129 @@ export default function ArcLegacy() {
     </span>
   );
 
+  // Chain notes: a list shortened by a parent names the NEAREST parent, and a
+  // level narrowed to nothing offers the way back.
+  const shiftLabel = shift ? `${t("arcl.shift")} ${shift}` : null;
+  const ownerName = (by, v) => (v === NO_OWNER ? t("arcl.unassigned") : tl(by[v]?.name || `#${v}`));
+  const ownerDisplay = (sel, by) => (!sel.length ? null
+    : sel.length === 1 ? ownerName(by, sel[0])
+    : `${sel.length} ${t("filter.selected2")}`);
+  const supLabel = ownerDisplay(sups, supById);
+  const leadLabel = ownerDisplay(leaders, leadById);
+  // «Biriktirilmagan» sits LAST, offered while a ticket reaches nobody and kept
+  // while it is picked.
+  const ownerValues = (opts, noneN, sel) => {
+    const vals = opts.map((o) => String(o.id));
+    if (noneN > 0 || sel.includes(NO_OWNER)) vals.push(NO_OWNER);
+    return vals;
+  };
+  const supValues = ownerValues(supOpts, org.managers_none || 0, sups);
+  const leadValues = ownerValues(leadOpts, org.leaders_none || 0, leaders);
+  const ownerRow = (by, v, noneN) => (v === NO_OWNER
+    ? withCount(
+        <span className="inline-flex items-center gap-1.5 min-w-0" style={{ color: "var(--text-3)" }}>
+          <Link2Off size={10} className="flex-shrink-0" />
+          <span className="truncate">{t("arcl.unassigned")}</span>
+        </span>,
+        noneN || 0)
+    : withCount(tl(by[v]?.name || `#${v}`), by[v]?.count));
+  // Asking for the tickets that reach nobody while the cells tab stands on an
+  // owner scope asks for rows that scope removed — so the pick lifts it, and
+  // the toggle moves to «Barcha yacheykalar» to say so.
+  const pickOwner = (set) => (vals) => {
+    set(vals);
+    if (vals.includes(NO_OWNER) && tab === "cells" && owner !== "all") setOwner("all");
+  };
+  const chainNote = (parentsList, n) => {
+    const p = parentsList.filter(Boolean).pop();
+    return p ? `${t("arcl.narrowedBy").replace("{x}", p)} · ${n}` : null;
+  };
+  const widenTo = (label, onClick) => (
+    <div className="text-center py-1">
+      <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{t("arcl.noneInScope")}</p>
+      <Button size="sm" variant="secondary" onClick={onClick}>{label}</Button>
+    </div>
+  );
+
+  // The org chain leads the «Kim va qayerda» group. On the cells tab its three
+  // levels stay inline (pinned) — they are the columns that tab shows.
   const sections = [
+    {
+      key: "shift", icon: Clock, label: t("arcl.fShift"), group: grpWho, pinned: tab === "cells",
+      active: !!shift,
+      display: shiftLabel || "",
+      onClear: () => setShift(""),
+      render: () => (
+        <SegmentedToggle fill value={shift || "all"} onChange={(v) => setShift(v === "all" ? "" : v)}
+          options={[["all", t("arcl.shiftAll")], ["1", `${t("arcl.shift")} 1`], ["2", `${t("arcl.shift")} 2`]]} />
+      ),
+    },
+    {
+      key: "sup", icon: Wrench, label: t("arcl.fSup"), group: grpWho, pinned: tab === "cells",
+      active: sups.length > 0,
+      display: supLabel || "",
+      onClear: () => setSups([]),
+      render: () => (
+        <OptsFilter searchable opts={supValues} sel={sups} onChange={pickOwner(setSups)}
+          note={chainNote([shiftLabel], supValues.length)}
+          empty={shiftLabel ? widenTo(t("arcl.shiftAll"), () => setShift("")) : null}
+          labelOf={(v) => ownerName(supById, v)}
+          render={(v) => ownerRow(supById, v, org.managers_none)} />
+      ),
+    },
+    {
+      key: "leader", icon: UserCog, label: t("arcl.fLeader"), group: grpWho, pinned: tab === "cells",
+      active: leaders.length > 0,
+      display: leadLabel || "",
+      onClear: () => setLeaders([]),
+      render: () => (
+        <OptsFilter searchable opts={leadValues} sel={leaders} onChange={pickOwner(setLeaders)}
+          note={chainNote([shiftLabel, supLabel], leadValues.length)}
+          empty={supLabel ? widenTo(t("arcl.allSups"), () => setSups([]))
+            : shiftLabel ? widenTo(t("arcl.shiftAll"), () => setShift("")) : null}
+          labelOf={(v) => ownerName(leadById, v)}
+          render={(v) => ownerRow(leadById, v, org.leaders_none)} />
+      ),
+    },
+    {
+      key: "cell", icon: Boxes, label: t("arcl.fCell"), group: grpWho,
+      active: !!cell,
+      display: cell ? cellDisplay(cell) : "",
+      onClear: () => setCell(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          note={chainNote([shiftLabel, supLabel, leadLabel], cellPickOpts.length)}
+          empty={leadLabel ? widenTo(t("arcl.allLeaders"), () => setLeaders([]))
+            : supLabel ? widenTo(t("arcl.allSups"), () => setSups([]))
+            : shiftLabel ? widenTo(t("arcl.shiftAll"), () => setShift("")) : null}
+          opts={[
+            { value: "", label: t("arcl.allCells") },
+            ...cellPickOpts.map((o) => {
+              const leader = tl(o.cell?.leader || "");
+              return {
+                value: o.code,
+                title: cellLabel(o.code, leader),
+                label: withCount(
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <span className="tabular-nums flex-shrink-0">{o.code}</span>
+                    {leader && <span className="truncate" style={{ color: "var(--text-4)" }}>{shortPerson(leader)}</span>}
+                  </span>,
+                  o.count,
+                ),
+              };
+            }),
+            // Last, and named: the tickets whose warehouse names no cell are a
+            // real scope — offered on the register only, and only while no
+            // level above names a unit.
+            ...(options.no_cell_count && !orgNamed && tab !== "cells"
+              ? [{ value: NO_CELL, title: t("arcl.cNoCell"),
+                   label: withCount(t("arcl.cNoCell"), options.no_cell_count) }]
+              : []),
+          ]}
+          value={cell}
+          onChange={(v) => setCell(v || "")} />
+      ),
+    },
     {
       key: "branch", icon: Store, label: t("arcl.fBranch"), group: grpWho,
       active: !!branch,
@@ -430,6 +685,7 @@ export default function ArcLegacy() {
   const clearAll = () => {
     setBranch(""); setMaster(""); setState("all"); setStatusSel([]); setCatSel([]);
     setUrgent("all"); setOverdue("all"); setSap("all");
+    setShift(""); setSups([]); setLeaders([]); setCell("");
   };
 
   // ── register ──────────────────────────────────────────────────────────────
@@ -461,9 +717,50 @@ export default function ArcLegacy() {
     </a>
   );
 
+  // The cell a ticket's warehouse NAMES — the CODE alone, a CellLink to
+  // /cells/:id (it stops propagation, so the row still opens the ticket). «No
+  // cell» is said, never blank: a warehouse with no code, or a ticket filed
+  // before 29 Sep 2026 that carries no warehouse at all.
+  const cellMap = list?.cells || {};
+  const cellCell = (r) => {
+    if (!r.cell_code) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-4)" }}
+          title={t("arcl.cNoCellHint")}>
+          <Link2Off size={11} />{t("arcl.cNoCell")}
+        </span>
+      );
+    }
+    const c = cellMap[r.cell_code];
+    return (
+      <CellLink id={c?.id} title={cellLabel(r.cell_code, tl(c?.leader || ""))}>
+        <span className="tabular-nums">{r.cell_code}</span>
+      </CellLink>
+    );
+  };
+  // The cell's owners — brigadir and leader — off the same cells map. A ticket
+  // reaches no owner three ways (no cell, a code the registry does not know, a
+  // cell nobody is assigned to); all three are «—», the reason on hover.
+  const ownerCell = (r, field) => {
+    const name = r.cell_code ? tl(cellMap[r.cell_code]?.[field] || "") : "";
+    if (name) return <span style={{ color: "var(--text-2)" }} title={name}>{shortPerson(name)}</span>;
+    const why = !r.cell_code ? t("arcl.cNoCellHint")
+      : !cellMap[r.cell_code] ? t("arcl.cUnknown")
+      : t("arcl.ownerNone");
+    return <span style={{ color: "var(--text-4)" }} title={why}>—</span>;
+  };
+
   // Row → cell, keyed by column — hide/reorder needs no markup change of its own.
   const listCell = (key, r) => {
     switch (key) {
+      case "sup":
+        return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "sup")}</td>;
+      case "leader":
+        return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "leader")}</td>;
+      case "warehouse":
+        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.warehouse_name || "—"}</td>;
+      case "cell":
+        return <td key={key} className="px-3 py-2 whitespace-nowrap">{cellCell(r)}</td>;
       case "num":
         return <td key={key} className="px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{r.request_num ?? "—"}</td>;
       case "created":
@@ -543,6 +840,7 @@ export default function ArcLegacy() {
       {!listLoading && rows.length === 0 && (
         <div className="rounded-xl px-3 py-8 text-center text-xs" style={{ ...cardStyle, color: "var(--text-4)" }}>
           {t("arcl.noMatch")}
+          {tab === "cells" && <div className="mt-1" style={{ color: "var(--text-3)" }}>{t("arcl.cellsSince")}</div>}
         </div>
       )}
       {!listLoading && rows.map((r) => {
@@ -558,14 +856,27 @@ export default function ArcLegacy() {
               <StatusChip status={r.normalized_status} color={r.status_color} label={statusLabel(r.normalized_status)} />
             </div>
             <div className="text-xs font-medium" style={{ color: "var(--text-1)" }}>{r.branch_name || "—"}</div>
+            <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{cellCell(r)}</div>
+            {/* The card answers the tab's own question: on «Yacheykalar
+                bo'yicha» whose cell it is, on the register what kind of job and
+                who is working it. */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              <Fact label={t("arcl.colCategory")}>
-                <span className="inline-flex items-center gap-1 flex-wrap">
-                  {r.category_name || "—"}
-                  {r.category_is_urgent && <RedBadge icon={Zap}>{t("arcl.urgent")}</RedBadge>}
-                </span>
-              </Fact>
-              <Fact label={t("arcl.colMaster")}>{r.master_name || "—"}</Fact>
+              {tab === "cells" ? (
+                <>
+                  <Fact label={t("arcl.colSup")}>{ownerCell(r, "sup")}</Fact>
+                  <Fact label={t("arcl.colLeader")}>{ownerCell(r, "leader")}</Fact>
+                </>
+              ) : (
+                <>
+                  <Fact label={t("arcl.colCategory")}>
+                    <span className="inline-flex items-center gap-1 flex-wrap">
+                      {r.category_name || "—"}
+                      {r.category_is_urgent && <RedBadge icon={Zap}>{t("arcl.urgent")}</RedBadge>}
+                    </span>
+                  </Fact>
+                  <Fact label={t("arcl.colMaster")}>{r.master_name || "—"}</Fact>
+                </>
+              )}
               <Fact label={t("arcl.colDue")}>
                 <span className="inline-flex items-center gap-1 flex-wrap tabular-nums">
                   {fmtShort(r.due) || "—"}
@@ -601,6 +912,15 @@ export default function ArcLegacy() {
   // without waiting on the network.
   const openRow = useMemo(() => rows.find((r) => r.remote_id === openId) || null, [rows, openId]);
   const d = detailQ.data || openRow;
+  // The fetched card carries its own one-entry cells map; before it lands the
+  // page's map already names the row that was clicked.
+  const dCell = d?.cell_code ? (detailQ.data?.cells || cellMap)[d.cell_code] : null;
+  const ownerFact = (field) => {
+    const name = tl(dCell?.[field] || "");
+    if (name) return name;
+    const why = !d?.cell_code ? t("arcl.cNoCellHint") : !dCell ? t("arcl.cUnknown") : t("arcl.ownerNone");
+    return <span style={{ color: "var(--text-4)" }} title={why}>—</span>;
+  };
   const [photoBroken, setPhotoBroken] = useState(false);
   useEffect(() => { setPhotoBroken(false); }, [openId]);
 
@@ -616,8 +936,12 @@ export default function ArcLegacy() {
           // Headers in the viewer's language — the backend's own labels are an
           // English fallback only.
           labels: Object.fromEntries(visibleCols.map((c) => [c.key, t(c.labelKey)])),
+          // Which tab the file came off (it names the file), and the language
+          // the brigadir and leader names are spelled in on screen.
+          view: tab === "cells" ? "cells" : "list",
+          lang,
         },
-        fallbackName: `arc_legacy_requests_${today}.xlsx`,
+        fallbackName: tab === "cells" ? `arc_legacy_cells_${today}.xlsx` : `arc_legacy_requests_${today}.xlsx`,
       });
       toast.success(via === "download" ? t("arcl.exportDownloaded") : t("arcl.exportSent"));
     } catch (e) {
@@ -813,6 +1137,29 @@ export default function ArcLegacy() {
         </div>
       ) : (
         <>
+          {/* The view switch. Both views read the SAME filtered tickets — one as
+              the register, one by the production cell their warehouse names —
+              so the tabs sit above the filter row, not inside it. */}
+          <div className="mb-3">
+            <SegmentedToggle
+              asTabs
+              ariaLabel={t("arcl.title")}
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "all", label: t("arcl.tabAll") },
+                {
+                  value: "cells",
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Boxes size={12} />{t("arcl.tabCells")}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </div>
+
           {/* ONE filter row: period inline, scopes + record filters in the
               panel, text search inline, export + column picker on the right. */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -827,16 +1174,17 @@ export default function ArcLegacy() {
               onClick={runExport}>
               <span className="hidden sm:inline">{t("arcl.export")}</span>
             </Button>
-            {/* Hidden below `sm:` — that is where TableCard swaps the table for
+            {/* The register's columns only — the cells tab is a fixed set.
+                Hidden below `sm:` — that is where TableCard swaps the table for
                 the stacked cards, and a picker over a table nobody can see is a
                 control with no effect. */}
-            <ColumnsPicker
+            {tab === "all" && <ColumnsPicker
               className="ml-auto hidden sm:block"
               columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
               hidden={colCfg.hidden}
               onChange={onColsChange}
-            />
+            />}
           </div>
 
           {/* ── KPI strip — the SAME filtered set as the table ── */}
@@ -846,16 +1194,54 @@ export default function ArcLegacy() {
               : kpiTiles.map((k) => <KPICard key={k.label} {...k} />)}
           </div>
 
+          {/* WHICH cells the cells tab answers for — the ones a brigadir is on
+              (the default), the ones a lider is on, or every cell. A scope, so
+              it narrows every figure on the page; it belongs to that tab's
+              question alone. */}
+          {tab === "cells" && (
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <SegmentedToggle value={owner} onChange={setOwner}
+                options={[
+                  { value: "manager", label: (<span className="inline-flex items-center gap-1.5"><Wrench size={12} />{t("arcl.ownerManager")}</span>), title: t("arcl.ownerManagerHint") },
+                  { value: "leader", label: (<span className="inline-flex items-center gap-1.5"><UserCog size={12} />{t("arcl.ownerLeader")}</span>), title: t("arcl.ownerLeaderHint") },
+                  { value: "all", label: (<span className="inline-flex items-center gap-1.5"><Boxes size={12} />{t("arcl.ownerAll")}</span>), title: t("arcl.ownerAllHint") },
+                ]} />
+            </div>
+          )}
+
+          {/* ONE table for both views — same rows, filters, page and sort; only
+              the columns differ. */}
           <TableCard
-            icon={ClipboardList}
-            title={t("arcl.listTitle")}
+            icon={tab === "cells" ? Boxes : ClipboardList}
+            title={tab === "cells" ? t("arcl.tabCells") : t("arcl.listTitle")}
             wrap
-            minWidth={1100}
+            minWidth={tab === "cells" ? 1000 : 1240}
             mobile={mobileList}
             mobileCards
             right={
-              <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-                {tpl(t("arcl.count"), { n: total.toLocaleString("ru-RU") })}
+              <span className="text-[11px] inline-flex items-center gap-1.5 flex-wrap justify-end" style={{ color: "var(--text-4)" }}>
+                <span className="tabular-nums whitespace-nowrap">
+                  {tpl(t("arcl.count"), { n: total.toLocaleString("ru-RU") })}
+                </span>
+                {/* What the cells tab is not showing, and where it is — a count
+                    that silently omitted these would read as the whole register. */}
+                {tab === "cells" && (stats?.hidden_no_cell || 0) > 0 && (
+                  <button type="button" className="underline underline-offset-2 whitespace-nowrap text-left"
+                    style={{ color: "var(--text-3)" }}
+                    title={t("arcl.cellsOnlyHiddenHint")}
+                    onClick={(e) => { e.stopPropagation(); setTab("all"); setCell(NO_CELL); }}>
+                    · {tpl(t("arcl.cellsOnlyHidden"), { n: stats.hidden_no_cell.toLocaleString("ru-RU") })}
+                  </button>
+                )}
+                {tab === "cells" && (stats?.hidden_unassigned || 0) > 0 && (
+                  <button type="button" className="underline underline-offset-2 whitespace-nowrap text-left"
+                    style={{ color: "var(--text-3)" }}
+                    title={t(owner === "leader" ? "arcl.leaderlessHiddenHint" : "arcl.unassignedHiddenHint")}
+                    onClick={(e) => { e.stopPropagation(); setOwner("all"); }}>
+                    · {tpl(t(owner === "leader" ? "arcl.leaderlessHidden" : "arcl.unassignedHidden"),
+                           { n: stats.hidden_unassigned.toLocaleString("ru-RU") })}
+                  </button>
+                )}
               </span>
             }
           >
@@ -878,6 +1264,10 @@ export default function ArcLegacy() {
               {!listLoading && rows.length === 0 && (
                 <tr><td colSpan={visibleCols.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                   {t("arcl.noMatch")}
+                  {/* The cell code arrives only on tickets filed from 29 Sep
+                      2026 — an empty cells tab over an older period is that,
+                      not a gap. */}
+                  {tab === "cells" && <div className="mt-1 text-xs" style={{ color: "var(--text-3)" }}>{t("arcl.cellsSince")}</div>}
                 </td></tr>
               )}
               {!listLoading && rows.map((r) => (
@@ -928,6 +1318,19 @@ export default function ArcLegacy() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+                <Fact label={t("arcl.colWarehouse")}>{d.warehouse_name || "—"}</Fact>
+                <Fact label={t("arcl.colCell")}>
+                  {!d.cell_code ? (
+                    <span style={{ color: "var(--text-4)" }} title={t("arcl.cNoCellHint")}>{t("arcl.cNoCell")}</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 flex-wrap">
+                      <CellLink id={dCell?.id}><span className="tabular-nums">{d.cell_code}</span></CellLink>
+                      {!dCell && <span className="text-[10px]" style={{ color: "var(--text-4)" }}>· {t("arcl.cUnknown")}</span>}
+                    </span>
+                  )}
+                </Fact>
+                <Fact label={t("arcl.colSup")}>{ownerFact("sup")}</Fact>
+                <Fact label={t("arcl.colLeader")}>{ownerFact("leader")}</Fact>
                 <Fact label={t("arcl.dMaster")}>{d.master_name || "—"}</Fact>
                 <Fact label={t("arcl.dClient")}>{d.client_name || "—"}</Fact>
                 <Fact label={t("arcl.dPhone")}>

@@ -13,6 +13,17 @@ same filters; there is no second copy of «what counts as open» to drift.
 Rows the API stopped returning (``missing_since`` set by a completed full
 walk) are hidden unless ``include_missing`` is asked for — visible on request,
 never deleted, never counted by default.
+
+From 2026-10-05 the page is TWO tabs over this one register, as /arc is:
+«Barchasi» and «Yacheykalar bo'yicha». The link between IT's ticket and this
+platform's cell is the ticket's ``warehouse_name`` — the new app's field from
+29 Sep 2026, the cell's Verifix code in front («8920 Цех Выпекания») —
+read by ``arc_cells.warehouse_code_expr`` into ``cell_code`` and resolved to
+the cell's brigadir and leader through the same ``arc_cells`` walk /arc uses.
+The cells tab carries /arc's two narrowings of its own — ``cells_only`` and the
+owner scope — and counts back what they hide (``hidden_no_cell`` /
+``hidden_unassigned`` on /stats); the org chain (shift → brigadir → leader →
+cell) narrows both tabs.
 """
 from __future__ import annotations
 
@@ -22,14 +33,15 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Float, Text, and_, case, cast, func, not_, or_
+from sqlalchemy import Float, Text, and_, case, cast, false, func, not_, or_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ArcLegacyRequest, ArcLegacySyncMeta
 from app.permissions import require_page
-from app.services import action_log, arc_legacy_client, arc_legacy_discovery
+from app.translit import transliterate
+from app.services import action_log, arc_cells, arc_legacy_client, arc_legacy_discovery
 from app.services.arc_legacy_export import build_arc_legacy_workbook
 from app.services.arc_legacy_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -59,6 +71,7 @@ def _derived() -> dict[str, Any]:
     late          = due IS NOT NULL AND coalesce(closed_at, now()) > due
     overdue_now   = is_open AND (is_overdue OR late)
     hours_to_close= (closed_at − created_at) in hours, when closed
+    cell_code     = the four digits the warehouse name carries, else NULL
     """
     R = ArcLegacyRequest
     closed_at = func.coalesce(R.completed_at, R.finished_at)
@@ -82,6 +95,7 @@ def _derived() -> dict[str, Any]:
         "late": late,
         "overdue_now": overdue_now,
         "hours_to_close": hours_to_close,
+        "cell_code": arc_cells.warehouse_code_expr(),
     }
 
 
@@ -89,10 +103,28 @@ def _derived() -> dict[str, Any]:
 # they are selected. is_closed is a stats-only helper (it is the complement of
 # open+cancelled and adds nothing to a row).
 _ROW_DERIVED = ("closed_at", "is_cancelled", "is_open", "due", "late",
-                "overdue_now", "hours_to_close")
+                "overdue_now", "hours_to_close", "cell_code")
 
 
 # ── filters ──────────────────────────────────────────────────────────────────
+
+def _ints(values: list[str]) -> list[int]:
+    out = []
+    for v in values or []:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _owner_scope(scope: Optional[str]) -> str:
+    """The cells tab's owner scope: "" (every cell), "manager" (cells with a
+    brigadir) or "leader" (cells with a lider) — /arc's rule. Anything else is
+    no scope, never a silently empty one."""
+    s = (scope or "").strip().lower()
+    return s if s in arc_cells.OWNER_LEVELS else ""
+
 
 def _filters(
     date_from: Optional[str] = Query(None),
@@ -101,17 +133,25 @@ def _filters(
     category: list[str] = Query(default=[]),
     branch: list[str] = Query(default=[]),
     master: list[str] = Query(default=[]),
+    cell: list[str] = Query(default=[]),
+    shift: list[str] = Query(default=[]),
+    manager: list[str] = Query(default=[]),
+    leader: list[str] = Query(default=[]),
     urgent: str = Query("all"),
     overdue: str = Query("all"),
     sap: str = Query("all"),
     state: str = Query("all"),
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
+    cells_only: bool = Query(False),
+    owner_scope: str = Query(""),
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
             "category": category, "branch": branch, "master": master,
+            "cell": cell, "shift": shift, "manager": manager, "leader": leader,
             "urgent": urgent, "overdue": overdue, "sap": sap, "state": state,
-            "q": q, "include_missing": include_missing}
+            "q": q, "include_missing": include_missing, "cells_only": cells_only,
+            "owner_scope": _owner_scope(owner_scope)}
 
 
 def _day_start(s: Optional[str]) -> Optional[datetime]:
@@ -134,7 +174,7 @@ def _tri(value: str, expr) -> Optional[Any]:
     return None
 
 
-def _apply_filters(query, f: dict, D: dict):
+def _apply_filters(query, f: dict, D: dict, db: Session):
     """The one place the filter set becomes WHERE clauses; list, stats and
     export all go through it."""
     R = ArcLegacyRequest
@@ -154,6 +194,47 @@ def _apply_filters(query, f: dict, D: dict):
         query = query.filter(R.branch_id.in_(f["branch"]))
     if f.get("master"):
         query = query.filter(R.master_id.in_(f["master"]))
+    # The cell the warehouse NAMES, by its code — the value the cell column and
+    # the cells tab's owner columns are read off, so the pick and the columns
+    # can never mean two things. «No cell» (arc_cells.NO_CELL) is a pick like
+    # any other: the tickets whose warehouse names none, or that carry none.
+    code = D["cell_code"]
+    picked = [c for c in (f.get("cell") or []) if c]
+    if picked:
+        conds = []
+        codes = [c for c in picked if c != arc_cells.NO_CELL]
+        if codes:
+            conds.append(code.in_(codes))
+        if arc_cells.NO_CELL in picked:
+            conds.append(code.is_(None))
+        query = query.filter(or_(*conds))
+    # «Yacheykalar bo'yicha» asks whose cell a ticket is on; a ticket whose
+    # warehouse names none has no answer to it, so that tab narrows to the ones
+    # that do — counted back as `hidden_no_cell` on /stats, never dropped in
+    # silence.
+    if f.get("cells_only"):
+        query = query.filter(code.isnot(None))
+    # …and, unless the reader lifted it, to the cells an owner is on at the level
+    # the toggle names (arc_cells.assigned_codes is the whole rule). An empty set
+    # is a real answer: an empty register, never the whole plant.
+    scope = f.get("owner_scope") or ""
+    if scope:
+        owned = arc_cells.assigned_codes(db, scope, code)
+        query = query.filter(code.in_(sorted(owned))) if owned else query.filter(false())
+    # The org chain — shift → brigadir → leader — reaches a ticket only through
+    # its cell, so it narrows to a SET OF CODES (plus, for «Biriktirilmagan»,
+    # the tickets naming no cell) and meets the register at the same expression.
+    shifts = _ints(f.get("shift") or [])
+    mgrs = [str(v) for v in (f.get("manager") or []) if str(v).strip()]
+    leads = [str(v) for v in (f.get("leader") or []) if str(v).strip()]
+    if shifts or mgrs or leads:
+        codes, with_null = arc_cells.org_codes(db, shifts, mgrs, leads, code)
+        conds = []
+        if codes:
+            conds.append(code.in_(sorted(codes)))
+        if with_null:
+            conds.append(code.is_(None))
+        query = query.filter(or_(*conds)) if conds else query.filter(false())
     for key, expr in (("urgent", R.category_is_urgent),
                       ("sap", R.sended_to_sap)):
         cond = _tri(f.get(key) or "all", expr)
@@ -180,6 +261,7 @@ def _apply_filters(query, f: dict, D: dict):
             R.branch_name.ilike(like),
             R.client_name.ilike(like),
             R.master_name.ilike(like),
+            R.warehouse_name.ilike(like),
         ))
     return query
 
@@ -203,6 +285,8 @@ def _sort_expr(sort: Optional[str], D: dict):
         "normalized_status": R.normalized_status,
         "closed_at": D["closed_at"],
         "hours_to_close": D["hours_to_close"],
+        "cell_code": D["cell_code"],
+        "warehouse_name": R.warehouse_name,
     }
     col = cols.get(key)
     if col is None:
@@ -230,7 +314,8 @@ _ROW_COLS = (
     "created_at", "cancelled_at", "finished_at", "completed_at", "extra_phone",
     "latitude", "longitude", "deny_reason", "sended_to_sap", "photo_report",
     "comment_report", "document_url", "has_other_active", "other_active_count",
-    "client_name", "first_seen_at", "synced_at", "missing_since",
+    "client_name", "warehouse_id", "warehouse_name", "first_seen_at",
+    "synced_at", "missing_since",
 )
 
 
@@ -243,6 +328,9 @@ def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = Fa
         out[c] = _iso(v) if isinstance(v, datetime) else v
     out["closed_at"] = _iso(derived.get("closed_at"))
     out["due"] = _iso(derived.get("due"))
+    # The cell the warehouse NAMES — digits only; which cell that is comes from
+    # the payload's own `cells` map, keyed by code.
+    out["cell_code"] = derived.get("cell_code")
     out["is_cancelled"] = bool(derived.get("is_cancelled"))
     out["is_open"] = bool(derived.get("is_open"))
     out["late"] = bool(derived.get("late"))
@@ -257,7 +345,15 @@ def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = Fa
 def _rows_query(db: Session, f: dict, D: dict):
     """The register query: the entity plus its derived facts, filtered."""
     query = db.query(ArcLegacyRequest, *[D[k].label(k) for k in _ROW_DERIVED])
-    return _apply_filters(query, f, D)
+    return _apply_filters(query, f, D, db)
+
+
+def _cells_map(db: Session, rows: list[dict]) -> dict[str, dict]:
+    """{code → cell} for the codes in these rows (id, both codes, the leader and
+    the brigadir), so the page names each unit once per page. A code no
+    registered cell answers to is absent — the row keeps its digits."""
+    codes = {r.get("cell_code") for r in rows if r.get("cell_code")}
+    return arc_cells.cells_for(db, codes) if codes else {}
 
 
 def _fetch_rows(query, D: dict, sort: Optional[str], offset: int = 0,
@@ -336,7 +432,66 @@ def _options(db: Session) -> dict:
         if mid
     ]
     return {"statuses": statuses, "categories": categories,
-            "branches": branches, "masters": masters}
+            "branches": branches, "masters": masters, **_cell_options(db, base)}
+
+
+def _cell_options(db: Session, base) -> dict:
+    """The cell list and the org chain behind it (shift → brigadir → leader),
+    counted in TICKETS over the same rows as the other lists here — the whole
+    mirror, as every list on this page is. Each option carries its own place in
+    the chain (`sh`, `mgr`, `lead`, and a leader's `manager_id`), which is what
+    lets the page narrow each level by the picks above it without asking again.
+
+    «Biriktirilmagan» is counted per owner level: the tickets that reach no such
+    person — the warehouse names no cell, names one the registry has never
+    heard of, or the cell has nobody assigned. All three render a blank owner
+    column, so all three are what that option picks (arc_cells.org_codes)."""
+    R = ArcLegacyRequest
+    code = arc_cells.warehouse_code_expr()
+    rows = base.with_entities(code.label("code"), func.count(R.id)).group_by(code).all()
+    codes = {c for c, _ in rows if c}
+    known = arc_cells.cells_for(db, codes)
+    org = arc_cells.org_index(db, codes)
+    by_code = org["by_code"]
+    cells = sorted(
+        ({"code": c, "count": n, "cell": known.get(c),
+          "sh": (by_code.get(c) or {}).get("shift"),
+          "mgr": (by_code.get(c) or {}).get("manager_id"),
+          "lead": (by_code.get(c) or {}).get("leader_id")}
+         for c, n in rows if c),
+        key=lambda x: x["code"],
+    )
+
+    def level(key: str) -> tuple[dict[int, int], int]:
+        out: dict[int, int] = {}
+        none_n = 0
+        for c, n in rows:
+            v = (by_code.get(c) or {}).get(key) if c else None
+            if v is None:
+                none_n += n
+            else:
+                out[v] = out.get(v, 0) + n
+        return out, none_n
+
+    def by_name(items: list[dict]) -> list[dict]:
+        return sorted(items, key=lambda x: (x.get("name") or "").lower())
+
+    shift_n, _ = level("shift")
+    mgr_n, mgr_none = level("manager_id")
+    lead_n, lead_none = level("leader_id")
+    return {
+        "cells": cells,
+        "no_cell_count": sum(n for c, n in rows if not c),
+        "org": {
+            "shifts": [{"value": v, "count": shift_n[v]} for v in sorted(shift_n)],
+            "managers": by_name([{**org["managers"][i], "count": n}
+                                 for i, n in mgr_n.items() if i in org["managers"]]),
+            "leaders": by_name([{**org["leaders"][i], "count": n}
+                                for i, n in lead_n.items() if i in org["leaders"]]),
+            "managers_none": mgr_none,
+            "leaders_none": lead_none,
+        },
+    }
 
 
 # ── endpoints ────────────────────────────────────────────────────────────────
@@ -370,7 +525,8 @@ def get_list(
     query = _rows_query(db, f, D)
     total = query.order_by(None).count()
     rows = _fetch_rows(query, D, sort, offset=(page - 1) * page_size, limit=page_size)
-    return {"total": total, "page": page, "page_size": page_size, "rows": rows}
+    return {"total": total, "page": page, "page_size": page_size, "rows": rows,
+            "cells": _cells_map(db, rows)}
 
 
 def _n(v) -> int:
@@ -386,7 +542,7 @@ def get_stats(
     """KPI figures over exactly the rows /list shows for the same filters."""
     R = ArcLegacyRequest
     D = _derived()
-    base = _apply_filters(db.query(R), f, D)
+    base = _apply_filters(db.query(R), f, D, db)
 
     def _sum(cond):
         return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
@@ -435,8 +591,30 @@ def get_stats(
             .group_by(R.master_id, R.master_name)
             .order_by(func.count(R.id).desc()).all())
     ]
+    # What the cells tab is NOT showing, in its two ways of hiding a ticket the
+    # other filters kept: its warehouse names no cell, and its cell has nobody
+    # at the level the owner toggle reads. Counted with BOTH of the tab's own
+    # narrowings lifted, which keeps the two disjoint (/arc's rule).
+    hidden_no_cell = hidden_unassigned = 0
+    if f.get("cells_only") or f.get("owner_scope"):
+        lifted = {**f, "cells_only": False, "owner_scope": ""}
+        code = D["cell_code"]
+        if f.get("cells_only"):
+            hidden_no_cell = _n(
+                _apply_filters(db.query(func.count(R.id)), lifted, D, db)
+                .filter(code.is_(None)).scalar())
+        if f.get("owner_scope"):
+            owned = arc_cells.assigned_codes(db, f["owner_scope"], code)
+            q_un = (_apply_filters(db.query(func.count(R.id)), lifted, D, db)
+                    .filter(code.isnot(None)))
+            if owned:
+                q_un = q_un.filter(code.notin_(sorted(owned)))
+            hidden_unassigned = _n(q_un.scalar())
+
     return {
         "shown": _n(shown),
+        "hidden_no_cell": hidden_no_cell,
+        "hidden_unassigned": hidden_unassigned,
         "open": _n(n_open),
         "overdue": _n(n_overdue),
         "cancelled": _n(n_cancelled),
@@ -464,7 +642,9 @@ def get_request(
            .filter(ArcLegacyRequest.remote_id == remote_id).first())
     if not tup:
         raise HTTPException(status_code=404, detail="Request not found")
-    return _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_raw=True)
+    out = _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_raw=True)
+    out["cells"] = _cells_map(db, [out])
+    return out
 
 
 @router.post("/refresh")
@@ -503,16 +683,28 @@ class ArcExportBody(BaseModel):
     category: list[str] = []
     branch: list[str] = []
     master: list[str] = []
+    cell: list[str] = []
+    shift: list[str] = []
+    manager: list[str] = []
+    leader: list[str] = []
     urgent: str = "all"
     overdue: str = "all"
     sap: str = "all"
     state: str = "all"
     q: Optional[str] = None
     include_missing: bool = False
+    cells_only: bool = False
+    owner_scope: str = ""
     sort: str = "created_at:desc"
     columns: list[str] = []
     labels: dict[str, str] = {}
     caption: Optional[str] = None
+    # Which tab the file came off — it names the file, nothing more: both tabs
+    # are this register, differing only in the `columns` the page sends.
+    view: str = "list"
+    # The viewer's language — the brigadir and leader columns are names from our
+    # own registry, and the screen spells them through the transliterator.
+    lang: str = "ru"
 
 
 # Export ceiling — an Excel sheet of more rows than this is not a report.
@@ -527,7 +719,8 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
     for key in ("date_from", "date_to", "q"):
         if f.get(key):
             parts.append(f"{key}={f[key]}")
-    for key in ("status", "category", "branch", "master"):
+    for key in ("status", "category", "branch", "master", "cell", "shift",
+                "manager", "leader"):
         vals = f.get(key) or []
         if vals:
             parts.append(f"{key}={','.join(str(v) for v in vals)}")
@@ -536,6 +729,10 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
             parts.append(f"{key}={f[key]}")
     if f.get("include_missing"):
         parts.append("include_missing=yes")
+    if f.get("cells_only"):
+        parts.append("cells_only=yes")
+    if f.get("owner_scope"):
+        parts.append(f"owner_scope={f['owner_scope']}")
     if sort:
         parts.append(f"sort={sort}")
     return (" · ".join(parts) or "no filters")[:1000]
@@ -553,14 +750,24 @@ def export_xlsx(
     caller's private chat (app/xlsx_delivery.py)."""
     f = {k: getattr(body, k) for k in
          ("date_from", "date_to", "status", "category", "branch", "master",
-          "urgent", "overdue", "sap", "state", "q", "include_missing")}
+          "cell", "shift", "manager", "leader", "urgent", "overdue", "sap",
+          "state", "q", "include_missing", "cells_only")}
+    f["owner_scope"] = _owner_scope(body.owner_scope)
     D = _derived()
     query = _rows_query(db, f, D)
     rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
+    # The cell column is the code, already on the row; its two OWNERS are
+    # resolved off the one cells map and spelled as the screen spells them.
+    cells = _cells_map(db, rows)
+    for r in rows:
+        c = cells.get(r.get("cell_code"))
+        r["sup_name"] = transliterate((c or {}).get("sup") or "", body.lang)
+        r["leader_name"] = transliterate((c or {}).get("leader") or "", body.lang)
     bio = build_arc_legacy_workbook(rows, body.columns, body.labels)
 
     today = datetime.now(_TASHKENT).date().isoformat()
-    fname = f"arc_legacy_requests_{today}.xlsx"
+    fname = (f"arc_legacy_cells_{today}.xlsx" if body.view == "cells"
+             else f"arc_legacy_requests_{today}.xlsx")
     caption = body.caption or f"📊 ARC (old API) · {len(rows)} rows"
     try:
         data = bio.read()
@@ -568,7 +775,7 @@ def export_xlsx(
         action_log.enrich(
             target_kind="report", target_id=fname,
             details=[("file", fname), ("rows", len(rows)), ("size", len(data)),
-                     ("columns", len(body.columns)),
+                     ("view", body.view), ("columns", len(body.columns)),
                      ("scope", _scope_line(f, body.sort))],
         )
         return resp

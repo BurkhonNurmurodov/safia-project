@@ -111,6 +111,7 @@ _UPSERT_COLS = (
     "cancelled_at", "finished_at", "completed_at", "extra_phone", "latitude",
     "longitude", "deny_reason", "sended_to_sap", "photo_report", "comment_report",
     "document_url", "has_other_active", "other_active_count", "client_name",
+    "warehouse_id", "warehouse_name",
     "raw", "synced_at", "missing_since",
 )
 

@@ -1779,6 +1779,32 @@ def add_attendance_upload_source() -> None:
         db.close()
 
 
+def add_arc_legacy_warehouse_columns() -> None:
+    """2026-10-05: IT's new request app (/arc-legacy) sends `warehouse_id` /
+    `warehouse_name` on a factory ticket from 29 Sep 2026, the cell's Verifix
+    code in front of the name — what the page's «Yacheykalar bo'yicha» tab reads
+    (services/arc_cells.warehouse_code_expr). Two columns, then a fill from the
+    `raw` item every row already keeps, so the tab answers at once instead of
+    after the next sync. The fill only touches a row whose column is still
+    empty while its raw item names a warehouse, so after the first boot it
+    finds nothing; no flag. A fresh box gets the columns from create_all."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE arc_legacy_requests ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR"))
+        db.execute(text("ALTER TABLE arc_legacy_requests ADD COLUMN IF NOT EXISTS warehouse_name VARCHAR"))
+        db.execute(text(
+            "UPDATE arc_legacy_requests "
+            "SET warehouse_id = NULLIF(btrim(raw->>'warehouse_id'), ''), "
+            "    warehouse_name = NULLIF(btrim(raw->>'warehouse_name'), '') "
+            "WHERE warehouse_name IS NULL AND NULLIF(btrim(raw->>'warehouse_name'), '') IS NOT NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] arc-legacy warehouse columns skipped: {exc}")
+    finally:
+        db.close()
+
+
 CELLS_IN_LOAD_FLAG = "cells_in_load_from_units_2026_10_04_v1"
 
 

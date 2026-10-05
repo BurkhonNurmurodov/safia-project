@@ -670,7 +670,7 @@ export default function Arc() {
   // register is now showing.
   const pickOwner = (set) => (vals) => {
     set(vals);
-    if (vals.includes(NO_OWNER) && tab === "cells" && owner === "assigned") setOwner("all");
+    if (vals.includes(NO_OWNER) && tab === "cells" && owner !== "all") setOwner("all");
   };
   const chainNote = (parents, n) => {
     const p = parents.filter(Boolean).pop();

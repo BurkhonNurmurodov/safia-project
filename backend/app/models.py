@@ -3566,6 +3566,11 @@ class ArcLegacyRequest(Base):
     has_other_active        = Column(Boolean, nullable=True)
     other_active_count      = Column(Integer, nullable=True)
     client_name             = Column(String, nullable=True)
+    # From 29 Sep 2026: the workshop the ticket is about, its cell's Verifix
+    # code in front («8920 Цех Выпекания» — services/arc_cells.warehouse_code).
+    # NULL on every ticket filed before IT added it.
+    warehouse_id            = Column(String, nullable=True)
+    warehouse_name          = Column(String, nullable=True)
     raw                     = Column(JSONB, nullable=True)         # the full API item
     first_seen_at           = Column(DateTime(timezone=True), server_default=func.now())
     synced_at               = Column(DateTime(timezone=True), nullable=True)   # every upsert

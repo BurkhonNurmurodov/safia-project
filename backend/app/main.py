@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
         add_attendance_upload_source,
+        add_arc_legacy_warehouse_columns,
         add_leader_kind_columns,
         add_education_thumb_url,
         add_idle_interval_client_key,
@@ -211,6 +212,7 @@ async def lifespan(app: FastAPI):
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
     add_attendance_upload_source()
+    add_arc_legacy_warehouse_columns()
     add_cell_shift_times()
     add_cell_archive()
     add_wc_groups()

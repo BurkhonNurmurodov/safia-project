@@ -8378,12 +8378,30 @@ untouched.
   `client_phone`, `werks` (SAP plant, null), `category_id`,
   `other_active_branch_requests`. The mirror does not call it yet — one call
   per ticket, like the internal API's card. The openapi document is refused
-  (401 even with the bearer). **No field names a cell**: the whole factory is
-  ONE branch, «Учтепа»; where the work is lives only in the free-text
-  description (block, floor, room, workshop, rarely a cell code), and the
-  requester (`client_name`) is a leader owning exactly one cell on ~27% of
-  Uchtepa tickets. A cancelled ticket was seen with `status` 7 while
-  `normalized_status` still read «in_progress».
+  (401 even with the bearer). On 28 Sep no field named a cell (the whole
+  factory is ONE branch, «Учтепа») — superseded by the next bullet. A
+  cancelled ticket was seen with `status` 7 while `normalized_status` still
+  read «in_progress».
+- **From 29 Sep 2026 the list carries the cell** — `warehouse_id` (uuid) and
+  `warehouse_name`, the cell's Verifix code IN FRONT («8920 Цех Выпекания»;
+  the old app put it at the END of the division name). Found by the attribute
+  census on 5 Oct: 110 of 660 tickets, none created before 29 Sep (not
+  backfilled by IT). Stored as two columns (`add_arc_legacy_warehouse_columns`,
+  both entrypoints, fills them once from `raw`) and read by
+  `arc_cells.warehouse_code_expr` — leading four digits, else the trailing
+  group, exactly four either way — which `arc_cells` passes into the same
+  `register_codes` / `org_codes` / `assigned_codes` walk /arc uses (they take
+  a `code` expression now; /arc's default is unchanged).
+- **Two tabs, as on /arc** (2026-10-05, the operator: «just like the other ARC
+  page») — «Barcha so'rovlar» (the register, now with «Bo'linma» and
+  «Yacheyka» columns) and «Yacheykalar bo'yicha» (fixed columns № · brigadir
+  · lider · yacheyka · kategoriya · tavsif · holat · muddat · yopildi · soat;
+  `cells_only` + the brigadir / lider / all owner toggle, `hidden_no_cell` /
+  `hidden_unassigned` named on the card). The org chain (shift → brigadir →
+  leader → cell) narrows both tabs; its option lists come off `/meta` over the
+  whole mirror, like every other list on this page (no `/facets`, no analysis
+  mode). A ticket filed before 29 Sep names no cell, so the cells tab over an
+  older period is empty and says why (`arcl.cellsSince`).
 - Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
   `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
 

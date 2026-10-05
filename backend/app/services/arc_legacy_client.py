@@ -518,5 +518,7 @@ def normalize_item(item: dict) -> dict:
         "has_other_active": _b(item.get("has_other_active_branch_requests")),
         "other_active_count": _i(item.get("other_active_branch_requests_count")),
         "client_name": _s(item.get("client_name")),
+        "warehouse_id": _s(item.get("warehouse_id")),
+        "warehouse_name": _s(item.get("warehouse_name")),
         "raw": item,
     }

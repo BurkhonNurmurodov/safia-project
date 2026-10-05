@@ -35,7 +35,7 @@ from typing import Iterable, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import ArcRequest, Cell, Manager, RoleProfile
+from app.models import ArcLegacyRequest, ArcRequest, Cell, Manager, RoleProfile
 from app.services.cell_lookup import by_verifix, resolve_verifix
 
 # The trailing four-digit group, in both dialects. Verified to agree on the
@@ -68,6 +68,33 @@ def code_expr():
     NULL for every ticket whose division names no cell — which is what makes
     ``code_expr().is_(None)`` the honest spelling of the «no cell» bucket."""
     return func.substring(func.btrim(ArcRequest.division_name), _SQL)
+
+
+# ── /arc-legacy: the new request app's «warehouse» ───────────────────────────
+# From 29 Sep 2026 IT's NEW request app (mirrored on /arc-legacy, whose names
+# are the wrong way round — see CLAUDE.md) sends `warehouse_name` on a factory
+# ticket, and it carries the cell's Verifix code IN FRONT: «8920 Цех
+# Выпекания» is cell 8920. Same idea as the old app's division name, the
+# number at the other end. The trailing group is accepted too, as the second
+# reading, because the first sample is all anybody has seen and IT spelled the
+# same fact at the end for years; the leading one wins when both are there.
+# Exactly four digits either way: «89201 …» names no cell.
+_RE_LEAD = re.compile(r"^\s*(\d{4})(?:\D|$)")
+_SQL_LEAD = r"^([0-9]{4})(?:[^0-9]|$)"
+
+
+def warehouse_code(warehouse_name: Optional[str]) -> Optional[str]:
+    """The Verifix code a /arc-legacy warehouse name carries, or None."""
+    m = _RE_LEAD.search(warehouse_name or "")
+    return m.group(1) if m else cell_code(warehouse_name)
+
+
+def warehouse_code_expr():
+    """:func:`warehouse_code` as SQL over ``ArcLegacyRequest.warehouse_name`` —
+    NULL for a ticket whose warehouse names no cell (or that carries none: every
+    ticket filed before the field existed)."""
+    name = func.btrim(ArcLegacyRequest.warehouse_name)
+    return func.coalesce(func.substring(name, _SQL_LEAD), func.substring(name, _SQL))
 
 
 def cells_for(db: Session, codes: Iterable[str]) -> dict[str, dict]:
@@ -105,14 +132,19 @@ def cells_for(db: Session, codes: Iterable[str]) -> dict[str, dict]:
 # be the same page disagreeing with itself.
 
 
-def register_codes(db: Session) -> list[str]:
+def register_codes(db: Session, code=None) -> list[str]:
     """Every four-digit code the register's division names carry, once each.
+
+    ``code`` is the register's code expression — /arc's :func:`code_expr` by
+    default, /arc-legacy passes :func:`warehouse_code_expr`. The walk below is
+    the same for both, which is the point of passing it rather than copying it.
 
     Deliberately unbounded by ``missing_since``: this is the DOMAIN a code is
     looked up in, not a row filter — the ticket filters are applied separately,
     and narrowing the domain would drop a code that only a hidden ticket
     carries."""
-    code = code_expr()
+    if code is None:
+        code = code_expr()
     rows = db.query(code).filter(code.isnot(None)).distinct().all()
     return [r[0] for r in rows if r[0]]
 
@@ -227,7 +259,7 @@ def _owner_ok(value: Optional[int], ids: set[int], none: bool) -> bool:
 
 
 def org_codes(db: Session, shifts: list[int], managers: list[str],
-              leaders: list[str]) -> tuple[set[str], bool]:
+              leaders: list[str], code=None) -> tuple[set[str], bool]:
     """The codes an org pick narrows the register to, and whether tickets that
     name NO cell are in that scope.
 
@@ -249,7 +281,7 @@ def org_codes(db: Session, shifts: list[int], managers: list[str],
     mgrs, mgr_none = owner_picks(managers)
     leads, lead_none = owner_picks(leaders)
     want_shifts = set(shifts or ())
-    codes = register_codes(db)
+    codes = register_codes(db, code)
     idx = org_index(db, codes)
     by_code = idx["by_code"]
     out: set[str] = set()
@@ -275,7 +307,7 @@ def org_codes(db: Session, shifts: list[int], managers: list[str],
 OWNER_LEVELS = {"manager": "manager_id", "leader": "leader_id"}
 
 
-def assigned_codes(db: Session, level: str = "manager") -> set[str]:
+def assigned_codes(db: Session, level: str = "manager", code=None) -> set[str]:
     """The codes whose cell this platform's registry gives an OWNER at *level*.
 
     ``manager`` — the cell has a brigadir. ``cells.manager_id`` is the one
@@ -300,5 +332,5 @@ def assigned_codes(db: Session, level: str = "manager") -> set[str]:
     field = OWNER_LEVELS.get(level)
     if not field:
         return set()
-    idx = org_index(db, register_codes(db))
-    return {code for code, org in idx["by_code"].items() if org.get(field)}
+    idx = org_index(db, register_codes(db, code))
+    return {c for c, org in idx["by_code"].items() if org.get(field)}

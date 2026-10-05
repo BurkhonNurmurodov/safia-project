@@ -43,6 +43,10 @@ _DEFAULT_LABELS = {
     "num": "№",
     "created": "Created",
     "branch": "Branch",
+    "warehouse": "Division",
+    "cell": "Cell",
+    "sup": "Brigadir",
+    "leader": "Leader",
     "category": "Category",
     "urgent": "Urgent",
     "description": "Description",
@@ -108,6 +112,13 @@ _COLS: dict[str, tuple[Callable[[dict], Any], str, int]] = {
     "num":         (lambda r: r.get("request_num"), "int", 9),
     "created":     (lambda r: _to_local(r.get("created_at")), "dt", 17),
     "branch":      (lambda r: r.get("branch_name"), "text", 26),
+    # The workshop the ticket is about (the new app's `warehouse_name`, from
+    # 29 Sep 2026) and the cell its code names — the CODE, as on screen.
+    "warehouse":   (lambda r: r.get("warehouse_name"), "text", 26),
+    "cell":        (lambda r: r.get("cell_code"), "text", 12),
+    # The cell's owners, filled by the router off the one cells map.
+    "sup":         (lambda r: r.get("sup_name"), "text", 22),
+    "leader":      (lambda r: r.get("leader_name"), "text", 22),
     "category":    (lambda r: r.get("category_name"), "text", 24),
     "urgent":      (lambda r: _yn(r.get("category_is_urgent")), "text", 8),
     "description": (lambda r: r.get("description"), "text", 48),
