@@ -497,8 +497,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // see the Verifix read behind it.
   const [liveFilter, setLiveFilter]     = usePersistentState("staff_live_workers_status", "all");
   const [openRaw, setOpenRaw]           = useState(null);
-  // Live: a phone reads a list instead of the ten-column table.
-  const isPhone = useIsMobile();
+  // Live: below lg (a phone, a tablet held upright) the rows read as a list —
+  // the table needs a laptop's width.
+  const isPhone = useIsMobile(1024);
   const qc = useQueryClient();
 
   // Restored values are old data: merge over the CURRENT shape so a filter
@@ -1147,7 +1148,7 @@ function LiveWorkersView({
   // summary, instead of on every row; several keep the column (and its filter).
   const schedules = [...new Set(allWorkers.map((w) => w.schedule).filter(Boolean))];
   const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
-  const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
+  const cols = 7 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
 
   return (
     <div>
@@ -1191,7 +1192,9 @@ function LiveWorkersView({
           <table className="w-full text-[13px]">
             <thead>
               <tr style={{ background: "var(--bg-inner)" }}>
-                <th scope="col" className={`${th} text-left border-t min-w-[14rem]`} style={thStyle}>
+                {/* The job title rides under the name: as a column of its own it
+                    cost ~180px a laptop does not have. Both keep their filter. */}
+                <th scope="col" className={`${th} text-left border-t min-w-[12rem] xl:min-w-[16rem]`} style={thStyle}>
                   <div className="flex items-center gap-1.5">
                     <ColFilter quiet label={t("staff.colWorker")} active={!!filters.worker}>
                       <TxtFilter value={filters.worker} onChange={(v) => setF("worker", v)} />
@@ -1202,16 +1205,15 @@ function LiveWorkersView({
                       aria-label={t("common.sortAZ")} title={t("common.sortAZ")}>
                       {nameAsc === null ? <ChevronsUpDown size={12} /> : nameAsc ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
+                    <span aria-hidden="true" style={{ color: "var(--text-4)" }}>·</span>
+                    <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
+                      <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
+                    </ColFilter>
                   </div>
                 </th>
                 {/* The status sits right after the name — it is the question
                     the page is opened for. */}
                 <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.status")}</th>
-                <th scope="col" className={`${th} text-left border-t min-w-[11rem]`} style={thStyle}>
-                  <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
-                  </ColFilter>
-                </th>
                 {showCellCol && (
                   <th scope="col" className={`${th} text-left border-t`} style={thStyle}>
                     <ColFilter quiet label={t("staff.colCell")} active={filters.cells.length > 0}>
@@ -1235,13 +1237,13 @@ function LiveWorkersView({
                       onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
+                <th scope="col" className={`${thNum} border-t hidden xl:table-cell`} style={thStyle}>
                   <ColFilter quiet label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
                     <RngFilter minV={filters.early_min} maxV={filters.early_max}
                       onMin={(v) => setF("early_min", v)} onMax={(v) => setF("early_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
+                <th scope="col" className={`${thNum} border-t hidden xl:table-cell`} style={thStyle}>
                   <ColFilter quiet label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
                     <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
                       onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
@@ -1254,14 +1256,14 @@ function LiveWorkersView({
                 <Fragment key={w.id}>
                   <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
                     <td className={td}>
-                      <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
-                        <LiveName w={w} open={openRaw === w.id}
-                          onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+                      <LiveName w={w} open={openRaw === w.id}
+                        onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
+                      <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
+                        <span>{tx(w.job_title) || "—"}</span>
                         <LiveRowNotes w={w} />
                       </div>
                     </td>
-                    <td className={td}><LiveStatusChip status={w.status} /></td>
-                    <td className={td} style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
+                    <td className={td}><LiveStatusChip status={w.status} wrap /></td>
                     {/* Code only — the workshop name is four words of Russian
                         per row; it stays in the tooltip and the filter. */}
                     {showCellCol && (
@@ -1281,10 +1283,10 @@ function LiveWorkersView({
                     <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
                       {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
                     </td>
-                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-2)" }}>
+                    <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-2)" }}>
                       {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
                     </td>
-                    <td className={`${td} tabular-nums text-right`} style={{ color: "var(--text-1)" }}>
+                    <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-1)" }}>
                       {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
                     </td>
                   </tr>

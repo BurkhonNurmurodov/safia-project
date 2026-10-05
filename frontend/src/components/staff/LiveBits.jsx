@@ -54,15 +54,16 @@ export function LiveChip({ color, children, dashed = false, title }) {
   );
 }
 
-export function LiveStatusChip({ status }) {
+// `wrap`: the label may take two lines below xl (the live table's status
+// column on a laptop); on a phone it always may — «Chiqish belgisi yo'q» on
+// one line pushed the status column past a 320px screen.
+export function LiveStatusChip({ status, wrap = false }) {
   const { t } = useLang();
   const color = STATUS_TONE[status] || "#94a3b8";
   return (
-    // On a phone the label may take two lines: «Chiqish belgisi yo'q» on one
-    // line pushed the status column past a 320px screen.
-    <span className="inline-flex items-center max-sm:items-start gap-1.5 whitespace-nowrap max-sm:whitespace-normal"
+    <span className={`inline-flex items-center max-sm:items-start gap-1.5 whitespace-nowrap max-sm:whitespace-normal ${wrap ? "max-xl:whitespace-normal max-xl:items-start" : ""}`}
       style={{ color: "var(--text-2)" }}>
-      <span className="w-2 h-2 rounded-full flex-shrink-0 max-sm:mt-[5px]" style={{ background: color }} />
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 max-sm:mt-[5px] ${wrap ? "max-xl:mt-[5px]" : ""}`} style={{ background: color }} />
       {t(`staffLive.st.${status}`)}
     </span>
   );
@@ -273,7 +274,7 @@ export function LiveSummary({ came, total, counted, countedOf, hours, avg, soFar
         </Stat>
         {schedule && (
           <Stat label={t("staffLive.sum.schedule")}>
-            <span className="text-lg sm:text-xl">{schedule}</span>
+            <span className="text-lg sm:text-xl whitespace-nowrap">{schedule}</span>
           </Stat>
         )}
       </div>
