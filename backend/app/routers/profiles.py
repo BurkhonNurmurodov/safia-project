@@ -317,6 +317,8 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str],
     under one brigadir while their cell's load is kept in another unit
     (`cell_lookup.cells_unit_for_leader`), and re-sending the same cell list with
     a rename must not quietly carry that cell — and its загрузка — away."""
+    from app.services import leader_load
+    leader_load.forget()        # who owns a counted cell just changed
     leader = db.query(RoleProfile).filter_by(id=leader_id).first()
     mgr_id = leader.manager_id if leader else None
     want: list[str] = []
@@ -824,6 +826,11 @@ _CELL_NAME_DIFF = {
 
 
 def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
+    # A cell's leader and «Zagruzkada hisoblanadi» decide who owes a checklist
+    # (`services/leader_load.py`); drop the kept answer so the bot reads the
+    # new state on the next press.
+    from app.services import leader_load
+    leader_load.forget()
     for col in _CELL_TEXT_COLS:
         val = getattr(payload, col)
         if val is not None:

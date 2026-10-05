@@ -1,0 +1,1 @@
+import{p as t}from"./createLucideIcon-CI5XYsHP.js";import{StaffPage as e,t as i}from"./Staff-C1CD94A2.js";var r=t();function o(){return(0,r.jsx)(i,{live:!0,children:(0,r.jsx)(e,{})})}export{o as default};

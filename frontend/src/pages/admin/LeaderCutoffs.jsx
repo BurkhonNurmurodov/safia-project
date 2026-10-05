@@ -59,6 +59,7 @@ import { useToast } from "../../components/ui/Toast";
 
 const TXT = {
   uz: {
+    noLoad: "Zagruzkada yacheykasi yo'q, oktabrda hech narsa topshirmagan — {d} dan hisobga olinmaydi",
     leadWhat: "Tanlangan liderning natijalari shu kundan boshlab hech qayerda hisobga olinmaydi — na o'z ballida, na brigadaning o'rtachasida.",
     leadSafe: "Undan oldingi kunlar o'z bahosi bilan qoladi va hech narsa o'chirilmaydi.",
     tabOn: "Hisobga olinadi", tabOff: "Hisobdan chiqarilgan",
@@ -93,6 +94,7 @@ const TXT = {
     loadFailed: "Ma'lumot yuklanmadi",
   },
   uz_cyrl: {
+    noLoad: "Загрузкада ячейкаси йўқ, октябрда ҳеч нарса топширмаган — {d} дан ҳисобга олинмайди",
     leadWhat: "Танланган лидернинг натижалари шу кундан бошлаб ҳеч қаерда ҳисобга олинмайди — на ўз баллида, на бригаданинг ўртачасида.",
     leadSafe: "Ундан олдинги кунлар ўз баҳоси билан қолади ва ҳеч нарса ўчирилмайди.",
     tabOn: "Ҳисобга олинади", tabOff: "Ҳисобдан чиқарилган",
@@ -127,6 +129,7 @@ const TXT = {
     loadFailed: "Маълумот юкланмади",
   },
   ru: {
+    noLoad: "Нет ячейки в загрузке, в октябре ничего не сдавал — не учитывается с {d}",
     leadWhat: "Результаты выбранного лидера с этого дня нигде не учитываются — ни в его балле, ни в среднем по бригаде.",
     leadSafe: "Более ранние дни остаются со своими оценками, ничего не удаляется.",
     tabOn: "Учитываются", tabOff: "Не учитываются",
@@ -161,6 +164,7 @@ const TXT = {
     loadFailed: "Не удалось загрузить данные",
   },
   en: {
+    noLoad: "No cell in the workload, filed nothing in October — not counted from {d}",
     leadWhat: "From this day on the selected leader's results count nowhere — not in their own score, not in their unit's average.",
     leadSafe: "Earlier days keep the scores they always had, and nothing is deleted.",
     tabOn: "Counted", tabOff: "Not counted",
@@ -512,7 +516,17 @@ export default function LeaderCutoffs() {
                     style={{ accentColor: "var(--brand)" }}
                   />
                 </td>
-                <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{nm(r.name)}</td>
+                <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>
+                  {nm(r.name)}
+                  {/* Out of the results by the загрузка rule, not by a cutoff
+                      (`services/leader_load.py`) — nothing to lift here; it
+                      follows the cells register. */}
+                  {r.no_load_from && !r.cutoff && (
+                    <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                      {T.noLoad.replace("{d}", r.no_load_from)}
+                    </div>
+                  )}
+                </td>
                 <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                   {r.supervisor && r.supervisor !== "N/A" ? nm(r.supervisor) : "—"}
                 </td>

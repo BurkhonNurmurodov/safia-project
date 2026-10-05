@@ -5734,6 +5734,40 @@ had no way to make the night cost nobody anything.
 
 Related memory: `leader-day-exclusions`.
 
+## A leader with no cell in the загрузка owes nothing (`leader_load`)
+
+From **2026-10-05** (the operator: «no cell on workload and didn't submit
+anything in October») a leader is EXEMPT — files no daily checklist and leaves
+the Monitoring ranking — when BOTH hold: none of their cells carries
+«Zagruzkada hisoblanadi» (`cells.in_load`; a leader with no cell at all
+included), and they have filed nothing on or after `leader_load.FROM`
+(2026-10-01) — no bot `LeaderTaskDay` of any state, no Google-Form row the
+register resolves to them. A leader with one counted cell, or one who filed in
+October, files and is ranked as before.
+
+- **`services/leader_load.py` is THE definition** — `FROM`, `exempt_ids`
+  (kept 60 s; `forget()` is called by the cell register writers and
+  `_set_leader_cells`), `exempt(db, prof, date)` (always False before `FROM`),
+  `with_cuts`. Nothing is stored: it is the CURRENT cells register applied from
+  `FROM` on, so switching a cell on puts its leader back on the hook — for the
+  days since `FROM` too, because `in_load` keeps no history.
+- **Owing**: `leader_cells.expected_days` answers `[]`, so the automatic checks
+  neither warn nor judge them, the brigadir's digest does not list them as «not
+  filed», and the auto-check report skips them.
+- **Filing is refused, not just not asked**, because one answer would make them
+  «filed in October» again: the bot's `/tasks`, its buttons and the shared
+  `leader_checklist.save_answer` / `current_day(create=True)`; the «Chek-list»
+  tab (`noLoad` notice, `rights.file` false, writes 409 `no_load`); the camera
+  page (`_camera_cfg`, 409 `no_load`).
+- **Ranking**: the roster carries `no_load_from` (also in the «Mening o'rnim»
+  pool tuple), folded by `buildCutLeaders` like a cutoff, and the server's
+  census of cut names / units reads `with_cuts` — so a unit whose every leader
+  is exempt leaves the unit ranking from `FROM`. Days filed before `FROM` keep
+  counting. The exclusions tab's «Topshirilmagan» skips those days, and the
+  cutoffs tab names the rule under the leader (nothing to lift there).
+- Not changed: a per-cell unit's leader with at least one counted cell still
+  files a checklist for every cell they own, counted or not.
+
 ## A LEADER who stops counting (`/admin/upload?tab=ltcutoff`)
 
 From **2026-08-30** a leader can be taken out of the results **from one day on,

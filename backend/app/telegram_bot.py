@@ -26,7 +26,7 @@ from app.models import (
 from app.reg_token import make_reg_token
 from app.services import (
     action_log, leader_ai, leader_auto, leader_cells, leader_checklist,
-    leader_close, leader_late_proof, leader_proof, leader_tasks,
+    leader_close, leader_late_proof, leader_load, leader_proof, leader_tasks,
 )
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
@@ -2044,6 +2044,7 @@ _LT_MESSAGES = {
         "pick_profile": "Qaysi profil bilan davom etasiz?",
         "pick_cell": "🏭 {name}\n📅 {date}\n\nQaysi yacheyka uchun hisobot berasiz?\nHar bir yacheyka uchun alohida chek-list to‘ldiriladi.",
         "no_cells": "🏭 {name}\n\nSizga yacheyka biriktirilmagan, shuning uchun bugun to‘ldiradigan chek-list yo‘q.\n\nBrigadiringizga murojaat qiling — yacheyka biriktirilgach, /tasks orqali davom etasiz.",
+        "no_load": "🏭 {name}\n\nYacheykalaringizdan hech biri zagruzkada hisoblanmaydi, shuning uchun sizdan kunlik chek-list talab qilinmaydi va siz «Lider nazorati» reytingiga kirmaysiz.\n\nYacheykangiz zagruzkaga qo‘shilsa, /tasks orqali chek-listni to‘ldirasiz.",
         "menu_title": "📋 {name}\n📅 {date}\n\nVazifani tanlang:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Kun yopilgan. Natija: {score}%",
         "btn_back": "⬅️ Orqaga",
@@ -2197,6 +2198,7 @@ _LT_MESSAGES = {
         "pick_profile": "Қайси профил билан давом этасиз?",
         "pick_cell": "🏭 {name}\n📅 {date}\n\nҚайси ячейка учун ҳисобот берасиз?\nҲар бир ячейка учун алоҳида чек-лист тўлдирилади.",
         "no_cells": "🏭 {name}\n\nСизга ячейка бириктирилмаган, шунинг учун бугун тўлдирадиган чек-лист йўқ.\n\nБригадирингизга мурожаат қилинг — ячейка бириктирилгач, /tasks орқали давом этасиз.",
+        "no_load": "🏭 {name}\n\nЯчейкаларингиздан ҳеч бири загрузкада ҳисобланмайди, шунинг учун сиздан кунлик чек-лист талаб қилинмайди ва сиз «Лидер назорати» рейтингига кирмайсиз.\n\nЯчейкангиз загрузкага қўшилса, /tasks орқали чек-листни тўлдирасиз.",
         "menu_title": "📋 {name}\n📅 {date}\n\nВазифани танланг:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Кун ёпилган. Натижа: {score}%",
         "btn_back": "⬅️ Орқага",
@@ -2349,6 +2351,7 @@ _LT_MESSAGES = {
         "pick_profile": "С каким профилем продолжить?",
         "pick_cell": "🏭 {name}\n📅 {date}\n\nПо какой ячейке отчитываетесь?\nПо каждой ячейке заполняется отдельный чек-лист.",
         "no_cells": "🏭 {name}\n\nЗа вами не закреплена ни одна ячейка, поэтому чек-листа на сегодня нет.\n\nОбратитесь к бригадиру — после закрепления ячейки продолжите через /tasks.",
+        "no_load": "🏭 {name}\n\nНи одна из ваших ячеек не учитывается в загрузке, поэтому ежедневный чек-лист от вас не требуется и вы не участвуете в рейтинге «Контроль лидеров».\n\nКогда вашу ячейку включат в загрузку, заполняйте чек-лист через /tasks.",
         "menu_title": "📋 {name}\n📅 {date}\n\nВыберите задачу:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 День закрыт. Результат: {score}%",
         "btn_back": "⬅️ Назад",
@@ -2501,6 +2504,7 @@ _LT_MESSAGES = {
         "pick_profile": "Which profile do you want to continue with?",
         "pick_cell": "🏭 {name}\n📅 {date}\n\nWhich cell are you reporting for?\nA separate checklist is filled in for each cell.",
         "no_cells": "🏭 {name}\n\nNo cell is assigned to you, so there is no checklist to fill in today.\n\nAsk your supervisor — once a cell is assigned, continue with /tasks.",
+        "no_load": "🏭 {name}\n\nNone of your cells counts in the workload, so no daily checklist is asked of you and you are not in the «Leader Monitoring» ranking.\n\nOnce your cell is added to the workload, fill in the checklist with /tasks.",
         "menu_title": "📋 {name}\n📅 {date}\n\nPick a task:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Day closed. Score: {score}%",
         "btn_back": "⬅️ Back",
@@ -3312,6 +3316,18 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         leader_ai.run_async(discover_first=False)
 
 
+def _lt_no_load(db, prof, date: str, lang: str, chat_id: int,
+                msg_id: int | None) -> bool:
+    """The screen for a leader who owes no checklist because none of their cells
+    counts in the загрузка and they filed nothing since 1 October
+    (`leader_load`). True when it drew it. A screen with no buttons: there is
+    nothing for them to do, and every task button refuses them anyway."""
+    if not leader_load.exempt(db, prof, date):
+        return False
+    _lt_edit(chat_id, msg_id, _lt(lang, "no_load").format(name=prof.name), None)
+    return True
+
+
 def _lt_cell_menu(db, tid: int, pid: int, lang: str, chat_id: int,
                   msg_id: int | None) -> bool:
     """The cell picker — one row per cell this leader files a checklist for.
@@ -3336,6 +3352,8 @@ def _lt_cell_menu(db, tid: int, pid: int, lang: str, chat_id: int,
         return False
     shift = _lt_shift(db, prof)
     date = effective_date(shift)
+    if _lt_no_load(db, prof, date, lang, chat_id, msg_id):
+        return True
     if not leader_cells.is_per_cell(db, prof.manager_id, date):
         return False
 
@@ -3376,6 +3394,8 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
         return
     shift = _lt_shift(db, prof)
     date = effective_date(shift)
+    if _lt_no_load(db, prof, date, lang, chat_id, msg_id):
+        return
     promote_due(db, shift, date)  # apply staged config due at this boundary
     # A button minted BEFORE this unit was switched carries no cell, and
     # following it would open — and on the first answer create — the cell-less
@@ -3626,6 +3646,14 @@ def _lt_callback(call: types.CallbackQuery):
 
         shift = _lt_shift(db, prof)
         date = effective_date(shift)
+        # A leader the загрузка rule exempts (`leader_load`) answers nothing:
+        # a button left in their chat from before must not file the answer
+        # that would put them back on the hook for every day since 1 October.
+        if action != "back" and leader_load.exempt(db, prof, date):
+            _lt_clear(tid)
+            bot.answer_callback_query(call.id)
+            _lt_no_load(db, prof, date, lang, chat_id, msg_id)
+            return
         # On a per-cell unit `cid` selects WHICH of this leader's checklists the
         # button belongs to; everywhere else it is None and this is the one
         # cell-less day the platform has always had.

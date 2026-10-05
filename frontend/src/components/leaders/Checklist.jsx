@@ -579,7 +579,15 @@ export default function Checklist({
           ariaLabel="cells" options={view.cells.map((c) => [c.id, c.code])} />
       )}
 
-      {view.noCell ? (
+      {view.noLoad ? (
+        // None of this leader's cells counts in the загрузка and they filed
+        // nothing since 1 October (`services/leader_load.py`): nothing is owed.
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState icon={CircleSlash} title={T.noLoadT}
+            message={isLeader ? T.noLoadMine : T.noLoadOther}
+            showUploadLink={false} height="h-56" />
+        </div>
+      ) : view.noCell ? (
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <EmptyState icon={CircleSlash} title={T.noCellT}
             message={rights.file || isLeader ? T.noCellMine : T.noCellOther}

@@ -28,7 +28,7 @@ from app import identity
 from app.models import RoleProfile
 from app.services import (
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
-    leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof,
+    leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof, leader_load,
     leader_reports, leader_unit_report)
 from app.services.name_map import (
     _name_tokens,
@@ -555,6 +555,13 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     # second denominator rule on the client, which is how two readings of one
     # ranking start disagreeing.
     cuts = leader_cutoffs.load(db)
+    # Leaders with no cell in the загрузка who filed nothing since 1 October
+    # (`services/leader_load.py`): they owe nothing from that day on. They
+    # travel on the roster (`no_load_from`, folded by the client like a
+    # cutoff) and into the census below through `census_cuts`; no row needs
+    # stamping, because by definition they filed nothing from that day.
+    load_free = leader_load.exempt_ids(db)
+    census_cuts = leader_load.with_cuts(cuts, load_free)
 
     sheet_data = []
     # Every leader-day the two FILED layers account for. An exclusion whose key
@@ -775,6 +782,11 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             "cells": [{"id": c.id, "code": c.verifix_code}
                       for c in roster_cells.get(p.id, [])],
             "cutoff": str(cut.from_date)[:10] if cut else None,
+            # No cell in the загрузка and nothing filed since 1 October: from
+            # this day on the leader owes nothing (`leader_load`). Not a
+            # cutoff — nobody wrote it and nobody can lift it but the cells
+            # register — so it is a field of its own the admin tab leaves be.
+            "no_load_from": leader_load.FROM if p.id in load_free else None,
             # The WHY and the WHO of the decision are the admin tab's own
             # columns. Every other reader needs only to know that this
             # leader stopped owing reports and from when: a free-text note
@@ -869,7 +881,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     # the key still has an active person filing under it.
     cut_leaders: dict[str, dict] = {}
     for name, people in name_people.items():
-        recs = [leader_cutoffs.record(cuts, lid, nm) for lid, nm in people]
+        recs = [leader_cutoffs.record(census_cuts, lid, nm) for lid, nm in people]
         if not recs or any(c is None for c in recs):
             continue
         # The reason and the author shown are the ones belonging to the floor
@@ -905,7 +917,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     # Per UNIT first — an absent key is a unit still counting.
     unit_floor: dict[int, str] = {}
     for uid_, members in unit_members.items():
-        floors = [leader_cutoffs.stopped_from(cuts, p.id, p.name) for p in members]
+        floors = [leader_cutoffs.stopped_from(census_cuts, p.id, p.name) for p in members]
         if not floors or any(f is None for f in floors):
             continue
         frm = max(floors)
@@ -925,7 +937,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
         # floor now belongs to somebody already cut by then.
         active = [who for who, last in unit_filers.get(uid_, {}).items()
                   if last >= frm]
-        extra = [leader_cutoffs.record(cuts, lid, nm) for lid, nm in active]
+        extra = [leader_cutoffs.record(census_cuts, lid, nm) for lid, nm in active]
         if any(c is None for c in extra):
             continue
         if extra:
@@ -1073,7 +1085,8 @@ def _standing_pool(db: Session) -> dict:
             "rows": rows,
             "filed": filed,
             "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
-                        p["cutoff"], p["cell_from"], len(p["cells"]))
+                        p["cutoff"], p["cell_from"], len(p["cells"]),
+                        p.get("no_load_from"))
                        for p in feed["roster"]],
             "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
             "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
@@ -1183,9 +1196,10 @@ def get_standing(
         #  excluded (0 · 1 day · 2 cutoff), voided, missing]
         "rows": [[r[0], name_of.get(r[1], r[1]), r[2], unit_of.get(r[3], r[3]),
                   r[4], r[5], r[6], r[7], r[8]] for r in rows],
-        # [name, unit, shift, cutoff, cell_from, cells owned, filed anything]
+        # [name, unit, shift, cutoff, cell_from, cells owned, filed anything,
+        #  owes nothing from (no cell in the загрузка — `leader_load`)]
         "roster": [[name_of.get(p[1], p[1]), unit_of.get(p[2], p[2]), p[3],
-                    p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0]
+                    p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0, p[7]]
                    for p in roster],
         "cutoffs": {name_of.get(k, k): {"from": v} for k, v in pool["cutoffs"].items()},
         "cutUnits": {unit_of.get(k, k): {"from": v} for k, v in pool["cutUnits"].items()},

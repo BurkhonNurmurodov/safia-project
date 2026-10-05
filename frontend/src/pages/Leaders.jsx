@@ -1257,9 +1257,10 @@ const filedUnderOf = (rows) => {
 // display name `slotsBy` groups by. `cutoffs` is the backend's answer for the
 // names it has rows under; the ROSTER adds the two cases that map cannot carry,
 // and both matter because the roster itself puts people on the board: a leader
-// cut before they ever filed, and a leader of a per-CELL unit who owns no cell
-// (owes nothing from the switch on). Without them either one would print as a
-// red row of days nobody asked them for.
+// cut before they ever filed, a leader of a per-CELL unit who owns no cell
+// (owes nothing from the switch on), and a leader none of whose cells counts in
+// the загрузка who filed nothing since 1 October (`no_load_from`). Without them
+// any one would print as a red row of days nobody asked them for.
 //
 // A roster CUTOFF speaks only for a name the feed has no rows under: where it
 // has rows, the backend's key-level answer already weighed everybody filing
@@ -1276,6 +1277,9 @@ const buildCutLeaders = (cutoffs, filedUnder, roster) => {
     const own = [];
     if (p.cutoff && !filedUnder.has(p.name)) own.push(p.cutoff);
     if (p.cell_from && !p.cells?.length) own.push(p.cell_from);
+    // No cell in the загрузка and nothing filed since 1 October
+    // (`services/leader_load.py`): owes nothing from that day on.
+    if (p.no_load_from) own.push(p.no_load_from);
     const f = own.length ? own.sort()[0] : null;
     const had = floors.has(p.name), cur = floors.get(p.name);
     floors.set(p.name, !had ? f : cur == null || f == null ? null : f > cur ? f : cur);
@@ -2071,9 +2075,10 @@ const poolRows = (raw) => (raw ?? []).map(
     missing: !!missing,
   }));
 const poolRoster = (raw) => (raw ?? []).map(
-  ([name, supervisor, shift, cutoff, cellFrom, cells, filed]) => ({
+  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad]) => ({
     name, supervisor, shift, cutoff,
     cell_from: cellFrom,
+    no_load_from: noLoad || null,
     cells: Array.from({ length: cells || 0 }),
     filed: !!filed,
   }));

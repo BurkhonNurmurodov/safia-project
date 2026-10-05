@@ -238,6 +238,8 @@ def save_load_registry(
             c.in_load = wanted[c.id]
             updated += 1
     db.commit()
+    from app.services import leader_load
+    leader_load.forget()        # who owes a checklist follows `in_load`
     one = touched[0] if len(touched) == 1 else None
     action_log.enrich(
         target_kind="cell",
