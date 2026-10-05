@@ -7155,9 +7155,15 @@ rights — over a different source, and it is being built to REPLACE /staff.
   The table header is ONE 40px line, never wrapped, every label on one baseline;
   columns take their content's width and a trailing spacer takes the rest, so a
   wide screen keeps a name beside its status instead of stretching every column
-  apart. «Xodim» sorts (the search box above is the name filter); the job title
-  rides under the name with its filter in the same header («Xodim / Lavozim»);
-  the early-arrival and effective-hours columns appear from xl (1280) up.
+  apart. «Xodim» sorts (the search box above is the name filter). **The job
+  title is a «Lavozim» column of its own, right after «Holat»** (the operator,
+  2026-10-05 — one line, cut with «…» past 12rem, whole on hover). Which
+  columns show is decided by the TABLE's width (`@container` on its scroller),
+  never the screen's, because an open sidebar takes 170px: «Lavozim» from 56rem
+  (below that the title rides under the name again, its filter in the name
+  header «Xodim / Lavozim»), early arrival and effective hours from 72rem.
+  Consequence to know: on a 1280 laptop with the sidebar open the table now
+  shows «Lavozim» and not those two columns (it showed the two before).
 - **It opens on the unit's CURRENT shift-day**, never a day remembered from an
   earlier visit — `GET /api/staff-live/today?manager_id=` (`_unit_today` over
   `verifix_live.day_frame`, reads nothing from Verifix, 404 for a unit that
