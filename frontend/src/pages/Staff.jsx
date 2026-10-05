@@ -1138,17 +1138,20 @@ function LiveWorkersView({
   const narrowed = activeFilter || liveFilter !== "all";
   const shownRows = workers.filter((w) => !w.split_of).length;
   const allRows = allWorkers.filter((w) => !w.split_of).length;
-  const th = "px-3 first:pl-4 last:pr-4 py-2.5 border-b text-xs font-semibold whitespace-nowrap align-bottom";
-  // The figures' headers may take two lines («Erta kelish, daq») — their
-  // columns hold three digits; the name column is the one that needs room.
-  const thNum = "px-3 first:pl-4 last:pr-4 py-2.5 border-b text-xs font-semibold text-right align-bottom";
+  // ONE header line: every label on one baseline, never wrapped (a header
+  // three lines tall is mostly empty space). Columns take their content's
+  // width and a trailing spacer takes what is left, so on a wide screen a
+  // name stays next to its status and the figures instead of every column
+  // stretching apart; figure headers sit right-aligned over their figures.
+  const th = "h-10 px-3 first:pl-4 last:pr-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
+  const thNum = th.replace("text-left", "text-right");
   const thStyle = { borderColor: "var(--border)", color: "var(--text-3)" };
-  const td = "px-3 first:pl-4 last:pr-4 py-2.5";
+  const td = "px-3 first:pl-4 last:pr-4 py-2.5 whitespace-nowrap";
   // One schedule for the whole unit (the usual case) is said once, in the
   // summary, instead of on every row; several keep the column (and its filter).
   const schedules = [...new Set(allWorkers.map((w) => w.schedule).filter(Boolean))];
   const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
-  const cols = 7 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
+  const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
 
   return (
     <div>
@@ -1193,29 +1196,31 @@ function LiveWorkersView({
             <thead>
               <tr style={{ background: "var(--bg-inner)" }}>
                 {/* The job title rides under the name: as a column of its own it
-                    cost ~180px a laptop does not have. Both keep their filter. */}
-                <th scope="col" className={`${th} text-left border-t min-w-[12rem] xl:min-w-[16rem]`} style={thStyle}>
-                  <div className="flex items-center gap-1.5">
-                    <ColFilter quiet label={t("staff.colWorker")} active={!!filters.worker}>
-                      <TxtFilter value={filters.worker} onChange={(v) => setF("worker", v)} />
-                    </ColFilter>
+                    cost ~180px a laptop does not have. The name header SORTS
+                    (the search above already filters by name); the job title
+                    keeps its filter. */}
+                <th scope="col" className={`${th} min-w-[14rem] min-[1400px]:min-w-[20rem]`} style={thStyle}
+                  aria-sort={nameAsc === null ? "none" : nameAsc ? "ascending" : "descending"}>
+                  <span className="inline-flex items-center gap-1.5">
                     <button type="button" onClick={() => setNameAsc((p) => (p === null ? true : p ? false : null))}
-                      className="grid place-items-center w-5 h-5 rounded"
-                      style={{ color: nameAsc === null ? "var(--text-4)" : "var(--text-2)" }}
-                      aria-label={t("common.sortAZ")} title={t("common.sortAZ")}>
-                      {nameAsc === null ? <ChevronsUpDown size={12} /> : nameAsc ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      className="inline-flex items-center gap-1 rounded font-[inherit]"
+                      style={{ color: nameAsc === null ? "var(--text-3)" : "var(--text-2)" }} title={t("common.sortAZ")}>
+                      {t("staff.colWorker")}
+                      {nameAsc === null
+                        ? <ChevronsUpDown size={12} aria-hidden="true" style={{ color: "var(--text-4)" }} />
+                        : nameAsc ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
                     </button>
-                    <span aria-hidden="true" style={{ color: "var(--text-4)" }}>·</span>
+                    <span aria-hidden="true" style={{ color: "var(--text-4)" }}>/</span>
                     <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
                       <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
                     </ColFilter>
-                  </div>
+                  </span>
                 </th>
                 {/* The status sits right after the name — it is the question
                     the page is opened for. */}
-                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.status")}</th>
+                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.status")}</th>
                 {showCellCol && (
-                  <th scope="col" className={`${th} text-left border-t`} style={thStyle}>
+                  <th scope="col" className={th} style={thStyle}>
                     <ColFilter quiet label={t("staff.colCell")} active={filters.cells.length > 0}>
                       <OptsFilter searchable opts={cellCodes} sel={filters.cells} onChange={(v) => setF("cells", v)}
                         render={(c) => cellLabels.get(c) || c} />
@@ -1223,39 +1228,40 @@ function LiveWorkersView({
                   </th>
                 )}
                 {!oneSchedule && (
-                  <th scope="col" className={`${th} text-left border-t`} style={thStyle}>
+                  <th scope="col" className={th} style={thStyle}>
                     <ColFilter quiet label={t("staff.colSchedule")} active={filters.schedules.length > 0}>
                       <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={(v) => setF("schedules", v)} />
                     </ColFilter>
                   </th>
                 )}
-                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.in")}</th>
-                <th scope="col" className={`${th} text-left border-t`} style={thStyle}>{t("staffLive.c.out")}</th>
-                <th scope="col" className={`${thNum} border-t`} style={thStyle}>
-                  <ColFilter quiet label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
+                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.in")}</th>
+                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.out")}</th>
+                <th scope="col" className={thNum} style={thStyle}>
+                  <ColFilter quiet align="right" label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
                     <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
                       onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} border-t hidden xl:table-cell`} style={thStyle}>
-                  <ColFilter quiet label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
+                <th scope="col" className={`${thNum} hidden xl:table-cell`} style={thStyle}>
+                  <ColFilter quiet align="right" label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
                     <RngFilter minV={filters.early_min} maxV={filters.early_max}
                       onMin={(v) => setF("early_min", v)} onMax={(v) => setF("early_max", v)} />
                   </ColFilter>
                 </th>
-                <th scope="col" className={`${thNum} border-t hidden xl:table-cell`} style={thStyle}>
-                  <ColFilter quiet label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
+                <th scope="col" className={`${thNum} hidden xl:table-cell`} style={thStyle}>
+                  <ColFilter quiet align="right" label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
                     <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
                       onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
                   </ColFilter>
                 </th>
+                <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
             <tbody>
               {sortedWorkers.map((w) => (
                 <Fragment key={w.id}>
                   <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
-                    <td className={td}>
+                    <td className={`${td} !whitespace-normal max-w-[24rem]`}>
                       <LiveName w={w} open={openRaw === w.id}
                         onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
                       <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
@@ -1263,7 +1269,7 @@ function LiveWorkersView({
                         <LiveRowNotes w={w} />
                       </div>
                     </td>
-                    <td className={td}><LiveStatusChip status={w.status} wrap /></td>
+                    <td className={`${td} max-xl:!whitespace-normal`}><LiveStatusChip status={w.status} wrap /></td>
                     {/* Code only — the workshop name is four words of Russian
                         per row; it stays in the tooltip and the filter. */}
                     {showCellCol && (
@@ -1289,6 +1295,7 @@ function LiveWorkersView({
                     <td className={`${td} tabular-nums text-right hidden xl:table-cell`} style={{ color: "var(--text-1)" }}>
                       {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
                     </td>
+                    <td aria-hidden="true" className="p-0" />
                   </tr>
                   {openRaw === w.id && w.raw && (
                     <tr>

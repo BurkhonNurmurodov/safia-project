@@ -11,7 +11,10 @@ import { useDragSelect } from "../../hooks/useDragSelect";
 // `quiet` makes the whole label the trigger and shows the filter glyph only
 // while the header is pointed at, focused or filtered (always on touch, where
 // nothing can be pointed at) — a row of ten glyphs read as noise (/staff-live).
-export function ColFilter({ label, active, children, quiet = false }) {
+// The glyph takes NO room (it hangs outside the label), so a quiet header lines
+// up with its column exactly; `align="right"` hangs it on the left, for a
+// right-aligned figure column.
+export function ColFilter({ label, active, children, quiet = false, align = "left" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const popRef = useRef(null);
@@ -52,12 +55,13 @@ export function ColFilter({ label, active, children, quiet = false }) {
           type="button"
           onClick={() => setOpen(o => !o)}
           aria-expanded={open}
-          className="inline-flex items-center gap-1 rounded py-0.5 -my-0.5 font-[inherit]"
+          className="relative inline-flex items-center rounded font-[inherit] whitespace-nowrap"
           style={{ color: active ? "var(--brand-text)" : "var(--text-3)" }}
         >
           {label}
           <SlidersHorizontal size={11} aria-hidden="true"
-            className={active || open ? "" : "opacity-0 group-hover/cf:opacity-100 group-focus-within/cf:opacity-100 pointer-coarse:opacity-60 transition-opacity"} />
+            className={`absolute top-1/2 -translate-y-1/2 ${align === "right" ? "right-full mr-1" : "left-full ml-1"} ${
+              active || open ? "" : "opacity-0 group-hover/cf:opacity-100 group-focus-within/cf:opacity-100 pointer-coarse:opacity-60 transition-opacity"}`} />
         </button>
       ) : (<>
       {label && <span style={{ color: "var(--text-3)" }}>{label}</span>}

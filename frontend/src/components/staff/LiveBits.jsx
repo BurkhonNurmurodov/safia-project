@@ -474,20 +474,22 @@ export function LiveExtras({ extras, phone = false }) {
               <tr style={{ background: "var(--bg-inner)" }}>
                 {["worker", "hours", "named", "status"].map((k) => (
                   <th key={k} scope="col"
-                    className={`${k === "hours" ? "text-right" : "text-left"} px-4 py-2.5 border-y text-xs font-semibold`}
+                    className={`${k === "hours" ? "text-right" : "text-left"} h-10 px-4 border-y text-xs font-semibold whitespace-nowrap align-middle`}
                     style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
                     {t(`staffLive.ex.c.${k}`)}
                   </th>
                 ))}
+                <td aria-hidden="true" className="w-full p-0 border-y" style={{ borderColor: "var(--border)" }} />
               </tr>
             </thead>
             <tbody>
               {extras.map((x) => (
                 <tr key={x.employee_id} className="border-b" style={{ borderColor: "var(--border)" }}>
                   <td className="px-4 py-2.5" style={{ color: "var(--text-1)" }}>{tl(x.worker_name)}</td>
-                  <td className="px-4 py-2.5 tabular-nums text-right" style={{ color: "var(--text-1)" }}>{n2(x.hours)}</td>
-                  <td className="px-4 py-2.5" style={{ color: x.named_at ? "var(--text-2)" : "var(--text-3)" }}>{named(x)}</td>
-                  <td className="px-4 py-2.5"><ExtraStatus x={x} /></td>
+                  <td className="px-4 py-2.5 tabular-nums text-right whitespace-nowrap" style={{ color: "var(--text-1)" }}>{n2(x.hours)}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: x.named_at ? "var(--text-2)" : "var(--text-3)" }}>{named(x)}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap"><ExtraStatus x={x} /></td>
+                  <td aria-hidden="true" className="p-0" />
                 </tr>
               ))}
             </tbody>

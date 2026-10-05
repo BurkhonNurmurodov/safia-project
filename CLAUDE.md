@@ -7131,7 +7131,14 @@ rights — over a different source, and it is being built to REPLACE /staff.
   holatlar qanday hisoblanadi» link. A phone reads a LIST (`LivePhoneList`:
   name + status, role · cell, Keldi · Ketdi · soat), not the table scrolled
   sideways. Column filters use `ColFilter quiet` (the label is the trigger, the
-  glyph shows on hover/focus/when filtering, always on touch).
+  glyph shows on hover/focus/when filtering, always on touch, and hangs OUTSIDE
+  the label so a header lines up with its column — `align="right"` for figures).
+  The table header is ONE 40px line, never wrapped, every label on one baseline;
+  columns take their content's width and a trailing spacer takes the rest, so a
+  wide screen keeps a name beside its status instead of stretching every column
+  apart. «Xodim» sorts (the search box above is the name filter); the job title
+  rides under the name with its filter in the same header («Xodim / Lavozim»);
+  the early-arrival and effective-hours columns appear from xl (1280) up.
 - **It opens on the unit's CURRENT shift-day**, never a day remembered from an
   earlier visit — `GET /api/staff-live/today?manager_id=` (`verifix_live.shift_day`,
   reads nothing from Verifix) names it, because the browser cannot: the plant
