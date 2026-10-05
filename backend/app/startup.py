@@ -7141,6 +7141,37 @@ def _wc_plan_history_job() -> None:
                       wc_plan_history_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: «Департамент по продукту и технологиям» clock in/out ───────────
+# The operator asked on 2026-10-05 whether the platform can see that
+# department's clock-in/out and, if so, for Mon 28.09 – Sun 04.10 as Excel. The
+# Verifix login and the bot token live only on the server, so it runs here: it
+# READS Verifix (the «Davomat» tab's own report and hours rule) and writes
+# nothing but its flag (`services/dept_attendance_report.py`). Changing what it
+# sends needs a NEW key.
+DEPT_ATTENDANCE_FLAG = "dept_product_tech_attendance_2026_09_28_v1"
+_DEPT_ATTENDANCE_DELAY_S = 90
+
+
+def report_dept_attendance() -> None:
+    """The department's week of clock-ins, DMed once. Never raises."""
+    try:
+        if not _report_pending(DEPT_ATTENDANCE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("dept-attendance-product-tech",
+                    datetime.now(timezone.utc) + timedelta(seconds=_DEPT_ATTENDANCE_DELAY_S),
+                    _dept_attendance_job)
+    except Exception as exc:
+        print(f"[startup] department attendance report could not be scheduled: {exc}")
+
+
+def _dept_attendance_job() -> None:
+    from app.services import dept_attendance_report
+    _send_report_once(DEPT_ATTENDANCE_FLAG, "department attendance report",
+                      dept_attendance_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance

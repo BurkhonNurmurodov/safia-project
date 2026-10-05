@@ -110,6 +110,7 @@ try:
         report_t11_proofs,
         report_dispute_queue,
         report_wc_plan_history,
+        report_dept_attendance,
         check_leader_kinds, check_leader_kind_pins,
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
@@ -497,6 +498,12 @@ try:
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
     # and `services/wc_plan_history_report.py` once it has landed.
     report_wc_plan_history()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — «Департамент по продукту и
+    # технологиям»: its clock-in/out for 28.09–04.10 from Verifix, DMed once to
+    # the operator as text + a workbook. Remove this line,
+    # `startup.report_dept_attendance` and `services/dept_attendance_report.py`
+    # once it has landed.
+    report_dept_attendance()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and
