@@ -63,7 +63,7 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import action_log, gemini, leader_bot, leader_exclusions
+from app.services import action_log, gemini, leader_bot, leader_exclusions, leader_shift
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
@@ -208,26 +208,38 @@ def row_uid(row: LeaderChecklist) -> str:
 
 # ── criteria chain ───────────────────────────────────────────────────────────
 
+def _shifted_levels(db: Session, task_id: int, manager_id, leader_id, date,
+                    own, sup):
+    """`(own, sup)` as the chain must walk them for this leader-day: untouched,
+    unless the leader's checklist runs on the other shift that day
+    (services/leader_shift) — then the unit's level is that shift's standard."""
+    if date and leader_id and leader_shift.moved(db, leader_id):
+        own, sup, _ = leader_shift.chain(
+            db, leader_id=leader_id, manager_id=manager_id, day=date,
+            task_id=task_id, own=own, sup=sup)
+    return own, sup
+
+
 def criteria_for(db: Session, task_id: int, manager_id: int | None,
-                 leader_id: int | None) -> str:
+                 leader_id: int | None, date: str | None = None) -> str:
     """Effective "what makes this task truly done", resolved leader → supervisor
-    → global. Blank at every level = no written definition (date check only)."""
-    if leader_id:
-        row = db.query(LeaderTaskLeaderSetting).filter_by(
-            leader_id=leader_id, task_id=task_id).first()
-        if row and (row.criteria or "").strip():
-            return row.criteria.strip()
-    if manager_id:
-        row = db.query(LeaderTaskSetting).filter_by(
-            manager_id=manager_id, task_id=task_id).first()
-        if row and (row.criteria or "").strip():
+    → global. Blank at every level = no written definition (date check only).
+    `date` names the leader-day, for a leader whose checklist runs on another
+    shift than their unit's (services/leader_shift)."""
+    own = (db.query(LeaderTaskLeaderSetting).filter_by(
+        leader_id=leader_id, task_id=task_id).first() if leader_id else None)
+    sup = (db.query(LeaderTaskSetting).filter_by(
+        manager_id=manager_id, task_id=task_id).first() if manager_id else None)
+    own, sup = _shifted_levels(db, task_id, manager_id, leader_id, date, own, sup)
+    for row in (own, sup):
+        if row is not None and (row.criteria or "").strip():
             return row.criteria.strip()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     return (td.criteria or "").strip() if td and td.criteria else ""
 
 
 def task_label(db: Session, task_id: int, manager_id: int | None = None,
-               leader_id: int | None = None) -> str:
+               leader_id: int | None = None, date: str | None = None) -> str:
     """The task's name, resolved leader → supervisor → global when the caller
     knows whose report this is.
 
@@ -237,15 +249,13 @@ def task_label(db: Session, task_id: int, manager_id: int | None = None,
     involved ever read. Callers that only have a task id (queue listings) pass
     neither and get the global name, which is right for a register column.
     """
-    if leader_id:
-        row = db.query(LeaderTaskLeaderSetting).filter_by(
-            leader_id=leader_id, task_id=task_id).first()
-        if row and (row.name_ru or row.name_uz or row.name_en):
-            return row.name_ru or row.name_uz or row.name_en
-    if manager_id:
-        row = db.query(LeaderTaskSetting).filter_by(
-            manager_id=manager_id, task_id=task_id).first()
-        if row and (row.name_ru or row.name_uz or row.name_en):
+    own = (db.query(LeaderTaskLeaderSetting).filter_by(
+        leader_id=leader_id, task_id=task_id).first() if leader_id else None)
+    sup = (db.query(LeaderTaskSetting).filter_by(
+        manager_id=manager_id, task_id=task_id).first() if manager_id else None)
+    own, sup = _shifted_levels(db, task_id, manager_id, leader_id, date, own, sup)
+    for row in (own, sup):
+        if row is not None and (row.name_ru or row.name_uz or row.name_en):
             return row.name_ru or row.name_uz or row.name_en
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     if not td:
@@ -578,6 +588,12 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         sup = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+    # A leader whose checklist runs on the other shift that day is judged by
+    # that shift's hours and standard (services/leader_shift).
+    if date and leader_id and leader_shift.moved(db, leader_id):
+        own, sup, shift = leader_shift.chain(
+            db, leader_id=leader_id, manager_id=manager_id, day=date,
+            task_id=task_id, own=own, sup=sup)
     win = resolve_window(shift, own, sup, td)
     if date:
         # A night whose hours were moved is judged by the hours it was worked
@@ -1173,7 +1189,9 @@ def discover(db: Session) -> int:
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
                 leader_id=d.leader_id, manager_id=d.manager_id,
-                shift=shifts.get(d.manager_id), status="pending", flags=[],
+                shift=leader_shift.day_shift(db, d.leader_id, d.date,
+                                             shifts.get(d.manager_id)),
+                status="pending", flags=[],
             ))
             known.add(ref)
             added += 1
@@ -1432,7 +1450,9 @@ def undiscovered(db: Session, *, date_from: str | None = None,
             if leader_exclusions.excluded(db, ldr, when, pairs=excluded_pairs,
                                           cuts=excluded_cuts):
                 continue
-            out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr, task_id))
+            out.append((f"bot:{day_id}",
+                        leader_shift.day_shift(db, ldr, when, shifts.get(mgr)),
+                        mgr, ldr, task_id))
 
     # ── sheet layer ──────────────────────────────────────────────────────────
     rows_q = db.query(LeaderChecklist)
@@ -1547,7 +1567,9 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=day.date, task_id=e.task_id,
                 leader_id=day.leader_id, manager_id=day.manager_id,
-                shift=mgr.shift if mgr else None, status="pending", flags=[],
+                shift=leader_shift.day_shift(db, day.leader_id, day.date,
+                                             mgr.shift if mgr else None),
+                status="pending", flags=[],
             ))
             added += 1
     elif row is not None:
@@ -1654,7 +1676,9 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
     db.add(LeaderAiReview(
         ref=ref, source="bot", date=day.date, task_id=entry.task_id,
         leader_id=day.leader_id, manager_id=day.manager_id,
-        shift=mgr.shift if mgr else None, status="pending", flags=[],
+        shift=leader_shift.day_shift(db, day.leader_id, day.date,
+                                     mgr.shift if mgr else None),
+        status="pending", flags=[],
     ))
     return 1
 
@@ -1758,7 +1782,14 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         db.commit()
         return "image"
 
-    examples = task_examples(db, rev.task_id, rev.manager_id, rev.leader_id)
+    # A leader-day on the other shift than the unit's (services/leader_shift)
+    # is shown — and judged by — no unit-level example: the unit's describe the
+    # unit's shift.
+    ex_mid = rev.manager_id
+    if rev.leader_id and leader_shift.moved(db, rev.leader_id) and leader_shift.shifted(
+            db, rev.leader_id, rev.date, leader_shift.unit_shift(db, rev.manager_id)):
+        ex_mid = None
+    examples = task_examples(db, rev.task_id, ex_mid, rev.leader_id)
     # Resolved BEFORE the call, not just after it: the rule decides what the
     # model is asked to read (a date-only task's date lives inside the app, and
     # the strict prompt forbids reading it), and the same values then judge what
@@ -1767,9 +1798,11 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     win, checked, dayed, timed, plus = date_rule_for(
         db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift, date=rev.date)
     prompt = _prompt(
-        task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
+        task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id,
+                        date=rev.date),
         note=task_note(db, rev.task_id),
-        criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
+        criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id,
+                              date=rev.date),
         n_images=len(images), omitted=omitted, n_examples=len(examples),
         # Only DATE-ONLY loosens what may be READ. Time-only asks about the
         # hour, which is exactly what the strict prompt already transcribes —
@@ -3303,6 +3336,14 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
         levels = (own_cfg.get((rev.leader_id, rev.task_id)),
                   sup_cfg.get((rev.manager_id, rev.task_id)),
                   defs.get(rev.task_id))
+        # A leader-day on the other shift than the unit's is re-derived against
+        # that shift's standard (services/leader_shift) — the rule it was first
+        # judged by. Every other row walks exactly the levels it always did.
+        if rev.leader_id and leader_shift.moved(db, rev.leader_id):
+            o, sp, _ = leader_shift.chain(
+                db, leader_id=rev.leader_id, manager_id=rev.manager_id,
+                day=rev.date, task_id=rev.task_id, own=levels[0], sup=levels[1])
+            levels = (o, sp, levels[2])
         win = resolve_window(rev.shift, *levels)
         if rev.leader_id in temp:
             win = leader_temp_hours.window_on(db, rev.leader_id, rev.date,

@@ -53,7 +53,7 @@ from app.security import require_auth
 from app.services import (
     action_log, leader_ai, leader_auto, leader_bot, leader_cells,
     leader_checklist, leader_close, leader_dispute, leader_late_proof, leader_load,
-    leader_proof, leader_reports, leader_tasks,
+    leader_proof, leader_reports, leader_shift, leader_tasks,
 )
 from app.services.name_map import leader_match, supervisor_match
 
@@ -258,6 +258,11 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
         # A checklist that does not exist yet has nothing to show and nothing
         # to file: the next day is opened by its own shift, not by a calendar.
         date = today
+    # The shift THAT day runs on — a leader whose checklist moved to the other
+    # shift (services/leader_shift) has past days on the old one.
+    unit_sh = mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
+    if date != today and leader_shift.moved(db, prof.id):
+        shift = leader_shift.shift_on(db, prof.id, date, unit_sh)
     is_today = date == today
     now = datetime.now(timezone.utc)
     files = _holds(db, payload, prof)
@@ -296,7 +301,9 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
     if day is not None:
         source, uid = "bot", leader_bot.day_uid(day.id)
         if day.closed_at is not None:
-            args = (shift, prof.manager_id, date)
+            # Which collection layer counts is a fact about the UNIT's form
+            # (leader_bot.merges), so it is asked with the unit's shift.
+            args = (unit_sh, prof.manager_id, date)
             overrides = leader_bot.source_overrides(db)
             counted = leader_bot.merges(
                 *args, leader_bot.camera_units(db), leader_bot.bot_from_floors(db),

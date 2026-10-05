@@ -39,7 +39,7 @@ from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import (
     action_log, leader_ai, leader_bot, leader_cells, leader_close,
-    leader_reports)
+    leader_reports, leader_shift)
 from app.services.leader_tasks import (
     AUTO_PREFIX, CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list,
     cancel_pending, channel_chat_id,
@@ -1955,7 +1955,10 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
             "pick_by": pick_by.get((d.leader_id, str(d.date))),
         }
         if d.closed_at is None:
-            shift = mgr.shift if mgr else None
+            # The shift THIS day runs on — a leader whose checklist moved to the
+            # other shift (services/leader_shift) is out of time on that one.
+            shift = leader_shift.day_shift(db, d.leader_id, str(d.date),
+                                           mgr.shift if mgr else None)
             # The day's OWN date decides which tasks it was asked — "what is
             # this unfinished checklist still waiting for" is a question about
             # that night, not about today.
@@ -2387,7 +2390,8 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
 
     prof = db.query(RoleProfile).filter_by(id=day.leader_id).first()
     mgr = db.query(Manager).filter_by(id=day.manager_id).first()
-    shift = mgr.shift if mgr else None
+    shift = leader_shift.day_shift(db, day.leader_id, str(day.date),
+                                   mgr.shift if mgr else None)
     entries = {e.task_id: e for e in db.query(LeaderTaskEntry)
                .filter_by(day_id=day.id).all()}
     media = leader_bot.media_of(db, [e.id for e in entries.values()])

@@ -9096,6 +9096,80 @@ def fix_nodirjon_leader_unit() -> None:
         db.close()
 
 
+# ── one-shot: Jumaniyazov Sanjarbek's checklist runs on shift 1 (2026-10-06) ──
+# The operator, 5 Oct 2026: his brigadir is on shift 2 while his cell works
+# shift 1, so his checklist moves to shift 1's hours and standard from the day
+# shift of 6 October on (services/leader_shift). Written with the same writer
+# the profile page's «Chek-list smenasi» switch uses, so the page shows it and
+# an admin changes it there. Never raises; refuses unless exactly one leader
+# profile is him. Changing what it does needs a NEW flag key.
+SANJARBEK_SHIFT_FLAG = "leader_checklist_shift_jumaniyazov_2026_10_06_v1"
+SANJARBEK_SHIFT_FROM = "2026-10-06"
+
+
+def move_sanjarbek_checklist_shift() -> None:
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=SANJARBEK_SHIFT_FLAG).first()
+        if row is not None and (row.value or "").startswith(("done", "blocked")):
+            return
+        from app.services import leader_shift
+
+        def mark(value: str) -> None:
+            nonlocal row
+            if row is None:
+                row = AppSetting(key=SANJARBEK_SHIFT_FLAG, value=value)
+                db.add(row)
+            else:
+                row.value = value
+            db.commit()
+
+        found = [p for p in db.query(RoleProfile).filter(RoleProfile.role == "leader").all()
+                 if "jumaniy" in (p.name or "").lower() and "sanjar" in (p.name or "").lower()]
+        if len(found) != 1:
+            mark("blocked")
+            names = ", ".join(f"{p.name} (#{p.id})" for p in found) or "yo'q"
+            print(f"[startup] Sanjarbek checklist shift refused: {len(found)} match(es): {names}")
+            _nodirjon_fix_dm(
+                "Jumaniyazov Sanjarbek chek-listini 1-smenaga o'tkazib bo'lmadi: "
+                f"lider profili aniq topilmadi ({names}). Profil sahifasidagi "
+                "«Chek-list smenasi» orqali qo'lda o'rnating.")
+            return
+        prof = found[0]
+        unit = db.query(Manager).filter_by(id=prof.manager_id).first()
+        unit_sh = unit.shift if unit else None
+        start = max(SANJARBEK_SHIFT_FROM, leader_shift.tomorrow())
+        leader_shift.set_from(prof, None if unit_sh == 1 else 1, start,
+                              by="Operator · 2026-10-05")
+        mark(f"done:{prof.id}:{start}")
+        leader_shift.forget()
+        print(f"[startup] Sanjarbek checklist shift: profile #{prof.id} on shift 1 "
+              f"from {start} (unit {unit.name if unit else '—'}, shift {unit_sh})")
+        from app.services import action_log
+        action_log.record_system(
+            "leader_config", "checklist.leader_shift_set",
+            target_kind="profile", target_id=f"leader:{prof.id}",
+            target_name=prof.name, unit_id=prof.manager_id,
+            unit_name=unit.name if unit else None,
+            details=[("shift", 1), ("from", start), ("unit_shift", unit_sh)],
+            reason=("Operator: his cell works shift 1 while his brigadir is on "
+                    "shift 2 — his checklist follows shift 1's hours and standard"),
+        )
+        _nodirjon_fix_dm(
+            f"{prof.name}: chek-listi {start[8:10]}.{start[5:7]}.{start[:4]} dan "
+            "1-smena bo'yicha ishlaydi — kun kalendar kuni, vazifa vaqtlari va "
+            "AI tekshiruvi 1-smena standartiga, avtomatik tekshiruvlar 1-smena "
+            "soatlarida (10:00, 14:00, 17:00, 20:00). Brigadasi o'zgarmadi: "
+            f"{unit.name if unit else '—'} ({unit_sh}-smena). O'tgan kunlar qayta "
+            "baholanmaydi. Profil sahifasida «Chek-list smenasi» orqali o'zgartirish "
+            "mumkin.")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] Sanjarbek checklist shift skipped: {exc}")
+    finally:
+        db.close()
+
+
 def _nodirjon_fix_dm(text: str) -> None:
     try:
         import requests

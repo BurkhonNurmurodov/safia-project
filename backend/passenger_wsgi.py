@@ -125,6 +125,7 @@ try:
         register_leader_rules_sep26,
         register_leader_temp_hours,
         fix_nodirjon_leader_unit,
+        move_sanjarbek_checklist_shift,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -609,6 +610,8 @@ try:
     # days stamped with Aripova Manzura's unit go back to his own unit. Remove
     # with `startup.fix_nodirjon_leader_unit` (mirrored in the FastAPI lifespan).
     fix_nodirjon_leader_unit()
+    # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
+    move_sanjarbek_checklist_shift()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

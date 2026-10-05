@@ -3289,10 +3289,12 @@ def leader_tasks_per_task(db, prof) -> bool:
 
 
 def _lt_shift(db, prof) -> int:
-    """The leader's shift (1 or 2) — their supervisor unit's shift. Drives the
-    checklist day boundary; falls back to shift 1 (calendar day) when unset."""
-    mgr = db.query(Manager).filter_by(id=prof.manager_id).first()
-    return mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
+    """The shift the leader's CURRENT checklist runs on (1 or 2) — their unit's
+    shift, unless their profile moved their checklist to the other one
+    (`services/leader_shift`). Drives the checklist day boundary; falls back to
+    shift 1 (calendar day) when unset."""
+    from app.services import leader_shift
+    return leader_shift.current(db, prof)[0]
 
 
 def _lt_entries(db, day: LeaderTaskDay | None) -> dict[int, LeaderTaskEntry]:

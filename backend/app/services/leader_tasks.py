@@ -1000,6 +1000,18 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
     is the SHIFT's effective date and never `date.today()`: a night belongs to
     the date its 17:00 boundary opened.
     """
+    # A leader whose checklist was moved to the other shift
+    # (services/leader_shift) is answered on THEIR shift for that day, whatever
+    # the caller passed — most callers hand in the unit's — and on a day where
+    # it differs from the unit's, the unit's level is that shift's standard.
+    from app.services import leader_shift
+    unit_sh = None
+    if leader_shift.moved(db, prof.id):
+        unit_sh = leader_shift.unit_shift(db, prof.manager_id)
+        if day is _NOW:
+            shift, day = leader_shift.current(db, prof)
+        else:
+            shift = leader_shift.shift_on(db, prof.id, day, unit_sh)
     if day is _NOW:
         day = effective_date(shift)
     defs = active_defs(db, day=day)
@@ -1016,6 +1028,10 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
     out = {}
     for td in defs:
         s, r = sup.get(td.id), own.get(td.id)
+        if unit_sh is not None:
+            r, s, _ = leader_shift.chain(
+                db, leader_id=prof.id, manager_id=prof.manager_id, day=day,
+                task_id=td.id, own=r, sup=s, unit_sh=unit_sh)
         enabled = s.enabled if s else def_enabled(td)
         min_media = s.min_media if s else def_min_media(td)
         weight = s.weight if s else td.default_weight
@@ -1104,6 +1120,17 @@ def requirements_for(db: Session, *, prof=None, manager=None,
         shift = manager.shift
     if shift not in (1, 2):
         shift = 1
+    # A leader whose checklist runs on the other shift (services/leader_shift)
+    # reads the rules of the shift their checklist is on, not their unit's.
+    from app.services import leader_shift
+    shifted_day = None
+    if prof is not None and leader_shift.moved(db, prof.id):
+        if day is _NOW:
+            shift, day = leader_shift.current(db, prof)
+        else:
+            shift = leader_shift.shift_on(db, prof.id, day, shift)
+        shifted_day = leader_shift.shifted(
+            db, prof.id, day, manager.shift if manager is not None else None)
     if day is _NOW:
         day = effective_date(shift)
     defs = active_defs(db, day=day)
@@ -1182,7 +1209,10 @@ def requirements_for(db: Session, *, prof=None, manager=None,
     # the global set, which is what that view is asking for.
     examples = leader_ai.example_ids_map(
         db,
-        manager_id=manager.id if manager is not None else None,
+        # On a day the leader's checklist runs on the other shift, the unit's
+        # examples describe the unit's shift and are not theirs.
+        manager_id=(manager.id if manager is not None and not shifted_day
+                    else None),
         leader_id=prof.id if prof is not None else None,
     )
 
@@ -1382,6 +1412,19 @@ def target_shifts(db: Session, *, manager_id: int | None = None,
     ids: list[int] = []
     if leader_ids or leader_id is not None:
         want = list(leader_ids or []) + ([leader_id] if leader_id is not None else [])
+        # A leader whose checklist runs on the other shift (services/leader_shift)
+        # works THAT shift's hours: their own row lands there, from today on.
+        from app.services import leader_shift
+        moved = [p for p in db.query(RoleProfile).filter(RoleProfile.id.in_(want)).all()
+                 if leader_shift.moved(db, p.id)]
+        if moved:
+            out = {leader_shift.current(db, p)[0] for p in moved}
+            rest = [w for w in want if w not in {p.id for p in moved}]
+            if rest:
+                out |= {sh for (sh,) in db.query(Manager.shift).filter(Manager.id.in_(
+                    [m for (m,) in db.query(RoleProfile.manager_id)
+                     .filter(RoleProfile.id.in_(rest)).all() if m])).all()}
+            return out
         ids = [m for (m,) in db.query(RoleProfile.manager_id)
                .filter(RoleProfile.id.in_(want)).all() if m]
     elif manager_ids or manager_id is not None:

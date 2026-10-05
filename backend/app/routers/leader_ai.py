@@ -53,7 +53,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, gemini, leader_ai, leader_tasks
+from app.services import action_log, gemini, leader_ai, leader_shift, leader_tasks
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
 )
@@ -421,6 +421,14 @@ def _first_name(obj) -> str:
     return ""
 
 
+class _Cfg(tuple):
+    """`(defs, sup_cfg, own_cfg)` that also remembers its session, so the chain
+    walkers below can ask `services/leader_shift` about a leader whose
+    checklist runs on another shift than their unit's — every caller still
+    unpacks three values."""
+    db = None
+
+
 def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict]:
     defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
     mgr_ids = {r.manager_id for r in rows if r.manager_id}
@@ -435,28 +443,34 @@ def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict
         for r in db.query(LeaderTaskLeaderSetting).filter(
                 LeaderTaskLeaderSetting.leader_id.in_(prof_ids)).all():
             own_cfg[(r.leader_id, r.task_id)] = r
-    return defs, sup_cfg, own_cfg
+    out = _Cfg((defs, sup_cfg, own_cfg))
+    out.db = db
+    return out
 
 
 def _chain(cfg, rev, attr: str) -> str:
     """First non-blank `attr` down leader → supervisor → global."""
-    defs, sup_cfg, own_cfg = cfg
-    for row, key in ((own_cfg, (rev.leader_id, rev.task_id)),
-                     (sup_cfg, (rev.manager_id, rev.task_id))):
-        got = getattr(row.get(key), attr, None) if key[0] else None
+    for row in _levels(cfg, rev):
+        got = getattr(row, attr, None)
         if got and str(got).strip():
             return str(got).strip()
-    got = getattr(defs.get(rev.task_id), attr, None)
-    return str(got).strip() if got and str(got).strip() else ""
+    return ""
 
 
 def _levels(cfg, rev):
     """This row's three config rows, narrowest first — the chain both date-rule
-    resolvers below walk."""
+    resolvers below walk. A leader-day on the other shift than the unit's walks
+    that shift's standard in place of the unit's level (services/leader_shift),
+    as the reviewer did when it judged the row."""
     defs, sup_cfg, own_cfg = cfg
-    return (own_cfg.get((rev.leader_id, rev.task_id)) if rev.leader_id else None,
-            sup_cfg.get((rev.manager_id, rev.task_id)) if rev.manager_id else None,
-            defs.get(rev.task_id))
+    own = own_cfg.get((rev.leader_id, rev.task_id)) if rev.leader_id else None
+    sup = sup_cfg.get((rev.manager_id, rev.task_id)) if rev.manager_id else None
+    db = getattr(cfg, "db", None)
+    if db is not None and rev.leader_id and leader_shift.moved(db, rev.leader_id):
+        own, sup, _ = leader_shift.chain(
+            db, leader_id=rev.leader_id, manager_id=rev.manager_id,
+            day=rev.date, task_id=rev.task_id, own=own, sup=sup)
+    return own, sup, defs.get(rev.task_id)
 
 
 def _window(cfg, rev) -> tuple[str, str]:

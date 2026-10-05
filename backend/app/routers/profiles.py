@@ -57,7 +57,8 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.services import (
-    action_log, cell_hours, leader_kind, profile_photo, supervisor_kind, wc_group,
+    action_log, cell_hours, leader_kind, leader_shift, profile_photo, supervisor_kind,
+    wc_group,
 )
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
@@ -595,7 +596,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
         })
 
     profiles = db.query(RoleProfile).order_by(RoleProfile.id).all()
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    _mgrs = db.query(Manager).all()
+    mgr_names = {m.id: m.name for m in _mgrs}
+    mgr_shifts = {m.id: m.shift for m in _mgrs}
     admin_rows = db.query(Admin).all()
     admins_by_profile = {a.profile_id: a for a in admin_rows if a.profile_id}
     cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
@@ -630,6 +633,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
             # answer came from (services/leader_kind.py).
             item["leader_kind"] = p.leader_kind
             item["leader_kind_info"] = leader_kind.out(p)
+            # The shift this leader's checklist runs on, when not the unit's
+            # (services/leader_shift) — the switch under «Chek-list smenasi».
+            item["checklist_shift"] = leader_shift.info(p, mgr_shifts.get(p.manager_id))
             item["bindings"] = [
                 binding(r) for r in by_key.get(("leader", p.manager_id), [])
                 if r.full_name == p.name
@@ -1577,6 +1583,7 @@ class UpdateProfilePayload(BaseModel):
     archived:       Optional[bool] = None       # supervisor only
     overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
     leader_kind:    Optional[str] = None        # leader → "leader" | "acting" (None = untouched)
+    checklist_shift: Optional[int] = None       # leader → 1 | 2: the shift their checklist runs on from tomorrow
     supervisor_kind: Optional[str] = None       # supervisor → "supervisor" | "acting" (None = untouched)
     zagruzka_on:    Optional[bool] = None       # supervisor → is the unit's загрузка calculated
 
@@ -1675,9 +1682,13 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     if payload.leader_kind is not None and (ptype != "leader"
                                             or payload.leader_kind not in leader_kind.KINDS):
         raise HTTPException(status_code=400, detail="Invalid leader kind")
+    if payload.checklist_shift is not None and (ptype != "leader"
+                                                or payload.checklist_shift not in (1, 2)):
+        raise HTTPException(status_code=400, detail="Invalid checklist shift")
 
     old = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
            "leader_kind": p.leader_kind}
+    cl_old = _checklist_shift_word(db, p)
     if payload.name is not None:
         _rename_profile(db, ptype, pid, payload.name)
     _apply_name_columns(p, payload)
@@ -1701,9 +1712,20 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         # The person's answer, from the profile page's switch — what Verifix
         # said stays beside it (services/leader_kind.py).
         leader_kind.set_manual(p, payload.leader_kind, caller.get("full_name"))
+    if payload.checklist_shift is not None:
+        # The shift this leader's CHECKLIST runs on, from TOMORROW — never today,
+        # whose checklist may be half filed (services/leader_shift). Their unit's
+        # own shift is stored as "follow the unit", so a later move of the unit
+        # carries them along.
+        unit_sh = db.query(Manager.shift).filter_by(id=p.manager_id).scalar()
+        want = None if payload.checklist_shift == unit_sh else payload.checklist_shift
+        leader_shift.set_from(p, want, leader_shift.tomorrow(),
+                              by=caller.get("full_name"))
     new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
                 "leader_kind": p.leader_kind}
     db.commit()
+    leader_shift.forget()
+    cl_new = _checklist_shift_word(db, p)
     diff = [(k, old[k], new_vals[k]) for k in ("name", "shift") if old[k] != new_vals[k]]
     if old["manager_id"] != new_vals["manager_id"]:
         diff.append(("unit", unit_name(db, old["manager_id"]),
@@ -1712,6 +1734,8 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         diff.append(("cells", None, ", ".join(payload.cells) or None))
     if old["leader_kind"] != new_vals["leader_kind"]:
         diff.append(("leader_kind", old["leader_kind"], new_vals["leader_kind"]))
+    if cl_old != cl_new:
+        diff.append(("checklist_shift", cl_old, cl_new))
     if diff:
         # The admins' DM words the two kinds in each reader's language.
         def word(k):
@@ -1728,6 +1752,20 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         details=[("role", ptype), ("profile", old["name"])], changes=diff,
     )
     return {"ok": True, "id": pid}
+
+
+def _checklist_shift_word(db: Session, p: RoleProfile) -> str | None:
+    """A leader's checklist shift as the change log reads it: the shift a
+    switch puts in force and from when, or None while it follows the unit."""
+    if p.role != "leader":
+        return None
+    tl = leader_shift.timeline(p.checklist_shift)
+    if not tl:
+        return None
+    last = tl[-1]
+    unit_sh = db.query(Manager.shift).filter_by(id=p.manager_id).scalar()
+    sh = last["shift"] if last["shift"] in (1, 2) else unit_sh
+    return f"{sh} · {last['from']}"
 
 
 def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:

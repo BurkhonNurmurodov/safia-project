@@ -173,6 +173,48 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   role rows and every checklist day to Aripova without touching the cell, and
   marked her already-sent digests as including them so nothing was re-sent.
 
+## A leader's CHECKLIST may run on the other shift (`leader_shift`, 2026-10-05)
+
+The operator's case: Jumaniyazov Sanjarbek leads a cell that works shift 1
+while his brigadir is on shift 2. A leader's checklist used to take every clock
+from the UNIT's shift; a leader profile may now name the shift its checklist
+runs on, from a date (`role_profiles.checklist_shift`, a JSONB timeline
+`[{from, shift: 1|2|null, at, by}]`, null = the unit's). Set on the admin
+profile page («Chek-list smenasi», two options; the unit's own shift is stored
+as "follow the unit"), always from TOMORROW. His was set once by
+`startup.move_sanjarbek_checklist_shift` (flag
+`leader_checklist_shift_jumaniyazov_2026_10_06_v1`, both entrypoints): shift 1
+from 2026-10-06.
+
+- **`services/leader_shift.py` is THE definition** — `current` (the shift +
+  date being filed now), `shift_on` / `shifted` / `day_shift` (a date's shift),
+  `standard` (a shift's rules), `chain` (the levels a resolver walks),
+  `AsShift` (a unit read as running on another shift). Everybody without a
+  timeline short-circuits and reads exactly what they read before.
+- **What follows the leader's shift**: the checklist date (`_lt_shift`,
+  `leader_proof.leader_shift`), the day close (`close_expired_days` holds each
+  day to ITS shift; the sweep's `AUTOCLOSE_SHIFTS` bound is applied to the
+  day's shift), task windows / deadlines / closing hours
+  (`effective_leader_config` recomputes the shift for the day; the
+  `leader_close` time functions seat hours on the entry's own `shift`), the AI
+  (new review rows are STAMPED with the day's shift; `date_rule_for`,
+  `criteria_for`, `sync_date_flags` and `routers/leader_ai._levels` walk the
+  shifted chain), the automatic checks (`leader_auto._run_moved`, `check_hour`),
+  «Vazifalar», the digest's "time up", the admin day views.
+- **On a shifted day the unit's level is the shift's STANDARD** — per task and
+  field the value most of that shift's units resolve to, the admin page's
+  derived «Smena N» level (`shiftTpl`), cached 60 s. Unit-level example photos
+  are skipped. The leader's own level applies, except a window or deadline that
+  does not fit the day's shift.
+- **What does NOT follow it**: the unit the leader belongs to (digest, concerns,
+  загрузка, Monitoring pool and its shift filter, the register row's `shift`),
+  and the collection layer (`leader_bot.merges` / `training` keep the UNIT's
+  shift — a shift-1 reading there would drop his bot days from the register).
+- **Dated, so history never moves**: days before `from` keep the unit's shift;
+  verdicts keep the shift they were stamped with.
+- A switch to the NIGHT shift leaves a gap (00:00–17:00 of its first date)
+  where no day is open; `current` then answers the shift-2 date before it.
+
 ## A leader on Verifix, or in place of one (`leader_kind`)
 
 From **2026-10-04** (the operator's directive) every leader profile says

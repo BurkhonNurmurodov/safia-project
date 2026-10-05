@@ -203,8 +203,11 @@ def burn(data: bytes, when: datetime) -> tuple[bytes, str]:
 # ── the day and the roll ─────────────────────────────────────────────────────
 
 def leader_shift(db: Session, prof: RoleProfile) -> int:
-    mgr = db.query(Manager).filter_by(id=prof.manager_id).first()
-    return mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
+    """The shift the leader's CURRENT checklist runs on — the unit's, unless the
+    profile moved the checklist to the other shift (`services/leader_shift`).
+    The twin of the bot's `_lt_shift`; both name today's checklist date with it."""
+    from app.services import leader_shift as _ls
+    return _ls.current(db, prof)[0]
 
 
 def open_day(db: Session, prof: RoleProfile, *, create: bool,

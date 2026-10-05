@@ -189,6 +189,7 @@ async def lifespan(app: FastAPI):
         drop_paused_shift_reviews,
         queue_shift2_backlog,
         fix_nodirjon_leader_unit,
+        move_sanjarbek_checklist_shift,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -665,6 +666,8 @@ async def lifespan(app: FastAPI):
     # and flag-guarded. Remove this line, `startup.fix_nodirjon_leader_unit`
     # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
     fix_nodirjon_leader_unit()
+    # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
+    move_sanjarbek_checklist_shift()
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the
