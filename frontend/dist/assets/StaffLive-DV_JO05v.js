@@ -1,1 +1,0 @@
-import{p as t}from"./createLucideIcon-DOO6_aDx.js";import{StaffPage as e,t as i}from"./Staff-Wp2sEpg_.js";var r=t();function o(){return(0,r.jsx)(i,{live:!0,children:(0,r.jsx)(e,{})})}export{o as default};
