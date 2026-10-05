@@ -45,7 +45,6 @@ const TITLE_KEYS = {
   "/zagruzka-cell":    "nav.zagruzkaCell",
   "/live":             "nav.live",
   "/arc":              "nav.arc",
-  "/arc-legacy":       "nav.arcLegacy",
   "/education":        "nav.education",
   "/exam":             "nav.exam",
   "/login":            "login.title",

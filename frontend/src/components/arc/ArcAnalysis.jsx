@@ -36,10 +36,10 @@ import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus"
 // goal marker for speed-vs-allowance, where «the bar crossed the line» IS the
 // verdict.
 //
-// /arc-legacy renders the same component over its own register (from
-// 2026-10-05): `endpoint` names its `/analysis`, which answers in this exact
-// shape, and `queryKey` / `prefPrefix` keep its cache and remembered toggles
-// apart from /arc's. Every other prop default is /arc's own, unchanged.
+// From 2026-10-05 /arc is ONE register over both of IT's apps, served by
+// /api/arc-legacy: the page passes `endpoint` (that router's `/analysis`, which
+// answers in this exact shape) plus its own `queryKey` / `prefPrefix`. The
+// defaults name the old app's frozen router and are no longer used by a page.
 
 // «Filed» is an EVENT series, not a status, so it takes a categorical hue the
 // status palette does not use; «closed» keeps the done-green the whole page

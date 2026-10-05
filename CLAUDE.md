@@ -8044,6 +8044,41 @@ daily") **the app downloads every build the site deploys by itself** — see
   (the proof camera is reachable only from the bot's buttons, which open in
   Telegram), instant delivery (Firebase), and the Fullscreen API on `/live`.
 
+## ARC is ONE page (`/arc`, from 2026-10-05)
+
+The operator: «merge these 2 pages into one» — and, asked, keep the old app's
+tickets in the same table but «stop the old app's sync». So:
+
+- **`/arc` renders the page that was `/arc-legacy`** (`pages/Arc.jsx`, moved;
+  the old `/arc` page file is deleted) and `/arc-legacy` redirects to it. It
+  keeps that page's endpoints (`/api/arc-legacy/*`), query keys (`arcl-*`),
+  saved filters (`arcl_*`) and strings (`arcl.*`).
+- **Its rows are BOTH apps, read as one** — `routers/arc_legacy._R()`: the new
+  app's mirror (`arc_legacy_requests`, still synced) UNION ALL the old app's
+  (`arc_requests`), projected at read time onto the new table's columns and
+  aliased (`adapt_on_names=True`, or the ORM lazy-loads projected columns from
+  the real table and fails). Nothing is copied, so the new mirror's sync,
+  attribute census and API panel never see the old rows. An old row has a
+  NEGATIVE id and an `arc:`-prefixed remote_id; its status maps to the new
+  app's slugs (0 new · 1 in_progress · 3 done · 4 cancelled — by STATUS, 267
+  denied rows have no finished_at · 6 done_unconfirmed), its due moment is
+  created + `category_ftime` hours, brigada → master, user → client, division
+  → warehouse (cell = the TRAILING digits only, the old page's rule). IT's
+  test categories stay out (`arc_hidden`). Category and crew are keyed by NAME
+  on both sides, so one category is one option and one chart bar; the saved
+  picks moved to `arcl_category2` / `arcl_master2`.
+- **The old app is frozen.** `arc_sync.RETIRED`: no boot catch-up, no
+  15-minute pass, no nightly walk; `POST /api/arc/refresh` answers 410. Its
+  tables, its router (read-only, for a tab still open on the old bundle) and
+  its modules stay — they are the old history. An old ticket still open stays
+  open on the page for good (the operator was told).
+- **«Ilova» (`source`: new / old)** is a column, a filter and an export column;
+  the ticket window shows an old row's start time, every attachment and its
+  status history (read from `arc_requests` on open). Status slugs are printed
+  through `arcl.st.<slug>`, an unknown one as sent.
+- The two sections below describe each app's mirror and are still accurate for
+  it; where they talk about «the page», read `/arc`.
+
 ## ARC tickets (`/arc`, page key `arc`)
 
 A mirror of «АРС Фабрика» from IT's **internal read-only API**

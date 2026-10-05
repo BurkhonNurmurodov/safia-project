@@ -33,15 +33,16 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Float, Text, and_, case, cast, false, func, not_, or_
+from sqlalchemy import (Boolean, DateTime, Float, Integer, String, Text, and_,
+                        case, cast, false, func, not_, null, or_, select, union_all)
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
-from app.models import ArcLegacyRequest, ArcLegacySyncMeta
+from app.models import ArcLegacyRequest, ArcLegacySyncMeta, ArcRequest
 from app.permissions import require_page
 from app.translit import transliterate
-from app.services import action_log, arc_cells, arc_legacy_client, arc_legacy_discovery
+from app.services import action_log, arc_cells, arc_client, arc_hidden, arc_legacy_client, arc_legacy_discovery
 from app.services.arc_legacy_export import build_arc_legacy_workbook
 from app.services.arc_legacy_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -56,6 +57,105 @@ _TASHKENT = timezone(timedelta(hours=5))
 
 NOT_CONFIGURED_MSG = ("The old ARC API is not connected. Add ARC_USERNAME/ARC_PASSWORD "
                       "(or USERNAME/PASSWORD) to the backend .env.")
+
+
+# ── the register: BOTH apps, one row source ──────────────────────────────────
+# From 2026-10-05 (the operator: «merge these 2 pages into one») this router is
+# /arc's. Its rows are the new app's mirror (`arc_legacy_requests`, still
+# synced) UNION ALL the old app's (`arc_requests`, whose sync was stopped the
+# same day — frozen as they last stood). Nothing is copied: the old rows are
+# projected onto the new table's columns at read time, so the new mirror, its
+# sync, its attribute census and its API panel never see them.
+#
+# An old row is told apart by a NEGATIVE id (−arc_requests.id, so the two id
+# spaces cannot meet in the session's identity map) and a remote_id prefixed
+# «arc:». Its projection, column by column:
+#   status            → normalized_status: 0 new · 1 in_progress · 3 done ·
+#                       4 cancelled · 6 done_unconfirmed («handled, waiting on
+#                       the author» — counted done, as the old page did)
+#   finished_at       → completed_at (3) / finished_at (3, 6) / cancelled_at (4)
+#   created + ftime h → deadline (the old page's derived due moment)
+#   brigada           → master (IT's crew) · user → client (who filed it)
+#   division          → warehouse (the bo'linma; its trailing digits are the cell)
+# Category and crew are keyed by NAME on both sides (`category_id` /
+# `master_id` carry the name), so «Вентиляция» in either app is one option,
+# one chart bar, one filter pick. IT's TEST categories stay out, as on the old
+# page (services/arc_hidden).
+
+OLD_PREFIX = "arc:"
+_HOUR_S = 3600.0
+_REGISTER = None
+
+
+def _old_status():
+    A = ArcRequest
+    return case((A.status == 0, "new"), (A.status == 1, "in_progress"),
+                (A.status == 3, "done"), (A.status == 4, "cancelled"),
+                (A.status == 6, "done_unconfirmed"),
+                else_=func.concat("status_", cast(A.status, String)))
+
+
+def _R():
+    """The register's row source — both apps as one ``ArcLegacyRequest``-shaped
+    subquery, aliased so every read below queries it exactly as it queried the
+    new app's table. Built once; the construct holds no session state."""
+    global _REGISTER
+    if _REGISTER is not None:
+        return _REGISTER
+    N, A = ArcLegacyRequest, ArcRequest
+    when = lambda cond, val: case((cond, val), else_=None)   # noqa: E731
+    by_name = {
+        "category_id": func.coalesce(N.category_name, N.category_id),
+        "master_id": func.coalesce(N.master_name, N.master_id),
+    }
+    old = {
+        "id": -A.id,
+        "remote_id": func.concat(OLD_PREFIX, A.remote_id),
+        "request_num": A.request_num,
+        "description": A.description,
+        "category_id": func.coalesce(A.category_name, cast(A.category_id, String)),
+        "category_name": A.category_name,
+        "category_is_urgent": A.category_urgent,
+        "category_deadline_hours": A.category_ftime,
+        "deadline": when(A.category_ftime > 0,
+                         A.created_at + func.make_interval(0, 0, 0, 0, 0, 0, A.category_ftime * _HOUR_S)),
+        "master_id": func.coalesce(A.brigada_name, cast(A.brigada_id, String)),
+        "master_name": A.brigada_name,
+        "status": A.status,
+        "normalized_status": _old_status(),
+        "created_at": A.created_at,
+        # Denied is decided by the STATUS, as on the old page: 267 denied rows
+        # carry no finished_at, and a NULL here would count them open forever.
+        # Their moment is the one the status history recorded, else the filing.
+        "cancelled_at": when(A.status == 4, func.coalesce(
+            A.finished_at,
+            when(A.update_time["4"].astext.op("~")(r"^\d{4}-\d{2}-\d{2}"),
+                 cast(A.update_time["4"].astext, DateTime(timezone=True))),
+            A.created_at)),
+        "finished_at": when(A.status.in_((3, 6)), A.finished_at),
+        "completed_at": when(A.status == 3, A.finished_at),
+        "extra_phone": A.user_phone,
+        "deny_reason": A.deny_reason,
+        "client_name": A.user_name,
+        "warehouse_id": A.division_id,
+        "warehouse_name": A.division_name,
+        "raw": A.raw,
+        "first_seen_at": A.first_seen_at,
+        "synced_at": A.synced_at,
+        "missing_since": A.missing_since,
+    }
+    cols = list(N.__table__.columns)
+    new_sel = select(*[by_name.get(c.name, c).label(c.name) if c.name in by_name else c
+                       for c in cols])
+    old_sel = (select(*[(old[c.name] if c.name in old else cast(null(), c.type)).label(c.name)
+                        for c in cols])
+               .where(not_(arc_hidden.hidden_clause())))
+    # adapt_on_names: the projected columns (a coalesce, a case) have no lineage
+    # back to the table, so the alias must match them by NAME or the ORM treats
+    # them as unloaded and tries to fetch the row from the real table.
+    _REGISTER = aliased(N, union_all(new_sel, old_sel).subquery("arc_register"),
+                        adapt_on_names=True)
+    return _REGISTER
 
 
 # ── derived semantics (THE one definition) ───────────────────────────────────
@@ -73,7 +173,7 @@ def _derived() -> dict[str, Any]:
     hours_to_close= (closed_at − created_at) in hours, when closed
     cell_code     = the four digits the warehouse name carries, else NULL
     """
-    R = ArcLegacyRequest
+    R = _R()
     closed_at = func.coalesce(R.completed_at, R.finished_at)
     is_cancelled = R.cancelled_at.isnot(None)
     is_open = and_(closed_at.is_(None), not_(is_cancelled))
@@ -95,7 +195,7 @@ def _derived() -> dict[str, Any]:
         "late": late,
         "overdue_now": overdue_now,
         "hours_to_close": hours_to_close,
-        "cell_code": arc_cells.warehouse_code_expr(),
+        "cell_code": arc_cells.warehouse_code_expr(R),
     }
 
 
@@ -141,6 +241,7 @@ def _filters(
     overdue: str = Query("all"),
     sap: str = Query("all"),
     state: str = Query("all"),
+    source: str = Query("all"),
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
     cells_only: bool = Query(False),
@@ -150,6 +251,7 @@ def _filters(
             "category": category, "branch": branch, "master": master,
             "cell": cell, "shift": shift, "manager": manager, "leader": leader,
             "urgent": urgent, "overdue": overdue, "sap": sap, "state": state,
+            "source": source,
             "q": q, "include_missing": include_missing, "cells_only": cells_only,
             "owner_scope": _owner_scope(owner_scope)}
 
@@ -177,7 +279,7 @@ def _tri(value: str, expr) -> Optional[Any]:
 def _apply_filters(query, f: dict, D: dict, db: Session):
     """The one place the filter set becomes WHERE clauses; list, stats and
     export all go through it."""
-    R = ArcLegacyRequest
+    R = _R()
     if not f.get("include_missing"):
         query = query.filter(R.missing_since.is_(None))
     lo = _day_start(f.get("date_from"))
@@ -245,6 +347,12 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
         query = query.filter(D["overdue_now"])
     elif ov == "no":
         query = query.filter(not_(D["overdue_now"]))
+    # Which app: the old one's rows carry negative ids (see _R).
+    src = f.get("source") or "all"
+    if src == "old":
+        query = query.filter(R.id < 0)
+    elif src == "new":
+        query = query.filter(R.id >= 0)
     state = f.get("state") or "all"
     if state == "open":
         query = query.filter(D["is_open"])
@@ -271,7 +379,7 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
 def _sort_expr(sort: Optional[str], D: dict):
     """«key:dir» → ORDER BY terms. Unknown keys fall back to created_at:desc.
     «deadline» (and «due») sort by the effective due moment the table shows."""
-    R = ArcLegacyRequest
+    R = _R()
     key, _, direction = (sort or "created_at:desc").partition(":")
     desc = (direction or "desc").lower() != "asc"
     cols = {
@@ -322,7 +430,10 @@ _ROW_COLS = (
 def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = False) -> dict:
     """A row + its derived facts (as computed by the SAME SQL the filters
     use, never re-derived in Python)."""
-    out: dict[str, Any] = {"id": r.remote_id}
+    out: dict[str, Any] = {"id": r.remote_id,
+                           # Which app the ticket was filed in — «old» rows are
+                           # the frozen old app (negative ids, see _R).
+                           "source": "old" if (r.id or 0) < 0 else "new"}
     for c in _ROW_COLS:
         v = getattr(r, c)
         out[c] = _iso(v) if isinstance(v, datetime) else v
@@ -344,7 +455,7 @@ def _serialize(r: ArcLegacyRequest, derived: dict[str, Any], with_raw: bool = Fa
 
 def _rows_query(db: Session, f: dict, D: dict):
     """The register query: the entity plus its derived facts, filtered."""
-    query = db.query(ArcLegacyRequest, *[D[k].label(k) for k in _ROW_DERIVED])
+    query = db.query(_R(), *[D[k].label(k) for k in _ROW_DERIVED])
     return _apply_filters(query, f, D, db)
 
 
@@ -400,7 +511,7 @@ def _options(db: Session) -> dict:
     by ``normalized_status`` ALONE (one colour per value via min): the page keys
     the list by value, and one status carrying two colours upstream would
     otherwise render as two identical rows."""
-    R = ArcLegacyRequest
+    R = _R()
     base = db.query(R).filter(R.missing_since.is_(None))
     statuses = [
         {"value": ns, "label": ns, "color": col, "count": n}
@@ -446,8 +557,8 @@ def _cell_options(db: Session, base) -> dict:
     person — the warehouse names no cell, names one the registry has never
     heard of, or the cell has nobody assigned. All three render a blank owner
     column, so all three are what that option picks (arc_cells.org_codes)."""
-    R = ArcLegacyRequest
-    code = arc_cells.warehouse_code_expr()
+    R = _R()
+    code = arc_cells.warehouse_code_expr(R)
     rows = base.with_entities(code.label("code"), func.count(R.id)).group_by(code).all()
     codes = {c for c, _ in rows if c}
     known = arc_cells.cells_for(db, codes)
@@ -540,7 +651,7 @@ def get_stats(
     f: dict = Depends(_filters),
 ):
     """KPI figures over exactly the rows /list shows for the same filters."""
-    R = ArcLegacyRequest
+    R = _R()
     D = _derived()
     base = _apply_filters(db.query(R), f, D, db)
 
@@ -671,7 +782,7 @@ def get_analysis(
     f: dict = Depends(_filters),
 ):
     """Aggregates behind the analysis charts, per view, over the filtered set."""
-    R = ArcLegacyRequest
+    R = _R()
     D = _derived()
     if gran not in _GRANS:
         gran = "day"
@@ -867,12 +978,30 @@ def get_request(
 ):
     """One ticket, derived facts and the raw API item included."""
     D = _derived()
-    tup = (db.query(ArcLegacyRequest, *[D[k].label(k) for k in _ROW_DERIVED])
-           .filter(ArcLegacyRequest.remote_id == remote_id).first())
+    R = _R()
+    tup = (db.query(R, *[D[k].label(k) for k in _ROW_DERIVED])
+           .filter(R.remote_id == remote_id).first())
     if not tup:
         raise HTTPException(status_code=404, detail="Request not found")
     out = _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_raw=True)
     out["cells"] = _cells_map(db, [out])
+    if out["source"] == "old":
+        # What the old app knew and the shared columns cannot carry: when a
+        # crew took it, every attachment, and the moment each status was
+        # entered (oldest first, in the register's own status words).
+        a = (db.query(ArcRequest)
+             .filter(ArcRequest.remote_id == remote_id[len(OLD_PREFIX):]).first())
+        if a is not None:
+            out["started_at"] = _iso(a.started_at)
+            out["files"] = [
+                {"id": f.get("id"), "url": arc_client.file_url(f.get("href") or f.get("url"))}
+                for f in (a.files or []) if isinstance(f, dict) and (f.get("href") or f.get("url"))
+            ]
+            words = {"0": "new", "1": "in_progress", "3": "done", "4": "cancelled",
+                     "6": "done_unconfirmed"}
+            steps = [{"status": words.get(str(k), f"status_{k}"), "at": str(v).replace(" ", "T", 1)}
+                     for k, v in (a.update_time or {}).items() if v]
+            out["timeline"] = sorted(steps, key=lambda x: str(x["at"]))
     return out
 
 
@@ -920,6 +1049,7 @@ class ArcExportBody(BaseModel):
     overdue: str = "all"
     sap: str = "all"
     state: str = "all"
+    source: str = "all"
     q: Optional[str] = None
     include_missing: bool = False
     cells_only: bool = False
@@ -953,7 +1083,7 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
         vals = f.get(key) or []
         if vals:
             parts.append(f"{key}={','.join(str(v) for v in vals)}")
-    for key in ("urgent", "overdue", "sap", "state"):
+    for key in ("urgent", "overdue", "sap", "state", "source"):
         if (f.get(key) or "all") != "all":
             parts.append(f"{key}={f[key]}")
     if f.get("include_missing"):
@@ -980,7 +1110,7 @@ def export_xlsx(
     f = {k: getattr(body, k) for k in
          ("date_from", "date_to", "status", "category", "branch", "master",
           "cell", "shift", "manager", "leader", "urgent", "overdue", "sap",
-          "state", "q", "include_missing", "cells_only")}
+          "state", "source", "q", "include_missing", "cells_only")}
     f["owner_scope"] = _owner_scope(body.owner_scope)
     D = _derived()
     query = _rows_query(db, f, D)
@@ -988,10 +1118,12 @@ def export_xlsx(
     # The cell column is the code, already on the row; its two OWNERS are
     # resolved off the one cells map and spelled as the screen spells them.
     cells = _cells_map(db, rows)
+    src_words = {"old": body.labels.get("_old") or "old", "new": body.labels.get("_new") or "new"}
     for r in rows:
         c = cells.get(r.get("cell_code"))
         r["sup_name"] = transliterate((c or {}).get("sup") or "", body.lang)
         r["leader_name"] = transliterate((c or {}).get("leader") or "", body.lang)
+        r["source_label"] = src_words.get(r.get("source"), r.get("source"))
     bio = build_arc_legacy_workbook(rows, body.columns, body.labels)
 
     today = datetime.now(_TASHKENT).date().isoformat()

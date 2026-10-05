@@ -59,6 +59,7 @@ _DEFAULT_LABELS = {
     "sap": "SAP",
     "evidence": "Evidence",
     "client": "Client",
+    "source": "App",
     "phone": "Phone",
     "cancelled": "Cancelled",
     "deny_reason": "Deny reason",
@@ -131,6 +132,8 @@ _COLS: dict[str, tuple[Callable[[dict], Any], str, int]] = {
     "sap":         (lambda r: _yn(r.get("sended_to_sap")), "text", 7),
     "evidence":    (_evidence, "text", 40),
     "client":      (lambda r: r.get("client_name"), "text", 22),
+    # Which of IT's two apps (the router puts the viewer's word in).
+    "source":      (lambda r: r.get("source_label") or r.get("source"), "text", 10),
     "phone":       (lambda r: r.get("extra_phone"), "text", 15),
     "cancelled":   (lambda r: _to_local(r.get("cancelled_at")), "dt", 17),
     "deny_reason": (lambda r: r.get("deny_reason"), "text", 32),

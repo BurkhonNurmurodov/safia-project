@@ -131,7 +131,6 @@ const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Kelish = lazyWithReload(() => import("./pages/Kelish"));
 const Turnover = lazyWithReload(() => import("./pages/Turnover"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
-const ArcLegacy = lazyWithReload(() => import("./pages/ArcLegacy"));
 const Education = lazyWithReload(() => import("./pages/Education"));
 const Exam = lazyWithReload(() => import("./pages/Exam"));
 const EducationLesson = lazyWithReload(() => import("./pages/EducationLesson"));
@@ -561,7 +560,8 @@ function AppWithLang() {
             <Route path="/kelish" element={<AuthGate><RequirePage page="kelish"><Kelish /></RequirePage></AuthGate>} />
             <Route path="/turnover" element={<AuthGate><RequirePage page="turnover"><Turnover /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
-            <Route path="/arc-legacy" element={<AuthGate><RequirePage page="arc"><ArcLegacy /></RequirePage></AuthGate>} />
+            {/* The two ARC pages are ONE from 2026-10-05 — /arc reads both apps. */}
+            <Route path="/arc-legacy" element={<Navigate to="/arc" replace />} />
             {/* «Ta'lim». The watch page is its own route rather than a modal so the
                 lesson DM can link straight at it, the back button works, and a leader
                 can send a colleague the lesson they were both assigned. */}
