@@ -46,7 +46,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Attendance, Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
     PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
@@ -57,6 +57,7 @@ from app.upload_guard import validate_spreadsheet
 from app.services import action_log
 from app.services import forecast_autocall
 from app.services import idle_lock
+from app.services import idle_source
 from app.services import pp_catalog
 from app.services import shift_scope
 from app.services import wc_group
@@ -392,12 +393,17 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # work centre. Unscoped on purpose: how many cells stand at a code is a fact
     # about the unit, and the split rule needs every one of them.
     cells_at: dict[str, list] = defaultdict(list)
+    # verifix code → (normalised work centre, letter): where a worker the
+    # attendance places in that cell stands on THIS page (`_verifix_staffing`).
+    wc_of_code: dict[str, tuple[str, Optional[str]]] = {}
     for c in (db.query(Cell)
               .filter(Cell.manager_id == manager_id, Cell.sap_code.isnot(None))
               .order_by(Cell.verifix_code, Cell.id).all()):
         n = norm_code(c.sap_code)
         if n:
             cells_at[n].append(c.wc_group or None)
+            if c.verifix_code:
+                wc_of_code[c.verifix_code] = (n, c.wc_group or None)
     wc_cells = {code: list(cells_at[norm_code(code)])
                 for code in ({w.code for w in wcs} | {p.work_center for p in products}
                              | {o.work_center for o in wc_daily})
@@ -537,6 +543,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         "productive_pinned": pinned_pm is not None,
     })
 
+    _verifix_staffing(db, manager_id, day, wc_of_code, result, unit_wide=wc_scope is None)
+
     # Resolve each «Команда» (SAP work center) against the cells registry by
     # matching pp_work_centers.code → cells.sap_code, so the Positions column,
     # the Команда filter, the staffing cards and the «Odamlar soni» tab can all
@@ -584,6 +592,71 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "work_centers": sorted(w["work_center"] for w in result["work_centers"]),
         }
     return result
+
+
+def _verifix_staffing(db: Session, manager_id: int, day: date,
+                      wc_of_code: dict, result: dict, unit_wide: bool) -> None:
+    """«Bugungi fakt» → «Штатка»: how many people Verifix put in each work
+    centre's cells that day — READ, never typed (2026-10-05, the operator: the
+    column «should take from Verifix automatically»).
+
+    **Who counts is the загрузка's own rule.** The unit's ATTENDANCE rows for
+    the day (what «Davomat» reads from Verifix and saves — the very rows
+    `build_metrics_list` sums into `verifix_hc` / `verifix_labor`), filtered by
+    `idle_source._counted_hc`: a direct role (Кондитер…, Фасовщик, Заготовитель,
+    or no title) who actually came, never the brigadir, `hc_weight` summed so a
+    worker split across two cells is a fraction in each. A row lands on the
+    work centre its CELL code names (cells of THIS unit only, codes met through
+    `norm_code`); a lettered cell's people are its group's.
+
+    Publishes `verifix_hc` on every work centre and group — None when the day's
+    attendance has not been read yet (no row for the unit-day at all), when no
+    cell of the unit stands at the code, or for an ORPHAN letter (no cell, so
+    nobody to count); a real 0 otherwise — and `verifix` on the dashboard:
+    `read`, plus for the whole unit (`unit_wide`) the загрузка's headcount
+    `hc` and the part of it standing in no work centre of this page
+    (`unplaced`: no cell code, or a cell with no SAP code here).
+
+    It moves NO number: the engine's W is still the configured roster or the
+    day's pin, and nothing reads this field but the tab that shows it.
+    """
+    q = (db.query(Attendance.verifix_code, Attendance.job_title, Attendance.hours_worked,
+                  Attendance.is_supervisor, Attendance.worker_name, Attendance.hc_weight)
+         .filter(Attendance.manager_id == manager_id, Attendance.date == day))
+    by_wc: dict[str, float] = defaultdict(float)
+    by_grp: dict[tuple[str, str], float] = defaultdict(float)
+    read = False
+    total = placed = 0.0
+    for r in q.all():
+        read = True
+        if not idle_source._counted_hc(r):
+            continue
+        w = 1.0 if r.hc_weight is None else float(r.hc_weight)
+        total += w
+        at = wc_of_code.get(r.verifix_code) if r.verifix_code else None
+        if at is None:
+            continue
+        by_wc[at[0]] += w
+        if at[1]:
+            by_grp[(at[0], at[1])] += w
+
+    page_codes: set[str] = set()
+    for w in result["work_centers"]:
+        n = norm_code(w["work_center"])
+        page_codes.add(n)
+        has_cell = bool(w.get("cells_n"))
+        w["verifix_hc"] = round(by_wc.get(n, 0.0), 2) if (read and has_cell) else None
+        for g in w.get("groups") or []:
+            g["verifix_hc"] = (round(by_grp.get((n, g["group"]), 0.0), 2)
+                               if (read and not g.get("orphan")) else None)
+    if read:
+        placed = sum(v for code, v in by_wc.items() if code in page_codes)
+    result["verifix"] = {"read": read}
+    if unit_wide:
+        result["verifix"].update({
+            "hc": round(total, 2) if read else None,
+            "unplaced": round(total - placed, 2) if read else None,
+        })
 
 
 # --------------------------------------------------------------------------- #

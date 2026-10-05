@@ -728,7 +728,14 @@ function centreStaffRows(w, people, shtatka) {
 // their own cells — may type their cells' headcount but never re-time cells
 // that are not theirs. Their save carries rows only; the backend refuses a
 // `productive_min` from a cell-scoped caller and leaves the unit's pin alone.
-function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
+//
+// «Bugungi fakt» → ШТАТКА is READ, never typed (2026-10-05, the operator): the
+// people Verifix put in each work centre's cells that day — the direct roles the
+// загрузка counts (`_verifix_staffing` in routers/production.py, off the day's
+// saved attendance). `verifix.read` false = the day has not been read from
+// Verifix yet, which is «—», never 0. The day's штатка pin is no longer written
+// from here: a save sends back whatever is stored, so it moves nothing.
+function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const shiftMin = Number(constants?.shift_min) || 480;
@@ -747,19 +754,14 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // part of the saved state too — a group pin landing must re-seed like any
   // other. An orphan-only centre's box seeds from `people`, which already moves
   // with a stored orphan pin, so its letters need no draft of their own.
-  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}:${w.shtatka_overridden ? w.shtatka : ""}`
+  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}`
     + (typesPerGroup(w) ? w.groups.map((g) => `/${g.group}=${g.people_overridden ? g.people : ""}`).join("") : "")).join("|");
   useEffect(() => {
     setDraft(Object.fromEntries(wcs.flatMap((w) => [
-      [w.work_center, {
-        people: w.people_overridden ? String(w.people) : "",
-        shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
-      }],
-      // One draft per group, keyed `${wc}|${group}`. Only «Кол-во»: a group has
-      // no штатка of its own — the day's штатка pin lives on the whole centre.
+      [w.work_center, { people: w.people_overridden ? String(w.people) : "" }],
+      // One draft per group, keyed `${wc}|${group}`.
       ...(typesPerGroup(w) ? w.groups.map((g) => [gKey(w.work_center, g.group), {
         people: g.people_overridden ? String(g.people) : "",
-        shtatka: "",
       }]) : []),
     ])));
   }, [seedKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -787,7 +789,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   const suggest = (w, pm) => suggestQ(w.shtatka_cfg, w.total_labor, pm);
 
   const setCell = (code, key) => (v) =>
-    setDraft((d) => ({ ...d, [code]: { ...(d[code] || { people: "", shtatka: "" }), [key]: v } }));
+    setDraft((d) => ({ ...d, [code]: { ...(d[code] || { people: "" }), [key]: v } }));
 
   const num = (v) => {
     const s = String(v ?? "").trim();
@@ -799,16 +801,15 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   const dirty =
     (canEditEff && pctValid && Math.abs(previewPm - curPm) > 0.001) ||
     wcs.some((w) => {
-      const d = draft[w.work_center] || { people: "", shtatka: "" };
-      const shtDirty = String(w.shtatka_overridden ? w.shtatka : "") !== String(d.shtatka).trim();
+      const d = draft[w.work_center] || { people: "" };
       // A centre typed per group has no «Кол-во» input of its own — its groups
       // are. An ORPHAN group is read-only, so it can never make the tab dirty.
       if (typesPerGroup(w)) {
-        return shtDirty || w.groups.some((g) => !g.orphan &&
+        return w.groups.some((g) => !g.orphan &&
           String(g.people_overridden ? g.people : "")
             !== String((draft[gKey(w.work_center, g.group)] || { people: "" }).people).trim());
       }
-      return shtDirty || String(w.people_overridden ? w.people : "") !== String(d.people).trim();
+      return String(w.people_overridden ? w.people : "") !== String(d.people).trim();
     });
 
   const apply = () => { if (pctValid) setAppliedPm(previewPm); };
@@ -818,17 +819,22 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
     onSave({
       ...(canEditEff ? { productive_min: Math.round(previewPm * 100) / 100 } : {}),
       rows: wcs.flatMap((w) => {
-        const d = draft[w.work_center] || { people: "", shtatka: "" };
+        const d = draft[w.work_center] || { people: "" };
+        // The day's штатка pin goes back EXACTLY as stored: this tab no longer
+        // types one (the column reads Verifix), and the endpoint reads an
+        // omitted or null штатка as «clear the pin» — so sending nothing would
+        // quietly delete a pin set on the «Команды» card.
+        const sht = w.shtatka_overridden ? w.shtatka : null;
         if (typesPerGroup(w)) {
           // An ORPHAN group goes back exactly as stored: the backend refuses a
           // new or changed pin for a letter no cell carries, and this tab never
           // offers one — re-sending the stored value (or null) is accepted.
-          return groupedStaffRows(w, num(d.shtatka),
+          return groupedStaffRows(w, sht,
             w.groups.map((g) => [g.group, g.orphan
               ? (g.people_overridden ? g.people : null)
               : num((draft[gKey(w.work_center, g.group)] || {}).people)]));
         }
-        return centreStaffRows(w, num(d.people), num(d.shtatka));
+        return centreStaffRows(w, num(d.people), sht);
       }),
     });
   };
@@ -871,25 +877,24 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
     if (w.people_whole != null && !typedOnServer) return { value: w.people_whole, mode: "whole", complete: true };
     return { value: null, mode: "sum", complete: false };
   };
-  const effOf = (w, key) => {
-    if (key === "people") {
-      if (typesPerGroup(w)) return groupedPeople(w).value ?? 0;
-      if (!canEdit) return Number(w.people) || 0;
-      return num((draft[w.work_center] || {}).people) ?? 0;
-    }
-    if (!canEdit) return Number(w.shtatka) || 0;
-    const typed = num((draft[w.work_center] || {}).shtatka);
-    return typed != null ? typed : Number(w.shtatka_cfg) || 0;
+  const effPeople = (w) => {
+    if (typesPerGroup(w)) return groupedPeople(w).value ?? 0;
+    if (!canEdit) return Number(w.people) || 0;
+    return num((draft[w.work_center] || {}).people) ?? 0;
   };
-  const totalActPeople = wcs.reduce((s, w) => s + effOf(w, "people"), 0);
-  const totalActShtat = wcs.reduce((s, w) => s + effOf(w, "shtatka"), 0);
+  const totalActPeople = wcs.reduce((s, w) => s + effPeople(w), 0);
+  // ШТАТКА — Verifix's count, summed over the centres that HAVE one (a centre
+  // no cell stands at has nobody to count). Unread day → no total at all.
+  const vfxRead = !!verifix?.read;
+  const totalVfx = vfxRead
+    ? Math.round(wcs.reduce((s, w) => s + (Number(w.verifix_hc) || 0), 0) * 100) / 100
+    : null;
+  const vfxUnplaced = vfxRead && Number(verifix?.unplaced) > 0 ? Number(verifix.unplaced) : 0;
 
-  // Did somebody TYPE this number? The `*_overridden` flag is the only thing
-  // that can answer it, for both columns and for opposite reasons: `w.shtatka`
-  // still RESOLVES (the pin, else the configured roster), so the value alone
-  // cannot say which it is — while `w.people` is null when nothing was typed,
-  // but a typed 0 is a real answer (a cell that ran empty) and testing the
-  // value would read that as missing. The загрузка reads the typed half alone
+  // Did somebody TYPE this «Кол-во»? The `people_overridden` flag is the only
+  // thing that can answer it: `w.people` is null when nothing was typed, but a
+  // typed 0 is a real answer (a cell that ran empty) and testing the value
+  // would read that as missing. The загрузка reads the typed half alone
   // (`zagruzka_source.typed_people`, whose whole predicate is `people IS NOT
   // NULL`). While editing, what counts as typed is what is in the INPUT rather
   // than what was last saved, so the JAMI mark follows the operator's typing
@@ -897,20 +902,20 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // A grouped centre counts as typed only when EVERY group is (or the one
   // whole-centre figure still stands): one group left blank is one cell's people
   // missing from the sum, and the JAMI «*» must say so.
-  const isTyped = (w, key) =>
-    key === "people" && typesPerGroup(w)
+  const isTyped = (w) =>
+    typesPerGroup(w)
       ? groupedPeople(w).complete
       : canEdit
-        ? num((draft[w.work_center] || {})[key]) != null
-        : (key === "people" ? w.people_overridden : w.shtatka_overridden);
+        ? num((draft[w.work_center] || {}).people) != null
+        : w.people_overridden;
   // Centres typed per group whose «Кол-во» was typed for the WHOLE centre and
   // not yet per group. Read off the saved state: it is a fact about what is
   // stored. Never an orphan-only centre: there the whole figure IS the answer,
   // and the hint would ask for per-group numbers no row lets anybody type.
   const wholeOnly = wcs.filter((w) => typesPerGroup(w) && w.people_whole != null
     && !w.groups.some((g) => g.people_overridden)).map((w) => w.work_center);
-  const allTyped = (key) => wcs.every((w) => isTyped(w, key));
-  const anyUntyped = wcs.length > 0 && (!allTyped("people") || !allTyped("shtatka"));
+  const allTyped = wcs.every((w) => isTyped(w));
+  const anyUntyped = wcs.length > 0 && !allTyped;
 
   const chip = (code, cell) => {
     const c = wcColor(code);
@@ -962,6 +967,20 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
       {!typed && mark && <sup style={{ color: "var(--text-4)" }}>*</sup>}
     </span>
   );
+  // ШТАТКА on «Bugungi fakt» — Verifix's count, read-only. Muted ink: nobody
+  // typed it, so it never wears the typed gold. A blank says WHY on hover — the
+  // day not read yet, no cell at this team, or an orphan letter.
+  // `digits` 1: a worker split across two cells is a fraction in each.
+  const vfxCell = (value, blankTitle) => (
+    <span className="tabular-nums font-semibold"
+      title={value == null ? blankTitle : t("production.vfxStaffCell")}
+      style={{ color: value == null ? "var(--text-4)" : "var(--text-2)" }}>
+      {fmt(value, 1)}
+    </span>
+  );
+  const vfxBlank = (w, g) => (!vfxRead ? t("production.vfxNotRead")
+    : g?.orphan ? t("production.group.orphanLocked")
+      : t("production.vfxNoCell"));
 
   return (
     <>
@@ -1072,7 +1091,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
             <tr>
               <Th label={t("production.col.wc")} />
               <Th label={t("production.oSoni")} align="center" />
-              <Th label={t("production.shtatka")} align="center" />
+              <Th label={t("production.shtatka")} align="center" hint={t("production.vfxStaffHint")} />
             </tr>
           </thead>
           <tbody>
@@ -1084,7 +1103,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
               </tr>
             ))}
             {!loading && wcs.map((w) => {
-              const d = draft[w.work_center] || { people: "", shtatka: "" };
+              const d = draft[w.work_center] || { people: "" };
               // `grouped` = typed per group: the header «Кол-во» is their sum.
               // An orphan-only centre gets the ordinary input instead.
               const grouped = typesPerGroup(w);
@@ -1093,57 +1112,44 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                 <Fragment key={w.work_center}>
                 <tr className={PT_ROW}>
                   <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
-                  {/* The placeholder is what an EMPTY box will count as. Штатка
-                      falls back to the configured roster, so it previews it;
+                  {/* The placeholder is what an EMPTY box will count as.
                       «Кол-во» falls back to nothing at all, so it shows «—» —
                       previewing the formula there would promise that leaving
                       the box empty adopts that number, which is exactly what
                       this page stopped doing. */}
-                  {[["people", null], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
-                    <td key={key} className="px-3 py-1 text-center">
-                      {key === "people" && grouped ? (
-                        // A grouped centre's «Кол-во» is typed on its groups and
-                        // only SUMMED here, so it is never an input and never
-                        // gold: nobody typed this number, they typed its parts.
-                        <span
-                          className="tabular-nums font-semibold"
-                          title={t(gp.mode === "whole" ? "production.group.wholeCell" : "production.group.sumHint")}
-                          style={{ color: "var(--text-3)" }}
-                        >
-                          {fmt(gp.value, 0)}
-                          {!gp.complete && <sup style={{ color: "var(--text-4)" }}>*</sup>}
-                        </span>
-                      ) : canEdit ? (
-                        pinInput(d[key], setCell(w.work_center, key), fmt(fallback, 0))
-                      ) : (
-                        // READ-ONLY — a closed day, or a viewer who may not type
-                        // here. This printed `w.people` bare while that field
-                        // still RESOLVED, so a cell nobody had typed showed the
-                        // suggestion from the table on the LEFT as the
-                        // brigadir's own fact: both cards read identically, cell
-                        // for cell, while the загрузка heatmap marked the same
-                        // unit-day 👥 «nobody typed the people». «Кол-во» no
-                        // longer resolves at all (pp_calc's `people_typed_only`)
-                        // and prints «—» here; ШТАТКА still does, because it is
-                        // configuration rather than a fact about one day. A
-                        // closed day is exactly the one read after the event, so
-                        // this is where the distinction matters most. Same
-                        // vocabulary as the editable branch above — typed is
-                        // gold and bold, anything else is muted — plus a «*»
-                        // the legend under the card explains.
-                        pinRead(
-                          key === "people" ? w.people : w.shtatka,
-                          isTyped(w, key),
-                          t(key === "people" ? "production.peopleNotEnteredCell"
-                                             : "production.peopleNotTypedCell"),
-                        )
-                      )}
-                    </td>
-                  ))}
+                  <td className="px-3 py-1 text-center">
+                    {grouped ? (
+                      // A grouped centre's «Кол-во» is typed on its groups and
+                      // only SUMMED here, so it is never an input and never
+                      // gold: nobody typed this number, they typed its parts.
+                      <span
+                        className="tabular-nums font-semibold"
+                        title={t(gp.mode === "whole" ? "production.group.wholeCell" : "production.group.sumHint")}
+                        style={{ color: "var(--text-3)" }}
+                      >
+                        {fmt(gp.value, 0)}
+                        {!gp.complete && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                      </span>
+                    ) : canEdit ? (
+                      pinInput(d.people, setCell(w.work_center, "people"), fmt(null, 0))
+                    ) : (
+                      // READ-ONLY — a closed day, or a viewer who may not type
+                      // here. «Кол-во» no longer resolves to the suggestion
+                      // (pp_calc's `people_typed_only`) and prints «—» when
+                      // nobody typed it. Same vocabulary as the editable branch
+                      // above — typed is gold and bold, anything else is muted —
+                      // plus a «*» the legend under the card explains. A closed
+                      // day is exactly the one read after the event, so this is
+                      // where the distinction matters most.
+                      pinRead(w.people, isTyped(w), t("production.peopleNotEnteredCell"))
+                    )}
+                  </td>
+                  {/* ШТАТКА — Verifix, never typed: the Σ over every cell of the
+                      centre (a grouped centre's groups listed below it). */}
+                  <td className="px-3 py-2 text-center">{vfxCell(w.verifix_hc, vfxBlank(w))}</td>
                 </tr>
-                {/* One row per group: its own «Кол-во» (the group pin), and «—»
-                    for ШТАТКА — the day's штатка belongs to the whole centre and
-                    stays on the header row above. An ORPHAN group is never an
+                {/* One row per group: its own «Кол-во» (the group pin), and its
+                    own cell's Verifix count under ШТАТКА. An ORPHAN group is never an
                     input: no cell carries its letter, so there is nobody to count
                     and the backend refuses a new pin for it — it shows what is
                     stored and says why it cannot be typed. Listed for EVERY
@@ -1167,7 +1173,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                             )
                             : pinRead(g.people, g.people_overridden, groupUntypedTitle(t, w, g), { digits: 1 })}
                       </td>
-                      <td className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>—</td>
+                      <td className="px-3 py-2 text-center">{vfxCell(g.verifix_hc, vfxBlank(w, g))}</td>
                     </tr>
                   );
                 })}
@@ -1183,10 +1189,12 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
               <tr className={PT_ROW}>
                 <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
                 <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>
-                  {fmt(totalActPeople, 0)}{!allTyped("people") && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                  {fmt(totalActPeople, 0)}{!allTyped && <sup style={{ color: "var(--text-4)" }}>*</sup>}
                 </td>
-                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>
-                  {fmt(totalActShtat, 0)}{!allTyped("shtatka") && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                <td className="px-3 py-2 text-center tabular-nums font-bold"
+                  title={vfxRead ? t("production.vfxStaffCell") : t("production.vfxNotRead")}
+                  style={{ color: vfxRead ? "var(--text-2)" : "var(--text-4)" }}>
+                  {fmt(totalVfx, 1)}
                 </td>
               </tr>
             )}
@@ -1204,6 +1212,19 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
         {!loading && anyUntyped && (
           <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
             {t("production.peopleNotTyped")}
+          </p>
+        )}
+
+        {/* Where ШТАТКА comes from, said once under the card in both states —
+            and, when it cannot answer yet, why: «—» on every row of an unread
+            day must not read as «nobody came». Above the save row, and present
+            whether or not the day was read, so reading it never moves it. */}
+        {!loading && wcs.length > 0 && (
+          <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
+            {vfxRead ? t("production.vfxStaffNote") : t("production.vfxNotReadNote")}
+            {vfxUnplaced > 0 && (
+              <>{" "}{t("production.vfxUnplaced").replace("{n}", fmt(vfxUnplaced, 1))}</>
+            )}
           </p>
         )}
 
@@ -2651,6 +2672,7 @@ export default function Production() {
         <PeopleTab
           wcs={wcs}
           constants={data?.constants}
+          verifix={data?.verifix}
           loading={loading}
           canEdit={canEditPeople}
           canEditEff={canEditPeople && !cellPinned}

@@ -1253,6 +1253,32 @@ for byte**; only where three numbers come from changes.
   Permissions — widening the units it covers is not the same decision as
   widening who may open it.
 
+## «Bugungi fakt» ШТАТКА is Verifix's (`/production` → «Odamlar soni»)
+
+From **2026-10-05** (the operator: «should not be editable anymore … take from
+Verifix automatically») the ШТАТКА column of the «Bugungi fakt» card is READ,
+never typed: per work centre (and per group) the people the day's saved
+ATTENDANCE — what «Davomat» reads from Verifix — places in that centre's cells.
+
+- **`production._verifix_staffing` is THE figure**, attached by
+  `_build_dashboard` as `work_centers[].verifix_hc` / `groups[].verifix_hc` plus
+  `verifix: {read, hc, unplaced}`. The unit's own attendance rows (manager +
+  date) filtered by `idle_source._counted_hc` — the загрузка's `verifix_hc`
+  rule: direct roles (Кондитер…, Фасовщик, Заготовитель, blank title) who came,
+  never the brigadir, `hc_weight` summed — on the cell their `verifix_code`
+  names (THIS unit's cells, codes met by `norm_code`; a lettered cell is its
+  group's).
+- **«—» is never 0**: an unread day (no attendance row for the unit-day), a
+  centre no cell stands at, an orphan letter. A note under the card says which
+  source and, unread, when it appears; `unplaced` (counted in the загрузка but
+  in no cell of the page's centres) is named there too.
+- **It moves NO number.** The engine's W is still the configured roster or the
+  day's штатка pin; the tab's Save sends that pin back exactly as stored (null
+  would DELETE it), so a pin set on the «Команды» card's pencil survives. That
+  pencil still edits the pin — retiring it is a separate decision.
+- Not the live read: `/staff-live`'s minute-by-minute read feeds nothing outside
+  that page, so a running day reads «—» until «Davomat» saves it.
+
 ## TWO comparison tables on `/zagruzka` («Smena boshi va Smena oxiri Zagruzka»)
 
 From **2026-09-20** (the operator's directive) `/zagruzka` carries a SECOND
