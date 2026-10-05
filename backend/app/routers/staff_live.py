@@ -1580,7 +1580,7 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     db.commit()
     pending = live_staff.pending_count(db, mid, d)
     action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid,
-                      unit_name=unit.name if unit else None, day=d,
+                      unit_name=_unit_name(db, mid), day=d,
                       details=[("date", str(d))] + ([("pending", pending)] if pending else []),
                       changes=[("status", "open", "closed")])
     _notify(db, "live_day_closed", {"closer_name": _who(caller), "date": d}, units=(mid,),
