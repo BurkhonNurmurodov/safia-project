@@ -437,6 +437,12 @@ class RoleProfile(Base):
     # Where that answer came from and what Verifix said, for the profile page:
     # {"src": "verifix" | "manual", "at", "by", "vfx": {...}} — see leader_kind.out.
     leader_kind_meta = Column(JSONB, nullable=True)
+    # leaders only (2026-10-05): the shift this leader's CHECKLIST runs on, as a
+    # dated timeline — [{"from": "YYYY-MM-DD", "shift": 1 | 2 | null, "at",
+    # "by"}], oldest first; null (or no entry yet) = their unit's shift. For a
+    # leader whose unit is on one shift while they work the other.
+    # `services/leader_shift.py` is THE definition.
+    checklist_shift  = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

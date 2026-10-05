@@ -1911,11 +1911,16 @@ def add_leader_kind_columns() -> None:
     that answer came from (``leader_kind_meta``) — ``services/leader_kind.py``.
     NULL = not determined, which every existing row is, so nothing moves. Pure
     DDL, idempotent, no flag. Runs FIRST at boot: every ORM read of a profile
-    selects these columns."""
+    selects these columns.
+
+    2026-10-05: also ``checklist_shift`` — the dated shift a leader's checklist
+    runs on when it is not their unit's (``services/leader_shift.py``). NULL =
+    the unit's shift, i.e. every existing row reads exactly as before."""
     db = SessionLocal()
     try:
         db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind VARCHAR(10)"))
         db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS leader_kind_meta JSONB"))
+        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS checklist_shift JSONB"))
         db.commit()
     except Exception as exc:
         db.rollback()
