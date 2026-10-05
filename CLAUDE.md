@@ -480,6 +480,35 @@ DMed as text + a workbook; the record is in app setting
   has landed — BEFORE `verifix_cell_sync`, `verifix_leader_sync` and
   `leader_verifix_check`, whose helpers it imports.
 
+## Leaders' and brigadirs' photos come from Verifix (`verifix_profile_photos`, 2026-10-05)
+
+The operator: «put pictures of the leaders and supervisors on Verifix as
+profile picture on IMS». TEMPORARY one-shot `services/verifix_profile_photos.py`,
+`startup.set_profile_photos_from_verifix` (flag
+`verifix_profile_photos_2026_10_05_v1`, ~300 s after boot, after the 5 Oct
+leader pass so the profiles it created are covered, both entrypoints), DMed
+as text + a workbook; the record (no bytes) is app setting
+`verifix_profile_photos_2026_10_05`.
+
+- **Who a profile is on Verifix is the tie the checks STORED** —
+  `role_profiles.leader_kind_meta.vfx.id` (the 4 Oct leader check, its pins,
+  the 5 Oct created profiles) and `managers.supervisor_kind_meta.vfx.id` (the
+  4 Oct brigadir check): the tie each profile page already names. Nothing is
+  matched afresh; an untied profile is listed with the check's reason.
+- **A photo somebody set is kept.** A tie whose Verifix name no longer looks
+  like the profile (`name_map._pair_score`, either order — a profile renamed
+  to another person) is refused. A Verifix list under 1,000 people writes
+  nothing.
+- The employee's MAIN identification photo, fetched by
+  `verifix_explore.download` (the «Verifix (test)» photo doors, split out of
+  `photo`), squared with the head kept in frame (top 0.35) and stored through
+  **`services/profile_photo.py` — THE way a profile photo is written**
+  (`square_jpeg` + `store`; the admin upload uses it too, byte for byte as
+  before). All photos land in one transaction with the record.
+- Delete the module, its startup trio and both entrypoint calls once the report
+  has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
+  photos and `profile_photo.py` stay.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts

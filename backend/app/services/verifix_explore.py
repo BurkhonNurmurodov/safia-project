@@ -629,6 +629,25 @@ def _allow(*shas: Optional[str]) -> None:
             _ALLOWED.popitem(last=False)
 
 
+def download(c: dict, sha: str) -> Optional[bytes]:
+    """The bytes Verifix keeps under ``sha``, as stored — None when neither door
+    hands them over. Nothing checks they are an image: the caller decodes."""
+    if not _SHA.match(sha or ""):
+        return None
+    with _downloads:
+        cl = _photo_client(c)
+        # The photo door the docs name for a mark's photo, then the general file door.
+        for path in ("/b/biruni/m:load_image", "/b/biruni/m:download_file_v2"):
+            try:
+                res = cl.get(f"https://{c['host']}{path}", params={"sha": sha},
+                             headers={"Accept": "image/*,*/*;q=0.5"})
+            except httpx.HTTPError:
+                continue
+            if res.status_code == 200 and res.content and len(res.content) < 20_000_000:
+                return res.content
+    return None
+
+
 def photo(db: Session, sha: str, size: int) -> bytes:
     """A photo Verifix holds, resized to a square avatar (96) or a view (960).
     Only a hash this process has handed out as a photo is served."""
@@ -644,20 +663,7 @@ def photo(db: Session, sha: str, size: int) -> bytes:
         if hit is not None:
             _THUMBS.move_to_end((sha, size))
             return hit
-    c = config(db)
-    raw = None
-    with _downloads:
-        cl = _photo_client(c)
-        # The photo door the docs name for a mark's photo, then the general file door.
-        for path in ("/b/biruni/m:load_image", "/b/biruni/m:download_file_v2"):
-            try:
-                res = cl.get(f"https://{c['host']}{path}", params={"sha": sha},
-                             headers={"Accept": "image/*,*/*;q=0.5"})
-            except httpx.HTTPError:
-                continue
-            if res.status_code == 200 and res.content and len(res.content) < 20_000_000:
-                raw = res.content
-                break
+    raw = download(config(db), sha)
     if raw is None:
         raise LookupError("not available")
     try:

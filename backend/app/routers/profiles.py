@@ -56,7 +56,9 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
-from app.services import action_log, cell_hours, leader_kind, supervisor_kind, wc_group
+from app.services import (
+    action_log, cell_hours, leader_kind, profile_photo, supervisor_kind, wc_group,
+)
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
 from app.models import (
@@ -2557,7 +2559,6 @@ def admin_delete_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
 # ── Profile photos ────────────────────────────────────────────────────────────
 
 _AVATAR_MAX_BYTES = 10 * 1024 * 1024
-_AVATAR_SIDE = 512
 
 
 def _photo_version(row: ProfilePhoto) -> int:
@@ -2610,23 +2611,7 @@ def admin_set_photo(profile_key: str = Form(...), file: UploadFile = File(...),
     except Exception:
         raise HTTPException(status_code=400, detail="invalid_image")
 
-    w, h = img.size
-    side = min(w, h)
-    img = img.crop(((w - side) // 2, (h - side) // 2,
-                    (w + side) // 2, (h + side) // 2))
-    if side > _AVATAR_SIDE:
-        img = img.resize((_AVATAR_SIDE, _AVATAR_SIDE), Image.Resampling.LANCZOS)
-    buf = BytesIO()
-    img.save(buf, "JPEG", quality=88)
-
-    now = datetime.now(timezone.utc)
-    row = db.query(ProfilePhoto).filter_by(profile_key=profile_key).first()
-    if row:
-        row.data, row.mime, row.updated_at = buf.getvalue(), "image/jpeg", now
-    else:
-        row = ProfilePhoto(profile_key=profile_key, mime="image/jpeg",
-                           data=buf.getvalue(), updated_at=now)
-        db.add(row)
+    row = profile_photo.store(db, profile_key, profile_photo.square_jpeg(img))
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_set",
                     details=[("profile", name)])

@@ -116,6 +116,7 @@ async def lifespan(app: FastAPI):
         sync_cells_from_verifix,
         sync_leaders_from_verifix,
         sync_cells_and_leaders_from_verifix,
+        set_profile_photos_from_verifix,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -589,6 +590,12 @@ async def lifespan(app: FastAPI):
     # `startup.sync_cells_and_leaders_from_verifix` and
     # `services/verifix_cells_leaders_sync.py` once the report has landed.
     sync_cells_and_leaders_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-05) — every leader's and brigadir's Verifix
+    # photo as their profile photo (by the Verifix tie the checks above stored;
+    # a photo somebody set is kept) and a DM of who got one. Remove this line,
+    # `startup.set_profile_photos_from_verifix` and
+    # `services/verifix_profile_photos.py` once the report has landed.
+    set_profile_photos_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,

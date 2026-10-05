@@ -7362,6 +7362,52 @@ def _cells_leaders_job() -> None:
                       verifix_cells_leaders_sync.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: every leader's and brigadir's Verifix photo on their profile ──
+# The operator on 2026-10-05: «put pictures of the leaders and supervisors on
+# Verifix as profile picture on IMS». Uses the Verifix tie the 4–5 Oct checks
+# already stored on each profile, never overwrites a photo somebody set, and
+# DMs who got one and why the rest did not (`services/verifix_profile_photos.py`).
+# Runs after the 5 Oct leader pass, so the leader profiles it created get theirs.
+PROFILE_PHOTOS_FLAG = "verifix_profile_photos_2026_10_05_v1"
+_PROFILE_PHOTOS_DELAY_S = 300
+# While the 5 Oct pass still has to run, wait for it — at most this many times.
+_PROFILE_PHOTOS_WAITS = 6
+_PROFILE_PHOTOS_WAIT_S = 120
+
+
+def set_profile_photos_from_verifix() -> None:
+    """Every tied leader's and brigadir's Verifix photo, once, and report. Never raises."""
+    try:
+        if not _report_pending(PROFILE_PHOTOS_FLAG):
+            return
+        if not _schedule_profile_photos(_PROFILE_PHOTOS_DELAY_S, 0):
+            print("[startup] Verifix profile photos could not be scheduled")
+    except Exception as exc:
+        print(f"[startup] Verifix profile photos could not be scheduled: {exc}")
+
+
+def _schedule_profile_photos(delay_s: int, waited: int) -> bool:
+    from datetime import timedelta
+    from app.scheduler import schedule_at
+    return schedule_at(f"verifix-profile-photos-{waited}",
+                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
+                       _profile_photos_job, args=(waited,))
+
+
+def _profile_photos_job(waited: int = 0) -> None:
+    # The 5 Oct pass creates leader profiles; photos taken before it lands
+    # would miss them. Its flag is set once its report is out.
+    if waited < _PROFILE_PHOTOS_WAITS and _report_pending(CELLS_LEADERS_FLAG):
+        try:
+            if _schedule_profile_photos(_PROFILE_PHOTOS_WAIT_S, waited + 1):
+                return
+        except Exception:
+            pass
+    from app.services import verifix_profile_photos
+    _send_report_once(PROFILE_PHOTOS_FLAG, "Verifix profile photos",
+                      verifix_profile_photos.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
 # The operator, the same day: «check the supervisors if they're actually
 # supervisor or not and put a switch like on the leaders also for them … report
