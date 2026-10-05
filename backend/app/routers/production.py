@@ -26,7 +26,8 @@ import logging
 
 import statistics
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 from io import BytesIO
 from typing import Annotated, Optional
@@ -46,7 +47,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Attendance, Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Attendance, AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow, AttendanceUploadFile,
+    Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
     PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
@@ -617,6 +619,14 @@ def _verifix_staffing(db: Session, manager_id: int, day: date,
     `hc` and the part of it standing in no work centre of this page
     (`unplaced`: no cell code, or a cell with no SAP code here).
 
+    **Where the figure came from is published too** (`verifix.reads`,
+    `verifix.saved_at`): every «Davomat» read that supplied one of this unit's
+    cells for the day — a Verifix read (`source` "verifix", from 2026-10-04) or
+    an Excel file before it — with its time and who pressed it, plus when the
+    day was saved into attendance. The card prints it, and
+    `/api/production/staffing-proof` lists the people behind each number, so the
+    answer to «is this really Verifix's» is on the page, not taken on trust.
+
     It moves NO number: the engine's W is still the configured roster or the
     day's pin, and nothing reads this field but the tab that shows it.
     """
@@ -651,12 +661,165 @@ def _verifix_staffing(db: Session, manager_id: int, day: date,
                                if (read and not g.get("orphan")) else None)
     if read:
         placed = sum(v for code, v in by_wc.items() if code in page_codes)
-    result["verifix"] = {"read": read}
+    result["verifix"] = {"read": read, **_staffing_sources(db, day, list(wc_of_code))}
     if unit_wide:
         result["verifix"].update({
             "hc": round(total, 2) if read else None,
             "unplaced": round(total - placed, 2) if read else None,
         })
+
+
+_TZ = ZoneInfo("Asia/Tashkent")
+
+
+def _local_iso(ts) -> Optional[str]:
+    """A stored instant as the plant's wall clock — never the browser's zone."""
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(_TZ).isoformat(timespec="minutes")
+
+
+def _staffing_sources(db: Session, day: date, codes: list[str]) -> dict:
+    """The «Davomat» reads that supplied ``codes`` on ``day`` — read off the
+    day's batch: each batch cell points at the read that last supplied it
+    (`AttendanceBatchCell.upload_id`), and the read says whether it was Verifix's
+    API or an Excel file. ``saved_at`` is when the batch reached attendance."""
+    batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == day).first()
+    if batch is None or not codes:
+        return {"reads": [], "saved_at": None, "saved_by": None, "batch": None}
+    per_upload: dict[Optional[int], int] = defaultdict(int)
+    for (uid,) in (db.query(AttendanceBatchCell.upload_id)
+                   .filter(AttendanceBatchCell.batch_id == batch.id,
+                           AttendanceBatchCell.verifix_code.in_(codes)).all()):
+        per_upload[uid] += 1
+    ups = {u.id: u for u in db.query(AttendanceUploadFile).filter(
+        AttendanceUploadFile.id.in_([u for u in per_upload if u is not None])).all()}
+    reads = []
+    for uid, n in per_upload.items():
+        u = ups.get(uid)
+        if u is None:
+            continue
+        reads.append({
+            "kind": "verifix" if u.source == "verifix" else "file",
+            "at": _local_iso(u.uploaded_at),
+            "by": u.uploaded_by_name,
+            "file": None if u.source == "verifix" else u.filename,
+            "cells": n,
+        })
+    reads.sort(key=lambda r: r["at"] or "", reverse=True)
+    return {
+        "reads": reads,
+        "saved_at": _local_iso(batch.saved_at),
+        "saved_by": batch.saved_by_name,
+        "batch": batch.status,
+    }
+
+
+def _not_counted_why(r) -> Optional[str]:
+    """Why an attendance row is NOT in the staffing figure — the reasons of
+    `idle_source._counted_hc` (= `kpi_calculator.is_direct_role` + a name), in
+    that function's own order. None = counted."""
+    if getattr(r, "is_supervisor", False):
+        return "brigadir"
+    try:
+        hrs = float(r.hours_worked or 0)
+    except (TypeError, ValueError):
+        hrs = 0.0
+    if hrs <= 0:
+        return "absent"
+    if not idle_source._counted_hc(r):
+        name = r.worker_name
+        return "no_name" if (not name or name in ("nan", "NaN")) else "role"
+    return None
+
+
+@router.get("/api/production/staffing-proof")
+def staffing_proof(
+    work_center: str = Query(...),
+    group: Optional[str] = Query(None),
+    date: Optional[str] = Query(None),
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """The people behind ONE «Bugungi fakt» → ШТАТКА number: every attendance
+    row of the unit-day standing in the cells of ``work_center`` (``group`` =
+    the cell carrying that letter), counted or not and why, each with the read
+    that supplied it — Verifix, an Excel file, an admin's edit or a hand-added
+    row (off the batch row of the same worker). The counted ones add up to the
+    figure on the card by construction: one filter, `idle_source._counted_hc`.
+    Scoped like the dashboard — a leader only for their own cells."""
+    mid = _resolve_manager_id(payload, manager_id, db)
+    day = _parse_date(date)
+    scope = _leader_wc_scope(db, payload)
+    grp = (group or "").strip().upper() or None
+    if scope is not None:
+        gscope = _leader_group_scope(db, payload)
+        if not _in_scope(scope, work_center) or (grp and not wc_group.in_scope(gscope, work_center, grp)):
+            raise HTTPException(status_code=403, detail="This team is not one of your cells")
+    want = norm_code(work_center)
+    cells = [c for c in db.query(Cell).filter(Cell.manager_id == mid, Cell.sap_code.isnot(None)).all()
+             if norm_code(c.sap_code) == want and c.verifix_code
+             and (grp is None or (c.wc_group or None) == grp)]
+    codes = sorted({c.verifix_code for c in cells})
+    rows = []
+    if codes:
+        att = (db.query(Attendance)
+               .filter(Attendance.manager_id == mid, Attendance.date == day,
+                       Attendance.verifix_code.in_(codes))
+               .order_by(Attendance.verifix_code, Attendance.worker_name).all())
+        batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == day).first()
+        by_name: dict[str, list] = defaultdict(list)
+        ups: dict[int, AttendanceUploadFile] = {}
+        if batch is not None and att:
+            names = {a.worker_name for a in att if a.worker_name}
+            for b in (db.query(AttendanceBatchRow)
+                      .filter(AttendanceBatchRow.batch_id == batch.id,
+                              AttendanceBatchRow.worker_name.in_(names)).all()):
+                by_name[b.worker_name].append(b)
+            uids = {b.upload_id for lst in by_name.values() for b in lst if b.upload_id}
+            if uids:
+                ups = {u.id: u for u in db.query(AttendanceUploadFile).filter(
+                    AttendanceUploadFile.id.in_(uids)).all()}
+        for a in att:
+            cands = by_name.get(a.worker_name) or []
+            b = next((x for x in cands if x.verifix_code == a.verifix_code), cands[0] if cands else None)
+            if b is None:
+                src, at = "none", None
+            elif b.manual:
+                src, at = "manual", None
+            else:
+                u = ups.get(b.upload_id) if b.upload_id else None
+                src = "edited" if b.edited else ("verifix" if (u and u.source == "verifix") else ("file" if u else "none"))
+                at = _local_iso(u.uploaded_at) if u else None
+            why = _not_counted_why(a)
+            rows.append({
+                "name": a.worker_name,
+                "job": a.job_title,
+                "cell": a.verifix_code,
+                "clock": a.clock_in_out,
+                "hours": float(a.hours_worked) if a.hours_worked is not None else None,
+                "weight": 1.0 if a.hc_weight is None else float(a.hc_weight),
+                "counted": why is None,
+                "why": why,
+                "source": src,
+                "read_at": at,
+            })
+    rows.sort(key=lambda r: (not r["counted"], r["cell"] or "", r["name"] or ""))
+    counted = round(sum(r["weight"] for r in rows if r["counted"]), 2)
+    return {
+        "date": day.isoformat(),
+        "work_center": work_center,
+        "group": grp,
+        "cells": codes,
+        "rows": rows,
+        "counted": counted if rows or codes else None,
+        "read": db.query(Attendance.id).filter(Attendance.manager_id == mid,
+                                               Attendance.date == day).first() is not None,
+        **_staffing_sources(db, day, codes),
+    }
 
 
 # --------------------------------------------------------------------------- #

@@ -1398,6 +1398,20 @@ ATTENDANCE — what «Davomat» reads from Verifix — places in that centre's c
   pencil still edits the pin — retiring it is a separate decision.
 - Not the live read: `/staff-live`'s minute-by-minute read feeds nothing outside
   that page, so a running day reads «—» until «Davomat» saves it.
+- **Every number PROVES itself** (same day — «we are not sure it comes from
+  Verifix»). The card names its source under the table — `verifix.reads` /
+  `saved_at` / `saved_by` (`production._staffing_sources`: the «Davomat» read
+  each of the unit's cells came from — `attendance_batch_cells.upload_id` →
+  `attendance_upload_files.source`, «verifix» or an Excel file — with its
+  Tashkent time and who pressed it; a read not yet SAVED says so). A tap on a
+  number opens `components/production/StaffingProofModal.jsx` over
+  `GET /api/production/staffing-proof` (work centre [+ group], day, unit; a
+  leader only for their own cells): every attendance row of those cells,
+  counted ones first — they add up to the number by construction, one filter —
+  each with the read that supplied it (Verifix · Excel · edited by an admin ·
+  added by hand, off the batch row of the same worker), and the rest folded
+  under «Hisobga kirmaganlar» with the reason (brigadir · 0 hours · job not
+  counted · no name). Read-only; nothing stored.
 
 ## TWO comparison tables on `/zagruzka` («Smena boshi va Smena oxiri Zagruzka»)
 

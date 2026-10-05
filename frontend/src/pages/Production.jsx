@@ -44,6 +44,8 @@ import useStatusBands from "../hooks/useStatusBands";
 import { exportXlsx } from "../utils/exportXlsx";
 import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
+import StaffingProofModal from "../components/production/StaffingProofModal";
+import { ddmm, hhmm } from "../components/production/staffingClock";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 // Timezone-safe: build/shift dates from calendar parts, never via toISOString()
@@ -735,7 +737,7 @@ function centreStaffRows(w, people, shtatka) {
 // saved attendance). `verifix.read` false = the day has not been read from
 // Verifix yet, which is «—», never 0. The day's штатка pin is no longer written
 // from here: a save sends back whatever is stored, so it moves nothing.
-function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
+function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const shiftMin = Number(constants?.shift_min) || 480;
@@ -890,6 +892,12 @@ function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = can
     ? Math.round(wcs.reduce((s, w) => s + (Number(w.verifix_hc) || 0), 0) * 100) / 100
     : null;
   const vfxUnplaced = vfxRead && Number(verifix?.unplaced) > 0 ? Number(verifix.unplaced) : 0;
+  // The newest «Davomat» read that supplied this unit's cells — Verifix's API
+  // or (the days before 4 Oct) an Excel file — printed under the card, so the
+  // number's source is stated, not assumed.
+  const vfxLast = (verifix?.reads || [])[0] || null;
+  // The row whose ШТАТКА was pressed: { work_center, group } → the proof dialog.
+  const [proof, setProof] = useState(null);
 
   // Did somebody TYPE this «Кол-во»? The `people_overridden` flag is the only
   // thing that can answer it: `w.people` is null when nothing was typed, but a
@@ -971,13 +979,20 @@ function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = can
   // typed it, so it never wears the typed gold. A blank says WHY on hover — the
   // day not read yet, no cell at this team, or an orphan letter.
   // `digits` 1: a worker split across two cells is a fraction in each.
-  const vfxCell = (value, blankTitle) => (
-    <span className="tabular-nums font-semibold"
-      title={value == null ? blankTitle : t("production.vfxStaffCell")}
-      style={{ color: value == null ? "var(--text-4)" : "var(--text-2)" }}>
+  // A number opens the list of the people it counts (StaffingProofModal) —
+  // the proof that it is Verifix's, row by row. A blank stays inert.
+  const vfxCell = (value, blankTitle, target) => (value == null ? (
+    <span className="tabular-nums font-semibold" title={blankTitle} style={{ color: "var(--text-4)" }}>
       {fmt(value, 1)}
     </span>
-  );
+  ) : (
+    <button type="button" onClick={() => setProof(target)}
+      className="cell-link tabular-nums font-semibold"
+      title={`${t("production.vfxStaffCell")} — ${t("production.vfxClick")}`}
+      style={{ color: "var(--text-2)" }}>
+      {fmt(value, 1)}
+    </button>
+  ));
   const vfxBlank = (w, g) => (!vfxRead ? t("production.vfxNotRead")
     : g?.orphan ? t("production.group.orphanLocked")
       : t("production.vfxNoCell"));
@@ -1146,7 +1161,7 @@ function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = can
                   </td>
                   {/* ШТАТКА — Verifix, never typed: the Σ over every cell of the
                       centre (a grouped centre's groups listed below it). */}
-                  <td className="px-3 py-2 text-center">{vfxCell(w.verifix_hc, vfxBlank(w))}</td>
+                  <td className="px-3 py-2 text-center">{vfxCell(w.verifix_hc, vfxBlank(w), { work_center: w.work_center })}</td>
                 </tr>
                 {/* One row per group: its own «Кол-во» (the group pin), and its
                     own cell's Verifix count under ШТАТКА. An ORPHAN group is never an
@@ -1173,7 +1188,7 @@ function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = can
                             )
                             : pinRead(g.people, g.people_overridden, groupUntypedTitle(t, w, g), { digits: 1 })}
                       </td>
-                      <td className="px-3 py-2 text-center">{vfxCell(g.verifix_hc, vfxBlank(w, g))}</td>
+                      <td className="px-3 py-2 text-center">{vfxCell(g.verifix_hc, vfxBlank(w, g), { work_center: w.work_center, group: g.group })}</td>
                     </tr>
                   );
                 })}
@@ -1221,12 +1236,25 @@ function PeopleTab({ wcs, constants, verifix, loading, canEdit, canEditEff = can
             whether or not the day was read, so reading it never moves it. */}
         {!loading && wcs.length > 0 && (
           <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
-            {vfxRead ? t("production.vfxStaffNote") : t("production.vfxNotReadNote")}
+            {vfxRead ? t("production.vfxStaffNote")
+              : vfxLast ? t("production.vfxReadNotSaved").replace("{d}", ddmm(vfxLast.at)).replace("{t}", hhmm(vfxLast.at))
+                : t("production.vfxNotReadNote")}
             {vfxUnplaced > 0 && (
               <>{" "}{t("production.vfxUnplaced").replace("{n}", fmt(vfxUnplaced, 1))}</>
             )}
+            {vfxRead && vfxLast && (
+              <span className="block mt-1" style={{ color: "var(--text-2)" }}>
+                {t(vfxLast.kind === "verifix" ? "production.vfxSourceVerifix" : "production.vfxSourceFile")
+                  .replace("{d}", ddmm(vfxLast.at)).replace("{t}", hhmm(vfxLast.at))
+                  .replace("{by}", vfxLast.by ? tl(vfxLast.by) : "—")}
+                {verifix?.saved_at && (
+                  <>{" · "}{t("production.vfxSaved").replace("{d}", ddmm(verifix.saved_at)).replace("{t}", hhmm(verifix.saved_at))}</>
+                )}
+              </span>
+            )}
           </p>
         )}
+        <StaffingProofModal target={proof} date={date} managerParam={managerParam} onClose={() => setProof(null)} />
 
         {/* A centre that became grouped after its «Кол-во» was typed for the
             whole of it. That figure still counts, but the groups cannot share it
@@ -2673,6 +2701,8 @@ export default function Production() {
           wcs={wcs}
           constants={data?.constants}
           verifix={data?.verifix}
+          date={date}
+          managerParam={managerParam}
           loading={loading}
           canEdit={canEditPeople}
           canEditEff={canEditPeople && !cellPinned}
