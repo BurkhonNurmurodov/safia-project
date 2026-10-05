@@ -4275,6 +4275,25 @@ SERVER's; the phone never authors it.
     is in the fingerprint: leaders on identical tablets share a user agent); at
     most three reports per page. The leader sees one muted line,
     `proof.cam.reported`, and only once the server HAS the report.
+  - **A camera request nobody answers is cleared by a RELOAD, never by asking
+    again** (2026-10-05, a Galaxy Tab A9: `getUserMedia` asked, 45 s, no
+    answer, no sheet). Chrome serves a page's camera requests one at a time,
+    so a Retry on the same page only queues behind the stuck one; a reload is
+    a new page and the WebView cancels the old request. So: once a request
+    has hung `HUNG_RELOAD_MS` (20 s — past the slowest open that ever
+    succeeded, 17.4 s) with the page visible, in live mode and nothing in
+    front of it (no `blur`, or focus back ≥ 3 s), the page reloads ITSELF,
+    once — the note in sessionStorage (`proof.camera.hungReload`, 10 min) is
+    what stops the next page reloading too, and an automatic reload whose
+    note cannot be written is not made. `settleReturn` reloads the same way
+    when the request it waited on is still unanswered. The 45 s deadline now
+    has its own screen, «Kamera javob bermadi» (`hung`, not «no picture»);
+    its Retry always reloads, and on a page that is already such a reload the
+    screen says to close Telegram completely and reopen the task. The report
+    prints «This page is a reload…» (`opens.reload`) and says a fresh page did
+    not help. **Focus proves nothing on a page that never had it**: the same
+    report's open began with focus «not on the page» and no blur ever came,
+    so `_stalled_step` no longer reads that as «nothing came up».
   - **Reading a screenshot of this page without a report:** the stamp sits on
     the picture box, and the box is shaped by `camAR`. A SQUARE box is Chrome's
     2×2 black placeholder — the frame a video renders when its stream ENDS
