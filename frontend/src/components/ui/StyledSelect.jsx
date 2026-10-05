@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Minus, Trash2, Search, Plus } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import { useMarkDraft } from "./dialogLayers";
 
 /**
  * Styled custom select — dropdown is rendered via createPortal so it is never
@@ -73,6 +74,7 @@ export default function StyledSelect({
   createLabel,
 }) {
   const { t } = useLang();
+  const markDraft = useMarkDraft();
   const [open, setOpen]           = useState(false);
   const [dropStyle, setDropStyle] = useState({});
   const [query, setQuery]         = useState("");
@@ -157,7 +159,8 @@ export default function StyledSelect({
       const inList    = listRef.current?.contains(e.target);
       if (!inTrigger && !inList) setOpen(false);
     };
-    const onKey    = (e) => { if (e.key === "Escape") setOpen(false); };
+    // Handled here — the dialog this select sits in must not close with it.
+    const onKey    = (e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     const onScroll = () => setDropStyle(computeDropStyle());
 
     document.addEventListener("mousedown", onDown);
@@ -183,6 +186,7 @@ export default function StyledSelect({
   }, [open, searchable]);
 
   function pick(val) {
+    markDraft();
     // Multi mode toggles and keeps the panel open — ticking several boxes in a
     // row is the whole point; closing after each one would defeat it.
     if (multiple) {
@@ -279,11 +283,12 @@ export default function StyledSelect({
           {multiple && !hideSelectAll && opts.length > 1 && (
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                markDraft();
                 // With a search query active this adds the visible rows to the
                 // selection rather than silently ticking hidden ones too.
-                onChange(allPicked ? [] : [...new Set([...picked, ...shown.map((o) => o.value)])])
-              }
+                onChange(allPicked ? [] : [...new Set([...picked, ...shown.map((o) => o.value)])]);
+              }}
               className="sticky w-full text-left px-3 py-2.5 text-sm font-semibold flex items-center justify-between gap-3 transition-colors"
               style={{
                 top:          searchable ? 37 : 0,

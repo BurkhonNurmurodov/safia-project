@@ -191,7 +191,7 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
     const onDown = (e) => {
       if (!triggerRef.current?.contains(e.target) && !listRef.current?.contains(e.target)) setOpen(false);
     };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     const onScroll = () => setDropStyle(computeDropStyle());
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);

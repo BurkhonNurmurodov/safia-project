@@ -647,7 +647,8 @@ export function CommentsThread({
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") stopEdit();
+                  // Ends the edit, not the dialog around it.
+                  if (e.key === "Escape") { e.preventDefault(); stopEdit(); }
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) editMutation.mutate(c.id);
                 }}
                 rows={3}

@@ -27,6 +27,7 @@ import { useTranslit } from "../utils/transliterate";
 import { surnameInitial } from "../utils/personName";
 import useIsMobile from "../hooks/useIsMobile";
 import api from "../utils/api";
+import { hasOpenDialog } from "../components/ui/dialogLayers";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
@@ -295,10 +296,12 @@ export default function Zagruzka() {
   const [calcFactors, setCalcFactors] = useState(DEFAULT_CALC_FACTORS);
 
   // Escape closes the band editor first (it sits above any overlay, and the
-  // overlay under it must not vanish while it is open), else fullscreen.
+  // overlay under it must not vanish while it is open), else fullscreen. Any
+  // dialog open over the page — the band editor is one — answers Escape
+  // itself (and asks before dropping moved edges), so the page steps aside.
   useEffect(() => {
     function onKey(e) {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented || hasOpenDialog()) return;
       if (bandsOpen.current) setBandsFor(null);
       else setOpenFull(null);
     }

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, CalendarDays, X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import { useMarkDraft } from "./dialogLayers";
 
 // ── date helpers ──────────────────────────────────────────────────────────────
 
@@ -155,6 +156,7 @@ export default function DateRangePicker({
                        // gives it (DayStepper's `fillPhone`); sm+ unchanged
 }) {
   const { t } = useLang();
+  const markDraft = useMarkDraft();
   const [open,     setOpen]     = useState(false);
   const [tempFrom, setTempFrom] = useState(dateFrom||"");
   const [tempTo,   setTempTo]   = useState(dateTo||"");
@@ -226,7 +228,12 @@ export default function DateRangePicker({
 
   useEffect(() => {
     if (!open) return;
-    const h = e => { if (e.key === "Enter") handleApply(); };
+    const h = e => {
+      if (e.key === "Enter") handleApply();
+      // Escape closes the calendar — and only the calendar: marked handled so
+      // the dialog it was opened from stays standing.
+      else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+    };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [open, tempFrom, tempTo]); // eslint-disable-line
@@ -250,6 +257,7 @@ export default function DateRangePicker({
 
   function handleApply() {
     if (!tempFrom) return;
+    markDraft();
     setDateFrom(tempFrom); setDateTo(tempTo||tempFrom); setOpen(false);
   }
 
@@ -265,6 +273,7 @@ export default function DateRangePicker({
   const prevYearOk = !min || mLast(navY - 1, 11) >= min;
   const pickMonth = (y, m) => {
     const to = mLast(y, m);
+    markDraft();
     setDateFrom(mFirst(y, m));
     // Clamp so a month still running never opens columns for days that have
     // not happened — the reader would read them as "nothing waited".

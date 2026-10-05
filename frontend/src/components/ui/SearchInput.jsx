@@ -31,6 +31,8 @@ export default function SearchInput({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        // Typing a filter is not entered work — Escape closes the dialog.
+        data-no-draft
         placeholder={placeholder}
         className={`w-full rounded-lg outline-none ${inputClassName}`}
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}

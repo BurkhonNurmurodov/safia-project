@@ -45,6 +45,7 @@ import { cellLabel } from "../utils/cellName";
 import { shortPerson } from "../utils/personName";
 import { wcGroupLabel } from "../utils/wcGroup";
 import api from "../utils/api";
+import { hasOpenDialog } from "../components/ui/dialogLayers";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
@@ -210,7 +211,8 @@ export default function ZagruzkaCell() {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") {
+      // A dialog open over the overlay answers Escape itself; the overlay stays.
+      if (e.key === "Escape" && !e.defaultPrevented && !hasOpenDialog()) {
         setHeatmapFullscreen(false);
         setCompFullscreen(false);
       }

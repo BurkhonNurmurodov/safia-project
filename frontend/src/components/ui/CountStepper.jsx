@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { Minus, Plus } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import { useMarkDraft } from "./dialogLayers";
 
 /**
  * Canonical WHOLE-NUMBER count field — THE template for "how many people /
@@ -42,16 +43,18 @@ const CountStepper = forwardRef(function CountStepper({
   ...rest
 }, ref) {
   const { t } = useLang();
+  const markDraft = useMarkDraft();
   const n = Number.isInteger(value) ? value : null;
   const canDown = !disabled && n != null && n > min;
   const canUp = !disabled && (max == null || n == null || n < max);
   const step = (d) => {
-    if (n == null) return onChange(min);
+    if (n == null) { markDraft(); return onChange(min); }
     let next = n + d;
     // A number TYPED above the bound comes down onto it in one press, rather
     // than leaving − inert until the reader has backed off step by step.
     if (max != null && next > max) next = d < 0 ? max : n;
     if (next < min || next === n) return;
+    markDraft();
     onChange(next);
   };
   const btn = (enabled, onClick, Icon, label) => (

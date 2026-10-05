@@ -71,7 +71,7 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
       onClick={(e) => { e.stopPropagation(); setShow((v) => !v); }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setShow((v) => !v); }
-        else if (e.key === "Escape") setShow(false);
+        else if (e.key === "Escape" && show) { e.preventDefault(); setShow(false); }
       }}
     >
       {/* A finger needs ~44px: the 11px icon alone is a target nobody can hit.

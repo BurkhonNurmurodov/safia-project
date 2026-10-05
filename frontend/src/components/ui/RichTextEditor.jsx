@@ -467,7 +467,7 @@ function ToolbarMenu({ icon: Icon, title, items, disabled }) {
   };
   useEffect(() => {
     if (!open) return;
-    const esc = (e) => { if (e.key === "Escape") setPos(null); };
+    const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); setPos(null); } };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [open]);
@@ -529,7 +529,7 @@ function EmojiPalette({ emojis, t, onOpen, onInsert, onAdd, onDelete }) {
   };
   useEffect(() => {
     if (!open) return;
-    const esc = (e) => { if (e.key === "Escape") setPos(null); };
+    const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); setPos(null); } };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [open]);
@@ -1368,7 +1368,7 @@ export default function RichTextEditor({
   };
   useEffect(() => {
     if (!ctx) return;
-    const esc = (e) => { if (e.key === "Escape") setCtx(null); };
+    const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); setCtx(null); } };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [ctx]);
