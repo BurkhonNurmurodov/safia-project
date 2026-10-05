@@ -1677,9 +1677,9 @@ def add_education_thumb_url() -> None:
         db.execute(text(
             "ALTER TABLE education_lessons ADD COLUMN IF NOT EXISTS access VARCHAR(16)"))
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        logger.exception("add_education_thumb_url failed")
+        print(f"[startup] education thumb_url/access migration skipped: {exc}")
     finally:
         db.close()
 
@@ -2335,7 +2335,7 @@ def add_leader_task_example_scope() -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.warning("add_leader_task_example_scope skipped: %s", exc)
+        print(f"[startup] leader task example scope migration skipped: {exc}")
     finally:
         db.close()
 
