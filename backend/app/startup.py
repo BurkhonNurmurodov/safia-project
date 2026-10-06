@@ -7413,6 +7413,54 @@ def _profile_photos_job(waited: int = 0) -> None:
                       verifix_profile_photos.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: DRY RUN — who OWNS each cell by Verifix ───────────────────────
+# The operator on 2026-10-06: a cell gets an «Egasi» (the leader Verifix seats
+# in it — what the two KPI pages will rank by) beside its «Boshqaruvchi»
+# (today's `cells.leader_id`), and a unit for every Verifix brigadir the
+# platform lacks. Asked for a dry run first: this reads Verifix, computes what
+# that pass WOULD write — owners, decisions for the operator, new units, the
+# brigadir of every cell on Verifix beside ours, and both KPI pages before →
+# after — and DMs it (`services/cell_owner_dryrun.py`). Writes nothing but its
+# record and this flag. Waits for the 5 Oct passes like the photo pass.
+CELL_OWNER_DRYRUN_FLAG = "cell_owner_dryrun_2026_10_06_v1"
+_CELL_OWNER_DRYRUN_DELAY_S = 240
+_CELL_OWNER_DRYRUN_WAITS = 6
+_CELL_OWNER_DRYRUN_WAIT_S = 120
+
+
+def report_cell_owner_dryrun() -> None:
+    """The cell-owner dry run, once, as a DM. Never raises."""
+    try:
+        if not _report_pending(CELL_OWNER_DRYRUN_FLAG):
+            return
+        if not _schedule_cell_owner_dryrun(_CELL_OWNER_DRYRUN_DELAY_S, 0):
+            print("[startup] cell owner dry run could not be scheduled")
+    except Exception as exc:
+        print(f"[startup] cell owner dry run could not be scheduled: {exc}")
+
+
+def _schedule_cell_owner_dryrun(delay_s: int, waited: int) -> bool:
+    from datetime import timedelta
+    from app.scheduler import schedule_at
+    return schedule_at(f"cell-owner-dryrun-{waited}",
+                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
+                       _cell_owner_dryrun_job, args=(waited,))
+
+
+def _cell_owner_dryrun_job(waited: int = 0) -> None:
+    # It reads the profiles and cells the 5 Oct passes write — run after them.
+    if waited < _CELL_OWNER_DRYRUN_WAITS and (_report_pending(CELLS_LEADERS_FLAG)
+                                              or _report_pending(PROFILE_PHOTOS_FLAG)):
+        try:
+            if _schedule_cell_owner_dryrun(_CELL_OWNER_DRYRUN_WAIT_S, waited + 1):
+                return
+        except Exception:
+            pass
+    from app.services import cell_owner_dryrun
+    _send_report_once(CELL_OWNER_DRYRUN_FLAG, "cell owner dry run",
+                      cell_owner_dryrun.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
 # The operator, the same day: «check the supervisors if they're actually
 # supervisor or not and put a switch like on the leaders also for them … report

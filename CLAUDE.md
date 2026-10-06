@@ -551,6 +551,46 @@ as text + a workbook; the record (no bytes) is app setting
   has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
   photos and `profile_photo.py` stay.
 
+## A cell's «Egasi» and «Boshqaruvchi» (2026-10-06 — DRY RUN so far)
+
+The operator's rulings (2026-10-06, asked one by one): a cell carries TWO leader
+slots, at most ONE person each, and in most cells they are the same person.
+**Nothing is built yet beyond the dry run below** — the real pass, the KPI
+switch and the cell form wait for the operator's go on its report.
+
+- **Boshqaruvchi** (ru «Управляющий», en «Manager») = today's
+  `cells.leader_id`: the one who RUNS the cell — checklist (they file the
+  per-cell one), automatic checks, «Ish grafigi», ojidaniya, concerns box.
+  Nothing that reads `leader_id` changes.
+- **Egasi** (ru «Владелец», en «Owner») = the leader Verifix SEATS in the cell —
+  a working employee with a leader's job whose org unit is the cell. Read ONLY by
+  «Kadrlar qo'nimsizligi» and «Ishchi havotirlari»: there only owned cells count,
+  and a leader owning none is shown unranked («not a cell owner»); every other
+  page ranks as now. History is re-read — every past worker concern counts for
+  its cell's Egasi, every turnover month (closed and saved ones too) is scored by
+  the Egasi map.
+- Y seated in a cell X runs → Y Egasi, X Boshqaruvchi. No leader on Verifix
+  («Lider o'rnida» cells) → no Egasi, the cell counts in nobody's KPI. Nobody
+  runs it here → Egasi only. No brigadir here → Egasi only once it has one.
+  An Egasi whose profile has no brigadir stays unit-less until the operator
+  decides. A tie that is not sure (first-name-first, a surname typo, two Verifix
+  leaders in a cell, one person for two profiles, no profile) gets no Egasi —
+  the operator names the match. Verifix is read ONCE; afterwards both slots are
+  set by hand on /cells (two pickers, today's edit rights).
+- **Brigadirs**: a unit for every Verifix brigadir with none here (unless a unit
+  or a profile here may be them); only the cells Verifix puts under them that
+  have NO brigadir here join it. Cells with a brigadir stay put, and a
+  brigadir-less cell whose Verifix brigadir already has a unit is reported only.
+- **The dry run** — `services/cell_owner_dryrun.py`, `startup.report_cell_owner_dryrun`
+  (flag `cell_owner_dryrun_2026_10_06_v1`, ~240 s after boot, both entrypoints):
+  reads Verifix, computes all of the above, DMs text + a workbook to
+  `UNPRICED_DM_CHAT` and writes NOTHING but its record (app setting
+  `cell_owner_dryrun_2026_10_06`). Ties are `leader_verifix_check._match`
+  (sure = full name, surname + first name, a pin); units by the 4 Oct
+  `supervisor_kind_meta.vfx.id`. Delete it with its startup trio and both
+  entrypoint calls once the real pass exists — BEFORE `verifix_cells_leaders_sync`,
+  `verifix_leader_sync` and `leader_verifix_check`, whose helpers it imports.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts

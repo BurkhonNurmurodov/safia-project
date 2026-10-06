@@ -117,6 +117,7 @@ try:
         sync_leaders_from_verifix,
         sync_cells_and_leaders_from_verifix,
         set_profile_photos_from_verifix,
+        report_cell_owner_dryrun,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -543,6 +544,13 @@ try:
     # `startup.set_profile_photos_from_verifix` and
     # `services/verifix_profile_photos.py` once the report has landed.
     set_profile_photos_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-06) — DRY RUN of the cell owners: reads
+    # Verifix and DMs who would be each cell's «Egasi» beside its
+    # «Boshqaruvchi», the units it would create for Verifix brigadirs and
+    # both KPI pages before → after. Writes nothing but its record. Remove
+    # this line, `startup.report_cell_owner_dryrun` and
+    # `services/cell_owner_dryrun.py` once the report has landed.
+    report_cell_owner_dryrun()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,
