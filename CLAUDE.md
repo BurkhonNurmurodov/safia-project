@@ -378,6 +378,10 @@ not resolve once. Logged as `attendance.cell_day_moved`. NOT moved: ojidaniya
 (read by the cell's CURRENT unit, for every past day), concerns, the leader's
 checklist. Delete the module, the startup function and both calls once the flag
 reads «done».
+Its status is printed into every deploy's job log by a TEMPORARY last step of
+`.gitea/workflows/deploy.yaml` (`backend/diag_cell_9123.py`, a read-only dry
+run, no worker names) — the one window onto production a cloud session can
+read. Delete that step and the script with the one-shot.
 
 ## Supervisors read `/cells` — their own unit, read-only
 

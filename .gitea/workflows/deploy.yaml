@@ -111,3 +111,11 @@ jobs:
           git show "${{ github.sha }}:deploy/deploy.sh" > "$SCRIPT"
 
           bash "$SCRIPT"
+
+      # ⚠ TEMPORARY (2026-10-06): read-only status of the cell 9123 / 5 Oct
+      # one-shot, printed into this log. Never fails the deploy. Remove with
+      # backend/diag_cell_9123.py and the one-shot itself.
+      - name: "Status: cell 9123 on 5 Oct (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 120 .venv/bin/python diag_cell_9123.py || true
