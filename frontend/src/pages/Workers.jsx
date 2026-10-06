@@ -88,7 +88,9 @@ const TRANS_BINS = [
 ];
 const transBin = (v) => TRANS_BINS.find((b) => v >= b.from && v <= b.to);
 
-const fmt1 = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
+// A count of PEOPLE prints whole — over a period it is an average per day, and
+// «139.8 workers» reads as a fraction of a person rather than a headcount.
+const fmtN = (v) => (v == null ? "—" : String(Math.round(v) || 0));
 const parseDate = (s) => { const [d, m, y] = s.split("."); return new Date(+y, +m - 1, +d); };
 // Traffic-light hue for an attendance percentage.
 const rateColor = (p) => (p == null ? "var(--text-2)" : p >= 90 ? "#22c55e" : p >= 75 ? "#eab308" : "#ef4444");
@@ -356,11 +358,11 @@ export default function Workers() {
     plotOptions: { pie: { donut: { size: "64%", labels: {
       show: true,
       value: { color: legendColor },
-      total: { show: true, label: measureLabel, color: legendColor, formatter: () => fmt1(donutTotal) },
+      total: { show: true, label: measureLabel, color: legendColor, formatter: () => fmtN(donutTotal) },
     } } } },
     // The number is a per-day average now, not a period headcount — the tooltip
     // says so rather than leaving a decimal to be read as a people count.
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmt1(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmtN(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
     theme: chartTheme,
   };
 
@@ -399,7 +401,7 @@ export default function Workers() {
       y: {
         formatter: (v, { dataPointIndex }) => {
           const m = rvpRows[dataPointIndex];
-          return `${v}% — ${t("workers.present")} ${fmt1(m.avg_daily_hc)} / ${t("workers.official")} ${fmt1(m.official_hc)}`;
+          return `${v}% — ${t("workers.present")} ${fmtN(m.avg_daily_hc)} / ${t("workers.official")} ${fmtN(m.official_hc)}`;
         },
       },
     },
@@ -413,7 +415,7 @@ export default function Workers() {
   const treePoints = headcount
     .map((m, i) => ({
       x: tl(m.name),
-      y: mgrValue(m),
+      y: Math.round(mgrValue(m)),
       color: SUP_COLORS[i % SUP_COLORS.length],
     }))
     .filter((d) => d.y > 0)
@@ -426,11 +428,11 @@ export default function Workers() {
     dataLabels: {
       enabled: true,
       style: { fontSize: "13px", fontWeight: 600, colors: ["#fff"] },
-      formatter: (text, op) => [text, fmt1(op.value)],
+      formatter: (text, op) => [text, fmtN(op.value)],
     },
     plotOptions: { treemap: { distributed: true, enableShades: false } },
     stroke: { width: 2, colors: [cardBg] },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmt1(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmtN(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
     theme: chartTheme,
   };
 
@@ -502,14 +504,14 @@ export default function Workers() {
       <span style="display:inline-flex;align-items:center;gap:5px">
         <span style="width:9px;height:9px;border-radius:2px;background:${it.color};flex:none"></span>
         <span style="color:var(--text-3)">${it.name}</span>
-        ${num(it.val, "2.4em")}</span>`).join("");
+        ${num(Math.round(it.val), "2.4em")}</span>`).join("");
     // Muted per-role detail of the folded tail — same roles every day and each
     // value width-pinned, so the strip keeps the no-reflow contract on hover.
     const foldDetail = foldRoles.length ? `
       <span style="color:var(--text-4)">${foldRoles.map((r) =>
-        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${(trendSrc[r] || [])[idx] ?? 0}</span>`).join(" · ")}</span>` : "";
+        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${Math.round((trendSrc[r] || [])[idx] ?? 0)}</span>`).join(" · ")}</span>` : "";
     return `<span style="color:var(--text-1);font-weight:600">${date}</span>${chips}${foldDetail}
-      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(total, "2.8em")}</span>`;
+      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(Math.round(total), "2.8em")}</span>`;
   };
   const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
   const trendDefaultHtml = trendTipHtml(trendDefaultIdx >= 0 ? trendDefaultIdx : null);
@@ -797,14 +799,14 @@ export default function Workers() {
                     how many were on the list → how many came → how many did
                     not → what that is as a rate. */}
                 <KPICard icon={Users} color="#3b82f6" label={t("workers.kpi.onList")}
-                  value={fmt1(Math.round(avgOnList * 10) / 10)}
+                  value={fmtN(avgOnList)}
                   sub={`${headcount.length} ${t("workers.kpi.supervisors")} · ${totalWorkers} ${t("workers.kpi.uniqueShort")}`}
                   tooltip={t("workers.tip.onList")} />
                 <KPICard icon={UserCheck} color="#22c55e" label={t("workers.kpi.came")}
-                  value={fmt1(Math.round(avgCame * 10) / 10)} tooltip={t("workers.tip.came")} />
+                  value={fmtN(avgCame)} tooltip={t("workers.tip.came")} />
                 <KPICard icon={UserMinus} color={ABSENT_COLOR} label={t("workers.kpi.absent")}
-                  value={fmt1(Math.round(avgAbsent * 10) / 10)}
-                  sub={avgLeave >= 0.1 ? `${fmt1(Math.round(avgLeave * 10) / 10)} ${t("workers.onLeaveShort")}` : undefined}
+                  value={fmtN(avgAbsent)}
+                  sub={Math.round(avgLeave) >= 1 ? `${fmtN(avgLeave)} ${t("workers.onLeaveShort")}` : undefined}
                   tooltip={t("workers.tip.absent")} />
                 <KPICard icon={TrendingUp} color="#14b8a6" label={t("workers.kpi.attRate")}
                   value={attRate == null ? "—" : `${attRate}%`}
@@ -815,7 +817,7 @@ export default function Workers() {
                     so it stays in the headline row rather than living only in
                     the table. */}
                 <KPICard icon={AlertTriangle} color="#a855f7" label={t("workers.kpi.shortfall")}
-                  value={fmt1(shortfall)}
+                  value={fmtN(shortfall)}
                   sub={mismatchMgrs.length ? `${mismatchMgrs.length} ${t("workers.mismatchWarn")}` : undefined}
                   tooltip={t("workers.tip.shortfall")} />
               </>
@@ -970,31 +972,31 @@ export default function Workers() {
                   <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
                   <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{m.shift}</td>
                   <td className={numCell} style={{ color: "var(--text-3)" }}>{m.days ?? 0}</td>
-                  <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{fmt1(m.avg_roster)}</td>
-                  <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmt1(m.avg_came)}</td>
+                  <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{fmtN(m.avg_roster)}</td>
+                  <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmtN(m.avg_came)}</td>
                   {/* Absences are only worth ink when there are any; the leave
                       share sits beside the number because "8 missing" and "8
                       missing, 6 of them on leave" are different problems. */}
                   <td className={numCell} style={{ color: (m.avg_absent || 0) > 0 ? ABSENT_COLOR : "var(--text-3)" }}>
-                    {fmt1(m.avg_absent)}
-                    {(m.avg_leave || 0) > 0 && (
+                    {fmtN(m.avg_absent)}
+                    {Math.round(m.avg_leave || 0) > 0 && (
                       <span className="ml-1 text-[10px]" style={{ color: "var(--text-4)" }}>
-                        ({fmt1(m.avg_leave)} {t("workers.onLeaveShort")})
+                        ({fmtN(m.avg_leave)} {t("workers.onLeaveShort")})
                       </span>
                     )}
                   </td>
                   <td className={numCell} style={{ color: rateColor(m.rate), fontWeight: 600 }}>
                     {m.rate == null ? "—" : `${m.rate}%`}
                   </td>
-                  <td className={numCell} style={{ color: "var(--text-2)" }}>{fmt1(m.official_hc)}</td>
+                  <td className={numCell} style={{ color: "var(--text-2)" }}>{fmtN(m.official_hc)}</td>
                   <td className={numCell} style={{ color: (m.gap ?? 0) > 2 ? "#f59e0b" : "var(--text-2)" }}>
                     <span className="inline-flex items-center gap-1 justify-end">
                       {(m.gap ?? 0) > 2 && <AlertTriangle size={11} />}
-                      {m.gap == null ? "—" : (m.gap > 0 ? `−${fmt1(m.gap)}` : "0")}
+                      {m.gap == null ? "—" : (Math.round(m.gap) > 0 ? `−${fmtN(m.gap)}` : "0")}
                     </span>
                   </td>
                   {activeRoles.map((r) => (
-                    <td key={r} className={numCell} style={{ color: roleColor(r) }}>{fmt1(roleVal(m, r))}</td>
+                    <td key={r} className={numCell} style={{ color: roleColor(r) }}>{fmtN(roleVal(m, r))}</td>
                   ))}
                 </tr>
               ))}
