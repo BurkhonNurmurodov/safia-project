@@ -678,9 +678,9 @@ async def lifespan(app: FastAPI):
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     move_sanjarbek_checklist_shift()
     # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
-    # for Raximova Kamola (it moved a day early). Remove this line,
-    # `startup.fix_cell_9123_oct05` and `services/cell_day_fix_oct05.py` once
-    # its flag reads «done».
+    # for Raximova Kamola (it moved a day early); re-checks every 10 min until
+    # it lands. Remove this line, `startup.fix_cell_9123_oct05` and
+    # `services/cell_day_fix_oct05.py` once its flag reads «done».
     fix_cell_9123_oct05()
 
     # Import every app module NOW, while this copy's files are still the ones

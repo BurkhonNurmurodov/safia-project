@@ -23,10 +23,19 @@ What it writes — on 2026-10-05 only:
 It moves rows, never re-projects a day: a re-projection wipes and rebuilds the
 whole (unit, date), which would undo anything the brigadirs did on /staff.
 
-Refuses — stages nothing and says what it found — unless the cell and the unit
-resolve exactly once, the rows sit under ONE other unit, and nothing on that
-unit's 5 Oct depends on them (a split half outside the cell, a pending or
-approved request or document naming one of the workers). Ids are never trusted.
+Refuses — stages nothing — only when the cell or the unit does not resolve
+exactly once, or the rows sit under several units none of which is the cell's
+register unit. Otherwise it moves every row it safely can and HOLDS BACK, per
+worker, only one still named by something WAITING on that unit's 5 Oct (a
+pending request, a draft document) or split across another cell; held workers
+are re-checked until the reason is gone. Requests and documents already decided
+travel with the row and are only named. With no row saved yet it routes the
+day's batch cell to her and waits (`waiting`). Ids are never trusted.
+
+v2 (same day): v1 ran once at boot, refused the WHOLE cell over any one worker,
+and went silent — 9123 was still on Yogmirov Feruz's 5 Oct afterwards and nothing
+said why. Now it holds back per worker, the startup side re-checks every 10
+minutes until nothing is left (or 13 Oct), and every distinct outcome is DMed.
 """
 from __future__ import annotations
 
@@ -72,9 +81,10 @@ def apply(db: Session) -> dict:
     """Stage the move on `db` and report it. Never commits: the caller commits
     it together with its flag. A non-empty ``problems`` means nothing staged;
     ``already`` means the rows were already hers and nothing needed doing."""
-    out: dict = {"problems": [], "already": False, "cell": None, "to": None,
-                 "from": None, "rows": 0, "people": 0.0, "hours": 0.0,
-                 "routing": [], "missing": [], "states": {}, "leader": None}
+    out: dict = {"problems": [], "already": False, "waiting": False, "cell": None,
+                 "to": None, "from": None, "rows": 0, "people": 0.0, "hours": 0.0,
+                 "routing": [], "missing": [], "states": {}, "leader": None,
+                 "notes": [], "held": [], "held_key": ""}
 
     cells = db.query(Cell).filter(Cell.verifix_code.in_(
         [CELL, CELL.lstrip("0"), CELL.zfill(4)])).all()
@@ -107,68 +117,114 @@ def apply(db: Session) -> dict:
             .filter(Attendance.date == DAY, Attendance.verifix_code.in_(codes))
             .all())
     if not rows:
-        out["problems"].append(
-            f"{DAY:%d.%m.%Y} uchun {cell.verifix_code} davomati hali yo'q "
-            "(«Davomat» saqlanmagan) — ko'chiradigan narsa yo'q")
+        # Nothing saved for the cell yet: route the day's batch cell to her now
+        # (the tab's own this-day-only drag), so the next Save writes the rows
+        # there. Checked again until the rows exist.
+        out["waiting"] = True
+        out["routed"] = bool(bcs)
+        for bc in bcs:
+            if bc.manager_id != to_.id:
+                out["routing"].append((bc.verifix_code, unit_name.get(bc.manager_id, "—"),
+                                       bool(bc.included)))
+                bc.manager_id = to_.id
+                bc.pending = True
         return out
     src = sorted({r.manager_id for r in rows if r.manager_id != to_.id})
     if not src:
         out["already"] = True
         out["rows"] = len(rows)
+        for bc in bcs:
+            if bc.manager_id != to_.id:
+                out["routing"].append((bc.verifix_code, unit_name.get(bc.manager_id, "—"),
+                                       bool(bc.included)))
+                bc.manager_id = to_.id
+                if not bc.pending:
+                    bc.prev_manager_id = to_.id
         return out
-    if len(src) > 1:
+    # The unit the move sent the cell to is its register unit today; rows under
+    # any OTHER unit (an admin's hand, an older routing) are named, not moved.
+    from_id = cell.manager_id if cell.manager_id in src else (src[0] if len(src) == 1 else None)
+    if from_id is None:
         out["problems"].append(
             "qatorlar bir nechta bo'linmada: "
             + ", ".join(unit_name.get(m, f"#{m}") for m in src))
         return out
-    from_id = src[0]
     out["from"] = unit_name.get(from_id, f"#{from_id}")
+    others = [m for m in src if m != from_id]
+    if others:
+        out["notes"].append(
+            f"{CELL} qatorlari boshqa bo'linmada ham bor (tegilmadi): "
+            + ", ".join(unit_name.get(m, f"#{m}") for m in others))
 
     moving = [r for r in rows if r.manager_id == from_id]
     ids = {r.id for r in moving}
     names = {(r.worker_name or "").strip() for r in moving if r.worker_name}
 
-    # A split half on another cell would leave the worker-day across two units.
-    loose = [r for r in moving if r.split_of and r.split_of not in ids]
-    loose += (db.query(Attendance)
-              .filter(Attendance.split_of.in_(ids), ~Attendance.id.in_(ids)).all()
-              if ids else [])
-    if loose:
-        out["problems"].append(
-            "ikkiga bo'lingan xodimlar boshqa yacheykada ham: "
-            + ", ".join(sorted({r.worker_name or "—" for r in loose})))
+    # Held back, per WORKER, never the whole cell: everybody else moves now and
+    # the held ones are re-checked until their reason is gone.
+    held: dict = {}
 
-    # Anything on that unit's day that names one of these workers would point at
-    # a row that is no longer there.
-    reqs = (db.query(EditRequest)
-            .filter(EditRequest.manager_id == from_id, EditRequest.date == DAY,
-                    EditRequest.status != "rejected").all())
-    hit = [r for r in reqs if (r.worker_name or "").strip() in names]
-    docs = (db.query(HrDocument)
-            .filter(HrDocument.manager_id == from_id, HrDocument.date == DAY,
-                    HrDocument.status != "rejected").all())
-    for d in docs:
+    # A split whose other half stands in another cell would leave the
+    # worker-day across two units — both halves stay until it is un-split.
+    partners = (db.query(Attendance)
+                .filter(Attendance.split_of.in_(ids), ~Attendance.id.in_(ids)).all()
+                if ids else [])
+    for r in moving:
+        if (r.split_of and r.split_of not in ids) or any(p.split_of == r.id for p in partners):
+            held.setdefault(r.id, (r.worker_name or "—", "ikki yacheykaga bo'lingan"))
+
+    # A request or document still WAITING on that unit's day that names a
+    # worker would be decided against a row that is no longer there — that
+    # worker stays until it is approved or rejected. One already decided was
+    # applied to the row and travels with it; it is only noted.
+    def _names_in(d) -> list:
         blob = json.dumps(d.payload or {}, ensure_ascii=False)
-        if any(n and n in blob for n in names):
-            hit.append(d)
-    if hit:
-        out["problems"].append(
-            f"«{out['from']}» {DAY:%d.%m} kunida bu xodimlarga tegishli "
-            f"{len(hit)} ta so'rov/hujjat bor — avval ularni hal qiling")
-    if out["problems"]:
+        return sorted(n for n in names if n and n in blob)
+
+    waits: dict = {}
+    for r in (db.query(EditRequest)
+              .filter(EditRequest.manager_id == from_id, EditRequest.date == DAY).all()):
+        nm = (r.worker_name or "").strip()
+        if nm in names and r.status != "rejected":
+            if r.status == "pending":
+                waits.setdefault(nm, f"so'rov #{r.id} kutilmoqda")
+            else:
+                out["notes"].append(f"so'rov #{r.id} ({r.status}) — {r.worker_name}")
+    for d in (db.query(HrDocument)
+              .filter(HrDocument.manager_id == from_id, HrDocument.date == DAY).all()):
+        hit = _names_in(d)
+        if hit and d.status != "rejected":
+            if d.status == "draft":
+                for nm in hit:
+                    waits.setdefault(nm, f"hujjat #{d.id} ({d.doc_type}) kutilmoqda")
+            else:
+                out["notes"].append(f"hujjat #{d.id} {d.doc_type} ({d.status}) — "
+                                    + ", ".join(hit[:3]))
+    for r in moving:
+        nm = (r.worker_name or "").strip()
+        if nm in waits:
+            held.setdefault(r.id, (r.worker_name or "—", waits[nm]))
+
+    out["held"] = sorted({v for v in held.values()})
+    out["held_key"] = ",".join(str(i) for i in sorted(held))
+    movable = [r for r in moving if r.id not in held]
+    out["states"] = {to_.name: _state(db, to_.id), out["from"]: _state(db, from_id)}
+    if not movable:
         return out
 
-    for r in moving:
+    for r in movable:
         r.manager_id = to_.id
-    out["rows"] = len(moving)
+    out["rows"] = len(movable)
     out["people"] = round(sum(1.0 if r.hc_weight is None else float(r.hc_weight)
-                              for r in moving if (r.hours_worked or 0) > 0), 2)
-    out["hours"] = round(sum(float(r.hours_worked or 0) for r in moving), 2)
+                              for r in movable if (r.hours_worked or 0) > 0), 2)
+    out["hours"] = round(sum(float(r.hours_worked or 0) for r in movable), 2)
 
     for bc in bcs:
+        if bc.manager_id == to_.id:
+            continue
         before = bc.manager_id
         bc.manager_id = to_.id
-        if bc.prev_manager_id == from_id:
+        if bc.prev_manager_id == from_id or not bc.pending:
             bc.prev_manager_id = to_.id
         out["routing"].append((bc.verifix_code, unit_name.get(before, "—"), bool(bc.included)))
 
@@ -180,8 +236,6 @@ def apply(db: Session) -> dict:
                         AttendanceBatchRow.verifix_code.in_(codes)).all() if r.worker_name}
         out["missing"] = sorted(read - names - {
             (r.worker_name or "").strip() for r in rows if r.manager_id == to_.id})
-
-    out["states"] = {to_.name: _state(db, to_.id), out["from"]: _state(db, from_id)}
 
     # The cell's leader and the unit their 5 Oct checklist counts in — reported
     # only; a checklist follows its leader's profile, not the cell.
@@ -204,17 +258,34 @@ def message(out: dict) -> str:
         return (f"⚠️ {CELL} yacheykasining {day} davomatini «{UNIT}»ga qaytarib "
                 "bo'lmadi — hech narsa o'zgarmadi:\n• "
                 + "\n• ".join(out["problems"])
-                + "\n\nQo'lda: «Davomat» tabida shu sanani ochib, yacheykani "
-                  f"{UNIT} bo'limiga sudrang (faqat shu kun) va Saqlang. "
-                  "Keyingi deployda yana tekshiriladi.")
+                + "\n\nHar 10 daqiqada qayta tekshiriladi: sabab yo'qolsa, o'zi "
+                  "ko'chiradi. Qo'lda: «Davomat» tabida shu sanani ochib, yacheykani "
+                  f"{UNIT} bo'limiga sudrang (faqat shu kun) va Saqlang.")
+    if out["waiting"]:
+        return (f"⏳ {CELL} yacheykasining {day} davomati hali saqlanmagan — "
+                + (f"«Davomat» tabida shu kunning yo'nalishi «{out['to']}»ga "
+                   "qo'yildi, Saqlanganda qatorlar o'sha yerga tushadi. "
+                   if out.get("routed") else "")
+                + "Har 10 daqiqada qayta tekshiriladi.")
     if out["already"]:
         return (f"✅ {out['cell']} yacheykasining {day} davomati ({out['rows']} qator) "
-                f"allaqachon «{out['to']}»da — hech narsa o'zgartirilmadi.")
+                f"«{out['to']}»da"
+                + (" — «Davomat» yo'nalishi ham unga qo'yildi." if out["routing"] else "."))
+    held = "; ".join(f"{n} — {why}" for n, why in out["held"][:12]) + (
+        f" va yana {len(out['held']) - 12}" if len(out["held"]) > 12 else "")
+    if not out["rows"] and out["held"]:
+        return (f"⏳ {out['cell']} yacheykasining {day} davomati: {len(out['held'])} kishi "
+                f"hali «{out['from']}»da — {held}.\nSababi yo'qolishi bilan (so'rov/hujjat "
+                "hal qilinsa, bo'lingan xodim birlashtirilsa) o'zi «"
+                f"{out['to']}»ga ko'chadi; har 10 daqiqada tekshiriladi.")
     lines = [
         f"✅ {out['cell']} yacheykasi {day} kuni «{out['to']}» brigadasida hisoblanadi.",
         f"• Davomat: {out['rows']} qator «{out['from']}»dan ko'chirildi "
         f"({out['people']:g} kishi kelgan, {out['hours']:g} soat).",
     ]
+    if out["held"]:
+        lines.append(f"• Hali «{out['from']}»da qoldi ({len(out['held'])} kishi; sababi "
+                     f"yo'qolishi bilan o'zi ko'chadi, har 10 daqiqada tekshiriladi): {held}")
     if out["routing"]:
         lines.append("• «Davomat» tabida shu kunning yo'nalishi ham "
                      f"«{out['to']}» (faqat {day}); keyingi Saqlash ularni joyida qoldiradi.")
@@ -222,6 +293,9 @@ def message(out: dict) -> str:
                  f"«{out['from']}»da qoladi.")
     for unit, st in out["states"].items():
         lines.append(f"• {unit} — {day}: {st}")
+    if out["notes"]:
+        lines.append("• Avval hal qilingan so'rov/hujjatlar (qator bilan ko'chdi; "
+                     "bekor qilinsa qo'lda tekshiring): " + "; ".join(out["notes"][:6]))
     if out["missing"]:
         lines.append("• O'qilgan, lekin qatorlarda topilmagan (tegilmadi): "
                      + ", ".join(out["missing"][:15])

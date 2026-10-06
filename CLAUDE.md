@@ -360,19 +360,24 @@ only from /cells/:id, and only by an admin.
 
 ## Cell 9123's 5 October counts for Raximova Kamola (`cell_day_fix_oct05`)
 
-The operator (2026-10-06): cell 9123 was moved to its new unit on 5 Oct but was
-meant to move from the 6th. The cells register is not dated, so the move stands
-from 6 Oct; only the one STORED day after it is put back. TEMPORARY one-shot
-`services/cell_day_fix_oct05.py`, `startup.fix_cell_9123_oct05` (flag
-`cell_9123_oct05_to_raximova_2026_10_06_v1`, both entrypoints): 5 Oct's
+The operator (2026-10-06): cell 9123 was moved to its new unit (Yogmirov Feruz)
+on 5 Oct but was meant to move from the 6th. The cells register is not dated, so
+the move stands from 6 Oct; only the one STORED day after it is put back.
+TEMPORARY `services/cell_day_fix_oct05.py`, `startup.fix_cell_9123_oct05` (flag
+`cell_9123_oct05_to_raximova_2026_10_06_v2`, both entrypoints): 5 Oct's
 `attendance` rows of 9123 move to Raximova Kamola's unit (`manager_id` only) and
 that day's «Davomat» routing names her unit as a this-day-only move, so a later
-Save keeps them; nothing is re-projected. Refuses (DMs once, re-checks on later
-boots) unless cell and unit resolve once, the rows sit under ONE other unit and
-no split half, request or document on that unit's 5 Oct names the workers.
-Logged as `attendance.cell_day_moved`. NOT moved: ojidaniya (read by the cell's
-CURRENT unit, for every past day), concerns, the leader's checklist. Delete the
-module, the startup function and both calls once the flag reads «done».
+Save keeps them; nothing is re-projected. v1 refused the whole cell over any one
+worker and went silent, so 9123 stayed on Yogmirov. v2 holds back PER WORKER only
+one named by a pending request / draft document on that unit's day, or split
+across another cell, moves everyone else, and re-checks every 10 minutes (job
+`cell-9123-oct05-fix`, until 13 Oct) until nothing is left; with no row saved
+yet it pre-routes the batch cell and waits. Every distinct outcome is DMed to
+the operator's chat once. Refuses outright only when the cell or the unit does
+not resolve once. Logged as `attendance.cell_day_moved`. NOT moved: ojidaniya
+(read by the cell's CURRENT unit, for every past day), concerns, the leader's
+checklist. Delete the module, the startup function and both calls once the flag
+reads «done».
 
 ## Supervisors read `/cells` — their own unit, read-only
 

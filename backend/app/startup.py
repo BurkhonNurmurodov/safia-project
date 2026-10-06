@@ -9221,60 +9221,112 @@ def move_sanjarbek_checklist_shift() -> None:
 # ── one-shot: cell 9123's 5 October counts for Raximova Kamola (2026-10-06) ──
 # See `services/cell_day_fix_oct05.py`. The cell moved to its new unit on 5 Oct
 # but was meant to from the 6th, so that one stored day of attendance goes back
-# to her unit. Same shape as the Nodirjon fix: the rows and the flag commit in
-# ONE transaction; a refusal writes nothing, is DMed once and re-checked quietly
-# on every later boot. Changing what it does needs a NEW flag key.
-CELL_9123_FIX_FLAG = "cell_9123_oct05_to_raximova_2026_10_06_v1"
+# to her unit. The rows and the flag commit in ONE transaction; a refusal
+# writes nothing. v1 ran once at boot and then sat silent while 9123 stayed on
+# Yogmirov Feruz's 5 Oct — so v2 runs at boot AND every 10 minutes until it
+# lands (or the window below ends), and DMs every DISTINCT outcome once,
+# errors included. Changing what it does needs a NEW flag key.
+CELL_9123_FIX_FLAG = "cell_9123_oct05_to_raximova_2026_10_06_v2"
+CELL_9123_FIX_MSG = CELL_9123_FIX_FLAG + "_last_dm"
+CELL_9123_FIX_JOB = "cell-9123-oct05-fix"
+CELL_9123_FIX_UNTIL = date(2026, 10, 13)      # stop re-checking after this day
+_CELL_9123_LOCK = 9123_0510                    # pg advisory xact lock key
 
 
 def fix_cell_9123_oct05() -> None:
-    """Count cell 9123's 5 Oct attendance under Raximova Kamola, once. Never raises."""
-    db = SessionLocal()
+    """Boot: one pass, then a 10-minute re-check until it lands. Never raises."""
     try:
-        row = db.query(AppSetting).filter_by(key=CELL_9123_FIX_FLAG).first()
-        val = (row.value or "") if row else ""
-        if val.startswith("done"):
-            return
-        tries = 0
-        if val.startswith("failed:"):
-            try:
-                tries = int(val.split(":")[-1])
-            except ValueError:
-                tries = _UNPRICED_DM_TRIES
-        if tries >= _UNPRICED_DM_TRIES:
-            return
+        if not _cell_9123_fix_pass():
+            from app.scheduler import schedule_interval
+            schedule_interval(CELL_9123_FIX_JOB, _cell_9123_fix_job, minutes=10)
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] cell 9123 5 Oct fix skipped: {exc}")
 
-        from app.services import cell_day_fix_oct05 as fx
 
-        def mark(value: str) -> None:
-            nonlocal row
-            if row is None:
-                row = AppSetting(key=CELL_9123_FIX_FLAG, value=value)
-                db.add(row)
-            else:
-                row.value = value
-            db.commit()
+def _cell_9123_fix_job() -> None:
+    if _cell_9123_fix_pass():
+        from app.scheduler import unschedule
+        unschedule(CELL_9123_FIX_JOB)
+
+
+def _cell_9123_fix_pass() -> bool:
+    """One attempt. True = nothing left to do (landed, or past the window)."""
+    from app.scheduler import SCHEDULER_TZ
+    from app.services import cell_day_fix_oct05 as fx
+    db = SessionLocal()
+
+    def setting(key: str):
+        return db.query(AppSetting).filter_by(key=key).first()
+
+    def put(key: str, value: str) -> None:
+        row = setting(key)
+        if row is None:
+            db.add(AppSetting(key=key, value=value))
+        else:
+            row.value = value
+
+    def tell(text_: str, key: str | None = None) -> None:
+        # Once per distinct outcome: a re-check that finds the same thing is quiet.
+        key = key or text_
+        last = setting(CELL_9123_FIX_MSG)
+        if last is not None and (last.value or "") == key:
+            return
+        put(CELL_9123_FIX_MSG, key)
+        db.commit()
+        _nodirjon_fix_dm(text_)
+
+    try:
+        flag = setting(CELL_9123_FIX_FLAG)
+        if flag is not None and (flag.value or "").startswith("done"):
+            return True
+        if datetime.now(timezone.utc).astimezone(SCHEDULER_TZ).date() > CELL_9123_FIX_UNTIL:
+            return True
+        # Two copies (blue-green) never work the same rows at once.
+        if not db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"),
+                          {"k": _CELL_9123_LOCK}).scalar():
+            db.rollback()
+            return False
 
         try:
             out = fx.apply(db)
         except Exception as exc:
             db.rollback()
-            mark(f"failed:{tries + 1}")
-            print(f"[startup] cell 9123 5 Oct fix failed "
-                  f"(attempt {tries + 1}/{_UNPRICED_DM_TRIES}): {exc}")
-            return
+            print(f"[startup] cell 9123 5 Oct fix failed: {exc!r}")
+            tell(f"⚠️ 9123 yacheykasining 05.10.2026 davomatini ko'chirishda xato: "
+                 f"{exc!r}"[:900] + "\nHar 10 daqiqada qayta urinadi.")
+            return False
 
         if out["problems"]:
             db.rollback()
             print("[startup] cell 9123 5 Oct fix refused: " + "; ".join(out["problems"]))
-            if not val.startswith("blocked"):
-                mark("blocked")
-                _nodirjon_fix_dm(fx.message(out))
-            return
+            put(CELL_9123_FIX_FLAG, "blocked")
+            db.commit()
+            tell(fx.message(out))
+            return False
 
-        mark(f"done:{out['rows']}")
+        if out["waiting"]:
+            put(CELL_9123_FIX_FLAG, "waiting")
+            db.commit()                    # the batch routing it staged
+            print(f"[startup] cell 9123 5 Oct fix: no rows yet, "
+                  f"routing set on {len(out['routing'])} batch cell(s)")
+            tell(fx.message(out))
+            return False
+
+        held_key = "held:" + out["held_key"] if out["held"] else None
+        if not out["rows"] and out["held"]:
+            # Nothing movable yet: the same held workers stay quiet after one DM.
+            db.rollback()
+            put(CELL_9123_FIX_FLAG, "held")
+            db.commit()
+            tell(fx.message(out), held_key)
+            return False
+
+        put(CELL_9123_FIX_FLAG,
+            f"{'partial' if out['held'] else 'done'}:{out['rows']}")
+        db.commit()
         print(f"[startup] cell 9123 5 Oct fix: {out['rows']} row(s) "
-              f"{out['from'] or '—'} → {out['to']} (already={out['already']})")
+              f"{out['from'] or '—'} → {out['to']} (already={out['already']}, "
+              f"held={len(out['held'])})")
         if not out["already"]:
             from app.services import action_log
             action_log.record_system(
@@ -9288,10 +9340,12 @@ def fix_cell_9123_oct05() -> None:
                 reason=("Operator: the cell moved to its new unit on 5 Oct but was "
                         "meant to from 6 Oct — that day counts for Raximova Kamola"),
             )
-        _nodirjon_fix_dm(fx.message(out))
-    except Exception as exc:  # pragma: no cover — never block startup
+        tell(fx.message(out), held_key)
+        return not out["held"]
+    except Exception as exc:  # pragma: no cover — never block startup / the job
         db.rollback()
         print(f"[startup] cell 9123 5 Oct fix skipped: {exc}")
+        return False
     finally:
         db.close()
 
