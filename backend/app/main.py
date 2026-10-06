@@ -191,6 +191,7 @@ async def lifespan(app: FastAPI):
         queue_shift2_backlog,
         fix_nodirjon_leader_unit,
         move_sanjarbek_checklist_shift,
+        fix_cell_9123_oct05,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -676,6 +677,11 @@ async def lifespan(app: FastAPI):
     fix_nodirjon_leader_unit()
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     move_sanjarbek_checklist_shift()
+    # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
+    # for Raximova Kamola (it moved a day early). Remove this line,
+    # `startup.fix_cell_9123_oct05` and `services/cell_day_fix_oct05.py` once
+    # its flag reads «done».
+    fix_cell_9123_oct05()
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the

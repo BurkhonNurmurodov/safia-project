@@ -127,6 +127,7 @@ try:
         register_leader_temp_hours,
         fix_nodirjon_leader_unit,
         move_sanjarbek_checklist_shift,
+        fix_cell_9123_oct05,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -620,6 +621,11 @@ try:
     fix_nodirjon_leader_unit()
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     move_sanjarbek_checklist_shift()
+    # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
+    # for Raximova Kamola (it moved a day early). Remove this line,
+    # `startup.fix_cell_9123_oct05` and `services/cell_day_fix_oct05.py` once
+    # its flag reads «done».
+    fix_cell_9123_oct05()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

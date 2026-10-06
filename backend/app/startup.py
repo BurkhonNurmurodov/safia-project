@@ -9218,6 +9218,84 @@ def move_sanjarbek_checklist_shift() -> None:
         db.close()
 
 
+# ── one-shot: cell 9123's 5 October counts for Raximova Kamola (2026-10-06) ──
+# See `services/cell_day_fix_oct05.py`. The cell moved to its new unit on 5 Oct
+# but was meant to from the 6th, so that one stored day of attendance goes back
+# to her unit. Same shape as the Nodirjon fix: the rows and the flag commit in
+# ONE transaction; a refusal writes nothing, is DMed once and re-checked quietly
+# on every later boot. Changing what it does needs a NEW flag key.
+CELL_9123_FIX_FLAG = "cell_9123_oct05_to_raximova_2026_10_06_v1"
+
+
+def fix_cell_9123_oct05() -> None:
+    """Count cell 9123's 5 Oct attendance under Raximova Kamola, once. Never raises."""
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=CELL_9123_FIX_FLAG).first()
+        val = (row.value or "") if row else ""
+        if val.startswith("done"):
+            return
+        tries = 0
+        if val.startswith("failed:"):
+            try:
+                tries = int(val.split(":")[-1])
+            except ValueError:
+                tries = _UNPRICED_DM_TRIES
+        if tries >= _UNPRICED_DM_TRIES:
+            return
+
+        from app.services import cell_day_fix_oct05 as fx
+
+        def mark(value: str) -> None:
+            nonlocal row
+            if row is None:
+                row = AppSetting(key=CELL_9123_FIX_FLAG, value=value)
+                db.add(row)
+            else:
+                row.value = value
+            db.commit()
+
+        try:
+            out = fx.apply(db)
+        except Exception as exc:
+            db.rollback()
+            mark(f"failed:{tries + 1}")
+            print(f"[startup] cell 9123 5 Oct fix failed "
+                  f"(attempt {tries + 1}/{_UNPRICED_DM_TRIES}): {exc}")
+            return
+
+        if out["problems"]:
+            db.rollback()
+            print("[startup] cell 9123 5 Oct fix refused: " + "; ".join(out["problems"]))
+            if not val.startswith("blocked"):
+                mark("blocked")
+                _nodirjon_fix_dm(fx.message(out))
+            return
+
+        mark(f"done:{out['rows']}")
+        print(f"[startup] cell 9123 5 Oct fix: {out['rows']} row(s) "
+              f"{out['from'] or '—'} → {out['to']} (already={out['already']})")
+        if not out["already"]:
+            from app.services import action_log
+            action_log.record_system(
+                "attendance", "attendance.cell_day_moved",
+                target_kind="cell", target_name=out["cell"],
+                unit_name=out["to"], day=fx.DAY,
+                details=[("from", out["from"]), ("rows", out["rows"]),
+                         ("hours", out["hours"]),
+                         ("routing", len(out["routing"]) or None)],
+                changes=[(out["cell"], out["from"], out["to"])],
+                reason=("Operator: the cell moved to its new unit on 5 Oct but was "
+                        "meant to from 6 Oct — that day counts for Raximova Kamola"),
+            )
+        _nodirjon_fix_dm(fx.message(out))
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] cell 9123 5 Oct fix skipped: {exc}")
+    finally:
+        db.close()
+
+
 def _nodirjon_fix_dm(text: str) -> None:
     try:
         import requests
