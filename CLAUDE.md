@@ -7288,7 +7288,7 @@ reads it yet except the card's own test, so no figure on the platform moves.
 
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
-**From `live_day.LIVE_FROM` (2026-10-07) this tab writes no live day** — the
+**From `live_day.LIVE_FROM` (2026-10-06) this tab writes no live day** — the
 brigadir's close copies it (see «/staff reads TODAY live»). Everything below
 describes the days before the floor.
 
@@ -7765,12 +7765,12 @@ rights — over a different source, and it is being built to REPLACE /staff.
     one `BADGES` map, polled only while the viewer may open the page); it left
     the «Verifix (test)» group and the Access tab's TEST chip (`tier` dropped in
     `config/pages.js`). The label keeps «· Jonli» while both pages exist.
-  - **The replacement itself landed on 2026-10-07** — see «/staff reads TODAY
+  - **The replacement itself landed on 2026-10-06** — see «/staff reads TODAY
     live» below: /staff reads its live days through these doors, and a live
     close copies the day into `attendance` + `DayApproval`, which is how the
     загрузка, the locks and the gap reports reach it with no change of theirs.
 
-## /staff reads TODAY live (`live_day.LIVE_FROM`, from 2026-10-07)
+## /staff reads TODAY live (`live_day.LIVE_FROM`, from 2026-10-06)
 
 The operator (2026-10-06): «can we turn current verifix edit page supports live
 editing for today? … At the end of the shift, when everyone is left and
@@ -7780,11 +7780,16 @@ asked one by one; `docs/plan-live-staff-today.md` is the record of every answer.
 `/staff-live` is LEFT AS IT IS (its fate is a later decision); `/staff` reads its
 live days through the same doors and tables, so the two pages show one today.
 
-- **`services/live_day.py` is THE floor** — `LIVE_FROM = 2026-10-07`, shift 1's
-  day and shift 2's night of the 7th: the first shift-day of either shift to
-  open after the deploy. A leaf (`day_state` imports it), a constant with no
-  override, never moved later. A day before it keeps the file flow exactly as
-  filed; a day on or after it is a LIVE day for the whole plant.
+- **`services/live_day.py` is THE floor** — `LIVE_FROM = 2026-10-06`, shift 1's
+  day and shift 2's night of the 6th. It shipped as 2026-10-07 at 19:53 on the
+  6th and was brought FORWARD the same evening (v4.253.1, the operator: «today's
+  results are not appearing»): shift 2's night of the 6th opened at 20:00, after
+  the deploy, so ruling 4 already made it live, and shift 1's day of the 6th had
+  just ended — a file day holds nothing until the next morning's Davomat read,
+  so switching a day being worked loses nothing. A leaf (`day_state` imports
+  it), a constant with no override, never moved later. A day before it keeps the
+  file flow exactly as filed; a day on or after it is a LIVE day for the whole
+  plant.
 - **The page picks its source PER DAY** — `StaffPage` in `pages/Staff.jsx`:
   `B` is the page's own API (`/staff` = file, `/staff-live` = live chrome) and
   owns every remembered key; `S = apiFor(selectedDate)` is the data source, and

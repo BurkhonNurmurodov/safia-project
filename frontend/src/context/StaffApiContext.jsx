@@ -8,7 +8,7 @@
 // row key — a worker NAME on /staff, a Verifix employee id on the live page.
 // No provider = /staff, so every existing caller (Daily included) is unchanged.
 //
-// From the first live shift-day (`live_day.LIVE_FROM`, 2026-10-07) /staff
+// From the first live shift-day (`live_day.LIVE_FROM`, 2026-10-06) /staff
 // itself reads a live day through `TODAY_STAFF_API` (the operator's rulings of
 // 2026-10-06): the live doors, cache and row key, with /staff's OWN remembered
 // keys and /staff's own look (`chrome: false` — one status column, none of the

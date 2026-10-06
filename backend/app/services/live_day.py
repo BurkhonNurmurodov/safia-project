@@ -19,10 +19,14 @@ moved LATER — that would hand days back to a file nobody uploads any more.
 from datetime import date
 from typing import Optional
 
-# Shift 1's day of 7 Oct 2026 and shift 2's night of 7 → 8 Oct: the first
-# shift-day of either shift to open after the deploy (shift 2's night of the
-# 6th had already begun), so no shift already running was switched mid-way.
-LIVE_FROM = date(2026, 10, 7)
+# Shift 1's day of 6 Oct 2026 and shift 2's night of 6 → 7 Oct. It shipped as
+# 7 Oct and was brought forward the same evening (the operator: «today's
+# results are not appearing»): the deploy landed at 19:53, so shift 2's night
+# of the 6th opened AFTER it (the first-shift-day-after-the-deploy rule already
+# made it live), and shift 1's day of the 6th had just ended — a file day
+# carries nothing until the next morning's Davomat read, so switching a day
+# still being worked loses nothing and shows it at once.
+LIVE_FROM = date(2026, 10, 6)
 
 
 def is_live(d: Optional[date]) -> bool:

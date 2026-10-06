@@ -43,7 +43,11 @@ tell the fate of live page later.»
 4. **Switch — whole plant, as soon as it ships, no pilot.** `LIVE_FROM` is the
    first shift-day that opens AFTER the deploy lands, for both shifts, so no
    shift already running is switched mid-way. A floor with no override, never
-   moved later.
+   moved later. **Brought forward to 2026-10-06 the same evening** (v4.253.1,
+   the operator: «today's results are not appearing on Verifix edit page»):
+   the deploy landed at 19:53, so shift 2's night of the 6th was already a
+   live day by this rule, and shift 1's day of the 6th had just ended with
+   nothing filed on the file side.
 5. **Hours — «Отработано», as the file**: the Davomat read's own rule (kinds
    23 + 27 ÷ 60, or the parity rule), lunch deducted. The clock span shows only
    while a worker is inside, marked «so far».

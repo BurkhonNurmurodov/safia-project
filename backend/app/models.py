@@ -4573,7 +4573,7 @@ class LiveClockFix(Base):
 
 class LiveProjection(Base):
     """The copy of a closed LIVE unit-day into `attendance` (services/
-    live_projection, from 2026-10-07): what was written, so a re-copy writes
+    live_projection, from 2026-10-06): what was written, so a re-copy writes
     only when something moved, and the two facts the copy itself cannot keep —
     the rows the exchanged workers would have had on their OWN unit (what
     `/workers` reads, `exchange_rewind`) and every worker the read filed under

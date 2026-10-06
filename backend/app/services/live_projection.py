@@ -1,4 +1,4 @@
-"""The COPY of a closed live day into `attendance` (from 2026-10-07).
+"""The COPY of a closed live day into `attendance` (from 2026-10-06).
 
 The operator's ruling 1 (2026-10-06): on a live day the stored Verifix read and
 the live documents ARE the day; the moment the brigadir closes it, the day is
