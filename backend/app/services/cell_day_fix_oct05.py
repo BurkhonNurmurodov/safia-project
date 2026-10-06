@@ -208,7 +208,8 @@ def apply(db: Session) -> dict:
     out["held"] = sorted({v for v in held.values()})
     out["held_key"] = ",".join(str(i) for i in sorted(held))
     movable = [r for r in moving if r.id not in held]
-    out["states"] = {to_.name: _state(db, to_.id), out["from"]: _state(db, from_id)}
+    out["states"] = _report_only(db, lambda: {to_.name: _state(db, to_.id),
+                                              out["from"]: _state(db, from_id)}, {})
     if not movable:
         return out
 
@@ -239,17 +240,34 @@ def apply(db: Session) -> dict:
 
     # The cell's leader and the unit their 5 Oct checklist counts in — reported
     # only; a checklist follows its leader's profile, not the cell.
+    # `leader_task_days.date` is a "YYYY-MM-DD" STRING: compared with a date it
+    # raised, rolled the whole move back on every pass (v2, 6 Oct) — so this
+    # part is also fenced off and can never block the move again.
     if cell.leader_id:
-        prof = db.query(RoleProfile).filter(RoleProfile.id == cell.leader_id).first()
-        days = (db.query(LeaderTaskDay.manager_id)
-                .filter(LeaderTaskDay.leader_id == cell.leader_id,
-                        LeaderTaskDay.date == DAY).all())
-        out["leader"] = (
-            prof.name if prof else f"#{cell.leader_id}",
-            unit_name.get(prof.manager_id, "—") if prof else "—",
-            sorted({unit_name.get(m, f"#{m}") for (m,) in days}),
-        )
+        def leader():
+            prof = db.query(RoleProfile).filter(RoleProfile.id == cell.leader_id).first()
+            days = (db.query(LeaderTaskDay.manager_id)
+                    .filter(LeaderTaskDay.leader_id == cell.leader_id,
+                            LeaderTaskDay.date == DAY.isoformat()).all())
+            return (
+                prof.name if prof else f"#{cell.leader_id}",
+                unit_name.get(prof.manager_id, "—") if prof else "—",
+                sorted({unit_name.get(m, f"#{m}") for (m,) in days}),
+            )
+        out["leader"] = _report_only(db, leader, None)
     return out
+
+
+def _report_only(db: Session, fn, fallback):
+    """Run a REPORT-ONLY read inside a savepoint. A failed statement aborts a
+    Postgres transaction, so without the savepoint one bad read in the message
+    would take the staged move down with it."""
+    try:
+        with db.begin_nested():
+            return fn()
+    except Exception as exc:
+        print(f"[cell_day_fix_oct05] report-only read skipped: {exc!r}"[:300])
+        return fallback
 
 
 def message(out: dict) -> str:
