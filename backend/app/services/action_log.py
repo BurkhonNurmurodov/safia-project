@@ -90,7 +90,7 @@ CATEGORIES = (
     "config",          # 12 platform settings, translations, AI model/key
     "danger",          # 13 dump/restore, wipes, mass deletion
     "training",        # 13b the dashboard exam: assignments, starts, results, the bank
-    "other",           # 14 mutating route with no entry in ROUTES
+    "other",           # 14 mutating route with no entry in ROUTES (+ the undo door's fallback)
 )
 
 DANGER = "danger"
@@ -105,8 +105,9 @@ SOURCES = ("telegram", "web", "bot", "system", "assistant")
 # ── the route table ───────────────────────────────────────────────────────────
 # (methods, path template, category, action). `{}` matches one path segment.
 # FIRST match wins, so a more specific template must come before its prefix.
-# Every one of the platform's 194 mutating routes is here on purpose: a table
-# with holes is a register that quietly loses whole features.
+# Every mutating route the platform serves is here on purpose (or in _SKIP),
+# and the boot check names any that is not: a table with holes is a register
+# that quietly loses whole features.
 
 _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # ── «Yordamchi» — the assistant's own Gemini key (the chats are skipped) ──
@@ -326,6 +327,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/concerns/{}/comments/{}",              "collab", "concern.comment_edited"),
     (("DELETE",), "/api/concerns/{}/comments/{}",              "collab", "concern.comment_deleted"),
     (("POST",),   "/api/concerns",                             "collab", "concern.created"),
+    # A WORKER filing from the shop-floor PC (/cell-concerns). The session is
+    # the leader's, so the actor column names them; the worker is in details.
+    (("POST",),   "/api/cell-concerns",                        "collab", "concern.worker_filed"),
     (("PUT",),    "/api/concerns/{}",                          "collab", "concern.edited"),
     (("DELETE",), "/api/concerns/{}",                          "collab", "concern.deleted"),
     (("PATCH",),  "/api/tasks/{}/status",                      "collab", "task.status_changed"),
@@ -368,9 +372,15 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/education/lessons/{}",                 "comms", "education.lesson_edited"),
     (("DELETE",), "/api/education/lessons/{}",                 "comms", "education.lesson_archived"),
     (("POST",),   "/api/education/lessons/{}/restore",         "comms", "education.lesson_restored"),
-    # Telemetry, not an action: every viewer opening a lesson would drown the
+    # The wizard's live preview of a pasted link — parses it and asks the
+    # provider whether the video is private. Changes nothing, but it is an
+    # admin's request reaching outside, so it is recorded like a probe.
+    (("POST",),   "/api/education/resolve",                    "comms", "education.link_checked"),
+    (("POST",),   "/api/education/report.xlsx",                "sync_export", "export.education"),
+    # Telemetry, not an action: a viewer opening a lesson (/seen/) and the
+    # player flushing what it played (/progress, every 15 s) would drown the
     # register. Deliberately unclassified is wrong (it would land in "other"),
-    # so it is named and pointed at the excluded set instead.
+    # so both are named and pointed at the excluded set instead.
     (("POST",),   "/api/broadcast/send-draft",                 "comms", "broadcast.draft_sent"),
     (("POST",),   "/api/broadcast/send",                       "comms", "broadcast.sent"),
     (("POST",),   "/api/broadcast/test",                       "comms", "broadcast.tested"),
@@ -478,8 +488,10 @@ _SKIP = (
     "/api/boot-report",
     "/api/crash-report",
     "/bot/webhook",
-    # «Ta'lim»: a viewer opened a lesson. Telemetry, not an action.
+    # «Ta'lim»: a viewer opened a lesson, and the player's watch-progress
+    # flush (every 15 s while a lesson plays). Telemetry, not actions.
     "/api/education/seen/",
+    "/api/education/progress",
     # «Imtihon»: every write an exam page makes lands in the sandbox table
     # and is recorded on the attempt, never as a change to a real resource;
     # /live carries the strip's route visits, ui snapshots and checks.
@@ -517,6 +529,16 @@ _COMPILED = [(methods, _compile(tpl), tpl, cat, act) for methods, tpl, cat, act 
 ROUTES = tuple((m, t, c, a) for m, t, c, a in _R)
 
 
+def _match(method: str, path: str) -> Optional[tuple[str, str]]:
+    """The (category, action) of the ROUTES entry a request hits, or None."""
+    for methods, rx, _tpl, cat, act in _COMPILED:
+        if methods and method not in methods:
+            continue
+        if rx.match(path):
+            return cat, act
+    return None
+
+
 def classify(method: str, path: str) -> tuple[str, str]:
     """(category, action) for a request. Unmatched → ("other", "other.<method>").
 
@@ -525,12 +547,7 @@ def classify(method: str, path: str) -> tuple[str, str]:
     so it cannot stay unclassified quietly.
     """
     method = (method or "").upper()
-    for methods, rx, _tpl, cat, act in _COMPILED:
-        if methods and method not in methods:
-            continue
-        if rx.match(path):
-            return cat, act
-    return "other", f"other.{method.lower()}"
+    return _match(method, path) or ("other", f"other.{method.lower()}")
 
 
 def should_record(method: str, path: str) -> bool:
@@ -541,6 +558,31 @@ def should_record(method: str, path: str) -> bool:
     return not any(path.startswith(s) for s in _SKIP)
 
 
+def _leaf_routes(routes) -> Iterable:
+    """Every route the app serves, each carrying its own ``path``/``methods``.
+
+    From FastAPI 0.141 (deployed 2026-10-03) ``include_router`` no longer copies
+    a router's routes into ``app.routes``: each call leaves ONE
+    ``_IncludedRouter`` there, with no path or methods of its own, and its
+    routes live behind ``effective_route_contexts()`` (nested includes already
+    flattened) — the way FastAPI's own OpenAPI generator walks them. Reading
+    ``app.routes`` alone found only the app's few GETs, so the boot check named
+    nothing. A plain Starlette route inside a router keeps its path and methods
+    on ``starlette_route`` (its context's stay blank), hence the ``or``.
+
+    Twin of ``assistant_api._walk``, but complete on purpose: that catalog
+    keeps API routes only, while the middleware records ANY mutating request.
+    Works on older FastAPI too, where every route is already a leaf.
+    """
+    for route in routes:
+        contexts = getattr(route, "effective_route_contexts", None)
+        if contexts is None:
+            yield route
+            continue
+        for ctx in contexts():
+            yield getattr(ctx, "starlette_route", None) or ctx
+
+
 def unmatched_routes(app) -> list[str]:
     """Every mutating route the app serves that ROUTES does not classify.
 
@@ -548,18 +590,25 @@ def unmatched_routes(app) -> list[str]:
     OJIDANIYA_ONLY_CATS: a second list drifts, so there is one list — and the
     only way one list stays complete is if the app says out loud when a route
     has fallen out of it.
+
+    "Does not classify" means NO ENTRY — never "filed under «other»", which the
+    undo door's fallback is on purpose (see its entry). A walk that finds no
+    recorded route at all has gone blind, and silence would read as "all
+    classified", so it raises and the boot report prints the reason instead.
     """
-    missing = []
-    for route in getattr(app, "routes", []):
-        path = getattr(route, "path", "")
-        for method in sorted(getattr(route, "methods", set()) or set()):
+    missing, walked = [], 0
+    for route in _leaf_routes(getattr(app, "routes", [])):
+        path = getattr(route, "path", "") or ""
+        for method in sorted(getattr(route, "methods", None) or set()):
             if not should_record(method, path):
                 continue
+            walked += 1
             # FastAPI paths carry {name}; the table's templates carry {}.
             probe = re.sub(r"\{[^}]+\}", "1", path)
-            cat, _ = classify(method, probe)
-            if cat == "other":
+            if _match(method, probe) is None:
                 missing.append(f"{method} {path}")
+    if not walked:
+        raise RuntimeError("no recorded mutating route found — the route walk is blind")
     return sorted(set(missing))
 
 

@@ -7009,14 +7009,26 @@ anywhere**. All six survive unchanged beside this one; nothing was retired.
   `enrich()` never raises and is a **no-op outside a recorded request** — call it
   unconditionally. Its ARGUMENT expressions are not protected, so never build one
   from an instance a commit or delete has already expired.
-- **`ROUTES` is THE list** — (method, path) → (category, action) for all 189
-  mutating routes, first-match-wins so **specific must precede generic** (the
+- **`ROUTES` is THE list** — (method, path) → (category, action) for every
+  mutating route, first-match-wins so **specific must precede generic** (the
   three `/api/profiles/admin/cells/*` routes sit in the identity block for
   exactly this reason). An unmatched route still gets a row, under «other», AND
   is named at boot by `report_unclassified_routes(app)`: one list stays complete
-  only if the app says out loud when something falls out of it. Five telemetry
-  paths are excluded on purpose (activity ping, ui-prefs, boot/crash report,
-  `/bot/webhook` — the envelope, whose handlers record themselves).
+  only if the app says out loud when something falls out of it. «Unmatched»
+  means NO ENTRY — the undo door's no-plan refusal is filed under «other» on
+  purpose. Telemetry is excluded on purpose (`_SKIP`: the activity ping,
+  ui-prefs, boot/crash reports, `/bot/webhook` — the envelope, whose handlers
+  record themselves — lesson views and playback flushes, the exam sandbox, the
+  bell's read marks, the app's session renewal, the assistant's own chat).
+- **The boot check walks `effective_route_contexts()`**
+  (`action_log._leaf_routes`). From FastAPI 0.141 (deployed 2026-10-03)
+  `app.routes` holds ONE `_IncludedRouter` per `include_router` call, with no
+  path or methods of its own, so a loop over `app.routes` alone saw only the
+  app's few GETs and the check named nothing for three days. A walk that finds
+  no recorded route now RAISES, and the boot report prints «the route walk is
+  blind» instead of a silence that reads as «all classified». Anything else
+  that walks the app's routes must go through the same contexts
+  (`assistant_api._walk` does).
 - **Bot taps and jobs use the direct door.** `record_bot()` = a PERSON acted in
   Telegram (day close, task close, approvals, registration, the broadcast
   composer); `record_system()` = a scheduled job did (the 09:00 auto-close, the
