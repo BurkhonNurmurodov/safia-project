@@ -661,7 +661,7 @@ def _verifix_staffing(db: Session, manager_id: int, day: date,
                                if (read and not g.get("orphan")) else None)
     if read:
         placed = sum(v for code, v in by_wc.items() if code in page_codes)
-    result["verifix"] = {"read": read, **_staffing_sources(db, day, list(wc_of_code))}
+    result["verifix"] = {"read": read, **_staffing_sources(db, day, list(wc_of_code), manager_id)}
     if unit_wide:
         result["verifix"].update({
             "hc": round(total, 2) if read else None,
@@ -681,11 +681,36 @@ def _local_iso(ts) -> Optional[str]:
     return ts.astimezone(_TZ).isoformat(timespec="minutes")
 
 
-def _staffing_sources(db: Session, day: date, codes: list[str]) -> dict:
+def _live_source(db: Session, day: date, manager_id: Optional[int]) -> Optional[dict]:
+    """A LIVE day's source (`live_day.LIVE_FROM`): its attendance is the copy
+    the brigadir's close on «Verifix to'g'irlash» wrote (`live_projection`),
+    never a «Davomat» read — that tab refuses a live day. None on a file day.
+    ``reads`` names the copy (kind "live": when it was last taken, who closed);
+    empty while the day is not closed, when nothing has been copied yet."""
+    from app.services import live_day
+    if not live_day.is_live(day):
+        return None
+    from app.models import LiveDayClose, LiveProjection
+    close = proj = None
+    if manager_id:
+        close = db.query(LiveDayClose).filter_by(manager_id=manager_id, day=day).first()
+        proj = db.query(LiveProjection).filter_by(manager_id=manager_id, day=day).first()
+    reads = ([{"kind": "live", "at": _local_iso(proj.copied_at),
+               "by": close.closed_by_name if close else None, "file": None, "cells": None}]
+             if proj is not None else [])
+    return {"live": True, "reads": reads, "saved_at": None, "saved_by": None, "batch": None}
+
+
+def _staffing_sources(db: Session, day: date, codes: list[str],
+                      manager_id: Optional[int] = None) -> dict:
     """The «Davomat» reads that supplied ``codes`` on ``day`` — read off the
     day's batch: each batch cell points at the read that last supplied it
     (`AttendanceBatchCell.upload_id`), and the read says whether it was Verifix's
-    API or an Excel file. ``saved_at`` is when the batch reached attendance."""
+    API or an Excel file. ``saved_at`` is when the batch reached attendance.
+    A live day answers with its close's copy instead (`_live_source`)."""
+    live = _live_source(db, day, manager_id)
+    if live is not None:
+        return live
     batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == day).first()
     if batch is None or not codes:
         return {"reads": [], "saved_at": None, "saved_by": None, "batch": None}
@@ -770,7 +795,12 @@ def staffing_proof(
                .filter(Attendance.manager_id == mid, Attendance.date == day,
                        Attendance.verifix_code.in_(codes))
                .order_by(Attendance.verifix_code, Attendance.worker_name).all())
-        batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == day).first()
+        # A live day's rows are its close's copy of the Verifix read — every
+        # one of them Verifix's, stamped with the copy's time.
+        live = _live_source(db, day, mid)
+        live_at = live["reads"][0]["at"] if live and live["reads"] else None
+        batch = (None if live is not None
+                 else db.query(AttendanceBatch).filter(AttendanceBatch.date == day).first())
         by_name: dict[str, list] = defaultdict(list)
         ups: dict[int, AttendanceUploadFile] = {}
         if batch is not None and att:
@@ -786,7 +816,9 @@ def staffing_proof(
         for a in att:
             cands = by_name.get(a.worker_name) or []
             b = next((x for x in cands if x.verifix_code == a.verifix_code), cands[0] if cands else None)
-            if b is None:
+            if live is not None:
+                src, at = "verifix", live_at
+            elif b is None:
                 src, at = "none", None
             elif b.manual:
                 src, at = "manual", None
@@ -818,7 +850,7 @@ def staffing_proof(
         "counted": counted if rows or codes else None,
         "read": db.query(Attendance.id).filter(Attendance.manager_id == mid,
                                                Attendance.date == day).first() is not None,
-        **_staffing_sources(db, day, codes),
+        **_staffing_sources(db, day, codes, mid),
     }
 
 

@@ -4540,8 +4540,11 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
     onError: (e) => setAskErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
   });
 
+  // A live day's status comes from the LIVE calendar, which may answer after
+  // the file one — wait for the calendar that holds the focused day.
+  const focusCal = wantLive && focusIso && focusIso >= liveFrom ? liveCal : data;
   useEffect(() => {
-    if (!focusIso || focusDone.current || !data) return;
+    if (!focusIso || focusDone.current || !focusCal) return;
     focusDone.current = true;
     // The day takes focus FIRST: the dialog hands focus back to whatever held
     // it, and the shortcut that did is gone with the tab it sat on.
@@ -4552,7 +4555,7 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
       setAskErr(""); setAsk({ kind: "close", iso: focusIso });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusIso, data]);
+  }, [focusIso, focusCal]);
 
   const cells = buildMonthCells(view.year, view.month);
   const prevMonth = () => setView(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 });
@@ -4689,24 +4692,38 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
   );
 }
 
-// /staff on a live day: the requests the FILE register still has waiting —
-// the days before the switch to the live source — named over the live
-// register, with the way to the newest of them (its day is a file day, so the
-// tab shows that register there).
-function OlderRequestsLine({ docs, onOpen }) {
+// /staff: the requests the OTHER register still has waiting, named over the
+// register on screen, with the way to a day that shows them. On a live day it
+// is the FILE register (the days before the switch): the button opens the
+// newest of their days that is a FILE day — a file request dated on a live day
+// (filed before the floor reached it) is shown by any file day, the file list
+// not being day-scoped, so the day before the floor stands in for it. On a
+// file day it is the LIVE register: the newest live day among them.
+function OlderRequestsLine({ docs, onOpen, liveFrom, live = false }) {
   const { t } = useLang();
-  const latest = docs.map((d) => d.date).filter(Boolean).sort().pop();
+  const dates = docs.map((d) => d.date).filter(Boolean).sort();
+  let target = dates.pop() || null;
+  if (!live && liveFrom && (!target || target >= liveFrom)) {
+    const before = dates.concat(target ? [target] : []).filter((d) => d < liveFrom).pop();
+    target = before || dayBefore(liveFrom);
+  }
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-      <span>{fillT(t("staffClose.olderPending"), { n: docs.length })}</span>
-      {latest && (
-        <Button size="sm" variant="secondary" onClick={() => onOpen(latest)}>
-          {fillT(t("staffClose.olderOpen"), { date: latest.split("-").reverse().join(".") })}
+      <span>{fillT(t(live ? "staffClose.livePending" : "staffClose.olderPending"), { n: docs.length })}</span>
+      {target && (
+        <Button size="sm" variant="secondary" onClick={() => onOpen(target)}>
+          {fillT(t("staffClose.olderOpen"), { date: target.split("-").reverse().join(".") })}
         </Button>
       )}
     </div>
   );
+}
+
+function dayBefore(iso) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -4837,7 +4854,10 @@ export function StaffPage() {
     queryKey: ["staff-live-from"],
     queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
     enabled: hybrid,
-    staleTime: 30 * 60_000,
+    // Short: a page loaded while a deploy swaps the backend copies may get the
+    // old copy's answer, and the floor (and the plant's date) must not stay
+    // stale for half an hour behind it.
+    staleTime: 60_000,
     retry: 1,
   });
   const liveFrom = hybrid ? (liveFloor?.live_from || null) : null;
@@ -4963,11 +4983,25 @@ export function StaffPage() {
     d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fileDocs, hybrid, S.live]);
+  // …and the other way round: on a FILE day (no unit picked yet, or a day
+  // before the switch) once the live source is in force, what the LIVE
+  // register has waiting — the badge counts it, so the tab must show the way.
+  const { data: liveDocs = [] } = useQuery({
+    queryKey: TODAY_STAFF_API.qk("staff-documents", liveFrom),
+    queryFn: () => api.get(`${TODAY_STAFF_API.base}/documents`, { params: { since: liveFrom } }).then(r => r.data),
+    enabled: hybrid && !S.live && liveForce && !!liveFrom,
+    refetchInterval: 60_000,
+  });
+  const livePending = useMemo(() => (hybrid && !S.live && liveForce ? liveDocs.filter(d =>
+    d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liveDocs, hybrid, S.live, liveForce]);
 
   // Rejected items also have approved=false — they are processed, so they
   // must not trigger the badge (mirrors the "pending" status filter)
   const pendingCount        = documents.filter(d =>
-    d._source === "deletion" ? d.status === "pending" : d.status === "draft").length + filePending.length;
+    d._source === "deletion" ? d.status === "pending" : d.status === "draft").length
+    + filePending.length + livePending.length;
   // A widened supervisor may browse any unit, but their own stays the default
   // until they pick one — so the page opens exactly where it always did.
   const supervisorManagerId = role === "supervisor"
@@ -5239,8 +5273,11 @@ export function StaffPage() {
       {/* Requests tab */}
       {tab === "requests" && (
         <StaffApiProvider value={S}>
+          {livePending.length > 0 && (
+            <OlderRequestsLine live docs={livePending} liveFrom={liveFrom} onOpen={(iso) => { pickDate(iso); }} />
+          )}
           {filePending.length > 0 && (
-            <OlderRequestsLine docs={filePending} onOpen={(iso) => { pickDate(iso); }} />
+            <OlderRequestsLine docs={filePending} liveFrom={liveFrom} onOpen={(iso) => { pickDate(iso); }} />
           )}
           <DocumentsPanel
             role={role}

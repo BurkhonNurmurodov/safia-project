@@ -109,7 +109,7 @@ export default function StaffingProofModal({ target, date, managerParam, onClose
   const inRows = rows.filter((r) => r.counted);
   const outRows = rows.filter((r) => !r.counted);
   const fromVerifix = inRows.filter((r) => r.source === "verifix").length;
-  const vfxReads = (d?.reads || []).filter((r) => r.kind === "verifix");
+  const vfxReads = (d?.reads || []).filter((r) => r.kind === "verifix" || r.kind === "live");
 
   return (
     <Modal
@@ -157,7 +157,7 @@ export default function StaffingProofModal({ target, date, managerParam, onClose
             {vfxReads.map((r, i) => (
               <div key={i} className="mt-1 flex items-center gap-1.5 text-xs" style={{ color: "var(--text-2)" }}>
                 <Database size={12} style={{ color: "var(--brand-text)" }} />
-                {t("production.vfxProof.readLine")
+                {t(r.kind === "live" ? "production.vfxProof.liveLine" : "production.vfxProof.readLine")
                   .replace("{d}", ddmm(r.at)).replace("{t}", hhmm(r.at))
                   .replace("{by}", r.by ? tl(r.by) : "—")}
               </div>
@@ -174,7 +174,7 @@ export default function StaffingProofModal({ target, date, managerParam, onClose
 
           {!d.read ? (
             <EmptyState showUploadLink={false} height="h-28" title={t("production.vfxNotRead")}
-              message={t("production.vfxNotReadNote")} />
+              message={t(d.live ? "production.vfxLiveNotClosed" : "production.vfxNotReadNote")} />
           ) : !(d.cells || []).length ? (
             <EmptyState showUploadLink={false} height="h-28" title={t("production.vfxNoCell")} message="" />
           ) : inRows.length === 0 ? (

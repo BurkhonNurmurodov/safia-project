@@ -227,6 +227,13 @@ def _live_docs(db: Session, payload: dict) -> list[dict]:
     from app.models import LiveDocument
     from app.routers import staff_live as sl
     q = sl._scope_docs(db.query(LiveDocument).filter(LiveDocument.status == "draft"), payload, db)
+    if payload.get("role") != "admin":
+        # A live draft dated before the floor is a /staff-live test filing:
+        # it moves no figure (those days keep the file flow), so it waits on
+        # nobody but the admins who were testing — the /staff register and its
+        # badge start at the floor too.
+        from app.services import live_day
+        q = q.filter(LiveDocument.day >= live_day.LIVE_FROM)
     docs = q.order_by(LiveDocument.created_at.desc()).limit(_CAP).all()
     if not docs:
         return []
@@ -284,6 +291,9 @@ def _live_batches(db: Session, payload: dict) -> list[dict]:
         return []
     from app.routers import staff_live as sl
     rows = [r for r in sl._scope_deletions(payload, db) if r.status == "pending"]
+    if payload.get("role") != "admin":
+        from app.services import live_day   # the floor, as in `_live_docs`
+        rows = [r for r in rows if r.day is None or live_day.is_live(r.day)]
     if not rows:
         return []
     batches: dict[str, list] = {}

@@ -182,7 +182,7 @@ function SupervisorDaily() {
   const { data: liveFloor } = useQuery({
     queryKey: ["staff-live-from"],
     queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
-    staleTime: 30 * 60_000,
+    staleTime: 60_000,   // short — see Staff.jsx (a deploy's backend swap)
     retry: 1,
   });
   const dayLive = !!liveFloor?.live_from && !!date && date >= liveFloor.live_from;

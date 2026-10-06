@@ -1437,7 +1437,12 @@ ATTENDANCE — what «Davomat» reads from Verifix — places in that centre's c
   would DELETE it), so a pin set on the «Команды» card's pencil survives. That
   pencil still edits the pin — retiring it is a separate decision.
 - Not the live read: `/staff-live`'s minute-by-minute read feeds nothing outside
-  that page, so a running day reads «—» until «Davomat» saves it.
+  that page, so a running day reads «—» until «Davomat» saves it. **On a live
+  day (`live_day.LIVE_FROM`) the source is the brigadir's close**
+  (`production._live_source`): the note says the figures appear once the day is
+  closed on «Verifix to'g'irlash», and after the close it names the copy (kind
+  «live», its time and who closed) — never a «Davomat» read, which that tab
+  refuses for a live day; the proof dialog marks every row Verifix's.
 - **Every number PROVES itself** (same day — «we are not sure it comes from
   Verifix»). The card names its source under the table — `verifix.reads` /
   `saved_at` / `saved_by` (`production._staffing_sources`: the «Davomat» read
@@ -7855,8 +7860,12 @@ live days through the same doors and tables, so the two pages show one today.
   is «closed» until they are decided and then «confirmed» (ruling 11 — pending
   requests never block the close). The /staff calendar merges the file calendar
   (days before the floor) with the live one; the requests tab follows the day's
-  source and names the file register's still-pending requests with a way there
-  (`OlderRequestsLine`); the sidebar badge counts both registers.
+  source and names the OTHER register's still-pending requests with a way there
+  (`OlderRequestsLine`, both directions: a live day names the file register's
+  and opens a FILE day, a file day — no unit picked yet — names the live
+  register's and opens a live day); the sidebar badge counts both registers.
+  The bell queue offers a non-admin no live draft or deletion dated before the
+  floor (those are /staff-live test filings and move no figure).
 - **Notices** (ruling 18): `live_staff.lab_open` is true from the floor (and
   `can_open` admits /staff's openers), so the live page's notices reach /staff's
   users. New keys: `live_list_open` («your list is live», once at the day's

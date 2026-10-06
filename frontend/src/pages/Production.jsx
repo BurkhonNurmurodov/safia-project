@@ -1237,14 +1237,16 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
         {!loading && wcs.length > 0 && (
           <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
             {vfxRead ? t("production.vfxStaffNote")
-              : vfxLast ? t("production.vfxReadNotSaved").replace("{d}", ddmm(vfxLast.at)).replace("{t}", hhmm(vfxLast.at))
-                : t("production.vfxNotReadNote")}
+              : verifix?.live ? t("production.vfxLiveNotClosed")
+                : vfxLast ? t("production.vfxReadNotSaved").replace("{d}", ddmm(vfxLast.at)).replace("{t}", hhmm(vfxLast.at))
+                  : t("production.vfxNotReadNote")}
             {vfxUnplaced > 0 && (
               <>{" "}{t("production.vfxUnplaced").replace("{n}", fmt(vfxUnplaced, 1))}</>
             )}
             {vfxRead && vfxLast && (
               <span className="block mt-1" style={{ color: "var(--text-2)" }}>
-                {t(vfxLast.kind === "verifix" ? "production.vfxSourceVerifix" : "production.vfxSourceFile")
+                {t(vfxLast.kind === "live" ? "production.vfxSourceLive"
+                  : vfxLast.kind === "verifix" ? "production.vfxSourceVerifix" : "production.vfxSourceFile")
                   .replace("{d}", ddmm(vfxLast.at)).replace("{t}", hhmm(vfxLast.at))
                   .replace("{by}", vfxLast.by ? tl(vfxLast.by) : "—")}
                 {verifix?.saved_at && (
