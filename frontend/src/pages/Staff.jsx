@@ -21,6 +21,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import CellPlacementPanel from "../components/staff/CellPlacementPanel";
+import LiveCloseCheck, { useLiveCloseCheck } from "../components/staff/LiveCloseCheck";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -39,7 +40,7 @@ import { exportXlsx } from "../utils/exportXlsx";
 import { surnameInitial } from "../utils/personName";
 import { isWebSession } from "../utils/session";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter, FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
-import { useStaffApi, LIVE_STAFF_API } from "../context/StaffApiContext";
+import { useStaffApi, StaffApiProvider, LIVE_STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
 import {
   LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
   LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, LIVE_FILTERS, n2 as liveN2,
@@ -506,7 +507,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // see the Verifix read behind it.
   const [liveFilterSaved, setLiveFilter] = usePersistentState("staff_live_workers_status", "all");
   // A filter the strip no longer offers (the retired «Kechikkan») reads as all.
-  const liveFilter = LIVE_FILTERS.includes(liveFilterSaved) ? liveFilterSaved : "all";
+  // /staff on a live day has no status strip (its own look): nothing narrows by it.
+  const liveFilter = S.chrome && LIVE_FILTERS.includes(liveFilterSaved) ? liveFilterSaved : "all";
   const [openRaw, setOpenRaw]           = useState(null);
   // Live: below lg (a phone, a tablet held upright) the rows read as a list —
   // the table needs a laptop's width.
@@ -539,7 +541,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     params: { attend_date: selectedDate, ...(pickSupervisor ? { manager_id: managerId } : {}),
       ...(force ? { force: true } : {}) },
   }).then(r => r.data);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: attError } = useQuery({
     queryKey: attKey,
     queryFn: () => fetchAtt(false),
     enabled: !!selectedDate && !!managerId && !dayPending,
@@ -804,7 +806,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   }
 
   if ((!selectedDate || !managerId) && !(S.live && managerId && (dayPending || dayError))) {
-    return S.live ? (
+    return S.chrome ? (
       <div className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-3)" }}>
         {t("staffLive.pickUnit")}
       </div>
@@ -815,7 +817,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     );
   }
 
-  if (S.live) {
+  if (S.live && S.chrome) {
     return (
       <LiveWorkersView
         data={data} loading={isLoading || !data || dayPending} dayError={dayError} onDayRetry={onDayRetry}
@@ -850,9 +852,19 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     );
   }
 
+  // /staff on a LIVE day: the day could not be named, or Verifix could not be
+  // read — say which, with the way to ask again, never a skeleton that never ends.
+  if (S.live && dayError) return (
+    <LiveDayState data={{ error: "day", message: dayError }} onRetry={onDayRetry} isAdmin={tableAuth?.role === "admin"} />
+  );
+  if (S.live && (data?.error || attError)) return (
+    <LiveDayState data={data?.error ? data : { error: "unreachable", message: attError?.message }}
+      onRetry={refreshNow} retrying={refresh.isPending} isAdmin={tableAuth?.role === "admin"} />
+  );
+
   // Guard covers: (a) query fetching, (b) the one render where enabled just
   // became true but React Query hasn't set isLoading yet (data still undefined)
-  if (isLoading || !data) return (
+  if (isLoading || !data || dayPending) return (
     <div className="rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <SkeletonTable rows={8} cols={6} />
     </div>
@@ -1021,6 +1033,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                     </button>
                   </div>
                 </th>
+                {/* A live day's one addition (ruling 3, 2026-10-06): where the
+                    worker stands — inside · on a break · left · no check-out ·
+                    moved — and, for a move, which list the name ends on. */}
+                {S.live && (
+                  <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider">{t("staffLive.c.status")}</span>
+                  </th>
+                )}
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colRole")} active={filters.job_titles.length > 0}>
                     <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tx(o) || o} />
@@ -1066,7 +1086,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
             </thead>
             <tbody>
               {sortedWorkers.map(w => (
-                <Fragment key={w.worker_name}>
+                <Fragment key={w.id ?? w.worker_name}>
                 <tr className="border-b hover:bg-white/5"
                   style={{ borderColor: "var(--border)" }}>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
@@ -1081,6 +1101,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                       )}
                     </div>
                   </td>
+                  {S.live && (
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-0.5 items-start">
+                        <LiveStatusChip status={w.status} />
+                        <LiveRowNotes w={w} />
+                      </div>
+                    </td>
+                  )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
                   {/* Code only — the workshop name is four words of Russian per
                       row and pushed every column after it off a phone. It stays
@@ -1097,14 +1125,18 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
                   )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.hours_worked != null ? w.hours_worked : "—"}
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+                    {w.hours_worked != null ? (S.live ? liveN2(w.hours_worked) : w.hours_worked) : "—"}
+                    {/* Still inside: the clock span so far (ruling 5). */}
+                    {S.live && w.so_far && (
+                      <span className="ml-1 text-[10px]" style={{ color: "var(--text-3)" }}>{t("staffLive.sum.soFar")}</span>
+                    )}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {w.early_arrival_min != null ? w.early_arrival_min : "—"}
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    {w.effective_hours != null ? w.effective_hours : "—"}
+                    {w.effective_hours != null ? (S.live ? liveN2(w.effective_hours) : w.effective_hours) : "—"}
                   </td>
                 </tr>
                 </Fragment>
@@ -4414,7 +4446,7 @@ function buildMonthCells(year, month) {
   return cells;
 }
 
-function ApprovalsCalendar({ role, supervisors }) {
+function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
   const S = useStaffApi();
   const qc = useQueryClient();
   const { auth } = useAuth();
@@ -4440,13 +4472,33 @@ function ApprovalsCalendar({ role, supervisors }) {
     }).then(r => r.data),
     enabled: !!effManagerId,
   });
-  const days = data?.days || {};
+  // /staff: a day from `liveFrom` on is a LIVE day — open from its first read,
+  // closed by the live close (which also writes the file ladder's closure) —
+  // so those days are read off the live calendar.
+  const isLiveDay = (iso) => S.live || (!!liveFrom && !!iso && iso >= liveFrom);
+  const monthLast = monthIso(view.year, view.month, new Date(view.year, view.month + 1, 0).getDate());
+  const wantLive = !S.live && !!liveFrom && monthLast >= liveFrom;
+  const { data: liveCal } = useQuery({
+    queryKey: LIVE_STAFF_API.qk("staff-approvals-calendar", effManagerId, view.year, view.month),
+    queryFn: () => api.get(`${LIVE_STAFF_API.base}/approvals/calendar`, {
+      params: { manager_id: effManagerId, year: view.year, month: view.month + 1 },
+    }).then(r => r.data),
+    enabled: !!effManagerId && wantLive,
+  });
+  const days = useMemo(() => {
+    if (!wantLive) return data?.days || {};
+    const out = {};
+    for (const [iso, v] of Object.entries(data?.days || {})) if (iso < liveFrom) out[iso] = v;
+    for (const [iso, v] of Object.entries(liveCal?.days || {})) if (iso >= liveFrom) out[iso] = v;
+    return out;
+  }, [data, liveCal, wantLive, liveFrom]);
+  // The live close is armed only once its own check says it may go ahead
+  // (the dialog's own query — `LiveCloseCheck` draws the same cache entry).
 
   // Live: the standing line's shortcut (`goClose`) names the day it came from.
   // Read once at mount: that day is ringed, and its close dialog — which then
   // names the date — opens by itself once the calendar says it is open.
   const [focusIso] = useState(() => {
-    if (!S.live) return null;
     try {
       const v = localStorage.getItem(S.pk("staff_approvals_focus"));
       localStorage.removeItem(S.pk("staff_approvals_focus"));
@@ -4459,6 +4511,9 @@ function ApprovalsCalendar({ role, supervisors }) {
     qc.invalidateQueries({ queryKey: S.qk("staff-approvals-calendar") });
     qc.invalidateQueries({ queryKey: S.qk("approved-cells") });
     qc.invalidateQueries({ queryKey: S.qk("daily-approval") });
+    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("staff-approvals-calendar") });
+    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("daily-approval") });
+    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("staff-attendance") });
   };
   // Telegram's iOS WebView silently suppresses window.confirm, so a
   // confirm-gated calendar day did nothing at all on the primary device. Both
@@ -4466,6 +4521,8 @@ function ApprovalsCalendar({ role, supervisors }) {
   // A close is never refused over a leader's ojidaniya any more (they count on
   // save since 2026-08-22) — the dialog ASKS about them instead, below.
   const [ask, setAsk] = useState(null);   // {kind: "close"|"reopen", iso} | null
+  const liveCheck = useLiveCloseCheck(effManagerId, ask?.iso,
+    ask?.kind === "close" && (S.live || (!!liveFrom && !!ask?.iso && ask.iso >= liveFrom)));
   const [askErr, setAskErr] = useState("");
   const closeMut = useMutation({
     mutationFn: (date) => api.post(`${S.base}/daily/close`, { manager_id: effManagerId, date }),
@@ -4608,14 +4665,19 @@ function ApprovalsCalendar({ role, supervisors }) {
         onCancel={() => { setAskErr(""); setAsk(null); }}
         onConfirm={() => (ask?.kind === "close" ? closeMut : reopenMut).mutate(ask.iso)}
         title={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")
-          + (S.live && ask?.iso ? ` · ${ask.iso.split("-").reverse().join(".")}` : "")}
+          + (isLiveDay(ask?.iso) && ask?.iso ? ` · ${ask.iso.split("-").reverse().join(".")}` : "")}
         // The close carries the «leaders entered N ojidaniya today» line — a
         // question, never a gate. Mounted with the dialog, so the day-summary
         // is fetched for the one day being closed, not for the whole month.
         message={ask?.kind === "close" ? (<>
-          {t("staff.apprCloseConfirm")}
+          {t(isLiveDay(ask.iso) ? "staffClose.confirm" : "staff.apprCloseConfirm")}
           <CloseDayIdleNote managerId={effManagerId} date={ask.iso} />
-        </>) : t("staff.apprReopenConfirm")}
+          {isLiveDay(ask.iso) && (
+            <LiveCloseCheck managerId={effManagerId} date={ask.iso}
+              canFix={role === "admin" || role === "supervisor"} />
+          )}
+        </>) : t(isLiveDay(ask?.iso) ? "staffClose.reopenConfirm" : "staff.apprReopenConfirm")}
+        confirmDisabled={ask?.kind === "close" && isLiveDay(ask?.iso) && liveCheck.data?.closable !== true}
         confirmLabel={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
         cancelLabel={t("daily.cancel")}
         loading={closeMut.isPending || reopenMut.isPending}
@@ -4623,6 +4685,26 @@ function ApprovalsCalendar({ role, supervisors }) {
       />
 
       <div className="pb-16" />
+    </div>
+  );
+}
+
+// /staff on a live day: the requests the FILE register still has waiting —
+// the days before the switch to the live source — named over the live
+// register, with the way to the newest of them (its day is a file day, so the
+// tab shows that register there).
+function OlderRequestsLine({ docs, onOpen }) {
+  const { t } = useLang();
+  const latest = docs.map((d) => d.date).filter(Boolean).sort().pop();
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+      <span>{fillT(t("staffClose.olderPending"), { n: docs.length })}</span>
+      {latest && (
+        <Button size="sm" variant="secondary" onClick={() => onOpen(latest)}>
+          {fillT(t("staffClose.olderOpen"), { date: latest.split("-").reverse().join(".") })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -4658,7 +4740,12 @@ export default function Staff() {
 // THE «Verifix to'g'irlash» page — /staff, and (inside a live
 // StaffApiProvider) /staff-live, which differs only in the source.
 export function StaffPage() {
-  const S = useStaffApi();
+  // B = the PAGE's own source: /staff (file) or /staff-live (live chrome). On
+  // /staff a day from `live_day.LIVE_FROM` on is read live (`TODAY_STAFF_API`,
+  // the operator's rulings of 2026-10-06), so the data source `S` is chosen
+  // per selected day below; every remembered key stays the page's own (`B.pk`).
+  const B = useStaffApi();
+  const hybrid = !B.live;
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -4676,19 +4763,21 @@ export function StaffPage() {
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
   // Before the persisted state below: a link writes it first.
-  useUrlScope(S.live ? readStaffLiveLink : readStaffLink);
-  const [rawTab, setTab] = usePersistentState(S.pk("staff_tab"), role === "shift-manager" ? "requests" : "workers");
+  useUrlScope(B.live ? readStaffLiveLink : readStaffLink);
+  const [rawTab, setTab] = usePersistentState(B.pk("staff_tab"), role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
-  const [storedDate, setSelectedDate] = usePersistentState(S.pk("staff_selected_date"), "");
-  const [selectedManagerId, setSelectedManagerId] = usePersistentState(S.pk("staff_selected_manager_id"), null);
+  const [storedDate, setSelectedDate] = usePersistentState(B.pk("staff_selected_date"), "");
+  const [selectedManagerId, setSelectedManagerId] = usePersistentState(B.pk("staff_selected_manager_id"), null);
   // Live: the page opens on the unit's CURRENT shift-day — never a day
   // remembered from an earlier visit (a live page reopened tomorrow showing
   // today is a page showing yesterday) — unless a link named one. `autoDay`
   // holds until the reader picks a day; while it holds, switching units
   // follows each unit's own shift-day (a night unit's is yesterday's date
   // until its next shift opens), which only the server can say.
-  const [autoDay, setAutoDay] = useState(() => S.live && !new URLSearchParams(window.location.search).get("date"));
+  // /staff: the same, from the first live day on (`liveUI` below) — until a
+  // unit's day is live the page keeps its remembered date and its picker.
+  const [autoDay, setAutoDay] = useState(() => !new URLSearchParams(window.location.search).get("date"));
   // …and a link followed while this page is ALREADY open: the route is not
   // keyed, so useUrlScope (mount-only) would never see it.
   const staffLoc = useLocation();
@@ -4699,7 +4788,7 @@ export function StaffPage() {
     if (v.staff_tab) setTab(v.staff_tab);
     if (v.staff_selected_date) {
       setSelectedDate(v.staff_selected_date);
-      if (S.live) setAutoDay(false);
+      setAutoDay(false);
     }
     if (v.staff_selected_manager_id != null) setSelectedManagerId(v.staff_selected_manager_id);
     staffNav({ pathname: staffLoc.pathname }, { replace: true });
@@ -4717,8 +4806,8 @@ export function StaffPage() {
   const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
   const { data: supervisors = [], isSuccess: supervisorsLoaded } = useQuery({
-    queryKey: S.qk("staff-supervisors"),
-    queryFn: () => api.get(`${S.base}/supervisors`).then(r => r.data),
+    queryKey: B.qk("staff-supervisors"),
+    queryFn: () => api.get(`${B.base}/supervisors`).then(r => r.data),
     enabled: isManagerView,
     staleTime: 120_000,
   });
@@ -4726,7 +4815,7 @@ export function StaffPage() {
   // загрузка) is dropped — the picker read «pick a brigadir» over a page
   // showing that unit's error.
   useEffect(() => {
-    if (S.live && supervisorsLoaded && selectedManagerId != null
+    if (B.live && supervisorsLoaded && selectedManagerId != null
         && !supervisors.some(s => s.manager_id === selectedManagerId)) setSelectedManagerId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supervisorsLoaded, supervisors, selectedManagerId]);
@@ -4741,10 +4830,25 @@ export function StaffPage() {
   // in the browser. Until it answers the page has NO day, so nothing that
   // depends on one is asked (a guess fired real reads for a night not begun).
   // It is asked again when the next shift-day opens (`next_in_s`), not polled.
+  // /staff: from which shift-day the live source answers, and the plant's
+  // date — asked once; until it answers (or if it fails) the page is the file
+  // page it always was.
+  const { data: liveFloor } = useQuery({
+    queryKey: ["staff-live-from"],
+    queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
+    enabled: hybrid,
+    staleTime: 30 * 60_000,
+    retry: 1,
+  });
+  const liveFrom = hybrid ? (liveFloor?.live_from || null) : null;
+  // The live source is in force on the plant's clock — only then is a unit's
+  // own shift-day asked for (a night unit's «today» is yesterday's date until
+  // its next shift opens, which only the server can say).
+  const liveForce = B.live || (!!liveFrom && !!liveFloor?.today && liveFloor.today >= liveFrom);
   const { data: liveToday, error: todayError, refetch: refetchToday } = useQuery({
-    queryKey: S.qk("staff-today", supervisorManagerIdEarly),
-    queryFn: () => api.get(`${S.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
-    enabled: S.live && !!supervisorManagerIdEarly,
+    queryKey: LIVE_STAFF_API.qk("staff-today", supervisorManagerIdEarly),
+    queryFn: () => api.get(`${LIVE_STAFF_API.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
+    enabled: liveForce && !!supervisorManagerIdEarly,
     staleTime: 60_000,
     retry: 1,
     refetchInterval: (q) => {
@@ -4753,14 +4857,21 @@ export function StaffPage() {
     },
   });
   const todayIso = liveToday?.manager_id === supervisorManagerIdEarly ? liveToday.date : null;
-  const selectedDate = S.live && autoDay ? (todayIso || "") : storedDate;
+  // The live day control (‹ day › up to the unit's own today, opening on it):
+  // always on /staff-live; on /staff once the unit's today is a live day.
+  const liveUI = B.live || (!!liveFrom && !!todayIso && todayIso >= liveFrom);
+  const selectedDate = liveUI && autoDay ? (todayIso || "") : storedDate;
   useEffect(() => {
-    if (S.live && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
+    if (liveUI && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIso, autoDay]);
-  const dayPending = S.live && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError;
-  const dayError = S.live && autoDay && !todayIso && todayError
+  }, [todayIso, autoDay, liveUI]);
+  const dayPending = liveForce && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError;
+  const dayError = liveForce && autoDay && !todayIso && todayError
     ? (todayError?.response?.data?.detail || todayError?.message || "error") : null;
+  // THE data source of the day on screen. /staff-live: always live. /staff: a
+  // day from `liveFrom` on is read live, every earlier day keeps the file.
+  const apiFor = (iso) => (B.live ? B : (liveFrom && iso && iso >= liveFrom ? TODAY_STAFF_API : B));
+  const S = apiFor(selectedDate || (dayPending ? liveFrom : ""));
   const { data: dayState } = useQuery({
     queryKey: S.qk("daily-approval", supervisorManagerIdEarly, selectedDate),
     queryFn: () => api.get(`${S.base}/approvals/day`, {
@@ -4784,7 +4895,7 @@ export function StaffPage() {
     staleTime: 120_000,
     retry: false,
   });
-  const hasCellData = !!selectedDate && cellDates.some(d => d.date === selectedDate);
+  const hasCellData = !S.live && !!selectedDate && cellDates.some(d => d.date === selectedDate);
 
   const { data: cellDay } = useQuery({
     queryKey: ["cell-attendance", selectedDate],
@@ -4815,7 +4926,7 @@ export function StaffPage() {
   // the leader are stored alongside the key so the trigger can label the cell
   // even on a date whose payload doesn't carry it (the body then explains, not
   // the label).
-  const [rawSelCell, setSelCell] = usePersistentState(S.pk("staff_selected_cell"), null);
+  const [rawSelCell, setSelCell] = usePersistentState(B.pk("staff_selected_cell"), null);
   const selCell = isManagerView && rawSelCell && typeof rawSelCell === "object" && rawSelCell.key
     ? rawSelCell
     : null;
@@ -4830,23 +4941,40 @@ export function StaffPage() {
     if (c) setSelectedManagerId(null);
   }
 
+  // The Requests tab follows the source of the day on screen. /staff on a
+  // live day asks for its live days only (`since`) — /staff-live's test
+  // filings of the days before are not /staff's register.
+  const docSince = S.live && !S.chrome ? liveFrom : null;
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
-    queryKey: S.qk("staff-documents"),
-    queryFn: () => api.get(`${S.base}/documents`).then(r => r.data),
+    queryKey: S.qk("staff-documents", docSince),
+    queryFn: () => api.get(`${S.base}/documents`, { params: docSince ? { since: docSince } : {} }).then(r => r.data),
     refetchInterval: 30_000,
   });
+  // …and on a live day, what the FILE register still has waiting — the
+  // requests of the days before the switch — is named under the tab with a way
+  // there, so nothing pending is out of sight.
+  const { data: fileDocs = [] } = useQuery({
+    queryKey: ["staff-documents", null],
+    queryFn: () => api.get("/api/staff/documents").then(r => r.data),
+    enabled: hybrid && S.live,
+    refetchInterval: 60_000,
+  });
+  const filePending = useMemo(() => (hybrid && S.live ? fileDocs.filter(d =>
+    d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fileDocs, hybrid, S.live]);
 
   // Rejected items also have approved=false — they are processed, so they
   // must not trigger the badge (mirrors the "pending" status filter)
   const pendingCount        = documents.filter(d =>
-    d._source === "deletion" ? d.status === "pending" : d.status === "draft").length;
+    d._source === "deletion" ? d.status === "pending" : d.status === "draft").length + filePending.length;
   // A widened supervisor may browse any unit, but their own stays the default
   // until they pick one — so the page opens exactly where it always did.
   const supervisorManagerId = role === "supervisor"
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
   function pickDate(d) {
-    if (S.live) setAutoDay(false);
+    setAutoDay(false);
     setSelectedDate(d);
   }
   // Live: the unit is picked in the FilterPanel — the platform's scope zone,
@@ -4857,7 +4985,7 @@ export function StaffPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [supervisors, lang]);
   const unitSel = supervisors.find(s => s.manager_id === selectedManagerId);
-  const unitPicker = S.live && isManagerView ? (
+  const unitPicker = B.live && isManagerView ? (
     // Required: the page shows one unit, so there is no «clear» (`anyActive`
     // false) — and the name shortens («Ergashev M. · S2») rather than being
     // cut off in the 150px trigger.
@@ -4875,7 +5003,7 @@ export function StaffPage() {
   // The live stepper: ‹ day › up to the unit's own today, plus a way back to
   // it. While the server has not named the day it holds the stepper's place.
   const liveMax = todayIso || storedDate || null;
-  const dayControl = S.live ? (
+  const dayControl = liveUI ? (
     <>
       {selectedDate
         ? <DayStepper value={selectedDate} onChange={pickDate} max={liveMax} fillPhone />
@@ -4885,17 +5013,17 @@ export function StaffPage() {
       )}
     </>
   ) : (
-    <DatePicker value={selectedDate} onChange={setSelectedDate} />
+    <DatePicker value={selectedDate} onChange={pickDate} />
   );
   // Live: the calendar shows the unit the other tabs show — it keeps its own
   // remembered unit otherwise, and opened on «pick a brigadir» after a unit
   // had just been read on Xodimlar.
   function changeTab(v) {
-    if (S.live && v === "approvals" && supervisorManagerId) {
+    if (liveUI && v === "approvals" && supervisorManagerId) {
       try {
-        localStorage.setItem(S.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
+        localStorage.setItem(B.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
         const [y, m] = String(selectedDate).split("-").map(Number);
-        if (y && m) localStorage.setItem(S.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
+        if (y && m) localStorage.setItem(B.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
       } catch { /* storage unavailable — the calendar opens where it was */ }
     }
     setTab(v);
@@ -4966,10 +5094,10 @@ export function StaffPage() {
   const canCloseDay = role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id);
   function goClose() {
     try {
-      localStorage.setItem(S.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
+      localStorage.setItem(B.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
       const [y, m] = String(selectedDate).split("-").map(Number);
-      if (y && m) localStorage.setItem(S.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
-      localStorage.setItem(S.pk("staff_approvals_focus"), JSON.stringify(selectedDate));
+      if (y && m) localStorage.setItem(B.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
+      localStorage.setItem(B.pk("staff_approvals_focus"), JSON.stringify(selectedDate));
     } catch { /* storage unavailable — the calendar opens where it was */ }
     setTab("approvals");
   }
@@ -5044,7 +5172,7 @@ export function StaffPage() {
       {tab === "workers" && showWorkersTab && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            {S.live ? <>{dayControl}{unitPicker}</> : isManagerView && (
+            {B.live ? <>{dayControl}{unitPicker}</> : isManagerView && (
               <SupervisorSelect
                 value={selectedManagerId}
                 onChange={pickSupervisorId}
@@ -5054,13 +5182,13 @@ export function StaffPage() {
                 onCellChange={pickCell}
               />
             )}
-            {!S.live && dayControl}
+            {!B.live && dayControl}
             {/* The cell view is read-only import data — no documents, no
                 day-close state; both controls belong to the verifix flow. */}
             {canCreateHere && !selCell && (
               <CreateMenu
-                className={S.live ? "ml-auto" : ""}
-                compactPhone={S.live && isManagerView}
+                className={B.live ? "ml-auto" : ""}
+                compactPhone={B.live && isManagerView}
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
                 disabledHint={createHint}
@@ -5069,7 +5197,7 @@ export function StaffPage() {
               />
             )}
             {/* Live: the card's own header line already says the day is closed. */}
-            {dayClosed && !selCell && !S.live && (
+            {dayClosed && !selCell && !B.live && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("staff.dayClosedBadge")}
@@ -5088,17 +5216,19 @@ export function StaffPage() {
                 hasCellData={hasCellData}
               />
             ) : (
-              <AttendanceTable
-                managerId={supervisorManagerId}
-                selectedDate={selectedDate}
-                pickSupervisor={isManagerView}
-                dayPending={dayPending}
-                dayError={dayError}
-                onDayRetry={() => refetchToday()}
-                onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
-                onGoRequests={S.live ? () => changeTab("requests") : undefined}
-                onToday={S.live ? () => setAutoDay(true) : undefined}
-              />
+              <StaffApiProvider value={S}>
+                <AttendanceTable
+                  managerId={supervisorManagerId}
+                  selectedDate={selectedDate}
+                  pickSupervisor={isManagerView}
+                  dayPending={dayPending}
+                  dayError={dayError}
+                  onDayRetry={() => refetchToday()}
+                  onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
+                  onGoRequests={S.live ? () => changeTab("requests") : undefined}
+                  onToday={liveUI ? () => setAutoDay(true) : undefined}
+                />
+              </StaffApiProvider>
             )}
           </div>
 
@@ -5108,14 +5238,19 @@ export function StaffPage() {
 
       {/* Requests tab */}
       {tab === "requests" && (
-        <DocumentsPanel
-          role={role}
-          myManagerId={auth?.role_id}
-          myTelegramId={auth?.telegram_id}
-          documents={documents}
-          isLoading={documentsLoading}
-          onEdit={startEdit}
-        />
+        <StaffApiProvider value={S}>
+          {filePending.length > 0 && (
+            <OlderRequestsLine docs={filePending} onOpen={(iso) => { pickDate(iso); }} />
+          )}
+          <DocumentsPanel
+            role={role}
+            myManagerId={auth?.role_id}
+            myTelegramId={auth?.telegram_id}
+            documents={documents}
+            isLoading={documentsLoading}
+            onEdit={startEdit}
+          />
+        </StaffApiProvider>
       )}
 
       {/* Cell placement tab — where the cell-less workers an accepted exchange
@@ -5128,7 +5263,7 @@ export function StaffPage() {
               cell picker and CreateMenu are deliberately NOT here: they belong
               to the read-only import view and the document flow. */}
           <div className="flex flex-wrap items-center gap-2">
-            {S.live ? <>{dayControl}{unitPicker}</> : <>
+            {B.live ? <>{dayControl}{unitPicker}</> : <>
               {isManagerView && (
                 <SupervisorSelect
                   value={selectedManagerId}
@@ -5146,17 +5281,19 @@ export function StaffPage() {
             )}
           </div>
 
-          <CellPlacementPanel
-            managerId={supervisorManagerId}
-            selectedDate={selectedDate}
-            canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
-          />
+          <StaffApiProvider value={S}>
+            <CellPlacementPanel
+              managerId={supervisorManagerId}
+              selectedDate={selectedDate}
+              canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
+            />
+          </StaffApiProvider>
         </div>
       )}
 
       {/* Approvals tab */}
       {tab === "approvals" && showApprovalsTab && (
-        <ApprovalsCalendar role={role} supervisors={supervisors} />
+        <ApprovalsCalendar role={role} supervisors={supervisors} liveFrom={liveFrom} />
       )}
 
       {/* Document create / edit overlay (Role Change or People Exchange) */}
@@ -5165,19 +5302,22 @@ export function StaffPage() {
         const docType = editing ? editing.doc_type : docCreate.docType;
         const Cmp = docType === "people_exchange" ? PeopleExchangeCreate : RoleChangeCreate;
         return (
-          <Cmp
-            role={role}
-            managerId={supervisorManagerId}
-            selectedDate={docCreate.date || selectedDate}
-            editDoc={editing}
-            onClose={closeCreate}
-            onSaved={onSavedDoc}
-          />
+          <StaffApiProvider value={apiFor(docCreate.date || selectedDate)}>
+            <Cmp
+              role={role}
+              managerId={supervisorManagerId}
+              selectedDate={docCreate.date || selectedDate}
+              editDoc={editing}
+              onClose={closeCreate}
+              onSaved={onSavedDoc}
+            />
+          </StaffApiProvider>
         );
       })()}
 
       {/* Delete workers modal */}
       {showDeleteModal && (
+        <StaffApiProvider value={apiFor(showDeleteModal)}>
         <DeleteWorkersModal
           managerId={supervisorManagerId}
           managerName={
@@ -5190,6 +5330,7 @@ export function StaffPage() {
           onClose={() => setShowDeleteModal(false)}
           onDeleted={handleDeleted}
         />
+        </StaffApiProvider>
       )}
     </Layout>
   );

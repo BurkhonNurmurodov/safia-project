@@ -72,8 +72,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Cell, LiveAllLeftNotice, LiveDayClose, LiveDeletion, LiveDocument, LivePlacement,
-    RoleProfile,
+    Cell, LiveAllLeftNotice, LiveClockFix, LiveDayClose, LiveDeletion, LiveDocument,
+    LivePlacement, RoleProfile,
 )
 from app.services import cell_hours, verifix_live
 
@@ -121,9 +121,24 @@ def _r(v: Optional[float], n: int = 2) -> Optional[float]:
 # opened, only to people who can open it — a notice must never open onto «no
 # access».
 
+def in_force() -> bool:
+    """/staff reads live days now (`live_day.LIVE_FROM` has come on the plant's
+    clock) — from then on the live day is the real day, so its notices go to
+    everybody who can open /staff, whatever /staff-live's own access says."""
+    from app.services import live_day
+    return verifix_live.now_local().date() >= live_day.LIVE_FROM
+
+
 def lab_open(db: Session) -> bool:
     """The page is opened to somebody but admins — a role on the Access tab, or
-    a person's own grant."""
+    a person's own grant — or /staff reads live days (`in_force`)."""
+    return in_force() or page_opened(db)
+
+
+def page_opened(db: Session) -> bool:
+    """/staff-live itself is opened to somebody but admins — the gate for a
+    notice about a day /staff does NOT read live (a day before the floor: the
+    night shift's last file day runs past midnight into the switch)."""
     from app.capabilities import page_cap
     from app.models import ProfilePermission, UserCapability
     from app.permissions import get_page_access
@@ -138,7 +153,7 @@ def lab_open(db: Session) -> bool:
 
 def can_open(db: Session, key: Optional[str], access: Optional[dict] = None) -> bool:
     """This PROFILE can open the page (its role on the Access tab, or a grant,
-    and no personal deny)."""
+    and no personal deny) — or, once /staff reads live days, /staff itself."""
     from app import identity
     from app.capabilities import caps_for_profile, denied_pages_for_profile, page_cap
     from app.permissions import get_page_access
@@ -147,10 +162,18 @@ def can_open(db: Session, key: Optional[str], access: Optional[dict] = None) -> 
     role, _ = identity.parse_profile_key(key)
     if role == "admin":
         return True
-    if PAGE in denied_pages_for_profile(db, key):
-        return False
+    denied = denied_pages_for_profile(db, key)
     access = access if access is not None else get_page_access(db)
-    return role in access.get(PAGE, []) or page_cap(PAGE) in caps_for_profile(db, key)
+    caps = None
+    for page in ((PAGE, "staff") if in_force() else (PAGE,)):
+        if page in denied:
+            continue
+        if role in access.get(page, []):
+            return True
+        caps = caps if caps is not None else caps_for_profile(db, key)
+        if page_cap(page) in caps:
+            return True
+    return False
 
 
 # ── the day's context ────────────────────────────────────────────────────────
@@ -172,6 +195,7 @@ class Ctx:
     pending_del: dict                  # (manager id, employee id) → LiveDeletion (pending)
     placements: dict                   # (manager id, employee id) → LivePlacement
     windows: dict                      # shift → ("HH:MM", "HH:MM")
+    fixes: dict = field(default_factory=dict)   # employee id → LiveClockFix (the close's answers)
     _persons: dict = field(default_factory=dict)
 
 
@@ -192,6 +216,7 @@ def load(db: Session, day: date, directory: dict, store: dict,
         placements={(p.manager_id, p.employee_id): p
                     for p in db.query(LivePlacement).filter(LivePlacement.day == day).all()},
         windows=cell_hours.defaults(db),
+        fixes={f.employee_id: f for f in db.query(LiveClockFix).filter(LiveClockFix.day == day).all()},
     )
 
 
@@ -278,6 +303,35 @@ def _moves_for(ctx: Ctx, eid: str) -> list:
     return out
 
 
+def _fixed(ctx: Ctx, p: dict, fix) -> dict:
+    """A worker's live day with the brigadir's answer for a MISSING check-out
+    laid over it (`LiveClockFix`, ruling 6 of 2026-10-06). «Exit at HH:MM» ends
+    the day there — the hours are the clock span, since Verifix's «Отработано»
+    needs the check-out it never got; «did not come» makes the day an absence
+    (no hours, counted nowhere). Verifix's own answer is untouched underneath:
+    deleting the fix puts it back."""
+    if fix is None or p["in"] is None:
+        return p
+    p = dict(p)
+    if fix.action == "absent":
+        p.update({"status": "absent", "in": None, "out": None, "hours": None, "so_far": False,
+                  "late": None, "early_in": None, "early_out": None, "missing": False,
+                  "in_src": "manual", "out_src": None, "held": None})
+        return p
+    shift = (ctx.units.get(fix.manager_id) or {}).get("shift")
+    t = _at(ctx, shift, fix.out_time)
+    if t is None or t <= p["in"]:
+        return p
+    early_out = None
+    if p["end"] is not None:
+        delta = (p["end"].replace(second=0, microsecond=0) - t).total_seconds() / 60.0
+        if delta > verifix_live.EARLY_GRACE_MIN:
+            early_out = round(delta)
+    p.update({"status": "left", "out": t, "hours": _h(p["in"], t), "so_far": False,
+              "early_out": early_out, "missing": False, "out_src": "manual", "held": None})
+    return p
+
+
 def person(ctx: Ctx, eid: str) -> Worker:
     """THE worker's live day — memoised per request."""
     if eid in ctx._persons:
@@ -285,7 +339,8 @@ def person(ctx: Ctx, eid: str) -> Worker:
     entry = ctx.store.get(eid) or {}
     rec = entry.get("ts")
     marks = [(datetime.fromisoformat(x[0]), x[1]) for x in entry.get("m") or []]
-    p = verifix_live._person(ctx.day, ctx.now, rec, marks, ctx.formula)
+    p = _fixed(ctx, verifix_live._person(ctx.day, ctx.now, rec, marks, ctx.formula),
+               ctx.fixes.get(eid))
     emp = (ctx.directory.get("emps") or {}).get(eid) or {}
     home_unit, home_cell = ctx.homes.get(eid, (None, None))
     role0 = (rec or {}).get("job") or emp.get("job") or ""

@@ -15,7 +15,8 @@ from typing import Iterable, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import DayApproval, EditRequest, HrDocument
+from app.models import DayApproval, EditRequest, HrDocument, LiveDeletion, LiveDocument
+from app.services.live_day import LIVE_FROM
 
 # The doc types that hold a day back — an explicit whitelist, deliberately
 # spelled out here and imported from nowhere. This module is the leaf EVERY
@@ -44,6 +45,21 @@ def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
         HrDocument.status == "draft",
         HrDocument.doc_type.in_(_REAL_DOC_TYPES),
     ).count()
+    # A LIVE day (from `live_day.LIVE_FROM`) files its requests in the live
+    # tables — the same two kinds, the same meaning. Before the floor those
+    # tables hold only /staff-live's test filings and are never read here.
+    if d >= LIVE_FROM:
+        pending_requests += db.query(LiveDeletion).filter(
+            LiveDeletion.manager_id == manager_id,
+            LiveDeletion.day == d,
+            LiveDeletion.status == "pending",
+        ).count()
+        draft_docs += db.query(LiveDocument).filter(
+            LiveDocument.manager_id == manager_id,
+            LiveDocument.day == d,
+            LiveDocument.status == "draft",
+            LiveDocument.doc_type.in_(_REAL_DOC_TYPES),
+        ).count()
     return {"pending_requests": pending_requests, "draft_docs": draft_docs}
 
 
@@ -89,4 +105,18 @@ def confirmed_pairs(
         HrDocument.date <= date_to,
         HrDocument.doc_type.in_(_REAL_DOC_TYPES),
     ).distinct().all()
-    return closed - set(pend) - set(drafts)
+    held = set(pend) | set(drafts)
+    if date_to >= LIVE_FROM:
+        lo = max(date_from, LIVE_FROM)
+        held |= set(db.query(LiveDeletion.manager_id, LiveDeletion.day).filter(
+            LiveDeletion.status == "pending",
+            LiveDeletion.day >= lo,
+            LiveDeletion.day <= date_to,
+        ).distinct().all())
+        held |= set(db.query(LiveDocument.manager_id, LiveDocument.day).filter(
+            LiveDocument.status == "draft",
+            LiveDocument.day >= lo,
+            LiveDocument.day <= date_to,
+            LiveDocument.doc_type.in_(_REAL_DOC_TYPES),
+        ).distinct().all())
+    return closed - held

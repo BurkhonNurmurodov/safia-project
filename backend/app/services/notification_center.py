@@ -67,7 +67,8 @@ _EXACT = {
     "request_undone": "approvals", "document_rejected": "approvals",
     # Attendance and the day close.
     "day_closed": "day", "day_reopened": "day", "verifix_uploaded": "day",
-    "live_all_left": "day",
+    "live_all_left": "day", "live_all_left_staff": "day", "live_list_open": "day",
+    "live_day_still_open": "day", "live_shift_summary": "day",
     # The live «Verifix to'g'irlash · Jonli» (/staff-live) — /staff's twins.
     "live_exchange_created": "approvals", "live_exchange_approved": "approvals",
     "live_exchange_cancelled": "approvals", "live_role_change_new": "approvals",
@@ -225,13 +226,22 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
         if not mid.isdigit() or not d:
             return "/staff"
         return f"/staff?tab=workers&unit={mid}&date={d}"
-    if kind in ("live_doc", "live_batch"):     # StaffLive.jsx reads ?tab=
-        return "/staff-live?tab=requests"
+    if kind in ("live_doc", "live_batch"):     # Staff.jsx / StaffLive.jsx read ?tab=
+        # Once /staff reads live days (live_day.LIVE_FROM) their requests are
+        # /staff's; before it they were /staff-live's test filings.
+        from app.services import live_staff
+        return "/staff?tab=requests" if live_staff.in_force() else "/staff-live?tab=requests"
     if kind == "live_day":                     # "<manager id>:<YYYY-MM-DD>"
         mid, _, d = sid.partition(":")
+        from app.services import live_day
+        try:
+            live = live_day.is_live(date.fromisoformat(d[:10]))
+        except ValueError:
+            live = False
+        page = "/staff" if live else "/staff-live"
         if not mid.isdigit() or not d:
-            return "/staff-live"
-        return f"/staff-live?tab=workers&unit={mid}&date={d}"
+            return page
+        return f"{page}?tab=workers&unit={mid}&date={d}"
     if kind == "idle":                         # IdleCell.jsx reads ?date=
         return f"/idle-cell?date={sid}"
     if kind == "page" and sid in ("/production", "/concerns", "/notifications",

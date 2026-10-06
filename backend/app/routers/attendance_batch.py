@@ -91,6 +91,22 @@ def _parse_date(s: str) -> date_t:
         raise HTTPException(status_code=400, detail="Invalid date format (expected YYYY-MM-DD)")
 
 
+def _parse_write_date(s: str) -> date_t:
+    """A day this tab may WRITE. From `live_day.LIVE_FROM` a day is read live on
+    «Verifix to'g'irlash» and copied into attendance by the brigadir's close
+    (the operator's ruling 16, 2026-10-06): a Save here would wipe that copy
+    and every placement and exchange in it. An admin corrects a live day by
+    reopening it and acting on that page."""
+    d = _parse_date(s)
+    from app.services import live_day
+    if live_day.is_live(d):
+        raise HTTPException(status_code=409, detail=(
+            "Bu kun jonli o'qiladi: davomat «Verifix to'g'irlash» sahifasida yuritiladi va "
+            "brigadir kunni yopganda o'zi saqlanadi. Tuzatish uchun kunni qayta oching va "
+            "o'sha sahifada o'zgartiring."))
+    return d
+
+
 def _num(v):
     return float(v) if v is not None else None
 
@@ -853,7 +869,7 @@ def read_verifix(
     400 `future` / `no_cells`, 424 `{code, message, status}` when Verifix
     refused or failed — never 502/503, which the client reads as a restart.
     """
-    d = _parse_date(body.date)
+    d = _parse_write_date(body.date)
     if d > datetime.now(verifix.TZ).date():
         raise HTTPException(status_code=400, detail={
             "code": "future", "message": "A day that has not come yet has nothing to read"})
@@ -963,7 +979,7 @@ def remove_upload(
     file's to take), just detached from the upload. Cells a later file re-supplied
     belong to that file and are untouched.
     """
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1073,7 +1089,7 @@ def discard(
     """Throw away the WHOLE day — every file, every adjustment. Attendance that
     was already saved goes too (for supervisors whose day is still open). Use the
     per-upload removal for a single wrong file."""
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1125,7 +1141,7 @@ def update_cells(
     (that is the whole point of the checkbox — it does not change day to day).
     A MOVE stays this-day-only until `permanent`, which also writes the
     supervisor into the registry every other page reads."""
-    d = _parse_date(body.date)
+    d = _parse_write_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1268,7 +1284,7 @@ def add_row(
 ):
     """Hand-add a worker the export missed (a forgotten punch, a late entry).
     Manual rows survive any later re-upload of their cell."""
-    d = _parse_date(body.date)
+    d = _parse_write_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1316,7 +1332,7 @@ def edit_row(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    d = _parse_date(body.date)
+    d = _parse_write_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1377,7 +1393,7 @@ def revert_row(
 ):
     """Drop the admin's edit and take the newer file's values for this worker.
     Only offered on rows where a later upload actually disagreed."""
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1417,7 +1433,7 @@ def delete_row(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1449,7 +1465,7 @@ def delete_cell_day(
     _: dict = Depends(verify_admin),
 ):
     """Drop every worker row of one cell for this day, and the cell with them."""
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
@@ -1496,7 +1512,7 @@ def delete_supervisor_day(
     unconfirmable forever, pointing at worker rows that no longer exist. The day
     is guaranteed OPEN here (`_require_open_day`), so there is no DayApproval to
     remove and no confirmation is being undone."""
-    d = _parse_date(date)
+    d = _parse_write_date(date)
     mgr = db.query(Manager).filter(Manager.id == manager_id).first()
     if not mgr:
         raise HTTPException(status_code=404, detail="Brigadir topilmadi")
@@ -1635,7 +1651,7 @@ def save(
     Supervisors whose cells did not change are neither rewritten nor pinged, so
     saving twice for a day fed by two files is safe. Closed days are skipped and
     returned so the admin can re-open them and press Save again."""
-    d = _parse_date(body.date)
+    d = _parse_write_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")

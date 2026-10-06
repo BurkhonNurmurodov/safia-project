@@ -419,6 +419,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/staff-live/requests/{}/approve",       "attendance", "lab.live_request_approved"),
     (("POST",),   "/api/staff-live/requests/{}/reject",        "attendance", "lab.live_request_rejected"),
     (("POST",),   "/api/staff-live/requests/{}/undo",          "attendance", "lab.live_request_undone"),
+    (("POST",),   "/api/staff-live/daily/clock-fix",           "attendance", "lab.live_clock_fixed"),
     (("POST",),   "/api/staff-live/daily/close",               "attendance", "lab.live_day_closed"),
     (("POST",),   "/api/staff-live/approvals/reopen",          "attendance", "lab.live_day_reopened"),
     (("PUT",),    "/api/staff-live/cell-placement",            "attendance", "lab.live_cells_placed"),

@@ -4548,6 +4548,65 @@ class LivePlacement(Base):
     updated_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class LiveClockFix(Base):
+    """A brigadir's answer, at the day's close, for a worker Verifix shows with
+    NO check-out (the operator, 2026-10-06, ruling 6: «hold the close and name
+    them»): the exit time they set, or that the worker did not count as having
+    come. One per (shift-day, worker) — a check-out is a fact about the PERSON,
+    whichever unit their name ends on. Read on every request
+    (`live_staff.person`), so a later Verifix check-out does not override it
+    and deleting the row puts Verifix's answer back."""
+    __tablename__ = "live_clock_fixes"
+    __table_args__ = (UniqueConstraint("day", "employee_id", name="uq_live_clock_fix"),)
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, nullable=False, index=True)          # the unit that answered
+    day         = Column(Date, nullable=False, index=True)
+    employee_id = Column(String, nullable=False)
+    worker_name = Column(String, nullable=True)
+    action      = Column(String, nullable=False)                       # "exit" | "absent"
+    out_time    = Column(String, nullable=True)                        # "HH:MM" (exit only)
+    created_by  = Column(String, nullable=True)
+    created_tg  = Column(BigInteger, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveProjection(Base):
+    """The copy of a closed LIVE unit-day into `attendance` (services/
+    live_projection, from 2026-10-07): what was written, so a re-copy writes
+    only when something moved, and the two facts the copy itself cannot keep —
+    the rows the exchanged workers would have had on their OWN unit (what
+    `/workers` reads, `exchange_rewind`) and every worker the read filed under
+    the unit's cells (the «Ish grafigi» list, `kelish`). Deleted with the copy
+    on a reopen."""
+    __tablename__ = "live_projections"
+    __table_args__ = (UniqueConstraint("manager_id", "day", name="uq_live_projection"),)
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, nullable=False, index=True)
+    day         = Column(Date, nullable=False, index=True)
+    digest      = Column(String, nullable=False)
+    rows        = Column(Integer, nullable=False, default=0)
+    original    = Column(JSONB, nullable=False, default=list)          # rewind rows (/workers)
+    roster      = Column(JSONB, nullable=False, default=list)          # [[name, cell code], …]
+    copied_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LiveDayNotice(Base):
+    """A once-per-(kind, unit, shift-day) notice of the live «Verifix
+    to'g'irlash» — «your list is live» at the day's first clock-in, the
+    reminder at the next shift's opening, the admins' per-shift line (unit 0).
+    Written BEFORE the message goes, so two passes can never send it twice."""
+    __tablename__ = "live_day_notices"
+    __table_args__ = (UniqueConstraint("kind", "manager_id", "day", name="uq_live_day_notice"),)
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    kind       = Column(String, nullable=False)        # "first_in" | "still_open" | "shift_summary:<shift>"
+    manager_id = Column(Integer, nullable=False)
+    day        = Column(Date, nullable=False)
+    sent_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class VerifixProbe(Base):
     """What one Verifix API method answered the last time the «Verifix (test)»
     section asked it (`services/verifix_explore.py`) — one row per method,

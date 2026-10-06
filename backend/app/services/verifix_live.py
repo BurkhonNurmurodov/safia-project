@@ -342,7 +342,8 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
 
 
 def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
-              unit_id: Optional[int] = None, units_read=(), all_units=()) -> dict:
+              unit_id: Optional[int] = None, units_read=(), all_units=(),
+              homes: Optional[dict] = None) -> dict:
     """Read `ids` on `day` from Verifix and fold them into the day's stored read.
 
     `unit_id` None = the job's read: the marks read since the last one only
@@ -396,6 +397,12 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
             m = marks.get(eid, [])
         uniq = {(x[0], x[1]): x for x in m}
         emps[eid] = {"at": at_iso, "ts": ts.get(eid), "m": [uniq[k] for k in sorted(uniq)]}
+        # The cell the directory put them in AT this read — the day's own
+        # placement, which the directory (current only) forgets by tomorrow:
+        # the «Ish grafigi» list reads it for a live day (`kelish`).
+        home = (homes or {}).get(eid)
+        if home:
+            emps[eid]["c"] = home[1]
     cur["emps"] = emps
     if unit_id is None:
         units = dict(cur.get("units") or {})
@@ -837,7 +844,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         lk = _unit_lock((manager_id, day))
         if lk.acquire(blocking=False):
             try:
-                data = _read_day(db, cfg, day, ids, unit_id=manager_id)
+                data = _read_day(db, cfg, day, ids, unit_id=manager_id, homes=homes)
             except verifix.VerifixError as exc:
                 _note_error(db, key, exc)
                 if covered is None:
@@ -897,11 +904,28 @@ def _due_days(db: Session, shifts: set, now_tz: datetime) -> dict[date, float]:
     return out
 
 
-def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, close: dict,
-                     last_out: datetime) -> bool:
-    """Tell the unit's brigadir, ONCE, that everybody who came has left. The row
-    is committed first: it is what keeps a second pass from sending it again."""
+def _claim(db: Session, kind: str, manager_id: int, day: date) -> bool:
+    """Write the once-only marker of a live-day notice; False = already sent.
+    Committed BEFORE the message goes, so two passes can never send it twice."""
     from sqlalchemy.exc import IntegrityError
+    from app.models import LiveDayNotice
+    db.add(LiveDayNotice(kind=kind, manager_id=manager_id, day=day))
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
+def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, close: dict,
+                     last_out: datetime, ud: Optional[dict] = None) -> bool:
+    """Tell the unit's brigadir, ONCE, that everybody who came has left. The row
+    is committed first: it is what keeps a second pass from sending it again.
+    On /staff's live days (`live_day.LIVE_FROM`) the message names who has no
+    check-out and says when nobody typed «Bugungi fakt» (rulings 18 and 20)."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services import live_day
     db.add(LiveAllLeftNotice(manager_id=manager_id, day=day, came=counts["came"],
                              missing=counts["missing"], pending=close["pending"], last_out=last_out))
     try:
@@ -911,11 +935,24 @@ def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, clos
         return False
     try:
         from app.routers.staff import _notify_supervisor_all
-        _notify_supervisor_all(db, manager_id, "live_all_left", {
+        params = {
             "date": day.strftime("%d.%m.%Y"), "came": counts["came"], "last_out": _hm(last_out),
             # A line whose one value is blank is dropped (`_render_body`).
             "missing": counts["missing"] or "", "pending": close["pending"] or "",
-        }, "info", subject=("live_day", f"{manager_id}:{day.isoformat()}"))
+        }
+        nkey = "live_all_left"
+        if live_day.is_live(day):
+            nkey = "live_all_left_staff"
+            names = [r["worker_name"] for r in (ud or {}).get("workers") or []
+                     if r.get("missing") and r.get("split_of") is None]
+            if names:
+                tail = f" +{len(names) - 5}" if len(names) > 5 else ""
+                params["missing"] = f"{len(names)} — {', '.join(names[:5])}{tail}"
+            from app.services import zagruzka_source
+            typed = zagruzka_source.typed_people(db, [manager_id], day, day)
+            params["no_people"] = "" if typed else day.strftime("%d.%m.%Y")
+        _notify_supervisor_all(db, manager_id, nkey, params, "info",
+                               subject=("live_day", f"{manager_id}:{day.isoformat()}"))
         db.commit()
     except Exception:  # noqa: BLE001 — a DM that fails must not stop the pass
         db.rollback()
@@ -924,34 +961,57 @@ def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, clos
 
 
 def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
-    """Every unit whose current shift-day this is and whose people have all
-    left gets its notice — while the last exit is recent (`NOTICE_WINDOW_MIN`),
-    so a deploy in the afternoon never tells last night's brigadirs."""
-    from app.services import live_staff
+    """After a read of `day`: re-copy the closed live units whose current day it
+    is (ruling 13 — the copy follows Verifix until the next shift-day opens),
+    tell a brigadir «your list is live» at the day's first clock-in, and tell
+    every unit whose people have all left — while the last exit is recent
+    (`NOTICE_WINDOW_MIN`), so a deploy in the afternoon never tells last
+    night's brigadirs."""
+    from app.services import live_day, live_projection, live_staff
     row = _row(db, _day_key(day))
     store = ((row.data or {}).get("emps") or {}) if row else {}
     if not store:
         return 0
+    ctx = live_staff.load(db, day, directory, store)
+    current = [m for m, d in unit_days.items() if d == day]
+    if live_day.is_live(day) and current:
+        live_projection.refresh(db, ctx, current)
     # Nothing is said while the page is admin-only, and only to a brigadir who
     # can open it — the notice is not written either, so the day is told once
     # the page is opened (the operator: «as soon as we open this page»).
-    if not live_staff.lab_open(db):
+    if not (live_day.is_live(day) or live_staff.page_opened(db)):
         return 0
     from app import identity
     from app.permissions import get_page_access
     access = get_page_access(db)
     done = {m for (m,) in db.query(LiveAllLeftNotice.manager_id).filter(LiveAllLeftNotice.day == day)}
     closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == day)}
-    ctx = live_staff.load(db, day, directory, store)
+    from app.models import LiveDayNotice
+    told_in = {m for (m,) in db.query(LiveDayNotice.manager_id).filter(
+        LiveDayNotice.kind == "first_in", LiveDayNotice.day == day)}
     now = ctx.now
     sent = 0
-    for mid, d in unit_days.items():
-        if d != day or mid in done or mid in closed:
+    for mid in current:
+        if mid in closed and mid in done:
             continue
         if not live_staff.can_open(db, identity.profile_key("supervisor", mid), access):
             continue
         ud = live_staff.unit_day(ctx, mid)
         if not ud["workers"] and not ud["extras"]:
+            continue
+        # «Your list is live» — once, at the day's first clock-in (ruling 18).
+        if (live_day.is_live(day) and mid not in told_in and mid not in closed
+                and ud["counts"]["came"] and _claim(db, "first_in", mid, day)):
+            try:
+                from app.routers.staff import _notify_supervisor_all
+                _notify_supervisor_all(db, mid, "live_list_open", {
+                    "date": day.strftime("%d.%m.%Y"), "came": ud["counts"]["came"]}, "info",
+                    subject=("live_day", f"{mid}:{day.isoformat()}"))
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("staff-live: the «list is live» notice to unit %s failed", mid)
+        if mid in done or mid in closed:
             continue
         cl = live_staff.close_state(ud, day, None, None, live_staff.pending_count(db, mid, day))
         if cl["state"] != "all_left" or not cl.get("last_out"):
@@ -959,11 +1019,71 @@ def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
         last_out = datetime.fromisoformat(cl["last_out"])
         if (now - last_out).total_seconds() > NOTICE_WINDOW_MIN * 60:
             continue
-        if _notify_all_left(db, mid, day, ud["counts"], cl, last_out):
+        if _notify_all_left(db, mid, day, ud["counts"], cl, last_out, ud):
             sent += 1
             log.info("staff-live: unit %s told everybody left on %s (last %s, came %s)",
                      mid, day, _hm(last_out), ud["counts"]["came"])
     return sent
+
+
+REMIND_WINDOW_MIN = 180   # the next-shift reminder goes out within this long of the shift's opening
+
+
+def _reminders(db: Session, units: dict, with_cells: set, by_shift: dict,
+               directory: dict, now_tz: datetime) -> int:
+    """When a shift opens and a unit's PREVIOUS live day of that shift is still
+    open with people on it: remind the brigadir and the shift manager, once
+    (ruling 18), and send the admins ONE line for the shift — how many units
+    closed it and which did not (their per-unit «day closed» DMs are folded
+    into it)."""
+    from app.services import live_day, live_staff
+    from app.models import LiveDayNotice
+    defaults = cell_hours.defaults(db)
+    told = 0
+    for s, cur in by_shift.items():
+        prev = cur - timedelta(days=1)
+        if not live_day.is_live(prev):
+            continue
+        fr = live_overview.shift_frame(now_tz, s, defaults.get(s) or ("08:00", "20:00"))
+        since = (now_tz - datetime.fromisoformat(fr["started_at"])).total_seconds() / 60.0
+        if since < 0 or since > REMIND_WINDOW_MIN:
+            continue
+        summary = f"shift_summary:{s}"
+        if db.query(LiveDayNotice.id).filter(LiveDayNotice.kind == summary, LiveDayNotice.manager_id == 0,
+                                             LiveDayNotice.day == prev).first():
+            continue
+        row = _row(db, _day_key(prev))
+        store = ((row.data or {}).get("emps") or {}) if row else {}
+        if not store:
+            continue
+        ctx = live_staff.load(db, prev, directory, store)
+        closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == prev)}
+        mids = sorted((m for m in with_cells if (units[m]["shift"] or 1) == s),
+                      key=lambda m: units[m]["name"] or "")
+        total, open_units = 0, []
+        from app.routers import staff_live
+        for m in mids:
+            ud = live_staff.unit_day(ctx, m)
+            if m not in closed and not (ud["counts"]["came"] or ud["counts"].get("extra_came")):
+                continue
+            total += 1
+            if m in closed:
+                continue
+            open_units.append(m)
+            if _claim(db, "still_open", m, prev):
+                staff_live._notify(db, "live_day_still_open",
+                                   {"date": prev.strftime("%d.%m.%Y"), "unit": units[m]["name"] or f"#{m}"},
+                                   units=(m,), supervisors=(m,), admins=False, ntype="warning",
+                                   subject=("live_day", f"{m}:{prev.isoformat()}"))
+                told += 1
+        if total and _claim(db, summary, 0, prev):
+            names = [units[m]["name"] or f"#{m}" for m in open_units]
+            tail = f" +{len(names) - 12}" if len(names) > 12 else ""
+            staff_live._notify(db, "live_shift_summary", {
+                "shift": s, "date": prev.strftime("%d.%m.%Y"), "closed": total - len(open_units),
+                "total": total, "open_units": (", ".join(names[:12]) + tail) if names else ""},
+                admins=True, ntype="info", subject=None)
+    return told
 
 
 def _pass(db: Session) -> None:
@@ -1010,13 +1130,22 @@ def _pass(db: Session) -> None:
         ids = sorted({eid for eid, (m, _) in homes.items() if m in read_units} | _doc_ids(db, day))
         t0 = _time.monotonic()
         try:
-            _read_day(db, cfg, day, ids, units_read=read_units, all_units=with_cells)
+            _read_day(db, cfg, day, ids, units_read=read_units, all_units=with_cells, homes=homes)
         except verifix.VerifixError as exc:
             _note_error(db, key, exc)
             log.warning("staff-live: reading %s failed (%s: %s)", day, exc.code, exc.message)
             continue
         log.info("staff-live: read %s — %d people in %.1f s", day, len(ids), _time.monotonic() - t0)
-        sent += _notices(db, day, unit_days, directory)
+        try:
+            sent += _notices(db, day, unit_days, directory)
+        except Exception:  # noqa: BLE001 — the next pass tries again
+            db.rollback()
+            log.exception("staff-live: the notices after reading %s failed", day)
+    try:
+        _reminders(db, units, with_cells, by_shift, directory, now_tz)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("staff-live: the next-shift reminders failed")
     if sent:
         from app.services import action_log
         action_log.record_system("attendance", "lab.live_all_left_notified", db,

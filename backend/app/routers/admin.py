@@ -105,6 +105,13 @@ async def upload_verifix(
             results.append({"file": f.filename, "status": "error", "detail": f"Manager ID {mgr_id} not found"})
             continue
         mgr_name = manager.name      # snapshot, before the commit below expires it
+        from app.services import live_day
+        if live_day.is_live(date):
+            # A live day is read live and copied at the brigadir's close — a file
+            # here would wipe that copy (ruling 16, 2026-10-06).
+            results.append({"file": f.filename, "status": "error",
+                            "detail": "Bu kun jonli o'qiladi — «Verifix to'g'irlash» sahifasida."})
+            continue
 
         db.query(Attendance).filter(
             Attendance.manager_id == mgr_id,
@@ -219,6 +226,14 @@ def delete_attendance(
         db.query(DayApproval).filter(
             DayApproval.manager_id == mgr_id, DayApproval.date == d,
         ).delete(synchronize_session=False)
+        from app.services import live_day
+        if live_day.is_live(d):
+            # A live day's close and its copy go with the day it stands for.
+            from app.models import LiveDayClose, LiveProjection
+            db.query(LiveDayClose).filter(LiveDayClose.manager_id == mgr_id,
+                                          LiveDayClose.day == d).delete(synchronize_session=False)
+            db.query(LiveProjection).filter(LiveProjection.manager_id == mgr_id,
+                                            LiveProjection.day == d).delete(synchronize_session=False)
         db.query(DailySubmission).filter(
             DailySubmission.manager_id == mgr_id, DailySubmission.date == d,
         ).delete(synchronize_session=False)

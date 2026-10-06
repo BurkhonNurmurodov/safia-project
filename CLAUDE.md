@@ -7288,6 +7288,10 @@ reads it yet except the card's own test, so no figure on the platform moves.
 
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
+**From `live_day.LIVE_FROM` (2026-10-07) this tab writes no live day** — the
+brigadir's close copies it (see «/staff reads TODAY live»). Everything below
+describes the days before the floor.
+
 From **2026-10-04** (the operator: «no more Excel documents for the загрузка»)
 the admin «Davomat» tab no longer takes the «Отчёт по посещениям сотрудников»
 Excel. Its one button, «Verifix'dan olish», opens a plant → shift → brigadir →
@@ -7761,13 +7765,112 @@ rights — over a different source, and it is being built to REPLACE /staff.
     one `BADGES` map, polled only while the viewer may open the page); it left
     the «Verifix (test)» group and the Access tab's TEST chip (`tier` dropped in
     `config/pages.js`). The label keeps «· Jonli» while both pages exist.
-  - **Still NOT done, deliberately — the replacement itself**: the загрузка,
-    `build_metrics_list`, `/production`'s lock, `/idle-cell`'s lock, the gap
-    reports and the admin «Davomat» Save all read `attendance` + `DayApproval`;
-    a live document or a live day close moves none of them. Retiring /staff
-    means pointing that ladder at the live tables (or the admin read replaying
-    live documents) — ask before wiring it. `/daily` for a supervisor still
-    renders the file source.
+  - **The replacement itself landed on 2026-10-07** — see «/staff reads TODAY
+    live» below: /staff reads its live days through these doors, and a live
+    close copies the day into `attendance` + `DayApproval`, which is how the
+    загрузка, the locks and the gap reports reach it with no change of theirs.
+
+## /staff reads TODAY live (`live_day.LIVE_FROM`, from 2026-10-07)
+
+The operator (2026-10-06): «can we turn current verifix edit page supports live
+editing for today? … At the end of the shift, when everyone is left and
+supervisor closed the day, the workload will be ready. There won't be any need
+to manually press any button or download excel sheets.» Twenty questions were
+asked one by one; `docs/plan-live-staff-today.md` is the record of every answer.
+`/staff-live` is LEFT AS IT IS (its fate is a later decision); `/staff` reads its
+live days through the same doors and tables, so the two pages show one today.
+
+- **`services/live_day.py` is THE floor** — `LIVE_FROM = 2026-10-07`, shift 1's
+  day and shift 2's night of the 7th: the first shift-day of either shift to
+  open after the deploy. A leaf (`day_state` imports it), a constant with no
+  override, never moved later. A day before it keeps the file flow exactly as
+  filed; a day on or after it is a LIVE day for the whole plant.
+- **The page picks its source PER DAY** — `StaffPage` in `pages/Staff.jsx`:
+  `B` is the page's own API (`/staff` = file, `/staff-live` = live chrome) and
+  owns every remembered key; `S = apiFor(selectedDate)` is the data source, and
+  each tab, modal and the calendar is wrapped in `<StaffApiProvider value={S}>`.
+  `TODAY_STAFF_API` (`context/StaffApiContext.jsx`) is the live doors and cache
+  with /staff's own keys and `chrome: false` — /staff's own table plus ONE
+  status column (inside · break · left · no check-out · moved, ruling 3), never
+  the live page's strip, figures or freshness line. Once a unit's own shift-day
+  (`/api/staff-live/today`) is live, /staff opens on it and steps with
+  `DayStepper` (max = that day); until then the page is exactly what it was.
+  `GET /api/staff-live/live-from` serves the floor and the plant's date. The live
+  router's page gate is `require_page("staff-live", "staff")`, and a grant at
+  "all" on staff/daily widens it as on /staff. `/daily` reads a live day the
+  same way (table, documents, close check) but keeps its own default date.
+- **The close COPIES the day** (`services/live_projection.py`, ruling 1):
+  `POST /api/staff-live/daily/close` — and `/api/staff/daily/close`, which
+  hands a live day to it, so every door that closes a day reaches it — reads
+  Verifix once more (`force`), then refuses while anybody is inside, on a break
+  or due, while a counted worker has no cell, while somebody has no check-out
+  the brigadir has not answered, or when Verifix is unreachable and the stored
+  read is older than `CLOSE_READ_MAX_MIN` (15, ruling 14). Then `LiveDayClose`
+  + `DayApproval` + the rows. The rows are the file's shape: «HH:MM - HH:MM
+  (Явка)» for a whole day (the row's own hours in the bracket for a stint, a
+  half or a brigadir's exit), «Отработано» hours at two decimals half up, the
+  file's early/effective arithmetic, the absence mark of a day nobody clocked
+  («X», a leave letter, «—» off), a split's `hc_weight` + `split_of`, a whole-day
+  task move zeroed («X», 0), and a nameless hours-only row for what a move left
+  here under another unit's name — in the worker's home cell on their own unit.
+  `LiveProjection` records the digest, the `/workers` rewind rows and the
+  «Ish grafigi» roster. **Consequence to know: nothing writes attendance for a
+  live day until its brigadir closes it** — `build_metrics_list` already gated
+  on the close, so the загрузка of an unclosed day was blank before too.
+- **The copy follows Verifix until the unit's next shift-day opens**
+  (ruling 13): the minute job (`verifix_live._notices`) re-copies every closed
+  unit whose CURRENT shift-day it read, writing only when the digest moved; a
+  decision on any document of a live day (approve, un-post, delete, a deletion
+  request, the bot's card tap) re-copies the closed units of that day
+  (`staff_live._recopy`). After the next shift opens the job stops reading the
+  day, so its copy freezes. **A reopen deletes the copy and `DayApproval`**
+  (`unproject`); `/api/staff/approvals/reopen` (/production, /idle-cell, the
+  admin tab) hands a live day to the live reopen. The Jurnal's undo refuses a
+  live day (`action_undo.LIVE_DAY`).
+- **No check-out at the close** (ruling 6): `GET /api/staff-live/daily/close-check`
+  is THE gate the dialog shows (`components/staff/LiveCloseCheck.jsx`,
+  `useLiveCloseCheck`): the read's time, who keeps the day open, who has no
+  cell, and everybody who came, has no exit and whose shift is over — each with
+  an exit-time field (default: the schedule's end) and «Kelmagan».
+  `POST /daily/clock-fix` stores the answer in `live_clock_fixes` (one per
+  shift-day and worker, `clear` takes it back); `live_staff._fixed` lays it over
+  Verifix's day on every read — the exit sets the hours to the clock span, «did
+  not come» makes it an absence. `ConfirmDialog` gained `confirmDisabled` for
+  this. Corrections otherwise come from Verifix only (ruling 7).
+- **One truth per live day.** `day_state.pending_counts` / `confirmed_pairs`
+  count live drafts and pending deletions from the floor, so a closed live day
+  is «closed» until they are decided and then «confirmed» (ruling 11 — pending
+  requests never block the close). The /staff calendar merges the file calendar
+  (days before the floor) with the live one; the requests tab follows the day's
+  source and names the file register's still-pending requests with a way there
+  (`OlderRequestsLine`); the sidebar badge counts both registers.
+- **Notices** (ruling 18): `live_staff.lab_open` is true from the floor (and
+  `can_open` admits /staff's openers), so the live page's notices reach /staff's
+  users. New keys: `live_list_open` («your list is live», once at the day's
+  first clock-in), `live_all_left_staff` (everybody left, naming who has no
+  check-out and saying when nobody typed «Bugungi fakt», ruling 20),
+  `live_day_still_open` (to the brigadir and the shift manager when the next
+  shift opens on an unclosed day, within `REMIND_WINDOW_MIN`), and
+  `live_shift_summary` (ONE line per shift to the admins at that moment —
+  their per-unit «day closed» DMs are bell-only on a live day). Once-only via
+  `live_day_notices`. The «everybody left» notice of a day before the floor
+  stays behind the old page gate (`page_opened`) — the night of the 6th runs
+  past midnight into the switch.
+- **The admin «Davomat» tab refuses a live day** (`attendance_batch._parse_write_date`,
+  ruling 16; the legacy per-supervisor upload too) — an admin corrects a live
+  day by reopening it and acting on /staff. The cleanup tool deletes a live
+  day's close and copy with it. The «Verifix data uploaded» DM therefore no
+  longer happens for live days.
+- **Readers of the file that moved**: «Ish grafigi» / T11 read a live day's
+  roster off its copy (`kelish._live_rosters` — so a day counts there once
+  closed); `/workers`' original-brigadir rewind reads the copy's `original`
+  rows (`exchange_rewind`); each stored read entry now carries the cell it was
+  read in (`emps[eid].c`). The live card links, the bell queue and the
+  notification links open /staff for a live day.
+- Not changed: the typed «Bugungi fakt» people and SAP minutes (ruling 20);
+  ШТАТКА on /production, /live and the Overview trend read the copy, i.e.
+  after the close (ruling 19); the whole-cell per-day routing of the Davomat
+  tab is gone with it (ruling 17).
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 

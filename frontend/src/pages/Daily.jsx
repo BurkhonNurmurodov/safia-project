@@ -22,6 +22,8 @@ import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
+import LiveCloseCheck, { useLiveCloseCheck } from "../components/staff/LiveCloseCheck";
+import { StaffApiProvider, TODAY_STAFF_API } from "../context/StaffApiContext";
 import api from "../utils/api";
 import { catColor } from "../components/idle/categories";
 import {
@@ -174,6 +176,17 @@ function SupervisorDaily() {
   useEffect(() => { if (drillDate) setDate(drillDate); }, [drillDate]);                     // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = !!managerId && !!date;
+  // A day from `live_day.LIVE_FROM` on is read live (the operator's rulings of
+  // 2026-10-06): its table is the live day, and its close waits on the live
+  // check. The floor is the server's.
+  const { data: liveFloor } = useQuery({
+    queryKey: ["staff-live-from"],
+    queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
+    staleTime: 30 * 60_000,
+    retry: 1,
+  });
+  const dayLive = !!liveFloor?.live_from && !!date && date >= liveFloor.live_from;
+  const dayApi = dayLive ? TODAY_STAFF_API : null;
 
   const { data: supervisors = [] } = useQuery({
     queryKey: ["staff-supervisors"],
@@ -192,9 +205,12 @@ function SupervisorDaily() {
     enabled,
   });
 
+  // A live day's documents are the live register's (`since` = the floor).
   const { data: allDocs = [] } = useQuery({
-    queryKey: ["staff-documents"],
-    queryFn: () => api.get("/api/staff/documents").then(r => r.data),
+    queryKey: dayLive ? ["live:staff-documents", liveFloor.live_from] : ["staff-documents", null],
+    queryFn: () => (dayLive
+      ? api.get("/api/staff-live/documents", { params: { since: liveFloor.live_from } })
+      : api.get("/api/staff/documents")).then(r => r.data),
     enabled,
   });
 
@@ -212,6 +228,7 @@ function SupervisorDaily() {
     qc.invalidateQueries({ queryKey: ["approved-cells"] });
   };
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const liveCheck = useLiveCloseCheck(managerId, date, dayLive && showCloseModal);
   const [closeErr, setCloseErr] = useState("");
   // Telegram's iOS WebView silently suppresses window.confirm, so on the
   // platform's primary device a confirm-gated button simply does nothing. Both
@@ -509,24 +526,32 @@ function SupervisorDaily() {
       {/* Full attendance table — same component as Staff page Workers tab */}
       <div className="rounded-xl mb-4"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflow: "visible" }}>
-        <AttendanceTable managerId={managerId} selectedDate={date} pickSupervisor={!ownUnitOnly} />
+        <StaffApiProvider value={dayApi}>
+          <AttendanceTable managerId={managerId} selectedDate={date} pickSupervisor={!ownUnitOnly} />
+        </StaffApiProvider>
       </div>
       </>
       )}
 
       {/* Change-document view modal */}
-      {viewDocId && <DocumentViewModal docId={viewDocId} onClose={() => setViewDocId(null)} />}
+      {viewDocId && (
+        <StaffApiProvider value={dayApi}>
+          <DocumentViewModal docId={viewDocId} onClose={() => setViewDocId(null)} />
+        </StaffApiProvider>
+      )}
 
       {/* Delete workers modal */}
       {showDeleteModal && (
-        <DeleteWorkersModal
-          managerId={managerId}
-          managerName={ownUnitOnly ? (auth?.name || "") : selectedSupName}
-          date={date}
-          isAdmin={canDeleteRows}
-          onClose={() => setShowDeleteModal(false)}
-          onDeleted={handleDeleted}
-        />
+        <StaffApiProvider value={dayApi}>
+          <DeleteWorkersModal
+            managerId={managerId}
+            managerName={ownUnitOnly ? (auth?.name || "") : selectedSupName}
+            date={date}
+            isAdmin={canDeleteRows}
+            onClose={() => setShowDeleteModal(false)}
+            onDeleted={handleDeleted}
+          />
+        </StaffApiProvider>
       )}
 
       {/* Close-the-day confirmation modal. The second line — «leaders entered
@@ -540,9 +565,11 @@ function SupervisorDaily() {
         onConfirm={() => closeMut.mutate()}
         title={t("daily.closeConfirmTitle")}
         message={<>
-          {t("daily.closeConfirmText")}
+          {t(dayLive ? "staffClose.confirm" : "daily.closeConfirmText")}
           <CloseDayIdleNote managerId={managerId} date={date} />
+          {dayLive && showCloseModal && <LiveCloseCheck managerId={managerId} date={date} />}
         </>}
+        confirmDisabled={dayLive && liveCheck.data?.closable !== true}
         confirmLabel={closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
         cancelLabel={t("daily.cancel")}
         loading={closeMut.isPending}
@@ -554,7 +581,7 @@ function SupervisorDaily() {
         onCancel={() => { setReopenErr(""); setShowReopen(false); }}
         onConfirm={() => reopenMut.mutate()}
         title={t("daily.reopenDay")}
-        message={t("staff.apprReopenConfirm")}
+        message={t(dayLive ? "staffClose.reopenConfirm" : "staff.apprReopenConfirm")}
         confirmLabel={t("daily.reopenDay")}
         cancelLabel={t("daily.cancel")}
         loading={reopenMut.isPending}

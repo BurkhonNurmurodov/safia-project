@@ -636,7 +636,21 @@ def send_live_document_to_admins(db, doc) -> set[int]:
                                    skip_telegram_id=doc.created_by_telegram_id))
     return _broadcast(db, "live_document", doc.id, _live_document_data(db, doc),
                       _render_live_document, extra_recipients=_live_openers(db, extra),
-                      panel="/staff-live?tab=requests")
+                      panel=_live_panel(doc.day))
+
+
+def _live_panel(day) -> str:
+    """Where a live card's «Open panel» goes: /staff for a live day of /staff
+    (`live_day.LIVE_FROM` on), /staff-live for its test days before."""
+    from app.services import live_day
+    try:
+        from datetime import date as _date
+        d = day if isinstance(day, _date) else _date.fromisoformat(str(day)[:10])
+    except (TypeError, ValueError):
+        d = None
+    if live_day.is_live(d):
+        return f"/staff?tab=requests&date={d.isoformat()}"
+    return "/staff-live?tab=requests"
 
 
 def send_live_batch_to_admins(db, batch_id, manager_id, day, supervisor_name,
@@ -659,7 +673,7 @@ def send_live_batch_to_admins(db, batch_id, manager_id, day, supervisor_name,
     return _broadcast(db, "live_batch", batch_id, data, _render_live_batch,
                       extra_recipients=_live_openers(
                           db, _grantee_recipients(db, CAP_REQUESTS_APPROVE, manager_id)),
-                      panel="/staff-live?tab=requests")
+                      panel=_live_panel(day))
 
 
 def _leader_dispute_data(db, d) -> dict:
@@ -1316,6 +1330,7 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
                 staff_live._approve(doc, caller, db)
                 db.commit()
                 staff_live._notify_doc(db, doc, "approved", int(caller["sub"]))
+                staff_live._recopy(db, doc.day)
             else:  # rejected → the draft stays, as a rejected record
                 staff_live._reject(doc, caller, db)
                 db.commit()

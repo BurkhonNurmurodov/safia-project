@@ -42,9 +42,15 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
-from app.services import action_log, shift_scope
+from app.services import action_log, live_day, shift_scope
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
+
+def _plant_today() -> date:
+    """Today on the plant's wall clock (Tashkent) — never the box's zone."""
+    from app.services import verifix_live
+    return verifix_live.now_local().date()
+
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
 
@@ -244,6 +250,34 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("Келганларнинг ҳаммаси ишдан кетди", "Сана: {date} | Келганлар: {came} | Охирги кетган: {last_out}\nЧиқиш белгиси йўқ: {missing}\nТасдиқ кутаётган ўзгаришлар: {pending}\nКунни ёпиш мумкин."),
         "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\nДень можно закрыть."),
         "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\nThe day can be closed."),
+    },
+    # /staff's live days (live_day.LIVE_FROM, the operator's ruling 18 of
+    # 2026-10-06). `{no_people}` is the date when nobody typed «Bugungi fakt»
+    # (blank otherwise, which drops the line): the close copies attendance and
+    # never the typed people, so such a unit's load stays blank (ruling 20).
+    "live_all_left_staff": {
+        "uz": ("Kelganlarning hammasi ishdan ketdi", "Sana: {date} | Kelganlar: {came} | Oxirgi ketgan: {last_out}\nChiqish belgisi yo'q: {missing}\nTasdiq kutayotgan o'zgarishlar: {pending}\n«Bugungi fakt» kiritilmagan ({no_people}) — kun yopilsa ham zagruzka bo'sh qoladi.\nKunni «Verifix to'g'irlash»da yoping — yopilishi bilan zagruzka hisoblanadi."),
+        "uz_cyrl": ("Келганларнинг ҳаммаси ишдан кетди", "Сана: {date} | Келганлар: {came} | Охирги кетган: {last_out}\nЧиқиш белгиси йўқ: {missing}\nТасдиқ кутаётган ўзгаришлар: {pending}\n«Бугунги факт» киритилмаган ({no_people}) — кун ёпилса ҳам загрузка бўш қолади.\nКунни «Verifix тўғирлаш»да ёпинг — ёпилиши билан загрузка ҳисобланади."),
+        "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\n«Bugungi fakt» не заполнен ({no_people}) — загрузка останется пустой и после закрытия.\nЗакройте день в «Verifix to'g'irlash» — загрузка посчитается сразу."),
+        "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\n«Bugungi fakt» not typed ({no_people}) — the load stays blank even once the day is closed.\nClose the day on «Verifix to'g'irlash» — the load is counted at once."),
+    },
+    "live_list_open": {
+        "uz": ("Bugungi davomat jonli", "Sana: {date} | Kelganlar: {came}\nAlmashinuv va yacheykalar shu kunning o'zida «Verifix to'g'irlash» sahifasida — ertangi faylni kutish shart emas."),
+        "uz_cyrl": ("Бугунги давомат жонли", "Сана: {date} | Келганлар: {came}\nАлмашинув ва ячейкалар шу куннинг ўзида «Verifix тўғирлаш» саҳифасида — эртанги файлни кутиш шарт эмас."),
+        "ru": ("Сегодняшняя посещаемость — вживую", "Дата: {date} | Пришли: {came}\nОбмен и ячейки — в тот же день на «Verifix to'g'irlash», файла на завтра ждать не нужно."),
+        "en": ("Today's attendance is live", "Date: {date} | Came: {came}\nExchanges and cells are made the same day on «Verifix to'g'irlash» — no waiting for tomorrow's file."),
+    },
+    "live_day_still_open": {
+        "uz": ("Kun yopilmagan", "Sana: {date} | Brigada: {unit}\nKeyingi smena boshlandi. Kunni «Verifix to'g'irlash»da yoping — shundan keyin zagruzka hisoblanadi."),
+        "uz_cyrl": ("Кун ёпилмаган", "Сана: {date} | Бригада: {unit}\nКейинги смена бошланди. Кунни «Verifix тўғирлаш»да ёпинг — шундан кейин загрузка ҳисобланади."),
+        "ru": ("День не закрыт", "Дата: {date} | Бригада: {unit}\nСледующая смена началась. Закройте день в «Verifix to'g'irlash» — после этого посчитается загрузка."),
+        "en": ("The day is not closed", "Date: {date} | Brigade: {unit}\nThe next shift has begun. Close the day on «Verifix to'g'irlash» — the load is counted after that."),
+    },
+    "live_shift_summary": {
+        "uz": ("Smena {shift} · {date}: {closed} / {total} brigada kunni yopdi", "Yopilmagan: {open_units}"),
+        "uz_cyrl": ("Смена {shift} · {date}: {closed} / {total} бригада кунни ёпди", "Ёпилмаган: {open_units}"),
+        "ru": ("Смена {shift} · {date}: день закрыли {closed} из {total} бригад", "Не закрыли: {open_units}"),
+        "en": ("Shift {shift} · {date}: {closed} of {total} brigades closed the day", "Not closed: {open_units}"),
     },
     # ── the live «Verifix to'g'irlash · Jonli» (/staff-live, routers/staff_live) ─
     # /staff's documents, deletions and day close over the live Verifix read.
@@ -1200,6 +1234,9 @@ _NAME_PARAMS = frozenset({
     "creator_name", "decided_by", "leader", "leader_name", "name", "owner",
     "processor_name", "reopener_name", "supervisor", "supervisor_name",
     "undoer", "worker_name", "lines", "changes", "changes_lines",
+    # the live day's notices (unit names are brigadirs' names; `missing` names
+    # the workers with no check-out)
+    "unit", "open_units", "missing",
 })
 
 
@@ -4734,7 +4771,15 @@ def documents_pending_count(caller=Depends(_require_staff), db: Session = Depend
         if r.status == "pending":
             pending_batches.add(r.batch_id if r.batch_id else f"solo-{r.id}")
 
-    return {"count": doc_count + len(pending_batches)}
+    # 3) The live days' requests (live_day.LIVE_FROM on) — the same page's
+    #    register for its live days, so the badge counts both.
+    live_n = 0
+    try:
+        from app.routers import staff_live
+        live_n = staff_live.documents_pending_count(since=live_day.iso(), db=db, caller=caller)["count"]
+    except Exception:  # noqa: BLE001 — a badge never fails over its second half
+        log.exception("staff: live pending count failed")
+    return {"count": doc_count + len(pending_batches) + live_n}
 
 
 @router.get("/documents/{doc_id}")
@@ -5114,7 +5159,7 @@ def _approve_doc(doc: HrDocument, caller: dict, db: Session):
     # Stale drafts cannot be posted — see STALE_APPROVE_DAYS. Checked before any
     # effect is applied, so a refused document is left exactly as it was.
     if doc.date:
-        age = (date.today() - doc.date).days
+        age = (_plant_today() - doc.date).days
         if age > STALE_APPROVE_DAYS:
             logger.warning("DOC-STALE refused approve of #%s (%s, %s days old) by %s",
                            doc.id, doc.date, age, caller.get("full_name") or caller.get("sub"))
@@ -5640,7 +5685,15 @@ def approval_day(
     # What the close will REFUSE on, published before the press — the same
     # `_unplaced_workers` the endpoint enforces with, so the warning and the
     # refusal can never name different people.
-    unplaced = [] if closure is not None else _unplaced_workers(db, manager_id, d)
+    if closure is not None:
+        unplaced = []
+    elif live_day.is_live(d):
+        # A live day has no attendance until its close: who has no cell is read
+        # off the live day (the stored read — never a Verifix read here).
+        from app.routers import staff_live
+        unplaced = staff_live.live_unplaced(db, manager_id, d)
+    else:
+        unplaced = _unplaced_workers(db, manager_id, d)
     return {
         "manager_id":       manager_id,
         "date":             attend_date,
@@ -5651,7 +5704,9 @@ def approval_day(
         "pending_requests": counts["pending_requests"] + counts["draft_docs"],
         "can_reopen":       _cap_covers_unit(caller, db, CAP_DAY_REOPEN, manager_id),
         "needs_cell":       len(unplaced),
-        "needs_cell_names": [r.worker_name for r in unplaced[:20]],
+        "needs_cell_names": [getattr(r, "worker_name", None) or (r.get("worker_name") if isinstance(r, dict) else None)
+                             for r in unplaced[:20]],
+        "live":             live_day.is_live(d),
     }
 
 
@@ -6259,7 +6314,14 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
         d = date.fromisoformat(body.date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
-    if d > date.today():
+    # A LIVE day (live_day.LIVE_FROM on) is closed by the live door — the gates,
+    # the fresh read and the copy into attendance live there. Every door that
+    # closes a day (/staff, Kunlik) reaches it through here.
+    if live_day.is_live(d):
+        from app.routers import staff_live
+        return staff_live.close_day(staff_live.ApprovalBody(manager_id=body.manager_id, date=body.date),
+                                    db=db, caller=caller)
+    if d > _plant_today():
         raise HTTPException(status_code=400, detail="Cannot close a future date")
 
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
@@ -6336,6 +6398,12 @@ def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session =
         d = date.fromisoformat(body.date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
+    # A live day's close is the live close + its copy: the reopen takes both
+    # back (/production, /idle-cell and the admin tab reopen through here).
+    if live_day.is_live(d):
+        from app.routers import staff_live
+        return staff_live.reopen_day(staff_live.ApprovalBody(manager_id=body.manager_id, date=body.date),
+                                     db=db, caller=caller)
 
     existing = db.query(DayApproval).filter_by(manager_id=body.manager_id, date=d).first()
     if existing:

@@ -65,6 +65,9 @@ export default function ConfirmDialog({
   challenge = null,
   challengeLabel = null,
   zIndex = 100,
+  // The confirm stays unarmed while the dialog's own content says the action
+  // cannot go ahead yet (the live day close: somebody still has no exit).
+  confirmDisabled = false,
 }) {
   const { t } = useLang();
   const backdropRef = useRef(null);
@@ -125,7 +128,7 @@ export default function ConfirmDialog({
     ? { background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", color: "#ef4444" }
     : { background: "#f59e0b22", border: "1px solid #f59e0b55", color: "#d97706" };
   const defaultIcon = tone === "danger" ? <Trash2 size={20} /> : <AlertTriangle size={20} />;
-  const armed = !challenge || typed.trim().toLowerCase() === String(challenge).trim().toLowerCase();
+  const armed = (!challenge || typed.trim().toLowerCase() === String(challenge).trim().toLowerCase()) && !confirmDisabled;
 
   return createPortal(
     <div

@@ -82,6 +82,7 @@ NO_DATA = "no_data"                # the row is too thin to reverse (an automati
 MASKED = "masked"                  # the old value was a secret and was never stored
 CAPPED = "capped"                  # the row records only part of what it changed
 CELLS_MISSING = "cells_missing"    # the day cannot close: somebody has no cell
+LIVE_DAY = "live_day"              # a live day closes/reopens only on its page (the copy rides there)
 
 # What `/admin/settings` writes instead of a secret. The register must never be a
 # second place a key is readable — which also means it can never put one back.
@@ -183,6 +184,9 @@ def _check_reopen(db: Session, r: ActionLog) -> Optional[str]:
     ref = _day_ref(r)
     if not ref:
         return NO_DATA
+    from app.services import live_day
+    if live_day.is_live(ref[1]):
+        return LIVE_DAY
     if not db.query(DayApproval).filter_by(manager_id=ref[0], date=ref[1]).first():
         return CHANGED_SINCE   # already open — somebody got there first
     return None
@@ -207,6 +211,11 @@ def _check_close(db: Session, r: ActionLog) -> Optional[str]:
     ref = _day_ref(r)
     if not ref:
         return NO_DATA
+    from app.services import live_day
+    if live_day.is_live(ref[1]):
+        # A live day's close is its copy into attendance and its live record;
+        # a bare DayApproval written from here would close it with neither.
+        return LIVE_DAY
     if db.query(DayApproval).filter_by(manager_id=ref[0], date=ref[1]).first():
         return CHANGED_SINCE   # already closed again
     # This undo re-creates the DayApproval directly and never calls

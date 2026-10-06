@@ -157,6 +157,36 @@ def window(day: date) -> tuple[date, date]:
     return day - timedelta(days=WINDOW_DAYS), day - timedelta(days=1)
 
 
+def _live_rosters(db: Session, lo: date, hi: date, as_of: Optional[datetime], raw: dict) -> set:
+    """Fold the live days' rosters into `raw` (the file rows' shape) and return
+    the days that had one. A live day counts once its brigadir has closed it —
+    the roster rides the copy — and, `as_of`, only a copy taken by then."""
+    from app.models import LiveProjection
+    from app.services import live_day
+    lo = max(lo, live_day.LIVE_FROM)
+    if hi < lo:
+        return set()
+    q = db.query(LiveProjection.day, LiveProjection.roster).filter(
+        LiveProjection.day >= lo, LiveProjection.day <= hi)
+    if as_of is not None:
+        q = q.filter(LiveProjection.copied_at <= as_of)   # compared in SQL, as the uploads are
+    days: set = set()
+    seq = 10 ** 12                     # after any file row of the same day
+    for d, roster in q.all():
+        days.add(d)
+        for ent in roster or []:
+            try:
+                name, code, job, came = ent[0], ent[1], ent[2], bool(ent[3])
+            except (IndexError, TypeError):
+                continue
+            n = str(name or "").strip().upper()
+            if not n or not code:
+                continue
+            seq += 1
+            raw.setdefault(n, []).append((d, seq, code, job, came))
+    return days
+
+
 def file_workers_days(db: Session, days: Iterable[date],
                       as_of: Optional[datetime] = None) -> dict:
     """THE file reader: for each of `days`, every worker the original upload
@@ -194,6 +224,11 @@ def file_workers_days(db: Session, days: Iterable[date],
     for n, code, job, d, rid, worked in db.execute(sql, params):
         raw.setdefault(n, []).append((d, rid, code, job, bool(worked)))
     uploads = sorted(r[0] for r in db.execute(_UPLOADS_SQL, {"lo": lo, "hi": hi}))
+    # From live_day.LIVE_FROM no file arrives: a live day is filed by its close
+    # copy (`live_projection`), whose roster is the read's own placement.
+    live_days = _live_rosters(db, lo, hi, as_of, raw)
+    if live_days:
+        uploads = sorted(set(uploads) | live_days)
 
     people = []
     for n in sorted(raw):

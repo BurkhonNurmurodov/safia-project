@@ -204,6 +204,19 @@ def _live_open(db: Session, payload: dict) -> bool:
     return bool(key) and live_staff.can_open(db, key, get_page_access(db))
 
 
+def _plant_today() -> date:
+    from app.services import verifix_live
+    return verifix_live.now_local().date()
+
+
+def _live_link(day) -> str:
+    """A live request opens /staff on its day once /staff reads live days."""
+    from app.services import live_day
+    if live_day.is_live(day):
+        return f"/staff?tab=requests&date={day.isoformat()}"
+    return "/staff-live?tab=requests"
+
+
 def _live_docs(db: Session, payload: dict) -> list[dict]:
     """`_hr_docs` over the live page's documents (`LiveDocument`, /staff-live):
     the same scope, rights and stale rule, read off `routers.staff_live`'s own
@@ -226,7 +239,7 @@ def _live_docs(db: Session, payload: dict) -> list[dict]:
         # The live approve door refuses a draft older than STALE_APPROVE_DAYS
         # (`staff_live._approve`, on the document's day) — no Approve button
         # that can only fail; the row says why and Reject is what is left.
-        age = (date.today() - doc.day).days if doc.day else 0
+        age = (_plant_today() - doc.day).days if doc.day else 0
         stale = age > sl.STALE_APPROVE_DAYS
         actions = [] if stale else [
             _action("approve", f"/api/staff-live/documents/{doc.id}/approve", tone="success",
@@ -242,7 +255,7 @@ def _live_docs(db: Session, payload: dict) -> list[dict]:
         out.append({
             "key": f"live_doc:{doc.id}", "kind": "live_doc", "id": doc.id,
             "since": _iso(doc.created_at),
-            "link": "/staff-live?tab=requests",
+            "link": _live_link(doc.day),
             "fields": {
                 "doc_type": doc.doc_type,
                 "count": s["employee_count"],
@@ -285,7 +298,7 @@ def _live_batches(db: Session, payload: dict) -> list[dict]:
         out.append({
             "key": f"live_batch:{token}", "kind": "live_batch", "id": token,
             "since": _iso(first.created_at),
-            "link": "/staff-live?tab=requests",
+            "link": _live_link(first.day),
             "fields": {
                 "count": len(reqs),
                 "workers": names[:6],

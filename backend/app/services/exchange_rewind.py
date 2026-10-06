@@ -115,7 +115,28 @@ def original_rows(
             if (emp.get("applied") or {}).get("task_blanked"):
                 blanked.add(key)
 
-    names = {name for _d, name in origin}
+    # A LIVE day (live_day.LIVE_FROM on) files its exchanges in the live tables
+    # and is copied into attendance at its close; the copy records, beside it,
+    # the day each exchanged worker would have had on the unit they STARTED on
+    # (`live_projection._original`). Both close copies of one move hold the
+    # same worker — one row per (date, name).
+    live: dict[tuple, tuple] = {}
+    from app.services import live_day
+    if date_to >= live_day.LIVE_FROM:
+        from app.models import LiveProjection
+        for d, original in db.query(LiveProjection.day, LiveProjection.original).filter(
+                LiveProjection.day >= max(date_from, live_day.LIVE_FROM),
+                LiveProjection.day <= date_to):
+            for o in original or []:
+                name = (o or {}).get("worker_name")
+                if not name or (d, name) in live or (d, name) in origin:
+                    continue
+                live[(d, name)] = (OriginalRow(
+                    o.get("manager_id"), d, name, o.get("job_title"),
+                    float(o["hours_worked"]) if o.get("hours_worked") is not None else None,
+                    o.get("clock_in_out"), False), set(o.get("seats") or []))
+
+    names = {name for _d, name in origin} | {name for _d, name in live}
     if not names:
         return set(), []
 
@@ -132,6 +153,13 @@ def original_rows(
     )
     for mgr, d, name, job, hours, clock, is_sup in q.all():
         key  = (d, name)
+        if key in live:
+            # The copy's moved row stands for the original one below.
+            if mgr in live[key][1]:
+                continue
+            rows.append(OriginalRow(mgr, d, name, job,
+                                    float(hours) if hours is not None else None, clock, bool(is_sup)))
+            continue
         home = origin.get(key)
         # Only a row sitting where the exchange could have left it is rewound.
         # Anything else carrying the same name — another day, another unit — is
@@ -163,4 +191,5 @@ def original_rows(
             snap.get("hours_worked"), snap.get("clock_in_out"), False,
         ))
 
+    rows.extend(row for row, _seats in live.values() if row.manager_id is not None)
     return names, rows

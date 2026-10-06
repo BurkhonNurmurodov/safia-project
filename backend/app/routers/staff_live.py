@@ -50,18 +50,20 @@ from app.capabilities import (
 )
 from app.database import get_db
 from app.models import (
-    Admin, ExchangeTask, LiveAllLeftNotice, LiveDayClose, LiveDeletion, LiveDocument,
-    LiveDocumentHistory, LivePlacement, LiveVerifixRead, Manager,
+    Admin, ExchangeTask, LiveAllLeftNotice, LiveClockFix, LiveDayClose, LiveDeletion,
+    LiveDocument, LiveDocumentHistory, LivePlacement, LiveVerifixRead, Manager,
 )
 from app.notify_ctx import notifications_suppressed
 from app.permissions import get_page_access, require_page
-from app.services import action_log, live_staff, shift_scope, verifix_live
+from app.services import action_log, live_day, live_projection, live_staff, shift_scope, verifix_live
 from app.xlsx_delivery import deliver_xlsx
 
 PAGE = live_staff.PAGE
 router = APIRouter(prefix="/api/staff-live", tags=["staff-live"])
 log = logging.getLogger(__name__)
-_page = require_page(PAGE)
+# From `live_day.LIVE_FROM` /staff reads its live days through these doors, so
+# whoever may open /staff may call them too (with /staff's rights per role).
+_page = require_page(PAGE, "staff")
 
 _HHMM = re.compile(r"^\s*([01]?\d|2[0-3])\s*[:.\-]\s*([0-5]\d)\s*$")
 # /staff's bound: a draft dated longer ago cannot be posted (staff.STALE_APPROVE_DAYS).
@@ -82,7 +84,7 @@ def _who(caller: dict) -> str:
 def _sees_all(db: Session, caller: dict) -> bool:
     """A personal page grant at "all" widens a supervisor to every unit (the
     /staff rule, `staff._staff_sees_all`); admins always pass."""
-    return page_scope_is_all(db, caller, PAGE)
+    return any(page_scope_is_all(db, caller, p) for p in (PAGE, "staff", "daily"))
 
 
 def _visible(db: Session, caller: dict) -> Optional[list[int]]:
@@ -196,7 +198,8 @@ def _named(ud: dict) -> dict:
 
 def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: bool = True,
             supervisors: tuple = (), profiles: tuple = (), actor: Optional[int] = None,
-            subject=None, ntype: str = "info", dm_skip: tuple = ()) -> None:
+            subject=None, ntype: str = "info", dm_skip: tuple = (),
+            admins_bell_only: bool = False) -> None:
     """One bell row per addressed PROFILE + a DM per holder (the
     `_notify_all_parties` shape): admins, the shift-managers answerable for
     `units`, the supervisors of `supervisors`, and any `profiles`; the actor's
@@ -212,9 +215,11 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
         from app.routers.staff import _get_user_lang, _mk_notif, _mk_notif_tg, _notify as bell
         from app.services import notification_center as notif_center
         keys: set = set(profiles)
+        admin_keys: set = set()
         if admins:
-            keys |= {identity.profile_key("admin", a.profile_id)
-                     for a in db.query(Admin).all() if a.profile_id}
+            admin_keys = {identity.profile_key("admin", a.profile_id)
+                          for a in db.query(Admin).all() if a.profile_id}
+            keys |= admin_keys
         for u in units:
             keys |= {identity.profile_key("shift-manager", rid)
                      for rid in shift_scope.role_ids_for_unit(db, u)}
@@ -237,6 +242,10 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
                 continue
             bell(db, holders[0], type=ntype, dm=False, nkey=nkey, params=params,
                  profile=key, subject=subject)
+            # A live day's close reaches the admins as ONE line per shift
+            # (ruling 18, `verifix_live._shift_summaries`) — the bell row stays.
+            if admins_bell_only and key in admin_keys:
+                continue
             if notif_center.telegram_muted(db, key, nkey):
                 continue
             from app.telegram_bot import send_tg_notification
@@ -441,6 +450,13 @@ def _unit_today(db: Session, mid: int) -> tuple[date, int]:
     return date.fromisoformat(fr["day"]), max(0, int((nxt - now).total_seconds()))
 
 
+@router.get("/live-from")
+def live_from(_: dict = Depends(_page)):
+    """The first shift-day /staff reads live (`live_day.LIVE_FROM`) and today on
+    the plant's clock — what tells the page which source a day it shows has."""
+    return {"live_from": live_day.iso(), "today": verifix_live.now_local().date().isoformat()}
+
+
 @router.get("/today")
 def unit_today(manager_id: Optional[int] = None, db: Session = Depends(get_db),
                caller: dict = Depends(_page)):
@@ -635,14 +651,27 @@ def _scope_deletions(caller: dict, db: Session) -> list:
     return q.order_by(LiveDeletion.day.desc(), LiveDeletion.id).all()
 
 
+def _since(raw: Optional[str]) -> Optional[date]:
+    """/staff asks for its live days only (`since` = `live_day.LIVE_FROM`):
+    /staff-live's test filings of the days before are not /staff's register."""
+    return _day_of(raw) if raw else None
+
+
 @router.get("/documents")
-def list_documents(db: Session = Depends(get_db), caller: dict = Depends(_page)):
+def list_documents(since: Optional[str] = None, db: Session = Depends(get_db),
+                   caller: dict = Depends(_page)):
     """Documents + deletion batches, newest first (`staff.list_documents`)."""
     names = {m.id: m.name for m in db.query(Manager).all()}
+    lo = _since(since)
+    q = _scope_docs(db.query(LiveDocument), caller, db)
+    if lo:
+        q = q.filter(LiveDocument.day >= lo)
     docs = [_serialize(d, names.get(d.manager_id)) for d in
-            _scope_docs(db.query(LiveDocument), caller, db).order_by(LiveDocument.created_at.desc()).all()]
+            q.order_by(LiveDocument.created_at.desc()).all()]
     batches: dict = defaultdict(list)
     for r in _scope_deletions(caller, db):
+        if lo and r.day < lo:
+            continue
         batches[r.batch_id or f"solo-{r.id}"].append(r)
     items = []
     for key, reqs in batches.items():
@@ -674,9 +703,15 @@ def list_documents(db: Session = Depends(get_db), caller: dict = Depends(_page))
 
 
 @router.get("/documents/pending-count")
-def documents_pending_count(db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    n = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.status == "draft").count()
-    batches = {r.batch_id or f"solo-{r.id}" for r in _scope_deletions(caller, db) if r.status == "pending"}
+def documents_pending_count(since: Optional[str] = None, db: Session = Depends(get_db),
+                            caller: dict = Depends(_page)):
+    lo = _since(since)
+    q = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.status == "draft")
+    if lo:
+        q = q.filter(LiveDocument.day >= lo)
+    n = q.count()
+    batches = {r.batch_id or f"solo-{r.id}" for r in _scope_deletions(caller, db)
+               if r.status == "pending" and not (lo and r.day < lo)}
     return {"count": n + len(batches)}
 
 
@@ -972,7 +1007,7 @@ def _approve(doc: LiveDocument, caller: dict, db: Session, reads: Optional[dict]
         raise HTTPException(status_code=409, detail="Rejected documents cannot be posted")
     _still_here(db, doc, reads)
     if doc.day:
-        age = (date.today() - doc.day).days
+        age = (verifix_live.now_local().date() - doc.day).days
         if age > STALE_APPROVE_DAYS:
             raise HTTPException(status_code=409, detail={
                 "code": "doc_too_old", "date": doc.day.isoformat(), "age_days": age,
@@ -1043,6 +1078,7 @@ def create_document(body: DocCreateBody, db: Session = Depends(get_db), caller: 
         db.commit()
         action_log.enrich(**_log_doc(doc, [("status", None, "approved")]))
         _notify_doc(db, doc, "approved", _tg(caller))
+        _recopy(db, doc.day)
         return {"id": doc.id, "status": doc.status}
     db.commit()
     action_log.enrich(**_log_doc(doc, [("status", None, "draft")]))
@@ -1105,6 +1141,7 @@ def approve_document(doc_id: int, db: Session = Depends(get_db), caller: dict = 
     action_log.enrich(**_log_doc(doc, [("status", "draft", "approved")]))
     _notify_doc(db, doc, "approved", _tg(caller))
     _retire("live_document", doc_id, "approved", _who(caller))
+    _recopy(db, doc.day)
     return {"ok": True, "status": doc.status}
 
 
@@ -1133,6 +1170,7 @@ def cancel_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
     db.commit()
     action_log.enrich(**_log_doc(doc, [("status", "approved", "draft")]))
     _notify_doc(db, doc, "cancelled", _tg(caller))
+    _recopy(db, doc.day)
     return {"ok": True, "status": doc.status}
 
 
@@ -1166,6 +1204,7 @@ def delete_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
     action_log.enrich(**log_fields)
     if was_approved:
         _notify_doc(db, snapshot, "cancelled", _tg(caller))
+        _recopy(db, snapshot.day)
     # The record is gone: nothing to print on a card that may still stand
     # (an approved document's card was retired at its approval; this is the
     # backstop for one that was not).
@@ -1245,6 +1284,7 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
     # Ids before the commit expires the instances — the cards are settled after it.
     approved_ids = [doc.id for doc, event in notify if event == "approved"]
     rejected_ids = [doc.id for doc in rejected]
+    touched_days = {doc.day for doc in docs if doc.day}
     db.commit()
     for doc, event in notify:
         _notify_doc(db, doc, event, _tg(caller))
@@ -1260,6 +1300,9 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
     action_log.enrich(target_kind="batch", target_id=",".join(str(i) for i in body.ids[:20]),
                       details=[("mode", body.action), ("count", done),
                                ("skipped", max(len(body.ids) - done, 0))])
+    if body.action in ("approve", "cancel", "delete"):
+        for d in sorted(touched_days):
+            _recopy(db, d)
     return {"ok": True, "affected": done, "refused": refused}
 
 
@@ -1449,10 +1492,14 @@ def process_batch(token: str, status: str, caller: dict, db: Session,
     reqs = q.all()
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
+    days = {r.day for r in reqs}
     _decide_deletions(reqs, status, caller, db)
     db.commit()
     _tell_decided(db, reqs, status, caller)
     _settle_batch_card(db, token, _who(caller))
+    if status == "approved":
+        for d in sorted(days):
+            _recopy(db, d)
     return len(reqs)
 
 
@@ -1526,12 +1573,14 @@ def approve_request(req_id: int, db: Session = Depends(get_db), caller: dict = D
     if r.status != "pending":
         raise HTTPException(status_code=409, detail="Request already processed")
     token = r.batch_id
+    day = r.day
     _decide_deletions([r], "approved", caller, db)
     db.commit()
     action_log.enrich(target_kind="request", target_id=req_id, target_name=r.worker_name,
                       unit_id=r.manager_id, day=r.day, changes=[("status", "pending", "approved")])
     _tell_decided(db, [r], "approved", caller)
     _settle_batch_card(db, token, _who(caller))
+    _recopy(db, day)
     return {"ok": True, "status": "approved"}
 
 
@@ -1569,10 +1618,21 @@ def undo_request(req_id: int, db: Session = Depends(get_db), caller: dict = Depe
                                         "undoer": _who(caller)},
             units=(r.manager_id,), supervisors=(r.manager_id,), actor=_tg(caller),
             subject=("live_day", f"{r.manager_id}:{r.day.isoformat()}"), ntype="warning")
+    _recopy(db, r.day)
     return {"ok": True}
 
 
 # ── the day close (the Tasdiqlash tab) ───────────────────────────────────────
+
+def live_unplaced(db: Session, mid: int, d: date) -> list:
+    """Who on this live unit-day has no cell — off the STORED read only (a
+    badge never starts a Verifix read). The close re-checks on a full read."""
+    rd = verifix_live.day_read(db, mid, d, stored_only=True)
+    if rd.get("error"):
+        return []
+    ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+    return live_staff.unplaced(live_staff.unit_day(ctx, mid)["workers"])
+
 
 @router.get("/approvals/day")
 def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = None,
@@ -1653,21 +1713,205 @@ class ApprovalBody(BaseModel):
     date: str
 
 
-@router.post("/daily/close")
-def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    """A supervisor closes their own day, an admin anybody's (`staff.close_day`) —
-    refused while a counted worker has no cell."""
+# How old the stored read may be when Verifix cannot be reached at the close
+# (ruling 14, 2026-10-06): the close goes ahead on it, its time named.
+CLOSE_READ_MAX_MIN = 15
+
+
+def _close_unit(caller: dict, body_mid: Optional[int]) -> int:
     role = caller.get("role")
     if role == "supervisor":
         mid = caller.get("role_id")
         if not mid:
             raise HTTPException(status_code=400, detail="Supervisor has no assigned manager")
-    elif role == "admin":
-        mid = body.manager_id
-        if not mid:
+        return mid
+    if role == "admin":
+        if not body_mid:
             raise HTTPException(status_code=400, detail="manager_id required")
-    else:
-        raise HTTPException(status_code=403, detail="Only supervisors or admins can close a day")
+        return body_mid
+    raise HTTPException(status_code=403, detail="Only supervisors or admins can close a day")
+
+
+def _names(rows: list, n: int = 5) -> str:
+    names = [r.get("worker_name") or "—" for r in rows[:n]]
+    more = f" +{len(rows) - len(names)}" if len(rows) > len(names) else ""
+    return f"{', '.join(names)}{more}"
+
+
+def _no_checkout(ctx, ud: dict, mid: int) -> list:
+    """Who has come and has no exit while the shift is OVER — the people the
+    close names for the brigadir to answer (ruling 6): their named rows here,
+    and the people standing here under another unit's name. Before the shift's
+    end a worker still inside is simply inside, and the close waits."""
+    now = ctx.now
+    out, seen = [], set()
+    cands = [r for r in ud["workers"] if r.get("split_of") is None] + [
+        x for x in ud.get("extras") or [] if x.get("here")]
+    for r in cands:
+        eid = r["employee_id"]
+        if eid in seen or not r.get("clock_in"):
+            continue
+        if r.get("status") not in ("inside", "break", "no_out"):
+            continue
+        p = live_staff.person(ctx, eid).p
+        if p["end"] is None or now < p["end"]:
+            continue
+        seen.add(eid)
+        out.append({"employee_id": eid, "worker_name": r.get("worker_name"),
+                    "clock_in": r.get("clock_in"), "end": p["end"].strftime("%H:%M"),
+                    "status": r.get("status"), "here_as_extra": r.get("named_at") is not None})
+    return out
+
+
+def _close_check(db: Session, mid: int, d: date, force: bool, stored_only: bool = False) -> dict:
+    """What a live day's close waits on — THE gate, read by the dialog and
+    re-checked by the close itself. `stored_only` inside a write: a Verifix
+    read owns the session's transaction and would roll the write back."""
+    rd = verifix_live.day_read(db, mid, d, force=force, stored_only=stored_only)
+    if rd.get("error"):
+        raise _NoDay(rd)
+    ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+    ud = live_staff.unit_day(ctx, mid)
+    fixable = _no_checkout(ctx, ud, mid)
+    fix_ids = {f["employee_id"] for f in fixable}
+    busy = [r for r in live_staff.busy(ud) if r.get("employee_id") not in fix_ids]
+    unplaced = live_staff.unplaced(ud["workers"])
+    covered = rd.get("covered")
+    age_min = ((rd["now"] - covered).total_seconds() / 60.0) if covered else None
+    stale = bool(rd.get("read_error")) and (age_min is None or age_min > CLOSE_READ_MAX_MIN)
+    fixes = [{"employee_id": f.employee_id, "worker_name": f.worker_name, "action": f.action,
+              "out_time": f.out_time, "by": f.created_by}
+             for f in ctx.fixes.values() if f.manager_id == mid]
+    return {
+        "ctx": ctx, "ud": ud, "rd": rd,
+        "out": {
+            "manager_id": mid, "date": rd["day"].isoformat(), "live": live_day.is_live(rd["day"]),
+            "read_at": verifix_live._iso(covered), "read_error": (rd.get("read_error") or {}).get("message"),
+            "stale": stale, "max_read_age_min": CLOSE_READ_MAX_MIN,
+            "busy": [{"worker_name": r.get("worker_name"), "status": r.get("status")} for r in busy[:30]],
+            "busy_count": len(busy),
+            "no_checkout": fixable, "fixes": fixes,
+            "unplaced": len(unplaced), "unplaced_names": [r["worker_name"] for r in unplaced[:20]],
+            "came": ud["counts"]["came"], "pending": live_staff.pending_count(db, mid, rd["day"]),
+            "closable": not (busy or fixable or unplaced or stale),
+            "closed": _closed(db, mid, rd["day"]) is not None,
+        },
+    }
+
+
+@router.get("/daily/close-check")
+def close_check(attend_date: Optional[str] = None, manager_id: Optional[int] = None,
+                db: Session = Depends(get_db), caller: dict = Depends(_page)):
+    """The close dialog's facts for one unit-day: the read it would close on,
+    who keeps it open, who has no check-out (with what the brigadir answered),
+    who has no cell."""
+    mid = _read_unit(db, caller, manager_id)
+    d = _day_of(attend_date) or _unit_today(db, mid)[0]
+    return _close_check(db, mid, d, force=False)["out"]
+
+
+class ClockFixBody(BaseModel):
+    manager_id: Optional[int] = None
+    date: str
+    employee_id: str
+    action: str                          # "exit" | "absent" | "clear"
+    out_time: Optional[str] = None
+
+
+@router.post("/daily/clock-fix")
+def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
+    """The brigadir's answer for a worker with no check-out (ruling 6): the
+    exit time, or «did not come»; `clear` takes it back. Only on an OPEN day,
+    only for somebody the close names."""
+    mid = _close_unit(caller, body.manager_id)
+    d = _day_of(body.date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
+    _assert_open(db, mid, d)
+    eid = str(body.employee_id)
+    row = db.query(LiveClockFix).filter(LiveClockFix.day == d, LiveClockFix.employee_id == eid).first()
+    if body.action == "clear":
+        if row is not None:
+            if row.manager_id != mid and caller.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Boshqa brigada kiritgan javob")
+            db.delete(row)
+            db.commit()
+            action_log.enrich(target_kind="worker", target_id=eid, unit_id=mid, day=d,
+                              details=[("date", str(d)), ("worker", row.worker_name or eid)],
+                              changes=[("clock_fix", row.action, None)])
+        return {"ok": True}
+    if body.action not in ("exit", "absent"):
+        raise HTTPException(status_code=400, detail="Unknown action")
+    if row is not None:
+        db.delete(row)
+        db.flush()
+    chk = _close_check(db, mid, d, force=False, stored_only=True)
+    cand = next((f for f in chk["out"]["no_checkout"] if f["employee_id"] == eid), None)
+    if cand is None:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=(
+            "Bu xodimning chiqishi Verifix'da bor yoki smena hali tugamagan."))
+    out_time = None
+    if body.action == "exit":
+        out_time = _hhmm(body.out_time)
+        if not out_time:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Chiqish vaqtini kiriting (SS:DD)")
+        ctx = chk["ctx"]
+        w = live_staff.person(ctx, eid)
+        t = live_staff._at(ctx, (ctx.units.get(mid) or {}).get("shift"), out_time)
+        if t is None or w.p["in"] is None or t <= w.p["in"] or t > ctx.now:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=(
+                f"Chiqish vaqti kelgan vaqtdan ({cand['clock_in']}) keyin va hozirgacha bo'lishi kerak."))
+    db.add(LiveClockFix(manager_id=mid, day=d, employee_id=eid, worker_name=cand.get("worker_name"),
+                        action=body.action, out_time=out_time, created_by=_who(caller),
+                        created_tg=_tg(caller)))
+    db.commit()
+    action_log.enrich(target_kind="worker", target_id=eid, unit_id=mid,
+                      unit_name=_unit_name(db, mid), day=d,
+                      details=[("date", str(d)), ("worker", cand.get("worker_name") or eid)]
+                              + ([("out_time", out_time)] if out_time else []),
+                      changes=[("clock_fix", None, body.action)])
+    return {"ok": True}
+
+
+def _recopy(db: Session, d: Optional[date]) -> None:
+    """A document of a live day was decided: re-copy every CLOSED unit of that
+    day whose rows moved (ruling 13 — the receiving unit may have closed
+    already). Best effort: a decision is never undone by its copy failing."""
+    if d is None or not live_day.is_live(d):
+        return
+    try:
+        closed = [m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)]
+        if not closed:
+            return
+        rd = None
+        for mid in closed:
+            rd = verifix_live.day_read(db, mid, d, stored_only=True)
+            if not rd.get("error"):
+                break
+        if not rd or rd.get("error"):
+            return
+        ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+        live_projection.refresh(db, ctx, closed)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("staff-live: re-copying %s after a decision failed", d)
+
+
+@router.post("/daily/close")
+def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
+    """A supervisor closes their own day, an admin anybody's (`staff.close_day`).
+
+    On a LIVE day (`live_day.LIVE_FROM` on) the close reads Verifix once more,
+    refuses while anybody is inside / on a break / due, while somebody has no
+    check-out the brigadir has not answered, while a counted worker has no
+    cell, or when Verifix cannot be reached and the stored read is older than
+    `CLOSE_READ_MAX_MIN` — then writes the close, `DayApproval` and the copy
+    into `attendance` (`live_projection`), so the загрузка exists at once."""
+    role = caller.get("role")
+    mid = _close_unit(caller, body.manager_id)
     d = _day_of(body.date)
     if d is None:
         raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
@@ -1675,39 +1919,55 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
         raise HTTPException(status_code=400, detail="Cannot close a future date")
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")
-    _, _, ud = _build(db, mid, d)
+    live = live_day.is_live(d)
+    chk = _close_check(db, mid, d, force=live)
+    out, ctx, ud = chk["out"], chk["ctx"], chk["ud"]
+
+    def refuse(reason: str, n: int, msg: str):
+        action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid, day=d,
+                          details=[("date", str(d)), ("blocked", reason), ("workers", n)])
+        raise HTTPException(status_code=409, detail=msg)
+
     left = live_staff.unplaced(ud["workers"])
     if left:
-        names = [r["worker_name"] for r in left[:5]]
-        more = f" +{len(left) - len(names)}" if len(left) > len(names) else ""
-        action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid, day=d,
-                          details=[("date", str(d)), ("blocked", "cells_missing"), ("workers", len(left))])
-        raise HTTPException(status_code=409, detail=(
-            f"{len(left)} ta xodim yacheykaga biriktirilmagan: {', '.join(names)}{more}. "
-            f"«Yacheykalar» bo'limida ularni joylashtiring."))
+        refuse("cells_missing", len(left),
+               f"{len(left)} ta xodim yacheykaga biriktirilmagan: {_names(left)}. "
+               f"«Yacheykalar» bo'limida ularni joylashtiring.")
     # The live day still moves while anybody is inside, out on a break or due:
     # the close waits for them (a closed day must not keep changing under it).
-    on = live_staff.busy(ud)
+    on = [r for r in live_staff.busy(ud)
+          if r.get("employee_id") not in {f["employee_id"] for f in out["no_checkout"]}]
     if on:
-        names = [r["worker_name"] for r in on[:5]]
-        more = f" +{len(on) - len(names)}" if len(on) > len(names) else ""
-        action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid, day=d,
-                          details=[("date", str(d)), ("blocked", "still_on_shift"), ("workers", len(on))])
-        raise HTTPException(status_code=409, detail=(
-            f"{len(on)} ta xodim hali smenada (ichkarida, tanaffusda yoki hali kelmagan): "
-            f"{', '.join(names)}{more}. Hamma chiqib ketgach kunni yoping."))
+        refuse("still_on_shift", len(on),
+               f"{len(on)} ta xodim hali smenada (ichkarida, tanaffusda yoki hali kelmagan): "
+               f"{_names(on)}. Hamma chiqib ketgach kunni yoping.")
+    if out["no_checkout"]:
+        refuse("no_checkout", len(out["no_checkout"]),
+               f"{len(out['no_checkout'])} ta xodimning chiqishi Verifix'da yo'q: "
+               f"{_names(out['no_checkout'])}. Kunni yopish oynasida har biriga chiqish vaqtini "
+               f"kiriting yoki «Kelmagan» deb belgilang.")
+    if live and out["stale"]:
+        refuse("verifix_unreachable", 0,
+               f"Verifix'ga ulanib bo'lmadi, oxirgi o'qish {CLOSE_READ_MAX_MIN} daqiqadan eski "
+               f"({(out['read_at'] or '—')[11:16]}). Birozdan keyin qayta urinib ko'ring.")
     db.add(LiveDayClose(manager_id=mid, day=d, closed_by_name=_who(caller)))
+    copied = None
+    if live:
+        copied = live_projection.close(db, mid, ctx, _tg(caller), _who(caller))
     db.commit()
     pending = live_staff.pending_count(db, mid, d)
     action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid,
                       unit_name=_unit_name(db, mid), day=d,
-                      details=[("date", str(d))] + ([("pending", pending)] if pending else []),
+                      details=[("date", str(d))] + ([("pending", pending)] if pending else [])
+                              + ([("rows", copied)] if copied is not None else [])
+                              + ([("read_at", (out["read_at"] or "")[11:16])] if live else []),
                       changes=[("status", "open", "closed")])
     _notify(db, "live_day_closed", {"closer_name": _who(caller), "date": d}, units=(mid,),
             supervisors=(mid,) if role == "admin" else (), actor=_tg(caller),
-            subject=("live_day", f"{mid}:{d.isoformat()}"))
+            subject=("live_day", f"{mid}:{d.isoformat()}"), admins_bell_only=live)
     return {"ok": True, "state": "closed" if pending else "confirmed", "manager_id": mid,
-            "date": body.date, "pending_requests": pending}
+            "date": body.date, "pending_requests": pending, "rows": copied,
+            "read_at": out["read_at"]}
 
 
 @router.post("/approvals/reopen")
@@ -1723,9 +1983,14 @@ def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict =
     if row:
         closer = row.closed_by_name
         db.delete(row)
+        removed = None
+        if live_day.is_live(d):
+            # The copy goes with the close (ruling 1); the next close copies again.
+            removed = live_projection.unproject(db, body.manager_id, d)
         db.commit()
         action_log.enrich(target_kind="day", target_id=f"{body.manager_id}:{d}", unit_id=body.manager_id,
-                          day=d, details=[("date", str(d)), ("closed_by", closer or "—")],
+                          day=d, details=[("date", str(d)), ("closed_by", closer or "—")]
+                          + ([("rows_removed", removed)] if removed is not None else []),
                           changes=[("status", "closed", "open")])
         _notify(db, "live_day_reopened", {"reopener_name": _who(caller), "date": d},
                 units=(body.manager_id,), supervisors=(body.manager_id,), actor=_tg(caller),
