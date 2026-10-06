@@ -7800,6 +7800,10 @@ live days through the same doors and tables, so the two pages show one today.
   the live page's strip, figures or freshness line. Once a unit's own shift-day
   (`/api/staff-live/today`) is live, /staff opens on it and steps with
   `DayStepper` (max = that day); until then the page is exactly what it was.
+  A worker nobody clocked prints Verifix's own day-cell mark in the clock column,
+  exactly as the file did (`live_staff.day_mark` = `verifix_attendance._mark`:
+  «X», a leave letter «О» / «Б» / «В» / «ОТ» …, «—» for a day off; a plain «X»
+  waits until the worker's shift is over) — and the close copies the same mark.
   `GET /api/staff-live/live-from` serves the floor and the plant's date. The live
   router's page gate is `require_page("staff-live", "staff")`, and a grant at
   "all" on staff/daily widens it as on /staff. `/daily` reads a live day the
@@ -7830,8 +7834,12 @@ live days through the same doors and tables, so the two pages show one today.
   (`staff_live._recopy`). After the next shift opens the job stops reading the
   day, so its copy freezes. **A reopen deletes the copy and `DayApproval`**
   (`unproject`); `/api/staff/approvals/reopen` (/production, /idle-cell, the
-  admin tab) hands a live day to the live reopen. The Jurnal's undo refuses a
-  live day (`action_undo.LIVE_DAY`).
+  admin tab) hands a live day to the live reopen — which also lifts a
+  `DayApproval` with no live close beside it (a file-flow close of a day the
+  floor later reached). The other half-state heals itself: a live close with no
+  `DayApproval` (a /staff-live close made before the floor reached the day) gets
+  its `DayApproval` at the next re-copy (`live_projection.refresh`). The
+  Jurnal's undo refuses a live day (`action_undo.LIVE_DAY`).
 - **No check-out at the close** (ruling 6): `GET /api/staff-live/daily/close-check`
   is THE gate the dialog shows (`components/staff/LiveCloseCheck.jsx`,
   `useLiveCloseCheck`): the read's time, who keeps the day open, who has no
@@ -7852,7 +7860,8 @@ live days through the same doors and tables, so the two pages show one today.
 - **Notices** (ruling 18): `live_staff.lab_open` is true from the floor (and
   `can_open` admits /staff's openers), so the live page's notices reach /staff's
   users. New keys: `live_list_open` («your list is live», once at the day's
-  first clock-in), `live_all_left_staff` (everybody left, naming who has no
+  first clock-in — never to a unit whose people have all left by the first pass
+  that sees the day: it is told only «everybody left»), `live_all_left_staff` (everybody left, naming who has no
   check-out and saying when nobody typed «Bugungi fakt», ruling 20),
   `live_day_still_open` (to the brigadir and the shift manager when the next
   shift opens on an unclosed day, within `REMIND_WINDOW_MIN`), and

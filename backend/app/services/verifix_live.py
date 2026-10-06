@@ -999,9 +999,16 @@ def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
         ud = live_staff.unit_day(ctx, mid)
         if not ud["workers"] and not ud["extras"]:
             continue
+        cl = (None if mid in closed else
+              live_staff.close_state(ud, day, None, None, live_staff.pending_count(db, mid, day)))
         # «Your list is live» — once, at the day's first clock-in (ruling 18).
+        # A day whose people have ALL left by the first pass that sees it (the
+        # floor reaching a day already worked, a job that was down) is told only
+        # «everybody left — close the day»: the marker is still written, so a
+        # worker coming back later does not raise a «your list is live» after it.
         if (live_day.is_live(day) and mid not in told_in and mid not in closed
-                and ud["counts"]["came"] and _claim(db, "first_in", mid, day)):
+                and mid not in done and ud["counts"]["came"] and _claim(db, "first_in", mid, day)
+                and cl["state"] != "all_left"):
             try:
                 from app.routers.staff import _notify_supervisor_all
                 _notify_supervisor_all(db, mid, "live_list_open", {
@@ -1013,7 +1020,6 @@ def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
                 log.exception("staff-live: the «list is live» notice to unit %s failed", mid)
         if mid in done or mid in closed:
             continue
-        cl = live_staff.close_state(ud, day, None, None, live_staff.pending_count(db, mid, day))
         if cl["state"] != "all_left" or not cl.get("last_out"):
             continue
         last_out = datetime.fromisoformat(cl["last_out"])

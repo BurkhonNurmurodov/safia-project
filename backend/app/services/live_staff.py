@@ -558,6 +558,28 @@ def _cell_of(ctx: Ctx, key: Optional[str]) -> Optional[str]:
     return c["code"] if c else (key.zfill(4) if key.isdigit() else key)
 
 
+def day_mark(ctx: Ctx, eid: str) -> str:
+    """The day cell for a day nobody clocked — the «Davomat» read's own rule
+    (`verifix_attendance._mark`), so /staff prints what the file printed: the
+    absence kind's letter («О» = «Отгул», «Б», «В», «ОТ» …), «X» for a plain
+    absence or a working day nobody came to, «—» for a day off. The close's
+    copy (`live_projection`) writes this very mark into `attendance`."""
+    from app.services import verifix_attendance
+    ts = (ctx.store.get(eid) or {}).get("ts") or {}
+    days = ts.get("days") or []
+    d = days[0] if days else None
+    if not d:
+        return "X"
+    facts: dict = {}
+    for f in d.get("facts") or []:
+        k = str(f.get("time_kind_id") or "")
+        try:
+            facts[k] = facts.get(k, 0.0) + float(f.get("fact_value") or 0)
+        except (TypeError, ValueError):
+            continue
+    return verifix_attendance._mark(facts, d)
+
+
 def _pending_for(ctx: Ctx, eid: str, unit: int) -> list:
     out = []
     for d in ctx.drafts:
@@ -618,6 +640,15 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         code = None                                   # an arrival — placed by its brigadir
 
     late = p["late"] if is_first else None
+    # Nobody clocked: the day cell is Verifix's mark, as the file printed it —
+    # except a plain «X» for somebody whose shift has not begun or still runs
+    # (they may yet come; a leave letter is shown at once).
+    still_due = p["status"] == "absent" and p["end"] is not None and ctx.now < p["end"]
+    mark = None
+    if not clock_in:
+        mark = day_mark(ctx, w.eid)
+        if mark == "X" and (p["status"] == "not_yet" or still_due):
+            mark = None
     base = {
         "id": row_id(w.eid),
         "employee_id": w.eid,
@@ -630,13 +661,13 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         "clock_out": _hm(clock_out),
         "in_at": _iso(clock_in), "out_at": _iso(clock_out),
         "clock_in_out": (f"{_hm(clock_in)}-{_hm(clock_out)}" if clock_in and clock_out
-                         else (f"{_hm(clock_in)}-" if clock_in else None)),
+                         else (f"{_hm(clock_in)}-" if clock_in else mark)),
         "hours_worked": _r(hours, 4),
         "early_arrival_min": float(early) if p["in"] is not None else None,
         "effective_hours": _r(eff, 4),
         # Not checked in while the shift still runs: «absent» from its first
         # minute, but on a day nobody came to `busy` keeps them due.
-        "still_due": p["status"] == "absent" and p["end"] is not None and ctx.now < p["end"],
+        "still_due": still_due,
         "verifix_code": code,
         "hc_weight": None,
         "split_of": None,

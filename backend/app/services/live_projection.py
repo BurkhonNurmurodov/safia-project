@@ -52,14 +52,7 @@ def _clock(ctx: live_staff.Ctx, eid: str, r: dict, whole: bool) -> str:
     days = ts.get("days") or []
     d = days[0] if days else {}
     if not r.get("clock_in"):
-        facts = {}
-        for f in d.get("facts") or []:
-            k = str(f.get("time_kind_id") or "")
-            try:
-                facts[k] = facts.get(k, 0.0) + float(f.get("fact_value") or 0)
-            except (TypeError, ValueError):
-                continue
-        return verifix_attendance._mark(facts, d) if d else "X"
+        return live_staff.day_mark(ctx, eid)
     t_in, t_out = r["clock_in"], r.get("clock_out")
     if not t_out:
         return f"{t_in} - xx:xx"
@@ -265,19 +258,30 @@ def refresh(db: Session, ctx: live_staff.Ctx, units=None) -> int:
     Commits."""
     if not live_day.is_live(ctx.day):
         return 0
-    q = db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == ctx.day)
+    q = db.query(LiveDayClose.manager_id, LiveDayClose.closed_by_name).filter(LiveDayClose.day == ctx.day)
     if units is not None:
         units = [u for u in units if u]
         if not units:
             return 0
         q = q.filter(LiveDayClose.manager_id.in_(units))
     done = 0
-    for (mid,) in q.all():
+    for (mid, closer) in q.all():
         try:
-            if write(db, mid, ctx) is not None:
+            # A live close with no `DayApproval` beside it — a day closed on
+            # /staff-live before the floor reached it (the copy did not exist
+            # then) — is half-closed: its copy would land while every reader
+            # still read it as open. The close's other half is written here.
+            healed = False
+            if not db.query(DayApproval.id).filter_by(manager_id=mid, date=ctx.day).first():
+                db.add(DayApproval(manager_id=mid, date=ctx.day, approved_by_telegram_id=0,
+                                   approved_by_name=closer or "",
+                                   approved_at=datetime.now(timezone.utc)))
+                healed = True
+            if write(db, mid, ctx, force=healed) is not None or healed:
                 db.commit()
                 done += 1
-                log.info("live copy: unit %s on %s re-copied", mid, ctx.day)
+                log.info("live copy: unit %s on %s re-copied%s", mid, ctx.day,
+                         " (its DayApproval written)" if healed else "")
         except Exception:  # noqa: BLE001 — one unit must not stop the others
             db.rollback()
             log.exception("live copy: re-copying unit %s on %s failed", mid, ctx.day)

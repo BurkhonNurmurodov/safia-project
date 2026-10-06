@@ -50,7 +50,7 @@ from app.capabilities import (
 )
 from app.database import get_db
 from app.models import (
-    Admin, ExchangeTask, LiveAllLeftNotice, LiveClockFix, LiveDayClose, LiveDeletion,
+    Admin, DayApproval, ExchangeTask, LiveAllLeftNotice, LiveClockFix, LiveDayClose, LiveDeletion,
     LiveDocument, LiveDocumentHistory, LivePlacement, LiveVerifixRead, Manager,
 )
 from app.notify_ctx import notifications_suppressed
@@ -1980,9 +1980,16 @@ def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict =
     if d is None:
         raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
     row = _closed(db, body.manager_id, d)
-    if row:
-        closer = row.closed_by_name
-        db.delete(row)
+    appr = None
+    if row is None and live_day.is_live(d):
+        # A live day closed by the FILE flow only (a `DayApproval` with no live
+        # close — closed on /staff before the floor reached this day) is still
+        # locked on /production, /idle-cell and every KPI; the reopen lifts it.
+        appr = db.query(DayApproval).filter_by(manager_id=body.manager_id, date=d).first()
+    if row or appr:
+        closer = row.closed_by_name if row else appr.approved_by_name
+        if row:
+            db.delete(row)
         removed = None
         if live_day.is_live(d):
             # The copy goes with the close (ruling 1); the next close copies again.
