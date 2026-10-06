@@ -1,14 +1,12 @@
 """The LIVE «Verifix to'g'irlash» — attendance read straight from Verifix.
 
-The READ half of `/staff-live` (admin-only by default, page key `staff-live`):
-who came, who is inside, who left and who has not come, read from Verifix's
-API every minute instead of the next-morning Excel (memory:
-verifix-api-integration). The other half — /staff's rows, documents, deletions,
-cell placements and the day close laid over this read — is
-`services/live_staff.py` (from 2026-10-04, the operator: «structure this page
-just like Verifix edit … the only difference should be the source»). Nothing
-outside the page reads either: real attendance, documents, day closes and the
-загрузка are untouched.
+The READ half of /staff's live days (`live_day.LIVE_FROM` on): who came, who
+is inside, who left and who has not come, read from Verifix's API every minute
+instead of the next-morning Excel (memory: verifix-api-integration). The other
+half — /staff's rows, documents, deletions, cell placements and the day close
+laid over this read — is `services/live_staff.py`; the brigadir's close copies
+the finished day into `attendance` (`services/live_projection.py`). Built first
+for the lab page /staff-live (2026-10-04), retired on 2026-10-06.
 
 Where a person stands is answered the way the agreed live feed will answer it:
 
@@ -976,10 +974,9 @@ def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
     current = [m for m, d in unit_days.items() if d == day]
     if live_day.is_live(day) and current:
         live_projection.refresh(db, ctx, current)
-    # Nothing is said while the page is admin-only, and only to a brigadir who
-    # can open it — the notice is not written either, so the day is told once
-    # the page is opened (the operator: «as soon as we open this page»).
-    if not (live_day.is_live(day) or live_staff.page_opened(db)):
+    # Only a live day (`live_day.LIVE_FROM` on) is told, and only to a brigadir
+    # who can open /staff, where the notice links.
+    if not live_day.is_live(day):
         return 0
     from app import identity
     from app.permissions import get_page_access

@@ -36,7 +36,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
   const metaLine = [...meta, timeAgo(item.since, t)].filter(Boolean).join(" · ");
   const actions = item.actions || [];
   const isChat = item.kind === "dispute" || item.kind === "late_proof";
-  // A deletion batch — /staff's or /staff-live's — approves by deleting rows,
+  // A deletion batch — a file day's or a live day's — approves by deleting rows,
   // so its approve confirm says so and wears the danger tone.
   const deletes = item.kind === "edit_batch" || item.kind === "live_batch";
 
@@ -114,8 +114,8 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
             </span>
           )}
           {tag && (
-            /* The «Jonli» mark: a neutral tag — the live page is a source, not
-               a status, so it borrows no traffic-light tone. */
+            /* The «Jonli» mark: a neutral tag — a live day is a source, not a
+               status, so it borrows no traffic-light tone. */
             <span
               className="flex-shrink-0 mt-0.5 inline-flex items-center text-[11px] font-medium px-1.5 py-px rounded-md whitespace-nowrap"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}

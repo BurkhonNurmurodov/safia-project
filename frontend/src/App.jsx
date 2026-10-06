@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, sleep } from "./utils/serverRestart";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
 import { FactoryProvider } from "./context/FactoryContext";
@@ -65,6 +65,13 @@ async function waitWhileRestarting() {
   }
   if (state !== "restarting") setServerRestarting(false);
   return state;
+}
+
+
+// /staff-live → /staff, carrying the query string (a bare <Navigate> drops it).
+function StaffLiveRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: "/staff", search, hash }} replace />;
 }
 
 function lazyWithReload(importer) {
@@ -141,7 +148,6 @@ const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Targets = lazyWithReload(() => import("./pages/Targets"));
 const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
-const StaffLive = lazyWithReload(() => import("./pages/StaffLive"));
 // «Verifix (test)» — the attendance system's API, page by page (admin-only).
 const VfxApiMap = lazyWithReload(() => import("./pages/verifix/VfxApiMap"));
 const VfxEmployees = lazyWithReload(() => import("./pages/verifix/VfxEmployees"));
@@ -584,8 +590,10 @@ function AppWithLang() {
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
             <Route path="/targets" element={<AuthGate><RequireAdmin><Targets /></RequireAdmin></AuthGate>} />
             <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
-            {/* «Verifix to'g'irlash · Jonli» — /staff with Verifix as the source (lab); page key staff-live. */}
-            <Route path="/staff-live" element={<AuthGate><RequirePage page="staff-live"><StaffLive /></RequirePage></AuthGate>} />
+            {/* «Verifix to'g'irlash · Jonli» was retired on 2026-10-06 once /staff read
+                live days itself. Its links (Telegram cards, bell rows) carry
+                ?tab=&unit=&date=, which /staff reads, so the redirect keeps them. */}
+            <Route path="/staff-live" element={<StaffLiveRedirect />} />
             <Route path="/verifix" element={<Navigate to="/verifix/api" replace />} />
             <Route path="/verifix/api" element={<AuthGate><RequireAdmin><VfxApiMap /></RequireAdmin></AuthGate>} />
             <Route path="/verifix/employees" element={<AuthGate><RequireAdmin><VfxEmployees /></RequireAdmin></AuthGate>} />

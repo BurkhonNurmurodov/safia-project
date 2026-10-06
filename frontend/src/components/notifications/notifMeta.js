@@ -31,8 +31,9 @@ export const QUEUE_KINDS = [
   "dispute", "late_proof", "concern", "task",
 ];
 
-// The /staff-live twins of hr_doc and edit_batch — the same record over the
-// live Verifix read, told apart by a «Jonli» tag on the row, never by colour.
+// The live-day twins of hr_doc and edit_batch — the same record over the
+// live Verifix read (/staff from `live_day.LIVE_FROM`), told apart by a
+// «Jonli» tag on the row, never by colour.
 export const LIVE_KINDS = { live_doc: "hr_doc", live_batch: "edit_batch" };
 export const isLiveKind = (kind) => kind in LIVE_KINDS;
 
@@ -126,7 +127,7 @@ export function nameList(names, { t, tl, tx, people = true, max = 3 }) {
  * What one queue item says: {title, sub, subTone, quote, meta[], urgent, tag}.
  * Names go through `tl` (people) and every other stored text through `tx`,
  * the platform's split — English spells NAMES only. `tag` is the «Jonli» mark
- * a /staff-live twin wears beside its title (the live kinds render exactly as
+ * a live-day twin wears beside its title (the live kinds render exactly as
  * the /staff kind they mirror, with that one addition).
  */
 export function queueText(item, { t, tl, tx, lang }) {

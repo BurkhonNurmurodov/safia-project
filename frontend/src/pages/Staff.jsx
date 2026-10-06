@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useDeferredValue, memo, Fragment } from "react";
+import { useState, useMemo, useRef, useEffect, useDeferredValue, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen, UserRound,
+  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -37,15 +37,10 @@ import { fmtPct, fmtNum } from "../utils/formatters";
 import { cellLabel } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
-import { surnameInitial } from "../utils/personName";
 import { isWebSession } from "../utils/session";
-import { ColFilter, TxtFilter, OptsFilter, RngFilter, FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
-import { useStaffApi, StaffApiProvider, LIVE_STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
-import {
-  LiveHeader, LiveSummary, LiveRowNotes, LiveClockIn, LiveClockOut, LiveStatusChip, LiveRaw, LiveExtras, LiveFooter,
-  LiveName, LivePhoneList, LiveDayState, liveMatch, liveMatchExtra, liveFilterOptions, LIVE_FILTERS, n2 as liveN2,
-} from "../components/staff/LiveBits";
-import useIsMobile from "../hooks/useIsMobile";
+import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { useStaffApi, StaffApiProvider, STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
+import { LiveRowNotes, LiveStatusChip, LiveDayState, n2 as liveN2 } from "../components/staff/LiveBits";
 import DayStepper from "../components/ui/DayStepper";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -489,7 +484,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 // ── Attendance Table ───────────────────────────────────────────────────────────
 
-export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoClose, onGoRequests, onToday,
+export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
   dayPending = false, dayError = null, onDayRetry }) {
   const S = useStaffApi();
   const { t } = useLang();
@@ -503,16 +498,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   const exportToast                     = useToast();
   const [nameAsc, setNameAsc]           = usePersistentState(S.pk("staff_workers_name_sort"), true);
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
-  // Live only: the status strip over the table, and the row an admin opened to
-  // see the Verifix read behind it.
-  const [liveFilterSaved, setLiveFilter] = usePersistentState("staff_live_workers_status", "all");
-  // A filter the strip no longer offers (the retired «Kechikkan») reads as all.
-  // /staff on a live day has no status strip (its own look): nothing narrows by it.
-  const liveFilter = S.chrome && LIVE_FILTERS.includes(liveFilterSaved) ? liveFilterSaved : "all";
-  const [openRaw, setOpenRaw]           = useState(null);
-  // Live: below lg (a phone, a tablet held upright) the rows read as a list —
-  // the table needs a laptop's width.
-  const isPhone = useIsMobile(1024);
   const qc = useQueryClient();
   const { auth: tableAuth } = useAuth();
 
@@ -553,9 +538,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
       refetchIntervalInBackground: false, staleTime: 30_000,
     } : {}),
   });
-  // «Yangilash»: the unit read from Verifix NOW, not the stored read. Its
-  // answer is stored under the unit-day it was ASKED for — the reader may have
-  // stepped to another day while it was on its way.
+  // A live day that could not be read: «Qayta urinish» reads the unit from
+  // Verifix NOW, not the stored read. Its answer is stored under the unit-day
+  // it was ASKED for — the reader may have stepped to another day meanwhile.
   const refresh = useMutation({
     mutationFn: () => fetchAtt(true),
     onSuccess: (res, key) => qc.setQueryData(key, res),
@@ -642,14 +627,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     () => (S.live ? { ...otherFilters, worker: deferredWorker } : filters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [S.live ? otherKey : filters, deferredWorker]);
+  // A live day's day-off rows (Verifix's «—») are on no list: neither the
+  // table, nor a count, nor the export.
   const workers = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, rowFilters, false, shownName) && (!S.live || liveMatch(w, liveFilter))),
+    () => allWorkers.filter(w => matchesFilters(w, rowFilters, false, shownName) && (!S.live || w.status !== "off")),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, rowFilters, liveFilter, lang]
+    [allWorkers, rowFilters, lang]
   );
-  // Live: the day's people — a day-off row is on no filter of the strip, so it
-  // is in no count either (the strip, the figures and the export said 42, 45
-  // and 45 for one day).
+  // Live: the day's people — a day-off row is in no count either.
   const dayRows = useMemo(() => (S.live ? allWorkers.filter(w => w.status !== "off") : allWorkers),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allWorkers]);
@@ -657,9 +642,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   // filter only. Counted off `workers`, picking one role would erase every
   // other chip and leave no way back to a second one.
   const chipBase = useMemo(
-    () => allWorkers.filter(w => matchesFilters(w, rowFilters, true, shownName) && (!S.live || liveMatch(w, liveFilter))),
+    () => allWorkers.filter(w => matchesFilters(w, rowFilters, true, shownName) && (!S.live || w.status !== "off")),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allWorkers, rowFilters, liveFilter, lang]
+    [allWorkers, rowFilters, lang]
   );
 
   // PEOPLE, not rows. A worker split across two of the unit's cells is TWO
@@ -760,20 +745,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
     });
   }
 
-  // Live: the people standing here under another unit's name follow every
-  // filter and the status strip of the table above them — «Kechikkan» listed
-  // two people who were not late. The section hides when none of them match.
-  const extrasShown = useMemo(() => (data?.extras || []).filter(x =>
-    // The row carries the clocked hours, the early minutes counted here (the
-    // first unit's) and the effective hours, as a named row does; a payload
-    // from before those fields falls back to the hours it shows.
-    matchesFilters({ ...x, _cell: x.verifix_code ? { code: x.verifix_code } : null,
-      hours_worked: x.hours_worked ?? x.hours, effective_hours: x.effective_hours ?? x.hours,
-      early_arrival_min: x.early_arrival_min ?? 0 }, filters, false, shownName)
-    && liveMatchExtra(x, liveFilter)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.extras, filters, liveFilter, lang]);
-
   const sortedWorkers = useMemo(() => (nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
         ? (tl(a.worker_name) || "").localeCompare(tl(b.worker_name) || "")
@@ -806,49 +777,10 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
   }
 
   if ((!selectedDate || !managerId) && !(S.live && managerId && (dayPending || dayError))) {
-    return S.chrome ? (
-      <div className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-3)" }}>
-        {t("staffLive.pickUnit")}
-      </div>
-    ) : (
+    return (
       <div className="flex items-center justify-center py-16 text-sm" style={{ color: "var(--text-4)" }}>
         {pickSupervisor ? t("staff.selectSupDateToView") : t("staff.selectDateToView")}
       </div>
-    );
-  }
-
-  if (S.live && S.chrome) {
-    return (
-      <LiveWorkersView
-        data={data} loading={isLoading || !data || dayPending} dayError={dayError} onDayRetry={onDayRetry}
-        refreshing={refresh.isPending && JSON.stringify(refresh.variables) === JSON.stringify(attKey)}
-        onRefresh={managerId ? refreshNow : null}
-        onGoClose={onGoClose} onGoRequests={onGoRequests} onToday={onToday} isPhone={isPhone}
-        isAdmin={tableAuth?.role === "admin"}
-        workers={workers} allWorkers={dayRows} sortedWorkers={sortedWorkers}
-        filters={filters} setF={setF} setFilters={setFilters} activeFilter={activeFilter}
-        liveFilter={liveFilter} setLiveFilter={setLiveFilter}
-        nameAsc={nameAsc} setNameAsc={setNameAsc} showCellCol={showCellCol}
-        distinctJobTitles={distinctJobTitles} distinctSchedules={distinctSchedules}
-        cellCodes={cellCodes} cellLabels={cellLabels}
-        openRaw={openRaw} setOpenRaw={setOpenRaw} extrasShown={extrasShown}
-        summary={{
-          came: cameToWorkCount, total: totalWorkers, counted: zagruzkaCount, countedOf: zagruzkaRoleTotal,
-          hours: totalWorkedHours, avg: avgWorkedHours,
-          soFar: zagruzkaWorkers.some((w) => w.so_far),
-        }}
-        exportToast={exportToast} exporting={exporting} onExport={() => setShowExport(true)}
-        exportModal={showExport && (
-          <ExportModal
-            filteredCount={workers.filter(w => !w.split_of).length}
-            totalCount={dayRows.filter(w => !w.split_of).length}
-            hasFilter={activeFilter || liveFilter !== "all"}
-            onExport={handleExport}
-            onClose={() => setShowExport(false)}
-            exporting={exporting}
-          />
-        )}
-      />
     );
   }
 
@@ -1190,273 +1122,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor, onGoC
 }
 
 
-// ── The live Workers tab (/staff-live) ────────────────────────────────────────
-// The SAME rows, filters, counts and export as /staff's table above it — every
-// number is computed by AttendanceTable — drawn the way the page will look once
-// it replaces /staff (2026-10-05): the day's standing and the read's freshness
-// on one line, three figures, the status strip and the search, then the table
-// (a list on a phone), the extra hours and the rules folded under one link.
-function LiveWorkersView({
-  data, loading, dayError, onDayRetry, refreshing, onRefresh, onGoClose, onGoRequests, onToday, isPhone, isAdmin,
-  workers, allWorkers, sortedWorkers, filters, setF, setFilters, activeFilter, liveFilter, setLiveFilter,
-  nameAsc, setNameAsc, showCellCol, distinctJobTitles, distinctSchedules, cellCodes, cellLabels,
-  openRaw, setOpenRaw, extrasShown, summary, exportToast, exporting, onExport, exportModal,
-}) {
-  const { t } = useLang();
-  const { tx } = useTranslit();
-
-  // The unit's day could not be named (the server did not answer `/today`):
-  // say so, with the way to ask again — never a skeleton that never ends.
-  if (dayError) return (
-    <LiveDayState data={{ error: "day", message: dayError }} onRetry={onDayRetry} isAdmin={isAdmin} />
-  );
-  if (loading) return (
-    <div className="p-4 space-y-5" aria-busy="true">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2 flex-1"><SkeletonBlock className="h-4 w-64 max-w-full" /><SkeletonBlock className="h-3 w-80 max-w-full" /></div>
-        <SkeletonBlock className="h-[38px] w-40 rounded-lg" />
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-8 sm:max-w-3xl">
-        {[0, 1, 2].map((i) => <div key={i} className={`space-y-2 ${i === 2 ? "max-sm:col-span-2" : ""}`}><SkeletonBlock className="h-3 w-24" /><SkeletonBlock className="h-7 w-20" /><SkeletonBlock className="h-3 w-28" /></div>)}
-      </div>
-      <SkeletonBlock className="h-[38px] w-full sm:w-[640px] rounded-xl" />
-      <SkeletonBlock className="h-[38px] w-full rounded-xl" />
-      <SkeletonTable rows={8} cols={7} />
-    </div>
-  );
-
-  const narrowed = activeFilter || liveFilter !== "all";
-  // ONE header line: every label on one baseline, never wrapped (a header
-  // three lines tall is mostly empty space). The columns share the card's
-  // whole width — a trailing spacer that kept them at their content's width
-  // left a blank band down the right of a wide screen (the operator,
-  // 2026-10-05) — and figure headers sit right-aligned over their figures.
-  // The last VISIBLE column takes the card's 16px edge: below 72rem the two
-  // figure columns after «Soat» are hidden, and `last:` still names them.
-  const th = "h-10 px-3 first:pl-4 last:pr-4 border-y text-xs font-semibold whitespace-nowrap align-middle text-left";
-  const thNum = th.replace("text-left", "text-right");
-  const thStyle = { borderColor: "var(--border)", color: "var(--text-3)" };
-  const td = "px-3 first:pl-4 last:pr-4 py-2.5 whitespace-nowrap";
-  // One schedule for the whole unit (the usual case) is said once, in the
-  // summary, instead of on every row; several keep the column (and its filter).
-  const schedules = [...new Set(allWorkers.map((w) => w.schedule).filter(Boolean))];
-  const oneSchedule = schedules.length === 1 && !filters.schedules.length ? schedules[0] : null;
-  const cols = 8 + (showCellCol ? 1 : 0) + (oneSchedule ? 0 : 1);
-
-  // The day cannot be shown, or holds nobody: the reason and the one thing to
-  // do about it — not figures of 0, eight empty filters and a search box.
-  if (data?.error || allWorkers.length === 0) return (
-    <div>
-      {!data?.error && <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} onGoRequests={onGoRequests} />}
-      <LiveDayState data={data} empty={!data?.error} onRetry={onRefresh} retrying={refreshing} onToday={onToday} isAdmin={isAdmin} />
-      {exportToast.node}
-    </div>
-  );
-
-  return (
-    <div>
-      <LiveHeader data={data} refreshing={refreshing} onRefresh={onRefresh} onGoClose={onGoClose} onGoRequests={onGoRequests} />
-      <LiveSummary {...summary} schedule={oneSchedule ? tx(oneSchedule) : null} filtered={narrowed} />
-
-      <div className="px-4 pt-5 pb-4 space-y-3">
-        <SegmentedToggle value={liveFilter} onChange={setLiveFilter} options={liveFilterOptions(allWorkers, t)} />
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0">
-            <SearchInput value={filters.worker} onChange={(v) => setF("worker", v)} placeholder={t("staff.searchByName")} />
-          </div>
-          {activeFilter && (
-            <Button size="lg" variant="ghost" onClick={() => setFilters(INIT_FILTERS)} className="flex-shrink-0">
-              {t("staff.clearFilters")}
-            </Button>
-          )}
-          <Button size="lg" variant="secondary" onClick={onExport} disabled={exporting || allWorkers.length === 0}
-            loading={exporting} icon={<Download size={15} />} aria-label={t("staff.export")}
-            className="flex-shrink-0 max-sm:!px-0 max-sm:w-[38px]">
-            <span className="max-sm:hidden">{t("staff.export")}</span>
-          </Button>
-        </div>
-      </div>
-
-      {exportToast.node}
-
-      {workers.length === 0 ? (
-        <div className="border-t px-4 py-10 text-center text-sm" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-          {t("staff.noMatch")}
-        </div>
-      ) : isPhone ? (
-        <div className="border-t" style={{ borderColor: "var(--border)" }}>
-          <LivePhoneList rows={sortedWorkers} openRaw={openRaw} setOpenRaw={setOpenRaw} isAdmin oneSchedule={!!oneSchedule} />
-        </div>
-      ) : (
-        <div className="@container overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr style={{ background: "var(--bg-inner)" }}>
-                {/* The name header SORTS (the search above already filters by
-                    name). While the table is too narrow for a Lavozim column
-                    the job title rides under the name, and its filter here. */}
-                <th scope="col" className={th} style={thStyle}
-                  aria-sort={nameAsc === null ? "none" : nameAsc ? "ascending" : "descending"}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <button type="button" onClick={() => setNameAsc((p) => (p === null ? true : p ? false : null))}
-                      className="inline-flex items-center gap-1 rounded font-[inherit]"
-                      style={{ color: nameAsc === null ? "var(--text-3)" : "var(--text-2)" }} title={t("common.sortAZ")}>
-                      {t("staff.colWorker")}
-                      {nameAsc === null
-                        ? <ChevronsUpDown size={12} aria-hidden="true" style={{ color: "var(--text-4)" }} />
-                        : nameAsc ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
-                    </button>
-                    <span className="inline-flex items-center gap-1.5 @min-[56rem]:hidden">
-                      <span aria-hidden="true" style={{ color: "var(--text-4)" }}>/</span>
-                      <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                        <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
-                      </ColFilter>
-                    </span>
-                  </span>
-                </th>
-                {/* The status sits right after the name — it is the question
-                    the page is opened for. */}
-                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.status")}</th>
-                {/* The job title is a column of its own (the operator,
-                    2026-10-05) once the TABLE is wide enough — measured on the
-                    table, not the screen: an open sidebar takes 170px. */}
-                <th scope="col" className={`${th} hidden @min-[56rem]:table-cell`} style={thStyle}>
-                  <ColFilter quiet label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={(v) => setF("job_titles", v)} render={(o) => tx(o) || o} />
-                  </ColFilter>
-                </th>
-                {showCellCol && (
-                  <th scope="col" className={th} style={thStyle}>
-                    <ColFilter quiet label={t("staff.colCell")} active={filters.cells.length > 0}>
-                      <OptsFilter searchable opts={cellCodes} sel={filters.cells} onChange={(v) => setF("cells", v)}
-                        render={(c) => cellLabels.get(c) || c} />
-                    </ColFilter>
-                  </th>
-                )}
-                {!oneSchedule && (
-                  <th scope="col" className={th} style={thStyle}>
-                    <ColFilter quiet label={t("staff.colSchedule")} active={filters.schedules.length > 0}>
-                      <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={(v) => setF("schedules", v)} />
-                    </ColFilter>
-                  </th>
-                )}
-                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.in")}</th>
-                <th scope="col" className={th} style={thStyle}>{t("staffLive.c.out")}</th>
-                <th scope="col" className={`${thNum} @max-[72rem]:pr-4`} style={thStyle}>
-                  <ColFilter quiet align="right" label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
-                    <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
-                      onMin={(v) => setF("hours_min", v)} onMax={(v) => setF("hours_max", v)} />
-                  </ColFilter>
-                </th>
-                <th scope="col" className={`${thNum} hidden @min-[72rem]:table-cell`} style={thStyle}>
-                  <ColFilter quiet align="right" label={t("staffLive.c.early")} active={!!(filters.early_min || filters.early_max)}>
-                    <RngFilter minV={filters.early_min} maxV={filters.early_max}
-                      onMin={(v) => setF("early_min", v)} onMax={(v) => setF("early_max", v)} />
-                  </ColFilter>
-                </th>
-                <th scope="col" className={`${thNum} hidden @min-[72rem]:table-cell`} style={thStyle}>
-                  <ColFilter quiet align="right" label={t("staffLive.c.eff")} active={!!(filters.eff_min || filters.eff_max)}>
-                    <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
-                      onMin={(v) => setF("eff_min", v)} onMax={(v) => setF("eff_max", v)} />
-                  </ColFilter>
-                </th>
-              </tr>
-            </thead>
-            <LiveRows rows={sortedWorkers} showCellCol={showCellCol} oneSchedule={!!oneSchedule}
-              openRaw={openRaw} setOpenRaw={setOpenRaw} cols={cols} td={td} />
-          </table>
-        </div>
-      )}
-
-      <LiveExtras extras={extrasShown} phone={isPhone} />
-      <LiveFooter data={data} />
-      {exportModal}
-    </div>
-  );
-}
-
-// The table's rows, apart from the view around them: the search box re-renders
-// the view on every keystroke, and a thousand rows must not re-render with it
-// (they follow the deferred text a beat later).
-const LiveRows = memo(function LiveRows({ rows, showCellCol, oneSchedule, openRaw, setOpenRaw, cols, td }) {
-  const { tx } = useTranslit();
-  const sortedWorkers = rows;
-  return (
-    <tbody>
-      {sortedWorkers.map((w) => (
-        <Fragment key={w.id}>
-          <tr className="border-b transition-colors hover:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
-            <td className={`${td} !whitespace-normal`}>
-              {/* Every row is one height (the operator, 2026-10-05). A wide
-                  table keeps a move / a pending change on the name's own line;
-                  a narrow one carries the job title under every name, and the
-                  notes join that line. */}
-              <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
-                <LiveName w={w} open={openRaw === w.id}
-                  onToggle={() => setOpenRaw((v) => (v === w.id ? null : w.id))} />
-                {(w.moved || w.pending?.length > 0) && (
-                  <span className="hidden @min-[56rem]:inline-flex items-center gap-x-2 text-xs" style={{ color: "var(--text-3)" }}>
-                    <LiveRowNotes w={w} />
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs @min-[56rem]:hidden" style={{ color: "var(--text-3)" }}>
-                <span>{tx(w.job_title) || "—"}</span>
-                <LiveRowNotes w={w} />
-              </div>
-            </td>
-            <td className={td}><LiveStatusChip status={w.status} /></td>
-            {/* One line, never wrapped (only the name may): a long title is
-                cut with «…» and read whole on hover. */}
-            <td className={`${td} hidden @min-[56rem]:table-cell`} style={{ color: "var(--text-2)" }} title={tx(w.job_title) || undefined}>
-              {w.job_title
-                ? <span className="block max-w-[12rem] truncate">{tx(w.job_title)}</span>
-                : <span style={{ color: "var(--text-4)" }}>—</span>}
-            </td>
-            {/* Code only — the workshop name is four words of Russian
-                per row; it stays in the tooltip and the filter. */}
-            {showCellCol && (
-              <td className={td} title={w._cell?.full || ""}>
-                {w._cell ? (
-                  <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</CellLink>
-                ) : (
-                  <span style={{ color: "var(--text-4)" }}>—</span>
-                )}
-              </td>
-            )}
-            {!oneSchedule && (
-              <td className={`${td} whitespace-nowrap tabular-nums`} style={{ color: "var(--text-3)" }}>{tx(w.schedule) || "—"}</td>
-            )}
-            <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockIn w={w} /></td>
-            <td className={`${td} tabular-nums`} style={{ color: "var(--text-1)" }}><LiveClockOut w={w} /></td>
-            <td className={`${td} tabular-nums text-right @max-[72rem]:pr-4`} style={{ color: "var(--text-1)" }}>
-              {w.hours_worked != null ? liveN2(w.hours_worked) : <span style={{ color: "var(--text-4)" }}>—</span>}
-            </td>
-            <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-2)" }}>
-              {w.early_arrival_min ? w.early_arrival_min : <span style={{ color: "var(--text-4)" }}>—</span>}
-            </td>
-            <td className={`${td} tabular-nums text-right hidden @min-[72rem]:table-cell`} style={{ color: "var(--text-1)" }}>
-              {w.effective_hours != null ? liveN2(w.effective_hours) : <span style={{ color: "var(--text-4)" }}>—</span>}
-            </td>
-          </tr>
-          {openRaw === w.id && w.raw && (
-            <tr>
-              <td colSpan={cols} className="px-4 py-2.5 border-b" style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
-                {/* Sized BY the columns, never sizing them: `cols` counts the
-                    columns a narrow card hides, and a wide panel spread over
-                    those would hand them a share of the width. */}
-                <div className="[contain:inline-size]"><LiveRaw raw={w.raw} /></div>
-              </td>
-            </tr>
-          )}
-        </Fragment>
-      ))}
-    </tbody>
-  );
-});
-
-const liveFill = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
-
 // ── Cell day view (Workers tab) ───────────────────────────────────────────────
 // Read-only roster of ONE cell out of the by-cell attendance import — shown when
 // the unit picker's «Yacheykalar» section is used on a day that has such an
@@ -1668,7 +1333,7 @@ const DOC_TYPES = [
 
 // ── "Создать" dropdown (Workers toolbar) ──────────────────────────────────────
 
-export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected, role, className = "", compactPhone = false }) {
+export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected, role, className = "" }) {
   const S = useStaffApi();
   const { t } = useLang();
   const [open, setOpen] = useState(false);
@@ -1698,14 +1363,11 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
 
   return (
     <div ref={ref} className={`relative flex-shrink-0 ${className}`}>
-      {/* `compactPhone`: below sm the button is a 38px «+» (named for screen
-          readers) so it shares the row with the unit chip on a 320px phone. */}
       <Button ref={trigger} size="lg" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
-        aria-label={t("staff.create")} icon={<Plus size={15} />}
-        className={compactPhone ? "max-sm:!px-0 max-sm:w-[38px]" : ""}
+        icon={<Plus size={15} />}
         onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}>
-        <span className={compactPhone ? "max-sm:hidden" : ""}>{t("staff.create")}</span>
-        <ChevronDown size={14} aria-hidden="true" className={compactPhone ? "max-sm:hidden" : ""}
+        <span>{t("staff.create")}</span>
+        <ChevronDown size={14} aria-hidden="true"
           style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
       </Button>
       {open && (
@@ -4479,8 +4141,8 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
   const monthLast = monthIso(view.year, view.month, new Date(view.year, view.month + 1, 0).getDate());
   const wantLive = !S.live && !!liveFrom && monthLast >= liveFrom;
   const { data: liveCal } = useQuery({
-    queryKey: LIVE_STAFF_API.qk("staff-approvals-calendar", effManagerId, view.year, view.month),
-    queryFn: () => api.get(`${LIVE_STAFF_API.base}/approvals/calendar`, {
+    queryKey: TODAY_STAFF_API.qk("staff-approvals-calendar", effManagerId, view.year, view.month),
+    queryFn: () => api.get(`${TODAY_STAFF_API.base}/approvals/calendar`, {
       params: { manager_id: effManagerId, year: view.year, month: view.month + 1 },
     }).then(r => r.data),
     enabled: !!effManagerId && wantLive,
@@ -4495,25 +4157,13 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
   // The live close is armed only once its own check says it may go ahead
   // (the dialog's own query — `LiveCloseCheck` draws the same cache entry).
 
-  // Live: the standing line's shortcut (`goClose`) names the day it came from.
-  // Read once at mount: that day is ringed, and its close dialog — which then
-  // names the date — opens by itself once the calendar says it is open.
-  const [focusIso] = useState(() => {
-    try {
-      const v = localStorage.getItem(S.pk("staff_approvals_focus"));
-      localStorage.removeItem(S.pk("staff_approvals_focus"));
-      return v ? JSON.parse(v) : null;
-    } catch { return null; }
-  });
-  const focusDone = useRef(false);
-
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: S.qk("staff-approvals-calendar") });
     qc.invalidateQueries({ queryKey: S.qk("approved-cells") });
     qc.invalidateQueries({ queryKey: S.qk("daily-approval") });
-    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("staff-approvals-calendar") });
-    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("daily-approval") });
-    qc.invalidateQueries({ queryKey: LIVE_STAFF_API.qk("staff-attendance") });
+    qc.invalidateQueries({ queryKey: TODAY_STAFF_API.qk("staff-approvals-calendar") });
+    qc.invalidateQueries({ queryKey: TODAY_STAFF_API.qk("daily-approval") });
+    qc.invalidateQueries({ queryKey: TODAY_STAFF_API.qk("staff-attendance") });
   };
   // Telegram's iOS WebView silently suppresses window.confirm, so a
   // confirm-gated calendar day did nothing at all on the primary device. Both
@@ -4539,23 +4189,6 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
     // Never "" — an empty error renders nothing and the dialog just sits there.
     onError: (e) => setAskErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
   });
-
-  // A live day's status comes from the LIVE calendar, which may answer after
-  // the file one — wait for the calendar that holds the focused day.
-  const focusCal = wantLive && focusIso && focusIso >= liveFrom ? liveCal : data;
-  useEffect(() => {
-    if (!focusIso || focusDone.current || !focusCal) return;
-    focusDone.current = true;
-    // The day takes focus FIRST: the dialog hands focus back to whatever held
-    // it, and the shortcut that did is gone with the tab it sat on.
-    document.querySelector(`[data-day-iso="${focusIso}"]`)?.focus();
-    if (days[focusIso]?.status === "open" && (role === "supervisor" || isAdmin) && focusIso <= todayIso) {
-      // Once, when the calendar's answer arrives — nothing to derive in render.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAskErr(""); setAsk({ kind: "close", iso: focusIso });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusIso, focusCal]);
 
   const cells = buildMonthCells(view.year, view.month);
   const prevMonth = () => setView(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 });
@@ -4645,7 +4278,6 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
                     ...STATUS_STYLE[status],
                     opacity: future ? 0.4 : 1,
                     cursor: clickable ? "pointer" : "default",
-                    ...(iso === focusIso ? { outline: "2px solid var(--brand)", outlineOffset: 2 } : null),
                   }}
                   onMouseEnter={e => { if (clickable) e.currentTarget.style.transform = "scale(1.05)"; }}
                   onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
@@ -4743,26 +4375,14 @@ function readStaffLink(q) {
   if (/^\d+$/.test(unit || "")) out.staff_selected_manager_id = Number(unit);
   return Object.keys(out).length ? out : null;
 }
-// The same link, written into the LIVE page's own keys (its tab, date and unit
-// are remembered apart from /staff's).
-function readStaffLiveLink(q) {
-  const out = readStaffLink(q);
-  return out ? Object.fromEntries(Object.entries(out).map(([k, v]) => [LIVE_STAFF_API.pk(k), v])) : null;
-}
-
+// THE «Verifix to'g'irlash» page. A day from `live_day.LIVE_FROM` on is read
+// live (`TODAY_STAFF_API`, the operator's rulings of 2026-10-06), every earlier
+// day keeps the file flow it was filed under — so the data source `S` is
+// chosen per selected day below, while every remembered key, the unit list
+// and the page itself stay /staff's (`B`). The lab page that read every day
+// live, /staff-live, was retired on 2026-10-06; its route redirects here.
 export default function Staff() {
-  return <StaffPage />;
-}
-
-// THE «Verifix to'g'irlash» page — /staff, and (inside a live
-// StaffApiProvider) /staff-live, which differs only in the source.
-export function StaffPage() {
-  // B = the PAGE's own source: /staff (file) or /staff-live (live chrome). On
-  // /staff a day from `live_day.LIVE_FROM` on is read live (`TODAY_STAFF_API`,
-  // the operator's rulings of 2026-10-06), so the data source `S` is chosen
-  // per selected day below; every remembered key stays the page's own (`B.pk`).
-  const B = useStaffApi();
-  const hybrid = !B.live;
+  const B = STAFF_API;
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -4780,7 +4400,7 @@ export function StaffPage() {
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
   // Before the persisted state below: a link writes it first.
-  useUrlScope(B.live ? readStaffLiveLink : readStaffLink);
+  useUrlScope(readStaffLink);
   const [rawTab, setTab] = usePersistentState(B.pk("staff_tab"), role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
@@ -4822,52 +4442,40 @@ export function StaffPage() {
   // list to the shift-manager's own shift (admins see everyone).
   const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
-  const { data: supervisors = [], isSuccess: supervisorsLoaded } = useQuery({
+  const { data: supervisors = [] } = useQuery({
     queryKey: B.qk("staff-supervisors"),
     queryFn: () => api.get(`${B.base}/supervisors`).then(r => r.data),
     enabled: isManagerView,
     staleTime: 120_000,
   });
-  // Live: a remembered unit the list no longer offers (its cells left the
-  // загрузка) is dropped — the picker read «pick a brigadir» over a page
-  // showing that unit's error.
-  useEffect(() => {
-    if (B.live && supervisorsLoaded && selectedManagerId != null
-        && !supervisors.some(s => s.manager_id === selectedManagerId)) setSelectedManagerId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supervisorsLoaded, supervisors, selectedManagerId]);
-
   // How many of this unit's workers still have no cell — the number the day
   // close will REFUSE on. It rides the day-state endpoint the close itself
   // consults (`needs_cell`), so the badge and the refusal can never disagree.
   const supervisorManagerIdEarly = role === "supervisor"
     ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
     : selectedManagerId;
-  // Live: the unit's shift-day on the clock, from the server — never guessed
-  // in the browser. Until it answers the page has NO day, so nothing that
-  // depends on one is asked (a guess fired real reads for a night not begun).
-  // It is asked again when the next shift-day opens (`next_in_s`), not polled.
-  // /staff: from which shift-day the live source answers, and the plant's
-  // date — asked once; until it answers (or if it fails) the page is the file
-  // page it always was.
+  // From which shift-day the live source answers, and the plant's date —
+  // asked once; until it answers (or if it fails) the page is the file page it
+  // always was.
   const { data: liveFloor } = useQuery({
     queryKey: ["staff-live-from"],
     queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
-    enabled: hybrid,
     // Short: a page loaded while a deploy swaps the backend copies may get the
     // old copy's answer, and the floor (and the plant's date) must not stay
     // stale for half an hour behind it.
     staleTime: 60_000,
     retry: 1,
   });
-  const liveFrom = hybrid ? (liveFloor?.live_from || null) : null;
+  const liveFrom = liveFloor?.live_from || null;
   // The live source is in force on the plant's clock — only then is a unit's
   // own shift-day asked for (a night unit's «today» is yesterday's date until
-  // its next shift opens, which only the server can say).
-  const liveForce = B.live || (!!liveFrom && !!liveFloor?.today && liveFloor.today >= liveFrom);
+  // its next shift opens, which only the server can say). Until it answers the
+  // page has NO day, so nothing that depends on one is asked; it is asked
+  // again when the next shift-day opens (`next_in_s`), not polled.
+  const liveForce = !!liveFrom && !!liveFloor?.today && liveFloor.today >= liveFrom;
   const { data: liveToday, error: todayError, refetch: refetchToday } = useQuery({
-    queryKey: LIVE_STAFF_API.qk("staff-today", supervisorManagerIdEarly),
-    queryFn: () => api.get(`${LIVE_STAFF_API.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
+    queryKey: TODAY_STAFF_API.qk("staff-today", supervisorManagerIdEarly),
+    queryFn: () => api.get(`${TODAY_STAFF_API.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
     enabled: liveForce && !!supervisorManagerIdEarly,
     staleTime: 60_000,
     retry: 1,
@@ -4877,9 +4485,9 @@ export function StaffPage() {
     },
   });
   const todayIso = liveToday?.manager_id === supervisorManagerIdEarly ? liveToday.date : null;
-  // The live day control (‹ day › up to the unit's own today, opening on it):
-  // always on /staff-live; on /staff once the unit's today is a live day.
-  const liveUI = B.live || (!!liveFrom && !!todayIso && todayIso >= liveFrom);
+  // The live day control (‹ day › up to the unit's own today, opening on it),
+  // once the unit's today is a live day.
+  const liveUI = !!liveFrom && !!todayIso && todayIso >= liveFrom;
   const selectedDate = liveUI && autoDay ? (todayIso || "") : storedDate;
   useEffect(() => {
     if (liveUI && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
@@ -4888,9 +4496,9 @@ export function StaffPage() {
   const dayPending = liveForce && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError;
   const dayError = liveForce && autoDay && !todayIso && todayError
     ? (todayError?.response?.data?.detail || todayError?.message || "error") : null;
-  // THE data source of the day on screen. /staff-live: always live. /staff: a
-  // day from `liveFrom` on is read live, every earlier day keeps the file.
-  const apiFor = (iso) => (B.live ? B : (liveFrom && iso && iso >= liveFrom ? TODAY_STAFF_API : B));
+  // THE data source of the day on screen: a day from `liveFrom` on is read
+  // live, every earlier day keeps the file.
+  const apiFor = (iso) => (liveFrom && iso && iso >= liveFrom ? TODAY_STAFF_API : B);
   const S = apiFor(selectedDate || (dayPending ? liveFrom : ""));
   const { data: dayState } = useQuery({
     queryKey: S.qk("daily-approval", supervisorManagerIdEarly, selectedDate),
@@ -4961,10 +4569,10 @@ export function StaffPage() {
     if (c) setSelectedManagerId(null);
   }
 
-  // The Requests tab follows the source of the day on screen. /staff on a
-  // live day asks for its live days only (`since`) — /staff-live's test
-  // filings of the days before are not /staff's register.
-  const docSince = S.live && !S.chrome ? liveFrom : null;
+  // The Requests tab follows the source of the day on screen. A live day asks
+  // for the live days only (`since`) — the live register's test filings of the
+  // days before the floor (the retired /staff-live) are nobody's register.
+  const docSince = S.live ? liveFrom : null;
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: S.qk("staff-documents", docSince),
     queryFn: () => api.get(`${S.base}/documents`, { params: docSince ? { since: docSince } : {} }).then(r => r.data),
@@ -4976,26 +4584,26 @@ export function StaffPage() {
   const { data: fileDocs = [] } = useQuery({
     queryKey: ["staff-documents", null],
     queryFn: () => api.get("/api/staff/documents").then(r => r.data),
-    enabled: hybrid && S.live,
+    enabled: S.live,
     refetchInterval: 60_000,
   });
-  const filePending = useMemo(() => (hybrid && S.live ? fileDocs.filter(d =>
+  const filePending = useMemo(() => (S.live ? fileDocs.filter(d =>
     d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileDocs, hybrid, S.live]);
+    [fileDocs, S.live]);
   // …and the other way round: on a FILE day (no unit picked yet, or a day
   // before the switch) once the live source is in force, what the LIVE
   // register has waiting — the badge counts it, so the tab must show the way.
   const { data: liveDocs = [] } = useQuery({
     queryKey: TODAY_STAFF_API.qk("staff-documents", liveFrom),
     queryFn: () => api.get(`${TODAY_STAFF_API.base}/documents`, { params: { since: liveFrom } }).then(r => r.data),
-    enabled: hybrid && !S.live && liveForce && !!liveFrom,
+    enabled: !S.live && liveForce && !!liveFrom,
     refetchInterval: 60_000,
   });
-  const livePending = useMemo(() => (hybrid && !S.live && liveForce ? liveDocs.filter(d =>
+  const livePending = useMemo(() => (!S.live && liveForce ? liveDocs.filter(d =>
     d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liveDocs, hybrid, S.live, liveForce]);
+    [liveDocs, S.live, liveForce]);
 
   // Rejected items also have approved=false — they are processed, so they
   // must not trigger the badge (mirrors the "pending" status filter)
@@ -5011,29 +4619,6 @@ export function StaffPage() {
     setAutoDay(false);
     setSelectedDate(d);
   }
-  // Live: the unit is picked in the FilterPanel — the platform's scope zone,
-  // on the 38px toolbar baseline — never a hand-rolled dropdown above it.
-  const unitOpts = useMemo(() => [...supervisors]
-    .sort((a, b) => (a.shift || 0) - (b.shift || 0) || tl(a.full_name).localeCompare(tl(b.full_name)))
-    .map(s => ({ value: String(s.manager_id), label: `${tl(s.full_name)} (S${s.shift})` })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [supervisors, lang]);
-  const unitSel = supervisors.find(s => s.manager_id === selectedManagerId);
-  const unitPicker = B.live && isManagerView ? (
-    // Required: the page shows one unit, so there is no «clear» (`anyActive`
-    // false) — and the name shortens («Ergashev M. · S2») rather than being
-    // cut off in the 150px trigger.
-    <FilterPanel anyActive={false} sections={[{
-      key: "unit", icon: UserRound, label: t("staff.colSupervisor"),
-      active: !!unitSel,
-      display: unitSel ? `${surnameInitial(tl(unitSel.full_name))} · S${unitSel.shift}` : "",
-      render: ({ close } = {}) => (
-        <PickFilter searchable close={close} opts={unitOpts}
-          value={selectedManagerId != null ? String(selectedManagerId) : ""}
-          onChange={(v) => pickSupervisorId(Number(v))} />
-      ),
-    }]} />
-  ) : null;
   // The live stepper: ‹ day › up to the unit's own today, plus a way back to
   // it. While the server has not named the day it holds the stepper's place.
   const liveMax = todayIso || storedDate || null;
@@ -5120,22 +4705,6 @@ export function StaffPage() {
     setTab("requests");
   }
 
-  // Live: the standing line's «close in Tasdiqlash» — only for those who may
-  // close the day (an admin, or the unit's own brigadir; the endpoint refuses
-  // everybody else). The calendar reads its unit and month from its OWN
-  // remembered keys when it mounts, so they are pointed at this unit-day first;
-  // the keys are the live page's (`S.pk`), so /staff's calendar is untouched.
-  const canCloseDay = role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id);
-  function goClose() {
-    try {
-      localStorage.setItem(B.pk("staff_approvals_manager_id"), JSON.stringify(supervisorManagerId));
-      const [y, m] = String(selectedDate).split("-").map(Number);
-      if (y && m) localStorage.setItem(B.pk("staff_approvals_month"), JSON.stringify({ year: y, month: m - 1 }));
-      localStorage.setItem(B.pk("staff_approvals_focus"), JSON.stringify(selectedDate));
-    } catch { /* storage unavailable — the calendar opens where it was */ }
-    setTab("approvals");
-  }
-
   function handleDeleted(toastKey) {
     setTab("requests");
     if (toastKey === "success") deleteToast.success(t("staff.deleteSuccess"));
@@ -5206,7 +4775,7 @@ export function StaffPage() {
       {tab === "workers" && showWorkersTab && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            {B.live ? <>{dayControl}{unitPicker}</> : isManagerView && (
+            {isManagerView && (
               <SupervisorSelect
                 value={selectedManagerId}
                 onChange={pickSupervisorId}
@@ -5216,13 +4785,11 @@ export function StaffPage() {
                 onCellChange={pickCell}
               />
             )}
-            {!B.live && dayControl}
+            {dayControl}
             {/* The cell view is read-only import data — no documents, no
                 day-close state; both controls belong to the verifix flow. */}
             {canCreateHere && !selCell && (
               <CreateMenu
-                className={B.live ? "ml-auto" : ""}
-                compactPhone={B.live && isManagerView}
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
                 disabledHint={createHint}
@@ -5230,8 +4797,7 @@ export function StaffPage() {
                 role={role}
               />
             )}
-            {/* Live: the card's own header line already says the day is closed. */}
-            {dayClosed && !selCell && !B.live && (
+            {dayClosed && !selCell && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("staff.dayClosedBadge")}
@@ -5258,9 +4824,6 @@ export function StaffPage() {
                   dayPending={dayPending}
                   dayError={dayError}
                   onDayRetry={() => refetchToday()}
-                  onGoClose={S.live && canCloseDay && supervisorManagerId && selectedDate ? goClose : undefined}
-                  onGoRequests={S.live ? () => changeTab("requests") : undefined}
-                  onToday={liveUI ? () => setAutoDay(true) : undefined}
                 />
               </StaffApiProvider>
             )}
@@ -5300,16 +4863,14 @@ export function StaffPage() {
               cell picker and CreateMenu are deliberately NOT here: they belong
               to the read-only import view and the document flow. */}
           <div className="flex flex-wrap items-center gap-2">
-            {B.live ? <>{dayControl}{unitPicker}</> : <>
-              {isManagerView && (
-                <SupervisorSelect
-                  value={selectedManagerId}
-                  onChange={pickSupervisorId}
-                  supervisors={supervisors}
-                />
-              )}
-              {dayControl}
-            </>}
+            {isManagerView && (
+              <SupervisorSelect
+                value={selectedManagerId}
+                onChange={pickSupervisorId}
+                supervisors={supervisors}
+              />
+            )}
+            {dayControl}
             {dayClosed && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>

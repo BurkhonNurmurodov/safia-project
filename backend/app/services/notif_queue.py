@@ -14,7 +14,7 @@ the queue can never offer a decision the endpoint behind it refuses:
 source                    whose turn
 ========================  ======================================================
 HR documents (draft)      ``staff._scope_documents`` ∩ ``_can_approve_doc``
-live documents (draft)    ``staff_live._scope_docs`` ∩ ``_can_approve`` — /staff-live's
+live documents (draft)    ``staff_live._scope_docs`` ∩ ``_can_approve`` — a live day's
 deletion requests         admin + shift-manager, ``_scope_deletion_requests``
 live deletion batches     admin + shift-manager, ``staff_live._scope_deletions``
 edit requests             admin + shift-manager covering the unit
@@ -28,12 +28,14 @@ An ADMIN's turn on objections and late proofs is the admin stage only, the
 reading the queue tabs on /leaders badge — an admin CAN rule stage 1, but a row
 sitting with a brigadir is not waiting on an admin.
 
-The two LIVE sources (the «Verifix to'g'irlash» page over the live Verifix
-read, /staff-live) are /staff's twins read off ``routers.staff_live``'s own
-scope and rights helpers, and they are listed only for a viewer who can OPEN
-that page (``live_staff.can_open`` — an admin always, anybody else once the
-operator has opened it to their role or granted it to them): a decision whose
-link lands on «no access» is worse than none.
+The two LIVE sources (a live day of /staff, ``live_day.LIVE_FROM`` on) are
+/staff's twins read off ``routers.staff_live``'s own scope and rights helpers,
+listed only for a viewer who can OPEN /staff (``permissions.page_allowed``,
+the decision ``require_page`` makes): a decision whose link lands on «no
+access» is worse than none. Rows dated before the floor (the retired
+/staff-live page's test filings) are offered to admins alone — no page lists
+them any more, and the bell's inline actions are where they can still be
+settled.
 
 Inline actions are DESCRIBED here (method + url + whether it needs a confirm +
 how to undo it) and executed by the client against the very endpoints /staff
@@ -189,19 +191,12 @@ def _edit_batches(db: Session, payload: dict) -> list[dict]:
 
 
 def _live_open(db: Session, payload: dict) -> bool:
-    """The viewer can open /staff-live — the one gate both live sources sit
-    behind. An admin always may; anybody else only once the page is opened to
-    their PROFILE (`live_staff.can_open`: their role on the Access tab, or a
-    grant, and no personal deny), which is the same test the page's own bell
-    rows are addressed by. Resolved from the JWT the way every permission check
-    is (`identity.viewer_profile_key`)."""
-    if payload.get("role") == "admin":
-        return True
-    from app.identity import viewer_profile_key
-    from app.permissions import get_page_access
-    from app.services import live_staff
-    key = viewer_profile_key(db, payload)
-    return bool(key) and live_staff.can_open(db, key, get_page_access(db))
+    """The viewer can open /staff — the one gate both live sources sit behind,
+    asked exactly as `require_page("staff")` asks it (role, capability-implied
+    pages, grants and denies), which is the gate the live doors themselves
+    stand behind."""
+    from app.permissions import page_allowed
+    return page_allowed(db, payload, "staff")
 
 
 def _plant_today() -> date:
@@ -210,15 +205,12 @@ def _plant_today() -> date:
 
 
 def _live_link(day) -> str:
-    """A live request opens /staff on its day once /staff reads live days."""
-    from app.services import live_day
-    if live_day.is_live(day):
-        return f"/staff?tab=requests&date={day.isoformat()}"
-    return "/staff-live?tab=requests"
+    """A live request opens /staff's requests on its day."""
+    return f"/staff?tab=requests&date={day.isoformat()}" if day else "/staff?tab=requests"
 
 
 def _live_docs(db: Session, payload: dict) -> list[dict]:
-    """`_hr_docs` over the live page's documents (`LiveDocument`, /staff-live):
+    """`_hr_docs` over a live day's documents (`LiveDocument`):
     the same scope, rights and stale rule, read off `routers.staff_live`'s own
     helpers and never re-spelled, so the queue offers exactly what that page's
     approve door accepts."""
@@ -228,10 +220,10 @@ def _live_docs(db: Session, payload: dict) -> list[dict]:
     from app.routers import staff_live as sl
     q = sl._scope_docs(db.query(LiveDocument).filter(LiveDocument.status == "draft"), payload, db)
     if payload.get("role") != "admin":
-        # A live draft dated before the floor is a /staff-live test filing:
-        # it moves no figure (those days keep the file flow), so it waits on
-        # nobody but the admins who were testing — the /staff register and its
-        # badge start at the floor too.
+        # A live draft dated before the floor is a test filing of the retired
+        # /staff-live page: it moves no figure (those days keep the file flow),
+        # no page lists it, and the /staff register and its badge start at the
+        # floor — so only the admins who were testing are offered it here.
         from app.services import live_day
         q = q.filter(LiveDocument.day >= live_day.LIVE_FROM)
     docs = q.order_by(LiveDocument.created_at.desc()).limit(_CAP).all()

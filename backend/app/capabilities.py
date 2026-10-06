@@ -150,7 +150,7 @@ def page_cap(page: str) -> str:
 # matrix reads only their own unit, and a grant is what widens that to the
 # whole register — "own" would only restate a supervisor's role default and
 # would narrow nothing for any other role.
-SCOPED_PAGES = ("staff", "staff-live", "daily", "production", "concerns", "worker-concerns", "tasks", "leaders", "quality", "setup", "idle-cell")
+SCOPED_PAGES = ("staff", "daily", "production", "concerns", "worker-concerns", "tasks", "leaders", "quality", "setup", "idle-cell")
 
 # key   → the capability id, also the i18n key suffix (caps.<key>.label/.hint)
 # group → UI grouping on the Permissions tab

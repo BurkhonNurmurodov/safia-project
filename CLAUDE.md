@@ -1452,8 +1452,8 @@ ATTENDANCE — what «Davomat» reads from Verifix — places in that centre's c
   day's штатка pin; the tab's Save sends that pin back exactly as stored (null
   would DELETE it), so a pin set on the «Команды» card's pencil survives. That
   pencil still edits the pin — retiring it is a separate decision.
-- Not the live read: `/staff-live`'s minute-by-minute read feeds nothing outside
-  that page, so a running day reads «—» until «Davomat» saves it. **On a live
+- Not the live read: the minute-by-minute Verifix read does not reach this
+  card until a day is copied, so a running day reads «—» until it is saved. **On a live
   day (`live_day.LIVE_FROM`) the source is the brigadir's close**
   (`production._live_source`): the note says the figures appear once the day is
   closed on «Verifix to'g'irlash», and after the close it names the copy (kind
@@ -7371,139 +7371,44 @@ change. `POST /upload` is gone; the days the files fed stay as they were.
   `vfx_attendance_days` / `vfx_attendance_rows`, are left in the database,
   unread; dropping them is a separate decision.
 
-## The live «Verifix to'g'irlash» (`/staff-live`)
+## A live day's engine (`/api/staff-live`, `live_staff`, `verifix_live`)
 
-From **2026-10-01** a LAB copy of /staff read straight from Verifix instead of
-the next-morning Excel. From **2026-10-04** (the operator: «structure this page
-just like Verifix edit … the same rule applies for everything as that page …
-the only difference should be the source»; every open point asked one by one)
-it IS /staff's page — same tabs (Xodimlar · So'rovlar · Yacheykalar ·
-Tasdiqlash), tables, documents, deletion requests, cell placement, day close and
-rights — over a different source, and it is being built to REPLACE /staff.
+What /staff reads a LIVE day through (from `live_day.LIVE_FROM` — see «/staff
+reads TODAY live» below). It was built as a LAB page of its own, `/staff-live`
+(2026-10-01 a read-only copy, from 2026-10-04 /staff's page over the live
+source, «the only difference should be the source»), and that page was
+**RETIRED on 2026-10-06** once /staff read its live days through the same
+doors (the operator: «is it safe to remove it? If yes, remove it»). Gone with
+it: `pages/StaffLive.jsx`, the nav row and its badge, the `staff-live` page key
+(a stored matrix entry or a `page.view.staff-live` grant is now inert — nothing
+reads it), `LIVE_STAFF_API`, and the look only that page had (the status strip,
+the three figures, the freshness line and «Yangilash», a phone list, the
+other-brigade hours list, the rules and the admin Diagnostics / raw Verifix
+facts behind a row — about 320 `staffLive.*` strings). `/staff-live` redirects
+to `/staff`, query string kept, so a Telegram card already sent still lands.
+Everything below is the ENGINE, and it is what /staff's live days run on.
 
-- **ONE page, two sources: `context/StaffApiContext.jsx`.** `pages/StaffLive.jsx`
-  is `<StaffApiProvider live><StaffPage/></StaffApiProvider>`; every component of
-  `pages/Staff.jsx` (and `components/staff/CellPlacementPanel.jsx`) reads the
-  context for its API base (`/api/staff` | `/api/staff-live`), a react-query key
-  prefix (`live:`) and a remembered-filter prefix (`staff_live_`) so the two
-  pages never share a cache or a pick, and the ROW KEY — a worker NAME on /staff,
-  a Verifix `employee_id` here (`S.rowKey`). No provider = /staff, unchanged
-  (Daily imports the same components). What only a live source can say lives in
-  `components/staff/LiveBits.jsx` and renders under `S.live`: the read line +
-  «Yangilash» + read errors + the day's standing (closed in «Tasdiqlash», as on
-  /staff), the status strip (Hammasi · Ichkarida · Ketgan · Kelmagan ·
-  Erta ketgan · Belgisiz · Ko'chirilgan — «Kechikkan» is gone, a saved pick of
-  it reads as Hammasi) and a Status column,
-  **Keldi and Ketdi as two columns — Ketdi is written only once the worker is
-  out of this unit** (left, or moved on at that minute; empty while inside or on
-  a break), «hours carried here under another unit's name», the rules and (admins)
-  Diagnostics + the raw Verifix facts behind a row. Never fork a /staff
-  component for the live page: add the difference behind `S.live`. **The one
-  exception is the Workers tab's RENDER** (2026-10-05): `AttendanceTable` still
-  computes every row, filter, count and the export for both pages, and on the
-  live page hands them to `LiveWorkersView` (same file) to draw — a render that
-  had grown twenty interleaved `S.live` branches is a second page hiding inside
-  the first. /staff's own render carries no live branch any more.
-- **It looks like the page it will replace — no lab notice** (2026-10-05, the
-  operator: «remove all test warnings … I must know how it looks on
-  production»). The title is «Verifix to'g'irlash» (the nav entry keeps
-  «· Jonli» while both pages exist). The card opens with ONE line: the day's
-  standing (+ «Tasdiqlash»da yopish» when closable) on the left, the read's
-  freshness on the right — «Jonli · 09:40» with a breathing dot while the
-  minute job reads the day, «Oxirgi o'qish …» for a past day — and «Yangilash»
-  as a 38px icon button (on a phone the button sits beside the sentence and the
-  clock under it). Then three figures on the card itself, no boxes: each is ONE
-  number over ONE sub-line that is always there and names its base — «42
-  kishidan · 93%» («filtrdagi …» while a filter is on: the filter caveat lives
-  there, never as a line inserted above the strip), «zagruzka lavozimidagi 38
-  kishidan», «o'rtacha 3.5 soat · hozirgacha» — so nothing above the strip moves
-  when a filter changes; «Ishga kelganlar» counts everybody who CLOCKED IN (a
-  no-check-out row carries no hours, and /staff's `hasWorked` dropped them).
-  A day-off row is in no count (no strip filter shows it): the strip, the
-  figures and the export's «Hammasi» count one set. «Smena jadvali: …» is a
-  plain line under the figures when the whole unit shares one schedule — the
-  Jadval column is then dropped (it returns, with its filter, when schedules
-  differ). No KPI cards, no role chips (the operator, 2026-10-05), no
-  «Xodimlar» header with a collapse button. Rows and their totals print hours
-  with 2 decimals, summary figures with 1. A day that cannot be shown (an
-  error, nobody on the unit's cells) is ONE block with the reason and one
-  action (`LiveDayState`: «Qayta urinish» for Verifix down — Verifix's own
-  text to admins only), never figures of 0 above empty filters. **Lateness
-  is not printed anywhere on the page** (the operator, 2026-10-05: «no one
-  cares about late comers») — not under «Keldi», not on the strip, not in the
-  rules text; the backend still computes `late` and nothing reads it. **Every
-  table row is ONE line high** (same day): early leave and a missing check-out
-  are words AFTER the time on its own line («15:20 · 160 daq erta»), a move or
-  a pending change sits on the name's line on a wide table (on a narrow one it
-  joins the job-title line every row carries), and the pending chip is
-  `leading-4` so it fits the text line. A time a
-  mark stood in for wears a muted «≈» (a dotted underline means a cell link).
-  The unit is picked in a required `FilterPanel` section (no ✕, the name
-  shortened «Ergashev M. · S2»; a remembered unit the list no longer offers is
-  dropped), «Yaratish» is the `Button` template with a keyboard menu (a 38px
-  «+» on a phone beside the unit chip), and the page hides document types that
-  do not exist yet. Numbers are right-aligned, «hozirgacha» replaced the `*` on
-  every row inside, the «no check-out» chip in Ketdi is dropped where the
-  status already says it, and the rules + Diagnostics fold under one «Soat va
-  holatlar qanday hisoblanadi» link. A phone reads a LIST (`LivePhoneList`:
-  name + status, role · cell, Keldi · Ketdi · soat), not the table scrolled
-  sideways. Column filters use `ColFilter quiet` (the label is the trigger, the
-  glyph shows on hover/focus/when filtering, always on touch, and hangs OUTSIDE
-  the label so a header lines up with its column — `align="right"` for figures).
-  The table header is ONE 40px line, never wrapped, every label on one baseline;
-  the columns SHARE the card's whole width (the operator, 2026-10-05: the
-  trailing spacer that kept them at their content's width left a blank band
-  down the right of a wide screen — gone from both tables, the extra hours'
-  too); the last VISIBLE column takes the 16px edge (`@max-[72rem]:pr-4` on
-  «Soat», since `last:` still names the hidden columns), and the admin's raw
-  row is `[contain:inline-size]`, sized by the columns and never sizing them.
-  **A worker is SHORT — «A. Sardor»** (`liveShortName` = `shortPerson(…,
-  {nameCase: true})`: the surname's initial and the given name, Verifix's
-  capitals in ordinary case), the full name on hover, in the table, the phone
-  list and the extra-hours section; the search and the export keep the full
-  name. «Xodim» sorts (the search box above is the name filter). **The job
-  title is a «Lavozim» column of its own, right after «Holat»** (the operator,
-  2026-10-05 — one line, cut with «…» past 12rem, whole on hover). Which
-  columns show is decided by the TABLE's width (`@container` on its scroller),
-  never the screen's, because an open sidebar takes 170px: «Lavozim» from 56rem
-  (below that the title rides under the name again, its filter in the name
-  header «Xodim / Lavozim»), early arrival and effective hours from 72rem.
-  Consequence to know: on a 1280 laptop with the sidebar open the table now
-  shows «Lavozim» and not those two columns (it showed the two before).
-- **It opens on the unit's CURRENT shift-day**, never a day remembered from an
-  earlier visit — `GET /api/staff-live/today?manager_id=` (`_unit_today` over
-  `verifix_live.day_frame`, reads nothing from Verifix, 404 for a unit that
-  does not exist) names it, because the browser cannot: the plant runs on
-  Tashkent's clock and a night unit's day is yesterday's date until its next
-  shift opens. **There is no guess**: until it answers the page has no day and
-  asks nothing that needs one (a browser guess once fired `approvals/day` for a
-  night not begun); it answers `next_in_s`, and the page asks again exactly when
-  the next shift-day opens instead of polling. `autoDay` holds until the reader
-  picks a day (a link naming a date counts as picking); while it holds,
-  switching units follows each unit's own day. Saved filters are reset only
-  when the reader moves from one day or unit to another, never when the page
-  first learns its day. The delete dialog and the document forms keep the day
-  they were opened on, and «Yangilash» stores its answer under the unit-day it
-  was asked for. A day that is over is not polled (read on focus). The day
-  control is `DayStepper` capped at that day, with «Bugungi smena» back to it. Opening «Tasdiqlash» carries the unit (and its month) into
-  the calendar, which kept a unit of its own before.
 - **`routers/staff_live.py` is /api/staff's twin** — the same paths under
   `/api/staff-live`, the same shapes and the same rights per role (supervisor
   own unit, shift-manager shift ∩ plant, admin everything; `_native_can_approve`
   mirrors /staff: exchange → supervisor = the receiving supervisor, → task =
   admin / covering shift-manager, role change = admin / shift-manager; deletions
   need admin / shift-manager / the request grant; an admin's own filing is the
-  approval). **Page key `staff-live`**, `DEFAULT_PAGE_ACCESS` empty = admin-only
-  until the operator opens it on the Access tab (`RequirePage`, a `page` nav
-  entry — no longer `RequireAdmin`).
+  approval). Its page gate is `require_page("staff")` (strict parity: /staff's
+  own `_require_staff` also admits a «daily» grant — a /daily-only viewer is
+  refused the live doors, a gap that predates the retirement), and a grant at
+  "all" on staff or daily widens it as on /staff.
 - **`services/live_staff.py` is THE day** — the stored read folded into
   /staff's row shape, with every APPROVED document laid over it on every
-  request. **Nothing is applied**: /staff writes a document onto `attendance`
-  and reverts it on cancel; the live day is re-read every minute, so an approve,
-  un-post or delete writes the document and nothing else. Lab tables only —
-  `live_documents`, `live_document_history`, `live_deletions`,
+  request. **Nothing is applied**: /staff writes a file-day document onto
+  `attendance` and reverts it on cancel; the live day is re-read every minute,
+  so an approve, un-post or delete writes the document and nothing else. Its
+  tables — `live_documents`, `live_document_history`, `live_deletions`,
   `live_placements`, `live_day_closes` (`live_staff_events` is retired, kept
-  unread); nothing else on the platform reads them.
+  unread) — reach the rest of the platform only through the close's copy
+  (`live_projection`). Rows dated before `LIVE_FROM` are the lab page's test
+  filings: they move no figure, /staff lists none of them, and only an admin's
+  bell queue still offers them (see the bell bullet below).
 - **Who may be exchanged or re-titled: a worker who CAME** (has a clock-in),
   still inside or already gone. A role change is for the whole day (/staff).
 - **A people-exchange follows the clock** (the operator's own rule): the day
@@ -7535,13 +7440,16 @@ rights — over a different source, and it is being built to REPLACE /staff.
   unit's name) and while a counted worker has no cell. Cross-shift moves land on
   the receiver's same-date day (/staff's rule, kept).
 - **Notifications** (bell + Telegram, `live_*` templates, category approvals /
-  day): nothing while the page is admin-only (`live_staff.lab_open`), then only
-  to people who can open it (`can_open`) — the «everybody left» notice too.
+  day) reach only people who can open /staff — `live_staff.can_open`, which is
+  `require_page("staff")` asked of a PROFILE: an admin, the role on the Access
+  tab, the page grant, or a capability carrying the page (approving documents or
+  requests, editing or deleting attendance, reopening a day), with no personal
+  deny.
 - **A worker belongs to the brigadir (on /cells) of the cell their Verifix ORG
   UNIT's code names** — never the division (the parity check's finding) — and
   **only cells counted in the загрузка** (`cells.in_load`, from 2026-10-04, the
   operator): `_registry` takes no other cell, so a person in any other cell is on
-  no page and a unit with none is not offered.
+  no unit's day and a unit with none has no live day.
 - **The last read is STORED and a job keeps it fresh** (from 2026-10-04, the
   operator: «save the last download in the database, auto-refresh every
   minute»). `live_verifix_reads`: `dir` (divisions · jobs · working employees,
@@ -7554,19 +7462,20 @@ rights — over a different source, and it is being built to REPLACE /staff.
   past its end, every 10 min after that until the next shift-day; the marks are
   read incrementally (`TRACKS_OVERLAP_MIN` back from the last read's end) and
   whole every `TRACKS_FULL_S` (15 min). An empty `employee_ids` filter means
-  everyone, so no call is made for nobody. **The page reads the database**
-  (polls it every minute — a DB read, not a Verifix one) and reads Verifix
-  itself only on «Yangilash» (the unit, now), for a day nobody stored yet, or
-  when a running day's read is older than `STALE_S` (3 min — a stopped job); a
-  failed read keeps the stored one on screen with the failure named
-  (`read_error`), and for `ERROR_BACKOFF_S` (60 s) after a failed read of a day
-  the requests serve the stored read instead of trying Verifix again (a Verifix
-  outage had turned every viewer's poll into a Verifix call; «Yangilash» still
-  tries). `approvals/day` (the badge and day state) reads the STORED read only. The Auto / Manual toggle is gone. **Consequence to know:** ~17
-  Verifix calls a minute (the timesheet in pages of 100 + the new marks), all
-  day, whether or not anybody has the page open.
+  everyone, so no call is made for nobody. **A request reads the database**
+  (/staff polls it every minute — a DB read, not a Verifix one) and Verifix
+  itself only on `force` (/staff's «Qayta urinish» on a day that could not be
+  read, and the close), for a day nobody stored yet, or when a running day's
+  read is older than `STALE_S` (3 min — a stopped job); a failed read keeps the
+  stored one with the failure named (`read_error`), and for `ERROR_BACKOFF_S`
+  (60 s) after a failed read of a day the requests serve the stored read
+  instead of trying Verifix again (a Verifix outage had turned every viewer's
+  poll into a Verifix call). `approvals/day` (the badge and day state) reads the
+  STORED read only. **Consequence to know:** ~17 Verifix calls a minute (the
+  timesheet in pages of 100 + the new marks), all day, whether or not anybody
+  has the page open.
 - **The clocks are the REPORT's** (2026-10-02, the operator: «/staff is
-  correct, fix /staff-live») — `input_time` / `output_time` of «Отчёт по
+  correct, fix the live page») — `input_time` / `output_time` of «Отчёт по
   посещениям», which the parity check proved equal to the file's clock-in/out
   for 1,157 of 1,158 people (27.09). The raw marks (`track$list`) are EVERY
   terminal a person passes: on 01.10 the first mark of the day sat 8–20 min
@@ -7576,8 +7485,8 @@ rights — over a different source, and it is being built to REPLACE /staff.
   the latest mark, so every arrival printed early and every departure late
   (the operator: «wrong times are arriving through the API») while the hours,
   read off the time kinds, were right. A mark decides a clock only where the
-  report has not answered yet, and the page SAYS so (`in_src` / `out_src` ≠
-  "report", dotted with a hint). **Every mark carries a type** (the 01.10
+  report has not answered yet (`in_src` / `out_src` ≠ "report" on the row).
+  **Every mark carries a type** (the 01.10
   dump, 42,963 marks): «I» (door in), «O» (door out) or «C» — a CHECKPOINT,
   the gate, 11,361 of them, which sits 8–20 min before every «I» and 7–31 min
   after every «O» and says only that the person passed it (`CHECKPOINT`).
@@ -7600,7 +7509,7 @@ rights — over a different source, and it is being built to REPLACE /staff.
   after it) read as a return, and the 6712 packers Verifix showed out since
   18:04 / 18:17 read «inside» all evening. `diag.held` names why each «inside»
   row has no check-out (`back` = an entry after the report's · `no_report_out`
-  = none in the report yet), printed under Diagnostics. ONCE THE SHIFT IS OVER the report's check-out is
+  = none in the report yet). ONCE THE SHIFT IS OVER the report's check-out is
   final: sixteen finished days read «no check-out» on 03.10 because the NEXT
   day's «I» (02.10 09:52) was taken as a return. A mark before the report's
   check-in is not this shift's: the previous night's exit was read as today's
@@ -7609,12 +7518,11 @@ rights — over a different source, and it is being built to REPLACE /staff.
   until the fallbacks existed. Replayed on the 01.10 dump (03.10): 1,493 of
   1,495 file rows agree with the file to the minute; the two left are the API
   being newer than the Excel. `diag.in_sources` / `out_sources` count each
-  source.
-  Tapping a worker's name opens the raw facts behind the row — the report's
-  in/out/begin/end, every mark fetched with its type, the time kinds —
-  because both earlier guesses about the night shift were made without them.
+  source. (The payload still carries `diag` and, for admins, each row's `raw`
+  facts; nothing on screen prints them since the lab page went.)
 - **An exit before the shift's end is a BREAK, not a departure** («Tanaffusda»,
-  the exit time in the Out column, hours counted up to it): 12 people read
+  the exit time printed after the arrival in the clock column, hours counted up
+  to it): 12 people read
   «Ketgan» at 09:30 on 02.10 over a breakfast. It becomes «Ketgan», with its
   early-leave minutes, once the shift is over, and holds the day open like
   anybody inside.
@@ -7627,48 +7535,37 @@ rights — over a different source, and it is being built to REPLACE /staff.
 - Late = more than 5 min after the schedule start, early leave = more than 5
   min before its end — counted on the clocks AS PRINTED, whole minutes
   (Verifix's way: a check-in at 07:50:40 read «07:50 · 9 min early» against
-  08:00 until 2026-10-04). **No check-out is a status of its own (`no_out`), not
-  «inside»**: still without an exit an hour after the shift's end. The arrival
-  is KEPT — it shows in the In column and counts as came (the operator's call,
-  2026-10-01), although Verifix's own day view reads such a day «Не пришла»
-  (it counts only in→out intervals; Sabirdjanova N., 30.09: one mark at
-  15:07). It carries no hours and holds the day close.
-  Hours = the «Отработано» kinds the parity check found (used when it matched ≥
-  90% of ≥ 50 person-days), else the clock span; someone inside counts so far
-  (the summary says «hozirgacha»; rows no longer carry a `*`). A split row
-  shares its hours by the clock.
+  08:00 until 2026-10-04). Lateness is computed (`late`) and printed nowhere
+  (the operator, 2026-10-05: «no one cares about late comers»). **No check-out
+  is a status of its own (`no_out`), not «inside»**: still without an exit an
+  hour after the shift's end. The arrival is KEPT — it is printed in the clock
+  column («HH:MM-») and counts as came (the operator's call, 2026-10-01), although Verifix's own
+  day view reads such a day «Не пришла» (it counts only in→out intervals;
+  Sabirdjanova N., 30.09: one mark at 15:07). It carries no hours and holds the
+  day close until the brigadir answers it (ruling 6, below). Hours = the
+  «Отработано» kinds the parity check found (used when it matched ≥ 90% of
+  ≥ 50 person-days), else the clock span; someone inside counts so far
+  («hozirgacha» on /staff). A split row shares its hours by the clock.
 - **A day closes BY HAND only**, in «Tasdiqlash» (the automatic close an hour
-  after the last check-out is gone, 2026-10-04). The standing line reads `open`
+  after the last check-out is gone, 2026-10-04). The day's standing is `open`
   (somebody inside or on a break, or still due), `all_left` (somebody came,
   nobody is inside, nobody is due — a missing check-out does not hold it, it is
-  named), `waiting` (nobody came) or `closed`. **The brigadir is TOLD**: the
-  first job pass that finds a unit's current shift-day `all_left` writes
-  `live_all_left_notices` (unique per unit-day, committed before the message)
-  and sends `live_all_left` («Kelganlarning hammasi ishdan ketdi», category
-  «day», a link onto the unit-day) to the unit's supervisor profile, with the
-  missing check-outs and pending changes as lines of their own — only once the
-  page is opened to non-admins and to a brigadir who can open it (nothing is
-  written before that, so the day is told once it is). Only while the last exit
-  is within `NOTICE_WINDOW_MIN` (3 h), so a deploy never tells a finished night;
-  never for a day already closed; once per unit-day even if somebody comes back.
-  The standing line names the people inside under ANOTHER unit's name apart
-  («ichkarida 34 kishi (+2 boshqa brigada nomida)» — the strip counts only the
-  unit's own, and with none of them inside it says «faqat boshqa brigada
-  nomidagi N kishi»). For whoever may close (an admin, the unit's own brigadir)
-  it carries ««Tasdiqlash»da yopish» wherever the close endpoint accepts it —
-  `close.closable` on the payload, `not live_staff.busy()`: everybody left, or
-  nobody came and nobody is still due («Hech kim kelmadi — kunni yopish
-  mumkin.»); otherwise a line says the day closes there once everybody has
-  gone. The client never re-derives the rule. On a day nobody has come to,
-  anybody whose shift is still running counts as due (`still_due` on the row —
-  a worker reads «absent» from the shift's first minute, and check-ins that
-  reach the read late must not make a running day closable), so such a day
-  closes only once its shift is over. The button writes the live calendar's own remembered keys
-  (unit, month, and `staff_live_approvals_focus` = the day — `goClose` in
-  `StaffPage`; /staff's keys are untouched): the calendar rings that day and
-  opens its close dialog, whose title names the date (live only).
-- **Hardening of 2026-10-05** (a fresh-eyes review of the test page, every fix
-  approved one by one):
+  named), `waiting` (nobody came) or `closed`; `close.closable` on the payload
+  (`not live_staff.busy()`) is whether the close endpoint accepts it, and the
+  client never re-derives the rule. On a day nobody has come to, anybody whose
+  shift is still running counts as due (`still_due` on the row — a worker reads
+  «absent» from the shift's first minute, and check-ins that reach the read late
+  must not make a running day closable), so such a day closes only once its
+  shift is over. **The brigadir is TOLD**: the first job pass that finds a
+  unit's current shift-day `all_left` writes `live_all_left_notices` (unique per
+  unit-day, committed before the message) and sends the notice to the unit's
+  supervisor profile, with the missing check-outs and pending changes as lines
+  of their own. Only while the last exit is within `NOTICE_WINDOW_MIN` (3 h), so
+  a deploy never tells a finished night; never for a day already closed; once
+  per unit-day even if somebody comes back. Only a live day (from `LIVE_FROM`)
+  is told, as `live_all_left_staff` — see the next section.
+- **Hardening of 2026-10-05** (a fresh-eyes review, every fix approved one by
+  one):
   - **A write never reads Verifix in the middle of itself.** `_ctx_for` (an
     approval's «does the move still hold», an un-post's dependants) reads
     `day_read(stored_only=True)`: no Verifix call, no commit, no rollback.
@@ -7696,9 +7593,9 @@ rights — over a different source, and it is being built to REPLACE /staff.
     every unit first), and **a unit's read time is the OLDEST `at` among its
     own people** (`_covered_at(data, unit, ids)` — each person carries the
     start of the read that last replaced them). A day-wide stamp showed a
-    skipped unit as just read and swallowed its «Yangilash». A person the last
+    skipped unit as just read and swallowed its forced read. A person the last
     passes skipped gets their whole day's marks when the job reads them again.
-  - **«Yangilash»** keeps the job's 10-minute directory (it re-read the whole
+  - **A forced read** keeps the job's 10-minute directory (it re-read the whole
     plant first), is ignored within `FORCE_MIN_S` (30 s) of the unit's last
     read, and only ONE read per (unit, day) runs at a time (`_unit_lock`). A
     request that finds one running is served the stored read at once when it
@@ -7709,87 +7606,55 @@ rights — over a different source, and it is being built to REPLACE /staff.
   - **A direct delete of a worker the brigadir already asked to delete approves
     THAT request** instead of writing a second row; a replaced batch is
     rejected only within its own unit.
-  - The table puts «Holat» right after the name (a phone and a 1024 px laptop
-    never showed it); the label wraps on a phone. The floating «N qator» pill is
-    gone on this page (the strip counts). The «boshqa brigada nomidagi soatlar»
-    section follows every filter of the table and the strip (its rows carry the
-    schedule, the clocked hours, the early minutes counted there — the first
-    unit's — and the effective hours, as a named row does; `liveMatchExtra`:
-    every such person came by a move, «Belgisiz» = their `no_out` status, they
-    carry no late / early flags); one status per person — «Ichkarida» there
-    already means «here now» (somebody no longer here reads «Ko'chirilgan»). On this page the name search also matches the name
-    AS PRINTED (`tl` — a name stored in Cyrillic is shown in Latin);
-    `matchesFilters` takes it as an argument, so /staff's search is unchanged. Live chips take the `--status-*` ink
-    over an 8 % tint mixed on the CARD (AA in both themes).
-  - Not changed: the KPI cards still follow the strip with no «filtrlangan»
-    badge, early arrival still rounds the seconds (`early_arrival_min` can sit
-    one minute off `early_in`), a no-check-out day still carries no lateness
-    (`late` is None for `no_out` — the operator, 2026-10-05: «do not care about
-    late comers», so it stays), the other-brigade section's «Soat» column
-    prints the hours counted here (after the first unit's early minutes) while
-    the table's «Soat» filter reads the clocked hours — left as is (the
-    operator, 2026-10-05) — and nothing /staff shares was touched.
-  - **Round 2 of the same day** changed two shared pieces /staff sees: the
-    export dialog is in four languages and says where the file goes (download
-    in a browser, Telegram inside it — the toast follows `exportXlsx`'s answer),
-    and «Yaratish» (`CreateMenu`) is the `Button` template (38px, bold) with a
-    real menu (arrows, Home/End, Escape, the disabled reason as text). In the
-    table only the NAME may wrap: the trailing spacer took every spare pixel, so
-    any wrappable column shrank to its narrowest word («Chiqish / belgisi /
-    yo'q» at 1024).
-
-- **Ready to use (2026-10-05, the operator: «make the live page ready to use,
-  ready to replace Verifix edit»).** Every door /staff has outside its own page
-  now exists for the live page, so opening it is ONE switch — the Access tab
-  (`staff-live` → supervisor + shift-manager, the roles «staff» holds) — and
-  nothing else. Built in one pass and verified end to end on a local copy (a
-  draft filed, carded, tapped, retired; a batch filed, carded, decided):
+  - Two shared pieces /staff draws came out of it: the export dialog is in
+    four languages and says where the file goes (download in a browser,
+    Telegram inside it — the toast follows `exportXlsx`'s answer), and
+    «Yaratish» (`CreateMenu`) is the `Button` template (38px, bold) with a real
+    menu (arrows, Home/End, Escape, the disabled reason as text).
+- **The doors outside the page** (2026-10-05, built so the page could replace
+  /staff; they now serve /staff's live days):
   - **The bot's one-tap cards** (`approvals.py`): kinds `live_document` (code
     `lv`) and `live_batch` (`lb`) beside `hr_document` / `edit_batch` — the
     same renderers with « · Jonli» on the header line, the «Open panel» button
-    onto `/staff-live?tab=requests`, `_broadcast` returning who it reached.
-    Recipients: admins, the RECEIVING supervisor of an exchange and the
-    documents / requests grantees over the unit — a non-admin only when
-    `live_staff.can_open` admits one of their profiles (`_live_openers`), and
-    nothing at all while `lab_open` is false. The tap runs the live router's
-    own cores (`_approve` / `_reject` / `process_batch`), writes the register
-    row under the web endpoint's key (`lab.live_document_approved` …) and
-    `edit_admin_notices`; a structured 409 from `_approve` (`not_here`,
-    `breaks`, `doc_too_old`) is answered as an ALERT with the server's own
-    sentence (`approvals.Refused`, cut at a word to Telegram's 200 chars) and
-    the card keeps its buttons — never «already handled». A documents grantee
-    who is neither admin nor receiver taps through `_grantee_caller`, so the
-    card they were sent can be acted on (the /staff `hr` card still cannot —
-    parity there is a separate change). `staff_live.py`: `_notify` takes
-    `dm_skip` (bell row kept, no DM — a card recipient is not DMed twice; the
-    /staff `admin_dm=False` rule), `_notify_doc("created")` sends the card
-    FIRST, and every decision path retires its card after `db.commit()` —
-    `_retire` / `_forget` for documents, `_settle_batch_card` for a batch once
-    NO row is pending (approved if any row is approved/undone, else rejected —
-    the `list_documents` rule), including a replaced batch, a direct delete
-    that answers a pending request, the single-request doors and the bot tap.
-    `process_batch` is the ONE batch core (the HTTP doors and the `lb` tap).
+    onto `/staff?tab=requests` (with the day), `_broadcast` returning who it
+    reached. Recipients: admins, the RECEIVING supervisor of an exchange and
+    the documents / requests grantees over the unit — a non-admin only when
+    `live_staff.can_open` admits one of their profiles (`_live_openers`). The
+    tap runs the live router's own cores (`_approve` / `_reject` /
+    `process_batch`), writes the register row under the web endpoint's key
+    (`lab.live_document_approved` …) and `edit_admin_notices`; a structured 409
+    from `_approve` (`not_here`, `breaks`, `doc_too_old`) is answered as an
+    ALERT with the server's own sentence (`approvals.Refused`, cut at a word to
+    Telegram's 200 chars) and the card keeps its buttons — never «already
+    handled». A documents grantee who is neither admin nor receiver taps
+    through `_grantee_caller`, so the card they were sent can be acted on (the
+    /staff `hr` card still cannot — parity there is a separate change).
+    `staff_live.py`: `_notify` takes `dm_skip` (bell row kept, no DM — a card
+    recipient is not DMed twice; the /staff `admin_dm=False` rule),
+    `_notify_doc("created")` sends the card FIRST, and every decision path
+    retires its card after `db.commit()` — `_retire` / `_forget` for documents,
+    `_settle_batch_card` for a batch once NO row is pending (approved if any row
+    is approved/undone, else rejected — the `list_documents` rule), including a
+    replaced batch, a direct delete that answers a pending request, the
+    single-request doors and the bot tap. `process_batch` is the ONE batch core
+    (the HTTP doors and the `lb` tap).
   - **The bell's «Sizdan kutilmoqda» and the phone** (`notif_queue._live_docs`
     / `_live_batches`, keys `live_doc:<id>` / `live_batch:<uuid>` — the very
     subjects the live rows carry, so `_push_decisions` attaches buttons;
-    `_live_open` gates them on `can_open` of the viewer's profile, admins
-    always; the stale rule on `doc.day`; actions on the live endpoints, approve
-    with undo → cancel). `KIND_ORDER` / `_RANK` and `notifMeta.QUEUE_KINDS`
+    `_live_open` is `permissions.page_allowed(db, payload, "staff")`, the very
+    decision the doors' gate makes; a non-admin is offered only days from
+    `LIVE_FROM`, while ADMINS still see the lab page's pre-floor test filings —
+    no page lists those any more, and the bell's inline actions are where they
+    can be settled; the stale rule on `doc.day`; actions on the live endpoints,
+    approve with undo → cancel; links onto `/staff?tab=requests`). `KIND_ORDER` / `_RANK` and `notifMeta.QUEUE_KINDS`
     carry the two kinds right after their twins; `QueueItem` draws a neutral
     «Jonli» chip, `live_batch` asks like `edit_batch`. FOLD gained the nine
     live twins (`live_day_closed` … `live_record_deleted`) with four-language
     titles prefixed «Jonli ·»; `_COUNT_DISTINCT` the two day keys; the
     `open_units` chip stays `day_closed`'s own.
-  - **The nav**: the entry sits in the «people» group right AFTER /staff with
-    its own icon (`Radio`) and its own 30 s pending-count badge
-    (`/api/staff-live/documents/pending-count`, the second entry in Sidebar's
-    one `BADGES` map, polled only while the viewer may open the page); it left
-    the «Verifix (test)» group and the Access tab's TEST chip (`tier` dropped in
-    `config/pages.js`). The label keeps «· Jonli» while both pages exist.
-  - **The replacement itself landed on 2026-10-06** — see «/staff reads TODAY
-    live» below: /staff reads its live days through these doors, and a live
-    close copies the day into `attendance` + `DayApproval`, which is how the
-    загрузка, the locks and the gap reports reach it with no change of theirs.
+  - **The badge**: /staff's own (`/api/staff/documents/pending-count`) counts
+    the live register's pending items from `LIVE_FROM` beside the file
+    register's — one number on one nav row.
 
 ## /staff reads TODAY live (`live_day.LIVE_FROM`, from 2026-10-06)
 
@@ -7798,8 +7663,9 @@ editing for today? … At the end of the shift, when everyone is left and
 supervisor closed the day, the workload will be ready. There won't be any need
 to manually press any button or download excel sheets.» Twenty questions were
 asked one by one; `docs/plan-live-staff-today.md` is the record of every answer.
-`/staff-live` is LEFT AS IT IS (its fate is a later decision); `/staff` reads its
-live days through the same doors and tables, so the two pages show one today.
+`/staff` reads its live days through the live page's doors and tables (see «A
+live day's engine» above); that page, `/staff-live`, was kept beside it for an
+afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
 
 - **`services/live_day.py` is THE floor** — `LIVE_FROM = 2026-10-06`, shift 1's
   day and shift 2's night of the 6th. It shipped as 2026-10-07 at 19:53 on the
@@ -7811,14 +7677,14 @@ live days through the same doors and tables, so the two pages show one today.
   it), a constant with no override, never moved later. A day before it keeps the
   file flow exactly as filed; a day on or after it is a LIVE day for the whole
   plant.
-- **The page picks its source PER DAY** — `StaffPage` in `pages/Staff.jsx`:
-  `B` is the page's own API (`/staff` = file, `/staff-live` = live chrome) and
-  owns every remembered key; `S = apiFor(selectedDate)` is the data source, and
-  each tab, modal and the calendar is wrapped in `<StaffApiProvider value={S}>`.
-  `TODAY_STAFF_API` (`context/StaffApiContext.jsx`) is the live doors and cache
-  with /staff's own keys and `chrome: false` — /staff's own table plus ONE
-  status column (inside · break · left · no check-out · moved, ruling 3), never
-  the live page's strip, figures or freshness line. Once a unit's own shift-day
+- **The page picks its source PER DAY** — `pages/Staff.jsx`: `B` is the page's
+  own API (`STAFF_API`, the file doors) and owns every remembered key and the
+  unit list; `S = apiFor(selectedDate)` is the data source, and each tab and
+  modal is wrapped in `<StaffApiProvider value={S}>` (the calendar is not — it
+  merges the two calendars itself). `TODAY_STAFF_API`
+  (`context/StaffApiContext.jsx`) is the live doors and cache with /staff's own
+  keys — /staff's own table plus ONE status column (inside · break · left · no
+  check-out · moved, ruling 3) and a day-off row on no list. Once a unit's own shift-day
   (`/api/staff-live/today`) is live, /staff opens on it and steps with
   `DayStepper` (max = that day); until then the page is exactly what it was.
   A worker nobody clocked prints Verifix's own day-cell mark in the clock column,
@@ -7826,8 +7692,8 @@ live days through the same doors and tables, so the two pages show one today.
   «X», a leave letter «О» / «Б» / «В» / «ОТ» …, «—» for a day off; a plain «X»
   waits until the worker's shift is over) — and the close copies the same mark.
   `GET /api/staff-live/live-from` serves the floor and the plant's date. The live
-  router's page gate is `require_page("staff-live", "staff")`, and a grant at
-  "all" on staff/daily widens it as on /staff. `/daily` reads a live day the
+  router's page gate is `require_page("staff")`, and a grant at "all" on
+  staff/daily widens it as on /staff. `/daily` reads a live day the
   same way (table, documents, close check) but keeps its own default date.
 - **The close COPIES the day** (`services/live_projection.py`, ruling 1):
   `POST /api/staff-live/daily/close` — and `/api/staff/daily/close`, which
@@ -7880,11 +7746,11 @@ live days through the same doors and tables, so the two pages show one today.
   (`OlderRequestsLine`, both directions: a live day names the file register's
   and opens a FILE day, a file day — no unit picked yet — names the live
   register's and opens a live day); the sidebar badge counts both registers.
-  The bell queue offers a non-admin no live draft or deletion dated before the
-  floor (those are /staff-live test filings and move no figure).
-- **Notices** (ruling 18): `live_staff.lab_open` is true from the floor (and
-  `can_open` admits /staff's openers), so the live page's notices reach /staff's
-  users. New keys: `live_list_open` («your list is live», once at the day's
+  /staff never lists a live draft or deletion dated before the floor, and the
+  bell queue offers one to admins only (those are the retired lab page's test
+  filings and move no figure; the rows are kept).
+- **Notices** (ruling 18): from the floor the live notices reach whoever can
+  open /staff (`live_staff.can_open`). New keys: `live_list_open` («your list is live», once at the day's
   first clock-in — never to a unit whose people have all left by the first pass
   that sees the day: it is told only «everybody left»), `live_all_left_staff` (everybody left, naming who has no
   check-out and saying when nobody typed «Bugungi fakt», ruling 20),
@@ -7892,9 +7758,8 @@ live days through the same doors and tables, so the two pages show one today.
   shift opens on an unclosed day, within `REMIND_WINDOW_MIN`), and
   `live_shift_summary` (ONE line per shift to the admins at that moment —
   their per-unit «day closed» DMs are bell-only on a live day). Once-only via
-  `live_day_notices`. The «everybody left» notice of a day before the floor
-  stays behind the old page gate (`page_opened`) — the night of the 6th runs
-  past midnight into the switch.
+  `live_day_notices`. A day before the floor is told nothing (the minute job's
+  notices start at `live_day.is_live`).
 - **The admin «Davomat» tab refuses a live day** (`attendance_batch._parse_write_date`,
   ruling 16; the legacy per-supervisor upload too) — an admin corrects a live
   day by reopening it and acting on /staff. The cleanup tool deletes a live
@@ -7927,10 +7792,10 @@ Verifix API role was not touched. Their old URLs redirect to the map. Personal r
 do WAGES: opened on 2026-10-03 and closed again the same afternoon (the
 operator, after detaching «Ведомость» from the API role) — the «Ish haqi» page
 was removed and every wage / payroll list is switched off in code, whatever
-the role opens. **Admin-only**, three ways like `/staff-live`
-(`adminOnly` nav entries, `RequireAdmin`, `verify_admin` on every endpoint), no
-page keys. `/staff-live` sat in this section until 2026-10-05; it is a «people»
-page beside the /staff it replaces now.
+the role opens. **Admin-only**, three ways (`adminOnly` nav entries,
+`RequireAdmin`, `verify_admin` on every endpoint), no page keys. (The lab page
+`/staff-live` sat in this section until 2026-10-05 and was retired on
+2026-10-06 — see «A live day's engine».)
 
 - **`services/verifix_catalog.py` is THE list of what may be called**: the 94
   READ methods of the Postman collection (path, module, Verifix's own name, the

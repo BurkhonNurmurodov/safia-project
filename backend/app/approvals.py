@@ -14,14 +14,12 @@ Registrations keep their own machinery in ``telegram_bot`` (RegistrationNotice
 + notify_admins_of_decision); this module covers the kinds that previously had
 no Telegram message tracking at all.
 
-The live «Verifix to'g'irlash» (`/staff-live`, `routers.staff_live`) has the
+A live day of /staff (`live_day.LIVE_FROM` on, `routers.staff_live`) has the
 same two cards — ``live_document`` (``lv``) and ``live_batch`` (``lb``) — over
 its own tables (``LiveDocument`` / ``LiveDeletion``). They are rendered by the
-/staff renderers with a «live» mark on the header line, so a card is never read
-as a /staff one while both pages exist; they go out only once the page is open
-to somebody but admins (``live_staff.lab_open``) and, beyond the admins, only to
-a recipient who can open it (``_live_openers``). Every decision path on that
-page retires them through :func:`edit_admin_notices` exactly as /staff does.
+/staff renderers with a «live» mark on the header line and reach, beyond the
+admins, only a recipient who can open /staff (``_live_openers``). Every decision
+path retires them through :func:`edit_admin_notices` exactly as /staff does.
 
 Import discipline: this module imports ``bot``/helpers from ``telegram_bot`` at
 load time, but staff cores only lazily inside functions — ``telegram_bot`` and
@@ -588,9 +586,9 @@ def send_hr_document_to_admins(db, doc) -> None:
 
 
 def _live_openers(db, telegram_ids) -> set[int]:
-    """Of these accounts, the ones that may OPEN the live page: an admin, or
-    any approved registration of theirs resolving to a profile the page is
-    open to (`live_staff.can_open` — its role on the Access tab or a grant,
+    """Of these accounts, the ones that may OPEN /staff, where a live day is
+    decided: an admin, or any approved registration of theirs resolving to a
+    profile /staff is open to (`live_staff.can_open` — its role on the Access tab or a grant,
     and no personal deny). A card whose panel button lands on «no access» is
     worse than no card, which is why a non-admin confirmer is filtered here
     and never merely offered the button."""
@@ -623,12 +621,9 @@ def send_live_document_to_admins(db, doc) -> set[int]:
     """The one-tap card for a LiveDocument draft — `send_hr_document_to_admins`
     for the live page: admins (unioned in by `_broadcast`), the receiving
     supervisor and a documents-approve grantee over either end of the move,
-    the non-admins among them only where they can open the page. Nothing goes
-    out while the page is admin-only. Returns who the card reached."""
+    the non-admins among them only where they can open /staff. Returns who the
+    card reached."""
     from app.capabilities import CAP_DOCUMENTS_APPROVE
-    from app.services import live_staff
-    if not live_staff.lab_open(db):
-        return set()
     payload = doc.payload or {}
     extra = (_exchange_supervisor_recipients(db, doc)
              | _grantee_recipients(db, CAP_DOCUMENTS_APPROVE, doc.manager_id,
@@ -640,17 +635,13 @@ def send_live_document_to_admins(db, doc) -> set[int]:
 
 
 def _live_panel(day) -> str:
-    """Where a live card's «Open panel» goes: /staff for a live day of /staff
-    (`live_day.LIVE_FROM` on), /staff-live for its test days before."""
-    from app.services import live_day
+    """Where a live card's «Open panel» goes: /staff's requests on that day."""
     try:
         from datetime import date as _date
         d = day if isinstance(day, _date) else _date.fromisoformat(str(day)[:10])
     except (TypeError, ValueError):
         d = None
-    if live_day.is_live(d):
-        return f"/staff?tab=requests&date={d.isoformat()}"
-    return "/staff-live?tab=requests"
+    return f"/staff?tab=requests&date={d.isoformat()}" if d else "/staff?tab=requests"
 
 
 def send_live_batch_to_admins(db, batch_id, manager_id, day, supervisor_name,
@@ -659,9 +650,6 @@ def send_live_batch_to_admins(db, batch_id, manager_id, day, supervisor_name,
     `send_edit_batch_to_admins` for the live page, under the same rules as
     `send_live_document_to_admins`. Returns who the card reached."""
     from app.capabilities import CAP_REQUESTS_APPROVE
-    from app.services import live_staff
-    if not live_staff.lab_open(db):
-        return set()
     mgr = db.query(Manager).filter_by(id=manager_id).first()
     data = {
         "unit":       mgr.name if mgr else f"#{manager_id}",

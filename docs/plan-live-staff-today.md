@@ -13,6 +13,13 @@ the загрузка readers and the two pages). This file is the record of the
 answers. Built on 2026-10-06 (v4.253.0) — CLAUDE.md «/staff reads TODAY live»
 is the rule book; the plan at the end is what the answers implied.
 
+**Later the same day (v4.254.0)** the lab page `/staff-live`, which these
+answers had left standing beside /staff, was retired on the operator's ask
+(«is it safe to remove it? If yes, remove it»): its route redirects to
+`/staff`, its page key, nav row, badge and its own look are gone, and the
+`/api/staff-live` doors stay as the engine /staff's live days read through.
+Wherever this file says «/staff-live», read «the live doors».
+
 ## What is being built
 
 `/staff` («Verifix to'g'irlash») shows TODAY's shift-day as it runs, read from

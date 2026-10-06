@@ -10,7 +10,8 @@ import { useDragSelect } from "../../hooks/useDragSelect";
 // trigger, or omit it when the header already renders its own (sortable) label.
 // `quiet` makes the whole label the trigger and shows the filter glyph only
 // while the header is pointed at, focused or filtered (always on touch, where
-// nothing can be pointed at) — a row of ten glyphs read as noise (/staff-live).
+// nothing can be pointed at) — a row of ten glyphs read as noise (built for the retired /staff-live table;
+// no caller uses it today).
 // The glyph takes NO room (it hangs outside the label), so a quiet header lines
 // up with its column exactly; `align="right"` hangs it on the left, for a
 // right-aligned figure column.

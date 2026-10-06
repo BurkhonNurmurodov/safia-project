@@ -1,34 +1,31 @@
-"""The LIVE «Verifix to'g'irlash» — `/staff-live`, the /staff API over Verifix.
+"""The LIVE «Verifix to'g'irlash» API — /staff's live days, over Verifix.
 
-From 2026-10-04 (the operator: «structure this page just like Verifix edit …
-the same rule applies for everything as that page … the only difference should
-be the source») every door here is the twin of a /api/staff door — same path
-under `/api/staff-live`, same request and response shapes, same rights — so the
-page renders /staff's own components with a different API base. What differs:
+From `live_day.LIVE_FROM` (2026-10-06) /staff reads every shift-day through
+these doors (`TODAY_STAFF_API` in `context/StaffApiContext.jsx`), and so does
+/daily. Every door here is the twin of a /api/staff door — same path under
+`/api/staff-live`, same request and response shapes, same rights per role (own
+unit for a supervisor, shift ∩ plant for a shift-manager). What differs:
 
 * **the source** — a unit's day is the stored live Verifix read laid out by
   `services/live_staff` (a job reads Verifix every minute), never `attendance`;
 * **a worker is a Verifix `employee_id`**, so every picker sends ids, not names
   (`worker_names` on the deletion door carries them too — it is the row key);
 * **nothing is applied** — an approved document is read on every request, so
-  an approve, an un-post or a delete writes the document and nothing else;
+  an approve, an un-post or a delete writes the document and nothing else; the
+  brigadir's close copies the finished day into `attendance` + `DayApproval`
+  (`services/live_projection`);
 * **who may be exchanged or re-titled**: only a worker who CAME (has a clock-in),
   whether still inside or already gone (the operator, 2026-10-04).
 
-Built to replace /staff, and from 2026-10-05 it carries the doors /staff has
-beside the page itself: the Telegram one-tap approval CARDS for a draft
-document and a brigadir's deletion batch (`approvals.send_live_document_to_admins`
-/ `send_live_batch_to_admins`, callback codes `lv` / `lb`), retired on every
-decision path here through `_retire` / `_forget` / `_settle_batch_card`; the
-bell queue and the badge. The documents still live in their own tables —
-`live_documents` / `live_document_history` / `live_deletions` /
-`live_placements` / `live_day_closes` — and nothing else on the platform reads
-them: the actual replacement (the day-close ladder and the attendance pipeline
-reading the live day) is a separate decision. Page key `staff-live`, admin-only
-until the operator opens it on the Access tab; inside, each role has exactly
-/staff's rights (own unit for a supervisor, shift ∩ plant for a shift-manager).
-Its notifications (bell + Telegram, the cards included) start once the page is
-opened to anybody but admins, and reach only people who can open it.
+It also carries the Telegram one-tap approval CARDS for a draft document and a
+brigadir's deletion batch (`approvals.send_live_document_to_admins` /
+`send_live_batch_to_admins`, callback codes `lv` / `lb`), retired on every
+decision path here through `_retire` / `_forget` / `_settle_batch_card`, and the
+bell queue's items. The documents live in their own tables — `live_documents` /
+`live_document_history` / `live_deletions` / `live_placements` /
+`live_day_closes`. These doors were built first for the lab page `/staff-live`
+(2026-10-04), retired on 2026-10-06 once /staff read live days itself; its page
+key went with it, and every door is gated on /staff's.
 """
 import logging
 import re
@@ -58,12 +55,11 @@ from app.permissions import get_page_access, require_page
 from app.services import action_log, live_day, live_projection, live_staff, shift_scope, verifix_live
 from app.xlsx_delivery import deliver_xlsx
 
-PAGE = live_staff.PAGE
 router = APIRouter(prefix="/api/staff-live", tags=["staff-live"])
 log = logging.getLogger(__name__)
-# From `live_day.LIVE_FROM` /staff reads its live days through these doors, so
-# whoever may open /staff may call them too (with /staff's rights per role).
-_page = require_page(PAGE, "staff")
+# /staff reads its live days through these doors, so whoever may open /staff
+# may call them (with /staff's rights per role).
+_page = require_page("staff")
 
 _HHMM = re.compile(r"^\s*([01]?\d|2[0-3])\s*[:.\-]\s*([0-5]\d)\s*$")
 # /staff's bound: a draft dated longer ago cannot be posted (staff.STALE_APPROVE_DAYS).
@@ -84,7 +80,7 @@ def _who(caller: dict) -> str:
 def _sees_all(db: Session, caller: dict) -> bool:
     """A personal page grant at "all" widens a supervisor to every unit (the
     /staff rule, `staff._staff_sees_all`); admins always pass."""
-    return any(page_scope_is_all(db, caller, p) for p in (PAGE, "staff", "daily"))
+    return any(page_scope_is_all(db, caller, p) for p in ("staff", "daily"))
 
 
 def _visible(db: Session, caller: dict) -> Optional[list[int]]:
@@ -192,9 +188,8 @@ def _named(ud: dict) -> dict:
 
 
 # ── notifications ────────────────────────────────────────────────────────────
-# Bell + Telegram DM (the operator: «as soon as we open this page for
-# supervisors»): nothing is sent while the page is admin-only, and once it is
-# opened, only people who can open it are told.
+# Bell + Telegram DM, only to people who can open /staff
+# (`live_staff.can_open`) — a notice must never open onto «no access».
 
 def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: bool = True,
             supervisors: tuple = (), profiles: tuple = (), actor: Optional[int] = None,
@@ -210,8 +205,6 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
     if notifications_suppressed():
         return
     try:
-        if not live_staff.lab_open(db):
-            return
         from app.routers.staff import _get_user_lang, _mk_notif, _mk_notif_tg, _notify as bell
         from app.services import notification_center as notif_center
         keys: set = set(profiles)
@@ -516,7 +509,9 @@ def get_attendance(attend_date: Optional[str] = None, manager_id: Optional[int] 
                       "late_grace": verifix_live.LATE_GRACE_MIN,
                       "early_grace": verifix_live.EARLY_GRACE_MIN,
                       "min_moved_hours": live_staff.MIN_MOVED_HOURS},
-            # What the read held — admins only, the page's Diagnostics line.
+            # What the read held — admins only. Nothing on screen prints it since
+            # the lab page /staff-live was retired (2026-10-06); a tab still open
+            # on that bundle does, so it stays for now.
             "diag": live_staff.diag(ctx, mid, ud["workers"]) if is_admin else None,
         },
     }
@@ -653,7 +648,7 @@ def _scope_deletions(caller: dict, db: Session) -> list:
 
 def _since(raw: Optional[str]) -> Optional[date]:
     """/staff asks for its live days only (`since` = `live_day.LIVE_FROM`):
-    /staff-live's test filings of the days before are not /staff's register."""
+    the lab page's test filings of the days before are not /staff's register."""
     return _day_of(raw) if raw else None
 
 
@@ -905,7 +900,7 @@ def _resolve_target(db: Session, sender: int, d: date, ttype: Optional[str],
         if not m or m.archived:
             raise HTTPException(status_code=404, detail="Target supervisor not found")
         if tgt not in {c["manager_id"] for c in verifix_live._registry(db)[0].values()}:
-            raise HTTPException(status_code=400, detail="The target unit has no cell on this page")
+            raise HTTPException(status_code=400, detail="The target unit has no cell counted in the загрузка")
         _assert_open(db, tgt, d)
         return ttype, m.id, m.name, None
     name = (task or "").strip()

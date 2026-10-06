@@ -1,18 +1,15 @@
 """The LIVE «Verifix to'g'irlash» day — /staff's rows, built from Verifix.
 
-`/staff-live` is /staff over the live Verifix read, built to replace it, with ONE
-difference, the source (the
-operator, 2026-10-04: «structure this page just like Verifix edit … the same
-rule applies for everything … the only difference should be the source»). On
-/staff a unit's day is `attendance` rows the admin's next-day «Verifix'dan
-olish» read wrote; here it is the STORED live read (`live_verifix_reads`, a job
-reads Verifix every minute — `verifix_live`) folded into the same row shape:
-worker, role, cell, schedule, clock in · clock out, hours, early arrival,
-effective hours, plus what only a live source can say (status, late, early
-leave, a missing check-out). The documents live in their own tables
-(`LiveDocument`, `LiveDeletion`, `LivePlacement`); the Telegram approval cards,
-the bell queue and the sidebar badge read them (2026-10-05), the загрузка and
-the real day-close ladder do not yet — that switch is a separate decision.
+From `live_day.LIVE_FROM` (2026-10-06) /staff reads every shift-day LIVE: a
+unit's day is the STORED live read (`live_verifix_reads`, a job reads Verifix
+every minute — `verifix_live`) folded into /staff's row shape: worker, role,
+cell, schedule, clock in · clock out, hours, early arrival, effective hours,
+plus what only a live source can say (status, late, early leave, a missing
+check-out). The documents live in their own tables (`LiveDocument`,
+`LiveDeletion`, `LivePlacement`); the brigadir's close copies the day into
+`attendance` + `DayApproval` (`live_projection`), which is how the загрузка
+reaches it. Built first as the lab page /staff-live (2026-10-04), which was
+retired once /staff read live days itself (2026-10-06).
 
 **Nothing is applied — every document is READ on every request.** /staff
 applies an approved document to `attendance` once and reverts it on cancel.
@@ -79,7 +76,8 @@ from app.services import cell_hours, verifix_live
 
 log = logging.getLogger(__name__)
 
-PAGE = "staff-live"
+# The page a live day is read and decided on (from `live_day.LIVE_FROM`).
+PAGE = "staff"
 
 # /staff's minimum (routers/staff.MIN_MOVED_ZAGRUZKA_HOURS) — keep the two in
 # step. Judged here only once the worker has left (see the module docstring).
@@ -116,64 +114,35 @@ def _r(v: Optional[float], n: int = 2) -> Optional[float]:
 
 
 # ── who may hear about it ────────────────────────────────────────────────────
-# Bell + Telegram (the operator, 2026-10-04: «as soon as we open this page for
-# supervisors»): nothing goes out while the page is admin-only, and once it is
-# opened, only to people who can open it — a notice must never open onto «no
-# access».
-
-def in_force() -> bool:
-    """/staff reads live days now (`live_day.LIVE_FROM` has come on the plant's
-    clock) — from then on the live day is the real day, so its notices go to
-    everybody who can open /staff, whatever /staff-live's own access says."""
-    from app.services import live_day
-    return verifix_live.now_local().date() >= live_day.LIVE_FROM
-
-
-def lab_open(db: Session) -> bool:
-    """The page is opened to somebody but admins — a role on the Access tab, or
-    a person's own grant — or /staff reads live days (`in_force`)."""
-    return in_force() or page_opened(db)
-
-
-def page_opened(db: Session) -> bool:
-    """/staff-live itself is opened to somebody but admins — the gate for a
-    notice about a day /staff does NOT read live (a day before the floor: the
-    night shift's last file day runs past midnight into the switch)."""
-    from app.capabilities import page_cap
-    from app.models import ProfilePermission, UserCapability
-    from app.permissions import get_page_access
-    if get_page_access(db).get(PAGE):
-        return True
-    cap = page_cap(PAGE)
-    return (db.query(ProfilePermission.id).filter(ProfilePermission.capability == cap,
-                                                  ProfilePermission.mode != "deny").first() is not None
-            or db.query(UserCapability.id).filter(UserCapability.capability == cap,
-                                                  UserCapability.mode != "deny").first() is not None)
-
+# Bell + Telegram: only people who can open /staff — the page a live day is
+# read and decided on (`live_day.LIVE_FROM` on). A notice must never open onto
+# «no access». The /staff-live lab page that carried these notices before is
+# gone (2026-10-06); its page key went with it.
 
 def can_open(db: Session, key: Optional[str], access: Optional[dict] = None) -> bool:
-    """This PROFILE can open the page (its role on the Access tab, or a grant,
-    and no personal deny) — or, once /staff reads live days, /staff itself."""
+    """This PROFILE can open /staff: an admin always; anybody else by their
+    role on the Access tab, the page grant, or a capability that carries the
+    page (approving documents or requests, editing or deleting attendance,
+    reopening a day — `require_page("staff")` admits all of them), and no
+    personal deny. A profile key has no session, so this is `require_page`
+    asked of the person rather than of a request."""
     from app import identity
-    from app.capabilities import caps_for_profile, denied_pages_for_profile, page_cap
+    from app.capabilities import CAPABILITIES, caps_for_profile, denied_pages_for_profile, page_cap
     from app.permissions import get_page_access
     if not key:
         return False
     role, _ = identity.parse_profile_key(key)
     if role == "admin":
         return True
-    denied = denied_pages_for_profile(db, key)
+    if PAGE in denied_pages_for_profile(db, key):
+        return False
     access = access if access is not None else get_page_access(db)
-    caps = None
-    for page in ((PAGE, "staff") if in_force() else (PAGE,)):
-        if page in denied:
-            continue
-        if role in access.get(page, []):
-            return True
-        caps = caps if caps is not None else caps_for_profile(db, key)
-        if page_cap(page) in caps:
-            return True
-    return False
+    if role in access.get(PAGE, []):
+        return True
+    caps = caps_for_profile(db, key)
+    if page_cap(PAGE) in caps:
+        return True
+    return any(PAGE in (c.get("pages") or []) for c in CAPABILITIES if c["key"] in caps)
 
 
 # ── the day's context ────────────────────────────────────────────────────────

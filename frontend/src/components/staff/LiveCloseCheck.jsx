@@ -1,5 +1,5 @@
 // What a LIVE day's close waits on, inside the close dialog (/staff from
-// `live_day.LIVE_FROM`, and /staff-live) — the operator's rulings of
+// `live_day.LIVE_FROM`) — the operator's rulings of
 // 2026-10-06: the close reads Verifix once more and is refused while anybody is
 // inside or due, while a counted worker has no cell, and while somebody has no
 // check-out the brigadir has not answered (ruling 6: set the exit time, or

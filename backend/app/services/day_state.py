@@ -47,7 +47,7 @@ def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
     ).count()
     # A LIVE day (from `live_day.LIVE_FROM`) files its requests in the live
     # tables — the same two kinds, the same meaning. Before the floor those
-    # tables hold only /staff-live's test filings and are never read here.
+    # tables hold only the retired /staff-live page's test filings and are never read here.
     if d >= LIVE_FROM:
         pending_requests += db.query(LiveDeletion).filter(
             LiveDeletion.manager_id == manager_id,
