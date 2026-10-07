@@ -9928,6 +9928,66 @@ manual step, no SSH.
   if you add a file the app must read at runtime, check
   `git check-ignore -v <path>` before assuming it shipped.
 
+## Freezes: the server watches itself, the loader reports itself (2026-10-07)
+
+The operator's report: the app sat on its logo-and-spinner screen (the
+full-screen `PageLoader`) for seconds on a good connection, and nothing said
+why — the index.html boot watchdog stops the moment React paints, and that
+loader IS React. Production runs ONE uvicorn process (`--workers 1`), so any
+blocking work on the event loop freezes every request on the server at once.
+
+- **The cause found and fixed: sync work inside `async def` handlers.**
+  `/bot/webhook` ran every bot update (its queries, its Telegram round-trips,
+  the checklist sweeps a /tasks runs) ON the loop — fine under Passenger (a
+  process per request), a platform-wide freeze under uvicorn. It now runs on
+  ONE dedicated thread (`webhook._BOT_THREAD`) and is awaited: still one
+  update at a time, in order, reply sent before the 200, exceptions logged —
+  just not on the loop, and not on the shared threadpool either (a queued
+  update must not hold a token the dashboard needs). The leader camera photo
+  doors (`/api/leader-proof/photo`, `/late-photo`: Pillow stamp + Telegram
+  relay + bot nudge), the SAP upload, the catalog import and the old admin
+  attendance upload are plain `def` now (`file.file.read()`), so FastAPI runs
+  them on the threadpool. **Never put sync DB / HTTP / file work in an
+  `async def` handler** — read the body with `await` if you must, then hand the
+  rest to the threadpool (or make the handler `def`). Left as they were, being
+  rare and admin-only: `/admin/db-restore`, `/api/android/publish`, the
+  broadcast composer (its fan-out already runs on a thread).
+- **`services/perf_watch.py` is THE server's account of being slow.** A
+  heartbeat the loop writes every 0.2 s, read by a thread of its own: a gap of
+  ≥ 1 s is a STALL, and the loop thread's stack is taken WHILE it lasts — the
+  app frames that held everybody, plus the requests in flight and any other
+  thread busy in app code. `RequestTimingMiddleware` (outermost) stamps
+  `X-Server-Ms` (time the server spent) and `X-Server-Stall-Ms` (longest stall
+  of the last minute; the heartbeat writes it the instant a freeze ends, so the
+  answers queued behind the freeze already carry it) on every /api, /admin,
+  /bot answer, and records requests ≥ 3 s with the DB pool (15 connections),
+  the threadpool (40 tokens) and the in-flight count. Logged as
+  `[SERVER-STALL]` / `[SLOW-REQUEST]`; the support chat (or every admin) gets
+  ONE «Server was slow» DM, at most every 30 min, only when it was real
+  trouble: a stall ≥ 2 s, a sign-in / page-access answer ≥ 5 s, a full DB pool,
+  or ≥ 5 slow requests in 2 min not counting paths slow BY DESIGN
+  (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started at the
+  END of the lifespan (startup migrations run on the loop by design and must
+  not read as a stall), stopped first at shutdown. Never fails a request.
+- **The loader reports itself** (`utils/stallReport.js` + `utils/requestLog.js`).
+  `PageLoader` takes `where` (auth · access · caps · page) and times its
+  VISIBLE wait. Past 6 s it says «Server javobi kutilmoqda…», past 20 s it
+  offers «Qayta yuklash» — both hang below the spinner, so the logo never
+  moves. A wait ≥ 6 s is reported to `/api/crash-report` kind `"stall"` as it
+  ends, at 25 s if it is still going, or by a keepalive fetch if the app is
+  hidden mid-wait («left») — once per wait, at most two per page load. The
+  report carries every request pending or finished in that window with the
+  tab's time AND the server's (`X-Server-Ms`, `X-Server-Stall-Ms`), fed by the
+  axios interceptors (paths only, never a query or body). The backend
+  (`services/stall_report.py`) prints a one-line VERDICT — restart · server
+  froze · server slow · network · no answer · page code — beside the server's
+  own perf_watch record of the same window; one DM per gate × endpoint × cause
+  per hour (not per person: a freeze stalls everybody at once). Logged as
+  `[CLIENT-STALL]`.
+- Not built: an admin page over the ledger (it is memory only, per process),
+  and any automatic retry of a hung request (axios still has no timeout; the
+  reload button is the way out).
+
 ## Zero-downtime deploys (blue-green, v4.196.0)
 
 From **2026-10-01** (the operator's report: every backend deploy showed users

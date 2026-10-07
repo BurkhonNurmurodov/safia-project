@@ -316,8 +316,12 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
 
 # ── writing a shot ───────────────────────────────────────────────────────────
 
+# A plain `def`, so FastAPI runs it on the threadpool: stamping the shot
+# (Pillow), relaying it to the archive channel and nudging the bot are seconds
+# of blocking work, and as an `async def` they ran on the ONE event loop and
+# froze every other request on the server while a leader took a photo.
 @router.post("/api/leader-proof/photo")
-async def post_photo(
+def post_photo(
     leader: int = Form(...),
     task: int = Form(...),
     cell: int | None = Form(None),
@@ -354,7 +358,7 @@ async def post_photo(
     if key and (len(key) > 64 or not _KEY_OK.fullmatch(key)):
         raise HTTPException(status_code=400, detail="bad_key")
 
-    data = await file.read()
+    data = file.file.read()
     if not data or len(data) > _MAX_UPLOAD:
         raise HTTPException(status_code=400, detail="bad_size")
     if not data.startswith(_JPEG_MAGIC):
@@ -579,8 +583,12 @@ def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict,
     return day, shift, bool(ok)
 
 
+# A plain `def`, so FastAPI runs it on the threadpool: stamping the shot
+# (Pillow), relaying it to the archive channel and nudging the bot are seconds
+# of blocking work, and as an `async def` they ran on the ONE event loop and
+# froze every other request on the server while a leader took a photo.
 @router.post("/api/leader-proof/late-photo")
-async def post_late_photo(
+def post_late_photo(
     leader: int = Form(...),
     task: int = Form(...),
     cell: int | None = Form(None),
@@ -617,7 +625,7 @@ async def post_late_photo(
     if key and (len(key) > 64 or not _KEY_OK.fullmatch(key)):
         raise HTTPException(status_code=400, detail="bad_key")
 
-    data = await file.read()
+    data = file.file.read()
     if not data or len(data) > _MAX_UPLOAD:
         raise HTTPException(status_code=400, detail="bad_size")
     if not data.startswith(_JPEG_MAGIC):

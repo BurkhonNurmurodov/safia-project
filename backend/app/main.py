@@ -699,7 +699,14 @@ async def lifespan(app: FastAPI):
     # every later `import` inside a function is a sys.modules lookup.
     _warm_import_app()
 
+    # The server's own account of being slow (services/perf_watch): the event
+    # loop's heartbeat starts only NOW, so the startup work above — which runs
+    # on the loop by design — is never read as a stall.
+    from app.services import perf_watch
+    perf_watch.start()
+
     yield
+    perf_watch.stop()
     shutdown_scheduler()
 
 
@@ -752,7 +759,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-App-Version", "X-App-Min-Client"],
+    expose_headers=["X-App-Version", "X-App-Min-Client", "X-Server-Ms", "X-Server-Stall-Ms"],
 )
 
 # Ghost Mode: admins can suppress change-notifications via the X-Ghost-Mode
@@ -969,6 +976,12 @@ class AppVersionMiddleware:
 
 
 app.add_middleware(AppVersionMiddleware)
+
+# Outermost of all: every API request is timed from the moment the app receives
+# it, stamped with `X-Server-Ms` / `X-Server-Stall-Ms`, and recorded when slow
+# (services/perf_watch.py — THE account of the server being slow).
+from app.services.perf_watch import RequestTimingMiddleware  # noqa: E402
+app.add_middleware(RequestTimingMiddleware)
 
 # Routers exposing /admin/* API routes need the initData guard applied at the
 # router level too — the global dep only covers /api/*. (These same three also

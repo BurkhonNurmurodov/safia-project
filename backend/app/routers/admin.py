@@ -80,8 +80,9 @@ def verify_refresh_access(
     raise HTTPException(status_code=403, detail="Admin access required")
 
 
+# A plain `def` (threadpool): parsing the files must not hold the event loop.
 @router.post("/upload")
-async def upload_verifix(
+def upload_verifix(
     files: list[UploadFile] = File(...),
     admin_payload: dict = Depends(verify_admin),
     db: Session = Depends(get_db),
@@ -89,7 +90,7 @@ async def upload_verifix(
     results = []
     landed = []          # (unit id, unit name, date, rows, file) per file that stuck
     for f in files:
-        content = await f.read()
+        content = f.file.read()
         try:
             validate_spreadsheet(f, content)
         except HTTPException as e:

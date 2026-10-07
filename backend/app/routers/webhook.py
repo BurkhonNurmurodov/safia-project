@@ -1,6 +1,9 @@
+import asyncio
+import contextvars
 import hmac
 import logging
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 import telebot
 from fastapi import APIRouter, Request, Response
@@ -64,6 +67,48 @@ def _already_seen(update_id: int) -> bool:
     return False
 
 
+# ── Where an update is handled ────────────────────────────────────────────────
+# On ONE thread of its own, never on the event loop. This handler used to run
+# the whole update inline in this `async def`, which was harmless under
+# Passenger (one process per request) and is the opposite under uvicorn with
+# `--workers 1`: every bot handler — its queries, its Telegram round-trips, the
+# checklist sweeps a /tasks runs — then held the ONE event loop, and every page
+# of the dashboard froze behind it on the logo-and-spinner screen until the
+# handler finished. One thread keeps everything the inline call promised:
+# updates are still handled one at a time and in arrival order, the reply is
+# still sent before Telegram gets its 200, and a handler's exception still
+# lands in the except below (see the TeleBot construction in telegram_bot.py).
+# Not the shared threadpool: an update waiting its turn must not hold one of
+# the tokens the dashboard's own endpoints run on.
+_BOT_THREAD = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bot-webhook")
+
+
+def _handle(data: dict) -> None:
+    update = telebot.types.Update.de_json(data)
+
+    if _already_seen(update.update_id):
+        logger.warning("Duplicate update_id %s — skipped", update.update_id)
+        return
+
+    if _is_non_private(update):
+        return
+
+    # Rich messages (Bot API 10.1+) carry a `rich_message` field the pinned
+    # telebot can't parse — content_type=None → matches no handler → silently
+    # dropped. Detect it from the raw update and reply gracefully if an admin
+    # is mid-/broadcast (see handle_incoming_rich_message).
+    msg = data.get("message") or data.get("edited_message")
+    if isinstance(msg, dict) and "rich_message" in msg and handle_incoming_rich_message(msg):
+        return
+
+    logger.info("Update %s — %s", update.update_id, _describe(update))
+
+    # Synchronous by design: the bot is built with threaded=False, so this
+    # runs the handler here and returns only once the reply has been sent
+    # (see the TeleBot construction in telegram_bot.py for why).
+    bot.process_new_updates([update])
+
+
 @router.post("/bot/webhook")
 async def telegram_webhook(request: Request):
     # Telegram echoes the secret token we registered with setWebhook back in this
@@ -77,31 +122,11 @@ async def telegram_webhook(request: Request):
         return Response(status_code=403)
 
     try:
-        data   = await request.json()
-        update = telebot.types.Update.de_json(data)
-
-        if _already_seen(update.update_id):
-            logger.warning("Duplicate update_id %s — skipped", update.update_id)
-            return {"ok": True}
-
-        if _is_non_private(update):
-            return {"ok": True}
-
-        # Rich messages (Bot API 10.1+) carry a `rich_message` field the pinned
-        # telebot can't parse — content_type=None → matches no handler → silently
-        # dropped. Detect it from the raw update and reply gracefully if an admin
-        # is mid-/broadcast (see handle_incoming_rich_message).
-        msg = data.get("message") or data.get("edited_message")
-        if isinstance(msg, dict) and "rich_message" in msg and handle_incoming_rich_message(msg):
-            return {"ok": True}
-
-        logger.info("Update %s — %s", update.update_id, _describe(update))
-
-        # Synchronous by design: the bot is built with threaded=False, so this
-        # runs the handler here and returns only once the reply has been sent
-        # (see the TeleBot construction in telegram_bot.py for why).
-        bot.process_new_updates([update])
-
+        data = await request.json()
+        # The handler runs with this request's context (Ghost Mode and the like
+        # are ContextVars) — run_in_executor alone would hand it an empty one.
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(_BOT_THREAD, ctx.run, _handle, data)
     except Exception:
         # Log the error but always return 200 so Telegram does NOT retry.
         # A retry would call send_message a second time if the first call
