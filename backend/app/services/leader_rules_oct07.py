@@ -92,15 +92,8 @@ CRITERIA = (
 DESCRIPTION = (
     "Tasker ilovasidagi obxod ro'yxati ekranining skrinshoti talab qilinadi. "
     "Smenadagi barcha obxodlar 100% bajarilgan bo'lishi shart — skrinshotni "
-    "hamma obxodlar tugagandan keyin oling. Bu skrinshotda:\n"
-    "- Har bir obxodning chizig'i oxirigacha to'lgan va yonida 100.0 turishi "
-    "(masalan: 7/7 — 100.0)\n"
-    "- Ekranning eng yuqorisidagi sana va vaqt ko'rinib turishi\n"
-    "- Agar ro'yxat bitta ekranga sig'masa, pastga surib, qolgan obxodlarni "
-    "keyingi skrinshotlarda yuborish\n"
-    "talab qilinadi.\n\n"
-    "Skrinshot smena davomida olinishi kerak. Birorta obxod 100% bo'lmasa, "
-    "vazifa bajarilmagan hisoblanadi."
+    "hamma obxodlar tugagandan keyin oling.\n\n"
+    "Birorta obxod 100% bo'lmasa, vazifa bajarilmagan hisoblanadi."
 )
 
 #: The texts the 19 Sep pass wrote — what «not edited since» means here.
