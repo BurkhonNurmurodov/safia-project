@@ -8984,6 +8984,9 @@ LEADER_RULES_OCT07_FLAGS = {1: "leader_rules_2026_10_07_t4_shift1_v1",
                             2: "leader_rules_2026_10_07_t4_shift2_v1"}
 LEADER_RULES_OCT07_GLOBAL_FLAG = "leader_rules_2026_10_07_t4_global_v1"
 LEADER_RULES_OCT07_DUE = {1: (2026, 10, 8, 0, 30), 2: (2026, 10, 7, 16, 30)}
+#: The leader's instruction alone, published a minute after boot (the operator
+#: wanted it visible before the passes) — `description` moves no verdict.
+LEADER_RULES_OCT07_DESC_FLAG = "leader_rules_2026_10_07_t4_description_v1"
 
 
 def register_leader_rules_oct07() -> None:
@@ -9002,10 +9005,85 @@ def register_leader_rules_oct07() -> None:
                             lambda s=shift: _leader_rules_oct07_job(s))
                 print(f"[startup] task 4 rule 07.10: shift {shift} armed for "
                       f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+            if not db.query(AppSetting).filter_by(
+                    key=LEADER_RULES_OCT07_DESC_FLAG).first():
+                from datetime import timedelta
+                run_at = now + timedelta(minutes=1)
+                schedule_at("leader-rules-oct07-desc", run_at,
+                            _leader_rules_oct07_desc_job)
+                print(f"[startup] task 4 rule 07.10: leader instruction armed "
+                      f"for {run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
         finally:
             db.close()
     except Exception as exc:
         print(f"[startup] task 4 rule 07.10 could not be armed: {exc}")
+
+
+def _leader_rules_oct07_desc_job() -> None:
+    """Publish task 4's new leader instruction on every unit and the global
+    level, then flag, log and report. Idempotent, flagged LAST."""
+    from app.services import action_log, leader_rules_oct07 as rules
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(
+                key=LEADER_RULES_OCT07_DESC_FLAG).first():
+            return
+        out = rules.publish_description(db)
+        db.add(AppSetting(key=LEADER_RULES_OCT07_DESC_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] task 4 rule 07.10: leader instruction — "
+              f"{out['texts']} of {out['units']} unit(s), global "
+              f"{'yes' if out['global'] else 'no'}, {len(out['kept'])} kept, "
+              f"{len(out['leaders'])} leader(s) with their own text")
+        try:
+            action_log.record_system(
+                "leader_config", "ltask.rules_applied",
+                target_kind="task", target_name="checklist",
+                details=[("level", "all"), ("task", rules.TASK),
+                         ("count", out["units"]),
+                         ("texts", out["texts"] + (1 if out["global"] else 0)),
+                         ("skipped", (len(out["kept"]) + len(out["leaders"]))
+                          or None)],
+                reason=("Operator, 07.10.2026: task 4's new leader instruction "
+                        "(every obxod 100%) published at once. Instruction only — "
+                        "the AI criteria and the date rule still land in each "
+                        "shift's gap."),
+            )
+        except Exception:
+            pass
+        try:
+            import html
+            from app.routers.boot import _recipients
+            from app.telegram_bot import bot
+            lines = [f"Liderlar uchun tavsif yangilandi: {out['texts']} brigada"
+                     + (", umumiy standart" if out["global"] else ""),
+                     "AI tekshiruvi va sana + vaqt qoidasi rejadagidek: "
+                     "2-smena bugun 16:30 dan, 1-smena 08.10 dan"]
+            if out["kept"]:
+                lines.append(f"Qo'lda yozilgan tavsif tegilmadi: {len(out['kept'])}")
+            if out["leaders"]:
+                lines.append(f"O'z tavsifi bor liderlar: {len(out['leaders'])}")
+            text = ("📋 <b>4-vazifa (obxod): yangi tavsif</b>\n"
+                    + html.escape("\n".join(lines), quote=False))
+            extra = out["kept"] + out["leaders"]
+            if extra:
+                text += ("\n\n<pre>" + html.escape("\n".join(extra[:25]),
+                                                    quote=False) + "</pre>")
+            for chat_id in _recipients():
+                try:
+                    bot.send_message(chat_id, text, parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"[startup] task 4 instruction summary not delivered: {exc}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] task 4 rule 07.10: leader instruction FAILED (the "
+              f"next boot retries it): {exc}")
+    finally:
+        db.close()
 
 
 def _leader_rules_oct07_job(shift: int) -> None:

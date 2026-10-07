@@ -3767,6 +3767,12 @@ shift, both shifts** — and leaders are told every obxod must be 100% done.
   date tolerance 0. The global level gets the texts, the three flags, a CLEARED
   window (it serves both shifts, so blank falls through to each shift's hours),
   no deadline. Leader-level rows are left and named (the 19 Sep convention).
+- **The leader's instruction went out EARLY, on the day** (the operator wanted
+  it visible at once): `publish_description`, flag
+  `leader_rules_2026_10_07_t4_description_v1`, a minute after boot — the
+  `description` alone, every unit of both shifts and the global level,
+  compare-and-set. It moves no verdict; the criteria and the date rule still
+  land in each shift's gap, and the passes find the text already written.
 - **Strict, not time-only — a choice to know.** The example screenshot (a Galaxy
   Tab) shows «22:14 вс, 13 сент.» in its status bar. A PHONE whose status bar
   shows the hour alone fails `no_date` under this rule; «faqat vaqt» on the
@@ -3801,7 +3807,7 @@ shift, both shifts** — and leaders are told every obxod must be 100% done.
   expected 0; anything else means the era missed a reader.
 - **NEVER delete an era or its frozen row** — every boot re-derives against it.
   A new dated change is one more `Era` with a NEW key. Delete
-  `leader_rules_oct07.py`, `register_leader_rules_oct07` and its job/DM, and the
+  `leader_rules_oct07.py`, `register_leader_rules_oct07` and its jobs/DM (the description job included), and the
   call in BOTH entrypoints once all three flags
   (`leader_rules_2026_10_07_t4_shift1_v1` / `…_shift2_v1` / `…_global_v1`) are
   set; keep `leader_rule_eras.py`.

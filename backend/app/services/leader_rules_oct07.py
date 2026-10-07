@@ -266,6 +266,49 @@ def apply_global(db: Session) -> dict:
     return out
 
 
+def publish_description(db: Session) -> dict:
+    """The leader's instruction ALONE, on every unit of BOTH shifts and the
+    global level, at once — the operator asked to see it before the passes run
+    (07.10.2026, the 18 Sep preview's shape). `description` is the one column
+    the grader never reads (`leader_ai._prompt` does not know it), so writing it
+    mid-shift moves no verdict; the criteria and the date rule still land in
+    each shift's gap. Compare-and-set like the passes, which then find it
+    already written. Leaders with their own description keep it and are
+    named."""
+    out = {"units": 0, "texts": 0, "kept": [], "global": False, "leaders": []}
+    for shift in (1, 2):
+        for m in units(db, shift):
+            row = (db.query(LeaderTaskSetting)
+                   .filter_by(manager_id=m.id, task_id=TASK).first())
+            cur = getattr(row, "description", None)
+            out["units"] += 1
+            if _same(cur, DESCRIPTION):
+                continue
+            if not _replaceable(cur, (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION),
+                                DESCRIPTION):
+                out["kept"].append(f"{m.name} · description")
+                continue
+            leader_tasks.set_description(db, task_id=TASK, manager_id=m.id,
+                                         description=DESCRIPTION)
+            out["texts"] += 1
+    td = db.query(LeaderTaskDef).filter_by(id=TASK).first()
+    if td is not None and not _same(td.description, DESCRIPTION):
+        if _replaceable(td.description,
+                        (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION), DESCRIPTION):
+            leader_tasks.set_description(db, task_id=TASK,
+                                         description=DESCRIPTION)
+            out["global"] = True
+        else:
+            out["kept"].append("global · description")
+    rows = (db.query(LeaderTaskLeaderSetting, RoleProfile)
+            .join(RoleProfile, RoleProfile.id == LeaderTaskLeaderSetting.leader_id)
+            .filter(LeaderTaskLeaderSetting.task_id == TASK).all())
+    out["leaders"] = sorted(prof.name for row, prof in rows
+                            if (row.description or "").strip()
+                            and not _same(row.description, DESCRIPTION))
+    return out
+
+
 _LEADER_FIELDS = ("criteria", "description", "win_from", "win_to", "deadline",
                   "date_check", "day_check", "time_check", "date_plus")
 
