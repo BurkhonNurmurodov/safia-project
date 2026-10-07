@@ -69,7 +69,9 @@ _relabel = relabel_supervisor
 def _photo_count(photo) -> int:
     """How many proof links a sheet task carries — the same rule the client
     used to apply to the raw field (comma-split, keep the http ones)."""
-    return sum(1 for p in str(photo or "").split(",") if "http" in p)
+    if not photo:
+        return 0    # every bot task, and a sheet task with no link
+    return sum(1 for p in str(photo).split(",") if "http" in p)
 
 
 def _wire_task(t: dict) -> dict:
@@ -427,10 +429,108 @@ def get_leaders(
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
     # its data — so a granted supervisor keeps their own view, widened.
-    feed = _leaders_feed(db, payload, page_scope_is_all(db, payload, "leaders"))
-    if _la_hides(payload):
-        _la_hide(feed)
+    sees_all = page_scope_is_all(db, payload, "leaders")
+    # A LEADER's copy is rewritten in place (`_la_hide`), so it is never one
+    # another viewer shares — and without «see all» it is their own slice anyway.
+    if sees_all and not _la_hides(payload):
+        feed = _shared_feed(db, payload)
+    else:
+        feed = _leaders_feed(db, payload, sees_all)
+        if _la_hides(payload):
+            _la_hide(feed)
     return _json_response(feed)
+
+
+# ── one build for everybody asking at once ───────────────────────────────────
+# The whole-platform register is the same for every «see all» viewer bar four
+# header fields (`_shared_feed` sets them per viewer), and it is the platform's
+# heaviest read: the whole checklist history, rebuilt per request. A shift's
+# worth of managers opening the page together built it once EACH — 16 builds in
+# flight held every DB connection and starved the server (2026-10-07, «Server
+# was slow»: 20.7 s per answer).
+#
+# So requests arriving while a build is running share the NEXT build — never
+# the running one. A build that started before a request arrived may have read
+# the data before a write that request is looking for (an admin's own ruling,
+# then the refetch), so a request only ever takes a build that STARTED after it
+# arrived. Nothing is cached once a build is done: the next request starts a
+# new one. At most one build runs, and at most one waits behind it.
+#
+# It is built as an ADMIN reads it and narrowed per viewer: the only part of a
+# «see all» build that depends on who is asking is a cutoff's reason and author
+# on the roster, which are an admin's alone (`_for_viewer` blanks them).
+
+class _Flight:
+    __slots__ = ("seq", "done", "feed")
+
+    def __init__(self, seq: int):
+        self.seq = seq                  # taken from `_flight_seq` at creation
+        self.done = threading.Event()
+        self.feed: dict | None = None   # None once done = the build failed
+
+
+_flight_lock = threading.Lock()
+_flight_seq = 0
+_flight: _Flight | None = None          # the build in progress
+_FLIGHT_WAIT_S = 120.0
+
+
+_ADMIN_BUILD = {"role": "admin"}     # nothing else in a «see all» build reads the payload
+
+
+def _shared_feed(db: Session, payload: dict) -> dict:
+    """`_leaders_feed(db, payload, True)`, built once for every request that
+    arrives before the build starts (see above)."""
+    global _flight_seq, _flight
+    with _flight_lock:
+        _flight_seq += 1
+        arrived = _flight_seq
+    while True:
+        build = False
+        with _flight_lock:
+            f = _flight
+            if f is None:
+                _flight_seq += 1
+                f = _flight = _Flight(_flight_seq)
+                build = True
+        if build:
+            try:
+                f.feed = _leaders_feed(db, _ADMIN_BUILD, True)
+            finally:
+                with _flight_lock:
+                    if _flight is f:
+                        _flight = None
+                f.done.set()
+            return _for_viewer(f.feed, payload)
+        if f.seq > arrived:
+            # Started after this request arrived: its answer is fresh enough.
+            if f.done.wait(_FLIGHT_WAIT_S) and f.feed is not None:
+                return _for_viewer(f.feed, payload)
+            break   # it failed or hung — this request builds its own
+        # Started before this request arrived: wait it out, then take (or
+        # start) the build after it.
+        if not f.done.wait(_FLIGHT_WAIT_S):
+            break
+    return _leaders_feed(db, payload, True)
+
+
+def _for_viewer(feed: dict, payload: dict) -> dict:
+    """A shared build with this viewer's own header — and, for anybody but an
+    admin, the roster without a cutoff's reason and author, exactly as their own
+    build would have left it. The rows are shared and read-only: nothing after
+    the build writes to them."""
+    role = payload.get("role")
+    out = dict(feed)
+    out["role"] = role
+    if role != "admin":
+        out["roster"] = [
+            {**p, "cutoff_reason": None, "cutoff_by": None}
+            if (p.get("cutoff_reason") is not None or p.get("cutoff_by") is not None)
+            else p
+            for p in feed.get("roster") or []]
+    out["can_request_late"] = role in ("admin", "supervisor")
+    out["can_decide_late"] = _may_decide(payload)
+    return out
 
 
 def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,

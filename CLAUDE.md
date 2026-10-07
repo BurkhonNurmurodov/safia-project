@@ -10083,6 +10083,26 @@ blocking work on the event loop freezes every request on the server at once.
   the whole queue's photos in one query; `_lp_item(media=)` takes them. The
   pool itself is SQLAlchemy's default (5 + 10 overflow = 15) under 40 request
   threads — raising it waits on knowing prod Postgres's `max_connections`.
+- **The fifth named the leaders board itself**: `/api/leaders` 10–21 s and
+  `/api/leaders/standing` 12 s, the DB pool full with 16 in flight. Measured on
+  a production-sized copy (5,500 bot days, 71k entries, 56k verdicts): one
+  build 4.2–5.4 s alone, 20 s each with four at once — most of it building
+  ~129k ORM objects to read one or two fields each. Two fixes. (1) The loaders
+  read COLUMNS: `leader_bot.entries_of` hands out read-only rows (`_ENTRY_COLS`
+  — no reader writes to them), `media_of` / `captures_of` read the columns
+  they print, `leader_ai.uid_map` reads `(id, day_id)` in one pass over the
+  refs, `rejected_by_uid` reads `(ref, task_id)`; big id lists go as ONE array
+  parameter (`leader_bot._in_ids`, `= ANY(:ids)`), never an expanding IN.
+  Output byte-identical; one build 1.9–2.5 s. (2) **Simultaneous «see all»
+  viewers share one build** (`routers/leaders._shared_feed`): built as an
+  admin reads it, narrowed per viewer by `_for_viewer` (the header fields, and
+  a cutoff's reason and author blanked for non-admins). A request takes only a
+  build that STARTED after it arrived — never a running one, so an admin's own
+  change is never missed — and nothing is kept once a build is done. A
+  leader's copy (`_la_hide` rewrites it in place) and every scoped viewer
+  still build their own. 16 at once: 2.2 s first, 4.7 s the rest (was ~35 s+
+  each). Still open: a scoped viewer's build reads every verdict of the
+  history (`stats_by_uid` over all dates) — 0.85 s for one brigadir.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).

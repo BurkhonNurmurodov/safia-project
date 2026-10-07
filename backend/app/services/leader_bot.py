@@ -39,6 +39,8 @@ submission — the same rule the dashboard has always applied.
 """
 from typing import Iterable
 
+from sqlalchemy import Integer, any_, bindparam
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -247,12 +249,31 @@ def closed_days(
                       per_cell=d.cell_id is not None)]
 
 
-def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list[LeaderTaskEntry]]:
-    by_day: dict[int, list[LeaderTaskEntry]] = {}
+def _in_ids(col, ids):
+    """`col IN ids` as ONE array parameter (`= ANY(:ids)`). The register hands
+    these loaders every closed day — and every entry — of the platform's
+    history, and an expanding IN renders a bind per id: ~70,000 of them for the
+    media, compiled, sent and parsed on every request."""
+    return col == any_(bindparam(None, sorted(set(ids)), type_=ARRAY(Integer)))
+
+
+# The columns the readers of `entries_of` use, read as plain rows. The register
+# loads every closed day of the platform's history on each request — tens of
+# thousands of entries — and building each as an ORM object (identity map,
+# state, weakrefs) cost more than the query itself: «Server was slow» measured
+# it, 2026-10-07. A Row answers `e.id`, `e.done` … exactly as the object did;
+# no reader writes to an entry it got from here.
+_ENTRY_COLS = (LeaderTaskEntry.id, LeaderTaskEntry.day_id, LeaderTaskEntry.task_id,
+               LeaderTaskEntry.done, LeaderTaskEntry.reason, LeaderTaskEntry.closed_at)
+
+
+def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list]:
+    """day id → its entries, as read-only rows (`_ENTRY_COLS`)."""
+    by_day: dict[int, list] = {}
     ids = [d.id for d in days]
     if not ids:
         return by_day
-    for e in db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(ids)).all():
+    for e in db.query(*_ENTRY_COLS).filter(_in_ids(LeaderTaskEntry.day_id, ids)).all():
         by_day.setdefault(e.day_id, []).append(e)
     return by_day
 
@@ -261,13 +282,13 @@ def media_of(db: Session, entry_ids: list[int]) -> dict[int, list[int]]:
     by_entry: dict[int, list[int]] = {}
     if not entry_ids:
         return by_entry
-    for m in (
-        db.query(LeaderTaskMedia)
-        .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
+    for mid, eid in (
+        db.query(LeaderTaskMedia.id, LeaderTaskMedia.entry_id)
+        .filter(_in_ids(LeaderTaskMedia.entry_id, entry_ids))
         .order_by(LeaderTaskMedia.pos)
         .all()
     ):
-        by_entry.setdefault(m.entry_id, []).append(m.id)
+        by_entry.setdefault(eid, []).append(mid)
     return by_entry
 
 
@@ -285,13 +306,16 @@ def captures_of(db: Session, days: list[LeaderTaskDay]) -> dict[tuple[int, int],
     ids = [d.id for d in days]
     if not ids:
         return out
-    for p in (db.query(LeaderTaskPhoto)
-              .filter(LeaderTaskPhoto.day_id.in_(ids))
-              .order_by(LeaderTaskPhoto.slot).all()):
-        out.setdefault((p.day_id, p.task_id), []).append({
-            "at": p.captured_at.isoformat() if p.captured_at else None,
-            "late": bool(p.late),
-            "deferred": bool(p.deferred),
+    for day_id, task_id, at, late, deferred in (
+            db.query(LeaderTaskPhoto.day_id, LeaderTaskPhoto.task_id,
+                     LeaderTaskPhoto.captured_at, LeaderTaskPhoto.late,
+                     LeaderTaskPhoto.deferred)
+            .filter(_in_ids(LeaderTaskPhoto.day_id, ids))
+            .order_by(LeaderTaskPhoto.slot).all()):
+        out.setdefault((day_id, task_id), []).append({
+            "at": at.isoformat() if at else None,
+            "late": bool(late),
+            "deferred": bool(deferred),
         })
     return out
 

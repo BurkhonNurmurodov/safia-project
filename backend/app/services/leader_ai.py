@@ -43,7 +43,8 @@ from typing import NamedTuple
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from sqlalchemy import and_, false, func, or_, text
+from sqlalchemy import Integer, and_, any_, bindparam, false, func, or_, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -3428,23 +3429,40 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
     """
     out: dict[str, str] = {}
 
-    bot_entry_ids = {int(r.ref.split(":")[1]) for r in revs if r.ref.startswith("bot:")}
-    if bot_entry_ids:
-        by_id = {e.id: e for e in db.query(LeaderTaskEntry)
-                 .filter(LeaderTaskEntry.id.in_(bot_entry_ids)).all()}
-        for r in revs:
-            if r.ref.startswith("bot:"):
-                e = by_id.get(int(r.ref.split(":")[1]))
-                if e is not None:
-                    out[r.ref] = f"bot-{e.day_id}"
-
-    dated = [r.ref for r in revs if r.ref.startswith("sheetd:")]
+    # Plain (id, day_id) pairs, never entry objects: the register asks this of
+    # every verdict in its whole history on each request — three times — and
+    # building tens of thousands of ORM objects for one integer each was most
+    # of what a slow /api/leaders was doing (2026-10-07). Bound as ONE array
+    # parameter: an expanding IN would render a bind per id.
+    # One pass over the refs, sorting them by form — this runs over the whole
+    # verdict history, so walking it once per form was most of its own time.
+    bot: dict[str, int] = {}
+    dated: list[str] = []
     for r in revs:
-        if r.ref.startswith("sheet:"):
-            out[r.ref] = r.ref.split(":", 2)[1]
+        ref = r.ref
+        if ref.startswith("bot:"):
+            bot[ref] = int(ref.split(":", 2)[1])
+        elif ref.startswith("sheet:"):
+            out[ref] = ref.split(":", 2)[1]
+        elif ref.startswith("sheetd:"):
+            dated.append(ref)
+    if bot:
+        day_of = dict(db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
+                      .filter(LeaderTaskEntry.id == any_(
+                          bindparam(None, sorted(set(bot.values())),
+                                    type_=ARRAY(Integer)))).all())
+        for ref, eid in bot.items():
+            day = day_of.get(eid)
+            if day is not None:
+                out[ref] = f"bot-{day}"
+
     if dated:
         dates = {ref.split(":")[1] for ref in dated}
-        rows = db.query(LeaderChecklist).filter(LeaderChecklist.date.in_(dates)).all()
+        # The three columns `row_uid` and the key read — not the row with its
+        # task JSON, which this resolver never looks at.
+        rows = (db.query(LeaderChecklist.id, LeaderChecklist.date,
+                         LeaderChecklist.leader, LeaderChecklist.submission_id)
+                .filter(LeaderChecklist.date.in_(dates)).all())
         by_key = {(row.date, (row.leader or "").strip().lower()[:60]): row for row in rows}
         for ref in dated:
             parts = ref.split(":")
@@ -3599,7 +3617,9 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
     rejection is reversible by re-ruling the verdict, which is the behaviour you
     want from a judgement call.
     """
-    q = (db.query(LeaderAiReview)
+    # `ref` and `task_id` are all this reads — the verdict's prose and its
+    # JSON clocks are dead weight on a pass the register makes per request.
+    q = (db.query(LeaderAiReview.ref, LeaderAiReview.task_id)
          .filter(or_(
              LeaderAiReview.resolution == "rejected",
              and_(_auto_clause(),
