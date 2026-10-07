@@ -341,14 +341,19 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
         at = _local(row.read_at) if row else None
         if row and row.data and at and (now_local() - at).total_seconds() <= max_age:
             return row.data, at
+        stored = (row.data, at) if row and row.data else None
+        # No transaction held across the ~9 Verifix calls of a directory read
+        # (`_read_day`'s rule): a «Verifix'dan yangilash» otherwise kept one of
+        # the 15 pool connections checked out for the ~10 s Verifix takes.
+        db.rollback()
         t0 = _time.monotonic()
         try:
             data = _read_directory(cfg)
         except verifix.VerifixError as exc:
             _note_error(db, "dir", exc)
-            if row and row.data:
+            if stored:
                 log.warning("staff-live: directory re-read failed (%s), using the stored one", exc.code)
-                return row.data, at
+                return stored
             raise
         row = _locked_row(db, "dir")
         row.data, row.read_at = data, datetime.now(timezone.utc)

@@ -1656,6 +1656,8 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                     ("zagruzka_on", bool(mgr.zagruzka_on)))
         db.commit()
         diff = [(k, old[k], v) for k, v in new_vals if old[k] != v]
+        if old["shift"] != dict(new_vals)["shift"] or new_id != pid:
+            leader_shift.forget()      # the cached unit → shift map (services/leader_shift)
         if new_id != pid:
             diff.append(("verifix_code", pid, new_id))
         if diff:

@@ -1306,7 +1306,8 @@ def discover(db: Session) -> int:
 
 def restamp(db: Session) -> int:
     """Re-point EXISTING sheet verdicts at the day and shift their source row
-    now has, then re-derive the date flags. Returns how many moved.
+    now has, then — when any moved — re-derive the date flags. Returns how
+    many moved.
 
     Queues NOTHING — that is the entire reason it exists as its own function.
     The sheet Refresh must be able to correct verdicts it invalidated without
@@ -1356,7 +1357,12 @@ def restamp(db: Session) -> int:
     if fixed:
         db.commit()
         log.info("leader-ai: re-stamped %s verdict(s) after a sheet refresh", fixed)
-    sync_date_flags(db)
+        # Only a row this pass MOVED has a date input that changed, so only then
+        # is the corpus re-derived — `discover()`'s own rule. Walked
+        # unconditionally, every Refresh press loaded every verdict ever written
+        # (most of a 19 s press on 2026-10-07, «Server was slow»); the boot
+        # still walks it whole as the catch-all.
+        sync_date_flags(db)
     return fixed
 
 
@@ -3292,8 +3298,9 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     about the CLOCK, and the tolerance widening WHICH day counts — and this runs
     whenever any of them can have moved: at boot, after a window edit, after a
     date-check, day-check, time-check or tolerance edit, after a sheet Refresh or
-    a discover (both re-stamp `date` AND `shift`), and when the AI overview is
-    opened. There is no ninth input, so there is no trigger left to forget.
+    a discover that re-stamped a row (both re-stamp `date` AND `shift`; a press
+    that moved nothing changed no input), and when the AI overview is opened.
+    There is no ninth input, so there is no trigger left to forget.
 
     It also REPAIRS the first of those inputs on the way past
     (`fill_clock_dates`): a stored clock whose day/month never made it out of

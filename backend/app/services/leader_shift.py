@@ -59,12 +59,14 @@ _TTL_S = 30.0
 _OVER: dict = {"at": 0.0, "map": {}}
 _TPL: dict[int, tuple[float, dict]] = {}
 _TPL_TTL_S = 60.0
+_UNITS: dict = {"at": 0.0, "map": {}}
 
 
 def forget() -> None:
-    """Drop the cached timelines and standards — after a profile save."""
+    """Drop the cached timelines, standards and unit shifts — after a profile save."""
     _OVER["at"] = 0.0
     _TPL.clear()
+    _UNITS["at"] = 0.0
 
 
 def _norm(shift) -> int:
@@ -153,10 +155,41 @@ def moved(db: Session, leader_id) -> bool:
     return bool(leader_id) and int(leader_id) in _overrides(db)
 
 
+def _unit_shifts(db: Session) -> dict[int, int]:
+    """manager id → shift for every unit, read once and kept `_TTL_S` like
+    `_overrides` (its own session, for the same reason). `unit_shift` is asked
+    once per verdict of a moved leader in every corpus walk (`chain` from
+    `leader_ai.sync_date_flags`), and a query per call cost the leaders-sheet
+    Refresh ~3 s of its 19 s on 2026-10-07 («Server was slow»). A unit's shift
+    is edited on the admin profile page, which calls `forget()`."""
+    now = time.monotonic()
+    if now - _UNITS["at"] < _TTL_S:
+        return _UNITS["map"]
+    from app.database import SessionLocal
+    own = SessionLocal()
+    try:
+        out = {int(mid): _norm(sh) for mid, sh in own.query(Manager.id, Manager.shift).all()}
+    except Exception:
+        return _UNITS["map"]          # keep what is held; the next call reads again
+    finally:
+        own.close()
+    _UNITS["map"], _UNITS["at"] = out, now
+    return out
+
+
 def unit_shift(db: Session, manager_id) -> int:
     if not manager_id:
         return 1
-    return _norm(db.query(Manager.shift).filter(Manager.id == manager_id).scalar())
+    try:
+        mid = int(manager_id)
+    except (TypeError, ValueError):
+        return _norm(db.query(Manager.shift).filter(Manager.id == manager_id).scalar())
+    units = _unit_shifts(db)
+    if mid not in units:
+        # A unit the map does not hold (created since it was read): one query,
+        # exactly as before, and its answer kept for the map's lifetime.
+        units[mid] = _norm(db.query(Manager.shift).filter(Manager.id == mid).scalar())
+    return units[mid]
 
 
 def shift_on(db: Session, leader_id, day, unit_sh) -> int:

@@ -10103,6 +10103,31 @@ blocking work on the event loop freezes every request on the server at once.
   still build their own. 16 at once: 2.2 s first, 4.7 s the rest (was ~35 s+
   each). Still open: a scoped viewer's build reads every verdict of the
   history (`stats_by_uid` over all dates) — 0.85 s for one brigadir.
+- **The sixth named a Refresh press and the «Verifix'dan yangilash» presses**
+  (17:46–18:20, after v4.257.5): the leaders-sheet Refresh 19.4 s — 5.6 s
+  reading Google Sheets, then `leader_ai.restamp` walking EVERY stored verdict
+  through `sync_date_flags` on every press, with one `unit_shift` query per
+  row of a moved leader inside `leader_shift.chain` (3.1 s of those alone);
+  three live-attendance reads at ~10 s and a close-check at 15 s, which were
+  presses (a press re-reads the plant's whole directory once it is older than
+  120 s: ~9 Verifix calls at about a second each); the quality refresh
+  (Google Sheets, by design); and `/api/leaders` + `/standing` twelve times,
+  all under 10 s, with no line saying what they were doing — the detail
+  prints only the six slowest requests. Fixed: `restamp` re-derives only when
+  it re-stamped a row (`discover()`'s own rule; the boot still walks the
+  corpus whole — measured on the 11 Sep copy, a press that moved nothing
+  pays 0.16 s instead of the walk); `leader_shift.unit_shift` reads the
+  unit → shift map once per 30 s (`_UNITS`, its own session like
+  `_overrides`, dropped by `forget()`, which the supervisor profile save now
+  calls when a unit's shift or id moved); `verifix_live._directory` holds no
+  DB connection across the plant-wide read (`_read_day`'s rule); a forced live
+  read is recorded as `…?force` and is slow BY DESIGN (`_expected_slow`, with
+  `/admin/refresh-sheet/`), while the same path unforced — a poll that found
+  its stored read stale — still counts; and «Slow most often» prints, per
+  path, the count, the median and where that path's time went over ALL its
+  events (`_path_summary`), so a path slow twelve times is named even when
+  none of its requests is among the six slowest. Not touched: `/api/leaders`
+  itself — the next report says where its time goes.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).

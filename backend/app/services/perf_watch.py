@@ -75,12 +75,28 @@ _INSTANT = ("/api/auth/", "/api/page-access", "/api/my-capabilities", "/health")
 # recorded, but they never count toward a burst: an admin paging through the
 # Verifix registers is not the server being in trouble.
 _EXPECTED_SLOW = ("/api/verifix-test/", "/api/admin/verifix", "/api/assistant/",
-                  "/api/attendance-batch/verifix", "/admin/db-")
-_EXPECTED_SLOW_ENDS = (".xlsx", ".pptx", ".pdf", "/export", "/refresh")
+                  "/api/attendance-batch/verifix", "/admin/db-", "/admin/refresh-sheet/")
+_EXPECTED_SLOW_ENDS = (".xlsx", ".pptx", ".pdf", "/export", "/refresh", "?force")
+# A Verifix read a PERSON asked for — «Verifix'dan yangilash» on /staff and the
+# close dialog's button, `?force=true` on these paths — re-reads the plant's
+# whole directory when it is older than two minutes: ~9 Verifix calls at about
+# a second each (10–15 s on 2026-10-07). The event's path carries `?force` and
+# is expected; the SAME path without it is a poll that found its stored read
+# stale, which is the server's problem and still counts.
+_FORCED = ("/api/staff-live/",)
 
 
 def _expected_slow(path: str) -> bool:
     return path.startswith(_EXPECTED_SLOW) or path.endswith(_EXPECTED_SLOW_ENDS)
+
+
+def _event_path(scope) -> str:
+    path = scope.get("path", "")
+    if path.startswith(_FORCED) and b"force=true" in (scope.get("query_string") or b""):
+        return path + "?force"
+    return path
+
+
 _TIMED = ("/api/", "/admin/", "/bot/", "/health")
 
 _TZ = timezone(timedelta(hours=5))
@@ -445,7 +461,7 @@ class RequestTimingMiddleware:
         t0 = time.perf_counter()
         _inflight += 1
         key = id(scope)
-        _active[key] = {"what": f"{scope.get('method', '')} {scope.get('path', '')[:120]}",
+        _active[key] = {"what": f"{scope.get('method', '')} {_event_path(scope)[:120]}",
                         "t0": t0, "scope": scope, "hits": {}, "n": 0, "peak": {}}
         state = {"status": 0, "ms": None}
 
@@ -471,7 +487,7 @@ class RequestTimingMiddleware:
             try:
                 ms = state["ms"] if state["ms"] is not None else (time.perf_counter() - t0) * 1000
                 if ms >= SLOW_REQUEST_S * 1000:
-                    path = scope.get("path", "")
+                    path = _event_path(scope)
                     # The busiest the server was WHILE it ran — taken at its end,
                     # the request's own thread and DB connection are already back.
                     peak = (rec or {}).get("peak") or snapshot()
@@ -536,6 +552,32 @@ def event_lines(events: list[dict], limit: int = 6) -> list[str]:
     return out
 
 
+def _path_summary(slow: list[dict], limit: int = 4) -> list[str]:
+    """«<code>/api/leaders</code> ×7 · median 4.2 s · 61% in leaders:… ↳ do_execute»
+    — the paths slow most often, each with its median and where ITS time went
+    over ALL of its events. The detail below prints only the slowest few
+    requests, and the 2026-10-07 report counted /api/leaders twelve times
+    without one line saying what they were doing."""
+    by: dict[str, dict] = {}
+    for e in slow:
+        d = by.setdefault(e["path"], {"n": 0, "ms": [], "frames": {}})
+        d["n"] += 1
+        d["ms"].append(e["ms"])
+        for w in e.get("where") or []:
+            pct, sep, frame = w.partition("% ")
+            if sep and pct.isdigit():
+                d["frames"][frame] = d["frames"].get(frame, 0.0) + e["ms"] * int(pct) / 100
+    out = []
+    for p, d in sorted(by.items(), key=lambda kv: -kv[1]["n"])[:limit]:
+        ms = sorted(d["ms"])
+        line = f"<code>{html.escape(p)}</code> ×{d['n']} · median {ms[len(ms) // 2] / 1000:.1f} s"
+        if d["frames"]:
+            frame, sec = max(d["frames"].items(), key=lambda kv: kv[1])
+            line += f" · {round(100 * sec / sum(d['ms']))}% in {html.escape(frame)}"
+        out.append(line)
+    return out
+
+
 def _dm(batch: list[dict]) -> None:
     try:
         stalls = [e for e in batch if e["kind"] == "stall"]
@@ -549,12 +591,9 @@ def _dm(batch: list[dict]) -> None:
         if stalls:
             worst = max(e["ms"] for e in stalls) / 1000
             head.append(f"Longest freeze: {worst:.1f} s — nobody's request was answered meanwhile.")
-        paths: dict[str, int] = {}
-        for e in slow:
-            paths[e["path"]] = paths.get(e["path"], 0) + 1
-        if len(paths) > 1:
-            top = sorted(paths.items(), key=lambda kv: -kv[1])[:4]
-            head.append("Slow most often: " + ", ".join(f"<code>{html.escape(p)}</code> ×{n}" for p, n in top))
+        if slow:
+            head.append("Slow most often:")
+            head += ["• " + line for line in _path_summary(slow)]
         text = "\n".join(head)
         for line in event_lines(batch):
             if len(text) + len(line) > 3900:     # whole lines only: a cut tag breaks the HTML
