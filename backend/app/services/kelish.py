@@ -44,7 +44,9 @@ This module computes; `routers/kelish.py` decides who may see and change what.
 from __future__ import annotations
 
 import re
+import threading
 from bisect import bisect_right
+from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Optional
 
@@ -187,6 +189,84 @@ def _live_rosters(db: Session, lo: date, hi: date, as_of: Optional[datetime], ra
     return days
 
 
+# ── the file, kept between requests ──────────────────────────────────────────
+#
+# Every tap on the page re-checks that the worker is on the list, and a list
+# is a statement about the WHOLE plant's file («the latest row places a
+# worker»): ~46,000 rows read and folded in Python — 0.3 s alone, 3–5 s EACH
+# when a shift's leaders tap at once, long enough to starve the one server
+# process (the 7 Oct «Server was slow» DM: four taps at 3.3–4.7 s, the event
+# loop held 1.4 s). So each day's answer is kept and handed out again while the
+# file under its window is the same file. «The same» is checked EXACTLY on
+# every call, never assumed for a while: per file date, the batch, its row
+# count, its newest row and a hash of every field the reader reads (an admin's
+# edit in place changes the hash), plus each close copy's roster — one GROUP BY
+# of ~10 ms, in Postgres, not in Python. A day whose stamp moved is read again,
+# and only one request reads it while the others wait for that answer.
+#
+# The maps handed out are SHARED between requests: read them, never change them.
+
+_STAMP_SQL = text("""
+    SELECT b.date, b.id, count(r.id), coalesce(max(r.id), 0),
+           coalesce(sum(hashtext(concat(r.worker_name, '|', r.verifix_code, '|',
+                                        r.job_title, '|', r.status, '|', r.upload_id))), 0)
+      FROM attendance_batches b
+      LEFT JOIN attendance_batch_rows r ON r.batch_id = b.id
+     WHERE b.date BETWEEN :lo AND :hi
+     GROUP BY b.date, b.id
+""")
+_LIVE_STAMP_SQL = text("""
+    SELECT day, count(*), coalesce(sum(hashtext(roster::text)), 0), max(copied_at)
+      FROM live_projections
+     WHERE day BETWEEN :lo AND :hi
+     GROUP BY day
+""")
+_KEEP = 24                       # day-maps kept (~1 MB each on the plant's file)
+_kept: "OrderedDict[tuple, tuple]" = OrderedDict()   # (day, as_of) → (stamp, (fw, last))
+_kept_lock = threading.Lock()
+_reading: dict[tuple, threading.Lock] = {}
+
+
+def _stamps(db: Session, lo: date, hi: date) -> dict[date, tuple]:
+    """{file date: what the reader would find there} over lo..hi."""
+    out: dict[date, list] = {}
+    for d, bid, n, newest, h in db.execute(_STAMP_SQL, {"lo": lo, "hi": hi}):
+        out.setdefault(d, []).append(("f", bid, n, newest, h))
+    for d, n, h, at in db.execute(_LIVE_STAMP_SQL, {"lo": lo, "hi": hi}):
+        out.setdefault(d, []).append(("l", n, h, at.isoformat() if at else ""))
+    return {d: tuple(sorted(v)) for d, v in out.items()}
+
+
+def _day_stamp(stamps: dict, day: date) -> tuple:
+    lo, hi = window(day)
+    return tuple((d, v) for d, v in sorted(stamps.items()) if lo <= d <= hi)
+
+
+def _kept_get(key: tuple, stamp: tuple):
+    with _kept_lock:
+        got = _kept.get(key)
+        if got is None or got[0] != stamp:
+            return None
+        _kept.move_to_end(key)
+        return got[1]
+
+
+def _kept_put(key: tuple, stamp: tuple, value) -> None:
+    with _kept_lock:
+        _kept[key] = (stamp, value)
+        _kept.move_to_end(key)
+        while len(_kept) > _KEEP:
+            _kept.popitem(last=False)
+
+
+def _reading_lock(key: tuple) -> threading.Lock:
+    with _kept_lock:
+        if len(_reading) > 200:          # a lock per day ever asked would only grow
+            for k in [k for k, lk in _reading.items() if not lk.locked()]:
+                del _reading[k]
+        return _reading.setdefault(key, threading.Lock())
+
+
 def file_workers_days(db: Session, days: Iterable[date],
                       as_of: Optional[datetime] = None) -> dict:
     """THE file reader: for each of `days`, every worker the original upload
@@ -210,10 +290,53 @@ def file_workers_days(db: Session, days: Iterable[date],
 
     `as_of` builds the lists as the file stood at that moment (`_AS_OF_SQL`) —
     what checklist task #11's check reads when it judges an hour already gone
-    (`leader_auto`, check `staff_list`)."""
+    (`leader_auto`, check `staff_list`).
+
+    Answers come from the kept maps (above) while the file under a day's
+    window is unchanged — the same maps for every caller, so read-only."""
     want = sorted(set(days))
     if not want:
         return {}
+    lo, hi = window(want[0])[0], window(want[-1])[1]
+    stamps = _stamps(db, lo, hi)
+    out: dict = {}
+    miss: list = []
+    for d in want:
+        st = _day_stamp(stamps, d)
+        got = _kept_get((d, as_of), st)
+        if got is None:
+            miss.append((d, st))
+        else:
+            out[d] = got
+    if not miss:
+        return out
+    # One reader per day: the others wait for its answer instead of all reading
+    # the same file at once. Locks are taken in day order, so two requests
+    # asking overlapping days can never hold each other up.
+    locks = [_reading_lock((d, as_of)) for d, _ in miss]
+    for lk in locks:
+        lk.acquire()
+    try:
+        todo = []
+        for d, st in miss:
+            got = _kept_get((d, as_of), st)
+            if got is None:
+                todo.append((d, st))
+            else:
+                out[d] = got
+        if todo:
+            read = _read_days(db, [d for d, _ in todo], as_of)
+            for d, st in todo:
+                out[d] = read[d]
+                _kept_put((d, as_of), st, read[d])
+    finally:
+        for lk in reversed(locks):
+            lk.release()
+    return out
+
+
+def _read_days(db: Session, want: list[date], as_of: Optional[datetime]) -> dict:
+    """The read itself, for `want` (sorted) — see `file_workers_days`."""
     lo, hi = window(want[0])[0], window(want[-1])[1]
     raw: dict[str, list] = {}
     if as_of is not None:

@@ -9080,6 +9080,20 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   window query cost ~0.3 s apiece (a week was ~2 s; it is ~50–90 ms now, and
   every tap's validation got ~3× cheaper too). Verified equal to the old query
   worker for worker before it shipped.
+- **Each day's file map is KEPT between requests** (2026-10-07, after the first
+  «Server was slow» DM: four taps at 3.3–4.7 s and the event loop starved for
+  1.4 s). A tap still re-checks its worker against the whole plant's file, and
+  that read is ~46,000 rows folded in Python — 0.3 s alone, 3–5 s EACH when a
+  shift's leaders tap at once. `file_workers_days` now hands out the map it
+  built last time while the file under that day's window is UNCHANGED, checked
+  EXACTLY on every call, never for-a-while: a stamp per file date (the batch,
+  its row count, newest row and a hash of every field the reader reads, so an
+  admin's edit in place counts; plus each close copy's roster) — one GROUP BY,
+  ~40 ms of Postgres time, no Python work. A moved stamp reads that day again,
+  ONE request per day (the others wait for its answer). Measured on a
+  plant-sized file: 8 taps at once 56–93 ms each, was 3.0–3.3 s. `as_of` (task
+  #11's late check) is kept under its own key. The maps are SHARED between
+  requests — read them, never change them.
 - **It reads like the spreadsheet it replaced** (2026-09-30, the operator: «more
   like the Excel … all cell sizes the same … too much noise»). Names down the
   left, one equal-width column per day, **every cell one size — an open day is
@@ -9984,6 +9998,12 @@ blocking work on the event loop freezes every request on the server at once.
   own perf_watch record of the same window; one DM per gate × endpoint × cause
   per hour (not per person: a freeze stalls everybody at once). Logged as
   `[CLIENT-STALL]`.
+- **The first DM it sent named «Ish grafigi»** (2026-10-07): taps
+  (`PUT /api/kelish/mark`) at 3–5 s, two threadpool workers inside
+  `kelish.file_workers_days` while the loop was held 1.4 s — CPU-heavy Python
+  on worker threads starves the loop through the GIL just as code ON the loop
+  does. Fixed by keeping the file maps (see «Ish grafigi»). A stall entry prints
+  its stack LAST: Telegram eats the line break right after a `</pre>`.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).

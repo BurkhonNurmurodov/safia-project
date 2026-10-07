@@ -200,7 +200,7 @@ def message(stall, *, who: str, version: str, ua: str, repeats: int,
         for line in perf_watch.event_lines(server_events, limit=4):
             if len(text) + len(line) > _MAX_TEXT:
                 break
-            text += "\n" + line
+            text += "\n\n" + line       # a stall entry ends in </pre>, which eats one break
     else:
         text += "\n\n<i>Server, same window: nothing slow recorded.</i>"
     return text

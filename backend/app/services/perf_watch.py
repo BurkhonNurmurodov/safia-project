@@ -405,13 +405,16 @@ def event_lines(events: list[dict], limit: int = 6) -> list[str]:
     out = []
     for ev in sorted(events, key=lambda e: -e.get("ms", 0))[:limit]:
         if ev["kind"] == "stall":
+            # The stack goes LAST: Telegram swallows the line break right after
+            # a </pre>, so anything after it ran into the stack's last line.
             where = (ev.get("stack") or ["(no app frames on the loop)"])
             out.append(f"🧊 {_clock(ev['at'])} loop held <b>{ev['ms'] / 1000:.1f} s</b> · "
-                       f"{html.escape(_pool_line(ev))}\n<pre>{html.escape(chr(10).join(where[-6:]))}</pre>\n"
+                       f"{html.escape(_pool_line(ev))}\n"
                        + (f"<i>in flight:</i> {html.escape('; '.join(ev['active'][:4]))}\n"
                           if ev.get("active") else "")
-                       + (f"<i>other threads:</i> {html.escape('; '.join(ev['others'][:3]))}"
-                          if ev.get("others") else ""))
+                       + (f"<i>other threads:</i> {html.escape('; '.join(ev['others'][:3]))}\n"
+                          if ev.get("others") else "")
+                       + f"<pre>{html.escape(chr(10).join(where[-6:]))}</pre>")
         else:
             out.append(f"🐢 {_clock(ev['at'])} {html.escape(ev.get('method', ''))} "
                        f"<code>{html.escape(ev.get('path', ''))}</code> → {ev.get('status') or '—'} "
