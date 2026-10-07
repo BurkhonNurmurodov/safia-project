@@ -10072,6 +10072,12 @@ blocking work on the event loop freezes every request on the server at once.
   whole checklist history per request (`_leaders_feed`); the standing pool is
   kept 60 s. Not yet profiled: the next report's «time went to» names the
   function.
+- **The fourth was the first with «time went to»**: «Kechikkan isbotlar»
+  (`GET /api/leaders/late-proofs`) 3.2 s, 83% in one photo query PER CARD (up
+  to 400) while the DB pool read 15/15. `leader_late_proof.photos_for` reads
+  the whole queue's photos in one query; `_lp_item(media=)` takes them. The
+  pool itself is SQLAlchemy's default (5 + 10 overflow = 15) under 40 request
+  threads — raising it waits on knowing prod Postgres's `max_connections`.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).

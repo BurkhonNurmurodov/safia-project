@@ -378,6 +378,23 @@ def photos(db: Session, late_id: int) -> list[LeaderLateProofMedia]:
             .order_by(LeaderLateProofMedia.pos).all())
 
 
+def photos_for(db: Session, late_ids) -> dict[int, list[LeaderLateProofMedia]]:
+    """`photos` for a whole queue in ONE query, keyed by proof id. Asked one
+    card at a time, the «Kechikkan isbotlar» list (up to 400 cards) spent 83%
+    of a 3.2 s answer on these lookups while it held a connection the full
+    pool needed (the 2026-10-07 «Server was slow» DM)."""
+    ids = sorted({int(i) for i in late_ids if i is not None})
+    out: dict[int, list[LeaderLateProofMedia]] = {i: [] for i in ids}
+    if not ids:
+        return out
+    for m in (db.query(LeaderLateProofMedia)
+              .filter(LeaderLateProofMedia.late_id.in_(ids))
+              .order_by(LeaderLateProofMedia.late_id, LeaderLateProofMedia.pos)
+              .all()):
+        out.setdefault(m.late_id, []).append(m)
+    return out
+
+
 # ── how late is late? ────────────────────────────────────────────────────────
 
 def local(ts: datetime | None) -> datetime | None:

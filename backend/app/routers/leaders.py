@@ -3104,8 +3104,11 @@ def _iso(ts) -> str | None:
 
 
 def _lp_item(db: Session, row, names: dict, mgr_names: dict,
-             can_act: bool = False) -> dict:
-    media = leader_late_proof.photos(db, row.id)
+             can_act: bool = False, media: list | None = None) -> dict:
+    # A list hands every card's photos in at once (`photos_for`); one card
+    # read alone (the appeal chat) asks for its own.
+    if media is None:
+        media = leader_late_proof.photos(db, row.id)
     return {
         "id": row.id,
         "status": row.status,
@@ -3217,7 +3220,9 @@ def list_late_proofs(
                       or (r.status == leader_late_proof.ADMIN and adm_ok))
         if acts[r.id]:
             todo += 1
-    items = [_lp_item(db, r, names, mgr_names, acts.get(r.id, False))
+    media = leader_late_proof.photos_for(db, [r.id for r in rows])
+    items = [_lp_item(db, r, names, mgr_names, acts.get(r.id, False),
+                      media=media.get(r.id, []))
              for r in rows]
     _attach_chat(db, payload, leader_appeal_chat.LATE, items)
     return {
