@@ -2,6 +2,7 @@ import axios from "axios";
 import { examAttemptId, rewriteExamUrl, noteExamMutation, examWriteAllowed } from "./examMode";
 import { clearToken, getToken, isWebSession } from "./session";
 import { noteServerHeaders } from "./compat";
+import { noteStart, noteEnd } from "./requestLog";
 import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, isServerRestarting, sleep as waitMs } from "./serverRestart";
 
 const api = axios.create({
@@ -98,6 +99,9 @@ api.interceptors.request.use((config) => {
       return Promise.reject(examBlockError(config));
     }
   }
+  // Timed for the stall report (utils/requestLog.js) — last, so a request the
+  // exam guard refused above is never counted as one the server kept waiting.
+  noteStart(config);
   return config;
 });
 
@@ -235,6 +239,7 @@ function normalizeDetail(response) {
 // sets a flag; see utils/compat.js.
 api.interceptors.response.use(
   (response) => {
+    noteEnd(response.config, response);
     noteServerHeaders(response.headers);
     if (isServerRestarting() && !restartKind(response)) setServerRestarting(false);
     // A sandbox write the exam may be waiting on — the strip re-checks the task.
@@ -246,6 +251,7 @@ api.interceptors.response.use(
       : response;
   },
   (error) => {
+    noteEnd(error.config, error.response);
     noteServerHeaders(error.response?.headers);
     if (shouldWaitForRestart(error.config, error.response)) {
       return retryAfterRestart(error.config);

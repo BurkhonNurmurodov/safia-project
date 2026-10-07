@@ -10,9 +10,12 @@ Two kinds, one delivery path — never add a third endpoint for a fourth kind:
   * /api/crash-report — the app started and then a render threw. Posted
     automatically by the ErrorBoundary, with no user involvement. The same
     door carries `kind="recovered"`: a DOM desync utils/domGuard.js absorbed
-    before it could reach a boundary at all — and `kind="camera"`: the proof
+    before it could reach a boundary at all — `kind="camera"`: the proof
     camera page landing on a failure screen, with what the device measured
-    about why (services/camera_report.py lays that one out).
+    about why (services/camera_report.py lays that one out) — and
+    `kind="stall"`: the app standing on its full-screen loader too long, with
+    what it was waiting on, set beside the server's own record of that moment
+    (services/stall_report.py + services/perf_watch.py).
 
 Both are throttled and size-capped so neither can be turned into a spam relay,
 and the automatic one is de-duplicated by fingerprint as well: one crash that
@@ -34,7 +37,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import TelegramUser
 from app.routers.auth import _validate_init_data
-from app.services import camera_report
+from app.services import camera_report, perf_watch, stall_report
 from app.telegram_bot import bot, _admin_ids
 
 logger = logging.getLogger(__name__)
@@ -161,6 +164,9 @@ class CrashReport(BaseModel):
     # services/camera_report.py. A dict, not a model: it is one client's
     # measurements, and every reader of it tolerates any shape.
     camera: Optional[dict] = None
+    # kind="stall" only. Built by frontend/src/utils/stallReport.js, laid out by
+    # services/stall_report.py — the same any-shape contract as `camera`.
+    stall: Optional[dict] = None
 
 
 def _crash_who(db: Session, request: Request) -> str:
@@ -211,10 +217,27 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
     who = _crash_who(db, request)
     path = (body.url or "?").split("?")[0]
     camera = body.kind == "camera"
+    stall = body.kind == "stall"
+    # The server's own record of the window the client waited through, taken
+    # NOW — the ledger is bounded, and the wait has only just ended.
+    server_events: list[dict] = []
+    if stall:
+        try:
+            total = (body.stall or {}).get("total_ms")
+            secs = float(total) / 1000 if isinstance(total, (int, float)) else 60.0
+            server_events = perf_watch.around(min(max(secs, 5.0), 600.0))
+        except Exception:
+            server_events = []
 
     # The log line lands regardless of throttling, de-duplication or whether
     # Telegram is reachable — it is the record that survives.
-    if camera:
+    if stall:
+        logger.warning(
+            "[CLIENT-STALL] %s | v%s | %s | %s | %s\n%s",
+            who, body.version or "?", path, body.message or "(no message)",
+            body.ua or "(no UA)", stall_report.log_json(body.stall),
+        )
+    elif camera:
         logger.error(
             "[CLIENT-CAMERA] %s | v%s | %s | %s | %s\n%s",
             who, body.version or "?", path, body.message or "(no message)",
@@ -230,7 +253,9 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
         )
 
     now = time.time()
-    fp = camera_report.fingerprint(body.camera, who) if camera else _fingerprint(body)
+    fp = (camera_report.fingerprint(body.camera, who) if camera
+          else stall_report.fingerprint(body.stall, server_events) if stall
+          else _fingerprint(body))
     seen = _CRASH_SEEN.get(fp)
     if seen and now - seen["sent"] < _CRASH_WINDOW_S:
         seen["count"] += 1
@@ -247,7 +272,13 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
         return {"ok": True, "reported": False, "throttled": True}
     _CRASH_RECENT.append(now)
 
-    if camera:
+    if stall:
+        # A wait, not a crash: what the app was waiting on, beside what the
+        # server recorded in the same window.
+        text = stall_report.message(body.stall, who=who, version=body.version,
+                                    ua=body.ua, repeats=repeats,
+                                    server_events=server_events)
+    elif camera:
         # Not a stack: what the device measured about a camera that failed, laid
         # out as a diagnosis with its evidence under it.
         text = camera_report.message(body.camera, who=who, version=body.version,

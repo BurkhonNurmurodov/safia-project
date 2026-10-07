@@ -62,8 +62,10 @@ class _BotExceptionHandler(telebot.ExceptionHandler):
 # exception surfaces (handler → webhook route). It costs the webhook request one
 # Telegram round-trip of latency (Telegram allows far more), and no handler here
 # fans out to many chats — the broadcast send lives in routers/broadcast.py.
-# Starvation is no longer a risk either: each update is served by its own
-# Passenger worker instead of a shared 8-thread pool.
+# "Inline" means inside the webhook REQUEST, never on the event loop: under
+# uvicorn `--workers 1` (Passenger is gone) a handler on the loop froze every
+# page of the dashboard until it finished, so routers/webhook.py runs it on a
+# single thread of its own and awaits it (2026-10-07).
 bot = telebot.TeleBot(
     settings.telegram_bot_token,
     parse_mode=None,

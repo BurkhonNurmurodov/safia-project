@@ -189,7 +189,7 @@ function AuthGate({ children }) {
   const { t } = useLang();
 
   if (loading) {
-    return <PageLoader />;
+    return <PageLoader where="auth" />;
   }
 
   // Opened in an ordinary browser with no live session — the password screen.
@@ -345,7 +345,7 @@ function RequireProfilesManage({ children }) {
   const { auth } = useAuth();
   const { capTabs, isLoading } = useCapabilities();
   if (auth?.role === "admin") return children;
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageLoader where="caps" />;
   if (capTabs.includes("profiles")) return children;
   return <Navigate to="/profile" replace />;
 }
@@ -361,7 +361,7 @@ function RequireAdminPanel({ children }) {
   const { auth } = useAuth();
   const { capTabs, isLoading } = useCapabilities();
   if (auth?.role === "admin") return children;
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageLoader where="caps" />;
   if (capTabs.length > 0) return children;
   return <Navigate to="/" replace />;
 }
@@ -434,7 +434,7 @@ function RequirePage({ page, children }) {
   const { auth } = useAuth();
   const { access, isLoading } = usePageAccess();
   const { capPages, deniedPages, isLoading: capsLoading } = useCapabilities();
-  if (isLoading || capsLoading) return <PageLoader />;
+  if (isLoading || capsLoading) return <PageLoader where="access" />;
   if (canAccessPage(auth?.role, page, access, capPages, deniedPages)) return children;
   // The redirect target has to respect the denies too, or a person blocked from
   // their role's first page is bounced straight back into it and loops.

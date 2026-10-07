@@ -2427,8 +2427,12 @@ def _sap_pairs(prods) -> set:
             for q in prods if (q.sap_code or "").strip() and q.work_center}
 
 
+# A plain `def` (threadpool), like the catalog import below: parsing the SAP
+# workbook and re-deriving every brigadir's days is seconds to minutes of
+# blocking work, and as an `async def` it held the ONE event loop — every
+# request on the server waited behind an admin's upload.
 @router.post("/admin/production/upload")
-async def upload_phase(
+def upload_phase(
     files: list[UploadFile] = File(...),
     manager_id: Optional[int] = Form(None),  # legacy single target; wins over manager_ids
     manager_ids: Optional[list[int]] = Form(None),  # this upload's targets; None → the auto-fill set
@@ -2448,7 +2452,7 @@ async def upload_phase(
     # slices, then fan out to each configured brigadir below.
     blobs = []
     for f in files:
-        content = await f.read()
+        content = f.file.read()
         validate_spreadsheet(f, content)   # extension + OOXML signature (400 on mismatch)
         blobs.append((f.filename, content))
     faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
@@ -2701,8 +2705,10 @@ def get_raw(
     }
 
 
+# A plain `def` (threadpool) — see upload_phase: a workbook parse plus a
+# backfill of every stored date must not hold the event loop.
 @router.post("/admin/production/catalog/import")
-async def import_catalog(
+def import_catalog(
     file: UploadFile = File(...),
     manager_id: int = Form(...),
     sheet_name: Optional[str] = Form(None),
@@ -2721,7 +2727,7 @@ async def import_catalog(
     replaced, its numbers stay whatever was entered by hand."""
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
-    content = await file.read()
+    content = file.file.read()
     validate_spreadsheet(file, content)   # extension + OOXML signature (400 on mismatch)
     parsed = parse_catalog_workbook(content, sheet_name)
     if not parsed["products"]:
