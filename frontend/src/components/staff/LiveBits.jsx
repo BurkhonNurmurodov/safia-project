@@ -59,6 +59,9 @@ export function LiveStatusChip({ status }) {
 }
 
 // ── one row's cells ──────────────────────────────────────────────────────────
+// Sits on the status's own line. No «N awaiting approval» chip here: the
+// Requests tab's badge already counts them, and a second line made the row
+// taller than its neighbours.
 export function LiveRowNotes({ w }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -69,9 +72,6 @@ export function LiveRowNotes({ w }) {
           {fill(t(w.moved.dir === "out" ? "staffLive.movedOut" : "staffLive.movedIn"),
             { unit: w.moved.task ? w.moved.unit : tl(w.moved.unit || "—"), t: w.moved.at })}
         </span>
-      )}
-      {w.pending?.length > 0 && (
-        <LiveChip color="#eab308" dashed>{fill(t("staffLive.pending"), { n: w.pending.length })}</LiveChip>
       )}
     </>
   );
