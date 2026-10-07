@@ -8524,6 +8524,20 @@ daily") **the app downloads every build the site deploys by itself** — see
     and published from the Mac** (`build-release.sh`, `publish-release.sh`),
     and until it is, every phone runs the fallback.
 - **Phone notifications** from 1.5.0 — see «Phone notifications».
+- **The bot sends the APK on `/android`** (2026-10-07, the operator's
+  request) — `_android_cmd` / `_apk_send` in `telegram_bot.py`. It sends the
+  published release (`android_release.latest()`, the file
+  `/api/android/download` serves) as `Safia-IMS-<version>.apk`, with a
+  four-language caption: open the file, allow the unknown source, sign in with
+  the «Sayt logini» (or ask an admin), and the app offers new versions itself.
+  Anyone may ask, because the file is public. It is registered ahead of every
+  stateful capture, so it answers mid-flow and the flow stays open. The first
+  send of a build uploads it and keeps Telegram's `file_id` in `app_meta`
+  (`android_apk_file_id`, keyed by the build's sha256); later sends re-send
+  that id. It runs on `tg_later`, after the webhook has answered. With nothing
+  published it says so. An APK over 50 MB (a bot's upload limit; `MAX_APK`
+  allows 80) or a send that fails gets the download link instead. It is in
+  every command menu, admins' included.
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in
   Telegram), instant delivery (Firebase), and the Fullscreen API on `/live`.

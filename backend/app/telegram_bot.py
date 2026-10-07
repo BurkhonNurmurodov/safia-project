@@ -25,8 +25,9 @@ from app.models import (
 )
 from app.reg_token import make_reg_token
 from app.services import (
-    action_log, leader_ai, leader_auto, leader_cells, leader_checklist,
-    leader_close, leader_late_proof, leader_load, leader_proof, leader_tasks,
+    action_log, android_release, leader_ai, leader_auto, leader_cells,
+    leader_checklist, leader_close, leader_late_proof, leader_load, leader_proof,
+    leader_tasks, tg_later,
 )
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
@@ -138,6 +139,15 @@ _MESSAGES = {
         "fc_none":           "Sizga ko'rinadigan brigadir yo'q.",
         "fc_gone":           "Bu brigadir endi ro'yxatda yo'q. /forecast ni qayta yuboring.",
         "fc_bad_date":       "📅 Sanani YYYY-MM-DD ko'rinishida yuboring, masalan: /forecast 2026-09-10",
+        "apk_caption": (
+            "📱 Safia IMS {version} — Android ilovasi\n\n"
+            "O'rnatish uchun faylni oching. Telefon noma'lum manbadan "
+            "o'rnatishga ruxsat so'rasa, ruxsat bering.\n\n"
+            "Kirish — sayt login va parolingiz bilan; logingiz bo'lmasa, "
+            "adminga murojaat qiling. Yangi versiyalarni ilovaning o'zi taklif qiladi."
+        ),
+        "apk_none":          "📱 Android ilovasi hali joylanmagan.",
+        "apk_link":          "📱 Safia IMS {version} — faylni yuborib bo'lmadi. Ilovani shu havoladan yuklab oling:\n{url}",
         "adminreg_choose":   "👤 Admin profilini tanlang:",
         "adminreg_none":     "Bo'sh admin profillari yo'q.",
         "adminreg_already":  "Siz allaqachon adminsiz.",
@@ -228,6 +238,15 @@ _MESSAGES = {
         "fc_none":           "Сизга кўринадиган бригадир йўқ.",
         "fc_gone":           "Бу бригадир энди рўйхатда йўқ. /forecast ни қайта юборинг.",
         "fc_bad_date":       "📅 Санани YYYY-MM-DD кўринишида юборинг, масалан: /forecast 2026-09-10",
+        "apk_caption": (
+            "📱 Safia IMS {version} — Android иловаси\n\n"
+            "Ўрнатиш учун файлни очинг. Телефон номаълум манбадан "
+            "ўрнатишга рухсат сўраса, рухсат беринг.\n\n"
+            "Кириш — сайт логин ва паролингиз билан; логинингиз бўлмаса, "
+            "админга мурожаат қилинг. Янги версияларни илованинг ўзи таклиф қилади."
+        ),
+        "apk_none":          "📱 Android иловаси ҳали жойланмаган.",
+        "apk_link":          "📱 Safia IMS {version} — файлни юбориб бўлмади. Иловани шу ҳаволадан юклаб олинг:\n{url}",
         "adminreg_choose":   "👤 Админ профилини танланг:",
         "adminreg_none":     "Бўш админ профиллари йўқ.",
         "adminreg_already":  "Сиз аллақачон админсиз.",
@@ -318,6 +337,15 @@ _MESSAGES = {
         "fc_none":           "Доступных бригадиров нет.",
         "fc_gone":           "Этого бригадира больше нет в списке. Отправьте /forecast заново.",
         "fc_bad_date":       "📅 Укажите дату как YYYY-MM-DD, например: /forecast 2026-09-10",
+        "apk_caption": (
+            "📱 Safia IMS {version} — приложение для Android\n\n"
+            "Чтобы установить, откройте файл. Если телефон попросит разрешить "
+            "установку из неизвестного источника — разрешите.\n\n"
+            "Вход — по логину и паролю от сайта; если логина нет, обратитесь "
+            "к администратору. Новые версии приложение предложит само."
+        ),
+        "apk_none":          "📱 Приложение для Android ещё не опубликовано.",
+        "apk_link":          "📱 Safia IMS {version} — файл не удалось отправить. Скачайте приложение по ссылке:\n{url}",
         "adminreg_choose":   "👤 Выберите админ-профиль:",
         "adminreg_none":     "Нет свободных админ-профилей.",
         "adminreg_already":  "Вы уже администратор.",
@@ -408,6 +436,15 @@ _MESSAGES = {
         "fc_none":           "No supervisors are visible to you.",
         "fc_gone":           "That supervisor is no longer on the list. Send /forecast again.",
         "fc_bad_date":       "📅 Use a date like YYYY-MM-DD, e.g. /forecast 2026-09-10",
+        "apk_caption": (
+            "📱 Safia IMS {version} — Android app\n\n"
+            "To install, open the file. If the phone asks to allow installs "
+            "from an unknown source, allow it.\n\n"
+            "Sign in with your website login and password; if you have no "
+            "login, ask an admin. The app offers new versions by itself."
+        ),
+        "apk_none":          "📱 The Android app has not been published yet.",
+        "apk_link":          "📱 Safia IMS {version} — the file could not be sent. Download the app here:\n{url}",
         "adminreg_choose":   "👤 Select an admin profile:",
         "adminreg_none":     "No available admin profiles.",
         "adminreg_already":  "You are already an admin.",
@@ -804,6 +841,74 @@ def _begin_registration(tid: int):
 @bot.message_handler(commands=["register"])
 def _register(message: types.Message):
     _begin_registration(message.from_user.id)
+
+
+# ── /android — the app's installer ────────────────────────────────────────────
+# Sends the APK the server holds — the one android/publish-release.sh last
+# published, the file /api/android/download serves — to whoever asks. It is a
+# public file, so nobody is checked. Registered HERE, ahead of every stateful
+# capture below, so it answers mid-flow and leaves the flow standing (a leader
+# typing a reason keeps their capture).
+#
+# Telegram hands back a file_id for the first upload of a build; it is kept in
+# app_meta beside the build's sha256, and every later /android re-sends that id
+# — one small call instead of a 19 MB upload. The send runs after the webhook
+# has answered (tg_later), so the first upload after a publish never holds the
+# bot's one thread. A bot may send documents up to 50 MB; a bigger APK, or a
+# send that fails, gets the download link instead.
+
+_APK_FILE_ID_KEY = "android_apk_file_id"
+_TG_DOC_MAX = 50 << 20
+
+
+def _apk_send(chat_id: int, lang: str) -> None:
+    meta = android_release.latest()
+    if meta is None:
+        bot.send_message(chat_id, _msg(lang, "apk_none"))
+        return
+    version = meta["version_name"]
+    caption = _msg(lang, "apk_caption").format(version=version)
+
+    try:
+        cached = json.loads(_meta_get(_APK_FILE_ID_KEY) or "null")
+    except ValueError:
+        cached = None
+    if isinstance(cached, dict) and cached.get("file_id") and cached.get("sha256") == meta["sha256"]:
+        try:
+            bot.send_document(chat_id, cached["file_id"], caption=caption)
+            logger.info("ANDROID APK %s sent to %s (cached)", version, chat_id)
+            return
+        except Exception as exc:  # an id this bot can no longer send: upload again
+            logger.warning("ANDROID cached APK file_id refused for %s: %s", chat_id, exc)
+
+    if (meta.get("size") or 0) <= _TG_DOC_MAX:
+        try:
+            with open(android_release.apk_path(meta["version_code"]), "rb") as f:
+                sent = bot.send_document(
+                    chat_id,
+                    (f"Safia-IMS-{version}.apk", f, "application/vnd.android.package-archive"),
+                    caption=caption, timeout=180)
+            doc = getattr(sent, "document", None)
+            if doc and doc.file_id:
+                _meta_set(_APK_FILE_ID_KEY,
+                          json.dumps({"sha256": meta["sha256"], "file_id": doc.file_id}))
+            logger.info("ANDROID APK %s uploaded to %s", version, chat_id)
+            return
+        except Exception:
+            logger.exception("ANDROID APK upload failed for %s", chat_id)
+
+    url = settings.backend_url.rstrip("/") + "/api/android/download"
+    bot.send_message(chat_id, _msg(lang, "apk_link").format(version=version, url=url))
+
+
+@bot.message_handler(commands=["android"])
+def _android_cmd(message: types.Message):
+    lang = _get_lang(message.from_user.id)
+    try:
+        bot.send_chat_action(message.chat.id, "upload_document")
+    except Exception:
+        pass
+    tg_later.run(_apk_send, message.chat.id, lang)
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("lang:"))
@@ -5842,18 +5947,21 @@ def setup_webhook():
             types.BotCommand("register", "Ro'yxatdan o'tish / yangi rol qo'shish"),
             types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
             types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
+            types.BotCommand("android", "Android ilovasini yuklab olish"),
         ],
         "ru": [
             types.BotCommand("start", "Запуск / дашборд"),
             types.BotCommand("register", "Регистрация / добавить роль"),
             types.BotCommand("tasks", "Ежедневные задачи (лидеры)"),
             types.BotCommand("ojidaniya", "Снимок страницы «Ожидания»"),
+            types.BotCommand("android", "Скачать приложение для Android"),
         ],
         "en": [
             types.BotCommand("start", "Start / dashboard"),
             types.BotCommand("register", "Register / add a role"),
             types.BotCommand("tasks", "Daily tasks (leaders)"),
             types.BotCommand("ojidaniya", "Snapshot of the Ojidaniya page"),
+            types.BotCommand("android", "Download the Android app"),
         ],
     }
     # /forecast is deliberately NOT in the public menus: it is gated on the
@@ -5865,6 +5973,7 @@ def setup_webhook():
         types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
         types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
         types.BotCommand("forecast", "Xodim chaqirish prognozi (sinov)"),
+        types.BotCommand("android", "Android ilovasini yuklab olish"),
     ]
     admin_ids = sorted(_admin_ids())
 
