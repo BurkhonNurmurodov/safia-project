@@ -1025,6 +1025,10 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
         for r in db.query(LeaderTaskLeaderSetting)
         .filter_by(leader_id=prof.id).all()
     }
+    # A day before a DATED rule change keeps the hours and date rule it was
+    # filed under (services/leader_rule_eras) — read for the time fields only.
+    from app.services import leader_rule_eras
+    eras = leader_rule_eras.load_cached(db)
     out = {}
     for td in defs:
         s, r = sup.get(td.id), own.get(td.id)
@@ -1032,6 +1036,8 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
             r, s, _ = leader_shift.chain(
                 db, leader_id=prof.id, manager_id=prof.manager_id, day=day,
                 task_id=td.id, own=r, sup=s, unit_sh=unit_sh)
+        tr, ts, ttd = leader_rule_eras.levels(eras, td.id, prof.manager_id,
+                                              shift, day, r, s, td)
         enabled = s.enabled if s else def_enabled(td)
         min_media = s.min_media if s else def_min_media(td)
         weight = s.weight if s else td.default_weight
@@ -1055,7 +1061,7 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
         out[td.id] = {
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
-            "window": leader_ai.resolve_window(shift, r, s, td),
+            "window": leader_ai.resolve_window(shift, tr, ts, ttd),
             # The shift the window above was resolved AGAINST, carried with it:
             # a night shift's window hours can sit on the report day's tomorrow
             # (leader_ai.window_offset), so every reader that judges a clock by
@@ -1065,14 +1071,14 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
             # the window is not enforced, so no surface may present it as a
             # requirement — `date_check` False asks nothing about the day at all,
             # `time_check` False asks about the day but never the hour.
-            "date_check": leader_ai.resolve_date_check(r, s, td),
-            "time_check": leader_ai.resolve_time_check(r, s, td),
-            "day_check": leader_ai.resolve_day_check(r, s, td),
+            "date_check": leader_ai.resolve_date_check(tr, ts, ttd),
+            "time_check": leader_ai.resolve_time_check(tr, ts, ttd),
+            "day_check": leader_ai.resolve_day_check(tr, ts, ttd),
             "criteria": criteria,
             # What the leader is told to DO. Resolved beside the criteria it
             # used to be, and falling back to it when nobody has written one.
             "description": description,
-            "deadline": resolve_deadline(r, s, td),
+            "deadline": resolve_deadline(tr, ts, ttd),
             # WHERE the leader answers this task: the bot chat, or the mini-app
             # camera. The bot branches on it, so it is resolved here with
             # everything else the bot reads rather than looked up separately.

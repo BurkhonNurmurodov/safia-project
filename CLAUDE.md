@@ -3744,6 +3744,71 @@ the rulings are in memory `leader-criteria-rulings-sep19-20`).
   `…_shift2_v1` / `…_global_v1` / `…_t3_sleeve_5cm_v1`) are set — and BEFORE
   deleting `leader_rules_sep19`, whose texts it compares against.
 
+## Task 4 (obxod) from 7 October 2026 (`leader_rules_oct07`, `leader_rule_eras`)
+
+The operator, 07.10.2026: task 4's proof stays a screenshot of the Tasker
+inspection list, but **every progress bar on it must be at 100%**, the
+screenshot must be taken **during the shift — date + time checked over the WHOLE
+shift, both shifts** — and leaders are told every obxod must be 100% done.
+`services/leader_rules_oct07.py` holds the texts and the pass;
+`startup.register_leader_rules_oct07` arms it, in both entrypoints.
+
+- **What is written, task 4 only**: the English `criteria` (a card is complete
+  when its bar is full, its count reads N/N and its percentage 100; one
+  incomplete visible card fails; a card cut off so far that nothing of its bar,
+  count or percentage shows is not judged; several screenshots are allowed for a
+  long list) and the Uzbek `description` — compare-and-set, as on 26 Sep: blank,
+  the 19 Sep text or its 18 Sep preview variant is replaced, anything else is an
+  admin's wording, kept and NAMED. Then the date rule WHOLE on every unit:
+  «sana + vaqt» (date_check / day_check / time_check all True), the window
+  written EXPLICITLY as the unit's whole shift (07:00—20:00 / 17:00—09:00, so no
+  unit leans on the global level between the two passes), the unit's own task-4
+  deadline cleared (on a per-task unit the task now closes at the shift's end),
+  date tolerance 0. The global level gets the texts, the three flags, a CLEARED
+  window (it serves both shifts, so blank falls through to each shift's hours),
+  no deadline. Leader-level rows are left and named (the 19 Sep convention).
+- **Strict, not time-only — a choice to know.** The example screenshot (a Galaxy
+  Tab) shows «22:14 вс, 13 сент.» in its status bar. A PHONE whose status bar
+  shows the hour alone fails `no_date` under this rule; «faqat vaqt» on the
+  ltasks date-rule toggle is the one-click way out if leaders file from phones.
+- **Shift 2 from the night of 07.10 (pass 16:30), shift 1 from 08.10 (pass
+  00:30)**, global after both — each shift's day records the day it actually ran
+  for (`first_new_day`), never a hard-coded one.
+- **It is a DATED change, and that is the new mechanism —
+  `services/leader_rule_eras.py` (PERMANENT).** A date-rule or window edit
+  re-judges EVERY stored verdict of the task at the next boot
+  (`sync_date_flags` has no date bound). Turning the date question ON for a task
+  whose proofs were filed under «not checked» would have rejected weeks of past
+  task-4 proofs (`no_date`) with no DM. So before the first write the task's rule
+  is FROZEN — the global row and every unit row, fields `win_from`, `win_to`,
+  `date_check`, `day_check`, `time_check`, `date_plus`, `deadline` — into
+  `AppSetting` `leader_rule_era_t4_2026_10_07` (insert-only); each shift's pass
+  records `from[shift]` before writing and only ever moves it LATER; and every
+  reader that resolves the rule FOR A DAY swaps in the frozen unit and global
+  rows for a day before its shift's `from`: `leader_ai.date_rule_for` (the
+  reviewer, cards), `leader_ai.sync_date_flags`, `routers/leader_ai._levels`
+  (queues, objections, day reports) and `leader_tasks.effective_leader_config`
+  (bot, checklist, closing sweeps — time fields only, via `load_cached`, 60 s).
+  Leader rows are never frozen (the pass does not write them). A row whose shift
+  is unknown reads the later `from`. Tested end to end on the dev DB: 0 past
+  verdicts moved by either pass or the next boot's re-derive; a new night with
+  no clock reads `no_date`, an 08:40 next-morning clock passes, a 10:15 one is
+  `date_mismatch`; the router and the reviewer agree on every row.
+- **The criteria are NOT dated** — the platform's rule for any criteria edit: a
+  re-check («Qayta tekshirish») of a day before the change is judged by the new
+  100% text but the OLD date rule.
+- The job re-derives once and DMs the admins the count of verdicts it moved —
+  expected 0; anything else means the era missed a reader.
+- **NEVER delete an era or its frozen row** — every boot re-derives against it.
+  A new dated change is one more `Era` with a NEW key. Delete
+  `leader_rules_oct07.py`, `register_leader_rules_oct07` and its job/DM, and the
+  call in BOTH entrypoints once all three flags
+  (`leader_rules_2026_10_07_t4_shift1_v1` / `…_shift2_v1` / `…_global_v1`) are
+  set; keep `leader_rule_eras.py`.
+- Not changed: the task's NAME («… (3x/day 9:00-11:00-15:00)», shift-1 hours in
+  every language), its photo count (1), its example photo (already the operator's
+  Tasker screenshot, 19 Sep).
+
 ## Temporary task hours (`leader_temp_hours`, from 28 Sep 2026)
 
 From **2026-09-28** (the operator's request) a cell whose shift is moved for a

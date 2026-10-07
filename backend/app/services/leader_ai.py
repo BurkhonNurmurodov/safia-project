@@ -594,6 +594,13 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         own, sup, shift = leader_shift.chain(
             db, leader_id=leader_id, manager_id=manager_id, day=date,
             task_id=task_id, own=own, sup=sup)
+    if date:
+        # A day before a DATED rule change is judged by the rule it was filed
+        # under (services/leader_rule_eras).
+        from app.services import leader_rule_eras
+        own, sup, td = leader_rule_eras.levels(
+            leader_rule_eras.load(db), task_id, manager_id, shift, date,
+            own, sup, td)
     win = resolve_window(shift, own, sup, td)
     if date:
         # A night whose hours were moved is judged by the hours it was worked
@@ -3330,6 +3337,10 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     # against the hours they were worked in — read once for the whole pass.
     from app.services import leader_temp_hours
     temp = leader_temp_hours.load(db)
+    # A day before a DATED rule change keeps the rule it was filed under
+    # (services/leader_rule_eras) — read once for the whole pass.
+    from app.services import leader_rule_eras
+    eras = leader_rule_eras.load(db)
 
     changed = 0
     for rev in rows:
@@ -3344,6 +3355,8 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
                 db, leader_id=rev.leader_id, manager_id=rev.manager_id,
                 day=rev.date, task_id=rev.task_id, own=levels[0], sup=levels[1])
             levels = (o, sp, levels[2])
+        levels = leader_rule_eras.levels(eras, rev.task_id, rev.manager_id,
+                                         rev.shift, rev.date, *levels)
         win = resolve_window(rev.shift, *levels)
         if rev.leader_id in temp:
             win = leader_temp_hours.window_on(db, rev.leader_id, rev.date,

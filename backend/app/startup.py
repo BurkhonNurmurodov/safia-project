@@ -8973,6 +8973,167 @@ def _leader_rules26_sleeve_dm(out: dict) -> int:
     return sent
 
 
+# ── Task 4 (obxod) from 07.10.2026: 100% inspections, date + time, whole shift ─
+#
+# The operator, 07.10.2026 — see `services/leader_rules_oct07.py`. One pass per
+# shift, each in its own shift's gap (the 19 Sep shape), then the global
+# baseline. A DATED change: the old date rule is frozen before the first write
+# (`services/leader_rule_eras`), so no verdict filed before a shift's first new
+# day is re-judged. Changing what a pass writes needs a NEW key.
+LEADER_RULES_OCT07_FLAGS = {1: "leader_rules_2026_10_07_t4_shift1_v1",
+                            2: "leader_rules_2026_10_07_t4_shift2_v1"}
+LEADER_RULES_OCT07_GLOBAL_FLAG = "leader_rules_2026_10_07_t4_global_v1"
+LEADER_RULES_OCT07_DUE = {1: (2026, 10, 8, 0, 30), 2: (2026, 10, 7, 16, 30)}
+
+
+def register_leader_rules_oct07() -> None:
+    """Arm both passes of the 07.10 task-4 rule. Called on EVERY boot (the
+    jobstore is in memory); only the flag stops a second run. Never raises."""
+    try:
+        from app.scheduler import SCHEDULER_TZ, schedule_at
+        now = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ)
+        db = SessionLocal()
+        try:
+            for shift, flag in sorted(LEADER_RULES_OCT07_FLAGS.items()):
+                if db.query(AppSetting).filter_by(key=flag).first():
+                    continue
+                run_at = _rules_run_at(shift, now, LEADER_RULES_OCT07_DUE)
+                schedule_at(f"leader-rules-oct07-s{shift}", run_at,
+                            lambda s=shift: _leader_rules_oct07_job(s))
+                print(f"[startup] task 4 rule 07.10: shift {shift} armed for "
+                      f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] task 4 rule 07.10 could not be armed: {exc}")
+
+
+def _leader_rules_oct07_job(shift: int) -> None:
+    """Write one shift's task-4 rule, then flag, log and report."""
+    from app.services import action_log, leader_ai, leader_rules_oct07 as rules
+
+    flag = LEADER_RULES_OCT07_FLAGS[shift]
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=flag).first():
+            return
+        out = rules.apply(db, shift)
+        left = rules.leader_overrides_left(db, shift)
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        if (not db.query(AppSetting)
+                  .filter_by(key=LEADER_RULES_OCT07_GLOBAL_FLAG).first()
+                and all(db.query(AppSetting).filter_by(key=f).first()
+                        for f in LEADER_RULES_OCT07_FLAGS.values())):
+            try:
+                out["global"] = rules.apply_global(db)
+                db.add(AppSetting(key=LEADER_RULES_OCT07_GLOBAL_FLAG,
+                                  value=datetime.now(timezone.utc).isoformat()))
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                print(f"[startup] task 4 rule 07.10: global NOT written: {exc}")
+        # The re-derive the setters were told to skip. The era keeps every day
+        # before `from` on the old rule and no day from it on has a verdict
+        # yet, so this should move NOTHING — the count is the proof.
+        out["rederived"] = leader_ai.sync_date_flags(db, [rules.TASK])
+        print(f"[startup] task 4 rule 07.10: shift {shift} from {out['from']} — "
+              f"{out['units']} unit(s), {out['texts']} text(s), "
+              f"{len(out['kept'])} kept, {out['rederived']} verdict(s) moved")
+        try:
+            action_log.record_system(
+                "leader_config", "ltask.rules_applied",
+                target_kind="task", target_name="checklist",
+                details=[("level", "unit"), ("shift", shift), ("task", rules.TASK),
+                         ("from", out["from"]), ("count", out["units"]),
+                         ("texts", out["texts"]),
+                         ("skipped", (len(out["kept"]) + len(left)) or None)],
+                reason=("Operator, 07.10.2026: task 4 — every Tasker inspection at "
+                        "100%, date + time checked over the whole shift. Dated: "
+                        "days before the shift's first new day keep the old rule."),
+            )
+        except Exception:
+            pass
+        _leader_rules_oct07_dm(shift, out, left)
+    except Exception as exc:
+        # Idempotent and flagged LAST: a failure leaves the shift part-written
+        # and the next boot re-runs it whole, its first new day moved on.
+        db.rollback()
+        print(f"[startup] task 4 rule 07.10 shift {shift} FAILED (partly "
+              f"written; the next boot retries it whole): {exc}")
+        try:
+            import html as _html
+            from app.routers.boot import _recipients
+            from app.telegram_bot import bot
+            for chat_id in _recipients():
+                try:
+                    bot.send_message(
+                        chat_id,
+                        f"🛑 <b>4-vazifa (obxod) yangi qoidasi: {shift}-smena "
+                        f"yozilmadi</b>\n"
+                        + _html.escape(str(exc)[:400], quote=False)
+                        + "\n\nQisman yozilgan bo'lishi mumkin — keyingi "
+                          "ishga tushishda qaytadan to'liq yoziladi.",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _leader_rules_oct07_dm(shift: int, out: dict, left: list[str]) -> int:
+    """Tell the admins what changed, from which day, and what was left."""
+    sent = 0
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        d = out["from"]
+        body = [f"Smena {shift}: {out['units']} brigada, {d[8:10]}.{d[5:7]}.{d[:4]} "
+                f"kunidan",
+                "Har bir obxod 100% bajarilgan bo'lishi kerak (AI tekshiradi), "
+                "liderlar uchun tavsif yangilandi",
+                f"Sana + vaqt tekshiriladi, oyna — butun smena ({out['window']})",
+                "Oldingi kunlar eski qoida bo'yicha qoladi — "
+                f"qayta hisoblangan xulosa: {out.get('rederived', 0)}"]
+        g = out.get("global")
+        if g is not None:
+            body.append("Umumiy standart ham yangilandi"
+                        + (f" (o'zgartirilgan matn tegilmadi: {', '.join(g['kept'])})"
+                           if g["kept"] else ""))
+        if out["windows"]:
+            body.append(f"Brigadaning o'z oynasi butun smenaga almashtirildi: "
+                        f"{len(out['windows'])}")
+        if out["deadlines"]:
+            body.append(f"Brigadaning o'z muddati olib tashlandi: "
+                        f"{len(out['deadlines'])}")
+        if out["kept"]:
+            body.append(f"Qo'lda o'zgartirilgan matn tegilmadi: {len(out['kept'])}")
+        if left:
+            body.append(f"O'z sozlamasi bor liderlar (brigada qoidasi ularga "
+                        f"yetmaydi): {len(left)}")
+        esc = lambda v: html.escape(str(v), quote=False)
+        text = ("📋 <b>4-vazifa (obxod): yangi qoida</b>\n"
+                + esc("\n".join(body)))
+        extra = out["windows"] + out["deadlines"] + out["kept"] + left
+        if extra:
+            text += "\n\n<pre>" + esc("\n".join(extra[:25])) + "</pre>"
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+                sent += 1
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] task 4 rule 07.10 summary not delivered: {exc}")
+    if not sent:
+        print("[startup] task 4 rule 07.10: summary reached NOBODY — the pass "
+              "ran and its flag is set; read the Jurnal row for what it did")
+    return sent
+
+
 # ── temporary task hours: cells working later for a few nights (28 Sep) ──────
 # See `services/leader_temp_hours.py`. The FREEZE (cell → leader, once) runs
 # INLINE at boot, because the rule reads it and must exist before the first

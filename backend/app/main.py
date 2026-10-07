@@ -125,6 +125,7 @@ async def lifespan(app: FastAPI):
         patch_task10_description_sep19,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
+        register_leader_rules_oct07,
         register_leader_temp_hours,
         add_leader_auto_checks,
         register_leader_auto_sep20,
@@ -642,6 +643,13 @@ async def lifespan(app: FastAPI):
     # once all three flags are set — and BEFORE removing leader_rules_sep19,
     # whose texts the pass compares against.
     register_leader_rules_sep26()
+    # ⚠ TEMPORARY one-shot (2026-10-07) — task 4 (obxod): every Tasker
+    # inspection at 100%, date + time over the whole shift. Two flag-guarded
+    # passes, each in its own shift's gap, then the global baseline. Remove this
+    # line, `startup.register_leader_rules_oct07` (+ its job and DM) and
+    # `services/leader_rules_oct07.py` once all three flags are set — but KEEP
+    # `services/leader_rule_eras.py` and its frozen row: they date the change.
+    register_leader_rules_oct07()
     # Temporary task hours (2026-09-28): cells working later for a few nights
     # move their leaders' checklist hours on those nights only — see
     # `services/leader_temp_hours.py`. NOT a one-shot to delete: the frozen

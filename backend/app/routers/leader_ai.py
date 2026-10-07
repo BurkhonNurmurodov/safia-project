@@ -53,7 +53,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, gemini, leader_ai, leader_shift, leader_tasks
+from app.services import action_log, gemini, leader_ai, leader_rule_eras, leader_shift, leader_tasks
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
 )
@@ -425,8 +425,10 @@ class _Cfg(tuple):
     """`(defs, sup_cfg, own_cfg)` that also remembers its session, so the chain
     walkers below can ask `services/leader_shift` about a leader whose
     checklist runs on another shift than their unit's — every caller still
-    unpacks three values."""
+    unpacks three values. `eras` is the dated rule changes, read once
+    (services/leader_rule_eras)."""
     db = None
+    eras = None
 
 
 def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict]:
@@ -445,6 +447,7 @@ def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict
             own_cfg[(r.leader_id, r.task_id)] = r
     out = _Cfg((defs, sup_cfg, own_cfg))
     out.db = db
+    out.eras = leader_rule_eras.load(db)
     return out
 
 
@@ -470,7 +473,11 @@ def _levels(cfg, rev):
         own, sup, _ = leader_shift.chain(
             db, leader_id=rev.leader_id, manager_id=rev.manager_id,
             day=rev.date, task_id=rev.task_id, own=own, sup=sup)
-    return own, sup, defs.get(rev.task_id)
+    # A day before a DATED rule change reads the rule it was filed under
+    # (services/leader_rule_eras), exactly as the reviewer judged it.
+    return leader_rule_eras.levels(
+        getattr(cfg, "eras", None) or {}, rev.task_id, rev.manager_id,
+        rev.shift, rev.date, own, sup, defs.get(rev.task_id))
 
 
 def _window(cfg, rev) -> tuple[str, str]:
