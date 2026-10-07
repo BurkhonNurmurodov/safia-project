@@ -3753,11 +3753,14 @@ shift, both shifts** — and leaders are told every obxod must be 100% done.
 `services/leader_rules_oct07.py` holds the texts and the pass;
 `startup.register_leader_rules_oct07` arms it, in both entrypoints.
 
-- **What is written, task 4 only**: the English `criteria` (a card is complete
-  when its bar is full, its count reads N/N and its percentage 100; one
-  incomplete visible card fails; a card cut off so far that nothing of its bar,
-  count or percentage shows is not judged; several screenshots are allowed for a
-  long list) and the Uzbek `description` — compare-and-set, as on 26 Sep: blank,
+- **What is written, task 4 only**: the English `criteria` (a card is DONE
+  when its bar is filled to the end AND its count reads n/n; the number in the
+  card's small box — «100.0», «86.0 %» — is the inspection's SCORE, not its
+  fill, may be below 100 on a finished inspection and is never judged (the
+  operator's correction the same day — the first text read it as a percentage);
+  one visible card not done fails; a card cut off so far that neither its bar
+  nor its count shows is not judged; several screenshots are allowed for a long
+  list) and the Uzbek `description` — compare-and-set, as on 26 Sep: blank,
   the 19 Sep text or its 18 Sep preview variant is replaced, anything else is an
   admin's wording, kept and NAMED. Then the date rule WHOLE on every unit:
   «sana + vaqt» (date_check / day_check / time_check all True), the window
@@ -3768,11 +3771,13 @@ shift, both shifts** — and leaders are told every obxod must be 100% done.
   window (it serves both shifts, so blank falls through to each shift's hours),
   no deadline. Leader-level rows are left and named (the 19 Sep convention).
 - **The leader's instruction went out EARLY, on the day** (the operator wanted
-  it visible at once): `publish_description`, flag
-  `leader_rules_2026_10_07_t4_description_v1`, a minute after boot — the
+  it visible at once): `publish_description`, a minute after boot — the
   `description` alone, every unit of both shifts and the global level,
   compare-and-set. It moves no verdict; the criteria and the date rule still
-  land in each shift's gap, and the passes find the text already written.
+  land in each shift's gap, and the passes find the text already written. Flag
+  `…_t4_description_v2`: v1 published «100% bajarilgan», and the text was
+  corrected the same day to «chizig'i to'liq to'lgan va soni to'liq (7/7)»;
+  every pass accepts the v1 texts (`CRITERIA_V1`, `DESCRIPTION_V1`) as its own.
 - **Strict, not time-only — a choice to know.** The example screenshot (a Galaxy
   Tab) shows «22:14 вс, 13 сент.» in its status bar. A PHONE whose status bar
   shows the hour alone fails `no_date` under this rule; «faqat vaqt» on the

@@ -1,9 +1,14 @@
-"""Task 4 (obxod / Tasker) from 7 October 2026: every inspection at 100%, the
-screenshot taken during the shift, its date and time checked.
+"""Task 4 (obxod / Tasker) from 7 October 2026: every inspection done (its bar
+full, its count n/n), the screenshot taken during the shift, its date and time
+checked.
 
 The operator, 07.10.2026: the proof stays a screenshot of the Tasker inspection
 list, but every progress bar on it must be full; the check time is the WHOLE
 shift, for both shifts; leaders are told that every obxod must be 100% done.
+The same day the operator corrected the reading: the number in a card's small box is the
+inspection's SCORE, not its fill, and may be below 100 on a finished one — so
+«done» is the bar filled to the end and the count n/n, and the score is never
+judged.
 
 What this pass writes, for task 4 only:
 
@@ -54,6 +59,59 @@ CRITERIA = (
     "The proof for this task is a screenshot — one or several — of the "
     "inspection (obxod) list screen in the Tasker app, taken after the shift's "
     "inspections are done. There are two requirements: the screenshot must be "
+    "of that screen, and EVERY inspection on it must be fully done.\n\n"
+    "That screen looks like this:\n"
+    "- A header row at the top: a back arrow on the left, the workshop or cell "
+    "name in the middle (for example «Мелкоштучка отдел 1.03»), and a round «+» "
+    "button on the right.\n"
+    "- Below it, a series of cards, one per inspection. Each card has a check "
+    "name and a time range (for example «Цехни текшируви 21:30 - 22:30», «Мойка "
+    "21:30 - 22:30», «Холодильник», «Логистика»), a line «Время выполнения: …» "
+    "with a clock or a red lock icon, an arrow on the right, a progress bar "
+    "underneath, and beside the bar a count of completed items (for example "
+    "«16/16» or «12/14») and a number in a small box (for example «100.0» or "
+    "«86.0 %»).\n"
+    "- Some cards also carry a grey note or a red «Отменить все задачи» link.\n"
+    "- The list scrolls, so the card at the top or bottom edge may be cut off.\n\n"
+    "The number in the small box is the SCORE the inspection received, NOT how "
+    "much of it was done: a fully done inspection may score below 100. Never "
+    "judge it.\n\n"
+    "A card is DONE when its progress bar is filled to the right end AND the two "
+    "numbers of its count are equal (for example «7/7», «16/16»).\n\n"
+    "PASSES if the screenshot(s) show that screen and EVERY card whose progress "
+    "bar or count is visible is done — whatever its score.\n\n"
+    "FAILS if:\n"
+    "- Any visible card is not done: its bar is not filled to the end, or the "
+    "two numbers of its count differ (for example «12/14» or «0/7»). One card "
+    "not done is enough to fail.\n"
+    "- No card's progress bar or count can be seen.\n"
+    "- Another screen is shown: one card opened, a different page of Tasker, or "
+    "a different app.\n"
+    "- A paper or another document has been photographed.\n\n"
+    "NOT JUDGED: the score in the small box (any value, 100 or below); the "
+    "workshop name; the number of cards; the check names and their time "
+    "ranges; the clock and lock icons; the notes and the «Отменить все задачи» "
+    "links; a card cut off so far that neither its bar nor its count shows. The "
+    "clock and date at the top of the screen are read separately — do not fail "
+    "the proof over them here."
+)
+
+DESCRIPTION = (
+    "Tasker ilovasidagi obxod ro'yxati ekranining skrinshoti talab qilinadi. "
+    "Smenadagi barcha obxodlar oxirigacha bajarilgan bo'lishi shart: har bir "
+    "obxodning chizig'i to'liq to'lgan va soni to'liq bo'lsin (masalan, 7/7). "
+    "Skrinshotni hamma obxodlar tugagandan keyin oling.\n\n"
+    "Birorta obxod oxirigacha bajarilmagan bo'lsa, vazifa bajarilmagan "
+    "hisoblanadi."
+)
+
+#: The first texts of this change (07.10, v4.256.0 / v4.257.2) — they read the
+#: score box as a fill percentage. Accepted as replaceable wherever the passes
+#: compare, because the description was already published with them.
+CRITERIA_V1 = (
+    "The proof for this task is a screenshot — one or several — of the "
+    "inspection (obxod) list screen in the Tasker app, taken after the shift's "
+    "inspections are done. There are two requirements: the screenshot must be "
     "of that screen, and EVERY inspection on it must be 100% complete.\n\n"
     "That screen looks like this:\n"
     "- A header row at the top: a back arrow on the left, the workshop or cell "
@@ -89,7 +147,7 @@ CRITERIA = (
     "separately — do not fail the proof over them here."
 )
 
-DESCRIPTION = (
+DESCRIPTION_V1 = (
     "Tasker ilovasidagi obxod ro'yxati ekranining skrinshoti talab qilinadi. "
     "Smenadagi barcha obxodlar 100% bajarilgan bo'lishi shart — skrinshotni "
     "hamma obxodlar tugagandan keyin oling.\n\n"
@@ -126,6 +184,9 @@ OLD_PREVIEW_DESCRIPTION = (
     "\u26a0\ufe0f YANGI TALAB \u2014 19-sentabrdan kuchga kiradi. Bugun va "
     "bugun kechasi vazifa eski qoida bo'yicha baholanadi; quyidagini oldindan "
     "o'qib, tayyorlanib qo'ying.\n\n" + OLD_DESCRIPTION)
+
+#: Every leader text this change may replace.
+OLD_DESCRIPTIONS = (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION, DESCRIPTION_V1)
 
 #: The date rule, written whole: date + time.
 DATE_MODE = {"date_check": True, "day_check": True, "time_check": True}
@@ -189,9 +250,9 @@ def apply(db: Session, shift: int) -> dict:
         name = m.name
 
         for field, new, old, setter in (
-                ("criteria", CRITERIA, OLD_CRITERIA, leader_tasks.set_criteria),
-                ("description", DESCRIPTION,
-                 (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION),
+                ("criteria", CRITERIA, (OLD_CRITERIA, CRITERIA_V1),
+                 leader_tasks.set_criteria),
+                ("description", DESCRIPTION, OLD_DESCRIPTIONS,
                  leader_tasks.set_description)):
             if _same(cur[field], new):
                 continue
@@ -240,9 +301,9 @@ def apply_global(db: Session) -> dict:
            ("criteria", "description", "win_from", "win_to", "deadline",
             "date_plus", *DATE_MODE)}
     for field, new, old, setter in (
-            ("criteria", CRITERIA, OLD_CRITERIA, leader_tasks.set_criteria),
-            ("description", DESCRIPTION,
-                 (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION),
+            ("criteria", CRITERIA, (OLD_CRITERIA, CRITERIA_V1),
+                 leader_tasks.set_criteria),
+            ("description", DESCRIPTION, OLD_DESCRIPTIONS,
              leader_tasks.set_description)):
         if _same(cur[field], new):
             continue
@@ -284,8 +345,7 @@ def publish_description(db: Session) -> dict:
             out["units"] += 1
             if _same(cur, DESCRIPTION):
                 continue
-            if not _replaceable(cur, (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION),
-                                DESCRIPTION):
+            if not _replaceable(cur, OLD_DESCRIPTIONS, DESCRIPTION):
                 out["kept"].append(f"{m.name} · description")
                 continue
             leader_tasks.set_description(db, task_id=TASK, manager_id=m.id,
@@ -293,8 +353,7 @@ def publish_description(db: Session) -> dict:
             out["texts"] += 1
     td = db.query(LeaderTaskDef).filter_by(id=TASK).first()
     if td is not None and not _same(td.description, DESCRIPTION):
-        if _replaceable(td.description,
-                        (OLD_DESCRIPTION, OLD_PREVIEW_DESCRIPTION), DESCRIPTION):
+        if _replaceable(td.description, OLD_DESCRIPTIONS, DESCRIPTION):
             leader_tasks.set_description(db, task_id=TASK,
                                          description=DESCRIPTION)
             out["global"] = True

@@ -8973,7 +8973,7 @@ def _leader_rules26_sleeve_dm(out: dict) -> int:
     return sent
 
 
-# ── Task 4 (obxod) from 07.10.2026: 100% inspections, date + time, whole shift ─
+# ── Task 4 (obxod) from 07.10.2026: every inspection done, date + time, whole shift
 #
 # The operator, 07.10.2026 — see `services/leader_rules_oct07.py`. One pass per
 # shift, each in its own shift's gap (the 19 Sep shape), then the global
@@ -8986,7 +8986,10 @@ LEADER_RULES_OCT07_GLOBAL_FLAG = "leader_rules_2026_10_07_t4_global_v1"
 LEADER_RULES_OCT07_DUE = {1: (2026, 10, 8, 0, 30), 2: (2026, 10, 7, 16, 30)}
 #: The leader's instruction alone, published a minute after boot (the operator
 #: wanted it visible before the passes) — `description` moves no verdict.
-LEADER_RULES_OCT07_DESC_FLAG = "leader_rules_2026_10_07_t4_description_v1"
+#: v2 (07.10, same day): the operator corrected the rule — the number on a
+#: card is a SCORE, not its fill; done = the bar full and the count n/n. A new
+#: key, because v1 had already run.
+LEADER_RULES_OCT07_DESC_FLAG = "leader_rules_2026_10_07_t4_description_v2"
 
 
 def register_leader_rules_oct07() -> None:
@@ -9047,9 +9050,9 @@ def _leader_rules_oct07_desc_job() -> None:
                          ("skipped", (len(out["kept"]) + len(out["leaders"]))
                           or None)],
                 reason=("Operator, 07.10.2026: task 4's new leader instruction "
-                        "(every obxod 100%) published at once. Instruction only — "
-                        "the AI criteria and the date rule still land in each "
-                        "shift's gap."),
+                        "(every obxod done: the bar full, the count n/n) "
+                        "published at once. Instruction only — the AI criteria "
+                        "and the date rule still land in each shift's gap."),
             )
         except Exception:
             pass
@@ -9126,9 +9129,11 @@ def _leader_rules_oct07_job(shift: int) -> None:
                          ("from", out["from"]), ("count", out["units"]),
                          ("texts", out["texts"]),
                          ("skipped", (len(out["kept"]) + len(left)) or None)],
-                reason=("Operator, 07.10.2026: task 4 — every Tasker inspection at "
-                        "100%, date + time checked over the whole shift. Dated: "
-                        "days before the shift's first new day keep the old rule."),
+                reason=("Operator, 07.10.2026: task 4 — every Tasker inspection "
+                        "done (the bar full, the count n/n; the score is not "
+                        "judged), date + time checked over the whole shift. "
+                        "Dated: days before the shift's first new day keep the "
+                        "old rule."),
             )
         except Exception:
             pass
@@ -9171,7 +9176,8 @@ def _leader_rules_oct07_dm(shift: int, out: dict, left: list[str]) -> int:
         d = out["from"]
         body = [f"Smena {shift}: {out['units']} brigada, {d[8:10]}.{d[5:7]}.{d[:4]} "
                 f"kunidan",
-                "Har bir obxod 100% bajarilgan bo'lishi kerak (AI tekshiradi), "
+                "Har bir obxod oxirigacha bajarilgan bo'lishi kerak: chizig'i "
+                "to'liq, soni n/n (AI tekshiradi; balli tekshirilmaydi), "
                 "liderlar uchun tavsif yangilandi",
                 f"Sana + vaqt tekshiriladi, oyna — butun smena ({out['window']})",
                 "Oldingi kunlar eski qoida bo'yicha qoladi — "
