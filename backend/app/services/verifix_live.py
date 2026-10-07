@@ -61,6 +61,9 @@ TZ = verifix.TZ
 
 DIR_TTL = 600            # divisions / jobs / employees — the job re-reads the directory, seconds
 DIR_FALLBACK_S = 3600    # …and the page reads it itself only when the stored one is older
+DIR_PRESS_S = 120        # …and a person's «Verifix'dan yangilash» when older than this: a
+                         # worker somebody just moved to another cell in Verifix must leave
+                         # (and join) the right unit's day on the press, not 10 min later
 HOT_S = 60               # a running shift-day is read again this often (the job's tick)
 COOL_S = 600             # …a shift-day whose shift is over (Verifix fills check-outs late)
 HOT_AFTER_MIN = 120      # a shift stays «running» for the reads this long past its end
@@ -96,6 +99,7 @@ PAIR_MIN = 30
 
 _lock = threading.Lock()
 _cache: dict[tuple, tuple[float, datetime, Any]] = {}
+_dir_lock = threading.Lock()  # one directory read at a time (the job and a press)
 
 
 def now_local() -> datetime:
@@ -323,20 +327,35 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
     at = _local(row.read_at) if row else None
     if row and row.data and at and (now_local() - at).total_seconds() <= max_age:
         return row.data, at
-    t0 = _time.monotonic()
+    # Another read of the directory is running (the job, or another press):
+    # the stored one serves — a second plant-wide read on top of it buys
+    # nothing. With nothing stored, wait for it.
+    if not _dir_lock.acquire(blocking=not (row and row.data)):
+        return row.data, at
     try:
-        data = _read_directory(cfg)
-    except verifix.VerifixError as exc:
-        _note_error(db, "dir", exc)
-        if row and row.data:
-            log.warning("staff-live: directory re-read failed (%s), using the stored one", exc.code)
+        # Re-read (`populate_existing`: the identity map would hand back the
+        # values loaded above) — a read that finished while we waited serves.
+        row = (db.query(LiveVerifixRead).filter(LiveVerifixRead.key == "dir")
+               .populate_existing().first())
+        at = _local(row.read_at) if row else None
+        if row and row.data and at and (now_local() - at).total_seconds() <= max_age:
             return row.data, at
-        raise
-    row = _locked_row(db, "dir")
-    row.data, row.read_at = data, datetime.now(timezone.utc)
-    row.ms, row.error, row.error_at = int((_time.monotonic() - t0) * 1000), None, None
-    db.commit()
-    return data, _local(row.read_at)
+        t0 = _time.monotonic()
+        try:
+            data = _read_directory(cfg)
+        except verifix.VerifixError as exc:
+            _note_error(db, "dir", exc)
+            if row and row.data:
+                log.warning("staff-live: directory re-read failed (%s), using the stored one", exc.code)
+                return row.data, at
+            raise
+        row = _locked_row(db, "dir")
+        row.data, row.read_at = data, datetime.now(timezone.utc)
+        row.ms, row.error, row.error_at = int((_time.monotonic() - t0) * 1000), None, None
+        db.commit()
+        return data, _local(row.read_at)
+    finally:
+        _dir_lock.release()
 
 
 def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
@@ -768,7 +787,7 @@ def _unit_lock(key: tuple) -> threading.Lock:
 
 
 def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = False,
-             stored_only: bool = False) -> dict:
+             stored_only: bool = False, fresh_dir: bool = False) -> dict:
     """The stored read behind one unit's day (`services/live_staff` builds the
     rows), read from Verifix first only when it has to be: «Yangilash»
     (`force`), a day nobody stored yet, somebody of this unit missing from it,
@@ -780,7 +799,14 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     what a WRITE request's checks read (an approval's «does the move still
     hold»). A read in the middle of a write would roll the caller's pending
     changes back — `_read_day` and `_note_error` own the session's transaction
-    — and the request would then report a save that never happened."""
+    — and the request would then report a save that never happened.
+
+    `fresh_dir` is a PERSON's «Verifix'dan yangilash» (any day, past ones
+    included): the directory — who stands in which cell, i.e. which unit's day
+    a worker is on — is re-read too when older than `DIR_PRESS_S`, so a worker
+    Verifix had in the wrong cell, corrected there a minute ago, leaves this
+    unit's day on the press. A unit's membership follows the CURRENT
+    directory, on a past day too; the job keeps it within `DIR_TTL`."""
     cfg = verifix.config(db, with_password=True)
     if not _configured(cfg):
         return {"error": "not_configured"}
@@ -805,7 +831,8 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         try:
             # «Yangilash» keeps the directory the job refreshes every DIR_TTL:
             # re-reading the whole plant's employees first doubled the press.
-            directory, dir_at = _directory(db, cfg, DIR_TTL if force else DIR_FALLBACK_S)
+            directory, dir_at = _directory(db, cfg, DIR_PRESS_S if fresh_dir
+                                           else DIR_TTL if force else DIR_FALLBACK_S)
         except verifix.VerifixError as exc:
             return {"error": exc.code, "message": exc.message}
     homes = _homes(directory, cells)

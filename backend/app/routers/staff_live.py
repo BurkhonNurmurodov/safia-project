@@ -470,9 +470,17 @@ def get_attendance(attend_date: Optional[str] = None, manager_id: Optional[int] 
                    force: bool = False, db: Session = Depends(get_db),
                    caller: dict = Depends(_page)):
     """The unit's live day in /staff's `GET /attendance` shape, plus `live` —
-    what only a live source can say (the read's age, the counts, the close)."""
+    what only a live source can say (the read's age, the counts, the close).
+    `force` = «Verifix'dan yangilash» (any day, past ones too): the unit read
+    from Verifix now, the directory with it (`day_read(fresh_dir=…)`)."""
     mid = _read_unit(db, caller, manager_id)
-    rd = verifix_live.day_read(db, mid, _day_of(attend_date), force=force)
+    d = _day_of(attend_date)
+    # A CLOSED past day's copy froze when the next shift opened (ruling 13):
+    # re-reading it would set the table against the загрузка it was copied
+    # into. Reopening it is the way to read it again (the close re-reads).
+    if force and d is not None and d < _unit_today(db, mid)[0] and _closed(db, mid, d):
+        force = False
+    rd = verifix_live.day_read(db, mid, d, force=force, fresh_dir=force)
     if rd.get("error"):
         return {"manager_id": mid, "manager_name": _unit_name(db, mid), "error": rd["error"],
                 "message": rd.get("message"), "workers": [], "cells": [], "extra_hours": 0}
@@ -1748,21 +1756,28 @@ def _no_checkout(ctx, ud: dict, mid: int) -> list:
             continue
         if r.get("status") not in ("inside", "break", "no_out"):
             continue
-        p = live_staff.person(ctx, eid).p
+        w = live_staff.person(ctx, eid)
+        p = w.p
         if p["end"] is None or now < p["end"]:
             continue
         seen.add(eid)
+        # Where Verifix stands them (their org unit's cell) and their schedule:
+        # what tells the brigadir a worker is on this day by Verifix's mistake
+        # — fixed in Verifix, then «Verifix'dan yangilash».
         out.append({"employee_id": eid, "worker_name": r.get("worker_name"),
                     "clock_in": r.get("clock_in"), "end": p["end"].strftime("%H:%M"),
-                    "status": r.get("status"), "here_as_extra": r.get("named_at") is not None})
+                    "status": r.get("status"), "here_as_extra": r.get("named_at") is not None,
+                    "cell": live_staff._cell_of(ctx, w.home_cell), "schedule": w.schedule or None})
     return out
 
 
-def _close_check(db: Session, mid: int, d: date, force: bool, stored_only: bool = False) -> dict:
+def _close_check(db: Session, mid: int, d: date, force: bool, stored_only: bool = False,
+                 fresh_dir: bool = False) -> dict:
     """What a live day's close waits on — THE gate, read by the dialog and
     re-checked by the close itself. `stored_only` inside a write: a Verifix
     read owns the session's transaction and would roll the write back."""
-    rd = verifix_live.day_read(db, mid, d, force=force, stored_only=stored_only)
+    rd = verifix_live.day_read(db, mid, d, force=force, stored_only=stored_only,
+                               fresh_dir=fresh_dir)
     if rd.get("error"):
         raise _NoDay(rd)
     ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
@@ -1796,13 +1811,16 @@ def _close_check(db: Session, mid: int, d: date, force: bool, stored_only: bool 
 
 @router.get("/daily/close-check")
 def close_check(attend_date: Optional[str] = None, manager_id: Optional[int] = None,
-                db: Session = Depends(get_db), caller: dict = Depends(_page)):
+                force: bool = False, db: Session = Depends(get_db),
+                caller: dict = Depends(_page)):
     """The close dialog's facts for one unit-day: the read it would close on,
     who keeps it open, who has no check-out (with what the brigadir answered),
-    who has no cell."""
+    who has no cell. `force` = the dialog's «Verifix'dan yangilash»: the unit
+    and the directory read from Verifix now — a past day's read stops when the
+    next shift opens, and a cell corrected in Verifix since must reach it."""
     mid = _read_unit(db, caller, manager_id)
     d = _day_of(attend_date) or _unit_today(db, mid)[0]
-    return _close_check(db, mid, d, force=False)["out"]
+    return _close_check(db, mid, d, force=force, fresh_dir=force)["out"]
 
 
 class ClockFixBody(BaseModel):

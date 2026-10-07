@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen,
+  LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen, RefreshCw,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -538,14 +538,34 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
       refetchIntervalInBackground: false, staleTime: 30_000,
     } : {}),
   });
-  // A live day that could not be read: «Qayta urinish» reads the unit from
-  // Verifix NOW, not the stored read. Its answer is stored under the unit-day
-  // it was ASKED for — the reader may have stepped to another day meanwhile.
+  // «Verifix'dan yangilash» (any live day — the job stops reading a day once
+  // the next shift opens) and «Qayta urinish» on a day that could not be read:
+  // the unit — and who stands in which cell — read from Verifix NOW, not the
+  // stored read. Its answer is stored under the unit-day it was ASKED for — the
+  // reader may have stepped to another day meanwhile. A poll in flight is
+  // cancelled first, or its older answer would land on top of this one.
   const refresh = useMutation({
     mutationFn: () => fetchAtt(true),
-    onSuccess: (res, key) => qc.setQueryData(key, res),
+    onSuccess: async (res, key) => {
+      await qc.cancelQueries({ queryKey: key });
+      qc.setQueryData(key, res);
+      qc.invalidateQueries({ queryKey: ["live:staff-close-check"] });
+      qc.invalidateQueries({ queryKey: TODAY_STAFF_API.qk("staff-approvals-calendar") });
+      // Verifix did not answer: the stored read stays on screen — say so.
+      if (res?.live?.read_error) exportToast.warning(
+        `${t("staffLive.readFailed")}: ${res.live.read_error.message || ""}`);
+    },
+    onError: () => exportToast.error(t("staffClose.refreshFailed")),
   });
   const refreshNow = () => refresh.mutate(attKey);
+  // When the stored read was taken — «DD.MM HH:MM» once it is not the day's
+  // own date (a past day read the next morning).
+  const pulledAt = data?.live?.pulled_at || "";
+  const pulledStamp = pulledAt
+    ? (pulledAt.slice(0, 10) !== data?.live?.day
+        ? `${pulledAt.slice(8, 10)}.${pulledAt.slice(5, 7)} ${pulledAt.slice(11, 16)}`
+        : pulledAt.slice(11, 16))
+    : "";
 
   // ── Yacheyka column ────────────────────────────────────────────────────────
   // On a date that has a by-cell attendance upload, every worker also shows the
@@ -827,6 +847,32 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
               </span>
             )}
           </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* A live day: when its read was taken, and the way to read it from
+              Verifix again — past days too, which no job reads any more. */}
+          {S.live && data?.live && (<>
+            <span className="text-[11px] tabular-nums whitespace-nowrap hidden sm:inline"
+              style={{ color: data.live.read_error ? "var(--status-warn)" : "var(--text-3)" }}
+              title={data.live.read_error ? `${t("staffLive.readFailed")}: ${data.live.read_error.message || ""}` : undefined}>
+              {data.live.read_error && <AlertTriangle size={11} className="inline-block mr-1 align-[-1px]" />}
+              {t("staffLive.readStamp").replace("{t}", pulledStamp || "—")}
+            </span>
+            {/* A closed past day's copy is frozen (ruling 13) — the server
+                ignores a forced read there, so the button is not offered;
+                reopening the day is the way to read it again. */}
+            {(data.live.close?.state !== "closed" || data.live.is_today) && <button
+              type="button"
+              onClick={refreshNow}
+              disabled={refresh.isPending}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors whitespace-nowrap"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)",
+                       opacity: refresh.isPending ? 0.7 : 1, cursor: refresh.isPending ? "wait" : "pointer" }}
+              title={`${t("staffLive.refreshHint")}${pulledStamp ? ` · ${t("staffLive.readStamp").replace("{t}", pulledStamp)}` : ""}`}
+            >
+              <RefreshCw size={12} className={refresh.isPending ? "animate-spin" : ""} />
+              {t("staffClose.refresh")}
+            </button>}
+          </>)}
           <button
             onClick={() => setIsCollapsed(v => !v)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors"
@@ -841,6 +887,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
               }}
             />
           </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KPICard

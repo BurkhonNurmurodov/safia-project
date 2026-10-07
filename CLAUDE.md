@@ -7832,6 +7832,28 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   Verifix's day on every read — the exit sets the hours to the clock span, «did
   not come» makes it an absence. `ConfirmDialog` gained `confirmDisabled` for
   this. Corrections otherwise come from Verifix only (ruling 7).
+- **«Verifix'dan yangilash» re-reads a live day — past days too** (2026-10-07,
+  the operator, over a worker Verifix had standing in the wrong unit's cell:
+  «we need an update from Verifix button for the past days also»). The job
+  stops reading a shift-day once the next one opens, so a past day kept its
+  last read (the close dialog said «07:49») however Verifix changed after it.
+  Two doors, both a person's press: the close dialog's button (`GET
+  /daily/close-check?force=true`, then the table and calendar re-read what it
+  stored) and the Workers tab's header on a live day (`GET
+  /attendance?force=true`, beside «Verifix · HH:MM» — «DD.MM HH:MM» once the
+  read is not the day's own date). A press is `day_read(force=True,
+  fresh_dir=True)`: the unit read whole, AND the directory (who stands in which
+  cell) re-read when older than `DIR_PRESS_S` (120 s) — a unit's day follows
+  the CURRENT directory, on a past day too, so a worker corrected to another
+  cell in Verifix leaves this unit's day (and joins their own) on the press, not
+  up to `DIR_TTL` later. One directory read at a time (`_dir_lock`; a second
+  caller serves the stored one). **Not on a CLOSED past day**: its copy froze
+  when the next shift opened (ruling 13), so the server ignores the force there
+  and the button is not drawn — reopening the day is the way to read it again.
+  Each no-check-out row in the dialog names the cell Verifix stands the worker
+  in and their schedule (`cell`, `schedule` on `_no_checkout`), and the list
+  ends with the way out: correct the worker's department in Verifix, then press
+  the button. The close itself still reads `force` without `fresh_dir`.
 - **One truth per live day.** `day_state.pending_counts` / `confirmed_pairs`
   count live drafts and pending deletions from the floor, so a closed live day
   is «closed» until they are decided and then «confirmed» (ruling 11 — pending
