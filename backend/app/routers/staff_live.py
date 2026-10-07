@@ -2233,7 +2233,7 @@ def export_attendance(request: Request, body: ExportBody, db: Session = Depends(
     wb.save(buf)
     fname = f"verifix_live_{body.attend_date}.xlsx"
     resp = deliver_xlsx(request, caller, fname, buf.getvalue(),
-                        f"📊 Jonli davomat — {body.attend_date} • {manager} • {len(body.rows)}",
+                        f"📊 Verifix davomat — {body.attend_date} • {manager} • {len(body.rows)}",
                         chat_id=_tg(caller))
     action_log.enrich(target_kind="day", target_id=f"{body.manager_id}:{body.attend_date}",
                       unit_id=body.manager_id, unit_name=manager,

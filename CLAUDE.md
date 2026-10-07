@@ -7700,7 +7700,7 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   /staff; they now serve /staff's live days):
   - **The bot's one-tap cards** (`approvals.py`): kinds `live_document` (code
     `lv`) and `live_batch` (`lb`) beside `hr_document` / `edit_batch` — the
-    same renderers with « · Jonli» on the header line, the «Open panel» button
+    same renderers with « · Verifix» on the header line, the «Open panel» button
     onto `/staff?tab=requests` (with the day), `_broadcast` returning who it
     reached. Recipients: admins, the RECEIVING supervisor of an exchange and
     the documents / requests grantees over the unit — a non-admin only when
@@ -7733,10 +7733,17 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
     can be settled; the stale rule on `doc.day`; actions on the live endpoints,
     approve with undo → cancel; links onto `/staff?tab=requests`). `KIND_ORDER` / `_RANK` and `notifMeta.QUEUE_KINDS`
     carry the two kinds right after their twins; `QueueItem` draws a neutral
-    «Jonli» chip, `live_batch` asks like `edit_batch`. FOLD gained the nine
+    «Verifix» chip, `live_batch` asks like `edit_batch`. FOLD gained the nine
     live twins (`live_day_closed` … `live_record_deleted`) with four-language
-    titles prefixed «Jonli ·»; `_COUNT_DISTINCT` the two day keys; the
+    titles prefixed «Verifix ·»; `_COUNT_DISTINCT` the two day keys; the
     `open_units` chip stays `day_closed`'s own.
+  - **The mark on every live-day message is «Verifix»** (2026-10-07, the
+    operator: «Jonli» / «Онлайн» / «Live» named no place, so a notice did not
+    say where the change was made). One Latin word in all four languages, on
+    the 14 `live_*` bell / DM titles, the 9 FOLD titles, the cards'
+    `live_mark`, the bell queue chip (`notif.q.live`, `notif.kind.live_*`) and
+    the export's DM caption. Bell rows store the key, so rows already written
+    render with it too; Telegram messages already sent keep «Jonli».
   - **The badge**: /staff's own (`/api/staff/documents/pending-count`) counts
     the live register's pending items from `LIVE_FROM` beside the file
     register's — one number on one nav row.

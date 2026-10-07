@@ -114,7 +114,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
             </span>
           )}
           {tag && (
-            /* The «Jonli» mark: a neutral tag — a live day is a source, not a
+            /* The «Verifix» mark: a neutral tag — a live day is a source, not a
                status, so it borrows no traffic-light tone. */
             <span
               className="flex-shrink-0 mt-0.5 inline-flex items-center text-[11px] font-medium px-1.5 py-px rounded-md whitespace-nowrap"
