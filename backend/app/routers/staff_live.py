@@ -226,6 +226,7 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
                                                        TelegramUserRole.status == "approved").all():
                 actor_keys.add(r.profile_key or identity.role_row_profile_key(db, r))
         dmed: set = set()
+        sends: list = []
         for key in sorted(k for k in keys if live_staff.can_open(db, k, access)):
             if key in actor_keys:
                 continue
@@ -241,21 +242,34 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
                 continue
             if notif_center.telegram_muted(db, key, nkey):
                 continue
-            from app.telegram_bot import send_tg_notification
             for tid in holders:
                 if tid == actor or tid in dmed or tid in dm_skip:
                     continue
                 dmed.add(tid)
                 lang = _get_user_lang(db, tid)
                 title, body = _mk_notif(nkey, params, lang)
-                try:
-                    send_tg_notification(tid, title, body, html=_mk_notif_tg(nkey, params, lang))
-                except Exception:  # noqa: BLE001
-                    pass
+                sends.append((tid, title, body, _mk_notif_tg(nkey, params, lang)))
         db.commit()
+        # The DMs go out AFTER the answer, one Telegram round-trip each: sent
+        # inline they held the press for seconds per recipient (a bulk approval
+        # took 12 s, a day close 17.6 s — the 2026-10-07 «Server was slow» DM).
+        if sends:
+            from app.services import tg_later
+            tg_later.run(_send_dms, nkey, sends)
     except Exception:  # noqa: BLE001 — a notice that fails must not undo the decision
         db.rollback()
         log.exception("staff-live: notification %s failed", nkey)
+
+
+def _send_dms(nkey: str, sends: list) -> None:
+    """`_notify`'s DMs, on `tg_later`'s thread — every message built before
+    the commit, so nothing here reads the request's session."""
+    from app.telegram_bot import send_tg_notification
+    for tid, title, body, html in sends:
+        try:
+            send_tg_notification(tid, title, body, html=html)
+        except Exception:  # noqa: BLE001
+            log.exception("staff-live: DM %s to %s failed", nkey, tid)
 
 
 def _creator_profile(db: Session, doc: LiveDocument) -> Optional[str]:
@@ -323,20 +337,34 @@ def _notify_doc(db: Session, doc: LiveDocument, event: str, actor: int) -> None:
 
 def _retire(kind: str, ref, status: str, who: Optional[str]) -> None:
     """Edit every recipient's card for (kind, ref) with the outcome and drop
-    its buttons; the notices are forgotten with it."""
+    its buttons; the notices are forgotten with it. Runs on `tg_later`'s
+    thread, after the answer: one Telegram edit per chat holding the card, and
+    a bulk approval retires a card per document. A card tapped meanwhile finds
+    its record already decided and says so."""
+    from app.services import tg_later
+    tg_later.run(_retire_now, kind, str(ref), status, who or None)
+
+
+def _retire_now(kind: str, ref: str, status: str, who: Optional[str]) -> None:
     try:
         from app.approvals import edit_admin_notices
-        edit_admin_notices(kind, str(ref), status, who or None)
+        edit_admin_notices(kind, ref, status, who)
     except Exception:  # noqa: BLE001
         log.exception("staff-live: could not retire the %s card %s", kind, ref)
 
 
 def _forget(kind: str, ref) -> None:
     """Drop the tracked cards for (kind, ref) without editing them — the record
-    itself is gone (a deleted document), so there is no outcome to print."""
+    itself is gone (a deleted document), so there is no outcome to print. On
+    `tg_later`'s thread, in order behind any `_retire` before it."""
+    from app.services import tg_later
+    tg_later.run(_forget_now, kind, str(ref))
+
+
+def _forget_now(kind: str, ref: str) -> None:
     try:
         from app.approvals import forget_notices
-        forget_notices(kind, str(ref))
+        forget_notices(kind, ref)
     except Exception:  # noqa: BLE001
         log.exception("staff-live: could not forget the %s card %s", kind, ref)
 

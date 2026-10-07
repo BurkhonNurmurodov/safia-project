@@ -18,8 +18,13 @@ Every API request is timed (`RequestTimingMiddleware`): the answer carries
 `X-Server-Ms` (the time the server spent on it) and `X-Server-Stall-Ms` (the
 longest stall of the last minute), so a client that waited can tell the server
 apart from the network — see frontend/src/utils/stallReport.js. A request
-slower than `SLOW_REQUEST_S` is recorded with the pool and the threadpool as
-they stood when it finished.
+slower than `SLOW_REQUEST_S` is recorded with the busiest the pool and the
+threadpool were while it ran, and with WHERE its time went: from
+`SAMPLE_AFTER_S` on, the watcher looks at the thread running the request's
+handler every `SAMPLE_S` and counts the code it finds there (the handler's own
+app frames and what they were waiting on — a Telegram call, a Verifix read, a
+query). «17.6 s» alone could not tell a slow Verifix from forty Telegram
+messages sent one by one (2026-10-07).
 
 Records go to the log at once (`[SERVER-STALL]`, `[SLOW-REQUEST]`) and into a
 small in-memory ledger. The support chat (or every admin) is DMed a summary
@@ -34,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import logging
 import os
 import sys
@@ -48,6 +54,9 @@ logger = logging.getLogger(__name__)
 BEAT_S = 0.2              # how often the loop writes its heartbeat
 LOOP_BLOCK_S = 1.0        # a gap this long (beyond BEAT_S) is a stall
 SLOW_REQUEST_S = 3.0      # a request the server spent this long on is recorded
+SAMPLE_AFTER_S = 1.0      # a request running this long starts being sampled …
+SAMPLE_S = 0.25           # … this often: which code its handler's thread is in
+_SIGS = 24                # distinct places kept per request
 DM_EVERY_S = 30 * 60      # at most one DM per this many seconds
 _KEEP = 300               # ledger size
 
@@ -80,7 +89,9 @@ _APP_DIR = os.sep + "app" + os.sep
 _lock = threading.Lock()
 _events: deque[dict] = deque(maxlen=_KEEP)
 _inflight = 0
-_active: dict[int, tuple[str, float]] = {}   # request → ("GET /api/x", perf_counter start)
+# request → {"what": "GET /api/x", "t0": perf_counter start, "scope": …,
+#            "hits": {where: samples}, "n": samples, "peak": busiest snapshot}
+_active: dict[int, dict] = {}
 _task = None                 # the heartbeat task (a reference, or it can be collected)
 _beat = 0.0                  # monotonic, written by the loop
 _loop_tid: int | None = None
@@ -128,8 +139,8 @@ def _oldest_active(n: int = 5) -> list[str]:
     this list instead."""
     try:
         now = time.perf_counter()
-        rows = sorted(list(_active.values()), key=lambda r: r[1])[:n]
-        return [f"{what} ({now - t0:.1f} s)" for what, t0 in rows]
+        rows = sorted(list(_active.values()), key=lambda r: r["t0"])[:n]
+        return [f"{r['what']} ({now - r['t0']:.1f} s)" for r in rows]
     except Exception:
         return []
 
@@ -175,6 +186,90 @@ def _busy_threads(skip: set[int]) -> list[str]:
     except Exception:
         pass
     return out[:6]
+
+
+# ── where a slow request spends its time ─────────────────────────────────────
+
+def _where(frame) -> str:
+    """One place in a stack, coarse enough to add up: the two innermost app
+    functions (no line numbers — a loop's lines must count as one place) and
+    the library call they were inside, e.g.
+    `staff_live:_notify › telegram_bot:_set_menu_button ↳ ssl:read`."""
+    try:
+        stack = traceback.extract_stack(frame)
+    except Exception:
+        return ""
+    app = [fs for fs in stack
+           if _APP_DIR in fs.filename and not fs.filename.endswith("perf_watch.py")]
+    name = lambda fs: f"{os.path.splitext(os.path.basename(fs.filename))[0]}:{fs.name}"
+    out = " › ".join(name(fs) for fs in app[-2:])
+    if stack and _APP_DIR not in stack[-1].filename:
+        out = (out + " " if out else "") + "↳ " + name(stack[-1])
+    return out
+
+
+def _bump_peak(rec: dict, snap: dict) -> None:
+    pk = rec["peak"]
+    for k in ("pool", "threads"):
+        new, old = snap.get(k) or {}, pk.get(k) or {}
+        field = "out" if k == "pool" else "busy"
+        if not old or new.get(field, 0) > old.get(field, 0):
+            pk[k] = new
+    pk["inflight"] = max(pk.get("inflight", 0), snap.get("inflight", 0))
+
+
+def _sample(me: int) -> None:
+    """Credit each request running past `SAMPLE_AFTER_S` with the place its
+    handler's thread is in right now. The thread is found by the handler's own
+    frame on its stack (`scope["endpoint"]` is the function the route
+    matched); a handler of the same endpoint already credited this round is
+    not counted twice. An `async` handler awaiting I/O is on no stack — it
+    simply gathers no samples."""
+    now = time.perf_counter()
+    reqs = sorted((r for r in list(_active.values()) if now - r["t0"] >= SAMPLE_AFTER_S),
+                  key=lambda r: r["t0"])
+    if not reqs:
+        return
+    frames = sys._current_frames()
+    snap = snapshot()
+    taken: set[int] = set()
+    for rec in reqs:
+        _bump_peak(rec, snap)
+        code = rec.get("code")
+        if code is None:
+            ep = rec["scope"].get("endpoint")
+            try:
+                ep = inspect.unwrap(ep) if ep is not None else None
+            except Exception:  # noqa: BLE001 — a wrapper loop: take it as it is
+                pass
+            code = rec["code"] = getattr(ep, "__code__", None) or False
+        if not code:
+            continue
+        for tid, frame in frames.items():
+            if tid == me or tid in taken:
+                continue
+            f = frame
+            while f is not None and f.f_code is not code:
+                f = f.f_back
+            if f is None:
+                continue
+            taken.add(tid)
+            where = _where(frame)
+            hits = rec["hits"]
+            if where and (where in hits or len(hits) < _SIGS):
+                hits[where] = hits.get(where, 0) + 1
+            rec["n"] += 1
+            break
+
+
+def _summary(rec: dict | None, limit: int = 3) -> list[str]:
+    """«62% staff_live:_notify › …» — the places a request spent its sampled
+    time in, biggest first."""
+    if not rec or not rec.get("n"):
+        return []
+    n = rec["n"]
+    top = sorted(rec["hits"].items(), key=lambda kv: -kv[1])[:limit]
+    return [f"{round(100 * c / n)}% {w}" for w, c in top]
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -259,10 +354,17 @@ def _watch() -> None:
     me = threading.get_ident()
     last_seen = _beat
     held: dict | None = None
+    last_sample = 0.0
     while not _stopping:
         time.sleep(BEAT_S / 2)
         try:
             now = time.monotonic()
+            if now - last_sample >= SAMPLE_S and _active:
+                last_sample = now
+                try:
+                    _sample(me)
+                except Exception:
+                    logger.exception("perf_watch: request sampling failed")
             beat = _beat
             if beat != last_seen:
                 gap = beat - last_seen - BEAT_S
@@ -343,7 +445,8 @@ class RequestTimingMiddleware:
         t0 = time.perf_counter()
         _inflight += 1
         key = id(scope)
-        _active[key] = (f"{scope.get('method', '')} {scope.get('path', '')[:120]}", t0)
+        _active[key] = {"what": f"{scope.get('method', '')} {scope.get('path', '')[:120]}",
+                        "t0": t0, "scope": scope, "hits": {}, "n": 0, "peak": {}}
         state = {"status": 0, "ms": None}
 
         async def send_wrapper(message):
@@ -364,16 +467,24 @@ class RequestTimingMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             _inflight -= 1
-            _active.pop(key, None)
+            rec = _active.pop(key, None)
             try:
                 ms = state["ms"] if state["ms"] is not None else (time.perf_counter() - t0) * 1000
                 if ms >= SLOW_REQUEST_S * 1000:
                     path = scope.get("path", "")
+                    # The busiest the server was WHILE it ran — taken at its end,
+                    # the request's own thread and DB connection are already back.
+                    peak = (rec or {}).get("peak") or snapshot()
                     ev = {"kind": "request", "ms": round(ms), "method": scope.get("method", ""),
-                          "path": path[:160], "status": state["status"], **snapshot()}
-                    logger.warning("[SLOW-REQUEST] %s %s → %s in %.1f s · %s",
+                          "path": path[:160], "status": state["status"],
+                          "pool": peak.get("pool") or {}, "threads": peak.get("threads") or {},
+                          "inflight": peak.get("inflight", 0),
+                          "peak": bool((rec or {}).get("peak")),
+                          "where": _summary(rec)}
+                    logger.warning("[SLOW-REQUEST] %s %s → %s in %.1f s · %s%s",
                                    ev["method"], ev["path"], ev["status"] or "—", ms / 1000,
-                                   _pool_line(ev))
+                                   _pool_line(ev),
+                                   ("\n  where: " + " · ".join(ev["where"])) if ev["where"] else "")
                     _record(ev)
             except Exception:
                 pass
@@ -396,7 +507,8 @@ def _pool_line(ev: dict) -> str:
         bits.append(f"threads {t.get('busy', '?')}/{t.get('of', '?')}")
     if ev.get("inflight") is not None:
         bits.append(f"{ev['inflight']} in flight")
-    return " · ".join(bits)
+    line = " · ".join(bits)
+    return f"busiest {line}" if line and ev.get("peak") else line
 
 
 def event_lines(events: list[dict], limit: int = 6) -> list[str]:
@@ -418,7 +530,9 @@ def event_lines(events: list[dict], limit: int = 6) -> list[str]:
         else:
             out.append(f"🐢 {_clock(ev['at'])} {html.escape(ev.get('method', ''))} "
                        f"<code>{html.escape(ev.get('path', ''))}</code> → {ev.get('status') or '—'} "
-                       f"in <b>{ev['ms'] / 1000:.1f} s</b> · {html.escape(_pool_line(ev))}")
+                       f"in <b>{ev['ms'] / 1000:.1f} s</b> · {html.escape(_pool_line(ev))}"
+                       + (f"\n<i>time went to:</i> {html.escape(' · '.join(ev['where']))}"
+                          if ev.get("where") else ""))
     return out
 
 

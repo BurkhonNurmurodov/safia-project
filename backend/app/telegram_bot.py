@@ -677,16 +677,33 @@ def _get_lang(tid: int) -> str:
         return user.language if user else "uz"
 
 
-def _set_menu_button(tid: int, lang: str):
+# chat → ((label, url), monotonic time it was set). Every DM used to re-set the
+# menu button first — a SECOND Telegram call per notification, so a decision
+# that DMs ten people waited on twenty round trips (2026-10-07: a bulk approval
+# at 12 s). The button only changes with the label (the reader's language, or a
+# deploy that renames it) or the URL, so it is set once per process and again
+# only when one of those moved, or after `_MENU_TTL_S`.
+_MENU_SET: dict[int, tuple] = {}
+_MENU_TTL_S = 6 * 3600
+
+
+def _set_menu_button(tid: int, lang: str, force: bool = False):
+    text = _msg(lang, "open_dashboard")
+    url = settings.webapp_url.rstrip("/")
+    seen = _MENU_SET.get(tid)
+    if (not force and seen and seen[0] == (text, url)
+            and time.monotonic() - seen[1] < _MENU_TTL_S):
+        return
     try:
         bot.set_chat_menu_button(
             chat_id=tid,
             menu_button=types.MenuButtonWebApp(
                 type="web_app",
-                text=_msg(lang, "open_dashboard"),
-                web_app=types.WebAppInfo(url=settings.webapp_url.rstrip("/")),
+                text=text,
+                web_app=types.WebAppInfo(url=url),
             ),
         )
+        _MENU_SET[tid] = ((text, url), time.monotonic())
     except Exception as e:
         logger.warning("set_chat_menu_button failed for %s: %s", tid, e)
 
@@ -720,7 +737,7 @@ def _start(message: types.Message):
         return
 
     if tid in _admin_ids():
-        _set_menu_button(tid, "uz")
+        _set_menu_button(tid, "uz", force=True)
         _send_dashboard(tid, "uz", _msg("uz", "admin_welcome"))
         with SessionLocal() as db:
             pending_count = db.query(TelegramUserRole).filter_by(status="pending").count()
@@ -736,7 +753,7 @@ def _start(message: types.Message):
         lang     = user.language
         statuses = {r.status for r in roles}
         if "approved" in statuses:
-            _set_menu_button(tid, lang)
+            _set_menu_button(tid, lang, force=True)
             # Adding another role moved to /register — only the dashboard here
             _send_dashboard(tid, lang, _msg(lang, "already_approved"))
         elif "pending" in statuses:
@@ -1464,7 +1481,7 @@ def notify_status_change(telegram_id: int, status: str, lang: str = "uz", role: 
     suffix = f"\n\n💼 {_role(lang, role)}" if role else ""
     try:
         if status == "approved":
-            _set_menu_button(telegram_id, lang)
+            _set_menu_button(telegram_id, lang, force=True)
             bot.send_message(telegram_id, _msg(lang, "approved") + suffix, reply_markup=_dashboard_kb(lang))
         elif status == "rejected":
             bot.send_message(telegram_id, _msg(lang, "rejected") + suffix)

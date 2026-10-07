@@ -67,7 +67,8 @@ DIR_PRESS_S = 120        # …and a person's «Verifix'dan yangilash» when olde
 HOT_S = 60               # a running shift-day is read again this often (the job's tick)
 COOL_S = 600             # …a shift-day whose shift is over (Verifix fills check-outs late)
 HOT_AFTER_MIN = 120      # a shift stays «running» for the reads this long past its end
-STALE_S = 180            # the page reads Verifix itself when a running day's read is older
+STALE_S = 180            # the page reads Verifix itself when today's read is this much
+                         # older than the job's pace for it (HOT_S / COOL_S) — a stopped job
 ERROR_BACKOFF_S = 60     # …but not within this long of a read of the day that FAILED: a
                          # Verifix outage must not turn every viewer's poll into a retry
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
@@ -791,8 +792,9 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     """The stored read behind one unit's day (`services/live_staff` builds the
     rows), read from Verifix first only when it has to be: «Yangilash»
     (`force`), a day nobody stored yet, somebody of this unit missing from it,
-    or a running day's read older than `STALE_S` — the job that keeps it fresh
-    has stopped. An error comes back as {"error": code[, "message"]}; with a
+    or today's read older than the job's pace for it (`HOT_S` while the shift
+    runs, `COOL_S` after) plus `STALE_S` — the job that keeps it fresh has
+    stopped. An error comes back as {"error": code[, "message"]}; with a
     stored read in hand a failed re-read keeps it and says so (`read_error`).
 
     `stored_only` never calls Verifix and never commits or rolls back: it is
@@ -816,7 +818,8 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         return {"error": "no_unit"}
     if not any(c["manager_id"] == manager_id for c in cells.values()):
         return {"error": "no_cells"}
-    today = shift_day(db, unit["shift"])
+    frame = day_frame(db, unit["shift"])
+    today = date.fromisoformat(frame["day"])
     day = day or today
     # A date that has not come yet has nothing in Verifix: reading it would
     # only store an empty day, which every unit's calendar then shows «open».
@@ -850,8 +853,14 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         return {"day": day, "today": today, "unit": unit, "directory": directory,
                 "dir_at": dir_at, "store": store, "covered": covered, "now": now,
                 "read_error": None}
+    # Today's read is stale once it is older than the job's own pace for it
+    # plus STALE_S — i.e. once the job has STOPPED. Measured against STALE_S
+    # alone, a finished shift-day (read every COOL_S) went stale three minutes
+    # after each pass, and the next minute's poll waited ~12 s on Verifix
+    # (the 2026-10-07 «Server was slow» DM: /staff-live/attendance 10–14 s).
+    pace = HOT_S if _hot(frame) else COOL_S
     stale = (covered is None or any(i not in store for i in ids)
-             or (day == today and (now - covered).total_seconds() > STALE_S))
+             or (day == today and (now - covered).total_seconds() > pace + STALE_S))
     # A press this soon after the last read serves that read.
     if force and covered is not None and (now - covered).total_seconds() < FORCE_MIN_S:
         force = False
@@ -911,6 +920,16 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
 _pass_lock = threading.Lock()
 
 
+def _hot(fr: dict, now_tz: Optional[datetime] = None) -> bool:
+    """Is this shift frame's day read every minute (`HOT_S`) — the shift runs,
+    or ended under `HOT_AFTER_MIN` ago — rather than every `COOL_S`? THE pace
+    rule: the job keeps it (`_due_days`) and a request judges a stored read's
+    age by it (`day_read`)."""
+    now_tz = now_tz or datetime.now(TZ)
+    ends = datetime.fromisoformat(fr["ends_at"])
+    return fr["state"] == "running" or now_tz < ends + timedelta(minutes=HOT_AFTER_MIN)
+
+
 def _due_days(db: Session, shifts: set, now_tz: datetime) -> dict[date, float]:
     """The shift-days the job keeps read, and how often: each shift's CURRENT
     day every minute while the shift runs and `HOT_AFTER_MIN` past its end (the
@@ -922,9 +941,7 @@ def _due_days(db: Session, shifts: set, now_tz: datetime) -> dict[date, float]:
         win = defaults.get(shift) or ("08:00", "20:00")
         fr = live_overview.shift_frame(now_tz, shift, win)
         day = date.fromisoformat(fr["day"])
-        ends = datetime.fromisoformat(fr["ends_at"])
-        hot = fr["state"] == "running" or now_tz < ends + timedelta(minutes=HOT_AFTER_MIN)
-        every = HOT_S if hot else COOL_S
+        every = HOT_S if _hot(fr, now_tz) else COOL_S
         out[day] = min(out.get(day, every), every)
     return out
 

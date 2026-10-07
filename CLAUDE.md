@@ -7550,8 +7550,13 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   everyone, so no call is made for nobody. **A request reads the database**
   (/staff polls it every minute — a DB read, not a Verifix one) and Verifix
   itself only on `force` (/staff's «Qayta urinish» on a day that could not be
-  read, and the close), for a day nobody stored yet, or when a running day's
-  read is older than `STALE_S` (3 min — a stopped job); a failed read keeps the
+  read, and the close), for a day nobody stored yet, or when TODAY's read is
+  older than the job's own pace for it plus `STALE_S` (3 min) — 4 min while
+  the shift runs or ended under `HOT_AFTER_MIN` ago, 13 min after that
+  (`verifix_live._hot` is THE pace rule, read by the job and the request
+  alike), i.e. only when the job has STOPPED. Measured against 3 min alone, a
+  finished shift-day (read every 10 min) went stale between passes and a
+  viewer's minute poll waited ~12 s on Verifix (2026-10-07); a failed read keeps the
   stored one with the failure named (`read_error`), and for `ERROR_BACKOFF_S`
   (60 s) after a failed read of a day the requests serve the stored read
   instead of trying Verifix again (a Verifix outage had turned every viewer's
@@ -10012,6 +10017,15 @@ blocking work on the event loop freezes every request on the server at once.
   (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started at the
   END of the lifespan (startup migrations run on the loop by design and must
   not read as a stall), stopped first at shutdown. Never fails a request.
+- **A slow request says WHERE its time went** («time went to: 62%
+  staff_live:_send_dms ↳ ssl:read»). From `SAMPLE_AFTER_S` (1 s) on, the
+  watcher looks at each running request's thread every `SAMPLE_S` (0.25 s) —
+  found by the handler's own frame on the stack (`scope["endpoint"]`,
+  unwrapped) — and counts the two innermost app functions plus the library
+  call under them; the three biggest shares print on the DM and the log line.
+  The pool / threads / in-flight figures are the BUSIEST seen during the
+  request («busiest …»), not the moment it ended, which always read 0. An
+  `async` handler waiting on I/O is on no stack and gathers nothing.
 - **The loader reports itself** (`utils/stallReport.js` + `utils/requestLog.js`).
   `PageLoader` takes `where` (auth · access · caps · page) and times its
   VISIBLE wait. Past 6 s it says «Server javobi kutilmoqda…», past 20 s it
@@ -10033,6 +10047,25 @@ blocking work on the event loop freezes every request on the server at once.
   on worker threads starves the loop through the GIL just as code ON the loop
   does. Fixed by keeping the file maps (see «Ish grafigi»). A stall entry prints
   its stack LAST: Telegram eats the line break right after a `</pre>`.
+- **The second named Telegram**: a live day's close 17.6 s and a bulk
+  approval 12 s, with nothing busy on the server — the request was waiting on
+  Telegram, one round-trip per DM and per card edit. Two fixes. Every DM also
+  re-set the recipient's menu button (a second call per message, platform
+  wide): `telegram_bot._set_menu_button` now remembers what it set per account
+  (`_MENU_TTL_S`, 6 h; `/start`, approval and admin set it `force`d). And the
+  live-day notices go out AFTER the answer: `services/tg_later.py` is THE
+  after-the-answer sender — one worker thread, in order, the request's context
+  copied (so Ghost Mode still holds), failures logged — and
+  `staff_live._notify` builds every message before its commit and hands them
+  over (`_send_dms`); `_retire` / `_forget` edit and drop the cards there too.
+  The one-tap CARD of a new draft is still sent inline: who got it decides who
+  is spared the DM. Nothing else moved to it yet.
+- **The third named the live table and the leaders board**: /staff's live
+  table 10–14 s (fixed: the read-staleness rule in «A live day's engine»), and
+  `/api/leaders` + `/api/leaders/standing` 11–14 s each — both rebuild the
+  whole checklist history per request (`_leaders_feed`); the standing pool is
+  kept 60 s. Not yet profiled: the next report's «time went to» names the
+  function.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).
