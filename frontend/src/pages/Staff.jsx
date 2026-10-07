@@ -1021,11 +1021,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
                 <Fragment key={w.id ?? w.worker_name}>
                 <tr className="border-b hover:bg-white/5"
                   style={{ borderColor: "var(--border)" }}>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 sm:flex-wrap">
+                  {/* Every row is ONE line high (the operator, repeatedly): no
+                      cell may stack a second line or wrap — the table scrolls
+                      sideways instead. */}
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+                    <div className="flex items-center gap-2">
                       <span>{tl(w.worker_name)}</span>
                       {w.on_task && (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap self-start"
+                        <span className="text-[10px] leading-4 font-medium px-2 rounded-full whitespace-nowrap"
                           title={t("staff.onTask")}
                           style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--border-md)" }}>
                           <FolderOpen size={11} className="inline-block align-[-1px] mr-1" aria-hidden="true" />{w.on_task}
@@ -1034,14 +1037,16 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
                     </div>
                   </td>
                   {S.live && (
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col gap-0.5 items-start">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                         <LiveStatusChip status={w.status} />
                         <LiveRowNotes w={w} />
                       </div>
                     </td>
                   )}
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }} title={tx(w.job_title) || undefined}>
+                    <div className="max-w-[12rem] truncate">{tx(w.job_title) || "—"}</div>
+                  </td>
                   {/* Code only — the workshop name is four words of Russian per
                       row and pushed every column after it off a phone. It stays
                       in the tooltip and in the Yacheyka filter, where there is
@@ -1055,8 +1060,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
                       )}
                     </td>
                   )}
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
                   <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                     {w.hours_worked != null ? (S.live ? liveN2(w.hours_worked) : w.hours_worked) : "—"}
                     {/* Still inside: the clock span so far (ruling 5). */}
