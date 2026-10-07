@@ -99,12 +99,13 @@ def overview(db: Session = Depends(get_db),
     if payload.get("role") != "admin":
         return {"enabled": True}
 
-    # The date verdict is DERIVED (clocks + report day + task window), and this
-    # is the entry point to every AI surface — so bring it up to date before a
-    # single number is counted. Normally a no-op scan writing nothing; after a
-    # window edit or a Refresh that moved reports to other days, this is what
-    # makes the correction visible without anyone re-running the AI.
-    leader_ai.sync_date_flags(db)
+    # No date re-derive here (`leader_ai.sync_date_flags`). Every input of the
+    # date verdict re-derives where it changes — a window or date-rule edit, a
+    # Refresh or discover that re-stamped a row, a dated rule pass — and the
+    # boot walks the corpus whole. This read is fetched on every page open and
+    # window focus and after each triage ruling, and walking every verdict ever
+    # written on each of those was a 16 s request on 2026-10-07 («Server was
+    # slow»): CPU the rest of the server waited behind.
 
     return {
         "enabled": True,

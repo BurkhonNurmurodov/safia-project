@@ -293,21 +293,55 @@ def _mark_row(db: Session, reader: str) -> NotificationReadMark:
     return m
 
 
-def viewer_clause(db: Session, payload: dict):
-    """THE rule for which bell rows a session reads: broadcasts, the account's
-    own legacy rows, and rows addressed to its ACTIVE profile — never another
-    profile the same account holds."""
+def viewer_branches(db: Session, payload: dict) -> list:
+    """THE rule for which bell rows a session reads, as its disjoint parts:
+    broadcasts, the account's own legacy rows, and rows addressed to its ACTIVE
+    profile — never another profile the same account holds.
+
+    Each part has an index of its own (`startup.add_notification_center`), so
+    the two reads the bell polls every minute per open tab — `top_id` and
+    `counts` — ask each part separately. As one OR the planner walks the
+    primary key backwards and tests row after row until any part matches,
+    which for a viewer with no recent row of their own is most of the table
+    (a 10 s bell poll on 2026-10-07, «Server was slow»)."""
     from app.identity import viewer_profile_key
     telegram_id = int(payload["sub"])
-    conds = [and_(
-        Notification.recipient_profile.is_(None),
-        or_(Notification.recipient_telegram_id.is_(None),
-            Notification.recipient_telegram_id == telegram_id),
-    )]
+    parts = [
+        and_(Notification.recipient_profile.is_(None),
+             Notification.recipient_telegram_id.is_(None)),
+        and_(Notification.recipient_profile.is_(None),
+             Notification.recipient_telegram_id == telegram_id),
+    ]
     pk = viewer_profile_key(db, payload)
     if pk:
-        conds.append(Notification.recipient_profile == pk)
-    return or_(*conds)
+        parts.append(Notification.recipient_profile == pk)
+    return parts
+
+
+def viewer_clause(db: Session, payload: dict):
+    """`viewer_branches` as one condition, for the reads that are bounded some
+    other way (the feed's days, a list of ids)."""
+    return or_(*viewer_branches(db, payload))
+
+
+def top_id(db: Session, payload: dict) -> int:
+    """The newest bell row this session reads: the greatest of each part's own
+    newest, one index probe per part."""
+    subs = [db.query(func.max(Notification.id)).filter(p).scalar_subquery()
+            for p in viewer_branches(db, payload)]
+    return db.query(func.greatest(*subs)).scalar() or 0
+
+
+def ids_above(db: Session, payload: dict, after: int, limit: int) -> list[int]:
+    """The newest `limit` ids above `after` this session reads, newest first —
+    each part's own newest `limit`, merged, which holds every id the whole set's
+    newest `limit` can contain."""
+    ids: set[int] = set()
+    for p in viewer_branches(db, payload):
+        ids.update(r[0] for r in db.query(Notification.id)
+                   .filter(p, Notification.id > after)
+                   .order_by(Notification.id.desc()).limit(limit))
+    return sorted(ids, reverse=True)[:limit]
 
 
 def read_set(db: Session, reader: str, ids: Iterable[int]) -> set[int]:
@@ -373,10 +407,7 @@ def counts(db: Session, payload: dict) -> dict:
     only rows above the reader's watermarks are ever looked at."""
     reader = reader_key(db, payload)
     upto, seen = marks(db, reader)
-    clause = viewer_clause(db, payload)
-    above = db.query(Notification.id).filter(clause, Notification.id > upto) \
-        .order_by(Notification.id.desc()).limit(500).all()
-    ids = [r[0] for r in above]
+    ids = ids_above(db, payload, upto, 500)
     read = read_set(db, reader, ids)
     unread = sum(1 for i in ids if i not in read)
     fresh = sum(1 for i in ids if i > seen and i not in read)

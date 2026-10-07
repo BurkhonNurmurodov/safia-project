@@ -413,8 +413,16 @@ def _labor_inputs(db: Session, manager_ids: Iterable[int], date_from: date, date
     if not prods:
         return {}, {}, {}
 
+    # Plain rows, never ORM objects: a fortnight of the fleet is tens of
+    # thousands of quantity rows, read for eight fields each, and building each
+    # as an object (identity map, state, weakrefs) was what /api/heatmap and
+    # /api/summary spent their time on (2026-10-07, «Server was slow»). A Row
+    # answers `d.plan_qty` … exactly as the object did.
     shared: dict[int, dict] = defaultdict(dict)
-    for d in db.query(PPDaily).filter(
+    for d in db.query(
+        PPDaily.manager_id, PPDaily.work_center, PPDaily.sap_code, PPDaily.date,
+        PPDaily.plan_qty, PPDaily.plan_override, PPDaily.actual_qty, PPDaily.actual_override,
+    ).filter(
         PPDaily.manager_id.in_(ids),
         PPDaily.date >= date_from,
         PPDaily.date <= date_to,
@@ -428,7 +436,11 @@ def _labor_inputs(db: Session, manager_ids: Iterable[int], date_from: date, date
             d.plan_override is not None, d.actual_override is not None,
         )
     per_line: dict[int, dict] = defaultdict(dict)
-    for lo in db.query(PPLineDaily).filter(
+    for lo in db.query(
+        PPLineDaily.manager_id, PPLineDaily.work_center, PPLineDaily.qty_key,
+        PPLineDaily.date, PPLineDaily.line_key,
+        PPLineDaily.plan_override, PPLineDaily.actual_override,
+    ).filter(
         PPLineDaily.manager_id.in_(ids),
         PPLineDaily.date >= date_from,
         PPLineDaily.date <= date_to,

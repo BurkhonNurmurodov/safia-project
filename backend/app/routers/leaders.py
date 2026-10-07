@@ -806,8 +806,15 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             if hit:
                 row["ai"] = hit
             # LAST, after every overlay has stamped the source tasks: the wire
-            # copy carries the count, not the links (see _wire_task).
-            row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
+            # copy carries the count, not the links (see _wire_task). A bot
+            # day's tasks were built for this request (`leader_bot.dashboard_rows`)
+            # and nothing else holds them, so they are projected in place —
+            # the same keys in the same order, without a copy per task.
+            if row.get("source") == "bot":
+                for t in row.get("tasks") or []:
+                    t["photos"] = _photo_count(t.pop("photo", None))
+            else:
+                row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
 
     # The per-cell floors and each leader's cells, for the roster below: on a
     # switched unit a leader owes one checklist PER CELL, and a "not filed" view

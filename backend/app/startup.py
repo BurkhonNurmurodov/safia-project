@@ -275,6 +275,19 @@ def add_notification_center() -> None:
             "CREATE INDEX IF NOT EXISTS ix_notifications_created_at "
             "ON notifications (created_at)"
         ))
+        # The two parts of the bell's address rule that are not a profile
+        # (services/notification_center.viewer_branches): an account's legacy
+        # rows and broadcasts. Without them the bell's every-minute reads walk
+        # the primary key backwards until one row matches (2026-10-07).
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_legacy_tg "
+            "ON notifications (recipient_telegram_id, id) WHERE recipient_profile IS NULL"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_broadcast "
+            "ON notifications (id) WHERE recipient_profile IS NULL "
+            "AND recipient_telegram_id IS NULL"
+        ))
         db.execute(text(
             "INSERT INTO app_settings (key, value) "
             "SELECT 'notif_read_floor_id', COALESCE(MAX(id), 0)::text FROM notifications "

@@ -43,7 +43,8 @@ from typing import NamedTuple
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from sqlalchemy import Integer, and_, any_, bindparam, false, func, or_, text
+from sqlalchemy import (Integer, String, and_, any_, bindparam, case, cast, false, func,
+                        literal, or_, text)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
@@ -3299,8 +3300,10 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     whenever any of them can have moved: at boot, after a window edit, after a
     date-check, day-check, time-check or tolerance edit, after a sheet Refresh or
     a discover that re-stamped a row (both re-stamp `date` AND `shift`; a press
-    that moved nothing changed no input), and when the AI overview is opened.
-    There is no ninth input, so there is no trigger left to forget.
+    that moved nothing changed no input), and after a dated rule pass. There is
+    no ninth input, so there is no trigger left to forget. (The AI overview
+    walked it too until 2026-10-07; a read that every page open and window
+    focus fetches cannot afford a walk of the whole corpus.)
 
     It also REPAIRS the first of those inputs on the way past
     (`fill_clock_dates`): a stored clock whose day/month never made it out of
@@ -3433,6 +3436,10 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
     A `sheet:` ref already carries the submission id, which IS the uid. A
     `sheetd:` ref predates submission ids and has to be resolved back to a live
     row, because the uid for those is the (recycled) row id.
+
+    `stats_by_uid` resolves the two forms that name their report in SQL
+    (`_uid_sql`) and hands this function only the rest — a new ref form goes
+    into both.
     """
     out: dict[str, str] = {}
 
@@ -3477,6 +3484,27 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
             if row is not None:
                 out[ref] = row_uid(row)
     return out
+
+
+def _uid_sql():
+    """`uid_map` in SQL, for an AGGREGATE over verdicts (`stats_by_uid`), which
+    otherwise handed every verdict ever written to Python to be resolved one by
+    one before anything was counted. `(join, uid, rest)`:
+
+    * `bot:<entry>` → 'bot-<day>', through the entry the caller outer-joins on
+      `join` (a CASE, so the cast never sees another form of ref);
+    * `sheet:<sid>:<task>` → '<sid>';
+    * any other ref — `sheetd:`, a bot ref whose entry is gone — is `rest`, the
+      ref itself, and goes through `uid_map`, which stays THE resolver. Change
+      the two together."""
+    ref = LeaderAiReview.ref
+    entry = case((ref.op("~")(r"^bot:[0-9]{1,9}$"), cast(func.substr(ref, 5), Integer)))
+    is_bot = LeaderTaskEntry.day_id.isnot(None)
+    is_sheet = ref.like("sheet:%")
+    uid = case((is_bot, literal("bot-") + cast(LeaderTaskEntry.day_id, String)),
+               (is_sheet, func.split_part(ref, ":", 2)))
+    rest = case((and_(~is_bot, ~is_sheet), ref))
+    return LeaderTaskEntry.id == entry, uid, rest
 
 
 # ── the automatic regime ─────────────────────────────────────────────────────
@@ -3744,11 +3772,17 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
     """
     if dates is not None and not dates:
         return {}
-    q = (db.query(LeaderAiReview.ref.label("ref"),
+    # Counted PER REPORT in SQL (`_uid_sql`): one row per report and outcome,
+    # not one per verdict ever written. The register asks this on every build,
+    # and resolving each verdict in Python first was a fifth of it (2026-10-07).
+    join, uid_col, rest_col = _uid_sql()
+    q = (db.query(uid_col.label("uid"), rest_col.label("rest"),
                   LeaderAiReview.status.label("status"),
                   LeaderAiReview.resolution.label("resolution"),
                   func.count(LeaderAiReview.id).label("n"))
-         .group_by(LeaderAiReview.ref, LeaderAiReview.status,
+         .select_from(LeaderAiReview)
+         .outerjoin(LeaderTaskEntry, join)
+         .group_by(uid_col, rest_col, LeaderAiReview.status,
                    LeaderAiReview.resolution))
     if dates is not None:
         q = q.filter(LeaderAiReview.date.in_(dates))
@@ -3756,10 +3790,11 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
     if not rows:
         return {}
 
-    uids = uid_map(db, rows)                # Row carries `.ref`, like a verdict
+    rest = [_RefOnly(r.rest) for r in rows if r.rest]
+    more = uid_map(db, rest) if rest else {}
     out: dict[str, dict[str, int]] = {}
     for r in rows:
-        uid = uids.get(r.ref)
+        uid = r.uid or (more.get(r.rest) if r.rest else None)
         if not uid:
             continue
         s = out.setdefault(uid, {"checked": 0, "flagged": 0, "open": 0,

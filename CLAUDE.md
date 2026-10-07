@@ -10142,6 +10142,31 @@ blocking work on the event loop freezes every request on the server at once.
   events (`_path_summary`), so a path slow twelve times is named even when
   none of its requests is among the six slowest. Not touched: `/api/leaders`
   itself — the next report says where its time goes.
+- **The seventh came three minutes after v4.257.6 deployed** (19:38–19:39):
+  tabs reloading onto the new build asked for the heavy pages together. Four
+  causes, all fixed:
+  - **The AI overview took 16.1 s** because every fetch of it re-derived every
+    stored verdict (`sync_date_flags`), and the page fetches it on each open,
+    each window focus and after each triage ruling. It no longer does: every
+    input of the date verdict re-derives where it changes, and the boot walks
+    the corpus whole. Never put a corpus walk back on a polled read.
+  - **The bell's newest-id read spent 10.3 s in one query.** Its address rule
+    was one OR, which the planner answers by walking the primary key backwards
+    until a row matches. `notification_center.viewer_branches` now splits it
+    into broadcasts, an account's legacy rows and the active profile, each with
+    an index of its own (`ix_notifications_broadcast`,
+    `ix_notifications_legacy_tg`, the existing `(recipient_profile, id)`), and
+    the two polled reads, `top_id` and `ids_above`, ask each part separately.
+    A fourth address form needs a part and an index of its own.
+  - **`/api/leaders` (11.7 s)** counts verdicts per REPORT in SQL
+    (`leader_ai._uid_sql`, the SQL twin of `uid_map`; change them together)
+    and projects bot tasks in place instead of copying each one.
+  - **`/api/heatmap` and `/api/summary`** read their quantities as columns
+    (`zagruzka_source._labor_inputs`), not as one ORM object per row.
+  Measured on the 11 Sep copy: the register build 0.82 → 0.68 s, its verdict
+  counts 174 → 111 ms, each bell part one index probe, the quantity reads
+  123 → 49 ms, the overview 42 ms. The 1.3 s loop stall had no app frames on
+  the loop: request threads busy in Python held the GIL.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request (axios still has no timeout; the
   reload button is the way out).

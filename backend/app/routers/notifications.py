@@ -194,8 +194,7 @@ def _lang(db: Session, payload: dict, lang: Optional[str]) -> str:
 
 
 def _top_id(db: Session, payload: dict) -> int:
-    return db.query(func.max(Notification.id)).filter(
-        center.viewer_clause(db, payload)).scalar() or 0
+    return center.top_id(db, payload)
 
 
 def _commit_retrying(db: Session, write) -> object:
