@@ -1912,15 +1912,12 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, selected, attData]);
 
-  // Live: a move is timed by default, at NOW clamped into the window — the
-  // usual case is «they are going over right now» (decided 2026-10-04).
-  const timeTouched = useRef(false);
-  useEffect(() => {
-    if (!S.live || isEdit || timeTouched.current || !timeWindow) return;
-    setUseTime(true);
-    setTransferTime(minToHHMM(timeWindow.hi));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeWindow, isEdit]);
+  // A move is a WHOLE-DAY move by default, on a live day as on a file day
+  // (the operator, 2026-10-08). From 2026-10-04 to then a live day opened the
+  // switch ON at NOW clamped into the window, i.e. at the check-out once the
+  // workers had gone home — so a brigadir who pressed Save as before filed a
+  // move at the exit minute, and the sender kept the head and the hours. A
+  // timed move is the switch; the wheel then opens at the earliest arrival.
 
   // Keep the picked time valid as the selection changes. Wait for the roster to
   // load first, so a hydrated edit-mode time isn't cleared during the fetch.
@@ -2126,7 +2123,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                 type="button"
                 role="switch"
                 aria-checked={useTime}
-                onClick={() => { timeTouched.current = true; setUseTime(v => !v); }}
+                onClick={() => setUseTime(v => !v)}
                 className="relative inline-flex items-center rounded-full transition-colors flex-shrink-0"
                 style={{
                   width: 36, height: 20,
@@ -2165,7 +2162,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               lo={timeWindow?.lo}
               hi={timeWindow?.hi}
               value={transferTime}
-              onConfirm={(v) => { timeTouched.current = true; setTransferTime(v); setPickerOpen(false); }}
+              onConfirm={(v) => { setTransferTime(v); setPickerOpen(false); }}
               onClose={() => setPickerOpen(false)}
             />
           </div>

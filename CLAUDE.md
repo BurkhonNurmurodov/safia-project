@@ -7565,9 +7565,19 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   APPROVAL (409 `not_here`: a document approved since moved them), and refuses
   a change that would break an approved move (`broken_moves` before vs after:
   400 at filing / 409 `breaks` at approval; an un-post a later move depends on
-  is 409 `depended_on`, and a bulk un-post goes newest approval first). The
-  move time defaults to NOW, inside a window from the earliest arrival here to
-  now (or the exit).
+  is 409 `depended_on`, and a bulk un-post goes newest approval first). A
+  timed move's window runs from the earliest arrival here to now (or the
+  exit). **The dialog opens on a WHOLE-DAY move** (the operator, 2026-10-08,
+  from the brigadirs' report that workers they had given away still counted on
+  their загрузка): from 2026-10-04 to then a live day opened the time switch
+  ON at NOW clamped into the window, i.e. at the CHECK-OUT once the workers had
+  gone home, so a brigadir who pressed Save as on a file day filed a move at
+  the exit minute — `_check_times` lets it through (17:01 is not after
+  17:01:40), `person` splits the day there, the sender keeps the name and all
+  but seconds of the hours, and the close copies exactly that into
+  `attendance`. The 7 Oct export of Aripova Manzura's unit showed two such rows
+  (`moved_out` at 17:01, 8.11 h). The switch now starts OFF on every day; a
+  timed move is the switch, and the wheel opens at the earliest arrival.
 - **Arrivals come cell-less** and are placed on «Yacheykalar» (`LivePlacement`,
   a split with `hc_weight`); **the day close is refused while anybody is
   inside, on a break or still due** (incl. people standing here under another
