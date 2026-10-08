@@ -119,3 +119,14 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 120 .venv/bin/python diag_cell_9123.py || true
+
+      # ⚠ TEMPORARY (2026-10-08): the live-day exchange report — every live
+      # unit-day from 6 Oct, every exchange document, the engine's reading of
+      # each moved worker and the close's copy — for the operator's retrace of
+      # «workers given away still count on the sender» (fixed in v4.259.1).
+      # Read-only, never fails the deploy, no worker names (pseudonyms). Lives
+      # under deploy/ so adding it restarts nothing. Remove with the script.
+      - name: "Report: live exchanges from 6 Oct (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true

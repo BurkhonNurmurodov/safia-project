@@ -7577,7 +7577,13 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   but seconds of the hours, and the close copies exactly that into
   `attendance`. The 7 Oct export of Aripova Manzura's unit showed two such rows
   (`moved_out` at 17:01, 8.11 h). The switch now starts OFF on every day; a
-  timed move is the switch, and the wheel opens at the earliest arrival.
+  timed move is the switch, and the wheel opens at the earliest arrival. The
+  live days from 6 Oct were REPORTED once into a deploy job's log for the
+  operator's retrace — `deploy/diag_live_exchange.py` (TEMPORARY, read-only,
+  every worker a pseudonym, never a name), the last step of
+  `.gitea/workflows/deploy.yaml`, the `diag_cell_9123` precedent; it sits
+  under deploy/ so adding it restarted nothing. Delete the script and the
+  step together once the retrace is done.
 - **Arrivals come cell-less** and are placed on «Yacheykalar» (`LivePlacement`,
   a split with `hc_weight`); **the day close is refused while anybody is
   inside, on a break or still due** (incl. people standing here under another
