@@ -2,6 +2,7 @@ import asyncio
 import contextvars
 import hmac
 import logging
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -9,14 +10,16 @@ import telebot
 from fastapi import APIRouter, Request, Response
 
 from app.config import settings
+from app.services import perf_watch
 from app.telegram_bot import bot, handle_incoming_rich_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
-# Telegram retries webhook delivery when it doesn't receive 200 OK within 10 s.
-# If the handler already sent a message before the error was raised, the retry
+# Telegram retries webhook delivery when it doesn't receive 200 OK in time (the
+# 8 Oct 2026 report shows the repeat arriving 60 s after the original, which
+# was still being handled). If the handler already sent a message, the retry
 # produces a duplicate.  We track the last 200 update_ids (ring-buffer) so we
 # can skip updates we've already processed.
 _SEEN_MAX = 200
@@ -83,11 +86,37 @@ def _already_seen(update_id: int) -> bool:
 _BOT_THREAD = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bot-webhook")
 
 
-def _handle(data: dict) -> None:
-    update = telebot.types.Update.de_json(data)
+def _what(update: telebot.types.Update) -> str:
+    """What an update asks for, for the slow-request record — a command's name
+    or a button's callback data, never a message body (`_describe`'s rule)."""
+    msg = update.message or update.edited_message
+    if msg is not None:
+        text = msg.text or ""
+        return text.split(maxsplit=1)[0][:32] if text.startswith("/") else (msg.content_type or "message")
+    if update.callback_query is not None:
+        return f"button {(update.callback_query.data or '')[:48]}"
+    return "update"
 
+
+def _handle(data: dict, scope=None, queued_at: float | None = None) -> None:
+    update = telebot.types.Update.de_json(data)
+    # The work below happens on THIS thread, which the slow-request sampler
+    # cannot find by the (async) handler's frame — so it is named to it here,
+    # together with what the update was and how long it waited its turn behind
+    # the one before it (one thread, one update at a time).
+    waited = time.monotonic() - queued_at if queued_at is not None else 0.0
+    note = _what(update) + (f" · waited {waited:.1f} s for the update before it"
+                            if waited >= 1.0 else "")
+    with perf_watch.working_for(scope, note):
+        _process(update, data, scope)
+
+
+def _process(update: telebot.types.Update, data: dict, scope=None) -> None:
     if _already_seen(update.update_id):
         logger.warning("Duplicate update_id %s — skipped", update.update_id)
+        # Telegram sends an update again when it got no answer in time; this
+        # copy only waited out the first one, and the record must say so.
+        perf_watch.add_note(scope, "a repeat of an update already handled — skipped")
         return
 
     if _is_non_private(update):
@@ -126,7 +155,8 @@ async def telegram_webhook(request: Request):
         # The handler runs with this request's context (Ghost Mode and the like
         # are ContextVars) — run_in_executor alone would hand it an empty one.
         ctx = contextvars.copy_context()
-        await asyncio.get_running_loop().run_in_executor(_BOT_THREAD, ctx.run, _handle, data)
+        await asyncio.get_running_loop().run_in_executor(
+            _BOT_THREAD, ctx.run, _handle, data, request.scope, time.monotonic())
     except Exception:
         # Log the error but always return 200 so Telegram does NOT retry.
         # A retry would call send_message a second time if the first call

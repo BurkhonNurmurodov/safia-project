@@ -743,6 +743,11 @@ app = FastAPI(title="Zagruzka KPI API", version=APP_VERSION, lifespan=lifespan,
               openapi_url=None if cfg.is_production else "/openapi.json",
               dependencies=[Depends(enforce_telegram_origin_global)])
 
+# A handler's answer is turned into JSON in the threadpool, never on the one
+# event loop (services/json_offload.py — a 30 MB answer walked for 4.7 s there).
+from app.services import json_offload  # noqa: E402
+json_offload.install()
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

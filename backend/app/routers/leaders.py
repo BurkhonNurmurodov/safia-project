@@ -15,7 +15,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy import Text, cast
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import (
     AppSetting, Cell, LeaderAiDispute, LeaderAiReview, LeaderChecklist,
     LeaderLateProof, LeaderLateProofMedia, LeaderLateRequest, LeaderSyncMeta,
@@ -1133,7 +1133,8 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
 # because a ranking cannot be computed from less — and a ranking computed a
 # second time in Python would be a second rule that drifts from the board.
 
-_STANDING_TTL = 60.0              # seconds one unscoped build answers everybody
+_STANDING_TTL = 60.0              # seconds one unscoped build is fresh
+_STANDING_STALE = 15 * 60.0       # …and how long it still answers while a new one is made
 _standing_lock = threading.Lock()
 _standing_build = threading.Lock()
 _standing_cache: dict = {"at": 0.0, "pool": None}
@@ -1142,67 +1143,110 @@ _TOK_DROP = re.compile(r"[ʻʼ'`‘’]")
 _TOK_SPLIT = re.compile(r"[^a-z0-9]+")
 
 
-def _standing_fresh() -> dict | None:
+def _standing_cached() -> tuple[dict | None, float]:
+    """The last pool built and its age in seconds (inf when there is none)."""
     with _standing_lock:
         pool = _standing_cache["pool"]
-        if pool is not None and monotonic() - _standing_cache["at"] < _STANDING_TTL:
-            return pool
-    return None
+        age = monotonic() - _standing_cache["at"] if pool is not None else float("inf")
+    return pool, age
+
+
+def _standing_fresh() -> dict | None:
+    pool, age = _standing_cached()
+    return pool if age < _STANDING_TTL else None
+
+
+def _standing_refresh() -> None:
+    """Build a new pool on a thread of its own, unless one is being built."""
+    if not _standing_build.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            if _standing_fresh() is None:
+                with SessionLocal() as db:
+                    _store_standing(_build_standing(db))
+        except Exception:
+            logger.exception("standing pool: background rebuild failed")
+        finally:
+            _standing_build.release()
+
+    try:
+        threading.Thread(target=run, name="standing-pool", daemon=True).start()
+    except Exception:
+        _standing_build.release()
+        logger.exception("standing pool: could not start the background rebuild")
 
 
 def _standing_pool(db: Session) -> dict:
-    """The unscoped register, cut down to what a ranking reads, kept a minute.
+    """The unscoped register, cut down to what a ranking reads.
 
-    One build answers every leader and brigadir for sixty seconds: the pool is
-    the same for all of them — who is asking decides only which codes are
-    theirs — and a shift's worth of leaders opening the page at once must not
-    rebuild the whole register per head. The build lock makes the second
-    caller wait for the first one's answer instead of starting its own."""
-    pool = _standing_fresh()
-    if pool is not None:
+    One build answers every leader and brigadir: the pool is the same for all
+    of them — who is asking decides only which codes are theirs. It is fresh
+    for a minute; after that the request still answers AT ONCE from the last
+    build (up to `_STANDING_STALE` old) while a new one is made on a thread of
+    its own. A build is the whole checklist history (~5 s on production), and
+    with a plain one-minute expiry somebody paid it every minute — nine of the
+    slow requests in the 8 Oct 2026 «Server was slow» report were this, at a
+    median of 5.1 s, for a place that moves once a day. Only the first request
+    after a boot (or after a quiet quarter of an hour) waits for a build; the
+    build lock makes a second such caller wait for that one's answer."""
+    pool, age = _standing_cached()
+    if pool is not None and age < _STANDING_TTL:
+        return pool
+    if pool is not None and age < _STANDING_STALE:
+        _standing_refresh()
         return pool
     with _standing_build:
         pool = _standing_fresh()
         if pool is not None:
             return pool
-        # No role, so nothing in the builder reads as a viewer: no scoping pass
-        # runs (`sees_all`), and no admin-only field (a cutoff's reason and
-        # author) is filled in.
-        feed = _leaders_feed(db, {"role": None}, True, lite=True)
-        rows, filed = [], set()
-        for r in feed["data"]:
-            leader = r.get("leader") or ""
-            if leader and not r.get("missing"):
-                filed.add(leader)
-            ex = r.get("excluded")
-            rows.append((
-                str(r["date"])[:10],
-                leader,
-                1 if r.get("leader_id") else 0,
-                r.get("supervisor") or "",
-                r.get("shift"),
-                float(r.get("completion") or 0),
-                # 1 = this day was excluded, 2 = the leader's cutoff reached
-                # it — `slotsBy` treats the two differently.
-                (2 if ex.get("cutoff") else 1) if ex else 0,
-                1 if r.get("rejected") else 0,
-                1 if r.get("missing") else 0,
-            ))
-        pool = {
-            "rows": rows,
-            "filed": filed,
-            "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
-                        p["cutoff"], p["cell_from"], len(p["cells"]),
-                        p.get("no_load_from"))
-                       for p in feed["roster"]],
-            "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
-            "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
-            "units": feed["_units"],
-        }
-        with _standing_lock:
-            _standing_cache["pool"] = pool
-            _standing_cache["at"] = monotonic()
+        pool = _build_standing(db)
+        _store_standing(pool)
         return pool
+
+
+def _store_standing(pool: dict) -> None:
+    with _standing_lock:
+        _standing_cache["pool"] = pool
+        _standing_cache["at"] = monotonic()
+
+
+def _build_standing(db: Session) -> dict:
+    # No role, so nothing in the builder reads as a viewer: no scoping pass
+    # runs (`sees_all`), and no admin-only field (a cutoff's reason and
+    # author) is filled in.
+    feed = _leaders_feed(db, {"role": None}, True, lite=True)
+    rows, filed = [], set()
+    for r in feed["data"]:
+        leader = r.get("leader") or ""
+        if leader and not r.get("missing"):
+            filed.add(leader)
+        ex = r.get("excluded")
+        rows.append((
+            str(r["date"])[:10],
+            leader,
+            1 if r.get("leader_id") else 0,
+            r.get("supervisor") or "",
+            r.get("shift"),
+            float(r.get("completion") or 0),
+            # 1 = this day was excluded, 2 = the leader's cutoff reached
+            # it — `slotsBy` treats the two differently.
+            (2 if ex.get("cutoff") else 1) if ex else 0,
+            1 if r.get("rejected") else 0,
+            1 if r.get("missing") else 0,
+        ))
+    return {
+        "rows": rows,
+        "filed": filed,
+        "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
+                    p["cutoff"], p["cell_from"], len(p["cells"]),
+                    p.get("no_load_from"))
+                   for p in feed["roster"]],
+        "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
+        "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
+        "units": feed["_units"],
+    }
 
 
 def _name_toks(name: str) -> list[str]:

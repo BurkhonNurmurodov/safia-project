@@ -5317,9 +5317,13 @@ page's period. `MyStanding` in `Leaders.jsx`, fed by `GET
 - **The pool is the unscoped register with every name replaced by a code.**
   `get_leaders` is a thin wrapper over `_leaders_feed(sees_all, lite)` (verified
   byte-identical for admin, supervisor and shift-manager when split);
-  `_standing_pool` builds it with `sees_all=True, lite=True` and keeps it 60 s
-  in-process (the build is ~1.5 s; a shift opening the page at once must not
-  rebuild it per head). Each request windows it and draws fresh random codes
+  `_standing_pool` builds it with `sees_all=True, lite=True`, in-process: fresh
+  for 60 s, and from then on every request answers AT ONCE from the last build
+  (up to 15 min old) while ONE new build runs on a thread of its own
+  (`_standing_refresh`, its own session). Only the first request after a boot or
+  a quiet quarter of an hour waits for a build (~5 s on production — with a
+  plain 60 s expiry somebody paid it every minute, nine times in the 8 Oct
+  report). Each request windows it and draws fresh random codes
   (`_pool_codes`): a unit is `u…`, a person is one `w…` code per WORD of their
   name plus a `p…` code of their own — the word structure is kept because
   `rosterFold` matches an unlinked sheet spelling to a profile by its first two
@@ -10170,7 +10174,8 @@ blocking work on the event loop freezes every request on the server at once.
   table 10–14 s (fixed: the read-staleness rule in «A live day's engine»), and
   `/api/leaders` + `/api/leaders/standing` 11–14 s each — both rebuild the
   whole checklist history per request (`_leaders_feed`); the standing pool is
-  kept 60 s. Not yet profiled: the next report's «time went to» names the
+  kept 60 s (served stale while rebuilt from 8 Oct — see «Mening o'rnim»).
+  Not yet profiled: the next report's «time went to» names the
   function.
 - **The fourth was the first with «time went to»**: «Kechikkan isbotlar»
   (`GET /api/leaders/late-proofs`) 3.2 s, 83% in one photo query PER CARD (up
@@ -10265,6 +10270,61 @@ blocking work on the event loop freezes every request on the server at once.
   (`requestLog.noteEnd(…, cancelled)`) and `stall_report._answered` leaves it
   out of the verdict, printing it as «cancelled — the other copy answered
   first». A second sign-in copy writes a second `session.telegram_login` row.
+- **The ninth: a 52.5 s freeze nothing could name, and a bot update of 77 s**
+  (8 Oct, 12:48–13:53). The one loop stack, taken 1 s in, showed the loop about
+  to finish the heartbeat's own `asyncio.sleep` (`tasks.py:651`, Python 3.11)
+  with every request in flight 0.3 s old and the three scheduler threads in
+  trivial queries — so for the other 51 s the loop was waiting for the GIL,
+  or the process was not running at all, and a single look cannot say which.
+  Three changes, measured locally before shipping:
+  - **A long freeze names itself** (`perf_watch`). faulthandler's watchdog —
+    a C thread that needs no GIL — is re-armed by the heartbeat every second
+    (`_arm_dump`, BEFORE the beat is written, so no dump is mid-write when the
+    watcher reads); a loop silent `DUMP_AFTER_S` (6 s) gets every thread's
+    stack written to an unlinked scratch file, again every 6 s while it lasts,
+    read and emptied at the end (`_read_dumps`). Beside it: a rolling baseline
+    taken every 2 s while the loop beats (`_base` — a freeze may not let this
+    thread run until it is over), per-thread CPU from `/proc/self/task`,
+    process CPU and major faults (`getrusage`), host steal / iowait / idle
+    (`/proc/stat`), RSS and swap, every full collection timed through
+    `gc.callbacks`, and the loop looked at again every 2 s while held. The
+    stall record gets `freeze` (`_freeze_account`) and the DM a **«why:»** line
+    (`_verdict`, the first that fits): garbage collection · the loop ran code
+    of its own · one thread used the CPU and never let the others run (its
+    stack, from the dump taken WHILE frozen) · something kept the GIL (the
+    threads in app code at the dump) · host steal · swap · the loop waited
+    inside a call of its own (named) · this process barely ran. Verified on
+    four reproductions: a regex holding the GIL on the loop, the same on a
+    scheduler-named thread, `time.sleep` on the loop, a 1.9 s collection.
+    `gc.freeze()` runs once at the end of startup, so a full collection walks
+    only what the running server made (a collection holds the GIL throughout).
+  - **Answers are encoded off the loop** (`services/json_offload.py`, installed
+    in `main.py`). FastAPI runs `jsonable_encoder` over a route's return value
+    ON THE LOOP when the route has no `response_model` — every route here — even
+    when the handler ran in the threadpool: a register-sized answer (30 MB) is
+    4.7 s of pure Python there. `install()` swaps `fastapi.routing.serialize_response`
+    (looked up as a module global per request) for a twin that runs the same
+    `jsonable_encoder` in the threadpool unless the answer is a scalar or a
+    flat container of ≤ 32 scalars. Byte-identical on every shape tried (big
+    nested rows with dates, Decimals, sets and models, `None`, a string, a list,
+    a `response_model` route, `status_code=201` with a header set on
+    `response`); a 1.9 MB answer held the loop 557 ms before and 54 ms after —
+    what is left is starlette's `json.dumps`. `/api/leaders` and `/standing`
+    already pre-render (`_json_response`) and never reach it.
+  - **The bot thread is sampled.** `perf_watch.working_for(scope, note)` hands
+    a request's samples to the thread doing its work — the webhook awaits its
+    own `_BOT_THREAD`, which no handler frame names — and `note` prints beside
+    the path: the command or button (`webhook._what`, never a message body), how
+    long it waited behind the update before it, and «a repeat of an update
+    already handled» when Telegram sent one again. The two webhooks of the 8 Oct
+    report ended in the same second, 77.2 s and 17.2 s: the second was
+    TELEGRAM'S repeat, sent 60 s after the first while that one was still
+    running, and skipped as a duplicate the moment it got its turn.
+  Still open: what the 77 s update and the 52 s freeze WERE — the next report
+  names both. The «Yordamchi» `async def` handlers (`send`, `confirm`, `upload`,
+  `transcribe`) still query the database on the loop; with the pool full that
+  is a wait of up to 30 s with every request stopped behind it — admin-only
+  today, so left for now.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
