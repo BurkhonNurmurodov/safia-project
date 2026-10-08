@@ -45,6 +45,8 @@ import { useLang } from "../../context/LangContext";
  *   clearable        – show the ✕ when there is a value (default true)
  *   disabled         – dims and disables BOTH the input and the ✕
  *   className        – extra classes on the wrapper (layout only)
+ *   Below sm the field is 16px (iOS zooms into a smaller input on focus),
+ *   its padding trimmed so the height stays on the 38px baseline.
  *   id / placeholder – forwarded to the input; ...rest too
  *
  * The ref lands on the <input>.
@@ -95,7 +97,7 @@ const TimeField = forwardRef(function TimeField({
           onBlur={(e) => { setFocused(false); rest.onBlur?.(e); }}
           onMouseEnter={(e) => { setHovered(true); rest.onMouseEnter?.(e); }}
           onMouseLeave={(e) => { setHovered(false); rest.onMouseLeave?.(e); }}
-          className="w-full px-3 py-2 rounded-xl text-sm outline-none transition-colors"
+          className="w-full px-3 py-2 rounded-xl text-sm outline-none transition-colors max-sm:text-base max-sm:py-[6px]"
           style={{
             background: "var(--bg-inner)",
             // Focus is the brand ring; hover only firms the border up. Both are

@@ -51,6 +51,8 @@ import { useMarkDraft } from "./dialogLayers";
  *                  dropdown closes so the parent can open its create flow (optional)
  *   createLabel  – (query: string) => node; label for the creatable row, e.g.
  *                  q => `Create "${q}"`. Defaults to the raw query (optional)
+ *   ariaLabel    – accessible name for the trigger when no visible label names
+ *                  it, e.g. "Sort by: Created" (optional)
  */
 export default function StyledSelect({
   value,
@@ -72,6 +74,7 @@ export default function StyledSelect({
   creatable = false,
   onCreate,
   createLabel,
+  ariaLabel,
 }) {
   const { t } = useLang();
   const markDraft = useMarkDraft();
@@ -407,6 +410,7 @@ export default function StyledSelect({
         ref={triggerRef}
         type="button"
         disabled={disabled}
+        aria-label={ariaLabel}
         onClick={toggle}
         className={`w-full flex items-center justify-between gap-2 rounded-lg text-left outline-none transition-colors ${triggerClassName}`}
         style={{

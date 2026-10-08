@@ -19,6 +19,7 @@ import SearchInput from "../ui/SearchInput";
 import StyledSelect from "../ui/StyledSelect";
 import TimeField from "../ui/TimeField";
 import { SkeletonBlock } from "../ui/Skeleton";
+import useIsMobile from "../../hooks/useIsMobile";
 import { useToast } from "../ui/Toast";
 
 /**
@@ -139,13 +140,17 @@ function Chip({ tone = "neutral", icon: Icon, children, title }) {
   );
 }
 
-function Stat({ label, value, tone }) {
+function Stat({ label, value, tone, phone = false }) {
   return (
     <div
       className="rounded-xl px-3 py-2 min-w-0"
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
     >
-      <div className="text-[10px] uppercase tracking-wider truncate" style={{ color: "var(--text-4)" }}>
+      {/* A phone's three columns are too narrow for the spaced capitals
+          («YACHEYKAL…»): there the label is sentence case, the Workers tab's
+          KPI style, and fits whole. */}
+      <div className="text-[10px] uppercase tracking-wider truncate max-sm:text-xs max-sm:normal-case max-sm:tracking-normal"
+        style={{ color: phone ? "var(--text-3)" : "var(--text-4)" }}>
         {label}
       </div>
       <div className="text-base font-bold tabular-nums mt-0.5" style={{ color: tone || "var(--text-1)" }}>
@@ -160,7 +165,7 @@ function Stat({ label, value, tone }) {
  * hover, so a small handle beside the name would be the only way in and would
  * be missed. The undo control is a SIBLING button, never nested inside it.
  */
-function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
+function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo, phone = false }) {
   const { tx } = useTranslit();
   const isSplit = entry.splitKind != null;
   return (
@@ -180,8 +185,9 @@ function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* A phone has no hover to finish a cut name: there it wraps whole. */}
             <span
-              className="text-xs font-semibold truncate"
+              className="text-xs font-semibold truncate max-sm:text-sm max-sm:whitespace-normal max-sm:overflow-visible max-sm:break-words"
               style={{ color: entry.counted ? "var(--text-1)" : "var(--text-3)" }}
             >
               {tl(entry.name)}
@@ -196,7 +202,8 @@ function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
             {entry.staged === "unsplit" && <Chip tone="warn" icon={Undo2}>{t("cellPlace.unsplitChip")}</Chip>}
             {!entry.counted && <Chip tone="neutral">{t("cellPlace.notCounted")}</Chip>}
           </div>
-          <div className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-4)" }}>
+          <div className="text-[10px] mt-0.5 truncate max-sm:text-xs max-sm:whitespace-normal max-sm:overflow-visible max-sm:break-words"
+            style={{ color: phone ? "var(--text-3)" : "var(--text-4)" }}>
             {[
               entry.job ? tx(entry.job) : null,
               entry.clock || null,
@@ -206,7 +213,7 @@ function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
           </div>
         </div>
         <span
-          className="text-[11px] tabular-nums whitespace-nowrap flex-shrink-0"
+          className="text-[11px] tabular-nums whitespace-nowrap flex-shrink-0 max-sm:text-xs"
           style={{ color: "var(--text-3)" }}
         >
           {entry.approx ? "≈" : ""}{fmtNum(entry.hours, 1)} {t("cellPlace.hoursShort")}
@@ -237,6 +244,9 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
+  // A phone reads every line of this panel rather than glancing at it: there
+  // the dimmest text steps up to --text-3 and nothing is cut short.
+  const phone = useIsMobile();
   // Bottom-centred: this is a dense editing surface and a top-right toast lands
   // on the toolbar the operator is working in.
   const toast = useToast({ position: "bottom" });
@@ -622,7 +632,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
     <div className="space-y-3">
       {/* One line naming the three acts. Nobody has seen this surface before and
           the split rule in particular is not guessable from the controls. */}
-      <div className="text-[11px] leading-snug px-1" style={{ color: "var(--text-3)" }}>
+      <div className="text-[11px] leading-snug px-1 max-sm:text-xs" style={{ color: "var(--text-3)" }}>
         {cellsRequired ? t("cellPlace.intro") : t("cellPlace.introHistoric")}
       </div>
 
@@ -648,11 +658,12 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
           amber while anybody is unplaced, because the day cannot close until it
           reads zero, and green the moment it does. */}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        <Stat label={t("cellPlace.statCells")} value={totals.cells} />
-        <Stat label={t("cellPlace.statWorkers")} value={totals.workers} />
-        <Stat label={t("cellPlace.statCounted")} value={fmtNum(totals.counted, 2)} />
-        <Stat label={t("cellPlace.statHours")} value={fmtNum(totals.hours, 1)} />
+        <Stat phone={phone} label={t("cellPlace.statCells")} value={totals.cells} />
+        <Stat phone={phone} label={t("cellPlace.statWorkers")} value={totals.workers} />
+        <Stat phone={phone} label={t("cellPlace.statCounted")} value={fmtNum(totals.counted, 2)} />
+        <Stat phone={phone} label={t("cellPlace.statHours")} value={fmtNum(totals.hours, 1)} />
         <Stat
+          phone={phone}
           label={t("cellPlace.statUnplaced")}
           value={totals.unplaced}
           tone={totals.unplaced ? "#eab308" : "#22c55e"}
@@ -796,7 +807,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
               <div className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
                 {t("cellPlace.unplacedTitle")}
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
+              <div className="text-[11px] mt-0.5 max-sm:text-xs" style={{ color: phone ? "var(--text-3)" : "var(--text-4)" }}>
                 {cellsRequired ? t("cellPlace.unplacedHint") : t("cellPlace.unplacedHistoric")}
               </div>
             </div>
@@ -812,6 +823,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
               selectable={editable}
               onSelect={(x) => setSel((cur) => (cur === x.key ? null : x.key))}
               onUndo={editable && e.staged ? () => undoEntry(e) : null}
+              phone={phone}
             />
           ))}
         </div>
@@ -853,7 +865,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
                 type="button"
                 onClick={() => toggleExpand(b.code)}
                 className="flex-shrink-0 flex items-center justify-center rounded-lg"
-                style={{ minHeight: 44, minWidth: 44, color: "var(--text-4)" }}
+                style={{ minHeight: 44, minWidth: 44, color: phone ? "var(--text-3)" : "var(--text-4)" }}
                 title={open ? t("cellPlace.collapse") : t("cellPlace.expand")}
                 aria-expanded={open}
               >
@@ -869,10 +881,10 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
                     {b.code}
                   </span>
                   {b.leader && (
-                    <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>{tl(b.leader)}</span>
+                    <span className="text-[11px] truncate max-sm:text-xs max-sm:whitespace-normal max-sm:overflow-visible" style={{ color: "var(--text-3)" }}>{tl(b.leader)}</span>
                   )}
                 </div>
-                <div className="text-[11px] mt-0.5 tabular-nums" style={{ color: "var(--text-4)" }}>
+                <div className="text-[11px] mt-0.5 tabular-nums max-sm:text-xs" style={{ color: phone ? "var(--text-3)" : "var(--text-4)" }}>
                   {fmtNum(b.counted, 2)}/{b.entries.length} {t("cellPlace.peopleShort")} · {fmtNum(b.hours, 1)} {t("cellPlace.hoursShort")}
                 </div>
               </div>
@@ -910,6 +922,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
                 // A staged split's virtual half carries its PRIMARY's id, so
                 // undoing from either leg retires the same one arrangement.
                 onUndo={editable && e.staged ? () => undoEntry(e) : null}
+                phone={phone}
               />
             )))}
           </div>

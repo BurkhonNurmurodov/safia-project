@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useDeferredValue, Fragment } from "react";
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
   LayoutGrid, FlaskConical, Filter, XCircle, User, FolderOpen, RefreshCw,
+  Briefcase, CalendarClock, Hourglass, Sunrise, Gauge, ArrowDownWideNarrow, ArrowUpNarrowWide,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -38,10 +39,12 @@ import { cellLabel } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
 import { isWebSession } from "../utils/session";
-import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { ColFilter, TxtFilter, OptsFilter, RngFilter, PickFilter, FilterPanel } from "../components/ui/ColumnFilter";
 import { useStaffApi, StaffApiProvider, STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
 import { LiveRowNotes, LiveStatusChip, LiveDayState, n2 as liveN2 } from "../components/staff/LiveBits";
 import DayStepper from "../components/ui/DayStepper";
+import StaffPhoneList, { Dotted } from "../components/staff/StaffPhoneList";
+import useIsMobile from "../hooks/useIsMobile";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -254,23 +257,25 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
       title={t("staff.exportTitle")}
       icon={<Download size={15} className="flex-shrink-0 text-[var(--brand-text)]" />}
       maxWidth="max-w-sm"
+      // A phone: 38px buttons. Three of them never fit one row there, so they
+      // stack full-width — cancel on top, the filtered export under the thumb.
       footer={hasFilter ? (
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="secondary" size="sm" onClick={() => onExport(false)} disabled={exporting}>
+        <div className="flex flex-wrap justify-end gap-2 w-full">
+          <Button variant="secondary" size="sm" className="max-sm:w-full max-sm:min-h-[38px]" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="secondary" size="sm" className="max-sm:w-full max-sm:min-h-[38px]" onClick={() => onExport(false)} disabled={exporting}>
             {fillT(t("staff.exportAllN"), { n: totalCount })}
           </Button>
-          <Button size="sm" loading={exporting} onClick={() => onExport(true)}>
+          <Button size="sm" className="max-sm:w-full max-sm:min-h-[38px]" loading={exporting} onClick={() => onExport(true)}>
             {fillT(t("staff.exportFilteredN"), { n: filteredCount })}
           </Button>
-        </>
+        </div>
       ) : (
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button size="sm" loading={exporting} onClick={() => onExport(false)}>
+        <div className="flex flex-wrap justify-end gap-2 w-full">
+          <Button variant="secondary" size="sm" className="max-sm:min-h-[38px] max-[359px]:w-full" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button size="sm" className="max-sm:min-h-[38px] max-[359px]:w-full" loading={exporting} onClick={() => onExport(false)}>
             {t(web ? "staff.exportGoDownload" : "staff.exportGoSend")}
           </Button>
-        </>
+        </div>
       )}
     >
       <p className="text-sm" style={{ color: "var(--text-2)" }}>
@@ -288,6 +293,7 @@ const fillT = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? 
 
 export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preSelected, replaceBatchId, onClose, onDeleted }) {
   const S = useStaffApi();
+  const isPhone = useIsMobile();
   const K = S.rowKey;
   const { t } = useLang();
   const { tl, tx } = useTranslit();
@@ -376,25 +382,33 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
     ? `${selected.size} ${t("staff.workerUnit")} → ${isAdmin ? t("staff.willBeDeleted") : t("staff.willBeRequested")}`
     : `0 ${t("staff.workerUnit")} → …`;
 
+  // Whose day this is: the unit the attendance read names (what the role-change
+  // and exchange dialogs print), the page's name until it lands — never a date
+  // trailed by an empty «·».
+  const unitName = tl(data?.manager_name || managerName || "");
+
   return (
     <Modal
       onClose={onClose}
       title={`${t("staff.deleteWorkers")} — ${subtitle}`}
-      subtitle={`${fmtDateLabel(date)} · ${managerName}`}
+      subtitle={[fmtDateLabel(date), unitName].filter(Boolean).join(" · ")}
       maxWidth="max-w-2xl"
       bodyClassName="p-0 flex flex-col"
       footer={
-        <>
-          <div className="mr-auto self-center text-sm"
-            style={{ color: saveError ? "#ef4444" : selected.size > 0 ? "#ef4444" : "var(--text-4)" }}>
+        // One wrapping row: on a phone the outcome line takes a line of its
+        // own and the two buttons keep their labels on one line under it;
+        // below 360px, where they cannot share a row, they stack full-width.
+        <div className="flex flex-wrap items-center justify-end gap-2 w-full">
+          <div className="mr-auto self-center text-sm max-sm:basis-full max-sm:mr-0"
+            style={{ color: saveError ? "#ef4444" : selected.size > 0 ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
             {saveError || footerEffect}
           </div>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>{t("staff.cancel")}</Button>
-          <Button variant="danger" icon={<Trash2 size={13} />} loading={saving}
+          <Button variant="secondary" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" onClick={onClose} disabled={saving}>{t("staff.cancel")}</Button>
+          <Button variant="danger" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" icon={<Trash2 size={13} />} loading={saving}
             disabled={!selected.size} onClick={handleSave}>
             {footerAction}
           </Button>
-        </>
+        </div>
       }
     >
         {/* Search bar */}
@@ -423,7 +437,9 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
             style={{ color: "var(--text-4)" }}>
             {t("staff.colWorker")}
           </div>
-          <div className="w-52 text-[11px] font-bold uppercase tracking-wider flex-shrink-0"
+          {/* A phone prints the role under each name instead of in a 208px
+              column that left the names 80px and ran the two into each other. */}
+          <div className="w-52 text-[11px] font-bold uppercase tracking-wider flex-shrink-0 max-sm:hidden"
             style={{ color: "var(--text-4)" }}>
             {t("staff.colRole")}
           </div>
@@ -464,10 +480,13 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
                     style={{ cursor: "pointer" }}
                   />
                 </div>
-                <div className="flex-1 text-sm font-medium" style={{ color: "var(--text-1)" }}>
+                <div className="flex-1 min-w-0 text-sm font-medium" style={{ color: "var(--text-1)" }}>
                   {tl(w.worker_name)}
+                  <div className="sm:hidden mt-0.5 text-xs font-normal" style={{ color: "var(--text-3)" }}>
+                    {tx(w.job_title) || "—"}
+                  </div>
                 </div>
-                <div className="w-52 text-xs flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                <div className="w-52 text-xs flex-shrink-0 max-sm:hidden" style={{ color: "var(--text-3)" }}>
                   {tx(w.job_title) || "—"}
                 </div>
               </div>
@@ -500,6 +519,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
   const qc = useQueryClient();
   const { auth: tableAuth } = useAuth();
+  // Below `sm` the day reads as a list (StaffPhoneList) and the column filters
+  // move into the «Filtrlar» sheet; from `sm` up the table is exactly as it was.
+  const isPhone = useIsMobile();
 
   // Restored values are old data: merge over the CURRENT shape so a filter
   // added since the visit that saved them can't crash the predicates.
@@ -758,6 +780,50 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
 
   const activeFilter = isFilterActive(filters);
   function setF(key, val) { setFilters(f => ({ ...f, [key]: val })); }
+
+  // The phone's filter sheet: the SAME filters the table's column headers hold
+  // (a phone list has no headers to carry them), over the same state, so a
+  // filter set on one width is the filter on the other. The name stays the
+  // search box above the list.
+  const many = (sel, one) => (sel.length === 1 ? one(sel[0]) : `${sel.length} ${t("filter.selected2")}`);
+  const rngDisp = (min, max) => (min && max ? `${min}–${max}` : min ? `≥ ${min}` : max ? `≤ ${max}` : "");
+  const phoneSections = isPhone ? [
+    { key: "role", icon: Briefcase, label: t("staff.colRole"),
+      active: filters.job_titles.length > 0,
+      display: many(filters.job_titles, (v) => tx(v) || v),
+      onClear: () => setF("job_titles", []),
+      render: () => <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tx(o) || o} /> },
+    ...(showCellCol ? [{ key: "cells", icon: LayoutGrid, label: t("staff.colCell"),
+      active: filters.cells.length > 0,
+      display: many(filters.cells, (v) => cellLabels.get(v) || v),
+      onClear: () => setF("cells", []),
+      render: () => <OptsFilter searchable opts={cellCodes} sel={filters.cells} onChange={v => setF("cells", v)} render={c => cellLabels.get(c) || c} /> }] : []),
+    { key: "schedules", icon: CalendarClock, label: t("staff.colSchedule"),
+      active: filters.schedules.length > 0,
+      display: many(filters.schedules, (v) => tx(v) || v),
+      onClear: () => setF("schedules", []),
+      render: () => <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={v => setF("schedules", v)} render={o => tx(o) || o} /> },
+    { key: "clock", icon: Clock, label: t("staff.colClock"),
+      active: filters.clock.length > 0,
+      display: many(filters.clock, (v) => tx(v) || v || "—"),
+      onClear: () => setF("clock", []),
+      render: () => <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} render={o => tx(o) || o || "—"} /> },
+    { key: "hours", icon: Hourglass, label: t("staff.colHours"),
+      active: !!(filters.hours_min || filters.hours_max),
+      display: rngDisp(filters.hours_min, filters.hours_max),
+      onClear: () => setFilters(f => ({ ...f, hours_min: "", hours_max: "" })),
+      render: () => <RngFilter minV={filters.hours_min} maxV={filters.hours_max} onMin={v => setF("hours_min", v)} onMax={v => setF("hours_max", v)} /> },
+    { key: "early", icon: Sunrise, label: t("staff.colEarly"),
+      active: !!(filters.early_min || filters.early_max),
+      display: rngDisp(filters.early_min, filters.early_max),
+      onClear: () => setFilters(f => ({ ...f, early_min: "", early_max: "" })),
+      render: () => <RngFilter minV={filters.early_min} maxV={filters.early_max} onMin={v => setF("early_min", v)} onMax={v => setF("early_max", v)} /> },
+    { key: "eff", icon: Gauge, label: t("staff.colEffHours"),
+      active: !!(filters.eff_min || filters.eff_max),
+      display: rngDisp(filters.eff_min, filters.eff_max),
+      onClear: () => setFilters(f => ({ ...f, eff_min: "", eff_max: "" })),
+      render: () => <RngFilter minV={filters.eff_min} maxV={filters.eff_max} onMin={v => setF("eff_min", v)} onMax={v => setF("eff_max", v)} /> },
+  ] : null;
   function toggleRole(title) {
     setFilters(f => {
       const has = f.job_titles.includes(title);
@@ -772,6 +838,26 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
     : workers),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [workers, nameAsc, lang]);
+
+  // The rows as the phone list prints them: every cell of the table's row,
+  // formatted exactly as the table's cell formats it.
+  const phoneItems = useMemo(() => (isPhone ? sortedWorkers.map(w => ({
+    key: w.id ?? w.worker_name,
+    name: tl(w.worker_name),
+    task: w.on_task || null,
+    status: S.live ? <LiveStatusChip status={w.status} /> : null,
+    note: S.live && w.moved ? <LiveRowNotes w={w} /> : null,
+    role: tx(w.job_title),
+    cell: w._cell ? { id: w._cell.id, code: w._cell.code } : null,
+    schedule: tx(w.schedule),
+    clock: tx(w.clock_in_out),
+    hours: w.hours_worked != null ? (S.live ? liveN2(w.hours_worked) : w.hours_worked) : null,
+    soFar: !!(S.live && w.so_far),
+    early: w.early_arrival_min,
+    eff: w.effective_hours != null ? (S.live ? liveN2(w.effective_hours) : w.effective_hours) : null,
+  })) : null),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [isPhone, sortedWorkers, lang]);
 
   const exportMutation = useMutation({
     mutationFn: (rows) => exportXlsx(`${S.base}/attendance/export`, {
@@ -828,9 +914,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
     <div>
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-3 max-sm:flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: isPhone ? "var(--text-3)" : "var(--text-4)" }}>
               {t("staff.tabWorkers")}
             </span>
             {/* The cards count the FILTERED rows, so they say so — a narrowed
@@ -847,11 +933,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 max-sm:ml-auto">
           {/* A live day: when its read was taken, and the way to read it from
-              Verifix again — past days too, which no job reads any more. */}
+              Verifix again — past days too, which no job reads any more. The
+              time is printed on a phone too: a list read with no idea how old
+              it is reads as «now». */}
           {S.live && data?.live && (<>
-            <span className="text-[11px] tabular-nums whitespace-nowrap hidden sm:inline"
+            <span className="text-[11px] tabular-nums whitespace-nowrap"
               style={{ color: data.live.read_error ? "var(--status-warn)" : "var(--text-3)" }}
               title={data.live.read_error ? `${t("staffLive.readFailed")}: ${data.live.read_error.message || ""}` : undefined}>
               {data.live.read_error && <AlertTriangle size={11} className="inline-block mr-1 align-[-1px]" />}
@@ -864,20 +952,22 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
               type="button"
               onClick={refreshNow}
               disabled={refresh.isPending}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors whitespace-nowrap"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors whitespace-nowrap max-sm:w-[38px] max-sm:h-[38px] max-sm:px-0 max-sm:justify-center"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)",
                        opacity: refresh.isPending ? 0.7 : 1, cursor: refresh.isPending ? "wait" : "pointer" }}
               title={`${t("staffLive.refreshHint")}${pulledStamp ? ` · ${t("staffLive.readStamp").replace("{t}", pulledStamp)}` : ""}`}
             >
-              <RefreshCw size={12} className={refresh.isPending ? "animate-spin" : ""} />
-              {t("staffClose.refresh")}
+              <RefreshCw size={12} className={`max-sm:w-4 max-sm:h-4 ${refresh.isPending ? "animate-spin" : ""}`} aria-hidden="true" />
+              <span className="max-sm:sr-only">{t("staffClose.refresh")}</span>
             </button>}
           </>)}
           <button
             onClick={() => setIsCollapsed(v => !v)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors max-sm:w-[38px] max-sm:h-[38px] max-sm:px-0 max-sm:justify-center"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
             title={isCollapsed ? t("staff.expand") : t("staff.collapse")}
+            aria-label={isCollapsed ? t("staff.expand") : t("staff.collapse")}
+            aria-expanded={!isCollapsed}
           >
             <ChevronUp
               size={13}
@@ -915,10 +1005,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
         {/* Came-to-work breakdown by role — clickable chips toggle the job_titles filter */}
         {roleCounts.length > 0 && (
           <div className="mt-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: isPhone ? "var(--text-3)" : "var(--text-4)" }}>
               {t("staff.byRole")}
             </span>
-            <div className="flex flex-wrap gap-2 mt-2">
+            {/* On a phone the chips are 34px with an invisible pad reaching
+                into the 10px gap — a 44px target without a taller block. */}
+            <div className="flex flex-wrap gap-2 mt-2 max-sm:gap-y-[10px]">
               {roleCounts.map(([title, count]) => {
                 const active = filters.job_titles.includes(title);
                 return (
@@ -926,14 +1018,17 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
                     key={title}
                     onClick={() => toggleRole(title)}
                     title={tx(title) || title}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
+                    aria-pressed={active}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors max-sm:min-h-[34px] max-sm:text-[13px] max-sm:relative max-sm:before:absolute max-sm:before:inset-x-0 max-sm:before:-inset-y-[5px] max-sm:before:content-['']"
                     style={{
                       background: active ? "var(--brand-bg)" : "var(--bg-inner)",
                       border: `1px solid ${active ? "var(--brand-bg)" : "var(--border-md)"}`,
                       color: active ? "var(--brand-text)" : "var(--text-2)",
                     }}
                   >
-                    <span className="truncate max-w-[160px]">{tx(title) || title}</span>
+                    {/* A phone has no hover for the title: a long job title
+                        wraps inside the chip rather than being cut. */}
+                    <span className="truncate max-w-[160px] max-sm:max-w-none max-sm:whitespace-normal max-sm:overflow-visible max-sm:text-left">{tx(title) || title}</span>
                     <span
                       className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
                       style={{
@@ -961,17 +1056,20 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
         }}
       >
         <div style={{ overflow: "hidden", minHeight: 0, opacity: isCollapsed ? 0 : 1, transition: "opacity 200ms ease" }}>
-      {/* Toolbar */}
-      <div className="px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
-        <div className="flex-1">
+      {/* Toolbar. A phone: the search on a line of its own at 16px (iOS
+          zooms into anything smaller; beside two buttons its placeholder was
+          cut), then the column filters in the «Filtrlar» sheet with their
+          chips, and the export as a 38px icon at the line's end. */}
+      <div className="px-3 py-2 border-b flex items-center gap-2 max-sm:flex-wrap" style={{ borderColor: "var(--border)" }}>
+        <div className="flex-1 min-w-0 max-sm:basis-full">
           <SearchInput
             value={filters.worker}
             onChange={(v) => setF("worker", v)}
             placeholder={t("staff.searchByName")}
-            inputClassName="text-xs pl-8 pr-7 py-1.5"
+            inputClassName="text-xs pl-8 pr-7 py-1.5 max-sm:text-base max-sm:py-[6px]"
           />
         </div>
-        {activeFilter && (
+        {activeFilter && !isPhone && (
           <button onClick={() => setFilters(INIT_FILTERS)}
             className="text-xs px-2.5 py-1.5 rounded-lg flex-shrink-0"
             style={{ color: "var(--text-4)", border: "1px solid var(--border-md)" }}>
@@ -980,11 +1078,15 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
         )}
         <button
           onClick={() => setShowExport(true)} disabled={exporting || allWorkers.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0 max-sm:w-[38px] max-sm:h-[38px] max-sm:px-0 max-sm:justify-center max-sm:order-last max-sm:ml-auto"
           style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-bg)", opacity: allWorkers.length === 0 ? 0.5 : 1 }}
         >
-          <Download size={12} /> {exporting ? t("staff.sending") : t("staff.export")}
+          {exporting && isPhone
+            ? <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            : <Download size={12} className="max-sm:w-4 max-sm:h-4" aria-hidden="true" />}
+          <span className="max-sm:sr-only">{exporting ? t("staff.sending") : t("staff.export")}</span>
         </button>
+        {isPhone && <FilterPanel sections={phoneSections} chipsWrap />}
       </div>
 
       {exportToast.node}
@@ -993,6 +1095,29 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
         <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>
           {activeFilter ? t("staff.noMatch") : t("staff.noData")}
         </div>
+      ) : isPhone ? (
+        <>
+          {/* The list's own head: the name sort the table keeps on its «Xodim»
+              header, and how many rows are listed — on a phone the count sits
+              here instead of floating over the last rows. */}
+          <div className="px-4 py-1 flex items-center justify-between gap-2 border-b"
+            style={{ borderColor: "var(--border)", background: "var(--bg-inner)" }}>
+            <button type="button"
+              onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
+              className="flex items-center gap-1 min-h-[38px] -ml-1 px-1 rounded-md text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-3)" }}
+              aria-label={`${t("staff.colWorker")} — ${t("common.sortAZ")}`}
+              title={t("common.sortAZ")}>
+              {t("staff.colWorker")}
+              {nameAsc === null ? <ChevronsUpDown size={12} aria-hidden="true" />
+                : nameAsc ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
+            </button>
+            <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+              {t("staff.showingRows").replace("{n}", workers.length)}
+            </span>
+          </div>
+          <StaffPhoneList items={phoneItems} label={t("staff.tabWorkers")} />
+        </>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -1133,7 +1258,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
       {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
           animation (fill-mode both) keeps a transform, which would make it the
           containing block for position:fixed and pin the badge to the page. */}
-      {!isCollapsed && createPortal(
+      {!isCollapsed && !isPhone && createPortal(
         <div
           className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
           style={{
@@ -1185,6 +1310,7 @@ export function CellDayView({ date, cellSel, hasCellData }) {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [search, setSearch] = useState("");
+  const isPhone = useIsMobile();
 
   // Same query key + params as the Yacheyka column and the parent's picker
   // feed — one fetch serves all three.
@@ -1293,6 +1419,18 @@ export function CellDayView({ date, cellSel, hasCellData }) {
         <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>
           {allRows.length === 0 ? t("staff.cellNoData") : t("staff.noMatch")}
         </div>
+      ) : isPhone ? (
+        <StaffPhoneList label={t("staff.tabWorkers")} items={rows.map(r => ({
+          key: r.id,
+          name: tl(r.worker_name),
+          status: <CellStatusChip status={r.status} />,
+          role: tx(r.job_title),
+          schedule: tx(r.schedule),
+          clock: r.clock_in && r.clock_out ? `${r.clock_in} - ${r.clock_out}` : (r.day_raw || ""),
+          hours: r.hours_worked != null ? fmtNum(r.hours_worked, 2) : null,
+          early: r.early_arrival_min != null ? fmtNum(r.early_arrival_min, 0) : null,
+          eff: r.effective_hours != null ? fmtNum(r.effective_hours, 2) : null,
+        }))} />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -1358,7 +1496,7 @@ function BulkBtn({ icon: Icon, label, count, fg, bg, bd, solid = false, onClick,
   const off = count === 0;
   return (
     <button onClick={onClick} disabled={off} title={title}
-      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
+      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity max-sm:min-h-[38px] max-sm:text-xs"
       style={{
         background: solid ? fg : bg,
         color:      solid ? "#fff" : fg,
@@ -1401,6 +1539,19 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
   const types = S.live ? DOC_TYPES.filter(dt => dt.enabled) : DOC_TYPES;
   const items = () => [...(menu.current?.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])') || [])];
   useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
+  // The menu hangs off the button's RIGHT edge. On a phone the button starts
+  // its own row, so a 230px menu ran off the screen's left side with every
+  // label cut. Measured as it opens (before paint) and nudged back inside the
+  // viewport; wherever it already fits — every desktop row — nothing moves.
+  // Written straight onto the node: a measurement must not cost a re-render.
+  useLayoutEffect(() => {
+    const el = menu.current;
+    if (!open || !el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 8, vw = document.documentElement.clientWidth;
+    const dx = r.left < pad ? pad - r.left : r.right > vw - pad ? vw - pad - r.right : 0;
+    el.style.transform = dx ? `translateX(${dx}px)` : "";
+  }, [open]);
   function onKey(e) {
     const list = items();
     const i = list.indexOf(document.activeElement);
@@ -1501,13 +1652,15 @@ function YesNoBadge({ approved }) {
 
 // ── 3-state badge for deletion request batches ────────────────────────────────
 
-export function DeletionStatusBadge({ status }) {
+// `long`: a phone list has no «O'tkazilgan» column header above the badge, so
+// an approved request reads «O'tkazilgan» rather than a bare «Ha».
+export function DeletionStatusBadge({ status, long = false }) {
   const { t } = useLang();
   if (status === "approved") {
     return (
       <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-block"
         style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e44" }}>
-        {t("staff.yes")}
+        {long ? t("staff.posted") : t("staff.yes")}
       </span>
     );
   }
@@ -1532,6 +1685,7 @@ export function DeletionStatusBadge({ status }) {
 
 export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const S = useStaffApi();
+  const isPhone = useIsMobile();
   const K = S.rowKey;
   const { t } = useLang();
   const { tl, tx } = useTranslit();
@@ -1675,15 +1829,19 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
       subtitle={`${fmtDateLabel(date)} · ${tl(editDoc?.supervisor_name || attData?.manager_name || "")}`}
       bodyClassName="p-0 flex flex-col"
       footer={
-        <>
-          <span className="mr-auto self-center text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
-            {error || `${selected.size} ${t("staff.employeesWord")} → ${newRole || "…"}`}
+        // One wrapping row: on a phone the summary takes a line of its own
+        // and the buttons keep their labels on one line under it; below 360px,
+        // where two labels cannot share a row, they stack full-width.
+        <div className="flex flex-wrap items-center justify-end gap-2 w-full">
+          <span className="mr-auto self-center text-[11px] max-sm:basis-full max-sm:mr-0 max-sm:text-xs"
+            style={{ color: error ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
+            {error || `${selected.size} ${t("staff.employeesWord")} → ${tx(newRole) || "…"}`}
           </span>
-          <Button variant="secondary" size="sm" onClick={onClose}>{t("staff.cancel")}</Button>
-          <Button size="sm" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
+          <Button variant="secondary" size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" onClick={onClose}>{t("staff.cancel")}</Button>
+          <Button size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
             {isEdit ? t("staff.saveChanges") : t("staff.saveDocument")}
           </Button>
-        </>
+        </div>
       }
     >
         {/* role picker */}
@@ -1762,6 +1920,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 
 export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const S = useStaffApi();
+  const isPhone = useIsMobile();
   const K = S.rowKey;
   const { t } = useLang();
   // `lang` is read only as a memo KEY — see AttendanceTable.
@@ -2077,26 +2236,33 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       subtitle={`${fmtDateLabel(date)} · ${tl(editDoc?.supervisor_name || attData?.manager_name || "")}`}
       bodyClassName="p-0 flex flex-col"
       footer={
-        <>
-          <span className="mr-auto self-center text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
+        // One wrapping row: on a phone the summary takes a line of its own
+        // and the buttons keep their labels on one line under it; below 360px,
+        // where two labels cannot share a row, they stack full-width.
+        <div className="flex flex-wrap items-center justify-end gap-2 w-full">
+          <span className="mr-auto self-center text-[11px] max-sm:basis-full max-sm:mr-0 max-sm:text-xs"
+            style={{ color: error ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
             {error || `${selected.size} ${t("staff.employeesWord")} → ${targetLabel()}`}
           </span>
-          <Button variant="secondary" size="sm" onClick={onClose}>{t("staff.cancel")}</Button>
-          <Button size="sm" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
+          <Button variant="secondary" size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" onClick={onClose}>{t("staff.cancel")}</Button>
+          <Button size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
             {isEdit ? t("staff.saveChanges") : t("staff.saveDocument")}
           </Button>
-        </>
+        </div>
       }
     >
         {/* target picker */}
+        {/* A phone: «Ko'chirish:» and the count share the first line, the
+            picker takes the full width under them — beside the label its
+            placeholder was cut. */}
         <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
-          <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
+          <span className="text-xs font-medium max-sm:order-1" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
           <StyledSelect
             value={target}
             onChange={setTarget}
             options={targetOptions}
             placeholder={t("staff.selectTargetOpt")}
-            className="flex-1 min-w-[220px] text-xs"
+            className="flex-1 min-w-[220px] text-xs max-sm:order-3 max-sm:basis-full max-sm:min-w-0"
             onRemove={isAdmin ? (opt) => { setRemoveError(""); setTaskToRemove(opt.taskName); } : undefined}
             removeTitle={t("staff.removeTaskTooltip")}
           />
@@ -2106,11 +2272,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               onChange={e => setNewTask(e.target.value)}
               placeholder={t("staff.taskNamePlaceholder")}
               autoFocus
-              className="flex-1 min-w-[180px] text-xs px-3 py-2 rounded-lg outline-none"
+              className="flex-1 min-w-[180px] text-xs px-3 py-2 rounded-lg outline-none max-sm:order-4 max-sm:basis-full max-sm:text-base"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
             />
           )}
-          <span className="text-[11px] px-2 py-1 rounded-full" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+          <span className="text-[11px] px-2 py-1 rounded-full max-sm:order-2 max-sm:ml-auto" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
             {selected.size} {t("staff.selected")}
           </span>
         </div>
@@ -2599,7 +2765,9 @@ function DeletionBatchPanel({ doc, isManager, isCreatorRole, delReqMutation, bat
 // ── Filter Bottom Sheet (mobile / tablet < lg) ────────────────────────────────
 // ── Mobile single-date picker (full-screen overlay) ──────────────────────────
 
-function MobileSheetDatePicker({ value, onChange, t }) {
+// `bare`: inside FilterPanel's sheet, which pads its sections and carries its
+// own per-section «Tozalash» — no second padding, no second clear link.
+function MobileSheetDatePicker({ value, onChange, t, bare = false }) {
   const [open, setOpen] = useState(false);
   const [temp, setTemp] = useState("");
   const [view, setView] = useState(() => {
@@ -2655,7 +2823,7 @@ function MobileSheetDatePicker({ value, onChange, t }) {
 
   return (
     <>
-      <div className="px-4 pb-1">
+      <div className={bare ? "" : "px-4 pb-1"}>
         <button
           onClick={openPicker}
           className="w-full rounded-xl px-3 py-2.5 text-sm flex items-center gap-2"
@@ -2668,7 +2836,7 @@ function MobileSheetDatePicker({ value, onChange, t }) {
           <Calendar size={14} style={{ color: "var(--text-4)", flexShrink: 0 }} />
           <span className="flex-1 text-left">{value ? fmtDateLabel(value) : t("staff.selectDate")}</span>
         </button>
-        {value && (
+        {value && !bare && (
           <button
             onClick={() => onChange("")}
             className="mt-1.5 text-xs flex items-center gap-1"
@@ -2702,10 +2870,10 @@ function MobileSheetDatePicker({ value, onChange, t }) {
               <span className="text-base font-semibold" style={{ color: "var(--text-1)" }}>
                 {t("filter.selectDates")}
               </span>
-              <button onClick={() => setOpen(false)}
+              <button onClick={() => setOpen(false)} aria-label={t("ui.modal.close")}
                 className="w-8 h-8 flex items-center justify-center rounded-full"
                 style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                <X size={15} />
+                <X size={15} aria-hidden="true" />
               </button>
             </div>
 
@@ -2732,14 +2900,14 @@ function MobileSheetDatePicker({ value, onChange, t }) {
 
               {/* Month nav */}
               <div className="flex items-center justify-between mb-3">
-                <button onClick={prevMonth} className="p-2.5 rounded-xl" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                  <ChevronLeft size={18} />
+                <button onClick={prevMonth} aria-label={t("staff.m.prevMonth")} className="p-2.5 rounded-xl" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                  <ChevronLeft size={18} aria-hidden="true" />
                 </button>
                 <span className="text-base font-semibold" style={{ color: "var(--text-1)" }}>
                   {t(`cal.m${month}`)} {year}
                 </span>
-                <button onClick={nextMonth} className="p-2.5 rounded-xl" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                  <ChevronRight size={18} />
+                <button onClick={nextMonth} aria-label={t("staff.m.nextMonth")} className="p-2.5 rounded-xl" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                  <ChevronRight size={18} aria-hidden="true" />
                 </button>
               </div>
 
@@ -2957,17 +3125,17 @@ function FilterBottomSheet({
                 {t("staff.clearAll")}
               </button>
             )}
-            <button onClick={onClose}
+            <button onClick={onClose} aria-label={t("ui.modal.close")}
               className="w-8 h-8 flex items-center justify-center rounded-full"
               style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-              <X size={15} />
+              <X size={15} aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Scrollable body */}
         <div style={{ overflowY: "auto", flex: 1 }}>
-          <SheetSection label={t("staff.selectDate")}>
+          <SheetSection label={t("staff.fDate")}>
             <MobileSheetDatePicker value={dateFilter} onChange={setDateFilter} t={t} />
           </SheetSection>
 
@@ -2994,7 +3162,7 @@ function FilterBottomSheet({
             <SheetOpts opts={distinctApprovers} sel={approverFilter} onChange={setApproverFilter} render={v => tl(v)} />
           </SheetSection>
 
-          <SheetSection label={t("staff.selectCreatedDate")}>
+          <SheetSection label={t("staff.colCreatedAt")}>
             <MobileSheetDatePicker value={createdFilter} onChange={setCreatedFilter} t={t} />
           </SheetSection>
         </div>
@@ -3121,6 +3289,28 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     else if (sortDir === "asc") { setSortDir("desc"); }
     else { setSortCol(null); setSortDir("asc"); }
   }
+  // A phone lists the requests (no header row to sort from), so the same sort
+  // state is driven by a column pick and a direction button. No column picked
+  // is the table's own default: newest filed first.
+  const isPhone = useIsMobile();
+  const effSortCol = sortCol ?? "created";
+  const effSortDir = sortCol ? sortDir : "desc";
+  function pickSortCol(col) { setSortCol(col); setSortDir(col === "created" ? "desc" : "asc"); }
+  function flipSortDir() {
+    if (!sortCol) { setSortCol("created"); setSortDir("asc"); }
+    else setSortDir(d => (d === "asc" ? "desc" : "asc"));
+  }
+  // The table's sortable columns, in its own order of importance; «Brigadir»
+  // only where the table carries that column.
+  const phoneSortOpts = [
+    { value: "created",  label: t("staff.colCreatedAt") },
+    { value: "date",     label: t("staff.fDate") },
+    ...(crossUnit ? [{ value: "supervisor", label: t("staff.colSupervisor") }] : []),
+    { value: "type",     label: t("staff.colDocType") },
+    { value: "status",   label: t("staff.colPosted") },
+    { value: "approver", label: t("staff.colApprovedBy") },
+  ];
+  const phoneSortValue = phoneSortOpts.some(o => o.value === effSortCol) ? effSortCol : "created";
   const [editingBatch, setEditingBatch] = useState(null);
 
   const invalidate = () => {
@@ -3344,6 +3534,60 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   if (isLoading) return <div className="rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}><SkeletonTable rows={6} cols={6} /></div>;
   if (documents.length === 0) return <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("staff.noDocuments")}</div>;
 
+  // The actions under an opened request — ONE block for the table's expanded
+  // row and the phone list's, read off the same rights as the bulk bar. On a
+  // phone its buttons are 38px: a thumb, not a pointer.
+  function renderActions(doc) {
+    const { isDeletion, isCreatorRole,
+            canApprove, canCancel, canEdit, canReject, canDelete } = rowRights(doc);
+    return (
+      <div className="flex flex-col gap-2 w-full max-sm:[&_button]:min-h-[38px] max-sm:[&_button]:text-xs">
+        {/* Compact worker list for deletion rows */}
+        {isDeletion && (
+          <div className="flex flex-wrap gap-1">
+            {(doc.workers || []).map(w => (
+              <span key={w.id} className="text-[11px] px-2 py-0.5 rounded-full"
+                style={{
+                  background: w.status === "approved" ? "#22c55e22" : w.status === "rejected" ? "#ef444422" : "var(--bg-card)",
+                  color:      w.status === "approved" ? "#16a34a"   : w.status === "rejected" ? "#ef4444"   : "var(--text-2)",
+                  border: "1px solid var(--border-md)",
+                }}>
+                {tl(w.worker_name)}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {!isDeletion && <ActionBtn icon={Eye} label={t("staff.view")} onClick={() => setViewId(doc.id)} />}
+          {canEdit && <ActionBtn icon={Pencil} label={t("staff.edit")} onClick={() => isDeletion
+            ? setEditingBatch({ managerId: doc.manager_id, managerName: doc.manager_name || doc.supervisor_name, date: doc.date, preSelected: (doc.workers || []).filter(w => w.status === "pending").map(S.rowKey), batchId: doc.batch_id })
+            : onEdit(doc)} />}
+          {canApprove && <ActionBtn icon={Check}  label={t("staff.post")}   color="#16a34a"
+            loading={busyKey === `${rowKey(doc)}:post`} disabled={!!busyKey}
+            onClick={() => runAction(`${rowKey(doc)}:post`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "approve" }) : single(doc.id, "approve"))} />}
+          {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706"
+            loading={busyKey === `${rowKey(doc)}:unpost`} disabled={!!busyKey}
+            onClick={() => runAction(`${rowKey(doc)}:unpost`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel"))} />}
+          {/* Refusing and erasing never share an icon: ✕ is a
+              decision that keeps the record, 🗑 destroys it. */}
+          {/* A unit pulling its OWN request back is withdrawing it,
+              not refusing somebody else's — same call, honest label. */}
+          {canReject  && <ActionBtn icon={XCircle} color="#ef4444"
+            label={isDeletion && isCreatorRole ? t("staff.withdraw") : t("staff.reject")}
+            loading={busyKey === `${rowKey(doc)}:reject`} disabled={!!busyKey}
+            onClick={() => runAction(`${rowKey(doc)}:reject`, () => isDeletion
+              ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" })
+              : single(doc.id, "reject"))} />}
+          {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444"
+            loading={busyKey === `${rowKey(doc)}:delete`} disabled={!!busyKey}
+            onClick={() => runAction(`${rowKey(doc)}:delete`, () => single(doc.id, "delete"))} />}
+          {!isDeletion && <ActionBtn icon={History} label={t("staff.history")} onClick={() => setHistoryId(doc.id)} />}
+        </div>
+      </div>
+    );
+  }
+
   const thCls = "px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]";
 
   const anyFilterActive = !!dateFilter || !!createdFilter || supervisorFilter.length > 0 ||
@@ -3353,6 +3597,39 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     setDateFilter(""); setCreatedFilter(""); setSupervisorFilter([]); setTypeFilter([]);
     setApproverFilter([]); setStatusFilter("all");
   }
+
+  // A phone files the same six filters under FilterPanel — the sheet the
+  // Workers tab opens, and a chip per active filter beside the trigger, so
+  // what narrows the list is on screen instead of a bare count.
+  const docTypeName = id => (DOC_TYPE_TKEY[id] ? t(DOC_TYPE_TKEY[id]) : id);
+  const manyOf = (arr, render) => (arr.length === 1 ? render(arr[0]) : `${arr.length} ${t("filter.selected2")}`);
+  const STATUS_OPTS = [
+    { value: "all",     label: t("staff.all") },
+    { value: "pending", label: t("staff.pending") },
+    { value: "yes",     label: t("staff.yes") },
+    { value: "no",      label: t("staff.rejected") },
+  ];
+  const reqSections = isPhone ? [
+    { key: "date", icon: Calendar, label: t("staff.fDate"),
+      active: !!dateFilter, display: fmtDateLabel(dateFilter), onClear: () => setDateFilter(""),
+      render: () => <MobileSheetDatePicker bare value={dateFilter} onChange={setDateFilter} t={t} /> },
+    ...(crossUnit ? [{ key: "sup", icon: Users, label: t("staff.colSupervisor"),
+      active: supervisorFilter.length > 0, display: manyOf(supervisorFilter, v => tl(v)), onClear: () => setSupervisorFilter([]),
+      render: () => <OptsFilter opts={distinctSupervisors} sel={supervisorFilter} onChange={setSupervisorFilter} render={v => tl(v)} /> }] : []),
+    { key: "type", icon: FileText, label: t("staff.colDocType"),
+      active: typeFilter.length > 0, display: manyOf(typeFilter, docTypeName), onClear: () => setTypeFilter([]),
+      render: () => <OptsFilter opts={distinctTypes} sel={typeFilter} onChange={setTypeFilter} render={docTypeName} /> },
+    { key: "status", icon: CheckCircle, label: t("staff.colPosted"),
+      active: statusFilter !== "all", display: STATUS_OPTS.find(o => o.value === statusFilter)?.label ?? "",
+      onClear: () => setStatusFilter("all"),
+      render: ({ close }) => <PickFilter opts={STATUS_OPTS} value={statusFilter} onChange={setStatusFilter} close={close} /> },
+    { key: "appr", icon: UserCheck, label: t("staff.colApprovedBy"),
+      active: approverFilter.length > 0, display: manyOf(approverFilter, v => tl(v)), onClear: () => setApproverFilter([]),
+      render: () => <OptsFilter opts={distinctApprovers} sel={approverFilter} onChange={setApproverFilter} render={v => tl(v)} /> },
+    { key: "created", icon: CalendarClock, label: t("staff.colCreatedAt"),
+      active: !!createdFilter, display: fmtDateLabel(createdFilter), onClear: () => setCreatedFilter(""),
+      render: () => <MobileSheetDatePicker bare value={createdFilter} onChange={setCreatedFilter} t={t} /> },
+  ] : null;
 
   return (
     <div className="space-y-3">
@@ -3401,24 +3678,27 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
 
         {/* Selected-count chip — appears inside the bar once rows are selected */}
         {selected.size > 0 && (
-          <div className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg"
+          <div className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg max-sm:min-h-[38px] max-sm:py-0 max-sm:pr-0.5"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
-            <span className="text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
+            <span className="text-[11px] font-semibold max-sm:text-xs" style={{ color: "var(--text-2)" }}>
               {selected.size} {t("staff.selected")}
             </span>
-            <button onClick={() => setSelected(new Set())}
-              className="flex items-center justify-center w-4 h-4 rounded" style={{ color: "var(--text-4)" }}>
-              <X size={13} />
+            <button onClick={() => setSelected(new Set())} aria-label={t("staff.clearSelection")}
+              className="flex items-center justify-center w-4 h-4 rounded max-sm:w-8 max-sm:h-8"
+              style={{ color: isPhone ? "var(--text-3)" : "var(--text-4)" }}>
+              <X size={13} aria-hidden="true" />
             </button>
           </div>
         )}
 
         <div className="flex-1" />
 
-        {/* Filters — single button. Mobile (<lg): bottom sheet · Desktop (lg+): dropdown */}
+        {/* Filters — phone (<sm): FilterPanel · tablet (sm–lg): the bottom
+            sheet · desktop (lg+): the dropdown */}
+        {isPhone && <FilterPanel sections={reqSections} chipsWrap />}
         <button
           onClick={() => setSheetOpen(true)}
-          className="flex lg:hidden items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors"
+          className="flex max-sm:hidden lg:hidden items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors"
           style={{
             background: "var(--bg-card)",
             border: `1px solid ${anyFilterActive ? "var(--brand)" : "var(--border-md)"}`,
@@ -3486,6 +3766,107 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
         />
       </div>
 
+      {isPhone ? (
+        // A phone lists the requests: six columns scrolled sideways put «who
+        // approved» and «created» behind a swipe nobody makes. Each request
+        // reads top to bottom — what it is and where it stands, then its day,
+        // unit, people and target, then who approved it and when it was filed —
+        // and a tap opens the same actions as the table's expanded row.
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border-md)", background: "var(--bg-card)" }}>
+          {/* The table's header row on a phone: select-all, and the sort its
+              column headers carry — a column, then the direction. */}
+          <div className="flex items-center border-b" style={{ borderColor: "var(--border)", background: "var(--bg-inner)" }}>
+            <label className="w-11 shrink-0 self-stretch flex items-center justify-center cursor-pointer">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                aria-label={t("staff.m.selectAll")}
+                className="w-[18px] h-[18px] cursor-pointer" style={{ accentColor: "var(--brand)" }} />
+            </label>
+            <div className="flex-1 min-w-0 flex items-center justify-end gap-2 py-1.5 pr-3">
+              <span aria-hidden="true" className="text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap max-[359px]:hidden"
+                style={{ color: "var(--text-3)" }}>
+                {t("staff.m.sortBy")}
+              </span>
+              <StyledSelect
+                value={phoneSortValue}
+                onChange={pickSortCol}
+                options={phoneSortOpts}
+                className="min-w-0"
+                triggerClassName="px-2.5 py-1.5 text-[13px] min-h-[38px]"
+                ariaLabel={`${t("staff.m.sortBy")}: ${phoneSortOpts.find(o => o.value === phoneSortValue)?.label ?? ""}`}
+              />
+              <button type="button" onClick={flipSortDir}
+                className="w-[38px] h-[38px] shrink-0 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+                aria-label={effSortDir === "asc" ? t("staff.m.sortAsc") : t("staff.m.sortDesc")}
+                title={effSortDir === "asc" ? t("staff.m.sortAsc") : t("staff.m.sortDesc")}>
+                {effSortDir === "asc" ? <ArrowUpNarrowWide size={17} aria-hidden="true" /> : <ArrowDownWideNarrow size={17} aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
+          <ul aria-label={t("staff.tabRequests")}>
+            {rows.map(doc => {
+              const { isDeletion, isExchange, st } = rowRights(doc);
+              const rKey = rowKey(doc);
+              const expanded = expandedId === rKey;
+              const typeLabel = DOC_TYPE_TKEY[doc.doc_type] ? t(DOC_TYPE_TKEY[doc.doc_type]) : (doc.doc_type_label || doc.doc_type);
+              const target = isDeletion ? null
+                : isExchange ? `→\u00A0${doc.target_type === "supervisor" ? tl(doc.target_manager_name) : doc.task_name}`
+                : tx(doc.new_role);
+              return (
+                <li key={rKey} className="border-b last:border-b-0"
+                  style={{ borderColor: "var(--border)", background: expanded ? "var(--bg-inner)" : "transparent" }}>
+                  <div className="flex">
+                    {/* The checkbox's tap area is the whole left strip of the
+                        request, not the 18px box. */}
+                    <label className="w-11 shrink-0 flex justify-center pt-[15px] cursor-pointer">
+                      <input type="checkbox" checked={selected.has(rKey)} onChange={() => toggleSel(rKey)}
+                        aria-label={`${typeLabel} · ${fmtDateLabel(doc.date)}`}
+                        className="w-[18px] h-[18px] cursor-pointer" style={{ accentColor: "var(--brand)" }} />
+                    </label>
+                    <button type="button" onClick={() => setExpandedId(expanded ? null : rKey)} aria-expanded={expanded}
+                      className="flex-1 min-w-0 text-left py-3 pr-3">
+                      {/* What it is, where it stands, and the way in. */}
+                      <span className="flex items-start gap-2">
+                        <span className="flex-1 min-w-0 text-[15px] leading-snug font-medium break-words" style={{ color: "var(--text-1)" }}>
+                          {typeLabel}
+                        </span>
+                        <span className="shrink-0 leading-none pt-px">
+                          <DeletionStatusBadge status={st} long />
+                        </span>
+                        <ChevronDown size={18} aria-hidden="true" className="shrink-0 transition-transform"
+                          style={{ color: "var(--text-3)", transform: expanded ? "rotate(180deg)" : "none" }} />
+                      </span>
+                      {/* The table's «Sana · Brigadir · Hujjat turi» detail. */}
+                      <Dotted as="span"
+                        className="block mt-1 text-[13px] leading-5 break-words"
+                        style={{ color: "var(--text-2)" }}
+                        parts={[
+                          <span className="tabular-nums">{fmtDateLabel(doc.date)}</span>,
+                          crossUnit && doc.supervisor_name && <span>{tl(doc.supervisor_name)}</span>,
+                          <span className="tabular-nums whitespace-nowrap">{doc.employee_count} {t("daily.emp")}</span>,
+                          target && <span>{target}</span>,
+                        ]} />
+                      {/* «Tasdiqlagan» and «Yaratilgan», each named — on a phone
+                          there is no column header above them. A refused
+                          request names who refused it: the column holds that
+                          person too. */}
+                      <span className="block mt-1 text-[13px] leading-5 break-words" style={{ color: "var(--text-3)" }}>
+                        {doc.approved_by_name && (
+                          <span className="block">
+                            {t(st === "rejected" ? "staff.m.rejectedBy" : "staff.colApprovedBy")}: {tl(doc.approved_by_name)}
+                          </span>
+                        )}
+                        <span className="block">{t("staff.colCreatedAt")}: {fmtCreatedAt(doc.created_at, t, lang)}</span>
+                      </span>
+                    </button>
+                  </div>
+                  {expanded && <div className="pl-11 pr-4 pb-3">{renderActions(doc)}</div>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : (
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border-md)", background: "var(--bg-card)" }}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -3543,8 +3924,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             <tbody>
               {rows.map(doc => {
                 // The row's buttons and the bulk bar read ONE rights function.
-                const { isDeletion, isExchange, isCreatorRole,
-                        canApprove, canCancel, canEdit, canReject, canDelete } = rowRights(doc);
+                const { isDeletion, isExchange } = rowRights(doc);
                 const rKey    = rowKey(doc);
                 const expanded   = expandedId === rKey;
                 const colSpan = crossUnit ? 7 : 6;
@@ -3578,50 +3958,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                     {expanded && (
                       <tr style={{ background: "var(--bg-inner)" }}>
                         <td colSpan={colSpan} className="px-3 py-2">
-                          <div className="flex flex-col gap-2 w-full">
-                            {/* Compact worker list for deletion rows */}
-                            {isDeletion && (
-                              <div className="flex flex-wrap gap-1">
-                                {(doc.workers || []).map(w => (
-                                  <span key={w.id} className="text-[11px] px-2 py-0.5 rounded-full"
-                                    style={{
-                                      background: w.status === "approved" ? "#22c55e22" : w.status === "rejected" ? "#ef444422" : "var(--bg-card)",
-                                      color:      w.status === "approved" ? "#16a34a"   : w.status === "rejected" ? "#ef4444"   : "var(--text-2)",
-                                      border: "1px solid var(--border-md)",
-                                    }}>
-                                    {tl(w.worker_name)}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {/* Action buttons */}
-                            <div className="flex flex-wrap items-center gap-2">
-                              {!isDeletion && <ActionBtn icon={Eye} label={t("staff.view")} onClick={() => setViewId(doc.id)} />}
-                              {canEdit && <ActionBtn icon={Pencil} label={t("staff.edit")} onClick={() => isDeletion
-                                ? setEditingBatch({ managerId: doc.manager_id, managerName: doc.manager_name || doc.supervisor_name, date: doc.date, preSelected: (doc.workers || []).filter(w => w.status === "pending").map(S.rowKey), batchId: doc.batch_id })
-                                : onEdit(doc)} />}
-                              {canApprove && <ActionBtn icon={Check}  label={t("staff.post")}   color="#16a34a"
-                                loading={busyKey === `${rowKey(doc)}:post`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:post`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "approve" }) : single(doc.id, "approve"))} />}
-                              {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706"
-                                loading={busyKey === `${rowKey(doc)}:unpost`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:unpost`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel"))} />}
-                              {/* Refusing and erasing never share an icon: ✕ is a
-                                  decision that keeps the record, 🗑 destroys it. */}
-                              {/* A unit pulling its OWN request back is withdrawing it,
-                                  not refusing somebody else's — same call, honest label. */}
-                              {canReject  && <ActionBtn icon={XCircle} color="#ef4444"
-                                label={isDeletion && isCreatorRole ? t("staff.withdraw") : t("staff.reject")}
-                                loading={busyKey === `${rowKey(doc)}:reject`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:reject`, () => isDeletion
-                                  ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" })
-                                  : single(doc.id, "reject"))} />}
-                              {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444"
-                                loading={busyKey === `${rowKey(doc)}:delete`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:delete`, () => single(doc.id, "delete"))} />}
-                              {!isDeletion && <ActionBtn icon={History} label={t("staff.history")} onClick={() => setHistoryId(doc.id)} />}
-                            </div>
-                          </div>
+                          {renderActions(doc)}
                         </td>
                       </tr>
                     )}
@@ -3632,6 +3969,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
           </table>
         </div>
       </div>
+      )}
 
       {viewId    && <DocumentViewModal    docId={viewId}    onClose={() => setViewId(null)} />}
       {historyId && <DocumentHistoryModal docId={historyId} onClose={() => setHistoryId(null)} />}
@@ -4158,6 +4496,7 @@ function buildMonthCells(year, month) {
 }
 
 function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
+  const isPhone = useIsMobile();
   const S = useStaffApi();
   const qc = useQueryClient();
   const { auth } = useAuth();
@@ -4270,14 +4609,18 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
           <SupervisorSelect value={selManagerId} onChange={setSelManagerId} supervisors={supervisors} />
         )}
         <div className="flex items-center gap-1 ml-auto">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
-            <ChevronLeft size={15} />
+          <button onClick={prevMonth} aria-label={t("staff.m.prevMonth")}
+            className="p-1.5 rounded-lg max-sm:p-0 max-sm:w-[38px] max-sm:h-[38px] max-sm:flex max-sm:items-center max-sm:justify-center"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+            <ChevronLeft size={15} aria-hidden="true" />
           </button>
           <div className="text-sm font-semibold px-2 min-w-[140px] text-center" style={{ color: "var(--text-1)" }}>
             {t(`cal.m${view.month}`)} {view.year}
           </div>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
-            <ChevronRight size={15} />
+          <button onClick={nextMonth} aria-label={t("staff.m.nextMonth")}
+            className="p-1.5 rounded-lg max-sm:p-0 max-sm:w-[38px] max-sm:h-[38px] max-sm:flex max-sm:items-center max-sm:justify-center"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+            <ChevronRight size={15} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -4297,7 +4640,7 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
         <div className="rounded-xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
           <div className="grid grid-cols-7 gap-1.5 mb-1.5">
             {WEEKDAY_INDEXES.map((i) => (
-              <div key={i} className="text-center text-[10px] font-semibold uppercase" style={{ color: "var(--text-4)" }}>{t(`cal.d${i}`)}</div>
+              <div key={i} className="text-center text-[10px] font-semibold uppercase max-sm:text-[11px]" style={{ color: isPhone ? "var(--text-3)" : "var(--text-4)" }}>{t(`cal.d${i}`)}</div>
             ))}
           </div>
           <div className="grid grid-cols-7 gap-1.5">
@@ -4393,7 +4736,7 @@ function OlderRequestsLine({ docs, onOpen, liveFrom, live = false }) {
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
       <span>{fillT(t(live ? "staffClose.livePending" : "staffClose.olderPending"), { n: docs.length })}</span>
       {target && (
-        <Button size="sm" variant="secondary" onClick={() => onOpen(target)}>
+        <Button size="sm" variant="secondary" onClick={() => onOpen(target)} className="max-sm:min-h-[38px]">
           {fillT(t("staffClose.olderOpen"), { date: target.split("-").reverse().join(".") })}
         </Button>
       )}
@@ -4432,6 +4775,7 @@ function readStaffLink(q) {
 // live, /staff-live, was retired on 2026-10-06; its route redirects here.
 export default function Staff() {
   const B = STAFF_API;
+  const isPhone = useIsMobile();
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -4768,6 +5112,7 @@ export default function Staff() {
       <div className="mb-6">
         <SegmentedToggle
           asTabs
+          size={isPhone ? "lg" : "md"}
           value={tab}
           onChange={changeTab}
           options={[
@@ -4969,8 +5314,8 @@ export default function Staff() {
           managerId={supervisorManagerId}
           managerName={
             role === "supervisor"
-              ? (auth?.name || "")
-              : (supervisors.find(s => s.manager_id === selectedManagerId)?.name || "")
+              ? (auth?.full_name || "")
+              : (supervisors.find(s => s.manager_id === selectedManagerId)?.full_name || "")
           }
           date={showDeleteModal}
           isAdmin={canDeleteRowsDirectly}

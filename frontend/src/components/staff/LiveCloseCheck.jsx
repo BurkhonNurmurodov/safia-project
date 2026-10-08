@@ -56,7 +56,7 @@ function NoCheckoutRow({ row, managerId, date, onDone, canFix }) {
   return (
     <li className="py-2 border-t first:border-t-0" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }}>{tl(row.worker_name)}</span>
+        <span className="text-xs font-medium truncate max-sm:whitespace-normal max-sm:overflow-visible max-sm:break-words" style={{ color: "var(--text-1)" }}>{tl(row.worker_name)}</span>
         <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
           {fill(t("staffClose.cameAt"), { t: row.clock_in || "—" })}
         </span>
@@ -69,12 +69,14 @@ function NoCheckoutRow({ row, managerId, date, onDone, canFix }) {
       )}
       {canFix && (
         <div className="flex flex-wrap items-center gap-2 mt-1.5">
-          <TimeField value={time} onChange={setTime} clearable={false} className="w-[120px]"
+          {/* A phone: a field wide enough for «08:00 PM» at 16px, and 38px
+              buttons beside it. */}
+          <TimeField value={time} onChange={setTime} clearable={false} className="w-[120px] max-sm:w-[150px]"
             aria-label={t("staffClose.exitAt")} />
           <Button size="sm" variant="primary" disabled={!time || !!busy} loading={busy === "exit"}
-            onClick={() => send("exit")}>{t("staffClose.setExit")}</Button>
+            className="max-sm:min-h-[38px]" onClick={() => send("exit")}>{t("staffClose.setExit")}</Button>
           <Button size="sm" variant="danger" tint disabled={!!busy} loading={busy === "absent"}
-            onClick={() => send("absent")}>{t("staffClose.absent")}</Button>
+            className="max-sm:min-h-[38px]" onClick={() => send("absent")}>{t("staffClose.absent")}</Button>
         </div>
       )}
       {err && <div className="text-[11px] mt-1" style={{ color: "var(--status-bad)" }}>{err}</div>}
