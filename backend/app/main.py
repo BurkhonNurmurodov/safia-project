@@ -194,6 +194,7 @@ async def lifespan(app: FastAPI):
         fix_nodirjon_leader_unit,
         move_sanjarbek_checklist_shift,
         fix_cell_9123_oct05,
+        repair_live_exchanges_oct08,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -692,6 +693,11 @@ async def lifespan(app: FastAPI):
     # it lands. Remove this line, `startup.fix_cell_9123_oct05` and
     # `services/cell_day_fix_oct05.py` once its flag reads «done».
     fix_cell_9123_oct05()
+    # ⚠ TEMPORARY one-shot (2026-10-08) — the exit-minute exchanges of 6–7 Oct
+    # become whole-day moves and the closed live days of 6–7 Oct are re-copied
+    # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
+    # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
+    repair_live_exchanges_oct08()
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the

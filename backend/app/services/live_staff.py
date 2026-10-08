@@ -347,16 +347,31 @@ def person(ctx: Ctx, eid: str) -> Worker:
         E = out or max(ctx.now, C)
         # A move timed at or after the end of the worker's day never happened —
         # they had gone (a check-out Verifix filled in earlier than the
-        # document's time). It is no stint of zero hours on the target.
-        timed = [m for m in timed if m["T"] < E]
-        points = [(C, start_unit, start_task)]
-        for m in timed:
-            points.append((m["T"], m["target"], m["task"]))
+        # document's time). It is no stint of zero hours on the target. Read to
+        # the MINUTE once the worker has left: a document's time carries no
+        # seconds, so «17:01» against a check-out at 17:01:40 is the minute the
+        # worker went home, not forty seconds on the target (the 6–7 Oct
+        # exit-minute moves, 2026-10-08). While they are still inside the cut
+        # is now itself, so a move at the current minute stands.
+        cut = out.replace(second=0, microsecond=0) if out is not None else E
+        timed = [m for m in timed if m["T"] < cut]
+        # A move timed BEFORE the clock-in lands AT it: a worker given away
+        # before they arrived was given from their arrival (until 2026-10-08
+        # the move's point sorted ahead of the clock-in's, its stint was empty
+        # and the sender kept the whole day — 14 worker-moves on 6–7 Oct).
+        # Points are ordered by time, then by the order they were listed in,
+        # and at one instant only the LAST point stands: the others would be
+        # stints of no length.
+        points = [(C, 0, start_unit, start_task)]
+        for i, m in enumerate(timed, 1):
+            points.append((max(m["T"], C), 2 * i, m["target"], m["task"]))
             if m["R"] is not None:
-                points.append((m["R"], m["sender"], None))
-        points.sort(key=lambda x: x[0])
-        for at, u, tk in points:
-            stints.append(Stint(start=min(max(at, C), E), unit=u, task=tk))
+                points.append((max(m["R"], C), 2 * i + 1, m["sender"], None))
+        points.sort(key=lambda x: (x[0], x[1]))
+        for j, (at, _, u, tk) in enumerate(points):
+            if j + 1 < len(points) and points[j + 1][0] == at:
+                continue
+            stints.append(Stint(start=min(at, E), unit=u, task=tk))
         for i, s in enumerate(stints):
             s.end = stints[i + 1].start if i + 1 < len(stints) else E
         # The day's hours shared in proportion to each stint's clock time (see

@@ -7556,8 +7556,9 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   rest»: at check-out «Отработано» (lunch deducted) replaces the clock, and
   letting the last stint absorb that flipped the name back at the moment of the
   check-out. The 2-hour floor (under 2 h on every side counts for nobody) is
-  judged only once the worker has LEFT. A move timed after the worker went out
-  is refused (and ignored by the engine).
+  judged only once the worker has LEFT. A move timed in or after the minute the
+  worker went out is refused at filing and void in the engine (the retrace
+  bullet below).
 - **The unit where the worker IS files the next move** (the operator's pick):
   `live_staff.where_at` is THE answer to «where is this worker at T». The
   exchange dialog lists the workers standing in the unit now — named rows and
@@ -7584,6 +7585,32 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   `.gitea/workflows/deploy.yaml`, the `diag_cell_9123` precedent; it sits
   under deploy/ so adding it restarted nothing. Delete the script and the
   step together once the retrace is done.
+  **The retrace (2026-10-08, the operator's «fix them on your own») found 17
+  worker-days still counted on the sending brigadir, in two shapes, and fixed
+  both.** (1) A move timed in the minute the worker clocked out (№21 and №23
+  on 6 Oct, №70 on 7 Oct — a document carries minutes, the exit carries
+  seconds, so «17:01» against 17:01:40 was forty seconds on the receiver):
+  `person` now voids a move at or after the exit MINUTE once the worker has
+  left (a move at the current minute of somebody still inside stands), and
+  `_check_times` refuses it at filing (`>=` the exit minute). (2) A move timed
+  BEFORE the worker's own clock-in (№31, №32, №46, №80, №75 — 14 worker-moves:
+  a batch filed at 08:00 for workers arriving 08:01–08:10): the move's point
+  sorted ahead of the clock-in's, its stint was empty and the sender kept the
+  whole day; `person` now lands such a move AT the arrival — points are ordered
+  by time, then by listing order, and at one instant only the LAST stands — so
+  it reads exactly as a whole-day move, while `_check_times` still refuses only
+  a time before EVERY picked worker's arrival. An engine change reaches a
+  CLOSED copy only through a re-copy, so `services/live_exchange_repair_oct08.py`
+  (TEMPORARY, `startup.repair_live_exchanges_oct08`, flag
+  `live_exchange_repair_2026_10_08_v1`, inline at boot in both entrypoints)
+  rewrote the three exit-minute documents to whole-day moves — each only while
+  the stored read still proved every worker's move void — and re-copied every
+  closed unit of 6 and 7 Oct through `live_projection.refresh`; its record is
+  app setting `live_exchange_repair_2026_10_08`, DMed once to the operator
+  (the `_dm` flag; a failed DM is re-sent at the next boot, never re-run).
+  The task moves at the exit minute (№19, №35, №55 — «sent home» the minute
+  the worker left) were left as filed. Delete the module, the startup
+  function and both calls once the flag and its `_dm` flag read «done».
 - **Arrivals come cell-less** and are placed on «Yacheykalar» (`LivePlacement`,
   a split with `hc_weight`); **the day close is refused while anybody is
   inside, on a break or still due** (incl. people standing here under another

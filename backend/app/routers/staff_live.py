@@ -961,10 +961,14 @@ def _check_times(ctx, unit_shift: Optional[int], rows: list, ttime: Optional[str
         raise HTTPException(status_code=400, detail=f"«{ttime}» — tanlangan xodimlar hali kelmagan vaqt")
     # A worker who is OUT (gone, or out on a break) cannot be moved from a
     # time after they went out — /staff clamps such a time silently and the
-    # document changes nothing. Once they are back, file it then.
+    # document changes nothing. Once they are back, file it then. The minute
+    # they went out counts as after: a document's time has no seconds, and a
+    # move «17:01» for a worker gone at 17:01:40 is one the engine voids (the
+    # 6–7 Oct exit-minute moves, 2026-10-08).
     for r in rows:
         p = live_staff.person(ctx, r["employee_id"]).p
-        if p["status"] in ("left", "break") and p["out"] is not None and T > p["out"]:
+        if p["status"] in ("left", "break") and p["out"] is not None \
+                and T >= p["out"].replace(second=0, microsecond=0):
             raise HTTPException(status_code=400, detail=(
                 f"{r['worker_name']}: {live_staff._hm(p['out'])} da chiqib ketgan — "
                 f"«{ttime}» dan ko'chirib bo'lmaydi"))

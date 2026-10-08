@@ -9630,6 +9630,33 @@ def _cell_9123_fix_pass() -> bool:
         db.close()
 
 
+# ── the live-day exchange repair (2026-10-08) ─────────────────────────────────
+#
+# ⚠ TEMPORARY. `services/live_exchange_repair_oct08.py` is the whole of it;
+# delete it, this function and both entrypoint calls once its flag reads
+# «done» and the DM flag is set.
+
+def repair_live_exchanges_oct08() -> None:
+    """Boot, inline (before /health, so the deploy's own report step reads the
+    repaired state): the three exit-minute exchanges of 6–7 Oct become
+    whole-day moves and every closed live unit-day of 6 and 7 Oct is re-copied
+    under the engine as it stands. Never raises."""
+    try:
+        from app.services import live_exchange_repair_oct08 as fx
+        db = SessionLocal()
+        try:
+            rec = fx.run(db)
+            if rec is not None:
+                print(f"[startup] live exchange repair: {len(rec['docs'])} documents checked, "
+                      + ", ".join(f"{d}: {i['rewritten']} of {i['closed']} copies rewritten"
+                                  for d, i in rec["days"].items()))
+            fx.send_dm(db, UNPRICED_DM_CHAT)
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] live exchange repair skipped: {exc}")
+
+
 def _nodirjon_fix_dm(text: str) -> None:
     try:
         import requests
