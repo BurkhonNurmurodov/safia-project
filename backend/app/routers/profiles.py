@@ -369,9 +369,12 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str],
 
 
 def _release_leader_cells(db: Session, leader_id: int) -> None:
-    """Unassign every cell owned by the profile (delete + role switch away from
-    leader). The rows stay — cell metadata outlives its owner."""
+    """Unassign every cell the profile runs AND every cell it owns (delete +
+    role switch away from leader) — both slots name a leader. The rows stay:
+    cell metadata outlives its people."""
     db.query(Cell).filter_by(leader_id=leader_id).update({"leader_id": None})
+    db.query(Cell).filter_by(owner_id=leader_id).update(
+        {"owner_id": None, "owner_meta": None})
 
 
 # ── What a profile delete actually reaches ────────────────────────────────────
@@ -444,7 +447,11 @@ def _leader_footprint(db: Session, leader_id: int) -> dict:
         "photos":   n("leader_task_photos", "leader_id"),
         "reviews":  n("leader_ai_reviews", "leader_id"),
         "late":     n("leader_late_proofs", "leader_id"),
-        "cells":    n("cells", "leader_id"),
+        # Both slots name a leader (Boshqaruvchi and Egasi), and a delete
+        # releases both — so a cell the profile only OWNS counts here too.
+        "cells":    db.execute(text("SELECT count(*) FROM cells "
+                                    "WHERE leader_id = :lid OR owner_id = :lid"),
+                               {"lid": leader_id}).scalar() or 0,
         "tasks":    n("leader_tasks", "leader_profile_id"),
         "concerns": n("leader_concerns", "leader_profile_id"),
     }
@@ -674,6 +681,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
         "name_workshop_en": c.name_workshop_en,
         "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
         "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
+        "owner_id": c.owner_id, "owner": prof_names.get(c.owner_id),
     } for c in cell_rows]
     return out
 
@@ -808,7 +816,10 @@ class CellPayload(BaseModel):
     name_workshop_ru:      Optional[str] = None
     name_workshop_en:      Optional[str] = None
     manager_id:            Optional[int] = None   # supervisor unit; 0 = clear; None = untouched
-    leader_id:             Optional[int] = None   # 0 = unassign; None = untouched
+    leader_id:             Optional[int] = None   # «Boshqaruvchi»; 0 = unassign; None = untouched
+    # «Egasi» (cells.owner_id): 0 = clear, None = untouched — so a tab from
+    # before the slot, which never sends it, leaves the owner as it stands.
+    owner_id:              Optional[int] = None
     # «Zagruzkada hisoblanadi» (cells.in_load). None = untouched — and on CREATE
     # the cell takes its unit's own switch (`_unit_counts`), which is what a tab
     # from before this field, or the /profile inline create, gets.
@@ -831,7 +842,8 @@ _CELL_NAME_DIFF = {
 }
 
 
-def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
+def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
+                       by: Optional[str] = None) -> None:
     # A cell's leader and «Zagruzkada hisoblanadi» decide who owes a checklist
     # (`services/leader_load.py`); drop the kept answer so the bot reads the
     # new state on the next press.
@@ -871,6 +883,21 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
                 row.manager_id = p.manager_id
         else:
             row.leader_id = None
+    if payload.owner_id is not None:
+        # The «Egasi» moves NOTHING — no unit, no checklist: who owns a cell is
+        # a fact about Verifix, who runs it is a fact about the platform (the
+        # operator's ruling, 2026-10-08). Any leader may own it, one in another
+        # unit or in none included. A person's pick is stamped `src: manual`,
+        # so nothing written from Verifix later overrides it.
+        new_id = payload.owner_id or None
+        if new_id and not db.query(RoleProfile).filter_by(id=new_id, role="leader").first():
+            raise HTTPException(status_code=400, detail="Leader profile not found")
+        if new_id != row.owner_id:
+            row.owner_id = new_id
+            meta = {k: v for k, v in (row.owner_meta or {}).items() if k == "vfx"}
+            meta.update(src="manual", at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        by=(by or "").strip() or None)
+            row.owner_meta = meta
     if payload.wc_group is not None:
         try:
             row.wc_group = wc_group.norm_group(payload.wc_group)
@@ -943,6 +970,18 @@ def _check_cell_group(db: Session, row: Cell, before: Optional[tuple] = None,
         raise HTTPException(status_code=400, detail=err)
 
 
+def _owner_meta_out(meta: Optional[dict]) -> dict:
+    """Who set a cell's «Egasi» and, where Verifix did, what Verifix said —
+    the `cells.owner_meta` blob trimmed to what /cells/:id prints. `src` is
+    "verifix" (the one-shot pass) or "manual" (a person on the cell form)."""
+    m = meta or {}
+    vfx = m.get("vfx") or {}
+    return {
+        "src": m.get("src"), "at": m.get("at"), "by": m.get("by"),
+        "vfx_name": vfx.get("name"), "vfx_job": vfx.get("job"),
+    }
+
+
 def _cells_viewer_unit(db: Session, caller: dict) -> tuple[bool, Optional[int]]:
     """Is the /cells register NARROWED for this caller, and to which unit?
 
@@ -998,6 +1037,7 @@ def admin_list_cells(db: Session = Depends(get_db),
                        .filter(RoleProfile.role == "leader")
                        .order_by(RoleProfile.id).all())
     prof_names = {p.id: p.name for p in leader_profiles}
+    prof_units = {p.id: p.manager_id for p in leader_profiles}
     if not narrowed:
         cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
     elif unit_id is None:
@@ -1006,7 +1046,7 @@ def admin_list_cells(db: Session = Depends(get_db),
         cell_rows = (db.query(Cell).filter(Cell.manager_id == unit_id)
                      .order_by(Cell.verifix_code).all())
     if narrowed:
-        named = {c.leader_id for c in cell_rows}
+        named = {c.leader_id for c in cell_rows} | {c.owner_id for c in cell_rows}
         managers = [m for m in managers if m.id == unit_id]
         leader_profiles = [p for p in leader_profiles
                            if (unit_id is not None and p.manager_id == unit_id)
@@ -1033,6 +1073,11 @@ def admin_list_cells(db: Session = Depends(get_db),
             "name_workshop_en": c.name_workshop_en,
             "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
             "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
+            # «Egasi», and the unit the owner's PROFILE stands in — which may be
+            # another brigadir's, or none (the operator's 2026-10-08 rulings).
+            "owner_id": c.owner_id, "owner": prof_names.get(c.owner_id),
+            "owner_unit_id": prof_units.get(c.owner_id),
+            "owner_unit": mgr_names.get(prof_units.get(c.owner_id)),
             "in_load": bool(c.in_load),
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
@@ -1058,7 +1103,7 @@ _CELLS_XLSX_T = {
         "generated": "Shakllantirildi", "records": "Yozuvlar",
         "shown_of": "{n} ta ko'rsatilgan ({total} tadan)",
         "num": "№", "verifix": "Verifix kod", "sap": "SAP kod", "group": "Guruh",
-        "workshop": "Sex nomi", "brigadir": "Brigadir", "leader": "Lider",
+        "workshop": "Sex nomi", "brigadir": "Brigadir", "leader": "Boshqaruvchi", "owner": "Egasi",
         "no_brigadir": "Brigadir yo'q", "unassigned": "Biriktirilmagan",
         "cells_cnt": "Yacheykalar", "with_leader": "Lider bilan",
         "without_leader": "Lidersiz", "coverage": "Qamrov", "total": "JAMI",
@@ -1070,7 +1115,7 @@ _CELLS_XLSX_T = {
         "generated": "Шакллантирилди", "records": "Ёзувлар",
         "shown_of": "{n} та кўрсатилган ({total} тадан)",
         "num": "№", "verifix": "Verifix код", "sap": "SAP код", "group": "Гуруҳ",
-        "workshop": "Сех номи", "brigadir": "Бригадир", "leader": "Лидер",
+        "workshop": "Сех номи", "brigadir": "Бригадир", "leader": "Бошқарувчи", "owner": "Эгаси",
         "no_brigadir": "Бригадир йўқ", "unassigned": "Бириктирилмаган",
         "cells_cnt": "Ячейкалар", "with_leader": "Лидер билан",
         "without_leader": "Лидерсиз", "coverage": "Қамров", "total": "ЖАМИ",
@@ -1082,7 +1127,7 @@ _CELLS_XLSX_T = {
         "generated": "Сформировано", "records": "Записей",
         "shown_of": "показано {n} из {total}",
         "num": "№", "verifix": "Verifix код", "sap": "SAP код", "group": "Группа",
-        "workshop": "Название цеха", "brigadir": "Бригадир", "leader": "Лидер",
+        "workshop": "Название цеха", "brigadir": "Бригадир", "leader": "Управляющий", "owner": "Владелец",
         "no_brigadir": "Бригадир не назначен", "unassigned": "Не закреплена",
         "cells_cnt": "Ячеек", "with_leader": "С лидером",
         "without_leader": "Без лидера", "coverage": "Покрытие", "total": "ИТОГО",
@@ -1094,7 +1139,7 @@ _CELLS_XLSX_T = {
         "generated": "Generated", "records": "Records",
         "shown_of": "{n} of {total} shown",
         "num": "#", "verifix": "Verifix code", "sap": "SAP code", "group": "Group",
-        "workshop": "Workshop", "brigadir": "Brigadir", "leader": "Leader",
+        "workshop": "Workshop", "brigadir": "Brigadir", "leader": "Manager", "owner": "Owner",
         "no_brigadir": "No brigadir", "unassigned": "Unassigned",
         "cells_cnt": "Cells", "with_leader": "With leader",
         "without_leader": "No leader", "coverage": "Coverage", "total": "TOTAL",
@@ -1119,7 +1164,9 @@ class CellsExportRow(BaseModel):
     wc_group:     str = ""   # the work-centre group letter; "" = none
     workshop:     str = ""   # accepted from older bundles, never written
     supervisor:   str = ""   # "" = unassigned; the label is applied here
-    leader:       str = ""   # "" = unassigned
+    leader:       str = ""   # «Boshqaruvchi»; "" = unassigned
+    # «Egasi». None = a bundle from before the slot, printed «—»; "" = none.
+    owner:        Optional[str] = None
     # «Zagruzkada hisoblanadi». None = a bundle from before the column, printed «—».
     in_load:      Optional[bool] = None
 
@@ -1182,7 +1229,9 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
     ws = wb.active
     ws.title = L["sheet"]
 
-    headers = [L["num"], L["verifix"], L["sap"], L["group"], L["brigadir"], L["leader"], L["load"]]
+    # The screen's order: brigadir, then who RUNS the cell, then who OWNS it.
+    headers = [L["num"], L["verifix"], L["sap"], L["group"], L["brigadir"],
+               L["leader"], L["owner"], L["load"]]
     ncols = len(headers)
     last_col = get_column_letter(ncols)
 
@@ -1212,7 +1261,8 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 4, r.wc_group or "—").alignment = center
         ws.cell(y, 5, r.supervisor or L["no_brigadir"])
         ws.cell(y, 6, r.leader or L["unassigned"])
-        ws.cell(y, 7, "—" if r.in_load is None else L["load_on" if r.in_load else "load_off"])
+        ws.cell(y, 7, "—" if r.owner is None else (r.owner or L["unassigned"]))
+        ws.cell(y, 8, "—" if r.in_load is None else L["load_on" if r.in_load else "load_off"])
         for i in range(1, ncols + 1):
             c = ws.cell(y, i)
             c.border = grid
@@ -1232,11 +1282,13 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
             ws.cell(y, 5).font = muted
         if not r.leader:
             ws.cell(y, 6).font = muted
-        ws.cell(y, 7).alignment = center
-        if r.in_load is None:
+        if not r.owner:
             ws.cell(y, 7).font = muted
+        ws.cell(y, 8).alignment = center
+        if r.in_load is None:
+            ws.cell(y, 8).font = muted
 
-    for col, width in zip("ABCDEFG", (5, 14, 13, 9, 30, 36, 16)):
+    for col, width in zip("ABCDEFGH", (5, 14, 13, 9, 30, 34, 34, 16)):
         ws.column_dimensions[col].width = width
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
@@ -1335,7 +1387,8 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     if db.query(Cell).filter_by(verifix_code=code).first():
         raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
     row = Cell(verifix_code=code)
-    _apply_cell_fields(db, row, payload)
+    _apply_cell_fields(db, row, payload,
+                       by=profile_display_name(db, viewer_profile_key(db, caller)))
     if payload.in_load is None:
         row.in_load = _unit_counts(db, row.manager_id)
     # Before `db.add`: the new row is not in the session yet, so the sibling
@@ -1347,6 +1400,9 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     cell_details = [("cell", code), ("unit", unit), ("in_load", bool(row.in_load))]
     if row.wc_group:
         cell_details.append(("wc_group", wc_group.label(row.sap_code, row.wc_group)))
+    if row.owner_id:
+        owner = db.query(RoleProfile).filter_by(id=row.owner_id).first()
+        cell_details.append(("owner", owner.name if owner else None))
     db.commit()
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.created",
                     details=cell_details)
@@ -1365,6 +1421,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
            "manager_id": row.manager_id, "leader_id": row.leader_id,
+           "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     before = _placement(row)
     if payload.verifix_code is not None:
@@ -1375,11 +1432,13 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         if dup:
             raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
         row.verifix_code = code
-    _apply_cell_fields(db, row, payload)
+    _apply_cell_fields(db, row, payload,
+                       by=profile_display_name(db, viewer_profile_key(db, caller)))
     _check_cell_group(db, row, before, payload)
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
            "manager_id": row.manager_id, "leader_id": row.leader_id,
+           "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     db.commit()
     diff = [(k, old[k], new[k])
@@ -1388,10 +1447,14 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     if old["manager_id"] != new["manager_id"]:
         diff.append(("unit", unit_name(db, old["manager_id"]),
                      unit_name(db, new["manager_id"])))
+    people = [i for i in (old["leader_id"], new["leader_id"],
+                          old["owner_id"], new["owner_id"]) if i]
+    lnames = ({p.id: p.name for p in db.query(RoleProfile).filter(RoleProfile.id.in_(people))}
+              if people else {})
     if old["leader_id"] != new["leader_id"]:
-        lnames = {p.id: p.name for p in db.query(RoleProfile).filter(
-            RoleProfile.id.in_([i for i in (old["leader_id"], new["leader_id"]) if i]))}
         diff.append(("leader", lnames.get(old["leader_id"]), lnames.get(new["leader_id"])))
+    if old["owner_id"] != new["owner_id"]:
+        diff.append(("owner", lnames.get(old["owner_id"]), lnames.get(new["owner_id"])))
     if diff:
         alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.updated",
                         details=[("cell", old["verifix_code"])],
@@ -1479,6 +1542,12 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
     mgr = db.query(Manager).filter_by(id=c.manager_id).first() if c.manager_id else None
     leader = (db.query(RoleProfile).filter_by(id=c.leader_id, role="leader").first()
               if c.leader_id else None)
+    # «Egasi» — the leader Verifix seats in the cell. Their PROFILE may stand in
+    # another unit, or in none yet, so its unit is named beside the name.
+    owner = (db.query(RoleProfile).filter_by(id=c.owner_id, role="leader").first()
+             if c.owner_id else None)
+    owner_unit = (db.query(Manager).filter_by(id=owner.manager_id).first()
+                  if owner and owner.manager_id else None)
     factory = (db.query(Factory).filter_by(id=mgr.factory_id).first()
                if mgr and mgr.factory_id else None)
 
@@ -1537,6 +1606,7 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "name_workshop_ru": c.name_workshop_ru,
             "name_workshop_en": c.name_workshop_en,
             "manager_id": c.manager_id, "leader_id": c.leader_id,
+            "owner_id": c.owner_id,
             "in_load": bool(c.in_load),
             "att_included": c.att_included,  # None = derived from supervisor
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
@@ -1552,6 +1622,9 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
         "supervisor": ({"id": mgr.id, "name": mgr.name, "shift": mgr.shift,
                         "archived": bool(mgr.archived)} if mgr else None),
         "leader": ({"id": leader.id, "name": leader.name} if leader else None),
+        "owner": ({"id": owner.id, "name": owner.name, "manager_id": owner.manager_id,
+                   "unit": owner_unit.name if owner_unit else None,
+                   **_owner_meta_out(c.owner_meta)} if owner else None),
         "factory": _factory_dict(factory),
         "activity": {
             "attendance": {

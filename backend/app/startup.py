@@ -1744,6 +1744,28 @@ def add_cell_archive() -> None:
         db.close()
 
 
+def add_cell_owner_columns() -> None:
+    """2026-10-08: a cell carries its «Egasi» beside its «Boshqaruvchi»
+    (``leader_id``) — ``cells.owner_id`` (the leader Verifix seats in the cell)
+    and ``owner_meta`` (who set it, when, what Verifix said). NULL = no owner,
+    which is what every existing row is until the owner pass writes them
+    (services/cell_owner_pass.py). Pure DDL, idempotent, no flag. Runs FIRST at
+    boot with the other column steps: every ORM read of a cell selects them."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE cells ADD COLUMN IF NOT EXISTS owner_id INTEGER "
+            "REFERENCES role_profiles(id) ON DELETE SET NULL"))
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS owner_meta JSONB"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_cells_owner_id ON cells (owner_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell owner migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_manager_kind_columns() -> None:
     """2026-10-04: a supervisor unit says whether its brigadir IS one on
     Verifix (``managers.supervisor_kind`` + ``supervisor_kind_meta`` —
@@ -7426,52 +7448,52 @@ def _profile_photos_job(waited: int = 0) -> None:
                       verifix_profile_photos.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: DRY RUN — who OWNS each cell by Verifix ───────────────────────
-# The operator on 2026-10-06: a cell gets an «Egasi» (the leader Verifix seats
-# in it — what the two KPI pages will rank by) beside its «Boshqaruvchi»
-# (today's `cells.leader_id`), and a unit for every Verifix brigadir the
-# platform lacks. Asked for a dry run first: this reads Verifix, computes what
-# that pass WOULD write — owners, decisions for the operator, new units, the
-# brigadir of every cell on Verifix beside ours, and both KPI pages before →
-# after — and DMs it (`services/cell_owner_dryrun.py`). Writes nothing but its
-# record and this flag. Waits for the 5 Oct passes like the photo pass.
-CELL_OWNER_DRYRUN_FLAG = "cell_owner_dryrun_2026_10_06_v1"
-_CELL_OWNER_DRYRUN_DELAY_S = 240
-_CELL_OWNER_DRYRUN_WAITS = 6
-_CELL_OWNER_DRYRUN_WAIT_S = 120
+# ── one-shot: every cell's «Egasi» from Verifix ─────────────────────────────
+# The operator, 8 Oct 2026, answering the 6 Oct dry run one decision at a time:
+# a cell carries an «Egasi» (the leader Verifix seats in it) beside its
+# «Boshqaruvchi» (`cells.leader_id`, unchanged). Reads Verifix once, renames the
+# one profile the operator corrected, creates the nine approved units with the
+# brigadir-less cells Verifix puts under them, writes every Egasi in ONE
+# transaction with its record, and DMs the report
+# (`services/cell_owner_pass.py`). Waits for the 5 Oct passes like the photo
+# pass did.
+CELL_OWNER_PASS_FLAG = "cell_owners_verifix_2026_10_08_v1"
+_CELL_OWNER_PASS_DELAY_S = 240
+_CELL_OWNER_PASS_WAITS = 6
+_CELL_OWNER_PASS_WAIT_S = 120
 
 
-def report_cell_owner_dryrun() -> None:
-    """The cell-owner dry run, once, as a DM. Never raises."""
+def set_cell_owners_from_verifix() -> None:
+    """The cell-owner pass, once, reported as a DM. Never raises."""
     try:
-        if not _report_pending(CELL_OWNER_DRYRUN_FLAG):
+        if not _report_pending(CELL_OWNER_PASS_FLAG):
             return
-        if not _schedule_cell_owner_dryrun(_CELL_OWNER_DRYRUN_DELAY_S, 0):
-            print("[startup] cell owner dry run could not be scheduled")
+        if not _schedule_cell_owner_pass(_CELL_OWNER_PASS_DELAY_S, 0):
+            print("[startup] cell owner pass could not be scheduled")
     except Exception as exc:
-        print(f"[startup] cell owner dry run could not be scheduled: {exc}")
+        print(f"[startup] cell owner pass could not be scheduled: {exc}")
 
 
-def _schedule_cell_owner_dryrun(delay_s: int, waited: int) -> bool:
+def _schedule_cell_owner_pass(delay_s: int, waited: int) -> bool:
     from datetime import timedelta
     from app.scheduler import schedule_at
-    return schedule_at(f"cell-owner-dryrun-{waited}",
+    return schedule_at(f"cell-owner-pass-{waited}",
                        datetime.now(timezone.utc) + timedelta(seconds=delay_s),
-                       _cell_owner_dryrun_job, args=(waited,))
+                       _cell_owner_pass_job, args=(waited,))
 
 
-def _cell_owner_dryrun_job(waited: int = 0) -> None:
+def _cell_owner_pass_job(waited: int = 0) -> None:
     # It reads the profiles and cells the 5 Oct passes write — run after them.
-    if waited < _CELL_OWNER_DRYRUN_WAITS and (_report_pending(CELLS_LEADERS_FLAG)
-                                              or _report_pending(PROFILE_PHOTOS_FLAG)):
+    if waited < _CELL_OWNER_PASS_WAITS and (_report_pending(CELLS_LEADERS_FLAG)
+                                            or _report_pending(PROFILE_PHOTOS_FLAG)):
         try:
-            if _schedule_cell_owner_dryrun(_CELL_OWNER_DRYRUN_WAIT_S, waited + 1):
+            if _schedule_cell_owner_pass(_CELL_OWNER_PASS_WAIT_S, waited + 1):
                 return
         except Exception:
             pass
-    from app.services import cell_owner_dryrun
-    _send_report_once(CELL_OWNER_DRYRUN_FLAG, "cell owner dry run",
-                      cell_owner_dryrun.send, UNPRICED_DM_CHAT)
+    from app.services import cell_owner_pass
+    _send_report_once(CELL_OWNER_PASS_FLAG, "cell owner pass",
+                      cell_owner_pass.send, UNPRICED_DM_CHAT)
 
 
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────

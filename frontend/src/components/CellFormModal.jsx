@@ -28,6 +28,13 @@ import GroupBadge from "./ui/GroupBadge";
  * takes the unit's own «Zagruzka hisoblanadi» (`units[].zagruzka_on`) — what
  * the server applies to a create that names no value — and an edit that keeps
  * the brigadir keeps the cell's own value.
+ *
+ * A cell names TWO leaders (2026-10-08, the operator's rulings): the
+ * «Boshqaruvchi» (`leader_id`) RUNS it — the checklist, the automatic checks,
+ * ojidaniya — and picking one carries the cell to their unit; the «Egasi»
+ * (`owner_id`) is the leader Verifix seats in it, and picking one moves
+ * nothing. Any leader may own a cell, one in another unit or in none, so the
+ * owner list names each leader's unit.
  */
 
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
@@ -45,6 +52,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           wc_group: item.wc_group || "",
           manager_id: item.manager_id ? String(item.manager_id) : "",
           leader_id: item.leader_id ? String(item.leader_id) : "",
+          owner_id: item.owner_id ? String(item.owner_id) : "",
           name_workshop_uz: item.name_workshop_uz || "",
           name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
           name_workshop_ru: item.name_workshop_ru || "",
@@ -52,7 +60,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           in_load: !!item.in_load,
         }
       : {
-          verifix_code: "", sap_code: "", wc_group: "", manager_id: "", leader_id: "",
+          verifix_code: "", sap_code: "", wc_group: "", manager_id: "", leader_id: "", owner_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
           name_workshop_ru: "", name_workshop_en: "", in_load: false,
         });
@@ -78,6 +86,27 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     onError: fail,
   });
   const busy = createMut.isPending || updateMut.isPending;
+  // The unit each leader's PROFILE stands in, for the owner list: an owner is
+  // often somebody else's leader, or nobody's yet.
+  const unitName = (mid) => units.find((u) => String(u.id) === String(mid))?.name;
+  const ownerOpts = [
+    { value: "", label: t("admin.profiles.cellUnassigned") },
+    ...leaders.map((l) => {
+      const unit = l.manager_id ? unitName(l.manager_id) : null;
+      const where = l.manager_id ? (unit ? tl(unit) : "") : t("admin.profiles.cellOwnerNoUnit");
+      const name = tl(l.name);
+      return {
+        value: String(l.id),
+        title: where ? `${name} · ${where}` : name,
+        label: (
+          <span className="truncate">
+            {name}
+            {where && <span style={{ color: "var(--text-3)" }}> · {where}</span>}
+          </span>
+        ),
+      };
+    }),
+  ];
   // A group letter qualifies a SAP code INSIDE one unit (services/wc_group.py),
   // so it needs both — and the server refuses one beside either missing. The
   // form neither offers nor sends it then, so clearing the brigadir clears the
@@ -100,6 +129,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       name_workshop_en: form.name_workshop_en || "",
       manager_id: form.manager_id ? Number(form.manager_id) : 0,
       leader_id: form.leader_id ? Number(form.leader_id) : 0,
+      owner_id: form.owner_id ? Number(form.owner_id) : 0,
       in_load: inLoad,
     };
     if (mode === "add") createMut.mutate(body);
@@ -193,13 +223,13 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           </p>
         )}
       </FormField>
-      <FormField label={t("admin.profiles.colOwner")}>
+      <FormField label={t("admin.profiles.colCellManager")}>
         <StyledSelect
           value={form.leader_id || ""}
           onChange={(v) => setForm((f) => {
-            // Owner is authoritative for the supervisor: picking a leader
-            // inherits their unit; clearing keeps the cell's current
-            // supervisor (a cell can be leaderless yet owned).
+            // The Boshqaruvchi is authoritative for the supervisor: picking a
+            // leader inherits their unit; clearing keeps the cell's current
+            // supervisor (a cell can be leaderless yet belong to a unit).
             const L = leaders.find((x) => String(x.id) === String(v));
             return {
               ...f,
@@ -212,6 +242,14 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
             { value: "", label: t("admin.profiles.cellUnassigned") },
             ...leaders.map((l) => ({ value: String(l.id), label: tl(l.name), title: tl(l.name) })),
           ]}
+        />
+      </FormField>
+      <FormField label={t("admin.profiles.colCellOwner")} hint={t("admin.profiles.cellOwnerHint")}>
+        <StyledSelect
+          value={form.owner_id || ""}
+          onChange={(v) => setForm((f) => ({ ...f, owner_id: v }))}
+          searchable
+          options={ownerOpts}
         />
       </FormField>
       <FormField label={t("cellPage.inLoad")}

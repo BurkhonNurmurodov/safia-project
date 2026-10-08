@@ -62,6 +62,7 @@ try:
         migrate_cell_in_load_column,
         add_cell_shift_times,
         add_cell_archive,
+        add_cell_owner_columns,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -117,7 +118,7 @@ try:
         sync_leaders_from_verifix,
         sync_cells_and_leaders_from_verifix,
         set_profile_photos_from_verifix,
-        report_cell_owner_dryrun,
+        set_cell_owners_from_verifix,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -203,6 +204,7 @@ try:
     # First: every ORM read of a profile selects these two columns.
     add_manager_kind_columns()
     add_leader_kind_columns()
+    add_cell_owner_columns()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()
@@ -546,13 +548,13 @@ try:
     # `startup.set_profile_photos_from_verifix` and
     # `services/verifix_profile_photos.py` once the report has landed.
     set_profile_photos_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-06) — DRY RUN of the cell owners: reads
-    # Verifix and DMs who would be each cell's «Egasi» beside its
-    # «Boshqaruvchi», the units it would create for Verifix brigadirs and
-    # both KPI pages before → after. Writes nothing but its record. Remove
-    # this line, `startup.report_cell_owner_dryrun` and
-    # `services/cell_owner_dryrun.py` once the report has landed.
-    report_cell_owner_dryrun()
+    # ⚠ TEMPORARY one-shot (2026-10-08) — every cell's «Egasi» from Verifix,
+    # with the operator's answers to the 6 Oct dry run: renames the one
+    # profile the operator corrected, creates the nine approved units with
+    # the brigadir-less cells Verifix puts under them, writes the owners and
+    # DMs what it wrote. Remove this line, `startup.set_cell_owners_from_verifix`
+    # and `services/cell_owner_pass.py` once the report has landed.
+    set_cell_owners_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,

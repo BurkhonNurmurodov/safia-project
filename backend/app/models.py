@@ -543,7 +543,19 @@ class Cell(Base):
     name_workshop_en      = Column(String, nullable=True)
     # Owning supervisor unit — a cell may belong to a supervisor with no leader.
     manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    # «Boshqaruvchi» — the leader who RUNS the cell: its checklist, the
+    # automatic checks, «Ish grafigi», ojidaniya, the concerns box.
     leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    # 2026-10-08: «Egasi» — the leader Verifix SEATS in the cell (a working
+    # employee with a leader's job whose org unit is this cell). Usually the
+    # same person as leader_id, and it moves nothing on its own: no unit, no
+    # checklist, no figure follows it. The two leader KPIs («Kadrlar
+    # qo'nimsizligi», «Ishchi havotirlari») are to read it. Filled once from
+    # Verifix (services/cell_owner_pass.py), set by hand on /cells afterwards.
+    # owner_meta: {"src": "verifix"|"manual", "at", "by", "vfx": {...}}.
+    owner_id     = Column(Integer, ForeignKey("role_profiles.id", ondelete="SET NULL"),
+                          nullable=True, index=True)
+    owner_meta   = Column(JSONB, nullable=True)
     # 2026-07-31: does this cell count toward the production load (загрузка)?
     # Until now that was DERIVED from "the cell has a supervisor"; it is now an
     # explicit admin decision, ticked on the cell's own page (/cells/:id).

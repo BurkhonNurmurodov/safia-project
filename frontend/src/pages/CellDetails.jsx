@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, LayoutGrid, Hash, Users, Flag, Clock, Factory as FactoryIcon,
+  ArrowLeft, LayoutGrid, Hash, Users, Flag, UserCheck, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
   Boxes, SearchX, AlertTriangle, Layers, Archive,
 } from "lucide-react";
@@ -114,6 +114,35 @@ function fmtDur(min, t) {
   return m
     ? t("admin.shiftTimes.durFmt").replace("{h}", h).replace("{m}", m)
     : t("admin.shiftTimes.durFmtH").replace("{h}", h);
+}
+
+// The «Egasi» row: the name, then — muted, on the same line — the unit the
+// owner's PROFILE stands in when that is not this cell's (or that it has none
+// yet), and where the value came from: Verifix's one read, or a person on the
+// cell form. The details are on hover.
+function OwnerValue({ owner, unitId, t, tl, lang }) {
+  if (!owner) return <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>;
+  const elsewhere = owner.manager_id == null
+    ? t("admin.profiles.cellOwnerNoUnit")
+    : owner.manager_id !== unitId && owner.unit ? tl(owner.unit) : null;
+  const when = owner.at ? fmtDate(String(owner.at).slice(0, 10), lang) : null;
+  const src = owner.src === "verifix" ? t("cellPage.ownerSrcVerifix")
+    : owner.src === "manual" ? t("cellPage.ownerSrcManual") : null;
+  const tip = [
+    owner.vfx_name ? `Verifix: ${owner.vfx_name}${owner.vfx_job ? ` · ${owner.vfx_job}` : ""}` : null,
+    owner.src === "manual" ? [owner.by, when].filter(Boolean).join(" · ") : when,
+  ].filter(Boolean).join("\n");
+  return (
+    <span title={tip || undefined}>
+      {tl(owner.name)}
+      {elsewhere && (
+        <span className="ml-1.5 text-[11px]" style={{ color: owner.manager_id == null ? "#eab308" : "var(--text-3)" }}>
+          · {elsewhere}
+        </span>
+      )}
+      {src && <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>· {src}</span>}
+    </span>
+  );
 }
 
 // One footprint line: label left, "N days · last <date> · extras" right,
@@ -255,6 +284,9 @@ export default function CellDetails() {
   const c = data.cell;
   const sup = data.supervisor;
   const leader = data.leader;
+  // «Egasi» — the leader Verifix seats in the cell (null on a backend that
+  // predates the slot, which reads exactly like a cell nobody owns).
+  const owner = data.owner || null;
   const factory = data.factory;
   const act = data.activity || {};
   // Working hours come resolved from the server (own pair, or the shift default
@@ -396,10 +428,13 @@ export default function CellDetails() {
                 <InfoRow icon={FactoryIcon} label={t("profile.factory")}>
                   {factoryName || <span style={{ color: "var(--text-4)" }}>—</span>}
                 </InfoRow>
-                <InfoRow icon={Flag} label={t("admin.profiles.colOwner")}>
+                <InfoRow icon={Flag} label={t("admin.profiles.colCellManager")}>
                   {leader
                     ? tl(leader.name)
                     : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+                </InfoRow>
+                <InfoRow icon={UserCheck} label={t("admin.profiles.colCellOwner")}>
+                  <OwnerValue owner={owner} unitId={c.manager_id} t={t} tl={tl} lang={lang} />
                 </InfoRow>
               </div>
             </Card>

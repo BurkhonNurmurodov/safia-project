@@ -587,45 +587,83 @@ as text + a workbook; the record (no bytes) is app setting
   has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
   photos and `profile_photo.py` stay.
 
-## A cell's «Egasi» and «Boshqaruvchi» (2026-10-06 — DRY RUN so far)
+## A cell's «Egasi» and «Boshqaruvchi» (`cells.owner_id`, 2026-10-08)
 
-The operator's rulings (2026-10-06, asked one by one): a cell carries TWO leader
-slots, at most ONE person each, and in most cells they are the same person.
-**Nothing is built yet beyond the dry run below** — the real pass, the KPI
-switch and the cell form wait for the operator's go on its report.
+The operator's rulings (2026-10-06 and 2026-10-08, asked one by one): a cell
+carries TWO leader slots, at most ONE person each, and in most cells they are
+the same person.
 
-- **Boshqaruvchi** (ru «Управляющий», en «Manager») = today's
-  `cells.leader_id`: the one who RUNS the cell — checklist (they file the
-  per-cell one), automatic checks, «Ish grafigi», ojidaniya, concerns box.
-  Nothing that reads `leader_id` changes.
-- **Egasi** (ru «Владелец», en «Owner») = the leader Verifix SEATS in the cell —
-  a working employee with a leader's job whose org unit is the cell. Read ONLY by
-  «Kadrlar qo'nimsizligi» and «Ishchi havotirlari»: there only owned cells count,
-  and a leader owning none is shown unranked («not a cell owner»); every other
-  page ranks as now. History is re-read — every past worker concern counts for
-  its cell's Egasi, every turnover month (closed and saved ones too) is scored by
-  the Egasi map.
-- Y seated in a cell X runs → Y Egasi, X Boshqaruvchi. No leader on Verifix
-  («Lider o'rnida» cells) → no Egasi, the cell counts in nobody's KPI. Nobody
-  runs it here → Egasi only. No brigadir here → Egasi only once it has one.
-  An Egasi whose profile has no brigadir stays unit-less until the operator
-  decides. A tie that is not sure (first-name-first, a surname typo, two Verifix
-  leaders in a cell, one person for two profiles, no profile) gets no Egasi —
-  the operator names the match. Verifix is read ONCE; afterwards both slots are
-  set by hand on /cells (two pickers, today's edit rights).
-- **Brigadirs**: a unit for every Verifix brigadir with none here (unless a unit
-  or a profile here may be them); only the cells Verifix puts under them that
-  have NO brigadir here join it. Cells with a brigadir stay put, and a
-  brigadir-less cell whose Verifix brigadir already has a unit is reported only.
-- **The dry run** — `services/cell_owner_dryrun.py`, `startup.report_cell_owner_dryrun`
-  (flag `cell_owner_dryrun_2026_10_06_v1`, ~240 s after boot, both entrypoints):
-  reads Verifix, computes all of the above, DMs text + a workbook to
-  `UNPRICED_DM_CHAT` and writes NOTHING but its record (app setting
-  `cell_owner_dryrun_2026_10_06`). Ties are `leader_verifix_check._match`
-  (sure = full name, surname + first name, a pin); units by the 4 Oct
-  `supervisor_kind_meta.vfx.id`. Delete it with its startup trio and both
-  entrypoint calls once the real pass exists — BEFORE `verifix_cells_leaders_sync`,
-  `verifix_leader_sync` and `leader_verifix_check`, whose helpers it imports.
+- **Boshqaruvchi** (ru «Управляющий», en «Manager») = `cells.leader_id`: the
+  one who RUNS the cell — checklist (they file the per-cell one), automatic
+  checks, «Ish grafigi», ojidaniya, concerns box. Nothing that reads `leader_id`
+  changed, and picking one on the form still carries the cell to their unit.
+- **Egasi** (ru «Владелец», en «Owner») = `cells.owner_id` + `owner_meta`
+  (`{src: verifix|manual, at, by, vfx}`, leader_kind_meta's shape): the leader
+  Verifix SEATS in the cell — a working employee with a leader's job whose org
+  unit is the cell. It moves NOTHING (no unit, no checklist), and any leader may
+  own a cell, one in another unit or in none.
+- **Nothing reads the Egasi yet.** «Kadrlar qo'nimsizligi» and «Ishchi
+  havotirlari» switch to it in the NEXT step, after the operator has read the
+  pass report: there only owned cells will count, a leader owning none shown
+  unranked («not a cell owner»), history re-read (every past worker concern for
+  its cell's Egasi, every turnover month scored by the Egasi map). Every other
+  page ranks as now.
+- **Set by hand from now on** — on the ONE cell form (`CellFormModal`:
+  «Boshqaruvchi», then «Egasi», whose list names each leader's unit), sent as
+  `owner_id` on the register's own POST/PUT (CAP_CELLS_MANAGE; 0 clears, an
+  absent key leaves it, so a tab from before the slot never touches it). A
+  person's pick — a clear included — stamps `src: manual`, and nothing written
+  from Verifix overrides it. Shown on /cells (an «Egasi» column after
+  «Boshqaruvchi», a filter offering «Boshqaruvchidan farqli», the phone card,
+  the search, the workbook — Boshqaruvchi then Egasi) and on /cells/:id (the
+  owner's unit when it is not the cell's, and whether Verifix or a person set
+  it). An owner whose PROFILE has no brigadir wears an amber mark. Deleting a
+  leader profile (or switching its role) releases both slots, and the delete
+  dialog counts owned cells too.
+- **Filled ONCE from Verifix** — `services/cell_owner_pass.py` (TEMPORARY, flag
+  `cell_owners_verifix_2026_10_08_v1`, `startup.set_cell_owners_from_verifix`,
+  both entrypoints, ~240 s after boot), DMed as text + a workbook to
+  `UNPRICED_DM_CHAT`. Every write lands in ONE transaction with its record (app
+  setting `cell_owner_pass_2026_10_08`, the values replaced included); a DM that
+  fails is re-sent from the record, never re-run. The rules:
+  - Y seated in a cell X runs → Y Egasi, X keeps running it («Follow Verifix
+    for ownership and our platform for managing» — 9123, 9425 and 8821 too; no
+    profile moves). Nobody runs it here → Egasi only.
+  - No leader on Verifix → no Egasi. A tie that is not sure
+    (`leader_verifix_check._match`: sure = full name, surname + first name, a
+    pin), one Verifix leader for two profiles, or no profile → none. Two Verifix
+    leaders in one cell (0111, 0822, 0912) → none until the operator says which.
+  - A cell with no brigadir here → none, unless this pass gives it one; the 9
+    cells with no Verifix brigadir over them (0022 0025 0028 0031 0034 0037 0110
+    0112 2531) wait.
+  - 6822: the profile «Jonizoqoqv Urolboy Quziboy O'g'li» is renamed «Jonizoqov
+    …» (`RENAMES`, through the register's own rename cascade) and tied to
+    JONIZOQOV UROLBOY QUZIBOY O'G'LI — `leader_kind_meta.vfx`, and the kind its
+    job says unless a person set one.
+  - The NINE units the operator approved (`NEW_UNITS`, Verifix name → unit
+    name; «Xabibullo Xayrullo o'g'li» for XAYRULLO O'G'LI ХABIBULLO) are created
+    at max(id)+1: «Brigadir» (`supervisor_kind_meta` from Verifix), zagruzka
+    OFF, NO shift and NO plant (set by hand on the profile page). The
+    brigadir-less cells Verifix puts under them — and under nobody else — JOIN
+    them (30 on the dry run; `in_load` untouched, all out of the загрузка;
+    letters settled by `wc_group.settle_moved`). No other unit is made: a
+    brigadir the plan finds off the list is reported (`not_approved`), an
+    approved one it no longer finds is reported (`missing`). Their owners'
+    profiles — and those of 3911 / 4312 / 4315 (Nurmatova Basida, Ne'matillayev
+    Izzatilla, Aripov Rustam, owners beside the leaders who run those cells) —
+    stay without a brigadir until the next ship.
+  - Guards: the 5 Oct pass's read guards (`verifix_cells_leaders_sync.MIN_*`,
+    the found share), ≤ 250 owners, ≤ 60 joins, ≤ 9 units — a breach writes
+    nothing (the rename rolled back with it) and is reported.
+  - The report re-counts both KPI pages by Egasi (read only, after the commit):
+    what the next step moves.
+  - Delete the module, `startup.set_cell_owners_from_verifix` and its job pair,
+    and both entrypoint calls once the report has landed — BEFORE
+    `verifix_cells_leaders_sync` and `leader_verifix_check`, whose helpers it
+    imports. The columns, the slot on /cells and `startup.add_cell_owner_columns`
+    (both entrypoints, first at boot, pure DDL) STAY.
+- The 6 Oct DRY RUN (`cell_owner_dryrun.py`) became this pass and is gone; its
+  record (app setting `cell_owner_dryrun_2026_10_06`) stays.
 
 ## A work centre is NOT unique — a cell is
 

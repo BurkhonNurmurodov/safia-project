@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
-  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
+  FileSpreadsheet, ShieldCheck, UserRound, UserCheck, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -54,6 +54,11 @@ import { exportXlsx } from "../utils/exportXlsx";
  * Rows and phone cards NAVIGATE to the cell's own page (/cells/:id) — same
  * pattern as the Profiles tab rows; edit/delete stay as the row's icon pair
  * and stop the click from bubbling into the navigation.
+ *
+ * A cell names two leaders (2026-10-08): the «Boshqaruvchi» who runs it on the
+ * platform (`leader_id`) and the «Egasi» Verifix seats in it (`owner_id`).
+ * Mostly one person; the owner filter's «Boshqaruvchidan farqli» lists the
+ * cells where they are not.
  */
 
 // Whole-sentence templates with {placeholders} — word order differs per language.
@@ -165,6 +170,26 @@ function LoadMark({ on, t, long = false }) {
   );
 }
 
+// «Egasi» — the leader Verifix seats in the cell. Their profile may stand in
+// another brigadir's unit, or in none yet; the tooltip names which, and an
+// owner with no brigadir carries an amber mark, because that profile still has
+// to be given one.
+function OwnerMark({ c, tl, t }) {
+  if (!c.owner) {
+    return <span className="block truncate" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>;
+  }
+  const name = tl(c.owner);
+  const noUnit = c.owner_unit_id == null;
+  const where = noUnit ? t("admin.profiles.cellOwnerNoUnit") : (c.owner_unit ? tl(c.owner_unit) : "");
+  const tip = where ? `${name} · ${where}` : name;
+  return (
+    <span className="flex items-center gap-1.5 min-w-0" title={tip}>
+      <span className="truncate min-w-0 text-[var(--text-2)]">{name}</span>
+      {noUnit && <AlertTriangle size={12} className="flex-shrink-0" style={{ color: "#eab308" }} aria-label={where} />}
+    </span>
+  );
+}
+
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
 // the mobile card so both surfaces read identically. Clicks must not bubble:
 // the row/card underneath navigates to the cell page.
@@ -250,9 +275,15 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
         </div>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <Flag size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{t("admin.profiles.colCellManager")}:</span>
           {c.leader
             ? <span className="truncate min-w-0 text-[var(--text-2)]">{tl(c.leader)}</span>
             : <span className="truncate min-w-0" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+        </div>
+        <div className="flex items-center gap-2 text-xs min-w-0">
+          <UserCheck size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{t("admin.profiles.colCellOwner")}:</span>
+          <OwnerMark c={c} tl={tl} t={t} />
         </div>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <Gauge size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
@@ -294,6 +325,8 @@ export default function Cells() {
   const [search, setSearch] = usePersistentState("cells_search", "");
   const [fBrigadir, setFBrigadir] = usePersistentState("cells_filter_brigadir", "");  // "" all · "none" unassigned · manager_id
   const [fLeader, setFLeader] = usePersistentState("cells_filter_leader", "");        // "" all · "none" unassigned · leader_id
+  // «Egasi»: "" all · "none" no owner · "differs" owner ≠ Boshqaruvchi · leader_id
+  const [fOwner, setFOwner] = usePersistentState("cells_filter_owner", "");
   // Archived (closed) cells are hidden by default; "archived" shows only them.
   const [fStatus, setFStatus] = usePersistentState("cells_filter_status", "active"); // active · archived · all
   const statusSel = ["active", "archived", "all"].includes(fStatus) ? fStatus : "active";
@@ -314,6 +347,8 @@ export default function Cells() {
   const brigadirSel = scope ? "" : fBrigadir;
   const leaderSel = !data || fLeader === "" || fLeader === "none"
     || leaders.some((l) => String(l.id) === fLeader) ? fLeader : "";
+  const ownerSel = !data || ["", "none", "differs"].includes(fOwner)
+    || leaders.some((l) => String(l.id) === fOwner) ? fOwner : "";
 
   // Per-column sort (desktop table headers) — key:null falls back to verifix.
   const [sort, setSort] = usePersistentState("cells_sort", { key: null, dir: "asc" });
@@ -367,10 +402,13 @@ export default function Cells() {
   const filtered = useMemo(() => {
     const q = latinFold(search.trim());
     return cells.filter((c) => {
-      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`)
+      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""} ${tl(c.owner) || ""}`)
             .includes(q)) return false;
       if (brigadirSel === "none" ? c.manager_id : brigadirSel && String(c.manager_id) !== brigadirSel) return false;
       if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
+      if (ownerSel === "none" ? c.owner_id
+          : ownerSel === "differs" ? (c.owner_id ?? null) === (c.leader_id ?? null)
+          : ownerSel && String(c.owner_id) !== ownerSel) return false;
       if (statusSel === "active" && c.archived_at) return false;
       if (statusSel === "archived" && !c.archived_at) return false;
       if (zagSel === "on" && !c.in_load) return false;
@@ -378,7 +416,7 @@ export default function Cells() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, brigadirSel, leaderSel, statusSel, zagSel, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, ownerSel, statusSel, zagSel, lang, tl]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
@@ -388,7 +426,8 @@ export default function Cells() {
         case "sap_code":   return c.sap_code || "";
         case "wc_group":   return c.wc_group || "";
         case "supervisor": return tl(c.supervisor) || "";
-        case "owner":      return tl(c.leader) || "";
+        case "leader":     return tl(c.leader) || "";
+        case "owner":      return tl(c.owner) || "";
         case "in_load":    return c.in_load ? "0" : "1";
         default:           return c.verifix_code || "";
       }
@@ -417,6 +456,7 @@ export default function Cells() {
             wc_group: c.wc_group || "",
             supervisor: c.supervisor ? tl(c.supervisor) : "",
             leader: c.leader ? tl(c.leader) : "",
+            owner: c.owner ? tl(c.owner) : "",
             in_load: !!c.in_load,
           })),
         },
@@ -426,7 +466,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 7 : 6;
+  const colSpan = canEdit ? 8 : 7;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -446,6 +486,12 @@ export default function Cells() {
   const leaderFilterOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllLeaders") },
     { value: "none", label: t("admin.profiles.cellUnassigned") },
+    ...leaders.map((l) => ({ value: String(l.id), label: tl(l.name), title: tl(l.name) })),
+  ];
+  const ownerFilterOpts = [
+    { value: "", label: t("admin.profiles.cellFilterAllOwners") },
+    { value: "none", label: t("admin.profiles.cellUnassigned") },
+    { value: "differs", label: t("admin.profiles.cellOwnerDiffers") },
     ...leaders.map((l) => ({ value: String(l.id), label: tl(l.name), title: tl(l.name) })),
   ];
 
@@ -536,6 +582,15 @@ export default function Cells() {
                   ),
                 },
                 {
+                  key: "owner", icon: UserCheck, label: t("admin.profiles.cellFilterAllOwners"),
+                  active: ownerSel !== "",
+                  display: ownerSel !== "" ? (ownerFilterOpts.find((o) => o.value === ownerSel)?.label || "") : "",
+                  onClear: () => setFOwner(""),
+                  render: ({ close } = {}) => (
+                    <PickFilter searchable close={close} opts={ownerFilterOpts} value={ownerSel} onChange={setFOwner} />
+                  ),
+                },
+                {
                   key: "zag", icon: Gauge, label: t("admin.profiles.colZagruzka"),
                   active: zagSel !== "",
                   display: zagSel !== "" ? (zagOpts.find((o) => o.value === zagSel)?.label || "") : "",
@@ -590,11 +645,12 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[17%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[12%]" />
-            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[9%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[20%]" />
-            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[20%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[7%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[16%]" />
             <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[11%]" />
             {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[11%]" />}
           </tr>
@@ -627,15 +683,19 @@ export default function Cells() {
               <td className="px-3 py-2 whitespace-nowrap">
                 <GroupMark c={c} issue={issues.get(c.id)} t={t} />
               </td>
+              {/* People are cut with «…» and whole on hover — one line per row. */}
               <td className="px-3 py-2">
                 {c.supervisor
-                  ? <span className="text-[var(--text-2)]">{tl(c.supervisor)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellNoSupervisor")}</span>}
+                  ? <span className="block truncate text-[var(--text-2)]" title={tl(c.supervisor)}>{tl(c.supervisor)}</span>
+                  : <span className="block truncate" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellNoSupervisor")}</span>}
               </td>
               <td className="px-3 py-2">
                 {c.leader
-                  ? <span className="text-[var(--text-2)]">{tl(c.leader)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+                  ? <span className="block truncate text-[var(--text-2)]" title={tl(c.leader)}>{tl(c.leader)}</span>
+                  : <span className="block truncate" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+              </td>
+              <td className="px-3 py-2">
+                <OwnerMark c={c} tl={tl} t={t} />
               </td>
               <td className="px-3 py-2 whitespace-nowrap">
                 <LoadMark on={c.in_load} t={t} />
