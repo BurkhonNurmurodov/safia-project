@@ -7496,6 +7496,50 @@ def _cell_owner_pass_job(waited: int = 0) -> None:
                       cell_owner_pass.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the cells Verifix seats MORE THAN ONE leader in ──────────────
+# The operator, 8 Oct 2026: «Report me the cells with multiple leaders on
+# Verifix». Reads Verifix afresh, lists every Verifix cell with two or more
+# working leaders (ours or not) with each leader's profile here and what it
+# runs / owns, and DMs it as text + a workbook
+# (`services/multi_leader_cells.py`). READ-ONLY. Waits for the 8 Oct owner pass,
+# so the «Egasi» it prints is the one that pass wrote.
+MULTI_LEADER_FLAG = "multi_leader_cells_report_2026_10_08_v1"
+_MULTI_LEADER_DELAY_S = 300
+_MULTI_LEADER_WAITS = 6
+_MULTI_LEADER_WAIT_S = 120
+
+
+def report_multi_leader_cells() -> None:
+    """The multi-leader cells report, once, as a DM. Never raises."""
+    try:
+        if not _report_pending(MULTI_LEADER_FLAG):
+            return
+        if not _schedule_multi_leader(_MULTI_LEADER_DELAY_S, 0):
+            print("[startup] multi-leader cells report could not be scheduled")
+    except Exception as exc:
+        print(f"[startup] multi-leader cells report could not be scheduled: {exc}")
+
+
+def _schedule_multi_leader(delay_s: int, waited: int) -> bool:
+    from datetime import timedelta
+    from app.scheduler import schedule_at
+    return schedule_at(f"multi-leader-cells-{waited}",
+                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
+                       _multi_leader_job, args=(waited,))
+
+
+def _multi_leader_job(waited: int = 0) -> None:
+    if waited < _MULTI_LEADER_WAITS and _report_pending(CELL_OWNER_PASS_FLAG):
+        try:
+            if _schedule_multi_leader(_MULTI_LEADER_WAIT_S, waited + 1):
+                return
+        except Exception:
+            pass
+    from app.services import multi_leader_cells
+    _send_report_once(MULTI_LEADER_FLAG, "multi-leader cells report",
+                      multi_leader_cells.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
 # The operator, the same day: «check the supervisors if they're actually
 # supervisor or not and put a switch like on the leaders also for them … report

@@ -119,6 +119,7 @@ try:
         sync_cells_and_leaders_from_verifix,
         set_profile_photos_from_verifix,
         set_cell_owners_from_verifix,
+        report_multi_leader_cells,
         check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -556,6 +557,11 @@ try:
     # DMs what it wrote. Remove this line, `startup.set_cell_owners_from_verifix`
     # and `services/cell_owner_pass.py` once the report has landed.
     set_cell_owners_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-08) — the cells Verifix seats more than
+    # one leader in, with each leader's profile here; READ-ONLY, DMed as text +
+    # a workbook. Remove this line, `startup.report_multi_leader_cells` and
+    # `services/multi_leader_cells.py` once the report has landed.
+    report_multi_leader_cells()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
     # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
     # which and which Verifix brigadirs have no unit here. Remove this line,

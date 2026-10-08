@@ -664,6 +664,18 @@ the same person.
     (both entrypoints, first at boot, pure DDL) STAY.
 - The 6 Oct DRY RUN (`cell_owner_dryrun.py`) became this pass and is gone; its
   record (app setting `cell_owner_dryrun_2026_10_06`) stays.
+- **Cells with several Verifix leaders, reported** (8 Oct, the operator: «Report
+  me the cells with multiple leaders on Verifix») — TEMPORARY, READ-ONLY
+  `services/multi_leader_cells.py`, `startup.report_multi_leader_cells` (flag
+  `multi_leader_cells_report_2026_10_08_v1`, ~300 s after boot and after the
+  owner pass, both entrypoints): reads Verifix afresh and DMs, as text + a
+  workbook to `UNPRICED_DM_CHAT`, every Verifix cell (ours or not) seating two or
+  more WORKING leaders — the owner pass's own rules (`cell_nodes`, org unit,
+  `is_leader_job`, `cell_owner_pass._ties`) — with each leader's hire date, the
+  profile here tied to them and what that profile runs / owns, plus non-cell
+  subdivisions with several leaders on a second sheet. Writes only its record
+  (app setting `multi_leader_cells_2026_10_08`). Delete the module, its startup
+  trio and both calls once it has landed — BEFORE `cell_owner_pass`.
 
 ## A work centre is NOT unique — a cell is
 
