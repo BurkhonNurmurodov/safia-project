@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "../utils/api";
+import { hedged } from "../utils/hedge";
 
 /**
  * The signed-in profile's personal admin capabilities.
@@ -17,7 +18,10 @@ import api from "../utils/api";
 export function useCapabilities() {
   const { data, isLoading } = useQuery({
     queryKey: ["my-capabilities"],
-    queryFn: () => api.get("/api/my-capabilities").then((r) => r.data),
+    // Every route waits on it, so it is asked again when it hangs
+    // (utils/hedge.js). React-query's own signal is deliberately not taken:
+    // consuming it makes a fetch abort whenever its last observer unmounts.
+    queryFn: () => hedged((signal) => api.get("/api/my-capabilities", { signal })).then((r) => r.data),
     staleTime: 60_000,
   });
 

@@ -9,6 +9,7 @@ import {
 } from "../utils/profileWallet";
 import { keepAppSignedIn } from "../utils/appSession";
 import { clearPush, registerPush } from "../utils/androidPush";
+import { hedged } from "../utils/hedge";
 
 const AuthContext = createContext(null);
 
@@ -126,7 +127,8 @@ export function AuthProvider({ children }) {
       keepAppSessionStored();
       keepAppProfilesStored();
       if (getToken() && isWebSession()) {
-        api.get("/api/auth/web/session")
+        // Asked again if it hangs (utils/hedge.js): the whole app waits on it.
+        hedged((signal) => api.get("/api/auth/web/session", { signal }))
           .then((r) => {
             // A re-issued token: the one held here still named the person as
             // they were at sign-in (renamed, moved to another unit), and every
@@ -184,26 +186,28 @@ export function AuthProvider({ children }) {
     // No initData in production (opened outside Telegram, or the webview
     // failed to pass it) — show a dedicated error page instead of the dev
     // bypass. The "__dev__" fallback is for local development only.
+    // The bot's username only fills in the «open the bot» links on the
+    // screens below, so the app never WAITS for it: it used to be half of a
+    // Promise.all with the sign-in, which held the logo screen until the
+    // slower of the two answered and turned a failed username lookup into a
+    // failed sign-in.
+    api.get("/api/auth/bot-info")
+      .then((botRes) => setBotUsername(botRes.data.bot_username || ""))
+      .catch(() => {});
+
     if (!initData && import.meta.env.PROD) {
-      api.get("/api/auth/bot-info")
-        .then((botRes) => setBotUsername(botRes.data.bot_username || ""))
-        .catch(() => {})
-        .finally(() => {
-          setAuth({ status: "no_init_data" });
-          setLoading(false);
-        });
+      setAuth({ status: "no_init_data" });
+      setLoading(false);
       return;
     }
 
-    Promise.all([
-      api.post("/api/auth/webapp", { init_data: initData || "__dev__" }),
-      api.get("/api/auth/bot-info"),
-    ])
-      .then(([authRes, botRes]) => {
+    // Safe to repeat (it only turns initData into a token), so it is asked
+    // again when it hangs — see utils/hedge.js.
+    hedged((signal) => api.post("/api/auth/webapp", { init_data: initData || "__dev__" }, { signal }))
+      .then((authRes) => {
         const data = authRes.data;
         if (data.token) setToken(data.token, { remember: true, web: false });
         setAuth(data);
-        setBotUsername(botRes.data.bot_username || "");
       })
       .catch(() => setAuth({ status: "error" }))
       .finally(() => setLoading(false));

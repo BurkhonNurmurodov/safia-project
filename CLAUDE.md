@@ -10248,9 +10248,26 @@ blocking work on the event loop freezes every request on the server at once.
   counts 174 → 111 ms, each bell part one index probe, the quantity reads
   123 → 49 ms, the overview 42 ms. The 1.3 s loop stall had no app frames on
   the loop: request threads busy in Python held the GIL.
+- **The eighth was the network, and the gate requests are now asked twice**
+  (v4.260.1): a leader's sign-in POST took 7.1 s on 4G with 13 ms on the
+  server, while `bot-info`, sent the same instant, came back in 0.8 s — ONE
+  request stuck on a working connection (a lost packet waiting out its
+  retransmission backoff, 1 + 2 + 4 s). `utils/hedge.js` `hedged(send)` sends
+  a second copy after `HEDGE_MS` (3 s) — at once if the first dropped with no
+  answer — takes whichever answers first and aborts the other; any ANSWER
+  (a 401 too) settles it. Only for requests safe to repeat that the app cannot
+  start without: `/api/auth/webapp`, `/api/auth/web/session`,
+  `/api/page-access`, `/api/my-capabilities` (react-query's own signal is not
+  taken — consuming it aborts a fetch whenever its last observer unmounts).
+  `bot-info` no longer gates the sign-in: it was half of a `Promise.all`, so the
+  logo waited for the slower of the two and a failed username lookup read as a
+  failed sign-in. The aborted copy is logged with `x: 1`
+  (`requestLog.noteEnd(…, cancelled)`) and `stall_report._answered` leaves it
+  out of the verdict, printing it as «cancelled — the other copy answered
+  first». A second sign-in copy writes a second `session.telegram_login` row.
 - Not built: an admin page over the ledger (it is memory only, per process),
-  and any automatic retry of a hung request (axios still has no timeout; the
-  reload button is the way out).
+  and any automatic retry of a hung request beyond those four (axios still has
+  no timeout; the reload button is the way out).
 
 ## Zero-downtime deploys (blue-green, v4.196.0)
 

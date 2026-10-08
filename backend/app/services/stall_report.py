@@ -43,6 +43,14 @@ def _l(v) -> list:
     return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
 
 
+def _answered(st: dict) -> list:
+    """The finished requests that say something about the wait: a copy the app
+    CANCELLED itself (`x` — the loser of a request asked twice,
+    frontend/src/utils/hedge.js) carries no answer and no server time, and
+    read as the slowest it would blame the server for a request nobody needed."""
+    return [r for r in _l(st.get("done")) if not r.get("x")]
+
+
 def _num(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
@@ -60,7 +68,7 @@ def _s(ms) -> str:
 
 
 def _slowest(st: dict) -> dict:
-    rows = _l(st.get("pending")) + _l(st.get("done"))
+    rows = _l(st.get("pending")) + _answered(st)
     return max(rows, key=lambda r: _num(r.get("ms")) or 0) if rows else {}
 
 
@@ -96,7 +104,7 @@ def cause(stall, server_events: list[dict]) -> str:
     """THE classification, shared by the verdict and the fingerprint:
     restart · froze · pending · server · network · noserver · page · other."""
     st = _d(stall)
-    done = _l(st.get("done"))
+    done = _answered(st)
     pending = _l(st.get("pending"))
     if st.get("restarting"):
         return "restart"
@@ -121,7 +129,7 @@ def cause(stall, server_events: list[dict]) -> str:
 
 def verdict(stall, server_events: list[dict]) -> str:
     st = _d(stall)
-    done = _l(st.get("done"))
+    done = _answered(st)
     pending = _l(st.get("pending"))
     slow = max(done, key=lambda r: _num(r.get("ms")) or 0) if done else {}
     ms, sms = _num(slow.get("ms")) or 0, _num(slow.get("sms"))
@@ -184,6 +192,10 @@ def message(stall, *, who: str, version: str, ua: str, repeats: int,
     for r in _l(st.get("pending")):
         req.append(f"… {_t(r.get('m'), 8)} {_t(r.get('p'))} — no answer after {_s(r.get('ms'))}")
     for r in _l(st.get("done")):
+        if r.get("x"):
+            req.append(f"{_t(r.get('m'), 8)} {_t(r.get('p'))} — cancelled after {_s(r.get('ms'))} "
+                       "(the other copy answered first)")
+            continue
         extra = []
         if _num(r.get("sms")) is not None:
             extra.append(f"server {_s(r.get('sms'))}")

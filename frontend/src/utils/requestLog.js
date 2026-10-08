@@ -14,7 +14,7 @@
 
 const MAX_DONE = 80;
 const inflight = new Map(); // id → { m, p, t0 }
-const done = [];            // { m, p, s, ms, sms, stall, t0, t1 }
+const done = [];            // { m, p, s, ms, sms, stall, x, t0, t1 }
 let seq = 0;
 
 const now = () => (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
@@ -59,8 +59,13 @@ export function noteStart(config) {
   }
 }
 
-/** Its answer arrived (or it failed — `response` is then the error's, or none). */
-export function noteEnd(config, response) {
+/**
+ * Its answer arrived (or it failed — `response` is then the error's, or none).
+ * `cancelled`: the app called it off itself — the losing copy of a request
+ * asked twice (utils/hedge.js) — so it is no evidence of a request the server
+ * left unanswered.
+ */
+export function noteEnd(config, response, cancelled = false) {
   try {
     const id = config?._rl;
     if (!id) return;
@@ -74,6 +79,7 @@ export function noteEnd(config, response) {
       ms: Math.round(t1 - r.t0),
       sms: header(response?.headers, "x-server-ms"),
       stall: header(response?.headers, "x-server-stall-ms"),
+      x: cancelled ? 1 : undefined,
       t1,
     });
     if (done.length > MAX_DONE) done.splice(0, done.length - MAX_DONE);
@@ -95,7 +101,7 @@ export function requestsSince(since, cap = 12) {
   });
   const finished = done
     .filter((r) => r.t1 >= since)
-    .map(({ m, p, s, ms, sms, stall }) => ({ m, p, s, ms, sms, stall }));
+    .map(({ m, p, s, ms, sms, stall, x }) => ({ m, p, s, ms, sms, stall, x }));
   pending.sort((a, b) => b.ms - a.ms);
   finished.sort((a, b) => b.ms - a.ms);
   return { pending: pending.slice(0, cap), done: finished.slice(0, cap) };

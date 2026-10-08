@@ -251,7 +251,7 @@ api.interceptors.response.use(
       : response;
   },
   (error) => {
-    noteEnd(error.config, error.response);
+    noteEnd(error.config, error.response, axios.isCancel(error));
     noteServerHeaders(error.response?.headers);
     if (shouldWaitForRestart(error.config, error.response)) {
       return retryAfterRestart(error.config);
