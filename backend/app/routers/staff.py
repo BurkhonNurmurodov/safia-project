@@ -3995,12 +3995,29 @@ def _clock_bounds_min(clock_in_out):
     return _parse_hhmm(left), _parse_hhmm(right)
 
 
-def _check_return_from_arrival(payload: dict) -> None:
+def _night_window(db: Session, manager_id: int) -> Optional[tuple]:
+    """(start, end) minutes of the unit's shift when it crosses midnight — what
+    seats a bare «HH:MM» on the shift-day (the live `_at` rule) — else None."""
+    from app.services import cell_hours
+    m = db.query(Manager).filter(Manager.id == manager_id).first()
+    win = cell_hours.defaults(db).get(getattr(m, "shift", None) or 0)
+    if not win:
+        return None
+    s, e = cell_hours._to_min(win[0]), cell_hours._to_min(win[1])
+    return (s, e) if s is not None and e is not None and e <= s else None
+
+
+def _check_return_from_arrival(payload: dict, night: Optional[tuple] = None) -> None:
     """A return WITHOUT a transfer time runs each worker's away stint from their
     own clock-in — so a worker who clocked in at or after the return time has
     none, and the document is refused naming them (the operator, 2026-10-09)
     rather than clamped into a whole-day move. A worker with no clock (did not
-    come, or not yet) is left in: their day splits nowhere."""
+    come, or not yet) is left in: their day splits nowhere. On a night shift
+    (`night` = its window) the return and the clock-in are seated on the
+    shift-day as the live flow seats them: a time before the shift's start is
+    the next morning — so «20:15» for a 20:30 arrival is refused, while «02:00»
+    is the small hours after it, whatever the snapshot's own end says (a
+    worker split across two cells snapshots only the first half)."""
     if payload.get("transfer_time") or not payload.get("return_time"):
         return
     R = _parse_hhmm(payload["return_time"])
@@ -4012,11 +4029,17 @@ def _check_return_from_arrival(payload: dict) -> None:
         if C is None:
             continue
         r = R
-        if O is not None and O <= C and r < C:
+        if night is not None:
+            s, e = night
+            if r < s:
+                r += 1440                             # the next morning
+            if C <= e:
+                C += 1440                             # clocked in after midnight
+        elif O is not None and O <= C and r < C:
             r += 1440                                 # an overnight return, the next morning
         if r <= C:
             raise HTTPException(status_code=400, detail=(
-                f"{emp.get('worker_name')}: {_fmt_hhmm(C)} da kelgan — "
+                f"{emp.get('worker_name')}: {_fmt_hhmm(C % 1440)} da kelgan — "
                 f"«{payload['return_time']}» da qaytish uchun kech"))
 
 
@@ -4999,7 +5022,7 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
                                       body.employees, transfer_time=ttime, return_time=rtime)
     if not payload["employees"]:
         raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
-    _check_return_from_arrival(payload)
+    _check_return_from_arrival(payload, _night_window(db, manager_id))
     if ttype == "task":
         _ensure_exchange_task(db, task_name, caller)
 
@@ -5101,7 +5124,7 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
                                           body.employees, transfer_time=ttime, return_time=rtime)
         if not payload["employees"]:
             raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
-        _check_return_from_arrival(payload)
+        _check_return_from_arrival(payload, _night_window(db, doc.manager_id))
         if ttype == "task":
             _ensure_exchange_task(db, task_name, caller)
         doc.payload = payload

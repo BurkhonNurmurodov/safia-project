@@ -118,7 +118,9 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
         if payload.get("target_type") != "supervisor" or not payload.get("target_manager_id"):
             continue
         docs_scanned += 1
-        split = bool(payload.get("transfer_time"))
+        # A return with no transfer time splits the day too (from each
+        # worker's own arrival, 2026-10-09) — the apply's own test.
+        split = bool(payload.get("transfer_time") or payload.get("return_time"))
         for emp in payload.get("employees") or []:
             name = (emp or {}).get("worker_name")
             if not name:
@@ -606,7 +608,9 @@ def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
             job_title=snap.get("job_title"), schedule=snap.get("schedule"),
             clock_in_out=plan.get("home_clock") or f'{plan["C"]}-{plan["T"]}',
             hours_worked=plan["part1"], effective_hours=plan["part1_eff"],
-            early_arrival_min=snap.get("early_arrival_min"),
+            # From-arrival: the early minutes went with the away stint, so the
+            # apply wrote 0 here.
+            early_arrival_min=(0 if plan.get("early_side") == "away" else snap.get("early_arrival_min")),
             verifix_code=emp.get("old_verifix_code"),
         )
         leftover_mgr, leftover_hrs = target, plan.get("part2_eff", plan["part2"])

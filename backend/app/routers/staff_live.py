@@ -890,11 +890,27 @@ def _still_here(db: Session, doc: LiveDocument, reads: Optional[dict] = None) ->
     if ctx is None:
         return                      # nothing to check against — creation already did
     eids = live_staff._doc_eids(doc)
+    pl = doc.payload or {}
+    shift = (ctx.units.get(doc.manager_id) or {}).get("shift")
+    # A return with no transfer time runs from each worker's own arrival: one
+    # who has since clocked in at or after it is refused by name, as filing
+    # would have refused them (the operator's rule 4, 2026-10-09).
+    R = live_staff._at(ctx, shift, pl.get("return_time"))
+    if R is not None and not pl.get("transfer_time"):
+        for e in pl.get("employees") or []:
+            eid = str(e.get("employee_id"))
+            if eid not in ctx.store and eid not in ctx.homes:
+                continue
+            came = live_staff.person(ctx, eid).p["in"]
+            if came is not None and came >= R:
+                raise HTTPException(status_code=409, detail={
+                    "code": "late_arrival", "worker": e.get("worker_name"),
+                    "message": (f"{e.get('worker_name')}: {live_staff._hm(came)} da kelgan — "
+                                f"«{pl.get('return_time')}» da qaytish uchun kech")})
     before = live_staff.broken_moves(ctx, eids)
     after = live_staff.broken_moves(ctx, eids, add=doc)
-    pl = doc.payload or {}
     if doc.id in after:
-        T = live_staff._at(ctx, (ctx.units.get(doc.manager_id) or {}).get("shift"), pl.get("transfer_time"))
+        T = live_staff._at(ctx, shift, pl.get("transfer_time"))
         for e in pl.get("employees") or []:
             at = live_staff.where_at(ctx, str(e.get("employee_id")), T)
             if at is not None and at.unit != doc.manager_id:
@@ -903,12 +919,33 @@ def _still_here(db: Session, doc: LiveDocument, reads: Optional[dict] = None) ->
                     "message": (f"{e.get('worker_name')}: {pl.get('transfer_time') or 'kun boshida'} "
                                 f"«{live_staff.stint_name(ctx, at)}»da — bu hujjat tuzilgandan keyin "
                                 f"boshqa hujjat uni ko'chirgan")})
+        bad = _return_elsewhere(ctx, doc)
+        if bad:
+            raise HTTPException(status_code=409, detail={"code": "not_here", **bad})
     newly = after - before - {doc.id}
     if newly:
         raise HTTPException(status_code=409, detail={
             "code": "breaks", "ids": sorted(newly),
             "message": (f"Bu ko'chirish {_doc_list(newly)} hujjatni buzadi: o'sha hujjat xodimni "
                         f"keyinroq shu brigadirdan ko'chiradi. Vaqtni yoki qaytish vaqtini tekshiring.")})
+
+
+def _return_elsewhere(ctx, doc) -> Optional[dict]:
+    """The first worker whose RETURN this document cannot fire — at the return
+    time another document has them somewhere the document did not put them."""
+    pl = doc.payload or {}
+    if not pl.get("return_time"):
+        return None
+    for e in pl.get("employees") or []:
+        eid = str(e.get("employee_id"))
+        if eid not in ctx.store and eid not in ctx.homes:
+            continue
+        at = live_staff.return_holder(ctx, doc, eid)
+        if not live_staff._gives_to(doc, at):
+            return {"worker": e.get("worker_name"), "message": (
+                f"{e.get('worker_name')}: {pl.get('return_time')} da «{live_staff.stint_name(ctx, at)}»da "
+                f"bo'ladi — u yerdan qaytarib bo'lmaydi. Qaytish vaqtini tekshiring.")}
+    return None
 
 
 def _dependents(db: Session, doc: LiveDocument) -> set:
@@ -1021,8 +1058,11 @@ def _exchange_payload(db: Session, caller: dict, body, d: date, mid: int, *, ctx
     hypo = LiveDocument(id=-1, doc_type="people_exchange", manager_id=mid, day=d, payload={
         "target_type": ttype, "target_manager_id": tgt_id, "task_name": task_name,
         "transfer_time": ttime, "return_time": rtime,
-        "employees": [{"employee_id": r["employee_id"]} for r in rows]})
+        "employees": [{"employee_id": r["employee_id"], "worker_name": r["worker_name"]} for r in rows]})
     eids = {r["employee_id"] for r in rows}
+    bad = _return_elsewhere(ctx, hypo)
+    if bad:
+        raise HTTPException(status_code=400, detail=bad["message"])
     newly = live_staff.broken_moves(ctx, eids, add=hypo) - live_staff.broken_moves(ctx, eids) - {-1}
     if newly:
         raise HTTPException(status_code=400, detail=(

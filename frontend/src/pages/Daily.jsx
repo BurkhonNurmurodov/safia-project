@@ -487,10 +487,12 @@ function SupervisorDaily() {
                         <tr key={d.id} className="border-b" style={{ borderColor: "var(--border)" }}>
                           <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                             <span className="font-mono">{fmtDateLabel(d.date)}</span>
-                            {isExchange && d.transfer_time && (
+                            {isExchange && (d.transfer_time || d.return_time) && (
                               <span className="mt-0.5 flex items-center gap-1 font-mono text-[10px]"
-                                style={{ color: "var(--text-4)" }} title={t("staff.transferTimeLabel")}>
-                                <Clock size={10} />{d.transfer_time}
+                                style={{ color: "var(--text-4)" }}
+                                title={d.transfer_time ? t("staff.transferTimeLabel") : t("staff.fromArrival")}>
+                                {/* A return with no transfer time runs from each arrival. */}
+                                <Clock size={10} />{d.transfer_time || `…–${d.return_time}`}
                               </span>
                             )}
                           </td>

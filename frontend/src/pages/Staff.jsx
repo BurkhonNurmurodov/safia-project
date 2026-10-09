@@ -148,24 +148,31 @@ function liveNowMin(live) {
 function liveWindow(sels, live) {
   if (!sels.length) return null;
   const nowM = liveNowMin(live);
+  // Every clock is seated on the shift-day: on a night shift a time more than
+  // 12 h before the shift's start (00:30 for a 20:00 shift) is the small hours
+  // after it — read on raw minutes it sorted before the 20:00 arrivals.
+  const begins = sels.map(w => parseHHMM(w.begin)).filter(x => x != null);
+  const raws = sels.map(w => parseHHMM(w.clock_in) ?? parseHHMM(w.begin)).filter(x => x != null);
+  const ref = begins.length ? Math.max(...begins) : (raws.length ? Math.max(...raws) : null);
+  const seat = m => (m != null && ref != null && ref - m > 720 ? m + 1440 : m);
   const starts = [], ends = [], ins = [];
   sels.forEach(w => {
     // Came → from the clock-in; not yet → from the schedule's start (a move
     // may name a worker before they arrive, the operator 2026-10-09).
-    const cin = parseHHMM(w.clock_in);
-    const s = cin ?? parseHHMM(w.begin);
+    const cin = seat(parseHHMM(w.clock_in));
+    const s = cin ?? seat(parseHHMM(w.begin));
     if (s == null) return;
+    const after = m => (m == null ? null : (m < s ? m + 1440 : m));
     // Gone → up to the check-out. Otherwise up to the schedule's END or now,
     // whichever is later: a move or a return may be PLANNED ahead of now
     // (2026-10-09), and a worker out on a break is expected back.
     const gone = w.status === "left" || w.status === "no_out";
-    let e = gone && w.clock_out ? parseHHMM(w.clock_out) : null;
+    let e = gone && w.clock_out ? after(parseHHMM(w.clock_out)) : null;
     if (e == null) {
-      const cands = [nowM, parseHHMM(w.end)].filter(x => x != null);
+      const cands = [nowM, parseHHMM(w.end)].map(after).filter(x => x != null);
       e = cands.length ? Math.max(...cands) : null;
     }
     if (e == null) return;
-    if (e < s) e += 1440;
     starts.push(s);
     ends.push(e);
     if (cin != null) ins.push(cin);
@@ -175,8 +182,7 @@ function liveWindow(sels, live) {
   if (hi < lo) return null;
   // The latest arrival among the workers who came: a return filed WITHOUT a
   // transfer time must fall after every one of them.
-  let maxIn = ins.length ? Math.max(...ins) : null;
-  if (maxIn != null && maxIn < lo) maxIn += 1440;
+  const maxIn = ins.length ? Math.max(...ins) : null;
   return { lo, hi, maxIn };
 }
 
@@ -864,7 +870,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
     name: tl(w.worker_name),
     task: w.on_task || null,
     status: S.live ? <LiveStatusChip status={w.status} /> : null,
-    note: S.live && w.moved ? <LiveRowNotes w={w} /> : null,
+    note: S.live && (w.moved || w.planned) ? <LiveRowNotes w={w} /> : null,
     role: tx(w.job_title),
     cell: w._cell ? { id: w._cell.id, code: w._cell.code } : null,
     schedule: tx(w.schedule),
@@ -2091,8 +2097,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     const lo = Math.min(...starts);
     const hi = Math.max(...outs);
     if (hi < lo) return null;
-    let maxIn = ins.length ? Math.max(...ins) : null;
-    if (maxIn != null && maxIn < lo) maxIn += 1440;
+    // An arrival is carried past midnight only when it really is one: a
+    // clock-in a few minutes before the schedule's start is an early arrival.
+    const seated = ins.map(m => (lo - m > 720 ? m + 1440 : m));
+    const maxIn = seated.length ? Math.max(...seated) : null;
     return { lo, hi, maxIn };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, selected, attData]);
@@ -2129,7 +2137,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       if (lo == null) return null;
       if (lo < timeWindow.lo) lo += 1440;            // post-midnight transfer
     } else {
-      lo = timeWindow.maxIn ?? timeWindow.lo;
+      // Strictly after the latest arrival — a return AT it is refused.
+      lo = timeWindow.maxIn != null ? timeWindow.maxIn + 1 : timeWindow.lo;
     }
     return timeWindow.hi > lo ? { lo, hi: timeWindow.hi } : null;
   }, [transferTime, timeWindow, useTime]);
@@ -2137,11 +2146,13 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // Drop the return time if it falls outside [T, latest clock-out] as T/selection
   // change (e.g. the transfer time was pushed past the old return).
   useEffect(() => {
-    if (!returnTime || !employees.length) return;
+    // No transfer time picked yet (the switch just turned on) is no window to
+    // judge by — the return stays until there is one.
+    if (!returnTime || !employees.length || (useTime && !transferTime)) return;
     let m = parseHHMM(returnTime);
     if (m != null && returnWindow && m < returnWindow.lo) m += 1440;
     if (!returnWindow || m == null || m < returnWindow.lo || m > returnWindow.hi) setReturnTime("");
-  }, [returnWindow, returnTime, employees.length]);
+  }, [returnWindow, returnTime, employees.length, useTime, transferTime]);
 
   function toggle(name) {
     setSelected(s => {
@@ -2402,7 +2413,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                 <Clock size={13} style={{ color: "var(--text-4)" }} />
               </button>
             ) : (
-              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("staff.returnTimeNoOptions")}</span>
+              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                {t(useTime ? "staff.returnTimeNoOptions"
+                  : (selected.size ? "staff.returnTimeNoOptionsArrival" : "staff.returnTimeSelectFirst"))}
+              </span>
             ))}
             {useReturn && returnTime && (
               <span className="text-[11px] flex-1 min-w-[180px]" style={{ color: "var(--text-4)" }}>

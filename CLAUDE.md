@@ -7648,9 +7648,14 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   NAME (`_check_times`; file flow `_check_return_from_arrival`); a worker who
   has NOT clocked in may be named in any exchange document (`_movers` no
   longer refuses them, the dialog offers every row standing here,
-  `where_at` answers with the unit their day opens in — a synthetic `Stint`,
-  `in_at` None on the document row) and counts from whenever they come — one
-  who comes after the return simply opens the day at the receiver.
+  `in_at` None on the document row) and counts from whenever they come.
+  **One who comes AT OR AFTER the return was never moved by it** — the day
+  opens at the sender (`_plan` drops such a whole-day move: C ≥ R, or not in
+  while R has passed), and approving the document after they came is refused
+  by name too (`_still_here`, 409 `late_arrival`). Until they come,
+  `where_at` WALKS the day's documents for them (`_due_at`: the opening unit,
+  then every move and return before T, in `person`'s order) and `is_here`
+  answers that opening unit, so the receiver may name them next.
   **Transfer and return times may be AHEAD of now on every document** (the
   operator: «every time, transfer included»): a time at or after the `cut`
   stays out of the timeline (the 8 Oct rule already voided a move after the
@@ -7660,14 +7665,24 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   and carried rows, while the worker is inside or out on a break); a worker
   who leaves before the time never moves. A time at or after a LEFT worker's
   exit minute is still refused; after a BREAK exit it is a planned move
-  applied once they are back. The wheel's far end is the schedule's end (or
+  applied once they are back — and `where_at` reads any instant after a
+  break's exit as the worker back (`Ctx.hold`), so filings, approvals and the
+  un-post guard do not flip with the break. **A return is checked like a
+  move**: `broken_moves` also asks where the worker stands at each document's
+  return with that return left out (`return_holder`) — anywhere but where the
+  document put them breaks it (an onward move past the lender's return is
+  refused; the filer's own return is checked at filing and approval,
+  `_return_elsewhere`). A planned move or return INTO a unit keeps its day
+  open (`unit_day` `due_back`, read by `busy`). The wheel's far end is the schedule's end (or
   the exit), not now; a not-yet-arrived worker's window opens at their
   schedule's start. The card and the Jurnal print «…–12:00» for a return
   from each arrival (`_time_span`). **The Excel-era file flow has the same
   shape** (`staff._compute_split` `from_arrival`: T = the clock-in,
   `early_side` «away», `part2_eff`, the home slice `R–O`; a nameless leftover
   always carries its side's EFFECTIVE hours; `_check_return_from_arrival` at
-  both doors; `exchange_audit` rebuilds with the same keys; that flow never
+  both doors, seating the times on a night unit's shift window as the live
+  `_at` does (`_night_window`); `exchange_audit` treats such a document as a
+  split and rebuilds with the same keys; that flow never
   checked a time against now, so «future» needs nothing there). Existing
   drafts are edited into and out of the shape like any field.
 - **Arrivals come cell-less** and are placed on «Yacheykalar» (`LivePlacement`,

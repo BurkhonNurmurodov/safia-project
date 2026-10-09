@@ -1331,7 +1331,7 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
                 staff_live._tell_rejected(db, doc, caller)
         except HTTPException as e:
             # A STRUCTURED 409 (`{code, message}`: `not_here`, `breaks`,
-            # `doc_too_old`) is a refusal of a document still open — nothing
+            # `late_arrival`, `doc_too_old`) is a refusal of a document still open — nothing
             # was decided, the card stays, the tapper reads the reason the
             # page would print. A plain-string 409 («Rejected documents cannot
             # be posted», «Only draft documents can be rejected») or a 404 is

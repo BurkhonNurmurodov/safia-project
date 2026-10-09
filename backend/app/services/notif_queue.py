@@ -247,10 +247,9 @@ def _live_docs(db: Session, payload: dict) -> list[dict]:
         if sl._may_reject(doc, payload, db):
             actions.append(_action("reject", f"/api/staff-live/documents/{doc.id}/reject",
                                    tone="danger", confirm=True))
-        # «09:30» or «09:30–12:00» — a move with a clock; blank = the whole day.
-        time = s.get("transfer_time") or ""
-        if time and s.get("return_time"):
-            time += f"–{s['return_time']}"
+        # «09:30», «09:30–12:00», or «…–12:00» (a return from each worker's
+        # arrival) — the card's and the DM's spelling; blank = the whole day.
+        time = sl._time_span(s)
         out.append({
             "key": f"live_doc:{doc.id}", "kind": "live_doc", "id": doc.id,
             "since": _iso(doc.created_at),

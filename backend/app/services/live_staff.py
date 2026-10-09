@@ -64,6 +64,7 @@ import zlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -165,6 +166,10 @@ class Ctx:
     placements: dict                   # (manager id, employee id) → LivePlacement
     windows: dict                      # shift → ("HH:MM", "HH:MM")
     fixes: dict = field(default_factory=dict)   # employee id → LiveClockFix (the close's answers)
+    # `where_at` only: an instant a worker out on a BREAK is read at as if they
+    # had come back — every move before it applies (a planned move after the
+    # exit included), instead of the timeline stopping at the exit.
+    hold: Optional[datetime] = None
     _persons: dict = field(default_factory=dict)
 
 
@@ -275,6 +280,32 @@ def _moves_for(ctx: Ctx, eid: str) -> list:
     return out
 
 
+def _plan(ctx: Ctx, eid: str, C: Optional[datetime], home_unit: Optional[int]) -> tuple:
+    """Where a worker's day opens and what moves it after — THE reading of the
+    approved documents, shared by `person` and `_due_at`: (start unit, start
+    task, whole-day task, the whole-day move's return as (R, sender), the timed
+    moves in order). A whole-day move whose RETURN came before the worker did
+    (C ≥ R; not in yet and R already past) never applied: the document gave
+    them to the receiver from their arrival until R, and they arrived after it
+    (the operator, 2026-10-09 — the filing door refuses such a worker by name;
+    one named before they came is simply at the sender)."""
+    moves = _moves_for(ctx, eid)
+    timed = [m for m in moves if m["T"] is not None]
+    timed.sort(key=lambda m: (m["T"], m["doc"].approved_at or datetime.min, m["doc"].id))
+    whole = [m for m in moves if m["T"] is None
+             and not (m["R"] is not None and (m["R"] <= C if C is not None else m["R"] <= ctx.now))]
+    start_unit, start_task, whole_task, whole_back = home_unit, None, None, None
+    if whole:
+        w = whole[-1]
+        if w["target"]:
+            start_unit = w["target"]
+        else:
+            start_unit, start_task, whole_task = None, w["task"], w["task"]
+        if w["R"] is not None:
+            whole_back = (w["R"], w["sender"])
+    return start_unit, start_task, whole_task, whole_back, timed
+
+
 def _fixed(ctx: Ctx, p: dict, fix) -> dict:
     """A worker's live day with the brigadir's answer for a MISSING check-out
     laid over it (`LiveClockFix`, ruling 6 of 2026-10-06). «Exit at HH:MM» ends
@@ -325,21 +356,8 @@ def person(ctx: Ctx, eid: str) -> Worker:
     if C is not None and p["begin"] is not None and C < p["begin"]:
         early = round((p["begin"] - C).total_seconds() / 60.0)
 
-    moves = _moves_for(ctx, eid)
-    whole = [m for m in moves if m["T"] is None]
-    timed = [m for m in moves if m["T"] is not None]
-    timed.sort(key=lambda m: (m["T"], m["doc"].approved_at or datetime.min, m["doc"].id))
-    start_unit, start_task = home_unit, None
-    whole_task = None
-    whole_back = None                  # (R, sender) of the whole-day move, if it carries one
-    if whole:
-        w = whole[-1]
-        if w["target"]:
-            start_unit = w["target"]
-        else:
-            start_unit, start_task, whole_task = None, w["task"], w["task"]
-        if w["R"] is not None:
-            whole_back = (w["R"], w["sender"])
+    # whole_back: (R, sender) of the whole-day move, if it carries a return.
+    start_unit, start_task, whole_task, whole_back, timed = _plan(ctx, eid, C, home_unit)
 
     stints: list[Stint] = []
     unit_hours: dict = {}
@@ -353,6 +371,11 @@ def person(ctx: Ctx, eid: str) -> Worker:
         # Where the day ENDS for the split: the exit when there is one (a
         # break's exit too — that is as far as the hours go), else now.
         E = out or max(ctx.now, C)
+        # Read for a later instant by `where_at`: a break is the worker coming
+        # back, so the day runs on to that instant.
+        held = ctx.hold is not None and out is not None and ctx.hold > out
+        if held:
+            E = max(ctx.now, ctx.hold, C)
         # A move timed at or after the end of the worker's day never happened —
         # they had gone (a check-out Verifix filled in earlier than the
         # document's time). It is no stint of zero hours on the target. Read to
@@ -361,7 +384,7 @@ def person(ctx: Ctx, eid: str) -> Worker:
         # worker went home, not forty seconds on the target (the 6–7 Oct
         # exit-minute moves, 2026-10-08). While they are still inside the cut
         # is now itself, so a move at the current minute stands.
-        cut = out.replace(second=0, microsecond=0) if out is not None else E
+        cut = out.replace(second=0, microsecond=0) if out is not None and not held else E
         # A time still AHEAD of the cut — a planned move or return (the
         # operator, 2026-10-09) — is the same case for now: it enters the
         # timeline the minute it comes, and `planned` names the next one so
@@ -477,25 +500,46 @@ def stint_at(w: Worker, T: Optional[datetime]) -> Optional[Stint]:
     return cur
 
 
+def _due_at(ctx: Ctx, eid: str, T: Optional[datetime]) -> Optional[Stint]:
+    """Where a worker who has not clocked in (yet) is due at T — None = where
+    their day opens: a whole-day document's receiver (or task), else the home
+    unit, then every move and return timed BEFORE T in the order `person`
+    lays them (a move before the clock-in lands at it, so each one is applied
+    by the time the worker can be anywhere). A document may name them before
+    they come (the operator, 2026-10-09)."""
+    home_unit = ctx.homes.get(eid, (None, None))[0]
+    unit, task, _, back, timed = _plan(ctx, eid, None, home_unit)
+    if T is not None:
+        pts = [(back[0], 1, back[1], None)] if back else []
+        for i, m in enumerate(timed, 1):
+            pts.append((m["T"], 2 * i, m["target"], m["task"]))
+            if m["R"] is not None:
+                pts.append((m["R"], 2 * i + 1, m["sender"], None))
+        for at, _, u, tk in sorted(pts, key=lambda x: (x[0], x[1])):
+            if at < T:
+                unit, task = u, tk
+    if unit is None and not task:
+        return None
+    return Stint(start=T or ctx.now, unit=unit, task=task)
+
+
 def where_at(ctx: Ctx, eid: str, T: Optional[datetime], without: tuple = ()) -> Optional[Stint]:
     """Where the worker stands at T, with the approved documents `without`
     left out — THE «who may move this worker» answer: the unit of the stint at
     T files the move. A move timed exactly at T is not counted (it is the move
-    being asked about, or one at the same minute), so T is read a second early."""
-    sub = replace(ctx, docs=[d for d in ctx.docs if d.id not in without], _persons={})
-    if T is not None and T > sub.now:
-        # A planned time (2026-10-09): every move before it has applied by then.
-        sub = replace(sub, now=T)
+    being asked about, or one at the same minute), so T is read a second early.
+    A time ahead of now (a planned move, 2026-10-09) or after a break's exit is
+    read with every move before it applied — a worker on a break is expected
+    back."""
+    sub = replace(ctx, docs=[d for d in ctx.docs if d.id not in without], hold=None, _persons={})
     w = person(sub, eid)
     if not w.stints:
-        # Not clocked in (yet): due where their day opens — a whole-day
-        # document's receiver (or task), else the home unit. A document may
-        # name them before they come (the operator, 2026-10-09).
-        if w.first_unit is None and not w.whole_task:
-            return None
-        return Stint(start=T or sub.now, unit=w.first_unit, task=w.whole_task)
+        return _due_at(sub, eid, T)
     if T is None:
         return stint_at(w, None)
+    brk = w.p["status"] == "break" and w.p["out"] is not None and T > w.p["out"]
+    if T > sub.now or brk:
+        w = person(replace(sub, now=max(T, sub.now), hold=T if brk else None, _persons={}), eid)
     return stint_at(w, T - timedelta(seconds=1)) if w.stints and T > w.stints[0].start \
         else stint_at(w, None)
 
@@ -504,13 +548,56 @@ def _doc_eids(d) -> set:
     return {str(e.get("employee_id")) for e in (d.payload or {}).get("employees") or []}
 
 
+def _no_return(d):
+    """The document as if it carried no return — what `return_holder` reads the
+    day through (an ORM row is never touched: this is a stand-in)."""
+    return SimpleNamespace(id=d.id, doc_type=d.doc_type, manager_id=d.manager_id,
+                           approved_at=getattr(d, "approved_at", None),
+                           payload={**(d.payload or {}), "return_time": None})
+
+
+def return_holder(ctx: Ctx, d, eid: str) -> Optional[Stint]:
+    """Where the worker stands at the document's RETURN time with that return
+    left out — a return is fired by the unit (or task) the document gave the
+    worker to, so anybody else here means the return pulls the worker out of
+    a unit that holds them (2026-10-09). None when the document has no return."""
+    pl = d.payload or {}
+    R = _at(ctx, (ctx.units.get(d.manager_id) or {}).get("shift"), pl.get("return_time"))
+    if R is None:
+        return None
+    p = person(ctx, eid).p
+    if p["out"] is not None and p["status"] != "break" \
+            and R >= p["out"].replace(second=0, microsecond=0):
+        return None                 # gone before it: the return never fires
+    # Counted as approved (a draft at its approval, a document being filed),
+    # with its own return left out.
+    docs = [_no_return(o) if o.id == d.id else o for o in ctx.docs]
+    if not any(o.id == d.id for o in ctx.docs):
+        docs.append(_no_return(d))
+    sub = replace(ctx, docs=docs, _persons={})
+    return where_at(sub, eid, R)
+
+
+def _gives_to(d, at: Optional[Stint]) -> bool:
+    """`at` is where the document put the worker — its target unit, or its task."""
+    pl = d.payload or {}
+    if at is None:
+        return True
+    if pl.get("target_type") == "task":
+        return at.unit is None and at.task == pl.get("task_name")
+    return at.unit == pl.get("target_manager_id")
+
+
 def broken_moves(ctx: Ctx, eids: set, add=None, drop: tuple = ()) -> set:
     """The approved people-exchanges (of these workers) whose sender does NOT
-    hold the worker at the move's time — with `add` counted as approved and
+    hold the worker at the move's time, or whose RETURN does not find the
+    worker where the document put them — with `add` counted as approved and
     `drop` left out. The doors compare it before and after a change: a change
     that newly breaks a move (an approval that takes the worker away from the
-    unit a later move sends them from; an un-post a later move depends on) is
-    refused, so the approved set always reads as one walk through the day."""
+    unit a later move sends them from; an un-post a later move depends on; a
+    move that carries the worker off before another document brings them
+    back) is refused, so the approved set always reads as one walk through
+    the day."""
     docs = [d for d in ctx.docs if d.id not in drop] + ([add] if add is not None else [])
     sub = replace(ctx, docs=docs, _persons={})
     bad = set()
@@ -520,12 +607,16 @@ def broken_moves(ctx: Ctx, eids: set, add=None, drop: tuple = ()) -> set:
         shared = eids & _doc_eids(o)
         if not shared:
             continue
-        T = _at(sub, (sub.units.get(o.manager_id) or {}).get("shift"), (o.payload or {}).get("transfer_time"))
+        pl = o.payload or {}
+        T = _at(sub, (sub.units.get(o.manager_id) or {}).get("shift"), pl.get("transfer_time"))
         for eid in shared:
             if eid not in sub.store and eid not in sub.homes:
                 continue
             at = where_at(sub, eid, T, without=(o.id,))
             if at is not None and at.unit != o.manager_id:
+                bad.add(o.id)
+                break
+            if pl.get("return_time") and not _gives_to(o, return_holder(sub, o, eid)):
                 bad.add(o.id)
                 break
     return bad
@@ -538,10 +629,12 @@ def stint_name(ctx: Ctx, s: Optional[Stint]) -> str:
 
 
 def is_here(w: Worker, unit: int) -> bool:
-    """The worker stands in this unit now — or ended the day here."""
+    """The worker stands in this unit now — or ended the day here. One who has
+    not clocked in is due where their day opens (`where_at`'s answer), so the
+    unit a whole-day document gives them to may name them in the next one."""
     if w.current is not None:
         return w.current.unit == unit
-    return (w.home_unit == unit) if not w.whole_task else False
+    return (w.first_unit == unit) if not w.whole_task else False
 
 
 # ── one unit's day ───────────────────────────────────────────────────────────
@@ -765,12 +858,19 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
     took with them, and the counts the page reads."""
     rows: list[dict] = []
     extras: list[dict] = []
+    due: list[dict] = []
     for eid in unit_ids(ctx, manager_id):
         if (manager_id, eid) in ctx.deleted:
             continue
         if eid not in ctx.store and eid not in ctx.homes:
             continue
         w = person(ctx, eid)
+        # A worker inside (or on a break) elsewhere whom a planned move or
+        # return brings HERE later: the day is not over for this unit.
+        if (w.planned and w.planned["unit"] == manager_id and w.current is not None
+                and w.current.unit != manager_id and w.p["status"] in ("inside", "break")):
+            due.append({"employee_id": eid, "worker_name": w.name, "status": "due_back",
+                        "at": _hm(w.planned["at"])})
         if w.winner == manager_id:
             rows.extend(_named_row(ctx, w, manager_id))
             continue
@@ -812,6 +912,8 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
         "workers": sorted(rows, key=lambda r: (r["worker_name"] or "", r.get("split_of") or 0)),
         "extras": sorted(extras, key=lambda x: x["worker_name"] or ""),
         "extra_hours": round(sum(x["hours"] for x in extras), 2),
+        # Inside elsewhere and coming here at a planned time — keeps the day open.
+        "due_back": sorted(due, key=lambda x: x["worker_name"] or ""),
         "counts": {
             "total": sum(1 for r in rows if r.get("split_of") is None),
             "came": came, "inside": inside, "left": counts["left"],
@@ -827,6 +929,7 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
             # close and «everybody left» wait on them too.
             "extra_inside": sum(1 for x in extras if x["here"] and x["status"] in ("inside", "break")),
             "extra_came": len(extras),
+            "due_back": len(due),
         },
     }
 
@@ -904,11 +1007,11 @@ def close_state(day_rows: dict, day: date, close_rec: Optional[LiveDayClose],
                "by": close_rec.closed_by_name}
     elif not (c["came"] or c.get("extra_came")):
         out = {"state": "waiting"}
-    elif c["inside"] + c.get("extra_inside", 0) == 0 and c["not_yet"] == 0:
+    elif c["inside"] + c.get("extra_inside", 0) == 0 and c["not_yet"] + c.get("due_back", 0) == 0:
         out = {"state": "all_left", "last_out": _iso(last_exit(day_rows, day))}
     else:
         out = {"state": "open", "n": c["inside"] + c.get("extra_inside", 0),
-               "expected": c["not_yet"]}
+               "expected": c["not_yet"] + c.get("due_back", 0)}
     # What `close_day` refuses on (besides people with no cell, which its
     # refusal names): the page offers the close exactly where this is true —
     # «everybody left», and a day nobody came to with nobody still due.
@@ -950,6 +1053,7 @@ def busy(day_rows: dict) -> list:
            if r.get("split_of") is None and r["status"] in ("inside", "break", "not_yet")]
     out += [x for x in day_rows.get("extras") or []
             if x.get("here") and x.get("status") in ("inside", "break")]
+    out += list(day_rows.get("due_back") or [])
     c = day_rows["counts"]
     if not (c["came"] or c.get("extra_came")):
         out += [r for r in day_rows["workers"] if r.get("split_of") is None and r.get("still_due")]
