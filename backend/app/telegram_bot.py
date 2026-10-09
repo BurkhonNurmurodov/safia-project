@@ -3728,11 +3728,14 @@ def _lt_cmd(message: types.Message):
             # platform's own checks as the leader's failure — permanently,
             # because a closed day can no longer be settled. Two doors, one
             # rule, and the rule has to hold in both.
-            leader_auto.run(db)
+            # Only the CALLER's own leaders: the timer job is everybody's, and
+            # walking the whole plant here cost every /tasks ~3 s (9 Oct).
+            mine = {p.id for p in profs}
+            leader_auto.run(db, leader_ids=mine)
             # Per-task units have per-task deadlines, and a deadline that only
             # bites when a scheduler happens to run is not one. The timer job
             # does this too; whichever gets there first wins.
-            leader_close.autoclose_due(db)
+            leader_close.autoclose_due(db, leader_ids=mine)
         except Exception:
             logger.exception("per-task auto-close failed")
             db.rollback()

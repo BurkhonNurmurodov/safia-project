@@ -5331,9 +5331,10 @@ page's period. `MyStanding` in `Leaders.jsx`, fed by `GET
   byte-identical for admin, supervisor and shift-manager when split);
   `_standing_pool` builds it with `sees_all=True, lite=True`, in-process: fresh
   for 60 s, and from then on every request answers AT ONCE from the last build
-  (up to 15 min old) while ONE new build runs on a thread of its own
-  (`_standing_refresh`, its own session). Only the first request after a boot or
-  a quiet quarter of an hour waits for a build (~5 s on production — with a
+  (up to 3 h old) while ONE new build runs on a thread of its own
+  (`_standing_refresh`, its own session), and a process builds one ~45 s after
+  it starts (`warm_standing`). Only a request after three quiet hours, or in a
+  process's first minute, waits for a build (~5 s on production — with a
   plain 60 s expiry somebody paid it every minute, nine times in the 8 Oct
   report). Each request windows it and draws fresh random codes
   (`_pool_codes`): a unit is `u…`, a person is one `w…` code per WORD of their
@@ -10412,6 +10413,24 @@ blocking work on the event loop freezes every request on the server at once.
     names): counted in the first line, named in «Slow by design», detailed
     after everything else — never in «Slow most often».
   Not touched: the Google-Sheets refreshes (the sheet is the wait).
+- **The tenth (9 Oct, from 12:28) had no freeze and four slow requests**, all
+  fixed:
+  - **`/tasks` in the bot (3.3 s, the DB pool full)** ran the automatic
+    checks and the per-task closes for the WHOLE plant before drawing the
+    menu. `leader_auto.run` and `leader_close.autoclose_due` take
+    `leader_ids`; `_lt_cmd` passes the caller's own leader profiles. The
+    5-minute sweep still passes nothing and settles everybody.
+  - **A plain /staff poll waited 9.3 s on Verifix.** `verifix_live.day_read`
+    read the whole unit whenever anybody of it was missing from the stored
+    read or the read had aged past the job's pace. Now it reads only the
+    MISSING people (`_read_day(stamp=False)`: not a read of the unit, so
+    `units[m]` is not stamped), and a read that is merely OLD is served as it
+    stands and re-read in the background (`_refresh_later`, two threads, once
+    per unit-day at a time). The whole unit is read while somebody waits only
+    on a press, a close, or a day nothing is stored for.
+  - **«Mening o'rnim» (4.8 s) waited for the pool's first build.** It is
+    built ~45 s after the process starts (`leaders.warm_standing`, from the
+    lifespan) and a stored pool answers for 3 h while a new one is made.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).

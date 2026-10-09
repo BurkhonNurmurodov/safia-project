@@ -442,7 +442,7 @@ def _side_by_side(cfg: dict, *reads):
 
 def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
               unit_id: Optional[int] = None, units_read=(), all_units=(),
-              homes: Optional[dict] = None) -> dict:
+              homes: Optional[dict] = None, stamp: bool = True) -> dict:
     """Read `ids` on `day` from Verifix and fold them into the day's stored read.
 
     `unit_id` None = the job's read: the marks read since the last one only
@@ -451,7 +451,9 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
     unit in `units_read` — the job reads only the units whose day it is (v2; in
     a v1 row `all_at` meant every unit, so upgrading one hands that stamp to
     each of `all_units`). A unit's read («Yangilash», or a day nobody stored)
-    reads its people whole and stamps `units[unit_id]`. Each person is replaced
+    reads its people whole and stamps `units[unit_id]` — unless `stamp` is
+    False: a read of only the people a unit's stored read LACKS (`day_read`)
+    is not a read of the unit. Each person is replaced
     only by a read that STARTED later than the one stored for them, and carries
     that read's start (`at`) — what `_covered_at` reads."""
     key = _day_key(day)
@@ -526,9 +528,10 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
         row.ms = int((_time.monotonic() - t0) * 1000)
     else:
         cur.setdefault("v", 1)
-        units = dict(cur.get("units") or {})
-        units[str(unit_id)] = at_iso
-        cur["units"] = units
+        if stamp:
+            units = dict(cur.get("units") or {})
+            units[str(unit_id)] = at_iso
+            cur["units"] = units
     row.data = cur
     row.error, row.error_at = None, None
     db.commit()
@@ -880,10 +883,11 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
              force_min_s: float = FORCE_MIN_S, memo: Optional[dict] = None) -> dict:
     """The stored read behind one unit's day (`services/live_staff` builds the
     rows), read from Verifix first only when it has to be: «Yangilash»
-    (`force`), a day nobody stored yet, somebody of this unit missing from it,
-    or today's read older than the job's pace for it (`HOT_S` while the shift
-    runs, `COOL_S` after) plus `STALE_S` — the job that keeps it fresh has
-    stopped. An error comes back as {"error": code[, "message"]}; with a
+    (`force`), a day nobody stored yet, or somebody of this unit missing from
+    it (only they are read). Today's read older than the job's pace for it
+    (`HOT_S` while the shift runs, `COOL_S` after) plus `STALE_S` — the job
+    that keeps it fresh has stopped — is served as it stands and re-read in the
+    background. An error comes back as {"error": code[, "message"]}; with a
     stored read in hand a failed re-read keeps it and says so (`read_error`).
 
     `stored_only` never calls Verifix and never commits or rolls back: it is
@@ -968,8 +972,10 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     # after each pass, and the next minute's poll waited ~12 s on Verifix
     # (the 2026-10-07 «Server was slow» DM: /staff-live/attendance 10–14 s).
     pace = HOT_S if _hot(frame) else COOL_S
-    stale = (covered is None or any(i not in store for i in ids)
-             or (day == today and (now - covered).total_seconds() > pace + STALE_S))
+    missing = [i for i in ids if i not in store]
+    aged = (covered is not None and day == today
+            and (now - covered).total_seconds() > pace + STALE_S)
+    stale = covered is None or bool(missing) or aged
     # A press this soon after the last read serves that read.
     if force and covered is not None and (now - covered).total_seconds() < force_min_s:
         force = False
@@ -983,11 +989,25 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         code, _, msg = (row.error or "").partition(": ")
         return {"error": code or "unreachable", "message": msg or row.error}
     read_error = None
-    if (force or stale) and not backoff:
+    # What a request reads from Verifix ITSELF, while somebody waits on it
+    # (the 9 Oct «Server was slow» DM: a plain poll of /staff, 9.3 s on
+    # Verifix). The whole unit only on a press or when nothing is stored; the
+    # people the stored read LACKS (a worker the directory put in the unit
+    # since — a past day, the day before a night opens) are read alone, a call
+    # or two; and a read that is merely OLD — the job behind its pace — is
+    # served as it stands and re-read in the background (`_refresh_later`),
+    # so the next poll has it.
+    sync_ids, whole = None, True
+    if force or (covered is None and not backoff):
+        sync_ids = ids
+    elif missing and not backoff:
+        sync_ids, whole = missing, False
+    if sync_ids is not None:
         lk = _unit_lock((manager_id, day))
         if lk.acquire(blocking=False):
             try:
-                data = _read_day(db, cfg, day, ids, unit_id=manager_id, homes=homes)
+                data = _read_day(db, cfg, day, sync_ids, unit_id=manager_id, homes=homes,
+                                 stamp=whole)
             except verifix.VerifixError as exc:
                 _note_error(db, key, exc)
                 if covered is None:
@@ -995,7 +1015,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
                 read_error = {"message": exc.message or exc.code, "at": _iso(now_local())}
             finally:
                 lk.release()
-        elif covered is None or any(i not in store for i in ids):
+        elif covered is None or missing:
             # Another read of this unit-day is fetching people the stored read
             # lacks: wait for it — holding no connection — and serve what it
             # stored. Never a second Verifix read on top of it (a wait plus a
@@ -1019,9 +1039,56 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         now = now_local()
     elif row and row.error and row.error_at and (row.read_at is None or row.error_at > row.read_at):
         read_error = {"message": row.error, "at": _iso(_local(row.error_at))}
+    if aged and not force and not backoff and covered is not None and (
+            (now - covered).total_seconds() > pace + STALE_S):
+        _refresh_later(cfg, manager_id, day, ids, homes)
     return {"day": day, "today": today, "unit": unit, "directory": directory,
             "dir_at": dir_at, "store": store, "covered": covered, "now": now,
             "read_error": read_error}
+
+
+_refresh_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-refresh")
+_refreshing: set[tuple] = set()
+_refreshing_guard = threading.Lock()
+
+
+def _refresh_later(cfg: dict, manager_id: int, day: date, ids: list[str],
+                   homes: Optional[dict]) -> None:
+    """Re-read one unit's day whole, off the request — a stored read the job
+    let age is served as it stands and refreshed here, so the next poll has
+    it. Once per unit-day at a time; a read already running (the unit lock)
+    is the refresh."""
+    key = (manager_id, day)
+    with _refreshing_guard:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def go():
+        try:
+            lk = _unit_lock(key)
+            if not lk.acquire(blocking=False):
+                return
+            try:
+                from app.database import SessionLocal
+                with SessionLocal() as db:
+                    try:
+                        _read_day(db, cfg, day, ids, unit_id=manager_id, homes=homes)
+                    except verifix.VerifixError as exc:
+                        _note_error(db, _day_key(day), exc)
+            finally:
+                lk.release()
+        except Exception:  # noqa: BLE001 — the next poll asks again
+            log.exception("staff-live: refreshing unit %s on %s failed", manager_id, day)
+        finally:
+            with _refreshing_guard:
+                _refreshing.discard(key)
+
+    try:
+        _refresh_pool.submit(go)
+    except RuntimeError:            # shutting down
+        with _refreshing_guard:
+            _refreshing.discard(key)
 
 
 # ── the minute job ────────────────────────────────────────────────────────────

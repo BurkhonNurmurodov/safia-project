@@ -580,7 +580,8 @@ def _awaiting_reopen(db: Session, day: LeaderTaskDay) -> bool:
     return bool(want - done)
 
 
-def autoclose_due(db: Session, now: datetime | None = None) -> int:
+def autoclose_due(db: Session, now: datetime | None = None,
+                  leader_ids: set[int] | None = None) -> int:
     """Close every task whose deadline has passed, on every per-task unit.
 
     Returns how many tasks were closed. Runs on a timer AND whenever a leader
@@ -594,9 +595,14 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
     units = leader_tasks.per_task_units(db)
     if not units:
         return 0
-    days = (db.query(LeaderTaskDay)
-            .filter(LeaderTaskDay.closed_at.is_(None),
-                    LeaderTaskDay.manager_id.in_(units)).all())
+    q = (db.query(LeaderTaskDay)
+         .filter(LeaderTaskDay.closed_at.is_(None),
+                 LeaderTaskDay.manager_id.in_(units)))
+    if leader_ids is not None:
+        # The bot's /tasks closes the CALLER's own due tasks; the timer job
+        # (no `leader_ids`) is everybody's.
+        q = q.filter(LeaderTaskDay.leader_id.in_(leader_ids))
+    days = q.all()
     if not days:
         return 0
     shifts = {m.id: m.shift for m in

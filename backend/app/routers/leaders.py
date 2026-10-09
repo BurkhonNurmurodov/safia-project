@@ -6,7 +6,7 @@ import threading
 from collections import Counter
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
-from time import monotonic
+from time import monotonic, sleep as _sleep
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -1134,7 +1134,8 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
 # second time in Python would be a second rule that drifts from the board.
 
 _STANDING_TTL = 60.0              # seconds one unscoped build is fresh
-_STANDING_STALE = 15 * 60.0       # …and how long it still answers while a new one is made
+_STANDING_STALE = 3 * 3600.0      # …and how long it still answers while a new one is made
+_STANDING_WARM_S = 45.0           # a fresh process builds one this long after it starts
 _standing_lock = threading.Lock()
 _standing_build = threading.Lock()
 _standing_cache: dict = {"at": 0.0, "pool": None}
@@ -1178,6 +1179,17 @@ def _standing_refresh() -> None:
         logger.exception("standing pool: could not start the background rebuild")
 
 
+def warm_standing() -> None:
+    """Build the pool in the background shortly after the process starts, so
+    the first «Mening o'rnim» after a deploy does not wait for it (4.8 s in the
+    9 Oct «Server was slow» DM). Late enough to stay out of the boot's way."""
+    def later():
+        _sleep(_STANDING_WARM_S)
+        if _standing_fresh() is None:
+            _standing_refresh()
+    threading.Thread(target=later, name="standing-warm", daemon=True).start()
+
+
 def _standing_pool(db: Session) -> dict:
     """The unscoped register, cut down to what a ranking reads.
 
@@ -1188,9 +1200,11 @@ def _standing_pool(db: Session) -> dict:
     its own. A build is the whole checklist history (~5 s on production), and
     with a plain one-minute expiry somebody paid it every minute — nine of the
     slow requests in the 8 Oct 2026 «Server was slow» report were this, at a
-    median of 5.1 s, for a place that moves once a day. Only the first request
-    after a boot (or after a quiet quarter of an hour) waits for a build; the
-    build lock makes a second such caller wait for that one's answer."""
+    median of 5.1 s, for a place that moves once a day. The process builds one
+    shortly after it starts (`warm_standing`) and a stored one answers for
+    `_STANDING_STALE` (3 h), so only a request after three quiet hours, or in
+    the first minute of a process, waits for a build; the build lock makes a
+    second such caller wait for that one's answer."""
     pool, age = _standing_cached()
     if pool is not None and age < _STANDING_TTL:
         return pool

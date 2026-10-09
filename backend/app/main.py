@@ -719,6 +719,11 @@ async def lifespan(app: FastAPI):
     from app.services import perf_watch
     perf_watch.start()
 
+    # «Mening o'rnim»'s pool, built off the boot path so the first leader or
+    # brigadir after a deploy is not the one who waits for it.
+    from app.routers import leaders as _leaders_router
+    _leaders_router.warm_standing()
+
     yield
     perf_watch.stop()
     shutdown_scheduler()

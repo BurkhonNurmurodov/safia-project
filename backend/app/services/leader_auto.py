@@ -908,12 +908,19 @@ def _facts_line(v: Verdict) -> str:
     return "—"
 
 
-def run(db: Session, now: datetime | None = None) -> dict:
+def run(db: Session, now: datetime | None = None,
+        leader_ids: set[int] | None = None) -> dict:
     """One pass: warn what is about to be checked, then check what is due.
 
     Returns a small tally for the caller to log. Never raises for one leader's
     sake — a check that throws is a verdict (`no_data`), because a task left
     open holds its whole day open behind it.
+
+    `leader_ids` narrows the pass to those leader profiles (and their units):
+    the bot's `/tasks` settles the CALLER's own checks before it shows the
+    menu, and walked the whole plant to do it — 3.3 s a command with the DB
+    pool full (the 9 Oct «Server was slow» DM). Everybody else is the 5-minute
+    sweep's, which passes nothing.
     """
     from app.services import leader_close
     tally = {"warned": 0, "checked": 0, "passed": 0, "failed": 0, "skipped": 0,
@@ -927,8 +934,16 @@ def run(db: Session, now: datetime | None = None) -> dict:
     units = leader_tasks.per_task_units(db)
     if not units or not defs:
         return tally
+    if leader_ids is not None:
+        mine = {mid for (mid,) in db.query(RoleProfile.manager_id).filter(
+            RoleProfile.id.in_(leader_ids)).all() if mid}
+        units = [u for u in units if u in mine]
+        if not units:
+            return tally
     managers = db.query(Manager).filter(Manager.id.in_(units)).all()
     moved = set(leader_shift.moved_ids(db))
+    if leader_ids is not None:
+        moved &= set(leader_ids)
 
     for m in managers:
         if getattr(m, "archived", False):
@@ -953,6 +968,8 @@ def run(db: Session, now: datetime | None = None) -> dict:
                                    RoleProfile.manager_id == m.id)
                            .order_by(RoleProfile.name).all())
             for prof in leaders:
+                if leader_ids is not None and prof.id not in leader_ids:
+                    continue
                 # A leader whose checklist runs on the other shift that day is
                 # answered on their own shift below, never on the unit's hours.
                 if prof.id in moved and leader_shift.shifted(db, prof.id, date, m.shift):
