@@ -7645,7 +7645,16 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   `whole_returned` makes the day a timeline — `moved`, the name by hours —
   while before the return the whole-day reading stands, a task pill
   included). A worker who clocked in AT OR AFTER the return is refused BY
-  NAME (`_check_times`; file flow `_check_return_from_arrival`); a worker who
+  NAME (`_check_times`; file flow `_check_return_from_arrival`). A worker
+  THIS unit already moves that day is refused only when the approved move
+  overlaps — starts at or before the return, or is a whole-day one
+  (`_own_moves`) — and the refusal NAMES it («№80 · 09:03–12:30 → Raximova
+  Kamola … o'sha hujjatni tahrirlang»): the way to count such a worker from
+  arrival is to un-post that document and edit it, not to file a second. A
+  move of theirs after the return stands beside it (until 2026-10-09 any
+  earlier move refused the shape with «bugun allaqachon ko'chirilgan —
+  ko'chirish vaqtini ko'rsating», which named no document and said «today»
+  on a past day). A worker who
   has NOT clocked in may be named in any exchange document (`_movers` no
   longer refuses them, the dialog offers every row standing here,
   `in_at` None on the document row) and counts from whenever they come.

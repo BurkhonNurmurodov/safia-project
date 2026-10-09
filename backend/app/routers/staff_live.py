@@ -821,12 +821,47 @@ def _picked(ud: dict, ids: List[str], *, came: bool) -> list:
     return out
 
 
-def _movers(ctx, ud: dict, mid: int, ids: List[str], T: Optional[datetime]) -> list:
+def _move_label(d: LiveDocument) -> str:
+    """«№80 · 09:03–12:30 → Raximova Kamola» — an approved move as a refusal
+    names it, so the operator can find the document that stands in the way."""
+    pl = d.payload or {}
+    target = (pl.get("target_manager_name") if pl.get("target_type") == "supervisor"
+              else pl.get("task_name")) or "—"
+    return f"№{d.id} · {_time_span(pl) or 'butun kun'} → {target}"
+
+
+def _own_moves(ctx, eid: str, mid: int, R: Optional[datetime]) -> list:
+    """This unit's approved exchanges naming the worker — with R, only those
+    whose stretch overlaps a return-from-arrival move ending at R (the move
+    being filed runs from the worker's clock-in, or wherever their day opens,
+    to R). One that starts after R (the worker sent elsewhere later in the
+    day) does not overlap and may stand beside it; one AT R would need the
+    worker back here and gone in the same minute (the engine keeps only the
+    last point of an instant), and a whole-day one always overlaps. A move INTO this unit is another brigadir's document, and `where_at`
+    already says where the worker stands at arrival."""
+    C = live_staff.person(ctx, eid).p["in"]
+    out = []
+    for d in ctx.docs:
+        if (d.doc_type != "people_exchange" or d.manager_id != mid
+                or eid not in live_staff._doc_eids(d)):
+            continue
+        t0 = live_staff._at(ctx, (ctx.units.get(mid) or {}).get("shift"),
+                            (d.payload or {}).get("transfer_time"))
+        if R is None or t0 is None or (max(t0, C) if C is not None else t0) <= R:
+            out.append(d)
+    return out
+
+
+def _movers(ctx, ud: dict, mid: int, ids: List[str], T: Optional[datetime],
+            R: Optional[datetime] = None) -> list:
     """The picked workers a people-exchange from THIS unit may move — each must
     have come, and must stand in this unit at the move's time (the operator,
     2026-10-04: the unit where the worker IS files the next move — from its
     named rows or from the nameless hours it carries). A whole-day move (no
-    time) is for a worker nobody has moved yet."""
+    time, no return) is for a worker nobody has moved yet; a return from each
+    worker's own arrival (no time, return R) for one no approved move already
+    covers before R — the refusal names that document, since the way out is to
+    edit it (un-posted first when it is approved), not to file a second one."""
     rows = _named(ud)
     extras = {x["employee_id"]: x for x in ud["extras"]}
     out = []
@@ -838,9 +873,21 @@ def _movers(ctx, ud: dict, mid: int, ids: List[str], T: Optional[datetime]) -> l
         # A worker who has not clocked in (yet) may be named (the operator,
         # 2026-10-09): `where_at` answers with the unit their day will open in,
         # and the engine counts them from whenever they come.
-        if T is None and w.moved:
-            raise HTTPException(status_code=400, detail=(
-                f"{w.name}: bugun allaqachon ko'chirilgan — ko'chirish vaqtini ko'rsating"))
+        if T is None:
+            over = _own_moves(ctx, eid, mid, R) if (R is not None or w.moved) else []
+            if over:
+                many = len(over) > 1
+                names = ", ".join(_move_label(d) for d in over)
+                doc_word = "o'sha hujjatlarni" if many else "o'sha hujjatni"
+                fix = (f"{doc_word} tahrirlang (tasdiqlangan bo'lsa, avval tasdiqni bekor qiling)"
+                       if R is not None else
+                       f"ko'chirish vaqtini ko'rsating yoki {doc_word} tahrirlang")
+                raise HTTPException(status_code=400, detail=(
+                    f"{w.name}: shu kuni {names} {'hujjatlari' if many else 'hujjati'} "
+                    f"uni allaqachon ko'chiradi — {fix}"))
+            if R is None and w.moved:
+                raise HTTPException(status_code=400, detail=(
+                    f"{w.name}: shu kuni allaqachon ko'chirilgan — ko'chirish vaqtini ko'rsating"))
         at = live_staff.where_at(ctx, eid, T)
         if at is None or at.unit != mid:
             when = live_staff._hm(T) if T else "kun boshida"
@@ -1051,7 +1098,8 @@ def _exchange_payload(db: Session, caller: dict, body, d: date, mid: int, *, ctx
     T = live_staff._at(ctx, shift, ttime) if ttime else None
     if ttime and T is None:
         raise HTTPException(status_code=400, detail="time must be HH:MM")
-    rows = _movers(ctx, ud, mid, body.employees, T)
+    R = live_staff._at(ctx, shift, rtime) if (rtime and not ttime) else None
+    rows = _movers(ctx, ud, mid, body.employees, T, R)
     _check_times(ctx, shift, rows, ttime, rtime)
     # Said at filing, not only at approval: a move that would take the worker
     # away from the unit an approved later move sends them on from.

@@ -423,7 +423,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
         // own and the two buttons keep their labels on one line under it;
         // below 360px, where they cannot share a row, they stack full-width.
         <div className="flex flex-wrap items-center justify-end gap-2 w-full">
-          <div className="mr-auto self-center text-sm max-sm:basis-full max-sm:mr-0"
+          <div className="flex-1 min-w-0 self-center text-sm max-sm:basis-full"
             style={{ color: saveError ? "#ef4444" : selected.size > 0 ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
             {saveError || footerEffect}
           </div>
@@ -1855,9 +1855,11 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
       footer={
         // One wrapping row: on a phone the summary takes a line of its own
         // and the buttons keep their labels on one line under it; below 360px,
-        // where two labels cannot share a row, they stack full-width.
+        // where two labels cannot share a row, they stack full-width. The
+        // summary (or a refusal) shrinks and wraps beside the buttons — a long
+        // server reason used to push «Saqlash» onto a line of its own.
         <div className="flex flex-wrap items-center justify-end gap-2 w-full">
-          <span className="mr-auto self-center text-[11px] max-sm:basis-full max-sm:mr-0 max-sm:text-xs"
+          <span className="flex-1 min-w-0 self-center text-[11px] max-sm:basis-full max-sm:text-xs"
             style={{ color: error ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
             {error || `${selected.size} ${t("staff.employeesWord")} → ${tx(newRole) || "…"}`}
           </span>
@@ -2284,9 +2286,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       footer={
         // One wrapping row: on a phone the summary takes a line of its own
         // and the buttons keep their labels on one line under it; below 360px,
-        // where two labels cannot share a row, they stack full-width.
+        // where two labels cannot share a row, they stack full-width. The
+        // summary (or a refusal) shrinks and wraps beside the buttons — a long
+        // server reason used to push «Saqlash» onto a line of its own.
         <div className="flex flex-wrap items-center justify-end gap-2 w-full">
-          <span className="mr-auto self-center text-[11px] max-sm:basis-full max-sm:mr-0 max-sm:text-xs"
+          <span className="flex-1 min-w-0 self-center text-[11px] max-sm:basis-full max-sm:text-xs"
             style={{ color: error ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
             {error || `${selected.size} ${t("staff.employeesWord")} → ${targetLabel()}`}
           </span>
