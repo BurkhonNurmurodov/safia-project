@@ -283,6 +283,14 @@ def _creator_profile(db: Session, doc: LiveDocument) -> Optional[str]:
     return (r.profile_key or identity.role_row_profile_key(db, r)) if r else None
 
 
+def _time_span(pl: dict) -> str:
+    """«10:00», «10:00–12:00», or «…–12:00» for a return from each arrival."""
+    t, r = pl.get("transfer_time") or "", pl.get("return_time") or ""
+    if not t and not r:
+        return ""
+    return (t or "…") + (f"–{r}" if r else "")
+
+
 def _doc_params(doc: LiveDocument) -> dict:
     pl = doc.payload or {}
     target = (pl.get("target_manager_name") if pl.get("target_type") == "supervisor"
@@ -292,8 +300,8 @@ def _doc_params(doc: LiveDocument) -> dict:
             "target_kind": "supervisor" if pl.get("target_type") == "supervisor" else "task",
             "new_role": pl.get("new_role") or "", "date": doc.day,
             # A line whose one value is blank is dropped — a whole-day move.
-            "time": ((pl.get("transfer_time") or "")
-                     + (f"–{pl['return_time']}" if pl.get("return_time") else ""))}
+            # «…–12:00» = from each worker's own arrival until the return.
+            "time": _time_span(pl)}
 
 
 def _notify_doc(db: Session, doc: LiveDocument, event: str, actor: int) -> None:
@@ -655,8 +663,8 @@ def _log_doc(doc: LiveDocument, changes: Optional[list] = None) -> dict:
                ("date", str(doc.day))]
     if pl.get("target_type"):
         details.append(("target", pl.get("target_manager_name") or pl.get("task_name") or "—"))
-    if pl.get("transfer_time"):
-        details.append(("time", pl["transfer_time"] + (f"–{pl['return_time']}" if pl.get("return_time") else "")))
+    if pl.get("transfer_time") or pl.get("return_time"):
+        details.append(("time", _time_span(pl)))
     if pl.get("new_role"):
         details.append(("role", pl["new_role"]))
     if names:
@@ -827,9 +835,9 @@ def _movers(ctx, ud: dict, mid: int, ids: List[str], T: Optional[datetime]) -> l
         if not r:
             continue
         w = live_staff.person(ctx, eid)
-        if w.p["in"] is None:
-            raise HTTPException(status_code=400, detail=(
-                f"{w.name}: ishga kelmagan — faqat kelgan xodimni ko'chirish mumkin"))
+        # A worker who has not clocked in (yet) may be named (the operator,
+        # 2026-10-09): `where_at` answers with the unit their day will open in,
+        # and the engine counts them from whenever they come.
         if T is None and w.moved:
             raise HTTPException(status_code=400, detail=(
                 f"{w.name}: bugun allaqachon ko'chirilgan — ko'chirish vaqtini ko'rsating"))
@@ -839,9 +847,11 @@ def _movers(ctx, ud: dict, mid: int, ids: List[str], T: Optional[datetime]) -> l
             raise HTTPException(status_code=400, detail=(
                 f"{w.name}: {when} «{live_staff.stint_name(ctx, at)}»da — uni o'sha yerdan "
                 f"ko'chirish hujjatini o'sha brigadir tuzadi"))
+        came = w.p["in"] is not None
         out.append({"employee_id": eid, "worker_name": w.name, "job_title": w.role,
                     "verifix_code": r.get("verifix_code"),
-                    "clock_in": live_staff._hm(at.start), "in_at": live_staff._iso(at.start),
+                    "clock_in": live_staff._hm(at.start) if came else None,
+                    "in_at": live_staff._iso(at.start) if came else None,
                     "clock_out": r.get("clock_out")})
     if not out:
         raise HTTPException(status_code=400, detail="None of the selected workers are on this unit's day")
@@ -948,37 +958,45 @@ def _resolve_target(db: Session, sender: int, d: date, ttype: Optional[str],
 
 def _check_times(ctx, unit_shift: Optional[int], rows: list, ttime: Optional[str],
                  rtime: Optional[str]) -> None:
-    """A transfer time must fall between the earliest arrival among the picked
-    workers and now (or their latest departure); a return after it, by now."""
-    if not ttime:
-        return
-    T = live_staff._at(ctx, unit_shift, ttime)
-    ins = [datetime.fromisoformat(r["in_at"]) for r in rows if r.get("in_at")]
-    if T is None:
+    """A transfer time must not fall before the earliest arrival among the
+    picked workers, nor after a departed worker's exit; a return comes after
+    it. Either may be AHEAD of now (a planned move, the operator 2026-10-09):
+    the engine applies it the minute it comes. A return WITHOUT a transfer
+    time runs from each worker's own clock-in, so it must be after every
+    picked worker's arrival — a worker who came at or after it is named."""
+    T = live_staff._at(ctx, unit_shift, ttime) if ttime else None
+    if ttime and T is None:
         raise HTTPException(status_code=400, detail="time must be HH:MM")
-    if T > ctx.now + timedelta(minutes=1):
-        raise HTTPException(status_code=400, detail=f"«{ttime}» hali kelmagan vaqt")
-    if ins and T < min(ins):
-        raise HTTPException(status_code=400, detail=f"«{ttime}» — tanlangan xodimlar hali kelmagan vaqt")
-    # A worker who is OUT (gone, or out on a break) cannot be moved from a
-    # time after they went out — /staff clamps such a time silently and the
-    # document changes nothing. Once they are back, file it then. The minute
-    # they went out counts as after: a document's time has no seconds, and a
-    # move «17:01» for a worker gone at 17:01:40 is one the engine voids (the
-    # 6–7 Oct exit-minute moves, 2026-10-08).
-    for r in rows:
-        p = live_staff.person(ctx, r["employee_id"]).p
-        if p["status"] in ("left", "break") and p["out"] is not None \
-                and T >= p["out"].replace(second=0, microsecond=0):
-            raise HTTPException(status_code=400, detail=(
-                f"{r['worker_name']}: {live_staff._hm(p['out'])} da chiqib ketgan — "
-                f"«{ttime}» dan ko'chirib bo'lmaydi"))
+    ins = [datetime.fromisoformat(r["in_at"]) for r in rows if r.get("in_at")]
+    if T is not None:
+        if ins and T < min(ins):
+            raise HTTPException(status_code=400, detail=f"«{ttime}» — tanlangan xodimlar hali kelmagan vaqt")
+        # A worker who has LEFT cannot be moved from a time after they went
+        # out — /staff clamps such a time silently and the document changes
+        # nothing. The minute they went out counts as after: a document's
+        # time has no seconds, and a move «17:01» for a worker gone at
+        # 17:01:40 is one the engine voids (the 6–7 Oct exit-minute moves,
+        # 2026-10-08). One out on a BREAK is expected back: a time after that
+        # exit is a planned move the engine applies once they return.
+        for r in rows:
+            p = live_staff.person(ctx, r["employee_id"]).p
+            if p["status"] == "left" and p["out"] is not None \
+                    and T >= p["out"].replace(second=0, microsecond=0):
+                raise HTTPException(status_code=400, detail=(
+                    f"{r['worker_name']}: {live_staff._hm(p['out'])} da chiqib ketgan — "
+                    f"«{ttime}» dan ko'chirib bo'lmaydi"))
     if rtime:
         R = live_staff._at(ctx, unit_shift, rtime)
-        if R is None or R <= T:
+        if R is None:
+            raise HTTPException(status_code=400, detail="time must be HH:MM")
+        if T is not None and R <= T:
             raise HTTPException(status_code=400, detail="Return time must be after the transfer time")
-        if R > ctx.now + timedelta(minutes=1):
-            raise HTTPException(status_code=400, detail=f"«{rtime}» hali kelmagan vaqt")
+        if T is None:
+            for r in rows:
+                if r.get("in_at") and datetime.fromisoformat(r["in_at"]) >= R:
+                    raise HTTPException(status_code=400, detail=(
+                        f"{r['worker_name']}: {r['clock_in']} da kelgan — "
+                        f"«{rtime}» da qaytish uchun kech"))
 
 
 def _exchange_payload(db: Session, caller: dict, body, d: date, mid: int, *, ctx, ud) -> dict:
@@ -987,9 +1005,9 @@ def _exchange_payload(db: Session, caller: dict, body, d: date, mid: int, *, ctx
     ttime = _hhmm(body.transfer_time) if body.transfer_time else None
     if body.transfer_time and not ttime:
         raise HTTPException(status_code=400, detail="time must be HH:MM")
-    if body.return_time and not ttime:
-        raise HTTPException(status_code=400, detail="Qaytish vaqti faqat ko'chirish vaqti bilan beriladi")
-    rtime = _hhmm(body.return_time) if (ttime and body.return_time) else None
+    # A return with no transfer time (2026-10-09): each worker is at the
+    # receiver from their own clock-in until the return.
+    rtime = _hhmm(body.return_time) if body.return_time else None
     if body.return_time and not rtime:
         raise HTTPException(status_code=400, detail="time must be HH:MM")
     shift = (ctx.units.get(mid) or {}).get("shift")

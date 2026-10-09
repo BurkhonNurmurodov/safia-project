@@ -141,25 +141,43 @@ export function minToHHMM(m) {
 // workers to NOW — or to the latest exit when everybody picked is already out
 // (a past day, or a worker who left). Overnight clocks are carried past 1440
 // like the file page's window.
+function liveNowMin(live) {
+  return live?.is_today ? parseHHMM((live.now || "").slice(11, 16)) : null;
+}
+
 function liveWindow(sels, live) {
   if (!sels.length) return null;
-  const nowM = live?.is_today ? parseHHMM((live.now || "").slice(11, 16)) : null;
-  const starts = [], ends = [];
+  const nowM = liveNowMin(live);
+  const starts = [], ends = [], ins = [];
   sels.forEach(w => {
-    const s = parseHHMM(w.clock_in);
+    // Came → from the clock-in; not yet → from the schedule's start (a move
+    // may name a worker before they arrive, the operator 2026-10-09).
+    const cin = parseHHMM(w.clock_in);
+    const s = cin ?? parseHHMM(w.begin);
     if (s == null) return;
-    // Inside → up to now; out on a break → up to that exit (a move cannot be
-    // timed after the worker went out); gone → up to the check-out.
-    const out = w.status === "inside" ? null : w.clock_out;
-    let e = out ? parseHHMM(out) : (nowM ?? parseHHMM(w.end));
+    // Gone → up to the check-out. Otherwise up to the schedule's END or now,
+    // whichever is later: a move or a return may be PLANNED ahead of now
+    // (2026-10-09), and a worker out on a break is expected back.
+    const gone = w.status === "left" || w.status === "no_out";
+    let e = gone && w.clock_out ? parseHHMM(w.clock_out) : null;
+    if (e == null) {
+      const cands = [nowM, parseHHMM(w.end)].filter(x => x != null);
+      e = cands.length ? Math.max(...cands) : null;
+    }
     if (e == null) return;
     if (e < s) e += 1440;
     starts.push(s);
     ends.push(e);
+    if (cin != null) ins.push(cin);
   });
   if (!starts.length) return null;
   const lo = Math.min(...starts), hi = Math.max(...ends);
-  return hi >= lo ? { lo, hi } : null;
+  if (hi < lo) return null;
+  // The latest arrival among the workers who came: a return filed WITHOUT a
+  // transfer time must fall after every one of them.
+  let maxIn = ins.length ? Math.max(...ins) : null;
+  if (maxIn != null && maxIn < lo) maxIn += 1440;
+  return { lo, hi, maxIn };
 }
 
 // The ROLE half of the load rule — mirrors CALC_ROWS_FILTER in backend
@@ -2000,10 +2018,13 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // (named here, or carried here as additional hours while the name sits on the
   // sender's day): the unit where the worker IS files the next move (the
   // operator, 2026-10-04). The server re-checks it at the move's own time.
+  // A worker who has NOT clocked in yet is offered too (the operator,
+  // 2026-10-09): the document names them and the engine counts them from
+  // whenever they come.
   const employees = useMemo(() => {
     const rows = attData?.workers ?? [];
     if (!S.live) return rows;
-    const named = rows.filter(w => w.clock_in && w.here && !w.split_of);
+    const named = rows.filter(w => w.here && !w.split_of);
     const carried = (attData?.extras ?? []).filter(x => x.here && x.clock_in)
       .map(x => ({ ...x, _carried: true }));
     return [...named, ...carried];
@@ -2056,18 +2077,23 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const timeWindow = useMemo(() => {
     const sels = employees.filter(w => selected.has(K(w)));
     if (S.live) return liveWindow(sels, attData?.live);
-    const starts = [], outs = [];
+    const starts = [], outs = [], ins = [];
     sels.forEach(w => {
       const s = scheduleStartMin(w.schedule) ?? clockInMin(w.clock_in_out);
       let o = clockOutMin(w.clock_in_out);
       if (s != null && o != null && o < s) o += 1440;   // clock-out crossed midnight
       if (s != null) starts.push(s);
       if (o != null) outs.push(o);
+      const cin = clockInMin(w.clock_in_out);
+      if (cin != null) ins.push(cin);
     });
     if (!starts.length || !outs.length) return null;
     const lo = Math.min(...starts);
     const hi = Math.max(...outs);
-    return hi >= lo ? { lo, hi } : null;
+    if (hi < lo) return null;
+    let maxIn = ins.length ? Math.max(...ins) : null;
+    if (maxIn != null && maxIn < lo) maxIn += 1440;
+    return { lo, hi, maxIn };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, selected, attData]);
 
@@ -2092,13 +2118,21 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // The return time R ends the away stint, so it must fall between the transfer
   // time T and the latest clock-out. Window = [T, timeWindow.hi]; null when there
   // is no T yet or no room after it. Overnight T is carried like the transfer one.
+  // WITHOUT a transfer time (the toggle off, 2026-10-09) each worker is away
+  // from their OWN clock-in, so R must fall after the latest arrival among them.
   const returnWindow = useMemo(() => {
-    if (!transferTime || !timeWindow) return null;
-    let tMin = parseHHMM(transferTime);
-    if (tMin == null) return null;
-    if (tMin < timeWindow.lo) tMin += 1440;          // post-midnight transfer
-    return timeWindow.hi > tMin ? { lo: tMin, hi: timeWindow.hi } : null;
-  }, [transferTime, timeWindow]);
+    if (!timeWindow) return null;
+    let lo;
+    if (useTime) {
+      if (!transferTime) return null;
+      lo = parseHHMM(transferTime);
+      if (lo == null) return null;
+      if (lo < timeWindow.lo) lo += 1440;            // post-midnight transfer
+    } else {
+      lo = timeWindow.maxIn ?? timeWindow.lo;
+    }
+    return timeWindow.hi > lo ? { lo, hi: timeWindow.hi } : null;
+  }, [transferTime, timeWindow, useTime]);
 
   // Drop the return time if it falls outside [T, latest clock-out] as T/selection
   // change (e.g. the transfer time was pushed past the old return).
@@ -2200,10 +2234,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
     // Transfer-time is only meaningful for a → supervisor/task move with the
     // toggle on and a time chosen. Always send the field (empty clears it). The
-    // return time only rides along when there is a transfer time (it's the away
-    // stint's end), and only when its own toggle is on with a valid pick.
+    // return time rides with a transfer time (the away stint's end) or ALONE
+    // (the toggle off: away from each worker's own clock-in, 2026-10-09), and
+    // only when its own toggle is on with a valid pick.
     const tt = (canUseTime && useTime && transferTime) ? transferTime : "";
-    const rt = (tt && useReturn && returnTime) ? returnTime : "";
+    const rt = (canUseTime && (tt || !useTime) && useReturn && returnTime) ? returnTime : "";
     setSaving(true);
     try {
       if (isEdit) {
@@ -2334,9 +2369,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           </div>
         )}
 
-        {/* return-time carve-out — only once a transfer time exists. The away
-            stint is [transfer, return]; the worker comes back to the home unit. */}
-        {canUseTime && useTime && transferTime && (
+        {/* return-time carve-out — once a transfer time exists (the away stint
+            is [transfer, return]), or with the transfer toggle OFF (the away
+            stint runs from each worker's own clock-in, 2026-10-09); either way
+            the worker comes back to the home unit at the return. */}
+        {canUseTime && (useTime ? !!transferTime : true) && (
           <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <button
@@ -2369,7 +2406,9 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
             ))}
             {useReturn && returnTime && (
               <span className="text-[11px] flex-1 min-w-[180px]" style={{ color: "var(--text-4)" }}>
-                {t(targetIsTask ? "staff.returnTimeHintTask" : "staff.returnTimeHint")}
+                {t(useTime
+                  ? (targetIsTask ? "staff.returnTimeHintTask" : "staff.returnTimeHint")
+                  : (targetIsTask ? "staff.returnTimeHintWholeTask" : "staff.returnTimeHintWhole"))}
               </span>
             )}
             <TimeWheelPicker
@@ -2512,12 +2551,14 @@ export function DocumentViewModal({ docId, onClose }) {
                       : <><FolderOpen size={12} className="flex-shrink-0" aria-hidden="true" />{doc.task_name || "—"}</>}
                   </span>
                 </div>
-                {doc.transfer_time && (
+                {(doc.transfer_time || doc.return_time) && (
                   <div className="mb-1.5 flex items-center gap-1.5 flex-wrap">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
                       style={{ background: "var(--bg-inner)", color: "var(--text-1)" }}>
                       <Clock size={11} style={{ color: "var(--text-4)" }} />
-                      {t("staff.transferTimeLabel")}: {doc.transfer_time}
+                      {doc.transfer_time
+                        ? <>{t("staff.transferTimeLabel")}: {doc.transfer_time}</>
+                        : t("staff.fromArrival")}
                     </span>
                     {doc.return_time && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
@@ -2528,7 +2569,9 @@ export function DocumentViewModal({ docId, onClose }) {
                     )}
                     <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
                       {doc.return_time
-                        ? t(doc.target_type === "task" ? "staff.returnTimeHintTask" : "staff.returnTimeHint")
+                        ? (doc.transfer_time
+                            ? t(doc.target_type === "task" ? "staff.returnTimeHintTask" : "staff.returnTimeHint")
+                            : t(doc.target_type === "task" ? "staff.returnTimeHintWholeTask" : "staff.returnTimeHintWhole"))
                         : t(doc.target_type === "task" ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
                     </span>
                   </div>

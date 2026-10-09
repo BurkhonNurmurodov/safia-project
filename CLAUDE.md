@@ -7583,8 +7583,9 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   a change that would break an approved move (`broken_moves` before vs after:
   400 at filing / 409 `breaks` at approval; an un-post a later move depends on
   is 409 `depended_on`, and a bulk un-post goes newest approval first). A
-  timed move's window runs from the earliest arrival here to now (or the
-  exit). **The dialog opens on a WHOLE-DAY move** (the operator, 2026-10-08,
+  timed move's window runs from the earliest arrival here to the schedule's
+  end (a time may be planned ahead of now, 2026-10-09 — below). **The dialog
+  opens on a WHOLE-DAY move** (the operator, 2026-10-08,
   from the brigadirs' report that workers they had given away still counted on
   their загрузка): from 2026-10-04 to then a live day opened the time switch
   ON at NOW clamped into the window, i.e. at the CHECK-OUT once the workers had
@@ -7627,6 +7628,47 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   The task moves at the exit minute (№19, №35, №55 — «sent home» the minute
   the worker left) were left as filed. Delete the module, the startup
   function and both calls once the flag and its `_dm` flag read «done».
+- **A return WITHOUT a transfer time, planned times, workers not yet in
+  (2026-10-09, the operator's rulings asked one by one).** With «Ko'chirish
+  vaqtini belgilash» OFF a document may still carry a return time: every
+  worker in it is at the receiver (or on the task) from their OWN clock-in
+  until the return, then back at the sender — the shape for several workers
+  who came at different times (the operator's case: four of Raximova
+  Kamola's arrivals, one return). Since the 8 Oct fix a transfer time before
+  a worker's clock-in lands AT it, so one time at the earliest arrival moves
+  everybody from their own arrival too; this shape says the same with no
+  time to pick, and is the one the operator asked for. The receiver is then
+  the FIRST unit, so the early-arrival minutes are its; the name goes to the
+  bigger side as always (`person`: `whole_back` is the return point, added
+  only once it has come and only for a worker who came before it;
+  `whole_returned` makes the day a timeline — `moved`, the name by hours —
+  while before the return the whole-day reading stands, a task pill
+  included). A worker who clocked in AT OR AFTER the return is refused BY
+  NAME (`_check_times`; file flow `_check_return_from_arrival`); a worker who
+  has NOT clocked in may be named in any exchange document (`_movers` no
+  longer refuses them, the dialog offers every row standing here,
+  `where_at` answers with the unit their day opens in — a synthetic `Stint`,
+  `in_at` None on the document row) and counts from whenever they come — one
+  who comes after the return simply opens the day at the receiver.
+  **Transfer and return times may be AHEAD of now on every document** (the
+  operator: «every time, transfer included»): a time at or after the `cut`
+  stays out of the timeline (the 8 Oct rule already voided a move after the
+  exit), so a planned move enters it the minute it comes; `where_at(T)`
+  builds the day AS OF a future T, so a planned chain (A→B 14:00, B→C 15:00)
+  is checked right; the row says «{t} da → {unit} (reja)» (`planned` on named
+  and carried rows, while the worker is inside or out on a break); a worker
+  who leaves before the time never moves. A time at or after a LEFT worker's
+  exit minute is still refused; after a BREAK exit it is a planned move
+  applied once they are back. The wheel's far end is the schedule's end (or
+  the exit), not now; a not-yet-arrived worker's window opens at their
+  schedule's start. The card and the Jurnal print «…–12:00» for a return
+  from each arrival (`_time_span`). **The Excel-era file flow has the same
+  shape** (`staff._compute_split` `from_arrival`: T = the clock-in,
+  `early_side` «away», `part2_eff`, the home slice `R–O`; a nameless leftover
+  always carries its side's EFFECTIVE hours; `_check_return_from_arrival` at
+  both doors; `exchange_audit` rebuilds with the same keys; that flow never
+  checked a time against now, so «future» needs nothing there). Existing
+  drafts are edited into and out of the shape like any field.
 - **Arrivals come cell-less** and are placed on «Yacheykalar» (`LivePlacement`,
   a split with `hc_weight`); **the day close is refused while anybody is
   inside, on a break or still due** (incl. people standing here under another

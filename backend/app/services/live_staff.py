@@ -239,6 +239,7 @@ class Worker:
     moved: bool                        # a timed move applies
     whole_task: Optional[str]          # sent to a task for the whole day
     current: Optional[Stint]           # where the worker is now / ended the day
+    planned: Optional[dict] = None     # the next move still ahead of now: {at, unit, task, back}
 
 
 def _role_for(ctx: Ctx, eid: str, role0: str) -> str:
@@ -267,7 +268,9 @@ def _moves_for(ctx: Ctx, eid: str) -> list:
             "target": pl.get("target_manager_id") if pl.get("target_type") == "supervisor" else None,
             "task": pl.get("task_name") if pl.get("target_type") == "task" else None,
             "T": _at(ctx, shift, pl.get("transfer_time")),
-            "R": _at(ctx, shift, pl.get("return_time")) if pl.get("transfer_time") else None,
+            # A return without a transfer time (2026-10-09): the worker is at the
+            # receiver from their own clock-in and back at the sender at R.
+            "R": _at(ctx, shift, pl.get("return_time")),
         })
     return out
 
@@ -328,17 +331,22 @@ def person(ctx: Ctx, eid: str) -> Worker:
     timed.sort(key=lambda m: (m["T"], m["doc"].approved_at or datetime.min, m["doc"].id))
     start_unit, start_task = home_unit, None
     whole_task = None
+    whole_back = None                  # (R, sender) of the whole-day move, if it carries one
     if whole:
         w = whole[-1]
         if w["target"]:
             start_unit = w["target"]
         else:
             start_unit, start_task, whole_task = None, w["task"], w["task"]
+        if w["R"] is not None:
+            whole_back = (w["R"], w["sender"])
 
     stints: list[Stint] = []
     unit_hours: dict = {}
     task_hours: dict = {}
     current = None
+    planned = None
+    whole_returned = False
     status = p["status"]
     total = p["hours"]
     if C is not None:
@@ -354,6 +362,22 @@ def person(ctx: Ctx, eid: str) -> Worker:
         # exit-minute moves, 2026-10-08). While they are still inside the cut
         # is now itself, so a move at the current minute stands.
         cut = out.replace(second=0, microsecond=0) if out is not None else E
+        # A time still AHEAD of the cut — a planned move or return (the
+        # operator, 2026-10-09) — is the same case for now: it enters the
+        # timeline the minute it comes, and `planned` names the next one so
+        # the row can say it is coming (while the worker is inside, or out
+        # on a break and expected back).
+        ahead = []
+        for m in timed:
+            if m["T"] >= cut:
+                ahead.append((m["T"], m["target"], m["task"], False))
+            elif m["R"] is not None and m["R"] >= cut:
+                ahead.append((m["R"], m["sender"], None, True))
+        if whole_back is not None and whole_back[0] >= cut:
+            ahead.append((whole_back[0], whole_back[1], None, True))
+        if ahead and (out is None or status == "break"):
+            at, u, tk, back = min(ahead, key=lambda x: x[0])
+            planned = {"at": at, "unit": u, "task": tk, "back": back}
         timed = [m for m in timed if m["T"] < cut]
         # A move timed BEFORE the clock-in lands AT it: a worker given away
         # before they arrived was given from their arrival (until 2026-10-08
@@ -361,11 +385,16 @@ def person(ctx: Ctx, eid: str) -> Worker:
         # and the sender kept the whole day — 14 worker-moves on 6–7 Oct).
         # Points are ordered by time, then by the order they were listed in,
         # and at one instant only the LAST point stands: the others would be
-        # stints of no length.
+        # stints of no length. A whole-day move's return (2026-10-09) is the
+        # point that brings the worker back to the sender — only once it has
+        # come, and only when they came before it.
         points = [(C, 0, start_unit, start_task)]
+        if whole_back is not None and C < whole_back[0] < cut:
+            points.append((whole_back[0], 1, whole_back[1], None))
+            whole_returned = True
         for i, m in enumerate(timed, 1):
             points.append((max(m["T"], C), 2 * i, m["target"], m["task"]))
-            if m["R"] is not None:
+            if m["R"] is not None and m["R"] < cut:
                 points.append((max(m["R"], C), 2 * i + 1, m["sender"], None))
         points.sort(key=lambda x: (x[0], x[1]))
         for j, (at, _, u, tk) in enumerate(points):
@@ -397,10 +426,10 @@ def person(ctx: Ctx, eid: str) -> Worker:
     first_unit = stints[0].unit if stints else start_unit
     # The name — the bigger side, ties to the side reached first.
     winner, reason = start_unit, None
-    moved = bool(timed) and C is not None
+    moved = (bool(timed) or whole_returned) and C is not None
     if C is None:
         winner = start_unit if not whole_task else home_unit
-    elif whole_task and not timed:
+    elif whole_task and not timed and not whole_returned:
         winner = home_unit                    # /staff: kept on the roster, 0 h, task pill
     elif total is None:
         # No check-out → no hours to compare (/staff's "cannot split" case):
@@ -430,7 +459,7 @@ def person(ctx: Ctx, eid: str) -> Worker:
                schedule=p["schedule"], home_unit=home_unit, home_cell=home_cell, p=p,
                early_min=early, stints=stints, unit_hours=unit_hours, task_hours=task_hours,
                first_unit=first_unit, winner=winner, reason=reason, moved=moved,
-               whole_task=whole_task, current=current)
+               whole_task=whole_task, current=current, planned=planned)
     ctx._persons[eid] = w
     return w
 
@@ -454,7 +483,17 @@ def where_at(ctx: Ctx, eid: str, T: Optional[datetime], without: tuple = ()) -> 
     T files the move. A move timed exactly at T is not counted (it is the move
     being asked about, or one at the same minute), so T is read a second early."""
     sub = replace(ctx, docs=[d for d in ctx.docs if d.id not in without], _persons={})
+    if T is not None and T > sub.now:
+        # A planned time (2026-10-09): every move before it has applied by then.
+        sub = replace(sub, now=T)
     w = person(sub, eid)
+    if not w.stints:
+        # Not clocked in (yet): due where their day opens — a whole-day
+        # document's receiver (or task), else the home unit. A document may
+        # name them before they come (the operator, 2026-10-09).
+        if w.first_unit is None and not w.whole_task:
+            return None
+        return Stint(start=T or sub.now, unit=w.first_unit, task=w.whole_task)
     if T is None:
         return stint_at(w, None)
     return stint_at(w, T - timedelta(seconds=1)) if w.stints and T > w.stints[0].start \
@@ -577,6 +616,16 @@ def _pending_for(ctx: Ctx, eid: str, unit: int) -> list:
     return out
 
 
+def _planned_info(ctx: Ctx, w: Worker) -> Optional[dict]:
+    """The worker's next move still ahead of now, for the row: where to (a unit
+    or a task), at what time, and whether it is a return."""
+    pl = w.planned
+    if not pl:
+        return None
+    dest = pl["task"] or (ctx.units.get(pl["unit"]) or {}).get("name")
+    return {"at": _hm(pl["at"]), "unit": dest, "task": bool(pl["task"]), "back": bool(pl["back"])}
+
+
 def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
     """The worker's row(s) on the unit holding their NAME — two when the
     brigadir split them across two of the unit's cells."""
@@ -614,6 +663,7 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         if src is not None:
             moved_info = {"dir": "in", "unit": src.task or (ctx.units.get(src.unit) or {}).get("name"),
                           "task": bool(src.task), "at": _hm(here[0].start)}
+    planned_info = _planned_info(ctx, w)
 
     pl = ctx.placements.get((unit, w.eid))
     if pl is not None:
@@ -668,6 +718,9 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         "out_src": p["out_src"] if ended_here else None,
         "held": p.get("held") if ended_here else None,
         "moved": moved_info,
+        # A move or a return still ahead of now (a planned time) — said on the
+        # row, since nothing else about it moves until the time comes.
+        "planned": planned_info,
         # Standing in this unit now (or ended the day here) — who this unit may
         # move on (`where_at`).
         "here": is_here(w, unit),
@@ -742,6 +795,7 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
             # Standing here now: this unit files the worker's next move, and a
             # worker still inside keeps the day open.
             "here": here, "status": w.p["status"] if here else "moved_out",
+            "planned": _planned_info(ctx, w) if here else None,
             "job_title": w.role, "schedule": w.schedule,
             "verifix_code": (ctx.placements[(manager_id, eid)].verifix_code
                                                   if (manager_id, eid) in ctx.placements else None),

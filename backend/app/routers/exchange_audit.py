@@ -609,7 +609,7 @@ def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
             early_arrival_min=snap.get("early_arrival_min"),
             verifix_code=emp.get("old_verifix_code"),
         )
-        leftover_mgr, leftover_hrs = target, plan["part2"]
+        leftover_mgr, leftover_hrs = target, plan.get("part2_eff", plan["part2"])
         leftover_cell = payload.get("target_cell")
         side, named_mgr = "stay", sender
     else:
@@ -620,8 +620,8 @@ def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
             manager_id=target, date=d, worker_name=name,
             job_title=snap.get("job_title"), schedule=snap.get("schedule"),
             clock_in_out=plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}',
-            hours_worked=plan["part2"], effective_hours=plan["part2"],
-            early_arrival_min=0,
+            hours_worked=plan["part2"], effective_hours=plan.get("part2_eff", plan["part2"]),
+            early_arrival_min=(plan["early_min"] if plan.get("early_side") == "away" else 0),
             # Legacy destination cell or nothing, as above: on the TARGET the
             # sender's own code names a cell this unit does not own.
             verifix_code=payload.get("target_cell"),

@@ -73,6 +73,14 @@ export function LiveRowNotes({ w }) {
             { unit: w.moved.task ? w.moved.unit : tl(w.moved.unit || "—"), t: w.moved.at })}
         </span>
       )}
+      {w.planned && (
+        // A move or a return still ahead of now (a planned time, 2026-10-09):
+        // nothing else on the row moves until it comes.
+        <span className="text-xs whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+          {fill(t(w.planned.back ? "staffLive.plannedBack" : "staffLive.plannedOut"),
+            { unit: w.planned.task ? w.planned.unit : tl(w.planned.unit || "—"), t: w.planned.at })}
+        </span>
+      )}
     </>
   );
 }

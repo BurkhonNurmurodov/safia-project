@@ -312,7 +312,11 @@ def _document_data(db, doc, day, transfer_time) -> dict:
 
 
 def _hr_document_data(db, doc) -> dict:
-    return _document_data(db, doc, doc.date, (doc.payload or {}).get("transfer_time"))
+    pl = doc.payload or {}
+    ttime = pl.get("transfer_time") or ""
+    if pl.get("return_time"):
+        ttime = f"{ttime or '…'}–{pl['return_time']}"     # a return from each arrival
+    return _document_data(db, doc, doc.date, ttime or None)
 
 
 # ── Renderers (data dict + admin language → message body) ─────────────────────
@@ -400,8 +404,10 @@ def _live_document_data(db, doc) -> dict:
     (the shape the page's own notices print)."""
     payload = doc.payload or {}
     ttime = payload.get("transfer_time") or ""
-    if ttime and payload.get("return_time"):
-        ttime = f"{ttime}–{payload['return_time']}"
+    if payload.get("return_time"):
+        # «…–12:00»: a return with no transfer time runs from each worker's
+        # own arrival (2026-10-09) — `staff_live._time_span`'s spelling.
+        ttime = f"{ttime or '…'}–{payload['return_time']}"
     return _document_data(db, doc, doc.day, ttime)
 
 

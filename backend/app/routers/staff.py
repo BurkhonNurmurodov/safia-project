@@ -2452,7 +2452,7 @@ def get_attendance(
             if not wn:
                 continue
             task_map[wn] = pl.get("task_name")
-            if ttime:
+            if ttime or pl.get("return_time"):
                 plan = _compute_split(emp.get("snapshot") or {}, ttime, pl.get("return_time"))
                 if plan and max(plan["part1"], plan["part2"]) < MIN_MOVED_ZAGRUZKA_HOURS:
                     below_min_eff[wn] = plan["part1_eff"]
@@ -3995,6 +3995,31 @@ def _clock_bounds_min(clock_in_out):
     return _parse_hhmm(left), _parse_hhmm(right)
 
 
+def _check_return_from_arrival(payload: dict) -> None:
+    """A return WITHOUT a transfer time runs each worker's away stint from their
+    own clock-in — so a worker who clocked in at or after the return time has
+    none, and the document is refused naming them (the operator, 2026-10-09)
+    rather than clamped into a whole-day move. A worker with no clock (did not
+    come, or not yet) is left in: their day splits nowhere."""
+    if payload.get("transfer_time") or not payload.get("return_time"):
+        return
+    R = _parse_hhmm(payload["return_time"])
+    if R is None:
+        return
+    for emp in payload.get("employees") or []:
+        snap = emp.get("snapshot") or {}
+        C, O = _clock_bounds_min(snap.get("clock_in_out"))
+        if C is None:
+            continue
+        r = R
+        if O is not None and O <= C and r < C:
+            r += 1440                                 # an overnight return, the next morning
+        if r <= C:
+            raise HTTPException(status_code=400, detail=(
+                f"{emp.get('worker_name')}: {_fmt_hhmm(C)} da kelgan — "
+                f"«{payload['return_time']}» da qaytish uchun kech"))
+
+
 def _normalize_transfer_time(caller: dict, ttype: Optional[str], raw) -> Optional[str]:
     """Honour a transfer time for admins and supervisors, moving to a supervisor
     OR a task. Returns a canonical 'HH:MM' string or None."""
@@ -4005,18 +4030,26 @@ def _normalize_transfer_time(caller: dict, ttype: Optional[str], raw) -> Optiona
 
 
 def _normalize_return_time(ttype: Optional[str], transfer_time: Optional[str], raw) -> Optional[str]:
-    """A return time R is the END of the away stint and is only meaningful when a
-    transfer time T is also set (→ supervisor or task). Returns a canonical
-    'HH:MM' string or None."""
-    if not raw or not transfer_time or ttype not in ("supervisor", "task"):
+    """A return time R is the END of the away stint (→ supervisor or task). With
+    a transfer time T the stint is [T, R]; WITHOUT one (2026-10-09, the
+    operator) it runs from the worker's OWN clock-in — several workers who
+    came at different times are each at the receiver from the moment they
+    started. Returns a canonical 'HH:MM' string or None."""
+    if not raw or ttype not in ("supervisor", "task"):
         return None
     mins = _parse_hhmm(raw)
     return _fmt_hhmm(mins) if mins is not None else None
 
 
-def _compute_split(snapshot: dict, transfer_time: str, return_time: Optional[str] = None) -> Optional[dict]:
+def _compute_split(snapshot: dict, transfer_time: Optional[str], return_time: Optional[str] = None) -> Optional[dict]:
     """Resolve how a single worker's day splits around the transfer time T, and —
     when a return time R is given — the moment they come back (the carve-out).
+
+    FROM ARRIVAL (a return time and NO transfer time, 2026-10-09): T is the
+    worker's own clock-in, so the away stint is [C, R] and the home side is
+    [R, O] alone. The receiver is then the FIRST unit of the day, and the early
+    arrival is credited there (`early_side` = "away", `part2_eff` strips it);
+    every other shape keeps early on the home side as before.
 
     TWO-WAY (no return) — the worker leaves at T and never returns:
       part1 = (T - clock_in)/60     → before-T worked time, INCLUDES early arrival
@@ -4036,7 +4069,8 @@ def _compute_split(snapshot: dict, transfer_time: str, return_time: Optional[str
     the caller can fall back to a plain full move. Hours are in decimal hours.
     """
     C, O  = _clock_bounds_min(snapshot.get("clock_in_out"))
-    T     = _parse_hhmm(transfer_time)
+    from_arrival = (not transfer_time) and bool(return_time)
+    T     = C if from_arrival else _parse_hhmm(transfer_time)
     total = snapshot.get("hours_worked")
     early = float(snapshot.get("early_arrival_min") or 0)
     if T is None or C is None or O is None or total is None:
@@ -4061,16 +4095,27 @@ def _compute_split(snapshot: dict, transfer_time: str, return_time: Optional[str
         away  = max(0.0, min((R - T) / 60.0, total))   # away stint at clock duration
         part1 = max(0.0, total - away)                 # home side (both slices), incl. break+early
         part2 = away                                   # away side
+        if from_arrival:
+            # The receiver opened the day: early arrival is its, and the home
+            # side is the one slice [R, O].
+            p1e, p2e, side = part1, max(0.0, part2 - early / 60.0), "away"
+            home_clock = f"{_fmt_hhmm(R)}-{_fmt_hhmm(O)}"
+        else:
+            p1e, p2e, side = max(0.0, part1 - early / 60.0), part2, "home"
+            home_clock = f"{_fmt_hhmm(C)}-{_fmt_hhmm(O)}"  # name stays → full C–O span
         return {
             "T":          _fmt_hhmm(T),
             "C":          _fmt_hhmm(C),
             "O":          _fmt_hhmm(O),
             "R":          _fmt_hhmm(R),
+            "from_arrival": from_arrival,
+            "early_side": side,
             "stay":       part1 >= part2,              # tie → stays on the original unit
             "part1":      round(part1, 4),             # home-side hours (incl. early)
             "part2":      round(part2, 4),             # away-side hours
-            "part1_eff":  round(max(0.0, part1 - early / 60.0), 4),
-            "home_clock": f"{_fmt_hhmm(C)}-{_fmt_hhmm(O)}",  # name stays → full C–O span
+            "part1_eff":  round(p1e, 4),
+            "part2_eff":  round(p2e, 4),
+            "home_clock": home_clock,
             "away_clock": f"{_fmt_hhmm(T)}-{_fmt_hhmm(R)}",  # name moves → just the [T,R] stint
             "early_min":  early,
         }
@@ -4085,6 +4130,9 @@ def _compute_split(snapshot: dict, transfer_time: str, return_time: Optional[str
         "part1":     round(part1, 4),                  # original-side hours (incl. early)
         "part2":     round(part2, 4),                  # receiving-side hours (early already on orig)
         "part1_eff": round(max(0.0, part1 - early / 60.0), 4),  # original effective (early removed)
+        "part2_eff": round(part2, 4),                  # nothing early on the away side here
+        "early_side": "home",
+        "from_arrival": False,
         "early_min": early,
     }
 
@@ -4155,7 +4203,7 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 # counts named rows only: the day-close gate must not demand a
                 # cell for a row the placement tab cannot show.
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part2"],
+                                 hours_worked=plan.get("part2_eff", plan["part2"]),
                                  verifix_code=None)
                 db.add(row); db.flush()
                 recv_leftover_id = row.id
@@ -4176,13 +4224,16 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             att.clock_in_out    = plan.get("home_clock") or f'{plan["C"]}-{plan["T"]}'
             att.hours_worked    = plan["part1"]
             att.effective_hours = plan["part1_eff"]
-            # early_arrival_min unchanged — early belongs to the original unit
+            # early_arrival_min unchanged — early belongs to the unit that opened
+            # the day; from arrival that is the receiver, so none is left here.
+            if plan.get("early_side") == "away":
+                att.early_arrival_min = 0
             if not is_task and plan["part2"] > 0:
                 # → supervisor: the after-T hours land on the receiving unit,
                 # cell-less and nameless (see the below-min branch above).
                 # → task: dropped (no row).
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part2"],
+                                 hours_worked=plan.get("part2_eff", plan["part2"]),
                                  verifix_code=None)
                 db.add(row); db.flush()
                 leftover_id = row.id
@@ -4215,8 +4266,10 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 # No return → away runs T–O; carve-out → just the [T,R] stint.
                 att.clock_in_out      = plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}'
                 att.hours_worked      = plan["part2"]
-                att.early_arrival_min = 0          # early stays on the original unit
-                att.effective_hours   = plan["part2"]
+                # early stays on the unit that opened the day — the original
+                # one, unless the move runs from the worker's own arrival
+                att.early_arrival_min = plan["early_min"] if plan.get("early_side") == "away" else 0
+                att.effective_hours   = plan.get("part2_eff", plan["part2"])
                 if plan["part1_eff"] > 0:
                     # The before-T remainder stays credited to the worker's ORIGINAL cell.
                     row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
@@ -4317,7 +4370,8 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
     payload = doc.payload or {}
     ttype   = payload.get("target_type")
     target  = payload.get("target_manager_id")
-    if payload.get("transfer_time") and ((ttype == "supervisor" and target) or ttype == "task"):
+    if (payload.get("transfer_time") or payload.get("return_time")) and \
+            ((ttype == "supervisor" and target) or ttype == "task"):
         _apply_split_exchange(db, doc)
         return
     for emp in payload.get("employees", []):
@@ -4361,7 +4415,8 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
     payload = doc.payload or {}
     ttype   = payload.get("target_type")
     target  = payload.get("target_manager_id")
-    if payload.get("transfer_time") and ((ttype == "supervisor" and target) or ttype == "task"):
+    if (payload.get("transfer_time") or payload.get("return_time")) and \
+            ((ttype == "supervisor" and target) or ttype == "task"):
         _revert_split_exchange(db, doc)
         return
     for emp in payload.get("employees", []):
@@ -4470,7 +4525,7 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
         # A full snapshot lets a later cancel restore the original row. Needed for
         # task moves (which blank the row) and for transfer-time splits (which
         # mutate clock-out / hours and may relocate the row to the receiver).
-        if target_type == "task" or transfer_time:
+        if target_type == "task" or transfer_time or return_time:
             row["snapshot"] = _snapshot_row(att)
         emp_rows.append(row)
     return {
@@ -4944,6 +4999,7 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
                                       body.employees, transfer_time=ttime, return_time=rtime)
     if not payload["employees"]:
         raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
+    _check_return_from_arrival(payload)
     if ttype == "task":
         _ensure_exchange_task(db, task_name, caller)
 
@@ -5045,6 +5101,7 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
                                           body.employees, transfer_time=ttime, return_time=rtime)
         if not payload["employees"]:
             raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
+        _check_return_from_arrival(payload)
         if ttype == "task":
             _ensure_exchange_task(db, task_name, caller)
         doc.payload = payload
