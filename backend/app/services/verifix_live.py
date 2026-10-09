@@ -41,11 +41,13 @@ else the clock span. Someone still inside is counted up to now and marked so.
 """
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import threading
 import time as _time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Callable, Optional
 
@@ -74,6 +76,7 @@ ERROR_BACKOFF_S = 60     # …but not within this long of a read of the day that
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
 FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
+CLOSE_FRESH_S = HOT_S + 30   # …and a day close: the job reads a running shift-day every HOT_S
 WAIT_S = 60              # a request waits this long for another read of its unit-day (+ the
                          # rest of the request stays inside Cloudflare's 100 s)
 BUSY_MESSAGE = "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."
@@ -124,8 +127,25 @@ def _cached(key: tuple, ttl: float, fn: Callable[[], Any]) -> tuple[Any, datetim
     return val, stamp
 
 
-def _dt(raw: Any) -> Optional[datetime]:
-    s = str(raw or "").strip()
+# Verifix's own spelling, «08.10.2026 07:51:12» (or without the seconds).
+# Read by hand, never by `strptime`: that one takes a process-wide lock around
+# a locale lookup on every call, and a live day parses four clocks per worker —
+# the minute job and a request re-copying the plant then queued behind each
+# other on that lock (the 2026-10-09 «Server was slow» report: 66% of a bulk
+# approval was spent waiting inside `_strptime`). Anything not in exactly
+# this shape still goes to `strptime`, so what is accepted did not change.
+_DT_RE = re.compile(r"(\d\d)\.(\d\d)\.(\d{4}) (\d\d):(\d\d)(?::(\d\d))?")
+
+
+@functools.lru_cache(maxsize=8192)
+def _dt_str(s: str) -> Optional[datetime]:
+    m = _DT_RE.fullmatch(s)
+    if m:
+        try:
+            return datetime(int(m[3]), int(m[2]), int(m[1]), int(m[4]), int(m[5]),
+                            int(m[6]) if m[6] else 0)
+        except ValueError:
+            return None
     for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
         try:
             return datetime.strptime(s, fmt)
@@ -134,11 +154,26 @@ def _dt(raw: Any) -> Optional[datetime]:
     return None
 
 
-def _d(raw: Any) -> Optional[date]:
+def _dt(raw: Any) -> Optional[datetime]:
+    return _dt_str(str(raw or "").strip())
+
+
+_D_RE = re.compile(r"(\d\d)\.(\d\d)\.(\d{4})")
+
+
+@functools.lru_cache(maxsize=1024)
+def _d_str(s: str) -> Optional[date]:
+    m = _D_RE.fullmatch(s)
     try:
-        return datetime.strptime(str(raw or "").strip()[:10], "%d.%m.%Y").date()
+        if m:
+            return date(int(m[3]), int(m[2]), int(m[1]))
+        return datetime.strptime(s, "%d.%m.%Y").date()
     except ValueError:
         return None
+
+
+def _d(raw: Any) -> Optional[date]:
+    return _d_str(str(raw or "").strip()[:10])
 
 
 def _hm(dt: Optional[datetime]) -> Optional[str]:
@@ -188,10 +223,10 @@ def _schedule_window(name: str, day: date) -> tuple[Optional[datetime], Optional
 def _read_directory(cfg: dict) -> dict:
     """Divisions, jobs and every WORKING employee — the directory."""
     deadline = _time.monotonic() + verifix.BUDGET_S
-    divs: dict[str, dict] = {}
-    jobs: dict[str, str] = {}
     emps: dict[str, dict] = {}
-    with verifix.client(cfg) as cl:
+
+    def read_divs(cl) -> dict:
+        divs: dict[str, dict] = {}
         for page in verifix.each_page(cl, "core/division$list", {"division_ids": []},
                                       limit=verifix.LIMIT_LIST, deadline=deadline):
             for d in page:
@@ -199,31 +234,42 @@ def _read_directory(cfg: dict) -> dict:
                 code = str(d.get("code") or "").strip()
                 divs[did] = {"code": verifix._code_key(code) if code else None,
                              "raw": code, "name": d.get("name") or ""}
+        return divs
+
+    def read_jobs(cl) -> dict:
+        jobs: dict[str, str] = {}
         for page in verifix.each_page(cl, "core/job$list", {"job_ids": []},
                                       limit=verifix.LIMIT_LIST, deadline=deadline):
             for j in page:
                 jobs[str(j.get("job_id") or "")] = j.get("name") or ""
+        return jobs
+
+    def read_emps(cl) -> list:
         body = {"employee_ids": [], "statuses": ["W"], "npins": []}
         try:
-            pages = list(verifix.each_page(cl, "core/employee$list", body,
-                                           limit=verifix.LIMIT_LIST, deadline=deadline))
+            return list(verifix.each_page(cl, "core/employee$list", body,
+                                          limit=verifix.LIMIT_LIST, deadline=deadline))
         except verifix.VerifixError as exc:
             if exc.code != "http":
                 raise
             # A server that will not filter by status: take everyone, keep «W».
             body["statuses"] = []
-            pages = list(verifix.each_page(cl, "core/employee$list", body,
-                                           limit=verifix.LIMIT_LIST, deadline=deadline))
-        for page in pages:
-            for e in page:
-                eid = str(e.get("employee_id") or "")
-                if not eid or (e.get("status") or "W") != "W":
-                    continue
-                name = " ".join(str(x).strip() for x in (e.get("last_name"), e.get("first_name"),
-                                                        e.get("middle_name")) if x).strip()
-                emps[eid] = {"name": name, "unit": str(e.get("org_unit_id") or ""),
-                             "div": str(e.get("division_id") or ""),
-                             "job": jobs.get(str(e.get("job_id") or ""), "")}
+            return list(verifix.each_page(cl, "core/employee$list", body,
+                                          limit=verifix.LIMIT_LIST, deadline=deadline))
+
+    # Three independent lists, read side by side (a press waited ~9 calls in a
+    # row for them — 16 s on 2026-10-09).
+    divs, jobs, pages = _side_by_side(cfg, read_divs, read_jobs, read_emps)
+    for page in pages:
+        for e in page:
+            eid = str(e.get("employee_id") or "")
+            if not eid or (e.get("status") or "W") != "W":
+                continue
+            name = " ".join(str(x).strip() for x in (e.get("last_name"), e.get("first_name"),
+                                                    e.get("middle_name")) if x).strip()
+            emps[eid] = {"name": name, "unit": str(e.get("org_unit_id") or ""),
+                         "div": str(e.get("division_id") or ""),
+                         "job": jobs.get(str(e.get("job_id") or ""), "")}
     return {"divs": divs, "jobs": jobs, "emps": emps}
 
 
@@ -364,6 +410,36 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
         _dir_lock.release()
 
 
+def _side_by_side(cfg: dict, *reads):
+    """Run Verifix reads at the same time, each on a client of its own (a
+    read is a chain of cursor pages, so one list cannot be split, but separate
+    lists can). A None read answers {}. The first failure is raised once every
+    read has stopped — each is bounded by the caller's deadline."""
+    todo = [(i, fn) for i, fn in enumerate(reads) if fn is not None]
+    out: list = [{} for _ in reads]
+    if len(todo) <= 1:
+        for i, fn in todo:
+            with verifix.client(cfg) as cl:
+                out[i] = fn(cl)
+        return out
+
+    def run(fn):
+        with verifix.client(cfg) as cl:
+            return fn(cl)
+
+    with ThreadPoolExecutor(max_workers=len(todo), thread_name_prefix="verifix-read") as pool:
+        futs = [(i, pool.submit(run, fn)) for i, fn in todo]
+        err = None
+        for i, f in futs:
+            try:
+                out[i] = f.result()
+            except Exception as exc:  # noqa: BLE001 — re-raised below, after the others stop
+                err = err or exc
+    if err is not None:
+        raise err
+    return out
+
+
 def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
               unit_id: Optional[int] = None, units_read=(), all_units=(),
               homes: Optional[dict] = None) -> dict:
@@ -397,10 +473,16 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
 
     num = [int(i) for i in ids if i.isdigit()]
     deadline = _time.monotonic() + verifix.BUDGET_S
-    with verifix.client(cfg) as cl:
-        ts = _read_timesheet(cl, num, day, deadline) if num else {}
-        marks = _read_marks(cl, num, m_from, hi, deadline)
-        whole = _read_marks(cl, [int(i) for i in fresh if i.isdigit()], lo, hi, deadline) if fresh else {}
+    # The report, the marks and the skipped people's whole marks are three
+    # independent reads: asked side by side, a read takes as long as its
+    # slowest list rather than the sum of the three — nearly all of a day
+    # close's 7.5 s was spent waiting on them one after another (2026-10-09).
+    fresh_num = [int(i) for i in fresh if i.isdigit()]
+    ts, marks, whole = _side_by_side(
+        cfg,
+        (lambda cl: _read_timesheet(cl, num, day, deadline)) if num else None,
+        lambda cl: _read_marks(cl, num, m_from, hi, deadline),
+        (lambda cl: _read_marks(cl, fresh_num, lo, hi, deadline)) if fresh else None)
 
     at_iso = started.isoformat(timespec="seconds")
     from_iso = m_from.isoformat(timespec="seconds")
@@ -691,8 +773,9 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
                                                      "end_time", "day_kind", "plan_time")},
             "facts": facts,
             "window": [_iso(lo), _iso(hi)],
-            "marks": [[m[0].strftime("%d.%m %H:%M"), m[1], lo <= m[0] <= hi]
-                      for m in sorted(marks)[-60:]],
+            # The marks themselves are not listed: nothing has read them since
+            # the lab page went, and formatting the last 60 of every worker's
+            # was the second-largest cost of building a live day.
             "marks_total": len(marks),
         },
     }
@@ -793,7 +876,8 @@ def _unit_lock(key: tuple) -> threading.Lock:
 
 
 def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = False,
-             stored_only: bool = False, fresh_dir: bool = False) -> dict:
+             stored_only: bool = False, fresh_dir: bool = False,
+             force_min_s: float = FORCE_MIN_S, memo: Optional[dict] = None) -> dict:
     """The stored read behind one unit's day (`services/live_staff` builds the
     rows), read from Verifix first only when it has to be: «Yangilash»
     (`force`), a day nobody stored yet, somebody of this unit missing from it,
@@ -813,7 +897,17 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     a worker is on — is re-read too when older than `DIR_PRESS_S`, so a worker
     Verifix had in the wrong cell, corrected there a minute ago, leaves this
     unit's day on the press. A unit's membership follows the CURRENT
-    directory, on a past day too; the job keeps it within `DIR_TTL`."""
+    directory, on a past day too; the job keeps it within `DIR_TTL`.
+
+    `force_min_s`: a forced read this soon after the unit's last read serves
+    that read (`FORCE_MIN_S` for a press; the day close passes
+    `CLOSE_FRESH_S`, because the job re-reads a running shift-day every
+    minute and a close re-reading it on top only made the brigadir wait).
+
+    `memo` (stored_only only): a dict one request passes to every call, so the
+    plant's stored directory and day — two large JSON rows — are read once per
+    request, not once per unit (a bulk approval checks each document's unit).
+    The values in it are shared: read-only."""
     cfg = verifix.config(db, with_password=True)
     if not _configured(cfg):
         return {"error": "not_configured"}
@@ -831,10 +925,15 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     if day > now_local().date():
         return {"error": "future"}
     if stored_only:
-        drow = _row(db, "dir")
-        if not drow or not drow.data:
+        if memo is not None and "dir" in memo:
+            directory, dir_at = memo["dir"]
+        else:
+            drow = _row(db, "dir")
+            directory, dir_at = (drow.data, _local(drow.read_at)) if drow else (None, None)
+            if memo is not None:
+                memo["dir"] = (directory, dir_at)
+        if not directory:
             return {"error": "no_read"}
-        directory, dir_at = drow.data, _local(drow.read_at)
     else:
         try:
             # «Yangilash» keeps the directory the job refreshes every DIR_TTL:
@@ -847,8 +946,13 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     ids = sorted({eid for eid, (mid, _) in homes.items() if mid == manager_id} | _doc_ids(db, day))
 
     key = _day_key(day)
-    row = _row(db, key)
-    data = (row.data or {}) if row else {}
+    if stored_only and memo is not None and key in memo:
+        data, row = memo[key], None
+    else:
+        row = _row(db, key)
+        data = (row.data or {}) if row else {}
+        if stored_only and memo is not None:
+            memo[key] = data
     store = data.get("emps") or {}
     covered = _covered_at(data, manager_id, ids)
     now = now_local()
@@ -867,7 +971,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     stale = (covered is None or any(i not in store for i in ids)
              or (day == today and (now - covered).total_seconds() > pace + STALE_S))
     # A press this soon after the last read serves that read.
-    if force and covered is not None and (now - covered).total_seconds() < FORCE_MIN_S:
+    if force and covered is not None and (now - covered).total_seconds() < force_min_s:
         force = False
     # A read of this day failed moments ago (Verifix down, the proxy refusing):
     # serve what is stored and say so, rather than every poll trying again.

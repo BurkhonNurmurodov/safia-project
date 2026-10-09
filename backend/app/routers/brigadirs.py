@@ -13,8 +13,17 @@ from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import idle_source, zagruzka_source
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
+from app.services.shared_build import SharedBuild
 
 router = APIRouter(prefix="/api", tags=["brigadirs"])
+
+# /api/brigadirs and /api/summary: viewers asking for the same scope and
+# period at once share one build (`services/shared_build`, never a stale one).
+_SHARED = SharedBuild()
+
+
+def _scope_key(scoped) -> Optional[tuple]:
+    return None if scoped is None else tuple(sorted(int(m) for m in scoped))
 
 
 def _closed_pairs(db: Session, date_from: date, date_to: date, manager_ids: list[int]) -> set:
@@ -169,20 +178,30 @@ def build_metrics_list(
         allowed = None
     has_days = None if allowed is None else {mid for mid, _d in allowed}
 
+    # Every unit's attendance for the whole period in ONE read of the six
+    # columns `compute_metrics` reads, grouped by unit and day here. It was one
+    # query per unit building a full ORM object per row — tens of thousands of
+    # them for a fortnight of the plant, the cost the leaders board shed on
+    # 2026-10-07; a Row answers `r.hours_worked` … exactly as the object did.
+    att_units = [m.id for m in managers if has_days is None or m.id in has_days]
+    att_by_unit: dict = {}
+    if att_units:
+        for r in db.query(
+            Attendance.manager_id, Attendance.date, Attendance.job_title,
+            Attendance.hours_worked, Attendance.is_supervisor,
+            Attendance.early_arrival_min, Attendance.worker_name, Attendance.hc_weight,
+        ).filter(
+            Attendance.manager_id.in_(att_units),
+            Attendance.date >= date_from,
+            Attendance.date <= date_to,
+        ):
+            att_by_unit.setdefault(r.manager_id, {}).setdefault(r.date, []).append(r)
+
     results = []
     for mgr in managers:
         if has_days is not None and mgr.id not in has_days:
             continue
-        # The unit's attendance for the whole period in ONE read, grouped by
-        # day here. It was one query per unit per DAY — ~300 for a fortnight
-        # on /zagruzka, every one of them a scan of the whole table.
-        att_by_day: dict = {}
-        for r in db.query(Attendance).filter(
-            Attendance.manager_id == mgr.id,
-            Attendance.date >= date_from,
-            Attendance.date <= date_to,
-        ):
-            att_by_day.setdefault(r.date, []).append(r)
+        att_by_day = att_by_unit.get(mgr.id, {})
         for d_str in all_dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
             if allowed is not None and (mgr.id, d_obj) not in allowed:
@@ -261,8 +280,10 @@ def list_brigadirs(
     if empty_scope(scoped):
         return []
 
-    metrics = build_metrics_list(db, date_from, date_to, shift, scoped)
-    return aggregate_units(metrics)
+    return _SHARED.run(
+        ("units", _scope_key(scoped), date_from, date_to, shift),
+        lambda: aggregate_units(build_metrics_list(db, date_from, date_to, shift, scoped)),
+        before_wait=db.rollback)
 
 
 def aggregate_units(metrics) -> list[dict]:
@@ -399,6 +420,12 @@ def get_summary(
         date_from = date_to - timedelta(days=1)
 
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    return _SHARED.run(("summary", _scope_key(scoped), date_from, date_to, shift),
+                       lambda: _summary(db, date_from, date_to, shift, scoped),
+                       before_wait=db.rollback)
+
+
+def _summary(db: Session, date_from: date, date_to: date, shift: Optional[int], scoped) -> dict:
     metrics = [] if empty_scope(scoped) else build_metrics_list(
         db, date_from, date_to, shift, scoped)
 

@@ -8,8 +8,18 @@ from app.models import Manager, Attendance, DayApproval, EditRequest
 from app.permissions import require_page
 from app.routers.brigadirs import aggregate_units, build_metrics_list
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services.shared_build import SharedBuild
 
 router = APIRouter(prefix="/api", tags=["heatmap"])
+
+# Viewers asking for the same scope and period at once share one build
+# (`services/shared_build` — never a stale one). The answer is the same for
+# every viewer of one scope: `scoped` already carries the viewer's lock.
+_SHARED = SharedBuild()
+
+
+def scope_key(scoped) -> Optional[tuple]:
+    return None if scoped is None else tuple(sorted(int(m) for m in scoped))
 
 
 @router.get("/heatmap")
@@ -39,6 +49,14 @@ def get_heatmap(
         date_from = date_to - timedelta(days=13)
 
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    key = (scope_key(scoped), date_from, date_to, shift, include_pending, units)
+    return _SHARED.run(key, lambda: _heatmap(db, date_from, date_to, shift, scoped,
+                                             include_pending, units),
+                       before_wait=db.rollback)
+
+
+def _heatmap(db: Session, date_from: date, date_to: date, shift: Optional[int], scoped,
+             include_pending: bool, units: bool) -> dict:
     metrics = [] if empty_scope(scoped) else build_metrics_list(
         db, date_from, date_to, shift, scoped, require_closed=not include_pending)
 

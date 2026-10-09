@@ -855,7 +855,8 @@ def _ctx_for(db: Session, doc: LiveDocument, reads: Optional[dict] = None):
     key = (doc.manager_id, doc.day)
     # Stored read only: this runs inside a write (an approval, an un-post),
     # and a Verifix read here would roll the caller's pending changes back.
-    rd = reads.get(key) or verifix_live.day_read(db, doc.manager_id, doc.day, stored_only=True)
+    rd = reads.get(key) or verifix_live.day_read(db, doc.manager_id, doc.day, stored_only=True,
+                                                 memo=reads.setdefault("rows", {}))
     if rd.get("error"):
         return None
     reads[key] = rd
@@ -1804,12 +1805,12 @@ def _no_checkout(ctx, ud: dict, mid: int) -> list:
 
 
 def _close_check(db: Session, mid: int, d: date, force: bool, stored_only: bool = False,
-                 fresh_dir: bool = False) -> dict:
+                 fresh_dir: bool = False, force_min_s: float = verifix_live.FORCE_MIN_S) -> dict:
     """What a live day's close waits on — THE gate, read by the dialog and
     re-checked by the close itself. `stored_only` inside a write: a Verifix
     read owns the session's transaction and would roll the write back."""
     rd = verifix_live.day_read(db, mid, d, force=force, stored_only=stored_only,
-                               fresh_dir=fresh_dir)
+                               fresh_dir=fresh_dir, force_min_s=force_min_s)
     if rd.get("error"):
         raise _NoDay(rd)
     ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
@@ -1965,7 +1966,10 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")
     live = live_day.is_live(d)
-    chk = _close_check(db, mid, d, force=live)
+    # «Reads Verifix once more» — unless this unit was read within the last
+    # CLOSE_FRESH_S: the job keeps a running (and a just-finished) shift-day
+    # within a minute, and re-reading it here was most of a close's 7.5 s.
+    chk = _close_check(db, mid, d, force=live, force_min_s=verifix_live.CLOSE_FRESH_S)
     out, ctx, ud = chk["out"], chk["ctx"], chk["ud"]
 
     def refuse(reason: str, n: int, msg: str):

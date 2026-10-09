@@ -1055,15 +1055,29 @@ def _path_summary(slow: list[dict], limit: int = 4) -> list[str]:
     return out
 
 
+def _count_paths(events: list[dict]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in events:
+        out[e.get("path", "")] = out.get(e.get("path", ""), 0) + 1
+    return out
+
+
 def _dm(batch: list[dict]) -> None:
     try:
         stalls = [e for e in batch if e["kind"] == "stall"]
-        slow = [e for e in batch if e["kind"] == "request"]
+        # Requests slow BY DESIGN (a Verifix read a person pressed for, a sheet
+        # refresh, an export) are listed apart and last: mixed in, three of the
+        # six lines of the 2026-10-09 report were presses doing what they do,
+        # and the report read as «nothing was fixed».
+        designed = [e for e in batch if e["kind"] == "request" and _expected_slow(e.get("path", ""))]
+        slow = [e for e in batch if e["kind"] == "request" and not _expected_slow(e.get("path", ""))]
         first = min(e["at"] for e in batch)
         head = [
             "🐌 <b>Server was slow</b>",
             f"Since {_clock(first)}: {len(stalls)} freeze(s) of the whole server, "
-            f"{len(slow)} slow request(s) (≥ {SLOW_REQUEST_S:.0f} s).",
+            f"{len(slow)} slow request(s) (≥ {SLOW_REQUEST_S:.0f} s)"
+            + (f", plus {len(designed)} slow by design (Verifix presses, sheet refreshes, exports)"
+               if designed else "") + ".",
         ]
         if stalls:
             w = max(stalls, key=lambda e: e["ms"])
@@ -1074,8 +1088,13 @@ def _dm(batch: list[dict]) -> None:
         if slow:
             head.append("Slow most often:")
             head += ["• " + line for line in _path_summary(slow)]
+        if designed:
+            head.append("Slow by design: " + ", ".join(
+                f"<code>{html.escape(p)}</code> ×{n}" for p, n in
+                sorted(_count_paths(designed).items(), key=lambda kv: -kv[1])[:4]))
         text = "\n".join(head)
-        for line in event_lines(batch):
+        real = event_lines(stalls + slow)
+        for line in real + event_lines(designed, limit=max(0, 6 - len(real))):
             if len(text) + len(line) > 3900:     # whole lines only: a cut tag breaks the HTML
                 break
             text += "\n\n" + line

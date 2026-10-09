@@ -7906,7 +7906,10 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
 - **The close COPIES the day** (`services/live_projection.py`, ruling 1):
   `POST /api/staff-live/daily/close` — and `/api/staff/daily/close`, which
   hands a live day to it, so every door that closes a day reaches it — reads
-  Verifix once more (`force`), then refuses while anybody is inside, on a break
+  Verifix once more (`force`; from 2026-10-09 not when this unit was read in
+  the last `CLOSE_FRESH_S`, 90 s — the job keeps a running and a just-finished
+  shift-day within a minute, and the extra read was most of a close's 7.5 s),
+  then refuses while anybody is inside, on a break
   or due, while a counted worker has no cell, while somebody has no check-out
   the brigadir has not answered, or when Verifix is unreachable and the stored
   read is older than `CLOSE_READ_MAX_MIN` (15, ruling 14). Then `LiveDayClose`
@@ -10337,6 +10340,36 @@ blocking work on the event loop freezes every request on the server at once.
   `transcribe`) still query the database on the loop; with the pool full that
   is a wait of up to 30 s with every request stopped behind it — admin-only
   today, so left for now.
+- **The ninth (9 Oct, 08:54–09:18) was the same paths again**, and three of
+  its six detailed lines were presses doing what they do. Fixed:
+  - **`strptime` was a convoy.** It takes a process-wide lock around a locale
+    lookup on every call, and a live day parses four clocks per worker — the
+    minute job re-copying the plant and a bulk approval re-copying it queued on
+    that lock (66% of `/api/staff-live/documents/bulk`). `verifix_live._dt` /
+    `_d` read Verifix's «dd.mm.yyyy HH:MM[:SS]» by hand (regex + `lru_cache`)
+    and hand anything else to `strptime`, so what is accepted did not change
+    (checked equal on 20,000 cases). A worker's `raw` no longer formats their
+    last 60 marks (nothing read them). 3,000 synthetic workers: 0.22 → 0.09 s.
+  - **A bulk approval reads the plant's stored day once**, not once per
+    document's unit (`day_read(stored_only=True, memo=)`, shared through
+    `_ctx_for`'s `reads`).
+  - **Verifix lists are read side by side** (`verifix_live._side_by_side`, a
+    client each): the report, the marks and the skipped people's whole marks
+    of a day; divisions, jobs and employees of the directory. A read takes as
+    long as its slowest list, not the sum. The day close reuses a read under
+    `CLOSE_FRESH_S` (see «A live day's engine»).
+  - **Identical heavy reads at once share one build** — `services/shared_build.py`,
+    the leaders board's rule made general (a request takes only a build that
+    STARTED after it arrived; nothing kept once done; a waiter hands its DB
+    connection back first): `/api/heatmap`, `/api/summary`, `/api/brigadirs`,
+    keyed by the scoped units + period + flags. At 08:57 the heatmap ran 22 at
+    once with the pool full. `build_metrics_list` reads attendance as the six
+    columns `compute_metrics` reads, in one query for every unit (it built one
+    ORM object per row, one query per unit).
+  - **The DM lists by-design slow requests apart** (a path `_expected_slow`
+    names): counted in the first line, named in «Slow by design», detailed
+    after everything else — never in «Slow most often».
+  Not touched: the Google-Sheets refreshes (the sheet is the wait).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
