@@ -10455,6 +10455,20 @@ blocking work on the event loop freezes every request on the server at once.
   - **«Mening o'rnim» (4.8 s) waited for the pool's first build.** It is
     built ~45 s after the process starts (`leaders.warm_standing`, from the
     lifespan) and a stored pool answers for 3 h while a new one is made.
+- **The eleventh (9 Oct, 14:55) was the MACHINE, not this server**: one
+  15.9 s freeze with the host at 0% idle and load 46, this process granted
+  2.4 s of CPU in 18 s and +407 major page faults — other programs on the box
+  had every CPU and pushed our pages out (the verdict read it as swap). Nothing
+  in the report could say WHO, so a freeze now reads the host's process list
+  (`perf_watch._procs`, `/proc/<pid>/stat` of every process this user may
+  read) 1 s in and again at its end: `_host_top` groups the CPU used in
+  between by command («postgres ×38 21.4 s 3.1 GB · node ×3 9.0 s · this
+  server 2.4 s»), printed as «on the host:» in the log and the DM, beside the
+  host's free memory and swap (`/proc/meminfo`). The verdict says «the machine
+  was full — N% idle, load L on C CPUs; this process got X s of CPU — most of
+  it «name»» whenever the host was ≤ 10% idle and this process got under a
+  quarter of the time, ahead of the swap reading. A scan costs ~2 ms and runs
+  only during a freeze. Not fixed: the cause — the next report names it.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
