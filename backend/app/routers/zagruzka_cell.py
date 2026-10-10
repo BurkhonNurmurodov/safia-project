@@ -52,6 +52,12 @@ the Production page's work-centre codes (see seed_cells_from_sheet.py).
 Decisions taken with the user (2026-07-31), all deliberate:
   * ALL of the locked unit's cells are computed — ``Cell.in_load`` is ignored so
     that ticking cells for the real загрузка can never change this test page.
+  * …except a cell ARCHIVED before the period's first day (2026-10-10, the
+    operator: an archived cell was listed on days after it closed). It is not
+    a row and takes no share of a work centre on such a period — the cell did
+    not exist on any day shown. One archived INSIDE the period stays, since
+    its earlier days are real. The left-out cells are named in
+    `diagnostics.archived_cells`.
   * The formula's headcount is O. SONI, NOT штатка — the user corrected the
     first version, which fed штатка in. **From `zagruzka_source.ZAGRUZKA_FROM`
     (2026-09-02) it is the TYPED «Bugungi fakt» alone** (the operator's
@@ -123,6 +129,7 @@ writes, and no existing pipeline reads it.
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -148,6 +155,8 @@ from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
 
 PAGE = "zagruzka-cell"
+# The plant's wall clock — which DAY a cell was archived on.
+_TZ = ZoneInfo("Asia/Tashkent")
 
 # Excel ROUND-trip constant shared with pp_calc: labor_time is seconds/unit.
 _SEC_PER_MIN = 60.0
@@ -258,12 +267,21 @@ def cell_zagruzka(
     _by_key = dict(zip(date_keys, dates))
 
     # ── The unit's cells. in_load is deliberately ignored (see module docstring).
-    cells = (
+    # A cell archived before the first day shown is left out — it did not
+    # exist on any of them — and named in the diagnostics. The archive day is
+    # the plant's wall clock (the stamp is timestamptz).
+    cells, archived_out = [], []
+    for c in (
         db.query(Cell)
         .filter(Cell.manager_id == mgr.id)
         .order_by(Cell.verifix_code)
         .all()
-    )
+    ):
+        gone = c.archived_at.astimezone(_TZ).date() if c.archived_at else None
+        if gone is not None and gone < date_from:
+            archived_out.append({"code": c.verifix_code, "date": gone.isoformat()})
+        else:
+            cells.append(c)
     if not cells:
         return {
             "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
@@ -274,7 +292,9 @@ def cell_zagruzka(
                 "cells_without_sap": [],
                 "work_centers_without_cell": [],
                 "excluded_job_titles": [],
-                "note": "This unit has no registered cells.",
+                "archived_cells": archived_out,
+                "note": ("Every cell of this unit was archived before this period."
+                         if archived_out else "This unit has no registered cells."),
             },
         }
 
@@ -1315,6 +1335,8 @@ def cell_zagruzka(
             # work centre, can never carry production numbers — say so loudly
             # instead of letting the row sit empty and look like a quiet day.
             "cells_without_sap": cells_without_sap,
+            # Cells archived before the period's first day — not rows here.
+            "archived_cells": archived_out,
             "cells_without_work_center": sorted(
                 c.verifix_code for c in cells
                 if c.id in wc_of_cell and wc_of_cell[c.id] not in shtatka

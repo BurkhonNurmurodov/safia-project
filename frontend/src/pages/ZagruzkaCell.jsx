@@ -915,6 +915,12 @@ export default function ZagruzkaCell() {
           {(() => {
             const rows = [
               [t("zcell.diagNoSap"), diag.cells_without_sap],
+              // Archived before the period's first day — left out of the grids,
+              // so the page says so rather than letting the cell just vanish.
+              [t("zcell.diagArchived"),
+               (diag.archived_cells ?? []).map((a) =>
+                 `${a.code} (${a.date.split("-").reverse().join(".")})`),
+               "ok"],
               [t("zcell.diagNoWc"), diag.cells_without_work_center],
               [t("zcell.diagOrphanWc"), diag.work_centers_without_cell],
               // Work centres still split EVENLY between several cells — those

@@ -435,6 +435,10 @@ archived cells by default (a «Holat» filter section: active · archived · all
 marks them with a grey «Arxivda · date» chip, and `/cells/:id` carries a banner.
 Deliberately NOT done: no other page or picker reads the flag yet — an archived
 cell still counts wherever it counted (it carries no new data once closed).
+ONE exception (2026-10-10, the operator): `/zagruzka-cell` leaves out a cell
+archived before the period's first day (plant clock) — no row, no share of a
+work centre — and names it in `diagnostics.archived_cells`; a cell archived
+inside the period stays, its earlier days being real.
 
 ## The cells register follows Verifix (`verifix_cell_sync`, 2026-10-04)
 
