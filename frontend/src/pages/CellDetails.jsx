@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, LayoutGrid, Hash, Users, Flag, UserCheck, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
-  Boxes, SearchX, AlertTriangle, Layers, Archive,
+  Boxes, SearchX, AlertTriangle, Layers, Archive, Workflow, Target,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -34,8 +34,8 @@ import api from "../utils/api";
  * /api/profiles/cells/:id/details, is gated the same way). Everyone gets the
  * same read-only view; holders of admin.cells.manage additionally get the
  * shared CellFormModal (codes / names / owners — the same form as /cells)
- * and the «Zagruzkada hisoblanadi» (in_load) switch, written through the
- * register's own PUT /api/profiles/admin/cells/:id.
+ * and the «Zagruzkada hisoblanadi» (in_load) and «Jarayonlar» (one_process)
+ * switches, written through the register's own PUT /api/profiles/admin/cells/:id.
  */
 
 // ── shared building blocks (Profile.jsx design language) ─────────────────────
@@ -88,6 +88,18 @@ function CodeChip({ children, muted = false }) {
 
 const GREEN = "#22c55e";
 const GREY  = "#94a3b8";
+
+// «Bitta jarayon» — a cell specialised for one process. A property of the
+// cell, not a status, so it wears the neutral skin and never a traffic light.
+function ProcChip({ children }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+          style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}>
+      <Target size={11} aria-hidden="true" style={{ color: "var(--text-3)" }} />
+      {children}
+    </span>
+  );
+}
 
 // Date-only ISO → localized short date, in the UI language (a browser-default
 // locale reads as someone else's software on an uz/ru page).
@@ -227,6 +239,17 @@ export default function CellDetails() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
+  // «Jarayonlar» — read by checklist task 3 alone (backend services/one_process).
+  const procMut = useMutation({
+    mutationFn: (val) => api.put(`/api/profiles/admin/cells/${id}`, { one_process: val }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cell-details", id] });
+      qc.invalidateQueries({ queryKey: ["admin-cells"] });
+      toast.success(t("cellPage.saved"));
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
+  });
+
   const back = (
     <button onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-[var(--text-2)] hover:text-[var(--text-1)] text-sm mb-5 transition-colors">
@@ -352,6 +375,7 @@ export default function CellDetails() {
                   <Tag color={c.in_load ? GREEN : GREY}>
                     {t(c.in_load ? "cellPage.inLoadOn" : "cellPage.inLoadOff")}
                   </Tag>
+                  {c.one_process && <ProcChip>{t("cellPage.oneProcessOn")}</ProcChip>}
                 </div>
                 {context && <div className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>{context}</div>}
               </div>
@@ -464,6 +488,29 @@ export default function CellDetails() {
                     : <Tag color={c.in_load ? GREEN : GREY}>
                         {t(c.in_load ? "cellPage.inLoadOn" : "cellPage.inLoadOff")}
                       </Tag>}
+                />
+                <FlagRow
+                  icon={Workflow}
+                  label={t("cellPage.oneProcess")}
+                  hint={t("cellPage.oneProcessHint")}
+                  control={canEdit
+                    ? <SegmentedToggle
+                        size="sm"
+                        ariaLabel={t("cellPage.oneProcess")}
+                        value={c.one_process ? "one" : "many"}
+                        onChange={(v) => {
+                          if (procMut.isPending) return;
+                          const want = v === "one";
+                          if (want !== Boolean(c.one_process)) procMut.mutate(want);
+                        }}
+                        options={[
+                          { value: "one", label: t("cellPage.oneProcessOn") },
+                          { value: "many", label: t("cellPage.oneProcessOff") },
+                        ]}
+                      />
+                    : c.one_process
+                      ? <ProcChip>{t("cellPage.oneProcessOn")}</ProcChip>
+                      : <span className="text-[12px]" style={{ color: "var(--text-2)" }}>{t("cellPage.oneProcessOff")}</span>}
                 />
                 <FlagRow
                   icon={CalendarDays}

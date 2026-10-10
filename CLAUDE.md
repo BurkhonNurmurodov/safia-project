@@ -711,6 +711,70 @@ the same person.
   (app setting `multi_leader_cells_2026_10_08`). Delete the module, its startup
   trio and both calls once it has landed — BEFORE `cell_owner_pass`.
 
+## A cell's «Jarayonlar» — one process or several (`cells.one_process`, 2026-10-10)
+
+The operator's rulings (2026-10-10, asked one by one): a cell either works
+through several processes («Ko'p jarayon», the default) or is specialised for
+ONE («Bitta jarayon»: crêpes, cream-coating, sponge slicing, boxing…). Task 3
+asks for photos of 3 DIFFERENT processes, which a leader whose cells only ever
+do one process cannot give — for them that requirement is dropped.
+
+- **`services/one_process.py` is THE rule** — `TASK` (3), `CRITERIA`,
+  `applies`, `leader_applies`, `cell_applies`, `day_cell`, `leader_ids`. Never
+  re-spell who it applies to.
+- **Who**: a PER-CELL checklist day (`leader_task_days.cell_id`) is judged by
+  ITS OWN cell's flag; every other day (a whole-leader day, a Google-Form row)
+  by the leader's cells — `cells.leader_id`, the «Boshqaruvchi» who files the
+  checklist, never the «Egasi» — that exist on that day (`cell_archive`): ALL
+  of them one-process, and at least one. A leader with no cell, or one
+  multi-process cell among several, keeps the 3-process rule.
+- **What changes is task 3's AI text, and nothing else.** The chain becomes:
+  the leader's OWN text → `one_process.CRITERIA` → the unit's → the global one.
+  `CRITERIA` is the 26 Sep blind-tested one-process text (5 cm sleeve amendment
+  included), byte for byte: still at least 3 separate photos (the same shot sent
+  twice does not count), the clean-table and sleeve rules unchanged, all three
+  may show the same process. A text an admin writes for ONE leader still wins;
+  a unit's own task-3 text does NOT reach a one-process leader (the operator
+  chose the tested text over an untested combination). Photo count, windows,
+  date rule and weight do not move, and **the leader's Uzbek instruction does
+  not change** (the operator: «leave it unchanged») — they are still told
+  «3 xil jarayon»; only the grader is lenient.
+- **Read at review time, stored nowhere.** Ticking a cell moves the NEXT
+  verdicts only; nothing already judged is re-judged (the platform's rule for
+  every criteria change) — «Qayta tekshirish» re-reads a past day, an
+  objection argues one.
+- **Readers**: `leader_ai.criteria_for` (the reviewer — `review_one` passes the
+  day's cell through `day_cell` for task 3), `leader_tasks
+  .effective_leader_config` («Vazifalar»' «AI nimani tekshiradi», the camera
+  page — the description is resolved BEFORE the swap, so it never changes),
+  `routers/leader_ai._criteria` (the «AI tekshiruvi» card's yardstick), and the
+  admin config payload (`one_process: {task_id, criteria, leaders}` +
+  `config_ownership(one_process_leaders=)`): «Chek-list sozlamalari» folds the
+  text in at a picked leader, tags it «Bitta jarayonli yacheyka», names each
+  such leader in «Istisnolar», and the leader editor's inherited text is the
+  one-process one. Mixed per-cell leaders: «Vazifalar» answers for the leader
+  as a whole (all cells), the reviewer per cell.
+- **Where it is set**: the ONE cell form (`CellFormModal`, «Jarayonlar»: Bitta
+  jarayon / Ko'p jarayon, with a hint naming the consequence), a «Jarayonlar»
+  column (a neutral «Bitta» chip — a property, never a traffic light), a filter
+  section and a phone-card line on /cells, a «Jarayonlar» column in the
+  register's workbook, and a switch + hero chip on /cells/:id. Written through
+  the register's own POST/PUT (`one_process`, None = untouched, a create naming
+  none = «Ko'p»), so it is **CAP_CELLS_MANAGE** like every field of a cell; a
+  grantee's flip DMs the admins (`l.one_process`), the Jurnal records it.
+- **The five names became the flag** — TEMPORARY `services/one_process_seed_oct10.py`,
+  `startup.seed_one_process_cells` (flag `one_process_cells_seed_2026_10_10_v1`,
+  inline at boot, both entrypoints): every cell that exists today run by the
+  five leaders named on 25 Sep (`leader_rules_sep26.ONE_PROCESS_LEADERS`) is
+  marked «Bitta jarayon», and their leader-level task-3 text is CLEARED where it
+  is still one of the 26 Sep one-process texts — they then read the very same
+  text through the flag, so nothing a leader reads or is judged by moves. A
+  text an admin wrote by hand stays (and wins); a leader with no cell keeps
+  theirs. The marked cells are DMed to `UNPRICED_DM_CHAT` (once, flag
+  `…_dm`) and logged as `org.cells_one_process_seeded`. Delete the module, the
+  startup function and both calls once the DM flag reads «done» — before
+  `leader_rules_sep26`, whose texts it compares against.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts
@@ -3790,8 +3854,10 @@ the rulings are in memory `leader-criteria-rulings-sep19-20`).
   operator named (Akramov, Omonov, Ro'ziyeva, Saidova, Tursunboyev —
   `ONE_PROCESS_LEADERS`, profile id AND name). Criteria only, so they read their
   unit's 19 Sep instruction (`_resolve_description` walks to the first
-  non-blank description). Adding a cell = one entry there under a NEW flag key,
-  or an admin edits that leader's criteria on «Chek-list sozlamalari».
+  non-blank description). SUPERSEDED 2026-10-10: the cell flag
+  `cells.one_process` decides it now (see «A cell's «Jarayonlar»»), the five
+  names were turned into ticked cells and their leader rows cleared — a new
+  one-process cell is ticked «Bitta jarayon» on /cells, never added here.
 - **Compare-and-set, never blind.** A level is rewritten only while its
   criteria is blank, still the 19 Sep text, or already the new one; a unit or
   leader an admin edited since 19 Sep keeps its text and is NAMED in the DM.

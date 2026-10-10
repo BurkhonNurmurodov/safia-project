@@ -35,6 +35,10 @@ import GroupBadge from "./ui/GroupBadge";
  * (`owner_id`) is the leader Verifix seats in it, and picking one moves
  * nothing. Any leader may own a cell, one in another unit or in none, so the
  * owner list names each leader's unit.
+ *
+ * «Jarayonlar» (`one_process`, 2026-10-10): «Bitta jarayon» marks a cell
+ * specialised for ONE process; a leader whose cells are all such is not asked
+ * for 3 different processes on checklist task 3. «Ko'p jarayon» is the default.
  */
 
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
@@ -58,11 +62,12 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           name_workshop_ru: item.name_workshop_ru || "",
           name_workshop_en: item.name_workshop_en || "",
           in_load: !!item.in_load,
+          one_process: !!item.one_process,
         }
       : {
           verifix_code: "", sap_code: "", wc_group: "", manager_id: "", leader_id: "", owner_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
-          name_workshop_ru: "", name_workshop_en: "", in_load: false,
+          name_workshop_ru: "", name_workshop_en: "", in_load: false, one_process: false,
         });
   const [formError, setFormError] = useState("");
   // Has the «Zagruzkada hisoblanadi» switch been set by hand in this form?
@@ -131,6 +136,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       leader_id: form.leader_id ? Number(form.leader_id) : 0,
       owner_id: form.owner_id ? Number(form.owner_id) : 0,
       in_load: inLoad,
+      one_process: !!form.one_process,
     };
     if (mode === "add") createMut.mutate(body);
     else updateMut.mutate(body);
@@ -263,6 +269,23 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           options={[
             { value: "on", label: t("profile.zagruzka.on") },
             { value: "off", label: t("profile.zagruzka.off") },
+          ]}
+        />
+      </FormField>
+      {/* «Jarayonlar» — read by checklist task 3 alone (services/one_process):
+          a leader whose cells are all one-process is not asked for 3
+          DIFFERENT processes. The hint says so, and that it moves only the
+          proofs checked from now on. */}
+      <FormField label={t("cellPage.oneProcess")} hint={t("cellPage.oneProcessHint")}>
+        <SegmentedToggle
+          fill
+          className="mt-1"
+          ariaLabel={t("cellPage.oneProcess")}
+          value={form.one_process ? "one" : "many"}
+          onChange={(v) => setForm((f) => ({ ...f, one_process: v === "one" }))}
+          options={[
+            { value: "one", label: t("cellPage.oneProcessOn") },
+            { value: "many", label: t("cellPage.oneProcessOff") },
           ]}
         />
       </FormField>

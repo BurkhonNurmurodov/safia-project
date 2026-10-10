@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         add_cell_shift_times,
         add_cell_archive,
         add_cell_owner_columns,
+        add_cell_one_process,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -196,6 +197,7 @@ async def lifespan(app: FastAPI):
         move_sanjarbek_checklist_shift,
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
+        seed_one_process_cells,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -204,6 +206,7 @@ async def lifespan(app: FastAPI):
     add_manager_kind_columns()
     add_leader_kind_columns()
     add_cell_owner_columns()
+    add_cell_one_process()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()
@@ -704,6 +707,12 @@ async def lifespan(app: FastAPI):
     # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
     # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
     repair_live_exchanges_oct08()
+    # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
+    # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
+    # goes (the flag hands them the same text). Remove this line,
+    # `startup.seed_one_process_cells` and `services/one_process_seed_oct10.py`
+    # once its DM flag reads «done».
+    seed_one_process_cells()
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the

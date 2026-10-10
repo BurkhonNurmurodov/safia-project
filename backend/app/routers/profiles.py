@@ -826,6 +826,9 @@ class CellPayload(BaseModel):
     # the cell takes its unit's own switch (`_unit_counts`), which is what a tab
     # from before this field, or the /profile inline create, gets.
     in_load:               Optional[bool] = None
+    # «Jarayonlar» (cells.one_process): True = specialised for ONE process.
+    # None = untouched; a create that names none starts «Ko'p jarayon».
+    one_process:           Optional[bool] = None
 
 
 _CELL_TEXT_COLS = ("sap_code", "name_workshop_uz", "name_workshop_uz_cyrl",
@@ -908,6 +911,10 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
                                 detail="A group is one Latin letter A–Z (or blank for none).")
     if payload.in_load is not None:
         row.in_load = bool(payload.in_load)
+    if payload.one_process is not None:
+        # Read by task 3's AI text alone (services/one_process): nothing to
+        # forget, no figure moves — the next proof reviewed reads it.
+        row.one_process = bool(payload.one_process)
 
 
 def _unit_counts(db: Session, manager_id: Optional[int]) -> bool:
@@ -1081,6 +1088,7 @@ def admin_list_cells(db: Session = Depends(get_db),
             "owner_unit_id": prof_units.get(c.owner_id),
             "owner_unit": mgr_names.get(prof_units.get(c.owner_id)),
             "in_load": bool(c.in_load),
+            "one_process": bool(c.one_process),
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
         } for c in cell_rows],
@@ -1110,6 +1118,7 @@ _CELLS_XLSX_T = {
         "cells_cnt": "Yacheykalar", "with_leader": "Lider bilan",
         "without_leader": "Lidersiz", "coverage": "Qamrov", "total": "JAMI",
         "load": "Zagruzka", "load_on": "Hisoblanadi", "load_off": "Hisoblanmaydi",
+        "proc": "Jarayonlar", "proc_one": "Bitta jarayon", "proc_many": "Ko'p jarayon",
     },
     "uz_cyrl": {
         "sheet": "Ячейкалар", "sum_sheet": "Умумий",
@@ -1122,6 +1131,7 @@ _CELLS_XLSX_T = {
         "cells_cnt": "Ячейкалар", "with_leader": "Лидер билан",
         "without_leader": "Лидерсиз", "coverage": "Қамров", "total": "ЖАМИ",
         "load": "Загрузка", "load_on": "Ҳисобланади", "load_off": "Ҳисобланмайди",
+        "proc": "Жараёнлар", "proc_one": "Битта жараён", "proc_many": "Кўп жараён",
     },
     "ru": {
         "sheet": "Ячейки", "sum_sheet": "Сводка",
@@ -1134,6 +1144,7 @@ _CELLS_XLSX_T = {
         "cells_cnt": "Ячеек", "with_leader": "С лидером",
         "without_leader": "Без лидера", "coverage": "Покрытие", "total": "ИТОГО",
         "load": "Загрузка", "load_on": "Считается", "load_off": "Не считается",
+        "proc": "Процессы", "proc_one": "Один процесс", "proc_many": "Несколько процессов",
     },
     "en": {
         "sheet": "Cells", "sum_sheet": "Summary",
@@ -1146,6 +1157,7 @@ _CELLS_XLSX_T = {
         "cells_cnt": "Cells", "with_leader": "With leader",
         "without_leader": "No leader", "coverage": "Coverage", "total": "TOTAL",
         "load": "Load", "load_on": "Counted", "load_off": "Not counted",
+        "proc": "Processes", "proc_one": "One process", "proc_many": "Several processes",
     },
 }
 
@@ -1171,6 +1183,8 @@ class CellsExportRow(BaseModel):
     owner:        Optional[str] = None
     # «Zagruzkada hisoblanadi». None = a bundle from before the column, printed «—».
     in_load:      Optional[bool] = None
+    # «Jarayonlar»: True = one process. None = a bundle from before the column.
+    one_process:  Optional[bool] = None
 
 
 class CellsExportBody(BaseModel):
@@ -1233,7 +1247,7 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
 
     # The screen's order: brigadir, then who RUNS the cell, then who OWNS it.
     headers = [L["num"], L["verifix"], L["sap"], L["group"], L["brigadir"],
-               L["leader"], L["owner"], L["load"]]
+               L["leader"], L["owner"], L["load"], L["proc"]]
     ncols = len(headers)
     last_col = get_column_letter(ncols)
 
@@ -1265,6 +1279,8 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 6, r.leader or L["unassigned"])
         ws.cell(y, 7, "—" if r.owner is None else (r.owner or L["unassigned"]))
         ws.cell(y, 8, "—" if r.in_load is None else L["load_on" if r.in_load else "load_off"])
+        ws.cell(y, 9, "—" if r.one_process is None
+                else L["proc_one" if r.one_process else "proc_many"])
         for i in range(1, ncols + 1):
             c = ws.cell(y, i)
             c.border = grid
@@ -1289,8 +1305,11 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 8).alignment = center
         if r.in_load is None:
             ws.cell(y, 8).font = muted
+        ws.cell(y, 9).alignment = center
+        if r.one_process is None:
+            ws.cell(y, 9).font = muted
 
-    for col, width in zip("ABCDEFGH", (5, 14, 13, 9, 30, 34, 34, 16)):
+    for col, width in zip("ABCDEFGHI", (5, 14, 13, 9, 30, 34, 34, 16, 20)):
         ws.column_dimensions[col].width = width
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
@@ -1400,6 +1419,8 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     unit = unit_name(db, row.manager_id)
     mid = row.manager_id
     cell_details = [("cell", code), ("unit", unit), ("in_load", bool(row.in_load))]
+    if row.one_process:
+        cell_details.append(("one_process", True))
     if row.wc_group:
         cell_details.append(("wc_group", wc_group.label(row.sap_code, row.wc_group)))
     if row.owner_id:
@@ -1411,7 +1432,7 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     action_log.enrich(target_kind="cell", target_id=row.id, target_name=code,
                       unit_id=mid, unit_name=unit, details=cell_details)
     return {"ok": True, "id": row.id, "sap_code": row.sap_code, "wc_group": row.wc_group,
-            "in_load": bool(row.in_load)}
+            "in_load": bool(row.in_load), "one_process": bool(row.one_process)}
 
 
 @router.put("/admin/cells/{cid}")
@@ -1422,6 +1443,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Cell not found")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
+           "one_process": bool(row.one_process),
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
@@ -1439,12 +1461,14 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     _check_cell_group(db, row, before, payload)
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
+           "one_process": bool(row.one_process),
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     db.commit()
     diff = [(k, old[k], new[k])
-            for k in ("verifix_code", "sap_code", "wc_group", "in_load", *_CELL_NAME_DIFF)
+            for k in ("verifix_code", "sap_code", "wc_group", "in_load", "one_process",
+                      *_CELL_NAME_DIFF)
             if old[k] != new[k]]
     if old["manager_id"] != new["manager_id"]:
         diff.append(("unit", unit_name(db, old["manager_id"]),
@@ -1467,7 +1491,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         details=[("cell", old["verifix_code"])], changes=diff,
     )
     return {"ok": True, "id": cid, "sap_code": new["sap_code"], "wc_group": new["wc_group"],
-            "in_load": new["in_load"]}
+            "in_load": new["in_load"], "one_process": new["one_process"]}
 
 
 class CellArchiveBody(BaseModel):
@@ -1612,6 +1636,7 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "manager_id": c.manager_id, "leader_id": c.leader_id,
             "owner_id": c.owner_id,
             "in_load": bool(c.in_load),
+            "one_process": bool(c.one_process),
             "att_included": c.att_included,  # None = derived from supervisor
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,

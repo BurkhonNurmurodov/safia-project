@@ -53,7 +53,8 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, gemini, leader_ai, leader_rule_eras, leader_shift, leader_tasks
+from app.services import (action_log, gemini, leader_ai, leader_rule_eras, leader_shift,
+                          leader_tasks, one_process)
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
 )
@@ -461,6 +462,21 @@ def _chain(cfg, rev, attr: str) -> str:
     return ""
 
 
+def _criteria(cfg, rev) -> str:
+    """The AI text this row is judged by: `_chain`, except task 3 of a leader
+    whose cells are all one-process — or of a per-cell day whose own cell is —
+    reads the one-process text between the leader's own level and the unit's,
+    the order `leader_ai.criteria_for` walks (services/one_process)."""
+    db = getattr(cfg, "db", None)
+    if db is not None and rev.task_id == one_process.TASK and rev.leader_id:
+        own = cfg[2].get((rev.leader_id, rev.task_id))
+        if not (own is not None and (own.criteria or "").strip()) and one_process.applies(
+                db, task_id=rev.task_id, leader_id=rev.leader_id, day=rev.date,
+                cell_id=one_process.day_cell(db, rev.ref)):
+            return one_process.CRITERIA
+    return _chain(cfg, rev, "criteria")
+
+
 def _levels(cfg, rev):
     """This row's three config rows, narrowest first — the chain both date-rule
     resolvers below walk. A leader-day on the other shift than the unit's walks
@@ -785,7 +801,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
-            "criteria": _chain(cfg, rev, "criteria"),
+            "criteria": _criteria(cfg, rev),
             "leaderDone": task.get("done"),
             "leaderReason": task.get("reason"),
             "photos": photos,

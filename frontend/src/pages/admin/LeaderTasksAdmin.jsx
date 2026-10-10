@@ -442,6 +442,13 @@ export default function LeaderTasksAdmin() {
   // dense: a side-field write materialises the whole row).
   const ownMap = data?.own ?? {};
   const ownLeadMap = data?.own_leader ?? {};
+  // Task 3 for a leader whose cells are all one-process (backend
+  // services/one_process): the reviewer reads this text in place of the
+  // unit's unless the leader's own row says otherwise. Folded into the leader
+  // level below so the sheet shows what the AI actually reads.
+  const proc = data?.one_process ?? null;
+  const procLeaders = useMemo(() => new Set(proc?.leaders || []), [proc]);
+  const procOn = (lid, tid) => !!proc && tid === proc.task_id && procLeaders.has(lid);
   // Windows that cannot be worked on the shift they land on. Judged by
   // `leader_ai.window_fits_shift` server-side; an older backend serves no key
   // at all, and then the page says nothing rather than guessing.
@@ -598,9 +605,15 @@ export default function LeaderTasksAdmin() {
       names: Object.fromEntries(LANGS.map((l) => [l, c.names?.[l] || g.names[l]])),
     };
   };
+  // What a leader inherits: their unit — except task 3's AI text for a leader
+  // whose cells are all one-process, which sits between the two levels.
+  const lb = (lid, mid, tid) => {
+    const b = uv(mid, tid);
+    return procOn(lid, tid) ? { ...b, criteria: proc.criteria } : b;
+  };
   // And a leader over their unit — the same walk one level down.
   const lv = (lid, mid, tid) => {
-    const b = uv(mid, tid), o = getOv(lid, tid);
+    const b = lb(lid, mid, tid), o = getOv(lid, tid);
     if (!o) return b;
     return {
       enabled: o.enabled ?? b.enabled,
@@ -689,6 +702,7 @@ export default function LeaderTasksAdmin() {
   // The name of a LEVEL, for «qiymat ← meros» on an exception row and for the
   // "what would this fall back to" line in the editor.
   const tagLabel = (o) => (o === "std" ? t("admin.ltasks.lvlStd")
+    : o === "proc" ? t("admin.ltasks.lvlProc")
     : o === "unit" ? t("admin.ltasks.supervisor")
       : o === "leader" ? t("admin.ltasks.leader")
         : t("admin.ltasks.lvlShift").replace("{n}", o.slice(1)));
@@ -713,6 +727,7 @@ export default function LeaderTasksAdmin() {
     const has = (l) => keys.some((k) => ownKeys(l, tid).has(k));
     if (lvl.kind === "leader") {
       if (has(lvl)) return "leader";
+      if (keys.includes("criteria") && procOn(lvl.id, tid)) return "proc";
       const u = { kind: "unit", id: lvl.mid, mid: lvl.mid, shift: lvl.shift };
       if (has(u)) return "unit";
     }
@@ -896,7 +911,9 @@ export default function LeaderTasksAdmin() {
         const own = new Set(byTask[tidStr] || []);
         const lvlL = { kind: "leader", id: p.id, mid: p.manager_id, shift: s };
         const r = lv(p.id, p.manager_id, tid);
-        const base = uv(p.manager_id, tid);
+        // What the leader's row overrides — the one-process text, for task 3
+        // of a leader whose cells are all one-process.
+        const base = lb(p.id, p.manager_id, tid);
         const lProbs = problemsFor(lvlL, tid);
         for (const col of [...COLS, { k: "name", keys: ["names"] }]) {
           if (!col.keys.some((k) => own.has(k))) continue;
@@ -906,11 +923,32 @@ export default function LeaderTasksAdmin() {
             tid, f: col.k, who: tl(p.name), sub: tl(m?.name || ""),
             v: showVal(col.k, r, lvlL, tid),
             p: showVal(col.k, base, { kind: "unit", id: p.manager_id, mid: p.manager_id, shift: s }, tid),
-            pl: t("admin.ltasks.supervisor"),
+            pl: col.k === "crit" && procOn(p.id, tid) ? t("admin.ltasks.lvlProc") : t("admin.ltasks.supervisor"),
             bad: col.k === "window" && lProbs.length > 0,
             hours: lProbs[0]?.hours,
           });
         }
+      }
+    }
+    // ── task 3 of the one-process leaders ─────────────────────────────────
+    // Their cells, not a row on this page, swap the unit's task-3 AI text for
+    // the one-process one (backend services/one_process) — so the swap is
+    // named here, with where it came from. A leader with a text of their own
+    // is already listed above: theirs wins.
+    if (proc && taskById.has(proc.task_id)) {
+      const tid = proc.task_id;
+      for (const p of leaders) {
+        if (!procOn(p.id, tid) || getOv(p.id, tid)?.criteria) continue;
+        const m = mgrById.get(p.manager_id);
+        const s = Number(m?.shift) || 0;
+        rows.push({
+          key: `op${p.id}-${tid}-crit`, lvl: "leader", shift: s, lid: p.id, mid: p.manager_id,
+          tid, f: "crit", who: tl(p.name),
+          sub: `${tl(m?.name || "")} · ${t("admin.ltasks.lvlProc")}`,
+          v: showVal("crit", lv(p.id, p.manager_id, tid), { kind: "leader", id: p.id, mid: p.manager_id, shift: s }, tid),
+          p: showVal("crit", uv(p.manager_id, tid), { kind: "unit", id: p.manager_id, mid: p.manager_id, shift: s }, tid),
+          pl: t("admin.ltasks.supervisor"),
+        });
       }
     }
     // ── the refused windows nothing above could name ──────────────────────
@@ -963,7 +1001,7 @@ export default function LeaderTasksAdmin() {
       });
     }
     return rows;
-  }, [tasks, managers, leaders, settings, leaderSettings, ownMap, ownLeadMap, shiftTpl, problems, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tasks, managers, leaders, settings, leaderSettings, ownMap, ownLeadMap, shiftTpl, problems, proc, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── the exceptions IN SCOPE ─────────────────────────────────────────────
   // The register above is the whole platform; what hangs under a task row is
@@ -1342,7 +1380,7 @@ export default function LeaderTasksAdmin() {
   // promised otherwise would silently move the value.
   const parentOf = (lvl, tid) => {
     if (lvl.kind === "std") return undefined;
-    if (lvl.kind === "leader") return uv(lvl.mid, tid);
+    if (lvl.kind === "leader") return lb(lvl.id, lvl.mid, tid);
     return gv(tid);
   };
 
@@ -1787,9 +1825,12 @@ export default function LeaderTasksAdmin() {
   const withMark = (label, mark) => (mark ? <>{label}{mark}</> : label);
   const inheritLine = (k, shown) => {
     if (isStd || !editInh) return null;
+    // A one-process leader's task-3 text is inherited from their cells.
+    const from = tagLabel(k === "criteria" && editLvl.kind === "leader"
+      && procOn(editLvl.id, edit.tid) ? "proc" : "std");
     const text = editOwn.has(k)
-      ? t("admin.ltasks.inheritWouldBe").replace("{v}", shown).replace("{from}", tagLabel("std"))
-      : t("admin.ltasks.inheritIs").replace("{v}", shown).replace("{from}", tagLabel("std"));
+      ? t("admin.ltasks.inheritWouldBe").replace("{v}", shown).replace("{from}", from)
+      : t("admin.ltasks.inheritIs").replace("{v}", shown).replace("{from}", from);
     return <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>{text}</div>;
   };
 

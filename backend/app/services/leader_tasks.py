@@ -21,7 +21,7 @@ from app.models import (
 # The photo window's shape, defaults and re-derivation live with the reviewer
 # that reads them — this module only stores and displays them. Safe as a
 # top-level import: leader_ai names this module in comments only.
-from app.services import leader_ai
+from app.services import leader_ai, one_process
 
 CHANNEL_SETTING_KEY = "leader_tasks_channel"
 
@@ -887,7 +887,8 @@ def _resolved_window(resolved: dict, shift: int | None) -> tuple[str, str]:
     return (resolved.get("win_from") or d_lo, resolved.get("win_to") or d_hi)
 
 
-def config_ownership(defs, managers, leaders, settings: dict, overrides: dict) -> dict:
+def config_ownership(defs, managers, leaders, settings: dict, overrides: dict,
+                     one_process_leaders: set[int] | frozenset = frozenset()) -> dict:
     """The three DERIVED maps the admin config payload carries: `own`,
     `own_leader` and `problems`.
 
@@ -905,6 +906,10 @@ def config_ownership(defs, managers, leaders, settings: dict, overrides: dict) -
     disagreement). A LEADER is listed only where its own row MOVES the window:
     a leader inheriting its unit's bad hours is the unit's problem, already
     named once, and listing all 93 of them per bad task would bury it.
+
+    `one_process_leaders` are the leaders whose cells are all one-process
+    (services/one_process): their task-3 parent criteria is the one-process
+    text, since that is what clearing their own text falls back to.
     """
     own: dict[str, dict[str, list[str]]] = {}
     own_leader: dict[str, dict[str, list[str]]] = {}
@@ -951,6 +956,8 @@ def config_ownership(defs, managers, leaders, settings: dict, overrides: dict) -
             parent = unit_res.get((p.manager_id, tid)) or glob.get(tid)
             if parent is None:
                 continue                  # a row for a task the catalog lost
+            if tid == one_process.TASK and p.id in one_process_leaders:
+                parent = {**parent, "criteria": one_process.CRITERIA}
             fields = own_fields(raw, parent)
             if fields:
                 own_leader.setdefault(str(p.id), {})[str(tid)] = fields
@@ -1029,6 +1036,16 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
     # filed under (services/leader_rule_eras) — read for the time fields only.
     from app.services import leader_rule_eras
     eras = leader_rule_eras.load_cached(db)
+    # Asked at most once, and only if task 3 reaches the question: are this
+    # leader's cells all one-process (services/one_process)? A per-cell day is
+    # judged by its own cell; this whole-leader view answers for all of them.
+    one_proc: list[bool] = []
+
+    def _one_process() -> bool:
+        if not one_proc:
+            one_proc.append(one_process.leader_applies(db, prof.id, day))
+        return one_proc[0]
+
     out = {}
     for td in defs:
         s, r = sup.get(td.id), own.get(td.id)
@@ -1058,6 +1075,14 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
                 criteria = level.criteria.strip()
                 break
         description = _resolve_description((r, s, td), criteria)
+        # One-process cells change what the AI JUDGES, never what the leader
+        # is TOLD: the instruction above is resolved off the chain as stored
+        # (the operator, 2026-10-10). The leader's own text still wins — the
+        # same order `leader_ai.criteria_for` walks.
+        if (td.id == one_process.TASK
+                and not (r is not None and (r.criteria or "").strip())
+                and _one_process()):
+            criteria = one_process.CRITERIA
         out[td.id] = {
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,

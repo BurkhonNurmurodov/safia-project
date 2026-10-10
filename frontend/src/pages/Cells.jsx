@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
   FileSpreadsheet, ShieldCheck, UserRound, UserCheck, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
+  Workflow, Target,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -59,6 +60,10 @@ import { exportXlsx } from "../utils/exportXlsx";
  * platform (`leader_id`) and the «Egasi» Verifix seats in it (`owner_id`).
  * Mostly one person; the owner filter's «Boshqaruvchidan farqli» lists the
  * cells where they are not.
+ *
+ * «Jarayonlar» (`one_process`, 2026-10-10): a cell specialised for ONE process
+ * carries a chip; a leader whose cells are all such is not asked for 3
+ * different processes on checklist task 3 (backend services/one_process).
  */
 
 // Whole-sentence templates with {placeholders} — word order differs per language.
@@ -166,6 +171,27 @@ function LoadMark({ on, t, long = false }) {
     <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
       style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.25)" }}>
       {t(long ? "cellPage.inLoadOff" : "admin.profiles.cellZagOff")}
+    </span>
+  );
+}
+
+// «Jarayonlar» (`one_process`): «Ko'p» plain — what most cells are — and a
+// neutral chip for a cell specialised for ONE process, the exception the eye
+// should find. Not a status, so no traffic-light colour. `long` spells it out
+// for a phone card, where no column header says what the word is about.
+function ProcessMark({ one, t, long = false }) {
+  if (!one) {
+    return (
+      <span className="whitespace-nowrap text-[var(--text-2)]">
+        {t(long ? "cellPage.oneProcessOff" : "admin.profiles.cellProcMany")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}>
+      <Target size={11} aria-hidden="true" style={{ color: "var(--text-3)" }} />
+      {t(long ? "cellPage.oneProcessOn" : "admin.profiles.cellProcOne")}
     </span>
   );
 }
@@ -289,6 +315,10 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
           <Gauge size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
           <LoadMark on={c.in_load} t={t} long />
         </div>
+        <div className="flex items-center gap-2 text-xs min-w-0">
+          <Workflow size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <ProcessMark one={c.one_process} t={t} long />
+        </div>
       </div>
     </div>
   );
@@ -333,6 +363,9 @@ export default function Cells() {
   // «Zagruzkada hisoblanadi»: "" all · "on" counted · "off" not counted.
   const [fZag, setFZag] = usePersistentState("cells_filter_zag", "");
   const zagSel = ["", "on", "off"].includes(fZag) ? fZag : "";
+  // «Jarayonlar»: "" all · "one" one process · "many" several.
+  const [fProc, setFProc] = usePersistentState("cells_filter_proc", "");
+  const procSel = ["", "one", "many"].includes(fProc) ? fProc : "";
 
   // Set when the server narrowed the register to the viewer's OWN unit — a
   // supervisor who opens the page through their role (backend
@@ -413,10 +446,12 @@ export default function Cells() {
       if (statusSel === "archived" && !c.archived_at) return false;
       if (zagSel === "on" && !c.in_load) return false;
       if (zagSel === "off" && c.in_load) return false;
+      if (procSel === "one" && !c.one_process) return false;
+      if (procSel === "many" && c.one_process) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, brigadirSel, leaderSel, ownerSel, statusSel, zagSel, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, ownerSel, statusSel, zagSel, procSel, lang, tl]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
@@ -429,6 +464,7 @@ export default function Cells() {
         case "leader":     return tl(c.leader) || "";
         case "owner":      return tl(c.owner) || "";
         case "in_load":    return c.in_load ? "0" : "1";
+        case "one_process": return c.one_process ? "0" : "1";
         default:           return c.verifix_code || "";
       }
     };
@@ -458,6 +494,7 @@ export default function Cells() {
             leader: c.leader ? tl(c.leader) : "",
             owner: c.owner ? tl(c.owner) : "",
             in_load: !!c.in_load,
+            one_process: !!c.one_process,
           })),
         },
         fallbackName: "cells_register.xlsx",
@@ -466,7 +503,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 8 : 7;
+  const colSpan = canEdit ? 9 : 8;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -482,6 +519,11 @@ export default function Cells() {
     { value: "", label: t("admin.profiles.cellStatusAll") },
     { value: "on", label: t("admin.profiles.cellZagOn") },
     { value: "off", label: t("admin.profiles.cellZagOff") },
+  ];
+  const procOpts = [
+    { value: "", label: t("admin.profiles.cellStatusAll") },
+    { value: "one", label: t("cellPage.oneProcessOn") },
+    { value: "many", label: t("cellPage.oneProcessOff") },
   ];
   const leaderFilterOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllLeaders") },
@@ -600,6 +642,15 @@ export default function Cells() {
                   ),
                 },
                 {
+                  key: "proc", icon: Workflow, label: t("cellPage.oneProcess"),
+                  active: procSel !== "",
+                  display: procSel !== "" ? (procOpts.find((o) => o.value === procSel)?.label || "") : "",
+                  onClear: () => setFProc(""),
+                  render: ({ close } = {}) => (
+                    <PickFilter close={close} opts={procOpts} value={procSel} onChange={setFProc} />
+                  ),
+                },
+                {
                   key: "status", icon: Archive, label: t("admin.profiles.cellFilterStatus"),
                   active: statusSel !== "active",
                   display: statusSel !== "active" ? (statusOpts.find((o) => o.value === statusSel)?.label || "") : "",
@@ -645,14 +696,15 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[11%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[9%]" />
             <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[7%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[16%]" />
-            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[16%]" />
-            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[16%]" />
-            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[11%]" />
-            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[11%]" />}
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[15%]" />
+            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[10%]" />
+            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[10%]" />}
           </tr>
         </thead>
         <tbody>
@@ -699,6 +751,9 @@ export default function Cells() {
               </td>
               <td className="px-3 py-2 whitespace-nowrap">
                 <LoadMark on={c.in_load} t={t} />
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                <ProcessMark one={c.one_process} t={t} />
               </td>
               {canEdit && (
                 <td className="px-3 py-2">

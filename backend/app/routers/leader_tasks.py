@@ -39,7 +39,7 @@ from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import (
     action_log, leader_ai, leader_bot, leader_cells, leader_close,
-    leader_reports, leader_shift)
+    leader_reports, leader_shift, one_process)
 from app.services.leader_tasks import (
     AUTO_PREFIX, CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list,
     cancel_pending, channel_chat_id,
@@ -153,7 +153,12 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # window that does not fit the shift it lands on. Derived in the service so
     # the unit and leader levels cannot drift apart — see `own_fields` for why
     # the test is the value and never the existence of a row.
-    derived = config_ownership(defs, managers, leaders, sup_settings, overrides)
+    # The leaders whose cells are all one-process TODAY (services/one_process):
+    # their task-3 AI text is the one-process one unless their own row says
+    # otherwise, and the sheet has to show what the reviewer actually reads.
+    proc_leaders = one_process.leader_ids(db)
+    derived = config_ownership(defs, managers, leaders, sup_settings, overrides,
+                               one_process_leaders=proc_leaders)
     per_task = per_task_units(db)
     bot_from = unit_bot_from_map(db)
     cell_from = leader_cells.floors(db)
@@ -281,6 +286,11 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         # it lands on — the 26-Aug incident class, judged by
         # `leader_ai.window_fits_shift` here so no reader re-derives it.
         "problems": derived["problems"],
+        # Task 3 for a leader whose cells are all one-process: the text the AI
+        # is handed in place of the unit's, and who it applies to today. The
+        # sheet folds it in between the leader's own level and the unit's.
+        "one_process": {"task_id": one_process.TASK, "criteria": one_process.CRITERIA,
+                        "leaders": sorted(proc_leaders)},
         "leaders": [
             {"id": p.id, "name": p.name, "manager_id": p.manager_id} for p in leaders
         ],

@@ -66,7 +66,8 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import action_log, gemini, leader_bot, leader_exclusions, leader_shift
+from app.services import (action_log, gemini, leader_bot, leader_exclusions, leader_shift,
+                          one_process)
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
@@ -224,19 +225,28 @@ def _shifted_levels(db: Session, task_id: int, manager_id, leader_id, date,
 
 
 def criteria_for(db: Session, task_id: int, manager_id: int | None,
-                 leader_id: int | None, date: str | None = None) -> str:
+                 leader_id: int | None, date: str | None = None,
+                 cell_id: int | None = None) -> str:
     """Effective "what makes this task truly done", resolved leader → supervisor
     → global. Blank at every level = no written definition (date check only).
     `date` names the leader-day, for a leader whose checklist runs on another
-    shift than their unit's (services/leader_shift)."""
+    shift than their unit's (services/leader_shift).
+
+    Task 3 of a leader whose cells are all one-process — or of a per-cell
+    checklist (`cell_id`) whose own cell is — reads the one-process text
+    between the leader's own level and the unit's (services/one_process)."""
     own = (db.query(LeaderTaskLeaderSetting).filter_by(
         leader_id=leader_id, task_id=task_id).first() if leader_id else None)
     sup = (db.query(LeaderTaskSetting).filter_by(
         manager_id=manager_id, task_id=task_id).first() if manager_id else None)
     own, sup = _shifted_levels(db, task_id, manager_id, leader_id, date, own, sup)
-    for row in (own, sup):
-        if row is not None and (row.criteria or "").strip():
-            return row.criteria.strip()
+    if own is not None and (own.criteria or "").strip():
+        return own.criteria.strip()
+    if one_process.applies(db, task_id=task_id, leader_id=leader_id,
+                           day=date, cell_id=cell_id):
+        return one_process.CRITERIA
+    if sup is not None and (sup.criteria or "").strip():
+        return sup.criteria.strip()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     return (td.criteria or "").strip() if td and td.criteria else ""
 
@@ -1817,8 +1827,12 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id,
                         date=rev.date),
         note=task_note(db, rev.task_id),
+        # A per-cell checklist's task 3 is judged by its OWN cell's
+        # «Jarayonlar» (services/one_process), so the day's cell rides along.
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id,
-                              date=rev.date),
+                              date=rev.date,
+                              cell_id=(one_process.day_cell(db, rev.ref)
+                                       if rev.task_id == one_process.TASK else None)),
         n_images=len(images), omitted=omitted, n_examples=len(examples),
         # Only DATE-ONLY loosens what may be READ. Time-only asks about the
         # hour, which is exactly what the strict prompt already transcribes —

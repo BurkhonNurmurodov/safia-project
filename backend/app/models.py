@@ -583,6 +583,12 @@ class Cell(Base):
     # one cell: either a code has a single cell, or every cell sharing it is
     # lettered and no two alike. services/wc_group.py is the rule and the why.
     wc_group     = Column(String(1), nullable=True)
+    # 2026-10-10: «Jarayonlar» — does the cell work through several processes
+    # (FALSE, the default) or is it specialised for ONE (TRUE: crêpes,
+    # cream-coating, boxing…)? Read by checklist task 3 alone: a leader whose
+    # cells are all one-process is not asked for 3 DIFFERENT processes.
+    # services/one_process.py is the rule.
+    one_process  = Column(Boolean, nullable=False, server_default="false", default=False)
 
 
 class CellOjidaniya(Base):

@@ -1766,6 +1766,27 @@ def add_cell_owner_columns() -> None:
         db.close()
 
 
+def add_cell_one_process() -> None:
+    """2026-10-10: a cell says whether it works through several processes or is
+    specialised for ONE — ``cells.one_process`` («Jarayonlar», FALSE = several,
+    which every existing row is, so nothing moves until somebody ticks a cell
+    or `seed_one_process_cells` marks the five the operator named).
+    ``services/one_process.py`` is the rule. Pure DDL, idempotent, no flag.
+    Runs FIRST at boot with the other column steps: every ORM read of a cell
+    selects it."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE cells ADD COLUMN IF NOT EXISTS one_process BOOLEAN "
+            "NOT NULL DEFAULT FALSE"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell one-process migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_manager_kind_columns() -> None:
     """2026-10-04: a supervisor unit says whether its brigadir IS one on
     Verifix (``managers.supervisor_kind`` + ``supervisor_kind_meta`` —
@@ -9699,6 +9720,36 @@ def repair_live_exchanges_oct08() -> None:
             db.close()
     except Exception as exc:  # pragma: no cover — never block startup
         print(f"[startup] live exchange repair skipped: {exc}")
+
+
+def seed_one_process_cells() -> None:
+    """Boot, inline: the five leaders the operator named on 25 Sep get their
+    cells marked «Bitta jarayon» and lose the leader-level task-3 text the flag
+    now hands them anyway (services/one_process_seed_oct10 — once, flag inside
+    the transaction), then the operator is DMed the list. Never raises.
+    TEMPORARY: remove with the module once its DM flag reads «done»."""
+    try:
+        from app.services import action_log
+        from app.services import one_process_seed_oct10 as seed
+        db = SessionLocal()
+        try:
+            rec = seed.run(db)
+            if rec is not None:
+                codes = [c for item in rec["leaders"] for c in item["codes"]]
+                print(f"[startup] one-process cells: {len(codes)} marked "
+                      f"({', '.join(codes) or 'none'}), {rec['cleared']} leader texts cleared")
+                action_log.record_system(
+                    "org", "org.cells_one_process_seeded",
+                    details=[("cells", len(codes)), ("codes", ", ".join(codes) or None),
+                             ("leaders", ", ".join(i["name"] for i in rec["leaders"]) or None),
+                             ("cleared", rec["cleared"])],
+                    reason="The five one-process leaders of 25 Sep: the cell flag replaces their names",
+                )
+            seed.send_dm(db, UNPRICED_DM_CHAT)
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] one-process cells seed skipped: {exc}")
 
 
 def _nodirjon_fix_dm(text: str) -> None:

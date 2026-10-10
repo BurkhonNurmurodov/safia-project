@@ -51,6 +51,9 @@ SHIFT_TASKS = (13,)
 #: exactly the leaders the operator named («for now we know these 5 only»,
 #: 25 Sep). Matched by profile id AND name — ids are this database's, and a
 #: renamed or re-used profile is not the person the operator named.
+#: SUPERSEDED 2026-10-10 by the cell flag `cells.one_process`
+#: (services/one_process): one_process_seed_oct10 ticked these leaders' cells
+#: and cleared their leader-level text. Tick a new one-process cell on /cells.
 ONE_PROCESS_TASK = 3
 ONE_PROCESS_LEADERS = (
     (292, "Akramov Dilshodbek"),     # crêpes · Kamolova Nargiza · shift 2

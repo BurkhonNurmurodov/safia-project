@@ -326,6 +326,8 @@ _T = {
                       "Load is calculated"),
     "l.in_load": ("Zagruzkada hisoblanadi", "Загрузкада ҳисобланади", "Считается в загрузке",
                   "Counted in the load"),
+    "l.one_process": ("Bitta jarayonli", "Битта жараёнли", "Однопроцессная",
+                      "Single-process"),
     "l.cells": ("Yacheykalar", "Ячейкалар", "Ячейки", "Cells"),
     "l.note": ("Izoh", "Изоҳ", "Примечание", "Note"),
     "l.category": ("Kategoriya", "Категория", "Категория", "Category"),
