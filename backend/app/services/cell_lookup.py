@@ -115,7 +115,8 @@ def by_verifix(db: Session, with_leader: bool = False,
 
 
 def by_sap(db: Session, with_leader: bool = False,
-           manager_ids: Iterable[int] | None = None) -> dict[tuple[int, str], dict]:
+           manager_ids: Iterable[int] | None = None,
+           day=None) -> dict[tuple[int, str], dict]:
     """``{(manager_id, normalized SAP work-center code) → cell dict}`` over cells
     that carry one.
 
@@ -140,12 +141,18 @@ def by_sap(db: Session, with_leader: bool = False,
     each LETTERED cell is also keyed by (unit, code, group), the key that names
     exactly one cell of a shared work centre (services/wc_group.py) — pass
     `group` to `resolve_sap` to read it.
+
+    `day` leaves out a cell archived before it (`cell_archive`), so a work
+    centre is never named after a cell that no longer exists on that day.
     """
     q = (
         db.query(Cell)
         .filter(Cell.sap_code.isnot(None), Cell.manager_id.isnot(None))
         .order_by(Cell.verifix_code)
     )
+    if day is not None:
+        from app.services import cell_archive
+        q = q.filter(cell_archive.alive_clause(day))
     if manager_ids is not None:
         ids = sorted({int(m) for m in manager_ids})
         if not ids:

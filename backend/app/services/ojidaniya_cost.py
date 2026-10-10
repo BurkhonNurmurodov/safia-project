@@ -98,7 +98,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (Cell, CellOjidaniyaInterval, HeadcountData, Manager,
                         RoleProfile)
-from app.services import idle_intervals, idle_source, zagruzka_source
+from app.services import cell_archive, idle_intervals, idle_source, zagruzka_source
 from app.services.name_map import sheet_alias_map
 
 # One row per event on the entries modal; a category on one cell over a couple
@@ -182,12 +182,15 @@ def _events(db: Session, cells, days: list[str]) -> list:
     """
     if not cells or not days:
         return []
-    return db.query(CellOjidaniyaInterval).filter(
-        CellOjidaniyaInterval.cell_id.in_([c.id for c in cells]),
+    by_id = {c.id: c for c in cells}
+    rows = db.query(CellOjidaniyaInterval).filter(
+        CellOjidaniyaInterval.cell_id.in_(list(by_id)),
         CellOjidaniyaInterval.date.in_(days),
         CellOjidaniyaInterval.status == "approved",
         CellOjidaniyaInterval.stopped.is_(True),
     ).all()
+    # A cell archived before a day costs nothing on it (`cell_archive`).
+    return [r for r in rows if cell_archive.alive(by_id[r.cell_id], r.date)]
 
 
 def _row(rows) -> list[dict]:
@@ -585,7 +588,7 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             "cells": sorted(
                 ({"id": c.id, "code": c.verifix_code,
                   "leader": leaders.get(c.leader_id), "manager_id": c.manager_id}
-                 for c in cells),
+                 for c in cells if cell_archive.alive(c, date_from)),
                 key=lambda r: (r["code"] or "").lower()),
             "categories": sorted(categories | pre_cats),
         },

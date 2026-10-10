@@ -28,7 +28,7 @@ from app.capabilities import CAP_CELL_HOURS_MANAGE, require_cap
 from app.capability_alerts import alert_grant_use, unit_name
 from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
-from app.services import action_log, cell_hours
+from app.services import action_log, cell_archive, cell_hours
 from app.services.factory_scope import list_factories, serialize
 
 router = APIRouter(prefix="/api/cell-hours", tags=["cell-hours"])
@@ -82,7 +82,9 @@ def get_cell_hours(db: Session = Depends(get_db), _: dict = Depends(_manage)):
                .filter(RoleProfile.role == "leader")
                .order_by(RoleProfile.id).all())
     lnames = {p.id: p.name for p in leaders}
-    cells = db.query(Cell).order_by(Cell.verifix_code).all()
+    # An archived cell is gone from the register (`cell_archive`).
+    cells = (db.query(Cell).filter(cell_archive.alive_clause())
+             .order_by(Cell.verifix_code).all())
     defs = cell_hours.defaults(db)
 
     rows = []
@@ -149,7 +151,8 @@ def put_default(body: DefaultIn, db: Session = Depends(get_db),
     inheriting = (db.query(Cell)
                   .join(Manager, Cell.manager_id == Manager.id)
                   .filter(Manager.shift == body.shift,
-                          Cell.shift_start.is_(None))
+                          Cell.shift_start.is_(None),
+                          cell_archive.alive_clause())
                   .count())
     try:
         start, end = cell_hours.set_default(db, body.shift, body.start, body.end)

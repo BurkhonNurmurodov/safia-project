@@ -57,7 +57,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Cell, RoleProfile
-from app.services import wc_group, zagruzka_source
+from app.services import cell_archive, wc_group, zagruzka_source
 from app.services.pp_calc import is_local_key
 
 # THE floor, and not a second one: the day the production page became the
@@ -208,7 +208,10 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
         "clamped": win["clamped"],
         "capped": win["capped"],
         "max_days": MAX_DAYS,
-        "cells": [_cell_out(c, leader_names) for c in cells],
+        # The option list leaves out a cell archived before the period
+        # begins (`cell_archive`) — it has nothing in it.
+        "cells": [_cell_out(c, leader_names) for c in cells
+                  if cell_archive.alive(c, win["lo"] or date_from)],
     }
     unit_meta = [{"manager_id": m.id, "name": m.name, "shift": m.shift,
                   "factory_id": m.factory_id} for m in managers]
@@ -265,11 +268,12 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
             k = norm_cache[wc] = wc_group.wc_key(mid, wc)[1]
         return k
 
-    def owners(mid, wc, grp) -> list:
-        k = (mid, wc, grp)
+    def owners(mid, wc, grp, d) -> list:
+        k = (mid, wc, grp, d)
         got = share_cache.get(k)
         if got is None:
-            cs = by_wc.get(wc_group.wc_key(mid, wc)) or []
+            # Only the cells that exist on the day share it (`cell_archive`).
+            cs = cell_archive.alive_on(by_wc.get(wc_group.wc_key(mid, wc)) or [], d)
             mine = [c for c in cs if grp and (c.wc_group or None) == grp]
             if mine:
                 got = [(c, 1.0 / len(mine)) for c in mine]
@@ -300,7 +304,7 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
         if not cur and not (p_lo is not None and p_lo <= d <= p_hi):
             continue
         grp = ((getattr(line, "wc_group", None) or None) if line is not None else None)
-        parts = owners(mid, wc, grp)
+        parts = owners(mid, wc, grp, d)
         if cell_ids is not None:
             parts = [(c, w) for c, w in parts if c.id in cell_ids]
             w = sum(cw for _c, cw in parts)
@@ -335,7 +339,7 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
             pr = prods[pk] = {
                 "manager_id": mid, "name": name, "sku": key, "wc": wc or "",
                 "group": grp, "cells": [c.id for c, _w in parts], "share": w,
-                "n_cells": len(owners(mid, wc, grp)),
+                "n_cells": len(owners(mid, wc, grp, d)),
                 "s": _Series(), "pq": 0.0, "aq": 0.0, "sq": 0.0, "dq": {},
             }
         pr["name"] = name or pr["name"]

@@ -42,6 +42,7 @@ from types import SimpleNamespace
 from sqlalchemy.orm import Session
 
 from app.models import Cell, LeaderChecklist, LeaderTaskDay, Manager, RoleProfile
+from app.services import cell_archive
 
 # The first day the rule reaches — «didn't submit anything in October».
 FROM = "2026-10-01"
@@ -82,7 +83,8 @@ def _compute(db: Session) -> frozenset[int]:
         return frozenset()
     counted = {int(lid) for (lid,) in
                db.query(Cell.leader_id)
-               .filter(Cell.leader_id.isnot(None), Cell.in_load.is_(True))
+               .filter(Cell.leader_id.isnot(None), Cell.in_load.is_(True),
+                       cell_archive.alive_clause())   # an archived cell counts nowhere
                .distinct().all()}
     filed = _filed_since(db, leaders)
     return frozenset(p.id for p in leaders

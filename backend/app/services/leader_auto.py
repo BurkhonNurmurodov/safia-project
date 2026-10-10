@@ -117,7 +117,7 @@ from app.models import (
     LeaderTaskEntry, Manager, RoleProfile,
 )
 from app.services import (
-    action_log, cell_lookup, leader_cells, leader_exclusions, leader_proof,
+    action_log, cell_archive, cell_lookup, leader_cells, leader_exclusions, leader_proof,
     leader_shift, leader_tasks, wc_group, zagruzka_source,
 )
 
@@ -353,8 +353,11 @@ class _Ctx:
             if self.cell is not None:
                 self._cells = [self.cell]
             else:
+                # A cell archived before the day is not checked on it.
                 self._cells = (self.db.query(Cell)
-                               .filter(Cell.leader_id == self.prof.id).all())
+                               .filter(Cell.leader_id == self.prof.id,
+                                       cell_archive.alive_clause(self.date))
+                               .all())
         return self._cells
 
     @property
@@ -495,7 +498,8 @@ def _check_concerns(ctx: _Ctx, target: float | None) -> Verdict:
     )
     codes = [c for (c,) in ctx.db.query(Cell.verifix_code)
              .filter(Cell.leader_id == ctx.prof.id,
-                     Cell.verifix_code.isnot(None)).all()]
+                     Cell.verifix_code.isnot(None),
+                     cell_archive.alive_clause(ctx.date)).all()]
     if ctx.cell is not None:
         own = getattr(ctx.cell, "verifix_code", None)
         codes = [own] if own else []

@@ -35,7 +35,7 @@ from app.models import (
     RoleProfile,
 )
 from app.permissions import require_page
-from app.services import (cell_hours, idle_source, live_overview, pp_catalog,
+from app.services import (cell_archive, cell_hours, idle_source, live_overview, pp_catalog,
                           shift_scope, wc_group, zagruzka_source)
 from app.services.day_state import day_state
 from app.services.factory_scope import (
@@ -213,7 +213,9 @@ def get_live_overview(
     unit_set = set(unit_ids)
 
     # ── Cells + leaders ──────────────────────────────────────────────────
-    cells_rows = db.query(Cell).filter(Cell.manager_id.in_(unit_ids)).all() if unit_ids else []
+    # A cell archived before the day on screen is gone from it (`cell_archive`).
+    cells_rows = ([c for c in db.query(Cell).filter(Cell.manager_id.in_(unit_ids)).all()
+                   if cell_archive.alive(c, frame["day"])] if unit_ids else [])
     lids = {c.leader_id for c in cells_rows if c.leader_id}
     leaders = {}
     if lids:

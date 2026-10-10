@@ -66,7 +66,7 @@ from app.models import (
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
-from app.services import (action_log, concerns_deck, concerns_narrative, report_week,
+from app.services import (action_log, cell_archive, concerns_deck, concerns_narrative, report_week,
                           shift_scope)
 from app.services.concerns_export import build_concerns_workbook
 from app.services.factory_scope import factory_manager_ids, resolve_factory
@@ -946,7 +946,8 @@ def list_cells(
         db.query(Cell.verifix_code, RoleProfile.name, Manager.id, Manager.name, Manager.shift)
         .join(RoleProfile, RoleProfile.id == Cell.leader_id)
         .outerjoin(Manager, Manager.id == RoleProfile.manager_id)
-        .filter(RoleProfile.role == "leader")
+        .filter(RoleProfile.role == "leader",
+                cell_archive.alive_clause())    # an archived cell takes no filing
     )
     if role == "shift-manager":
         q = q.filter(RoleProfile.manager_id.in_(_shift_unit_ids(db, payload.get("role_id"))))

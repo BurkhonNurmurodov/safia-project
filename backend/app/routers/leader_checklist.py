@@ -277,7 +277,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
     per_cell = owed != [None]
     cells: list[dict] = []
     if per_cell:
-        have = {c.id: c for c in leader_cells.filing_cells(db, prof)}
+        have = {c.id: c for c in leader_cells.filing_cells(db, prof, date)}
         # A cell reassigned since still has its filed days: keep it pickable.
         for d in (db.query(LeaderTaskDay)
                   .filter(LeaderTaskDay.leader_id == prof.id,

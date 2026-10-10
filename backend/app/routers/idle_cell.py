@@ -68,7 +68,7 @@ from app.capabilities import (
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
-from app.services import action_log, idle_intervals, idle_lock, idle_scope
+from app.services import action_log, cell_archive, idle_intervals, idle_lock, idle_scope
 from app.services.sheets_reader import CLEANERS_CATS
 from app import identity
 
@@ -401,7 +401,9 @@ def list_cells(
     computed summary."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    cells = [c for c in _scoped_cells(db, payload) if c.manager_id == supervisor_id]
+    # A cell archived before the date is gone from it (`cell_archive`).
+    cells = [c for c in _scoped_cells(db, payload)
+             if c.manager_id == supervisor_id and cell_archive.alive(c, date)]
     if not cells:
         return {"cells": []}
     ids = [c.id for c in cells]
@@ -575,8 +577,11 @@ def _validate(body: IntervalIn, db: Session, payload: dict) -> tuple[str, bool, 
     # outside the register's only guarantee for good.
     if date_t.fromisoformat(body.date) > date_t.today():
         raise HTTPException(status_code=400, detail="Cannot file a future date")
-    if body.cell_id not in {c.id for c in _scoped_cells(db, payload)}:
+    scoped = {c.id: c for c in _scoped_cells(db, payload)}
+    if body.cell_id not in scoped:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    if not cell_archive.alive(scoped[body.cell_id], body.date):
+        raise HTTPException(status_code=400, detail="This cell was archived before that day")
     # Cat H has no not-stopped half; forcing it here keeps the one category that
     # cannot answer the question from carrying a meaningless answer.
     stopped = True if body.category in _ALWAYS_STOPPED else bool(body.stopped)

@@ -5952,7 +5952,8 @@ def _split_hours(att: Attendance, hhmm: str):
     return h1, h2
 
 
-def _placement_cells(db: Session, manager_id: int, codes_in_use: set) -> list:
+def _placement_cells(db: Session, manager_id: int, codes_in_use: set,
+                     day: date) -> list:
     """The cells this supervisor may place somebody INTO.
 
     The unit's REGISTRY cells (cells.manager_id) unioned with whatever codes the
@@ -5962,8 +5963,12 @@ def _placement_cells(db: Session, manager_id: int, codes_in_use: set) -> list:
     already has somebody standing in it. The in-use half is what keeps a code
     the registry has never heard of visible instead of silently unplaceable:
     the two registers are allowed to disagree, in public.
+
+    A registry cell archived before the day is no destination (`cell_archive`);
+    a code somebody already stands in stays shown, archived or not.
     """
-    clauses = [Cell.manager_id == manager_id]
+    from app.services import cell_archive
+    clauses = [and_(Cell.manager_id == manager_id, cell_archive.alive_clause(day))]
     if codes_in_use:
         clauses.append(Cell.verifix_code.in_(list(codes_in_use)))
     return db.query(Cell).filter(or_(*clauses)).all()
@@ -6063,7 +6068,7 @@ def cell_placement(attend_date: str, manager_id: Optional[int] = None,
             by_code.setdefault(code, []).append(r)
 
     cells_out = []
-    for c in _placement_cells(db, manager_id, set(by_code)):
+    for c in _placement_cells(db, manager_id, set(by_code), d):
         crows = by_code.pop(c.verifix_code, [])
         cells_out.append({
             "verifix_code": c.verifix_code,
@@ -6189,7 +6194,7 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
         ).distinct()
         if (c or "").strip()
     }
-    valid_codes = {c.verifix_code for c in _placement_cells(db, manager_id, in_use)} | in_use
+    valid_codes = {c.verifix_code for c in _placement_cells(db, manager_id, in_use, d)} | in_use
 
     def _own_row(att_id: int) -> Attendance:
         r = db.query(Attendance).filter_by(id=att_id).first()

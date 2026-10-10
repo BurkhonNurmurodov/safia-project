@@ -871,7 +871,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const leaderCellOpts = useMemo(() => {
     const meId = item.id;
     const sel = new Set(form.cells || []);
+    // An archived cell is offered only while it is still on the form — a
+    // closed cell takes no new leader, and dropping it here would release it.
     return (data?.cells ?? [])
+      .filter((c) => !c.archived_at || sel.has(c.verifix_code))
       .filter((c) => !c.leader_id || c.leader_id === meId || sel.has(c.verifix_code))
       .sort((a, b) => String(a.verifix_code).localeCompare(String(b.verifix_code), undefined, { numeric: true }))
       .map((c) => ({ value: c.verifix_code, label: c.verifix_code, title: c.verifix_code }));

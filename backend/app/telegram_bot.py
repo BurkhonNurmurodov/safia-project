@@ -3485,7 +3485,7 @@ def _lt_cell_menu(db, tid: int, pid: int, lang: str, chat_id: int,
     if not leader_cells.is_per_cell(db, prof.manager_id, date):
         return False
 
-    cells = leader_cells.filing_cells(db, prof)
+    cells = leader_cells.filing_cells(db, prof, date)
     if not cells:
         _lt_edit(chat_id, msg_id,
                  _lt(lang, "no_cells").format(name=prof.name), None)

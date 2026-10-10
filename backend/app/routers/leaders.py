@@ -533,6 +533,19 @@ def _for_viewer(feed: dict, payload: dict) -> dict:
     return out
 
 
+def _cells_gone_from(cells: list) -> str | None:
+    """The first day none of these cells exists any more — the day after the
+    last archive day — when EVERY one of them is archived; None otherwise
+    (`cell_archive`)."""
+    if not cells:
+        return None
+    from app.services import cell_archive
+    days = [cell_archive.archived_day(c) for c in cells]
+    if any(d is None for d in days):
+        return None
+    return (max(days) + timedelta(days=1)).isoformat()
+
+
 def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
                   lite: bool = False) -> dict:
     """The register `get_leaders` serves, built for one viewer.
@@ -890,6 +903,11 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             "cell_from": cell_floors.get(p.manager_id) or None,
             "cells": [{"id": c.id, "code": c.verifix_code}
                       for c in roster_cells.get(p.id, [])],
+            # Every cell of theirs ARCHIVED: from the day after the last
+            # archive day they own no cell and, on a per-cell unit, owe
+            # nothing (`cell_archive`) — the client folds it like `cell_from`
+            # with no cells.
+            "cells_gone_from": _cells_gone_from(roster_cells.get(p.id, [])),
             "cutoff": str(cut.from_date)[:10] if cut else None,
             # No cell in the загрузка and nothing filed since 1 October: from
             # this day on the leader owes nothing (`leader_load`). Not a
@@ -1257,7 +1275,7 @@ def _build_standing(db: Session) -> dict:
         "filed": filed,
         "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
                     p["cutoff"], p["cell_from"], len(p["cells"]),
-                    p.get("no_load_from"))
+                    p.get("no_load_from"), p.get("cells_gone_from"))
                    for p in feed["roster"]],
         "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
         "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
@@ -1364,9 +1382,11 @@ def get_standing(
         "rows": [[r[0], name_of.get(r[1], r[1]), r[2], unit_of.get(r[3], r[3]),
                   r[4], r[5], r[6], r[7], r[8]] for r in rows],
         # [name, unit, shift, cutoff, cell_from, cells owned, filed anything,
-        #  owes nothing from (no cell in the загрузка — `leader_load`)]
+        #  owes nothing from (no cell in the загрузка — `leader_load`),
+        #  every cell archived from (`cell_archive`)]
         "roster": [[name_of.get(p[1], p[1]), unit_of.get(p[2], p[2]), p[3],
-                    p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0, p[7]]
+                    p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0, p[7],
+                    p[8] if len(p) > 8 else None]
                    for p in roster],
         "cutoffs": {name_of.get(k, k): {"from": v} for k, v in pool["cutoffs"].items()},
         "cutUnits": {unit_of.get(k, k): {"from": v} for k, v in pool["cutUnits"].items()},

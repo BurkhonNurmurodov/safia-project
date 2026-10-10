@@ -428,17 +428,47 @@ From **2026-10-02** (the operator's request) a cell that closed is archived
 from the /cells register's row actions (`POST /api/profiles/admin/cells/{id}/archive`,
 `{archived: bool}`, `CAP_CELLS_MANAGE`). `cells.archived_at` (when, timestamptz)
 and `archived_by` (a name snapshot) are the whole of it — NULL = active;
-re-archiving keeps the first date, restoring clears both. **It changes no figure
-and deletes nothing**, unlike DELETE, which cascades the cell's ojidaniya
-intervals and re-splits shared work centres over past days. The register hides
-archived cells by default (a «Holat» filter section: active · archived · all),
-marks them with a grey «Arxivda · date» chip, and `/cells/:id` carries a banner.
-Deliberately NOT done: no other page or picker reads the flag yet — an archived
-cell still counts wherever it counted (it carries no new data once closed).
-ONE exception (2026-10-10, the operator): `/zagruzka-cell` leaves out a cell
-archived before the period's first day (plant clock) — no row, no share of a
-work centre — and names it in `diagnostics.archived_cells`; a cell archived
-inside the period stays, its earlier days being real.
+re-archiving keeps the first date, restoring clears both. **Nothing is
+deleted**, unlike DELETE, which cascades the cell's ojidaniya intervals and
+re-splits shared work centres over past days. The register hides archived cells
+by default (a «Holat» filter section: active · archived · all), marks them with
+a grey «Arxivda · date» chip, and `/cells/:id` carries a banner.
+
+**From the day AFTER its archive day an archived cell is GONE everywhere, lists
+and counting** (2026-10-10, the operator: «hide archived cells on the other
+pages too», scope «Lists + counting»). Its archive day (plant clock, Tashkent)
+and every day before it are untouched. `services/cell_archive.py` is THE rule —
+`archived_day`, `alive(cell, day)`, `alive_on`, `alive_clause(day)` (SQL;
+today when omitted); never re-spell the comparison.
+
+- **Counting**: it takes no share of its work centre on those days —
+  `zagruzka_source.cell_pins` / `cell_labor` split only over the cells that
+  exist that day, so the cells still standing take its share (Σ is unchanged);
+  the ojidaniya weight (`idle_source._n_by_cell`, both halves) gives it none, so
+  its intervals leave /downtime, the matrix and «Xarajat» (`ojidaniya_cost`
+  also drops its events); /zagruzka-cell prints its days blank and splits per
+  day; Plan Bajarish shares lines per day; the /production dashboard drops its
+  letter (`cells_at`, `_cell_letters`, `by_sap(day=)`, the staffing proof).
+- **Owing**: `leader_cells.filing_cells` / `cell_ids` / `expected_days` take
+  the day — no per-cell checklist is owed for it, the bot's cell picker, the
+  «Chek-list» tab and the camera page drop it, the automatic checks (`leader_auto`
+  `cells`, #8's codes) skip it, and `leader_load` counts it nowhere (archive
+  calls `forget()`). A per-cell unit's leader whose every cell is archived owes
+  nothing from the day after the last one (`cells_gone_from` on the /leaders
+  roster and the standing pool, folded by `buildCutLeaders` like `cell_from`).
+- **Lists**: «Ish grafigi», /idle-cell (create refused 400), /live, «Yacheykalar»
+  placement destinations (live and file days — a code somebody stands in stays
+  shown), the concern pickers (/concerns, /cell-concerns), the worker-concerns
+  «owned cells», «Smena vaqtlari», «Perenaladka», /profile's own cells, the
+  Plan Bajarish and «Xarajat» cell options, and the leader-cell pickers on the
+  profile editors (offered only while still on the form — dropping one there
+  would release it).
+- **Deliberately NOT**: the /cells register and /cells/:id (they manage it),
+  the admin Profiles list (it seeds the editor), labels of history
+  (`cell_lookup.by_verifix`), the Verifix / «Davomat» reads (who Verifix places
+  where is Verifix's), the register checks, turnover, and one-shot reports.
+- `/zagruzka-cell` names a cell archived before the period's first day in
+  `diagnostics.archived_cells`.
 
 ## The cells register follows Verifix (`verifix_cell_sync`, 2026-10-04)
 

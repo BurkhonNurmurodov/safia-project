@@ -1277,6 +1277,10 @@ const buildCutLeaders = (cutoffs, filedUnder, roster) => {
     const own = [];
     if (p.cutoff && !filedUnder.has(p.name)) own.push(p.cutoff);
     if (p.cell_from && !p.cells?.length) own.push(p.cell_from);
+    // Every cell of theirs archived: a per-cell unit's leader owes nothing
+    // from the day after the last archive day.
+    if (p.cell_from && p.cells_gone_from)
+      own.push(p.cells_gone_from > p.cell_from ? p.cells_gone_from : p.cell_from);
     // No cell in the загрузка and nothing filed since 1 October
     // (`services/leader_load.py`): owes nothing from that day on.
     if (p.no_load_from) own.push(p.no_load_from);
@@ -2075,10 +2079,11 @@ const poolRows = (raw) => (raw ?? []).map(
     missing: !!missing,
   }));
 const poolRoster = (raw) => (raw ?? []).map(
-  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad]) => ({
+  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad, cellsGone]) => ({
     name, supervisor, shift, cutoff,
     cell_from: cellFrom,
     no_load_from: noLoad || null,
+    cells_gone_from: cellsGone || null,
     cells: Array.from({ length: cells || 0 }),
     filed: !!filed,
   }));

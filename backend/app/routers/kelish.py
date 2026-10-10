@@ -42,7 +42,7 @@ from app.capabilities import page_scope_is_all, profile_unit_ids
 from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
 from app.permissions import require_page
-from app.services import action_log, cell_hours, kelish, live_overview
+from app.services import action_log, cell_archive, cell_hours, kelish, live_overview
 from app.services.factory_scope import empty_scope, resolve_factory, scoped_manager_ids
 
 router = APIRouter(prefix="/api/kelish", tags=["kelish"])
@@ -176,7 +176,10 @@ def list_cells(
     # The week the page opens on — the plant's calendar week, never the
     # browser's, so a night unit at 02:00 on a Monday still opens on Monday's.
     this_week = kelish.week_of(now.date())[0].isoformat()
-    q = db.query(Cell.id, Cell.verifix_code, Cell.manager_id, Cell.leader_id)
+    # A cell archived before the day asked about (today when none) is gone
+    # from the page (`cell_archive`).
+    q = (db.query(Cell.id, Cell.verifix_code, Cell.manager_id, Cell.leader_id)
+         .filter(cell_archive.alive_clause(_day(day, None) if day else now.date())))
     fac = None
     if ctx["read_all"] or ctx["edit_all"]:
         fac = resolve_factory(db, payload, factory)

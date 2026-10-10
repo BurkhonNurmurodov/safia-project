@@ -82,7 +82,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (Attendance, Cell, CellOjidaniyaInterval,
                         IdleSourceSetting, Manager)
-from app.services import idle_intervals, zagruzka_source
+from app.services import cell_archive, idle_intervals, zagruzka_source
 from app.services.kpi_calculator import is_direct_role
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -195,6 +195,7 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
     out: dict[tuple[int, str], float] = defaultdict(float)
 
     code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
+    by_id = {c.id: c for c in cells}
     att_hi = zagruzka_source.sheet_end(date_to)
     if code_to_cell and date_from <= att_hi:
         for r in db.query(
@@ -209,6 +210,10 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
         ).all():
             cid = code_to_cell.get(r.verifix_code)
             if cid is None or not _counted_hc(r):
+                continue
+            # A cell archived before this day weighs nothing on it
+            # (`cell_archive`) — it does not exist any more.
+            if not cell_archive.alive(by_id[cid], r.date):
                 continue
             out[(cid, r.date.isoformat())] += (
                 1.0 if r.hc_weight is None else float(r.hc_weight)

@@ -129,7 +129,6 @@ writes, and no existing pipeline reads it.
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -143,7 +142,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import pp_catalog, wc_group, zagruzka_source
+from app.services import cell_archive, pp_catalog, wc_group, zagruzka_source
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
@@ -155,8 +154,6 @@ from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
 
 PAGE = "zagruzka-cell"
-# The plant's wall clock — which DAY a cell was archived on.
-_TZ = ZoneInfo("Asia/Tashkent")
 
 # Excel ROUND-trip constant shared with pp_calc: labor_time is seconds/unit.
 _SEC_PER_MIN = 60.0
@@ -268,8 +265,7 @@ def cell_zagruzka(
 
     # ── The unit's cells. in_load is deliberately ignored (see module docstring).
     # A cell archived before the first day shown is left out — it did not
-    # exist on any of them — and named in the diagnostics. The archive day is
-    # the plant's wall clock (the stamp is timestamptz).
+    # exist on any of them — and named in the diagnostics (`cell_archive`).
     cells, archived_out = [], []
     for c in (
         db.query(Cell)
@@ -277,11 +273,11 @@ def cell_zagruzka(
         .order_by(Cell.verifix_code)
         .all()
     ):
-        gone = c.archived_at.astimezone(_TZ).date() if c.archived_at else None
-        if gone is not None and gone < date_from:
-            archived_out.append({"code": c.verifix_code, "date": gone.isoformat()})
-        else:
+        if cell_archive.alive(c, date_from):
             cells.append(c)
+        else:
+            archived_out.append({"code": c.verifix_code,
+                                 "date": cell_archive.archived_day(c).isoformat()})
     if not cells:
         return {
             "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
@@ -501,26 +497,50 @@ def cell_zagruzka(
             _slot[_g] = _slot[_g] + _v if _g in _slot else _v
 
     _labor_cache: dict[tuple[str, date], tuple[list, list]] = {}
+    _alive_cache: dict[tuple[str, date], list] = {}
+
+    def alive_pos(wc: str, d: date) -> list:
+        """Positions in `cells_at_wc[wc]` of the cells that exist on `d` — a
+        cell archived inside the period takes no share of its work centre after
+        its archive day (`cell_archive`), so the rest split it."""
+        k = (wc, d)
+        hit = _alive_cache.get(k)
+        if hit is None:
+            hit = _alive_cache[k] = [i for i, c in enumerate(cells_at_wc[wc])
+                                     if cell_archive.alive(c, d)]
+        return hit
+
+    def _scatter(n_all: int, idx: list, vals: list, empty):
+        out = [empty] * n_all
+        for i, v in zip(idx, vals):
+            out[i] = v
+        return out
 
     def labor_split(wc: str, d: date) -> tuple[list, list]:
         """(plan per cell, actual per cell) of one work centre-day, in
-        `cells_at_wc[wc]` order. A cell nothing reaches reads 0, as before."""
+        `cells_at_wc[wc]` order. A cell nothing reaches reads 0, as before;
+        so does a cell archived before `d`."""
         k = (wc, d)
         hit = _labor_cache.get(k)
         if hit is not None:
             return hit
-        n = len(cells_at_wc[wc])
-        if wc not in lettered_wcs:
+        n_all = len(cells_at_wc[wc])
+        idx = alive_pos(wc, d)
+        n = len(idx)
+        if not n:
+            hit = ([0.0] * n_all, [0.0] * n_all)
+        elif wc not in lettered_wcs:
             # No cell carries a letter, so every line is unclaimed and the answer
             # is the even split — spelled `total × 1/N` exactly as it was before
             # groups existed, so an ungrouped unit reads the same FLOATS and not
             # merely the same numbers.
             sh = 1.0 / n
-            hit = ([plan_min.get(k, 0.0) * sh] * n, [actual_min.get(k, 0.0) * sh] * n)
+            hit = (_scatter(n_all, idx, [plan_min.get(k, 0.0) * sh] * n, 0.0),
+                   _scatter(n_all, idx, [actual_min.get(k, 0.0) * sh] * n, 0.0))
         else:
-            letters = letters_at_wc[wc]
-            hit = ([v or 0.0 for v in wc_group.share(letters, plan_grp.get(k, {}))],
-                   [v or 0.0 for v in wc_group.share(letters, actual_grp.get(k, {}))])
+            letters = [letters_at_wc[wc][i] for i in idx]
+            hit = (_scatter(n_all, idx, [v or 0.0 for v in wc_group.share(letters, plan_grp.get(k, {}))], 0.0),
+                   _scatter(n_all, idx, [v or 0.0 for v in wc_group.share(letters, actual_grp.get(k, {}))], 0.0))
         _labor_cache[k] = hit
         return hit
 
@@ -624,23 +644,28 @@ def cell_zagruzka(
         untouched — the groups arrived long after those days were read.
         """
         k = (wc, d)
+        idx = alive_pos(wc, d)
+        if pos_in_wc[c.id] not in idx:
+            return 0.0, False                 # archived before `d`
         split = _hc_cache.get(k)
         if split is None:
-            n = len(cells_at_wc[wc])
+            n_all = len(cells_at_wc[wc])
+            n = len(idx)
             vals = people_pin.get(k)
             if not vals:
-                split = [None] * n
+                split = [None] * n_all
             elif wc not in lettered_wcs and set(vals) == {None}:
-                split = [vals[None] * (1.0 / n)] * n
+                split = _scatter(n_all, idx, [vals[None] * (1.0 / n)] * n, None)
             else:
-                split = wc_group.share(letters_at_wc[wc], vals, pins=True)
+                split = _scatter(n_all, idx, wc_group.share(
+                    [letters_at_wc[wc][i] for i in idx], vals, pins=True), None)
             _hc_cache[k] = split
         v = split[pos_in_wc[c.id]]
         if v is not None:
             return v, True
         if zagruzka_source.uses_production(d):
             return 0.0, False
-        return derived_o_soni(wc, d) * (1.0 / len(cells_at_wc[wc])), False
+        return derived_o_soni(wc, d) * (1.0 / len(idx)), False
 
     # ── Attendance per (cell, date) ───────────────────────────────────────────
     # PRIMARY source: the DAILY «Davomat» single-file upload. Its rows land in
@@ -874,6 +899,10 @@ def cell_zagruzka(
         data[label] = {}
         inputs[label] = {}
         for d, key in zip(dates, date_keys):
+            if not cell_archive.alive(c, d):
+                # Archived before this day: the cell did not exist on it.
+                data[label][key] = {"baseline_util": None, "net_util": None}
+                continue
             att_rows = att_by_cell.get((c.id, d), [])
             downtime = idle_by_cell.get((c.id, d.isoformat()), 0.0)
             # This cell's slice of its work centre — its own group plus an even
@@ -890,7 +919,7 @@ def cell_zagruzka(
             # WHICH reading the row got, for the page to say so. «group» is a
             # cell whose letter the catalog or a typed pin names — its figures
             # are its own; «even» is a share of a number nobody attributed to it.
-            n_wc = len(cells_at_wc[wc]) if wc else 1
+            n_wc = len(alive_pos(wc, d)) if wc else 1
             if n_wc <= 1:
                 wc_split, share = "none", 1.0
             elif wc not in lettered_wcs:

@@ -57,6 +57,7 @@ from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services import action_log
+from app.services import cell_archive
 from app.services import forecast_autocall
 from app.services import idle_lock
 from app.services import idle_source
@@ -398,8 +399,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # verifix code → (normalised work centre, letter): where a worker the
     # attendance places in that cell stands on THIS page (`_verifix_staffing`).
     wc_of_code: dict[str, tuple[str, Optional[str]]] = {}
+    # A cell archived before the day is not one of them (`cell_archive`): its
+    # letter claims nothing, so its share falls to the cells still standing.
     for c in (db.query(Cell)
-              .filter(Cell.manager_id == manager_id, Cell.sap_code.isnot(None))
+              .filter(Cell.manager_id == manager_id, Cell.sap_code.isnot(None),
+                      cell_archive.alive_clause(day))
               .order_by(Cell.verifix_code, Cell.id).all()):
         n = norm_code(c.sap_code)
         if n:
@@ -557,7 +561,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # Scoped to THIS brigadir, because a SAP work centre is not unique: two
     # shifts stand at one, and a registry-wide lookup answered with whichever
     # cell sorted first — so this page named and linked another shift's cell.
-    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id])
+    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id], day=day)
     for wc in result["work_centers"]:
         wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"), manager_id)
         # A letter names ONE cell or none — an orphan letter must not borrow the
@@ -785,7 +789,8 @@ def staffing_proof(
         if not _in_scope(scope, work_center) or (grp and not wc_group.in_scope(gscope, work_center, grp)):
             raise HTTPException(status_code=403, detail="This team is not one of your cells")
     want = norm_code(work_center)
-    cells = [c for c in db.query(Cell).filter(Cell.manager_id == mid, Cell.sap_code.isnot(None)).all()
+    cells = [c for c in db.query(Cell).filter(Cell.manager_id == mid, Cell.sap_code.isnot(None),
+                                              cell_archive.alive_clause(day)).all()
              if norm_code(c.sap_code) == want and c.verifix_code
              and (grp is None or (c.wc_group or None) == grp)]
     codes = sorted({c.verifix_code for c in cells})
@@ -1590,11 +1595,13 @@ def _clear_whole_people(db, whole) -> Optional[int]:
     return was
 
 
-def _cell_letters(db, mid: int) -> dict[str, set]:
-    """``{normalised SAP code: {letters its cells carry}}`` for ONE unit, matched
-    through `wc_group.cells_by_wc` — the letters a group pin may be typed under."""
+def _cell_letters(db, mid: int, day: date) -> dict[str, set]:
+    """``{normalised SAP code: {letters its cells carry}}`` for ONE unit on one
+    day, matched through `wc_group.cells_by_wc` — the letters a group pin may be
+    typed under. A cell archived before the day carries none (`cell_archive`)."""
     by = wc_group.cells_by_wc(db.query(Cell).filter(
-        Cell.manager_id == mid, Cell.sap_code.isnot(None)).all())
+        Cell.manager_id == mid, Cell.sap_code.isnot(None),
+        cell_archive.alive_clause(day)).all())
     return {code: {c.wc_group for c in cs if c.wc_group} for (_m, code), cs in by.items()}
 
 
@@ -1676,7 +1683,7 @@ def set_wc_override(
     if grp is not None:
         row = pins.get(grp)
         if body.people is not None:
-            _refuse_orphan_pin(_cell_letters(db, mid), code, grp, body.people,
+            _refuse_orphan_pin(_cell_letters(db, mid, day), code, grp, body.people,
                                row.people if row else None)
         was = (row.people if row else None, None)
         if body.people is None:
@@ -1877,7 +1884,7 @@ def save_staffing(
                                     detail="This team is typed per group — enter your own "
                                            "group's people instead of the whole team's")
     if any(slot["groups"] for slot in plan.values()):
-        letters_at = _cell_letters(db, mid)
+        letters_at = _cell_letters(db, mid, day)
         for code, slot in plan.items():
             pins = pins_of(code)
             for g, n in slot["groups"].items():
@@ -2927,7 +2934,8 @@ def admin_work_centers(manager_id: int = Query(...), _: dict = Depends(_verify_a
     # so the admin capacity table can show the workshop name / owner beside it.
     # Inside this unit only — a work centre shared with the other shift must not
     # be labelled with that shift's cell and leader.
-    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id])
+    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id],
+                     day=cell_archive.today())
     return [{"id": w.id, "code": w.code, "shtatka": w.shtatka,
              "capacity": (float(w.capacity) if w.capacity is not None else None),
              "active": w.active,

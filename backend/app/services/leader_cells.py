@@ -94,7 +94,8 @@ def is_per_cell(db: Session, manager_id: int | None, date: str | None) -> bool:
 
 # ── the cells ────────────────────────────────────────────────────────────────
 
-def filing_cells(db: Session, prof: RoleProfile) -> list[Cell]:
+def filing_cells(db: Session, prof: RoleProfile,
+                 date: str | None = None) -> list[Cell]:
     """The cells this leader files a checklist for, ordered by verifix code.
 
     Plain OWNERSHIP — `cells.leader_id` — and deliberately nothing else. The
@@ -107,17 +108,22 @@ def filing_cells(db: Session, prof: RoleProfile) -> list[Cell]:
 
     An EMPTY list is a real answer, not a missing one: a leader with no cell
     files nothing on a switched unit (see `expected_days`).
+
+    A cell ARCHIVED before `date` (today when omitted) is not a cell any more
+    and is owed nothing (`cell_archive`); its archive day still is.
     """
     if not prof or not getattr(prof, "id", None):
         return []
+    from app.services import cell_archive
     return (db.query(Cell)
-            .filter(Cell.leader_id == prof.id)
+            .filter(Cell.leader_id == prof.id,
+                    cell_archive.alive_clause(date))
             .order_by(Cell.verifix_code)
             .all())
 
 
-def cell_ids(db: Session, prof: RoleProfile) -> list[int]:
-    return [c.id for c in filing_cells(db, prof)]
+def cell_ids(db: Session, prof: RoleProfile, date: str | None = None) -> list[int]:
+    return [c.id for c in filing_cells(db, prof, date)]
 
 
 # ── the two together ─────────────────────────────────────────────────────────
@@ -150,7 +156,7 @@ def expected_days(db: Session, prof: RoleProfile, date: str | None,
             else unit_floor(db, mid)
     if not per_cell(floor, date):
         return [None]
-    return cell_ids(db, prof)
+    return cell_ids(db, prof, date)
 
 
 def owes_nothing(db: Session, prof: RoleProfile, date: str | None,
@@ -209,8 +215,10 @@ def self_check(db: Session) -> list[str]:
             if n == 0:
                 out.append(f"«{name}» / {p.name}: no cell assigned — files "
                            f"NOTHING from {floor}")
+        from app.services import cell_archive
         orphan = (db.query(Cell)
-                  .filter(Cell.manager_id == mid, Cell.leader_id.is_(None))
+                  .filter(Cell.manager_id == mid, Cell.leader_id.is_(None),
+                          cell_archive.alive_clause())
                   .count())
         if orphan:
             out.append(f"«{name}»: {orphan} cell(s) have no leader — nobody "

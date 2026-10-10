@@ -543,11 +543,15 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
         return {"cells_days": cells_days, "days": {}}
 
     wanted = set(cats) if cats else None
+    by_id = {c.id: c for c in cells}
     rows = db.query(CellOjidaniyaInterval).filter(
-        CellOjidaniyaInterval.cell_id.in_([c.id for c in cells]),
+        CellOjidaniyaInterval.cell_id.in_(list(by_id)),
         CellOjidaniyaInterval.date.in_(cells_days),
         CellOjidaniyaInterval.status == "approved",
     ).all()
+    # A cell archived before a day is gone from it (`cell_archive`).
+    from app.services import cell_archive
+    rows = [r for r in rows if cell_archive.alive(by_id[r.cell_id], r.date)]
 
     # How many people stood in each cell that day — `idle_source.cell_headcount`
     # is the very weight the unit's mean divides by, never a second count of

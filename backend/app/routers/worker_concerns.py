@@ -520,8 +520,10 @@ def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) ->
     owned: dict[int, set] = {}
     if ids:
         picked = {c.strip() for c in cell}
+        from app.services import cell_archive
         for lid, code in (db.query(Cell.leader_id, Cell.verifix_code)
-                          .filter(Cell.leader_id.in_(ids))):
+                          .filter(Cell.leader_id.in_(ids),
+                                  cell_archive.alive_clause())):
             if code and (not picked or code in picked):
                 owned.setdefault(lid, set()).add(code)
     kinds = _leader_kinds(db, ids)

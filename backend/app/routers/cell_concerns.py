@@ -67,7 +67,7 @@ from app.database import get_db
 from app.identity import viewer_leader_profile_id
 from app.models import Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
-from app.services import action_log
+from app.services import action_log, cell_archive
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
     _comment_counts, _due, _no, _notify_recipients, _owner_names, _scope_query,
@@ -114,7 +114,8 @@ def _leader_cells(db: Session, payload: dict):
                  func.coalesce(RoleProfile.manager_id, Cell.manager_id))
         .outerjoin(RoleProfile, (RoleProfile.id == Cell.leader_id)
                    & (RoleProfile.role == "leader"))
-        .filter(Cell.verifix_code.isnot(None))
+        .filter(Cell.verifix_code.isnot(None),
+                cell_archive.alive_clause())    # an archived cell takes no filing
     )
     role = payload.get("role")
     if role == "leader":

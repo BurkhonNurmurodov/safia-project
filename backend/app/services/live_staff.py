@@ -957,12 +957,18 @@ def diag(ctx: Ctx, manager_id: int, rows: list) -> dict:
 def cells_catalog(db: Session, ctx: Ctx, manager_id: int, rows: list) -> list:
     """The cells the day's rows name, and the unit's own workload cells, with
     each cell's leader — what the Yacheyka column and its filter print."""
-    codes = {r["verifix_code"] for r in rows if r.get("verifix_code")}
+    used = {r["verifix_code"] for r in rows if r.get("verifix_code")}
     own = [c for c in ctx.cells.values() if c["manager_id"] == manager_id]
-    codes |= {c["code"] for c in own}
+    codes = used | {c["code"] for c in own}
     if not codes:
         return []
     by_code = {c.verifix_code: c for c in db.query(Cell).filter(Cell.verifix_code.in_(codes)).all()}
+    # An own cell archived before the day is no destination (`cell_archive`);
+    # a code somebody stands in stays listed, archived or not.
+    from app.services import cell_archive
+    codes = {code for code in codes
+             if code in used or code not in by_code
+             or cell_archive.alive(by_code[code], ctx.day)}
     lids = {c.leader_id for c in by_code.values() if c.leader_id}
     leaders = dict(db.query(RoleProfile.id, RoleProfile.name).filter(RoleProfile.id.in_(lids)).all()) if lids else {}
     out = []

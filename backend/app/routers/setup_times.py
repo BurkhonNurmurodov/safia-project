@@ -40,7 +40,7 @@ from app.database import get_db
 from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
 from app.permissions import require_page
 from app.routers.idle_cell import _scoped_cells
-from app.services import action_log
+from app.services import action_log, cell_archive
 from app.services.cell_lookup import by_verifix, resolve_verifix
 
 router = APIRouter(prefix="/api/setup-times", tags=["setup-times"])
@@ -138,7 +138,8 @@ def list_setup_times(
             "uz": c.name_workshop_uz, "uz_cyrl": c.name_workshop_uz_cyrl,
             "ru": c.name_workshop_ru, "en": c.name_workshop_en,
         }
-        for c in db.query(Cell).order_by(Cell.verifix_code).all()
+        for c in db.query(Cell).filter(cell_archive.alive_clause())
+                                .order_by(Cell.verifix_code).all()
     ]
 
     return {

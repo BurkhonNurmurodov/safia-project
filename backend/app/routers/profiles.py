@@ -682,6 +682,8 @@ def admin_list_profiles(db: Session = Depends(get_db),
         "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
         "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
         "owner_id": c.owner_id, "owner": prof_names.get(c.owner_id),
+        # A picker leaves an archived cell out (`cell_archive`).
+        "archived_at": c.archived_at.isoformat() if c.archived_at else None,
     } for c in cell_rows]
     return out
 
@@ -1494,6 +1496,8 @@ def admin_archive_cell(cid: int, body: CellArchiveBody, db: Session = Depends(ge
     at = row.archived_at
     by = row.archived_by
     db.commit()
+    from app.services import leader_load
+    leader_load.forget()        # an archived cell counts for nobody
     unit = unit_name(db, mid)
     details = [("cell", code), ("unit", unit)]
     event = "cell.archived" if body.archived else "cell.unarchived"
@@ -3133,9 +3137,11 @@ def my_profile_details(caller: dict = Depends(_caller), db: Session = Depends(ge
                     out["unit"] = m.name
                     out["shift"] = m.shift
                     factory_id = m.factory_id
-                out["cells"] = [
+                from app.services import cell_archive
+                out["cells"] = [            # an archived cell is no longer theirs
                     _cell_dict(c) for c in db.query(Cell)
-                    .filter_by(leader_id=p.id).order_by(Cell.verifix_code).all()
+                    .filter(Cell.leader_id == p.id, cell_archive.alive_clause())
+                    .order_by(Cell.verifix_code).all()
                 ]
 
     out["name"] = canonical

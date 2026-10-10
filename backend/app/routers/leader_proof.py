@@ -110,7 +110,7 @@ def _own_cell(db: Session, prof: RoleProfile, cell_id: int | None) -> int | None
     date = effective_date(leader_proof.leader_shift(db, prof))
     if not leader_cells.is_per_cell(db, prof.manager_id, date):
         return None
-    return int(cell_id) if int(cell_id) in leader_cells.cell_ids(db, prof) else None
+    return int(cell_id) if int(cell_id) in leader_cells.cell_ids(db, prof, date) else None
 
 
 def _camera_cfg(db: Session, prof: RoleProfile, task_id: int) -> tuple[dict, dict]:

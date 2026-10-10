@@ -58,7 +58,7 @@ from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
 from app.services.pp_calc import line_facts as pp_line_facts
 from app.services import pp_catalog
-from app.services import wc_group
+from app.services import cell_archive, wc_group
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
 # the «Zagruzka fayli» page and the «Одам сони» / «Минут» sheet tabs are not a
@@ -199,7 +199,9 @@ def cell_pins(cells, pins: dict) -> dict[tuple[int, str], tuple[Optional[float],
         slot[g] = slot.get(g, 0.0) + float(n)
     out: dict[tuple[int, str], tuple[Optional[float], frozenset]] = {}
     for (mid, code, day), vals in per.items():
-        cs = by_wc.get((mid, code))
+        # A cell archived before this day takes no share — the work centre is
+        # split among the cells that exist on it (`cell_archive`).
+        cs = cell_archive.alive_on(by_wc.get((mid, code)) or (), day)
         if not cs:
             continue
         letters = frozenset(g for g in vals if g)
@@ -325,7 +327,7 @@ def cell_labor(cells, group_labor: dict) -> dict[tuple[int, str], tuple[float, f
         slot[g or None] = (prev[0] + p, prev[1] + a)
     out: dict[tuple[int, str], tuple[float, float]] = {}
     for (mid, code, day), vals in per.items():
-        cs = by_wc.get((mid, code))
+        cs = cell_archive.alive_on(by_wc.get((mid, code)) or (), day)
         if not cs:
             continue
         letters = [getattr(c, "wc_group", None) for c in cs]
