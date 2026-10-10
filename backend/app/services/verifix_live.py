@@ -77,6 +77,7 @@ TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new 
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
 FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
 CLOSE_FRESH_S = HOT_S + 30   # …and a day close: the job reads a running shift-day every HOT_S
+                             # (a finished one every COOL_S — `close_fresh_s`)
 WAIT_S = 60              # a request waits this long for another read of its unit-day (+ the
                          # rest of the request stays inside Cloudflare's 100 s)
 BUSY_MESSAGE = "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."
@@ -825,6 +826,26 @@ def day_frame(db: Session, shift: Optional[int], now: Optional[datetime] = None)
     now = now or datetime.now(TZ)
     win = cell_hours.defaults(db).get(shift or 1) or ("08:00", "20:00")
     return live_overview.shift_frame(now, shift or 1, win)
+
+
+def close_fresh_s(db: Session, manager_id: int, day: date) -> float:
+    """How old a stored read a day close takes as it stands rather than reading
+    Verifix while the brigadir waits: the job's own pace for that day plus a
+    margin — `CLOSE_FRESH_S` while the shift runs or has just ended, `COOL_S`
+    + a minute once it is over and the job reads it every ten minutes. After
+    the close the same job re-copies the day whenever Verifix moves
+    (`live_projection`), so a re-read on top bought minutes the copy follows
+    anyway, and cost the 10 Oct 13:03 close 11.7 s on Verifix. A PAST
+    shift-day — the job no longer reads it, and its copy will not follow —
+    still has the close read it."""
+    _, units = _registry(db)
+    unit = units.get(manager_id)
+    if not unit:
+        return CLOSE_FRESH_S
+    frame = day_frame(db, unit["shift"])
+    if date.fromisoformat(frame["day"]) != day:
+        return CLOSE_FRESH_S
+    return CLOSE_FRESH_S if _hot(frame) else COOL_S + 60
 
 
 def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:

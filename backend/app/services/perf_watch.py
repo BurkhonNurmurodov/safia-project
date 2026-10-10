@@ -46,6 +46,10 @@ import logging
 import os
 import re
 import resource
+try:
+    import pwd
+except ImportError:  # not Linux: the host's process list is not read anyway
+    pwd = None
 import sys
 import tempfile
 import threading
@@ -150,6 +154,10 @@ _recent_stall: tuple[float, float] = (0.0, 0.0)   # (monotonic end, ms) of the w
 DUMP_AFTER_S = 6.0           # a loop silent this long gets every thread's stack dumped
 _BASE_EVERY_S = 2.0          # the healthy baseline a freeze is measured against is this fresh
 _base: dict | None = None    # the last `_machine()` read while the loop was beating
+_PROCS_EVERY_S = 5.0         # the host's process list is read this often while healthy…
+_PROCS_SHARE = 0.01          # …or less often, so it never costs more than 1% of a CPU
+_pbase = None                # the last `_procs()` read while the loop was beating
+_pbase_next = 0.0
 _REARM_BEATS = 5             # the heartbeat re-arms the dump every this many beats (~1 s)
 _DUMP_MAX = 4 * 1024 * 1024  # bytes of dumps read per freeze
 _beats = 0
@@ -291,7 +299,8 @@ def _status_kb(*keys: str) -> dict[str, int]:
 
 def _machine() -> dict:
     """Everything a freeze is later measured against, read at one instant."""
-    snap: dict = {"mono": time.monotonic(), "threads": _thread_cpu(), "host": _host_cpu()}
+    snap: dict = {"mono": time.monotonic(), "threads": _thread_cpu(), "host": _host_cpu(),
+                  "vm": _vmstat()}
     try:
         ru = resource.getrusage(resource.RUSAGE_SELF)
         snap["cpu"] = ru.ru_utime + ru.ru_stime
@@ -306,12 +315,65 @@ def _machine() -> dict:
     return snap
 
 
+_VM_KEYS = ("pswpin", "pswpout", "pgmajfault", "compact_stall", "oom_kill")
+_VM_SUMS = ("allocstall", "pgscan_direct")   # one counter per memory zone: summed
+
+
+def _vmstat() -> dict[str, int]:
+    """The host's memory traffic since boot (`/proc/vmstat`): pages swapped in
+    and out, major faults, the times a program had to stop and reclaim memory
+    itself (`allocstall`, `pgscan_direct`) or wait for it to be compacted, and
+    processes killed for memory. Differenced over a freeze, they say whether
+    the machine was short of MEMORY rather than of CPU."""
+    out: dict[str, int] = {}
+    try:
+        with open("/proc/vmstat", "rb") as fh:
+            for line in fh:
+                k, _, v = line.decode("ascii", "replace").partition(" ")
+                if k in _VM_KEYS:
+                    out[k] = int(v)
+                    continue
+                for p in _VM_SUMS:
+                    if k.startswith(p):
+                        out[p] = out.get(p, 0) + int(v)
+                        break
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def _psi() -> dict[str, tuple[float, float | None]]:
+    """Linux pressure-stall information over the last 10 s: the share of time
+    SOME tasks (and, for memory and io, ALL of them) waited for the CPU, for
+    memory, for the disk. Empty where the kernel does not keep it."""
+    out: dict[str, tuple[float, float | None]] = {}
+    for res in ("cpu", "memory", "io"):
+        try:
+            some = full = None
+            with open(f"/proc/pressure/{res}", "rb") as fh:
+                for line in fh:
+                    parts = line.decode("ascii", "replace").split()
+                    vals = dict(p.split("=", 1) for p in parts[1:])
+                    if parts[0] == "some":
+                        some = float(vals["avg10"])
+                    elif parts[0] == "full" and res != "cpu":
+                        full = float(vals["avg10"])
+            if some is not None:
+                out[res] = (some, full)
+        except (OSError, ValueError, KeyError, IndexError):
+            continue
+    return out
+
+
 def _procs() -> tuple[float, dict[int, tuple[str, int, int]]]:
     """Every process on the host this user may read: pid → (command, CPU ticks
-    used, resident kB), from /proc/<pid>/stat. Read only while a freeze lasts
-    and when it ends — a freeze in which this process barely ran (the 9 Oct
-    14:55 one: 0% idle, load 46, 2.4 s of CPU in 18 s) was somebody ELSE on
-    the machine, and only the machine's own list can say who."""
+    used, resident kB), from /proc/<pid>/stat. A freeze in which this process
+    barely ran (the 9 Oct 14:55 one: 0% idle, load 46, 2.4 s of CPU in 18 s)
+    was somebody ELSE on the machine, and only the machine's own list can say
+    who. Read while the loop beats (`_pbase`, at most every `_PROCS_EVERY_S`)
+    and when a freeze ends: read at the moment the freeze was NOTICED it
+    measured nothing, because on a full machine this thread is starved too and
+    noticed it at the end (the 10 Oct 13:04 one: «CPU over the last 0 s»)."""
     out: dict[int, tuple[str, int, int]] = {}
     at = time.monotonic()
     try:
@@ -335,10 +397,45 @@ def _procs() -> tuple[float, dict[int, tuple[str, int, int]]]:
 _PAGE_KB = (os.sysconf("SC_PAGE_SIZE") // 1024) if hasattr(os, "sysconf") else 4
 
 
-def _host_top(p0, p1, limit: int = 5) -> list[tuple[str, int, float, int]]:
+def _who(pids: list[int]) -> str:
+    """The user a group's busiest processes run as and the script they run —
+    «user: site/dist/server.js» — so «node ×4» says WHICH node. Never an
+    argument past the script: a command line may carry a secret."""
+    users: list[str] = []
+    scripts: list[str] = []
+    for pid in pids:
+        try:
+            uid = os.stat(f"/proc/{pid}").st_uid
+            try:
+                name = pwd.getpwuid(uid).pw_name if pwd else str(uid)
+            except KeyError:
+                name = str(uid)
+            if name not in users:
+                users.append(name)
+        except OSError:
+            pass
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                args = fh.read(4096).split(b"\0")
+            for a in args[1:]:
+                arg = a.decode("utf-8", "replace")
+                if not arg or arg.startswith("-"):
+                    continue
+                if "/" in arg or "." in arg:
+                    tail = "/".join(arg.rstrip("/").split("/")[-3:])[-48:]
+                    if tail not in scripts:
+                        scripts.append(tail)
+                break
+        except OSError:
+            pass
+    return ", ".join(users[:2]) + (": " + ", ".join(scripts[:2]) if scripts else "")
+
+
+def _host_top(p0, p1, limit: int = 5) -> list[tuple[str, int, float, int, str]]:
     """Who used the host's CPU between two `_procs` reads, grouped by command:
-    [(command, processes, CPU seconds, resident MB)], most CPU first. This
-    process is «this server»; a process born in between counts from 0."""
+    [(command, processes, CPU seconds, resident MB, who)], most CPU first —
+    `who` is `_who` of the group's busiest processes. This process is «this
+    server»; a process born in between counts from 0."""
     if not p0 or not p1:
         return []
     me = os.getpid()
@@ -347,14 +444,18 @@ def _host_top(p0, p1, limit: int = 5) -> list[tuple[str, int, float, int]]:
     for pid, (comm, ticks, rss) in p1[1].items():
         used = ticks - (before[pid][1] if pid in before and before[pid][0] == comm else 0)
         label = "this server" if pid == me else comm
-        g = groups.setdefault(label, [0, 0, 0])
+        g = groups.setdefault(label, [0, 0, 0, []])
         if used > 0:
             g[0] += 1
             g[1] += used
+            g[3].append((used, pid))
         g[2] += rss
-    rows = [(k, n, round(t / _TICK, 1), round(r / 1024)) for k, (n, t, r) in groups.items()
-            if t / _TICK >= 0.2 or k == "this server"]
-    return sorted(rows, key=lambda r: -r[2])[:limit]
+    rows = sorted(((k, n, round(t / _TICK, 1), round(r / 1024), busy)
+                   for k, (n, t, r, busy) in groups.items()
+                   if t / _TICK >= 0.2 or k == "this server"), key=lambda r: -r[2])[:limit]
+    return [(k, n, cpu, mb, "" if k == "this server"
+             else _who([pid for _, pid in sorted(busy, reverse=True)[:3]]))
+            for k, n, cpu, mb, busy in rows]
 
 
 def _meminfo() -> dict[str, int]:
@@ -471,8 +572,8 @@ def _freeze_account(base: dict | None, gap: float, looked: int, procs0=None) -> 
     the last healthy look (`base`, at most `_BASE_EVERY_S` before the freeze
     began) and now. `looked` = how many times the watcher could look at the
     loop WHILE it was held — only possible when the GIL was free. `procs0` =
-    the host's process list read 1 s into the freeze (None when the watcher
-    could not run then)."""
+    the host's process list read while the loop last beat (`_pbase`), so the
+    CPU each program used is counted over the whole freeze."""
     out: dict = {"looked": looked}
     try:
         if procs0:
@@ -511,6 +612,17 @@ def _freeze_account(base: dict | None, gap: float, looked: int, procs0=None) -> 
                 out["steal"] = round(100 * d[7] / total)
                 out["iowait"] = round(100 * d[4] / total)
                 out["idle"] = round(100 * d[3] / total)
+                # Busy in programs, or in the kernel — the kernel is where a
+                # machine short of memory spends it (reclaim, compaction, swap).
+                out["user"] = round(100 * (d[0] + d[1]) / total)
+                out["kernel"] = round(100 * (d[2] + d[5] + d[6]) / total)
+            v0, v1 = m0.get("vm") or {}, m1.get("vm") or {}
+            vm = {k: v1[k] - v0.get(k, 0) for k in v1 if v1[k] - v0.get(k, 0) > 0}
+            if vm:
+                out["vm"] = vm
+        psi = _psi()
+        if psi:
+            out["psi"] = psi
         for k in ("VmRSS", "VmSwap", "load"):
             if k in m1:
                 out[k] = m1[k]
@@ -564,6 +676,28 @@ def _freeze_account(base: dict | None, gap: float, looked: int, procs0=None) -> 
     return out
 
 
+def _memory_short(a: dict) -> str:
+    """«memory was short — 120 MB swapped in, 480 MB out, 2,140 reclaim
+    stalls, tasks waited on memory 41% of the time», or "" when nothing in the
+    freeze says the machine was short of memory."""
+    vm = a.get("vm") or {}
+    mb = _PAGE_KB / 1024
+    sin, sout = vm.get("pswpin", 0) * mb, vm.get("pswpout", 0) * mb
+    bits = []
+    if sin + sout >= 10:
+        bits.append(f"{sin:.0f} MB swapped in, {sout:.0f} MB out")
+    if vm.get("allocstall"):
+        bits.append(f"{vm['allocstall']:,} reclaim stalls")
+    if vm.get("compact_stall"):
+        bits.append(f"{vm['compact_stall']:,} compaction stalls")
+    mem = (a.get("psi") or {}).get("memory")
+    if mem and mem[0] >= 10:
+        bits.append(f"tasks waited on memory {mem[0]:.0f}% of the time")
+    if vm.get("oom_kill"):
+        bits.append(f"{vm['oom_kill']} process(es) killed for memory")
+    return ("memory was short — " + ", ".join(bits)) if bits else ""
+
+
 def _verdict(a: dict, gap: float) -> str:
     """One line on WHY, read off the measurements — the first that fits."""
     span = a.get("span") or 0.0
@@ -592,16 +726,22 @@ def _verdict(a: dict, gap: float) -> str:
             others = [h for h in a.get("host_top") or [] if h[0] != "this server"]
             lead = ""
             if others:
-                name, n, cpu_s, _ = others[0]
+                name, n, cpu_s, _, who = others[0]
                 lead = (f" — most of it «{name}»" + (f" ×{n}" if n > 1 else "")
-                        + f", {cpu_s:.1f} s of CPU")
+                        + (f" ({who})" if who else "") + f", {cpu_s:.1f} s of CPU")
             ncpu = a.get("ncpu") or 0
-            return (f"the machine was full — {a['idle']}% idle, load {a.get('load', 0):.0f}"
+            split = (f" (programs {a['user']}%, kernel {a['kernel']}%)"
+                     if "kernel" in a else "")
+            mem = _memory_short(a)
+            return (f"the machine was full — {a['idle']}% idle{split}, load {a.get('load', 0):.0f}"
                     + (f" on {ncpu} CPUs" if ncpu else "")
+                    + (f"; {mem}" if mem else "")
                     + f"; this process got {cpu:.1f} s of CPU in {span:.0f} s{lead}"
                     + ("" if others else " (the host's process list could not be read)"))
         if a.get("majflt", 0) >= 200 or a.get("VmSwap", 0) >= 50 * 1024:
-            return "memory was being read back from swap (major page faults)"
+            mem = _memory_short(a)
+            return ("memory was being read back from swap (major page faults)"
+                    + (f" — {mem}" if mem else ""))
         if looked >= 2:
             return ("the loop waited inside a call of its own (a query, a network call, "
                     "a lock or a sleep) — named below")
@@ -629,7 +769,8 @@ def _machine_line(a: dict) -> str:
     if a.get("majflt"):
         bits.append(f"+{a['majflt']} major faults")
     if "steal" in a:
-        bits.append(f"host steal {a['steal']}% · iowait {a['iowait']}% · idle {a['idle']}%")
+        bits.append(f"host steal {a['steal']}% · iowait {a['iowait']}% · idle {a['idle']}%"
+                    + (f" · programs {a['user']}% · kernel {a['kernel']}%" if "kernel" in a else ""))
     if a.get("load") is not None:
         bits.append(f"load {a['load']:.1f}")
     mem = a.get("mem") or {}
@@ -638,18 +779,34 @@ def _machine_line(a: dict) -> str:
                     f"{mem['MemTotal'] / 1024 / 1024:.1f} GB")
         if mem.get("SwapTotal"):
             bits.append(f"swap used {(mem['SwapTotal'] - mem.get('SwapFree', 0)) / 1024 / 1024:.1f} GB")
+    vm = a.get("vm") or {}
+    if vm.get("pswpin") or vm.get("pswpout"):
+        mb = _PAGE_KB / 1024
+        bits.append(f"swapped in {vm.get('pswpin', 0) * mb:.0f} MB · out {vm.get('pswpout', 0) * mb:.0f} MB")
+    if vm.get("allocstall") or vm.get("compact_stall"):
+        bits.append(f"reclaim stalls {vm.get('allocstall', 0):,} · compaction stalls "
+                    f"{vm.get('compact_stall', 0):,}")
+    psi = a.get("psi") or {}
+    if psi:
+        bits.append("waiting (10 s): " + " · ".join(
+            f"{res} {some:.0f}%" + (f" (all {full:.0f}%)" if full else "")
+            for res, (some, full) in psi.items()))
     return " · ".join(bits)
 
 
 def _host_line(a: dict) -> str:
-    """«postgres ×38 21.4 s 3.1 GB · node ×3 9.0 s 1.2 GB · this server 2.4 s»"""
+    """«node ×3 (user: site/dist/server.js) 9.0 s 1.2 GB · postgres ×38
+    (postgres) 21.4 s 3.1 GB · this server 2.4 s»"""
     rows = a.get("host_top") or []
     if not rows:
         return ""
-    return " · ".join(f"{name}" + (f" ×{n}" if n > 1 else "") + f" {cpu_s:.1f} s"
-                      + (f" {mb / 1024:.1f} GB" if mb >= 1024 else f" {mb} MB")
-                      for name, n, cpu_s, mb in rows) + (
-        f" (CPU over the last {a['host_span']:.0f} s)" if a.get("host_span") else "")
+    return " · ".join(f"{row[0]}" + (f" ×{row[1]}" if row[1] > 1 else "")
+                      + (f" ({row[4]})" if len(row) > 4 and row[4] else "")
+                      + f" {row[2]:.1f} s"
+                      + (f" {row[3] / 1024:.1f} GB" if row[3] >= 1024 else f" {row[3]} MB")
+                      for row in rows) + (
+        f" (CPU over the {a['host_span']:.0f} s from just before the freeze to its end)"
+        if a.get("host_span") else "")
 
 
 # ── where a slow request spends its time ─────────────────────────────────────
@@ -859,7 +1016,7 @@ async def _heartbeat() -> None:
 
 
 def _watch() -> None:
-    global _base
+    global _base, _pbase, _pbase_next
     me = threading.get_ident()
     last_seen = _beat
     held: dict | None = None
@@ -883,7 +1040,7 @@ def _watch() -> None:
                     # while it lasted (starved itself) — still a stall, unnamed.
                     ev = {"kind": "stall", "ms": ms, **(held or {"stack": [], **snapshot()})}
                     looks = ev.pop("looks", None)
-                    procs0 = ev.pop("p0", None)
+                    procs0 = _pbase
                     ev.pop("m0", None)
                     ev.pop("look_at", None)
                     if looks:
@@ -930,6 +1087,14 @@ def _watch() -> None:
                 # so what it is measured against must already be in hand. Never
                 # taken on the tick that sees a freeze end — that is the END.
                 _base = _machine()
+            if held is None and now - beat < BEAT_S * 2 and now >= _pbase_next:
+                # The host's process list, for the same reason: on a full
+                # machine this thread is starved with everybody else, and a
+                # list read when it noticed the freeze — at its end — measured
+                # nothing. Read less often when it is slow to read.
+                _pbase = _procs()
+                took = time.monotonic() - _pbase[0]
+                _pbase_next = time.monotonic() + max(_PROCS_EVERY_S, took / _PROCS_SHARE)
             if held is None and now - beat >= LOOP_BLOCK_S and _loop_tid:
                 # Taken WHILE the loop is held, which is the only moment the
                 # culprit is on its stack.
@@ -939,9 +1104,6 @@ def _watch() -> None:
                     "others": _busy_threads({me, _loop_tid}),
                     "active": _oldest_active(),
                     "m0": _base,
-                    # The host's processes, read again when it ends: who else
-                    # had the machine while this one waited.
-                    "p0": _procs(),
                     "looks": {},
                     "look_at": now,
                     **snapshot(),

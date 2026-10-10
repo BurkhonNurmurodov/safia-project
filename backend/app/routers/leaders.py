@@ -787,7 +787,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     )
     data.sort(key=lambda r: str(r["date"]), reverse=True)
 
-    _apply_overlays(db, data)
+    _apply_overlays(db, data, narrow=not sees_all)
 
     # What verification has done to each report, so the register can print the
     # state beside the score. Stamped on the row rather than fetched beside it
@@ -800,7 +800,9 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     # leave them with a number that dropped for no visible cause. It stays one
     # aggregated query scoped to the dates already on screen.
     if not lite:
-        ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
+        ai_stats = leader_ai.stats_by_uid(
+            db, {str(r["date"]) for r in data},
+            uids=None if sees_all else {r["uid"] for r in data})
         for row in data:
             hit = ai_stats.get(row["uid"])
             if hit:
@@ -1371,7 +1373,7 @@ def get_standing(
     })
 
 
-def _apply_overlays(db: Session, data: list[dict]) -> None:
+def _apply_overlays(db: Session, data: list[dict], narrow: bool = True) -> None:
     """Make every human ruling change the number it judged, in place.
 
     Two overlays, one pass. An upheld AI flag has to cost the day its points,
@@ -1397,7 +1399,10 @@ def _apply_overlays(db: Session, data: list[dict]) -> None:
     verdict on a task nobody ends up reading.
     """
     dates = {str(r["date"]) for r in data}
-    rejected = leader_ai.rejected_by_uid(db, dates)
+    # `narrow`: read only THESE rows' verdicts — a unit's register, one day
+    # report. The whole register (a «see all» build) reads every date anyway.
+    rejected = leader_ai.rejected_by_uid(
+        db, dates, uids={r["uid"] for r in data} if narrow else None)
     overrides: dict[str, dict[int, LeaderTaskOverride]] = {}
     if dates:
         for o in (db.query(LeaderTaskOverride)

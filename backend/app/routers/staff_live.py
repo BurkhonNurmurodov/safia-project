@@ -2072,10 +2072,13 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")
     live = live_day.is_live(d)
-    # «Reads Verifix once more» — unless this unit was read within the last
-    # CLOSE_FRESH_S: the job keeps a running (and a just-finished) shift-day
-    # within a minute, and re-reading it here was most of a close's 7.5 s.
-    chk = _close_check(db, mid, d, force=live, force_min_s=verifix_live.CLOSE_FRESH_S)
+    # «Reads Verifix once more» — unless the job read this unit within its own
+    # pace for the day (`close_fresh_s`): a minute while the shift runs or has
+    # just ended, ten after that, and it re-copies the closed day whenever
+    # Verifix moves. Re-reading here was most of a close's 7.5–11.7 s.
+    chk = _close_check(db, mid, d, force=live,
+                       force_min_s=verifix_live.close_fresh_s(db, mid, d) if live
+                       else verifix_live.CLOSE_FRESH_S)
     out, ctx, ud = chk["out"], chk["ctx"], chk["ud"]
 
     def refuse(reason: str, n: int, msg: str):

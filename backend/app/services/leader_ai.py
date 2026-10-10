@@ -45,6 +45,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from sqlalchemy import (Integer, String, and_, any_, bindparam, case, cast, false, func,
                         literal, or_, text)
+from sqlalchemy import select as db_select
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
@@ -3507,6 +3508,35 @@ def _uid_sql():
     return LeaderTaskEntry.id == entry, uid, rest
 
 
+def _refs_of(uids: set[str]):
+    """The verdicts that can belong to these report uids, as a filter on
+    `LeaderAiReview` — `uid_map`'s rule read backwards: a `bot-<day>` report
+    holds the `bot:<entry>` refs of that day's entries, a sheet report the
+    `sheet:<sid>:…` refs of its submission. `sheetd:` refs name their report
+    only through `uid_map`, so all of them stay in (few, and legacy); a bot
+    ref whose entry is gone names no report and is left out, as `uid_map`
+    leaves it.
+
+    For a reader who sees ONE unit: the register's two verdict passes
+    (`stats_by_uid`, `rejected_by_uid`) used to fold the whole plant's history
+    to annotate one unit's rows — the 10 Oct «Server was slow» DM put 30–50%
+    of a supervisor's /api/leaders there."""
+    uids = {u for u in uids if isinstance(u, str) and u}
+    days = sorted({int(u[4:]) for u in uids if u.startswith("bot-") and u[4:].isdigit()})
+    sids = sorted({u for u in uids if not u.startswith("bot-")})
+    ref = LeaderAiReview.ref
+    conds = [ref.like("sheetd:%")]
+    if days:
+        mine = (db_select(literal("bot:") + cast(LeaderTaskEntry.id, String))
+                .where(LeaderTaskEntry.day_id == any_(bindparam(None, days, type_=ARRAY(Integer)))))
+        conds.append(ref.in_(mine))
+    if sids:
+        conds.append(and_(ref.like("sheet:%"),
+                          func.split_part(ref, ":", 2) == any_(
+                              bindparam(None, sids, type_=ARRAY(String)))))
+    return or_(*conds)
+
+
 # ── the automatic regime ─────────────────────────────────────────────────────
 # From 13 Aug 2026 a report does not wait for a human to agree with the AI: a
 # flagged proof marks its task not-done immediately, the whole day is checked
@@ -3627,7 +3657,8 @@ def paused_clause():
     return func.coalesce(LeaderAiReview.shift, -1).in_(REVIEW_PAUSED_SHIFTS)
 
 
-def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set[int]]:
+def rejected_by_uid(db: Session, dates: set[str] | None = None,
+                    uids: set[str] | None = None) -> dict[str, set[int]]:
     """report uid → the task ids whose proof does not count.
 
     Two ways a task lands here, and they are deliberately different questions:
@@ -3651,7 +3682,12 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
     overlay applied at read time by routers/leaders.py. That also means a
     rejection is reversible by re-ruling the verdict, which is the behaviour you
     want from a judgement call.
+
+    `uids`: only these reports' verdicts (`_refs_of`) — the same answer for
+    them, without reading the rest of the plant's.
     """
+    if uids is not None and not uids:
+        return {}
     # `ref` and `task_id` are all this reads — the verdict's prose and its
     # JSON clocks are dead weight on a pass the register makes per request.
     q = (db.query(LeaderAiReview.ref, LeaderAiReview.task_id)
@@ -3664,13 +3700,15 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
          )))
     if dates:
         q = q.filter(LeaderAiReview.date.in_(dates))
+    if uids is not None:
+        q = q.filter(_refs_of(uids))
     revs = q.all()
     if not revs:
         return {}
-    uids = uid_map(db, revs)
+    by_ref = uid_map(db, revs)
     out: dict[str, set[int]] = {}
     for rev in revs:
-        uid = uids.get(rev.ref)
+        uid = by_ref.get(rev.ref)
         if uid:
             out.setdefault(uid, set()).add(rev.task_id)
     return out
@@ -3756,7 +3794,8 @@ def auto_discover(db: Session) -> int:
     return added
 
 
-def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[str, int]]:
+def stats_by_uid(db: Session, dates: set[str] | None = None,
+                 uids: set[str] | None = None) -> dict[str, dict[str, int]]:
     """report uid → what the reviewer has actually done to THAT report.
 
     The register header used to print platform-wide totals beside a filtered
@@ -3769,8 +3808,11 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
     map can never outgrow the row set it annotates. The pending queue is a
     backfill of everything ever filed — it must never be walked row by row for
     a header.
+
+    `uids`: only the verdicts that can belong to these reports (`_refs_of`) —
+    a reader who sees one unit. The answer for those reports is the same.
     """
-    if dates is not None and not dates:
+    if (dates is not None and not dates) or (uids is not None and not uids):
         return {}
     # Counted PER REPORT in SQL (`_uid_sql`): one row per report and outcome,
     # not one per verdict ever written. The register asks this on every build,
@@ -3786,6 +3828,8 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
                    LeaderAiReview.resolution))
     if dates is not None:
         q = q.filter(LeaderAiReview.date.in_(dates))
+    if uids is not None:
+        q = q.filter(_refs_of(uids))
     rows = q.all()
     if not rows:
         return {}

@@ -7975,7 +7975,11 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   hands a live day to it, so every door that closes a day reaches it — reads
   Verifix once more (`force`; from 2026-10-09 not when this unit was read in
   the last `CLOSE_FRESH_S`, 90 s — the job keeps a running and a just-finished
-  shift-day within a minute, and the extra read was most of a close's 7.5 s),
+  shift-day within a minute, and the extra read was most of a close's 7.5 s;
+  from 2026-10-10 not within `COOL_S` + 1 min either once the shift is over
+  and the job reads the day every ten minutes — `verifix_live.close_fresh_s`;
+  the job re-copies the closed day whenever Verifix moves, and a PAST
+  shift-day, which no job reads any more, keeps the 90 s),
   then refuses while anybody is inside, on a break
   or due, while a counted worker has no cell, while somebody has no check-out
   the brigadir has not answered, or when Verifix is unreachable and the stored
@@ -10467,8 +10471,29 @@ blocking work on the event loop freezes every request on the server at once.
   host's free memory and swap (`/proc/meminfo`). The verdict says «the machine
   was full — N% idle, load L on C CPUs; this process got X s of CPU — most of
   it «name»» whenever the host was ≤ 10% idle and this process got under a
-  quarter of the time, ahead of the swap reading. A scan costs ~2 ms and runs
-  only during a freeze. Not fixed: the cause — the next report names it.
+  quarter of the time, ahead of the swap reading. Not fixed: the cause — the
+  next report names it.
+- **The twelfth (10 Oct, 13:04) was the machine again, and the list read
+  nothing**: «CPU over the last 0 s». On a full machine the watcher thread is
+  starved with everybody else, so it NOTICED the freeze only at its end and
+  read the «before» list then. The list is now read while the loop beats
+  (`_pbase`, every `_PROCS_EVERY_S` 5 s, less often when one read costs more
+  than 1% of a CPU — ~20 µs a process) and differenced at the freeze's end,
+  so it covers the whole freeze. Each group names the user its busiest
+  processes run as and the script they run («node ×4 (user:
+  site/dist/server.js)» — `_who`, never an argument past the script). Beside
+  it: the host's CPU split between programs and the kernel, its memory
+  traffic over the freeze (`/proc/vmstat`: pages swapped in/out, reclaim and
+  compaction stalls, OOM kills — `_vmstat`, in every baseline) and Linux
+  pressure-stall figures for the last 10 s (`/proc/pressure`, `_psi`); a
+  machine short of MEMORY rather than CPU is named so in the verdict
+  («memory was short — …»). Same report: `/api/leaders` for a reader who sees
+  one unit read the whole plant's verdict history twice (`stats_by_uid`,
+  `rejected_by_uid` — 30–50% of it); both take `uids` now and read only the
+  verdicts of the rows on screen (`leader_ai._refs_of`, `uid_map`'s rule
+  read backwards). A «see all» build reads as before; the day report reads
+  its one row's. And a day close of a finished shift waited
+  11.7 s on Verifix — see `close_fresh_s` above.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
