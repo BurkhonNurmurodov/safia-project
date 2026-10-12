@@ -7568,6 +7568,13 @@ reads it yet except the card's own test, so no figure on the platform moves.
   the API starts counting those people either way — say so before switching.
 - Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
+- **Live sync of the three org registers is PLANNED, not built** (2026-10-12):
+  `docs/plan-verifix-live-sync.md` records the operator's rulings — rows tied
+  by Verifix id in one run, history never affected (dated cell links), the
+  Verifix seat as a cell's default manager with a brigadir's override from the
+  unit's own Verifix workers, only «dismissed with a date» counts as leaving —
+  and the build in six MINOR steps. Nothing in it has shipped; the one-shots
+  above stay until step 6.
 
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
