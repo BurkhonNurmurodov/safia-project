@@ -9313,31 +9313,48 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   reached mid-day, an answer filed by screenshot before the switch stands and
   a filled table grants the points (`_staff_list_filed`).
 - /kelish opened to leader · supervisor · shift-manager (`open_kelish_page`).
-- **WHEN a list was fully filled is printed beside the count** (2026-10-12,
-  the operator: «show when it was fully filled alongside» the «12/13»). Each
-  judged list item carries `filled_at` (ISO, Tashkent) — the latest mark on
-  the list, i.e. the moment its last worker was answered (`list_done_at`).
-  The CHECK stamps it on a list it found full; a list that FAILED gets it from
-  `late_fills` (ONE reader, two doors): the 5-minute sweep (`stamp_late_fills`,
-  right after `leader_auto.run` in `leader_close._sweep` — every failed
-  `staff_list` row of the last `LATE_FILL_DAYS` (3) re-read against the lists
-  AS THEY STAND NOW, stamped once full, committed there), and `_settle` for a
-  verdict WRITTEN after the hour (a checklist that appeared later), whose DM
-  then carries it. The count it read is untouched. Beside the time, HOW LONG
-  AFTER THE CHECK (`filled_late_min`, off the row's `due_at`): «12/13, 11.10
-  08:53 da to'liq to'ldirildi — tekshiruvdan 12 soat 53 daqiqa keyin» — the
-  reason line prints the hour alone, so without it a next-morning fill read
-  as before the check (the operator's «then why is it not marked?»). An
-  unfixed cell names which list (`filled_kind`). Items carry `cell_id` from
-  this date; older rows resolve the cell by code. Printed by both twins
-  (`staff_list_cells` / `_filled_phrase`, `utils/autoResult.js`): «HH:MM» on
-  the checklist day, «DD.MM HH:MM» on any other, read off the text, never a
-  clock. Nothing is re-measured on a read. **The leader is TOLD in Telegram**:
-  a verdict DM sent after the fill prints it in its facts line; a fill after
+- **The #11 result is a block of labelled lines, and WHEN the list was fully
+  filled is one of them** (2026-10-12, the operator — first «show when it was
+  fully filled alongside», then «why is it not marked?», then «everything
+  should be crystal-clear»: which day's list, when it was checked, how many
+  were marked at that moment). `leader_auto.staff_list_lines` and its twin
+  in `utils/autoResult.js` print, per verdict:
+  «Tekshiruv vaqti: 10.10, soat 20:00» (the check's instant with its DATE —
+  `facts.checked`, the reason sentinel carries the hour alone, which is how a
+  next-morning fill read as before a 20:00 check) → per cell «Tekshirilgan
+  ro'yxat: 4612 — 11.10 (ertangi)» → «Tekshiruv paytida belgilangan: 12 / 13»
+  → «To'liq to'ldirildi: 11.10, soat 08:53 — tekshiruvdan 12 soat 53 daqiqa
+  keyin», or «Keyin ham to'liq to'ldirilmagan». An unfixed cell names both
+  lists and which one filled (`filled_kind`). Every moment is read off its
+  ISO text, never a clock. `staff_list_cells` is the same block joined by
+  newlines, for a DM's `{facts}` (the verdict DM templates put `{facts}` on
+  its own line). Each judged list item carries `filled_at` (ISO, Tashkent —
+  the latest mark on the list, `list_done_at`) and `filled_late_min` (minutes
+  after the row's `due_at`); items carry `cell_id` from this date, older rows
+  resolve the cell by code. The CHECK stamps a list it found full; a FAILED
+  list gets it from `late_fills` (ONE reader, two doors): the 5-minute sweep
+  (`stamp_late_fills`, right after `leader_auto.run` in `leader_close._sweep`
+  — every failed `staff_list` row of the last `LATE_FILL_DAYS` (3) re-read
+  against the lists AS THEY STAND NOW, stamped once full, committed there;
+  `_complete_facts` also fills `checked` / `filled_late_min` on rows stamped
+  before they existed), and `_settle` for a verdict WRITTEN after the hour (a
+  checklist that appeared later), whose DM then carries it. The count the
+  check read is untouched; nothing is re-measured on a read. **The leader is
+  TOLD in Telegram**: a verdict DM sent after the fill prints it; a fill after
   the verdict DM (which cannot be edited — no message id is kept) is ONE
-  follow-up per task, `leader_auto_filled_late` (list, time, how long after,
-  «the verdict does not change by itself»), sent by the sweep after its
-  commit.
+  follow-up per task, `leader_auto_filled_late` (the block above, «the
+  verdict does not change by itself»), sent by the sweep after its commit.
+  **The brigadir's day digest prints it too**: each row carries `autoTasks`
+  (every failed platform check, and #11 even when it passed, with its ledger
+  facts), rendered as a «🤖 Tizim tekshirgan vazifalar» block per leader
+  (`leader_unit_rich.body`, `result_lines` in the reader's language); the
+  ledger remembers each row's fills as a third element (`_fills`), so a list
+  completed after the digest went out is a `fill_only` change — the sweep
+  calls `leader_unit_report.note` for each stamped unit-day, and the update
+  prints «📋 «Ish grafigi» to'ldirildi» + `fill_summary` instead of
+  «80% → 80%» (a two-element ledger from before reads as «no fill known»,
+  never as every row changed). The classic fallback prints «📋 №11 4612 11.10
+  08:53».
 
 ## «Ish grafigi» — the T11 staff list (`/kelish`)
 

@@ -836,17 +836,19 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "2. Mark every worker on the list «Coming» or «Not coming» — in each of your cells that has a plan.\n"
                "At {time} the system checks the list itself — no photo needed."),
     },
+    # `{facts}` is one line for #1 / #8 / #9 and several labelled lines for
+    # #11 (`leader_auto.staff_list_lines`), so it sits under the reason.
     "leader_auto_passed": {
-        "uz": ("Vazifa bajarildi", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "uz_cyrl": ("Вазифа бажарилди", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "ru": ("Задача выполнена", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "en": ("Task passed", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "uz": ("Vazifa bajarildi", "✅ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "uz_cyrl": ("Вазифа бажарилди", "✅ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "ru": ("Задача выполнена", "✅ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "en": ("Task passed", "✅ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
     },
     "leader_auto_failed": {
-        "uz": ("Vazifa bajarilmadi", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "uz_cyrl": ("Вазифа бажарилмади", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "ru": ("Задача не выполнена", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
-        "en": ("Task not done", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "uz": ("Vazifa bajarilmadi", "✖️ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "uz_cyrl": ("Вазифа бажарилмади", "✖️ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "ru": ("Задача не выполнена", "✖️ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
+        "en": ("Task not done", "✖️ {task}\n🕐 {time} · {date}\n{why}\n{facts}"),
     },
     # The follow-up to a failed #11 verdict: the «Ish grafigi» list has been
     # completed since the check — when, and how long after the hour

@@ -23,13 +23,20 @@ const T_ALL = {
     pctBare: "Bajarilishi: {v}",
     concerns: "Yozilgan xavotirlar: {n} ta ({from} – {to})",
     late: "Tekshiruv {n} daqiqa kechikib o'tkazilgan",
-    kelish: "Ish grafigi: {cells}",
     kelishNoPlan: "Rejasi yo'q, tekshirilmadi: {codes}",
     kelishEmpty: "Ro'yxati bo'sh, tekshirilmadi: {codes}",
     kelishNone: "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
     kToday: "bugungi", kTomorrow: "ertangi",
-    kFilled: "{t} da to'liq to'ldirildi",
-    kFilledLate: "{t} da to'liq to'ldirildi — tekshiruvdan {d} keyin",
+    chkAt: "Tekshiruv vaqti: {d}, soat {t}",
+    lst: "Tekshirilgan ro'yxat: {cell} — {ld} ({kind})",
+    lst2: "Tekshirilgan ro'yxatlar: {cell} — bugungi ({d0}) va ertangi ({d1})",
+    atChk: "Tekshiruv paytida belgilangan: {m} / {n}",
+    atChk2: "Tekshiruv paytida belgilangan: bugungi {m0} / {n0}, ertangi {m1} / {n1}",
+    done: "To'liq to'ldirildi: {d}, soat {t}",
+    doneLate: "To'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
+    doneK: "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t}",
+    doneKLate: "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
+    notDone: "Keyin ham to'liq to'ldirilmagan",
     durH: "{h} soat", durM: "{m} daqiqa", durHM: "{h} soat {m} daqiqa",
   },
   uz_cyrl: {
@@ -40,13 +47,20 @@ const T_ALL = {
     pctBare: "Бажарилиши: {v}",
     concerns: "Ёзилган хавотирлар: {n} та ({from} – {to})",
     late: "Текширув {n} дақиқа кечикиб ўтказилган",
-    kelish: "Иш графиги: {cells}",
     kelishNoPlan: "Режаси йўқ, текширилмади: {codes}",
     kelishEmpty: "Рўйхати бўш, текширилмади: {codes}",
     kelishNone: "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
     kToday: "бугунги", kTomorrow: "эртанги",
-    kFilled: "{t} да тўлиқ тўлдирилди",
-    kFilledLate: "{t} да тўлиқ тўлдирилди — текширувдан {d} кейин",
+    chkAt: "Текширув вақти: {d}, соат {t}",
+    lst: "Текширилган рўйхат: {cell} — {ld} ({kind})",
+    lst2: "Текширилган рўйхатлар: {cell} — бугунги ({d0}) ва эртанги ({d1})",
+    atChk: "Текширув пайтида белгиланган: {m} / {n}",
+    atChk2: "Текширув пайтида белгиланган: бугунги {m0} / {n0}, эртанги {m1} / {n1}",
+    done: "Тўлиқ тўлдирилди: {d}, соат {t}",
+    doneLate: "Тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
+    doneK: "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t}",
+    doneKLate: "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
+    notDone: "Кейин ҳам тўлиқ тўлдирилмаган",
     durH: "{h} соат", durM: "{m} дақиқа", durHM: "{h} соат {m} дақиқа",
   },
   ru: {
@@ -57,13 +71,20 @@ const T_ALL = {
     pctBare: "Выполнение: {v}",
     concerns: "Записано обеспокоенностей: {n} ({from} – {to})",
     late: "Проверка прошла с опозданием на {n} мин",
-    kelish: "График работы: {cells}",
     kelishNoPlan: "Нет плана, не проверялись: {codes}",
     kelishEmpty: "Список пуст, не проверялись: {codes}",
     kelishNone: "Нет ячеек с планом — проверять было нечего",
     kToday: "на сегодня", kTomorrow: "на завтра",
-    kFilled: "полностью заполнен в {t}",
-    kFilledLate: "полностью заполнен в {t} — через {d} после проверки",
+    chkAt: "Время проверки: {d}, {t}",
+    lst: "Проверенный список: {cell} — {ld} ({kind})",
+    lst2: "Проверенные списки: {cell} — на сегодня ({d0}) и на завтра ({d1})",
+    atChk: "Отмечено на момент проверки: {m} / {n}",
+    atChk2: "Отмечено на момент проверки: на сегодня {m0} / {n0}, на завтра {m1} / {n1}",
+    done: "Заполнен полностью: {d}, {t}",
+    doneLate: "Заполнен полностью: {d}, {t} — через {dur} после проверки",
+    doneK: "Список {kind} заполнен полностью: {d}, {t}",
+    doneKLate: "Список {kind} заполнен полностью: {d}, {t} — через {dur} после проверки",
+    notDone: "Позже тоже не был заполнен полностью",
     durH: "{h} ч", durM: "{m} мин", durHM: "{h} ч {m} мин",
   },
   en: {
@@ -74,13 +95,20 @@ const T_ALL = {
     pctBare: "Fulfilment: {v}",
     concerns: "Concerns written: {n} ({from} – {to})",
     late: "The check ran {n} min late",
-    kelish: "Work schedule: {cells}",
     kelishNoPlan: "No plan, not checked: {codes}",
     kelishEmpty: "Empty list, not checked: {codes}",
     kelishNone: "No cell had a plan — there was no list to check",
     kToday: "today's", kTomorrow: "tomorrow's",
-    kFilled: "fully filled at {t}",
-    kFilledLate: "fully filled at {t} — {d} after the check",
+    chkAt: "Checked: {d} at {t}",
+    lst: "List checked: {cell} — {ld} ({kind})",
+    lst2: "Lists checked: {cell} — today's ({d0}) and tomorrow's ({d1})",
+    atChk: "Marked at the check: {m} / {n}",
+    atChk2: "Marked at the check: today's {m0} / {n0}, tomorrow's {m1} / {n1}",
+    done: "Fully filled: {d} at {t}",
+    doneLate: "Fully filled: {d} at {t} — {dur} after the check",
+    doneK: "{kind} list fully filled: {d} at {t}",
+    doneKLate: "{kind} list fully filled: {d} at {t} — {dur} after the check",
+    notDone: "Not fully filled afterwards either",
     durH: "{h} h", durM: "{m} min", durHM: "{h} h {m} min",
   },
 };
@@ -100,47 +128,65 @@ const pctLine = (T, v, f) => (f.target == null
 
 const codes = (list) => list.slice(0, 8).join(", ");
 
-// #11 «Ish grafigi»: what the check read on each list it judged — the twin of
-// `leader_auto.staff_list_cells`. A cell whose type is fixed shows that one
-// list; one not fixed yet shows both, since either would have passed. Beside
-// the count, WHEN the list was fully filled (`filled_at`): the check stamps it
-// on a list it found full, the 5-minute sweep on a failed list once it fills
-// (`leader_auto.stamp_late_fills`) — so «12/13, 20:35 da to'liq to'ldirildi»
-// says the leader finished after the hour, and how long after. «HH:MM» on the
-// checklist day, «DD.MM HH:MM» on any other — read off the ISO text, never
-// through the browser's clock (`leader_auto.fill_text` is the twin).
-const pair = (v) => (Array.isArray(v) ? `${v[0] ?? 0}/${v[1] ?? 0}` : "0/0");
-const fillText = (it, f) => {
-  const s = String(it.filled_at || "");
+// #11 «Ish grafigi»: what the check read, as labelled lines answering every
+// question a reader has asked of one of these verdicts (the operator,
+// 2026-10-12): WHEN the check ran (date + hour), WHICH day's list of WHICH
+// cell it judged, how many were marked AT THAT MOMENT, and when the list was
+// fully filled — and how long after the check, when it was after. The twin of
+// `leader_auto.staff_list_lines`; keep the two saying the same.
+//
+//   Tekshiruv vaqti: 10.10, soat 20:00
+//   Tekshirilgan ro'yxat: 4612 — 11.10 (ertangi)
+//   Tekshiruv paytida belgilangan: 12 / 13
+//   To'liq to'ldirildi: 11.10, soat 08:53 — tekshiruvdan 12 soat 53 daqiqa keyin
+//
+// Every moment is read off its ISO text, never through the browser's clock.
+const ddmm = (iso) => { const s = String(iso || ""); return s.length >= 10 ? `${s.slice(8, 10)}.${s.slice(5, 7)}` : "—"; };
+const dmText = (iso) => {
+  const s = String(iso || "");
   if (s.length < 16 || s[10] !== "T") return null;
-  const day0 = String((Array.isArray(f.days) && f.days[0]) || "").slice(0, 10);
-  const hm = s.slice(11, 16);
-  return day0 && s.slice(0, 10) === day0 ? hm : `${s.slice(8, 10)}.${s.slice(5, 7)} ${hm}`;
+  return [ddmm(s), s.slice(11, 16)];
 };
+const dur = (T, minutes) => {
+  const h = Math.floor(minutes / 60); const m = minutes % 60;
+  return !h ? put(T.durM, { m }) : !m ? put(T.durH, { h }) : put(T.durHM, { h, m });
+};
+const isKind = (k) => k === "today" || k === "tomorrow";
 const kindWord = (T, k) => (k === "today" ? T.kToday : T.kTomorrow);
-// «— tekshiruvdan 12 soat 53 daqiqa keyin» when the list filled AFTER the
-// check (`filled_late_min`): the reason line prints the check's hour alone,
-// so without it a fill dated the next morning could be read as before it.
-// The twin of `leader_auto._filled_phrase`.
-const filledPhrase = (T, it, at) => {
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const fillLine = (T, it, kind) => {
+  const dt = dmText(it.filled_at);
+  if (!dt) return it.ok ? "" : T.notDone;
   const late = Number(it.filled_late_min);
-  if (!Number.isFinite(late) || late <= 0) return put(T.kFilled, { t: at });
-  const h = Math.floor(late / 60); const m = late % 60;
-  const d = !h ? put(T.durM, { m }) : !m ? put(T.durH, { h }) : put(T.durHM, { h, m });
-  return put(T.kFilledLate, { t: at, d });
+  const isLate = Number.isFinite(late) && late > 0;
+  const fk = kind == null && isKind(it.filled_kind) ? it.filled_kind : null;
+  const key = (fk ? "doneK" : "done") + (isLate ? "Late" : "");
+  return cap(put(T[key], { d: dt[0], t: dt[1], dur: isLate ? dur(T, late) : "", kind: fk ? kindWord(T, fk) : "" }));
 };
-const staffCells = (T, lists, f) => lists.slice(0, 8).map((it) => {
-  const k = it.kind === "today" || it.kind === "tomorrow" ? it.kind : null;
-  const at = fillText(it, f);
-  if (k) {
-    const s = `${it.cell} (${kindWord(T, k)}): ${pair(it[k])}`;
-    return at ? `${s}, ${filledPhrase(T, it, at)}` : s;
+const pair = (v) => (Array.isArray(v) ? [v[0] ?? 0, v[1] ?? 0] : [0, 0]);
+const staffLines = (T, f) => {
+  const lists = (Array.isArray(f.lists) ? f.lists : []).filter((x) => x && typeof x === "object").slice(0, 8);
+  if (!lists.length) return [];
+  const days = [...(Array.isArray(f.days) ? f.days : []).slice(0, 2).map((x) => String(x || "").slice(0, 10)), "", ""];
+  const out = [];
+  const chk = dmText(f.checked);
+  if (chk) out.push(put(T.chkAt, { d: chk[0], t: chk[1] }));
+  for (const it of lists) {
+    const kind = isKind(it.kind) ? it.kind : null;
+    if (kind) {
+      const [m, n] = pair(it[kind]);
+      out.push(put(T.lst, { cell: it.cell, ld: ddmm(days[kind === "tomorrow" ? 1 : 0]), kind: kindWord(T, kind) }));
+      out.push(put(T.atChk, { m, n }));
+    } else {
+      const [m0, n0] = pair(it.today); const [m1, n1] = pair(it.tomorrow);
+      out.push(put(T.lst2, { cell: it.cell, d0: ddmm(days[0]), d1: ddmm(days[1]) }));
+      out.push(put(T.atChk2, { m0, n0, m1, n1 }));
+    }
+    const line = fillLine(T, it, kind);
+    if (line) out.push(line);
   }
-  const s = `${it.cell}: ${T.kToday} ${pair(it.today)}, ${T.kTomorrow} ${pair(it.tomorrow)}`;
-  if (!at) return s;
-  const fk = it.filled_kind === "today" || it.filled_kind === "tomorrow" ? `${kindWord(T, it.filled_kind)} ` : "";
-  return `${s}, ${fk}${filledPhrase(T, it, at)}`;
-}).join(" · ");
+  return out;
+};
 
 export function autoResultLines(facts, lang) {
   const f = facts && typeof facts === "object" ? facts : {};
@@ -162,7 +208,7 @@ export function autoResultLines(facts, lang) {
   if (f.found != null) out.push(put(T.concerns, { n: f.found, from: f.from || "—", to: f.to || "—" }));
   if (Array.isArray(f.lists)) {
     const lists = f.lists.filter((x) => x && typeof x === "object");
-    if (lists.length) out.push(put(T.kelish, { cells: staffCells(T, lists, f) }));
+    if (lists.length) out.push(...staffLines(T, f));
     if (Array.isArray(f.no_plan) && f.no_plan.length) out.push(put(T.kelishNoPlan, { codes: codes(f.no_plan) }));
     if (Array.isArray(f.empty) && f.empty.length) out.push(put(T.kelishEmpty, { codes: codes(f.empty) }));
     if (!lists.length && !(f.no_plan || []).length && !(f.empty || []).length) out.push(T.kelishNone);

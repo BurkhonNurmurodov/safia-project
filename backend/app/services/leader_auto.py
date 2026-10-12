@@ -545,6 +545,7 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
     cells = sorted(ctx.cells, key=lambda c: (c.verifix_code or "", c.id))
     planned = [c for c in cells if cell_planned(rows, c)]
     facts: dict = {"days": [x.isoformat() for x in days], "lists": [],
+                   "checked": ctx.due.astimezone(TASHKENT).isoformat(timespec="minutes"),
                    "no_plan": sorted(cell_label(c) for c in cells
                                      if c not in planned),
                    "empty": []}
@@ -775,13 +776,28 @@ def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
         return 0
     got = late_fills(db, [(r.facts, r.due_at) for r in rows], now)
     stamped = [(row, f) for row, f in zip(rows, got) if f is not None]
-    if not stamped:
-        return 0
+    # Rows stamped before `checked` / `filled_late_min` existed (4.267.0) get
+    # both off their own `due_at` — no list is read for it.
+    fixed = 0
+    for row, f in zip(rows, got):
+        f2 = _complete_facts(f if f is not None else row.facts, row.due_at)
+        if f2 is not None:
+            if f is None:
+                row.facts = f2
+                fixed += 1
+            else:
+                for i, (r2, _) in enumerate(stamped):
+                    if r2 is row:
+                        stamped[i] = (row, f2)
     for row, f in stamped:
         row.facts = f
+    if not stamped and not fixed:
+        return 0
     db.commit()
     told: set = set()
+    units: set = set()
     for row, f in stamped:
+        units.add((int(row.manager_id), str(row.date)[:10]))
         key = (row.leader_id, str(row.date)[:10], row.task_id)
         if key in told:
             continue
@@ -791,7 +807,44 @@ def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
         except Exception:                              # noqa: BLE001
             logger.exception("late-fill DM failed for row %s", row.id)
             db.rollback()
+    # The brigadir's day digest shows the fill time too: a digest already sent
+    # is marked dirty and the sweep sends the update naming it
+    # (`leader_unit_report.changes`, a fill-only change).
+    if units:
+        from app.services import leader_unit_report
+        for mid, d in sorted(units):
+            leader_unit_report.note(db, mid, d)
     return len(stamped)
+
+
+def _complete_facts(f: dict | None, due: datetime | None) -> dict | None:
+    """`f` with `checked` and every stamped list's `filled_late_min` filled in
+    from the row's own due instant where missing; None when nothing was."""
+    if not isinstance(f, dict) or due is None:
+        return None
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    out = None
+    if not f.get("checked"):
+        out = dict(f, checked=due.astimezone(TASHKENT).isoformat(timespec="minutes"))
+    lists = f.get("lists") if isinstance(f.get("lists"), list) else []
+    new_lists = None
+    for i, it in enumerate(lists):
+        if (not isinstance(it, dict) or it.get("ok") or not it.get("filled_at")
+                or it.get("filled_late_min") is not None):
+            continue
+        try:
+            late = int((datetime.fromisoformat(str(it["filled_at"])) - due).total_seconds() // 60)
+        except (TypeError, ValueError):
+            continue
+        if late <= 0:
+            continue
+        if new_lists is None:
+            new_lists = [dict(x) if isinstance(x, dict) else x for x in lists]
+        new_lists[i]["filled_late_min"] = late
+    if new_lists is not None:
+        out = dict(out or f, lists=new_lists)
+    return out
 
 
 def _tell_filled_late(db: Session, row: LeaderAutoCheck, f: dict) -> None:
@@ -1365,7 +1418,7 @@ def measured(db: Session, leader_id: int, date: str, task_id: int,
 _RESULT_KEYS = ("lines", "with_plan", "cells", "untyped", "filled", "target",
                 "pct", "by_cell", "best", "best_pct", "found", "from", "to",
                 "checked_at", "late_by_min", "days", "lists", "no_plan", "empty",
-                "granted")
+                "checked", "granted")
 
 
 def results_for(db: Session, entry_ids) -> dict[int, dict]:
@@ -1443,7 +1496,7 @@ def result_lines(facts: dict | None, lang: str = "uz",
                                         to=f.get("to") or "—"))
     if isinstance(f.get("lists"), list):
         if f["lists"]:
-            out.append(L["kelish"].format(cells=staff_list_cells(f, lang)))
+            out.extend(staff_list_lines(f, lang))
         if f.get("no_plan"):
             out.append(L["kelish_noplan"].format(codes=", ".join(map(str, f["no_plan"][:8]))))
         if f.get("empty"):
@@ -1456,61 +1509,104 @@ def result_lines(facts: dict | None, lang: str = "uz",
 
 
 def staff_list_cells(f: dict, lang: str = "uz") -> str:
-    """«4321 (ertangi): 12/12 · 4322: bugungi 3/11, ertangi 0/11» — what #11's
-    check read on each list it judged. The client twin is `utils/autoResult.js`."""
+    """The #11 result as ONE string — the structured lines joined by newlines,
+    for a DM template's `{facts}` slot. See `staff_list_lines`."""
+    return "\n".join(staff_list_lines(f, lang))
+
+
+def staff_list_lines(f: dict, lang: str = "uz") -> list[str]:
+    """What #11's check read, as labelled lines that answer every question a
+    reader has asked about one of these verdicts (the operator, 2026-10-12):
+    WHEN the check ran (date + hour), WHICH day's list of WHICH cell it judged,
+    how many were marked AT THAT MOMENT, and when the list was fully filled —
+    and how long after the check, when it was after. The client twin is
+    `utils/autoResult.js`; keep the two saying the same:
+
+        Tekshiruv vaqti: 10.10, soat 20:00
+        Tekshirilgan ro'yxat: 4612 — 11.10 (ertangi)
+        Tekshiruv paytida belgilangan: 12 / 13
+        To'liq to'ldirildi: 11.10, soat 08:53 — tekshiruvdan 12 soat 53 daqiqa keyin
+
+    A cell whose list type is not fixed yet names both lists; a failed list
+    with no fill moment says so («keyin ham to'liq to'ldirilmagan»)."""
     L = _RESULT_TEXT.get(lang) or _RESULT_TEXT["uz"]
-    parts = []
-    for it in (f.get("lists") or [])[:8]:
-        if not isinstance(it, dict):
-            continue
-        kind = it.get("kind")
-        at = fill_text(it, f)
-        if kind in ("today", "tomorrow"):
+    lists = [it for it in (f.get("lists") or []) if isinstance(it, dict)][:8]
+    if not lists:
+        return []
+    days = [str(x or "")[:10] for x in (f.get("days") or [])[:2]] + ["", ""]
+    out: list[str] = []
+    chk = _dm_text(f.get("checked"))
+    if chk:
+        out.append(L["chk_at"].format(d=chk[0], t=chk[1]))
+    for it in lists:
+        kind = it.get("kind") if it.get("kind") in ("today", "tomorrow") else None
+        cell = it.get("cell")
+        if kind:
             m, n = (it.get(kind) or [0, 0])[:2]
-            s = f"{it.get('cell')} ({L['k_' + kind]}): {m}/{n}"
-            if at:
-                s += ", " + _filled_phrase(L, it, at)
+            out.append(L["lst"].format(cell=cell, ld=_ddmm(days[kind == "tomorrow"]),
+                                       kind=L["k_" + kind]))
+            out.append(L["at_chk"].format(m=m, n=n))
         else:
             t, w = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
-            s = (f"{it.get('cell')}: {L['k_today']} {t[0]}/{t[1]}, "
-                 f"{L['k_tomorrow']} {w[0]}/{w[1]}")
-            if at:
-                fk = it.get("filled_kind")
-                lead = (L["k_" + fk] + " ") if fk in ("today", "tomorrow") else ""
-                s += ", " + lead + _filled_phrase(L, it, at)
-        parts.append(s)
-    return " · ".join(parts)
+            out.append(L["lst2"].format(cell=cell, d0=_ddmm(days[0]), d1=_ddmm(days[1])))
+            out.append(L["at_chk2"].format(m0=t[0], n0=t[1], m1=w[0], n1=w[1]))
+        out.append(_fill_line(L, it, kind))
+    return out
 
 
-def _filled_phrase(L: dict, it: dict, at: str) -> str:
-    """«20:35 da to'liq to'ldirildi», and «— tekshiruvdan 12 soat 53 daqiqa
-    keyin» when the list filled after the check (`filled_late_min`): the
-    reason line prints the check's HOUR alone, so without this a fill dated
-    the next morning could be read as before it."""
+def fill_summary(f: dict, lang: str = "uz") -> list[str]:
+    """One line per list that HAS a fill moment — «4612 — 11.10 (ertangi) ·
+    To'liq to'ldirildi: …» — for a digest update that reports only that."""
+    L = _RESULT_TEXT.get(lang) or _RESULT_TEXT["uz"]
+    days = [str(x or "")[:10] for x in (f.get("days") or [])[:2]] + ["", ""]
+    out: list[str] = []
+    for it in (f.get("lists") or [])[:8]:
+        if not isinstance(it, dict) or not it.get("filled_at"):
+            continue
+        kind = it.get("kind") if it.get("kind") in ("today", "tomorrow") else None
+        fk = kind or (it.get("filled_kind") if it.get("filled_kind") in ("today", "tomorrow") else None)
+        head = (f"{it.get('cell')} — {_ddmm(days[fk == 'tomorrow'])} ({L['k_' + fk]})"
+                if fk else str(it.get("cell")))
+        out.append(f"{head} · {_fill_line(L, it, kind)}")
+    return out
+
+
+def _fill_line(L: dict, it: dict, kind: str | None) -> str:
+    """«To'liq to'ldirildi: 11.10, soat 08:53 — tekshiruvdan 12 soat 53 daqiqa
+    keyin» (`filled_at` + `filled_late_min`), the list named when the cell's
+    type is not fixed, or «keyin ham to'liq to'ldirilmagan»."""
+    dt = _dm_text(it.get("filled_at"))
+    if not dt:
+        return L["not_done"] if not it.get("ok") else ""
     try:
         late = int(it.get("filled_late_min") or 0)
     except (TypeError, ValueError):
         late = 0
-    if late <= 0:
-        return L["k_filled"].format(t=at)
-    h, m = divmod(late, 60)
-    d = (L["dur_m"].format(m=m) if not h
-         else L["dur_h"].format(h=h) if not m
-         else L["dur_hm"].format(h=h, m=m))
-    return L["k_filled_late"].format(t=at, d=d)
+    fk = it.get("filled_kind") if (kind is None and it.get("filled_kind") in ("today", "tomorrow")) else None
+    key = ("done_k" if fk else "done") + ("_late" if late > 0 else "")
+    s = L[key].format(d=dt[0], t=dt[1], dur=_dur(L, late), kind=L["k_" + fk] if fk else "")
+    return s[:1].upper() + s[1:]
 
 
-def fill_text(it: dict, f: dict) -> str | None:
-    """«20:35», or «13.10 20:35» when the list was completed on a calendar day
-    other than the checklist day — read off the item's `filled_at` as text,
-    never through a clock, so the bot and `utils/autoResult.js` print one
-    moment the same way."""
-    s = str(it.get("filled_at") or "")
+def _dur(L: dict, minutes: int) -> str:
+    h, m = divmod(max(0, int(minutes)), 60)
+    return (L["dur_m"].format(m=m) if not h
+            else L["dur_h"].format(h=h) if not m
+            else L["dur_hm"].format(h=h, m=m))
+
+
+def _dm_text(iso) -> tuple[str, str] | None:
+    """(«DD.MM», «HH:MM») off an ISO text, never through a clock — so the bot,
+    the digest and `utils/autoResult.js` print one moment the same way."""
+    s = str(iso or "")
     if len(s) < 16 or s[10] != "T":
         return None
-    day0 = str((f.get("days") or [""])[0] or "")[:10]
-    hm = s[11:16]
-    return hm if day0 and s[:10] == day0 else f"{s[8:10]}.{s[5:7]} {hm}"
+    return _ddmm(s), s[11:16]
+
+
+def _ddmm(iso: str) -> str:
+    s = str(iso or "")
+    return f"{s[8:10]}.{s[5:7]}" if len(s) >= 10 else "—"
 
 
 def _pct_line(L: dict, v: str, f: dict, show_target: bool) -> str:
@@ -1535,13 +1631,20 @@ _RESULT_TEXT = {
            "pct_bare": "Bajarilishi: {v}",
            "concerns": "Yozilgan xavotirlar: {n} ta ({frm} – {to})",
            "late": "Tekshiruv {n} daqiqa kechikib o'tkazilgan",
-           "kelish": "Ish grafigi: {cells}",
            "kelish_noplan": "Rejasi yo'q, tekshirilmadi: {codes}",
            "kelish_empty": "Ro'yxati bo'sh, tekshirilmadi: {codes}",
            "kelish_none": "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
            "k_today": "bugungi", "k_tomorrow": "ertangi",
-           "k_filled": "{t} da to'liq to'ldirildi",
-           "k_filled_late": "{t} da to'liq to'ldirildi — tekshiruvdan {d} keyin",
+           "chk_at": "Tekshiruv vaqti: {d}, soat {t}",
+           "lst": "Tekshirilgan ro'yxat: {cell} — {ld} ({kind})",
+           "lst2": "Tekshirilgan ro'yxatlar: {cell} — bugungi ({d0}) va ertangi ({d1})",
+           "at_chk": "Tekshiruv paytida belgilangan: {m} / {n}",
+           "at_chk2": "Tekshiruv paytida belgilangan: bugungi {m0} / {n0}, ertangi {m1} / {n1}",
+           "done": "To'liq to'ldirildi: {d}, soat {t}",
+           "done_late": "To'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
+           "done_k": "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t}",
+           "done_k_late": "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
+           "not_done": "Keyin ham to'liq to'ldirilmagan",
            "dur_h": "{h} soat", "dur_m": "{m} daqiqa", "dur_hm": "{h} soat {m} daqiqa"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
@@ -1550,13 +1653,20 @@ _RESULT_TEXT = {
                 "pct_bare": "Бажарилиши: {v}",
                 "concerns": "Ёзилган хавотирлар: {n} та ({frm} – {to})",
                 "late": "Текширув {n} дақиқа кечикиб ўтказилган",
-                "kelish": "Иш графиги: {cells}",
                 "kelish_noplan": "Режаси йўқ, текширилмади: {codes}",
                 "kelish_empty": "Рўйхати бўш, текширилмади: {codes}",
                 "kelish_none": "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
                 "k_today": "бугунги", "k_tomorrow": "эртанги",
-                "k_filled": "{t} да тўлиқ тўлдирилди",
-                "k_filled_late": "{t} да тўлиқ тўлдирилди — текширувдан {d} кейин",
+                "chk_at": "Текширув вақти: {d}, соат {t}",
+                "lst": "Текширилган рўйхат: {cell} — {ld} ({kind})",
+                "lst2": "Текширилган рўйхатлар: {cell} — бугунги ({d0}) ва эртанги ({d1})",
+                "at_chk": "Текширув пайтида белгиланган: {m} / {n}",
+                "at_chk2": "Текширув пайтида белгиланган: бугунги {m0} / {n0}, эртанги {m1} / {n1}",
+                "done": "Тўлиқ тўлдирилди: {d}, соат {t}",
+                "done_late": "Тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
+                "done_k": "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t}",
+                "done_k_late": "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
+                "not_done": "Кейин ҳам тўлиқ тўлдирилмаган",
                 "dur_h": "{h} соат", "dur_m": "{m} дақиқа", "dur_hm": "{h} соат {m} дақиқа"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
@@ -1565,13 +1675,20 @@ _RESULT_TEXT = {
            "pct_bare": "Выполнение: {v}",
            "concerns": "Записано обеспокоенностей: {n} ({frm} – {to})",
            "late": "Проверка прошла с опозданием на {n} мин",
-           "kelish": "График работы: {cells}",
            "kelish_noplan": "Нет плана, не проверялись: {codes}",
            "kelish_empty": "Список пуст, не проверялись: {codes}",
            "kelish_none": "Нет ячеек с планом — проверять было нечего",
            "k_today": "на сегодня", "k_tomorrow": "на завтра",
-           "k_filled": "полностью заполнен в {t}",
-           "k_filled_late": "полностью заполнен в {t} — через {d} после проверки",
+           "chk_at": "Время проверки: {d}, {t}",
+           "lst": "Проверенный список: {cell} — {ld} ({kind})",
+           "lst2": "Проверенные списки: {cell} — на сегодня ({d0}) и на завтра ({d1})",
+           "at_chk": "Отмечено на момент проверки: {m} / {n}",
+           "at_chk2": "Отмечено на момент проверки: на сегодня {m0} / {n0}, на завтра {m1} / {n1}",
+           "done": "Заполнен полностью: {d}, {t}",
+           "done_late": "Заполнен полностью: {d}, {t} — через {dur} после проверки",
+           "done_k": "Список {kind} заполнен полностью: {d}, {t}",
+           "done_k_late": "Список {kind} заполнен полностью: {d}, {t} — через {dur} после проверки",
+           "not_done": "Позже тоже не был заполнен полностью",
            "dur_h": "{h} ч", "dur_m": "{m} мин", "dur_hm": "{h} ч {m} мин"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
@@ -1580,13 +1697,20 @@ _RESULT_TEXT = {
            "pct_bare": "Fulfilment: {v}",
            "concerns": "Concerns written: {n} ({frm} – {to})",
            "late": "The check ran {n} min late",
-           "kelish": "Work schedule: {cells}",
            "kelish_noplan": "No plan, not checked: {codes}",
            "kelish_empty": "Empty list, not checked: {codes}",
            "kelish_none": "No cell had a plan — there was no list to check",
            "k_today": "today's", "k_tomorrow": "tomorrow's",
-           "k_filled": "fully filled at {t}",
-           "k_filled_late": "fully filled at {t} — {d} after the check",
+           "chk_at": "Checked: {d} at {t}",
+           "lst": "List checked: {cell} — {ld} ({kind})",
+           "lst2": "Lists checked: {cell} — today's ({d0}) and tomorrow's ({d1})",
+           "at_chk": "Marked at the check: {m} / {n}",
+           "at_chk2": "Marked at the check: today's {m0} / {n0}, tomorrow's {m1} / {n1}",
+           "done": "Fully filled: {d} at {t}",
+           "done_late": "Fully filled: {d} at {t} — {dur} after the check",
+           "done_k": "{kind} list fully filled: {d} at {t}",
+           "done_k_late": "{kind} list fully filled: {d} at {t} — {dur} after the check",
+           "not_done": "Not fully filled afterwards either",
            "dur_h": "{h} h", "dur_m": "{m} min", "dur_hm": "{h} h {m} min"},
 }
 

@@ -347,6 +347,15 @@ def _rows(db: Session, f: dict) -> list[dict]:
             # page and the plain fallback print the number.
             "rejectedTasks": [{"id": t["id"], "name": t["name"]}
                               for t in rep["tasks"] if t["ai_rejected"]],
+            # The PLATFORM's own checks (#1 #8 #9 #11): every one that failed,
+            # with what it read at its hour, and #11 even when it passed — the
+            # digest prints when each list was fully filled (the operator,
+            # 2026-10-12). `facts` is the ledger's (`leader_auto.results_for`).
+            "autoTasks": [{"id": t["id"], "name": t["name"], "done": t["done"],
+                           "facts": t.get("autoFacts") or {}}
+                          for t in rep["tasks"]
+                          if t.get("auto") and (not t["done"]
+                                                or "lists" in (t.get("autoFacts") or {}))],
             "excluded": rep.get("excluded"),
         })
 
@@ -364,7 +373,7 @@ def _rows(db: Session, f: dict) -> list[dict]:
             "cell": codes.get(cid),
             "cellId": cid,
             "score": None, "rawScore": None, "completion": None,
-            "counts": None, "rejectedTasks": [], "excluded": None,
+            "counts": None, "rejectedTasks": [], "autoTasks": [], "excluded": None,
         })
     # Worst first, and the lowest score first inside a state.
     rows.sort(key=lambda r: (ORDER.index(r["state"]),
@@ -453,11 +462,23 @@ def _state(p: dict) -> dict:
     the table can still be named in one."""
     return {
         "rows": {r["key"]: [r["state"],
-                            None if r["state"] in NO_SCORE else r["score"]]
+                            None if r["state"] in NO_SCORE else r["score"],
+                            _fills(r)]
                  for r in p["rows"]},
         "names": {r["key"]: [r["leader"], r["cell"]] for r in p["rows"]},
         "unit": p["unitScore"],
     }
+
+
+def _fills(r: dict) -> list[str] | None:
+    """The #11 lists of this row that have a fill moment, as «cell|iso» — the
+    third thing the ledger remembers of a sent row, so a list completed after
+    the digest went out is an update (`changes`) naming it. None with none."""
+    out = sorted(f"{it.get('cell')}|{it['filled_at']}"
+                 for t in (r.get("autoTasks") or [])
+                 for it in ((t.get("facts") or {}).get("lists") or [])
+                 if isinstance(it, dict) and it.get("filled_at"))
+    return out or None
 
 
 def changes(prev: dict | None, p: dict) -> list[dict]:
@@ -471,16 +492,25 @@ def changes(prev: dict | None, p: dict) -> list[dict]:
     now = _state(p)["rows"]
     out = []
     for r in p["rows"]:
-        b = before.get(r["key"])
-        if b is None or list(b) != now[r["key"]]:
+        b = list(before.get(r["key"]) or []) or None
+        cur = now[r["key"]]
+        # A ledger written before rows carried their fills (two elements) is
+        # read as «no fill known», never as every row having changed.
+        b2 = b[:2] if b else None
+        bf = (b[2:3] or [None])[0] if b else None
+        fill = cur[2] if cur[2] != bf else None
+        if b is None or b2 != cur[:2] or fill:
             out.append({"key": r["key"], "leader": r["leader"], "cell": r["cell"],
-                        "before": list(b) if b else None,
-                        "after": now[r["key"]]})
+                        "before": b2, "after": cur[:2],
+                        # A list filled since the last send — on its own
+                        # (`fill_only`), or beside a score that also moved.
+                        "fill": fill, "fill_only": b is not None and b2 == cur[:2]})
     for k, b in before.items():
         if k not in now:
             name, cell = (list(names.get(k) or []) + ["—", None])[:2]
             out.append({"key": k, "leader": name, "cell": cell,
-                        "before": list(b), "after": None})
+                        "before": list(b)[:2], "after": None,
+                        "fill": None, "fill_only": False})
     return out
 
 

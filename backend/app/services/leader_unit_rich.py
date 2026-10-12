@@ -54,6 +54,9 @@ L = {
         "gone": "hisobdan chiqdi",
         "changed": "Nima o'zgardi",
         "rejected_head": "Qabul qilinmagan vazifalar",
+        "auto_head": "Tizim tekshirgan vazifalar",
+        "auto_pass": "bajarildi", "auto_fail": "bajarilmadi",
+        "fill_changed": "«Ish grafigi» to'ldirildi",
         "checking_note": "{n} ta hisobot hali tekshirilmoqda — natija o'zgarishi mumkin.",
         "zero": "Topshirilmagan cheklist brigada natijasiga 0% bo'lib kiradi.",
         "quote": ("Har bir liderning vazifalari, dalil rasmlari va AI xulosasi — "
@@ -77,6 +80,9 @@ L = {
         "gone": "ҳисобдан чиқди",
         "changed": "Нима ўзгарди",
         "rejected_head": "Қабул қилинмаган вазифалар",
+        "auto_head": "Тизим текширган вазифалар",
+        "auto_pass": "бажарилди", "auto_fail": "бажарилмади",
+        "fill_changed": "«Иш графиги» тўлдирилди",
         "checking_note": "{n} та ҳисобот ҳали текширилмоқда — натижа ўзгариши мумкин.",
         "zero": "Топширилмаган чеклист бригада натижасига 0% бўлиб киради.",
         "quote": ("Ҳар бир лидернинг вазифалари, далил расмлари ва AI хулосаси — "
@@ -100,6 +106,9 @@ L = {
         "gone": "не учитывается",
         "changed": "Что изменилось",
         "rejected_head": "Непринятые задачи",
+        "auto_head": "Задачи, проверенные системой",
+        "auto_pass": "выполнено", "auto_fail": "не выполнено",
+        "fill_changed": "«График работы» заполнен",
         "checking_note": "Ещё на проверке: {n} — итог может измениться.",
         "zero": "Несданный чек-лист входит в итог бригады как 0%.",
         "quote": ("Задачи каждого лидера, фото-подтверждения и заключение ИИ — "
@@ -123,6 +132,9 @@ L = {
         "gone": "no longer counted",
         "changed": "What changed",
         "rejected_head": "Rejected tasks",
+        "auto_head": "Tasks checked by the system",
+        "auto_pass": "passed", "auto_fail": "not done",
+        "fill_changed": "Work schedule filled",
         "checking_note": "{n} report(s) still in review — the result may change.",
         "zero": "A checklist nobody filed enters the unit result as 0%.",
         "quote": ("Each leader's tasks, proof photos and the AI's verdict are in "
@@ -233,12 +245,18 @@ def body(p: dict, lang: str = "ru", diff: list[dict] | None = None) -> str:
     # WHAT CHANGED leads an update, above the table it changed: a second copy of
     # the table with no pointer to the difference is a spot-the-difference game.
     if update and diff:
-        items = "\n".join(
-            f"<li><b>{who(c['leader'])}</b>{code(c.get('cell'))}: "
-            f"{_esc(_side(c['before'], t))} → "
-            f"<b>{_esc(_side(c['after'], t, after=True))}</b></li>"
-            for c in diff)
-        parts.append(f"<h4>{_esc(t['changed'])}</h4>\n<ul>\n{items}\n</ul>")
+        by_key = {r["key"]: r for r in p["rows"]}
+        items = []
+        for c in diff:
+            head = f"<li><b>{who(c['leader'])}</b>{code(c.get('cell'))}: "
+            if not c.get("fill_only"):
+                items.append(head + f"{_esc(_side(c['before'], t))} → "
+                             f"<b>{_esc(_side(c['after'], t, after=True))}</b></li>")
+            if c.get("fill"):
+                fills = _fill_lines(by_key.get(c["key"]), lang)
+                items.append(head + f"📋 {_esc(t['fill_changed'])}"
+                             + "".join(f"<br/>{_esc(x)}" for x in fills) + "</li>")
+        parts.append(f"<h4>{_esc(t['changed'])}</h4>\n<ul>\n" + "\n".join(items) + "\n</ul>")
 
     trs = []
     for r in p["rows"]:
@@ -269,11 +287,37 @@ def body(p: dict, lang: str = "ru", diff: list[dict] | None = None) -> str:
             parts.append(f"<p><b>{who(r['leader'])}</b>{code(r.get('cell'))}</p>\n"
                          f"<ul>\n{tasks}\n</ul>")
 
+    # The platform's own checks, per leader: the verdict and what the check
+    # read — for #11 when the list was fully filled (and how long after the
+    # check), the question the operator asked of the digest on 2026-10-12.
+    from app.services import leader_auto
+    auto = [r for r in p["rows"] if r.get("autoTasks")]
+    if auto:
+        parts.append(f"<h4>🤖 {_esc(t['auto_head'])}</h4>")
+        for r in auto:
+            items = []
+            for tk in r["autoTasks"]:
+                mark = f"✅ {t['auto_pass']}" if tk.get("done") else f"✖️ {t['auto_fail']}"
+                lines = leader_auto.result_lines(tk.get("facts") or {}, lang)
+                items.append(f"<li><b>№{tk['id']} · {_esc(_pick(tk.get('name'), lang) or '—')}</b> — {mark}"
+                             + "".join(f"<br/>{_esc(x)}" for x in lines) + "</li>")
+            parts.append(f"<p><b>{who(r['leader'])}</b>{code(r.get('cell'))}</p>\n"
+                         f"<ul>\n" + "\n".join(items) + "\n</ul>")
+
     note = t["quote"]
     if counts["missing"] or counts["open"]:
         note = f"{t['zero']} {note}"
     parts.append(f"<blockquote>{_esc(note)}</blockquote>")
     return "\n".join(parts)
+
+
+def _fill_lines(r: dict | None, lang: str) -> list[str]:
+    """The fill moments of a row's #11 lists, in the reader's language."""
+    from app.services import leader_auto
+    out: list[str] = []
+    for tk in (r or {}).get("autoTasks") or []:
+        out.extend(leader_auto.fill_summary(tk.get("facts") or {}, lang))
+    return out
 
 
 # ── the classic fallback ─────────────────────────────────────────────────────
@@ -301,7 +345,17 @@ def classic_changes(diff: list[dict] | None, sep: str = "\n") -> str:
             return "—"
         return f"{pair[1]}%" if pair[1] is not None else ICON.get(pair[0], "—")
 
+    def fills(c) -> str:
+        # «cell|iso» → «4612 11.10 08:53», glyph and numbers only.
+        out = []
+        for x in c.get("fill") or []:
+            cell, _, iso = str(x).partition("|")
+            out.append(f"{cell} {iso[8:10]}.{iso[5:7]} {iso[11:16]}" if len(iso) >= 16 else cell)
+        return "📋 №11 " + ", ".join(out)
+
     return sep.join(
         f"{c['leader']}{' · ' + str(c['cell']) if c.get('cell') else ''}: "
-        f"{side(c['before'])} → {side(c['after'])}"
+        + (fills(c) if c.get("fill_only")
+           else f"{side(c['before'])} → {side(c['after'])}"
+                + (f" · {fills(c)}" if c.get("fill") else ""))
         for c in (diff or []))
