@@ -9541,7 +9541,8 @@ admin-only test screen: the goals are one JSON blob per profile in
 ## The shift report («Smena hisoboti»), on the shift dashboard
 
 From **2026-09-15** (the operator's directive) a status board for the shift
-manager: one row per brigadir of their shift, five columns —
+manager: one row per brigadir of their shift, six columns (five until
+«Davomat» joined on 2026-10-12) —
 `components/overview/ShiftReportTable.jsx` over `GET /api/shift-report`
 (`routers/shift_report.py` fetches and scopes, `services/shift_report.py`
 folds). It replaced a Google Sheet somebody filled and coloured by hand every
@@ -9725,12 +9726,14 @@ morning, with «XATO» wherever a brigadir had entered nothing.
 - **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
   sort chevron hidden and the active one stacked under its label, a blank's
   reason as a bare icon (its words are in the legend at every width, since the
-  cell can no longer spare a second line). From 2026-10-03 the five columns
+  cell can no longer spare a second line). From 2026-10-03 the columns
   fit at **320px** too: the phone header is ONE line per label (the short
   labels carry no «%» — every figure does — and captions are ≥ 11px), and a
   name of 13+ letters gets soft hyphens (`softHyphenate`, `utils/personName.js` — /worker-concerns' phone rows use it too) so it breaks WITH a
   visible hyphen — a silent break read «Abdurakhmonova» as «Abdurakhmono va»
-  («… and …»). The legend is one band per line on a phone.
+  («… and …»). The legend is one band per line on a phone. With the sixth
+  column (2026-10-12) the «bugun» / «kecha» captions print no date on a phone
+  — the subtitle names the day there instead (`1-smena · bugun · 12.10`).
 - **Every cell opens WHERE ITS FIGURE COMES FROM, on the scope it was counted
   over** (the operator's rulings, 2026-09-30). The NAME opens `/brigadir/:id`;
   the row itself no longer does, because each cell has a destination of its
@@ -9795,41 +9798,39 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   heatmap's silhouette so the wait states what is coming. Deliberately NOT built: KRU %, «Kiritish soni»,
   an export, a ColumnsPicker.
 
-## «Bugungi davomat» — today's attendance per unit (`/shift-daily`)
+### The «Davomat» column (from 2026-10-12)
 
-From **2026-10-12** (the operator's request, with the /workers heatmap as the
-picture) a card under the «Smena hisoboti» board shows every brigadir's
-attendance on their shift-day NOW — `components/overview/TodayAttendanceTable.jsx`
-over `GET /api/shift-report/attendance`.
+The operator's request, with /workers' heatmap as the picture: the board's
+second column is each unit's attendance on its shift-day SO FAR — a card of its
+own shipped first (v4.265.0) and was folded into the board the same day, at the
+operator's word («one column of the existing table»).
 
 - **The figure IS /workers' «Davomat issiqlik xaritasi» for a day still being
-  worked**: (came + on leave) ÷ on the list, both halves of its «Jami /
-  Zagruzka» switch, painted on that heatmap's own scale —
-  `statusBands.ATT_SEGMENTS`, moved there from `Workers.jsx` so the two pages
-  share ONE scale, and `segmentFill` (judges the whole percent printed). Once
-  the day is closed and copied, the heatmap prints the same number.
+  worked**: (came + on leave) ÷ on the list, the «Jami» half (every job title),
+  painted on that heatmap's own six-shade scale — `statusBands.ATT_SEGMENTS`,
+  moved there from `Workers.jsx` so the two pages share ONE scale, through
+  `segmentFill` (whole percent printed). NOT the board's three admin-editable
+  bands: one unit-day must wear one colour on both pages. `attTone` (90 / 75)
+  decides only bold-on-red, like every other column. Once the day is closed and
+  copied, the heatmap prints the same number.
 - **`live_staff.attendance` is THE count**, off the STORED live read (the
-  minute job's `live_verifix_reads`) — the endpoint never calls Verifix. The
-  list is the unit's own people (`ctx.homes`, by Verifix org unit) with no
-  exchange applied — the basis /workers rewinds a closed day to — minus
-  approved deletions and anybody whose own schedule has not begun (`not_yet`,
-  named in the roster cell's tooltip). Came = a clock-in after the brigadir's
+  minute job's `live_verifix_reads`) inside the board's own request — never a
+  Verifix call. The list is the unit's own people (`ctx.homes`, by Verifix org
+  unit) with no exchange applied — the basis /workers rewinds a closed day to
+  — minus approved deletions and anybody whose own schedule has not begun
+  (`not_yet`, in the tooltip). Came = a clock-in after the brigadir's
   no-check-out answers (`_fixed`); leave = `workers._py_on_leave` on the mark
-  the copy would write (`day_mark`); the «Zagruzka» half = `_py_known_title`.
-  A person the stored read lacks is `unread`, never absent.
-- **«Today» is each shift's own frame** (`verifix_live.day_frame`, the day
-  /staff opens on); the day stepper does NOT reach it, as it does not reach the
-  board. Scoped and filtered exactly as the board (`_scope`, `zagruzka_on`).
-  Cached 30 s server-side; the card polls every minute and fetches after the
-  page (`pageReady`).
-- Blanks carry a reason (`shift_report.ATT_REASONS`: `no_cells`, `no_read`,
-  `not_started`, `no_list`), never 0. While a shift runs, «Kelmadi» includes
-  people still due — the /staff reading from the shift's first minute.
-- It is built from the board's own pieces: `HeadLabel` and `Blank` exported
-  from `ShiftReportTable.jsx`, the cell classes in
-  `components/overview/boardStyle.js`. The percentage opens «Verifix
-  to'g'irlash» on that unit's day (`scopeLinks.staffLink`), the name the
-  brigadir's profile.
+  the copy would write (`day_mark`). A person the stored read lacks is
+  `unread`, never absent.
+- «Today» is the board's own (`report_days`, the shift frame /staff opens a
+  unit on). It rides the board's 60 s cache, so a figure may be a minute old.
+  It runs in a SAVEPOINT: a read that cannot be folded costs the column
+  (`no_read`), never the board.
+- Blanks carry a reason (`no_cells`, `no_read`, `not_started`, `no_list` in
+  `shift_report.REASONS`), never 0, and open nothing. A figure opens «Verifix
+  to'g'irlash» on that unit's day (`scopeLinks.staffLink`). While a shift runs,
+  people still due count as absent — /staff's own reading from the shift's
+  first minute.
 
 ## The dashboard exam («Imtihon», `/exam`)
 

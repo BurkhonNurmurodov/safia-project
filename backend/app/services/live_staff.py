@@ -1068,20 +1068,21 @@ def busy(day_rows: dict) -> list:
 
 # ── a unit's attendance on the day (the shift dashboard) ─────────────────────
 
-def attendance(ctx: Ctx, manager_ids, known, on_leave) -> dict:
+def attendance(ctx: Ctx, manager_ids, on_leave) -> dict:
     """{unit: counts} — /workers' «Davomat issiqlik xaritasi» figure,
     (came + on leave) ÷ on the list, for the day `ctx` holds while it is still
-    being worked: the shift dashboard's «Bugungi davomat»
-    (`routers/shift_report.get_attendance`).
+    being worked: the «Davomat» column of the «Smena hisoboti» board
+    (`routers/shift_report.get_shift_report`).
 
     THE LIST is the unit's own people — everybody whose Verifix org unit is one
-    of its workload cells (`ctx.homes`) — with no exchange applied: the basis
-    /workers reads a closed day on (`exchange_rewind` counts a lent-out worker
-    on the unit they started the day with, and a → task move as came). Left
-    out, as the close's copy leaves them out: an approved deletion, and anybody
-    whose own schedule has not begun yet (`not_yet`, counted apart). Somebody
-    the stored read does not hold yet is `unread` — the next minute's read
-    fills the gap — never an absence.
+    of its workload cells (`ctx.homes`), every job title (the heatmap's «Jami»)
+    — with no exchange applied: the basis /workers reads a closed day on
+    (`exchange_rewind` counts a lent-out worker on the unit they started the
+    day with, and a → task move as came). Left out, as the close's copy leaves
+    them out: an approved deletion, and anybody whose own schedule has not
+    begun yet (`not_yet`, counted apart). Somebody the stored read does not
+    hold yet is `unread` — the next minute's read fills the gap — never an
+    absence.
 
     CAME = a clock-in, after the brigadir's answer for a missing check-out
     (`_fixed`: «did not come» is an absence). ON LEAVE = no clock-in and a day
@@ -1089,23 +1090,17 @@ def attendance(ctx: Ctx, manager_ids, known, on_leave) -> dict:
     (`routers.workers._py_on_leave`), handed the mark the copy would write
     (`day_mark`). Everybody else on the list is absent, a worker still due
     while the shift runs included — /staff reads them «absent» from the shift's
-    first minute too. `known(job title)` is /workers' title test
-    (`_py_known_title`): the `z_` half counts only those titles, the
-    «Zagruzka» side of the heatmap's switch. `read_at` = the oldest read among
-    the unit's people (`verifix_live._covered_at`'s rule), None = nobody read."""
+    first minute too. `read_at` = the oldest read among the unit's people
+    (`verifix_live._covered_at`'s rule), None = nobody read."""
     keys = ("roster", "came", "on_leave", "not_yet", "unread")
-    out = {m: {**{k: 0 for k in keys}, **{f"z_{k}": 0 for k in keys}, "read_at": None}
-           for m in set(manager_ids)}
+    out = {m: {**{k: 0 for k in keys}, "read_at": None} for m in set(manager_ids)}
     for eid, (mid, _cell) in ctx.homes.items():
         acc = out.get(mid)
         if acc is None or (mid, eid) in ctx.deleted:
             continue
-        w = person(ctx, eid)
-        halves = ("", "z_") if known(w.role) else ("",)
         entry = ctx.store.get(eid)
         if entry is None:
-            for h in halves:
-                acc[f"{h}unread"] += 1
+            acc["unread"] += 1
             continue
         try:
             at = datetime.fromisoformat(entry.get("at") or "")
@@ -1113,15 +1108,12 @@ def attendance(ctx: Ctx, manager_ids, known, on_leave) -> dict:
                 acc["read_at"] = at
         except ValueError:
             pass
-        p = w.p
+        p = person(ctx, eid).p
         if p["in"] is None and p["status"] == "not_yet":
-            for h in halves:
-                acc[f"{h}not_yet"] += 1
+            acc["not_yet"] += 1
             continue
         came = p["in"] is not None
-        leave = not came and on_leave(None, day_mark(ctx, eid))
-        for h in halves:
-            acc[f"{h}roster"] += 1
-            acc[f"{h}came"] += int(came)
-            acc[f"{h}on_leave"] += int(leave)
+        acc["roster"] += 1
+        acc["came"] += int(came)
+        acc["on_leave"] += int(not came and on_leave(None, day_mark(ctx, eid)))
     return out

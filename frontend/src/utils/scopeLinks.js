@@ -44,7 +44,7 @@ export const productionLink = ({ unit, date, tab }) =>
 
 // «Verifix to'g'irlash» — one unit's day, on its Workers tab by default
 // (`readStaffLink` in pages/Staff.jsx reads tab / unit / date). First caller:
-// «Bugungi davomat» (components/overview/TodayAttendanceTable.jsx).
+// the board's «Davomat» column (components/overview/ShiftReportTable.jsx).
 export const staffLink = ({ unit, date, tab = "workers" }) =>
   `/staff${query({ tab, unit, date: isoDay(date) })}`;
 

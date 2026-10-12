@@ -1,5 +1,5 @@
 // «Smena hisoboti» — the shift dashboard (pages/ShiftDaily.jsx), under the KPI
-// cards. One row per brigadir of the viewer's shift, five columns, and no figure
+// cards. One row per brigadir of the viewer's shift, six columns, and no figure
 // computed here: every value comes from GET /api/shift-report, which reads each
 // one through the page that owns it (backend/app/services/shift_report.py names
 // them). This file only paints.
@@ -38,11 +38,20 @@
 // - Colour is never the only signal: every cell prints its own figure, and the
 //   bands are printed under the table in the very tints the cells wear — a
 //   threshold nobody can read is a verdict nobody can check.
+// - «Davomat» (2026-10-12) is the unit's attendance on its shift-day so far:
+//   /workers' «Davomat issiqlik xaritasi» figure, (came + on leave) ÷ on the
+//   list, read off the stored live Verifix read — and painted on that
+//   heatmap's own scale (`statusBands.ATT_SEGMENTS`), not the board's three
+//   bands, so one unit-day wears one colour on both pages. Not admin-editable.
 // - It stays a TABLE on a phone. The rows are read against each other, which
 //   cards would take away; the headers shorten and a blank shows its icon alone.
+//   With six columns the «bugun» / «kecha» captions drop their dates on a
+//   phone and the subtitle names the day instead — a date under each of them
+//   was what a sixth column had no room for.
 // - Every cell OPENS WHERE ITS FIGURE COMES FROM, on the scope it was counted
 //   over (the operator's directive, 2026-09-30): load → «Zagruzka fayli» on the
-//   unit's shift-day, plan fulfilment → the same page on the day before,
+//   unit's shift-day, attendance → «Verifix to'g'irlash» on that day (the list
+//   behind it), plan fulfilment → the same page on the day before,
 //   quality → the brigadir's UNRESOLVED records of the month, open concerns →
 //   the brigadir's register at level brigadir, «to do» + «in work», all time.
 //   A blank opens where its gap is filled — «Odamlar soni» for no people, the
@@ -57,11 +66,11 @@ import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, FileClock, FileX, Inbox, ListChecks, PackageX, SlidersHorizontal, UserX,
+  AlertTriangle, CloudOff, FileClock, FileX, Hourglass, Inbox, LayoutGrid, ListChecks,
+  PackageX, SlidersHorizontal, UserX, Users,
 } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import StatusBandsModal from "./StatusBandsModal";
-import { LINK_CLS, RULE, SK_NAME, TD_FIG, TD_PAD, TH_FIG } from "./boardStyle";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
@@ -69,7 +78,8 @@ import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import {
-  productionLink, qualityLink, concernsLink, monthSpan, QUALITY_UNRESOLVED, CONCERN_OPEN,
+  productionLink, qualityLink, concernsLink, staffLink, monthSpan, QUALITY_UNRESOLVED,
+  CONCERN_OPEN,
 } from "../../utils/scopeLinks";
 import { useFactory, useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
@@ -77,7 +87,8 @@ import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import useStatusBands from "../../hooks/useStatusBands";
 import {
-  loadTone, vypTone, resolvedTone, concernsTone, toneFill, toneTint,
+  loadTone, vypTone, resolvedTone, concernsTone, attTone, toneFill, toneTint,
+  ATT_SEGMENTS, segmentFill,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
 import { softHyphenate } from "../../utils/personName";
@@ -88,24 +99,39 @@ const REASON_ICON = {
   no_plan: FileX,
   no_fact: FileClock,
   no_records: Inbox,
+  // «Davomat»: no workload cell, Verifix not read yet, nobody's shift begun,
+  // nobody on the list (backend shift_report.REASONS).
+  no_cells: LayoutGrid,
+  no_read: CloudOff,
+  not_started: Hourglass,
+  no_list: Users,
 };
 
 const SORT_VALUE = {
   load: (r) => r.load?.value,
+  att: (r) => r.att?.value,
   compl: (r) => r.compl?.value,
   quality: (r) => r.quality?.value,
   concerns: (r) => r.concerns?.open,
 };
 // The first press on a column puts its WORST rows on top: the lowest
 // percentage, the most open concerns. A third press returns to name order.
-const FIRST_DIR = { name: "asc", load: "asc", compl: "asc", quality: "asc", concerns: "desc" };
+const FIRST_DIR = { name: "asc", load: "asc", att: "asc", compl: "asc", quality: "asc", concerns: "desc" };
 const DEFAULT_SORT = { key: "name", dir: "asc" };
-const COLS = 5;
+const COLS = 6;
 
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
 
+// «Davomat»'s scale as the legend prints it, best first: ≥95%  90–94%  …  <60%,
+// each chip in the very paint its cells wear.
+const ATT_LEGEND = ATT_SEGMENTS.map((seg, i, all) => ({
+  label: i === 0 ? `<${all[1].from}%`
+    : all[i + 1] ? `${seg.from}–${all[i + 1].from - 1}%` : `≥${seg.from}%`,
+  style: segmentFill(seg.from / 100, ATT_SEGMENTS),
+})).reverse();
+
 // A name longer than its column breaks WITH a visible hyphen (utils/personName
-// `softHyphenate`) instead of pushing the fifth column off a 320px screen.
+// `softHyphenate`) instead of pushing the last column off a 320px screen.
 const pctText = (v) => `${Math.round(v * 100)}%`;
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const fill = (s, vars) =>
@@ -145,10 +171,8 @@ function sortRows(rows, sort, nameOf) {
 // A blank is one line: the dash and its reason's icon. The words are under the
 // table, for every width — a second line in the cell is what made most rows
 // twice as tall as they needed to be.
-// `icons` lets «Bugungi davomat» (TodayAttendanceTable) draw its own reasons in
-// the very same blank.
-export function Blank({ reason, icons = REASON_ICON }) {
-  const Icon = icons[reason];
+function Blank({ reason }) {
+  const Icon = REASON_ICON[reason];
   return (
     <span className="inline-flex items-center justify-center gap-1" style={{ color: "var(--text-4)" }}>
       <span aria-hidden="true">—</span>
@@ -157,9 +181,9 @@ export function Blank({ reason, icons = REASON_ICON }) {
   );
 }
 
-// Header content: the column's name over the window it covers. Below `sm` five
+// Header content: the column's name over the window it covers. Below `sm` six
 // columns share ~358px, so both lines switch to their short forms.
-export function HeadLabel({ full, short, cap, capShort, left = false, active = false }) {
+function HeadLabel({ full, short, cap, capShort, left = false, active = false }) {
   const swap = (a, b) => (
     <>
       <span className="sm:hidden">{b ?? a}</span>
@@ -184,6 +208,39 @@ export function HeadLabel({ full, short, cap, capShort, left = false, active = f
   );
 }
 
+// Below `sm` a figure header stacks its sort chevron under the label and shows
+// it only on the column that is sorted — a chevron beside every label is what
+// would push six columns past a phone's width.
+const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
+  + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
+// The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
+// CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
+// shapes are the mistakes this one answers: painted cells whose gridline was
+// `--border` (a 5% white that any fill swallows, so three greens read as one
+// block), and rounded tiles floating in a 3px gutter, which read as a row of
+// buttons rather than a heatmap. Drawing the rule in the card's colour is what
+// makes it show against ANY fill in BOTH themes.
+//
+// The COLOUR has to be inline and cannot be a class: `DataTable` paints every
+// cell's border through `[&_td]:border-[var(--border)]`, a descendant selector
+// that outranks any plain utility on the cell itself — a `border-[…]` class
+// here compiles, loses, and leaves the grid invisible with nothing to show for
+// it. `RULE` is that one declaration and every figure cell carries it.
+const TD_FIG = "text-center align-middle tabular-nums "
+  + "leading-tight text-xs border";
+const RULE = { borderColor: "var(--bg-card)" };
+// A linked cell moves its padding onto the link, so the whole tile is the
+// target and the row keeps its height. Hover tints with the cell's own INK
+// (`currentColor`), which lightens a white-ink fill and darkens a dark-ink
+// one, in both themes, with no colour of its own.
+const TD_PAD = "px-1 max-[359px]:px-0.5 sm:px-2 py-2.5";
+const LINK_CLS = "block w-full outline-none transition-colors "
+  + "hover:bg-[color-mix(in_srgb,currentColor_14%,transparent)] "
+  + "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]";
+
+// The name placeholders cycle a fixed list — Math.random() re-rolls on every
+// render and makes the skeleton twitch (the SkeletonMatrix rule).
+const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 
 // `pageReady` is what keeps this board off the page's critical path. One
 // request can run the «Zagruzka fayli» engine twice per configured unit, and
@@ -227,13 +284,27 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const multi = groups.length > 1;
   const missing = rows.filter((r) => r.load?.reason || r.compl?.reason).length;
   const anyPartial = rows.some((r) => r.load?.partial && !r.load?.reason);
-  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.compl?.reason, r.quality?.reason]))]
+  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, r.quality?.reason]))]
     .filter((k) => REASON_ICON[k]);
 
   const shiftName = (s) => (s === 1 || s === 2
     ? fill(t("overview.sr.subShift"), { n: s })
     : t("overview.sr.noShift"));
-  const subtitle = single ? shiftName(single.shift) : multi ? t("overview.sr.subAll") : undefined;
+  // On a phone the «bugun» / «kecha» captions print no date (six columns have
+  // no room for one each), so the subtitle names the day there.
+  const subtitle = single
+    ? (
+      <>
+        {shiftName(single.shift)}
+        {single.today && (
+          <span className="sm:hidden">
+            {" · "}
+            {fill(t("overview.sr.capDated"), { when: t("overview.sr.today"), date: ddmm(single.today) })}
+          </span>
+        )}
+      </>
+    )
+    : multi ? t("overview.sr.subAll") : undefined;
   // One shift on screen: the header names the date. Two: each group row does,
   // because the two shifts' «today» can be different dates.
   const dated = (whenKey, iso) => (single && iso
@@ -261,6 +332,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const canProd = may("production");
   const canQuality = may("quality");
   const canConcerns = may("concerns");
+  const canStaff = may("staff");
   const qSpan = monthSpan(data?.quality_month);
   const prodPage = t("nav.production");
 
@@ -272,6 +344,9 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
     const tab = cell?.reason === "no_people" ? "people" : undefined;
     return { to: productionLink({ unit: r.manager_id, date, tab }), page: prodPage };
   };
+  const staffTarget = (r, date) => (canStaff
+    ? { to: staffLink({ unit: r.manager_id, date }), page: t("nav.staff") }
+    : null);
   const qualityTarget = (r) => (canQuality && qSpan && r.name
     ? {
       to: qualityLink({ brigadir: r.name, from: qSpan.from, to: qSpan.to, status: QUALITY_UNRESOLVED }),
@@ -288,14 +363,16 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   // One figure cell: the tile is the verdict, the figure is printed on it, and
   // a blank grows no tile at all — a missing figure reads as a hole in a
   // coloured field, which is what it is. With a `target` the whole tile is the
-  // link, and its tooltip adds where it leads.
-  const figTd = ({ tone, title, target, children }) => {
+  // link, and its tooltip adds where it leads. `paint` replaces the band fill
+  // for a column painted on a scale of its own («Davomat»); `tone` still says
+  // whether the figure is read in bold.
+  const figTd = ({ tone, paint, title, target, children }) => {
     const hint = target ? fill(t("overview.sr.goto"), { page: target.page }) : null;
     const fullTitle = [title, hint].filter(Boolean).join("\n") || undefined;
     return (
       <td
         className={`${TD_FIG} ${target ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-        style={{ ...toneFill(tone), ...RULE }}
+        style={{ ...(paint ?? toneFill(tone)), ...RULE }}
         title={fullTitle}
       >
         {target ? (
@@ -318,6 +395,31 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
       target,
       children: blank ? <Blank reason={cell.reason} />
         : isNum(cell?.value) ? render(cell)
+        : <span style={{ color: "var(--text-4)" }}>—</span>,
+    });
+  };
+
+  // «Davomat» — painted on /workers' heatmap scale; its tooltip spells out the
+  // fraction, who is still to come and when Verifix was read. A blank has no
+  // link: nothing on another page fills a read that has not happened yet.
+  const attCell = (cell, r, date) => {
+    const blank = !!cell?.reason;
+    const has = !blank && isNum(cell?.value);
+    const title = blank ? t(`overview.sr.reason.${cell.reason}`)
+      : has ? [
+        fill(t("overview.sr.attFrac"), { came: cell.came, leave: cell.on_leave, roster: cell.roster }),
+        cell.not_yet ? fill(t("overview.sr.attNotYet"), { n: cell.not_yet }) : null,
+        cell.unread ? fill(t("overview.sr.attUnread"), { n: cell.unread }) : null,
+        cell.read_at ? fill(t("overview.sr.attRead"), { time: cell.read_at.slice(11, 16) }) : null,
+      ].filter(Boolean).join("\n")
+      : undefined;
+    return figTd({
+      tone: has ? attTone(cell.value) : null,
+      paint: has ? segmentFill(cell.value, ATT_SEGMENTS) : undefined,
+      title,
+      target: has ? staffTarget(r, date) : null,
+      children: blank ? <Blank reason={cell.reason} />
+        : has ? pctText(cell.value)
         : <span style={{ color: "var(--text-4)" }}>—</span>,
     });
   };
@@ -346,7 +448,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
         <td className="px-2 sm:px-3 py-2.5">
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
-        {[0, 1, 2, 3].map((j) => (
+        {[0, 1, 2, 3, 4].map((j) => (
           <td key={j} className="p-0 border" style={RULE}>
             <SkeletonBlock className="h-[36px] w-full" style={{ borderRadius: 0 }} />
           </td>
@@ -391,7 +493,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
                   to={`/brigadir/${r.manager_id}`}
                   className="block px-2 max-[359px]:px-1.5 sm:px-3 py-2 outline-none hover:shadow-[inset_3px_0_0_0_var(--brand)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
                 >
-                  {/* Below 360px the five columns only fit if a very long
+                  {/* Below 360px the six columns only fit if a very long
                       surname may break inside the word — the alternative was
                       the «Xavotir» column cut off at the screen's edge — so it
                       breaks at a soft hyphen, visibly (`softHyphenate`). */}
@@ -409,6 +511,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
                   {c.partial && <span className="ml-px font-normal opacity-70">*</span>}
                 </>
               ), undefined, productionTarget(r.load, r, g.today))}
+              {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), undefined,
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure. «done/actionable» was printed
@@ -460,11 +563,14 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
 
   // The legend wears the table's own tints, so a band and the cells it judges
   // are read in one vocabulary.
+  const toneChips = (labels) =>
+    ["ok", "warn", "bad"].map((tone, i) => ({ label: labels[i], style: toneFill(tone) }));
   const bandRows = [
-    { key: "load", full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(bands.load) },
-    { key: "compl", full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"), bands: pctBand(bands.compl) },
-    { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(bands.quality) },
-    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(bands.concerns) },
+    { key: "load", full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"), chips: toneChips(pctBand(bands.load)) },
+    { key: "att", full: t("overview.sr.colAtt"), short: t("overview.sr.colAttShort"), chips: ATT_LEGEND },
+    { key: "compl", full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"), chips: toneChips(pctBand(bands.compl)) },
+    { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), chips: toneChips(pctBand(bands.quality)) },
+    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), chips: toneChips(countBand(bands.concerns)) },
   ];
 
   return (
@@ -482,17 +588,21 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
               k="name"
               sort={sort}
               onSort={onSort}
-              cls="align-bottom sm:w-[32%] max-sm:px-2 max-[359px]:px-1.5 max-sm:[&_.lucide-chevrons-up-down]:hidden"
+              cls="align-bottom sm:w-[30%] max-sm:px-2 max-[359px]:px-1.5 max-sm:[&_.lucide-chevrons-up-down]:hidden"
               label={<HeadLabel left active={sort?.key === "name"} full={t("overview.sr.colName")} />}
             />
             {[
               ["load", t("overview.sr.hintLoad"), {
                 full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"),
-                cap: dated("overview.sr.today", single?.today),
+                cap: dated("overview.sr.today", single?.today), capShort: t("overview.sr.today"),
+              }],
+              ["att", t("overview.sr.hintAtt"), {
+                full: t("overview.sr.colAtt"), short: t("overview.sr.colAttShort"),
+                cap: dated("overview.sr.today", single?.today), capShort: t("overview.sr.today"),
               }],
               ["compl", t("overview.sr.hintCompl"), {
                 full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"),
-                cap: dated("overview.sr.yesterday", single?.yesterday),
+                cap: dated("overview.sr.yesterday", single?.yesterday), capShort: t("overview.sr.yesterday"),
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
@@ -539,20 +649,20 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
                   <span className="sm:hidden">{b.short}</span>
                   <span className="max-sm:hidden">{b.full}</span>
                 </span>
-                {["ok", "warn", "bad"].map((tone, i) => (
+                {b.chips.map((c) => (
                   <span
-                    key={tone}
+                    key={c.label}
                     className="rounded-sm px-1.5 py-px font-semibold tabular-nums"
-                    style={toneFill(tone)}
+                    style={c.style}
                   >
-                    {b.bands[i]}
+                    {c.label}
                   </span>
                 ))}
               </span>
             ))}
           </div>
           {anyPartial && <div>* — {t("overview.sr.partial")}</div>}
-          {(canProd || canQuality || canConcerns) && <div>{t("overview.sr.tapHint")}</div>}
+          {(canProd || canStaff || canQuality || canConcerns) && <div>{t("overview.sr.tapHint")}</div>}
           {reasons.length > 0 && (
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {reasons.map((k) => {

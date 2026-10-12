@@ -71,9 +71,9 @@ export const toneFill = (tone) =>
   (tone ? { background: TONE_HEX[tone], color: contrastText(TONE_HEX[tone]) } : undefined);
 
 // Davomat — (came + on leave) ÷ on the list. ONE scale for /workers' «Davomat
-// issiqlik xaritasi» (pages/Workers.jsx) and the shift dashboard's «Bugungi
-// davomat» (components/overview/TodayAttendanceTable.jsx), so one unit-day
-// wears one colour on both. Traffic-light families on the 90 / 75 breaks of the
+// issiqlik xaritasi» (pages/Workers.jsx) and the «Davomat» column of «Smena
+// hisoboti» (components/overview/ShiftReportTable.jsx), so one unit-day wears
+// one colour on both. Traffic-light families on the 90 / 75 breaks of the
 // heatmap's own rate column; the shades inside a family rank days within it, so
 // a 60% day does not read like a 74% one. Not admin-editable, as it never was.
 export const ATT_SEGMENTS = [
@@ -99,6 +99,12 @@ export function segmentFill(v, segs) {
   }
   return { background: hit.color, color: contrastText(hit.color) };
 }
+
+// The family a Davomat figure falls in on that scale — red below 75, green from
+// 90. «Smena hisoboti» reads it for one thing only: a red cell is printed in
+// bold there, in every column alike. The PAINT is `segmentFill`'s.
+export const ATT_FAMILY = Object.freeze({ ok: 90, warn: 75 });
+export const attTone = (v) => pctTone(v, ATT_FAMILY);
 
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
