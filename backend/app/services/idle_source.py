@@ -75,14 +75,14 @@ with its reason on it, and the legacy minutes-only `cell_ojidaniya` rows are
 never consulted — they predate both the interval model and any from-date.
 """
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
 from app.models import (Attendance, Cell, CellOjidaniyaInterval,
                         IdleSourceSetting, Manager)
-from app.services import cell_archive, idle_intervals, zagruzka_source
+from app.services import cell_archive, cell_links, idle_intervals, zagruzka_source
 from app.services.kpi_calculator import is_direct_role
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -164,6 +164,98 @@ def _counted_hc(r) -> bool:
     return bool(name) and name not in ("nan", "NaN", "")
 
 
+def _stood_in(cells, date_from: date, date_to: date) -> dict:
+    """{cell id: every unit it stood in on a day of the range} (`cell_links`)."""
+    on_day = cell_links.OnDay(cells)
+    out: dict = defaultdict(set)
+    d, hi = _as_day(date_from), _as_day(date_to)
+    while d <= hi:
+        for cid, u in on_day.units(d).items():
+            if u:
+                out[cid].add(int(u))
+        d += timedelta(days=1)
+    return out
+
+
+def _as_day(d) -> date:
+    return d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
+
+
+def _units_over(cells, date_from: date, date_to: date) -> set:
+    """Every unit any of `cells` stood in on a day of the range (`cell_links`)."""
+    out: set = set()
+    for us in _stood_in(cells, date_from, date_to).values():
+        out |= us
+    return out
+
+
+def cells_with_moved(db: Session, current: list, unit_ids: Iterable[int],
+                     date_from, date_to, *extra) -> list:
+    """`current` — the units' cells by the CURRENT column, the caller's own
+    query, untouched — plus every cell that stood in one of the units on a day
+    of the range and has since moved away (`cell_links`, 2026-10-12). A cell
+    that moved INTO a unit is already in `current`; the reader then keeps each
+    cell on a day only where it stood in a requested unit that day.
+
+    With no cell moved, `current` comes back as it was — the same list in the
+    same order — so every figure built on it stays byte for byte. `extra` are
+    the caller's own SQL filters (a SAP code, …), applied to the added cells."""
+    ids = {int(u) for u in unit_ids if u is not None}
+    if not ids:
+        return current
+    have = {c.id for c in current}
+    want = cell_links.changed_since("manager_id", date_from) - have
+    if not want:
+        return current
+    q = db.query(Cell).filter(Cell.id.in_(sorted(want)))
+    for f in extra:
+        q = q.filter(f)
+    found = q.all()
+    stood = _stood_in(found, date_from, date_to)
+    add = [c for c in found if stood.get(c.id, set()) & ids]
+    return current + add if add else current
+
+
+class _Units:
+    """Which unit each cell stood in on a day — the CURRENT column when no cell
+    given changed brigadir from `date_from` on (the fast path: every figure
+    exactly as before), else `cell_links`, day by day (2026-10-12)."""
+
+    def __init__(self, cells, date_from: date):
+        self.cells = cells
+        self.cur = {c.id: (int(c.manager_id) if c.manager_id is not None else None)
+                    for c in cells}
+        self.dated = bool(cell_links.changed_since("manager_id", date_from) & set(self.cur))
+        self._od = cell_links.OnDay(cells) if self.dated else None
+        self._members: dict = {}
+
+    def of(self, cid: int, day) -> Optional[int]:
+        if not self.dated:
+            return self.cur.get(cid)
+        u = self._od.units(day).get(cid)
+        return int(u) if u is not None else None
+
+    def members(self, unit: int, day) -> int:
+        """How many of the cells stood in `unit` on `day` (archived ones too —
+        the count the payload's `cells` always carried)."""
+        if not self.dated:
+            m = self._members.get(None)
+            if m is None:
+                m = self._members[None] = defaultdict(int)
+                for u in self.cur.values():
+                    if u is not None:
+                        m[u] += 1
+            return m.get(unit, 0)
+        key = str(day)[:10]
+        m = self._members.get(key)
+        if m is None:
+            m = self._members[key] = defaultdict(int)
+            for u in self._od.units(key).values():
+                if u is not None:
+                    m[int(u)] += 1
+        return m.get(unit, 0)
+
+
 def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple[int, str], float]:
     """N per (cell, "YYYY-MM-DD") — the weight each cell carries in its unit's
     mean. THE definition, shared by `unit_downtime` and `cell_counts`: the two
@@ -221,7 +313,14 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
 
     lo = zagruzka_source.range_start(date_from, date_to)
     if lo is not None:
-        ids = sorted({int(c.manager_id) for c in cells})
+        ids = sorted({int(c.manager_id) for c in cells if c.manager_id is not None})
+        # A cell that changed brigadir inside the range reads the pins of the
+        # unit it stood in ON EACH DAY (`cell_links`, 2026-10-12), so every
+        # unit it stood in is read — `cell_people` matches day by day.
+        moved = cell_links.changed_since("manager_id", lo) & set(by_id)
+        if moved:
+            ids = sorted(set(ids) | _units_over(
+                [by_id[cid] for cid in moved], lo, date_to))
         # Group-keyed: each cell reads its OWN group's pin where the brigadir
         # typed per group (services/wc_group.py), else its even share.
         pins = zagruzka_source.typed_pins(db, ids, lo, date_to)
@@ -268,14 +367,17 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     if not ids or date_from > date_to:
         return {}
 
-    cells = db.query(Cell).filter(Cell.manager_id.in_(ids)).all()
+    # Every cell that stood in one of the units on a day of the range — a cell
+    # that has since moved away still weighs into its OLD unit's days, and a
+    # cell weighs into a unit only on the days it stood there (`cell_links`,
+    # 2026-10-12; with nothing moved, exactly the current selection).
+    cells = cells_with_moved(db, db.query(Cell).filter(Cell.manager_id.in_(ids)).all(),
+                             ids, date_from, date_to)
     if not cells:
         return {}
-    cell_unit = {c.id: int(c.manager_id) for c in cells}
-    code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
-    cells_per_unit: dict[int, int] = defaultdict(int)
-    for c in cells:
-        cells_per_unit[cell_unit[c.id]] += 1
+    idset = set(ids)
+    units = _Units(cells, date_from)
+    cell_ids = [c.id for c in cells]
 
     # ── N per (cell, day) — see `_n_by_cell`, THE weight definition ─────────
     # Attendance before the загрузка floor, the typed «Bugungi fakt» from it.
@@ -287,7 +389,7 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     iso_lo, iso_hi = date_from.isoformat(), date_to.isoformat()
     iv_by_cell: dict[tuple[int, str], list] = defaultdict(list)
     for iv in db.query(CellOjidaniyaInterval).filter(
-        CellOjidaniyaInterval.cell_id.in_(list(cell_unit)),
+        CellOjidaniyaInterval.cell_id.in_(cell_ids),
         CellOjidaniyaInterval.date >= iso_lo,
         CellOjidaniyaInterval.date <= iso_hi,
         CellOjidaniyaInterval.status == "approved",
@@ -299,7 +401,10 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     for (cid, day), n in n_by_cell.items():
         if n <= 0:
             continue
-        key = (cell_unit[cid], day)
+        unit = units.of(cid, day)            # the unit it stood in THAT day
+        if unit not in idset:
+            continue
+        key = (unit, day)
         a = acc.get(key)
         if a is None:
             a = acc[key] = {
@@ -383,7 +488,7 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
             "by_category_sum": {cat: round(v, 2) for cat, v in a["p_cat"].items()},
             "by_category_ns_sum": {cat: round(v, 2) for cat, v in a["p_cat_ns"].items()},
             "n_sum": n_sum,
-            "cells": cells_per_unit.get(key[0], 0),
+            "cells": units.members(key[0], key[1]),
             "cells_with_att": a["cells_with_att"],
             "cells_with_idle": a["cells_with_idle"],
         }
@@ -411,17 +516,23 @@ def cell_counts(db: Session, manager_ids: Iterable[int],
     if not ids or date_from > date_to:
         return {}
 
-    cells = db.query(Cell).filter(Cell.manager_id.in_(ids)).all()
+    # The cells of each unit ON EACH DAY (`cell_links`, 2026-10-12) — the very
+    # selection `unit_downtime` weighs, so the two still divide alike.
+    cells = cells_with_moved(db, db.query(Cell).filter(Cell.manager_id.in_(ids)).all(),
+                             ids, date_from, date_to)
     if not cells:
         return {}
-    cell_unit = {c.id: int(c.manager_id) for c in cells}
+    idset = set(ids)
+    units = _Units(cells, date_from)
 
     w = _n_by_cell(db, cells, date_from, date_to)
 
     out: dict[tuple[int, str], int] = defaultdict(int)
     for (cid, day), weight in w.items():
         if weight > 0:
-            out[(cell_unit[cid], day)] += 1
+            unit = units.of(cid, day)
+            if unit in idset:
+                out[(unit, day)] += 1
     return dict(out)
 
 

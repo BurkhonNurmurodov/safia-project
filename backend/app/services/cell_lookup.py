@@ -143,34 +143,71 @@ def by_sap(db: Session, with_leader: bool = False,
     `group` to `resolve_sap` to read it.
 
     `day` leaves out a cell archived before it (`cell_archive`), so a work
-    centre is never named after a cell that no longer exists on that day.
+    centre is never named after a cell that no longer exists on that day — and
+    keys every cell by its unit ON that day, its leader label by its
+    «Boshqaruvchi» on that day (`cell_links`, 2026-10-12): a cell moved to
+    another brigadir since still answers for its old unit's past days. With no
+    cell's link changed after `day` it is the current columns, as before.
     """
+    moved_m: set = set()
+    moved_l: set = set()
+    if day is not None:
+        from app.services import cell_links
+        moved_m = cell_links.changed_since("manager_id", day)
+        if with_leader:
+            moved_l = cell_links.changed_since("leader_id", day)
+    has_unit = Cell.manager_id.isnot(None)
+    if moved_m:
+        from sqlalchemy import or_
+        has_unit = or_(has_unit, Cell.id.in_(moved_m))
     q = (
         db.query(Cell)
-        .filter(Cell.sap_code.isnot(None), Cell.manager_id.isnot(None))
+        .filter(Cell.sap_code.isnot(None), has_unit)
         .order_by(Cell.verifix_code)
     )
     if day is not None:
         from app.services import cell_archive
         q = q.filter(cell_archive.alive_clause(day))
+    ids = None
     if manager_ids is not None:
         ids = sorted({int(m) for m in manager_ids})
         if not ids:
             return {}
-        q = q.filter(Cell.manager_id.in_(ids))
+        in_ids = Cell.manager_id.in_(ids)
+        if moved_m:
+            from sqlalchemy import or_
+            in_ids = or_(in_ids, Cell.id.in_(moved_m))
+        q = q.filter(in_ids)
     cells = q.all()
+    # Only a cell whose link changed after `day` is resolved; every other cell
+    # answers by its column — the fast path's own answer.
+    units_on: dict = {}
+    if moved_m:
+        from app.services import cell_links
+        units_on = cell_links.map_on([c for c in cells if c.id in moved_m], "manager_id", day)
+        if units_on:
+            want = set(ids) if ids is not None else None
+            cells = [c for c in cells
+                     if (u := units_on.get(c.id, c.manager_id)) is not None
+                     and (want is None or int(u) in want)]
+    leaders_on: dict = {}
+    if moved_l:
+        from app.services import cell_links
+        leaders_on = cell_links.map_on([c for c in cells if c.id in moved_l], "leader_id", day)
     leaders = _leader_names(db) if with_leader else {}
     out: dict[tuple[int, str], dict] = {}
     for c in cells:
         key = _norm(c.sap_code)
         if key:
-            d = _cell_dict(c, leaders.get(c.leader_id))
-            out.setdefault((int(c.manager_id), key), d)
+            mid = units_on.get(c.id, c.manager_id)
+            lid = leaders_on.get(c.id, c.leader_id)
+            d = _cell_dict(c, leaders.get(lid))
+            out.setdefault((int(mid), key), d)
             # …and, for a LETTERED cell, under (unit, code, group) as well — the
             # one key that names exactly this cell of a shared work centre
             # (services/wc_group.py). `resolve_sap(..., group=)` reads it.
             if getattr(c, "wc_group", None):
-                out.setdefault((int(c.manager_id), key, c.wc_group), d)
+                out.setdefault((int(mid), key, c.wc_group), d)
     return out
 
 

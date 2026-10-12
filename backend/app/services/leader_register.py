@@ -177,6 +177,10 @@ _ARMS = [
     ("managers", "select count(*), max(xmin::text::bigint) from managers"),
     ("role_profiles", "select count(*), max(xmin::text::bigint) from role_profiles"),
     ("cells", "select count(*), max(xmin::text::bigint) from cells"),
+    # A cell's links and archived days are DATED (2026-10-12): the build reads
+    # them through `cell_links` / `cell_archive`.
+    ("cell_link_events", "select count(*), max(xmin::text::bigint) from cell_link_events"),
+    ("cell_archive_spans", "select count(*), max(xmin::text::bigint) from cell_archive_spans"),
     ("leader_sync_meta", "select count(*), max(xmin::text::bigint) from leader_sync_meta"),
     ("leader_late_requests", "select count(*), max(xmin::text::bigint) from leader_late_requests"),
     ("leader_day_exclusions", "select count(*), max(xmin::text::bigint) from leader_day_exclusions"),
@@ -213,9 +217,15 @@ def enabled() -> bool:
 
 
 def fingerprint(db: Session) -> tuple:
-    """The state of everything the build reads, as one comparable value."""
+    """The state of everything the build reads, as one comparable value — the
+    plant's DATE included: rows the build derives «up to today» (the days a
+    leader's archived cells were dead, an owes floor reached) change at
+    midnight with no table touched."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     rows = db.execute(_FP_SQL).all()
-    return tuple(sorted((str(t), int(n or 0), int(x or 0)) for t, n, x in rows))
+    day = datetime.now(ZoneInfo("Asia/Tashkent")).date().toordinal()
+    return tuple(sorted((str(t), int(n or 0), int(x or 0)) for t, n, x in rows)) + (("_day", day, 0),)
 
 
 # ── who wrote, and when ──────────────────────────────────────────────────────

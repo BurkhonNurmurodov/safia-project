@@ -429,7 +429,7 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = _day_of(attend_date)
     sender = caller.get("role_id") if caller.get("role") == "supervisor" else manager_id
-    cells, units = verifix_live._registry(db)
+    cells, units = verifix_live._registry(db, d)
     with_cells = {c["manager_id"] for c in cells.values() if c["manager_id"] in units}
     closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)}
     out = [{"manager_id": mid, "full_name": u["name"], "shift": u["shift"]}
@@ -1030,7 +1030,7 @@ def _resolve_target(db: Session, sender: int, d: date, ttype: Optional[str],
         m = db.query(Manager).filter(Manager.id == tgt).first()
         if not m or m.archived:
             raise HTTPException(status_code=404, detail="Target supervisor not found")
-        if tgt not in {c["manager_id"] for c in verifix_live._registry(db)[0].values()}:
+        if tgt not in {c["manager_id"] for c in verifix_live._registry(db, d)[0].values()}:
             raise HTTPException(status_code=400, detail="The target unit has no cell counted in the загрузка")
         _assert_open(db, tgt, d)
         return ttype, m.id, m.name, None
@@ -1825,7 +1825,7 @@ def approvals_calendar(year: int = Query(..., ge=2000, le=2100), month: int = Qu
     q = db.query(LiveVerifixRead.key).filter(
         LiveVerifixRead.key >= f"day:{start.isoformat()}", LiveVerifixRead.key < f"day:{end.isoformat()}",
         covers)
-    for (key,) in (q if verifix_live.unit_cells(db, mid) else []):
+    for (key,) in (q if verifix_live.had_cells(db, mid, start, end) else []):
         try:
             read_days.add(date.fromisoformat(key[4:]))
         except ValueError:

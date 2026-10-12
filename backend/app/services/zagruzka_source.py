@@ -58,7 +58,7 @@ from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
 from app.services.pp_calc import line_facts as pp_line_facts
 from app.services import pp_catalog
-from app.services import cell_archive, wc_group
+from app.services import cell_archive, cell_links, wc_group
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
 # the «Zagruzka fayli» page and the «Одам сони» / «Минут» sheet tabs are not a
@@ -167,6 +167,40 @@ def unit_people(pins: dict[tuple[int, str, str], float]) -> dict[tuple[int, str]
     return dict(out)
 
 
+def by_wc_on(cells, days: Iterable):
+    """``day -> {(unit, normalised code): [cells]}`` — `wc_group.cells_by_wc`
+    for the unit each cell stood in ON THAT DAY (`cell_links`, 2026-10-12).
+
+    When no cell given changed its brigadir from the range's first day on
+    (`cell_links.changed_since`), every day answers with ONE map built off the
+    current column — exactly what every reader read before, byte for byte.
+    Only a range a cell really moved inside is matched day by day, so a moved
+    cell weighs in its OLD unit on the days it stood there and in its new one
+    after. `cells` is a list (it is walked more than once)."""
+    days = [d for d in days if d]
+    base = wc_group.cells_by_wc(cells)
+    if not days:
+        return lambda _d: base
+    moved = cell_links.changed_since("manager_id", min(str(d)[:10] for d in days))
+    ids = {wc_group._get(c, "id") for c in cells}
+    if not (moved & ids):
+        return lambda _d: base
+    on_day = cell_links.OnDay([(wc_group._get(c, "id"), wc_group._get(c, "manager_id"))
+                               for c in cells])
+    cache: dict = {}
+
+    def at(day):
+        key = str(day)[:10]
+        got = cache.get(key)
+        if got is None:
+            # …each with the work-centre letter it carried THAT day: a move
+            # that cleared a letter does not re-split the old unit's past.
+            got = cache[key] = wc_group.cells_by_wc(cell_links.with_letters_on(cells, key),
+                                                    units=on_day.units(key))
+        return got
+    return at
+
+
 def cell_pins(cells, pins: dict) -> dict[tuple[int, str], tuple[Optional[float], frozenset]]:
     """``{(cell_id, "YYYY-MM-DD"): (value, letters)}`` — what each cell reads of
     its work centre's TYPED pins, before any «is it a weight» filter, plus the
@@ -186,7 +220,7 @@ def cell_pins(cells, pins: dict) -> dict[tuple[int, str], tuple[Optional[float],
     cell — its group untyped and nothing unclaimed. A cell of a work centre with
     no pin that day is absent.
     """
-    by_wc = wc_group.cells_by_wc(cells)
+    cells = list(cells)
     per: dict[tuple[int, str, str], dict] = defaultdict(dict)
     for key, n in pins.items():
         if len(key) == 4:
@@ -197,11 +231,15 @@ def cell_pins(cells, pins: dict) -> dict[tuple[int, str], tuple[Optional[float],
         slot = per[(mk[0], mk[1], day)]
         g = group or None
         slot[g] = slot.get(g, 0.0) + float(n)
+    # The cells of a work centre ON EACH DAY — a cell that moved to another
+    # brigadir inside the range is split in its old unit before the move and
+    # in its new one after (`by_wc_on`; one map when nothing moved).
+    by_wc = by_wc_on(cells, {day for (_m, _c, day) in per})
     out: dict[tuple[int, str], tuple[Optional[float], frozenset]] = {}
     for (mid, code, day), vals in per.items():
         # A cell archived before this day takes no share — the work centre is
         # split among the cells that exist on it (`cell_archive`).
-        cs = cell_archive.alive_on(by_wc.get((mid, code)) or (), day)
+        cs = cell_archive.alive_on(by_wc(day).get((mid, code)) or (), day)
         if not cs:
             continue
         letters = frozenset(g for g in vals if g)
@@ -318,16 +356,17 @@ def cell_labor(cells, group_labor: dict) -> dict[tuple[int, str], tuple[float, f
     describe the same slice of the work centre. Pass EVERY cell of the unit.
     Σ over the cells of a work centre is the work centre's figure. A cell
     nothing reaches is absent."""
-    by_wc = wc_group.cells_by_wc(cells)
+    cells = list(cells)
     per: dict[tuple[int, str, str], dict] = defaultdict(dict)
     for (mid, day, wc, g), (p, a) in group_labor.items():
         mk = wc_group.wc_key(mid, wc)
         slot = per[(mk[0], mk[1], day)]
         prev = slot.get(g or None, (0.0, 0.0))
         slot[g or None] = (prev[0] + p, prev[1] + a)
+    by_wc = by_wc_on(cells, {day for (_m, _c, day) in per})   # the unit ON the day
     out: dict[tuple[int, str], tuple[float, float]] = {}
     for (mid, code, day), vals in per.items():
-        cs = cell_archive.alive_on(by_wc.get((mid, code)) or (), day)
+        cs = cell_archive.alive_on(by_wc(day).get((mid, code)) or (), day)
         if not cs:
             continue
         letters = [getattr(c, "wc_group", None) for c in cs]

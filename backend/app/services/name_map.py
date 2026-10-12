@@ -51,6 +51,15 @@ def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
         val = (t.value or "").strip()
         if val:
             alias[val] = key_to_canon[t.key]
+    # A unit the Verifix sync renamed keeps its earlier spellings
+    # (`managers.name_aliases`) — its sheet-era rows carry the old one.
+    from app.models import Manager
+    for m in db.query(Manager).filter(Manager.name.in_(list(canon)),
+                                      Manager.name_aliases.isnot(None)).all():
+        for a in (m.name_aliases or []):
+            a = (a or "").strip()
+            if a and a not in alias:
+                alias[a] = m.name
     # Cross-person pins: resolve each target to whichever canonical spelling this
     # manager set actually holds (order/alphabet-tolerant, so a Latin/Cyrillic or
     # surname-first profile name still matches), and skip a pin whose unit isn't
@@ -330,6 +339,11 @@ def leader_match(profiles: Iterable, entries: Iterable) -> dict[tuple, dict]:
     rather than being attributed to the wrong person).
     """
     canon = [(p, _name_tokens(p.name)) for p in profiles]
+    # A profile renamed (by hand, or by a Verifix rename the operator applied)
+    # keeps its earlier spellings (`role_profiles.name_aliases`) — the sheet
+    # rows filed under the old name still resolve to the person.
+    canon += [(p, _name_tokens(a)) for p, _t in list(canon)
+              for a in (getattr(p, "name_aliases", None) or []) if a]
     by_unit: dict = {}
     for p, ctok in canon:
         by_unit.setdefault(p.manager_id, []).append((p, ctok))

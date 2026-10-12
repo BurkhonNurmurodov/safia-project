@@ -142,7 +142,8 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import cell_archive, pp_catalog, wc_group, zagruzka_source
+from app.services import (cell_archive, cell_links, idle_source, pp_catalog, wc_group,
+                          zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
@@ -266,18 +267,47 @@ def cell_zagruzka(
     # ── The unit's cells. in_load is deliberately ignored (see module docstring).
     # A cell archived before the first day shown is left out — it did not
     # exist on any of them — and named in the diagnostics (`cell_archive`).
+    #
+    # A cell belongs to the unit only on the days it stood in it (`cell_links`,
+    # 2026-10-12): one that has since moved to another brigadir is still read
+    # here for its days in this unit, and one that moved in is blank before it
+    # arrived (`member` below). With no cell moved, the same list as before.
     cells, archived_out = [], []
-    for c in (
-        db.query(Cell)
-        .filter(Cell.manager_id == mgr.id)
-        .order_by(Cell.verifix_code)
-        .all()
-    ):
+    _cur_cells = (db.query(Cell).filter(Cell.manager_id == mgr.id)
+                  .order_by(Cell.verifix_code).all())
+    _all_cells = idle_source.cells_with_moved(db, _cur_cells, [mgr.id], date_from, date_to)
+    if _all_cells is not _cur_cells:
+        _all_cells = sorted(_all_cells, key=lambda c: (c.verifix_code is None,
+                                                       c.verifix_code or ""))
+    for c in _all_cells:
         if cell_archive.alive(c, date_from):
             cells.append(c)
         else:
+            # The archive DAY (the last day it existed): the day before the run
+            # of archived days covering `date_from` — a restored cell has no
+            # `archived_at` any more but is still gone on those days.
+            _gone = cell_archive.dead_from(c, date_from)
             archived_out.append({"code": c.verifix_code,
-                                 "date": cell_archive.archived_day(c).isoformat()})
+                                 "date": ((_gone - timedelta(days=1)).isoformat()
+                                          if _gone else None)})
+    # Did the cell stand in this unit on `d`? Always, unless a cell here changed
+    # brigadir from the first day shown on — then the dated link answers.
+    _on_day = (cell_links.OnDay(cells)
+               if cell_links.changed_since("manager_id", date_from) & {c.id for c in cells}
+               else None)
+
+    def member(cid: int, d) -> bool:
+        return _on_day is None or _on_day.units(d).get(cid) == mgr.id
+
+    if _on_day is not None:
+        # A cell that stood in this unit on NONE of the days shown (it moved in
+        # after the period) has no row here — the rule an archived cell follows.
+        cells = [c for c in cells if any(member(c.id, d) for d in dates)]
+        # …and a moved cell is read with the work-centre letter it carried
+        # while it stood HERE (the last such day): a move that cleared the
+        # letter must not re-split this unit's past (`cell_links.letter_on`).
+        cells = [cell_links.with_letters_on([c], max(d for d in dates if member(c.id, d)))[0]
+                 for c in cells]
     if not cells:
         return {
             "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
@@ -321,8 +351,12 @@ def cell_zagruzka(
     def wc_code(code) -> str:
         return wc_group.wc_key(mgr.id, code)[1]
 
+    # Every cell here is matched at THIS unit's work centres — a moved cell too,
+    # on the days `member` keeps it (its current column may name another unit).
     cells_at_wc: dict[str, list] = {
-        code: cs for (_mid, code), cs in wc_group.cells_by_wc(cells).items()}
+        code: cs for (_mid, code), cs in wc_group.cells_by_wc(
+            cells, units=({c.id: mgr.id for c in cells} if _on_day is not None else None)
+        ).items()}
     wc_of_cell: dict[int, str] = {c.id: code for code, cs in cells_at_wc.items() for c in cs}
     cells_without_sap = [c.verifix_code for c in cells if c.id not in wc_of_cell]
     wanted_wcs = set(cells_at_wc)
@@ -507,7 +541,7 @@ def cell_zagruzka(
         hit = _alive_cache.get(k)
         if hit is None:
             hit = _alive_cache[k] = [i for i, c in enumerate(cells_at_wc[wc])
-                                     if cell_archive.alive(c, d)]
+                                     if cell_archive.alive(c, d) and member(c.id, d)]
         return hit
 
     def _scatter(n_all: int, idx: list, vals: list, empty):
@@ -708,7 +742,7 @@ def cell_zagruzka(
             Attendance.is_supervisor.is_(False),
         ).all():
             cid = code_to_cell.get(r.verifix_code)
-            if cid is None:
+            if cid is None or not member(cid, r.date):
                 continue
             sheet_days.add(r.date)
             _keep(r, cid, r.date)
@@ -739,7 +773,7 @@ def cell_zagruzka(
         if r.date in sheet_days:
             continue
         cid = r.cell_id if r.cell_id in cell_id_set else code_to_cell.get(r.verifix_code)
-        if cid is None:
+        if cid is None or not member(cid, r.date):
             continue
         fallback_days.add(r.date)
         _keep(r, cid, r.date)
@@ -778,7 +812,8 @@ def cell_zagruzka(
         # same table, so they answer "approved only" the same way.
         CellOjidaniyaInterval.status == "approved",
     ).all():
-        iv_by_cell[(iv.cell_id, iv.date)].append(iv)
+        if member(iv.cell_id, iv.date):
+            iv_by_cell[(iv.cell_id, iv.date)].append(iv)
 
     for k, ivs in iv_by_cell.items():
         counted = [
@@ -823,6 +858,8 @@ def cell_zagruzka(
     ).all():
         k = (e.cell_id, e.date)
         if k in iv_by_cell or e.category in OJIDANIYA_ONLY_CATS:
+            continue
+        if not member(e.cell_id, e.date):
             continue
         mins = float(e.stopped or 0)
         if mins <= 0:
@@ -899,8 +936,9 @@ def cell_zagruzka(
         data[label] = {}
         inputs[label] = {}
         for d, key in zip(dates, date_keys):
-            if not cell_archive.alive(c, d):
-                # Archived before this day: the cell did not exist on it.
+            if not cell_archive.alive(c, d) or not member(c.id, d):
+                # Archived before this day: the cell did not exist on it — or
+                # it stood in another unit that day (`cell_links`).
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 continue
             att_rows = att_by_cell.get((c.id, d), [])

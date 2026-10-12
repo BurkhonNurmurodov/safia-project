@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
-  ClipboardList, CircleSlash, GraduationCap, Fingerprint,
+  ClipboardList, CircleSlash, GraduationCap, Fingerprint, RefreshCcwDot,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -39,6 +39,7 @@ import DocAudit from "./DocAudit";
 import Logs from "./Logs";
 import ExamAdmin from "./ExamAdmin";
 import VerifixSettings from "./VerifixSettings";
+import VerifixSync from "./VerifixSync";
 
 /**
  * The admin panel shell.
@@ -143,6 +144,12 @@ export const ADMIN_NAV = [
   // each form returns. No capKey: this login reads every employee's
   // attendance, so it is admin-only and never grantable.
   { id: "verifix",      group: "tools",  Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifix" },
+  // «Verifix sinxron» — cells, leaders and brigadirs FOLLOW Verifix through a
+  // stored Verifix id (docs/plan-verifix-live-sync.md): the sync's mode and
+  // caps, the queue of what it will not write by itself, the hand ties and the
+  // pass log. No capKey: it moves people, cells and access — admin-only and
+  // never grantable (the `permissions` / `logs` model).
+  { id: "verifixsync",  group: "tools",  Icon: RefreshCcwDot,  labelKey: "admin.tabVerifixSync",  descKey: "admin.desc.verifixsync" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
   // on /zagruzka now carries its own colour bands and its own admin button.
@@ -174,6 +181,7 @@ const VIEWS = {
   lostworkers:  LostWorkers,
   docaudit:     DocAudit,
   verifix:      VerifixSettings,
+  verifixsync:  VerifixSync,
   translations: TranslationsEditor,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,

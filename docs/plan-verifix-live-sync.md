@@ -26,9 +26,29 @@ The asks, verbatim, in the order they came:
 8. «Ok write the full plan as your proposals accepted.»
 
 This file is the record: the operator's four rulings, the four proposals they
-accepted whole, and the build the rulings imply. **Nothing in it is built** —
-the plan is the deliverable of 2026-10-12. When it ships, CLAUDE.md gets a
-section of its own and this file stays as the record of why.
+accepted whole, and the build the rulings imply. **It is built** (2026-10-12,
+all six rollout steps in one change, local branch `vfx-live-sync`, not yet
+deployed); CLAUDE.md's «Cells, leaders and brigadirs follow Verifix» describes
+what shipped and this file stays as the record of why.
+
+## Where the build differs from this plan
+
+- **All six steps at once**, so the `brigadir_differs` tap is enabled from the
+  start (the past-day readers are day-aware in the same change).
+- **The org is a read of its own** (`live_verifix_reads` key `org`, every
+  employee of every status), not a widened `dir`.
+- **Two adversarial reviews added rules the plan did not name**: a waiting
+  brigadir change is withdrawn by saving the brigadir in force; a pick is made
+  in the unit the cell is moving to; a person an untied profile may already be
+  is not given a second profile; a renamed unit keeps its old spelling for its
+  sheet-era rows; a claim owes from the first day the leader can still file; a
+  move that clears a work-centre letter keeps it for the days before; a hand
+  untie is remembered until lifted; a refused pass keeps the «two reads» flags.
+- **Kept, not deleted**: `leader_verifix_check` (its `PINS` feed the tie run)
+  and the 12 Oct Kenjayeva photo one-shot.
+- **Accepted limits**: a letter changed by hand on the form is undated, as it
+  always was; the «fix it now» reports read the current register; a move from
+  a night unit to a shift-less one flips the present-tense column at midnight.
 
 ## Where it starts from
 

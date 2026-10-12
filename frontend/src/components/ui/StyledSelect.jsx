@@ -13,9 +13,11 @@ import { useMarkDraft } from "./dialogLayers";
  * Props:
  *   value        – current selected value (string)
  *   onChange     – (value: string) => void
- *   options      – string[] | { value, label, title? }[]; `label` may be a node,
- *                  `title` is the plain-text tooltip (and what `searchable`
- *                  matches on) for labels that ellipsise in the panel
+ *   options      – string[] | { value, label, title?, disabled? }[]; `label` may
+ *                  be a node, `title` is the plain-text tooltip (and what
+ *                  `searchable` matches on) for labels that ellipsise in the
+ *                  panel. A `disabled` option is listed, dimmed and cannot be
+ *                  picked (put the reason in its `title`); «select all» skips it
  *   placeholder  – text shown when nothing is selected (optional)
  *   className    – extra classes on the wrapper element (optional)
  *   triggerClassName – size/spacing classes for the trigger button; override to
@@ -102,7 +104,8 @@ export default function StyledSelect({
   const picked      = multiple ? (Array.isArray(value) ? value : []) : [];
   const isPicked    = (v) => (multiple ? picked.includes(v) : v === value);
   const selectedOpt = multiple ? null : opts.find((o) => o.value === value);
-  const allPicked   = multiple && opts.length > 0 && picked.length === opts.length;
+  const pickable    = opts.filter((o) => !o.disabled);
+  const allPicked   = multiple && pickable.length > 0 && pickable.every((o) => picked.includes(o.value));
 
   // Trigger label in multi mode: nothing (or everything) ticked reads as "all".
   const multiLabel = (() => {
@@ -290,7 +293,7 @@ export default function StyledSelect({
                 markDraft();
                 // With a search query active this adds the visible rows to the
                 // selection rather than silently ticking hidden ones too.
-                onChange(allPicked ? [] : [...new Set([...picked, ...shown.map((o) => o.value)])]);
+                onChange(allPicked ? [] : [...new Set([...picked, ...shown.filter((o) => !o.disabled).map((o) => o.value)])]);
               }}
               className="sticky w-full text-left px-3 py-2.5 text-sm font-semibold flex items-center justify-between gap-3 transition-colors"
               style={{
@@ -328,26 +331,32 @@ export default function StyledSelect({
 
           {shown.map((opt) => {
             const isSelected = isPicked(opt.value);
+            const off = !!opt.disabled;
             return (
               <button
                 key={opt.value}
                 type="button"
                 data-selected={isSelected}
                 title={opt.title}
-                onClick={() => pick(opt.value)}
-                className="w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 transition-colors"
+                disabled={off}
+                aria-disabled={off || undefined}
+                onClick={() => { if (!off) pick(opt.value); }}
+                className={`w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 transition-colors ${off ? "cursor-not-allowed" : ""}`}
                 style={{
                   background: isSelected
                     ? "var(--brand-hover, rgba(200,151,63,.12))"
                     : "transparent",
                   // Multi rows say "picked" with the tick-box, so the label keeps
                   // its normal colour — gold-on-gold is unreadable at this size.
-                  color: isSelected && !multiple
-                    ? "var(--brand-text, #C8973F)"
-                    : "var(--text-1)",
+                  color: off
+                    ? "var(--text-3)"
+                    : isSelected && !multiple
+                      ? "var(--brand-text, #C8973F)"
+                      : "var(--text-1)",
+                  opacity: off ? 0.6 : undefined,
                 }}
                 onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = "var(--bg-inner)";
+                  if (!isSelected && !off) e.currentTarget.style.background = "var(--bg-inner)";
                 }}
                 onMouseLeave={(e) => {
                   if (!isSelected) e.currentTarget.style.background = "transparent";

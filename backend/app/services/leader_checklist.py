@@ -34,7 +34,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, RoleProfile
-from app.services import leader_ai, leader_close, leader_load, leader_proof, leader_tasks
+from app.services import (leader_ai, leader_close, leader_load, leader_owes, leader_proof,
+                          leader_tasks)
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,8 @@ def current_day(db: Session, prof: RoleProfile, cell_id: int | None = None,
     q = (q.filter(LeaderTaskDay.cell_id == cell_id) if cell_id
          else q.filter(LeaderTaskDay.cell_id.is_(None)))
     day = q.first()
-    if day is None and create and not leader_load.exempt(db, prof, date):
+    if day is None and create and not leader_load.exempt(db, prof, date) \
+            and leader_owes.owes(prof, date):
         day = LeaderTaskDay(leader_id=prof.id, manager_id=prof.manager_id,
                             date=date, cell_id=cell_id)
         db.add(day)
@@ -87,6 +89,10 @@ def save_answer(db: Session, prof: RoleProfile, task_id: int, done: bool,
         # No counted cell and nothing filed since 1 October: this leader owes
         # nothing, and a first answer would make them «filed in October» —
         # back on the hook for every day they were told they did not owe.
+        return None
+    if not day and not leader_owes.owes(prof, _date):
+        # A profile the Verifix sync created and nobody claimed yet, or a day
+        # before the profile was claimed / picked / existed (`leader_owes`).
         return None
     if not day:
         day = LeaderTaskDay(leader_id=prof.id, manager_id=prof.manager_id,

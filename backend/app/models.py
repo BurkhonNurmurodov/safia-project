@@ -67,6 +67,15 @@ class Manager(Base):
     # (`startup.add_manager_kind_columns`); a unit created later starts OFF until
     # somebody says its загрузка counts.
     zagruzka_on = Column(Boolean, nullable=False, server_default="false", default=False)
+    # 2026-10-12 (Verifix live sync): the brigadir's Verifix employee id — THE
+    # tie (`services/verifix_sync.py`), promoted once from
+    # supervisor_kind_meta.vfx.id — and what the sync last saw of them.
+    vfx_employee_id = Column(String(32), nullable=True, index=True)
+    vfx_meta        = Column(JSONB, nullable=True)
+    # The unit's earlier spellings, kept when the Verifix sync renames it —
+    # the sheet-era rows (headcount, downtime, production) are keyed by the
+    # sheet's spelling and resolve through `name_map.sheet_alias_map`.
+    name_aliases    = Column(JSONB, nullable=True)
 
     attendance = relationship("Attendance", back_populates="manager")
     comments = relationship("Comment", back_populates="manager")
@@ -443,6 +452,19 @@ class RoleProfile(Base):
     # leader whose unit is on one shift while they work the other.
     # `services/leader_shift.py` is THE definition.
     checklist_shift  = Column(JSONB, nullable=True)
+    # 2026-10-12 (Verifix live sync, every role): the person's Verifix
+    # employee id — THE tie (`services/verifix_sync.py`), promoted once from
+    # leader_kind_meta.vfx.id — and what the sync last saw of them (status,
+    # job, org unit, hired / dismissed, photo sha).
+    vfx_employee_id = Column(String(32), nullable=True, index=True)
+    vfx_meta        = Column(JSONB, nullable=True)
+    # leaders: the day the checklist obligation and every ranking start — the
+    # day the person CLAIMED the profile in the bot (a brigadir's pick: the pick
+    # day). NULL = owes as it always did (a profile claimed before 2026-10-12).
+    owes_from       = Column(Date, nullable=True)
+    # Earlier spellings of the name (a Verifix rename accepted on the sync page
+    # keeps the old one here), so days filed under it stay the same person.
+    name_aliases    = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -556,6 +578,12 @@ class Cell(Base):
     owner_id     = Column(Integer, ForeignKey("role_profiles.id", ondelete="SET NULL"),
                           nullable=True, index=True)
     owner_meta   = Column(JSONB, nullable=True)
+    # 2026-10-12 (Verifix live sync): the Verifix subdivision this cell IS —
+    # its division id, the tie the sync follows (a code can change, the id
+    # cannot) — and what the sync last saw of it (name, raw code, state,
+    # parent, opened / closed, the seat).
+    vfx_division_id = Column(String(32), nullable=True, index=True)
+    vfx_meta        = Column(JSONB, nullable=True)
     # 2026-07-31: does this cell count toward the production load (загрузка)?
     # Until now that was DERIVED from "the cell has a supervisor"; it is now an
     # explicit admin decision, ticked on the cell's own page (/cells/:id).
@@ -4847,3 +4875,121 @@ class AssistantFile(Base):
     size       = Column(Integer, nullable=False)
     data       = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── Verifix live sync (2026-10-12) ────────────────────────────────────────────
+
+class CellLinkEvent(Base):
+    """A DATED change of one of a cell's links — its brigadir (`manager_id`),
+    its «Boshqaruvchi» (`leader_id`) or its «Egasi» (`owner_id`). APPEND-ONLY,
+    so a past day reads the links it had (`services/cell_links.py` is THE
+    reader): the value on day D is the latest event with `effective_from` ≤ D;
+    a day before every event reads the first event's `prev`. The `cells`
+    columns stay the CURRENT mirror — an event lands on them at
+    `effective_at` (the unit's next shift opening), by `cell_links.apply_due`.
+
+    `src`: "verifix" (the sync), "manual" (a person on /cells), "grandfather"
+    (the first build's mark that a manager differing from the Verifix seat was
+    a person's choice — value == prev, so it moves nothing)."""
+    __tablename__ = "cell_link_events"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id        = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    field          = Column(String(16), nullable=False)          # manager_id | leader_id | owner_id
+    value          = Column(Integer, nullable=True)
+    prev           = Column(Integer, nullable=True)
+    effective_from = Column(Date, nullable=False)
+    effective_at   = Column(DateTime(timezone=True), nullable=False)
+    applied_at     = Column(DateTime(timezone=True), nullable=True)
+    src            = Column(String(16), nullable=False)
+    by_name        = Column(String, nullable=True)
+    vfx            = Column(JSONB, nullable=True)
+    created_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_cell_link_events_field", "field", "cell_id", "effective_from", "id"),
+    )
+
+
+class CellArchiveSpan(Base):
+    """A run of days a cell did NOT exist (`services/cell_archive.py`): from
+    `from_day` (the day after its archive day) up to, not including, `to_day`
+    (the day a restore took effect; NULL = still archived). A restore closes
+    the span instead of clearing it, so the archived days stay archived."""
+    __tablename__ = "cell_archive_spans"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id     = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_day    = Column(Date, nullable=False)
+    to_day      = Column(Date, nullable=True)
+    src         = Column(String(16), nullable=True)               # manual | verifix | seed
+    by_name     = Column(String, nullable=True)
+    restored_by = Column(String, nullable=True)
+    restored_src = Column(String(16), nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    restored_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class VerifixTie(Base):
+    """A row of ours tied to its Verifix record BY HAND (the operator naming the
+    pair on «Verifix sinxron»), the old PINS as rows. A hand tie wins over every
+    matching rule. `kind`: cell (our id = cells.id, vfx id = division id) |
+    leader / profile (role_profiles.id, employee id) | unit (managers.id,
+    employee id)."""
+    __tablename__ = "verifix_ties"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    kind       = Column(String(16), nullable=False)
+    our_id     = Column(Integer, nullable=False)
+    vfx_id     = Column(String(32), nullable=False)
+    how        = Column(String(32), nullable=True)
+    by_name    = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("kind", "our_id", name="uq_verifix_tie_row"),)
+
+
+class VerifixSyncItem(Base):
+    """Something Verifix changed that does NOT follow by itself — a suggestion
+    an admin approves or dismisses on «Verifix sinxron» (and in the bell's
+    «Sizdan kutilmoqda»). One OPEN item per (kind, key). A dismissal remembers
+    the fact it dismissed (`value_hash`) and the item does not come back until
+    Verifix says something else."""
+    __tablename__ = "verifix_sync_items"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    kind        = Column(String(32), nullable=False)
+    key         = Column(String(160), nullable=False)
+    payload     = Column(JSONB, nullable=True)
+    value_hash  = Column(String(64), nullable=True)
+    status      = Column(String(16), nullable=False, default="open", server_default="open")
+    first_seen  = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen   = Column(DateTime(timezone=True), server_default=func.now())
+    decided_at  = Column(DateTime(timezone=True), nullable=True)
+    decided_by  = Column(String, nullable=True)
+    note        = Column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_verifix_sync_items_kind_key", "kind", "key"),
+        Index("ix_verifix_sync_items_status", "status"),
+    )
+
+
+class VerifixSyncRun(Base):
+    """One pass of the sync (or one tie run): what it read, what it wrote,
+    what it refused and why. Read by «Verifix sinxron»'s log."""
+    __tablename__ = "verifix_sync_runs"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    kind        = Column(String(16), nullable=False, default="pass")   # pass | tie | dry
+    mode        = Column(String(16), nullable=True)                    # off | report | on
+    started_at  = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    org_at      = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, nullable=True)
+    guard       = Column(String, nullable=True)
+    counts      = Column(JSONB, nullable=True)
+    changes     = Column(JSONB, nullable=True)
+    error       = Column(Text, nullable=True)
+    ms          = Column(Integer, nullable=True)
+

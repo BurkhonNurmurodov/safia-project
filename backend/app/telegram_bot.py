@@ -1147,6 +1147,9 @@ def _webapp_data(message: types.Message):
                 approved_at=now if is_admin else None,
             )
             db.add(role_row)
+        if is_admin:
+            from app.services import leader_owes
+            leader_owes.claim_key(db, role_row.profile_key)
 
         if user:
             user.username  = message.from_user.username or user.username
@@ -1711,6 +1714,10 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
             role_row.status = status
             if status == "approved":
                 role_row.approved_at = datetime.now(timezone.utc)
+                # A profile the Verifix sync made owes from the day it is
+                # claimed (`leader_owes`).
+                from app.services import leader_owes
+                leader_owes.claim_key(db, role_row.profile_key)
         db.commit()
 
         # A newly approved brigadir may have call-to-shift bell rows that were

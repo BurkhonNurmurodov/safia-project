@@ -87,6 +87,8 @@ _RULES: list[tuple[Optional[tuple[str, ...]], str, str]] = [
     # — logins, keys and platform-wide settings —
     (None, r"/api/leader-ai/(key|model)", "blocked:credentials"),
     (None, r"/api/admin/verifix(/.*)?", "blocked:credentials"),
+    # The Verifix sync's ties, taps and mode move people, cells and access.
+    (None, r"/api/admin/verifix-sync(/.*)?", "blocked:people_access"),
     (None, r"/api/admin/translations(/.*)?", "blocked:settings"),
     (None, r"/admin/sheet-sources/[^/]+", "blocked:settings"),
     # — anything that messages many people at once —
@@ -99,6 +101,9 @@ _RULES: list[tuple[Optional[tuple[str, ...]], str, str]] = [
     (None, r"/api/factories/assign/.*", "blocked:people_access"),
     (None, r"/admin/capabilities(/.*)?", "blocked:people_access"),
     (None, r"/admin/page-access", "blocked:people_access"),
+    # A cell's «Boshqaruvchi» pick creates a leader PROFILE when the person has
+    # none (`cell_register.pick_manager`) — profile creation is people & access.
+    (("PUT",), r"/api/profiles/admin/cells/[^/]+/manager", "blocked:people_access"),
 ]
 _COMPILED_RULES = [(m, re.compile("^" + rx + "/?$"), v) for m, rx, v in _RULES]
 

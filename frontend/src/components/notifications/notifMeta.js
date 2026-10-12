@@ -6,7 +6,7 @@
 import {
   ArrowLeftRight, CalendarCheck, CalendarClock, Clock, FileCheck2,
   GraduationCap, ListChecks, ListTodo, Megaphone, MessageSquareWarning,
-  PencilLine, Scale, Timer, Trash2, UserCog,
+  PencilLine, RefreshCcwDot, Scale, Timer, Trash2, UserCog,
 } from "lucide-react";
 import { shortPerson } from "../../utils/personName";
 
@@ -28,7 +28,7 @@ export const CATEGORY_ICON = {
 // Same order as notif_queue.KIND_ORDER — the page lists its sections so.
 export const QUEUE_KINDS = [
   "hr_doc", "live_doc", "edit_batch", "live_batch", "edit_request", "late_day",
-  "dispute", "late_proof", "concern", "task",
+  "dispute", "late_proof", "verifix_item", "concern", "task",
 ];
 
 // The live-day twins of hr_doc and edit_batch — the same record over the
@@ -39,7 +39,8 @@ export const isLiveKind = (kind) => kind in LIVE_KINDS;
 
 const QUEUE_ICON = {
   edit_batch: Trash2, live_batch: Trash2, edit_request: PencilLine, late_day: CalendarClock,
-  dispute: Scale, late_proof: Clock, concern: MessageSquareWarning, task: ListTodo,
+  dispute: Scale, late_proof: Clock, verifix_item: RefreshCcwDot,
+  concern: MessageSquareWarning, task: ListTodo,
 };
 
 export const queueIcon = (item) =>
@@ -194,6 +195,25 @@ export function queueText(item, { t, tl, tx, lang }) {
       push(tl(f.leader || f.owner || ""));
       push(f.cell);
       break;
+    case "verifix_item": {
+      // What the Verifix sync could not do by itself (services/verifix_sync) —
+      // named by the item's own kind, the words «Verifix sinxron» uses for it;
+      // a kind this bundle has no words for reads as the section's name. A
+      // link only: the tap is made on that page, where its choice is asked.
+      const key = `vsync.kind.${f.what}`;
+      const said = f.what ? t(key) : key;
+      title = said && said !== key ? said : t("notif.kind.verifix_item");
+      // Whom or what it is about: a profile's or a unit's name (a person's —
+      // `tl`), else the cell's code, which is printed as it is. A person's
+      // item that also names a cell keeps the code on the meta line.
+      if (f.name && f.name !== f.code) {
+        sub = tl(f.name);
+        push(f.code);
+      } else {
+        sub = f.code || "";
+      }
+      break;
+    }
     case "task":
       title = tx(f.text || "");
       urgent = !!f.urgent;

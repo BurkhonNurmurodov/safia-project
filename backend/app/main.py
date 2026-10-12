@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, staff_live, push, verifix_explore, turnover, assistant
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -63,6 +63,8 @@ async def lifespan(app: FastAPI):
         add_cell_shift_times,
         add_cell_archive,
         add_cell_owner_columns,
+        add_verifix_sync_columns,
+        seed_verifix_sync,
         add_cell_one_process,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
@@ -116,14 +118,7 @@ async def lifespan(app: FastAPI):
         report_wc_plan_history,
         report_dept_attendance,
         check_leader_kinds, check_leader_kind_pins,
-        sync_cells_from_verifix,
-        sync_leaders_from_verifix,
-        sync_cells_and_leaders_from_verifix,
-        set_profile_photos_from_verifix,
         set_kenjayeva_photo_from_verifix,
-        set_cell_owners_from_verifix,
-        report_multi_leader_cells,
-        check_supervisor_kinds,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -208,6 +203,7 @@ async def lifespan(app: FastAPI):
     add_manager_kind_columns()
     add_leader_kind_columns()
     add_cell_owner_columns()
+    add_verifix_sync_columns()
     add_cell_one_process()
     add_last_seen_column()
     add_tg_name_column()
@@ -230,6 +226,7 @@ async def lifespan(app: FastAPI):
     add_arc_legacy_warehouse_columns()
     add_cell_shift_times()
     add_cell_archive()
+    seed_verifix_sync()
     add_wc_groups()
     add_education_thumb_url()
     add_idle_interval_client_key()
@@ -434,6 +431,12 @@ async def lifespan(app: FastAPI):
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
     register_staff_live_jobs()
+    # The Verifix live sync (2026-10-12): the org read + pass, and the dated
+    # cell links landing at each unit's shift opening.
+    from app.services.verifix_sync import register_jobs as register_verifix_sync_jobs
+    register_verifix_sync_jobs()
+    from app.services.cell_links import register_jobs as register_cell_link_jobs
+    register_cell_link_jobs()
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —
@@ -591,54 +594,12 @@ async def lifespan(app: FastAPI):
     # …and the operator's name corrections to it (`leader_verifix_check.PINS`),
     # once per pin set. Goes with the line above.
     check_leader_kind_pins()
-    # ⚠ TEMPORARY one-shot (2026-10-04) — makes the cells register Verifix's:
-    # renames ours to Verifix's names, creates the cells Verifix has open and we
-    # do not, archives the ones it closed, and DMs the operator every mismatch.
-    # Remove this line, `startup.sync_cells_from_verifix` and
-    # `services/verifix_cell_sync.py` once the report has landed.
-    sync_cells_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-04) — leaders × Verifix: creates the leader
-    # profiles Verifix says are missing (only where the cell gives a clean
-    # place) and DMs every other difference; deletes, archives, renames nothing.
-    # Remove this line, `startup.sync_leaders_from_verifix` and
-    # `services/verifix_leader_sync.py` once the report has landed.
-    sync_leaders_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-05) — every Verifix cell (the name-coded
-    # ones too) and a profile for every Verifix leader without one, connected
-    # only where safe; DMs every mismatch. Remove this line,
-    # `startup.sync_cells_and_leaders_from_verifix` and
-    # `services/verifix_cells_leaders_sync.py` once the report has landed.
-    sync_cells_and_leaders_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-05) — every leader's and brigadir's Verifix
-    # photo as their profile photo (by the Verifix tie the checks above stored;
-    # a photo somebody set is kept) and a DM of who got one. Remove this line,
-    # `startup.set_profile_photos_from_verifix` and
-    # `services/verifix_profile_photos.py` once the report has landed.
-    set_profile_photos_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-12) — Kenjayeva Dinora Sobir Qizi's
     # Verifix photo (and Verifix tie) on the leader profile renamed to her
     # from Mukimova Marxabo; DMs the result with the photo. Remove this
     # line, `startup.set_kenjayeva_photo_from_verifix` and
     # `services/leader_photo_fix_oct12.py` once the DM has landed.
     set_kenjayeva_photo_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-08) — every cell's «Egasi» from Verifix,
-    # with the operator's answers to the 6 Oct dry run: renames the one
-    # profile the operator corrected, creates the nine approved units with
-    # the brigadir-less cells Verifix puts under them, writes the owners and
-    # DMs what it wrote. Remove this line, `startup.set_cell_owners_from_verifix`
-    # and `services/cell_owner_pass.py` once the report has landed.
-    set_cell_owners_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-10-08) — the cells Verifix seats more than
-    # one leader in, with each leader's profile here; READ-ONLY, DMed as text +
-    # a workbook. Remove this line, `startup.report_multi_leader_cells` and
-    # `services/multi_leader_cells.py` once the report has landed.
-    report_multi_leader_cells()
-    # ⚠ TEMPORARY one-shot (2026-10-04) — fills every unit's «Brigadir /
-    # Brigadir o'rnida» switch from Verifix's API and DMs the operator who is
-    # which and which Verifix brigadirs have no unit here. Remove this line,
-    # `startup.check_supervisor_kinds` and `services/verifix_supervisor_check.py`
-    # once it has been sent.
-    check_supervisor_kinds()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
@@ -735,6 +696,16 @@ async def lifespan(app: FastAPI):
     # that window would be the NEW file inside the OLD process. After this,
     # every later `import` inside a function is a sys.modules lookup.
     _warm_import_app()
+    # The dated-link and archive-span caches, read once before the first
+    # request: cold, every reader of a cell's day waits on ONE loader that
+    # needs a second pool connection — at the post-deploy reload burst, with
+    # the pool full, that is a platform-wide stall.
+    try:
+        from app.services import cell_archive, cell_links
+        cell_links.events()
+        cell_archive.spans()
+    except Exception as exc:  # noqa: BLE001 — a cold cache still works, slower
+        print(f"[startup] cell link / span cache warm-up skipped: {exc}", flush=True)
 
     # The server's own account of being slow (services/perf_watch): the event
     # loop's heartbeat starts only NOW, so the startup work above — which runs
@@ -1153,6 +1124,7 @@ app.include_router(logs.router)
 # Verifix connection card — admin-only: the stored login (password sealed)
 # and the read-only connection test (services/verifix.py).
 app.include_router(verifix.router)
+app.include_router(verifix_sync.router)
 # The LIVE «Verifix to'g'irlash» lab page — admin-only, writes only its own tables.
 app.include_router(staff_live.router)
 # «Verifix (test)» — admin-only pages showing what Verifix's API returns; reads

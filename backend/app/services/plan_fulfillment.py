@@ -57,7 +57,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Cell, RoleProfile
-from app.services import cell_archive, wc_group, zagruzka_source
+from app.services import cell_archive, idle_source, wc_group, zagruzka_source
 from app.services.pp_calc import is_local_key
 
 # THE floor, and not a second one: the day the production page became the
@@ -172,15 +172,21 @@ def window(date_from: date, date_to: date) -> dict:
             "prev_lo": p_lo, "prev_hi": p_hi, "prev_partial": partial}
 
 
-def registry(db: Session, manager_ids: Iterable[int]) -> tuple[list, dict]:
+def registry(db: Session, manager_ids: Iterable[int], since: Optional[date] = None,
+             until: Optional[date] = None) -> tuple[list, dict]:
     """Every cell of the units in scope (the option lists and the share rule
     both need ALL of them — a split is over every cell at a work centre) and
-    {leader profile id: name}."""
+    {leader profile id: name}. With `since` (and `until`, default today) it also
+    carries every cell that stood in one of the units on a day of that range and
+    has since moved away (`idle_source.cells_with_moved`, 2026-10-12); `build`
+    widens its share rule the same way whatever it is handed."""
     ids = sorted({int(m) for m in manager_ids})
     if not ids:
         return [], {}
     cells = (db.query(Cell).filter(Cell.manager_id.in_(ids))
              .order_by(Cell.verifix_code, Cell.id).all())
+    if since is not None:
+        cells = idle_source.cells_with_moved(db, cells, ids, since, until or date.today())
     lids = sorted({c.leader_id for c in cells if c.leader_id})
     names = ({r.id: r.name for r in db.query(RoleProfile.id, RoleProfile.name)
               .filter(RoleProfile.id.in_(lids)).all()} if lids else {})
@@ -258,7 +264,12 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
 
     # ── who makes a line: THE share rule (wc_group.share), cached per
     #    (unit, work centre, letter) ──────────────────────────────────────
-    by_wc = wc_group.cells_by_wc(cells)
+    # The cells standing at a work centre ON THE LINE'S DAY (`cell_links`,
+    # 2026-10-12): a cell that changed brigadir inside the period shares its
+    # old unit's lines before the move and its new unit's after — including a
+    # cell that has since left the registry's units. One map when nothing moved.
+    share_cells = idle_source.cells_with_moved(db, cells, mids, read_lo, hi)
+    by_wc = zagruzka_source.by_wc_on(share_cells, [read_lo])
     share_cache: dict[tuple, list] = {}
     norm_cache: dict = {}
 
@@ -273,7 +284,7 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
         got = share_cache.get(k)
         if got is None:
             # Only the cells that exist on the day share it (`cell_archive`).
-            cs = cell_archive.alive_on(by_wc.get(wc_group.wc_key(mid, wc)) or [], d)
+            cs = cell_archive.alive_on(by_wc(d).get(wc_group.wc_key(mid, wc)) or [], d)
             mine = [c for c in cs if grp and (c.wc_group or None) == grp]
             if mine:
                 got = [(c, 1.0 / len(mine)) for c in mine]

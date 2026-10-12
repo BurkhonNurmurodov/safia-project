@@ -711,6 +711,9 @@ def add_user_role(
             approved_at=None if guest else now,
         )
         db.add(row)
+    if not guest:
+        from app.services import leader_owes
+        leader_owes.claim_key(db, pkey)
 
     telegram_id = user.telegram_id
     lang = user.language or "uz"

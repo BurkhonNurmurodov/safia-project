@@ -111,15 +111,30 @@ def filing_cells(db: Session, prof: RoleProfile,
 
     A cell ARCHIVED before `date` (today when omitted) is not a cell any more
     and is owed nothing (`cell_archive`); its archive day still is.
+
+    With `date`, ownership is the cell's «Boshqaruvchi» ON that day
+    (`cell_links`, 2026-10-12): a cell handed to another leader since is
+    still this leader's on the days before the handover, and one handed to
+    them is not yet. With no change after `date` it is the current column.
     """
     if not prof or not getattr(prof, "id", None):
         return []
-    from app.services import cell_archive
-    return (db.query(Cell)
-            .filter(Cell.leader_id == prof.id,
-                    cell_archive.alive_clause(date))
-            .order_by(Cell.verifix_code)
-            .all())
+    from app.services import cell_archive, cell_links
+    cond = Cell.leader_id == prof.id
+    moved = cell_links.changed_since("leader_id", date) if date else set()
+    if moved:
+        from sqlalchemy import or_
+        cond = or_(cond, Cell.id.in_(moved))
+    cells = (db.query(Cell)
+             .filter(cond, cell_archive.alive_clause(date))
+             .order_by(Cell.verifix_code)
+             .all())
+    if moved:
+        # Only a cell whose leader changed after `date` is resolved; every
+        # other cell answers by its column — the fast path's own answer.
+        on = cell_links.map_on([c for c in cells if c.id in moved], "leader_id", date)
+        cells = [c for c in cells if on.get(c.id, c.leader_id) == prof.id]
+    return cells
 
 
 def cell_ids(db: Session, prof: RoleProfile, date: str | None = None) -> list[int]:
@@ -147,8 +162,12 @@ def expected_days(db: Session, prof: RoleProfile, date: str | None,
     """
     if not prof:
         return []
-    from app.services import leader_load
+    from app.services import leader_load, leader_owes
     if leader_load.exempt(db, prof, date):
+        return []
+    # A profile owes only from the day it was claimed (a profile the Verifix
+    # sync created) or picked, and never before it existed (`leader_owes`).
+    if not leader_owes.owes(prof, date):
         return []
     mid = getattr(prof, "manager_id", None)
     if floor is None:

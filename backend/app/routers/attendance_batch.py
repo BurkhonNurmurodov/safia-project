@@ -1134,7 +1134,7 @@ class MappingBody(BaseModel):
 def update_cells(
     body: MappingBody,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    admin: dict = Depends(verify_admin),
 ):
     """Apply tick / move decisions for the day. A TICK always writes itself into
     `cells.att_included`, so every FUTURE day starts from the last decision
@@ -1181,17 +1181,18 @@ def update_cells(
                 if ch.included is not None:
                     cell.att_included = bool(ch.included)
                 if body.permanent:
-                    moved.setdefault(cell.id, (cell, cell.manager_id))
-                    cell.manager_id = bc.manager_id
                     cell.att_included = bool(bc.included)
-                    # A letter tells apart the cells of ONE unit at one work
-                    # centre; with no unit it names nothing (wc_group.check_cell
-                    # forbids it), and the boot backfill that re-attaches the
-                    # cell to its leader's unit would collide on it. So clearing
-                    # the unit clears the letter, named in the log.
-                    if cell.manager_id is None and cell.wc_group:
-                        group_cleared.append(f"{cell.verifix_code} {cell.wc_group}")
-                        cell.wc_group = None
+                    # From 2026-10-12 a cell's brigadir is DATED (the Verifix
+                    # live sync, «history is never affected»): «Doimiy qilish»
+                    # records the move from the unit's next shift opening, and
+                    # `cell_links.apply_due` puts it on the column then —
+                    # settling the letter (and clearing it with no unit) as
+                    # this write used to. The day being edited keeps its own
+                    # this-day routing on the batch, as before.
+                    if cell.manager_id != bc.manager_id:
+                        from app.services import cell_register
+                        cell_register.set_unit(db, cell, bc.manager_id, src="manual",
+                                               by=admin.get("full_name") or "admin")
 
     # «Doimiy qilish» moves a cell into a unit nobody chose its letter for. Like
     # a leader's unit move it must never refuse, so a colliding letter yields
@@ -1235,6 +1236,9 @@ def update_cells(
         ))
 
     db.commit()
+    if body.permanent:
+        from app.services import cell_register
+        cell_register.after_commit()
     action_log.enrich(
         target_kind="batch", target_id=batch.id, day=d,
         details=[("date", str(d)), ("cells", len(body.changes)),

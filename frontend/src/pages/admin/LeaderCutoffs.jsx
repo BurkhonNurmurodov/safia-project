@@ -57,9 +57,15 @@ import { useToast } from "../../components/ui/Toast";
  * register has no trace of them.
  */
 
+// `owes_from` of a leader profile the Verifix sync created that nobody has
+// claimed yet (`services/leader_owes.UNCLAIMED`): it owes nothing.
+const UNCLAIMED = "9999-12-31";
+
 const TXT = {
   uz: {
     noLoad: "Zagruzkada yacheykasi yo'q, oktabrda hech narsa topshirmagan — {d} dan hisobga olinmaydi",
+    owesNone: "Profil hali egallanmagan — majburiyat yo'q",
+    owesFrom: "{d} dan majburiyat",
     leadWhat: "Tanlangan liderning natijalari shu kundan boshlab hech qayerda hisobga olinmaydi — na o'z ballida, na brigadaning o'rtachasida.",
     leadSafe: "Undan oldingi kunlar o'z bahosi bilan qoladi va hech narsa o'chirilmaydi.",
     tabOn: "Hisobga olinadi", tabOff: "Hisobdan chiqarilgan",
@@ -95,6 +101,8 @@ const TXT = {
   },
   uz_cyrl: {
     noLoad: "Загрузкада ячейкаси йўқ, октябрда ҳеч нарса топширмаган — {d} дан ҳисобга олинмайди",
+    owesNone: "Профил ҳали эгалланмаган — мажбурият йўқ",
+    owesFrom: "{d} дан мажбурият",
     leadWhat: "Танланган лидернинг натижалари шу кундан бошлаб ҳеч қаерда ҳисобга олинмайди — на ўз баллида, на бригаданинг ўртачасида.",
     leadSafe: "Ундан олдинги кунлар ўз баҳоси билан қолади ва ҳеч нарса ўчирилмайди.",
     tabOn: "Ҳисобга олинади", tabOff: "Ҳисобдан чиқарилган",
@@ -130,6 +138,8 @@ const TXT = {
   },
   ru: {
     noLoad: "Нет ячейки в загрузке, в октябре ничего не сдавал — не учитывается с {d}",
+    owesNone: "Профиль ещё никем не занят — обязательств нет",
+    owesFrom: "Обязан сдавать с {d}",
     leadWhat: "Результаты выбранного лидера с этого дня нигде не учитываются — ни в его балле, ни в среднем по бригаде.",
     leadSafe: "Более ранние дни остаются со своими оценками, ничего не удаляется.",
     tabOn: "Учитываются", tabOff: "Не учитываются",
@@ -165,6 +175,8 @@ const TXT = {
   },
   en: {
     noLoad: "No cell in the workload, filed nothing in October — not counted from {d}",
+    owesNone: "Profile not claimed yet — owes nothing",
+    owesFrom: "Owes from {d}",
     leadWhat: "From this day on the selected leader's results count nowhere — not in their own score, not in their unit's average.",
     leadSafe: "Earlier days keep the scores they always had, and nothing is deleted.",
     tabOn: "Counted", tabOff: "Not counted",
@@ -497,6 +509,16 @@ export default function LeaderCutoffs() {
             </td></tr>
           ) : pageRows.map((r) => {
             const sel = picked.has(r.id);
+            // What keeps this leader out of the results WITHOUT a cutoff, on
+            // the name's own line (a table row is ONE line high — cut with «…»,
+            // whole on hover): the загрузка rule (`leader_load`) and the first
+            // day they owe at all (`owes_from` — a profile the Verifix sync
+            // created owes nothing until somebody claims it).
+            const notes = [];
+            if (r.owes_from)
+              notes.push(r.owes_from === UNCLAIMED ? T.owesNone : T.owesFrom.replace("{d}", r.owes_from));
+            if (r.no_load_from && !r.cutoff) notes.push(T.noLoad.replace("{d}", r.no_load_from));
+            const note = notes.join(" · ");
             return (
               <tr key={r.id} onClick={() => toggle(r.id)}
                 style={{ cursor: "pointer",
@@ -517,15 +539,19 @@ export default function LeaderCutoffs() {
                   />
                 </td>
                 <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>
-                  {nm(r.name)}
-                  {/* Out of the results by the загрузка rule, not by a cutoff
-                      (`services/leader_load.py`) — nothing to lift here; it
-                      follows the cells register. */}
-                  {r.no_load_from && !r.cutoff && (
-                    <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
-                      {T.noLoad.replace("{d}", r.no_load_from)}
-                    </div>
-                  )}
+                  {/* Out of the results by the загрузка rule or before the
+                      first owed day, not by a cutoff (`services/leader_load.py`,
+                      `services/leader_owes.py`) — nothing to lift here; both
+                      follow their own registers. */}
+                  <span className="inline-flex items-center gap-2 max-w-full min-w-0 align-middle">
+                    <span className="whitespace-nowrap">{nm(r.name)}</span>
+                    {note && (
+                      <span className="text-[11px] truncate min-w-0 max-w-[18rem]" title={note}
+                        style={{ color: "var(--text-3)" }}>
+                        {note}
+                      </span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                   {r.supervisor && r.supervisor !== "N/A" ? nm(r.supervisor) : "—"}

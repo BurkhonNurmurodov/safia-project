@@ -65,11 +65,15 @@ logger = logging.getLogger(__name__)
 _RANK = {
     "hr_doc": 0, "live_doc": 0, "edit_batch": 0, "live_batch": 0, "edit_request": 0,
     "late_day": 0, "dispute": 0, "late_proof": 0, "concern": 1, "task": 1,
+    # A Verifix sync suggestion carries no inline action and a first pass opens
+    # many at once: after the work list, so it never takes a 3-slot preview
+    # from an approval somebody is blocked on.
+    "verifix_item": 2,
 }
 # The order the page lists its sections in — each live twin right after the
 # /staff kind it mirrors (notifMeta.QUEUE_KINDS is the client copy).
 KIND_ORDER = ("hr_doc", "live_doc", "edit_batch", "live_batch", "edit_request", "late_day",
-              "dispute", "late_proof", "concern", "task")
+              "dispute", "late_proof", "verifix_item", "concern", "task")
 
 _CAP = 300   # per source — a register, not a dump; the page says when it is cut
 
@@ -520,8 +524,28 @@ def _tasks(db: Session, payload: dict) -> list[dict]:
     } for t in rows]
 
 
+def _verifix_items(db: Session, payload: dict) -> list[dict]:
+    """What the Verifix sync could not do by itself — a suggestion an admin
+    approves or dismisses on «Verifix sinxron» (2026-10-12). Admins only, and
+    a link, never an inline decision: most taps need a choice the page asks."""
+    if payload.get("role") != "admin":
+        return []
+    from app.models import VerifixSyncItem
+    rows = (db.query(VerifixSyncItem).filter(VerifixSyncItem.status == "open")
+            .order_by(VerifixSyncItem.first_seen.desc()).limit(_CAP).all())
+    return [{
+        "key": f"verifix_item:{r.id}", "kind": "verifix_item", "id": r.id,
+        "since": _iso(r.first_seen),
+        "link": "/admin/upload?tab=verifixsync",
+        "fields": {"what": r.kind,
+                   "name": (r.payload or {}).get("name") or (r.payload or {}).get("code"),
+                   "code": (r.payload or {}).get("code")},
+        "actions": [],
+    } for r in rows]
+
+
 _SOURCES = (_hr_docs, _live_docs, _edit_batches, _live_batches, _edit_requests,
-            _late_days, _disputes, _late_proofs, _concerns, _tasks)
+            _late_days, _disputes, _late_proofs, _verifix_items, _concerns, _tasks)
 
 
 def build(db: Session, payload: dict) -> list[dict]:

@@ -120,6 +120,20 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
 
     by_code = {c.verifix_code: c for c in db.query(Cell).all() if c.verifix_code}
 
+    # The owning brigadir is the cell's unit ON the row's date (`cell_links`,
+    # 2026-10-12): a cell moved to another brigadir since is still owned by
+    # the old one on the days before the move. Cells whose unit did not change
+    # after the sheet's first date read the column, as before.
+    from datetime import date as _date
+    from app.services import cell_links
+    _days = []
+    for (iso, _name) in data:
+        try:
+            _days.append(_date.fromisoformat(str(iso)[:10]))
+        except ValueError:
+            continue
+    moved = cell_links.changed_since("manager_id", min(_days)) if _days else set()
+
     # Resolve one final value per (cell_id, date) under the owning-brigadir rule.
     final: dict[tuple[int, str], float] = {}
     unknown_codes: set[str] = set()
@@ -133,7 +147,9 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
             if c is None:
                 unknown_codes.add(code)
                 continue
-            if c.manager_id != mgr.id:
+            owner = (cell_links.value_on(c, "manager_id", iso) if c.id in moved
+                     else c.manager_id)
+            if owner != mgr.id:
                 foreign += 1
                 continue
             final[(c.id, iso)] = minutes

@@ -587,6 +587,19 @@ export default function Checklist({
             message={isLeader ? T.noLoadMine : T.noLoadOther}
             showUploadLink={false} height="h-56" />
         </div>
+      ) : view.notOwed ? (
+        // Before the first day this leader owes (`leader_owes`: the day the
+        // profile was claimed or picked; "9999-12-31" while nobody has claimed
+        // a profile the Verifix sync created) — not owed, so never missed.
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState icon={CircleSlash} title={T.notOweT}
+            message={!view.owesFrom || view.owesFrom >= "9999"
+              ? T.notOweNew
+              : put(isLeader ? T.notOweMine : T.notOweOther, {
+                date: `${view.owesFrom.slice(8, 10)}.${view.owesFrom.slice(5, 7)}.${view.owesFrom.slice(0, 4)}`,
+              })}
+            showUploadLink={false} height="h-56" />
+        </div>
       ) : view.noCell ? (
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <EmptyState icon={CircleSlash} title={T.noCellT}

@@ -107,13 +107,18 @@ def wc_key(manager_id, code) -> tuple[int, str]:
     return (int(manager_id), norm_code(code))
 
 
-def cells_by_wc(cells: Iterable) -> dict[tuple[int, str], list]:
+def cells_by_wc(cells: Iterable, units: Optional[Mapping] = None) -> dict[tuple[int, str], list]:
     """``{(unit, normalised code): [cells]}`` in the caller's order — THE match of
     cells to their work centre for every per-cell reader. A cell with no unit or
-    no SAP code belongs to no work centre and is absent."""
+    no SAP code belongs to no work centre and is absent.
+
+    ``units`` ({cell id: unit}) answers WHICH unit each cell stood in — a past
+    day's (`cell_links.OnDay.units(day)`, 2026-10-12); omitted, the cell's own
+    `manager_id`, as before."""
     by: dict[tuple[int, str], list] = defaultdict(list)
     for c in cells:
-        mid, code = _get(c, "manager_id"), norm_code(_get(c, "sap_code"))
+        mid = (units.get(_get(c, "id")) if units is not None else _get(c, "manager_id"))
+        code = norm_code(_get(c, "sap_code"))
         if mid is None or not code:
             continue
         by[(int(mid), code)].append(c)

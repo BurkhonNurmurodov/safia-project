@@ -98,10 +98,24 @@ def leader_applies(db: Session, leader_id: int | None, day=None) -> bool:
     one-process — and is there at least one?"""
     if not leader_id:
         return False
-    from app.services import cell_archive
-    flags = [bool(f) for (f,) in db.query(Cell.one_process).filter(
-        Cell.leader_id == int(leader_id),
-        cell_archive.alive_clause(_day(day))).all()]
+    from app.services import cell_archive, cell_links
+    d = _day(day)
+    # The cells this leader runs ON that day (`cell_links`, 2026-10-12): a
+    # re-check of a past day is judged by the cells they ran then.
+    moved = cell_links.changed_since("leader_id", d) if d else set()
+    if not moved:
+        flags = [bool(f) for (f,) in db.query(Cell.one_process).filter(
+            Cell.leader_id == int(leader_id),
+            cell_archive.alive_clause(d)).all()]
+        return bool(flags) and all(flags)
+    from sqlalchemy import or_
+    rows = db.query(Cell.id, Cell.leader_id, Cell.one_process).filter(
+        or_(Cell.leader_id == int(leader_id), Cell.id.in_(moved)),
+        cell_archive.alive_clause(d)).all()
+    # Only a cell whose leader changed after `d` is resolved; every other cell
+    # answers by its column — the fast path's own answer.
+    on = cell_links.map_on([(r[0], r[1]) for r in rows if r[0] in moved], "leader_id", d)
+    flags = [bool(r[2]) for r in rows if on.get(r[0], r[1]) == int(leader_id)]
     return bool(flags) and all(flags)
 
 
@@ -132,8 +146,27 @@ def leader_ids(db: Session, day=None) -> set[int]:
     """Every leader whose cells on `day` (today when omitted) are ALL
     one-process — `leader_applies` for the whole platform in one query, for the
     admin sheet."""
-    from app.services import cell_archive
-    rows = (db.query(Cell.leader_id, func.bool_and(Cell.one_process))
-            .filter(Cell.leader_id.isnot(None), cell_archive.alive_clause(_day(day)))
-            .group_by(Cell.leader_id).all())
-    return {int(lid) for lid, ok in rows if ok}
+    from app.services import cell_archive, cell_links
+    d = _day(day)
+    moved = cell_links.changed_since("leader_id", d) if d else set()
+    if not moved:
+        rows = (db.query(Cell.leader_id, func.bool_and(Cell.one_process))
+                .filter(Cell.leader_id.isnot(None), cell_archive.alive_clause(d))
+                .group_by(Cell.leader_id).all())
+        return {int(lid) for lid, ok in rows if ok}
+    # A cell's leader ON that day (`cell_links`): grouped here, with
+    # `bool_and`'s rule (NULLs ignored; none left = not one-process).
+    from sqlalchemy import or_
+    rows = db.query(Cell.id, Cell.leader_id, Cell.one_process).filter(
+        or_(Cell.leader_id.isnot(None), Cell.id.in_(moved)),
+        cell_archive.alive_clause(d)).all()
+    on = cell_links.map_on([(r[0], r[1]) for r in rows if r[0] in moved], "leader_id", d)
+    flags: dict[int, list] = {}
+    for cid, cur, f in rows:
+        lid = on.get(cid, cur)
+        if lid is None:
+            continue
+        flags.setdefault(int(lid), [])
+        if f is not None:
+            flags[int(lid)].append(bool(f))
+    return {lid for lid, fs in flags.items() if fs and all(fs)}

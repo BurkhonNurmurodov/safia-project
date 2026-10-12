@@ -27,6 +27,7 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
+    leader_owes,
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
     leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof, leader_load,
     leader_register, leader_reports, leader_unit_report)
@@ -528,10 +529,84 @@ def _cells_gone_from(cells: list) -> str | None:
     if not cells:
         return None
     from app.services import cell_archive
-    days = [cell_archive.archived_day(c) for c in cells]
-    if any(d is None for d in days):
-        return None
-    return (max(days) + timedelta(days=1)).isoformat()
+    # The OPEN archived span of each (from 2026-10-12 a restore closes a span
+    # instead of clearing the past); a cell with no span reads `archived_at`.
+    spans = cell_archive.spans()
+    firsts = []
+    for c in cells:
+        sp = spans.get(getattr(c, "id", None)) or []
+        open_ = [f for f, t in sp if t is None]
+        if open_:
+            firsts.append(max(open_))
+            continue
+        if sp:
+            return None
+        d = cell_archive.archived_day(c)
+        if d is None:
+            return None
+        firsts.append(d + timedelta(days=1))
+    return max(firsts).isoformat()
+
+
+def _gone_rows(roster: list, roster_cells: dict, data: list) -> list[dict]:
+    """Register rows for the days a per-cell leader's cells were ALL archived,
+    over spans a restore has since closed (`cell_archive`, 2026-10-12: archived
+    days stay archived). One row per such day the leader filed nothing on,
+    `excluded` with `gone: true` so the exclusions tab leaves it alone."""
+    from app.services import cell_archive
+    spans = cell_archive.spans()
+    today = cell_archive.today()
+    have = {(r.get("leader"), str(r.get("date"))[:10]) for r in data}
+    out: list[dict] = []
+    for e in roster:
+        if not e.get("cell_from"):
+            continue
+        cells = roster_cells.get(e["id"]) or []
+        if not cells:
+            continue
+        dead = None                            # the days EVERY cell was dead: [from, to)
+        for c in cells:
+            mine = [(f, t or today + timedelta(days=1)) for f, t in (spans.get(c.id) or [])]
+            if not mine:
+                dead = []
+                break
+            if dead is None:
+                dead = mine
+                continue
+            dead = [(max(a, f), min(b, t)) for a, b in dead for f, t in mine
+                    if max(a, f) < min(b, t)]
+            if not dead:
+                break
+        if not dead:
+            continue
+        floor = datetime.fromisoformat(str(e["cell_from"])[:10]).date()
+        # From an OPEN span on, `cells_gone_from` speaks for the days (a floor
+        # on the roster); everything before it — a closed span, one whose
+        # restore lands tomorrow included — is emitted here, up to today.
+        gone = _cells_gone_from(cells)
+        gone_d = datetime.fromisoformat(gone).date() if gone else None
+        for a, b in dead:
+            end = min(b, today + timedelta(days=1))
+            if gone_d is not None:
+                end = min(end, gone_d)
+            d = max(a, floor)
+            while d < end:
+                iso = d.isoformat()
+                if (e["name"], iso) not in have:
+                    out.append({
+                        "uid": f"gone-{e['id']}-{iso}", "source": "none", "missing": True,
+                        "date": iso, "submitted_at": None,
+                        "supervisor": e.get("supervisor"), "shift": e.get("shift"),
+                        "rejected": False, "late_state": None, "late_by": None,
+                        "late_at": None, "late_reason": None,
+                        "excluded": {"reason": "cells_archived", "by": None, "at": None,
+                                     "score": None, "gone": True},
+                        "leader_id": e["id"], "leader": e["name"],
+                        "manager_id": e.get("manager_id"),
+                        "completion": 0.0, "tasks": [],
+                    })
+                d += timedelta(days=1)
+    return out
 
 
 def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
@@ -912,6 +987,10 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             # cutoff — nobody wrote it and nobody can lift it but the cells
             # register — so it is a field of its own the admin tab leaves be.
             "no_load_from": leader_load.FROM if p.id in load_free else None,
+            # The first day this profile OWES (`leader_owes`: the claim / pick
+            # day, the creation floor) — None: no floor. «9999-12-31» = nobody
+            # claimed it yet. Folded on the client like a cutoff, the other way.
+            "owes_from": leader_owes.iso(p),
             # The WHY and the WHO of the decision are the admin tab's own
             # columns. Every other reader needs only to know that this
             # leader stopped owing reports and from when: a free-text note
@@ -920,6 +999,17 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             "cutoff_reason": (cut.reason or "") if cut and is_admin else None,
             "cutoff_by": (cut.set_by or None) if cut and is_admin else None,
         })
+
+    # A per-cell leader whose EVERY cell stood archived over a span a restore
+    # later CLOSED owed nothing on those days (the server's own
+    # `leader_cells.expected_days`), while `cells_gone_from` speaks only for an
+    # archive still open — so each such day travels as a row of its own,
+    # excluded and named, exactly as an unfiled excluded day does
+    # (`leader_exclusions.orphan_rows`): the client already takes it off.
+    gone = _gone_rows(roster, roster_cells, data)
+    if gone:
+        data += gone
+        data.sort(key=lambda r: str(r["date"]), reverse=True)
 
     # ── who stopped counting, and from when ──────────────────────────────────
     # THE load-bearing half of the cutoff, and the one thing rows cannot carry.
@@ -1273,7 +1363,7 @@ def _build_standing(db: Session) -> dict:
         "filed": filed,
         "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
                     p["cutoff"], p["cell_from"], len(p["cells"]),
-                    p.get("no_load_from"), p.get("cells_gone_from"))
+                    p.get("no_load_from"), p.get("cells_gone_from"), p.get("owes_from"))
                    for p in feed["roster"]],
         "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
         "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
@@ -1384,7 +1474,8 @@ def get_standing(
         #  every cell archived from (`cell_archive`)]
         "roster": [[name_of.get(p[1], p[1]), unit_of.get(p[2], p[2]), p[3],
                     p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0, p[7],
-                    p[8] if len(p) > 8 else None]
+                    p[8] if len(p) > 8 else None,
+                    p[9] if len(p) > 9 else None]
                    for p in roster],
         "cutoffs": {name_of.get(k, k): {"from": v} for k, v in pool["cutoffs"].items()},
         "cutUnits": {unit_of.get(k, k): {"from": v} for k, v in pool["cutUnits"].items()},

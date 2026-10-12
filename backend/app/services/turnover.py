@@ -215,12 +215,45 @@ def points_of(score: Optional[int], r: dict) -> Optional[float]:
 
 # ── who leads what ────────────────────────────────────────────────────────────
 
-def cell_map(db: Session) -> dict[str, dict]:
+def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
     """Every /cells cell by code key, with its brigadir and leader — the map a
-    month is attributed by (frozen into the month when its list is taken)."""
+    month is attributed by (frozen into the month when its list is taken).
+
+    With `day` (a past month's last day) each cell's brigadir and leader are
+    the ones in force ON that day and `archived` says whether it stood on it
+    (`cell_links` / `cell_archive`, 2026-10-12): a cell handed to another
+    leader since still counts for its leader of that month. With no link
+    changed after `day` the brigadir and leader are the current columns."""
     cells = db.query(Cell).order_by(Cell.verifix_code).all()
-    mids = {c.manager_id for c in cells if c.manager_id}
-    lids = {c.leader_id for c in cells if c.leader_id}
+    # Only a cell whose link changed after `day` is resolved; every other cell
+    # answers by its column — the fast path's own answer.
+    units_on: dict = {}
+    leaders_on: dict = {}
+    if day is not None:
+        from app.services import cell_links
+        moved = cell_links.changed_since("manager_id", day)
+        if moved:
+            units_on = cell_links.map_on([c for c in cells if c.id in moved], "manager_id", day)
+        moved = cell_links.changed_since("leader_id", day)
+        if moved:
+            leaders_on = cell_links.map_on([c for c in cells if c.id in moved], "leader_id", day)
+
+    def mid_of(c):
+        return units_on.get(c.id, c.manager_id)
+
+    def lid_of(c):
+        return leaders_on.get(c.id, c.leader_id)
+
+    if day is not None:
+        from app.services import cell_archive
+
+        def archived_of(c):
+            return not cell_archive.alive(c, day)
+    else:
+        def archived_of(c):
+            return bool(c.archived_at)
+    mids = {mid_of(c) for c in cells if mid_of(c)}
+    lids = {lid_of(c) for c in cells if lid_of(c)}
     mans = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
     leads = {p.id: p for p in db.query(RoleProfile).filter(RoleProfile.id.in_(lids)).all()} if lids else {}
     out: dict[str, dict] = {}
@@ -228,11 +261,12 @@ def cell_map(db: Session) -> dict[str, dict]:
         k = code_key(c.verifix_code)
         if not k or k in out:
             continue
-        m = mans.get(c.manager_id)
-        p = leads.get(c.leader_id)
+        mid = mid_of(c)
+        m = mans.get(mid)
+        p = leads.get(lid_of(c))
         out[k] = {
-            "id": c.id, "code": c.verifix_code, "archived": bool(c.archived_at),
-            "manager_id": c.manager_id, "brigadir": m.name if m else None,
+            "id": c.id, "code": c.verifix_code, "archived": archived_of(c),
+            "manager_id": mid, "brigadir": m.name if m else None,
             "shift": m.shift if m else None, "factory_id": m.factory_id if m else None,
             "leader_id": p.id if p else None, "leader": p.name if p else None,
             "leader_kind": p.leader_kind if p else None,
@@ -373,7 +407,9 @@ def capture(db: Session, m: date, at: datetime, source: str = "read") -> int:
     } for p in people])
     row.roster_at = at
     row.roster_source = source
-    row.cell_map = cell_map(db)
+    # The map in force ON the last day — a capture that runs late (the job
+    # down past midnight) must not freeze a handover that took effect on the 1st.
+    row.cell_map = cell_map(db, d)
     db.flush()
     return len(people)
 
@@ -505,7 +541,7 @@ def save_past(db: Session, m: date, journal: Optional[list[dict]], by: str,
     row.status = "closed"
     row.roster_at = at
     row.roster_source = "past"
-    row.cell_map = cell_map(db)
+    row.cell_map = cell_map(db, d)
     row.closed_at = at
     row.closed_by = by
     row.rule = rule(db)
@@ -704,15 +740,15 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
         leavers = live_leavers(db, m, d)
         if row and row.roster_at:
             roster, dropped = _drop_leavers(_frozen(db, m, "roster"), leavers)
-            return {"roster": roster, "leavers": leavers, "cmap": row.cell_map or cell_map(db),
+            return {"roster": roster, "leavers": leavers, "cmap": row.cell_map or cell_map(db, d),
                     "rule": rule(db), "as_of": d, "source": row.roster_source or "read",
                     "dropped": dropped, "late": []}
-        return {"roster": mirror_roster(db, d), "leavers": leavers, "cmap": cell_map(db),
+        return {"roster": mirror_roster(db, d), "leavers": leavers, "cmap": cell_map(db, d),
                 "rule": rule(db), "as_of": d, "source": "approx", "dropped": 0, "late": []}
     if state == "saved":
         frozen = _frozen(db, m, "leaver")
         roster, dropped = _drop_leavers(_frozen(db, m, "roster"), frozen)
-        return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db),
+        return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db, d),
                 "rule": (row.rule if row and row.rule else rule(db)), "as_of": d, "source": "past",
                 "dropped": dropped, "late": []}
     # closed — everything from the frozen rows; what Verifix says SINCE the
@@ -735,7 +771,7 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
         if k not in live_keys:
             late.append({"kind": "gone", "name": p["name"], "code": p.get("code"),
                          "left": p["dismissed"].isoformat() if p.get("dismissed") else None, "seen": None})
-    return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db),
+    return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db, d),
             "rule": (row.rule if row and row.rule else rule(db)), "as_of": d,
             "source": (row.roster_source if row else None) or "read", "dropped": dropped, "late": late}
 

@@ -10,7 +10,7 @@ or copy-paste its markup into a page.
 
 | Element type | Template | Rules |
 |---|---|---|
-| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. |
+| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). |
 | Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. |
 | "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. The subtitle is readable text (`--text-2`, 12px) and WRAPS: it often names who a record belongs to (a brigadir, a cell), and a phone has no hover to finish a cut line. **It is a real dialog (2026-10-05)**: `role=dialog` + `aria-modal`, labelled by the title (described by the subtitle); on open focus moves onto the CARD (never into a field — that raises a phone keyboard — unless a child autoFocuses), Tab is trapped, and focus returns to the opener on close. **Escape is an implicit close, like the backdrop**: it obeys `dismissable`, and it NEVER silently discards entered work — with a draft it asks first (`ConfirmDialog`, «Saqlamasdan yopilsinmi?», the safe button focused). The draft is `dirty` when the caller passes it; otherwise «the user changed something in this card since it opened»: any typed / ticked / chosen native field (`SearchInput` and anything under `data-no-draft` excepted) plus a pick in `StyledSelect` / `DateRangePicker` / `CountStepper`, which report through `useMarkDraft()` — a new value template inside dialogs must do the same. The X never asks; the backdrop click is unchanged. Only the TOPMOST dialog answers the keyboard: `dialogLayers.js` is THE stack (Modal, ConfirmDialog and Lightbox register; top = highest z-index, then later in the DOM). A popover inside a dialog that closes on Escape must `e.preventDefault()` so the dialog stays standing, and a page-level Escape (a fullscreen overlay) steps aside while `hasOpenDialog()`. |
@@ -175,7 +175,10 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   drags kept cells only when the profile edit changes the unit
   (`follow_unit`), and the /cells form applies the leader's unit only to a NEW
   owner. Before, a rename re-synced the cells and quietly carried 0811 — and
-  its load — into Aripova's unit.
+  its load — into Aripova's unit. (SUPERSEDED 2026-10-12: NO save moves a
+  cell any more — a leader's cells never follow the leader's unit, and every
+  pick is a dated «Boshqaruvchi» change; see «Cells, leaders and brigadirs
+  follow Verifix».)
 - Moving an existing leader's days is a data fix, not a feature:
   `services/leader_unit_fix_sep26.py` (TEMPORARY one-shot) moved his profile,
   role rows and every checklist day to Aripova without touching the cell, and
@@ -314,9 +317,9 @@ drafts like every field there (the page's one Save):
   (Murodali Ochilov, Turdimurodov Nodirjon — «Лидер» on Verifix), one person
   for both Suvonov Elshod units, and 9 Verifix brigadirs with no unit (supply,
   staff kitchen, Keles cleaning, washing ×2, cold rooms «Цех -22», the
-  finished-goods freezers, «Цех - 3» over 1911). Delete it and its startup pair
-  once the report has landed — before `leader_verifix_check`, which it imports;
-  the columns, `supervisor_kind.py` and both switches STAY.
+  finished-goods freezers, «Цех - 3» over 1911). **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`);
+  the columns, `supervisor_kind.py` and both switches STAY, and the live sync
+  keeps the kind current from Verifix's job (a value set by hand still wins).
 
 ## A cell's «Zagruzkada hisoblanadi» (`cells.in_load`)
 
@@ -502,8 +505,8 @@ to the operator as text + a workbook.
   < 1,000 employees, finds < 80 % of our active cells open, or the pass would
   archive more than max(15, 10 %) or create more than 150 cells.
 - Every old value is kept in app setting `verifix_cell_sync_2026_10_04` and in
-  the workbook. Delete the module, the startup pair and both entrypoint calls
-  once the report has landed — the cells it wrote stay.
+  the workbook. **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`) — the cells it wrote stay, and the live
+  sync now does what it did every ten minutes.
 - Dry run (11 Sep register × the 1 Oct API dump): 46 created (washing
   0020–0037, raw-material warehouse 0110–0114, supply 09xx / 1411 / 1412 /
   9432, cold rooms 1511 / 3411 / 3511 / 8011, staff kitchen 7711 / 7721, plus
@@ -540,8 +543,7 @@ workbook. Nothing is deleted, archived or renamed.
   finished-goods freezers 1711/1721/1811/1821, «Алмата Фабрика», «Корзинка»),
   3 in cells led by another profile, 1 in a department, 1 beside a profile on
   0822; 3 profiles not in Verifix, 8 «Lider o'rnida», 6 spelled differently.
-- Delete it (before `leader_verifix_check`, whose matching it imports) with its
-  startup pair and both entrypoint calls once the report has landed.
+- **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`).
 
 ## Every Verifix cell, every Verifix leader (`verifix_cells_leaders_sync`, 2026-10-05)
 
@@ -588,9 +590,8 @@ DMed as text + a workbook; the record is in app setting
   the way and the Verifix brigadir standing over their subdivision (and the
   unit here the 4 Oct check tied that brigadir to).
 - Existing profiles are not touched; their mismatches are in the workbook.
-- Delete the module, its startup pair and both entrypoint calls once the report
-  has landed — BEFORE `verifix_cell_sync`, `verifix_leader_sync` and
-  `leader_verifix_check`, whose helpers it imports.
+- **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`). The profiles it created stay; the live sync ties them
+  by Verifix id and keeps them owing nothing until claimed (`owes_from`).
 
 ## Leaders' and brigadirs' photos come from Verifix (`verifix_profile_photos`, 2026-10-05)
 
@@ -617,9 +618,10 @@ as text + a workbook; the record (no bytes) is app setting
   **`services/profile_photo.py` — THE way a profile photo is written**
   (`square_jpeg` + `store`; the admin upload uses it too, byte for byte as
   before). All photos land in one transaction with the record.
-- Delete the module, its startup trio and both entrypoint calls once the report
-  has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
-  photos and `profile_photo.py` stay.
+- **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`). The photos and `profile_photo.py` stay; the photos it
+  wrote are marked as the sync's own (`vfx_meta.photo_set`), so the live sync
+  replaces them when Verifix's photo changes and never touches one a person
+  uploaded.
 - **A profile RENAMED to a new person keeps the old face** — that pass took the
   photo off the stored tie, and renaming moves no tie. The first case (12 Oct,
   Mukimova Marxabo → Kenjayeva Dinora Sobir Qizi, cells 8222 · 8610) is fixed by
@@ -653,7 +655,10 @@ the same person.
   unranked («not a cell owner»), history re-read (every past worker concern for
   its cell's Egasi, every turnover month scored by the Egasi map). Every other
   page ranks as now.
-- **Set by hand from now on** — on the ONE cell form (`CellFormModal`:
+- (SUPERSEDED 2026-10-12: «Egasi» is the Verifix seat and nothing else — the
+  manual owner and its picker are retired; a person's choice lives on the
+  «Boshqaruvchi», picked from the unit's Verifix workers. See «Cells, leaders
+  and brigadirs follow Verifix».) **Set by hand from now on** — on the ONE cell form (`CellFormModal`:
   «Boshqaruvchi», then «Egasi», whose list names each leader's unit), sent as
   `owner_id` on the register's own POST/PUT (CAP_CELLS_MANAGE; 0 clears, an
   absent key leaves it, so a tab from before the slot never touches it). A
@@ -702,11 +707,9 @@ the same person.
     nothing (the rename rolled back with it) and is reported.
   - The report re-counts both KPI pages by Egasi (read only, after the commit):
     what the next step moves.
-  - Delete the module, `startup.set_cell_owners_from_verifix` and its job pair,
-    and both entrypoint calls once the report has landed — BEFORE
-    `verifix_cells_leaders_sync` and `leader_verifix_check`, whose helpers it
-    imports. The columns, the slot on /cells and `startup.add_cell_owner_columns`
-    (both entrypoints, first at boot, pure DDL) STAY.
+  - **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`). The columns, the slot on /cells and
+    `startup.add_cell_owner_columns` (both entrypoints, first at boot, pure DDL)
+    STAY.
 - The 6 Oct DRY RUN (`cell_owner_dryrun.py`) became this pass and is gone; its
   record (app setting `cell_owner_dryrun_2026_10_06`) stays.
 - **Cells with several Verifix leaders, reported** (8 Oct, the operator: «Report
@@ -719,8 +722,8 @@ the same person.
   `is_leader_job`, `cell_owner_pass._ties`) — with each leader's hire date, the
   profile here tied to them and what that profile runs / owns, plus non-cell
   subdivisions with several leaders on a second sheet. Writes only its record
-  (app setting `multi_leader_cells_2026_10_08`). Delete the module, its startup
-  trio and both calls once it has landed — BEFORE `cell_owner_pass`.
+  (app setting `multi_leader_cells_2026_10_08`). **Deleted on 2026-10-12 with the Verifix live sync** (its rules live on in `services/verifix_org.py`) — the
+  live sync lists every cell with two seats as a `two_seats` item.
 
 ## A cell's «Jarayonlar» — one process or several (`cells.one_process`, 2026-10-10)
 
@@ -7638,13 +7641,204 @@ reads it yet except the card's own test, so no figure on the platform moves.
   the API starts counting those people either way — say so before switching.
 - Next (not built): a week-long run (both shifts), then the live feed — see the
   memory for the operator's seven decisions.
-- **Live sync of the three org registers is PLANNED, not built** (2026-10-12):
-  `docs/plan-verifix-live-sync.md` records the operator's rulings — rows tied
-  by Verifix id in one run, history never affected (dated cell links), the
-  Verifix seat as a cell's default manager with a brigadir's override from the
-  unit's own Verifix workers, only «dismissed with a date» counts as leaving —
-  and the build in six MINOR steps. Nothing in it has shipped; the one-shots
-  above stay until step 6.
+- **Cells, leaders and brigadirs follow Verifix live from 2026-10-12** — see
+  the section of that name below.
+
+## Cells, leaders and brigadirs follow Verifix (`verifix_sync`, 2026-10-12)
+
+The operator (2026-10-12): «Our cells, leaders and supervisors should be synched
+with Verifix through API live. Every change happened on Verifix should happen on
+ours also» — with four rulings and four accepted proposals, recorded whole in
+`docs/plan-verifix-live-sync.md`. Every row is tied to its Verifix record by ID
+once, and followed through the tie from then on; history is never affected.
+
+- **The modules.** `services/verifix_org.py` reads and stores the org (every
+  employee of every status, the divisions, the jobs — app-setting-free, in
+  `live_verifix_reads` key `org`, its own 10-minute read beside the live day's
+  `dir`, decoded once per read and kept in memory) and holds the classifiers the
+  4–8 Oct one-shots used (`cell_nodes`, the seat rule, `is_leader_job` /
+  `is_supervisor_job`, `brigadirs_over`, `match`, `same_person`, `profile_name`).
+  `services/verifix_sync.py` is the tie run, the pass, the queue and the taps.
+  `services/cell_register.py` holds the register cores the /cells form and the
+  sync both run (create, rename, unit, manager, owner, archive / restore,
+  release, the manager pool and pick, leader creation, renames with aliases).
+  `services/cell_links.py` is the dated reader; `services/cell_archive.py`
+  carries archive SPANS; `services/leader_owes.py` says from when a profile
+  owes a checklist. `routers/verifix_sync.py` is the admin API; the page is
+  «Verifix sinxron» (`/admin/upload?tab=verifixsync`, tools group, admin-only,
+  NOT grantable — it moves people and access).
+- **A cell's brigadir, «Boshqaruvchi» and «Egasi» are DATED**
+  (`cell_link_events`, append-only: field, value, prev, `effective_from` — the
+  shift-day the change lands on — `effective_at`, `src` verifix | manual |
+  grandfather | release | restore, who, what Verifix said). A change lands at
+  the unit's NEXT shift opening (`cell_links.opening`; a brigadir change at the
+  LATER of the two units' openings, `opening_for_move`; a «Boshqaruvchi» change
+  recorded while a unit move is pending lands with the move). The `cells`
+  columns stay the CURRENT mirror, put there by `apply_due` (the minute job
+  `cell-links-apply`, and the start of every pass), which voids an event whose
+  unit / profile was deleted since and settles work-centre letters the
+  «Doimiy qilish» way. Every writer goes through `cell_register` / `cell_links`
+  — the /cells form, the profile editor (`_set_leader_cells` never drags a cell
+  again), a profile delete or role switch (released at once on the column, the
+  event still dated), «Doimiy qilish» on the admin «Davomat» tab, and the sync.
+- **Past days read the links of THAT day** — `value_on`, `map_on`, `OnDay`,
+  `changed_since`, `cells_of_units`; `cell_archive.alive` / `alive_clause` /
+  `dead_from` read the spans (a restore closes its span: archived days stay
+  archived). The readers made day-aware: the загрузка pins and labour split
+  (`zagruzka_source.cell_pins` / `cell_labor` / `by_wc_on`), the ojidaniya weight
+  and divisor (`idle_source`), «Xarajat» (`ojidaniya_cost`), the /downtime bar
+  modal, /idle-cell (list, people, cleaners cap, closed-day locks, day summary),
+  /zagruzka-cell, Plan Bajarish's share rule, /production's cells and letters
+  and staffing proof, `cell_lookup.by_sap(day=)`, the live day's registry
+  (`verifix_live._registry(db, day)` → `live_staff.load`, the close's copy),
+  `leader_cells.filing_cells`, `one_process`, the turnover month's cell map,
+  «Perenaladka» sync, the «Yacheykalar» placement list. **Every one keeps its
+  old query and the current columns while no loaded cell moved** (`changed_since`
+  is the gate), so nothing reads differently until a change is made.
+- **A move that clears a work-centre letter keeps it for the days before**:
+  `apply_due` stores the lost letter on the event (`vfx.wc_group_was`),
+  `cell_links.letter_on` / `with_letters_on` answer it, and `by_wc_on` (the one
+  door of the pin, labour and ojidaniya splits) hands each day's cells with that
+  day's letter; /zagruzka-cell reads a moved cell with the letter it carried on
+  its last day in the unit shown. A letter changed BY HAND on the form is still
+  undated, as before. Deliberately present-tense: pickers, labels of history,
+  `in_load`, `one_process`, `sap_code`. The «fix it now» reports
+  (`zagruzka_gaps`, `cell_input_gaps`, the unpriced report) still pass the
+  current unit's cells. One present-tense lag is accepted: a move from a night
+  unit to a shift-less one flips the column at midnight inside the night, while
+  every day reader still counts the cell in the night's unit.
+- **The tie run** (`tie_run`, the page's «Bog'lash», dry run first): a cell by
+  its code (`code_key`; a code on two subdivisions or two cells on one key is
+  listed), a leader / profile by the strict match narrowed by their own cells
+  and unit (`SURE_HOW`: full name, surname + first name, a pin), a unit by the
+  strict match narrowed by its Verifix workshop. Everything else is listed in
+  «Bog'lanmaganlar», where the admin ties the pair by hand (`verifix_ties`, a
+  hand tie wins over every rule). One person may head two units (the Suvonov
+  pair); one person on two PROFILES is followed for neither (`shared_tie`). The
+  boot seed promoted the 4–8 Oct ties (`leader_kind_meta.vfx.id`,
+  `supervisor_kind_meta.vfx.id`), dropped ids shared by two profiles, opened
+  archive spans for archived cells and marked the 5 Oct photos as the sync's.
+- **The «Boshqaruvchi» is the Verifix seat by default; a brigadir may pick ONE
+  worker of their unit instead.** The pool (`cell_register.manager_pool`, `GET
+  /api/profiles/admin/cells/{id}/manager-pool`) is Verifix's working people in
+  the unit's own cells, the seat first, leader jobs next — never free text,
+  never somebody not on Verifix (a pick outside it is 400 `not_in_pool`). A pick
+  (`PUT …/manager`) finds or creates the person's leader profile (owing from the
+  first day they can still file) and records a dated manual event; picking the
+  seat, or «Verifix bo'yicha», returns the cell to the seat. A cell whose
+  brigadir change is still waiting is picked for in the unit it is MOVING to
+  (`cell_register.pick_unit`: who may pick, the pool, a new profile's unit). A
+  picked profile with no unit is connected to that unit; a person an UNTIED
+  profile may already be (`namesake`, the 5 Oct SKIP rules) is listed
+  unpickable and refused (`maybe_existing`) — tie them by hand first. Who may:
+  an admin, a cells-register manager, the cell's own (or incoming) brigadir on
+  an active cell (`can_pick` per row). A manager chosen before this build is
+  grandfathered as manual only where it is not the seat (a manager who IS the
+  seat is marked Verifix's). «Egasi» is the seat and nothing else — read-only
+  everywhere. The /cells form opens a cell's brigadir on the change still
+  waiting, the one in force printed under it; picking the one in force
+  WITHDRAWS the waiting change. A leader's profile list carries the cells
+  picked for them and still waiting, so the profile editor's Save keeps them.
+- **The pass** (job `verifix-sync`, every 10 min, one at a time across both
+  app copies — an advisory lock on a connection of its own): mode `off` |
+  `report` (THE DEFAULT: computes, queues, writes nothing automatic) | `on`.
+  AUTOMATIC in `on`: a cell tied, created (no brigadir, out of the загрузка),
+  renamed, archived at now (seen closed TWICE, ≥ 9 min apart), restored (only
+  if the sync archived it); a unit's / leader's kind from the job (a hand value
+  wins); photos (≤ 20 a pass, never over one a person uploaded); the seat as
+  «Egasi» and as the default «Boshqaruvchi», a profile created for a seat
+  nobody has (UNCLAIMED, connected to the unit only where it will run the cell);
+  a leader DISMISSED with a date, seen twice — their cells released (to another
+  seat where there is one), their results cut from max(date, today), the
+  brigadir and the leader told; a return lifts the sync's own cutoff (a
+  person's cutoff is never touched). Everything else is a QUEUE item
+  (`verifix_sync_items`, one tap on the page, a dismissed fact never comes
+  back): `brigadir_differs`, `leader_moved`, `new_unit`, `code_changed` (the
+  code cascades through every stored row), `rename` (only when VERIFIX's own
+  spelling changed; the old name kept as an alias the sheet matcher reads),
+  `tie_doubtful`, `two_seats`, `seat_changed`, `seat_gone` (the seat left every
+  cell, went missing or changed status — nothing released until tapped; a seat
+  that MOVED to another cell is released automatically), `hold` (a seat whose
+  cell has no brigadir, or whose profile was made with no unit because a person
+  chose the manager — the tap connects it, the manager stays),
+  `archived_open`, `seat_no_profile`, and the information-only `missing`,
+  `unit_dismissed`, `profile_dismissed`, `seat_other_role`, `shared_tie`,
+  `not_a_cell`. Ruling 6: a person missing from the list is never a departure.
+- **Guards**: a cut answer (< 100 subdivisions, < 1,000 employees, < 80 % of
+  tied cells found open) and the per-pass caps (archives 15, creations 20,
+  dismissals 10, seat moves 30, profiles 20 — editable on the page) — a pass
+  over a guard applies NOTHING and DMs the admins once. One action that fails
+  is rolled back alone (a savepoint) and named in the run. A refused pass still
+  keeps the «two reads» flags (a disarm must not be lost); a fact seen on every
+  read stays armed (its «last looked» stamp moves hourly) and re-arms only
+  after 3 h with no acting pass. A hand UNTIE is remembered — no pass or tie run
+  ties the row back — until it is lifted on the page («Qo'lda uzilganlar»).
+  Photos are fetched with no transaction open; a photo Verifix will not hand
+  over waits 24 h. Report-mode and trial runs are kept 3 days, the rest 90.
+- **Report mode PREVIEWS the «two reads» facts**: a would-be dismissal or
+  archive is listed the first time it is seen, and nothing about the flags is
+  stored (`_two_reads(preview=True)`), so a report read never arms what an
+  `on` pass would act on. The first org read runs ~90 s after boot
+  (`verifix-sync-boot`), not 10 minutes later — the /cells manager picker
+  waits on it.
+- **A /cells form from before 4.272** (it always sends `owner_id`; the
+  current form never does) cannot cancel a waiting brigadir move: its column
+  brigadir is read as «untouched», and a «Boshqaruvchi» or «Egasi» pick from it
+  is refused 409 «reload the page» rather than half-applied
+  (`profiles._apply_cell_fields`, `old_form`).
+- **Boot**: `startup.add_verifix_sync_columns` adds the columns ONE table per
+  transaction (cells, then role_profiles, then managers), with a 5 s
+  `lock_timeout` and up to six tries, and takes no lock at all once they exist.
+  A failure is FATAL: the copy refuses to start, so the deploy keeps the old
+  one. One transaction over the three tables lost a deadlock to an old-copy
+  request in the blue-green window and left a copy reporting healthy with no
+  columns, i.e. no sign-in.
+- **The /leaders register's kept build** (`leader_register.fingerprint`) now
+  carries the plant's date as well: the owing rule reads «today», so a build
+  kept across midnight would count yesterday's owing.
+- **Owing** (`role_profiles.owes_from`): NULL = as always; 9999-12-31 =
+  created by the sync, claimed by nobody — owes nothing, files nothing, is in
+  no ranking; a date = owes from that day (a claim at registration approval, a
+  pick — `leader_owes.shift_day` / `unit_day`: the leader's own checklist day,
+  or the next one when its window has shut, so a night claimed at 01:30 owes
+  that night and one claimed at 11:30 owes the next). A set date decides alone;
+  a profile with none created from 2026-10-14 (the day after the release, so
+  no profile that existed at the deploy has a past figure move) never owes a
+  day before it existed — before the day before, when it was made before 09:00
+  (a night-shift leader made at 01:30 owes the night they are in). `leader_cells.expected_days`, the digest (a not-yet-owing leader who
+  filed anyway still counts), the bot, the camera door, the Chek-list tab
+  (`notOwed` — «Chek-list hali talab qilinmaydi») and every /leaders figure
+  (`owes_from` on the roster and the standing pool, element 9) read it.
+- **Visibility**: the run log on the page, a digest DM to the admins after a
+  pass that changed something (report mode: when the would-do list changed),
+  the bell's «Sizdan kutilmoqda» (`verifix_item`, admins, ranked AFTER the
+  work list so a first pass never pushes an approval out of the 3-slot
+  preview), the /cells pending
+  chips and «qo'lda» mark, /cells/:id's «Verifix bilan bog'lanish» card (the
+  dated history, the archived periods). Every change is in the Jurnal
+  (`org.verifix_sync_pass`, `org.cell_links_applied`, `org.cell_manager_picked`
+  …). The assistant may not touch any of it, the manager pick included (it can
+  create a profile). A renamed UNIT keeps its old spelling in
+  `managers.name_aliases`, which `name_map.sheet_alias_map` reads, so its
+  sheet-era rows stay its own.
+- **The dated-link and span caches** (`cell_links.events`, `cell_archive.spans`)
+  are re-read by ONE thread while the others are served the previous answer; a
+  failed re-read keeps it, and a read that began before a write is stale at
+  once. Both are read once at the end of the lifespan, before the first
+  request (a cold one makes every reader wait on a loader that needs a second
+  pool connection). An OPEN span counts only while the cell's `archived_at` is
+  set: a cell restored by code that knows nothing of spans (the old copy in the
+  swap window, a rollback) is alive, as /cells says.
+- **Deviations from the plan, all deliberate**: the six rollout steps were
+  built together, so the `brigadir_differs` tap is enabled (the readers are
+  day-aware); the org is a read of its own, not a widened `dir`;
+  `leader_verifix_check` (its `PINS`) and the 12 Oct Kenjayeva one-shot stay.
+  Deleted with this build: `verifix_cell_sync`, `verifix_leader_sync`,
+  `verifix_cells_leaders_sync`, `verifix_profile_photos`,
+  `verifix_supervisor_check`, `cell_owner_pass`, `multi_leader_cells` and their
+  startup hooks in both entrypoints (their records and columns stay).
+- **To switch it on**: run the tie run (dry, then real), read the queue and
+  the would-do list in `report` mode for two days, then set `on`.
 
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 

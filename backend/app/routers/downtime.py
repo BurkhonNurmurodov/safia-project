@@ -538,7 +538,12 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
                   for i in range((date_to - date_from).days + 1))
         if idle_source.uses_cells(units, manager_id, d)
     ]
-    cells = db.query(Cell).filter(Cell.manager_id == manager_id).all()
+    # The unit's cells, plus every cell that stood in it on a day of the period
+    # and has since moved to another brigadir (`cell_links`, 2026-10-12) — its
+    # events there are this unit's. With nothing moved, the same list.
+    cells = idle_source.cells_with_moved(
+        db, db.query(Cell).filter(Cell.manager_id == manager_id).all(),
+        [manager_id], date_from, date_to)
     if not cells or not cells_days:
         return {"cells_days": cells_days, "days": {}}
 
@@ -550,8 +555,14 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
         CellOjidaniyaInterval.status == "approved",
     ).all()
     # A cell archived before a day is gone from it (`cell_archive`).
-    from app.services import cell_archive
+    from app.services import cell_archive, cell_links
     rows = [r for r in rows if cell_archive.alive(by_id[r.cell_id], r.date)]
+    # …and a cell counts for this unit only on the days it stood in it: one
+    # that changed brigadir inside the period keeps its other unit's events
+    # there. Asked only when a cell here really moved.
+    if cell_links.changed_since("manager_id", date_from) & set(by_id):
+        on_day = cell_links.OnDay(cells)
+        rows = [r for r in rows if on_day.units(r.date).get(r.cell_id) == manager_id]
 
     # How many people stood in each cell that day — `idle_source.cell_headcount`
     # is the very weight the unit's mean divides by, never a second count of

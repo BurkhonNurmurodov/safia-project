@@ -5,12 +5,14 @@ import {
   ArrowLeft, LayoutGrid, Hash, Users, Flag, UserCheck, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
   Boxes, SearchX, AlertTriangle, Layers, Archive, Workflow, Target,
+  Link2, History, CalendarClock,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import CellFormModal from "../components/CellFormModal";
+import { CellManagerDialog, PendingChip } from "../components/CellManagerPicker";
 import GroupBadge from "../components/ui/GroupBadge";
 import { wcGroupLabel } from "../utils/wcGroup";
 import { SectionHead } from "../components/ui/DataTable";
@@ -19,6 +21,7 @@ import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
+import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 
 /**
@@ -36,6 +39,14 @@ import api from "../utils/api";
  * shared CellFormModal (codes / names / owners — the same form as /cells)
  * and the «Zagruzkada hisoblanadi» (in_load) and «Jarayonlar» (one_process)
  * switches, written through the register's own PUT /api/profiles/admin/cells/:id.
+ *
+ * «Verifix» (the live sync, 2026-10-12): whether the cell is tied to a Verifix
+ * subdivision and what Verifix calls it, who decides its «Boshqaruvchi» (the
+ * Verifix seat, or a person), the dated changes still waiting for their shift
+ * opening, the cell's dated history (newest first — a change reaches no day
+ * already filed) and the spans it stood archived. The cell's own brigadir (or
+ * an admin / a register editor) gets «Boshqaruvchini tanlash», the picker
+ * dialog the /cells register opens too.
  */
 
 // ── shared building blocks (Profile.jsx design language) ─────────────────────
@@ -157,6 +168,182 @@ function OwnerValue({ owner, unitId, t, tl, lang }) {
   );
 }
 
+// ── The «Verifix» section ─────────────────────────────────────────────────────
+
+// "2026-10-13" → "13.10.2026".
+const dmy = (iso) => {
+  const s = String(iso || "");
+  return s.length >= 10 ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : s;
+};
+const fill = (s, vars) =>
+  String(s ?? "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
+
+// A dated link's field, as the register's own columns name it.
+const FIELD_KEY = {
+  manager_id: "admin.profiles.colSupervisor",
+  leader_id: "admin.profiles.colCellManager",
+  owner_id: "admin.profiles.colCellOwner",
+  archived: "cellVfx.fArchived",
+};
+const SRC_KEY = {
+  verifix: "cellVfx.src.verifix", manual: "cellVfx.src.manual",
+  grandfather: "cellVfx.src.grandfather", release: "cellVfx.src.release",
+};
+
+// One value of a dated link: a unit / a profile by name, the archive as a word.
+function linkValue(field, value, name, t, tl) {
+  if (field === "archived") return t(value ? "cellVfx.archivedOn" : "cellVfx.archivedOff");
+  if (name) return tl(name);
+  if (value == null) return t(field === "manager_id" ? "admin.profiles.cellNoSupervisor" : "admin.profiles.cellUnassigned");
+  return `#${value}`;
+}
+
+// One dated change: when it counts, which link, before → after, who decided.
+function HistoryRow({ h, t, tl }) {
+  const after = linkValue(h.field, h.value, h.value_name, t, tl);
+  // A «grandfather» mark keeps the value (value == prev): it states who
+  // decides from then on and moves nothing, so it prints no «X → X».
+  const before = h.field === "archived" || h.prev === h.value ? null
+    : h.prev == null && !h.prev_name ? null : linkValue(h.field, h.prev, h.prev_name, t, tl);
+  const who = [SRC_KEY[h.src] ? t(SRC_KEY[h.src]) : h.src, h.by && h.src !== "verifix" ? tl(h.by) : null]
+    .filter(Boolean).join(" · ");
+  return (
+    <li className="py-2 border-b last:border-b-0" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center gap-2 flex-wrap min-w-0 text-[12px]">
+        <span className="font-mono tabular-nums" style={{ color: "var(--text-3)" }}>{dmy(h.from)}</span>
+        <span className="font-semibold" style={{ color: "var(--text-2)" }}>{t(FIELD_KEY[h.field] || h.field)}</span>
+        {!h.applied && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}>
+            <CalendarClock size={11} aria-hidden="true" style={{ color: "var(--text-3)" }} />
+            {t("cellVfx.waiting")}
+          </span>
+        )}
+        <span className="ml-auto text-[11px]" style={{ color: "var(--text-3)" }}>{who}</span>
+      </div>
+      <div className="mt-0.5 text-[13px] break-words" style={{ color: "var(--text-1)" }}>
+        {before && <><span style={{ color: "var(--text-3)" }}>{before}</span> → </>}
+        {after}
+      </div>
+    </li>
+  );
+}
+
+const HISTORY_SHOWN = 8;
+
+// The changes waiting for their opening, {field: {value, from, src, by}},
+// each named off the history row that recorded it.
+function namedPending(vfx) {
+  const history = vfx?.history || [];
+  return Object.entries(vfx?.pending || {}).map(([field, p]) => {
+    const h = history.find((x) => x.field === field && !x.applied && x.from === p.from
+                                  && String(x.value) === String(p.value));
+    return { field, ...p, name: h?.value_name || null };
+  });
+}
+
+function VerifixCard({ vfx, pending, owner, canPick, onPick, t, tl }) {
+  const [all, setAll] = useState(false);
+  const history = vfx.history || [];
+  const spans = vfx.archived_spans || [];
+  const shown = all ? history : history.slice(0, HISTORY_SHOWN);
+  const manual = vfx.manager_mode === "manual";
+  return (
+    <Card
+      icon={Link2}
+      title={t("cellVfx.title")}
+      right={canPick && (
+        <Button size="sm" tint icon={<Flag size={12} />} onClick={onPick}>
+          {t("cellMgr.pickTitle")}
+        </Button>
+      )}
+    >
+      <div className="-my-2">
+        <InfoRow icon={Link2} label={t("cellVfx.link")}>
+          {vfx.tied ? (
+            <span className="inline-flex items-center gap-1.5 flex-wrap justify-end">
+              <Tag color={GREEN}>{t("cellVfx.tied")}</Tag>
+              {vfx.code && <span>{vfx.code}</span>}
+              {vfx.state && vfx.state !== "A" && <Tag color={GREY}>{t("cellVfx.closed")}</Tag>}
+            </span>
+          ) : (
+            <Tag color={GREY}>{t("cellVfx.untied")}</Tag>
+          )}
+        </InfoRow>
+        <InfoRow icon={Flag} label={t("cellVfx.decides")}>
+          {t(manual ? "cellVfx.modeManual" : "cellVfx.modeVerifix")}
+        </InfoRow>
+        <InfoRow icon={UserCheck} label={t("cellVfx.seat")}>
+          {owner
+            ? tl(owner.name)
+            : <span style={{ color: "var(--text-3)" }}>
+                {t(vfx.seat_employee ? "cellVfx.seatNoProfile" : "cellVfx.noSeat")}
+              </span>}
+        </InfoRow>
+        {pending.length > 0 && (
+          <InfoRow icon={CalendarClock} label={t("cellVfx.pending")} top>
+            <span className="flex flex-col items-end gap-1">
+              {pending.map((p) => (
+                <span key={p.field} className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                  <span className="text-[11px] flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                    {t(FIELD_KEY[p.field] || p.field)}:
+                  </span>
+                  <PendingChip from={p.from} name={linkValue(p.field, p.value, p.name, t, tl)} />
+                </span>
+              ))}
+            </span>
+          </InfoRow>
+        )}
+      </div>
+      {!vfx.tied && (
+        <p className="mt-2 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{t("cellVfx.untiedNote")}</p>
+      )}
+
+      <div className="mt-4">
+        <div className="flex items-center gap-2 mb-1">
+          <History size={13} style={{ color: "var(--text-4)" }} />
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            {t("cellVfx.history")}
+          </span>
+        </div>
+        <p className="text-[11px] leading-snug mb-1" style={{ color: "var(--text-3)" }}>{t("cellVfx.historyHint")}</p>
+        {history.length === 0 ? (
+          <p className="py-2 text-[12px]" style={{ color: "var(--text-3)" }}>{t("cellVfx.historyEmpty")}</p>
+        ) : (
+          <>
+            <ul>
+              {shown.map((h, i) => <HistoryRow key={`${i}-${h.field}-${h.from}-${h.at || ""}`} h={h} t={t} tl={tl} />)}
+            </ul>
+            {history.length > HISTORY_SHOWN && (
+              <Button size="sm" variant="ghost" className="mt-1" onClick={() => setAll((v) => !v)}>
+                {all ? t("cellVfx.less") : fill(t("cellVfx.more"), { n: history.length - HISTORY_SHOWN })}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      {spans.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Archive size={13} style={{ color: "var(--text-4)" }} />
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              {t("cellVfx.spans")}
+            </span>
+          </div>
+          <ul>
+            {[...spans].reverse().map((sp) => (
+              <li key={`${sp.from}-${sp.to || ""}`} className="py-1 text-[13px] tabular-nums" style={{ color: "var(--text-1)" }}>
+                {dmy(sp.from)} — {sp.to ? dmy(sp.to) : <span style={{ color: "var(--text-3)" }}>{t("cellVfx.spanOpen")}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // One footprint line: label left, "N days · last <date> · extras" right,
 // muted "no data yet" when the table has nothing for this cell.
 function ActRow({ icon: Icon, label, parts, none }) {
@@ -211,7 +398,9 @@ export default function CellDetails() {
   const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
   const qc = useQueryClient();
   const toast = useToast();
+  const { auth } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["cell-details", id],
@@ -316,6 +505,25 @@ export default function CellDetails() {
   // it inherits). Undefined on a backend that predates the register — the row
   // then reads exactly like a cell whose hours nobody has set.
   const hours = data.hours || null;
+  // The Verifix live sync's block (null on a backend that predates it).
+  const vfx = data.verifix || null;
+  const pending = namedPending(vfx);
+  const pendOf = (field) => pending.find((p) => p.field === field) || null;
+  // «13.10 dan: X» beside a value in force — a change already waiting.
+  const pendChip = (field) => {
+    const p = pendOf(field);
+    return p ? <PendingChip from={p.from} name={linkValue(field, p.value, p.name, t, tl)} /> : null;
+  };
+  // Who may pick the «Boshqaruvchi» (backend `_may_pick_manager`): an admin or
+  // a register editor anywhere, a brigadir on their own unit's cell.
+  const canPick = !c.archived_at && (
+    canEdit || auth?.role === "admin"
+    || (auth?.role === "supervisor" && c.manager_id != null && Number(auth?.role_id) === c.manager_id));
+  const onSavedText = (msg) => {
+    qc.invalidateQueries({ queryKey: ["cell-details", id] });
+    qc.invalidateQueries({ queryKey: ["admin-cells"] });
+    if (msg) toast.success(msg);
+  };
 
   // A cell is its CODE — the workshop name is never printed (utils/cellName.js),
   // so the hero states the code and the people answerable for it.
@@ -426,6 +634,7 @@ export default function CellDetails() {
                         )}
                       </>
                     : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellNoSupervisor")}</span>}
+                  {pendOf("manager_id") && <span className="ml-1.5">{pendChip("manager_id")}</span>}
                 </InfoRow>
                 <InfoRow icon={Clock} label={t("profile.shift")}>
                   {sup?.shift != null ? sup.shift : <span style={{ color: "var(--text-4)" }}>—</span>}
@@ -456,6 +665,12 @@ export default function CellDetails() {
                   {leader
                     ? tl(leader.name)
                     : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+                  {vfx?.manager_mode === "manual" && (
+                    <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-3)" }} title={t("cellMgr.manualTip")}>
+                      · {t("cellMgr.manual")}
+                    </span>
+                  )}
+                  {pendOf("leader_id") && <span className="ml-1.5">{pendChip("leader_id")}</span>}
                 </InfoRow>
                 <InfoRow icon={UserCheck} label={t("admin.profiles.colCellOwner")}>
                   <OwnerValue owner={owner} unitId={c.manager_id} t={t} tl={tl} lang={lang} />
@@ -572,6 +787,13 @@ export default function CellDetails() {
               </div>
             </Card>
 
+            {vfx && (
+              <div className="lg:col-span-2 min-w-0">
+                <VerifixCard vfx={vfx} pending={pending} owner={owner} canPick={canPick}
+                             onPick={() => setPickOpen(true)} t={t} tl={tl} />
+              </div>
+            )}
+
           </div>
         </div>
 
@@ -579,14 +801,23 @@ export default function CellDetails() {
         {editOpen && (
           <CellFormModal
             mode="edit"
-            item={c}
+            // The form reads the waiting changes and the seat's name off the
+            // register's row shape; this page holds them apart.
+            item={{ ...c, pending: vfx?.pending || {}, owner: owner?.name || null }}
             units={(reg?.supervisors ?? []).filter((s) => !s.archived)}
             leaders={reg?.leaders ?? []}
             onClose={() => setEditOpen(false)}
-            onSaved={() => {
-              qc.invalidateQueries({ queryKey: ["cell-details", id] });
-              qc.invalidateQueries({ queryKey: ["admin-cells"] });
-            }}
+            onSaved={onSavedText}
+          />
+        )}
+
+        {/* The «Boshqaruvchi» picker alone — a brigadir's door on their cell */}
+        {pickOpen && (
+          <CellManagerDialog
+            cell={c}
+            subtitle={sup ? tl(sup.name) : undefined}
+            onClose={() => setPickOpen(false)}
+            onSaved={onSavedText}
           />
         )}
 

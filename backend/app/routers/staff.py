@@ -544,6 +544,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{leader}: результаты больше не учитываются", "С {date} | Дни этого лидера больше не входят в средний результат. Причина: {reason} | Кто: {by}"),
         "en": ("{leader}: results no longer count", "From {date} | This leader's days no longer enter the average at all. Reason: {reason} | By: {by}"),
     },
+    # The Verifix live sync (2026-10-12): a leader dismissed on Verifix — their
+    # cells are let go and their results stop counting; and back again.
+    "vfx_leader_dismissed": {
+        "uz": ("{leader} Verifixda ishdan bo'shatilgan", "Bo'shatilgan sana: {date}\nNatijalari {cut} dan hisoblanmaydi\nBo'shatilgan yacheykalar: {cells}\nYacheykaga boshqaruvchi tanlang (Yacheykalar sahifasi)."),
+        "uz_cyrl": ("{leader} Verifixда ишдан бўшатилган", "Бўшатилган сана: {date}\nНатижалари {cut} дан ҳисобланмайди\nБўшатилган ячейкалар: {cells}\nЯчейкага бошқарувчи танланг (Ячейкалар саҳифаси)."),
+        "ru": ("{leader} уволен(а) в Verifix", "Дата увольнения: {date}\nРезультаты не учитываются с {cut}\nОсвобождённые ячейки: {cells}\nВыберите управляющего ячейки (страница «Ячейки»)."),
+        "en": ("{leader} was dismissed on Verifix", "Dismissed on: {date}\nResults no longer count from {cut}\nCells released: {cells}\nPick the cells' manager (the Cells page)."),
+    },
+    "vfx_leader_returned": {
+        "uz": ("{leader} Verifixda yana ishlayapti", "Natijalari yana hisoblanadi."),
+        "uz_cyrl": ("{leader} Verifixда яна ишлаяпти", "Натижалари яна ҳисобланади."),
+        "ru": ("{leader} снова работает в Verifix", "Результаты снова учитываются."),
+        "en": ("{leader} works on Verifix again", "Their results count again."),
+    },
     "leader_cutoff_set": {
         "uz": ("Natijalaringiz hisoblanmaydi", "Sana: {date} dan boshlab | Kunlaringiz endi o'rtacha natijaga umuman kirmaydi — na ortiqcha, na kamchilik. Sabab: {reason} | Kim: {by}"),
         "uz_cyrl": ("Натижаларингиз ҳисобланмайди", "Сана: {date} дан бошлаб | Кунларингиз энди ўртача натижага умуман кирмайди — на ортиқча, на камчилик. Сабаб: {reason} | Ким: {by}"),
@@ -5981,12 +5995,28 @@ def _placement_cells(db: Session, manager_id: int, codes_in_use: set,
 
     A registry cell archived before the day is no destination (`cell_archive`);
     a code somebody already stands in stays shown, archived or not.
+
+    The registry half is the unit's cells ON the day (`cell_links`,
+    2026-10-12): a cell moved to another brigadir since is still this unit's
+    on the days before the move. With no cell's unit changed after the day it
+    is the current column, as before.
     """
-    from app.services import cell_archive
-    clauses = [and_(Cell.manager_id == manager_id, cell_archive.alive_clause(day))]
+    from app.services import cell_archive, cell_links
+    moved = cell_links.changed_since("manager_id", day)
+    in_unit = Cell.manager_id == manager_id
+    if moved:
+        in_unit = or_(in_unit, Cell.id.in_(moved))
+    clauses = [and_(in_unit, cell_archive.alive_clause(day))]
     if codes_in_use:
         clauses.append(Cell.verifix_code.in_(list(codes_in_use)))
-    return db.query(Cell).filter(or_(*clauses)).all()
+    cells = db.query(Cell).filter(or_(*clauses)).all()
+    if moved:
+        # Only a cell whose unit changed after `day` is resolved; every other
+        # cell answers by its column — the fast path's own answer.
+        on = cell_links.map_on([c for c in cells if c.id in moved], "manager_id", day)
+        cells = [c for c in cells
+                 if on.get(c.id, c.manager_id) == manager_id or c.verifix_code in codes_in_use]
+    return cells
 
 
 def _lender_names(db: Session, manager_id: int, d: date) -> dict:

@@ -310,6 +310,10 @@ export default function LeaderDayExclusions() {
         // …or a day they owed nothing for: no cell of theirs counts in the
         // загрузка and they filed nothing since 1 October (`leader_load`).
         if (p.no_load_from && d >= p.no_load_from) continue;
+        // …or a day BEFORE the first one they owe (`owes_from`: the day the
+        // profile was claimed or picked; "9999-12-31" while nobody has claimed
+        // a profile the Verifix sync created). Not owed, so not missed.
+        if (p.owes_from && d < p.owes_from) continue;
         out.push({
           // Not a register row and never pretends to be one: it exists only in
           // this list, until an admin turns one into a decision.
@@ -332,7 +336,9 @@ export default function LeaderDayExclusions() {
   const base = useMemo(
     () => (miss ? missingRows
       : inRange.filter((r) => (view === "off"
-          ? !!r.excluded && !r.excluded.cutoff
+          // A day all of the leader's cells stood archived (`gone`) is out by
+          // the archive's own rule, not a decision of this tab — nothing to lift.
+          ? !!r.excluded && !r.excluded.cutoff && !r.excluded.gone
           : !r.excluded))),
     [miss, missingRows, inRange, view]);
 

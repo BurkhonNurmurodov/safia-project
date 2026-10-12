@@ -127,6 +127,11 @@ def _camera_cfg(db: Session, prof: RoleProfile, task_id: int) -> tuple[dict, dic
         # No counted cell and nothing filed since 1 October: no checklist is
         # owed, and a shot would file one (`services/leader_load.py`).
         raise HTTPException(status_code=409, detail="no_load")
+    from app.services import leader_owes
+    if not leader_owes.owes(prof, leader_owes.shift_day(db, prof)):
+        # Before the first day this leader owes (`leader_owes`): the bot and the
+        # «Chek-list» tab refuse to open the day, and a shot would open it.
+        raise HTTPException(status_code=409, detail="not_owed")
     cfg = effective_leader_config(db, prof, leader_proof.leader_shift(db, prof))
     entry = cfg.get(task_id)
     if not entry or not entry.get("enabled"):

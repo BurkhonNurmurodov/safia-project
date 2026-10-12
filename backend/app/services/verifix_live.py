@@ -790,10 +790,16 @@ def _person(day: date, now: datetime, rec: Optional[dict], marks: list,
 
 # ── who belongs where ─────────────────────────────────────────────────────────
 
-def _registry(db: Session) -> tuple[dict, dict]:
+def _registry(db: Session, day: Optional[date] = None) -> tuple[dict, dict]:
     """code key → {id, code, manager_id} for the cells COUNTED IN THE ЗАГРУЗКА
     (`cells.in_load` — the operator, 2026-10-04: this page takes no other
-    cell); manager id → {name, shift} for every live unit."""
+    cell); manager id → {name, shift} for every live unit.
+
+    With `day` (a shift-day) each cell's `manager_id` is its unit ON that day
+    (`cell_links`, 2026-10-12): a cell moved to another brigadir since is
+    still listed for its old unit's days, and one moved in is not yet the new
+    unit's. Without it — or when no cell's unit changed after that day — it
+    is the current column, exactly as before."""
     cells = {}
     for cid, code, mid in (db.query(Cell.id, Cell.verifix_code, Cell.manager_id)
                            .filter(Cell.in_load.is_(True)).all()):
@@ -801,13 +807,55 @@ def _registry(db: Session) -> tuple[dict, dict]:
             cells[verifix._code_key(code)] = {"id": cid, "code": code, "manager_id": mid}
     units = {m.id: {"name": m.name, "shift": m.shift}
              for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
-    return cells, units
+    return _on_day(cells, day), units
 
 
-def unit_cells(db: Session, manager_id: int) -> set[str]:
+def _on_day(cells: dict, day: Optional[date]) -> dict:
+    """The registry's cells with each cell's unit on `day`. The SAME dict when
+    no listed cell's unit changed after that day (the fast path: every figure
+    reads exactly what it read before the links were dated)."""
+    if day is None:
+        return cells
+    from app.services import cell_links
+    moved = cell_links.changed_since("manager_id", day)
+    if not moved:
+        return cells
+    hit = [c for c in cells.values() if c["id"] in moved]
+    if not hit:
+        return cells
+    on = cell_links.map_on([(c["id"], c["manager_id"]) for c in hit], "manager_id", day)
+    diff = {k: on[c["id"]] for k, c in cells.items()
+            if c["id"] in on and on[c["id"]] != c["manager_id"]}
+    if not diff:
+        return cells
+    out = dict(cells)
+    for k, mid in diff.items():
+        out[k] = {**cells[k], "manager_id": mid}
+    return out
+
+
+def unit_cells(db: Session, manager_id: int, day: Optional[date] = None) -> set[str]:
     """The unit's workload cells, by their stored code — what a move or a
-    placement on this page may name."""
-    return {c["code"] for c in _registry(db)[0].values() if c["manager_id"] == manager_id}
+    placement on this page may name. With `day`: the cells it had ON that
+    shift-day."""
+    return {c["code"] for c in _registry(db, day)[0].values() if c["manager_id"] == manager_id}
+
+
+def had_cells(db: Session, manager_id: int, start: date, end: date) -> bool:
+    """The unit had a workload cell on some day of [start, end) — now, or on a
+    day before a cell of it moved away (`cell_links`)."""
+    cells, _ = _registry(db)
+    if any(c["manager_id"] == manager_id for c in cells.values()):
+        return True
+    from app.services import cell_links
+    moved = cell_links.changed_since("manager_id", start)
+    hit = [(c["id"], c["manager_id"]) for c in cells.values() if c["id"] in moved]
+    d = start
+    while hit and d < end:
+        if manager_id in cell_links.map_on(hit, "manager_id", d).values():
+            return True
+        d += timedelta(days=1)
+    return False
 
 
 def _homes(directory: dict, cells: dict) -> dict[str, tuple[int, str]]:
@@ -845,7 +893,7 @@ def close_fresh_s(db: Session, manager_id: int, day: date) -> float:
     Verifix once before saying no (`routers/staff_live.close_day`). A PAST
     shift-day — the job no longer reads it, and its copy will not follow —
     still has the close read it (`CLOSE_FRESH_S`)."""
-    _, units = _registry(db)
+    _, units = _registry(db, day)
     unit = units.get(manager_id)
     if not unit:
         return CLOSE_FRESH_S
@@ -947,11 +995,15 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
     unit = units.get(manager_id)
     if not unit:
         return {"error": "no_unit"}
-    if not any(c["manager_id"] == manager_id for c in cells.values()):
-        return {"error": "no_cells"}
     frame = day_frame(db, unit["shift"])
     today = date.fromisoformat(frame["day"])
     day = day or today
+    # Who stands in which cell is the unit's ON the day read (`cell_links`):
+    # a cell moved to another brigadir since still brings its people to the
+    # old unit's past days. The same dict when nothing moved after the day.
+    cells = _on_day(cells, day)
+    if not any(c["manager_id"] == manager_id for c in cells.values()):
+        return {"error": "no_cells"}
     # A date that has not come yet has nothing in Verifix: reading it would
     # only store an empty day, which every unit's calendar then shows «open».
     if day > now_local().date():
@@ -1312,7 +1364,10 @@ def _reminders(db: Session, units: dict, with_cells: set, by_shift: dict,
             continue
         ctx = live_staff.load(db, prev, directory, store)
         closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == prev)}
-        mids = sorted((m for m in with_cells if (units[m]["shift"] or 1) == s),
+        # The units with a workload cell ON that day (`ctx.cells` is the
+        # registry on `prev` — the current one when nothing moved since).
+        with_prev = {c["manager_id"] for c in ctx.cells.values() if c["manager_id"] in units}
+        mids = sorted((m for m in with_prev if (units[m]["shift"] or 1) == s),
                       key=lambda m: units[m]["name"] or "")
         total, open_units = 0, []
         from app.routers import staff_live
@@ -1380,11 +1435,22 @@ def _pass(db: Session) -> None:
         last = datetime.fromisoformat(row.data["all_at"]) if row and (row.data or {}).get("all_at") else None
         if last is not None and (now_local() - last).total_seconds() < every - 15:
             continue
-        read_units = {m for m in with_cells if reads(m, day)}
-        ids = sorted({eid for eid, (m, _) in homes.items() if m in read_units} | _doc_ids(db, day))
+        # Who stands in which cell is the unit's ON this shift-day
+        # (`cell_links`): a cell that moves at the next opening still belongs
+        # to the day being read. The current registry when nothing moved.
+        cells_d = _on_day(cells, day)
+        if cells_d is cells:
+            with_d, homes_d = with_cells, homes
+        else:
+            with_d = {c["manager_id"] for c in cells_d.values() if c["manager_id"] in units}
+            homes_d = {eid: h for eid, h in _homes(directory, cells_d).items() if h[0] in with_d}
+            for m in with_d - unit_days.keys():
+                unit_days[m] = shift_day(db, units[m]["shift"] or 1, now_tz)
+        read_units = {m for m in with_d if reads(m, day)}
+        ids = sorted({eid for eid, (m, _) in homes_d.items() if m in read_units} | _doc_ids(db, day))
         t0 = _time.monotonic()
         try:
-            _read_day(db, cfg, day, ids, units_read=read_units, all_units=with_cells, homes=homes)
+            _read_day(db, cfg, day, ids, units_read=read_units, all_units=with_d, homes=homes_d)
         except verifix.VerifixError as exc:
             _note_error(db, key, exc)
             log.warning("staff-live: reading %s failed (%s: %s)", day, exc.code, exc.message)

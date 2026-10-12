@@ -175,7 +175,9 @@ class Ctx:
 
 def load(db: Session, day: date, directory: dict, store: dict,
          now: Optional[datetime] = None) -> Ctx:
-    cells, units = verifix_live._registry(db)
+    # The cells' units ON this shift-day (`cell_links`): a cell moved to
+    # another brigadir since still brings its people to its old unit's day.
+    cells, units = verifix_live._registry(db, day)
     homes = verifix_live._homes(directory, cells)
     docs = (db.query(LiveDocument).filter(LiveDocument.day == day)
             .order_by(LiveDocument.approved_at.nullslast(), LiveDocument.id).all())

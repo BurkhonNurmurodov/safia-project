@@ -331,6 +331,30 @@ def _parse_date(s: Optional[str]) -> date:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
 
+def _unit_cells_on(db: Session, manager_id: int, day: date, *crit, order=()) -> list:
+    """The unit's cells ON `day` matching `crit`, in `order` — `cell_links`
+    (2026-10-12): a cell moved to another brigadir since is still the old
+    unit's on the days before the move, and one moved in is not yet the new
+    unit's. With no cell's unit changed after `day` it is exactly the current
+    selection (`Cell.manager_id == manager_id`)."""
+    from sqlalchemy import or_
+    from app.services import cell_links
+    moved = cell_links.changed_since("manager_id", day) if day else set()
+    cond = Cell.manager_id == manager_id
+    if moved:
+        cond = or_(cond, Cell.id.in_(moved))
+    q = db.query(Cell).filter(cond, *crit)
+    if order:
+        q = q.order_by(*order)
+    cells = q.all()
+    if moved:
+        # Only a cell whose unit changed after `day` is resolved; every other
+        # cell answers by its column — the fast path's own answer.
+        on = cell_links.map_on([c for c in cells if c.id in moved], "manager_id", day)
+        cells = [c for c in cells if on.get(c.id, c.manager_id) == manager_id]
+    return cells
+
+
 def _build_dashboard(db: Session, manager_id: int, day: date,
                      wc_scope: Optional[set[str]] = None,
                      payload: Optional[dict] = None,
@@ -401,10 +425,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     wc_of_code: dict[str, tuple[str, Optional[str]]] = {}
     # A cell archived before the day is not one of them (`cell_archive`): its
     # letter claims nothing, so its share falls to the cells still standing.
-    for c in (db.query(Cell)
-              .filter(Cell.manager_id == manager_id, Cell.sap_code.isnot(None),
-                      cell_archive.alive_clause(day))
-              .order_by(Cell.verifix_code, Cell.id).all()):
+    # The unit's cells ON the day (`cell_links`) — the current ones when no
+    # cell moved after it.
+    for c in _unit_cells_on(db, manager_id, day, Cell.sap_code.isnot(None),
+                            cell_archive.alive_clause(day),
+                            order=(Cell.verifix_code, Cell.id)):
         n = norm_code(c.sap_code)
         if n:
             cells_at[n].append(c.wc_group or None)
@@ -789,8 +814,8 @@ def staffing_proof(
         if not _in_scope(scope, work_center) or (grp and not wc_group.in_scope(gscope, work_center, grp)):
             raise HTTPException(status_code=403, detail="This team is not one of your cells")
     want = norm_code(work_center)
-    cells = [c for c in db.query(Cell).filter(Cell.manager_id == mid, Cell.sap_code.isnot(None),
-                                              cell_archive.alive_clause(day)).all()
+    cells = [c for c in _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
+                                       cell_archive.alive_clause(day))
              if norm_code(c.sap_code) == want and c.verifix_code
              and (grp is None or (c.wc_group or None) == grp)]
     codes = sorted({c.verifix_code for c in cells})
@@ -1599,9 +1624,11 @@ def _cell_letters(db, mid: int, day: date) -> dict[str, set]:
     """``{normalised SAP code: {letters its cells carry}}`` for ONE unit on one
     day, matched through `wc_group.cells_by_wc` — the letters a group pin may be
     typed under. A cell archived before the day carries none (`cell_archive`)."""
-    by = wc_group.cells_by_wc(db.query(Cell).filter(
-        Cell.manager_id == mid, Cell.sap_code.isnot(None),
-        cell_archive.alive_clause(day)).all())
+    # The unit's cells ON the day (`cell_links`), keyed by that unit — a cell
+    # moved away since keeps its letter on the days before the move.
+    cells = _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
+                           cell_archive.alive_clause(day))
+    by = wc_group.cells_by_wc(cells, units={c.id: mid for c in cells})
     return {code: {c.wc_group for c in cs if c.wc_group} for (_m, code), cs in by.items()}
 
 

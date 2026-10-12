@@ -57,8 +57,8 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.services import (
-    action_log, cell_hours, leader_kind, leader_shift, profile_photo, supervisor_kind,
-    wc_group,
+    action_log, cell_hours, cell_links, cell_register, leader_kind, leader_shift,
+    profile_photo, supervisor_kind, wc_group,
 )
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
@@ -303,7 +303,7 @@ def _user_info(db: Session) -> dict[int, dict]:
 
 
 def _set_leader_cells(db: Session, leader_id: int, codes: list[str],
-                      follow_unit: bool = True) -> None:
+                      follow_unit: bool = True, by: Optional[str] = None) -> None:
     """Reconcile a leader's owned cells to exactly `codes`: release rows no
     longer listed (leader_id → NULL — cells are first-class rows now, their
     sap_code/workshop names survive reassignment), claim or create the rest.
@@ -318,63 +318,60 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str],
     under one brigadir while their cell's load is kept in another unit
     (`cell_lookup.cells_unit_for_leader`), and re-sending the same cell list with
     a rename must not quietly carry that cell — and its загрузка — away."""
-    from app.services import leader_load
-    leader_load.forget()        # who owns a counted cell just changed
+    # From 2026-10-12 (the operator's ruling 3 of the Verifix live sync) a
+    # leader's cells NEVER follow the leader's unit: picking a cell for a leader,
+    # keeping it or moving the leader to another brigadir moves no cell. The
+    # picks and releases are DATED «Boshqaruvchi» changes (`cell_register`), so
+    # no filed day moves. `follow_unit` is kept for the callers and ignored.
+    from app.services import cell_register
     leader = db.query(RoleProfile).filter_by(id=leader_id).first()
     mgr_id = leader.manager_id if leader else None
+    by = by or "Profile editor"
     want: list[str] = []
     for c in codes or []:
-        c = " ".join((c or "").split())
+        c = latin_code(" ".join((c or "").split())) or ""
         if c and c not in want:
             want.append(c)
-    existing = db.query(Cell).filter_by(leader_id=leader_id).all()
-    moved: list[Cell] = []   # cells whose unit this sync changes (group settlement below)
+    existing = cell_register.held_cells(db, leader_id, "leader_id")
     for row in existing:
         if row.verifix_code not in want:
-            row.leader_id = None
-        elif follow_unit and mgr_id and row.manager_id != mgr_id:
-            # A KEPT cell follows its leader's unit as well. Only claimed and
-            # created rows were stamped before, so moving a leader to another
-            # brigadir left every cell they kept naming the OLD one: the leader
-            # read as the new unit everywhere the unit comes from the profile
-            # (/leaders, /tasks), while `cells.manager_id` — the register's
-            # «Brigadir» column and every per-cell page scoped by it, /idle-cell
-            # included — went on answering with the supervisor they had left.
-            # The other two writers already treat the leader as authoritative
-            # (`_apply_cell_fields`, the create below); this is the third.
-            row.manager_id = mgr_id
-            moved.append(row)
+            # A RELEASE, not a person's pick of «nobody»: the cell goes back to
+            # following its Verifix seat (src "release" is not an override),
+            # and a pick waiting for somebody else stands.
+            cell_register.release_one(db, row, leader_id, "leader_id", to=None,
+                                      src="release", by=by)
     have = {row.verifix_code for row in existing}
     for code in want:
         if code in have:
             continue
         row = db.query(Cell).filter_by(verifix_code=code).first()
-        if row and row.leader_id not in (None, leader_id):
-            owner = db.query(RoleProfile).filter_by(id=row.leader_id).first()
+        held_by = None
+        if row is not None:
+            waiting = cell_register.cell_links.pending(db, [row.id]).get(row.id, {})
+            held_by = (waiting["leader_id"]["value"] if "leader_id" in waiting
+                       else row.leader_id)
+        if row and held_by not in (None, leader_id):
+            owner = db.query(RoleProfile).filter_by(id=held_by).first()
             raise HTTPException(
                 status_code=409,
                 detail=f"Cell {code} is already assigned to "
                        f"{owner.name if owner else 'another leader'}")
         if row:
-            row.leader_id = leader_id
-            if mgr_id and row.manager_id != mgr_id:
-                row.manager_id = mgr_id
-                moved.append(row)
+            cell_register.set_manager(db, row, leader_id, src="manual", by=by, mark=True)
         else:
-            db.add(Cell(verifix_code=code, leader_id=leader_id, manager_id=mgr_id))
-    # A sync nobody chose cell by cell never refuses: a colliding letter yields.
-    cleared = wc_group.settle_moved(db, moved, mgr_id)
-    if cleared:
-        action_log.enrich(details=[("group_cleared", c) for c in cleared])
+            cell_register.create_cell(db, code, manager_id=mgr_id, leader_id=leader_id)
 
 
 def _release_leader_cells(db: Session, leader_id: int) -> None:
     """Unassign every cell the profile runs AND every cell it owns (delete +
     role switch away from leader) — both slots name a leader. The rows stay:
     cell metadata outlives its people."""
-    db.query(Cell).filter_by(leader_id=leader_id).update({"leader_id": None})
-    db.query(Cell).filter_by(owner_id=leader_id).update(
-        {"owner_id": None, "owner_meta": None})
+    from app.services import cell_register
+    # The columns clear AT ONCE (the profile is going: the FK must not point
+    # at it) while the events are dated, so every day before reads the
+    # profile as it was.
+    cell_register.release_profile(db, leader_id, src="manual", by="Profile editor",
+                                  apply_now=True)
 
 
 # ── What a profile delete actually reaches ────────────────────────────────────
@@ -613,6 +610,14 @@ def admin_list_profiles(db: Session = Depends(get_db),
     for c in cell_rows:
         if c.leader_id:
             cells_by_leader.setdefault(c.leader_id, []).append(c.verifix_code)
+    # A «Boshqaruvchi» pick still waiting for its opening is the leader's too —
+    # the cells `_set_leader_cells` treats as held (`cell_register.held_cells`),
+    # so a profile save round-trips it instead of silently withdrawing it.
+    waiting_picks = cell_links.pending(db, [c.id for c in cell_rows])
+    for c in cell_rows:
+        w = (waiting_picks.get(c.id) or {}).get("leader_id") or {}
+        if w.get("value") and c.verifix_code not in cells_by_leader.get(w["value"], []):
+            cells_by_leader.setdefault(w["value"], []).append(c.verifix_code)
 
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
            "leaders": [], "admins": [], "guests": [], "idle_owners": []}
@@ -728,6 +733,7 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
         db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False,
                        zagruzka_on=zon))
         db.commit()
+        _links_changed()
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.created",
                         details=[("role", tv("role.supervisor")), ("name", name),
                                  ("shift", payload.shift),
@@ -777,8 +783,9 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
     db.add(p)
     if role == "leader" and payload.cells:
         db.flush()  # p.id must exist before cells can point at it
-        _set_leader_cells(db, p.id, payload.cells)
+        _set_leader_cells(db, p.id, payload.cells, by=caller.get("full_name"))
     db.commit()
+    _links_changed()
     create_details = [("role", tv("role." + role)), ("name", name)]
     if role == "shift-manager":
         create_details.append(("shift", payload.shift))
@@ -848,12 +855,37 @@ _CELL_NAME_DIFF = {
 
 
 def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
-                       by: Optional[str] = None) -> None:
+                       by: Optional[str] = None, dated: bool = False) -> dict:
+    """Write the form onto the cell. Returns {field: "YYYY-MM-DD"} for every
+    link change that was recorded DATED (`dated=True`, an existing cell): from
+    2026-10-12 a cell's brigadir and «Boshqaruvchi» change at the unit's NEXT
+    shift opening (`services/cell_links.py`), so no filed day moves. A new
+    cell (`dated=False`) has no past to protect and takes the values at once."""
     # A cell's leader and «Zagruzkada hisoblanadi» decide who owes a checklist
     # (`services/leader_load.py`); drop the kept answer so the bot reads the
     # new state on the next press.
     from app.services import leader_load
     leader_load.forget()
+    from app.services import cell_links, cell_register
+    pending = cell_links.pending(db, [row.id]).get(row.id, {}) if (dated and row.id) else {}
+    # A form from before 4.272 always sends `owner_id`; the current one never
+    # does. Such a tab knows nothing of a change still WAITING, sends the
+    # column's brigadir on every save, fills the brigadir from a picked leader
+    # (a unit move ruling 3 forbids) and offers «Egasi», which is Verifix's
+    # now. So from it: the column's brigadir is «untouched» (never a
+    # withdrawal), and a leader or owner pick is refused with «reload» rather
+    # than half-applied behind a 200.
+    old_form = dated and payload.owner_id is not None
+    if old_form:
+        def _moved(field: str, value) -> bool:
+            if field in pending and value == pending[field]["value"]:
+                return False
+            return value != getattr(row, field)
+        if ((payload.leader_id is not None and _moved("leader_id", payload.leader_id or None))
+                or _moved("owner_id", payload.owner_id or None)):
+            raise HTTPException(status_code=409, detail=(
+                "Bu oyna platformaning eski versiyasida ochilgan — sahifani "
+                "yangilang va qaytadan saqlang."))
     for col in _CELL_TEXT_COLS:
         val = getattr(payload, col)
         if val is not None:
@@ -862,47 +894,48 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
             # (services/latin_code.py): a Cyrillic В typed here looks right and
             # matches no work centre. The workshop names are text, kept as typed.
             setattr(row, col, latin_code(val) if col == "sap_code" else val)
+    pend: dict = {}
+
+    def unchanged(field: str, value) -> bool:
+        # The brigadir: with a change waiting, only the waiting value is
+        # «untouched» — sending the value in force now WITHDRAWS the change
+        # (the form sends it only when the pick moved). The «Boshqaruvchi»: an
+        # older form sends it on every save, so a value equal to what stands now
+        # or to the waiting pick is «untouched» (a pick is withdrawn on its own
+        # door, PUT …/manager).
+        if field in pending:
+            if value == pending[field]["value"]:
+                return True
+            return ((field != "manager_id" or old_form)
+                    and value == getattr(row, field))
+        return value == getattr(row, field)
+
     # Supervisor unit: 0 clears, a positive id must be a real managers row.
-    # Applied before the leader so an owner (below) can override it.
     if payload.manager_id is not None:
-        if payload.manager_id:
-            if not db.query(Manager).filter_by(id=payload.manager_id).first():
-                raise HTTPException(status_code=400, detail="Supervisor unit not found")
-            row.manager_id = payload.manager_id
-        else:
-            row.manager_id = None
+        new = payload.manager_id or None
+        if new and not db.query(Manager).filter_by(id=new).first():
+            raise HTTPException(status_code=400, detail="Supervisor unit not found")
+        if not dated:
+            row.manager_id = new
+        elif not unchanged("manager_id", new):
+            ev = cell_register.set_unit(db, row, new, src="manual", by=by)
+            if ev is not None:
+                pend["manager_id"] = ev.effective_from.isoformat()
+    # «Boshqaruvchi». A pick NEVER moves the cell to the leader's unit (the
+    # operator's ruling 3, 2026-10-12) — it carried the unit until then.
     if payload.leader_id is not None:
-        if payload.leader_id:
-            p = db.query(RoleProfile).filter_by(id=payload.leader_id, role="leader").first()
-            if not p:
-                raise HTTPException(status_code=400, detail="Leader profile not found")
-            new_owner = row.leader_id != payload.leader_id
-            row.leader_id = payload.leader_id
-            # A cell inherits a NEW owning leader's supervisor — the leader is
-            # authoritative, overriding any manager_id in the same payload. The
-            # SAME leader re-sent with the rest of the form moves nothing: the
-            # form's own unit stands, so a cell whose load is kept apart from its
-            # leader's unit (`cell_lookup.cells_unit_for_leader`) survives an edit
-            # of its workshop name.
-            if p.manager_id and new_owner:
-                row.manager_id = p.manager_id
-        else:
-            row.leader_id = None
-    if payload.owner_id is not None:
-        # The «Egasi» moves NOTHING — no unit, no checklist: who owns a cell is
-        # a fact about Verifix, who runs it is a fact about the platform (the
-        # operator's ruling, 2026-10-08). Any leader may own it, one in another
-        # unit or in none included. A person's pick is stamped `src: manual`,
-        # so nothing written from Verifix later overrides it.
-        new_id = payload.owner_id or None
-        if new_id and not db.query(RoleProfile).filter_by(id=new_id, role="leader").first():
+        new = payload.leader_id or None
+        if new and not db.query(RoleProfile).filter_by(id=new, role="leader").first():
             raise HTTPException(status_code=400, detail="Leader profile not found")
-        if new_id != row.owner_id:
-            row.owner_id = new_id
-            meta = {k: v for k, v in (row.owner_meta or {}).items() if k == "vfx"}
-            meta.update(src="manual", at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                        by=(by or "").strip() or None)
-            row.owner_meta = meta
+        if not dated:
+            row.leader_id = new
+        elif not unchanged("leader_id", new):
+            ev = cell_register.set_manager(db, row, new, src="manual", by=by, mark=True)
+            if ev is not None:
+                pend["leader_id"] = ev.effective_from.isoformat()
+    # `owner_id` is IGNORED: «Egasi» is the Verifix seat and nothing else from
+    # 2026-10-12 (ruling 3 — the manual owner is retired; the person's choice
+    # lives on the «Boshqaruvchi»). A tab from before still sends it.
     if payload.wc_group is not None:
         try:
             row.wc_group = wc_group.norm_group(payload.wc_group)
@@ -915,6 +948,7 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
         # Read by task 3's AI text alone (services/one_process): nothing to
         # forget, no figure moves — the next proof reviewed reads it.
         row.one_process = bool(payload.one_process)
+    return pend
 
 
 def _unit_counts(db: Session, manager_id: Optional[int]) -> bool:
@@ -1052,10 +1086,28 @@ def admin_list_cells(db: Session = Depends(get_db),
     elif unit_id is None:
         cell_rows = []
     else:
-        cell_rows = (db.query(Cell).filter(Cell.manager_id == unit_id)
-                     .order_by(Cell.verifix_code).all())
+        # The unit's cells, and those a dated change brings into it (they
+        # join at the next shift opening — `cell_links`).
+        from app.models import CellLinkEvent
+        joining = [cid for (cid,) in db.query(CellLinkEvent.cell_id).filter(
+            CellLinkEvent.field == "manager_id", CellLinkEvent.value == unit_id,
+            CellLinkEvent.applied_at.is_(None)).all()]
+        cond = Cell.manager_id == unit_id
+        if joining:
+            from sqlalchemy import or_ as _or
+            cond = _or(cond, Cell.id.in_(joining))
+        cell_rows = db.query(Cell).filter(cond).order_by(Cell.verifix_code).all()
+    waiting = cell_links.pending(db, [c.id for c in cell_rows])
+    modes = cell_links.manager_mode(db, [c.id for c in cell_rows])
+    pick_all = _may_pick_all(db, caller)
+    try:
+        own_unit = (int(caller.get("role_id")) if caller.get("role") == "supervisor"
+                    and caller.get("role_id") is not None else None)
+    except (TypeError, ValueError):
+        own_unit = None
     if narrowed:
-        named = {c.leader_id for c in cell_rows} | {c.owner_id for c in cell_rows}
+        named = {c.leader_id for c in cell_rows} | {c.owner_id for c in cell_rows} | {
+            (w.get("leader_id") or {}).get("value") for w in waiting.values()}
         managers = [m for m in managers if m.id == unit_id]
         leader_profiles = [p for p in leader_profiles
                            if (unit_id is not None and p.manager_id == unit_id)
@@ -1091,7 +1143,23 @@ def admin_list_cells(db: Session = Depends(get_db),
             "one_process": bool(c.one_process),
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
+            # The Verifix live sync (2026-10-12): tied to a Verifix subdivision,
+            # who decides the «Boshqaruvchi» (the seat / a person), the changes
+            # recorded and not yet in force ({field: {value, name, from}}).
+            "vfx_tied": bool(c.vfx_division_id),
+            "manager_mode": modes.get(c.id) or "verifix",
+            "pending": {f: {"value": w.get("value"), "from": w.get("from"),
+                            "name": (mgr_names.get(w.get("value")) if f == "manager_id"
+                                     else prof_names.get(w.get("value")))}
+                        for f, w in (waiting.get(c.id) or {}).items()},
+            # Whether this viewer may pick THIS cell's «Boshqaruvchi» — the
+            # rule `_may_pick_manager` applies on the endpoint, per row.
+            "can_pick": pick_all or (own_unit is not None and c.archived_at is None
+                                     and ((waiting.get(c.id) or {}).get("manager_id") or {})
+                                     .get("value", c.manager_id) == own_unit),
         } for c in cell_rows],
+        # Whether this viewer may pick a «Boshqaruvchi» anywhere on the page.
+        "can_pick_manager": pick_all or own_unit is not None,
     }
 
 
@@ -1402,7 +1470,7 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
-    code = " ".join((payload.verifix_code or "").split())
+    code = latin_code(" ".join((payload.verifix_code or "").split())) or ""
     if not code:
         raise HTTPException(status_code=400, detail="Verifix code is required")
     if db.query(Cell).filter_by(verifix_code=code).first():
@@ -1423,10 +1491,8 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
         cell_details.append(("one_process", True))
     if row.wc_group:
         cell_details.append(("wc_group", wc_group.label(row.sap_code, row.wc_group)))
-    if row.owner_id:
-        owner = db.query(RoleProfile).filter_by(id=row.owner_id).first()
-        cell_details.append(("owner", owner.name if owner else None))
     db.commit()
+    cell_register.after_commit()
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.created",
                     details=cell_details)
     action_log.enrich(target_kind="cell", target_id=row.id, target_name=code,
@@ -1456,9 +1522,11 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         if dup:
             raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
         row.verifix_code = code
-    _apply_cell_fields(db, row, payload,
-                       by=profile_display_name(db, viewer_profile_key(db, caller)))
+    pend = _apply_cell_fields(db, row, payload,
+                              by=profile_display_name(db, viewer_profile_key(db, caller)),
+                              dated=True)
     _check_cell_group(db, row, before, payload)
+    waiting = cell_links.pending(db, [row.id]).get(row.id, {})
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
            "one_process": bool(row.one_process),
@@ -1470,17 +1538,17 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
             for k in ("verifix_code", "sap_code", "wc_group", "in_load", "one_process",
                       *_CELL_NAME_DIFF)
             if old[k] != new[k]]
-    if old["manager_id"] != new["manager_id"]:
+    if "manager_id" in pend:
+        to = (waiting.get("manager_id") or {}).get("value")
         diff.append(("unit", unit_name(db, old["manager_id"]),
-                     unit_name(db, new["manager_id"])))
-    people = [i for i in (old["leader_id"], new["leader_id"],
-                          old["owner_id"], new["owner_id"]) if i]
-    lnames = ({p.id: p.name for p in db.query(RoleProfile).filter(RoleProfile.id.in_(people))}
-              if people else {})
-    if old["leader_id"] != new["leader_id"]:
-        diff.append(("leader", lnames.get(old["leader_id"]), lnames.get(new["leader_id"])))
-    if old["owner_id"] != new["owner_id"]:
-        diff.append(("owner", lnames.get(old["owner_id"]), lnames.get(new["owner_id"])))
+                     f"{unit_name(db, to) or '—'} ({pend['manager_id']})"))
+    if "leader_id" in pend:
+        to = (waiting.get("leader_id") or {}).get("value")
+        people = [i for i in (old["leader_id"], to) if i]
+        lnames = ({p.id: p.name for p in db.query(RoleProfile).filter(RoleProfile.id.in_(people))}
+                  if people else {})
+        diff.append(("leader", lnames.get(old["leader_id"]),
+                     f"{lnames.get(to) or '—'} ({pend['leader_id']})"))
     if diff:
         alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.updated",
                         details=[("cell", old["verifix_code"])],
@@ -1490,8 +1558,102 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         unit_id=new["manager_id"],
         details=[("cell", old["verifix_code"])], changes=diff,
     )
+    cell_register.after_commit()
     return {"ok": True, "id": cid, "sap_code": new["sap_code"], "wc_group": new["wc_group"],
-            "in_load": new["in_load"], "one_process": new["one_process"]}
+            "in_load": new["in_load"], "one_process": new["one_process"],
+            "pending": {k: {"value": v.get("value"), "from": v.get("from")}
+                        for k, v in waiting.items()}}
+
+
+# ── The cell's «Boshqaruvchi», picked from Verifix (2026-10-12, ruling 3) ─────
+#
+# The Verifix seat is a cell's manager by default; a brigadir may change it,
+# picking ONE worker Verifix places in a cell of the unit — nobody who is not
+# on Verifix. The pick is DATED (the unit's next shift opening) and never moves
+# the cell to another unit. Admins and cell managers may do it on any cell; a
+# supervisor on the cells of their OWN unit (nothing else on the form).
+
+def _may_pick_all(db: Session, caller: dict) -> bool:
+    from app.capabilities import has_cap
+    return caller.get("role") == "admin" or has_cap(db, caller, CAP_CELLS_MANAGE)
+
+
+def _may_pick_manager(db: Session, caller: dict, cell: Cell) -> bool:
+    """An admin / a cells-register manager on any cell; a brigadir on an active
+    cell of their OWN unit as it stands now (a cell joining their unit at the
+    next opening is not theirs yet)."""
+    if _may_pick_all(db, caller):
+        return True
+    if caller.get("role") == "supervisor" and cell.archived_at is None:
+        # The unit the pick lands in: a brigadir change already waiting is
+        # the cell's next unit, and a pick made now lands with it.
+        unit = cell_register.pick_unit(db, cell)
+        try:
+            return unit is not None and int(caller.get("role_id")) == unit
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+@router.get("/admin/cells/{cid}/manager-pool")
+def cell_manager_pool(cid: int, db: Session = Depends(get_db), caller: dict = Depends(_caller)):
+    row = db.query(Cell).filter_by(id=cid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    if not _may_pick_manager(db, caller, row):
+        raise HTTPException(status_code=403, detail="Not your cell")
+    pool = cell_register.manager_pool(db, row)
+    mode = cell_links.manager_mode(db, [row.id]).get(row.id)
+    waiting = cell_links.pending(db, [row.id]).get(row.id, {})
+    cur = db.query(RoleProfile).filter_by(id=row.leader_id).first() if row.leader_id else None
+    nxt_id = (waiting.get("leader_id") or {}).get("value") if "leader_id" in waiting else None
+    nxt = db.query(RoleProfile).filter_by(id=nxt_id).first() if nxt_id else None
+    return {
+        **pool,
+        "cell": {"id": row.id, "code": row.verifix_code, "tied": bool(row.vfx_division_id)},
+        "mode": mode or "verifix",
+        "current": ({"id": cur.id, "name": cur.name, "vfx": bool(cur.vfx_employee_id)}
+                    if cur else None),
+        "pending": ({"id": nxt.id if nxt else None, "name": nxt.name if nxt else None,
+                     "from": waiting["leader_id"]["from"]} if "leader_id" in waiting else None),
+        # A pick lands with a brigadir change already waiting (the later of the
+        # two units' openings), else at the unit's own next opening.
+        "next_opening": (cell_links.opening_for_move(db, row.manager_id, waiting["manager_id"].get("value"))
+                         if "manager_id" in waiting
+                         else cell_links.opening(db, row.manager_id))[0].isoformat(),
+    }
+
+
+class CellManagerPick(BaseModel):
+    # A Verifix employee id from the pool; null = back to the Verifix seat.
+    employee_id: Optional[str] = None
+
+
+@router.put("/admin/cells/{cid}/manager")
+def cell_pick_manager(cid: int, body: CellManagerPick, db: Session = Depends(get_db),
+                      caller: dict = Depends(_caller)):
+    row = db.query(Cell).filter_by(id=cid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    if not _may_pick_manager(db, caller, row):
+        raise HTTPException(status_code=403, detail="Not your cell")
+    before = row.leader_id
+    who = profile_display_name(db, viewer_profile_key(db, caller)) or caller.get("full_name")
+    try:
+        out = cell_register.pick_manager(db, row, body.employee_id, by=who)
+    except cell_register.Refused as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=exc.detail())
+    db.commit()
+    cell_register.after_commit()
+    names = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_([i for i in (before, out.get("profile_id")) if i]))}
+    action_log.enrich(target_kind="cell", target_id=cid, target_name=row.verifix_code,
+                      unit_id=row.manager_id, unit_name=unit_name(db, row.manager_id),
+                      details=[("cell", row.verifix_code), ("mode", out.get("mode")),
+                               ("from", out.get("from")), ("created", out.get("created"))],
+                      changes=[("leader", names.get(before), names.get(out.get("profile_id")))])
+    return out
 
 
 class CellArchiveBody(BaseModel):
@@ -1510,18 +1672,18 @@ def admin_archive_cell(cid: int, body: CellArchiveBody, db: Session = Depends(ge
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
     was = row.archived_at
-    if body.archived and row.archived_at is None:
-        row.archived_at = datetime.now(timezone.utc)
-        row.archived_by = profile_display_name(db, viewer_profile_key(db, caller))
-    elif not body.archived:
-        row.archived_at = None
-        row.archived_by = None
+    who = profile_display_name(db, viewer_profile_key(db, caller))
+    # Archive AT NOW; a restore CLOSES the archived span from the unit's next
+    # shift opening, so the archived days stay archived (`cell_archive`).
+    if body.archived:
+        cell_register.archive(db, row, by=who, src="manual")
+    elif was is not None:
+        cell_register.restore(db, row, by=who, src="manual")
     code, mid = row.verifix_code, row.manager_id
     at = row.archived_at
     by = row.archived_by
     db.commit()
-    from app.services import leader_load
-    leader_load.forget()        # an archived cell counts for nobody
+    cell_register.after_commit()        # an archived cell counts for nobody
     unit = unit_name(db, mid)
     details = [("cell", code), ("unit", unit)]
     event = "cell.archived" if body.archived else "cell.unarchived"
@@ -1551,6 +1713,22 @@ def admin_delete_cell(cid: int, db: Session = Depends(get_db),
     action_log.enrich(target_kind="cell", target_id=cid, target_name=code,
                       unit_id=mid, unit_name=unit, details=cell_details)
     return {"ok": True}
+
+
+def _named_history(db: Session, rows: list) -> list:
+    """The dated link changes with each id printed as a name (a unit for the
+    brigadir, a profile for «Boshqaruvchi» / «Egasi»)."""
+    units = {r["value"] for r in rows if r["field"] == "manager_id"} | \
+        {r["prev"] for r in rows if r["field"] == "manager_id"}
+    profs = {r["value"] for r in rows if r["field"] != "manager_id"} | \
+        {r["prev"] for r in rows if r["field"] != "manager_id"}
+    un = {m.id: m.name for m in db.query(Manager).filter(Manager.id.in_([u for u in units if u]))}
+    pn = {p.id: p.name for p in db.query(RoleProfile).filter(RoleProfile.id.in_([p for p in profs if p]))}
+    out = []
+    for r in rows:
+        names = un if r["field"] == "manager_id" else pn
+        out.append({**r, "value_name": names.get(r["value"]), "prev_name": names.get(r["prev"])})
+    return out
 
 
 @router.get("/cells/{cid}/details")
@@ -1641,6 +1819,24 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
         },
+        # The Verifix live sync (2026-10-12): the tie, the seat, who decides the
+        # «Boshqaruvchi», the changes recorded and not in force yet, and every
+        # dated change of the cell's links (newest first).
+        "verifix": {
+            "tied": bool(c.vfx_division_id),
+            # The code only — a Verifix subdivision's NAME is the workshop name
+            # «A cell is its CODE» keeps off every read surface.
+            "code": (c.vfx_meta or {}).get("raw"),
+            "state": (c.vfx_meta or {}).get("state"),
+            "seat_employee": (c.vfx_meta or {}).get("seat"),
+            "manager_mode": cell_links.manager_mode(db, [c.id]).get(c.id) or "verifix",
+            "pending": cell_links.pending(db, [c.id]).get(c.id, {}),
+            "history": _named_history(db, cell_links.history(db, c.id)[:60]),
+            "archived_spans": [{"from": f.isoformat(), "to": t.isoformat() if t else None}
+                               for f, t in sorted(__import__("app.services.cell_archive",
+                                                             fromlist=["spans"]).spans()
+                                                  .get(c.id, []))],
+        },
         "hours": {
             "start": eff_start, "end": eff_end,
             "own_start": cell_hours.hhmm(c.shift_start),
@@ -1718,6 +1914,14 @@ def _apply_overrides(db: Session, canonical: str, overrides: dict[str, str]) -> 
             db.delete(row)
 
 
+def _links_changed() -> None:
+    """A profile write may have recorded / applied a cell link (releases, the
+    unit re-key): this process's dated-link caches are dropped after the
+    commit, so no past day reads a stale link for 20 s."""
+    from app.services import cell_register
+    cell_register.after_commit()
+
+
 @router.put("/admin/{ptype}/{pid}")
 def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                          db: Session = Depends(get_db),
@@ -1757,6 +1961,7 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                     ("supervisor_kind", mgr.supervisor_kind),
                     ("zagruzka_on", bool(mgr.zagruzka_on)))
         db.commit()
+        _links_changed()
         diff = [(k, old[k], v) for k, v in new_vals if old[k] != v]
         if old["shift"] != dict(new_vals)["shift"] or new_id != pid:
             leader_shift.forget()      # the cached unit → shift map (services/leader_shift)
@@ -1807,9 +2012,9 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
             r.role_id = payload.manager_id
         p.manager_id = payload.manager_id
     if ptype == "leader" and payload.cells is not None:
-        # Kept cells follow the leader only when this save MOVES the leader.
-        _set_leader_cells(db, pid, payload.cells,
-                          follow_unit=p.manager_id != old["manager_id"])
+        # No cell follows the leader's unit any more (2026-10-12, ruling 3):
+        # the list only picks and releases cells, dated.
+        _set_leader_cells(db, pid, payload.cells, by=caller.get("full_name"))
     if payload.overrides:
         _apply_overrides(db, p.name, payload.overrides)
     if payload.leader_kind is not None and payload.leader_kind != p.leader_kind:
@@ -1828,6 +2033,7 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
                 "leader_kind": p.leader_kind}
     db.commit()
+    _links_changed()
     leader_shift.forget()
     cl_new = _checklist_shift_word(db, p)
     diff = [(k, old[k], new_vals[k]) for k in ("name", "shift") if old[k] != new_vals[k]]
@@ -1887,10 +2093,17 @@ def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
     db.add(Manager(id=new_id, name=mgr.name, shift=mgr.shift, archived=mgr.archived,
                    factory_id=mgr.factory_id, supervisor_kind=mgr.supervisor_kind,
                    supervisor_kind_meta=mgr.supervisor_kind_meta,
-                   zagruzka_on=bool(mgr.zagruzka_on)))
+                   zagruzka_on=bool(mgr.zagruzka_on),
+                   vfx_employee_id=mgr.vfx_employee_id, vfx_meta=mgr.vfx_meta))
     db.flush()
     for table, col in _MANAGER_REKEY_REFS:
         db.execute(text(f"UPDATE {table} SET {col} = :new WHERE {col} = :old"),
+                   {"new": new_id, "old": old_id})
+    # A cell's DATED brigadir (`services/cell_links.py`): the unit id sits in a
+    # generic integer column, so it is re-pointed by field.
+    for col in ("value", "prev"):
+        db.execute(text(f"UPDATE cell_link_events SET {col} = :new "
+                        f"WHERE field = 'manager_id' AND {col} = :old"),
                    {"new": new_id, "old": old_id})
     db.execute(text(
         "UPDATE telegram_user_roles SET role_id = :new "
@@ -2076,7 +2289,8 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
         db.flush()
         if new_role == "leader":
             if payload.cells:
-                _set_leader_cells(db, target_profile.id, payload.cells)
+                _set_leader_cells(db, target_profile.id, payload.cells,
+                                  by=caller.get("full_name"))
         else:
             # Leaving the leader role frees the profile's cells.
             _release_leader_cells(db, target_profile.id)
@@ -2162,6 +2376,7 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
 
     new_id = target_role_id if new_role == "supervisor" else target_profile.id
     db.commit()
+    _links_changed()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.role_switched",
                     details=[("profile", name),
                              ("count", len(approved_rows))],
@@ -2204,6 +2419,7 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
         if _manager_has_data(db, pid):
             mgr.archived = True   # history stays queryable; unit leaves pickers/dashboards
             db.commit()
+            _links_changed()
             alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                             details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
                             changes=[("status", None, tv("v.archived"))])
@@ -2225,6 +2441,7 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
         db.delete(mgr)
         try:
             db.commit()
+            _links_changed()
         except IntegrityError:
             # `_manager_has_data` lists the tables that make a unit HISTORY, not
             # every table that references it: config the tab never asks about
@@ -2242,6 +2459,7 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
                 _remove_role_row(db, r)
             mgr.archived = True
             db.commit()
+            _links_changed()
             alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                             details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
                             changes=[("status", None, tv("v.archived"))])
@@ -2291,6 +2509,7 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
     p_name = p.name
     db.delete(p)
     db.commit()
+    _links_changed()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                     details=[("role", tv("role." + ptype)), ("profile", p_name)])
     log_details = [("role", ptype), ("profile", p_name)]
@@ -2761,6 +2980,7 @@ def admin_set_photo(profile_key: str = Form(...), file: UploadFile = File(...),
         raise HTTPException(status_code=400, detail="invalid_image")
 
     row = profile_photo.store(db, profile_key, profile_photo.square_jpeg(img))
+    _photo_mark(db, role, ref, keep=True)
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_set",
                     details=[("profile", name)])
@@ -2771,6 +2991,27 @@ def admin_set_photo(profile_key: str = Form(...), file: UploadFile = File(...),
 
 class PhotoDeletePayload(BaseModel):
     profile_key: str
+
+
+def _photo_mark(db: Session, role: str, ref, *, keep: bool) -> None:
+    """What the Verifix sync may do with this profile's photo: a person's
+    upload is theirs (`photo_kept`, never replaced); a deleted photo hands the
+    profile back to Verifix's (the next pass sets it again)."""
+    try:
+        rid = int(ref)
+    except (TypeError, ValueError):
+        return
+    row = (db.query(Manager).filter_by(id=rid).first() if role == "supervisor"
+           else db.query(RoleProfile).filter_by(id=rid, role=role).first())
+    if row is None:
+        return
+    meta = dict(row.vfx_meta or {})
+    meta.pop("photo_set", None)
+    if keep:
+        meta["photo_kept"] = True
+    else:
+        meta.pop("photo_kept", None)
+    row.vfx_meta = meta or None
 
 
 @router.delete("/admin/photo")
@@ -2784,6 +3025,7 @@ def admin_delete_photo(payload: PhotoDeletePayload, db: Session = Depends(get_db
     if not row:
         raise HTTPException(status_code=404, detail="No photo")
     db.delete(row)
+    _photo_mark(db, role, ref, keep=False)
     db.commit()
     pname = profile_display_name(db, payload.profile_key) or payload.profile_key
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_removed",

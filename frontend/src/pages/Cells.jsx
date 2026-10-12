@@ -16,6 +16,7 @@ import EmptyState from "../components/ui/EmptyState";
 import TableCard, { Th } from "../components/ui/DataTable";
 import CellLink from "../components/ui/CellLink";
 import CellFormModal from "../components/CellFormModal";
+import { CellManagerDialog, PendingChip, ManualMark } from "../components/CellManagerPicker";
 import GroupBadge from "../components/ui/GroupBadge";
 import { wcGroupLabel } from "../utils/wcGroup";
 import { SkeletonBlock } from "../components/ui/Skeleton";
@@ -25,6 +26,7 @@ import { useTranslit } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
 import { latinFold } from "../utils/latinCode";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
+import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 
@@ -64,6 +66,15 @@ import { exportXlsx } from "../utils/exportXlsx";
  * «Jarayonlar» (`one_process`, 2026-10-10): a cell specialised for ONE process
  * carries a chip; a leader whose cells are all such is not asked for 3
  * different processes on checklist task 3 (backend services/one_process).
+ *
+ * The Verifix live sync (2026-10-12): a cell's brigadir and «Boshqaruvchi»
+ * are DATED links — a change lands at the unit's next shift opening — so a
+ * change already waiting prints beside the value in force, «13.10 dan: X», on
+ * the same line (rows stay one line high). The «Boshqaruvchi» is the Verifix
+ * seat by default; one a person picked carries a «qo'lda» mark. A brigadir
+ * (no edit grant, `can_pick_manager` on the payload) gets ONE row action on
+ * their own unit's cells, «Boshqaruvchi», opening the picker dialog — nothing
+ * else of the cell is theirs to edit. «Egasi» is Verifix's, read-only.
  */
 
 // Whole-sentence templates with {placeholders} — word order differs per language.
@@ -196,6 +207,57 @@ function ProcessMark({ one, t, long = false }) {
   );
 }
 
+// "2026-10-13" → "13.10" — the operator's «{dd.mm} dan» form.
+const ddmm = (iso) => {
+  const s = String(iso || "");
+  return s.length >= 10 ? `${s.slice(8, 10)}.${s.slice(5, 7)}` : s;
+};
+
+// A DATED link of the cell (its brigadir, its «Boshqaruvchi»): the value in
+// force, cut with «…»; «qo'lda» when a person picked the manager; and a change
+// already waiting as «13.10 dan: X» on the SAME line. The whole of it on hover.
+function LinkName({ name, empty, manual = false, pend, t, tl }) {
+  const shown = name ? tl(name) : t(empty);
+  const pendName = pend ? (pend.name ? tl(pend.name) : t(empty)) : null;
+  const tip = [
+    shown,
+    manual ? t("cellMgr.manualTip") : null,
+    pend ? fill(t("cellMgr.from"), { date: ddmm(pend.from), name: pendName }) : null,
+  ].filter(Boolean).join("\n");
+  return (
+    <span className="flex items-center gap-1.5 min-w-0" title={tip}>
+      <span className="truncate min-w-0" style={{ color: name ? "var(--text-2)" : "var(--text-4)", flexShrink: 1 }}>
+        {shown}
+      </span>
+      {manual && <ManualMark />}
+      {pend && (
+        <span className="flex min-w-0" style={{ flexShrink: 2 }}>
+          <PendingChip from={pend.from} name={pendName} title={tip} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+// The brigadir's one door on a cell of their own unit: pick its manager.
+// Icon-only where the column is narrow; the label is always its name.
+function PickAction({ t, onPick, compact = false }) {
+  const label = t("cellMgr.pickTitle");
+  return (
+    <Button
+      size="sm"
+      tint
+      icon={<Flag size={12} />}
+      onClick={(e) => { e.stopPropagation(); onPick(); }}
+      title={label}
+      aria-label={label}
+      className="whitespace-nowrap"
+    >
+      <span className={compact ? "hidden lg:inline" : undefined}>{t("admin.profiles.colCellManager")}</span>
+    </Button>
+  );
+}
+
 // «Egasi» — the leader Verifix seats in the cell. Their profile may stand in
 // another brigadir's unit, or in none yet; the tooltip names which, and an
 // owner with no brigadir carries an amber mark, because that profile still has
@@ -263,7 +325,7 @@ function RowActions({ t, onEdit, onDelete, deleting, archived, onArchive, archiv
 // the workshop name is never printed (utils/cellName.js), and the two people
 // answerable for the cell are what the card carries instead.
 // The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue }) {
+function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue, onPick }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -290,21 +352,24 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
               archived={!!c.archived_at} onArchive={onArchive} archiving={archiving} />
           </div>
         )}
+        {!canEdit && onPick && (
+          <div className="flex-shrink-0">
+            <PickAction t={t} onPick={onPick} />
+          </div>
+        )}
       </div>
 
       <div className="mt-auto pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--border)" }}>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <Users size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-          {c.supervisor
-            ? <span className="truncate min-w-0 text-[var(--text-2)]">{tl(c.supervisor)}</span>
-            : <span className="truncate min-w-0" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellNoSupervisor")}</span>}
+          <LinkName name={c.supervisor} empty="admin.profiles.cellNoSupervisor"
+                    pend={c.pending?.manager_id} t={t} tl={tl} />
         </div>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <Flag size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
           <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{t("admin.profiles.colCellManager")}:</span>
-          {c.leader
-            ? <span className="truncate min-w-0 text-[var(--text-2)]">{tl(c.leader)}</span>
-            : <span className="truncate min-w-0" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+          <LinkName name={c.leader} empty="admin.profiles.cellUnassigned"
+                    manual={c.manager_mode === "manual"} pend={c.pending?.leader_id} t={t} tl={tl} />
         </div>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <UserCheck size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
@@ -334,6 +399,7 @@ export default function Cells() {
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
+  const { auth } = useAuth();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-cells"],
@@ -377,6 +443,22 @@ export default function Cells() {
   // session must not keep filtering behind it; a leader the list no longer
   // offers is dropped the same way instead of hiding every row behind a chip
   // that names nobody.
+  // A brigadir may pick the «Boshqaruvchi» of their OWN unit's cells and do
+  // nothing else here (backend `_may_pick_manager`). The server answers it per
+  // row (`can_pick`); a payload without it is answered off the viewer's unit —
+  // a narrowed register names it, a supervisor widened by a page grant by
+  // their role. A cell the payload lists because it JOINS the unit at the next
+  // opening is not theirs yet, and the server would refuse it. Nothing is
+  // offered while the capabilities load: an editor gets the whole form.
+  const pickOnly = !capLoading && !canEdit && !!data?.can_pick_manager;
+  const myUnit = scope ? scope.unit_id ?? null
+    : auth?.role === "supervisor" && auth?.role_id != null ? Number(auth.role_id) : null;
+  const canPickRow = (c) => pickOnly && (typeof c.can_pick === "boolean"
+    ? c.can_pick
+    : myUnit != null && !c.archived_at && c.manager_id === myUnit);
+  // Over the whole register, never the filtered rows, so a filter never adds
+  // or removes the column under the reader.
+  const showActions = canEdit || (pickOnly && cells.some(canPickRow));
   const brigadirSel = scope ? "" : fBrigadir;
   const leaderSel = !data || fLeader === "" || fLeader === "none"
     || leaders.some((l) => String(l.id) === fLeader) ? fLeader : "";
@@ -389,6 +471,7 @@ export default function Cells() {
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
   const [modal, setModal] = useState(null);       // {mode:"add"|"edit", item?}
+  const [pickFor, setPickFor] = useState(null);   // the cell whose manager a brigadir picks
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmArchive, setConfirmArchive] = useState(null);
 
@@ -503,7 +586,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 9 : 8;
+  const colSpan = showActions ? 9 : 8;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -570,6 +653,7 @@ export default function Cells() {
           archiving={archiveMut.isPending}
           onOpen={() => navigate(`/cells/${c.id}`)}
           issue={issues.get(c.id)}
+          onPick={canPickRow(c) ? () => setPickFor(c) : null}
         />
       ))}
     </div>
@@ -704,7 +788,7 @@ export default function Cells() {
             <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[14%]" />
             <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[10%]" />
             <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[10%]" />
-            {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[10%]" />}
+            {showActions && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[10%]" />}
           </tr>
         </thead>
         <tbody>
@@ -737,14 +821,12 @@ export default function Cells() {
               </td>
               {/* People are cut with «…» and whole on hover — one line per row. */}
               <td className="px-3 py-2">
-                {c.supervisor
-                  ? <span className="block truncate text-[var(--text-2)]" title={tl(c.supervisor)}>{tl(c.supervisor)}</span>
-                  : <span className="block truncate" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellNoSupervisor")}</span>}
+                <LinkName name={c.supervisor} empty="admin.profiles.cellNoSupervisor"
+                          pend={c.pending?.manager_id} t={t} tl={tl} />
               </td>
               <td className="px-3 py-2">
-                {c.leader
-                  ? <span className="block truncate text-[var(--text-2)]" title={tl(c.leader)}>{tl(c.leader)}</span>
-                  : <span className="block truncate" style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+                <LinkName name={c.leader} empty="admin.profiles.cellUnassigned"
+                          manual={c.manager_mode === "manual"} pend={c.pending?.leader_id} t={t} tl={tl} />
               </td>
               <td className="px-3 py-2">
                 <OwnerMark c={c} tl={tl} t={t} />
@@ -761,6 +843,15 @@ export default function Cells() {
                     archived={!!c.archived_at} onArchive={() => onArchive(c)} archiving={archiveMut.isPending} />
                 </td>
               )}
+              {!canEdit && showActions && (
+                <td className="px-3 py-2">
+                  {canPickRow(c) && (
+                    <div className="flex items-center justify-center">
+                      <PickAction t={t} onPick={() => setPickFor(c)} compact />
+                    </div>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -774,7 +865,17 @@ export default function Cells() {
           units={units}
           leaders={leaders}
           onClose={() => setModal(null)}
-          onSaved={done}
+          onSaved={(msg) => { done(); if (msg) toast.success(msg); }}
+        />
+      )}
+
+      {/* A brigadir's pick of a cell's «Boshqaruvchi» — the picker alone */}
+      {pickFor && (
+        <CellManagerDialog
+          cell={pickFor}
+          subtitle={pickFor.supervisor ? tl(pickFor.supervisor) : undefined}
+          onClose={() => setPickFor(null)}
+          onSaved={(msg) => { if (msg) toast.success(msg); }}
         />
       )}
 

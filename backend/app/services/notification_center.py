@@ -82,6 +82,8 @@ _EXACT = {
     "education_lesson_new": "learning",
     "call_forecast": "other",
     "push_test": "other",
+    # The Verifix live sync (2026-10-12): a leader dismissed / back on Verifix.
+    "vfx_leader_dismissed": "checklist", "vfx_leader_returned": "checklist",
 }
 _PREFIX = (
     ("concern_", "concerns"),
@@ -236,8 +238,10 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
     if kind == "idle":                         # IdleCell.jsx reads ?date=
         return f"/idle-cell?date={sid}"
     if kind == "page" and sid in ("/production", "/concerns", "/notifications",
-                                  "/kelish"):
+                                  "/kelish", "/cells"):
         return sid
+    if kind == "admin_tab" and sid in ("verifixsync",):   # an admin destination
+        return f"/admin/upload?tab={sid}"
     if kind == "lesson":
         return "/education"
     if kind == "exam":

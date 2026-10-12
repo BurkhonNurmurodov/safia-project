@@ -837,31 +837,12 @@ def migrate_cell_supervisor_column() -> None:
     db = SessionLocal()
     try:
         db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS manager_id INTEGER"))
-        # Backfill only rows without a supervisor yet, from their leader's unit.
-        # The work-centre group letter is dropped in the same statement: a
-        # unit-less cell may not carry one (wc_group.check_cell), and one left
-        # behind would meet its own letter in the unit it rejoins on
-        # uq_cells_wc_group — rolling this whole backfill back on every boot,
-        # for every cell waiting on it. The column is checked because this runs
-        # before `add_wc_groups` on a box that has never had it.
-        has_group = db.execute(text(
-            "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() "
-            "AND table_name = 'cells' AND column_name = 'wc_group'")).first() is not None
-        lettered = db.execute(text(
-            "SELECT c.verifix_code, c.wc_group FROM cells c JOIN role_profiles p ON c.leader_id = p.id "
-            "WHERE c.manager_id IS NULL AND p.manager_id IS NOT NULL AND c.wc_group IS NOT NULL"
-        )).all() if has_group else []
-        db.execute(text(
-            "UPDATE cells c SET manager_id = p.manager_id"
-            + (", wc_group = NULL" if has_group else "") +
-            " FROM role_profiles p "
-            "WHERE c.leader_id = p.id AND c.manager_id IS NULL "
-            "AND p.manager_id IS NOT NULL"
-        ))
+        # The backfill that copied a leader's unit onto a unit-less cell at every
+        # boot is GONE (2026-10-12, the Verifix live sync's ruling 3: a leader
+        # never carries a cell to their unit, and a cell's unit is a DATED link —
+        # an undated column write rewrites every past day of the cell). Every
+        # cell it could reach had been reached by the boots before.
         db.commit()
-        if lettered:
-            print(f"[startup] cell supervisor backfill cleared {len(lettered)} group letter(s) "
-                  f"on unit-less cells: {', '.join(f'{v} {g}' for v, g in lettered[:50])}")
     except Exception as exc:
         db.rollback()
         print(f"[startup] cell supervisor column migration skipped: {exc}")
@@ -1762,6 +1743,230 @@ def add_cell_owner_columns() -> None:
     except Exception as exc:
         db.rollback()
         print(f"[startup] cell owner migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+_VFX_SYNC_DDL = (
+    # (table, ((column, type), ...), (index, column) or None)
+    ("cells", (("vfx_division_id", "VARCHAR(32)"), ("vfx_meta", "JSONB")),
+     ("ix_cells_vfx_division_id", "vfx_division_id")),
+    ("role_profiles", (("vfx_employee_id", "VARCHAR(32)"), ("vfx_meta", "JSONB"),
+                       ("owes_from", "DATE"), ("name_aliases", "JSONB")),
+     ("ix_role_profiles_vfx_employee_id", "vfx_employee_id")),
+    ("managers", (("vfx_employee_id", "VARCHAR(32)"), ("vfx_meta", "JSONB"),
+                  ("name_aliases", "JSONB")),
+     ("ix_managers_vfx_employee_id", "vfx_employee_id")),
+)
+
+
+def add_verifix_sync_columns() -> None:
+    """2026-10-12 (Verifix live sync, `services/verifix_sync.py`): the tie of a
+    cell (`vfx_division_id`), a profile and a unit (`vfx_employee_id`) to its
+    Verifix record, what the sync last saw (`vfx_meta`), a leader's
+    `owes_from` and `name_aliases`. NULL everywhere = untied, which is what
+    every row is until the tie run. Pure DDL, idempotent, no flag. Runs FIRST
+    at boot with the other column steps: every ORM read of these rows selects
+    them. The new tables come from `create_all`.
+
+    Shaped for a blue-green boot, where the OLD copy is still serving on these
+    very tables: ONE transaction PER TABLE (one transaction over all three
+    took cells, then role_profiles, then managers, and lost a deadlock to an
+    old-copy request reading them in another order), a `lock_timeout` so a
+    waiting ALTER never stalls the old copy's readers queued behind it for
+    long, a few tries, and nothing taken at all once a column or index exists
+    (ALTER … IF NOT EXISTS takes its ACCESS EXCLUSIVE lock before it looks).
+    **A failure is FATAL** — re-raised, so this copy never reports healthy
+    without the columns every sign-in reads; the deploy keeps the old copy."""
+    import time as _time
+    from sqlalchemy.exc import DBAPIError
+
+    tries = 6
+    for table, cols, index in _VFX_SYNC_DDL:
+        for attempt in range(1, tries + 1):
+            db = SessionLocal()
+            try:
+                have = {r[0] for r in db.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() AND table_name = :t"),
+                    {"t": table})}
+                if not have:
+                    break  # no such table — `create_all` makes it whole
+                missing = [(c, ty) for c, ty in cols if c not in have]
+                need_ix = bool(index) and not db.execute(text(
+                    "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() "
+                    "AND tablename = :t AND indexname = :i"),
+                    {"t": table, "i": index[0]}).first()
+                db.rollback()  # the catalogue reads hold no lock worth keeping
+                if not missing and not need_ix:
+                    break
+                db.execute(text("SET LOCAL lock_timeout = '5s'"))
+                for c, ty in missing:
+                    db.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {c} {ty}"))
+                if need_ix:
+                    db.execute(text(
+                        f"CREATE INDEX IF NOT EXISTS {index[0]} ON {table} ({index[1]})"))
+                db.commit()
+                print(f"[startup] verifix sync columns: {table} "
+                      f"+{[c for c, _ in missing]}{' +index' if need_ix else ''}",
+                      flush=True)
+                break
+            except DBAPIError as exc:
+                db.rollback()
+                code = getattr(getattr(exc, "orig", None), "pgcode", None)
+                # 55P03 lock_not_available · 40P01 deadlock_detected
+                if code in ("55P03", "40P01") and attempt < tries:
+                    print(f"[startup] verifix sync columns: {table} busy "
+                          f"({code}), try {attempt}/{tries}", flush=True)
+                    _time.sleep(2 * attempt)
+                    continue
+                print(f"[startup] verifix sync columns FAILED on {table}: {exc}",
+                      flush=True)
+                raise
+            finally:
+                db.close()
+
+
+def seed_verifix_sync() -> None:
+    """Both halves of the Verifix-sync seed, each under its own flag, then the
+    one-person-one-profile index."""
+    _seed_verifix_sync_v1()
+    _seed_verifix_sync_v2()
+    _ensure_vfx_profile_unique()
+
+
+def _ensure_vfx_profile_unique() -> None:
+    """One Verifix person ↔ at most ONE profile (`role_profiles.vfx_employee_id`,
+    a partial unique index): two writers creating a profile for one seat at once
+    (the pass, a brigadir's pick) cannot both win. Created after the seed has
+    dropped the pairs the 4–8 Oct passes left; idempotent, no flag. A unit may
+    share its brigadir with another unit — `managers` gets no such index."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_role_profiles_vfx_employee "
+            "ON role_profiles (vfx_employee_id) WHERE vfx_employee_id IS NOT NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] verifix profile unique index skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _seed_verifix_sync_v1() -> None:
+    """2026-10-12, once (flag claimed inside the transaction): carry what the
+    4–8 Oct passes already knew onto the new columns, so the tie run starts
+    from it and nothing moves.
+
+    * a profile's / unit's Verifix id from `leader_kind_meta.vfx.id` /
+      `supervisor_kind_meta.vfx.id` (made by the strict rules or the
+      operator's pins) → `vfx_employee_id`;
+    * every cell archived today → one OPEN archive span from the day after its
+      archive day (`cell_archive`), so a later restore closes it instead of
+      handing the archived days back.
+    Never raises."""
+    flag = "verifix_sync_seed_2026_10_12_v1"
+    db = SessionLocal()
+    try:
+        claimed = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, '1') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"), {"k": flag}).first()
+        if not claimed:
+            db.rollback()
+            return
+        prof = db.execute(text(
+            "UPDATE role_profiles SET vfx_employee_id = leader_kind_meta->'vfx'->>'id' "
+            "WHERE vfx_employee_id IS NULL AND leader_kind_meta->'vfx'->>'id' IS NOT NULL "
+            "AND COALESCE(leader_kind_meta->'vfx'->>'found', 'true') <> 'false'")).rowcount
+        units = db.execute(text(
+            "UPDATE managers SET vfx_employee_id = supervisor_kind_meta->'vfx'->>'id' "
+            "WHERE vfx_employee_id IS NULL AND supervisor_kind_meta->'vfx'->>'id' IS NOT NULL "
+            "AND COALESCE(supervisor_kind_meta->'vfx'->>'found', 'true') <> 'false'")).rowcount
+        spans = db.execute(text(
+            "INSERT INTO cell_archive_spans (cell_id, from_day, src, by_name) "
+            "SELECT c.id, ((c.archived_at AT TIME ZONE 'Asia/Tashkent')::date + 1), 'seed', "
+            "c.archived_by FROM cells c WHERE c.archived_at IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM cell_archive_spans s WHERE s.cell_id = c.id)")).rowcount
+        db.commit()
+        print(f"[startup] verifix sync seed: {prof} profile ids, {units} unit ids, "
+              f"{spans} archive spans")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] verifix sync seed skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _seed_verifix_sync_v2() -> None:
+    """The seed's second half (its own flag, so a box that ran the first half
+    gets it too):
+
+    * a Verifix id the 4–8 Oct passes left on TWO profiles (the 4 Oct check
+      wrote `vfx` on both of a `shared` pair) is promoted on neither — a pair is
+      the tie run's list, never a tie the pass would follow for one of them;
+    * the photos the 5 Oct one-shot wrote (its record, `outcome == "set"`, and
+      the 12 Oct Kenjayeva fix) are marked as the sync's own
+      (`vfx_meta.photo_set = "seeded"`), so the pass may replace them when
+      Verifix's photo changes — unless a person uploaded one since (an
+      `identity.profile_photo_set` row after the record), which stays theirs.
+    Never raises."""
+    import json as _json
+    flag = "verifix_sync_seed_2026_10_12_v2"
+    db = SessionLocal()
+    try:
+        claimed = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, '1') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"), {"k": flag}).first()
+        if not claimed:
+            db.rollback()
+            return
+        shared = db.execute(text(
+            "UPDATE role_profiles SET vfx_employee_id = NULL "
+            "WHERE vfx_employee_id IN (SELECT vfx_employee_id FROM role_profiles "
+            "  WHERE vfx_employee_id IS NOT NULL GROUP BY vfx_employee_id HAVING count(*) > 1) "
+            "AND NOT EXISTS (SELECT 1 FROM verifix_ties t WHERE t.our_id = role_profiles.id "
+            "  AND t.kind IN ('leader', 'profile')) "
+            "RETURNING id, name")).all()
+        keys = []
+        for rec_key in ("verifix_profile_photos_2026_10_05", "leader_photo_kenjayeva_2026_10_12"):
+            row = db.execute(text("SELECT value FROM app_settings WHERE key = :k"),
+                             {"k": rec_key}).first()
+            if not row or not row[0]:
+                continue
+            try:
+                rep = _json.loads(row[0])
+            except (TypeError, ValueError):
+                continue
+            rows = rep.get("rows") if isinstance(rep, dict) and "rows" in rep else [rep]
+            for r in rows or []:
+                if isinstance(r, dict) and r.get("outcome") == "set" and r.get("key"):
+                    keys.append(r["key"])
+        marked = 0
+        for key in dict.fromkeys(keys):
+            role, _, rid = key.partition(":")
+            if not rid.isdigit():
+                continue
+            hand = db.execute(text(
+                "SELECT 1 FROM action_logs WHERE action = 'identity.profile_photo_set' "
+                "AND target_id = :k AND outcome = 'done' "
+                "AND created_at > TIMESTAMPTZ '2026-10-05 00:00+05' LIMIT 1"), {"k": key}).first()
+            if hand:
+                continue
+            table = "managers" if role == "supervisor" else "role_profiles"
+            marked += db.execute(text(
+                f"UPDATE {table} SET vfx_meta = COALESCE(vfx_meta, '{{}}'::jsonb) "
+                "|| jsonb_build_object('photo_set', 'seeded') WHERE id = :i "
+                "AND EXISTS (SELECT 1 FROM profile_photos ph WHERE ph.profile_key = :k)"),
+                {"i": int(rid), "k": key}).rowcount or 0
+        db.commit()
+        print(f"[startup] verifix sync seed v2: {len(shared)} shared profile ids dropped"
+              + (f" ({', '.join(f'{n} #{i}' for i, n in shared[:20])})" if shared else "")
+              + f", {marked} Verifix photos marked as the sync's")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] verifix sync seed v2 skipped: {exc}")
     finally:
         db.close()
 
@@ -7358,149 +7563,6 @@ def _leader_kind_pins_job(flag: str) -> None:
                       leader_verifix_check.send_pins, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: make the cells register the same as Verifix's ─────────────────
-# The operator asked on 2026-10-04 for our cells to be Verifix's: rename ours to
-# Verifix's names, create the cells Verifix has open and we do not, archive the
-# ones Verifix closed or no longer has, and report every mismatch. The Verifix
-# login lives only on the server, so it runs there, once, and DMs the result
-# (`services/verifix_cell_sync.py` — which subdivision counts as a cell, and the
-# guards that stop it on a cut answer, are explained there). Scheduled, not
-# inline: the employee list is ~18 pages and a boot that stalls past /health
-# rolls the deploy back.
-CELL_SYNC_FLAG = "verifix_cell_sync_2026_10_04_v1"
-_CELL_SYNC_DELAY_S = 150
-
-
-def sync_cells_from_verifix() -> None:
-    """Rename / create / archive cells to match Verifix, once, and report it. Never raises."""
-    try:
-        if not _report_pending(CELL_SYNC_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("verifix-cell-sync",
-                    datetime.now(timezone.utc) + timedelta(seconds=_CELL_SYNC_DELAY_S),
-                    _cell_sync_job)
-    except Exception as exc:
-        print(f"[startup] Verifix cell sync could not be scheduled: {exc}")
-
-
-def _cell_sync_job() -> None:
-    from app.services import verifix_cell_sync
-    _send_report_once(CELL_SYNC_FLAG, "Verifix cell sync",
-                      verifix_cell_sync.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: leaders × Verifix — create the missing profiles, report the rest
-# The operator's follow-up the same day: «do the same with leaders, but don't
-# delete or archive yet — report me; if there are leaders, create leader
-# profiles for them». Runs after the cell sync (the profiles it creates take a
-# cell that sync may have created), on the server, once, and DMs the report
-# (`services/verifix_leader_sync.py` says who counts as a leader and when a
-# profile is created). Nothing is deleted, archived or renamed.
-LEADER_SYNC_FLAG = "verifix_leader_sync_2026_10_04_v1"
-_LEADER_SYNC_DELAY_S = 180
-
-
-def sync_leaders_from_verifix() -> None:
-    """Create the leader profiles Verifix says are missing, once, and report. Never raises."""
-    try:
-        if not _report_pending(LEADER_SYNC_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("verifix-leader-sync",
-                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_SYNC_DELAY_S),
-                    _leader_sync_job)
-    except Exception as exc:
-        print(f"[startup] Verifix leader sync could not be scheduled: {exc}")
-
-
-def _leader_sync_job() -> None:
-    from app.services import verifix_leader_sync
-    _send_report_once(LEADER_SYNC_FLAG, "Verifix leader sync",
-                      verifix_leader_sync.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: EVERY Verifix cell, and a profile for every Verifix leader ────
-# The operator on 2026-10-05: «Download every single cell, and create leader
-# profiles for those leaders who don't have a profile on our platform. For
-# connecting them, report me mismatches and do not connect not safe ones yet.»
-# The 4 Oct passes could not see the cells Verifix numbers only in their NAME,
-# and created a leader only where it could also connect them (none). This pass
-# creates every missing cell and every missing leader, connects a leader only
-# where nothing disputes the cell, and DMs everything else
-# (`services/verifix_cells_leaders_sync.py`). Runs after the earlier one-shots.
-CELLS_LEADERS_FLAG = "verifix_cells_leaders_2026_10_05_v1"
-_CELLS_LEADERS_DELAY_S = 210
-
-
-def sync_cells_and_leaders_from_verifix() -> None:
-    """Every Verifix cell and leader onto the platform, once, and report. Never raises."""
-    try:
-        if not _report_pending(CELLS_LEADERS_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("verifix-cells-leaders-sync",
-                    datetime.now(timezone.utc) + timedelta(seconds=_CELLS_LEADERS_DELAY_S),
-                    _cells_leaders_job)
-    except Exception as exc:
-        print(f"[startup] Verifix cells + leaders sync could not be scheduled: {exc}")
-
-
-def _cells_leaders_job() -> None:
-    from app.services import verifix_cells_leaders_sync
-    _send_report_once(CELLS_LEADERS_FLAG, "Verifix cells + leaders sync",
-                      verifix_cells_leaders_sync.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: every leader's and brigadir's Verifix photo on their profile ──
-# The operator on 2026-10-05: «put pictures of the leaders and supervisors on
-# Verifix as profile picture on IMS». Uses the Verifix tie the 4–5 Oct checks
-# already stored on each profile, never overwrites a photo somebody set, and
-# DMs who got one and why the rest did not (`services/verifix_profile_photos.py`).
-# Runs after the 5 Oct leader pass, so the leader profiles it created get theirs.
-PROFILE_PHOTOS_FLAG = "verifix_profile_photos_2026_10_05_v1"
-_PROFILE_PHOTOS_DELAY_S = 300
-# While the 5 Oct pass still has to run, wait for it — at most this many times.
-_PROFILE_PHOTOS_WAITS = 6
-_PROFILE_PHOTOS_WAIT_S = 120
-
-
-def set_profile_photos_from_verifix() -> None:
-    """Every tied leader's and brigadir's Verifix photo, once, and report. Never raises."""
-    try:
-        if not _report_pending(PROFILE_PHOTOS_FLAG):
-            return
-        if not _schedule_profile_photos(_PROFILE_PHOTOS_DELAY_S, 0):
-            print("[startup] Verifix profile photos could not be scheduled")
-    except Exception as exc:
-        print(f"[startup] Verifix profile photos could not be scheduled: {exc}")
-
-
-def _schedule_profile_photos(delay_s: int, waited: int) -> bool:
-    from datetime import timedelta
-    from app.scheduler import schedule_at
-    return schedule_at(f"verifix-profile-photos-{waited}",
-                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
-                       _profile_photos_job, args=(waited,))
-
-
-def _profile_photos_job(waited: int = 0) -> None:
-    # The 5 Oct pass creates leader profiles; photos taken before it lands
-    # would miss them. Its flag is set once its report is out.
-    if waited < _PROFILE_PHOTOS_WAITS and _report_pending(CELLS_LEADERS_FLAG):
-        try:
-            if _schedule_profile_photos(_PROFILE_PHOTOS_WAIT_S, waited + 1):
-                return
-        except Exception:
-            pass
-    from app.services import verifix_profile_photos
-    _send_report_once(PROFILE_PHOTOS_FLAG, "Verifix profile photos",
-                      verifix_profile_photos.send, UNPRICED_DM_CHAT)
-
-
 # ── one-shot: Kenjayeva Dinora's own photo on the profile she took over ─────
 # The operator, 12 Oct 2026: a leader profile (Mirmaxmudova Munira's unit,
 # cells 8222 · 8610) was renamed from Mukimova Marxabo Samandarovna, who moved
@@ -7531,128 +7593,6 @@ def _kenjayeva_photo_job() -> None:
     from app.services import leader_photo_fix_oct12
     _send_report_once(KENJAYEVA_PHOTO_FLAG, "Kenjayeva photo fix",
                       leader_photo_fix_oct12.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: every cell's «Egasi» from Verifix ─────────────────────────────
-# The operator, 8 Oct 2026, answering the 6 Oct dry run one decision at a time:
-# a cell carries an «Egasi» (the leader Verifix seats in it) beside its
-# «Boshqaruvchi» (`cells.leader_id`, unchanged). Reads Verifix once, renames the
-# one profile the operator corrected, creates the nine approved units with the
-# brigadir-less cells Verifix puts under them, writes every Egasi in ONE
-# transaction with its record, and DMs the report
-# (`services/cell_owner_pass.py`). Waits for the 5 Oct passes like the photo
-# pass did.
-CELL_OWNER_PASS_FLAG = "cell_owners_verifix_2026_10_08_v1"
-_CELL_OWNER_PASS_DELAY_S = 240
-_CELL_OWNER_PASS_WAITS = 6
-_CELL_OWNER_PASS_WAIT_S = 120
-
-
-def set_cell_owners_from_verifix() -> None:
-    """The cell-owner pass, once, reported as a DM. Never raises."""
-    try:
-        if not _report_pending(CELL_OWNER_PASS_FLAG):
-            return
-        if not _schedule_cell_owner_pass(_CELL_OWNER_PASS_DELAY_S, 0):
-            print("[startup] cell owner pass could not be scheduled")
-    except Exception as exc:
-        print(f"[startup] cell owner pass could not be scheduled: {exc}")
-
-
-def _schedule_cell_owner_pass(delay_s: int, waited: int) -> bool:
-    from datetime import timedelta
-    from app.scheduler import schedule_at
-    return schedule_at(f"cell-owner-pass-{waited}",
-                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
-                       _cell_owner_pass_job, args=(waited,))
-
-
-def _cell_owner_pass_job(waited: int = 0) -> None:
-    # It reads the profiles and cells the 5 Oct passes write — run after them.
-    if waited < _CELL_OWNER_PASS_WAITS and (_report_pending(CELLS_LEADERS_FLAG)
-                                            or _report_pending(PROFILE_PHOTOS_FLAG)):
-        try:
-            if _schedule_cell_owner_pass(_CELL_OWNER_PASS_WAIT_S, waited + 1):
-                return
-        except Exception:
-            pass
-    from app.services import cell_owner_pass
-    _send_report_once(CELL_OWNER_PASS_FLAG, "cell owner pass",
-                      cell_owner_pass.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: the cells Verifix seats MORE THAN ONE leader in ──────────────
-# The operator, 8 Oct 2026: «Report me the cells with multiple leaders on
-# Verifix». Reads Verifix afresh, lists every Verifix cell with two or more
-# working leaders (ours or not) with each leader's profile here and what it
-# runs / owns, and DMs it as text + a workbook
-# (`services/multi_leader_cells.py`). READ-ONLY. Waits for the 8 Oct owner pass,
-# so the «Egasi» it prints is the one that pass wrote.
-MULTI_LEADER_FLAG = "multi_leader_cells_report_2026_10_08_v1"
-_MULTI_LEADER_DELAY_S = 300
-_MULTI_LEADER_WAITS = 6
-_MULTI_LEADER_WAIT_S = 120
-
-
-def report_multi_leader_cells() -> None:
-    """The multi-leader cells report, once, as a DM. Never raises."""
-    try:
-        if not _report_pending(MULTI_LEADER_FLAG):
-            return
-        if not _schedule_multi_leader(_MULTI_LEADER_DELAY_S, 0):
-            print("[startup] multi-leader cells report could not be scheduled")
-    except Exception as exc:
-        print(f"[startup] multi-leader cells report could not be scheduled: {exc}")
-
-
-def _schedule_multi_leader(delay_s: int, waited: int) -> bool:
-    from datetime import timedelta
-    from app.scheduler import schedule_at
-    return schedule_at(f"multi-leader-cells-{waited}",
-                       datetime.now(timezone.utc) + timedelta(seconds=delay_s),
-                       _multi_leader_job, args=(waited,))
-
-
-def _multi_leader_job(waited: int = 0) -> None:
-    if waited < _MULTI_LEADER_WAITS and _report_pending(CELL_OWNER_PASS_FLAG):
-        try:
-            if _schedule_multi_leader(_MULTI_LEADER_WAIT_S, waited + 1):
-                return
-        except Exception:
-            pass
-    from app.services import multi_leader_cells
-    _send_report_once(MULTI_LEADER_FLAG, "multi-leader cells report",
-                      multi_leader_cells.send, UNPRICED_DM_CHAT)
-
-
-# ── one-shot: supervisors × Verifix — Brigadir / Brigadir o'rnida ───────────
-# The operator, the same day: «check the supervisors if they're actually
-# supervisor or not and put a switch like on the leaders also for them … report
-# me if there're supervisors whose profile is not created». Fills
-# `managers.supervisor_kind` once from Verifix's API (never over a value set by
-# hand) and DMs the report (`services/verifix_supervisor_check.py`).
-SUPERVISOR_KIND_FLAG = "supervisor_kind_verifix_check_2026_10_04_v1"
-_SUPERVISOR_KIND_DELAY_S = 120
-
-
-def check_supervisor_kinds() -> None:
-    """Fill every unit's Brigadir / Brigadir o'rnida from Verifix, once, and report. Never raises."""
-    try:
-        if not _report_pending(SUPERVISOR_KIND_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("supervisor-kind-verifix-check",
-                    datetime.now(timezone.utc) + timedelta(seconds=_SUPERVISOR_KIND_DELAY_S),
-                    _supervisor_kind_job)
-    except Exception as exc:
-        print(f"[startup] supervisor Verifix check could not be scheduled: {exc}")
-
-
-def _supervisor_kind_job() -> None:
-    from app.services import verifix_supervisor_check
-    _send_report_once(SUPERVISOR_KIND_FLAG, "supervisor Verifix check",
-                      verifix_supervisor_check.send, UNPRICED_DM_CHAT)
 
 
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────

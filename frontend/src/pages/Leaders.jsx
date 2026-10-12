@@ -941,7 +941,15 @@ const effDone = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
 // the page folds the roster's own cutoff and no-cell floor into that map.
 // Marked `unfiled`, because the Trend chip must not read «Yangi» beside
 // somebody whose data has not begun — it has simply not arrived.
-const slotsBy = (rows, keyFn, cuts, dates, members) => {
+//
+// `starts` is the other edge of the same question, and it runs the OTHER way:
+// the first day a person owes at all (`owes_from` — the day a profile the sync
+// created was claimed, or the brigadir picked it). Every day BEFORE it is a day
+// nobody expected them to file, so it goes into `off` exactly as a cut day
+// does — never folded into `cuts`, whose every reader tests `d >= from`. A
+// profile nobody has claimed yet starts on "9999-12-31": every day is off and
+// `scoreSlots` drops them, rather than ranking them last.
+const slotsBy = (rows, keyFn, cuts, dates, members, starts) => {
   const map = new Map();
   for (const r of rows) {
     const key = keyFn(r);
@@ -980,13 +988,14 @@ const slotsBy = (rows, keyFn, cuts, dates, members) => {
     for (const key of members)
       if (key && key !== "N/A" && !map.has(key))
         map.set(key, { days: new Map(), off: new Set(), unfiled: true });
-  // Every day of this window from the person's cutoff on: days they were never
-  // expected to file, so days that belong in neither half of the average.
-  if (cuts?.size && dates?.length) {
+  // Every day of this window from the person's cutoff on, and every day before
+  // the first one they owe: days they were never expected to file, so days
+  // that belong in neither half of the average.
+  if ((cuts?.size || starts?.size) && dates?.length) {
     for (const [key, e] of map) {
-      const from = cuts.get(key);
-      if (!from) continue;
-      for (const d of dates) if (d >= from) e.off.add(d);
+      const from = cuts?.get(key), start = starts?.get(key);
+      if (from) for (const d of dates) if (d >= from) e.off.add(d);
+      if (start) for (const d of dates) if (d < start) e.off.add(d);
     }
   }
   // A date that ended up with a real slot is not off, whatever else was filed
@@ -1102,8 +1111,9 @@ const filedOn = (e, d) => (e.filed ? e.filed.has(d) : e.days.has(d));
 // denominator would drop precisely those people's scores out of their own
 // unit's average. Off it come the two decisions an admin makes on the panel,
 // each only on the days it covers — a CUTOFF (this person stopped counting from
-// a date on) and a DAY EXCLUSION (this leader-day counts for nobody).
-const unitSlots = (rows, roster, cutLeaders, cutUnits, dates) => {
+// a date on) and a DAY EXCLUSION (this leader-day counts for nobody) — and the
+// days before a member's first owed day (`startLeaders`, see `slotsBy`).
+const unitSlots = (rows, roster, cutLeaders, cutUnits, dates, startLeaders) => {
   const map = new Map();
   const unitOf = (u) => {
     let e = map.get(u);
@@ -1152,6 +1162,12 @@ const unitSlots = (rows, roster, cutLeaders, cutUnits, dates) => {
     const from = cutLeaders?.get(name);
     return !!from && d >= from;
   };
+  // Before the first day this person owes anything. The opposite direction of
+  // a cutoff, so a test of its own rather than a value in `cutLeaders`.
+  const notYet = (name, d) => {
+    const start = startLeaders?.get(name);
+    return !!start && d < start;
+  };
   for (const [unit, e] of map) {
     // Every day the unit could be asked about. The window when there is one;
     // otherwise whatever the rows themselves span, which is the same fallback
@@ -1163,8 +1179,12 @@ const unitSlots = (rows, roster, cutLeaders, cutUnits, dates) => {
       let owed = 0, sum = 0, missing = 0;
       for (const who of e.members) {
         // Nobody owed this: an admin took the day out, or took the person out
-        // of the counting from a date on or before it.
-        if (skip?.has(who) || cutAt(who, d)) continue;
+        // of the counting from a date on or before it, or it falls before the
+        // first day they owe. That last one only while nothing ARRIVED: a day
+        // somebody really filed is a day they were measured on (`slotsBy`'s
+        // last pass, in this function's currency).
+        if (skip?.has(who) || cutAt(who, d)
+            || (notYet(who, d) && !arrived?.has(who))) continue;
         owed++;
         const a = arrived?.get(who);
         if (a) sum += a.sum / a.n; else missing++;
@@ -1303,14 +1323,35 @@ const buildCutLeaders = (cutoffs, filedUnder, roster) => {
 const buildCutUnits = (cutUnits) =>
   new Map(Object.entries(cutUnits ?? {}).map(([name, c]) => [name, c.from]));
 
+// The first day each display name OWES a checklist — the roster's `owes_from`
+// (the day the profile was claimed, or picked by the brigadir; "9999-12-31" =
+// created by the Verifix sync and claimed by nobody yet, so it owes nothing).
+// The mirror of `buildCutLeaders`, in the opposite direction: several profiles
+// sharing one name owe from the EARLIEST of their floors, and from the start
+// of time as soon as any one of them has no floor at all. A roster without the
+// key (an older backend, the exam fixture) reads as "no floor" — nothing moves.
+const buildStartLeaders = (roster) => {
+  const floors = new Map();                 // name → earliest floor, or null = owes throughout
+  for (const p of roster ?? []) {
+    if (!p.name) continue;
+    const f = p.owes_from || null;
+    const had = floors.has(p.name), cur = floors.get(p.name);
+    floors.set(p.name, !had ? f : cur == null || f == null ? null : f < cur ? f : cur);
+  }
+  const m = new Map();
+  for (const [name, f] of floors) if (f) m.set(name, f);
+  return m;
+};
+
 // THE ranking of a scope: leaders (`slotsBy`, the roster folded in as the
 // people who filed nothing) or units (`unitSlots`, a unit's day composed of
 // its leaders), scored over the window by `scoreSlots`.
-const boardScores = (mode, rows, roster, cutLeaders, cutUnits, dates, days) =>
+const boardScores = (mode, rows, roster, cutLeaders, cutUnits, dates, days, startLeaders) =>
   mode === "leader"
     ? scoreSlots(slotsBy(rows, (r) => r.leader, cutLeaders, dates,
-        rosterFold(new Set(roster.map((p) => p.name)), rows)), days)
-    : scoreSlots(unitSlots(rows, rosterByUnit(roster), cutLeaders, cutUnits, dates), days);
+        rosterFold(new Set(roster.map((p) => p.name)), rows), startLeaders), days)
+    : scoreSlots(unitSlots(rows, rosterByUnit(roster), cutLeaders, cutUnits, dates,
+        startLeaders), days);
 
 // ── localized long-date formatter ("19th June, 2026" and its translations) ──────
 const MONTHS = {
@@ -1931,7 +1972,20 @@ function Spark({ vals, tone }) {
   if (!vals || vals.length < 2) return null;
   const pt = (v, i) => [3 + (i / (vals.length - 1)) * (SPARK_W - 6),
     SPARK_H - 3 - (Math.min(100, Math.max(0, v)) / 100) * (SPARK_H - 6)];
-  const p = vals.map(pt), r = (n) => Math.round(n * 10) / 10;
+  // A `null` is a day the board would not have listed this person (before
+  // their first owed day): no point, but its SLOT keeps its x, so a line that
+  // begins late begins where its day is instead of stretching over the card.
+  const p = [], r = (n) => Math.round(n * 10) / 10;
+  vals.forEach((v, i) => { if (v != null) p.push(pt(v, i)); });
+  // Fewer than two points draws no line, but keeps the column's width so the
+  // chip beside it stays in line with every other row's.
+  if (p.length < 2) {
+    return (
+      <svg width={SPARK_W} height={SPARK_H} className="flex-shrink-0" aria-hidden="true">
+        {p.length === 1 && <circle cx={p[0][0]} cy={p[0][1]} r="2.5" fill={tone} />}
+      </svg>
+    );
+  }
   let d = `M${r(p[0][0])},${r(p[0][1])}`;
   for (let i = 0; i < p.length - 1; i++) {
     const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
@@ -1941,7 +1995,7 @@ function Spark({ vals, tone }) {
   const [ex, ey] = p[p.length - 1];
   return (
     <svg width={SPARK_W} height={SPARK_H} className="flex-shrink-0" aria-hidden="true">
-      <path d={`${d} L${r(ex)},${SPARK_H - 1} L3,${SPARK_H - 1} Z`} fill={hexA(tone, 0.14)} />
+      <path d={`${d} L${r(ex)},${SPARK_H - 1} L${r(p[0][0])},${SPARK_H - 1} Z`} fill={hexA(tone, 0.14)} />
       <path d={d} fill="none"
         stroke={tone} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={ex} cy={ey} r="2.5" fill={tone} />
@@ -2079,12 +2133,15 @@ const poolRows = (raw) => (raw ?? []).map(
     rejected: !!voided,
     missing: !!missing,
   }));
+// The tenth element is `owes_from` (appended last, so an older pool without it
+// reads as "no floor").
 const poolRoster = (raw) => (raw ?? []).map(
-  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad, cellsGone]) => ({
+  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad, cellsGone, owesFrom]) => ({
     name, supervisor, shift, cutoff,
     cell_from: cellFrom,
     no_load_from: noLoad || null,
     cells_gone_from: cellsGone || null,
+    owes_from: owesFrom || null,
     cells: Array.from({ length: cells || 0 }),
     filed: !!filed,
   }));
@@ -2102,6 +2159,7 @@ const placesOf = (pool, scopes, win, metric) => {
   const cutLeaders = buildCutLeaders(pool.cutoffs,
     new Set(roster.filter((p) => p.filed).map((p) => p.name)), roster);
   const cutUnits = buildCutUnits(pool.cutUnits);
+  const startLeaders = buildStartLeaders(roster);
   const mode = me.kind === "unit" ? "unit" : "leader";
   const val = (e) => (metric === "consist" ? e.consist : e.rating);
   const out = {};
@@ -2116,7 +2174,7 @@ const placesOf = (pool, scopes, win, metric) => {
       sup: key === "unit" ? me.unit : "All",
     };
     const list = rankPlaces(boardScores(mode, rows.filter((r) => inScope(r, sc)),
-      rosterIn(roster, sc), cutLeaders, cutUnits, win.dates, win.days), metric);
+      rosterIn(roster, sc), cutLeaders, cutUnits, win.dates, win.days, startLeaders), metric);
     const i = me.key ? list.findIndex((e) => e.name === me.key) : -1;
     // Off the board for this window — every day excluded or cut, or (a unit)
     // nothing filed in it at all. Said as such, never printed as a last place.
@@ -2815,6 +2873,10 @@ export default function Leaders() {
   const cutLeaders = useMemo(
     () => buildCutLeaders(data?.cutoffs, filedUnderOf(data?.data), data?.roster), [data]);
   const cutUnits = useMemo(() => buildCutUnits(data?.cutUnits), [data]);
+  // …and the other edge: the first day each name owes at all (`owes_from`).
+  // Threaded beside `cutLeaders` into every ranking, the task bars, the trend
+  // and the sparks, so a leader is never asked for days before they owed.
+  const startLeaders = useMemo(() => buildStartLeaders(data?.roster), [data]);
   // Name → shift, for the S1/S2 chips the combined view prints beside people:
   // a unit lives in one shift, so any of a person's rows answers for them.
   const shiftOf = useMemo(() => {
@@ -3252,12 +3314,14 @@ export default function Leaders() {
   // function over the same rows, so the two describe the same people.
   const foldLeaders = useMemo(() => rosterFold(rosterLeaders, filtered), [rosterLeaders, filtered]);
   const leaderScores = useMemo(
-    () => boardScores("leader", filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days),
-    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days]);
+    () => boardScores("leader", filtered, rosterScoped, cutLeaders, cutUnits, winDates,
+      scoreWin.days, startLeaders),
+    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days, startLeaders]);
   const rosterUnits = useMemo(() => rosterByUnit(rosterScoped), [rosterScoped]);
   const supScores = useMemo(
-    () => boardScores("unit", filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days),
-    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days]);
+    () => boardScores("unit", filtered, rosterScoped, cutLeaders, cutUnits, winDates,
+      scoreWin.days, startLeaders),
+    [filtered, rosterScoped, cutLeaders, cutUnits, winDates, scoreWin.days, startLeaders]);
 
   // «Mening o'rnim» — a leader's and a brigadir's own place, which the rows
   // this page holds for them cannot answer (see `MyStanding`). Keyed by the
@@ -3394,16 +3458,19 @@ export default function Leaders() {
     // still in `nL` and still inflates `nL * (winDays - t.first)` by every day
     // after it — days they filed nothing on because nobody expected them to.
     // The row loop can only see days that produced a row; this walks the
-    // calendar for the days that did not.
+    // calendar for the days that did not. The days BEFORE a leader's first
+    // owed day (`startLeaders`) come off the same way — the opposite edge of
+    // the same question, or the bars count days nobody asked them for as
+    // missed.
     for (const L of leaders) {
       // NOT named `from`: the window's own origin is called that here, and
       // shadowing it walks the calendar from the CUTOFF instead — every index
       // then lands on the wrong day and the subtraction misses entirely.
-      const cutFrom = cutLeaders.get(L);
-      if (!cutFrom) continue;
+      const cutFrom = cutLeaders.get(L), start = startLeaders.get(L);
+      if (!cutFrom && !start) continue;
       for (let i = 0; i < winDays; i++) {
         const d = isoShift(from, i);
-        if (d < cutFrom) continue;
+        if (!(cutFrom && d >= cutFrom) && !(start && d < start)) continue;
         const k = `${L}|${d}`;
         // Disjoint from what the row loop already counted, both ways: a day
         // with a real slot is a day somebody was measured on, and a pair
@@ -3439,7 +3506,7 @@ export default function Leaders() {
       const owed = t.asked + missed;
       return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
     });
-  }, [filtered, scoreWin, cutLeaders, foldLeaders]);
+  }, [filtered, scoreWin, cutLeaders, startLeaders, foldLeaders]);
 
   // Every question on the form keeps its slot on the axis, but one nobody has
   // answered plots as null — an empty space under its label, not a 0% bar. A 0%
@@ -3480,7 +3547,7 @@ export default function Leaders() {
     // The roster rides in too: the line divides by everyone who owed, and a
     // leader who filed nothing owed as much as anybody.
     const perLeader = slotsBy(trendRows, (r) => r.leader, cutLeaders, cutSpan,
-      rosterFold(rosterLeaders, trendRows));
+      rosterFold(rosterLeaders, trendRows), startLeaders);
     const roster = perLeader.size;
     if (!roster) return empty;
     const dayScore = new Map();                          // date → Σ of that day's leader scores
@@ -3524,7 +3591,7 @@ export default function Leaders() {
       // weekly buckets get a full "start – end" range in the tooltip
       trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
     };
-  }, [trendRows, trendFrom, endDate, countCap, cutLeaders, rosterLeaders]);
+  }, [trendRows, trendFrom, endDate, countCap, cutLeaders, startLeaders, rosterLeaders]);
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
@@ -3595,8 +3662,8 @@ export default function Leaders() {
     // measurements instead of movement. So the unit composition travels here
     // too, over the same roster the standings were built from.
     const slotsFor = (rs, ds) => (effStandMode === "leader"
-      ? slotsBy(rs, (r) => r.leader, cutLeaders, ds)
-      : unitSlots(rs, rosterUnits, cutLeaders, cutUnits, ds));
+      ? slotsBy(rs, (r) => r.leader, cutLeaders, ds, null, startLeaders)
+      : unitSlots(rs, rosterUnits, cutLeaders, cutUnits, ds, startLeaders));
     const prevFrom = isoShift(winFrom, -calDays), prevTo = isoShift(winFrom, -1);
     const weekAgo = isoShift(winTo, -6);
     const sparkFrom = winFrom < weekAgo ? winFrom : weekAgo;
@@ -3615,8 +3682,11 @@ export default function Leaders() {
       if (d >= rollFrom && d <= sparkTo) rollRows.push(r);
     }
     const roster = standings.list.map((e) => e.name);
-    // Whichever cutoff map answers for the key this ranking is built on.
+    // Whichever cutoff map answers for the key this ranking is built on — and,
+    // for a leader, the first day they owe at all (a unit has no such floor of
+    // its own: its day is composed of its leaders', `unitSlots`).
     const keyCuts = effStandMode === "leader" ? cutLeaders : cutUnits;
+    const keyStarts = effStandMode === "leader" ? startLeaders : null;
     // A window's scores padded back up to the roster, so the board is the same
     // size every time it is ranked.
     //
@@ -3626,15 +3696,19 @@ export default function Leaders() {
     // a climb, out of exactly the 0 the cutoff exists to stop them being given.
     // The WHOLE window, mirroring `scoreSlots`' own `win <= 0` drop exactly: a
     // cutoff that starts mid-window still leaves countable days in front of it,
-    // and filing nothing on those really is a 0.
-    const cutWhole = (name, winStart) => {
+    // and filing nothing on those really is a 0. The same, from the other
+    // edge, for somebody whose first owed day comes AFTER the window ends: the
+    // window asked them for nothing, so it does not rank them last either.
+    const cutWhole = (name, winStart, winEnd) => {
       const from = keyCuts.get(name);
-      return !!from && from <= winStart;
+      if (from && from <= winStart) return true;
+      const start = keyStarts?.get(name);
+      return !!start && start > winEnd;
     };
-    const onRoster = (scored, winStart) => {
+    const onRoster = (scored, winStart, winEnd) => {
       const seen = new Set(scored.map((s) => s.name));
       for (const name of roster)
-        if (!seen.has(name) && !cutWhole(name, winStart))
+        if (!seen.has(name) && !cutWhole(name, winStart, winEnd))
           scored.push({ name, rating: 0, consist: 0 });
       return seen;
     };
@@ -3643,7 +3717,7 @@ export default function Leaders() {
     if (prevRows.length) {
       const prevDays = Array.from({ length: calDays }, (_, i) => isoShift(prevFrom, i));
       const scored = scoreSlots(slotsFor(prevRows, prevDays), calDays);
-      prevSeen = onRoster(scored, prevFrom);
+      prevSeen = onRoster(scored, prevFrom, prevTo);
       prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
       // «Yangi» is for somebody whose data BEGINS in this period, so their first
       // one is not read as a climb from last place. A leader on the board off the
@@ -3651,8 +3725,14 @@ export default function Leaders() {
       // «Yangi» beside a leader who has not filed for weeks says the opposite of
       // what is true. They are compared like anybody else, against wherever the
       // previous period put them — last place, if it had nothing from them
-      // either (the roster padding above).
-      for (const e of standings.list) if (e.unfiled) prevSeen.add(e.name);
+      // either (the roster padding above). The exception is a leader whose first
+      // owed day falls after the previous period: their obligation really does
+      // begin in this one, so they are «Yangi» — the padding left them out.
+      for (const e of standings.list) {
+        if (!e.unfiled) continue;
+        const start = keyStarts?.get(e.name);
+        if (!start || start <= prevTo) prevSeen.add(e.name);
+      }
     }
 
     const sparks = new Map();
@@ -3701,21 +3781,34 @@ export default function Leaders() {
           if (gone && p.off.has(gone)) a.x--;
         }
         if (i < head) return;
-        const scored = allNames.map((name) => {
+        const scored = allNames.flatMap((name) => {
           const a = acc.get(name);
+          // The whole trailing window lies before this person's first owed day
+          // and they filed nothing in it: the board would not list them
+          // (`scoreSlots`), so this day does not rank them last either. Their
+          // line begins on the first day they owe.
+          const start = keyStarts?.get(name);
+          if (start && start > d && !a.n) return [];
           const win = Math.max(0, winDays - a.x);
-          return { name,
-                   rating: win ? Math.round(a.sum / win) : 0,
-                   consist: win ? Math.round((a.n / win) * 100) : 0 };
+          return [{ name,
+                    rating: win ? Math.round(a.sum / win) : 0,
+                    consist: win ? Math.round((a.n / win) * 100) : 0 }];
         });
-        for (const e of rankPlaces(scored, standMetric))
-          series.get(e.name).push(100 - ((e.place - 1) / top) * 100);
+        // Every series gets a slot for every day, so all sparks span the same
+        // days: a person this day does not rank (before their first owed day)
+        // holds a `null` — a gap `Spark` leaves undrawn — never a skipped
+        // index, which would stretch their line over days it does not cover.
+        const placed = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
+        for (const name of allNames) {
+          const place = placed.get(name);
+          series.get(name).push(place == null ? null : 100 - ((place - 1) / top) * 100);
+        }
       });
       for (const [name, vals] of series) sparks.set(name, vals);
     }
     return { prev, prevSeen, sparks };
   }, [rows, scoreWin, calWin, effStandMode, standMetric, standings, effShift,
-      effSup, effLeader, cutLeaders, cutUnits, rosterUnits]);
+      effSup, effLeader, cutLeaders, cutUnits, startLeaders, rosterUnits]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).

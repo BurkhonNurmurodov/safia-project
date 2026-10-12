@@ -60,6 +60,7 @@ from app.models import (
     Manager, RoleProfile,
 )
 from app.services import (
+    leader_owes,
     action_log, leader_ai, leader_bot, leader_cells, leader_cutoffs,
     leader_exclusions, leader_tasks,
 )
@@ -219,6 +220,9 @@ def _frame(db: Session, manager_id: int, date: str,
         .filter(RoleProfile.role == "leader", RoleProfile.manager_id == unit.id)
         .order_by(RoleProfile.name).all())
     skipped: set[int] = set()
+    # Skipped only because the day is before their first owed one — a leader
+    # who filed anyway still counts (`unitSlots`' «not yet, unless it arrived»).
+    not_yet: set[int] = set()
     missing: list[tuple[RoleProfile, int | None]] = []
     if profs:
         cuts = leader_cutoffs.load(db)
@@ -228,6 +232,10 @@ def _frame(db: Session, manager_id: int, date: str,
             if (leader_cutoffs.hit(cuts, p.id, p.name, d) is not None
                     or leader_exclusions.key(p.id, p.name, d) in excluded_days):
                 skipped.add(p.id)
+                continue
+            if not leader_owes.owes(p, d):
+                skipped.add(p.id)
+                not_yet.add(p.id)
                 continue
             for cid in leader_cells.expected_days(db, p, d,
                                                   shift_floors=cell_floors):
@@ -259,7 +267,7 @@ def _frame(db: Session, manager_id: int, date: str,
     return {
         "unit": unit, "shift": shift, "date": d,
         "auto": leader_ai.in_auto_regime(d, shift),
-        "closed": closed, "profs": profs, "skipped": skipped,
+        "closed": closed, "profs": profs, "skipped": skipped, "not_yet": not_yet,
         "missing": missing, "started": started,
         "expired": expired,
         "waiting": any(not up(p.id) for p, _cid in missing),
@@ -403,7 +411,8 @@ def _unit_score(f: dict, rows: list[dict]) -> tuple[int | None, int, int]:
     total = 0.0
     for lid in names:
         got = mine.get(lid) or []
-        if lid in f["skipped"] or any(r["excluded"] for r in got):
+        if (lid in f["skipped"] and not (got and lid in f.get("not_yet", ()))) \
+                or any(r["excluded"] for r in got):
             continue
         owed += 1
         if got:

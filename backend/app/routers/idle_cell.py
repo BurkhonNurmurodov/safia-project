@@ -68,7 +68,8 @@ from app.capabilities import (
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
-from app.services import action_log, cell_archive, idle_intervals, idle_lock, idle_scope
+from app.services import (action_log, cell_archive, cell_links, idle_intervals, idle_lock,
+                          idle_scope)
 from app.services.sheets_reader import CLEANERS_CATS
 from app import identity
 
@@ -139,6 +140,54 @@ def _scoped_cells(db: Session, payload: dict, *pages: str) -> list[Cell]:
     if not units:
         return []
     return q.filter(Cell.manager_id.in_(units)).all()
+
+
+def _cells_on(db: Session, payload: dict, supervisor_id: int, day: str) -> list[Cell]:
+    """The cells of one unit ON ``day`` within the caller's reach — the unit
+    each stood in THAT day (`cell_links`, 2026-10-12), never the current
+    column alone: a cell that has since moved to another brigadir is still
+    its old unit's on the old days, and one that moved in is not before it
+    arrived. A cell archived before the day is gone from it (`cell_archive`).
+
+    With no cell's brigadir changed from ``day`` on, exactly the old filter.
+    A cell that moved away is outside a unit-scoped caller's current reach;
+    it is added back only for a caller whose reach covers ``supervisor_id``
+    itself (a leader's reach is their own cells and is not widened)."""
+    scoped = _scoped_cells(db, payload)
+    moved = cell_links.changed_since("manager_id", day)
+    if not moved:
+        return [c for c in scoped
+                if c.manager_id == supervisor_id and cell_archive.alive(c, day)]
+    have = {c.id for c in scoped}
+    want = moved - have
+    if want and _reaches_unit(db, payload, supervisor_id):
+        scoped = scoped + db.query(Cell).filter(Cell.id.in_(sorted(want))).all()
+
+    def unit(c) -> Optional[int]:
+        return (cell_links.value_on(c, "manager_id", day) if c.id in moved
+                else c.manager_id)
+    return [c for c in scoped if unit(c) == supervisor_id and cell_archive.alive(c, day)]
+
+
+def _unit_on(cell, day) -> Optional[int]:
+    """The unit a cell stood in on ``day`` (`cell_links`, 2026-10-12) — whose
+    closed day an entry dated ``day`` belongs to. The current column for a cell
+    whose brigadir never changed, exactly as before."""
+    if cell is None:
+        return None
+    return cell_links.value_on(cell, "manager_id", day)
+
+
+def _reaches_unit(db: Session, payload: dict, unit_id: int) -> bool:
+    """Does the caller's `_scoped_cells` reach cover a whole unit — the same
+    ladder, asked of one unit (a leader's reach is cells, never a unit)."""
+    role = payload.get("role")
+    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
+        return True
+    if role == "leader":
+        return False
+    units = profile_unit_ids(db, identity.viewer_profile_key(db, payload))
+    return units is None or unit_id in units
 
 
 def _valid_date(s: str) -> bool:
@@ -401,9 +450,9 @@ def list_cells(
     computed summary."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    # A cell archived before the date is gone from it (`cell_archive`).
-    cells = [c for c in _scoped_cells(db, payload)
-             if c.manager_id == supervisor_id and cell_archive.alive(c, date)]
+    # A cell archived before the date is gone from it (`cell_archive`), and a
+    # cell is the unit's on the date only if it stood in it then (`cell_links`).
+    cells = _cells_on(db, payload, supervisor_id, date)
     if not cells:
         return {"cells": []}
     ids = [c.id for c in cells]
@@ -529,6 +578,25 @@ def day_summary(
         CellOjidaniyaInterval.date == date,
         CellOjidaniyaInterval.status == "approved",
     ).all()
+    # The cells that stood in the unit ON THAT DAY (`cell_links`, 2026-10-12):
+    # a day closed the morning after a cell moved away still counts that
+    # cell's entries, and a cell that moved in since counts none of the old
+    # day's. Asked only when some cell's brigadir changed from that day on.
+    moved = cell_links.changed_since("manager_id", date)
+    if moved:
+        moved_cells = db.query(Cell).filter(Cell.id.in_(sorted(moved))).all()
+        here = {c.id for c in moved_cells
+                if cell_links.value_on(c, "manager_id", date) == manager_id}
+        gone = {c.id for c in moved_cells} - here
+        rows = [r for r in rows if r.cell_id not in gone]
+        extra = sorted(c.id for c in moved_cells
+                       if c.id in here and c.manager_id != manager_id)
+        if extra:
+            rows += db.query(CellOjidaniyaInterval).filter(
+                CellOjidaniyaInterval.cell_id.in_(extra),
+                CellOjidaniyaInterval.date == date,
+                CellOjidaniyaInterval.status == "approved",
+            ).all()
     return {
         "entries": len(rows),
         "leader_entries": sum(1 for e in rows
@@ -608,7 +676,12 @@ def _people_on(db: Session, manager_id: Optional[int], day: str) -> dict[int, fl
     except (TypeError, ValueError):
         return {}
     from app.services import idle_source
-    cells = db.query(Cell).filter(Cell.manager_id == manager_id).all()
+    # Every cell that stood in the unit on that day — including one that has
+    # since moved to another brigadir (`cell_links`, 2026-10-12): the split is
+    # over the cells standing at a work centre THAT day.
+    cells = idle_source.cells_with_moved(
+        db, db.query(Cell).filter(Cell.manager_id == manager_id).all(),
+        [manager_id], d, d)
     if not cells:
         return {}
     return {cid: n for (cid, dd), n in
@@ -650,8 +723,9 @@ def _cleaners_for(body: "IntervalIn", db: Session, cell: Optional[Cell], day: st
         raise HTTPException(status_code=400, detail={
             "code": "cleaners_required",
             "message": "Enter how many people cleaned"})
-    cap = _crew_cap(_people_on(db, getattr(cell, "manager_id", None), day)
-                    .get(getattr(cell, "id", None)))
+    # The people of the unit the cell stood in ON THE ENTRY'S DAY (`cell_links`).
+    unit = cell_links.value_on(cell, "manager_id", day) if cell is not None else None
+    cap = _crew_cap(_people_on(db, unit, day).get(getattr(cell, "id", None)))
     limit = cap if cap is not None else _CLEANERS_MAX
     if n < 1 or n > limit:
         raise HTTPException(status_code=400, detail={
@@ -939,7 +1013,7 @@ def create_interval(
                                          _cell_of(db, prior.cell_id)), True))
 
     cell = _cell_of(db, body.cell_id)
-    idle_lock.require_open(db, getattr(cell, "manager_id", None), body.date)
+    idle_lock.require_open(db, _unit_on(cell, body.date), body.date)
     # After the replay answer above, never before it: a record already stored
     # must not be refused because the cell's people changed since it was sent.
     cleaners = _cleaners_for(body, db, cell, body.date)
@@ -1038,7 +1112,7 @@ def update_interval(
     note, stopped, _ = _validate(body, db, payload)
 
     cell = _cell_of(db, e.cell_id)
-    idle_lock.require_open(db, getattr(cell, "manager_id", None), e.date)
+    idle_lock.require_open(db, _unit_on(cell, e.date), e.date)
     ctx = _decider(db, payload)
     decides = _may_decide(ctx, cell)
     perm = _row_perm(e, decides, True)
@@ -1087,7 +1161,7 @@ def delete_interval(
     if e.cell_id not in {c.id for c in _scoped_cells(db, payload)}:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
     cell = _cell_of(db, e.cell_id)
-    idle_lock.require_open(db, getattr(cell, "manager_id", None), e.date)
+    idle_lock.require_open(db, _unit_on(cell, e.date), e.date)
     ctx = _decider(db, payload)
     if not _row_perm(e, _may_decide(ctx, cell), True)["can_delete"]:
         raise HTTPException(status_code=403, detail="Only the unit's brigadir may delete this entry")
@@ -1128,7 +1202,7 @@ def delete_legacy(
     if e.cell_id not in {c.id for c in _scoped_cells(db, payload)}:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
     cell = _cell_of(db, e.cell_id)
-    idle_lock.require_open(db, getattr(cell, "manager_id", None), str(e.date))
+    idle_lock.require_open(db, _unit_on(cell, e.date), str(e.date))
     if not _may_decide(_decider(db, payload), cell):
         raise HTTPException(status_code=403, detail="Only the unit's brigadir may retire a legacy row")
     cell_id, date = e.cell_id, str(e.date)

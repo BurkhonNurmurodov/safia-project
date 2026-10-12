@@ -98,7 +98,8 @@ from sqlalchemy.orm import Session
 
 from app.models import (Cell, CellOjidaniyaInterval, HeadcountData, Manager,
                         RoleProfile)
-from app.services import cell_archive, idle_intervals, idle_source, zagruzka_source
+from app.services import (cell_archive, cell_links, idle_intervals, idle_source,
+                          zagruzka_source)
 from app.services.name_map import sheet_alias_map
 
 # One row per event on the entries modal; a category on one cell over a couple
@@ -324,8 +325,10 @@ def _totals(rows: list[dict], cat_rows: list[dict], days: int) -> dict:
         **t,
         "days": days,
         "managers": len(rows),
-        "cells": sum(sum(1 for c in r["cells"] if not c.get("pre"))
-                     for r in rows),
+        # Distinct cells: one that changed brigadir inside the period is a row
+        # under each unit it stood in (`cell_links`) and still one cell.
+        "cells": len({c["cell_id"] for r in rows for c in r["cells"]
+                      if not c.get("pre")}),
         "categories": len(cat_rows),
         "cat_minutes": sum(k["minutes"] for k in cat_rows),
         # No priced minute anywhere ⇒ no cost anywhere: «—», never a 0 that
@@ -365,12 +368,17 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     """
     managers = {m.id: m for m in db.query(Manager).filter(
         Manager.id.in_(manager_ids)).all()} if manager_ids else {}
-    cells = _cells_of(db, managers)
+    # Per-cell pricing only reaches days the typed headcount reaches.
+    cell_from = max(date_from, zagruzka_source.ZAGRUZKA_FROM)
+    # The units' cells by the current column (the option list stays that —
+    # a picker is present tense), plus every cell that stood in one of them on
+    # a priced day and has since moved away: its stoppages there are that
+    # unit's cost (`cell_links`, 2026-10-12). With nothing moved, the same list.
+    cur_cells = _cells_of(db, managers)
+    cells = idle_source.cells_with_moved(db, cur_cells, managers, cell_from, date_to)
     leaders = _leader_names(db, cells)
 
     units = idle_source.cell_units(db)
-    # Per-cell pricing only reaches days the typed headcount reaches.
-    cell_from = max(date_from, zagruzka_source.ZAGRUZKA_FROM)
     all_days = _days(cell_from, date_to)
     # Which (unit, day) pairs read their cells at all. One test per unit-day.
     ok_days: dict[int, set[str]] = {
@@ -380,12 +388,23 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     wanted_days = sorted({d for s in ok_days.values() for d in s})
 
     by_cell = {c.id: c for c in cells}
+    # Which unit a cell stood in on a day: the current column when no cell here
+    # changed brigadir from the first priced day on (every figure as before),
+    # else the dated link — a stoppage is its unit's on ITS date.
+    on_day = (cell_links.OnDay(cells)
+              if cell_links.changed_since("manager_id", cell_from) & set(by_cell) else None)
+
+    def unit_on(cid: int, day: str):
+        if on_day is None:
+            return by_cell[cid].manager_id
+        return on_day.units(day).get(cid)
+
     # Only events on a day this unit actually reads from its cells. Applied
     # FIRST, so the option list below can never offer a category whose only
     # events sit on days this tab does not price.
     events = [e for e in _events(db, cells, wanted_days)
               if by_cell.get(e.cell_id) is not None
-              and e.date in ok_days.get(by_cell[e.cell_id].manager_id, ())]
+              and e.date in ok_days.get(unit_on(e.cell_id, e.date), ())]
 
     # Option list — the org scope, unnarrowed by the record picks, so choosing
     # a category never shortens the list it was chosen from. The viewer's LOCK
@@ -407,22 +426,26 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
         per_day[(e.cell_id, e.date)].append(e)
         per_cat[(e.cell_id, e.date, e.category)].append(e)
 
-    cell_acc: dict[int, _Acc] = defaultdict(_Acc)
-    cat_acc: dict[tuple[int, str], _Acc] = defaultdict(_Acc)
+    # Keyed by (cell, the unit it stood in that day): a cell that changed
+    # brigadir inside the period is one row under each unit, carrying the days
+    # it stood there (`cell_links`). With nothing moved, one row per cell.
+    cell_acc: dict[tuple[int, int], _Acc] = defaultdict(_Acc)
+    cat_acc: dict[tuple[int, int, str], _Acc] = defaultdict(_Acc)
     # Σ of the per-category unions, i.e. what the categories under a cell add up
     # to. Compared against the cell's own union to say how many minutes carried
     # two causes at once — the one number that explains why they differ.
-    cat_sum: dict[int, int] = defaultdict(int)
+    cat_sum: dict[tuple[int, int], int] = defaultdict(int)
 
     for (cid, d), rows in per_day.items():
         n = hc.get((cid, d))
         rate = rate_for(date.fromisoformat(d))
-        _price(cell_acc[cid], rows, n, rate)
+        _price(cell_acc[(cid, unit_on(cid, d))], rows, n, rate)
 
     for (cid, d, cat), rows in per_cat.items():
         n = hc.get((cid, d))
         rate = rate_for(date.fromisoformat(d))
-        cat_sum[cid] += _price(cat_acc[(cid, cat)], rows, n, rate)
+        mid = unit_on(cid, d)
+        cat_sum[(cid, mid)] += _price(cat_acc[(cid, mid, cat)], rows, n, rate)
 
     # Every per-cell day is at or after the floor now, so the headcount behind
     # a CELL row is always the typed «Bugungi fakt». Earlier days never reach a
@@ -432,7 +455,7 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
 
     # ── roll up ──────────────────────────────────────────────────────────────
     cells_by_mgr: dict[int, list[dict]] = defaultdict(list)
-    for cid, acc in cell_acc.items():
+    for (cid, mid), acc in cell_acc.items():
         c = by_cell.get(cid)
         if not c or acc.minutes <= 0:
             continue
@@ -442,14 +465,15 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             "code": c.verifix_code,
             "leader": leaders.get(c.leader_id),
             "hc_typed": hc_typed,
-            "cat_sum": cat_sum.get(cid, 0),
+            "cat_sum": cat_sum.get((cid, mid), 0),
             "cats": sorted(
                 ({"category": cat, **a.out()}
-                 for (ccid, cat), a in cat_acc.items() if ccid == cid),
+                 for (ccid, cmid, cat), a in cat_acc.items()
+                 if ccid == cid and cmid == mid),
                 key=lambda r: (-r["minutes"], r["category"]),
             ),
         })
-        cells_by_mgr[c.manager_id].append(row)
+        cells_by_mgr[mid].append(row)
 
     # ── the pre-floor half: ONE row per brigadir, no cell breakdown ─────────
     # `_downtime` keys its days «DD.MM.YYYY» and has already applied the
@@ -535,11 +559,11 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     # and the table's own total.
     by_cat_mgr: dict[str, dict[int, list[dict]]] = defaultdict(
         lambda: defaultdict(list))
-    for (cid, cat), acc in cat_acc.items():
+    for (cid, mid, cat), acc in cat_acc.items():
         c = by_cell.get(cid)
         if not c or acc.minutes <= 0:
             continue
-        by_cat_mgr[cat][c.manager_id].append({
+        by_cat_mgr[cat][mid].append({
             "cell_id": cid, "code": c.verifix_code,
             "leader": leaders.get(c.leader_id), "hc_typed": hc_typed,
             **acc.out(),
@@ -588,7 +612,7 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             "cells": sorted(
                 ({"id": c.id, "code": c.verifix_code,
                   "leader": leaders.get(c.leader_id), "manager_id": c.manager_id}
-                 for c in cells if cell_archive.alive(c, date_from)),
+                 for c in cur_cells if cell_archive.alive(c, date_from)),
                 key=lambda r: (r["code"] or "").lower()),
             "categories": sorted(categories | pre_cats),
         },
@@ -615,14 +639,26 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     printing one and letting the other be discovered. Same rule
     `UnitOjidaniyaModal` follows.
     """
-    cell = db.query(Cell).filter(Cell.id == cell_id,
-                                 Cell.manager_id == manager_id).first()
+    # The cell as it stood in THIS unit: a cell that has since moved to
+    # another brigadir still opens from its old unit's row, with the events of
+    # the days it stood there and no others (`cell_links`, 2026-10-12).
+    cell = db.query(Cell).filter(Cell.id == cell_id).first()
     if not cell:
         return {"entries": [], "sum_minutes": 0, "union_minutes": 0}
+    all_days = _days(date_from, date_to)
+    if cell.manager_id == manager_id and cell.id not in cell_links.changed_since(
+            "manager_id", date_from):
+        def stood(_d) -> bool:
+            return True
+    else:
+        def stood(d) -> bool:
+            return cell_links.value_on(cell, "manager_id", d) == manager_id
+        if not any(stood(d) for d in all_days):
+            return {"entries": [], "sum_minutes": 0, "union_minutes": 0}
 
     units = idle_source.cell_units(db)
-    days = [d.isoformat() for d in _days(date_from, date_to)
-            if idle_source.uses_cells(units, manager_id, d)]
+    days = [d.isoformat() for d in all_days
+            if stood(d) and idle_source.uses_cells(units, manager_id, d)]
     rows = _events(db, [cell], days)
     if category:
         rows = [r for r in rows if r.category == category]
@@ -637,7 +673,10 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     # cells it is handed, so a one-cell list reads every other group's people
     # (and a whole-centre pin undivided) as this cell's own, and the modal would
     # price the row with a headcount the tree above it never used.
-    hc = idle_source.cell_headcount(db, _cells_of(db, [manager_id]), date_from, date_to)
+    hc = idle_source.cell_headcount(
+        db, idle_source.cells_with_moved(db, _cells_of(db, [manager_id]), [manager_id],
+                                         date_from, date_to),
+        date_from, date_to)
 
     out = []
     for r in rows:
