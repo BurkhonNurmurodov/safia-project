@@ -645,38 +645,27 @@ def list_done_at(lst: list) -> str | None:
 LATE_FILL_DAYS = 3
 
 
-def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
-    """A failed #11 («Ish grafigi») verdict learns WHEN its list was filled
-    after the hour (the operator, 2026-10-12: «show when it was fully filled
-    alongside» the 12/13 the check read).
-
-    The check stores what it read AT THE HOUR, and a list that was short then
-    has no fill moment yet — it comes later, when the leader (or the brigadir)
-    answers the last worker. This runs on the 5-minute sweep: every failed
-    `staff_list` row of the last `LATE_FILL_DAYS` whose failed lists carry no
-    `filled_at` is re-read against the lists AS THEY STAND NOW, and a list
-    that is full now gets `filled_at` = the latest mark on it (`list_done_at`).
-    The count the check read (`today` / `tomorrow`, `ok`) is never touched, so
-    the verdict still says what it saw; the stamp says what happened next.
-    Every reader prints it through `results_for` — the day report, the admin
-    day detail, the register, the appeal chat, the bot — so nothing has to
-    re-measure. Returns how many rows were stamped; the caller commits.
+def late_fills(db: Session, jobs: list, now: datetime | None = None) -> list:
+    """For each (facts, due_at) of a FAILED #11 verdict: the same facts with
+    every failed list that is full NOW stamped — `filled_at` (the latest mark
+    on it, `list_done_at`), `filled_kind` on a cell whose type is not fixed,
+    and `filled_late_min`, how many minutes after the check's hour (`due_at`)
+    the list was completed. Returns one new dict per job, or None where
+    nothing filled. The lists are read AS THEY STAND NOW (the file, «+»/«−»
+    and the marks); the count the check read (`today` / `tomorrow`, `ok`) is
+    never touched. ONE reader for both doors: the sweep (`stamp_late_fills`)
+    and a verdict written after the hour (`_settle`), which may be about a
+    list completed since the check and says so in its DM.
     """
     from app.services import kelish
-    now = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
-    floor = (now.date() - timedelta(days=LATE_FILL_DAYS)).isoformat()
-    rows = (db.query(LeaderAutoCheck)
-            .filter(LeaderAutoCheck.check == "staff_list",
-                    LeaderAutoCheck.outcome == FAILED,
-                    LeaderAutoCheck.code == "not_filled",
-                    LeaderAutoCheck.date >= floor)
-            .all())
-    todo = []   # (row, item index)
+    todo = []   # (job index, item index)
     codes: set[str] = set()
     ids: set[int] = set()
     days: set[_date] = set()
-    for row in rows:
-        f = row.facts if isinstance(row.facts, dict) else {}
+    out: list = [None] * len(jobs)
+    for j, (f, _due) in enumerate(jobs):
+        if not isinstance(f, dict):
+            continue
         lists = f.get("lists") if isinstance(f.get("lists"), list) else []
         try:
             ds = [_as_date(x) for x in (f.get("days") or [])[:2]]
@@ -687,14 +676,14 @@ def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
         for i, it in enumerate(lists):
             if not isinstance(it, dict) or it.get("ok") or it.get("filled_at"):
                 continue
-            todo.append((row, i))
+            todo.append((j, i))
             days.update(ds)
             if it.get("cell_id"):
                 ids.add(int(it["cell_id"]))
             elif it.get("cell"):
                 codes.add(str(it["cell"]))
     if not todo:
-        return 0
+        return out
     # Rows written before the item carried its cell id name the cell by its
     # verifix code; an active cell with that code is the one meant.
     by_code: dict[str, Cell] = {}
@@ -709,10 +698,8 @@ def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
     marks = kelish.load_marks_days(db, list(cells), sorted(days))
     kinds = kelish.load_kinds(db, list(cells))
 
-    stamped = 0
-    touched: dict[int, dict] = {}
-    for row, i in todo:
-        f = touched.get(row.id) or dict(row.facts)
+    for j, i in todo:
+        f = out[j] or dict(jobs[j][0])
         lists = [dict(x) if isinstance(x, dict) else x for x in f["lists"]]
         it = lists[i]
         c = cells.get(int(it["cell_id"])) if it.get("cell_id") else by_code.get(str(it.get("cell")))
@@ -737,14 +724,94 @@ def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
         it["filled_at"] = found[0]
         if not it.get("kind"):
             it["filled_kind"] = found[1]
+        due = jobs[j][1]
+        if due is not None:
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+            late = int((datetime.fromisoformat(found[0]) - due).total_seconds() // 60)
+            if late > 0:
+                it["filled_late_min"] = late
         lists[i] = it
         f["lists"] = lists
-        touched[row.id] = f
-    for row, _ in todo:
-        if row.id in touched and row.facts is not touched[row.id]:
-            row.facts = touched[row.id]
-            stamped += 1
-    return stamped
+        out[j] = f
+    return out
+
+
+# How far back a failed #11 verdict is watched for its list filling up. A list
+# for day D can only be marked while D is the cell's today or tomorrow, so a
+# check dated D is settled for good once D + 2 has passed; three days covers a
+# night shift's frame with a day to spare.
+LATE_FILL_DAYS = 3
+
+
+def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
+    """A failed #11 («Ish grafigi») verdict learns WHEN its list was filled
+    after the hour (the operator, 2026-10-12: «show when it was fully filled
+    alongside» the 12/13 the check read — and why it is still not marked).
+
+    The check stores what it read AT THE HOUR, and a list that was short then
+    has no fill moment yet — it comes later, when the leader (or the brigadir)
+    answers the last worker. This runs on the 5-minute sweep: every failed
+    `staff_list` row of the last `LATE_FILL_DAYS` whose failed lists carry no
+    `filled_at` goes through `late_fills`, and a stamped row is COMMITTED here
+    and then its leader is sent ONE follow-up DM per task
+    (`leader_auto_filled_late`: the list, when it filled, how long after the
+    check) — the verdict DM went out at the hour, before there was a fill time
+    to print, and a sent message cannot be edited. Every reader prints the
+    stamp through `results_for` — the day report, the admin day detail, the
+    register, the appeal chat, the bot — so nothing re-measures. Returns how
+    many rows were stamped.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
+    floor = (now.date() - timedelta(days=LATE_FILL_DAYS)).isoformat()
+    rows = (db.query(LeaderAutoCheck)
+            .filter(LeaderAutoCheck.check == "staff_list",
+                    LeaderAutoCheck.outcome == FAILED,
+                    LeaderAutoCheck.code == "not_filled",
+                    LeaderAutoCheck.date >= floor)
+            .order_by(LeaderAutoCheck.id)
+            .all())
+    if not rows:
+        return 0
+    got = late_fills(db, [(r.facts, r.due_at) for r in rows], now)
+    stamped = [(row, f) for row, f in zip(rows, got) if f is not None]
+    if not stamped:
+        return 0
+    for row, f in stamped:
+        row.facts = f
+    db.commit()
+    told: set = set()
+    for row, f in stamped:
+        key = (row.leader_id, str(row.date)[:10], row.task_id)
+        if key in told:
+            continue
+        told.add(key)
+        try:
+            _tell_filled_late(db, row, f)
+        except Exception:                              # noqa: BLE001
+            logger.exception("late-fill DM failed for row %s", row.id)
+            db.rollback()
+    return len(stamped)
+
+
+def _tell_filled_late(db: Session, row: LeaderAutoCheck, f: dict) -> None:
+    """The follow-up to a failed #11 verdict DM: the list is full now, filled
+    at this time, this long after the check — and the verdict does not move
+    by itself (an objection or an admin's ruling is the way)."""
+    from app.routers.staff import notify_profile
+    from app.identity import profile_key
+    from app.notify_ctx import notifications_suppressed
+    if notifications_suppressed():
+        return
+    td = db.get(LeaderTaskDef, int(row.task_id))
+    hhmm = row.due_at.astimezone(TASHKENT).strftime("%H:%M") if row.due_at else "—"
+    date = str(row.date)[:10]
+    notify_profile(db, profile_key("leader", int(row.leader_id)),
+                   "leader_auto_filled_late",
+                   {"task": _task_name(td), "time": hhmm, "date": date,
+                    "facts": staff_list_cells(f) or "—"},
+                   type="info",
+                   subject=("checklist", f"{int(row.leader_id)}:{date}:{int(row.task_id)}"))
 
 
 _RUNNERS = {
@@ -1402,7 +1469,7 @@ def staff_list_cells(f: dict, lang: str = "uz") -> str:
             m, n = (it.get(kind) or [0, 0])[:2]
             s = f"{it.get('cell')} ({L['k_' + kind]}): {m}/{n}"
             if at:
-                s += ", " + L["k_filled"].format(t=at)
+                s += ", " + _filled_phrase(L, it, at)
         else:
             t, w = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
             s = (f"{it.get('cell')}: {L['k_today']} {t[0]}/{t[1]}, "
@@ -1410,9 +1477,27 @@ def staff_list_cells(f: dict, lang: str = "uz") -> str:
             if at:
                 fk = it.get("filled_kind")
                 lead = (L["k_" + fk] + " ") if fk in ("today", "tomorrow") else ""
-                s += ", " + lead + L["k_filled"].format(t=at)
+                s += ", " + lead + _filled_phrase(L, it, at)
         parts.append(s)
     return " · ".join(parts)
+
+
+def _filled_phrase(L: dict, it: dict, at: str) -> str:
+    """«20:35 da to'liq to'ldirildi», and «— tekshiruvdan 12 soat 53 daqiqa
+    keyin» when the list filled after the check (`filled_late_min`): the
+    reason line prints the check's HOUR alone, so without this a fill dated
+    the next morning could be read as before it."""
+    try:
+        late = int(it.get("filled_late_min") or 0)
+    except (TypeError, ValueError):
+        late = 0
+    if late <= 0:
+        return L["k_filled"].format(t=at)
+    h, m = divmod(late, 60)
+    d = (L["dur_m"].format(m=m) if not h
+         else L["dur_h"].format(h=h) if not m
+         else L["dur_hm"].format(h=h, m=m))
+    return L["k_filled_late"].format(t=at, d=d)
 
 
 def fill_text(it: dict, f: dict) -> str | None:
@@ -1455,7 +1540,9 @@ _RESULT_TEXT = {
            "kelish_empty": "Ro'yxati bo'sh, tekshirilmadi: {codes}",
            "kelish_none": "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
            "k_today": "bugungi", "k_tomorrow": "ertangi",
-           "k_filled": "{t} da to'liq to'ldirildi"},
+           "k_filled": "{t} da to'liq to'ldirildi",
+           "k_filled_late": "{t} da to'liq to'ldirildi — tekshiruvdan {d} keyin",
+           "dur_h": "{h} soat", "dur_m": "{m} daqiqa", "dur_hm": "{h} soat {m} daqiqa"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
                 "untyped": "Одамлар сони киритилмаган: {codes}",
@@ -1468,7 +1555,9 @@ _RESULT_TEXT = {
                 "kelish_empty": "Рўйхати бўш, текширилмади: {codes}",
                 "kelish_none": "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
                 "k_today": "бугунги", "k_tomorrow": "эртанги",
-                "k_filled": "{t} да тўлиқ тўлдирилди"},
+                "k_filled": "{t} да тўлиқ тўлдирилди",
+                "k_filled_late": "{t} да тўлиқ тўлдирилди — текширувдан {d} кейин",
+                "dur_h": "{h} соат", "dur_m": "{m} дақиқа", "dur_hm": "{h} соат {m} дақиқа"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
            "untyped": "Не внесено количество людей: {codes}",
@@ -1481,7 +1570,9 @@ _RESULT_TEXT = {
            "kelish_empty": "Список пуст, не проверялись: {codes}",
            "kelish_none": "Нет ячеек с планом — проверять было нечего",
            "k_today": "на сегодня", "k_tomorrow": "на завтра",
-           "k_filled": "полностью заполнен в {t}"},
+           "k_filled": "полностью заполнен в {t}",
+           "k_filled_late": "полностью заполнен в {t} — через {d} после проверки",
+           "dur_h": "{h} ч", "dur_m": "{m} мин", "dur_hm": "{h} ч {m} мин"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
            "untyped": "Headcount missing: {codes}",
@@ -1494,7 +1585,9 @@ _RESULT_TEXT = {
            "kelish_empty": "Empty list, not checked: {codes}",
            "kelish_none": "No cell had a plan — there was no list to check",
            "k_today": "today's", "k_tomorrow": "tomorrow's",
-           "k_filled": "fully filled at {t}"},
+           "k_filled": "fully filled at {t}",
+           "k_filled_late": "fully filled at {t} — {d} after the check",
+           "dur_h": "{h} h", "dur_m": "{m} min", "dur_hm": "{h} h {m} min"},
 }
 
 
@@ -1766,6 +1859,16 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         late = max(0, int((late_from - due).total_seconds() // 60))
         if late > LATE_GRACE.total_seconds() // 60:
             v.facts = dict(v.facts, late_by_min=late)
+    # A failed #11 written AFTER the hour — a checklist that appeared later, a
+    # late pass — may be about a list completed since the check: the ledger
+    # row and the verdict DM then say when, and how long after (`late_fills`).
+    if v.code == "not_filled" and (now - due) > LATE_GRACE:
+        try:
+            got = late_fills(db, [(v.facts, due)], now)
+            if got and got[0] is not None:
+                v.facts = got[0]
+        except Exception:                              # noqa: BLE001
+            logger.exception("late-fill read failed for leader %s", prof.id)
 
     entry = LeaderTaskEntry(day_id=day.id, task_id=tid, done=v.done,
                             reason=leader_tasks.auto_reason(hhmm, v.code))

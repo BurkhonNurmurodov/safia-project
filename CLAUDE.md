@@ -9318,16 +9318,26 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   judged list item carries `filled_at` (ISO, Tashkent) — the latest mark on
   the list, i.e. the moment its last worker was answered (`list_done_at`).
   The CHECK stamps it on a list it found full; a list that FAILED gets it from
-  the 5-minute sweep (`stamp_late_fills`, right after `leader_auto.run` in
-  `leader_close._sweep`): every failed `staff_list` row of the last
-  `LATE_FILL_DAYS` (3) is re-read against the lists AS THEY STAND NOW and
-  stamped once full, the count it read untouched — so «12/13, 20:35 da to'liq
-  to'ldirildi» says the leader finished 35 min after the hour, and an admin
-  rules on it from the day view. An unfixed cell names which list
-  (`filled_kind`). Items carry `cell_id` from this date; older rows resolve the
-  cell by code. Printed by both twins (`staff_list_cells` / `fill_text`,
-  `utils/autoResult.js`): «HH:MM» on the checklist day, «DD.MM HH:MM» on any
-  other, read off the text, never a clock. Nothing is re-measured on a read.
+  `late_fills` (ONE reader, two doors): the 5-minute sweep (`stamp_late_fills`,
+  right after `leader_auto.run` in `leader_close._sweep` — every failed
+  `staff_list` row of the last `LATE_FILL_DAYS` (3) re-read against the lists
+  AS THEY STAND NOW, stamped once full, committed there), and `_settle` for a
+  verdict WRITTEN after the hour (a checklist that appeared later), whose DM
+  then carries it. The count it read is untouched. Beside the time, HOW LONG
+  AFTER THE CHECK (`filled_late_min`, off the row's `due_at`): «12/13, 11.10
+  08:53 da to'liq to'ldirildi — tekshiruvdan 12 soat 53 daqiqa keyin» — the
+  reason line prints the hour alone, so without it a next-morning fill read
+  as before the check (the operator's «then why is it not marked?»). An
+  unfixed cell names which list (`filled_kind`). Items carry `cell_id` from
+  this date; older rows resolve the cell by code. Printed by both twins
+  (`staff_list_cells` / `_filled_phrase`, `utils/autoResult.js`): «HH:MM» on
+  the checklist day, «DD.MM HH:MM» on any other, read off the text, never a
+  clock. Nothing is re-measured on a read. **The leader is TOLD in Telegram**:
+  a verdict DM sent after the fill prints it in its facts line; a fill after
+  the verdict DM (which cannot be edited — no message id is kept) is ONE
+  follow-up per task, `leader_auto_filled_late` (list, time, how long after,
+  «the verdict does not change by itself»), sent by the sweep after its
+  commit.
 
 ## «Ish grafigi» — the T11 staff list (`/kelish`)
 

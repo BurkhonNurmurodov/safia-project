@@ -29,6 +29,8 @@ const T_ALL = {
     kelishNone: "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
     kToday: "bugungi", kTomorrow: "ertangi",
     kFilled: "{t} da to'liq to'ldirildi",
+    kFilledLate: "{t} da to'liq to'ldirildi — tekshiruvdan {d} keyin",
+    durH: "{h} soat", durM: "{m} daqiqa", durHM: "{h} soat {m} daqiqa",
   },
   uz_cyrl: {
     plan: "Режа киритилган позициялар: {a} / {b}",
@@ -44,6 +46,8 @@ const T_ALL = {
     kelishNone: "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
     kToday: "бугунги", kTomorrow: "эртанги",
     kFilled: "{t} да тўлиқ тўлдирилди",
+    kFilledLate: "{t} да тўлиқ тўлдирилди — текширувдан {d} кейин",
+    durH: "{h} соат", durM: "{m} дақиқа", durHM: "{h} соат {m} дақиқа",
   },
   ru: {
     plan: "Позиции с планом: {a} / {b}",
@@ -59,6 +63,8 @@ const T_ALL = {
     kelishNone: "Нет ячеек с планом — проверять было нечего",
     kToday: "на сегодня", kTomorrow: "на завтра",
     kFilled: "полностью заполнен в {t}",
+    kFilledLate: "полностью заполнен в {t} — через {d} после проверки",
+    durH: "{h} ч", durM: "{m} мин", durHM: "{h} ч {m} мин",
   },
   en: {
     plan: "Positions with a plan: {a} / {b}",
@@ -74,6 +80,8 @@ const T_ALL = {
     kelishNone: "No cell had a plan — there was no list to check",
     kToday: "today's", kTomorrow: "tomorrow's",
     kFilled: "fully filled at {t}",
+    kFilledLate: "fully filled at {t} — {d} after the check",
+    durH: "{h} h", durM: "{m} min", durHM: "{h} h {m} min",
   },
 };
 
@@ -110,17 +118,28 @@ const fillText = (it, f) => {
   return day0 && s.slice(0, 10) === day0 ? hm : `${s.slice(8, 10)}.${s.slice(5, 7)} ${hm}`;
 };
 const kindWord = (T, k) => (k === "today" ? T.kToday : T.kTomorrow);
+// «— tekshiruvdan 12 soat 53 daqiqa keyin» when the list filled AFTER the
+// check (`filled_late_min`): the reason line prints the check's hour alone,
+// so without it a fill dated the next morning could be read as before it.
+// The twin of `leader_auto._filled_phrase`.
+const filledPhrase = (T, it, at) => {
+  const late = Number(it.filled_late_min);
+  if (!Number.isFinite(late) || late <= 0) return put(T.kFilled, { t: at });
+  const h = Math.floor(late / 60); const m = late % 60;
+  const d = !h ? put(T.durM, { m }) : !m ? put(T.durH, { h }) : put(T.durHM, { h, m });
+  return put(T.kFilledLate, { t: at, d });
+};
 const staffCells = (T, lists, f) => lists.slice(0, 8).map((it) => {
   const k = it.kind === "today" || it.kind === "tomorrow" ? it.kind : null;
   const at = fillText(it, f);
   if (k) {
     const s = `${it.cell} (${kindWord(T, k)}): ${pair(it[k])}`;
-    return at ? `${s}, ${put(T.kFilled, { t: at })}` : s;
+    return at ? `${s}, ${filledPhrase(T, it, at)}` : s;
   }
   const s = `${it.cell}: ${T.kToday} ${pair(it.today)}, ${T.kTomorrow} ${pair(it.tomorrow)}`;
   if (!at) return s;
   const fk = it.filled_kind === "today" || it.filled_kind === "tomorrow" ? `${kindWord(T, it.filled_kind)} ` : "";
-  return `${s}, ${fk}${put(T.kFilled, { t: at })}`;
+  return `${s}, ${fk}${filledPhrase(T, it, at)}`;
 }).join(" · ");
 
 export function autoResultLines(facts, lang) {

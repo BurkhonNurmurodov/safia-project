@@ -848,6 +848,19 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Задача не выполнена", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
         "en": ("Task not done", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
     },
+    # The follow-up to a failed #11 verdict: the «Ish grafigi» list has been
+    # completed since the check — when, and how long after the hour
+    # (`leader_auto.stamp_late_fills`). The verdict itself does not move.
+    "leader_auto_filled_late": {
+        "uz": ("Ro'yxat tekshiruvdan keyin to'ldirildi",
+               "📋 {task}\n🕐 {time} · {date}\n{facts}\n«Ish grafigi» tekshiruv vaqtidan keyin to'liq to'ldirildi — tekshiruv natijasi o'z-o'zidan o'zgarmaydi."),
+        "uz_cyrl": ("Рўйхат текширувдан кейин тўлдирилди",
+                    "📋 {task}\n🕐 {time} · {date}\n{facts}\n«Иш графиги» текширув вақтидан кейин тўлиқ тўлдирилди — текширув натижаси ўз-ўзидан ўзгармайди."),
+        "ru": ("Список заполнен после проверки",
+               "📋 {task}\n🕐 {time} · {date}\n{facts}\n«График работы» заполнен полностью после проверки — результат проверки сам по себе не меняется."),
+        "en": ("List filled after the check",
+               "📋 {task}\n🕐 {time} · {date}\n{facts}\nThe work schedule was fully filled after the check — the verdict does not change by itself."),
+    },
     "leader_dispute_approved": {
         "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi.\nIzoh: {note}"),
         "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа яна бажарилган деб ҳисобланади.\nИзоҳ: {note}"),
