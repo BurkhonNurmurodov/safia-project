@@ -566,7 +566,7 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
         label = cell_label(c)
         ev = [e for e in events.get(c.id, [])
               if cutoff is None or (e.created_at is not None and e.created_at <= cutoff)]
-        got = {}
+        got, done_at = {}, {}
         for name, day in zip(kelish.KINDS, days):
             fw, last = files[day]
             mk = marks.get(c.id, {}).get(day, {})
@@ -578,16 +578,19 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
             n = len(lst)
             m_ = sum(1 for r in lst if r["mark"] in kelish.STATUSES)
             got[name] = (m_, n)
+            done_at[name] = list_done_at(lst) if (n and m_ == n) else None
         full = {k: (n > 0 and m_ == n) for k, (m_, n) in got.items()}
         kr = kinds.get(c.id)
         kind = kr.kind if kr is not None and kr.kind in kelish.KINDS else None
-        item = {"cell": label, "kind": kind,
+        item = {"cell": label, "cell_id": c.id, "kind": kind,
                 "today": list(got["today"]), "tomorrow": list(got["tomorrow"])}
         if kind is not None:
             if got[kind][1] == 0:
                 facts["empty"].append(label)
                 continue
             ok = full[kind]
+            if ok and done_at.get(kind):
+                item["filled_at"] = done_at[kind]
         else:
             if got["today"][1] == 0 and got["tomorrow"][1] == 0:
                 facts["empty"].append(label)
@@ -600,6 +603,9 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
                     item["kind"], item["decided"] = pick, True
                 else:
                     item["would_be"] = pick
+                    item["filled_kind"] = pick
+                if done_at.get(pick):
+                    item["filled_at"] = done_at[pick]
         item["ok"] = ok
         all_ok = all_ok and ok
         facts["lists"].append(item)
@@ -607,6 +613,138 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
         return Verdict(PASSED, "ok", facts)
     return Verdict(PASSED if all_ok else FAILED,
                    "ok" if all_ok else "not_filled", facts)
+
+
+def list_done_at(lst: list) -> str | None:
+    """WHEN a «Ish grafigi» list was fully filled — the moment its LAST worker
+    was answered, i.e. the latest `set_at` among the marks on it — as an ISO
+    string on the plant's wall clock (Tashkent). None for a list with an
+    unmarked worker: it is not full, so it has no such moment."""
+    best = None
+    for r in lst:
+        if r.get("mark") not in ("yes", "no"):
+            return None
+        at = r.get("at")
+        if not at:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(at))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if best is None or dt > best:
+            best = dt
+    return best.astimezone(TASHKENT).isoformat(timespec="seconds") if best else None
+
+
+# How far back a failed #11 verdict is watched for its list filling up. A list
+# for day D can only be marked while D is the cell's today or tomorrow, so a
+# check dated D is settled for good once D + 2 has passed; three days covers a
+# night shift's frame with a day to spare.
+LATE_FILL_DAYS = 3
+
+
+def stamp_late_fills(db: Session, now: datetime | None = None) -> int:
+    """A failed #11 («Ish grafigi») verdict learns WHEN its list was filled
+    after the hour (the operator, 2026-10-12: «show when it was fully filled
+    alongside» the 12/13 the check read).
+
+    The check stores what it read AT THE HOUR, and a list that was short then
+    has no fill moment yet — it comes later, when the leader (or the brigadir)
+    answers the last worker. This runs on the 5-minute sweep: every failed
+    `staff_list` row of the last `LATE_FILL_DAYS` whose failed lists carry no
+    `filled_at` is re-read against the lists AS THEY STAND NOW, and a list
+    that is full now gets `filled_at` = the latest mark on it (`list_done_at`).
+    The count the check read (`today` / `tomorrow`, `ok`) is never touched, so
+    the verdict still says what it saw; the stamp says what happened next.
+    Every reader prints it through `results_for` — the day report, the admin
+    day detail, the register, the appeal chat, the bot — so nothing has to
+    re-measure. Returns how many rows were stamped; the caller commits.
+    """
+    from app.services import kelish
+    now = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
+    floor = (now.date() - timedelta(days=LATE_FILL_DAYS)).isoformat()
+    rows = (db.query(LeaderAutoCheck)
+            .filter(LeaderAutoCheck.check == "staff_list",
+                    LeaderAutoCheck.outcome == FAILED,
+                    LeaderAutoCheck.code == "not_filled",
+                    LeaderAutoCheck.date >= floor)
+            .all())
+    todo = []   # (row, item index)
+    codes: set[str] = set()
+    ids: set[int] = set()
+    days: set[_date] = set()
+    for row in rows:
+        f = row.facts if isinstance(row.facts, dict) else {}
+        lists = f.get("lists") if isinstance(f.get("lists"), list) else []
+        try:
+            ds = [_as_date(x) for x in (f.get("days") or [])[:2]]
+        except Exception:
+            continue
+        if len(ds) != 2:
+            continue
+        for i, it in enumerate(lists):
+            if not isinstance(it, dict) or it.get("ok") or it.get("filled_at"):
+                continue
+            todo.append((row, i))
+            days.update(ds)
+            if it.get("cell_id"):
+                ids.add(int(it["cell_id"]))
+            elif it.get("cell"):
+                codes.add(str(it["cell"]))
+    if not todo:
+        return 0
+    # Rows written before the item carried its cell id name the cell by its
+    # verifix code; an active cell with that code is the one meant.
+    by_code: dict[str, Cell] = {}
+    if codes:
+        for c in (db.query(Cell).filter(Cell.verifix_code.in_(sorted(codes)))
+                  .order_by(Cell.archived_at.isnot(None), Cell.id).all()):
+            by_code.setdefault(c.verifix_code, c)
+        ids.update(c.id for c in by_code.values())
+    cells = {c.id: c for c in db.query(Cell).filter(Cell.id.in_(sorted(ids))).all()}
+    files = kelish.file_workers_days(db, sorted(days))
+    events = kelish.load_events(db, list(cells))
+    marks = kelish.load_marks_days(db, list(cells), sorted(days))
+    kinds = kelish.load_kinds(db, list(cells))
+
+    stamped = 0
+    touched: dict[int, dict] = {}
+    for row, i in todo:
+        f = touched.get(row.id) or dict(row.facts)
+        lists = [dict(x) if isinstance(x, dict) else x for x in f["lists"]]
+        it = lists[i]
+        c = cells.get(int(it["cell_id"])) if it.get("cell_id") else by_code.get(str(it.get("cell")))
+        if c is None or not c.verifix_code:
+            continue
+        ds = [_as_date(x) for x in f["days"][:2]]
+        kr = kinds.get(c.id)
+        kind = it.get("kind") if it.get("kind") in kelish.KINDS else (
+            kr.kind if kr is not None and kr.kind in kelish.KINDS else None)
+        names = [kind] if kind else list(kelish.KINDS)
+        found = None
+        for name in names:
+            day = ds[kelish.KINDS.index(name)]
+            fw, last = files[day]
+            lst = kelish.roster(c.verifix_code, day, fw, last, events.get(c.id, []),
+                                marks.get(c.id, {}).get(day, {}))
+            at = list_done_at(lst) if lst else None
+            if at and (found is None or at < found[0]):
+                found = (at, name)
+        if found is None:
+            continue
+        it["filled_at"] = found[0]
+        if not it.get("kind"):
+            it["filled_kind"] = found[1]
+        lists[i] = it
+        f["lists"] = lists
+        touched[row.id] = f
+    for row, _ in todo:
+        if row.id in touched and row.facts is not touched[row.id]:
+            row.facts = touched[row.id]
+            stamped += 1
+    return stamped
 
 
 _RUNNERS = {
@@ -1259,14 +1397,35 @@ def staff_list_cells(f: dict, lang: str = "uz") -> str:
         if not isinstance(it, dict):
             continue
         kind = it.get("kind")
+        at = fill_text(it, f)
         if kind in ("today", "tomorrow"):
             m, n = (it.get(kind) or [0, 0])[:2]
-            parts.append(f"{it.get('cell')} ({L['k_' + kind]}): {m}/{n}")
+            s = f"{it.get('cell')} ({L['k_' + kind]}): {m}/{n}"
+            if at:
+                s += ", " + L["k_filled"].format(t=at)
         else:
             t, w = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
-            parts.append(f"{it.get('cell')}: {L['k_today']} {t[0]}/{t[1]}, "
-                         f"{L['k_tomorrow']} {w[0]}/{w[1]}")
+            s = (f"{it.get('cell')}: {L['k_today']} {t[0]}/{t[1]}, "
+                 f"{L['k_tomorrow']} {w[0]}/{w[1]}")
+            if at:
+                fk = it.get("filled_kind")
+                lead = (L["k_" + fk] + " ") if fk in ("today", "tomorrow") else ""
+                s += ", " + lead + L["k_filled"].format(t=at)
+        parts.append(s)
     return " · ".join(parts)
+
+
+def fill_text(it: dict, f: dict) -> str | None:
+    """«20:35», or «13.10 20:35» when the list was completed on a calendar day
+    other than the checklist day — read off the item's `filled_at` as text,
+    never through a clock, so the bot and `utils/autoResult.js` print one
+    moment the same way."""
+    s = str(it.get("filled_at") or "")
+    if len(s) < 16 or s[10] != "T":
+        return None
+    day0 = str((f.get("days") or [""])[0] or "")[:10]
+    hm = s[11:16]
+    return hm if day0 and s[:10] == day0 else f"{s[8:10]}.{s[5:7]} {hm}"
 
 
 def _pct_line(L: dict, v: str, f: dict, show_target: bool) -> str:
@@ -1295,7 +1454,8 @@ _RESULT_TEXT = {
            "kelish_noplan": "Rejasi yo'q, tekshirilmadi: {codes}",
            "kelish_empty": "Ro'yxati bo'sh, tekshirilmadi: {codes}",
            "kelish_none": "Rejasi bor yacheyka yo'q — tekshiriladigan ro'yxat yo'q",
-           "k_today": "bugungi", "k_tomorrow": "ertangi"},
+           "k_today": "bugungi", "k_tomorrow": "ertangi",
+           "k_filled": "{t} da to'liq to'ldirildi"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
                 "untyped": "Одамлар сони киритилмаган: {codes}",
@@ -1307,7 +1467,8 @@ _RESULT_TEXT = {
                 "kelish_noplan": "Режаси йўқ, текширилмади: {codes}",
                 "kelish_empty": "Рўйхати бўш, текширилмади: {codes}",
                 "kelish_none": "Режаси бор ячейка йўқ — текшириладиган рўйхат йўқ",
-                "k_today": "бугунги", "k_tomorrow": "эртанги"},
+                "k_today": "бугунги", "k_tomorrow": "эртанги",
+                "k_filled": "{t} да тўлиқ тўлдирилди"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
            "untyped": "Не внесено количество людей: {codes}",
@@ -1319,7 +1480,8 @@ _RESULT_TEXT = {
            "kelish_noplan": "Нет плана, не проверялись: {codes}",
            "kelish_empty": "Список пуст, не проверялись: {codes}",
            "kelish_none": "Нет ячеек с планом — проверять было нечего",
-           "k_today": "на сегодня", "k_tomorrow": "на завтра"},
+           "k_today": "на сегодня", "k_tomorrow": "на завтра",
+           "k_filled": "полностью заполнен в {t}"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
            "untyped": "Headcount missing: {codes}",
@@ -1331,7 +1493,8 @@ _RESULT_TEXT = {
            "kelish_noplan": "No plan, not checked: {codes}",
            "kelish_empty": "Empty list, not checked: {codes}",
            "kelish_none": "No cell had a plan — there was no list to check",
-           "k_today": "today's", "k_tomorrow": "tomorrow's"},
+           "k_today": "today's", "k_tomorrow": "tomorrow's",
+           "k_filled": "fully filled at {t}"},
 }
 
 

@@ -1127,6 +1127,18 @@ def _sweep() -> None:
         except Exception:
             logger.exception("automatic checklist sweep failed")
             db.rollback()
+        # A failed #11 learns when its list filled up after the hour
+        # (`leader_auto.stamp_late_fills`): a stamp on the ledger row, so every
+        # reader prints it without re-measuring. Its own try: a bad stamp must
+        # not cost the closes below.
+        try:
+            n = leader_auto.stamp_late_fills(db)
+            if n:
+                db.commit()
+                logger.info("staff-list late fills: stamped %s verdict(s)", n)
+        except Exception:
+            logger.exception("staff-list late-fill stamp failed")
+            db.rollback()
         try:
             n = autoclose_due(db)
             if n:

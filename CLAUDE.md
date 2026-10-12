@@ -9313,6 +9313,21 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   reached mid-day, an answer filed by screenshot before the switch stands and
   a filled table grants the points (`_staff_list_filed`).
 - /kelish opened to leader · supervisor · shift-manager (`open_kelish_page`).
+- **WHEN a list was fully filled is printed beside the count** (2026-10-12,
+  the operator: «show when it was fully filled alongside» the «12/13»). Each
+  judged list item carries `filled_at` (ISO, Tashkent) — the latest mark on
+  the list, i.e. the moment its last worker was answered (`list_done_at`).
+  The CHECK stamps it on a list it found full; a list that FAILED gets it from
+  the 5-minute sweep (`stamp_late_fills`, right after `leader_auto.run` in
+  `leader_close._sweep`): every failed `staff_list` row of the last
+  `LATE_FILL_DAYS` (3) is re-read against the lists AS THEY STAND NOW and
+  stamped once full, the count it read untouched — so «12/13, 20:35 da to'liq
+  to'ldirildi» says the leader finished 35 min after the hour, and an admin
+  rules on it from the day view. An unfixed cell names which list
+  (`filled_kind`). Items carry `cell_id` from this date; older rows resolve the
+  cell by code. Printed by both twins (`staff_list_cells` / `fill_text`,
+  `utils/autoResult.js`): «HH:MM» on the checklist day, «DD.MM HH:MM» on any
+  other, read off the text, never a clock. Nothing is re-measured on a read.
 
 ## «Ish grafigi» — the T11 staff list (`/kelish`)
 
