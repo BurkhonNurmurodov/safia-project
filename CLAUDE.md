@@ -10631,6 +10631,31 @@ blocking work on the event loop freezes every request on the server at once.
   read backwards). A «see all» build reads as before; the day report reads
   its one row's. And a day close of a finished shift waited
   11.7 s on Verifix — see `close_fresh_s` above.
+- **The thirteenth (12 Oct, a leader's phone) was the CONNECTION after the
+  app had been in the background, and the report could not say so**: four
+  requests of one window stuck 9.5–13.6 s with 12–16 ms of server time each,
+  the page's code 16.8 s, nothing slow on the server — the browser sending on
+  a connection that had died while the app was away, waiting ~10 s for its
+  PING (Chrome's hung-connection timeout) before opening a new one, then
+  everything going through at once. Hedging cannot help there (the second
+  copy rides the same dead connection) and nothing on the server can. Three
+  additions so the next one names itself: the client sends the BROWSER's own
+  phases per request (`rt`: held before sending · connecting · first byte ·
+  download, size, h2/h3 — off PerformanceResourceTiming, matched by path and
+  start instant; the timing buffer is widened to 600 and cleared when full,
+  or a tab an hour old records nothing), the page chunks a «page» wait was
+  waiting on (`chunks` — axios never sees them), and how long the app had
+  been in the background before the wait and how long back (`vis`, counting
+  Telegram's `deactivated` / `activated` as away too, which also stops the
+  loader's visible-time clock). The verdict gains a cause, `connection` (two
+  or more requests each lost ≥ 1.5 s on the way with the server under 40 % of
+  it — the WAY was stuck, where `network` is one request lost among others
+  that came back), names the dominant phase («the browser HELD it 12.9 s
+  before it was sent — no usable connection»), and prints the away line; a
+  connection stall's fingerprint names no endpoint, so one phone's flaky 4G
+  is one DM an hour. Not built: preloading the pages a role can open right
+  after boot, which would show the page frame instead of the logo while the
+  connection recovers — data on 4G at every open, the operator's call.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).

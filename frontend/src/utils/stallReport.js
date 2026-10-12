@@ -13,7 +13,15 @@
 //   • the requests still pending and the ones that finished meanwhile, each
 //     with the time the TAB waited and the time the SERVER says it spent
 //     (utils/requestLog.js) — the difference is the network, or a request
-//     queued behind a frozen server (`stall`);
+//     queued behind a frozen server (`stall`) — and the BROWSER's own phases
+//     (`rt`: held before sending · connecting · first byte · download);
+//   • for the «page» gate, the page chunks fetched in the window (`chunks`),
+//     which is what that gate actually waits on and what axios never sees;
+//   • how long the app had been in the BACKGROUND before the wait and how long
+//     it had been back (`vis`): the 12 Oct 2026 report — every request of the
+//     window stuck 10–13 s with 12–16 ms of server time each — is what a
+//     connection that died while the app was away looks like, and nothing in
+//     the report could say the app had been away;
 //   • whether the server was restarting, the connection, the platform.
 // The backend (services/stall_report.py) puts its OWN record of that moment
 // beside it (services/perf_watch.py), so one message says which side it was.
@@ -25,7 +33,7 @@
 
 import { useEffect, useState } from "react";
 import api, { authHeaders } from "./api";
-import { requestsSince } from "./requestLog";
+import { requestsSince, scriptsSince } from "./requestLog";
 import { isServerRestarting, onServerRestarting } from "./serverRestart";
 import { APP_VERSION } from "./version";
 import { inAndroidApp, inTelegram } from "./session";
@@ -38,6 +46,56 @@ const MAX_PER_PAGE = 2;
 let sentThisPage = 0;
 
 const now = () => performance.now();
+
+// ---- when the app is AWAY ---------------------------------------------------
+// `document.hidden`, plus Telegram's own `deactivated` / `activated`: a mini app
+// minimised on Android is not always a visibilitychange (the camera page learned
+// that). Kept from module load, so a wait can say how long the app had been in
+// the background before it began and how long it had been back — and the
+// loader's visible-time clock stops for both kinds of away.
+const away = { hiddenAt: null, spans: [], listeners: new Set(), tg: false };
+let tgInactive = false;
+const isAway = () => away.hiddenAt != null;
+
+function recompute(src) {
+  const hidden = document.hidden || tgInactive;
+  const n = now();
+  if (hidden) {
+    if (away.hiddenAt == null) away.hiddenAt = n;
+  } else if (away.hiddenAt != null) {
+    away.spans.push({ from: away.hiddenAt, to: n });
+    if (away.spans.length > 20) away.spans.shift();
+    away.hiddenAt = null;
+  }
+  if (src === "tg") away.tg = true;
+  away.listeners.forEach((fn) => { try { fn(); } catch { /* a listener's own failure */ } });
+}
+
+try {
+  if (document.hidden) away.hiddenAt = now();
+  document.addEventListener("visibilitychange", () => recompute("doc"));
+  const tg = window.Telegram?.WebApp;
+  if (tg?.isActive === false) { tgInactive = true; away.hiddenAt = now(); }
+  tg?.onEvent?.("deactivated", () => { tgInactive = true; recompute("tg"); });
+  tg?.onEvent?.("activated", () => { tgInactive = false; recompute("tg"); });
+} catch {
+  /* no document, or a dead Telegram bridge — the clock simply runs */
+}
+
+/**
+ * The most recent spell in the background that ENDED before `t0` (within ten
+ * minutes): how long it lasted and how long the app had been back when the wait
+ * began. null when the app had not been away.
+ */
+export function awayBefore(t0) {
+  for (let i = away.spans.length - 1; i >= 0; i--) {
+    const sp = away.spans[i];
+    if (sp.to > t0) continue;
+    if (t0 - sp.to > 600_000) return null;
+    return { hidden_ms: Math.round(sp.to - sp.from), back_ms: Math.round(t0 - sp.to), tg: away.tg || undefined };
+  }
+  return null;
+}
 
 function platform() {
   try {
@@ -99,7 +157,7 @@ export function useStallWatch(where) {
   useEffect(() => {
     const t0 = now();
     let hiddenMs = 0;
-    let hiddenAt = document.hidden ? t0 : null;
+    let hiddenAt = isAway() ? t0 : null;
     let restarted = isServerRestarting();
     let sent = false;
     let alive = true;
@@ -117,11 +175,13 @@ export function useStallWatch(where) {
         waited_ms: Math.round(visibleMs()),
         total_ms: Math.round(n - t0),
         since_load_ms: Math.round(t0),
+        vis: awayBefore(t0),
         restarting: restarted,
         online: navigator.onLine,
         conn: connection(),
         platform: platform(),
         ...requestsSince(t0),
+        ...(where === "page" ? { chunks: scriptsSince(t0) } : {}),
       };
     };
     const report = (outcome, keepalive) => {
@@ -134,7 +194,7 @@ export function useStallWatch(where) {
 
     const onVis = () => {
       const n = now();
-      if (document.hidden) {
+      if (isAway()) {
         if (hiddenAt == null) hiddenAt = n;
         // Closed or switched away while still waiting — likely gave up. The
         // keepalive fetch is the only send that survives the page going away.
@@ -144,7 +204,7 @@ export function useStallWatch(where) {
         hiddenAt = null;
       }
     };
-    document.addEventListener("visibilitychange", onVis);
+    away.listeners.add(onVis);
 
     const iv = setInterval(() => {
       const v = visibleMs();
@@ -155,7 +215,7 @@ export function useStallWatch(where) {
     return () => {
       alive = false;
       clearInterval(iv);
-      document.removeEventListener("visibilitychange", onVis);
+      away.listeners.delete(onVis);
       offRestart();
       if (visibleMs() >= REPORT_MS) report("resolved", false);
     };

@@ -9,6 +9,16 @@
 // request queued behind a frozen server, which `X-Server-Stall-Ms` says); a
 // long server time is the server.
 //
+// Each finished request also carries the BROWSER's own account of where its
+// time went (`rt`, off PerformanceResourceTiming, matched by path and start
+// instant): `stall` — held in the browser before it was sent (a connection that
+// died while the app was in the background shows here: Chrome sends the request
+// on the dead one, waits ~10 s for its PING, then opens a new one), `conn` —
+// DNS + connecting, `ttfb` — sent to first byte, `dl` — the download, `size`,
+// `proto` (h2 / h3). Our wall clock says HOW LONG; this says WHERE. The same
+// for the page chunks a lazy route loads (`scriptsSince`) — those never pass
+// through axios, and the «page» gate waits on exactly them.
+//
 // Paths only — never a query string (filters carry names) and never a body.
 // Memory only, bounded, and nothing here can throw into a request.
 
@@ -88,6 +98,102 @@ export function noteEnd(config, response, cancelled = false) {
   }
 }
 
+// ---- the browser's own timing -------------------------------------------
+
+// The buffer holds 250 entries by default and then STOPS recording: a tab
+// polling the bell every minute fills it within the hour, and the request a
+// report needs is then the one with no entry. Widen it, and clear it when it
+// fills — only the recent window is ever read.
+try {
+  if (typeof performance !== "undefined") {
+    performance.setResourceTimingBufferSize?.(600);
+    performance.addEventListener?.("resourcetimingbufferfull", () => {
+      try { performance.clearResourceTimings(); } catch { /* nothing to clear */ }
+    });
+  }
+} catch {
+  /* an old engine without the API — reports simply carry no phases */
+}
+
+function entries() {
+  try {
+    return performance.getEntriesByType("resource") || [];
+  } catch {
+    return [];
+  }
+}
+
+/** The phases of one PerformanceResourceTiming entry, in whole ms. */
+function phases(e) {
+  const fs = e.fetchStart || e.startTime;
+  // Same-origin, so every phase is readable; a 0 requestStart means the entry
+  // is opaque after all (a proxy answered?) and its phases would be guesses.
+  if (!e.requestStart || !e.responseStart) return undefined;
+  const dns0 = e.domainLookupStart || fs;
+  const dns1 = e.domainLookupEnd || dns0;
+  const c0 = e.connectStart || dns1;
+  const c1 = e.connectEnd || c0;
+  const nz = (v) => (v > 0 ? Math.round(v) : 0);
+  return {
+    // Waited in the browser before anything was sent: before DNS/connecting
+    // began, plus between the socket being ready and the request going out.
+    stall: nz(dns0 - fs) + nz(e.requestStart - c1),
+    conn: nz(dns1 - dns0) + nz(c1 - c0),
+    ttfb: nz(e.responseStart - e.requestStart),
+    dl: nz(e.responseEnd - e.responseStart),
+    size: nz(e.transferSize),
+    proto: String(e.nextHopProtocol || "").slice(0, 12) || undefined,
+  };
+}
+
+/** The browser's timing of a finished request of ours, or undefined. */
+function timingFor(r) {
+  try {
+    let best;
+    let bestGap = Infinity;
+    for (const e of entries()) {
+      if (e.initiatorType !== "xmlhttprequest" && e.initiatorType !== "fetch") continue;
+      if (pathOf(e.name) !== r.p) continue;
+      // Started within a breath of our own stamp (noteStart runs just before
+      // send), ended about when we saw the answer — the second copy of a
+      // hedged request has the same path and a later start.
+      const gap = Math.abs(e.startTime - r.t0) + Math.abs(e.responseEnd - r.t1) / 4;
+      if (Math.abs(e.startTime - r.t0) > 250 || gap >= bestGap) continue;
+      best = e;
+      bestGap = gap;
+    }
+    return best ? phases(best) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The page code (and styles) the browser fetched in the window from `since`:
+ * the chunks a lazy route imports, which the «page» gate waits on. Slowest
+ * first, capped; each with the browser's phases.
+ */
+export function scriptsSince(since, cap = 4) {
+  try {
+    const out = [];
+    for (const e of entries()) {
+      const path = pathOf(e.name);
+      if (!/\/assets\/[^/]+\.(js|css)$/.test(path)) continue;
+      if (e.responseEnd < since) continue;
+      out.push({
+        n: path.slice(path.lastIndexOf("/") + 1).slice(0, 60),
+        ms: Math.round(e.responseEnd - e.startTime),
+        at: Math.round(e.startTime - since), // when it was asked for, from the wait's start
+        ...(phases(e) || {}),
+      });
+    }
+    out.sort((a, b) => b.ms - a.ms);
+    return out.slice(0, cap);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Everything that overlapped the window starting at `since` (a performance.now()
  * instant): what is still pending, with its age, and what finished, with its
@@ -101,7 +207,10 @@ export function requestsSince(since, cap = 12) {
   });
   const finished = done
     .filter((r) => r.t1 >= since)
-    .map(({ m, p, s, ms, sms, stall, x }) => ({ m, p, s, ms, sms, stall, x }));
+    .map((r) => {
+      const { m, p, s, ms, sms, stall, x } = r;
+      return { m, p, s, ms, sms, stall, x, at: Math.round(r.t0 - since), rt: x ? undefined : timingFor(r) };
+    });
   pending.sort((a, b) => b.ms - a.ms);
   finished.sort((a, b) => b.ms - a.ms);
   return { pending: pending.slice(0, cap), done: finished.slice(0, cap) };
