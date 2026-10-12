@@ -14,6 +14,7 @@ import { BotPhoto, ReportPhoto, RollPhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
+import StaffListAtCheckButton, { hasStaffList } from "./StaffListAtCheck";
 import api from "../../utils/api";
 
 /**
@@ -168,6 +169,10 @@ function TaskRow({ task, uid, lang, T, onPhoto, onReopen, onWipe, busy }) {
           {line}
         </p>
       ))}
+      {/* #11: the list itself, as it stood at the check and now */}
+      {task.reason && !task.done && hasStaffList(task.autoFacts) && uid && (
+        <div><StaffListAtCheckButton uid={uid} taskId={Number(task.id)} lang={lang} /></div>
+      )}
 
       {task.closedAt && (
         <p className="text-[11px]" style={{ color: "var(--text-4)" }}>

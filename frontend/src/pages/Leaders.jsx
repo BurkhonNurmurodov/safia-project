@@ -46,6 +46,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { showReason as expandReason } from "../utils/leaderReason";
 import { autoResultLines } from "../utils/autoResult";
+import StaffListAtCheckButton, { hasStaffList } from "../components/leaders/StaffListAtCheck";
 import { surnameInitial } from "../utils/personName";
 
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
@@ -5149,6 +5150,12 @@ export default function Leaders() {
                         {!unasked && !tk.done && autoResultLines(tk.auto_facts, lang).map((line) => (
                           <p key={line} className="text-xs mt-0.5 tabular-nums" style={{ color: "var(--text-2)" }}>{line}</p>
                         ))}
+                        {/* #11: the list itself, as it stood at the check and now */}
+                        {!unasked && !tk.done && hasStaffList(tk.auto_facts) && detail?.uid && (
+                          <div className="mt-2">
+                            <StaffListAtCheckButton uid={detail.uid} taskId={Number(tk.id)} lang={lang} />
+                          </div>
+                        )}
                         {/* The photo IS the evidence on this card — an admin
                             rules on what the frame shows and on the clock in
                             its corner, so it renders big enough to read

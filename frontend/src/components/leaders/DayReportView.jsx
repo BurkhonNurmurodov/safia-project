@@ -15,6 +15,7 @@ import { VERIFY, GROUP_ORDER, groupOf, taskState, disputeOpen } from "./verifySt
 import api from "../../utils/api";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
+import StaffListAtCheckButton, { hasStaffList } from "./StaffListAtCheck";
 
 /**
  * One leader's day, verified — the body of `/leaders/report/:uid`, and of every
@@ -434,6 +435,10 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
             <p key={line} className="text-[12px] leading-snug tabular-nums"
               style={{ color: "var(--text-2)" }}>{line}</p>
           ))}
+          {/* #11: the list itself, as it stood at the check and now */}
+          {!t.done && t.auto && hasStaffList(t.autoFacts) && uid && (
+            <div><StaffListAtCheckButton uid={uid} taskId={Number(t.id)} lang={lang} /></div>
+          )}
 
           {photos.length > 0 && (
             <div className="pt-2.5">

@@ -48,7 +48,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, ChevronDown, Clock, ListChecks, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users, X,
+  Check, ChevronDown, Clock, ListChecks, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
@@ -64,12 +64,13 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import StyledSelect from "../components/ui/StyledSelect";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useToast } from "../components/ui/Toast";
+import { Chip, DASH, FILL, LANE, LANE_HEAD, MarkIcon, OFF, SLOT_EDGE } from "../components/kelish/marks";
 import { useFactory, useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { cellLabel } from "../utils/cellName";
 import { shortPerson } from "../utils/personName";
-import { TONE_HEX, toneFill } from "../utils/statusBands";
+import { TONE_HEX } from "../utils/statusBands";
 import { transliterate, useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 
@@ -78,23 +79,9 @@ const WINDOW_DAYS = 30;       // services/kelish.WINDOW_DAYS
 const RED = TONE_HEX.bad;
 const NO_PARAMS = {};
 
-// The two answers, painted as the platform paints every heatmap cell: the hue
-// at full saturation with the ink `contrastText` picks for it (dark on green,
-// white on red), so a cell reads the same on both themes.
-const FILL = { yes: toneFill("ok"), no: toneFill("bad") };
-// Where a cell holds no slot at all.
-const OFF = { background: "var(--bg-inner)" };
-// A closed day's listed cell nobody answered prints «—», the totals row's own
-// blank — so a gap in the record is never the same flat colour as «not on that
-// day's list», and never a hollow box that reads as an unticked checkbox.
-const DASH = <span aria-hidden="true" className="text-xs leading-none" style={{ color: "var(--text-3)" }}>—</span>;
-// An open day's unanswered cell: a brand wash that says «tap here». In the grid
-// `.kelish-hit.is-empty` adds a dashed slot inside it (index.css), so an open
-// empty cell never reads as the flat grey of «no slot».
-const LANE = { background: "rgba(var(--brand-rgb), 0.12)" };
-const SLOT_EDGE = "1px dashed var(--brand)";
-// The open days' header, opaque because the header row is sticky.
-const LANE_HEAD = "linear-gradient(rgba(var(--brand-rgb), 0.14), rgba(var(--brand-rgb), 0.14)), var(--bg-inner)";
+// The answers' paint (FILL / OFF / DASH / LANE / SLOT_EDGE / LANE_HEAD) and the
+// MarkIcon / Chip pieces live in components/kelish/marks.jsx, shared with the
+// «how the list looked at the check» modal of a task-#11 verdict.
 
 // The grid's geometry, named ONCE: every day column is --kd wide and every row
 // ROW_H high (44px under a finger, 40px under a mouse), so all cells are one
@@ -232,33 +219,6 @@ function patchSlot(old, rowKey, i, patch) {
 // ── pieces of the grid ──────────────────────────────────────────────────────
 
 // The mark inside a filled cell. Colour + icon, so it reads without colour.
-function MarkIcon({ mark, pop = false }) {
-  const Icon = mark === "yes" ? Check : X;
-  return <Icon aria-hidden="true" className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${pop ? "kelish-pop" : ""}`} strokeWidth={3} />;
-}
-
-// A cell in miniature, for the legend and the worker card — drawn exactly as
-// the grid draws it: `lane` is an open cell nobody answered yet (the dashed
-// slot), `off` is «no slot», and a bare chip is a closed cell left unanswered
-// — the «—» the grid prints there.
-function Chip({ mark = null, off = false, lane = false, size = 14 }) {
-  const Icon = mark === "yes" ? Check : mark === "no" ? X : null;
-  const style = mark ? FILL[mark]
-    : off ? { ...OFF, border: "1px solid var(--border)" }
-      : lane ? { ...LANE, border: SLOT_EDGE }
-        : null;
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-grid place-items-center rounded-[3px] flex-shrink-0"
-      style={{ width: size, height: size, ...style }}
-    >
-      {Icon && <Icon style={{ width: size - 4, height: size - 4 }} strokeWidth={3.5} />}
-      {!mark && !off && !lane && DASH}
-    </span>
-  );
-}
-
 function DayHead({ day, t }) {
   const future = day.state === "future";
   const current = day.state === "today" || day.state === "tomorrow";

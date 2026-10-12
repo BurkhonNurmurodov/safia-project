@@ -1675,6 +1675,28 @@ def unit_scope_ok(db: Session, payload: dict, manager_id: int | None) -> bool:
 # Auth-only and scoped for the reason the day report is: the brigadir it was
 # DMed to is often somebody nobody granted the /leaders page to.
 
+@router.get("/leaders/report/{uid}/staff-list")
+def get_report_staff_list(
+    uid: str,
+    task: int | None = None,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """The «Ish grafigi» list(s) a task-#11 automatic verdict on this report
+    judged — as they stood at the check and as they stand now, one row per
+    worker (`leader_auto.staff_list_snapshot`). Row-scoped exactly as the
+    report is; 404 for a report the viewer may not read and for a day with no
+    such verdict, so an id cannot be probed."""
+    from app.services import leader_auto
+    row = build_report_row(db, uid, allow_open=True)
+    if row is None or not report_scope_ok(db, payload, row):
+        raise HTTPException(status_code=404, detail="No such report")
+    snap = leader_auto.staff_list_snapshot(db, uid, task)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="No staff-list check on this report")
+    return snap
+
+
 @router.get("/leaders/unit-report/{manager_id}/{day}")
 def get_unit_report(
     manager_id: int,

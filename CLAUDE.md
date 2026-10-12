@@ -9355,6 +9355,24 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   «80% → 80%» (a two-element ledger from before reads as «no fill known»,
   never as every row changed). The classic fallback prints «📋 №11 4612 11.10
   08:53».
+- **«Tekshiruv paytida ro'yxat qanday edi» — the list itself, in a modal**
+  (2026-10-12, the operator). A button under the result lines of a failed #11
+  (the register's day detail in `Leaders.jsx`, `DayReportView`,
+  `DaySubmissionModal` — wherever `hasStaffList(facts)`) opens
+  `components/leaders/StaffListAtCheck.jsx`: per judged list a `TableCard` of
+  every worker with two cells, «Tekshiruv paytida» and «Hozir», drawn with the
+  /kelish grid's own cells — `components/kelish/marks.jsx` (`FILL`, `OFF`,
+  `DASH`, `LANE`, `MarkIcon`, `Chip`), moved out of `pages/Kelish.jsx` so the
+  modal reuses them rather than forking them — a mark set after the check
+  printing its time in amber, counts in the foot, the check's instant in the
+  head. Fed by `GET /api/leaders/report/{uid}/staff-list?task=`
+  (`leader_auto.staff_list_snapshot`): the ledger row whose entry sits on
+  that bot day, both states rebuilt server-side — «at the check» with the
+  check's own cutoff (the pass instant within `LATE_GRACE`, else the hour:
+  the file as of it, «+»/«−» and marks by it), «now» without one — rows
+  merged by key and alias, `late` = the current mark's `set_at` is past the
+  cutoff. Row-scoped as the report (`report_scope_ok`), 404 otherwise. Reads
+  only.
 
 ## «Ish grafigi» — the T11 staff list (`/kelish`)
 

@@ -639,13 +639,6 @@ def list_done_at(lst: list) -> str | None:
     return best.astimezone(TASHKENT).isoformat(timespec="seconds") if best else None
 
 
-# How far back a failed #11 verdict is watched for its list filling up. A list
-# for day D can only be marked while D is the cell's today or tomorrow, so a
-# check dated D is settled for good once D + 2 has passed; three days covers a
-# night shift's frame with a day to spare.
-LATE_FILL_DAYS = 3
-
-
 def late_fills(db: Session, jobs: list, now: datetime | None = None) -> list:
     """For each (facts, due_at) of a FAILED #11 verdict: the same facts with
     every failed list that is full NOW stamped — `filled_at` (the latest mark
@@ -736,6 +729,149 @@ def late_fills(db: Session, jobs: list, now: datetime | None = None) -> list:
         f["lists"] = lists
         out[j] = f
     return out
+
+
+def staff_list_snapshot(db: Session, uid: str, task_id: int | None = None) -> dict | None:
+    """The «Ish grafigi» lists a #11 verdict judged, AS THEY STOOD AT THE CHECK
+    and as they stand now — one row per worker — for the «how the list looked
+    at the check» modal (the operator, 2026-10-12).
+
+    `uid` is the bot day's report id (`leader_bot.day_uid`); the verdict is the
+    ledger row whose entry sits on that day. «At the check» is rebuilt the way
+    the check itself read: the file as of the cutoff, «+»/«−» made by then,
+    marks set by then — the cutoff being the pass instant within `LATE_GRACE`
+    of the hour, else the hour (`_check_staff_list`'s own rule). A mark whose
+    `set_at` is past the cutoff is `late`: it is what the verdict did not see.
+    Nothing is written; None when the uid names no such verdict.
+    """
+    from app.services import kelish
+    s = str(uid or "")
+    if not s.startswith("bot-"):
+        return None
+    try:
+        day_id = int(s[4:])
+    except ValueError:
+        return None
+    q = (db.query(LeaderAutoCheck)
+         .join(LeaderTaskEntry, LeaderTaskEntry.id == LeaderAutoCheck.entry_id)
+         .filter(LeaderTaskEntry.day_id == day_id,
+                 LeaderAutoCheck.check == "staff_list",
+                 LeaderAutoCheck.outcome.in_((PASSED, FAILED))))
+    if task_id:
+        q = q.filter(LeaderAutoCheck.task_id == int(task_id))
+    row = q.order_by(LeaderAutoCheck.id.desc()).first()
+    if row is None:
+        return None
+    f = row.facts if isinstance(row.facts, dict) else {}
+    try:
+        ds = [_as_date(x) for x in (f.get("days") or [])[:2]]
+    except Exception:
+        ds = []
+    if len(ds) != 2:
+        return None
+    due, chk = _aware_dt(row.due_at), _aware_dt(row.checked_at)
+    if due is None:
+        cutoff = chk
+    elif chk is None or chk > due + LATE_GRACE:
+        cutoff = due
+    else:
+        cutoff = chk
+
+    items = [it for it in (f.get("lists") or []) if isinstance(it, dict)]
+    ids = {int(it["cell_id"]) for it in items if it.get("cell_id")}
+    codes = {str(it["cell"]) for it in items if not it.get("cell_id") and it.get("cell")}
+    by_code: dict[str, Cell] = {}
+    if codes:
+        for c in (db.query(Cell).filter(Cell.verifix_code.in_(sorted(codes)))
+                  .order_by(Cell.archived_at.isnot(None), Cell.id).all()):
+            by_code.setdefault(c.verifix_code, c)
+        ids.update(c.id for c in by_code.values())
+    cells = ({c.id: c for c in db.query(Cell).filter(Cell.id.in_(sorted(ids))).all()}
+             if ids else {})
+    files_at = kelish.file_workers_days(db, ds, as_of=cutoff)
+    files_now = kelish.file_workers_days(db, ds)
+    events = kelish.load_events(db, list(cells))
+    marks = kelish.load_marks_days(db, list(cells), ds)
+
+    lists = []
+    for it in items:
+        c = cells.get(int(it["cell_id"])) if it.get("cell_id") else by_code.get(str(it.get("cell")))
+        if c is None or not c.verifix_code:
+            continue
+        kind = it.get("kind") if it.get("kind") in kelish.KINDS else None
+        for name in ([kind] if kind else list(kelish.KINDS)):
+            day = ds[kelish.KINDS.index(name)]
+            ev_all = events.get(c.id, [])
+            mk_all = marks.get(c.id, {}).get(day, {})
+            if cutoff is not None:
+                ev_at = [e for e in ev_all
+                         if e.created_at is not None and _aware_dt(e.created_at) <= cutoff]
+                mk_at = {k: m for k, m in mk_all.items()
+                         if m.set_at is not None and _aware_dt(m.set_at) <= cutoff}
+            else:
+                ev_at, mk_at = ev_all, mk_all
+            fw_at, last_at = files_at[day]
+            fw_now, last_now = files_now[day]
+            at_rows = kelish.roster(c.verifix_code, day, fw_at, last_at, ev_at, mk_at)
+            now_rows = kelish.roster(c.verifix_code, day, fw_now, last_now, ev_all, mk_all)
+            lists.append({
+                "cell": c.verifix_code, "cell_id": c.id, "kind": name,
+                "day": day.isoformat(), "ok": bool(it.get("ok")),
+                "check": kelish.counts(at_rows), "now": kelish.counts(now_rows),
+                "rows": _snapshot_rows(at_rows, now_rows, cutoff),
+            })
+    return {
+        "uid": s, "task_id": int(row.task_id), "outcome": row.outcome,
+        "checked": (f.get("checked")
+                    or (due.astimezone(TASHKENT).isoformat(timespec="minutes") if due else None)),
+        "cutoff": cutoff.astimezone(TASHKENT).isoformat(timespec="seconds") if cutoff else None,
+        "days": [d.isoformat() for d in ds],
+        "lists": lists,
+    }
+
+
+def _aware_dt(v: datetime | None) -> datetime | None:
+    if v is None:
+        return None
+    return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
+
+def _snapshot_rows(at_rows: list, now_rows: list, cutoff: datetime | None) -> list[dict]:
+    """The two rosters side by side, one row per person (a hand-typed alias is
+    the same person): `check` / `now` None where they were not on that list."""
+    def slot(r):
+        at = None
+        if r.get("at"):
+            try:
+                at = _aware_dt(datetime.fromisoformat(str(r["at"]))).astimezone(TASHKENT)
+            except ValueError:
+                at = None
+        return {"mark": r.get("mark"), "by": r.get("by"),
+                "at": at.isoformat(timespec="minutes") if at else None}, at
+
+    rows: dict[str, dict] = {}
+    alias: dict[str, str] = {}
+    for r in at_rows:
+        s, _ = slot(r)
+        rows[r["key"]] = {"key": r["key"], "name": r["name"], "job": r.get("job") or "",
+                          "check": s, "now": None, "late": False}
+        for a in r.get("aliases") or []:
+            alias[a] = r["key"]
+    for r in now_rows:
+        k = alias.get(r["key"], r["key"])
+        if k not in rows:
+            k = (next((alias[a] for a in (r.get("aliases") or []) if a in alias), None)
+                 or next((a for a in (r.get("aliases") or []) if a in rows), None)
+                 or r["key"])
+        s, at = slot(r)
+        u = rows.get(k)
+        if u is None:
+            u = rows[k] = {"key": k, "name": r["name"], "job": r.get("job") or "",
+                           "check": None, "now": None, "late": False}
+        u["now"] = s
+        u["name"] = r["name"] or u["name"]
+        u["late"] = bool(s["mark"] and at is not None and cutoff is not None and at > cutoff)
+    return sorted(rows.values(), key=lambda u: str(u["name"] or "").casefold())
 
 
 # How far back a failed #11 verdict is watched for its list filling up. A list
