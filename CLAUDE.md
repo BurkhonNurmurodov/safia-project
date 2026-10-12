@@ -5420,6 +5420,66 @@ inside it (red) is still 0. **The Δ chip compares with the whole previous perio
 of the PICKED length** (`calWin.days`), scored over its own days. The
 server-side standing pool is given the cut window, so it agrees.
 
+## The /leaders register is KEPT between requests (`leader_register`, 2026-10-12)
+
+`GET /api/leaders` is the whole checklist history in one answer — ~20 MB,
+built from twenty-one tables — and until 2026-10-12 it was rebuilt from
+scratch on EVERY request: the page refetches it on every window focus, so an
+admin tabbing back to Monitoring paid 7–9 s on production, and the shared
+flight (one build for everybody asking at once) helped only the requests that
+overlapped. It was the first line of every «Server was slow» DM for a week.
+`services/leader_register.py` is THE rule; `routers/leaders.py` keeps only
+what a build IS (`_build_shared`) and how a viewer's answer is cut from it
+(`_assemble`).
+
+- **ONE build is kept — the unscoped one** — as BYTES (the `data` list already
+  encoded; the dict behind it is two hundred thousand Python objects), with
+  the roster, the two cutoff maps and `last_synced` beside it. Every viewer
+  whose build is unscoped reads it: admin, shift-manager, top-manager, a
+  «see all» grantee — the answer differs by the header and, for a non-admin,
+  a cutoff's reason and author, which `_assemble` cuts per viewer (verified
+  equal to a per-viewer build, parsed, for an admin and a shift-manager). A
+  supervisor or a leader without «see all» still builds their own scoped feed
+  per request, as before; a leader with «see all» too (`_la_hide` rewrites it).
+- **Served while nothing it read has changed — EXACT.** `fingerprint()` is
+  one query (~60 ms on a production-sized copy): per input table the row
+  count and `max(xmin)`, the id of the last transaction that touched a row,
+  which moves on every committed insert, update and delete (a freeze moves
+  a hint bit, never the value). The per-day tables — days, entries, media,
+  camera shots, auto checks — are counted over CLOSED days only: a leader
+  answering a task on an open day changes nothing the register shows. The
+  fingerprint is taken BEFORE a build reads anything, so a change landing
+  mid-build reads as a change at the next request. **A table added to the
+  build is an arm added to `_ARMS`**, or a kept build goes stale on exactly
+  that table.
+- **A young kept build is served while a new one is made** (`STALE_MAX_S`,
+  3 min): a verdict landing or a day closing elsewhere never makes a viewer
+  who did nothing wait; their next refetch (60 s staleTime, or the next
+  focus) gets the new build. Older than that, the request waits for the
+  rebuild — never a figure three minutes behind shown as current. Rebuilds
+  share one flight as before: at most one runs, a request takes only one that
+  started after it arrived.
+- **Never to a viewer who wrote something since it started.** `wrote(actor)`
+  is called for EVERY mutating request — in the action-log middleware on
+  `http.response.start`, before the response leaves, so the refetch it
+  triggers cannot miss it — and for every bot act (`record_bot`), keyed by
+  the Telegram account. No door per endpoint, nothing to forget: a ruling, an
+  override, an exclusion, a sheet refresh or a reopen in Telegram is followed
+  by a build that started after it. A write that could not move the register
+  costs that one account one rebuild.
+- **The build itself computes the exemption set fresh** (`leader_load.forget()`
+  first): its own 60 s memory is harmless on a build thrown away, and wrong on
+  one that is kept until the next change.
+- Measured on a production-sized copy (15,775 rows): a kept answer 60–70 ms
+  including the fingerprint; the rebuild 2.6–2.8 s warm (was 3.0–3.9 s: the
+  sheet rows are read as columns, not ORM entities, and the register's rows
+  carry no per-task `cam` — the day report and the appeal page, the only
+  readers of it, fetch their one report; `dashboard_rows(captures=False)`).
+  Production's shared Postgres is slower, so a rebuild there still costs
+  seconds — but only once per change, not once per focus.
+- Postgres only (`xmin`); on any other database every request builds.
+  `forget()` drops the kept build. Nothing is stored; a restart starts empty.
+
 ## «Mening o'rnim» — a leader's and a brigadir's own place (`/leaders`)
 
 From **2026-09-30** (the operator's request) the Monitoring tab opens, for a
@@ -10734,6 +10794,13 @@ blocking work on the event loop freezes every request on the server at once.
   is one DM an hour. Not built: preloading the pages a role can open right
   after boot, which would show the page frame instead of the logo while the
   connection recovers — data on 4G at every open, the operator's call.
+- **The fourteenth (12 Oct, 15:35) was `/api/leaders` again, four times at
+  7–9 s — one of them ALONE on the server** (DB 2/15, 1 in flight): the build
+  itself, not contention. The pieces named (entries, media ids, the task
+  dicts, the verdict aggregate, the sheet rows' ORM load, the 20 MB encode)
+  are the build, and shaving them had changed nothing a viewer could feel.
+  Fixed by not rebuilding: the register is KEPT between requests and served
+  while its inputs are unchanged — see «The /leaders register is KEPT».
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).

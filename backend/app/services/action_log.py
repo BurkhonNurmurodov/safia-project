@@ -974,8 +974,20 @@ def record(db=None, *, category: str, action: str, source: str = "system",
 
 def record_bot(db, telegram_id: Optional[int], category: str, action: str, **kw) -> None:
     """A person acting through the Telegram bot."""
+    _note_write({"sub": telegram_id})
     record(db, category=category, action=action, source="bot",
            telegram_id=telegram_id, **kw)
+
+
+def _note_write(payload: Optional[dict]) -> None:
+    """Tell the kept /api/leaders build that this account changed something
+    (`leader_register.wrote`). Lazy: that module imports the engine, and this
+    one is imported before the app is built."""
+    try:
+        from app.services import leader_register
+        leader_register.wrote(leader_register.actor_key(payload))
+    except Exception:
+        logger.debug("leader-register: write mark failed", exc_info=True)
 
 
 def record_system(category: str, action: str, db=None, **kw) -> None:
@@ -1059,6 +1071,11 @@ class ActionLogMiddleware:
             nonlocal status
             if message["type"] == "http.response.start":
                 status = message.get("status")
+                # The kept /api/leaders build must never answer this account's
+                # next read with rows from before this write — marked HERE,
+                # before the response leaves, so the refetch it triggers is
+                # too late to miss it (`services/leader_register.wrote`).
+                _note_write(payload)
             await send(message)
 
         token = _pending.set(row)

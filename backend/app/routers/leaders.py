@@ -29,7 +29,7 @@ from app.models import RoleProfile
 from app.services import (
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
     leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof, leader_load,
-    leader_reports, leader_unit_report)
+    leader_register, leader_reports, leader_unit_report)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -79,8 +79,8 @@ def _wire_task(t: dict) -> dict:
     string, plus its count. A NEW dict — the source list belongs to the ORM
     row and the overlays already mutate it in place; the projection must not
     also strip it, or a later reader of the same row would find no photos."""
-    out = {k: v for k, v in t.items() if k != "photo"}
-    out["photos"] = _photo_count(t.get("photo"))
+    out = dict(t)
+    out["photos"] = _photo_count(out.pop("photo", None))
     return out
 
 
@@ -430,107 +430,73 @@ def get_leaders(
     # reported `role` stays the caller's own — it drives the page's layout, not
     # its data — so a granted supervisor keeps their own view, widened.
     sees_all = page_scope_is_all(db, payload, "leaders")
+    # Only a supervisor or a leader without «see all» gets a SCOPED build;
+    # every other viewer's build is the whole register and differs from the
+    # admin's by its header alone — so it is answered from the KEPT one
+    # (`leader_register`), rebuilt only when something it read has changed.
     # A LEADER's copy is rewritten in place (`_la_hide`), so it is never one
-    # another viewer shares — and without «see all» it is their own slice anyway.
-    if sees_all and not _la_hides(payload):
-        feed = _shared_feed(db, payload)
-    else:
-        feed = _leaders_feed(db, payload, sees_all)
-        if _la_hides(payload):
-            _la_hide(feed)
+    # another viewer shares.
+    scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
+    if not scoped and not _la_hides(payload):
+        return _assemble(leader_register.get(db, payload, _build_shared), payload)
+    feed = _leaders_feed(db, payload, sees_all)
+    if _la_hides(payload):
+        _la_hide(feed)
     return _json_response(feed)
 
 
-# ── one build for everybody asking at once ───────────────────────────────────
-# The whole-platform register is the same for every «see all» viewer bar four
-# header fields (`_shared_feed` sets them per viewer), and it is the platform's
-# heaviest read: the whole checklist history, rebuilt per request. A shift's
-# worth of managers opening the page together built it once EACH — 16 builds in
-# flight held every DB connection and starved the server (2026-10-07, «Server
-# was slow»: 20.7 s per answer).
-#
-# So requests arriving while a build is running share the NEXT build — never
-# the running one. A build that started before a request arrived may have read
-# the data before a write that request is looking for (an admin's own ruling,
-# then the refetch), so a request only ever takes a build that STARTED after it
-# arrived. Nothing is cached once a build is done: the next request starts a
-# new one. At most one build runs, and at most one waits behind it.
-#
-# It is built as an ADMIN reads it and narrowed per viewer: the only part of a
-# «see all» build that depends on who is asking is a cutoff's reason and author
-# on the roster, which are an admin's alone (`_for_viewer` blanks them).
+# ── one build for everybody ──────────────────────────────────────────────────
+# The whole-platform register is the same for every unscoped viewer bar four
+# header fields and a cutoff's reason, and it is the platform's heaviest read.
+# `services/leader_register.py` KEEPS the last build and decides, per request,
+# whether it may still be served (its inputs unchanged — an exact fingerprint —
+# or young enough while a new one is built behind it, and never to a viewer
+# who wrote something since it started). This router only says what a build
+# IS (`_build_shared`) and how a viewer's answer is cut from it (`_assemble`).
 
-class _Flight:
-    __slots__ = ("seq", "done", "feed")
-
-    def __init__(self, seq: int):
-        self.seq = seq                  # taken from `_flight_seq` at creation
-        self.done = threading.Event()
-        self.feed: dict | None = None   # None once done = the build failed
+_ADMIN_BUILD = {"role": "admin"}     # nothing else in an unscoped build reads the payload
+_JSON = dict(ensure_ascii=False, separators=(",", ":"), default=_json_default)
 
 
-_flight_lock = threading.Lock()
-_flight_seq = 0
-_flight: _Flight | None = None          # the build in progress
-_FLIGHT_WAIT_S = 120.0
+def _build_shared(db: Session) -> leader_register.Build:
+    """`_leaders_feed(db, ADMIN, True)`, its rows already encoded — the 20 MB
+    half of the answer is bytes once per build, not a dict per request."""
+    # The exemption set has its own 60 s memory; a build that is going to be
+    # KEPT must compute it fresh, or a leader's first October filing would be
+    # read as absent until the next unrelated change.
+    leader_load.forget()
+    feed = _leaders_feed(db, _ADMIN_BUILD, True)
+    rows = feed["data"]
+    return leader_register.Build(
+        data=json.dumps(rows, **_JSON).encode("utf-8"),
+        roster=feed["roster"], cutoffs=feed["cutoffs"], cut_units=feed["cutUnits"],
+        last_synced=feed["last_synced"], rows=len(rows))
 
 
-_ADMIN_BUILD = {"role": "admin"}     # nothing else in a «see all» build reads the payload
-
-
-def _shared_feed(db: Session, payload: dict) -> dict:
-    """`_leaders_feed(db, payload, True)`, built once for every request that
-    arrives before the build starts (see above)."""
-    global _flight_seq, _flight
-    with _flight_lock:
-        _flight_seq += 1
-        arrived = _flight_seq
-    while True:
-        build = False
-        with _flight_lock:
-            f = _flight
-            if f is None:
-                _flight_seq += 1
-                f = _flight = _Flight(_flight_seq)
-                build = True
-        if build:
-            try:
-                f.feed = _leaders_feed(db, _ADMIN_BUILD, True)
-            finally:
-                with _flight_lock:
-                    if _flight is f:
-                        _flight = None
-                f.done.set()
-            return _for_viewer(f.feed, payload)
-        if f.seq > arrived:
-            # Started after this request arrived: its answer is fresh enough.
-            if f.done.wait(_FLIGHT_WAIT_S) and f.feed is not None:
-                return _for_viewer(f.feed, payload)
-            break   # it failed or hung — this request builds its own
-        # Started before this request arrived: wait it out, then take (or
-        # start) the build after it.
-        if not f.done.wait(_FLIGHT_WAIT_S):
-            break
-    return _leaders_feed(db, payload, True)
-
-
-def _for_viewer(feed: dict, payload: dict) -> dict:
-    """A shared build with this viewer's own header — and, for anybody but an
-    admin, the roster without a cutoff's reason and author, exactly as their own
-    build would have left it. The rows are shared and read-only: nothing after
-    the build writes to them."""
+def _assemble(b: leader_register.Build, payload: dict) -> Response:
+    """A kept build with THIS viewer's header — the same keys in the same order
+    `_leaders_feed` returns them — and, for anybody but an admin, the roster
+    without a cutoff's reason and author, exactly as their own build would
+    have left it. The rows are shared and read-only."""
     role = payload.get("role")
-    out = dict(feed)
-    out["role"] = role
+    roster = b.roster
     if role != "admin":
-        out["roster"] = [
+        roster = [
             {**p, "cutoff_reason": None, "cutoff_by": None}
             if (p.get("cutoff_reason") is not None or p.get("cutoff_by") is not None)
             else p
-            for p in feed.get("roster") or []]
-    out["can_request_late"] = role in ("admin", "supervisor")
-    out["can_decide_late"] = _may_decide(payload)
-    return out
+            for p in roster]
+    head = json.dumps({"role": role, "last_synced": b.last_synced}, **_JSON)
+    tail = json.dumps({
+        "roster": roster,
+        "cutoffs": b.cutoffs,
+        "cutUnits": b.cut_units,
+        "can_request_late": role in ("admin", "supervisor"),
+        "can_decide_late": _may_decide(payload),
+    }, **_JSON)
+    body = b"".join((head[:-1].encode("utf-8"), b',"data":', b.data, b",",
+                     tail[1:].encode("utf-8")))
+    return Response(content=body, media_type="application/json")
 
 
 def _cells_gone_from(cells: list) -> str | None:
@@ -559,8 +525,14 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     `_apply_overlays` runs in both."""
     role = payload.get("role")
 
+    # Read as COLUMNS, not entities: ~12k rows whose JSON task lists are the
+    # bulk of the register, and building each as an ORM object (identity map,
+    # state, weakrefs) cost more than the query. A Row answers `r.date`,
+    # `r.tasks` … exactly as the object did; nothing here writes one back.
     rows = (
-        db.query(LeaderChecklist)
+        db.query(LeaderChecklist.id, LeaderChecklist.date, LeaderChecklist.supervisor,
+                 LeaderChecklist.leader, LeaderChecklist.completion, LeaderChecklist.tasks,
+                 LeaderChecklist.submission_id, LeaderChecklist.submitted_at)
         .order_by(LeaderChecklist.date.desc(), LeaderChecklist.id.desc())
         .all()
     )
@@ -753,6 +725,10 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             db,
             leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_ids),
             sup_display=sup_display,
+            # What the in-app camera recorded per shot is read by the day
+            # report and the appeal page, which fetch their one report; no
+            # reader of the register's rows looks at it.
+            captures=False,
         )
         # The filing-window rule judges SHEET rows: a bot day is filed by being
         # closed, and the close is already refused once the window has shut. The

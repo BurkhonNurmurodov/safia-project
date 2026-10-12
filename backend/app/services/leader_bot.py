@@ -325,9 +325,14 @@ def dashboard_rows(
     days: list[LeaderTaskDay],
     *,
     sup_display: dict[int, str] | None = None,
+    captures: bool = True,
 ) -> list[dict]:
     """Shape closed bot days like `/api/leaders` sheet rows so the dashboard
     can score, group and rank both through one code path.
+
+    `captures=False` leaves the per-task `cam` list out (`captures_of`): the
+    register's rows carry nothing any reader of theirs looks at, and the day
+    report, which does, builds its ONE day with the default.
 
     `sup_display` maps a unit id to the supervisor spelling the SHEET rows use.
     Without it a merged unit would appear twice in every picker and split its
@@ -356,7 +361,7 @@ def dashboard_rows(
 
     by_day = entries_of(db, days)
     by_entry = media_of(db, [e.id for es in by_day.values() for e in es])
-    caps = captures_of(db, days)
+    caps = captures_of(db, days) if captures else None
     # What each AUTOMATIC verdict was taken on — printed beside its reason
     # wherever the reason is (`leader_auto.results_for`). Lazy: leader_auto
     # imports half the services layer.
@@ -402,7 +407,7 @@ def dashboard_rows(
                         # slot order (services/leader_proof.sync_entry rebuilds
                         # the media rows from the roll on every change), so the
                         # nth capture describes the nth photo.
-                        "cam": caps.get((d.id, e.task_id), []),
+                        **({"cam": caps.get((d.id, e.task_id), [])} if caps is not None else {}),
                         # Only on an automatic verdict the ledger measured —
                         # absent everywhere else, so the register does not
                         # carry an empty key on every task of every row.
