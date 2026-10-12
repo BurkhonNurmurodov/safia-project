@@ -7501,6 +7501,38 @@ def _profile_photos_job(waited: int = 0) -> None:
                       verifix_profile_photos.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: Kenjayeva Dinora's own photo on the profile she took over ─────
+# The operator, 12 Oct 2026: a leader profile (Mirmaxmudova Munira's unit,
+# cells 8222 · 8610) was renamed from Mukimova Marxabo Samandarovna, who moved
+# to another job, to the new leader, Kenjayeva Dinora Sobir Qizi — «update the
+# image for her». Finds her on Verifix by the new name, sets her Verifix photo
+# and re-ties the profile to her, once, and DMs the result with the photo
+# (`services/leader_photo_fix_oct12.py`). Scheduled, not inline: the employee
+# list is ~18 pages and a boot that stalls past /health rolls the deploy back.
+KENJAYEVA_PHOTO_FLAG = "leader_photo_kenjayeva_2026_10_12_v1"
+_KENJAYEVA_PHOTO_DELAY_S = 90
+
+
+def set_kenjayeva_photo_from_verifix() -> None:
+    """Kenjayeva Dinora's Verifix photo on her profile, once, reported. Never raises."""
+    try:
+        if not _report_pending(KENJAYEVA_PHOTO_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("leader-photo-kenjayeva",
+                    datetime.now(timezone.utc) + timedelta(seconds=_KENJAYEVA_PHOTO_DELAY_S),
+                    _kenjayeva_photo_job)
+    except Exception as exc:
+        print(f"[startup] Kenjayeva photo fix could not be scheduled: {exc}")
+
+
+def _kenjayeva_photo_job() -> None:
+    from app.services import leader_photo_fix_oct12
+    _send_report_once(KENJAYEVA_PHOTO_FLAG, "Kenjayeva photo fix",
+                      leader_photo_fix_oct12.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: every cell's «Egasi» from Verifix ─────────────────────────────
 # The operator, 8 Oct 2026, answering the 6 Oct dry run one decision at a time:
 # a cell carries an «Egasi» (the leader Verifix seats in it) beside its

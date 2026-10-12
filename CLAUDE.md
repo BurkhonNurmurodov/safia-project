@@ -620,6 +620,17 @@ as text + a workbook; the record (no bytes) is app setting
 - Delete the module, its startup trio and both entrypoint calls once the report
   has landed — BEFORE `leader_verifix_check`, whose helpers it imports. The
   photos and `profile_photo.py` stay.
+- **A profile RENAMED to a new person keeps the old face** — that pass took the
+  photo off the stored tie, and renaming moves no tie. The first case (12 Oct,
+  Mukimova Marxabo → Kenjayeva Dinora Sobir Qizi, cells 8222 · 8610) is fixed by
+  TEMPORARY `services/leader_photo_fix_oct12.py`
+  (`startup.set_kenjayeva_photo_from_verifix`, flag
+  `leader_photo_kenjayeva_2026_10_12_v1`, ~90 s after boot, both entrypoints):
+  it re-finds her on Verifix by the NEW name (`leader_verifix_check._match`),
+  stores her main photo and re-ties the profile (`_apply` — the kind follows her
+  job unless set by hand) in one transaction, and DMs the result with the photo.
+  Not found → nothing written. Delete it with its startup pair and both calls
+  once the DM has landed — BEFORE `leader_verifix_check`.
 
 ## A cell's «Egasi» and «Boshqaruvchi» (`cells.owner_id`, 2026-10-08)
 

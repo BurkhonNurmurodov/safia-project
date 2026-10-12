@@ -120,6 +120,7 @@ try:
         sync_leaders_from_verifix,
         sync_cells_and_leaders_from_verifix,
         set_profile_photos_from_verifix,
+        set_kenjayeva_photo_from_verifix,
         set_cell_owners_from_verifix,
         report_multi_leader_cells,
         check_supervisor_kinds,
@@ -558,6 +559,12 @@ try:
     # `startup.set_profile_photos_from_verifix` and
     # `services/verifix_profile_photos.py` once the report has landed.
     set_profile_photos_from_verifix()
+    # ⚠ TEMPORARY one-shot (2026-10-12) — Kenjayeva Dinora Sobir Qizi's
+    # Verifix photo (and Verifix tie) on the leader profile renamed to her
+    # from Mukimova Marxabo; DMs the result with the photo. Remove this
+    # line, `startup.set_kenjayeva_photo_from_verifix` and
+    # `services/leader_photo_fix_oct12.py` once the DM has landed.
+    set_kenjayeva_photo_from_verifix()
     # ⚠ TEMPORARY one-shot (2026-10-08) — every cell's «Egasi» from Verifix,
     # with the operator's answers to the 6 Oct dry run: renames the one
     # profile the operator corrected, creates the nine approved units with
