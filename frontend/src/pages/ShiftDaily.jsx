@@ -14,6 +14,7 @@ import { DEFAULT_DIFF_SEGMENTS } from "../components/charts/ComparisonTable";
 import BarRankingChart from "../components/charts/BarChart";
 import BrigadirTable from "../components/ui/BrigadirTable";
 import ShiftReportTable from "../components/overview/ShiftReportTable";
+import TodayAttendanceTable from "../components/overview/TodayAttendanceTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -352,6 +353,12 @@ export default function ShiftDaily() {
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
       <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
+
+      {/* «Bugungi davomat» — each brigadir's attendance on their shift-day
+          NOW, live off Verifix: /workers' heatmap figure for a day still being
+          worked. Like the board it is «today» whatever the day stepper says,
+          follows the plant and the shift, and fetches after the page. */}
+      <TodayAttendanceTable shift={shift} pageReady={!isLoading && !cardsLoading} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

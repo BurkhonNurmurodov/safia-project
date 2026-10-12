@@ -9795,6 +9795,42 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   heatmap's silhouette so the wait states what is coming. Deliberately NOT built: KRU %, «Kiritish soni»,
   an export, a ColumnsPicker.
 
+## «Bugungi davomat» — today's attendance per unit (`/shift-daily`)
+
+From **2026-10-12** (the operator's request, with the /workers heatmap as the
+picture) a card under the «Smena hisoboti» board shows every brigadir's
+attendance on their shift-day NOW — `components/overview/TodayAttendanceTable.jsx`
+over `GET /api/shift-report/attendance`.
+
+- **The figure IS /workers' «Davomat issiqlik xaritasi» for a day still being
+  worked**: (came + on leave) ÷ on the list, both halves of its «Jami /
+  Zagruzka» switch, painted on that heatmap's own scale —
+  `statusBands.ATT_SEGMENTS`, moved there from `Workers.jsx` so the two pages
+  share ONE scale, and `segmentFill` (judges the whole percent printed). Once
+  the day is closed and copied, the heatmap prints the same number.
+- **`live_staff.attendance` is THE count**, off the STORED live read (the
+  minute job's `live_verifix_reads`) — the endpoint never calls Verifix. The
+  list is the unit's own people (`ctx.homes`, by Verifix org unit) with no
+  exchange applied — the basis /workers rewinds a closed day to — minus
+  approved deletions and anybody whose own schedule has not begun (`not_yet`,
+  named in the roster cell's tooltip). Came = a clock-in after the brigadir's
+  no-check-out answers (`_fixed`); leave = `workers._py_on_leave` on the mark
+  the copy would write (`day_mark`); the «Zagruzka» half = `_py_known_title`.
+  A person the stored read lacks is `unread`, never absent.
+- **«Today» is each shift's own frame** (`verifix_live.day_frame`, the day
+  /staff opens on); the day stepper does NOT reach it, as it does not reach the
+  board. Scoped and filtered exactly as the board (`_scope`, `zagruzka_on`).
+  Cached 30 s server-side; the card polls every minute and fetches after the
+  page (`pageReady`).
+- Blanks carry a reason (`shift_report.ATT_REASONS`: `no_cells`, `no_read`,
+  `not_started`, `no_list`), never 0. While a shift runs, «Kelmadi» includes
+  people still due — the /staff reading from the shift's first minute.
+- It is built from the board's own pieces: `HeadLabel` and `Blank` exported
+  from `ShiftReportTable.jsx`, the cell classes in
+  `components/overview/boardStyle.js`. The percentage opens «Verifix
+  to'g'irlash» on that unit's day (`scopeLinks.staffLink`), the name the
+  brigadir's profile.
+
 ## The dashboard exam («Imtihon», `/exam`)
 
 From **2026-09-24** (the operator's twelve rulings, 2026-09-18 — recorded in

@@ -28,6 +28,7 @@ import { padChartParams } from "../utils/chartRange";
 import { fmtLongDate } from "./Staff";
 import api from "../utils/api";
 import { CATEGORY_COLORS, FOLD_COLOR } from "../utils/chartPalette";
+import { ATT_SEGMENTS } from "../utils/statusBands";
 
 // ── palette ──────────────────────────────────────────────────────────────────
 // Role identity hues follow the shared generic-first category order (see
@@ -68,14 +69,9 @@ const SUP_COLORS = CATEGORY_COLORS;
 // the metric was present ÷ period-union — which was ~100 % for everybody, so
 // every shade meant "fine"; a real attended ÷ on-the-list rate is a status, and a
 // 60 % day must not read as green. Shades within a hue rank days inside a band.
-const ATT_SEGMENTS = [
-  { from: 0,  color: "#b91c1c" }, // < 60%   → deep red
-  { from: 60, color: "#ef4444" }, // 60–74%  → red
-  { from: 75, color: "#eab308" }, // 75–84%  → yellow
-  { from: 85, color: "#84cc16" }, // 85–89%  → lime (approaching target)
-  { from: 90, color: "#22c55e" }, // 90–94%  → green
-  { from: 95, color: "#15803d" }, // ≥ 95%   → darkest green
-];
+// The scale itself is `ATT_SEGMENTS` in utils/statusBands — the shift
+// dashboard's «Bugungi davomat» paints today's cell with it, so a unit-day
+// wears one colour on both pages.
 // Role-transition matrix bins — single violet hue on log-ish breaks so the top
 // flow is unmistakably darkest (a flat 11+ band rendered 35 and 543 identical).
 // fg is the in-cell label color; zero cells recede to bg-inner and skip the fill.

@@ -19,6 +19,10 @@ A shift manager whose profile names no shift reads an EMPTY board with
 
 The period picker beside the table does not reach it. Each column has a fixed
 window — today, yesterday, this month, whole time — and its header prints it.
+
+`GET /api/shift-report/attendance` is the card under the board, «Bugungi
+davomat»: each unit's attendance on its shift-day now, off the stored live
+Verifix read (`get_attendance` says how).
 """
 import time
 from datetime import date, timedelta
@@ -32,8 +36,9 @@ from app.database import get_db
 from app.models import LeaderConcern, Manager, QualityComplaint
 from app.permissions import require_page
 from app.routers import production
-from app.services import (cell_hours, live_overview, shift_report, shift_scope,
-                          zagruzka_source)
+from app.routers.workers import _py_known_title, _py_on_leave
+from app.services import (cell_hours, live_overview, live_staff, shift_report, shift_scope,
+                          verifix_live, zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import supervisor_match
 
@@ -59,14 +64,14 @@ def _cache_get(key):
     return None
 
 
-def _cache_put(key, value) -> None:
+def _cache_put(key, value, ttl: float = _CACHE_TTL_S) -> None:
     now = time.monotonic()
     if len(_cache) >= _CACHE_MAX:
         for k in [k for k, (exp, _v) in list(_cache.items()) if exp <= now]:
             _cache.pop(k, None)
         while len(_cache) >= _CACHE_MAX:
             _cache.pop(next(iter(_cache)), None)
-    _cache[key] = (now + _CACHE_TTL_S, value)
+    _cache[key] = (now + ttl, value)
 
 
 def _scope(db: Session, payload: dict, factory: Optional[int],
@@ -272,4 +277,92 @@ def get_start_load(
             if v is not None:
                 row[iso] = v
         out["data"][str(m.id)] = row
+    return out
+
+
+# «Bugungi davomat» moves with the minute job's read, so its answer is kept
+# half as long as the board's — never longer than the page's own poll.
+_ATT_CACHE_TTL_S = 30
+
+
+@router.get("/attendance")
+def get_attendance(
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("overview", "shift-daily", "daily")),
+):
+    """«Bugungi davomat» — each unit's attendance on its shift-day NOW, the
+    figure /workers' «Davomat issiqlik xaritasi» prints for a closed day:
+    (came + on leave) ÷ on the list, both halves of its «Jami / Zagruzka»
+    switch. `live_staff.attendance` says who is on the list and who came;
+    `shift_report.attendance_row` shapes it.
+
+    Read off the STORED live Verifix read (`live_verifix_reads`) that the
+    minute job keeps fresh (`verifix_live.run_pass`) — this door never calls
+    Verifix itself: every shift manager opens the page at once, and a figure a
+    minute old is what the job promises anyway. «Today» is the shift frame
+    (`verifix_live.day_frame`, the day /staff opens a unit on), so a night unit
+    at 09:00 reads the night that has just ended. Scoped and filtered exactly
+    as the board (`_scope`, `zagruzka_on`), so the two list the same
+    brigadirs; the page's day stepper does not reach it. A unit-day that cannot
+    be stated is a blank with a reason (`shift_report.ATT_REASONS`), never 0."""
+    now = live_overview.now_local()
+    ids, note = _scope(db, payload, factory, manager_id)
+    out = {"generated_at": now.isoformat(timespec="seconds"), "note": note, "shifts": []}
+    if empty_scope(ids):
+        return out
+    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
+    if ids is not None:
+        q = q.filter(Manager.id.in_(ids))
+    if shift in (1, 2):
+        q = q.filter(Manager.shift == shift)
+    units = q.order_by(Manager.name, Manager.id).all()
+    if not units:
+        return out
+
+    groups: dict = {}
+    for m in units:
+        groups.setdefault(m.shift if m.shift in (1, 2) else None, []).append(m)
+    order = sorted(groups, key=lambda k: (k is None, k or 0))
+    frames = {s: verifix_live.day_frame(db, s, now) for s in order}
+    # The units in reach and each group's shift-day: a new shift-day is a new
+    # entry, never a stale one.
+    key = ("attendance", tuple(m.id for m in units), note,
+           tuple((s, frames[s]["day"]) for s in order))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    cells, _units = verifix_live._registry(db)
+    with_cells = {c["manager_id"] for c in cells.values() if c["manager_id"]}
+    drow = verifix_live._row(db, "dir")
+    directory = (drow.data or None) if drow else None
+    ctxs: dict = {}
+    for s in order:
+        fr = frames[s]
+        day = date.fromisoformat(fr["day"])
+        counts: dict = {}
+        if directory:
+            if day not in ctxs:
+                row = verifix_live._row(db, verifix_live._day_key(day))
+                store = ((row.data or {}).get("emps") or {}) if row else {}
+                ctxs[day] = live_staff.load(db, day, directory, store) if store else None
+            if ctxs[day] is not None:
+                counts = live_staff.attendance(ctxs[day], [m.id for m in groups[s]],
+                                               _py_known_title, _py_on_leave)
+        rows = [shift_report.attendance_row(m, counts.get(m.id), m.id in with_cells)
+                for m in groups[s]]
+        reads = [r["read_at"] for r in rows if r["read_at"]]
+        out["shifts"].append({
+            "shift": s,
+            "day": fr["day"],
+            # running = the figures still move; ended = the shift is over.
+            "state": fr["state"],
+            # The OLDEST read behind the group — what «Verifix HH:MM» prints.
+            "read_at": min(reads) if reads else None,
+            "rows": rows,
+        })
+    _cache_put(key, out, ttl=_ATT_CACHE_TTL_S)
     return out

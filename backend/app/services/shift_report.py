@@ -211,3 +211,55 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int) -> dic
         "quality": quality,
         "concerns": {"open": int(open_concerns or 0)},
     }
+
+
+# ── «Bugungi davomat» — the attendance card under the board ──────────────────
+# Each unit's attendance on its shift-day NOW: the figure /workers' «Davomat
+# issiqlik xaritasi» prints for a closed day, (came + on leave) ÷ on the list,
+# counted off the stored live Verifix read by `live_staff.attendance` (which
+# says who is on the list). This module only shapes it.
+
+# Every reason an attendance figure can be blank for. The client translates the
+# key: the unit has no workload cell (Verifix reads nobody for it), the minute
+# job has not read its day yet, nobody's own shift has begun, nobody is on it.
+ATT_REASONS = ("no_cells", "no_read", "not_started", "no_list")
+
+
+def _att_half(acc: dict, h: str) -> dict:
+    """One half of the switch — «Jami» (`h` = "") or «Zagruzka» (`h` = "z_")."""
+    roster = acc[f"{h}roster"]
+    extra = {"not_yet": acc[f"{h}not_yet"], "unread": acc[f"{h}unread"]}
+    if not roster:
+        reason = ("not_started" if extra["not_yet"]
+                  else "no_read" if extra["unread"] else "no_list")
+        return {"value": None, "reason": reason, **extra}
+    came, leave = acc[f"{h}came"], acc[f"{h}on_leave"]
+    return {
+        "value": round((came + leave) / roster, 4),
+        "reason": None,
+        "roster": roster,
+        "came": came,
+        "on_leave": leave,
+        # The /workers pair: absent = on the list − came, so leave sits inside
+        # it and the rate counts it as attended.
+        "absent": roster - came,
+        **extra,
+    }
+
+
+def attendance_row(unit, acc: Optional[dict], has_cells: bool) -> dict:
+    """One unit's row, both halves: `all` («Jami») and `zag` («Zagruzka»).
+    `acc` is the unit's `live_staff.attendance` count, None when there is no
+    stored read of the day to count from."""
+    base = {"manager_id": unit.id, "name": unit.name, "factory_id": unit.factory_id,
+            "read_at": None}
+    if not has_cells or acc is None:
+        blank = {"value": None, "reason": "no_cells" if not has_cells else "no_read"}
+        return {**base, "all": blank, "zag": blank}
+    at = acc.get("read_at")
+    return {
+        **base,
+        "read_at": at.isoformat(timespec="minutes") if at else None,
+        "all": _att_half(acc, ""),
+        "zag": _att_half(acc, "z_"),
+    }

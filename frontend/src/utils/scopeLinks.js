@@ -42,6 +42,12 @@ export const dayParam = (q, key) => isoDay(q.get(key));
 export const productionLink = ({ unit, date, tab }) =>
   `/production${query({ unit, date: isoDay(date), tab })}`;
 
+// «Verifix to'g'irlash» — one unit's day, on its Workers tab by default
+// (`readStaffLink` in pages/Staff.jsx reads tab / unit / date). First caller:
+// «Bugungi davomat» (components/overview/TodayAttendanceTable.jsx).
+export const staffLink = ({ unit, date, tab = "workers" }) =>
+  `/staff${query({ tab, unit, date: isoDay(date) })}`;
+
 // «Sifat va shikoyatlar», «Brigadirlar» tab — one brigadir, by the name the
 // register matched (`r.sup`, the unit's own name), over a date span.
 export const qualityLink = ({ brigadir, from, to, status }) =>

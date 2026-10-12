@@ -70,6 +70,36 @@ export function contrastText(hex) {
 export const toneFill = (tone) =>
   (tone ? { background: TONE_HEX[tone], color: contrastText(TONE_HEX[tone]) } : undefined);
 
+// Davomat — (came + on leave) ÷ on the list. ONE scale for /workers' «Davomat
+// issiqlik xaritasi» (pages/Workers.jsx) and the shift dashboard's «Bugungi
+// davomat» (components/overview/TodayAttendanceTable.jsx), so one unit-day
+// wears one colour on both. Traffic-light families on the 90 / 75 breaks of the
+// heatmap's own rate column; the shades inside a family rank days within it, so
+// a 60% day does not read like a 74% one. Not admin-editable, as it never was.
+export const ATT_SEGMENTS = [
+  { from: 0,  color: "#b91c1c" }, // < 60%   → deep red
+  { from: 60, color: "#ef4444" }, // 60–74%  → red
+  { from: 75, color: "#eab308" }, // 75–84%  → yellow
+  { from: 85, color: "#84cc16" }, // 85–89%  → lime (approaching target)
+  { from: 90, color: "#22c55e" }, // 90–94%  → green
+  { from: 95, color: "#15803d" }, // ≥ 95%   → darkest green
+];
+
+// The heatmap's paint for a fraction on a {from, color} scale — background and
+// ink, as `toneFill` gives them. It judges the WHOLE percent printed, exactly as
+// `HeatmapChart` does (it rounds before it looks), so a cell printed «90%» is
+// never painted in the colour of 89.
+export function segmentFill(v, segs) {
+  const p = wholePct(v);
+  if (p === null || !segs?.length) return undefined;
+  let hit = segs[0];
+  for (const s of segs) {
+    if (p >= s.from) hit = s;
+    else break;
+  }
+  return { background: hit.color, color: contrastText(hit.color) };
+}
+
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
 // Over-capacity is no longer a case of its own: a load above 100% reads GREEN.

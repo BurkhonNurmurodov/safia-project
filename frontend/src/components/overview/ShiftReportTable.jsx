@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import StatusBandsModal from "./StatusBandsModal";
+import { LINK_CLS, RULE, SK_NAME, TD_FIG, TD_PAD, TH_FIG } from "./boardStyle";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
@@ -144,8 +145,10 @@ function sortRows(rows, sort, nameOf) {
 // A blank is one line: the dash and its reason's icon. The words are under the
 // table, for every width — a second line in the cell is what made most rows
 // twice as tall as they needed to be.
-function Blank({ reason }) {
-  const Icon = REASON_ICON[reason];
+// `icons` lets «Bugungi davomat» (TodayAttendanceTable) draw its own reasons in
+// the very same blank.
+export function Blank({ reason, icons = REASON_ICON }) {
+  const Icon = icons[reason];
   return (
     <span className="inline-flex items-center justify-center gap-1" style={{ color: "var(--text-4)" }}>
       <span aria-hidden="true">—</span>
@@ -156,7 +159,7 @@ function Blank({ reason }) {
 
 // Header content: the column's name over the window it covers. Below `sm` five
 // columns share ~358px, so both lines switch to their short forms.
-function HeadLabel({ full, short, cap, capShort, left = false, active = false }) {
+export function HeadLabel({ full, short, cap, capShort, left = false, active = false }) {
   const swap = (a, b) => (
     <>
       <span className="sm:hidden">{b ?? a}</span>
@@ -181,39 +184,6 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
   );
 }
 
-// Below `sm` a figure header stacks its sort chevron under the label and shows
-// it only on the column that is sorted — a chevron beside every label is what
-// would push five columns past a phone's width.
-const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
-  + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
-// The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
-// CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
-// shapes are the mistakes this one answers: painted cells whose gridline was
-// `--border` (a 5% white that any fill swallows, so three greens read as one
-// block), and rounded tiles floating in a 3px gutter, which read as a row of
-// buttons rather than a heatmap. Drawing the rule in the card's colour is what
-// makes it show against ANY fill in BOTH themes.
-//
-// The COLOUR has to be inline and cannot be a class: `DataTable` paints every
-// cell's border through `[&_td]:border-[var(--border)]`, a descendant selector
-// that outranks any plain utility on the cell itself — a `border-[…]` class
-// here compiles, loses, and leaves the grid invisible with nothing to show for
-// it. `RULE` is that one declaration and every figure cell carries it.
-const TD_FIG = "text-center align-middle tabular-nums "
-  + "leading-tight text-xs border";
-const RULE = { borderColor: "var(--bg-card)" };
-// A linked cell moves its padding onto the link, so the whole tile is the
-// target and the row keeps its height. Hover tints with the cell's own INK
-// (`currentColor`), which lightens a white-ink fill and darkens a dark-ink
-// one, in both themes, with no colour of its own.
-const TD_PAD = "px-1 max-[359px]:px-0.5 sm:px-2 py-2.5";
-const LINK_CLS = "block w-full outline-none transition-colors "
-  + "hover:bg-[color-mix(in_srgb,currentColor_14%,transparent)] "
-  + "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]";
-
-// The name placeholders cycle a fixed list — Math.random() re-rolls on every
-// render and makes the skeleton twitch (the SkeletonMatrix rule).
-const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 
 // `pageReady` is what keeps this board off the page's critical path. One
 // request can run the «Zagruzka fayli» engine twice per configured unit, and
