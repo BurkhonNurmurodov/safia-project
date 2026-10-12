@@ -6670,6 +6670,38 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: every proof of 9–11 Oct, for a LOCAL test of another AI ────────
+# The operator, 2026-10-12: test whether a local vision model (qwen3-vl:8b)
+# can replace Gemini on the checklist proofs. Every proof photo of 9, 10 and
+# 11 Oct plus one manifest (who, which task, when, what it is checked against
+# — and no verdict, the local model checks blind), as ZIP files in the
+# operator's chat (`services/ai_proof_export.py`). READ-ONLY. Scheduled: it
+# downloads a few thousand photos from Telegram, and a boot that stalls past
+# /health rolls the deploy back.
+AI_PROOF_EXPORT_FLAG = "ai_proof_export_2026_10_12_v1"
+_AI_PROOF_EXPORT_DELAY_S = 150
+
+
+def export_ai_proofs() -> None:
+    """The 9–11 Oct proof export, DMed once as ZIP files. Never raises."""
+    try:
+        if not _report_pending(AI_PROOF_EXPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("ai-proof-export",
+                    datetime.now(timezone.utc) + timedelta(seconds=_AI_PROOF_EXPORT_DELAY_S),
+                    _ai_proof_export_job)
+    except Exception as exc:
+        print(f"[startup] AI proof export could not be scheduled: {exc}")
+
+
+def _ai_proof_export_job() -> None:
+    from app.services import ai_proof_export
+    _send_report_once(AI_PROOF_EXPORT_FLAG, "AI proof export",
+                      ai_proof_export.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: clear what the 19 Sep go-live left behind ──────────────────────
 # The operator asked on the morning of 19 Sep for two things to go: the «YANGI
 # TALAB — 19-sentabrdan kuchga kiradi» notice, which now contradicts itself on

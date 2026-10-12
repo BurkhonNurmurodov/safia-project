@@ -103,6 +103,7 @@ async def lifespan(app: FastAPI):
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
         report_checklist_setup,
+        export_ai_proofs,
         report_proof_archive,
         report_proof_review_sep19_20,
         report_auto_checks_sep20_21,
@@ -502,6 +503,12 @@ async def lifespan(app: FastAPI):
     # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
     # once it has landed.
     report_checklist_setup()
+    # ⚠ TEMPORARY one-shot (2026-10-12) — every checklist proof of 9–11 Oct
+    # with a manifest, as ZIP files in the operator's chat, for a LOCAL test
+    # of another vision model. Scheduled, flag-guarded — delivers once.
+    # Remove this line, `startup.export_ai_proofs` and
+    # `services/ai_proof_export.py` once it has landed.
+    export_ai_proofs()
     # ⚠ TEMPORARY one-shot (2026-09-18) — a SAMPLE of the last 7 days' leader
     # proofs: PER_GROUP filings per (shift, task) over the ten tasks that have
     # new requirements (1, 8 and 9 are out — they become automatic checks and

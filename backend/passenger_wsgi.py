@@ -103,6 +103,7 @@ try:
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
         report_checklist_setup,
+        export_ai_proofs,
         report_proof_archive,
         report_proof_review_sep19_20,
         report_auto_checks_sep20_21,
@@ -448,6 +449,10 @@ try:
     # Remove this line, `startup.report_checklist_setup` and
     # `services/checklist_setup_report.py` once it has landed.
     report_checklist_setup()
+    # ⚠ TEMPORARY one-shot (2026-10-12) — 9–11 Oct proofs + manifest for a
+    # local AI test. Remove this line, `startup.export_ai_proofs` and
+    # `services/ai_proof_export.py` once it has landed.
+    export_ai_proofs()
     # ⚠ TEMPORARY one-shot (2026-09-18) — a SAMPLE of the last 7 days' leader
     # proofs: PER_GROUP filings per (shift, task) over the ten tasks that have
     # new requirements (1, 8 and 9 are out — they become automatic checks and
