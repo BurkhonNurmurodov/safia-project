@@ -9010,7 +9010,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.7.0, versionCode 12).
+  **Raise `versionCode` on every release** (current: 1.7.1, versionCode 13).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
@@ -9086,10 +9086,12 @@ daily") **the app downloads every build the site deploys by itself** — see
     handed to the phone's browser by an `<a download>` click on the release
     URL (MainActivity's download listener), with no progress in the window
     (the browser's notification carries it, and the window says so). The
-    same fallback runs when a 1.7.0 app does not answer within 4 s. **The
-    pages carry the button the moment they deploy; 1.7.0 must still be built
-    and published from the Mac** (`build-release.sh`, `publish-release.sh`),
-    and until it is, every phone runs the fallback.
+    same fallback runs when a 1.7.0+ app does not answer within 4 s. The
+    pages carried the button from the day they deployed; the APK that answers
+    it was built and published only on **2026-10-13 as 1.7.1** (versionCode
+    13, the new emblem launcher icon — the FIRST publish since 1.5.1: 1.5.2,
+    1.5.3 and 1.6.0 were built and never published, 1.7.0 never built), so a
+    phone still on 1.5.1 runs the fallback until it installs 1.7.1.
 - **Phone notifications** from 1.5.0 — see «Phone notifications».
 - **The bot sends the APK on `/android`** (2026-10-07, the operator's
   request) — `_android_cmd` / `_apk_send` in `telegram_bot.py`. It sends the
