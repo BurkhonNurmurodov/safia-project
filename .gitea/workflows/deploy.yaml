@@ -130,3 +130,12 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
+
+      # ⚠ TEMPORARY (2026-10-13): task #11 on cell 4612, 10—11 Oct — every
+      # «Ish grafigi» tap, the marks, when each worker joined the list and the
+      # verdict, for a leader's dispute of the «at the check» modal. Read-only,
+      # never fails the deploy, no worker names. Remove with the script.
+      - name: "Report: Ish grafigi 4612 on 10 Oct (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 120 .venv/bin/python ../deploy/diag_staff_list_4612.py || true
