@@ -2056,7 +2056,9 @@ def _recopy(db: Session, d: Optional[date]) -> None:
 def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """A supervisor closes their own day, an admin anybody's (`staff.close_day`).
 
-    On a LIVE day (`live_day.LIVE_FROM` on) the close reads Verifix once more,
+    On a LIVE day (`live_day.LIVE_FROM` on) the close takes the job's stored
+    read (Verifix once more when the job is not keeping the day, or when that
+    read would refuse — `close_fresh_s`),
     refuses while anybody is inside / on a break / due, while somebody has no
     check-out the brigadir has not answered, while a counted worker has no
     cell, or when Verifix cannot be reached and the stored read is older than
@@ -2072,13 +2074,21 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")
     live = live_day.is_live(d)
-    # «Reads Verifix once more» — unless the job read this unit within its own
-    # pace for the day (`close_fresh_s`): a minute while the shift runs or has
-    # just ended, ten after that, and it re-copies the closed day whenever
-    # Verifix moves. Re-reading here was most of a close's 7.5–11.7 s.
-    chk = _close_check(db, mid, d, force=live,
-                       force_min_s=verifix_live.close_fresh_s(db, mid, d) if live
-                       else verifix_live.CLOSE_FRESH_S)
+    # «Reads Verifix once more» — unless the job is keeping this unit's day
+    # (`close_fresh_s`: its pace for the day plus STALE_S), which it re-copies
+    # whenever Verifix moves once the day is closed. Re-reading here was most
+    # of every close: 7.5–11.7 s, then 9.1 s median on the 13 Oct DM.
+    fresh_s = verifix_live.close_fresh_s(db, mid, d) if live else verifix_live.CLOSE_FRESH_S
+    chk = _close_check(db, mid, d, force=live, force_min_s=fresh_s)
+    # …but never REFUSE on the stored read alone: somebody it still shows
+    # inside, due or without a check-out may have left a minute ago. Read
+    # Verifix once (as every close did before) and judge the fresh read.
+    rd0 = chk["rd"]
+    if (live and fresh_s > verifix_live.CLOSE_FRESH_S
+            and (chk["out"]["busy_count"] or chk["out"]["no_checkout"])
+            and rd0.get("covered") is not None
+            and (rd0["now"] - rd0["covered"]).total_seconds() >= verifix_live.CLOSE_FRESH_S):
+        chk = _close_check(db, mid, d, force=True, force_min_s=verifix_live.CLOSE_FRESH_S)
     out, ctx, ud = chk["out"], chk["ctx"], chk["ud"]
 
     def refuse(reason: str, n: int, msg: str):

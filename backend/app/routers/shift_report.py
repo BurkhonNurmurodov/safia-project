@@ -25,7 +25,9 @@ live read the minute job keeps (`live_staff.attendance`), never a call to
 Verifix from here.
 """
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import List, Optional
 
@@ -38,8 +40,9 @@ from app.models import LeaderConcern, Manager, QualityComplaint
 from app.permissions import require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
-from app.services import (cell_hours, live_overview, live_staff, shift_report, shift_scope,
-                          verifix_live, zagruzka_source)
+from app.services import (cell_hours, leader_register, live_overview, live_staff,
+                          shared_build, shift_report, shift_scope, verifix_live,
+                          zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import supervisor_match
 
@@ -47,33 +50,48 @@ router = APIRouter(prefix="/api/shift-report", tags=["shift-report"])
 log = logging.getLogger(__name__)
 
 # The board runs the «Zagruzka fayli» engine twice per configured unit — ~2 s
-# and ~850 queries on production-sized data (measured 2026-10-03) — so every
-# open of the page waited for all of it and the board painted last. The answer
-# is cached for 60 s, keyed by everything it depends on (see the key below).
-# The FIGURES are the engine's, untouched: a viewer may read a board up to 60 s
-# old, the staleness the page's own query (`staleTime` 60 s) already accepts.
-# Viewers with one scope share an entry (every admin and top-manager on «all
-# plants» does). Bounded, in-process, per copy.
+# and ~850 queries on production-sized data (measured 2026-10-03), ~4 s on
+# production once «Davomat» joined — so every answer is KEPT, keyed by
+# everything it depends on (see the key below). The FIGURES are the engine's,
+# untouched. An answer is served as it stands for `_CACHE_TTL_S` (the
+# staleness the page's own query, `staleTime` 60 s, already accepts); older
+# but younger than `_CACHE_STALE_S` it is served AT ONCE while a new one is
+# built behind it (`_refresh_later`), so the next refetch has it — unless the
+# viewer changed something since it was built (`leader_register.last_write`:
+# a brigadir's ПЛАН, a shift manager's concern), who waits for a build that
+# started after their write. Older than that, the request builds, sharing one
+# build with whoever asks the same at the same time (`shared_build`). Before
+# this (the 13 Oct «Server was slow» DM) a 60 s expiry made somebody wait
+# ~4 s for the board every minute it was open: /api/shift-report ×13, median
+# 3.9 s. Viewers with one scope share an entry (every admin and top-manager on
+# «all plants» does). Bounded, in-process, per copy.
 _CACHE_TTL_S = 60
+_CACHE_STALE_S = 600
 _CACHE_MAX = 64
-_cache: dict = {}
+_cache: dict = {}                    # key → (monotonic() the build STARTED, answer)
+_cache_lock = threading.Lock()
+_flight = shared_build.SharedBuild()
+_refresh_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shift-report")
+_refreshing: set = set()
 
 
 def _cache_get(key):
-    hit = _cache.get(key)
-    if hit and hit[0] > time.monotonic():
-        return hit[1]
-    return None
+    with _cache_lock:
+        return _cache.get(key)
 
 
-def _cache_put(key, value) -> None:
+def _cache_put(key, started: float, value) -> None:
     now = time.monotonic()
-    if len(_cache) >= _CACHE_MAX:
-        for k in [k for k, (exp, _v) in list(_cache.items()) if exp <= now]:
-            _cache.pop(k, None)
-        while len(_cache) >= _CACHE_MAX:
-            _cache.pop(next(iter(_cache)), None)
-    _cache[key] = (now + _CACHE_TTL_S, value)
+    with _cache_lock:
+        old = _cache.get(key)
+        if old is not None and old[0] > started:
+            return                   # a build that started later is already kept
+        if key not in _cache and len(_cache) >= _CACHE_MAX:
+            for k in [k for k, (t, _v) in list(_cache.items()) if now - t > _CACHE_STALE_S]:
+                _cache.pop(k, None)
+            while len(_cache) >= _CACHE_MAX:
+                _cache.pop(next(iter(_cache)), None)
+        _cache[key] = (started, value)
 
 
 def _scope(db: Session, payload: dict, factory: Optional[int],
@@ -94,6 +112,27 @@ def _scope(db: Session, payload: dict, factory: Optional[int],
     return [m for m in (ids if ids is not None else own) if m in own], None
 
 
+def _units(db: Session, ids: Optional[list[int]], shift: Optional[int]) -> list:
+    # A unit whose загрузка is switched OFF (`managers.zagruzka_on`) is not on
+    # the production board and not in the start-load cards.
+    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
+    if ids is not None:
+        q = q.filter(Manager.id.in_(ids))
+    if shift in (1, 2):
+        q = q.filter(Manager.shift == shift)
+    return q.order_by(Manager.name, Manager.id).all()
+
+
+def _key(units: list, note, month: str, now, windows) -> tuple:
+    """Everything the answer depends on: the units in reach (the scope AND the
+    shift filter), the quality month, and each shift's report days — so a new
+    shift-day or a new month is a new entry, never a stale one."""
+    return (
+        tuple(m.id for m in units), note, month,
+        tuple((s, *map(str, shift_report.report_days(now, s, windows))) for s in (1, 2, None)),
+    )
+
+
 @router.get("")
 def get_shift_report(
     shift: Optional[int] = Query(default=None),
@@ -107,39 +146,83 @@ def get_shift_report(
     # The quality window rides on the payload from the first line, so an empty
     # board still states which month its (absent) closure rates would have been
     # counted over, and the header never has to guess it off the browser clock.
-    month, m_from, m_to = shift_report.quality_window(now.date())
-    out = {
+    month, _m_from, _m_to = shift_report.quality_window(now.date())
+    if empty_scope(ids):
+        return _empty(now, note, month)
+    units = _units(db, ids, shift)
+    if not units:
+        return _empty(now, note, month)
+    windows = cell_hours.defaults(db)
+    key = _key(units, note, month, now, windows)
+    hit = _cache_get(key)
+    if hit is not None:
+        started, value = hit
+        age = time.monotonic() - started
+        if age < _CACHE_TTL_S:
+            return value
+        if age < _CACHE_STALE_S and started > leader_register.last_write(payload):
+            _refresh_later(ids, note, shift)
+            return value
+
+    def build():
+        t0 = time.monotonic()
+        value = _compute(db, units, note, now, windows)
+        _cache_put(key, t0, value)
+        return value
+
+    return _flight.run(key, build, before_wait=db.rollback)
+
+
+def _empty(now, note, month: str) -> dict:
+    return {
         "generated_at": now.isoformat(timespec="seconds"),
         "note": note,
         "quality_month": month,
         "shifts": [],
     }
-    if empty_scope(ids):
-        return out
 
-    # A unit whose загрузка is switched OFF (`managers.zagruzka_on`) is not on
-    # the production board and not in the start-load cards.
-    q = db.query(Manager).filter(Manager.archived.is_(False), Manager.zagruzka_on.is_(True))
-    if ids is not None:
-        q = q.filter(Manager.id.in_(ids))
-    if shift in (1, 2):
-        q = q.filter(Manager.shift == shift)
-    units = q.order_by(Manager.name, Manager.id).all()
-    if not units:
-        return out
+
+def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int]) -> None:
+    """Build this scope's board again off the request, in a session of its own,
+    and keep it under the key its OWN clock gives (a shift-day that turned
+    meanwhile is a new entry). One rebuild per scope at a time."""
+    rk = (tuple(ids) if ids is not None else None, note, shift)
+    with _cache_lock:
+        if rk in _refreshing:
+            return
+        _refreshing.add(rk)
+
+    def go():
+        from app.database import SessionLocal
+        try:
+            with SessionLocal() as s:
+                now = live_overview.now_local()
+                units = _units(s, ids, shift)
+                if not units:
+                    return
+                windows = cell_hours.defaults(s)
+                month = shift_report.quality_window(now.date())[0]
+                key = _key(units, note, month, now, windows)
+                t0 = time.monotonic()
+                _cache_put(key, t0, _compute(s, units, note, now, windows))
+        except Exception:  # noqa: BLE001 — the next request builds inline
+            log.exception("shift-report: background rebuild failed")
+        finally:
+            with _cache_lock:
+                _refreshing.discard(rk)
+
+    try:
+        _refresh_pool.submit(go)
+    except RuntimeError:            # shutting down
+        with _cache_lock:
+            _refreshing.discard(rk)
+
+
+def _compute(db: Session, units: list, note, now, windows) -> dict:
+    """The board for `units` at `now` — every figure from the page that owns it."""
+    month, m_from, m_to = shift_report.quality_window(now.date())
+    out = _empty(now, note, month)
     unit_ids = [m.id for m in units]
-
-    # Everything the answer depends on is in the key: the units in reach (the
-    # scope AND the shift filter), the quality month, and each shift's report
-    # days — so a new shift-day or a new month is a new entry, never a stale one.
-    windows = cell_hours.defaults(db)
-    key = (
-        tuple(unit_ids), note, month,
-        tuple((s, *map(str, shift_report.report_days(now, s, windows))) for s in (1, 2, None)),
-    )
-    cached = _cache_get(key)
-    if cached is not None:
-        return cached
 
     # ── O'rt. zagruzka / Bajarilish % — the «Zagruzka fayli» page's own engine,
     # the very call GET /api/production/dashboard makes, so the two figures are
@@ -242,7 +325,6 @@ def get_shift_report(
                 for m in groups[s]
             ],
         })
-    _cache_put(key, out)
     return out
 
 

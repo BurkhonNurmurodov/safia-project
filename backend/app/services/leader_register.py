@@ -40,6 +40,13 @@ nobody else theirs. What is kept is BYTES (the `data` list already encoded),
 not the dict: a 20 MB JSON string is a fraction of the memory of the two
 hundred thousand dicts behind it, and a served request skips the encode too.
 
+A SCOPED register (a supervisor's unit, a leader's own rows) is kept the same
+way from 2026-10-13, one slot per viewer scope (`get(..., key=…)`): the 13 Oct
+«Server was slow» DM named /api/leaders ×10 at a 5.8 s median, every one of
+them a supervisor's or a leader's own build, which nothing kept. The rules are
+the unscoped build's, slot by slot; at most `MAX_SLOTS` scopes are kept, the
+least recently asked forgotten first (never the unscoped one).
+
 Postgres only (`xmin`); on any other database every request builds, as before.
 """
 from __future__ import annotations
@@ -47,7 +54,7 @@ from __future__ import annotations
 import logging
 import threading
 from time import monotonic
-from typing import Callable, Optional
+from typing import Callable, Hashable, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -61,12 +68,24 @@ log = logging.getLogger(__name__)
 STALE_MAX_S = 180.0
 # How long a request waits on a build somebody else is running.
 FLIGHT_WAIT_S = 120.0
+# Scoped builds kept at once (one per viewer scope); the unscoped one is extra.
+MAX_SLOTS = 160
+# …and the bytes they may hold between them: a supervisor's unit is ~1 MB, a
+# leader's own rows far less, but a LEADER with «see all» keeps the whole
+# platform rewritten for them (~20 MB) — so the count alone bounds nothing.
+MAX_SCOPED_BYTES = 120 * 1024 * 1024
 
 
 class Build:
-    """One finished build: the encoded rows plus the small per-viewer parts."""
+    """One finished build: the encoded rows plus the small per-viewer parts.
+    A SCOPED build keeps its whole answer, already encoded, in `data` and
+    nothing else (`body()`)."""
     __slots__ = ("fp", "started", "done_at", "data", "roster", "cutoffs",
                  "cut_units", "last_synced", "rows")
+
+    @classmethod
+    def body(cls, data: bytes) -> "Build":
+        return cls(data=data, roster=[], cutoffs={}, cut_units={}, last_synced=None, rows=0)
 
     def __init__(self, *, data: bytes, roster: list, cutoffs: dict,
                  cut_units: dict, last_synced, rows: int):
@@ -90,10 +109,57 @@ class _Flight:
         self.build: Optional[Build] = None   # None once done = the build failed
 
 
+class _Slot:
+    """What is kept for one scope: its last build and the build running now."""
+    __slots__ = ("kept", "flight", "used")
+
+    def __init__(self):
+        self.kept: Optional[Build] = None
+        self.flight: Optional[_Flight] = None
+        self.used = monotonic()
+
+
 _lock = threading.Lock()
-_kept: Optional[Build] = None
-_flight: Optional[_Flight] = None
+_slots: dict[Hashable, _Slot] = {}  # scope key → slot; None = the unscoped register
 _writes: dict[str, float] = {}     # actor → monotonic() of their last write
+
+
+def _slot(key: Hashable) -> _Slot:
+    """The slot for `key` (under `_lock`), made on first use. Past `MAX_SLOTS`
+    scoped slots the least recently asked idle one is forgotten."""
+    sl = _slots.get(key)
+    if sl is None:
+        scoped = sum(1 for k in _slots if k is not None)
+        if key is not None and scoped >= MAX_SLOTS:
+            idle = sorted((k for k, v in _slots.items() if k is not None and v.flight is None),
+                          key=lambda k: _slots[k].used)
+            for k in idle[:scoped - MAX_SLOTS + 1]:
+                _slots.pop(k, None)
+        sl = _slots[key] = _Slot()
+    sl.used = monotonic()
+    return sl
+
+
+def _trim_bytes(keep: Hashable) -> None:
+    """(Under `_lock`.) Past `MAX_SCOPED_BYTES` the least recently asked scoped
+    builds are dropped — their slots stay, so the next ask simply rebuilds."""
+    held = [(v.used, k, len(v.kept.data)) for k, v in _slots.items()
+            if k is not None and v.kept is not None]
+    total = sum(n for _u, _k, n in held)
+    for _u, k, n in sorted(held, key=lambda x: x[0]):
+        if total <= MAX_SCOPED_BYTES:
+            break
+        if k == keep:
+            continue
+        _slots[k].kept = None
+        total -= n
+
+
+def _clear_flight(key: Hashable, f: "_Flight") -> None:
+    with _lock:
+        sl = _slots.get(key)
+        if sl is not None and sl.flight is f:
+            sl.flight = None
 
 
 # ── what the build reads ─────────────────────────────────────────────────────
@@ -135,6 +201,8 @@ _ARMS = [
     ("leader_auto_checks", "select count(*), max(a.xmin::text::bigint) from leader_auto_checks a"
                            " join leader_task_entries e on e.id = a.entry_id"
                            " join leader_task_days d on d.id = e.day_id and d.closed_at is not null"),
+    # which leader profiles a LEADER viewer holds (`identity`) — a scoped build
+    ("telegram_user_roles", "select count(*), max(xmin::text::bigint) from telegram_user_roles"),
 ]
 _FP_SQL = text(" union all ".join(
     f"select '{name}' as t, n, x from ({sql}) as f{i}(n, x)" for i, (name, sql) in enumerate(_ARMS)))
@@ -184,53 +252,62 @@ def _written_since(actor: Optional[str]) -> float:
         return _writes.get(actor, 0.0) if actor else 0.0
 
 
+def last_write(payload: Optional[dict]) -> float:
+    """`monotonic()` of this viewer's last write (0.0 = none since boot). For
+    any other answer KEPT between requests that must not be served to somebody
+    who changed something after it was built — the shift report reads it."""
+    return _written_since(actor_key(payload))
+
+
 # ── the kept build ───────────────────────────────────────────────────────────
 
-def kept() -> Optional[Build]:
+def kept(key: Hashable = None) -> Optional[Build]:
     with _lock:
-        return _kept
+        sl = _slots.get(key)
+        return sl.kept if sl is not None else None
 
 
-def get(db: Session, payload: dict, build_fn: Callable[[Session], Build]) -> Build:
-    """The build to answer this viewer with — see the module docstring."""
+def get(db: Session, payload: dict, build_fn: Callable[[Session], Build],
+        key: Hashable = None) -> Build:
+    """The build to answer this viewer with — see the module docstring.
+    `key` names a SCOPED build (None = the unscoped register): everything the
+    viewer's answer depends on besides the tables the fingerprint reads."""
     if not enabled():
-        return _run(db, build_fn, None, fp=())
+        return _run(db, build_fn, None, fp=(), key=key)
     arrived = monotonic()
     try:
         fp = fingerprint(db)
     except Exception:
         log.exception("leader-register: fingerprint failed; building unkept")
-        return _run(db, build_fn, None, fp=())
+        return _run(db, build_fn, None, fp=(), key=key)
     since = _written_since(actor_key(payload))
     with _lock:
-        k = _kept
+        k = _slot(key).kept
     if k is not None and k.started > since:
         if k.fp == fp:
             return k
         if arrived - k.done_at < STALE_MAX_S:
-            _refresh_later(build_fn)
+            _refresh_later(build_fn, key)
             return k
-    return _wait_build(db, build_fn, after=arrived, fp=fp)
+    return _wait_build(db, build_fn, after=arrived, fp=fp, key=key)
 
 
-def _wait_build(db: Session, build_fn, *, after: float, fp: tuple) -> Build:
+def _wait_build(db: Session, build_fn, *, after: float, fp: tuple, key: Hashable) -> Build:
     """A build that STARTED after `after`: start one, or join one somebody
     else started late enough. A build that started earlier may have read the
     data before a write this request is looking for, so it is waited out."""
-    global _flight
     while True:
         with _lock:
-            f = _flight
+            sl = _slot(key)
+            f = sl.flight
             mine = f is None
             if mine:
-                f = _flight = _Flight(monotonic())
+                f = sl.flight = _Flight(monotonic())
         if mine:
             try:
-                return _run(db, build_fn, f, fp=fp)
+                return _run(db, build_fn, f, fp=fp, key=key)
             finally:
-                with _lock:
-                    if _flight is f:
-                        _flight = None
+                _clear_flight(key, f)
                 f.done.set()
         if f.started > after:
             if f.done.wait(FLIGHT_WAIT_S) and f.build is not None:
@@ -238,14 +315,14 @@ def _wait_build(db: Session, build_fn, *, after: float, fp: tuple) -> Build:
             break                       # it failed or hung — build alone
         if not f.done.wait(FLIGHT_WAIT_S):
             break
-    return _run(db, build_fn, None, fp=fp)
+    return _run(db, build_fn, None, fp=fp, key=key)
 
 
-def _run(db: Session, build_fn, flight: Optional[_Flight], *, fp: tuple) -> Build:
+def _run(db: Session, build_fn, flight: Optional[_Flight], *, fp: tuple,
+         key: Hashable = None) -> Build:
     """Build, stamp, keep. `fp` is the fingerprint taken BEFORE this build read
     anything (the caller's own, when the build starts in its session; the
     background thread takes one of its own)."""
-    global _kept
     started = flight.started if flight is not None else monotonic()
     if not fp and enabled():
         try:
@@ -257,40 +334,40 @@ def _run(db: Session, build_fn, flight: Optional[_Flight], *, fp: tuple) -> Buil
     b.fp, b.started, b.done_at = fp, started, monotonic()
     if fp:
         with _lock:
-            if _kept is None or b.started > _kept.started:
-                _kept = b
+            sl = _slot(key)
+            if sl.kept is None or b.started > sl.kept.started:
+                sl.kept = b
+                if key is not None:
+                    _trim_bytes(key)
     if flight is not None:
         flight.build = b
     return b
 
 
-def _refresh_later(build_fn) -> None:
-    """Start a background build unless one is already running."""
-    global _flight
+def _refresh_later(build_fn, key: Hashable = None) -> None:
+    """Start a background build of this scope unless one is already running."""
     with _lock:
-        if _flight is not None:
+        sl = _slot(key)
+        if sl.flight is not None:
             return
-        f = _flight = _Flight(monotonic())
+        f = sl.flight = _Flight(monotonic())
 
     def run():
-        global _flight
         db = SessionLocal()
         try:
-            _run(db, build_fn, f, fp=())
+            _run(db, build_fn, f, fp=(), key=key)
         except Exception:
-            log.exception("leader-register: background rebuild failed")
+            log.exception("leader-register: background rebuild of %r failed", key)
         finally:
             db.close()
-            with _lock:
-                if _flight is f:
-                    _flight = None
+            _clear_flight(key, f)
             f.done.set()
 
     threading.Thread(target=run, name="leader-register", daemon=True).start()
 
 
 def forget() -> None:
-    """Drop the kept build (tests, and a deliberate reset)."""
-    global _kept
+    """Drop every kept build (tests, and a deliberate reset)."""
     with _lock:
-        _kept = None
+        for sl in _slots.values():
+            sl.kept = None

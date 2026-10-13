@@ -76,8 +76,11 @@ ERROR_BACKOFF_S = 60     # …but not within this long of a read of the day that
 TRACKS_FULL_S = 900      # the marks are re-read whole this often; only the new ones between
 TRACKS_OVERLAP_MIN = 15  # a read of the new marks starts this far before the last one ended
 FORCE_MIN_S = 30         # a «Yangilash» this soon after the unit's last read serves that read
-CLOSE_FRESH_S = HOT_S + 30   # …and a day close: the job reads a running shift-day every HOT_S
-                             # (a finished one every COOL_S — `close_fresh_s`)
+CLOSE_FRESH_S = HOT_S + 30   # …and the re-read a day close makes when the stored read would
+                             # REFUSE it, or the day is past (`close_fresh_s`)
+DIR_FORCE_S = DIR_TTL + STALE_S  # a forced read re-reads the directory only past the job's own
+                                 # pace for it plus STALE_S (the job stopped): at DIR_TTL a close
+                                 # raced the job and read the plant's directory itself (13 Oct DM)
 WAIT_S = 60              # a request waits this long for another read of its unit-day (+ the
                          # rest of the request stays inside Cloudflare's 100 s)
 BUSY_MESSAGE = "Verifix'dan o'qish davom etmoqda — birozdan keyin yangilang."
@@ -830,14 +833,18 @@ def day_frame(db: Session, shift: Optional[int], now: Optional[datetime] = None)
 
 def close_fresh_s(db: Session, manager_id: int, day: date) -> float:
     """How old a stored read a day close takes as it stands rather than reading
-    Verifix while the brigadir waits: the job's own pace for that day plus a
-    margin — `CLOSE_FRESH_S` while the shift runs or has just ended, `COOL_S`
-    + a minute once it is over and the job reads it every ten minutes. After
-    the close the same job re-copies the day whenever Verifix moves
+    Verifix while the brigadir waits: for the shift-day the job is reading, as
+    old as the job lets it get — its pace for that day plus `STALE_S`, the very
+    line past which `day_read` calls a read «aged» (the job has stopped).
+    After the close the same job re-copies the day whenever Verifix moves
     (`live_projection`), so a re-read on top bought minutes the copy follows
-    anyway, and cost the 10 Oct 13:03 close 11.7 s on Verifix. A PAST
+    anyway — and at the old `HOT_S` + 30 s it raced the job's own pass (which
+    takes ~30 s and stamps the read with its START), so most closes of a
+    running shift read Verifix: 9.1 s median on the 13 Oct DM, 86% of it
+    waiting on Verifix. A close the stored read would REFUSE still reads
+    Verifix once before saying no (`routers/staff_live.close_day`). A PAST
     shift-day — the job no longer reads it, and its copy will not follow —
-    still has the close read it."""
+    still has the close read it (`CLOSE_FRESH_S`)."""
     _, units = _registry(db)
     unit = units.get(manager_id)
     if not unit:
@@ -845,7 +852,7 @@ def close_fresh_s(db: Session, manager_id: int, day: date) -> float:
     frame = day_frame(db, unit["shift"])
     if date.fromisoformat(frame["day"]) != day:
         return CLOSE_FRESH_S
-    return CLOSE_FRESH_S if _hot(frame) else COOL_S + 60
+    return (HOT_S if _hot(frame) else COOL_S) + STALE_S
 
 
 def shift_day(db: Session, shift: Optional[int], now: Optional[datetime] = None) -> date:
@@ -926,8 +933,8 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
 
     `force_min_s`: a forced read this soon after the unit's last read serves
     that read (`FORCE_MIN_S` for a press; the day close passes
-    `CLOSE_FRESH_S`, because the job re-reads a running shift-day every
-    minute and a close re-reading it on top only made the brigadir wait).
+    `close_fresh_s`, because the job re-reads the day it is on and a close
+    re-reading it on top only made the brigadir wait).
 
     `memo` (stored_only only): a dict one request passes to every call, so the
     plant's stored directory and day — two large JSON rows — are read once per
@@ -963,8 +970,11 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
         try:
             # «Yangilash» keeps the directory the job refreshes every DIR_TTL:
             # re-reading the whole plant's employees first doubled the press.
+            # Measured against DIR_TTL itself it raced the job (which re-reads
+            # it once it is DIR_TTL old, a pass later), so a press or a close
+            # landing in that minute read the plant's directory inline.
             directory, dir_at = _directory(db, cfg, DIR_PRESS_S if fresh_dir
-                                           else DIR_TTL if force else DIR_FALLBACK_S)
+                                           else DIR_FORCE_S if force else DIR_FALLBACK_S)
         except verifix.VerifixError as exc:
             return {"error": exc.code, "message": exc.message}
     homes = _homes(directory, cells)

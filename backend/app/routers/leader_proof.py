@@ -31,7 +31,7 @@ from app.security import require_auth
 from app.routers.admin import _TG_API, _tg_file_meta
 from app.services import (
     action_log, leader_cells, leader_close, leader_late_proof, leader_proof,
-    leader_tasks,
+    leader_tasks, tg_later,
 )
 from app.services.leader_tasks import (
     channel_chat_id, config_name, effective_leader_config,
@@ -490,12 +490,25 @@ def _nudge_bot(db: Session, prof: RoleProfile, task_id: int,
     they read. Leaving it saying «0/3» after three shots is the single most
     confusing thing this flow could do, so the counter follows the roll. Best
     effort by design — a failed edit must never fail the save that produced it.
-    """
+
+    AFTER the answer (`tg_later`, in queue order, so two shots' edits land in
+    the order they were taken): the edit is a Telegram round trip on top of the
+    task screen's own reads, and the leader taking the next shot waited for it
+    — /api/leader-proof/photo was a slow path of the 13 Oct «Server was slow»
+    DM (×14, median 3.7 s). The shot is committed before this is queued."""
+    tg_later.run(_refresh_later, "camera", prof.id, task_id, cell_id)
+
+
+def _refresh_later(kind: str, leader_id: int, task_id: int, cell_id: int | None) -> None:
+    """The bot prompt redraw, in a session of its own (the request's is gone)."""
+    from app.database import SessionLocal
     try:
-        from app.telegram_bot import refresh_camera_prompt
-        refresh_camera_prompt(db, prof.id, task_id, cell_id)
+        from app.telegram_bot import refresh_camera_prompt, refresh_late_screen
+        fn = refresh_late_screen if kind == "late" else refresh_camera_prompt
+        with SessionLocal() as s:
+            fn(s, leader_id, task_id, cell_id)
     except Exception:
-        log.debug("camera prompt refresh skipped", exc_info=True)
+        log.debug("%s prompt refresh skipped", kind, exc_info=True)
 
 
 def _stream_shot(file_id: str) -> StreamingResponse:
@@ -712,15 +725,12 @@ def get_late_photo(shot_id: int, db: Session = Depends(get_db),
 
 def _nudge_late_bot(db: Session, prof: RoleProfile, task_id: int,
                     cell_id: int | None = None) -> None:
-    """Re-draw the bot's late screen with the new count.
+    """Re-draw the bot's late screen with the new count — after the answer,
+    like `_nudge_bot`.
 
     Deliberately NOT a widening of `refresh_camera_prompt`'s `stage="camera"`
     filter: that one re-renders the ordinary task view, which for a LOCKED task
     takes the early-return locked branch and would repaint the outcome screen
     over the late one the leader is working in.
     """
-    try:
-        from app.telegram_bot import refresh_late_screen
-        refresh_late_screen(db, prof.id, task_id, cell_id)
-    except Exception:
-        log.debug("late screen refresh skipped", exc_info=True)
+    tg_later.run(_refresh_later, "late", prof.id, task_id, cell_id)

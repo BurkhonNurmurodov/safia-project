@@ -439,10 +439,14 @@ def get_leaders(
     scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
     if not scoped and not _la_hides(payload):
         return _assemble(leader_register.get(db, payload, _build_shared), payload)
-    feed = _leaders_feed(db, payload, sees_all)
-    if _la_hides(payload):
-        _la_hide(feed)
-    return _json_response(feed)
+    # A scoped build is KEPT too, one per viewer scope, under the same rules
+    # (the 13 Oct «Server was slow» DM: /api/leaders ×10, median 5.8 s — every
+    # one a supervisor's or a leader's own build). The key is everything in the
+    # payload a scoped build reads; the tables are the fingerprint's.
+    view = {k: payload.get(k) for k in _SCOPED_KEYS}
+    key = ("scoped", sees_all, _la_hides(payload), *view.values())
+    b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key)
+    return Response(content=b.data, media_type="application/json")
 
 
 # ── one build for everybody ──────────────────────────────────────────────────
@@ -471,6 +475,24 @@ def _build_shared(db: Session) -> leader_register.Build:
         data=json.dumps(rows, **_JSON).encode("utf-8"),
         roster=feed["roster"], cutoffs=feed["cutoffs"], cut_units=feed["cutUnits"],
         last_synced=feed["last_synced"], rows=len(rows))
+
+
+# What a SCOPED build reads off the payload: the scoping passes (`role`,
+# `role_id`) and who a leader viewer is (`identity.viewer_leader_profile_ids`
+# — the account, the registration the token names, the name it was issued
+# under; `_self_names`), plus `_la_hides`' own input. Nothing else.
+_SCOPED_KEYS = ("role", "role_id", "role_ref", "sub", "full_name")
+
+
+def _build_scoped(db: Session, view: dict, sees_all: bool) -> leader_register.Build:
+    """One viewer's scoped register, encoded whole — what `get_leaders` used to
+    build on every request."""
+    leader_load.forget()            # a kept build computes the exemptions fresh
+    feed = _leaders_feed(db, view, sees_all)
+    if _la_hides(view):
+        _la_hide(feed)
+    return leader_register.Build.body(
+        json.dumps(feed, **_JSON).encode("utf-8"))
 
 
 def _assemble(b: leader_register.Build, payload: dict) -> Response:

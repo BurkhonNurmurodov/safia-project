@@ -5439,8 +5439,18 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   «see all» grantee — the answer differs by the header and, for a non-admin,
   a cutoff's reason and author, which `_assemble` cuts per viewer (verified
   equal to a per-viewer build, parsed, for an admin and a shift-manager). A
-  supervisor or a leader without «see all» still builds their own scoped feed
-  per request, as before; a leader with «see all» too (`_la_hide` rewrites it).
+  supervisor or a leader without «see all» — and a leader with it (`_la_hide`
+  rewrites theirs) — gets their OWN scoped build, and from 2026-10-13 that is
+  kept too: one slot per viewer scope (`get(..., key=…)`, the key = every
+  payload field a scoped build reads, `routers/leaders._SCOPED_KEYS`, plus
+  «see all» and `_la_hides`), the whole answer as bytes (`Build.body`), under
+  the same four rules slot by slot; at most `MAX_SLOTS` (160) scopes and
+  `MAX_SCOPED_BYTES` (120 MB) between them — a leader with «see all» keeps the
+  whole platform (~20 MB) — the least recently asked dropped first, never the
+  unscoped one. The 13 Oct DM
+  named /api/leaders ×10 at a 5.8 s median, every one a scoped build. The
+  fingerprint gained `telegram_user_roles`: which leader profiles a leader
+  viewer holds (`identity`).
 - **Served while nothing it read has changed — EXACT.** `fingerprint()` is
   one query (~60 ms on a production-sized copy): per input table the row
   count and `max(xmin)`, the id of the last transaction that touched a row,
@@ -8151,13 +8161,20 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
 - **The close COPIES the day** (`services/live_projection.py`, ruling 1):
   `POST /api/staff-live/daily/close` — and `/api/staff/daily/close`, which
   hands a live day to it, so every door that closes a day reaches it — reads
-  Verifix once more (`force`; from 2026-10-09 not when this unit was read in
-  the last `CLOSE_FRESH_S`, 90 s — the job keeps a running and a just-finished
-  shift-day within a minute, and the extra read was most of a close's 7.5 s;
-  from 2026-10-10 not within `COOL_S` + 1 min either once the shift is over
-  and the job reads the day every ten minutes — `verifix_live.close_fresh_s`;
-  the job re-copies the closed day whenever Verifix moves, and a PAST
-  shift-day, which no job reads any more, keeps the 90 s),
+  Verifix once more ONLY when it must (`verifix_live.close_fresh_s`, from
+  2026-10-13): the shift-day the job is reading closes on the job's stored
+  read while that is younger than the job's pace plus `STALE_S` (4 min while
+  the shift runs or just ended, 13 min after) — the same line past which
+  `day_read` calls a read «aged» — because the job re-copies a closed day
+  whenever Verifix moves; and a close the stored read would REFUSE (somebody
+  inside, due or without a check-out) reads Verifix once more (older than
+  `CLOSE_FRESH_S`, 90 s) and judges the fresh read before saying no. A PAST
+  shift-day, which no job reads any more, still reads past 90 s. The earlier
+  90 s bar (2026-10-09) raced the job's own pass — ~30 s long and stamped
+  with its START — so most closes of a running shift still read Verifix: 9.1 s
+  median on the 13 Oct DM. A forced read takes the directory as it stands up
+  to `DIR_FORCE_S` (`DIR_TTL` + `STALE_S`); at `DIR_TTL` it raced the job's
+  directory pass too,
   then refuses while anybody is inside, on a break
   or due, while a counted worker has no cell, while somebody has no check-out
   the brigadir has not answered, or when Verifix is unreachable and the stored
@@ -9927,7 +9944,13 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   reach, the quality month and each shift's report days — viewers with one
   scope share an entry, a new shift-day or month is a new key, the figures are
   the engine's untouched; `staleTime` 60 s and a refetch on focus on the
-  client. **It is the LAST thing on the page to fetch**
+  client. From 2026-10-13 an answer between 60 s and `_CACHE_STALE_S` (10 min)
+  old is served AT ONCE while a new one is built behind it (`_refresh_later`,
+  its own session, one per scope) — unless the viewer wrote something since it
+  was built (`leader_register.last_write`), who waits for a build that started
+  after their write; older, the request builds, sharing one build with whoever
+  asks the same (`shared_build`). The 60 s expiry had made somebody wait ~4 s
+  every minute the board was open (13 Oct DM: ×13, median 3.9 s). **It is the LAST thing on the page to fetch**
   (`pageReady`, handed down by its page): that cost competes with the queries
   the KPI cards and the charts are waiting on — one uvicorn worker — so
   fired together the whole page read as «still loading» for as long as the
@@ -10702,8 +10725,8 @@ blocking work on the event loop freezes every request on the server at once.
   - **Verifix lists are read side by side** (`verifix_live._side_by_side`, a
     client each): the report, the marks and the skipped people's whole marks
     of a day; divisions, jobs and employees of the directory. A read takes as
-    long as its slowest list, not the sum. The day close reuses a read under
-    `CLOSE_FRESH_S` (see «A live day's engine»).
+    long as its slowest list, not the sum. The day close reuses a stored read
+    (`close_fresh_s` — see «/staff reads TODAY live»).
   - **Identical heavy reads at once share one build** — `services/shared_build.py`,
     the leaders board's rule made general (a request takes only a build that
     STARTED after it arrived; nothing kept once done; a waiter hands its DB
@@ -10801,6 +10824,22 @@ blocking work on the event loop freezes every request on the server at once.
   are the build, and shaving them had changed nothing a viewer could feel.
   Fixed by not rebuilding: the register is KEPT between requests and served
   while its inputs are unchanged — see «The /leaders register is KEPT».
+- **The fifteenth (12 Oct 16:51 → 13 Oct 09:00) had no freeze over 1.7 s and
+  four paths slow on their own**, all fixed:
+  - **The day close (×11, 9.1 s median, 86% waiting on Verifix)** still read
+    Verifix on almost every press: its 90 s bar raced the minute job's own
+    pass. It now closes on the job's stored read and reads Verifix only when
+    that read would refuse it — see «/staff reads TODAY live».
+  - **`/api/leaders` (×10, 5.8 s)** was the supervisors' and leaders' own
+    scoped builds, which the 12 Oct keep did not cover; they are kept per
+    scope now — see «The /leaders register is KEPT».
+  - **`/api/shift-report` (×13, 3.9 s)** is served while rebuilt behind the
+    viewer — see «The shift report».
+  - **A camera shot (`POST /api/leader-proof/photo`, ×14, 3.7 s)** waited for
+    the archive-channel upload (`_relay`, 52% — it stays: the row stores the
+    file_id it returns) AND for the bot's prompt redraw, a second Telegram
+    round trip. The redraw (`_nudge_bot`, `_nudge_late_bot`) now runs after
+    the answer (`tg_later`, its own session, in shot order).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
