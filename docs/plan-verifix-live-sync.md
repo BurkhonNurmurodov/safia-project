@@ -184,6 +184,9 @@ other way of vanishing is a suggestion.
    cell — and that planned switch is CANCELLED. Both pages keep what they do
    today; the only change they see is that `leader_id` becomes the seat by
    default.
+   **REVERSED on 2026-10-13** (the operator: «the KPIs will be calculated for
+   the cell owner») — both pages credit a cell to its «Egasi» (`owner_id`),
+   and a leader who runs a cell but owns none is listed unranked.
 
 Two further proposals from the first answer stood unchallenged through the
 dialogue and are part of the plan: **a new Verifix brigadir with no unit here

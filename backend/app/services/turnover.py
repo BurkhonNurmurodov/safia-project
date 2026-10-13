@@ -20,9 +20,16 @@ places the file was ambiguous, so every figure can be explained:
 * **Cell** — the Verifix org unit's code (its `code`, else the digits its name
   starts with: 15 units carry the code only in the name), matched to /cells.
   A code /cells does not have counts toward nobody and is listed so.
-* **Leader** — the cell's leader on /cells at the month's end. A leader with
-  several cells gets ONE figure over all of them: Σ left ÷ Σ working × 12 (HR's
-  file averaged the cells and then overwrote the average by hand).
+* **Leader** — the cell's OWNER («Egasi», `cells.owner_id`: the leader Verifix
+  seats in the cell) on the month's last day — never its «Boshqaruvchi»
+  (`leader_id`, who runs it), the operator's rule (2026-10-13: «the KPIs will
+  be calculated for the cell owner»). A leader with several cells gets ONE
+  figure over all of them: Σ left ÷ Σ working × 12 (HR's file averaged the
+  cells and then overwrote the average by hand). A leader who runs a cell and
+  owns none is listed apart, unranked («not a cell owner»); a cell with no
+  owner counts toward nobody and is said so. A month frozen before owners
+  were frozen with it reads them off the dated links (`with_owners`), so
+  every month — past ones included — is scored by the owner map.
 * **× 12** — one month as a yearly rate.
 * **Score** — the rate is rounded to one decimal (what the page prints) and
   judged by HR's bands: ≤ 50 → 5, ≤ 60 → 4, ≤ 70 → 3, ≤ 85 → 2, above → 1.
@@ -216,19 +223,22 @@ def points_of(score: Optional[int], r: dict) -> Optional[float]:
 # ── who leads what ────────────────────────────────────────────────────────────
 
 def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
-    """Every /cells cell by code key, with its brigadir and leader — the map a
-    month is attributed by (frozen into the month when its list is taken).
+    """Every /cells cell by code key, with its brigadir, its «Boshqaruvchi»
+    (`leader*`) and its «Egasi» (`owner*`, whom the figure is credited to) —
+    the map a month is attributed by (frozen into the month when its list is
+    taken).
 
-    With `day` (a past month's last day) each cell's brigadir and leader are
-    the ones in force ON that day and `archived` says whether it stood on it
-    (`cell_links` / `cell_archive`, 2026-10-12): a cell handed to another
-    leader since still counts for its leader of that month. With no link
-    changed after `day` the brigadir and leader are the current columns."""
+    With `day` (a past month's last day) each cell's brigadir, manager and
+    owner are the ones in force ON that day and `archived` says whether it
+    stood on it (`cell_links` / `cell_archive`, 2026-10-12): a cell handed to
+    another owner since still counts for its owner of that month. With no link
+    changed after `day` they are the current columns."""
     cells = db.query(Cell).order_by(Cell.verifix_code).all()
     # Only a cell whose link changed after `day` is resolved; every other cell
     # answers by its column — the fast path's own answer.
     units_on: dict = {}
     leaders_on: dict = {}
+    owners_on: dict = {}
     if day is not None:
         from app.services import cell_links
         moved = cell_links.changed_since("manager_id", day)
@@ -237,12 +247,18 @@ def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
         moved = cell_links.changed_since("leader_id", day)
         if moved:
             leaders_on = cell_links.map_on([c for c in cells if c.id in moved], "leader_id", day)
+        moved = cell_links.changed_since("owner_id", day)
+        if moved:
+            owners_on = cell_links.map_on([c for c in cells if c.id in moved], "owner_id", day)
 
     def mid_of(c):
         return units_on.get(c.id, c.manager_id)
 
     def lid_of(c):
         return leaders_on.get(c.id, c.leader_id)
+
+    def oid_of(c):
+        return owners_on.get(c.id, c.owner_id)
 
     if day is not None:
         from app.services import cell_archive
@@ -253,7 +269,7 @@ def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
         def archived_of(c):
             return bool(c.archived_at)
     mids = {mid_of(c) for c in cells if mid_of(c)}
-    lids = {lid_of(c) for c in cells if lid_of(c)}
+    lids = {lid_of(c) for c in cells if lid_of(c)} | {oid_of(c) for c in cells if oid_of(c)}
     mans = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
     leads = {p.id: p for p in db.query(RoleProfile).filter(RoleProfile.id.in_(lids)).all()} if lids else {}
     out: dict[str, dict] = {}
@@ -264,13 +280,39 @@ def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
         mid = mid_of(c)
         m = mans.get(mid)
         p = leads.get(lid_of(c))
+        o = leads.get(oid_of(c))
         out[k] = {
             "id": c.id, "code": c.verifix_code, "archived": archived_of(c),
             "manager_id": mid, "brigadir": m.name if m else None,
             "shift": m.shift if m else None, "factory_id": m.factory_id if m else None,
+            # «Boshqaruvchi» — who runs the cell; shown, never scored.
             "leader_id": p.id if p else None, "leader": p.name if p else None,
             "leader_kind": p.leader_kind if p else None,
+            # «Egasi» — whom the cell's turnover is credited to.
+            "owner_id": o.id if o else None, "owner": o.name if o else None,
+            "owner_kind": o.leader_kind if o else None,
         }
+    return out
+
+
+OWNER_FIELDS = ("owner_id", "owner", "owner_kind")
+
+
+def with_owners(db: Session, cmap: Optional[dict], d: date) -> Optional[dict]:
+    """A frozen month map with each cell's OWNER filled in. Maps frozen before
+    the owner rule (2026-10-13) carry the «Boshqaruvchi» alone, so the owner on
+    the month's last day is read off the dated links — the operator's «every
+    month scored by the owner map». A map frozen with owners is left as it is."""
+    if not cmap or all("owner_id" in v for v in cmap.values()):
+        return cmap
+    now = cell_map(db, d)
+    out = {}
+    for k, v in cmap.items():
+        if "owner_id" in v:
+            out[k] = v
+        else:
+            o = now.get(k) or {}
+            out[k] = {**v, **{f: o.get(f) for f in OWNER_FIELDS}}
     return out
 
 
@@ -391,7 +433,7 @@ def month_state(db: Session, m: date, now: Optional[datetime] = None) -> tuple[s
 
 def capture(db: Session, m: date, at: datetime, source: str = "read") -> int:
     """Take month `m`'s list of people working on its last day from the
-    directory as last read, and freeze the cell → leader map beside it."""
+    directory as last read, and freeze the cell → owner map beside it."""
     d = last_day(m)
     people = mirror_roster(db, d)
     row = db.get(TurnoverMonth, m)
@@ -632,7 +674,7 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             counted = "no_cell"
         else:
             cell(k)["left"] += 1
-            counted = "leader" if c.get("leader_id") else "no_leader"
+            counted = "owner" if c.get("owner_id") else "no_owner"
             if any_scope and not _scope_ok(c, scope):
                 continue
         if counted == "no_cell" and any_scope:
@@ -647,32 +689,47 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             "days": _tenure(p.get("hired"), p.get("dismissed")),
             "reason": p.get("reason"), "note": p.get("note"), "counted": counted,
             "approx": bool(p.get("approx")),
+            "owner_id": (c or {}).get("owner_id"), "owner": (c or {}).get("owner"),
             "leader_id": (c or {}).get("leader_id"), "leader": (c or {}).get("leader"),
             "brigadir": (c or {}).get("brigadir"), "manager_id": (c or {}).get("manager_id"),
         })
     out_leavers.sort(key=lambda x: (x["left"] or "", x["name"]), reverse=True)
 
-    # Cells: every cell anybody stands in, plus every leader's cell (an empty
-    # one says a code does not match — the reader must see it as 0, not miss it).
+    # Cells: every cell anybody stands in, plus every cell somebody owns or
+    # runs (an empty one says a code does not match — the reader must see it
+    # as 0, not miss it).
     for k, c in cmap.items():
-        if c.get("leader_id"):
+        if c.get("owner_id") or c.get("leader_id"):
             cell(k)
     out_cells = []
     for k, c in cells.items():
         if any_scope and not _scope_ok(c, scope):
             continue
-        if c["working"] == 0 and c["left"] == 0 and not c.get("leader_id"):
+        if c["working"] == 0 and c["left"] == 0 and not (c.get("owner_id") or c.get("leader_id")):
             continue
         rt = rate_of(c["left"], c["working"], r)
         out_cells.append({**c, "rate": rt, "score": score_of(rt, r)})
     out_cells.sort(key=lambda c: (c["code"] or ""))
 
-    by_leader: dict[int, list[str]] = defaultdict(list)
+    def brigadirs_of(cs: list[dict]) -> list[dict]:
+        brig, seen = [], set()
+        for c in cs:
+            if c.get("manager_id") and c["manager_id"] not in seen:
+                seen.add(c["manager_id"])
+                brig.append({"id": c["manager_id"], "name": c.get("brigadir"), "shift": c.get("shift")})
+        return brig
+
+    def cells_out(cs: list[dict]) -> list[dict]:
+        return [{"key": c["key"], "id": c["id"], "code": c["code"], "working": c["working"],
+                 "left": c["left"], "archived": c.get("archived")} for c in cs]
+
+    # The KPI is the OWNER's: one figure over every cell they own.
+    by_owner: dict[int, list[str]] = defaultdict(list)
     for k, c in cmap.items():
-        if c.get("leader_id"):
-            by_leader[c["leader_id"]].append(k)
+        if c.get("owner_id"):
+            by_owner[c["owner_id"]].append(k)
     out_leaders = []
-    for lid, keys in by_leader.items():
+    for oid, keys in by_owner.items():
         cs = [cells[k] for k in sorted(keys, key=lambda k: cmap[k].get("code") or "")]
         if any_scope and not any(_scope_ok(c, scope) for c in cs):
             continue
@@ -681,24 +738,37 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
         rt = rate_of(left, working, r)
         sc = score_of(rt, r)
         first = cs[0]
-        brig, seen = [], set()
-        for c in cs:
-            if c.get("manager_id") and c["manager_id"] not in seen:
-                seen.add(c["manager_id"])
-                brig.append({"id": c["manager_id"], "name": c.get("brigadir"), "shift": c.get("shift")})
         out_leaders.append({
-            "id": lid, "name": first.get("leader"), "kind": first.get("leader_kind"),
-            "brigadirs": brig,
-            "cells": [{"key": c["key"], "id": c["id"], "code": c["code"], "working": c["working"],
-                       "left": c["left"], "archived": c.get("archived")} for c in cs],
+            "id": oid, "name": first.get("owner"), "kind": first.get("owner_kind"), "owner": True,
+            "brigadirs": brigadirs_of(cs), "cells": cells_out(cs),
             "working": working, "left": left, "rate": rt, "score": sc, "points": points_of(sc, r),
         })
     out_leaders.sort(key=lambda x: (x["rate"] is None, -(x["rate"] or 0), x["name"] or ""))
 
+    # A leader who RUNS a cell and owns none — listed, never scored: their
+    # cells' figures are their owners'.
+    runs: dict[int, list[str]] = defaultdict(list)
+    for k, c in cmap.items():
+        lid = c.get("leader_id")
+        if lid and lid not in by_owner:
+            runs[lid].append(k)
+    not_owners = []
+    for lid, keys in runs.items():
+        cs = [cells[k] for k in sorted(keys, key=lambda k: cmap[k].get("code") or "")]
+        if any_scope and not any(_scope_ok(c, scope) for c in cs):
+            continue
+        first = cs[0]
+        not_owners.append({
+            "id": lid, "name": first.get("leader"), "kind": first.get("leader_kind"), "owner": False,
+            "brigadirs": brigadirs_of(cs), "cells": cells_out(cs),
+            "working": None, "left": None, "rate": None, "score": None, "points": None,
+        })
+    not_owners.sort(key=lambda x: x["name"] or "")
+
     scoped = out_cells
     working = sum(c["working"] for c in scoped)
     left = sum(c["left"] for c in scoped)
-    left_leader = sum(c["left"] for c in scoped if c.get("leader_id"))
+    left_owner = sum(c["left"] for c in scoped if c.get("owner_id"))
     by_score: dict[str, int] = {str(s): 0 for s in range(1, 6)}
     for x in out_leaders:
         if x["score"] is not None:
@@ -708,9 +778,12 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
     return {
         "totals": {
             "working": working, "left": left, "rate": rt,
-            "left_leader": left_leader, "left_no_leader": left - left_leader,
+            "left_owner": left_owner, "left_no_owner": left - left_owner,
+            # The names a tab on an older bundle reads — the same figures.
+            "left_leader": left_owner, "left_no_leader": left - left_owner,
             "cells": sum(1 for c in scoped if c["working"] or c["left"]),
             "leaders": len(out_leaders),
+            "not_owners": len(not_owners),
             "scored": sum(1 for x in out_leaders if x["score"] is not None),
             "no_people": sum(1 for x in out_leaders if x["working"] == 0),
             "by_score": by_score,
@@ -718,7 +791,7 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             "unregistered_working": sum(u["working"] for u in unregistered),
             "other_left": 0 if any_scope else other_left,
         },
-        "leaders": out_leaders, "cells": out_cells, "leavers": out_leavers,
+        "leaders": [*out_leaders, *not_owners], "cells": out_cells, "leavers": out_leavers,
         "unregistered": unregistered,
     }
 
@@ -740,7 +813,7 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
         leavers = live_leavers(db, m, d)
         if row and row.roster_at:
             roster, dropped = _drop_leavers(_frozen(db, m, "roster"), leavers)
-            return {"roster": roster, "leavers": leavers, "cmap": row.cell_map or cell_map(db, d),
+            return {"roster": roster, "leavers": leavers, "cmap": with_owners(db, row.cell_map, d) or cell_map(db, d),
                     "rule": rule(db), "as_of": d, "source": row.roster_source or "read",
                     "dropped": dropped, "late": []}
         return {"roster": mirror_roster(db, d), "leavers": leavers, "cmap": cell_map(db, d),
@@ -748,7 +821,8 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
     if state == "saved":
         frozen = _frozen(db, m, "leaver")
         roster, dropped = _drop_leavers(_frozen(db, m, "roster"), frozen)
-        return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db, d),
+        return {"roster": roster, "leavers": frozen,
+                "cmap": with_owners(db, row.cell_map if row else None, d) or cell_map(db, d),
                 "rule": (row.rule if row and row.rule else rule(db)), "as_of": d, "source": "past",
                 "dropped": dropped, "late": []}
     # closed — everything from the frozen rows; what Verifix says SINCE the
@@ -771,7 +845,8 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
         if k not in live_keys:
             late.append({"kind": "gone", "name": p["name"], "code": p.get("code"),
                          "left": p["dismissed"].isoformat() if p.get("dismissed") else None, "seen": None})
-    return {"roster": roster, "leavers": frozen, "cmap": (row.cell_map if row else None) or cell_map(db, d),
+    return {"roster": roster, "leavers": frozen,
+            "cmap": with_owners(db, row.cell_map if row else None, d) or cell_map(db, d),
             "rule": (row.rule if row and row.rule else rule(db)), "as_of": d,
             "source": (row.roster_source if row else None) or "read", "dropped": dropped, "late": late}
 

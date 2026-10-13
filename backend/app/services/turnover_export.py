@@ -8,8 +8,10 @@ still gets a readable file. The house report style is `quality_export`'s.
 
     Umumiy          banner · scope · KPI cards · the formula · the score bands
                     · what counts toward nobody
-    Liderlar        one row per leader — the KPI itself, in the screen's order
-    Yacheykalar     one row per cell
+    Liderlar        one row per leader — the KPI itself (cell OWNERS), in the
+                    screen's order; leaders who run a cell and own none follow,
+                    marked and unscored
+    Yacheykalar     one row per cell, with its owner and its manager
     Ketganlar       every person who left, with where they were counted
     Ishlayotganlar  every person counted as working at the month's end
 """
@@ -43,8 +45,12 @@ LABELS_UZ = {
     "colDays": "Ishlagan kuni", "colReason": "Sabab", "colNote": "Izoh", "colCounted": "Kimga hisoblandi",
     "countedLeader": "Liderga", "countedNoLeader": "Lidersiz yacheyka", "countedNoCell": "Yacheyka /cells'da yo'q",
     "noLeader": "Lider yo'q", "noRate": "—",
+    "colOwner": "Egasi", "colManager": "Boshqaruvchi",
+    "countedOwner": "Egasiga", "countedNoOwner": "Egasi yo'q yacheyka", "noOwner": "Egasi yo'q",
+    "notOwner": "Yacheyka egasi emas",
     "formulaLines": [],
     "nobodyNoLeader": "Lidersiz yacheykalardan ketganlar",
+    "nobodyNoOwner": "Egasi yo'q yacheykalardan ketganlar",
     "nobodyNoCell": "/cells'da yo'q kodlar",
     "nobodyOther": "Yacheyka bo'lmagan bo'limlardan ketganlar (KPI'ga kirmaydi)",
 }
@@ -165,8 +171,8 @@ def _summary(wb: Workbook, p: dict) -> None:
     row += 1
 
     nobody = []
-    if t.get("left_no_leader"):
-        nobody.append((_l(p, "nobodyNoLeader"), t["left_no_leader"]))
+    if t.get("left_no_owner"):
+        nobody.append((_l(p, "nobodyNoOwner"), t["left_no_owner"]))
     for u in pay.get("unregistered") or []:
         nobody.append((f"{_l(p, 'nobodyNoCell')}: {u.get('code') or '—'} {_text(p, u.get('unit'))}",
                        f"{u.get('left', 0)} / {u.get('working', 0)}"))
@@ -196,12 +202,22 @@ def _leaders(wb: Workbook, p: dict) -> None:
     labels = [_l(p, k) for k in ("colN", "colLeader", "colBrigadir", "colCells", "colWorking", "colLeft",
                                  "colRate", "colScore", "colPoints")]
     row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
+    # Owners first (the KPI); a leader who runs a cell and owns none follows,
+    # unnumbered and unscored — their cells' figures are their owners'.
+    rows = [x for x in rows if x.get("owner") is not False] + [x for x in rows if x.get("owner") is False]
     out = []
-    for i, x in enumerate(rows, 1):
+    n = 0
+    for x in rows:
         brig = ", ".join(_name(p, b.get("name")) for b in x.get("brigadirs") or []) or "—"
         cells = ", ".join(c.get("code") or "" for c in x.get("cells") or [])
+        if x.get("owner") is False:
+            out.append((["", f"{_name(p, x.get('name'))} — {_l(p, 'notOwner')}", brig, cells,
+                         None, None, None, None, None],
+                        {"centers": (0, 3), "tints": {1: SLATE}}))
+            continue
+        n += 1
         tone = _score_color(x.get("score")) if x.get("score") is not None else None
-        out.append(([i, _name(p, x.get("name")), brig, cells, x.get("working", 0), x.get("left", 0),
+        out.append(([n, _name(p, x.get("name")), brig, cells, x.get("working", 0), x.get("left", 0),
                      x.get("rate"), x.get("score"), x.get("points")],
                     {"fmts": {6: '0.0"%"', 8: "0.00"}, "tints": {7: tone} if tone else {}, "centers": (0, 3)}))
     _table(ws, row, C1, labels, out)
@@ -209,17 +225,19 @@ def _leaders(wb: Workbook, p: dict) -> None:
 
 def _cells(wb: Workbook, p: dict) -> None:
     pay = p["payload"]
-    ws = _sheet(wb, _l(p, "sheetCells"), {2: 12, 3: 32, 4: 28, 5: 8, 6: 14, 7: 12, 8: 14}, landscape=True)
+    ws = _sheet(wb, _l(p, "sheetCells"), {2: 12, 3: 32, 4: 32, 5: 28, 6: 8, 7: 14, 8: 12, 9: 14},
+                landscape=True)
     C1 = 2
-    labels = [_l(p, k) for k in ("colCell", "colLeader", "colBrigadir", "colShift", "colWorking", "colLeft",
-                                 "colRate")]
+    labels = [_l(p, k) for k in ("colCell", "colOwner", "colManager", "colBrigadir", "colShift", "colWorking",
+                                 "colLeft", "colRate")]
     row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
     out = []
     for c in pay.get("cells") or []:
-        out.append(([c.get("code"), _name(p, c.get("leader")) if c.get("leader") else _l(p, "noLeader"),
+        out.append(([c.get("code"), _name(p, c.get("owner")) if c.get("owner") else _l(p, "noOwner"),
+                     _name(p, c.get("leader")) if c.get("leader") else None,
                      _name(p, c.get("brigadir")), c.get("shift"), c.get("working", 0), c.get("left", 0),
                      c.get("rate")],
-                    {"fmts": {6: '0.0"%"'}, "centers": (0, 3)}))
+                    {"fmts": {7: '0.0"%"'}, "centers": (0, 4)}))
     _table(ws, row, C1, labels, out)
 
 
@@ -228,19 +246,19 @@ def _left(wb: Workbook, p: dict) -> None:
     ws = _sheet(wb, _l(p, "sheetLeft"), {2: 34, 3: 10, 4: 28, 5: 24, 6: 22, 7: 12, 8: 12, 9: 10, 10: 30, 11: 30,
                                         12: 22}, landscape=True)
     C1 = 2
-    labels = [_l(p, k) for k in ("colName", "colCell", "colLeader", "colBrigadir", "colJob", "colHired",
+    labels = [_l(p, k) for k in ("colName", "colCell", "colOwner", "colBrigadir", "colJob", "colHired",
                                  "colLeftOn", "colDays", "colReason", "colNote", "colCounted")]
     row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
-    counted = {"leader": _l(p, "countedLeader"), "no_leader": _l(p, "countedNoLeader"),
+    counted = {"owner": _l(p, "countedOwner"), "no_owner": _l(p, "countedNoOwner"),
                "no_cell": _l(p, "countedNoCell")}
     out = []
     for x in pay.get("leavers") or []:
-        out.append(([_name(p, x.get("name")), x.get("code"), _name(p, x.get("leader")) if x.get("leader") else None,
+        out.append(([_name(p, x.get("name")), x.get("code"), _name(p, x.get("owner")) if x.get("owner") else None,
                      _name(p, x.get("brigadir")) if x.get("brigadir") else None, _text(p, x.get("job")),
                      _d(x.get("hired")), _d(x.get("left")), x.get("days"), _text(p, x.get("reason")),
                      _text(p, x.get("note")), counted.get(x.get("counted"), x.get("counted"))],
                     {"fmts": {5: "DD.MM.YYYY", 6: "DD.MM.YYYY"}, "centers": (1, 5, 6),
-                     "tints": {} if x.get("counted") == "leader" else {10: SLATE}}))
+                     "tints": {} if x.get("counted") == "owner" else {10: SLATE}}))
     _table(ws, row, C1, labels, out)
 
 
@@ -249,12 +267,12 @@ def _working(wb: Workbook, p: dict) -> None:
     names = p.get("working") or {}
     ws = _sheet(wb, _l(p, "sheetWorking"), {2: 12, 3: 30, 4: 36, 5: 26, 6: 13}, landscape=False)
     C1 = 2
-    labels = [_l(p, k) for k in ("colCell", "colLeader", "colName", "colJob", "colHired")]
+    labels = [_l(p, k) for k in ("colCell", "colOwner", "colName", "colJob", "colHired")]
     row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
     out = []
     for c in pay.get("cells") or []:
         for person in names.get(c.get("key")) or []:
-            out.append(([c.get("code"), _name(p, c.get("leader")) if c.get("leader") else _l(p, "noLeader"),
+            out.append(([c.get("code"), _name(p, c.get("owner")) if c.get("owner") else _l(p, "noOwner"),
                          _name(p, person.get("name")), _text(p, person.get("job")), _d(person.get("hired"))],
                         {"fmts": {4: "DD.MM.YYYY"}, "centers": (0, 4)}))
     _table(ws, row, C1, labels, out)

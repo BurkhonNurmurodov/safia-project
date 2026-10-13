@@ -649,10 +649,14 @@ the same person.
   Verifix SEATS in the cell — a working employee with a leader's job whose org
   unit is the cell. It moves NOTHING (no unit, no checklist), and any leader may
   own a cell, one in another unit or in none.
-- **«Ishchi havotirlari» reads the Egasi from 2026-10-13** (see that section:
-  a worker concern counts for its cell's owner on the filing day). «Kadrlar
-  qo'nimsizligi» does not yet — switching it (every turnover month scored by
-  the Egasi map) is a separate step. Every other page ranks as now.
+- **Both KPI pages read the Egasi from 2026-10-13** (the operator: «the KPIs
+  will be calculated for the cell owner» — reversing the 12 Oct ruling 8 that
+  had them rank by `leader_id`). «Ishchi havotirlari»: a worker concern counts
+  for its cell's owner on the filing day; «Kadrlar qo'nimsizligi»: a cell's
+  turnover counts for its owner on the month's last day, every month (past
+  ones included) scored by the owner map. On both a leader who runs a cell and
+  owns none is shown unranked («Yacheyka egasi emas»). See their sections.
+  Every other page ranks as now.
 - (SUPERSEDED 2026-10-12: «Egasi» is the Verifix seat and nothing else — the
   manual owner and its picker are retired; a person's choice lives on the
   «Boshqaruvchi», picked from the unit's Verifix workers. See «Cells, leaders
@@ -2620,11 +2624,22 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   freezers 17xx/18xx, 0611 — carry the code only in the name), matched to
   /cells; a unit that is anybody's DEPARTMENT (`division_id`) is never a cell.
   A code /cells lacks counts toward nobody and is NAMED on the page.
-- **A leader with several cells gets ONE figure**: Σ left ÷ Σ working × 12 (HR
-  averaged the cells, then overwrote the average by hand). Leader = /cells at
-  the month's end. Cells with no leader, codes not on /cells, units that are not
-  cells and leaders whose cells hold nobody are each counted and said in the
-  «Hech kimning baliga…» card — never silently dropped.
+- **A cell's turnover is its OWNER's** (from 2026-10-13, the operator: «the
+  KPIs will be calculated for the cell owner») — `cells.owner_id`, the «Egasi»
+  Verifix seats in the cell, on the month's last day (`cell_links`), never the
+  «Boshqaruvchi» (`leader_id`), who is shown beside it on «Yacheykalar» and
+  scored nothing. A leader who owns several cells gets ONE figure: Σ left ÷ Σ
+  working × 12 (HR averaged the cells, then overwrote the average by hand). A
+  leader who RUNS a cell and owns none is listed after the ranking, unnumbered
+  and unscored («Yacheyka egasi emas», `owner: false` on the row, the workbook
+  marks them too). Cells with no owner (Verifix seats nobody there, or two),
+  codes not on /cells, units that are not cells and owners whose cells hold
+  nobody are each counted and said in the «Hech kimning baliga…» card — never
+  silently dropped. **History re-read**: a month frozen before owners were
+  frozen with it (every saved past month) takes them from the dated links
+  through `turnover.with_owners`; a capture from now on freezes `owner*` in
+  the month's map. Totals carry `left_owner` / `left_no_owner` (and the old
+  `left_leader` / `left_no_leader` names, same values, for an older tab).
 - **Verifix keeps only TODAY's placement** (and a re-hire erases the earlier
   dismissal from its directory), so the platform keeps its own history: a
   nightly read at **23:40** (+ a boot catch-up when the last good read is
@@ -2635,7 +2650,7 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   dismissal journal (`pro/` else `start/dismissal$list`) and never move a figure.
 - **Month life**: the current month is computed from the last read («so far»,
   provisional); the first complete read at or after **23:00 on the last day**
-  TAKES the month's working list + the cell → leader map (`turnover_months`,
+  TAKES the month's working list + the cell → owner map (`turnover_months`,
   `turnover_month_people` kind roster) — the exact denominator; the month stays
   open for late dismissal orders until the **5th at 09:00**, then closes by
   itself (`auto_close`, daily 09:05) and its leavers freeze too. A dismissal
@@ -2647,7 +2662,7 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   on a fresh read (`POST /compute` → `save_past`). Built from today's directory:
   leavers by dismissal date, re-hired ones from the dismissal journal (`approx`,
   placed by today's unit, marked ≈); working people by their CURRENT unit,
-  leaders by today's /cells — so a saved past month is approximate and the page
+  owners as the dated links answer — so a saved past month is approximate and the page
   says so. `PAST_FROM` / `START_MONTH` are the two floors.
 - `turnover_month_people.approx` arrived after the tables shipped (v4.230.1,
   swept in by another session's auto-commit), so `startup.add_turnover_month_people_approx`
