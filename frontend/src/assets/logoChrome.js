@@ -12,8 +12,9 @@
 // it's gone" symptom). A data URI has no URL to fetch, so nothing can intercept
 // or poison it.
 //
-// This is a small 192px palette-quantized copy (~8 KB) of frontend/public/
-// logo.png, sized for the 96px loader / 36px sidebar. The full-res /logo.png
+// This is a small 192px palette-quantized copy (~9 KB) of frontend/public/
+// logo.png — the Safia IMS emblem (2026-10-13), transparent outside its
+// circle — sized for the 96px loader / 36px sidebar. The full-res /logo.png
 // stays for the ES5 boot overlay in index.html (which can't import).
 import logoChrome from "./logo-chrome.png?inline";
 

@@ -14,7 +14,8 @@ app»). Three images per screen density:
       the adaptive icon's front layer, 108 dp. A launcher shows only its middle
       72 dp, through whatever mask it likes; the logo fills 80 % of that, the
       same proportion as the PWA's maskable icon, so both installs read alike.
-      The back layer is @color/iconBackground, the disc's own gold.
+      The back layer is @color/iconBackground, the site's ink — the emblem's
+      own ground, so the launcher shows one dark coin, no second colour.
   drawable-*/splash.png
       160 dp, shown centred and unscaled while the site loads — one per
       density so it is the same physical size on every screen.

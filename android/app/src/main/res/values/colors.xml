@@ -3,6 +3,6 @@
     <!-- The site's dark base background, the web manifest's theme_color. -->
     <color name="systemBar">#0F1117</color>
     <color name="splashBackground">#0F1117</color>
-    <!-- The logo disc's own gold (scripts/render-icons.py), behind the adaptive icon. -->
-    <color name="iconBackground">#D5B26F</color>
+    <!-- The site's ink, the emblem's own ground (scripts/render-android-icons.py), behind the adaptive icon. -->
+    <color name="iconBackground">#0F1117</color>
 </resources>

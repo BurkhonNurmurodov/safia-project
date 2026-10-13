@@ -63,9 +63,9 @@ const ROOT_STATICS = [
   '/manifest.webmanifest',
   '/telegram-web-app.js',
   '/favicon.ico',
-  '/favicon-32.png',
-  '/favicon-192.png',
-  '/apple-touch-icon.png',
+  '/favicon-32-v2.png',
+  '/favicon-192-v2.png',
+  '/apple-touch-icon-v2.png',
   '/icons.svg',
   // Drawn by the ES5 boot screens in index.html (stale-version, slow-link,
   // recovery) and fetched by nothing else — the in-app logo is a data URI —

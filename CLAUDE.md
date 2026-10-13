@@ -8795,11 +8795,18 @@ no event; the route is the share sheet).
   dark bar; the manifest carries the dark values because dark is the default
   and a static manifest cannot follow a stored choice.
 - **The icons are rendered from `public/logo.png` by `scripts/render-icons.py`**
-  (Pillow — `backend/venv/bin/python scripts/render-icons.py`), all four
-  together: 192/512 `any` keep the round logo's transparent corners (the
-  favicon look), 192/512 `maskable` put it on the ring gold (`#D5B26F`, the
-  disc's own colour) scaled to the 80% safe zone. Never hand-edit one of them;
-  re-run the script, and rename the outputs (see the Cloudflare note).
+  (Pillow — `backend/venv/bin/python scripts/render-icons.py`), all of them
+  together — the four PWA icons, `favicon.ico`, the two PNG favicons and the
+  apple-touch icon. From **2026-10-13** `logo.png` is the Safia IMS EMBLEM
+  (the mascot inside a gold gauge ring, a bar chart in the ring's opening,
+  on the site's ink `#0F1117`, transparent outside its inscribed circle):
+  192/512 `any` keep those transparent corners (the favicon look), 192/512
+  `maskable` put it on INK scaled to the 80% safe zone, the apple-touch icon
+  is flattened onto ink. Never hand-edit one of them; re-run the script,
+  which also deletes the previous tag's files — the outputs carry a suffix
+  (`-v2`) that the manifest, index.html and `ROOT_STATICS` name, and a
+  re-render bumps it (see the Cloudflare note). The sidebar / loader / login
+  copy is `assets/logo-chrome.png` (192 px, palette-quantised, inlined).
 - An installed iOS app keeps its own storage, so the login is entered once
   more there; nothing else about the session model changes (`webSession`, the
   profile wallet and the JWT are exactly what the browser tab holds).
