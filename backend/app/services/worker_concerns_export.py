@@ -231,7 +231,9 @@ def _cells_block(ws: Worksheet, row: int, c1: int, p: dict) -> int:
     c2 = c1 + 7
     start = row
     row = _section(ws, row, c1, c2, lbl.get("secCells", ""), lbl.get("secCellsSub", ""))
-    _head_spans(ws, row, c1, [(lbl.get("colCell", ""), 2), (lbl.get("colLeader", ""), 4),
+    # A cell is named by its owner (routers/worker_concerns._cell_owner_names).
+    _head_spans(ws, row, c1, [(lbl.get("colCell", ""), 2),
+                              (lbl.get("colCellOwner") or lbl.get("colLeader", ""), 4),
                               (lbl.get("colOpen", ""), 1), (lbl.get("colTotal", ""), 1)])
     head_row = row
     row += 1
@@ -394,7 +396,10 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
 
     row = _section(ws, row, C1, C2, lbl.get("secLeaders", ""),
                    f'{lbl.get("secLeadersSub", "")} · {_n(len(rows))} {lbl.get("leadersWord", "")}')
-    head = [lbl.get("colLeader", ""), lbl.get("colBrig", ""), lbl.get("colCells", ""),
+    # Every row is a cell OWNER — the person the concerns of their cells count
+    # for (routers/worker_concerns._owner) — but the ones who own none.
+    head = [lbl.get("colCellOwner") or lbl.get("colLeader", ""), lbl.get("colBrig", ""),
+            lbl.get("colCells", ""),
             lbl.get("colTotal", "")] + [_st_label(p, s) for s in sts] \
         + [lbl.get("colOpen", ""), lbl.get("colPct", "")]
     _head_row(ws, row, C1, head, span=1)
@@ -411,7 +416,12 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     for i, r in enumerate(rows):
         bg = _fill(PANEL if i % 2 == 0 else BAND)
         name = r.get("leader") or "—"
-        if "kind" in r and r["kind"] != "leader":
+        if r.get("owner") is False:
+            # A leader who owns no cell: listed, never ranked — their cells'
+            # concerns count for the cells' owners.
+            if lbl.get("notOwnerTag"):
+                name = f"{name} — {lbl['notOwnerTag']}"
+        elif "kind" in r and r["kind"] != "leader":
             tag = kind_lbl.get(r["kind"] or "none")
             if tag:
                 name = f"{name} — {tag}"

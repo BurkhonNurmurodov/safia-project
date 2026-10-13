@@ -33,19 +33,28 @@ aggregate, the register and the export read the same expression, so
 done ÷ rated, rated = total − uplifted (``_rated``), computed here; «open» is
 what still waits on the leader (doing + todo).
 
-Attribution is the ROW's own, never a registry lookup: the LEADER the worker
-filed to (``leader_profile_id`` — the cell's owner at filing time, the person
-who had to answer it, printed under their CURRENT profile name), the UNIT it
-was filed under (``brigadir_manager_id``) and the CELL it names. A cell handed
-to another leader later does not take its history with it. A row with no leader
-surfaces as an explicit «unassigned» bucket — counted, never ranked.
+A concern counts for the CELL'S OWNER (the operator, 2026-10-13: «show every
+single leader who owns a cell … rank based on the cell and write the cell
+owner's name»): the «Egasi» — ``cells.owner_id``, the leader Verifix seats in
+the cell — of the cell the concern names, AS IT STOOD ON THE FILING DAY
+(services/cell_links, the dated reading every past-day reader uses: a seat
+that moves later does not take its history with it). ``_owner`` is that rule
+as SQL and its only spelling: the leader filter, a leader's own
+lock, every aggregate and the export read it. The leader the worker FILED to
+(``leader_profile_id`` — the cell's «Boshqaruvchi», who answers it on
+/cell-concerns) is in most cells the same person; the register still prints
+whom it was filed to, beside the owner. The UNIT is the one it was filed under
+(``brigadir_manager_id``). A concern whose cell had no owner that day surfaces
+as an explicit «unassigned» bucket — counted, never ranked.
 
-Leaders with fewer than MIN_RANKED rated concerns in the window are reported
-but flagged unranked — a leader with one concern must not out-rank one with a
-hundred at 93%. So is every profile that is not a LEADER on Verifix
-(``role_profiles.leader_kind`` other than "leader" — «Lider o'rnida» or not
-determined, services/leader_kind.py): the operator, 2026-10-04, «rank only
-those who are actually leaders». Their rows stay on the table, unranked.
+The table lists EVERY leader who owns a cell standing today (``_owners``),
+concerns or not; a leader of the old roster who owns none is listed apart,
+unranked («not a cell owner»). Leaders with fewer than MIN_RANKED rated
+concerns in the window are reported but flagged unranked — a leader with one
+concern must not out-rank one with a hundred at 93%. So is every profile that
+is not a LEADER on Verifix (``role_profiles.leader_kind`` other than "leader"
+— «Lider o'rnida» or not determined, services/leader_kind.py): the operator,
+2026-10-04, «rank only those who are actually leaders».
 
 Scoping (the page opens to supervisor + leader by default), narrowed the way
 /concerns narrows these same rows:
@@ -53,7 +62,8 @@ Scoping (the page opens to supervisor + leader by default), narrowed the way
   * admin, top-manager, or a page grant at "all" → everything;
   * shift-manager → the units of their shift ∩ plant (shift_scope);
   * supervisor → their own unit's rows;
-  * leader → the rows filed to THEM (every profile record that is this person);
+  * leader → the rows of the cells THEY owned (every profile record that is
+    this person);
   * any other role → nothing.
 """
 from __future__ import annotations
@@ -65,7 +75,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import case, false, func, or_, select
+from sqlalchemy import (Date, Integer, String, case, cast, column, false, func, null, or_,
+                        select, values)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -73,8 +84,8 @@ from app.identity import viewer_leader_profile_ids
 from app.models import AppSetting, Cell, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
-from app.routers.concerns import _cell_leaders, _no, _shift_unit_ids
-from app.services import action_log
+from app.routers.concerns import _no, _shift_unit_ids
+from app.services import action_log, cell_archive, cell_links
 from app.services.factory_scope import scoped_manager_ids, viewer_factory_id
 from app.services.worker_concerns_export import build_worker_concerns_workbook, whole_pct
 from app.xlsx_delivery import deliver_xlsx
@@ -129,6 +140,61 @@ BUCKET = case(
 # Only a leader on Verifix is ranked (module docstring; services/leader_kind).
 RANKED_KIND = "leader"
 
+# ── who a concern counts for: its cell's owner on the filing day ─────────────
+# The bounds of a span that is open on that side (a date the column can hold).
+_LO = date_cls(1, 1, 1)
+_HI = date_cls(9999, 12, 31)
+_OWNER_KEY = "worker_concerns.owner"
+
+
+def _owner_spans(db: Session) -> list[tuple[str, date_cls, date_cls, int]]:
+    """(cell code, from, until, owner profile id) — every stretch of days a
+    cell had an owner, read off the dated links exactly as
+    `cell_links.value_on` reads them: before the cell's first owner event, that
+    event's `prev`; from each event to the next, its value; the last, once
+    applied, the column. Spans of one code never overlap (`verifix_code` is
+    UNIQUE), so a concern matches at most one."""
+    evs = cell_links.events().get("owner_id", {})
+    out = []
+    for cid, code, cur in db.query(Cell.id, Cell.verifix_code, Cell.owner_id):
+        if not code:
+            continue
+        e = evs.get(cid) or []
+        if not e:
+            if cur:
+                out.append((code, _LO, _HI, cur))
+            continue
+        segs = [(_LO, e[0].eff, e[0].prev)]
+        for i, ev in enumerate(e):
+            last = i == len(e) - 1
+            hi = _HI if last else e[i + 1].eff
+            segs.append((ev.eff, hi, cur if last and ev.applied else ev.value))
+        out.extend((code, lo, hi, v) for lo, hi, v in segs if v and lo < hi)
+    return out
+
+
+def _owner(db: Session):
+    """THE attribution (module docstring): the profile id that owned the
+    concern's cell on its filing day, as one SQL expression — a scalar
+    subquery over this request's owner spans, so it composes into any filter,
+    aggregate or count without a join to forget. Built once per session."""
+    got = db.info.get(_OWNER_KEY)
+    if got is not None:
+        return got
+    rows = _owner_spans(db)
+    if not rows:
+        expr = cast(null(), Integer)
+    else:
+        own = values(column("code", String), column("lo", Date), column("hi", Date),
+                     column("owner", Integer), name="wc_own").data(rows)
+        expr = (select(own.c.owner)
+                .where(own.c.code == LeaderConcern.cell_code,
+                       own.c.lo <= LeaderConcern.entry_date,
+                       LeaderConcern.entry_date < own.c.hi)
+                .limit(1).scalar_subquery())
+    db.info[_OWNER_KEY] = expr
+    return expr
+
 # The register's order: newest filing first, the register number breaking a
 # day's ties — the order /cell-concerns lists the same rows in.
 _ORDER = {
@@ -159,9 +225,11 @@ def _filed(query):
     return query.filter(LeaderConcern.worker_name.isnot(None))
 
 
-def _filed_to(leader_ids: list[int]):
-    """The rows filed to these leader profiles — a leader's own lock."""
-    return LeaderConcern.leader_profile_id.in_(leader_ids) if leader_ids else false()
+def _owned_by(db: Session, leader_ids: list[int]):
+    """The rows that count for these leader profiles — the concerns of the
+    cells they owned on the filing day (`_owner`). A leader's own lock and the
+    Lider filter both read it, so the two can never pick different rows."""
+    return _owner(db).in_(leader_ids) if leader_ids else false()
 
 
 def leader_filings(db: Session, leader_ids: list[int],
@@ -170,7 +238,7 @@ def leader_filings(db: Session, leader_ids: list[int],
     the profile rather than a session: the exam's expected answers (tasks 40
     and 41, services/exam_check) are computed from exactly this, so the number
     a leader reads off the page and the one they are marked against agree."""
-    query = _filed(db.query(LeaderConcern)).filter(_filed_to(leader_ids))
+    query = _filed(db.query(LeaderConcern)).filter(_owned_by(db, leader_ids))
     if date_from:
         query = query.filter(LeaderConcern.entry_date >= date_from)
     if date_to:
@@ -216,7 +284,7 @@ def _viewer_scope(db: Session, payload: dict, query, lock=None):
     if units is not None:
         query = query.filter(_within(LeaderConcern.brigadir_manager_id, units))
     if leaders is not None:
-        query = query.filter(_filed_to(leaders))
+        query = query.filter(_owned_by(db, leaders))
     return query
 
 
@@ -224,11 +292,12 @@ def _roster(db: Session, payload: dict, *, factory: Optional[int] = None,
             manager_id: Optional[list[int]] = None, leader_id: Optional[list[int]] = None,
             cell: Optional[list[str]] = None, lock=None,
             units=_COMPUTE) -> list[tuple[int, str, int]]:
-    """Every leader the KPI table names whether or not anybody filed to them —
-    the /leaders roster rule (a leader profile standing in a unit that is not
-    archived), under the same viewer lock as the rows and the page's scope
-    filters: plant, brigadir, leader, and the owners of the picked cells.
-    → [(profile id, name, unit id)]."""
+    """The /leaders roster rule (a leader profile standing in a unit that is
+    not archived), under the same viewer lock as the rows and the page's scope
+    filters: plant, brigadir, leader, and the leaders running the picked
+    cells. The table lists the ones among them who own no cell apart —
+    unranked, «not a cell owner» (`_with_roster`); the owners come from
+    `_owners`. → [(profile id, name, unit id)]."""
     q = (db.query(RoleProfile.id, RoleProfile.name, RoleProfile.manager_id)
          .join(Manager, Manager.id == RoleProfile.manager_id)
          .filter(RoleProfile.role == "leader", Manager.archived.is_(False)))
@@ -248,6 +317,48 @@ def _roster(db: Session, payload: dict, *, factory: Optional[int] = None,
         q = q.filter(RoleProfile.id.in_(
             select(Cell.leader_id).where(Cell.verifix_code.in_([c.strip() for c in cell]))))
     return [tuple(r) for r in q.order_by(RoleProfile.name).all()]
+
+
+def _owners(db: Session, payload: dict, *, factory: Optional[int] = None,
+            manager_id: Optional[list[int]] = None, leader_id: Optional[list[int]] = None,
+            cell: Optional[list[str]] = None, lock=None,
+            units=_COMPUTE) -> dict[int, dict]:
+    """Every leader who OWNS («Egasi») a cell standing today — listed on the
+    table whether or not a concern was filed in their cells (the operator,
+    2026-10-13). A cell is in the view when its brigadir is: the viewer lock
+    and the plant / brigadir pick narrow the CELLS, the Lider pick the owners,
+    the Yacheyka pick the codes. A cell with no brigadir is reachable only from
+    «All factories», like every unit-less row. A cell of an archived unit is
+    not a cell the view reaches.
+    → {profile id: {"name", "units": {unit ids}, "cells": {codes}, "unit": the
+    profile's own unit}}."""
+    q = (db.query(Cell.owner_id, Cell.verifix_code, Cell.manager_id,
+                  RoleProfile.name, RoleProfile.manager_id)
+         .join(RoleProfile, RoleProfile.id == Cell.owner_id)
+         .outerjoin(Manager, Manager.id == Cell.manager_id)
+         .filter(RoleProfile.role == "leader", Cell.owner_id.isnot(None),
+                 or_(Manager.id.is_(None), Manager.archived.is_(False)),
+                 cell_archive.alive_clause()))
+    lock_units, lock_leaders = lock if lock is not None else _viewer_lock(db, payload)
+    if lock_units is not None:
+        q = q.filter(_within(Cell.manager_id, lock_units))
+    if lock_leaders is not None:
+        q = q.filter(_within(Cell.owner_id, lock_leaders))
+    picked = scoped_manager_ids(db, payload, factory, manager_id or []) if units is _COMPUTE else units
+    if picked is not None:
+        q = q.filter(_within(Cell.manager_id, picked))
+    if leader_id:
+        q = q.filter(Cell.owner_id.in_(leader_id))
+    if cell:
+        q = q.filter(Cell.verifix_code.in_([c.strip() for c in cell]))
+    out: dict[int, dict] = {}
+    for pid, code, mid, name, own_unit in q.all():
+        o = out.setdefault(pid, {"name": name, "units": set(), "cells": set(), "unit": own_unit})
+        if mid:
+            o["units"].add(mid)
+        if code:
+            o["cells"].add(code)
+    return out
 
 
 def _apply_scope_and_filters(
@@ -270,7 +381,7 @@ def _apply_scope_and_filters(
     if units is not None:
         query = query.filter(_within(LeaderConcern.brigadir_manager_id, units))
     if leader_id:
-        query = query.filter(LeaderConcern.leader_profile_id.in_(leader_id))
+        query = query.filter(_owned_by(db, leader_id))
     if cell:
         query = query.filter(LeaderConcern.cell_code.in_([c.strip() for c in cell]))
     # «deferred» is the sheet era's key for the same act (their «O'tqazish»):
@@ -291,9 +402,11 @@ def _apply_scope_and_filters(
             LeaderConcern.worker_name.ilike(like),
             LeaderConcern.leader_name.ilike(like),
             LeaderConcern.cell_code.ilike(like),
-            # The leader's CURRENT name too — the register prints that one.
+            # The leader's CURRENT name too — the register prints that one —
+            # and the cell owner's, whom the concern counts for.
             LeaderConcern.leader_profile_id.in_(
                 select(RoleProfile.id).where(RoleProfile.name.ilike(like))),
+            _owner(db).in_(select(RoleProfile.id).where(RoleProfile.name.ilike(like))),
         ]
         digits = needle.lstrip("№#").strip()
         if digits.isdigit() and len(digits) <= 9:
@@ -350,10 +463,14 @@ def _named(names: dict, key, snapshot: Optional[str]) -> str:
 
 # ── aggregation (ONE pass, shared by /stats, /leaders and the export) ────────
 
-_AGG_COLS = (LeaderConcern.entry_date, BUCKET, LeaderConcern.worker_name,
-             LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
-             LeaderConcern.cell_code, LeaderConcern.leader_profile_id,
-             LeaderConcern.leader_name)
+def _agg_cols(db: Session) -> tuple:
+    """The columns one aggregation pass reads — the leader is the cell's OWNER
+    on the filing day (`_owner`); whom it was filed to rides along only for the
+    name snapshot of an owner whose profile is gone."""
+    return (LeaderConcern.entry_date, BUCKET, LeaderConcern.worker_name,
+            LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
+            LeaderConcern.cell_code, _owner(db), LeaderConcern.leader_profile_id,
+            LeaderConcern.leader_name)
 
 
 def _zero() -> dict:
@@ -408,7 +525,10 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
     snap_unit, snap_leader = {}, {}
 
     unit_leaders: dict = {}
-    for d, st, worker, mid, bname, code, lid, lname in rows:
+    for d, st, worker, mid, bname, code, lid, fid, fname in rows:
+        # The filing's own name snapshot names the owner only where the owner
+        # is whom it was filed to.
+        lname = fname if lid and lid == fid else None
         daily.setdefault(d, _zero())[st] += 1
         if (lo and d < lo) or (hi and d > hi):
             continue
@@ -429,7 +549,8 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
             cell["by_leader"][lid] = cell["by_leader"].get(lid, 0) + 1
         if lid:
             leader_ids.add(lid)
-            snap_leader.setdefault(lid, lname)
+            if lname:
+                snap_leader.setdefault(lid, lname)
             g = leaders.setdefault(lid, {**_zero(), "units": set(), "cells": set()})
             g[st] += 1
             if mid:
@@ -460,15 +581,15 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
         })
     by_brigadir.sort(key=lambda r: -r["total"])
 
-    # A cell is named by its CURRENT leader — «go fix this first» needs the
-    # person who answers for it now — and falls back to who it was filed to.
-    live = _cell_leaders(db)
+    # A cell is named by its owner NOW — the person its concerns count for
+    # from here on — and falls back to whom most of them counted for.
+    live = _cell_owner_names(db)
     top_cells = []
     for code, v in cells.items():
         t = sum(v[s] for s in STATUSES)
-        cid, live_leader, _ = live.get(code) or (None, None, None)
-        # A cell nobody owns now is named after the leader most of its concerns
-        # were filed to (then the lowest id) — the same name on every request.
+        cid, live_leader = live.get(code) or (None, None)
+        # A cell nobody owns now is named after the owner most of its concerns
+        # counted for (then the lowest id) — the same name on every request.
         top = min(v["by_leader"].items(), key=lambda kv: (-kv[1], kv[0]))[0] if v["by_leader"] else None
         leader = live_leader or (_named(lnames, top, snap_leader.get(top)) if top else "")
         top_cells.append({"code": code or "—", "cell_id": cid, "leader": leader,
@@ -505,49 +626,79 @@ def _cell_key(v: str):
     return (len(v), v)
 
 
-def _with_roster(db: Session, by_leader: list[dict], roster, cell: list[str]) -> list[dict]:
-    """The KPI table: the leaders the view's concerns were filed to PLUS every
-    roster leader nobody filed to, at zero (the operator, 2026-10-03: «show all
-    leaders, even those with no concerns»). A leader with no filings is shown,
-    never dropped — an empty row says something a missing one cannot. Every row
-    also names the cells its leader owns now (narrowed to a cell pick), so a
-    leader with nothing filed still says where they work.
+def _cell_owner_names(db: Session) -> dict[str, tuple[int, Optional[str]]]:
+    """cell code → (cell id, its owner's CURRENT name, None when nobody owns
+    it) — what the cells card names a cell by."""
+    return {code: (cid, name) for cid, code, name in
+            db.query(Cell.id, Cell.verifix_code, RoleProfile.name)
+            .outerjoin(RoleProfile, RoleProfile.id == Cell.owner_id)
+            if code}
 
-    THE ranking rule lives here, the one door every leader row passes: a row is
-    ``ranked`` when its profile is a leader on Verifix (``kind``) AND it has
-    MIN_RANKED rated concerns behind it."""
-    ids = {r[0] for r in roster} | {r["leader_id"] for r in by_leader}
-    owned: dict[int, set] = {}
-    if ids:
-        picked = {c.strip() for c in cell}
-        from app.services import cell_archive
-        for lid, code in (db.query(Cell.leader_id, Cell.verifix_code)
-                          .filter(Cell.leader_id.in_(ids),
-                                  cell_archive.alive_clause())):
-            if code and (not picked or code in picked):
-                owned.setdefault(lid, set()).add(code)
+
+def _with_roster(db: Session, by_leader: list[dict], owners: dict[int, dict], roster,
+                 cell: list[str]) -> list[dict]:
+    """The KPI table, three kinds of row:
+
+      * every leader the view's concerns counted for — the owners of their
+        cells on the filing days (`_aggregate`);
+      * every leader who OWNS a cell standing today (`_owners`) and has no
+        concern in the view, at zero — the operator, 2026-10-13: «show every
+        single leader who owns a cell even they don't have the concerns». An
+        empty row says something a missing one cannot;
+      * the roster leaders (`_roster`) who own no cell — ``owner: False``,
+        listed apart and never ranked: their cells' concerns count for the
+        cells' owners.
+
+    Every row names the cells its leader owns now (narrowed to a cell pick) on
+    top of the ones its concerns name, and the brigadirs of those cells — a
+    non-owner, the cells they run. THE ranking rule lives here, the one door
+    every leader row passes: a row is ``ranked`` when its profile is a leader
+    on Verifix (``kind``) AND it has MIN_RANKED rated concerns behind it."""
+    ids = set(owners) | {r[0] for r in roster} | {r["leader_id"] for r in by_leader}
     kinds = _leader_kinds(db, ids)
-    seen = set()
+    units = _units(db, {u for o in owners.values() for u in o["units"]}
+                   | {o["unit"] for o in owners.values() if o["unit"]}
+                   | {mid for _, _, mid in roster})
+
+    def names(mids) -> set:
+        return {units[m].name for m in mids if m in units and units[m].name}
+
+    seen: set = set()
     out = []
     for r in by_leader:
-        seen.add(r["leader_id"])
-        cells = set(r["cells"]) | owned.get(r["leader_id"], set())
-        kind = kinds.get(r["leader_id"])
-        out.append({**r, "cells": sorted(cells, key=_cell_key), "kind": kind,
+        lid = r["leader_id"]
+        seen.add(lid)
+        own = owners.get(lid) or {"cells": set(), "units": set()}
+        kind = kinds.get(lid)
+        out.append({**r,
+                    "cells": sorted(set(r["cells"]) | own["cells"], key=_cell_key),
+                    "brigadirs": sorted(set(r["brigadirs"]) | names(own["units"])),
+                    "kind": kind, "owner": True,
                     "ranked": kind == RANKED_KIND and r["rated"] >= MIN_RANKED})
-    units = _units(db, (mid for _, _, mid in roster))
-    for lid, name, mid in roster:
+
+    def zero(lid, name, brigadirs, cells, owner) -> dict:
+        return {"leader_id": lid, "leader": name or "—", "brigadirs": sorted(brigadirs),
+                "cells": sorted(cells, key=_cell_key),
+                "total": 0, **_zero(), "rated": 0, "open": 0, "pct": None, "pct0": None,
+                "kind": kinds.get(lid), "owner": owner, "ranked": False}
+
+    for lid, o in sorted(owners.items(), key=lambda kv: (kv[1]["name"] or "").casefold()):
         if lid in seen:
             continue
-        m = units.get(mid)
-        out.append({
-            "leader_id": lid, "leader": name or "—",
-            "brigadirs": [m.name] if m and m.name else [],
-            "cells": sorted(owned.get(lid, set()), key=_cell_key),
-            "total": 0, **_zero(), "rated": 0, "open": 0, "pct": None, "pct0": None,
-            "kind": kinds.get(lid), "ranked": False,
-        })
-    out.sort(key=lambda r: -r["total"])     # stable: the zeros keep name order
+        seen.add(lid)
+        out.append(zero(lid, o["name"], names(o["units"]) or names([o["unit"]]), o["cells"], True))
+    rest = [(lid, name, mid) for lid, name, mid in roster if lid not in seen]
+    runs: dict[int, set] = {}
+    if rest:
+        picked = {c.strip() for c in cell}
+        for lid, code in (db.query(Cell.leader_id, Cell.verifix_code)
+                          .filter(Cell.leader_id.in_([lid for lid, _, _ in rest]),
+                                  cell_archive.alive_clause())):
+            if code and (not picked or code in picked):
+                runs.setdefault(lid, set()).add(code)
+    for lid, name, mid in rest:
+        out.append(zero(lid, name, names([mid]), runs.get(lid, set()), False))
+    out.sort(key=lambda r: -r["total"])     # stable: the zeros keep their order
     return out
 
 
@@ -555,9 +706,10 @@ def _ranking_order(rows: list[dict]) -> list[dict]:
     """The ranking's DEFAULT order — ranked leaders by their exact share
     resolved (best first, more concerns first on a tie), then the leaders with
     too few concerns to rank, then the profiles that are not leaders on
-    Verifix, then the ones nobody filed to — the page's groups. The file
-    follows the order the page SENDS (`_in_order`); this is only for a request
-    that sent none, or for a leader the page did not list."""
+    Verifix, then the cell owners with no concern, then the leaders who own no
+    cell — the page's groups. The file follows the order the page SENDS
+    (`_in_order`); this is only for a request that sent none, or for a leader
+    the page did not list."""
     def name(r):
         return (r.get("leader") or "").casefold()
 
@@ -569,7 +721,7 @@ def _ranking_order(rows: list[dict]) -> list[dict]:
             return (1, 0, -t, name(r))
         if t:
             return (2, 0, -t, name(r))
-        return (3, 0, 0, name(r))
+        return (3 if r.get("owner", True) else 4, 0, 0, name(r))
     return sorted(rows, key=key)
 
 
@@ -619,48 +771,61 @@ def get_meta(
 ):
     """Filter options + KPI bands — one boot call for the page. The options
     are what THIS viewer can read (their locks applied, no filter): the units
-    and leaders of their concerns plus the leader ROSTER, because the KPI
-    table lists every leader in scope — a name the table shows must be one the
-    Lider filter can pick. Cells are the ones concerns name."""
+    and leaders of their concerns plus every leader the KPI table lists — the
+    cell OWNERS in view and the roster — because a name the table shows must
+    be one the Lider filter can pick. Cells are the ones concerns name and the
+    ones those owners own. A concern's leader here is its cell's owner on the
+    filing day (`_owner`), the person the Lider filter picks it by."""
     sees_all = page_scope_is_all(db, payload, PAGE_KEY)
     lock = _viewer_lock(db, payload, sees_all)
     base = _viewer_scope(db, payload, _filed(db.query(LeaderConcern)), lock)
     # ONE pass over the viewer's filings, grouped by everything the options
     # need — the units, the leaders, the cells, the count and the first day
-    # are all read off these groups (a few hundred rows, not the filings).
-    groups = (base.with_entities(LeaderConcern.cell_code, LeaderConcern.leader_profile_id,
-                                 LeaderConcern.leader_name, LeaderConcern.brigadir_manager_id,
-                                 func.count(LeaderConcern.id), func.min(LeaderConcern.entry_date))
-              .group_by(LeaderConcern.cell_code, LeaderConcern.leader_profile_id,
-                        LeaderConcern.leader_name, LeaderConcern.brigadir_manager_id)
+    # are all read off these groups (a few hundred rows, not the filings). The
+    # owner is an expression, so it is grouped on through a subquery.
+    sub = base.with_entities(
+        LeaderConcern.id.label("id"), LeaderConcern.entry_date.label("d"),
+        LeaderConcern.cell_code.label("code"), _owner(db).label("lid"),
+        LeaderConcern.leader_profile_id.label("fid"), LeaderConcern.leader_name.label("fname"),
+        LeaderConcern.brigadir_manager_id.label("mid")).subquery()
+    groups = (db.query(sub.c.code, sub.c.lid, sub.c.fid, sub.c.fname, sub.c.mid,
+                       func.count(sub.c.id), func.min(sub.c.d))
+              .group_by(sub.c.code, sub.c.lid, sub.c.fid, sub.c.fname, sub.c.mid)
               .all())
-    total = sum(g[4] for g in groups)
+    total = sum(g[5] for g in groups)
     first = _first_filing(db, payload, lock)
-    unit_ids = {g[3] for g in groups if g[3]}
-    leader_rows = sorted({(g[1], g[2], g[3]) for g in groups},
-                         key=lambda r: (r[0] or 0, r[1] or "", r[2] or 0))
-    lnames = _leader_names(db, (lid for lid, _, _ in leader_rows))
+    unit_ids = {g[4] for g in groups if g[4]}
+    lnames = _leader_names(db, (g[1] for g in groups))
     leader_opts: dict[int, str] = {}
-    # A leader's units: the ones their filings name, plus the unit their
-    # profile stands in — what the Lider list is narrowed by under a pick.
+    # A leader's units: the ones the concerns that counted for them name, plus
+    # the units of the cells they own (else of their profile) — what the Lider
+    # list is narrowed by under a brigadir pick.
     leader_units: dict[int, set] = {}
-    for lid, snap, mid in leader_rows:
+    for code, lid, fid, fname, mid, _n, _d in groups:
         if not lid:
             continue
-        leader_opts.setdefault(lid, _named(lnames, lid, snap))
+        name = lnames.get(lid) or (fname if fid == lid else None)
+        if name:
+            leader_opts.setdefault(lid, name)
         if mid:
             leader_units.setdefault(lid, set()).add(mid)
+    owners = _owners(db, payload, lock=lock)
+    for lid, o in owners.items():
+        leader_opts.setdefault(lid, o["name"] or "—")
+        mids = o["units"] or ({o["unit"]} if o["unit"] else set())
+        leader_units.setdefault(lid, set()).update(mids)
+        unit_ids |= mids
     for lid, name, mid in _roster(db, payload, lock=lock):
         leader_opts.setdefault(lid, name or "—")
         leader_units.setdefault(lid, set()).add(mid)
         unit_ids.add(mid)
     # A cell's units and leaders, from the filings that name it — the same
     # rows a cell pick narrows, so the Yacheyka list cascades under a
-    # brigadir or leader pick without offering a cell that would empty the page.
+    # brigadir or leader pick without offering a cell that would empty the page
+    # — and from who owns it now, so every cell the table names is pickable.
     cell_of: dict[str, dict] = {}
-    for code, lid, mid in {(g[0], g[1], g[3]) for g in groups}:
-        if not code:
-            continue
+
+    def note(code, lid, mid):
         c = cell_of.setdefault(code, {"units": set(), "leaders": set(), "pairs": set()})
         if mid:
             c["units"].add(mid)
@@ -670,6 +835,16 @@ def get_meta(
         # the old unit, so «this leader» and «this unit» separately would offer
         # a cell their combination never touched.
         c["pairs"].add((lid or 0, mid or 0))
+
+    for code, lid, mid in {(g[0], g[1], g[4]) for g in groups}:
+        if code:
+            note(code, lid, mid)
+    if owners:
+        for code, lid, mid in (db.query(Cell.verifix_code, Cell.owner_id, Cell.manager_id)
+                               .filter(Cell.owner_id.in_(list(owners)),
+                                       cell_archive.alive_clause())):
+            if code and code in owners[lid]["cells"]:
+                note(code, lid, mid)
     cells = sorted(cell_of, key=_cell_key)
     units = _units(db, unit_ids)
 
@@ -728,7 +903,7 @@ def get_stats(
     if chart_from and (not wide["date_from"] or chart_from < wide["date_from"]):
         wide["date_from"] = chart_from
     rows = (_apply_scope_and_filters(db, payload, **wide, lock=lock, units=units)
-            .with_entities(*_AGG_COLS).all())
+            .with_entities(*_agg_cols(db)).all())
     agg = _aggregate(db, rows, flt["date_from"], flt["date_to"])
     return {
         # `undated_in_scope` is the sheet era's unreadable date; a filing
@@ -809,18 +984,20 @@ def get_leaders(
     payload: dict = Depends(require_page(PAGE_KEY)),
     flt: dict = Depends(_filter_params),
 ):
-    """The KPI table: one row per leader in scope — every leader the view's
-    concerns were filed to, and every roster leader nobody filed to, at zero.
-    Concerns with no leader fold into one explicit «unassigned» summary —
+    """The KPI table: one row per leader in scope — every cell owner the
+    view's concerns counted for, every owner of a standing cell with none, at
+    zero, and the roster leaders who own no cell (`_with_roster`). Concerns
+    whose cell had no owner fold into one explicit «unassigned» summary —
     counted, displayed, never ranked."""
     lock = _viewer_lock(db, payload)
     units = scoped_manager_ids(db, payload, flt["factory"], flt["manager_id"])
     rows = (_apply_scope_and_filters(db, payload, **flt, lock=lock, units=units)
-            .with_entities(*_AGG_COLS).all())
+            .with_entities(*_agg_cols(db)).all())
     agg = _aggregate(db, rows, flt["date_from"], flt["date_to"])
-    roster = _roster(db, payload, factory=flt["factory"], manager_id=flt["manager_id"],
-                     leader_id=flt["leader_id"], cell=flt["cell"], lock=lock, units=units)
-    out = _with_roster(db, agg["leaders"], roster, flt["cell"])
+    scope = dict(factory=flt["factory"], manager_id=flt["manager_id"],
+                 leader_id=flt["leader_id"], cell=flt["cell"], lock=lock, units=units)
+    out = _with_roster(db, agg["leaders"], _owners(db, payload, **scope),
+                       _roster(db, payload, **scope), flt["cell"])
     return {
         "rows": out,
         # The cells the rows name → their register ids, for the page's links.
@@ -834,12 +1011,16 @@ def get_leaders(
 
 def _register_rows(db: Session, items) -> list[dict]:
     """The register's wire shape — one row per filing, with what the detail
-    view needs to say where an uplifted concern sits now."""
-    lnames = _leader_names(db, (c.leader_profile_id for c, _ in items))
-    units = _units(db, (c.brigadir_manager_id for c, _ in items))
-    cids = _cell_ids(db, (c.cell_code for c, _ in items))
+    view needs to say where an uplifted concern sits now. `items` are
+    (concern, bucket, cell owner on the filing day) — the owner is whom the
+    concern counts for (`_owner`), `leader` whom it was filed to."""
+    items = list(items)
+    lnames = _leader_names(db, [c.leader_profile_id for c, _, _ in items]
+                           + [o for _, _, o in items])
+    units = _units(db, (c.brigadir_manager_id for c, _, _ in items))
+    cids = _cell_ids(db, (c.cell_code for c, _, _ in items))
     out = []
-    for c, st in items:
+    for c, st, oid in items:
         m = units.get(c.brigadir_manager_id)
         out.append({
             "id": c.id, "no": _no(c),
@@ -847,6 +1028,9 @@ def _register_rows(db: Session, items) -> list[dict]:
             "cell": c.cell_code, "cell_id": cids.get(c.cell_code),
             "leader": _named(lnames, c.leader_profile_id, c.leader_name),
             "leader_id": c.leader_profile_id,
+            "cell_owner": (_named(lnames, oid, c.leader_name if oid == c.leader_profile_id else None)
+                           if oid else None),
+            "cell_owner_id": oid,
             "owner": c.worker_name, "text": c.concern_text,
             "st": st, "status": c.status, "level": c.level or "supervisor",
             "category": c.category,
@@ -875,7 +1059,7 @@ def get_list(
     if open_only:
         query = query.filter(func.coalesce(LeaderConcern.status, "") != "done")
     total = query.count()
-    items = (query.with_entities(LeaderConcern, BUCKET)
+    items = (query.with_entities(LeaderConcern, BUCKET, _owner(db))
              .order_by(*(_ORDER.get(sort) or _ORDER["date_desc"]))
              .offset((page - 1) * page_size).limit(page_size).all())
     return {"total": total, "page": page, "page_size": page_size,
@@ -961,8 +1145,10 @@ def export_excel(
     # redefine (pick «done» and every leader reads 100%) — the page offers the
     # status filter on its register only, and so does the file.
     kpi_flt = {**flt, "status": []}
+    scope = dict(factory=f.factory, manager_id=f.manager_id, leader_id=f.leader_id,
+                 cell=f.cell, lock=lock, units=units)
     rows = (_apply_scope_and_filters(db, payload, **kpi_flt, lock=lock, units=units)
-            .with_entities(*_AGG_COLS).all())
+            .with_entities(*_agg_cols(db)).all())
     agg = _aggregate(db, rows, f.date_from, f.date_to)
 
     top_cells = [c for c in agg["top_cells"] if c["open"] > 0][:12]
@@ -987,7 +1173,7 @@ def export_excel(
     # The register: same scope + the text search, ALL rows in on-screen order.
     reg = _register_rows(db, (
         _apply_scope_and_filters(db, payload, **flt, q=f.q, lock=lock, units=units)
-        .with_entities(LeaderConcern, BUCKET)
+        .with_entities(LeaderConcern, BUCKET, _owner(db))
         .order_by(*(_ORDER.get(f.sort) or _ORDER["date_desc"])).all()
     ))
 
@@ -1010,10 +1196,9 @@ def export_excel(
             # what the screen grades.
             "plain": bool(f.date_from and f.date_to
                           and 0 < (f.date_to - f.date_from).days + 1 < SHORT_PERIOD_DAYS),
-            "rows": _in_order(_with_roster(db, agg["leaders"], _roster(
-                db, payload, factory=f.factory, manager_id=f.manager_id,
-                leader_id=f.leader_id, cell=f.cell, lock=lock, units=units), f.cell),
-                body.leader_order),
+            "rows": _in_order(_with_roster(
+                db, agg["leaders"], _owners(db, payload, **scope),
+                _roster(db, payload, **scope), f.cell), body.leader_order),
             "unassigned": agg["unassigned"],
             "undated": 0,
             "bands": get_bands(db),

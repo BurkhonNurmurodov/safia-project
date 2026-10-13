@@ -649,12 +649,10 @@ the same person.
   Verifix SEATS in the cell — a working employee with a leader's job whose org
   unit is the cell. It moves NOTHING (no unit, no checklist), and any leader may
   own a cell, one in another unit or in none.
-- **Nothing reads the Egasi yet.** «Kadrlar qo'nimsizligi» and «Ishchi
-  havotirlari» switch to it in the NEXT step, after the operator has read the
-  pass report: there only owned cells will count, a leader owning none shown
-  unranked («not a cell owner»), history re-read (every past worker concern for
-  its cell's Egasi, every turnover month scored by the Egasi map). Every other
-  page ranks as now.
+- **«Ishchi havotirlari» reads the Egasi from 2026-10-13** (see that section:
+  a worker concern counts for its cell's owner on the filing day). «Kadrlar
+  qo'nimsizligi» does not yet — switching it (every turnover month scored by
+  the Egasi map) is a separate step. Every other page ranks as now.
 - (SUPERSEDED 2026-10-12: «Egasi» is the Verifix seat and nothing else — the
   manual owner and its picker are retired; a person's choice lives on the
   «Boshqaruvchi», picked from the unit's Verifix workers. See «Cells, leaders
@@ -2451,23 +2449,40 @@ structure changed the same day — see the redesign bullets below).
   uplifted count as `↑N` under «Jami» and the headline/dialog say «N kept by
   the leader … M escalated — not in the %» (`OfLine`). Level moves only on an
   escalate or a return, so a concern sent back down is the leader's again.
-- **Attribution is the row's own**: the leader it was filed to
-  (`leader_profile_id`, printed under the CURRENT profile name), its unit
-  (`brigadir_manager_id`), its cell code. Leaders are picked by PROFILE id
-  (`leader_id`, client key `wc_lead_ids`).
+- **A concern counts for its CELL'S OWNER** (2026-10-13, the operator: «show
+  every single leader who owns a cell even they don't have the concerns … rank
+  based on the cell and write the cell owner's name»): the «Egasi»
+  (`cells.owner_id`, the Verifix seat) of the cell it names, AS IT STOOD ON THE
+  FILING DAY — `cell_links`' dated reading, so a seat that moves later keeps
+  its history. `_owner(db)` is THE rule and its only spelling: a scalar
+  subquery over the request's owner spans (`_owner_spans`, a VALUES list
+  mirroring `cell_links._resolve`), cached on `db.info`, so it composes into
+  every filter, aggregate and count with no join to forget. It decides the
+  ranking rows, the Lider filter (`_owned_by`), a LEADER's own lock and page
+  (and so exam tasks 40/41 through `leader_filings`), `/meta`'s Lider and
+  Yacheyka options, and the cells card's name (the cell's owner now). The unit
+  is still the row's own (`brigadir_manager_id`). A concern whose cell had no
+  owner that day is the «unassigned» bucket («egasi yo'q yacheykalarda»). The
+  register keeps printing whom it was FILED to (`leader`, the «Boshqaruvchi»
+  who answers it on /cell-concerns) and carries `cell_owner` beside it — the
+  detail dialog names both. Leaders are picked by PROFILE id (`leader_id`,
+  client key `wc_lead_ids`).
 - **Scope**: admin / top-manager / a page grant at "all" → everything;
   shift-manager → shift ∩ plant units; supervisor → their unit; leader → the
   rows filed to them (`identity.leader_profile_ids_of`, every record that is
   that person); any other role → nothing. The plant lock rides on top.
-- **«Liderlar KPI» lists EVERY leader in scope** (the operator, same day): the
-  leaders the view's concerns were filed to plus the ROSTER — `_roster`, the
-  /leaders rule (a leader profile in a unit that is not archived) under the
-  same `_viewer_lock` as the rows and the page's plant / brigadir / leader /
-  cell filters (a cell pick keeps its current owners). A leader nobody wrote to
-  is a row of zeros marked «havotir yo'q» with a chip of its own, never graded
-  and never «kam ma'lumot»; the status filter does not narrow the roster. The
-  Excel leaders sheet is the same list, and `/meta`'s Lider and Brigadir
-  options include the roster so every name on the table can be picked.
+- **«Liderlar KPI» lists EVERY cell owner in scope** (`_with_roster`): the
+  owners the view's concerns counted for, plus every leader who owns an alive
+  cell today (`_owners` — the cell's brigadir is what the viewer lock and the
+  plant / brigadir pick narrow; a brigadir-less cell only under «All
+  factories»), at zero when nothing was filed in their cells — SHOWN, never
+  folded («Bu davrda yacheykalarida havotir yo'q»), never graded, never «kam
+  ma'lumot». The /leaders roster leaders (`_roster`) who own no cell are rows
+  with `owner: false`, folded at the bottom («Yacheyka egasi emas»), never
+  ranked, naming the cells they run; they are not counted in the table's
+  headline or facts. The status filter does not narrow the list. The Excel
+  leaders sheet is the same list (non-owners tagged), and `/meta`'s Lider,
+  Brigadir and Yacheyka options include every name and cell the table shows.
 - **Only a LEADER on Verifix is ranked** (the operator, 2026-10-04: «rank only
   those who are actually leaders») — `role_profiles.leader_kind == "leader"`
   (`RANKED_KIND`, applied in `_with_roster`, which serves `kind` on every
