@@ -31,19 +31,32 @@ the day report and the corrected report DM without a single new scoring path.
 THE ELIGIBILITY RULE, in one place: a task is late-fileable while
 
     the unit closes tasks one at a time (per-task mode — nothing else HAS a
-    per-task deadline to miss), the task's own deadline has gone by, its day
-    is still OPEN, the task was not actually done, and no late proof exists
-    for it yet.
+    per-task deadline to miss), the task's own deadline has gone by, the
+    LATE WINDOW is still open, the task was not actually done, and no late
+    proof exists for it yet.
 
-"its day is still open" is what bounds the window to the day (the operator's
-call, 2026-08-30): the late door shuts when the checklist itself shuts, so a
-proof can never arrive for a day whose score has already been reported and
-read.
+THE LATE WINDOW (2026-10-14, the operator's rulings): shift 1 until 24:00 of
+the checklist day, shift 2 until 12:00 the morning after its night — by the
+shift the leader's CHECKLIST runs on (`leader_shift`), strict: at the minute
+the door shuts, nothing more is accepted and the draft roll goes. It used to
+be «while the day is open», and on a per-task unit the day closes itself the
+moment its last task closes — 20:00 on shift 1, 09:00 on shift 2 — so a
+leader who missed a morning task had at most a few hours, and none at all
+for the last tasks of the day. A closed day does not shut it any more; the
+leader's own «Kunni yopish» does (`finish_day`), for that checklist.
+
+THE BRIGADIR HEARS AT THE END (same day, the operator: «When everyone closes
+the day, then send»): a filing is stored at once and the leader can see it,
+but the brigadir's card and the chat's first notice are HELD until every
+leader of the unit is done with that day — pressed «Kunni yopish», has
+nothing left to file late, or reached the cut-off — and then go out together
+(`release`, run at the filing, at each «Kunni yopish» and every five minutes
+by `leader_close._sweep`).
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 
@@ -71,11 +84,55 @@ OPEN_STATES = (SUPERVISOR, ADMIN)
 DONE_STATES = (APPROVED, REJECTED)
 
 
+# ── the late window ──────────────────────────────────────────────────────────
+
+def late_until(shift: int | None, date: str | None) -> datetime | None:
+    """THE end of the late window for checklist `date` on `shift` — Tashkent.
+
+    Shift 1 (and a unit with no shift, which files on the calendar day) until
+    24:00 of the date itself, i.e. 00:00 of the next one; shift 2 until 12:00
+    of the morning after its night (the night of 13 → 14 October closes its
+    late door at 12:00 on the 14th). `shift` is the one the leader's CHECKLIST
+    runs on that day — `checklist_shift` — never the unit's when the two
+    differ. None only when the date cannot be read."""
+    try:
+        d = _date.fromisoformat(str(date or "")[:10])
+    except ValueError:
+        return None
+    nxt = d + timedelta(days=1)
+    hh = 12 if shift == 2 else 0
+    return datetime(nxt.year, nxt.month, nxt.day, hh, 0, tzinfo=leader_proof.TASHKENT)
+
+
+def late_until_label(shift: int | None) -> str:
+    """The cut-off as people say it — «24:00», or «12:00» for a night."""
+    return "12:00" if shift == 2 else "24:00"
+
+
+def checklist_shift(db: Session, prof: RoleProfile, date: str) -> int:
+    """The shift this leader's checklist for `date` runs on — their unit's,
+    unless their profile moved it (`services/leader_shift`)."""
+    from app.services import leader_shift
+    return leader_shift.shift_on(db, prof.id, date,
+                                 leader_shift.unit_shift(db, prof.manager_id))
+
+
+def window_open(day: LeaderTaskDay | None, shift: int | None, date: str,
+                now: datetime | None = None) -> bool:
+    """Is the late window of this checklist still open — before its cut-off and
+    not shut by the leader's own «Kunni yopish»?"""
+    if day is not None and day.finished_at is not None:
+        return False
+    cut = late_until(shift, date)
+    return cut is None or (now or datetime.now(timezone.utc)) < cut
+
+
 # ── is this task late-fileable? ──────────────────────────────────────────────
 
 def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
              cfg_entry: dict | None, shift: int | None,
-             per_task: bool, now: datetime | None = None) -> bool:
+             per_task: bool, now: datetime | None = None,
+             entries: dict | None = None, lates: dict | None = None) -> bool:
     """THE predicate. True while a late proof may still be filed for this task.
 
     Every surface that offers, accepts or describes the late door reads this
@@ -86,6 +143,9 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     Bounded to per-task units on purpose: a day-close unit has no per-task
     deadline to be late for, and the day's own deadline is where its checklist
     ends altogether.
+
+    `entries` / `lates` (task id → row, for this day) let a caller asking about
+    a whole checklist read each table once (`late_open`); the rule is the same.
     """
     if not per_task:
         return False
@@ -112,9 +172,14 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     # Absent means "open and holding nothing", which is open. The row is
     # created when the leader actually commits to filing late, never by a
     # sweep, so an untouched day is never conjured.
-    if day is not None and day.closed_at is not None:
-        return False
+    #
+    # A CLOSED day is no longer the end (2026-10-14): the window runs to the
+    # cut-off — 24:00, or 12:00 for a night — unless the leader pressed
+    # «Kunni yopish» on this checklist.
+    now = now or datetime.now(timezone.utc)
     date = day.date if day is not None else leader_tasks.effective_date(shift)
+    if not window_open(day, shift, date, now):
+        return False
     # Nothing before 1 September 2026 can be argued any more — the floor the
     # objection chain applies too, defined once in `leader_dispute`.
     if not leader_dispute.appealable(date):
@@ -130,14 +195,37 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
         # Nothing filed, nothing locked, nothing already late-filed — and the
         # deadline has gone by. That is precisely a late filing.
         return True
-    entry = (db.query(LeaderTaskEntry)
+    entry = (entries.get(task_id) if entries is not None else
+             db.query(LeaderTaskEntry)
              .filter_by(day_id=day.id, task_id=task_id).first())
     # A task the leader actually DID has nothing to file late. Only the two
     # empty-handed endings qualify — the deadline caught it, or they answered
     # «Yo'q» — and both are recorded the same way: an entry that is not done.
     if entry is not None and entry.done:
         return False
+    if lates is not None:
+        return task_id not in lates
     return existing(db, day.id, task_id) is None
+
+
+def late_open(db: Session, *, day: LeaderTaskDay | None, cfg: dict,
+              shift: int | None, per_task: bool,
+              now: datetime | None = None) -> list[int]:
+    """Every task of this checklist a late proof may still be filed for —
+    `eligible`, asked of the whole config with each table read once. The bot
+    menu, the web tab and the release readiness all count off this."""
+    if not per_task:
+        return []
+    now = now or datetime.now(timezone.utc)
+    entries = lates = None
+    if day is not None:
+        entries = {e.task_id: e for e in
+                   db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
+        lates = by_day(db, day.id)
+    return [tid for tid, c in cfg.items()
+            if c.get("enabled") and eligible(
+                db, day=day, task_id=tid, cfg_entry=c, shift=shift,
+                per_task=True, now=now, entries=entries, lates=lates)]
 
 
 def existing(db: Session, day_id: int, task_id: int) -> LeaderLateProof | None:
@@ -292,12 +380,14 @@ def clear_draft(db: Session, day_id: int | None, task_id: int) -> int:
 
 
 def drop_drafts(db: Session, day_id: int | None) -> int:
-    """Drop every draft on a day whose window has shut.
+    """Drop every draft on a day whose late window has shut.
 
-    `eligible` requires the day OPEN, so once it closes nothing can ever submit
-    these — and a draft roll left behind on a closed day is a pile of photos
-    with no route to any reader, which is the state this feature exists to
-    abolish rather than create.
+    Called when the leader presses «Kunni yopish» (`finish_day`) and, for a
+    window that ran out at its cut-off, by `sweep` — never by the day closing
+    any more, because the window now outlives the close (2026-10-14). Once it
+    has shut nothing can ever submit these, and a draft roll left behind is a
+    pile of photos with no route to any reader, which is the state this
+    feature exists to abolish rather than create.
     """
     if not day_id:
         return 0
@@ -738,6 +828,11 @@ def notify_undone(db: Session, row: LeaderLateProof, *, actor_name: str | None,
 def notify_message(db: Session, row: LeaderLateProof, m, nfiles: int,
                    invited: list[str] | None = None) -> None:
     from app.services import leader_appeal_chat as chat
+    # A HELD filing has not been announced yet: a message the leader adds to
+    # its chat stays in the thread and is read when the card arrives, rather
+    # than telling the brigadir early by a side door (`release`).
+    if row.held:
+        return
     params = {**_params(db, row), "author": m.author_name or "\u2014",
               "text": chat.notice_text(m.text),
               "files": str(nfiles) if nfiles else ""}
@@ -765,3 +860,286 @@ def rescore(db: Session, row: LeaderLateProof) -> None:
         leader_reports.resend_if_changed(db, uid=row.uid)
     except Exception:
         logger.warning("late-proof rescore failed", exc_info=True)
+
+
+# ── «Kunni yopish» and the held announcement ─────────────────────────────────
+#
+# The operator (2026-10-14): late proofs may now arrive until 24:00 (shift 1)
+# or 12:00 (shift 2), so the moment a brigadir would be told about one is no
+# longer predictable — «add kunni yopish button to submit their works … When
+# everyone closes the day, then send». So a filing is HELD (`held`), and the
+# unit-day is released as a whole once every leader who owed a checklist that
+# day is done with it. Done = any of
+#
+#   * they pressed «Kunni yopish» on it (`LeaderTaskDay.finished_at`);
+#   * their day is closed and nothing on it can be filed late any more (every
+#     task done, or its late proof already filed) — a leader who did the work
+#     on time owes no button press;
+#   * their late window ran out (`late_until`, by their checklist's shift).
+#
+# A leader who filed nothing at all has no day row and is done at the cut-off.
+# The release always comes, at the latest at the cut-off; the five-minute sweep
+# is what guarantees it when nobody presses anything.
+
+
+def _day(db: Session, leader_id: int, date: str,
+         cell_id: int | None) -> LeaderTaskDay | None:
+    q = db.query(LeaderTaskDay).filter_by(leader_id=leader_id, date=date)
+    q = (q.filter(LeaderTaskDay.cell_id == cell_id) if cell_id
+         else q.filter(LeaderTaskDay.cell_id.is_(None)))
+    return q.first()
+
+
+def finish_state(db: Session, *, day: LeaderTaskDay | None, cfg: dict,
+                 shift: int | None, per_task: bool,
+                 now: datetime | None = None) -> dict | None:
+    """What a leader is shown about their late window and «Kunni yopish» — the
+    bot menu and the web tab read this one answer. None on a day-close unit,
+    which has no late door at all.
+
+    `can` is the button: the day's tasks are all closed (it closed itself),
+    the window is open, the leader has not pressed it yet, and something can
+    still be filed late — a leader with nothing left to file is done already
+    and is not asked to press anything."""
+    if not per_task:
+        return None
+    now = now or datetime.now(timezone.utc)
+    date = day.date if day is not None else leader_tasks.effective_date(shift)
+    is_open = window_open(day, shift, date, now)
+    open_ids = (late_open(db, day=day, cfg=cfg, shift=shift, per_task=True, now=now)
+                if is_open else [])
+    held = (db.query(LeaderLateProof)
+            .filter(LeaderLateProof.day_id == day.id,
+                    LeaderLateProof.held.is_(True)).count()
+            if day is not None else 0)
+    return {
+        "date": date,
+        "until": late_until(shift, date),
+        "label": late_until_label(shift),
+        "window_open": is_open,
+        "open": open_ids,
+        "finished_at": day.finished_at if day is not None else None,
+        "finished_by": day.finished_by if day is not None else None,
+        "can": bool(day is not None and day.closed_at is not None
+                    and day.finished_at is None and is_open and open_ids),
+        "held": held,
+    }
+
+
+def finish_day(db: Session, day: LeaderTaskDay, *,
+               actor_name: str | None) -> bool:
+    """«Kunni yopish» on a per-task checklist. False when already pressed.
+
+    Shuts the late door for this checklist and drops its draft roll — the
+    leader said there is nothing more, so photos staged and never sent have no
+    reader left. Commits. The caller releases the unit-day (`release`) and
+    writes the register row; refusing a day that cannot be finished
+    (`finish_state`'s `can`) is the caller's, so each door says why in its own
+    words."""
+    if day.finished_at is not None:
+        return False
+    day.finished_at = datetime.now(timezone.utc)
+    day.finished_by = (actor_name or "").strip()[:160] or None
+    drop_drafts(db, day.id)
+    db.commit()
+    return True
+
+
+def _owed(db: Session, unit: Manager | None,
+          date: str) -> list[tuple[RoleProfile, int | None]]:
+    """The checklists a unit-day waits on — the brigadir's digest roster: the
+    unit's leaders minus a cutoff, an exclusion or a day they do not owe, one
+    checklist per cell where the unit files per cell."""
+    from app.services import (leader_cells, leader_cutoffs, leader_exclusions,
+                              leader_owes)
+    if unit is None or unit.archived:
+        return []
+    profs = (db.query(RoleProfile)
+             .filter(RoleProfile.role == "leader",
+                     RoleProfile.manager_id == unit.id).all())
+    if not profs:
+        return []
+    cuts = leader_cutoffs.load(db)
+    excluded = {k for (k, _cell) in leader_exclusions.load(db)}
+    floors = leader_cells.floors(db)
+    out: list[tuple[RoleProfile, int | None]] = []
+    for p in profs:
+        if (leader_cutoffs.hit(cuts, p.id, p.name, date) is not None
+                or leader_exclusions.key(p.id, p.name, date) in excluded
+                or not leader_owes.owes(p, date)):
+            continue
+        for cid in leader_cells.expected_days(db, p, date, shift_floors=floors):
+            out.append((p, cid))
+    return out
+
+
+def checklist_done(db: Session, prof: RoleProfile, cell_id: int | None,
+                   date: str, now: datetime | None = None) -> bool:
+    """Is this leader done with this checklist's late window? See the section
+    comment above for the three ways."""
+    now = now or datetime.now(timezone.utc)
+    shift = checklist_shift(db, prof, date)
+    cut = late_until(shift, date)
+    if cut is not None and now >= cut:
+        return True
+    day = _day(db, prof.id, date, cell_id)
+    if day is None:
+        return False
+    if day.finished_at is not None:
+        return True
+    if day.closed_at is None:
+        return False       # still filing — a task may yet be missed
+    cfg = leader_tasks.effective_leader_config(db, prof, shift, day=date)
+    return not late_open(db, day=day, cfg=cfg, shift=shift,
+                         per_task=leader_tasks.per_task_close(db, prof.manager_id),
+                         now=now)
+
+
+def unit_day_done(db: Session, manager_id: int, date: str,
+                  now: datetime | None = None, extra=()) -> bool:
+    """Has every leader of this unit-day closed it? The owed roster, plus the
+    checklists the held filings themselves sit on (a leader moved since is
+    still waited on for what they filed), plus `extra` (profile, cell) pairs."""
+    now = now or datetime.now(timezone.utc)
+    unit = db.query(Manager).filter_by(id=int(manager_id)).first()
+    waits: dict[tuple[int, int | None], RoleProfile] = {
+        (p.id, cid): p for p, cid in _owed(db, unit, date)}
+    for p, cid in extra or ():
+        if p is not None:
+            waits.setdefault((p.id, cid), p)
+    held = (db.query(LeaderLateProof.leader_id, LeaderTaskDay.cell_id)
+            .join(LeaderTaskDay, LeaderTaskDay.id == LeaderLateProof.day_id)
+            .filter(LeaderLateProof.held.is_(True),
+                    LeaderLateProof.manager_id == int(manager_id),
+                    LeaderLateProof.date == date).distinct().all())
+    for lid, cid in held:
+        if (lid, cid) not in waits:
+            p = db.query(RoleProfile).filter_by(id=int(lid)).first()
+            if p is not None:
+                waits[(lid, cid)] = p
+    return all(checklist_done(db, p, cid, date, now)
+               for (_pid, cid), p in waits.items())
+
+
+def _announce(db: Session, row: LeaderLateProof) -> None:
+    """Put one filing in front of the brigadir — the card with its photos —
+    and tell everybody in its chat. The two calls the bot always made, in the
+    bot's order; never fatal."""
+    carded: set = set()
+    try:
+        from app.telegram_bot import _lp_send_to_supervisor
+        carded = _lp_send_to_supervisor(db, row) or set()
+    except Exception:
+        logger.warning("late proof %s: card to the brigadir failed", row.id,
+                       exc_info=True)
+    notify_filed(db, row, skip_dm=carded)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def release(db: Session, manager_id: int | None, date: str | None,
+            now: datetime | None = None, extra=()) -> int:
+    """Announce every held filing of this unit-day once everybody is done with
+    it. Returns how many were released.
+
+    The rows are CLAIMED first (`FOR UPDATE SKIP LOCKED`, then `held` off and
+    committed) and only then announced: two leaders pressing «Kunni yopish» in
+    the same second, or the sweep beside them, can never send one card twice.
+    A filing somebody already ruled on (it is not hidden from its own chat) is
+    released without a card — there is nothing left to ask the brigadir."""
+    if not manager_id or not date:
+        return 0
+    now = now or datetime.now(timezone.utc)
+    if not unit_day_done(db, int(manager_id), str(date), now, extra=extra):
+        db.rollback()
+        return 0
+    rows = (db.query(LeaderLateProof)
+            .filter(LeaderLateProof.held.is_(True),
+                    LeaderLateProof.manager_id == int(manager_id),
+                    LeaderLateProof.date == str(date))
+            .order_by(LeaderLateProof.id)
+            .with_for_update(skip_locked=True).all())
+    if not rows:
+        db.rollback()
+        return 0
+    for r in rows:
+        r.held = False
+        r.released_at = now
+    db.commit()
+    for r in rows:
+        if r.status == SUPERVISOR:
+            _announce(db, r)
+    try:
+        action_log.record_system(
+            "leader_review", "checklist.late_proofs_released", db=db,
+            target_kind="unit", target_id=int(manager_id),
+            unit_id=int(manager_id), day=str(date),
+            details=[("released", len(rows)),
+                     ("ids", ", ".join(str(r.id) for r in rows[:20]))])
+        db.commit()
+    except Exception:
+        db.rollback()
+    return len(rows)
+
+
+def file_announcement(db: Session, row: LeaderLateProof, *,
+                      prof: RoleProfile | None = None,
+                      cell_id: int | None = None,
+                      now: datetime | None = None) -> bool:
+    """Right after `create`: HOLD the filing, then release the unit-day if
+    everybody is already done — this filing may well have been the last thing
+    anybody had left. True when it is still held.
+
+    Ghost Mode keeps the old behaviour exactly: nothing is held, and the card
+    and the notices are suppressed now, as they always were — a held filing
+    would otherwise be announced later by the sweep, outside the request that
+    asked for silence."""
+    from app.notify_ctx import notifications_suppressed
+    if notifications_suppressed():
+        row.released_at = datetime.now(timezone.utc)
+        db.commit()
+        _announce(db, row)
+        return False
+    row.held = True
+    db.commit()
+    extra = [(prof, cell_id)] if prof is not None else ()
+    try:
+        release(db, row.manager_id, row.date, now=now, extra=extra)
+    except Exception:
+        logger.exception("late proof %s: release check failed", row.id)
+        db.rollback()
+    db.refresh(row)
+    return bool(row.held)
+
+
+def sweep(db: Session, now: datetime | None = None) -> dict:
+    """The five-minute pass (`leader_close._sweep`): drop draft rolls whose
+    window has shut, and release every unit-day that has become done — the
+    cut-off included, which is what makes the release certain."""
+    now = now or datetime.now(timezone.utc)
+    dropped = 0
+    day_ids = [d for (d,) in db.query(LeaderLateProofShot.day_id).distinct().all()]
+    if day_ids:
+        profs: dict[int, RoleProfile | None] = {}
+        for day in db.query(LeaderTaskDay).filter(LeaderTaskDay.id.in_(day_ids)).all():
+            if day.leader_id not in profs:
+                profs[day.leader_id] = (db.query(RoleProfile)
+                                        .filter_by(id=day.leader_id).first())
+            prof = profs[day.leader_id]
+            shift = checklist_shift(db, prof, day.date) if prof is not None else None
+            if not window_open(day, shift, day.date, now):
+                dropped += drop_drafts(db, day.id)
+        db.commit()
+    released = 0
+    groups = (db.query(LeaderLateProof.manager_id, LeaderLateProof.date)
+              .filter(LeaderLateProof.held.is_(True)).distinct().all())
+    for mid, d in groups:
+        try:
+            released += release(db, mid, d, now)
+        except Exception:
+            logger.exception("late-proof release failed for unit %s · %s", mid, d)
+            db.rollback()
+    return {"drafts": dropped, "released": released}
+

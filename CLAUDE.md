@@ -5212,13 +5212,61 @@ say about it.
   The late proof is a SEPARATE row with its own photos, which is what keeps
   every writer, reader and sweep ignorant of it.
 - **`services/leader_late_proof.py` is THE definition** — `eligible`, `create`,
-  `decide_supervisor`, `decide_admin`, `_grant`, `revoke`. A task is
-  late-fileable while: the unit closes tasks one at a time (nothing else HAS a
-  per-task deadline to miss), the task's deadline has passed, **its day is still
-  OPEN**, the task was not actually done, and no late proof exists for it yet.
-  «Its day is still open» is the window (the operator's call): the late door
-  shuts when the checklist shuts, so a proof can never arrive for a day whose
-  score has already been reported and read.
+  `decide_supervisor`, `decide_admin`, `_grant`, `revoke`, and from 2026-10-14
+  `late_until`, `window_open`, `late_open`, `finish_state`, `finish_day`,
+  `file_announcement`, `release`, `sweep`. A task is late-fileable while: the
+  unit closes tasks one at a time (nothing else HAS a per-task deadline to
+  miss), the task's deadline has passed, **the late window is open**, the task
+  was not actually done, and no late proof exists for it yet.
+- **The late window (2026-10-14, the operator's rulings):** shift 1 until
+  **24:00** of the checklist day, shift 2 until **12:00** the morning after its
+  night (night 13 → 14 Oct: until 14 Oct 12:00) — by the shift the leader's
+  CHECKLIST runs on (`leader_shift`; Jumaniyazov Sanjarbek → 24:00), strict:
+  at that minute the door shuts, an unsent filing is refused and its draft
+  photos go. `late_until(shift, date)` is THE cut-off and `late_until_label`
+  its «24:00» / «12:00»; every door prints it (the bot's late screen, task
+  screen and menu, the camera's late banner, the web tab). **A closed day no
+  longer shuts the door** — until then the window was «while the day is open»,
+  and a per-task day closes itself the moment its last task closes (≈20:00 /
+  09:00), which left almost no time for anything missed late in the day. What
+  shuts it early is the leader's own **«🏁 Kunni yopish»**
+  (`LeaderTaskDay.finished_at` / `finished_by`, per checklist): offered on a
+  per-task unit once the day has closed itself, while the window is open and
+  something can still be filed late (`finish_state`'s `can`); a confirm, then
+  the late door shuts for that checklist, its draft photos are dropped and the
+  unit-day is released. `closed_at` keeps meaning «the last task closed» —
+  everything downstream (register, score, digest, reports) is untouched. Bot:
+  `lt:fin` → `lt:finok`; web: `POST /api/leader-checklist/finish-day`
+  (`tasks_open` / `late_over` / `day_mode`), the tab's `finishDay` block.
+- **The brigadir hears at the END (same day, the operator: «When everyone
+  closes the day, then send»).** A filing is stored at once — the leader sees
+  it («saqlandi», `held` on every payload) — but the brigadir's card and the
+  chat's first notice are HELD (`leader_late_proofs.held`) until every leader
+  who owed a checklist that unit-day is done: pressed «Kunni yopish», has
+  nothing left to file late (day closed, every task done or already
+  late-filed — a leader who worked on time owes no button press), or reached
+  the cut-off; a leader with no day row at all is done at the cut-off. Then the
+  unit-day's held filings go out together (`release`: claimed with `FOR UPDATE
+  SKIP LOCKED` and `held` committed off BEFORE any card is sent, so two
+  releasers never send one card twice; `released_at` stamps it). Release is
+  tried at every filing (`file_announcement` — the filing may be the last thing
+  anybody had left), at every «Kunni yopish», and by the five-minute
+  `leader_close._sweep` (`sweep`), which is what makes it certain by the
+  cut-off. The roster is the digest's (`_owed`: cutoffs, exclusions, owing,
+  `expected_days`) plus the checklists the held filings sit on. While held a
+  filing is invisible to everybody but its leader — the «Kechikkan isbotlar»
+  list and the bell's queue skip it, and a chat message on it notifies nobody
+  (`notify_message`). Ghost Mode holds nothing (the old suppress-now
+  behaviour). Rows filed before this have `held` FALSE and are never announced
+  twice. Logged as `checklist.day_finished` / `checklist.late_proofs_released`.
+  Columns: `startup.add_late_window_columns` (both entrypoints, FIRST at boot,
+  fatal on failure — `_ensure_columns`, the Verifix columns' lock-safe helper).
+- **Consequences to know:** a shift-2 leader with NO day row can file late only
+  until 12:00 (before, until the next 17:00 boundary); a brigadir gets a late
+  proof at the end of the unit's day — often at the cut-off, i.e. near midnight
+  for shift 1 — instead of the minute it was filed; the brigadir's day digest
+  is untouched (it still goes when the last leader's TIME is up, the 15 Sep
+  ruling), so a late proof can arrive after it.
 - **The AI never sees one.** No `LeaderAiReview` row is written, so there is no
   queue door to close — a late proof is judged on WHY it is late, which is a
   question about a person and not about a photograph.
@@ -5285,9 +5333,10 @@ say about it.
   the payload is byte-identical to what it has always been; that endpoint is the
   one piece of shared code the live camera pilot executes.
 - **A draft never outlives its window**: `reset_task` and `reopen_task` call
-  `clear_draft`, `maybe_close_day` and `close_expired_days` call `drop_drafts`.
-  `eligible` requires the day OPEN, so a draft left behind could never be
-  submitted by anybody.
+  `clear_draft`; «Kunni yopish» (`finish_day`) and the five-minute `sweep` (once
+  the cut-off has passed) call `drop_drafts`. The day closing does NOT drop
+  them any more (2026-10-14) — the window outlives the close, so a leader
+  half-way through a late filing keeps the photos they took.
 - Bot: the warning screen is a SCREEN, not a line — it names the hour that
   passed, states plainly that no point comes automatically, says who will read
   the reason, and only then offers the way forward. Photos, then a mandatory
@@ -5675,7 +5724,10 @@ leader files, reads and argues their checklist on the web, one day at a time —
   proof (`/answer` answers 409 `time_up`; a task an admin reopened is on the
   day's deadline and exempt): `/late/start` materialises the day (the camera's
   late door needs it) and `/late` files uploads + camera drafts + the required
-  reason, then cards the brigadir exactly as the bot's `lsend` does.
+  reason, then holds or announces it exactly as the bot's `lsend` does
+  (`file_announcement`). The late door stays open on a CLOSED day until the
+  cut-off (24:00 / 12:00) or «Kunni yopish» — the late button reads
+  `task.late.eligible`, never `rights.file` (which is false on a closed day).
 - **Verdicts arrive live:** the tab polls every 8 s while a task is being
   checked and every 60 s otherwise (today only), and a verdict landing raises a
   toast (+ Telegram haptic); a rejection's toast persists.

@@ -76,6 +76,7 @@ const TXT = {
     stApproved: "Qabul qilindi", stApprovedLate: "Tasdiqlandi", stRejected: "Rad etildi",
     stCancelled: "Qaror bekor qilingan",
     yourTurn: "Sizning navbatingiz", unread: "{n} yangi", msgs: "{n} xabar", files: "{n} fayl",
+    heldNote: "Saqlandi — brigadirga hamma liderlar kunni yopgach yuboriladi",
     lateBy: "kechikish", lateNone: "aniqlanmadi", unitD: "kun", unitH: "soat", unitM: "daq",
     kFiled: "Norozilik", kFiledLate: "Sabab", kSupRejected: "Brigadir rad etdi",
     kUplifted: "Adminlarga yuborildi", kApproved: "Qabul qilindi", kApprovedLate: "Tasdiqlandi",
@@ -103,6 +104,7 @@ const TXT = {
     stApproved: "Қабул қилинди", stApprovedLate: "Тасдиқланди", stRejected: "Рад этилди",
     stCancelled: "Қарор бекор қилинган",
     yourTurn: "Сизнинг навбатингиз", unread: "{n} янги", msgs: "{n} хабар", files: "{n} файл",
+    heldNote: "Сақланди — бригадирга ҳамма лидерлар кунни ёпгач юборилади",
     lateBy: "кечикиш", lateNone: "аниқланмади", unitD: "кун", unitH: "соат", unitM: "дақ",
     kFiled: "Норозилик", kFiledLate: "Сабаб", kSupRejected: "Бригадир рад этди",
     kUplifted: "Админларга юборилди", kApproved: "Қабул қилинди", kApprovedLate: "Тасдиқланди",
@@ -130,6 +132,7 @@ const TXT = {
     stApproved: "Принято", stApprovedLate: "Принято", stRejected: "Отклонено",
     stCancelled: "Решение отменено",
     yourTurn: "Ваша очередь", unread: "{n} новых", msgs: "{n} сообщ.", files: "{n} файл.",
+    heldNote: "Сохранено — уйдёт бригадиру, когда день закроют все лидеры",
     lateBy: "опоздание", lateNone: "не измерить", unitD: "д", unitH: "ч", unitM: "мин",
     kFiled: "Возражение", kFiledLate: "Причина", kSupRejected: "Бригадир отклонил",
     kUplifted: "Передано администраторам", kApproved: "Принято", kApprovedLate: "Принято",
@@ -157,6 +160,7 @@ const TXT = {
     stApproved: "Upheld", stApprovedLate: "Approved", stRejected: "Refused",
     stCancelled: "Ruling undone",
     yourTurn: "Your turn", unread: "{n} new", msgs: "{n} messages", files: "{n} files",
+    heldNote: "Saved — goes to the brigadir once every leader has closed the day",
     lateBy: "late", lateNone: "not measurable", unitD: "d", unitH: "h", unitM: "min",
     kFiled: "Objection", kFiledLate: "Reason", kSupRejected: "The brigadir refused",
     kUplifted: "Passed to the admins", kApproved: "Upheld", kApprovedLate: "Approved",
@@ -438,6 +442,13 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
                       </div>
                       <StateChip status={it.status} late={late} T={T} />
                     </div>
+                    {/* Filed and not yet sent: it reaches the brigadir once
+                        every leader of the unit has closed the day. */}
+                    {late && it.held && it.status === "supervisor" && (
+                      <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                        {T.heldNote}
+                      </p>
+                    )}
 
                     <div className="mt-2 flex items-start gap-2 text-[13px]">
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 mt-0.5"

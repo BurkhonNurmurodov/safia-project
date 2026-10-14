@@ -206,6 +206,9 @@ def _late_wire(row: LeaderLateProof | None, drafts: int) -> dict | None:
             "id": row.id, "status": row.status, "reason": row.reason,
             "at": _iso(row.created_at), "deadline": row.deadline,
             "lateMin": leader_late_proof.late_minutes(row),
+            # Not sent to the brigadir yet — it goes once every leader of the
+            # unit has closed the day (`leader_late_proof.release`).
+            "held": bool(row.held),
         } if row is not None else None),
     }
 
@@ -485,6 +488,12 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
 
     missing = (leader_checklist.missing_tasks(db, day, cfg)
                if (is_today and not per_task) else [])
+    # The late window and «Kunni yopish» on a per-task checklist (2026-10-14):
+    # one answer for the bot menu and this tab (`leader_late_proof.finish_state`).
+    fin = (leader_late_proof.finish_state(db, day=day, cfg=cfg, shift=shift,
+                                          per_task=True)
+           if (is_today and per_task and source != "sheet" and not no_load
+               and not not_owed and not (per_cell and cell_id is None)) else None)
     return {
         "leader": {"id": prof.id, "name": prof.name},
         "unit": {"id": mgr.id if mgr else None, "name": mgr.name if mgr else None},
@@ -528,6 +537,19 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
         "closeDay": ({"ready": not missing, "missing": missing}
                      if (is_today and not per_task and files and not no_load
                          and not not_owed) else None),
+        "finishDay": ({
+            # The button: the day's tasks are all closed, the window is open,
+            # something can still be filed late and the leader has not pressed
+            # it yet — and only the leader may press it.
+            "can": bool(fin["can"] and files),
+            "until": _iso(fin["until"]),
+            "label": fin["label"],
+            "windowOpen": fin["window_open"],
+            "open": len(fin["open"]),
+            "finishedAt": _iso(fin["finished_at"]),
+            "finishedBy": fin["finished_by"],
+            "held": fin["held"],
+        } if fin else None),
         "tasks": tasks,
     }
 
@@ -846,6 +868,46 @@ def close_day(
             "view": _view(db, payload, prof, date, cid)}
 
 
+@router.post("/finish-day")
+def finish_day(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """«Kunni yopish» on a unit that closes task by task (2026-10-14): the
+    leader is done with the day, late proofs included. The late door shuts for
+    this checklist, its unsent draft photos go, and the unit's held late proofs
+    go to the brigadir as soon as every leader is done
+    (`leader_late_proof.release`). The bot's «🏁 Kunni yopish» runs the same
+    two calls."""
+    prof, cid, shift, date, cfg, _c = _filing_ctx(
+        db, payload, body.get("leader"), body.get("cell"))
+    if not leader_tasks.per_task_close(db, prof.manager_id):
+        raise HTTPException(status_code=409, detail="day_mode")
+    day = _day_row(db, prof.id, date, cid)
+    if day is None or day.closed_at is None:
+        # Every task closes first — it closes itself at its own hour.
+        raise HTTPException(status_code=409, detail="tasks_open")
+    if day.finished_at is None and not leader_late_proof.window_open(day, shift, date):
+        raise HTTPException(status_code=409, detail="late_over")
+    done = leader_late_proof.finish_day(db, day, actor_name=prof.name)
+    released = 0
+    if done:
+        try:
+            released = leader_late_proof.release(db, day.manager_id, day.date)
+        except Exception:
+            log.exception("late-proof release after «Kunni yopish» failed")
+            db.rollback()
+    action_log.enrich(
+        target_kind="day", target_id=day.id, target_name=prof.name,
+        unit_id=prof.manager_id, day=date,
+        details=[("leader", prof.name), ("door", "web"),
+                 ("released", released)],
+        changes=[("late_window", "open", "closed")] if done else None,
+    )
+    return {"ok": True, "view": _view(db, payload, prof, date, cid)}
+
+
 # ── write: a proof after the task's own hour ─────────────────────────────────
 
 def _late_ctx(db: Session, payload: dict, leader, cell, task):
@@ -925,20 +987,15 @@ def file_late(
         db.rollback()
         raise HTTPException(status_code=400, detail="need_photos")
     db.commit()
-    # Put it in front of whoever rules first, and tell everybody in the chat —
-    # the bot's own two calls, in the bot's own order.
-    carded: set = set()
-    try:
-        from app.telegram_bot import _lp_send_to_supervisor
-        carded = _lp_send_to_supervisor(db, row) or set()
-    except Exception:
-        log.warning("late proof %s: card to the brigadir failed", row.id, exc_info=True)
-    leader_late_proof.notify_filed(db, row, skip_dm=carded)
-    db.commit()
+    # HELD until every leader of the unit has closed the day, then the card and
+    # the chat's first notice go out together — the bot's own call
+    # (`leader_late_proof.file_announcement`). It may go at once.
+    held = leader_late_proof.file_announcement(db, row, prof=prof, cell_id=cid)
     action_log.enrich(
         target_kind="task", target_id=row.id, target_name=prof.name,
         unit_id=prof.manager_id, day=date, reason=reason[:_REASON_MAX],
         details=[("leader", prof.name), ("task_id", tid), ("door", "web"),
-                 ("uploaded", len(images))],
+                 ("uploaded", len(images)), ("held", held)],
     )
-    return {"ok": True, "id": row.id, "view": _view(db, payload, prof, date, cid)}
+    return {"ok": True, "id": row.id, "held": held,
+            "view": _view(db, payload, prof, date, cid)}

@@ -285,6 +285,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leader-checklist/submit",              "leader_review", "checklist.task_closed"),
     (("POST",),   "/api/leader-checklist/reset",               "leader_review", "checklist.task_reset"),
     (("POST",),   "/api/leader-checklist/close-day",           "leader_review", "checklist.day_closed"),
+    (("POST",),   "/api/leader-checklist/finish-day",          "leader_review", "checklist.day_finished"),
     (("POST",),   "/api/leader-checklist/late/start",          "leader_review", "checklist.late_started"),
     (("POST",),   "/api/leader-checklist/late",                "leader_review", "checklist.late_proof_filed"),
     (("DELETE",), "/api/leader-proof/late-photo/{}",           "leader_review", "late_proof.photo_removed"),

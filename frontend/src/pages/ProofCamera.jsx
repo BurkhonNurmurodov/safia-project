@@ -1944,8 +1944,16 @@ export default function ProofCamera() {
               longer news — the hours are gone, and what the leader needs to
               know is that this earns nothing until two people say otherwise. */}
           {lateMode ? (
-            <Banner tone="warn" icon={<Clock size={13} />}
-              text={t("proof.late.banner").replace("{t}", task?.deadline || "—")} />
+            <>
+              <Banner tone="warn" icon={<Clock size={13} />}
+                text={t("proof.late.banner").replace("{t}", task?.deadline || "—")} />
+              {/* When the late door shuts (24:00, or 12:00 for a night) —
+                  strict, so it is read before the shot, not after a refusal. */}
+              {task?.late_until && (
+                <Banner tone="info" icon={<Clock size={13} />}
+                  text={t("proof.late.until").replace("{t}", task.late_until)} />
+              )}
+            </>
           ) : late && mode === "live" ? (
             <Banner tone="warn" icon={<Clock size={13} />}
               text={t("proof.lateNow").replace("{lo}", task.window[0]).replace("{hi}", task.window[1])} />

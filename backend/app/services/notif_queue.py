@@ -430,6 +430,9 @@ def _late_proofs(db: Session, payload: dict) -> list[dict]:
     q = _appeal_rows(db, payload, LeaderLateProof)
     if q is None:
         return []
+    # A held filing waits for the unit's day to close before anybody is asked
+    # about it (`leader_late_proof.release`).
+    q = q.filter(LeaderLateProof.held.is_(False))
     rows = q.order_by(LeaderLateProof.id.desc()).limit(_CAP).all()
     units = _unit_names(db, [r.manager_id for r in rows])
     tasks = _task_names(db, [r.task_id for r in rows])
@@ -441,7 +444,8 @@ def _late_proofs(db: Session, payload: dict) -> list[dict]:
             late = mins if mins >= 0 else None
         out.append({
             "key": f"late_proof:{r.id}", "kind": "late_proof", "id": r.id,
-            "since": _iso(r.sup_at if r.status == "admin" and r.sup_at else r.created_at),
+            "since": _iso(r.sup_at if r.status == "admin" and r.sup_at
+                          else (r.released_at or r.created_at)),
             "link": f"/leaders/appeal/late/{r.id}",
             "fields": {
                 "stage": r.status,

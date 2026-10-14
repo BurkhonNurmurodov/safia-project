@@ -1958,6 +1958,15 @@ class LeaderTaskDay(Base):
     # `leader_close.reopened_tasks()`; it moves a task onto the DAY's filing
     # deadline, never off a deadline altogether.
     reopened   = Column(JSONB, nullable=True)
+    # «Kunni yopish» on a PER-TASK unit (2026-10-14): the leader says they are
+    # done with the day, late proofs included. `closed_at` stays what it always
+    # was — the moment the last task closed, which everything downstream reads
+    # — and this is the second, later act: it shuts the late door for this
+    # checklist (`leader_late_proof.eligible`) and lets the unit's held late
+    # proofs go to the brigadir once every leader is done. NULL = not pressed;
+    # the 24:00 / 12:00 cut-off ends the window without writing here.
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    finished_by = Column(String(160), nullable=True)
 
     # ONE checklist per (leader, date, cell) — an EXPRESSION index, not a plain
     # UniqueConstraint, and that is load-bearing. Postgres treats NULLs as
@@ -2548,6 +2557,15 @@ class LeaderLateProof(Base):
     due_at     = Column(DateTime(timezone=True), nullable=True)
 
     status = Column(String(12), nullable=False, default="supervisor", index=True)
+    # Filed, and not yet ANNOUNCED (2026-10-14, the operator: «when everyone
+    # closes the day, then send»). The brigadir's card and the chat's first
+    # notice wait until every leader of the unit is done with that day —
+    # «Kunni yopish», nothing left to file late, or the 24:00 / 12:00 cut-off —
+    # then go out together (`leader_late_proof.release`). FALSE on every row
+    # filed before this existed, so none of them is announced twice.
+    held        = Column(Boolean, nullable=False, default=False,
+                         server_default=text("false"))
+    released_at = Column(DateTime(timezone=True), nullable=True)
 
     # The leader's own explanation. Mandatory — a late proof with no reason is
     # exactly the thing the brigadir has nothing to rule on.

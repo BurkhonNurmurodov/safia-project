@@ -5,7 +5,7 @@ import {
   ClipboardCheck, ClipboardList, ShieldAlert, XCircle, Hourglass, CheckCircle2,
   Circle, Lock, PencilLine, TimerOff, CircleSlash, Gavel, ShieldQuestion,
   ImagePlus, Settings2, ChevronRight, ChevronDown, MessagesSquare,
-  Timer, Info, UserSearch,
+  Timer, Info, UserSearch, Flag,
 } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../ui/Button";
@@ -20,7 +20,7 @@ import { hexA, pick, scoreColor } from "./DayReportView";
 import ChecklistTaskSheet from "./ChecklistTaskSheet";
 import {
   C_OK, C_BAD, C_WARN, C_WAIT, GROUP_OF, KIND_ICON, DISPUTE_OPEN, leftText,
-  urgency, disputeChip, lateChip, rowMeta,
+  urgency, disputeChip, lateChip, rowMeta, clock,
 } from "./checklistShared";
 
 /**
@@ -299,7 +299,7 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
         <ShieldQuestion size={12} /> {T.object}
       </Button>
     );
-  } else if (task.late?.eligible && !task.late?.proof && rights.file) {
+  } else if (task.late?.eligible && !task.late?.proof) {
     action = (
       <Button size="sm" variant="secondary" tint className="max-sm:h-9" onClick={() => onOpen(task.id, "late")}>
         <Timer size={12} /> {T.late}
@@ -428,6 +428,10 @@ export default function Checklist({
   const [closeAsk, setCloseAsk] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeErr, setCloseErr] = useState("");
+  // «Kunni yopish» on a unit that submits task by task — the late window's end.
+  const [finishAsk, setFinishAsk] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finishErr, setFinishErr] = useState("");
 
   // The cell pick and an open sheet belong to ONE leader: the page mounts this
   // component keyed on the leader, so switching leaders starts it afresh.
@@ -571,6 +575,24 @@ export default function Checklist({
     }
   };
 
+  const finishDay = async () => {
+    setFinishing(true);
+    setFinishErr("");
+    try {
+      const r = await api.post("/api/leader-checklist/finish-day",
+        { leader: view.leader.id, cell: view.cell });
+      setView(r.data.view);
+      setFinishAsk(false);
+      toast.success(T.finishOk);
+    } catch (e) {
+      setFinishErr(errText(e, T));
+    } finally {
+      setFinishing(false);
+    }
+  };
+  const fin = view.finishDay;
+  const finClock = (iso) => clock(iso) || "—";
+
   return (
     <div className="space-y-3">
       {/* WHICH checklist, on a unit that files one per cell. */}
@@ -623,6 +645,37 @@ export default function Checklist({
                 {T.readOnly}
               </p>
             )}
+            {/* The late window on a unit that submits task by task: until
+                24:00, or 12:00 for a night, and shut early by «Kunni yopish».
+                Late proofs reach the brigadir once every leader is done. */}
+            {fin && (fin.finishedAt || (fin.windowOpen && fin.open > 0) || fin.held > 0) && (
+              <div className="rounded-2xl p-3 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                {fin.finishedAt ? (
+                  <p className="text-[12px] flex items-start gap-1.5 leading-snug" style={{ color: "var(--text-2)" }}>
+                    <Flag size={13} className="flex-shrink-0 mt-0.5" style={{ color: C_OK }} />
+                    {put(T.finishDone, { time: finClock(fin.finishedAt) })}
+                  </p>
+                ) : fin.windowOpen && fin.open > 0 ? (
+                  <p className="text-[12px] flex items-start gap-1.5 leading-snug" style={{ color: "var(--text-2)" }}>
+                    <Timer size={13} className="flex-shrink-0 mt-0.5" style={{ color: C_WARN }} />
+                    {put(T.lateUntil, { t: fin.label })}
+                  </p>
+                ) : null}
+                {fin.held > 0 && (
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                    {put(T.finishHeld, { n: fin.held })}
+                  </p>
+                )}
+                {fin.can && (
+                  <>
+                    <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{T.finishHint}</p>
+                    <Button size="lg" className="w-full" onClick={() => { setFinishErr(""); setFinishAsk(true); }}>
+                      <Flag size={15} /> {T.finishBtn}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
             {view.closeDay && rights.file && (
               <div className="rounded-2xl p-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
                 <Button size="lg" className="w-full" disabled={!view.closeDay.ready}
@@ -660,6 +713,10 @@ export default function Checklist({
       <ConfirmDialog open={closeAsk} title={T.closeDayT} message={T.closeDayM}
         confirmLabel={T.closeDay} loading={closing} error={closeErr || null}
         onCancel={() => setCloseAsk(false)} onConfirm={closeDay} />
+      <ConfirmDialog open={finishAsk} title={T.finishT}
+        message={put(T.finishM, { t: fin?.label || "24:00" })}
+        confirmLabel={T.finishBtn} loading={finishing} error={finishErr || null}
+        onCancel={() => setFinishAsk(false)} onConfirm={finishDay} />
       {toast.node}
     </div>
   );

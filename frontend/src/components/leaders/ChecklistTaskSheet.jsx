@@ -280,7 +280,9 @@ function LateSheet({ view, task, T, onClose, onView, toast }) {
       onView(r.data.view);
       // The «Kechikkan isbotlar» tab's badge counts off this queue.
       qc.invalidateQueries({ queryKey: ["leader-late-proofs"] });
-      toast.success(T.lateOk);
+      // HELD until every leader of the unit has closed the day, then it goes
+      // to the brigadir; it may also go at once.
+      toast.success(r.data.held ? T.lateHeld : T.lateOk);
       onClose(true);
     } catch (e) {
       setErr(errText(e, T));
@@ -302,6 +304,7 @@ function LateSheet({ view, task, T, onClose, onView, toast }) {
       <p className="text-[12px] leading-snug rounded-xl px-3 py-2.5"
         style={{ background: hexA(C_WARN, 0.1), color: "var(--text-2)" }}>
         {T.lateIntro}
+        {view.finishDay?.label && <> {put(T.lateUntil, { t: view.finishDay.label })}</>}
       </p>
       <Section title={T.latePhotosLbl} icon={Images}>
         {cam && (
@@ -567,7 +570,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         )}
 
         {/* The late door, for a task whose own hour has gone by. */}
-        {task.late && (task.late.proof || (task.late.eligible && rights.file)) && (
+        {task.late && (task.late.proof || task.late.eligible) && (
           <Section title={T.lateT} icon={Timer} innerRef={lateRef}>
             {task.late.proof ? (
               <div className="rounded-xl px-3 py-2.5 space-y-2" style={{ background: "var(--bg-inner)" }}>
@@ -580,6 +583,11 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 {task.late.proof.reason && (
                   <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>«{task.late.proof.reason}»</p>
                 )}
+                {task.late.proof.held && task.late.proof.status === "supervisor" && (
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                    {put(T.lateHeldNote, { t: view.finishDay?.label || "24:00" })}
+                  </p>
+                )}
                 <Button size="md" tint variant="secondary" className="w-full"
                   onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
                   <MessagesSquare size={13} /> {T.openChat}
@@ -587,7 +595,10 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
               </div>
             ) : (
               <>
-                <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>{T.lateIntro}</p>
+                <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+                  {T.lateIntro}
+                  {view.finishDay?.label && <> {put(T.lateUntil, { t: view.finishDay.label })}</>}
+                </p>
                 <Button size="lg" variant="secondary" tint className="w-full" onClick={() => setLateOpen(true)}>
                   <Timer size={15} /> {T.lateOpen}
                 </Button>

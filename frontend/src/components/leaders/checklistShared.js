@@ -49,10 +49,14 @@ export const disputeChip = (d, T) => ({
   cancelled: { text: T.dCancel, color: C_WAIT },
 }[d?.status] || null);
 
-export const lateChip = (p, T) => ({
-  supervisor: { text: T.lSup, color: C_WARN }, admin: { text: T.lAdm, color: C_WARN },
-  approved: { text: T.lOk, color: C_OK }, rejected: { text: T.lNo, color: C_BAD },
-}[p?.status] || null);
+// A HELD filing has not reached the brigadir yet — it goes once every leader
+// of the unit has closed the day (`leader_late_proof.release`).
+export const lateChip = (p, T) => (p?.held && p.status === "supervisor"
+  ? { text: T.lHeld, color: C_WAIT }
+  : ({
+    supervisor: { text: T.lSup, color: C_WARN }, admin: { text: T.lAdm, color: C_WARN },
+    approved: { text: T.lOk, color: C_OK }, rejected: { text: T.lNo, color: C_BAD },
+  }[p?.status] || null));
 
 
 /** What a row says under its name — one sentence, in the state's own words. */

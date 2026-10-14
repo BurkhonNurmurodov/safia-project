@@ -273,6 +273,8 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
                     "time_check": False,
                     "day_check": True,
                     "deadline": leader_close.task_deadline(entry, lshift),
+                    # When the late door shuts — 24:00, or 12:00 for a night.
+                    "late_until": leader_late_proof.late_until_label(lshift),
                 },
                 "photos": [_shot_wire(p) for p in shots],
                 "complete": len(shots) >= 1,
@@ -594,7 +596,14 @@ def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict,
     screen, so by the time a shot arrives there is one.
     """
     shift = leader_proof.leader_shift(db, prof)
-    day = leader_proof.open_day(db, prof, create=False, cell_id=cell_id)
+    # The STORED day, closed or not (2026-10-14): the late window runs past the
+    # day's close — 24:00, or 12:00 for a night — and `open_day` answers None
+    # for a closed day, which refused every late shot taken after it.
+    date = leader_tasks.effective_date(shift)
+    q = db.query(LeaderTaskDay).filter_by(leader_id=prof.id, date=date)
+    q = (q.filter(LeaderTaskDay.cell_id == cell_id) if cell_id
+         else q.filter(LeaderTaskDay.cell_id.is_(None)))
+    day = q.first()
     ok = leader_late_proof.eligible(
         db, day=day, task_id=task_id, cfg_entry=entry, shift=shift,
         per_task=leader_tasks.per_task_close(db, prof.manager_id))

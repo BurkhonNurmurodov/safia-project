@@ -349,15 +349,13 @@ def maybe_close_day(db: Session, day: LeaderTaskDay, cfg: dict) -> bool:
     want = {t for t, s in cfg.items() if s.get("enabled")}
     if not want or not want <= closed_tasks(db, day):
         return False
-    from app.services import leader_late_proof   # cycle: see reset_task
     entries = db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()
     day.closed_at = datetime.now(timezone.utc)
     day.completion = leader_tasks.compute_completion(cfg, entries)
-    # The late door shuts with the day (`leader_late_proof.eligible` requires an
-    # OPEN day), so any draft still staged can never be submitted by anybody.
-    # Left behind it would be a pile of photos with no route to any reader —
-    # precisely the state this feature exists to abolish rather than create.
-    leader_late_proof.drop_drafts(db, day.id)
+    # A late-proof draft roll is NOT dropped here any more (2026-10-14): the
+    # late window outlives the day — 24:00, or 12:00 for a night — so a leader
+    # half-way through a late filing keeps the photos they took. They go when
+    # the window shuts (`leader_late_proof.finish_day` / `sweep`).
     db.commit()
     return True
 
@@ -849,13 +847,11 @@ def close_expired_days(db: Session, prof, shift: int,
                         task_deadline(s, dsh), "not_checked")
                         if leader_auto.owns(s, day.date) else reason)))
         db.flush()
-        from app.services import leader_late_proof   # cycle: see reset_task
         day.closed_at = now
         day.completion = leader_tasks.compute_completion(
             cfg, db.query(LeaderTaskEntry).filter_by(day_id=day.id).all())
-        # Same rule as `maybe_close_day`: the late door shuts with the day, so
-        # a draft left staged here could never be submitted by anyone again.
-        leader_late_proof.drop_drafts(db, day.id)
+        # Same rule as `maybe_close_day`: the late window outlives the day, so
+        # a staged late-proof draft stays until it shuts (`leader_late_proof`).
         # Snapshotted HERE, while the instances are loaded: the commit below
         # expires them, and re-reading four columns per day to describe the
         # work would make the audit trail cost a query round for every close.
@@ -1158,6 +1154,18 @@ def _sweep() -> None:
                 leader_ai.run_async(discover_first=False)
         except Exception:
             logger.exception("day auto-close sweep failed")
+            db.rollback()
+        # Late proofs (2026-10-14): drop draft rolls whose window has shut and
+        # announce every unit-day whose leaders are all done — pressed «Kunni
+        # yopish», nothing left to file late, or past the 24:00 / 12:00
+        # cut-off. AFTER the day close, which can make a night «done».
+        try:
+            from app.services import leader_late_proof
+            got = leader_late_proof.sweep(db)
+            if any(got.values()):
+                logger.info("late proofs: %s", got)
+        except Exception:
+            logger.exception("late-proof sweep failed")
             db.rollback()
         # …and the brigadir's day digest, AFTER the day close: a night the pass
         # above just closed has queued its reviews, so the digest waits on them

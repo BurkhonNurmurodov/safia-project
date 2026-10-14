@@ -3420,6 +3420,9 @@ def _lp_item(db: Session, row, names: dict, mgr_names: dict,
         # unit's rows, and "you are a brigadir" is not "you are THIS unit's
         # brigadir". Every foreign card then grew buttons that answered 403.
         "canAct": bool(can_act),
+        # Filed and not yet sent to the brigadir — it goes once every leader
+        # of the unit has closed the day (`leader_late_proof.release`).
+        "held": bool(row.held),
         "date": row.date,
         "shift": row.shift,
         "taskId": row.task_id,
@@ -3507,6 +3510,11 @@ def list_late_proofs(
         else:
             return {"items": [], "canSupervise": False, "canApprove": False,
                     "todo": 0}
+    if role != "leader":
+        # A HELD filing has not been sent to anybody yet — it goes out when
+        # every leader of the unit has closed the day (`leader_late_proof.
+        # release`). Its leader sees it; nobody else until then.
+        q = q.filter(LeaderLateProof.held.is_(False))
     rows = q.order_by(LeaderLateProof.id.desc()).limit(LATE_PROOF_CAP).all()
 
     names = leader_reports.names_for_pairs(

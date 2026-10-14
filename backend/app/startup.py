@@ -1778,11 +1778,45 @@ def add_verifix_sync_columns() -> None:
     (ALTER … IF NOT EXISTS takes its ACCESS EXCLUSIVE lock before it looks).
     **A failure is FATAL** — re-raised, so this copy never reports healthy
     without the columns every sign-in reads; the deploy keeps the old copy."""
+    _ensure_columns(_VFX_SYNC_DDL, "verifix sync columns")
+
+
+# 2026-10-14 (late proofs until 24:00 / 12:00, `services/leader_late_proof`):
+# a leader's «Kunni yopish» on a per-task day (`finished_at` + `finished_by`),
+# and a late proof whose announcement waits for the unit's day to close
+# (`held`, `released_at`). Every ORM read of a checklist day or a late proof
+# selects them, so they are added FIRST at boot, the lock-safe way.
+_LATE_WINDOW_DDL = (
+    ("leader_task_days", (("finished_at", "TIMESTAMP WITH TIME ZONE"),
+                          ("finished_by", "VARCHAR(160)")), None),
+    ("leader_late_proofs", (("held", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                            ("released_at", "TIMESTAMP WITH TIME ZONE")), None),
+)
+
+
+def add_late_window_columns() -> None:
+    """2026-10-14: the columns the late window needs (`_LATE_WINDOW_DDL`).
+    NULL / FALSE on every existing row = never pressed, never held — so a late
+    proof filed before this shipped is never announced a second time. Pure
+    DDL, idempotent, no flag, FATAL on failure like the Verifix columns: a copy
+    that cannot read a checklist day must not report healthy."""
+    _ensure_columns(_LATE_WINDOW_DDL, "late window columns")
+
+
+def _ensure_columns(spec, label: str) -> None:
+    """Add missing columns (and one index per table) for a blue-green boot.
+
+    ONE transaction PER TABLE (one transaction over several tables lost a
+    deadlock to an old-copy request reading them in another order), a
+    `lock_timeout` so a waiting ALTER never stalls the old copy's readers
+    queued behind it for long, a few tries, and nothing taken at all once a
+    column or index exists (ALTER … IF NOT EXISTS takes its ACCESS EXCLUSIVE
+    lock before it looks). A failure is re-raised."""
     import time as _time
     from sqlalchemy.exc import DBAPIError
 
     tries = 6
-    for table, cols, index in _VFX_SYNC_DDL:
+    for table, cols, index in spec:
         for attempt in range(1, tries + 1):
             db = SessionLocal()
             try:
@@ -1808,7 +1842,7 @@ def add_verifix_sync_columns() -> None:
                     db.execute(text(
                         f"CREATE INDEX IF NOT EXISTS {index[0]} ON {table} ({index[1]})"))
                 db.commit()
-                print(f"[startup] verifix sync columns: {table} "
+                print(f"[startup] {label}: {table} "
                       f"+{[c for c, _ in missing]}{' +index' if need_ix else ''}",
                       flush=True)
                 break
@@ -1817,11 +1851,11 @@ def add_verifix_sync_columns() -> None:
                 code = getattr(getattr(exc, "orig", None), "pgcode", None)
                 # 55P03 lock_not_available · 40P01 deadlock_detected
                 if code in ("55P03", "40P01") and attempt < tries:
-                    print(f"[startup] verifix sync columns: {table} busy "
+                    print(f"[startup] {label}: {table} busy "
                           f"({code}), try {attempt}/{tries}", flush=True)
                     _time.sleep(2 * attempt)
                     continue
-                print(f"[startup] verifix sync columns FAILED on {table}: {exc}",
+                print(f"[startup] {label} FAILED on {table}: {exc}",
                       flush=True)
                 raise
             finally:

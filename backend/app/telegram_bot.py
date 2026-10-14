@@ -2274,6 +2274,25 @@ _LT_MESSAGES = {
         "late_state_admin": "\n\n\u23F3 Kechikkan isbot adminlarga yuborildi.",
         "late_state_approved": "\n\n\u2705 Kechikkan isbot tasdiqlandi \u00B7 {w}/{w} ball",
         "late_state_rejected": "\n\n\u274C Kechikkan isbot rad etildi \u00B7 0/{w} ball",
+        "late_state_held": "\n\n\U0001F4E8 Kechikkan isbot saqlandi \u2014 brigadirga hamma liderlar kunni yopgach yuboriladi.",
+        "late_until": "\n\n\u23F3 Kechikkan isbotni {t} gacha yuborish mumkin.",
+        "late_sent_held": ("\u2705 Kechikkan isbot saqlandi.\n\n"
+                           "U brigadiringizga brigadadagi hamma liderlar kunni yopgach yuboriladi "
+                           "(eng kechi {t} da). Boshqa yuboradigan isbotingiz bo'lmasa, "
+                           "\u00AB\U0001F3C1 Kunni yopish\u00BB tugmasini bosing."),
+        "menu_late_hint": "\n\n\u23F1 belgili vazifalar uchun kechikkan isbotni {t} gacha yuborishingiz mumkin.",
+        "menu_finish_hint": ("\n\nBoshqa yuboradigan isbotingiz bo'lmasa, \u00AB\U0001F3C1 Kunni yopish\u00BB ni "
+                             "bosing \u2014 shunda kechikkan isbotlaringiz brigadirga tezroq yetadi."),
+        "menu_finished": "\n\n\U0001F3C1 Kun yopilgan ({time}). Kechikkan isbotlar qabul qilinmaydi.",
+        "btn_finish_day": "\U0001F3C1 Kunni yopish",
+        "finish_confirm": ("\U0001F3C1 Kunni yopasizmi?\n\n"
+                           "Shundan keyin bugun uchun boshqa kechikkan isbot yubora olmaysiz.{extra}\n\n"
+                           "Kechikkan isbotlaringiz brigadirga hamma liderlar kunni yopgach yuboriladi "
+                           "(eng kechi {t} da)."),
+        "finish_drafts_extra": "\n\n\U0001F5D1 Yuborilmagan {k} ta rasm o'chiriladi.",
+        "finish_ok": "\u2705 Kun yopildi",
+        "menu_held": "\n\U0001F4E8 {n} ta kechikkan isbot brigadirga hamma liderlar kunni yopgach yuboriladi.",
+        "finish_need_tasks": "Avval barcha vazifalar yopilishi kerak.",
         "lp_card_sup": ("\u23F1 KECHIKKAN ISBOT\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 muddat {t}\n{sent}\n\n\U0001F4DD Sabab:\n{reason}\n\n"
                         "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
@@ -2427,6 +2446,25 @@ _LT_MESSAGES = {
         "late_state_admin": "\n\n\u23F3 Кечиккан исбот админларга юборилди.",
         "late_state_approved": "\n\n\u2705 Кечиккан исбот тасдиқланди \u00B7 {w}/{w} балл",
         "late_state_rejected": "\n\n\u274C Кечиккан исбот рад этилди \u00B7 0/{w} балл",
+        "late_state_held": "\n\n\U0001F4E8 Кечиккан исбот сақланди \u2014 бригадирга ҳамма лидерлар кунни ёпгач юборилади.",
+        "late_until": "\n\n\u23F3 Кечиккан исботни {t} гача юбориш мумкин.",
+        "late_sent_held": ("\u2705 Кечиккан исбот сақланди.\n\n"
+                           "У бригадирингизга бригададаги ҳамма лидерлар кунни ёпгач юборилади "
+                           "(энг кечи {t} да). Бошқа юборадиган исботингиз бўлмаса, "
+                           "\u00AB\U0001F3C1 Кунни ёпиш\u00BB тугмасини босинг."),
+        "menu_late_hint": "\n\n\u23F1 белгили вазифалар учун кечиккан исботни {t} гача юборишингиз мумкин.",
+        "menu_finish_hint": ("\n\nБошқа юборадиган исботингиз бўлмаса, \u00AB\U0001F3C1 Кунни ёпиш\u00BB ни "
+                             "босинг \u2014 шунда кечиккан исботларингиз бригадирга тезроқ етади."),
+        "menu_finished": "\n\n\U0001F3C1 Кун ёпилган ({time}). Кечиккан исботлар қабул қилинмайди.",
+        "btn_finish_day": "\U0001F3C1 Кунни ёпиш",
+        "finish_confirm": ("\U0001F3C1 Кунни ёпасизми?\n\n"
+                           "Шундан кейин бугун учун бошқа кечиккан исбот юбора олмайсиз.{extra}\n\n"
+                           "Кечиккан исботларингиз бригадирга ҳамма лидерлар кунни ёпгач юборилади "
+                           "(энг кечи {t} да)."),
+        "finish_drafts_extra": "\n\n\U0001F5D1 Юборилмаган {k} та расм ўчирилади.",
+        "finish_ok": "\u2705 Кун ёпилди",
+        "menu_held": "\n\U0001F4E8 {n} та кечиккан исбот бригадирга ҳамма лидерлар кунни ёпгач юборилади.",
+        "finish_need_tasks": "Аввал барча вазифалар ёпилиши керак.",
         "lp_card_sup": ("\u23F1 КЕЧИККАН ИСБОТ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 муддат {t}\n{sent}\n\n\U0001F4DD Сабаб:\n{reason}\n\n"
                         "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
@@ -2580,6 +2618,25 @@ _LT_MESSAGES = {
         "late_state_admin": "\n\n\u23F3 Позднее подтверждение передано администраторам.",
         "late_state_approved": "\n\n\u2705 Позднее подтверждение принято \u00B7 {w}/{w} баллов",
         "late_state_rejected": "\n\n\u274C Позднее подтверждение отклонено \u00B7 0/{w} баллов",
+        "late_state_held": "\n\n\U0001F4E8 Позднее подтверждение сохранено \u2014 уйдёт бригадиру, когда день закроют все лидеры.",
+        "late_until": "\n\n\u23F3 Позднее подтверждение можно отправить до {t}.",
+        "late_sent_held": ("\u2705 Позднее подтверждение сохранено.\n\n"
+                           "Оно уйдёт бригадиру, когда день закроют все лидеры бригады "
+                           "(не позднее {t}). Если больше нечего отправлять, нажмите "
+                           "\u00AB\U0001F3C1 Закрыть день\u00BB."),
+        "menu_late_hint": "\n\n\u23F1 По задачам с отметкой \u23F1 позднее подтверждение можно отправить до {t}.",
+        "menu_finish_hint": ("\n\nЕсли больше нечего отправлять, нажмите \u00AB\U0001F3C1 Закрыть день\u00BB "
+                             "\u2014 тогда ваши поздние подтверждения быстрее дойдут до бригадира."),
+        "menu_finished": "\n\n\U0001F3C1 День закрыт ({time}). Поздние подтверждения больше не принимаются.",
+        "btn_finish_day": "\U0001F3C1 Закрыть день",
+        "finish_confirm": ("\U0001F3C1 Закрыть день?\n\n"
+                           "После этого за сегодня больше нельзя отправить позднее подтверждение.{extra}\n\n"
+                           "Ваши поздние подтверждения уйдут бригадиру, когда день закроют все лидеры "
+                           "(не позднее {t})."),
+        "finish_drafts_extra": "\n\n\U0001F5D1 Неотправленные фото ({k}) будут удалены.",
+        "finish_ok": "\u2705 День закрыт",
+        "menu_held": "\n\U0001F4E8 Поздних подтверждений: {n} — уйдут бригадиру, когда день закроют все лидеры.",
+        "finish_need_tasks": "Сначала должны закрыться все задачи.",
         "lp_card_sup": ("\u23F1 ПОЗДНЕЕ ПОДТВЕРЖДЕНИЕ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 срок {t}\n{sent}\n\n\U0001F4DD Причина:\n{reason}\n\n"
                         "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
@@ -2733,6 +2790,25 @@ _LT_MESSAGES = {
         "late_state_admin": "\n\n\u23F3 Late proof was passed to the admins.",
         "late_state_approved": "\n\n\u2705 Late proof accepted \u00B7 {w}/{w} points",
         "late_state_rejected": "\n\n\u274C Late proof rejected \u00B7 0/{w} points",
+        "late_state_held": "\n\n\U0001F4E8 Late proof saved \u2014 it goes to your brigadir once every leader has closed the day.",
+        "late_until": "\n\n\u23F3 Late proofs can be sent until {t}.",
+        "late_sent_held": ("\u2705 Late proof saved.\n\n"
+                           "It goes to your brigadir once every leader of your unit has closed the day "
+                           "(by {t} at the latest). If you have nothing more to send, press "
+                           "\u00AB\U0001F3C1 Close the day\u00BB."),
+        "menu_late_hint": "\n\n\u23F1 For tasks marked \u23F1 you can send a late proof until {t}.",
+        "menu_finish_hint": ("\n\nIf you have nothing more to send, press \u00AB\U0001F3C1 Close the day\u00BB "
+                             "\u2014 your late proofs then reach your brigadir sooner."),
+        "menu_finished": "\n\n\U0001F3C1 Day closed ({time}). Late proofs are no longer accepted.",
+        "btn_finish_day": "\U0001F3C1 Close the day",
+        "finish_confirm": ("\U0001F3C1 Close the day?\n\n"
+                           "After this you cannot send any more late proofs for today.{extra}\n\n"
+                           "Your late proofs go to your brigadir once every leader has closed the day "
+                           "(by {t} at the latest)."),
+        "finish_drafts_extra": "\n\n\U0001F5D1 {k} unsent photo(s) will be deleted.",
+        "finish_ok": "\u2705 Day closed",
+        "menu_held": "\n\U0001F4E8 {n} late proof(s) go to your brigadir once every leader has closed the day.",
+        "finish_need_tasks": "All tasks must be closed first.",
         "lp_card_sup": ("\u23F1 LATE PROOF\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 due {t}\n{sent}\n\n\U0001F4DD Reason:\n{reason}\n\n"
                         "Review it in the chat: ask what you need, then refuse it or pass it to "
@@ -3268,6 +3344,10 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
                    leader_late_proof.ADMIN: "late_state_admin",
                    leader_late_proof.APPROVED: "late_state_approved",
                    leader_late_proof.REJECTED: "late_state_rejected"}.get(late.status)
+            # Filed and not yet sent: it goes to the brigadir once every
+            # leader of the unit has closed the day (`leader_late_proof`).
+            if late.held and late.status == leader_late_proof.SUPERVISOR:
+                key = "late_state_held"
             if key:
                 text += _lt(lang, key).format(w=weight)
         elif leader_late_proof.eligible(
@@ -3282,6 +3362,9 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
                                                    task_id)
             if staged:
                 text += _lt(lang, "late_have").format(k=staged)
+            # The cut-off, said where the door is: 24:00, or 12:00 for a night.
+            text += _lt(lang, "late_until").format(
+                t=leader_late_proof.late_until_label(shift))
             kb.add(_lt_btn(_lt(lang, "btn_late_resume" if staged else "btn_late_file"),
                            f"lt:late:{_lt_ref(pid, cid)}:{task_id}"))
 
@@ -3542,6 +3625,12 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
     day = _lt_day(db, pid, date, cid)
     entries = _lt_entries(db, day)
     cfg = effective_leader_config(db, prof, shift)
+    per_task = leader_tasks_per_task(db, prof)
+    # The late window (2026-10-14): 24:00, or 12:00 for a night, and shut early
+    # by the leader's own «Kunni yopish». None on a day-close unit.
+    fin = leader_late_proof.finish_state(db, day=day, cfg=cfg, shift=shift,
+                                         per_task=per_task)
+    late_set = set(fin["open"]) if fin else set()
 
     kb = types.InlineKeyboardMarkup(row_width=1)
     if day and day.closed_at:
@@ -3550,11 +3639,28 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
         # submission is through the task itself, and on a per-task unit the day
         # is closed precisely BECAUSE the tasks are, so a dead menu would put
         # every locked task out of reach of the one person allowed to reopen it.
+        #
+        # EXCEPT the late door (2026-10-14): it stays open past the close until
+        # the cut-off or the leader's «Kunni yopish», so a task that can still
+        # take a late proof — or one whose late proof the leader wants to look
+        # at — keeps a live row while the window is open.
         adm = tid in _admin_ids()
         text = _lt(lang, "menu_closed").format(
             name=prof.name, date=date,
             score=round(float(day.completion or 0)),
         )
+        lates = leader_late_proof.by_day(db, day.id) if fin else {}
+        window = bool(fin and fin["window_open"])
+        if fin and fin["finished_at"]:
+            at = leader_late_proof.local(fin["finished_at"])
+            text += _lt(lang, "menu_finished").format(
+                time=at.strftime("%H:%M") if at else "—")
+        elif window and late_set:
+            text += _lt(lang, "menu_late_hint").format(t=fin["label"])
+            if fin["can"]:
+                text += _lt(lang, "menu_finish_hint")
+        if fin and fin["held"]:
+            text += _lt(lang, "menu_held").format(n=fin["held"])
         if adm:
             text += _lt(lang, "adm_menu_hint")
         for td_id, s in cfg.items():
@@ -3562,8 +3668,15 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 continue
             e = entries.get(td_id)
             mark = "✅ " if (e and e.done) else ("❌ " if e else "")
+            if td_id in late_set:
+                mark = "⏱ "
+            elif td_id in lates and not (e and e.done):
+                mark = "📨 "
+            live = adm or td_id in late_set or (window and td_id in lates)
             kb.add(_lt_btn(f"{mark}{config_name(s, lang)}",
-                           f"lt:task:{_lt_ref(pid, cid)}:{td_id}" if adm else f"lt:noop:{_lt_ref(pid, cid)}"))
+                           f"lt:task:{_lt_ref(pid, cid)}:{td_id}" if live else f"lt:noop:{_lt_ref(pid, cid)}"))
+        if fin and fin["can"]:
+            kb.add(_lt_btn(_lt(lang, "btn_finish_day"), f"lt:fin:{_lt_ref(pid, cid)}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{_lt_ref(pid, cid)}"))
     else:
         text = _lt(lang, "menu_title").format(name=prof.name, date=date)
@@ -3574,7 +3687,6 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
         cams = [t for t, c in cfg.items()
                 if c["enabled"] and c.get("proof_kind") == "camera"]
         shot = leader_proof.counts(db, day.id if day else None, cams)
-        per_task = leader_tasks_per_task(db, prof)
         if per_task:
             # The running score, and it is the only place the leader sees one
             # before the day is over. Pending tasks are in NEITHER number and
@@ -3586,6 +3698,10 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
             if waiting:
                 text += _lt(lang, "pt_pending").format(n=waiting)
             text += _lt(lang, "pt_menu_hint")
+            if late_set:
+                text += _lt(lang, "menu_late_hint").format(t=fin["label"])
+            if fin and fin["held"]:
+                text += _lt(lang, "menu_held").format(n=fin["held"])
             revs = leader_ai.verdicts_for(db, day) if day else {}
             with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id)
                           .filter(LeaderTaskMedia.entry_id.in_(
@@ -3622,9 +3738,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 # exactly those. Asked only for a row that is still open, so
                 # the menu costs no extra query for anything already answered.
                 if st == "open" and not leader_auto.is_auto(s) \
-                        and leader_late_proof.eligible(
-                        db, day=day, task_id=td_id, cfg_entry=s, shift=shift,
-                        per_task=True):
+                        and td_id in late_set:
                     mark = "⏱ "
                 label = f"{mark}{config_name(s, lang)}"
             elif e:
@@ -3637,9 +3751,11 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 label = config_name(s, lang)
             kb.add(_lt_btn(label, f"lt:task:{_lt_ref(pid, cid)}:{td_id}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{_lt_ref(pid, cid)}"))
-        # No «KUNNI YOPISH» in per-task mode: the day closes itself when the
-        # last task is submitted, so a button for it would be a second, weaker
-        # way to end a day that is already ending correctly.
+        # No «KUNNI YOPISH» here in per-task mode: the day closes itself when
+        # the last task is submitted, so a button for it would be a second,
+        # weaker way to end a day that is already ending correctly. Its
+        # «🏁 Kunni yopish» is a different act and lives on the CLOSED menu: it
+        # ends the late window (`leader_late_proof.finish_day`).
         if not per_task:
             kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{_lt_ref(pid, cid)}"))
 
@@ -3844,7 +3960,7 @@ def _lt_callback(call: types.CallbackQuery):
                 db.commit()
                 bot.answer_callback_query(call.id)
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
-                                 s_cfg, prof, day, shift)
+                                 s_cfg, prof, day, shift, cid=cid)
                 return
 
             if not live:
@@ -3860,7 +3976,8 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(
                     call.id, _lt(lang, "late_send_now") if action == "lgo" else None)
                 _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
-                              s_cfg, shift, day, awaiting=(action == "lgo"))
+                              s_cfg, shift, day, awaiting=(action == "lgo"),
+                              cid=cid)
                 return
 
             if action == "lclr":
@@ -3868,7 +3985,7 @@ def _lt_callback(call: types.CallbackQuery):
                 db.commit()
                 bot.answer_callback_query(call.id, _lt(lang, "late_cleared"))
                 _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
-                              s_cfg, shift, day)
+                              s_cfg, shift, day, cid=cid)
                 return
 
             shots = leader_late_proof.draft_shots(db, day.id, task_id) if day else []
@@ -3929,22 +4046,75 @@ def _lt_callback(call: types.CallbackQuery):
             if cap:
                 db.delete(cap)
             db.commit()
-            carded = _lp_send_to_supervisor(db, row) or set()
-            # The chat opened with the leader's reason as its first entry: the
-            # admins hear about it too (the operator's ruling — all three
-            # parties, every message), the brigadir who got the card keeps
-            # the bell row alone.
-            leader_late_proof.notify_filed(db, row, skip_dm=carded)
+            # HELD until every leader of the unit has closed the day, then the
+            # card and the chat's first notice go out together (2026-10-14,
+            # the operator: «When everyone closes the day, then send»). It may
+            # go at once — this filing can be the last thing anybody had left.
+            held = leader_late_proof.file_announcement(db, row, prof=prof,
+                                                       cell_id=cid)
+            sent_text = (_lt(lang, "late_sent_held").format(
+                             t=leader_late_proof.late_until_label(shift))
+                         if held else _lt(lang, "late_sent"))
             from app.services.leader_appeal_chat import LATE, open_chat_markup
             try:
-                bot.edit_message_text(_lt(lang, "late_sent"), chat_id=chat_id,
+                bot.edit_message_text(sent_text, chat_id=chat_id,
                                       message_id=msg_id,
                                       reply_markup=open_chat_markup(LATE, row.id, lang))
             except Exception:
-                bot.send_message(chat_id, _lt(lang, "late_sent"),
+                bot.send_message(chat_id, sent_text,
                                  reply_markup=open_chat_markup(LATE, row.id, lang))
             bot.answer_callback_query(call.id)
             _lt_menu(db, tid, pid, lang, chat_id, None, cid)
+            return
+
+        # ── «Kunni yopish» on a per-task checklist (2026-10-14) ──────────────
+        # The leader says they are done with the day, late proofs included: the
+        # late door shuts for this checklist, its unsent draft photos go, and
+        # the unit's held late proofs reach the brigadir as soon as every
+        # leader is done. A confirm first — nothing undoes it.
+        if action in ("fin", "finok"):
+            _lt_clear(tid)
+            if day is None or not leader_tasks_per_task(db, prof):
+                bot.answer_callback_query(call.id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
+                return
+            if day.finished_at is not None:
+                bot.answer_callback_query(call.id, _lt(lang, "finish_ok"))
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
+                return
+            if day.closed_at is None:
+                bot.answer_callback_query(call.id, _lt(lang, "finish_need_tasks"),
+                                          show_alert=True)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
+                return
+            if not leader_late_proof.window_open(day, shift, date):
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"),
+                                          show_alert=True)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
+                return
+            if action == "fin":
+                k = db.query(LeaderLateProofShot).filter_by(day_id=day.id).count()
+                kb = types.InlineKeyboardMarkup()
+                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"),
+                       _lt_btn(_lt(lang, "btn_confirm"), f"lt:finok:{_lt_ref(pid, cid)}"))
+                bot.answer_callback_query(call.id)
+                _lt_edit(chat_id, msg_id, _lt(lang, "finish_confirm").format(
+                    extra=(_lt(lang, "finish_drafts_extra").format(k=k) if k else ""),
+                    t=leader_late_proof.late_until_label(shift)), kb)
+                return
+            if leader_late_proof.finish_day(db, day, actor_name=prof.name):
+                _lt_log(db, tid, prof, date, "checklist.day_finished",
+                        target_kind="day", target_id=day.id,
+                        target_name=prof.name,
+                        details=[("leader", prof.name), ("door", "bot")],
+                        changes=[("late_window", "open", "closed")])
+                try:
+                    leader_late_proof.release(db, day.manager_id, day.date)
+                except Exception:
+                    logger.exception("late-proof release after «Kunni yopish» failed")
+                    db.rollback()
+            bot.answer_callback_query(call.id, _lt(lang, "finish_ok"))
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "back":
@@ -3992,16 +4162,29 @@ def _lt_callback(call: types.CallbackQuery):
         if action == "task":
             task_id = int(parts[3])
             if closed and tid not in _admin_ids():
-                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
-                return
+                # The late door outlives the close (2026-10-14): a task that can
+                # still take a late proof, or whose late proof the leader wants
+                # to read, opens while the window is open. Anything else on a
+                # closed day stays shut for the leader.
+                ce = cfg.get(task_id) or {}
+                reach = bool(ce.get("enabled")) and (
+                    leader_late_proof.eligible(
+                        db, day=day, task_id=task_id, cfg_entry=ce, shift=shift,
+                        per_task=leader_tasks_per_task(db, prof))
+                    or (leader_late_proof.window_open(day, shift, date)
+                        and leader_late_proof.existing(db, day.id, task_id) is not None))
+                if not reach:
+                    bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"),
+                                              show_alert=True)
+                    return
             if task_id not in cfg or not cfg[task_id]["enabled"]:
                 bot.answer_callback_query(call.id)
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
                 return
-            if closed:  # admin, guarded above → the locked-task screen
+            if closed:  # admin, or the late door → the locked-task screen
                 bot.answer_callback_query(call.id)
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
-                                 cfg[task_id], prof, day, shift)
+                                 cfg[task_id], prof, day, shift, cid=cid)
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
@@ -4017,7 +4200,7 @@ def _lt_callback(call: types.CallbackQuery):
                     db, day=day, task_id=task_id, cfg_entry=cfg[task_id],
                     shift=shift, per_task=leader_tasks_per_task(db, prof)):
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
-                                 cfg[task_id], prof, day, shift)
+                                 cfg[task_id], prof, day, shift, cid=cid)
                 return
             # On a per-task unit every task has a screen of its own — draft or
             # submitted — and that screen is the only place work happens. It
@@ -4688,6 +4871,10 @@ def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
     text = _lt(lang, "late_warn").format(
         task=config_name(cfg_entry, lang),
         t=leader_close.task_deadline(cfg_entry, shift))
+    # WHEN the door shuts (2026-10-14): 24:00, or 12:00 for a night — strict,
+    # so the leader reads it before deciding rather than after being refused.
+    text += _lt(lang, "late_until").format(
+        t=leader_late_proof.late_until_label(shift))
     if k:
         text += _lt(lang, "late_have").format(k=k)
     # The upload door has nothing to open — the chat is already listening, and
@@ -4739,7 +4926,7 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
             db.commit()
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
     text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k,
-                               awaiting=awaiting)
+                               awaiting=awaiting, cid=cid)
     cap = _lt_capture(db, tid)
     if not (cap and cap.stage == "late_photos"
             and cap.leader_id == pid and cap.task_id == task_id):
@@ -4776,7 +4963,9 @@ def refresh_late_screen(db, leader_id: int, task_id: int,
     entry = effective_leader_config(db, prof, shift).get(task_id)
     if not entry:
         return
-    day = leader_proof.open_day(db, prof, create=False, cell_id=cid)
+    # The STORED day, closed or not: the late window outlives the close, and
+    # `open_day` answers None for a closed day, which read as «0 photos».
+    day = _lt_day(db, leader_id, effective_date(shift), cid)
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
     for cap in caps:
         if not cap.message_id:
@@ -4821,9 +5010,11 @@ def _lt_late_photo(message: types.Message):
         shift = _lt_shift(db, prof)
         cfg = effective_leader_config(db, prof, shift)
         s_cfg = cfg.get(task_id) or {}
-        day = _lt_day(db, pid, effective_date(shift))
-        # Re-checked on every shot, not just when the screen opened: the day can
-        # close, or an admin can reopen the task, while the leader is mid-roll.
+        cid = cap.cell_id
+        day = _lt_day(db, pid, effective_date(shift), cid)
+        # Re-checked on every shot, not just when the screen opened: the window
+        # can run out, the leader can close the day, or an admin can reopen
+        # the task, while the leader is mid-roll.
         if not leader_late_proof.eligible(
                 db, day=day, task_id=task_id, cfg_entry=s_cfg, shift=shift,
                 per_task=leader_tasks_per_task(db, prof)):
@@ -4831,6 +5022,14 @@ def _lt_late_photo(message: types.Message):
             db.commit()
             bot.send_message(message.chat.id, _lt(lang, "late_gone_alert"))
             return
+        if day is None:
+            # The late screen creates the day when it opens; a capture that
+            # outlived a lost row gets it back the same way, never a crash.
+            day = leader_proof.open_day(db, prof, create=True, cell_id=cid)
+            if day is None:
+                db.commit()
+                bot.send_message(message.chat.id, _lt(lang, "late_gone_alert"))
+                return
         relayed = _lt_relay_photo(db, message)
         if not relayed:
             db.commit()
@@ -4850,7 +5049,8 @@ def _lt_late_photo(message: types.Message):
             return
         k = leader_late_proof.draft_count(db, day.id, task_id)
         chat, old_mid = cap.chat_id, cap.message_id
-        text, kb = _lt_late_screen(db, lang, pid, task_id, s_cfg, shift, k)
+        text, kb = _lt_late_screen(db, lang, pid, task_id, s_cfg, shift, k,
+                                   cid=cid)
         # The screen FOLLOWS the chat: the old one is deleted and a fresh copy
         # sent below the uploads, so «Sababni yozish» is never stranded above
         # the photos it belongs to.
