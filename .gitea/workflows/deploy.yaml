@@ -130,3 +130,14 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
+
+      # ⚠ TEMPORARY (2026-10-14): where cell 0811 stands — Turdimurodov
+      # Nodirjon's cell, kept in a unit of its own (26 Sep ruling), now read in
+      # Aripova Manzura's unit since the Verifix sync. Both units, his profile,
+      # every dated link event, sync item and Jurnal row naming the cell.
+      # Read-only, never fails the deploy, no worker names. Lives under deploy/
+      # so adding it restarts nothing. Remove with the script.
+      - name: "Report: cell 0811 / Turdimurodov (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 120 .venv/bin/python ../deploy/diag_cell_0811.py || true
