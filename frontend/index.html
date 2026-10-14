@@ -184,7 +184,9 @@
         }
         // Shared chrome for the boot screens below (recovery + stale-version),
         // kept vanilla + self-contained so it renders even when the bundle/CSS
-        // never loaded. Theme mirrors the in-app localStorage 'theme'.
+        // never loaded. Theme mirrors the in-app localStorage 'theme'; logo is
+        // the emblem drawn for it (cream ground on light, rendered by
+        // scripts/render-icons.py — components/ui/BrandLogo.jsx is the twin).
         function palette() {
           var theme = 'dark';
           try {
@@ -193,9 +195,11 @@
           } catch (e) {}
           return theme === 'light'
             ? { bg: '#faf8f5', text1: '#111827', text3: '#6b7280', brand: '#C8973F',
-                onBrand: '#ffffff', border: 'rgba(0,0,0,0.10)', techBg: '#f3f0ea' }
+                onBrand: '#ffffff', border: 'rgba(0,0,0,0.10)', techBg: '#f3f0ea',
+                logo: '/logo-light-v2.png' }
             : { bg: '#0f1117', text1: '#f3f4f6', text3: '#9ca3af', brand: '#C8973F',
-                onBrand: '#ffffff', border: 'rgba(255,255,255,0.10)', techBg: '#0a0c11' };
+                onBrand: '#ffffff', border: 'rgba(255,255,255,0.10)', techBg: '#0a0c11',
+                logo: '/logo.png' };
         }
         function ensureAnims() {
           if (document.getElementById('safia-boot-anims')) return;
@@ -218,7 +222,7 @@
           return (
             '<div style="display:flex;flex-direction:column;align-items:center;' +
             'justify-content:center;gap:20px">' +
-              '<img src="/logo.png" alt="Safia" style="width:96px;height:96px;' +
+              '<img src="' + p.logo + '" alt="Safia" style="width:96px;height:96px;' +
               'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18);' +
               'animation:safia-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" />' +
               (spinner
@@ -356,7 +360,7 @@
             'background:' + p.bg + ';color:' + p.text1 + ';' +
             "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
           // Amber "blocked but fixable" chip + an INLINE wifi-off mark, not the
-          // logo: every other boot screen fetches /logo.png, which is the one
+          // logo: every other boot screen fetches /logo.png (or its light twin), the one
           // thing this screen already knows it cannot get.
           var icon =
             '<div style="width:64px;height:64px;border-radius:9999px;display:flex;' +
@@ -450,7 +454,7 @@
           box.innerHTML =
             '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;' +
             'align-items:center;text-align:center;gap:16px">' +
-              '<img src="/logo.png" alt="Safia" style="width:76px;height:76px;' +
+              '<img src="' + p.logo + '" alt="Safia" style="width:76px;height:76px;' +
               'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18)"/>' +
               midHtml +
               '<button id="boot-report" type="button" style="width:100%;margin-top:8px;padding:8px;border:none;' +

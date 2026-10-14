@@ -1,8 +1,8 @@
-// Inlined base64 logo baked into the JS bundle — no network fetch, so it can
+// Inlined base64 logo (one per theme) baked into the JS bundle — no network fetch, so it can
 // never get stuck on a poisoned cache entry for the stable /logo.png URL. See
 // assets/logoChrome.js for the full rationale.
 import { RotateCw } from "lucide-react";
-import LOGO_SRC from "../../assets/logoChrome.js";
+import BrandLogo from "./BrandLogo";
 import Button from "./Button";
 import { useLang } from "../../context/LangContext";
 import { useStallWatch } from "../../utils/stallReport";
@@ -45,9 +45,7 @@ export default function PageLoader({ overlay = false, where = "page" }) {
           spinner sit exactly where they always did, from the first frame to
           the last, whatever the hint says. */}
       <div className="relative flex flex-col items-center gap-5">
-        <img
-          src={LOGO_SRC}
-          alt="Safia"
+        <BrandLogo
           className="w-24 h-24 rounded-full object-cover animate-pulse"
           style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}
         />

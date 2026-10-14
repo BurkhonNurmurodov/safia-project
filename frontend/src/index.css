@@ -127,6 +127,11 @@
   --chat-ink-mix:    56%;
 }
 
+/* The brand emblem has a drawing per theme (components/ui/BrandLogo.jsx renders
+   both): the ink ground on dark, the cream ground on light. */
+[data-theme="light"] .brand-logo-dark,
+:root:not([data-theme="light"]) .brand-logo-light { display: none; }
+
 * { box-sizing: border-box; }
 
 body {

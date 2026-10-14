@@ -4,7 +4,7 @@ import { Eye, EyeOff, Lock, User, ArrowLeft, Send, Check } from "lucide-react";
 // the stable /logo.png URL can be poisoned by the host's anti-bot layer, and the
 // login screen is the one place where a broken logo is the whole first
 // impression. See assets/logoChrome.js.
-import LOGO_SRC from "../assets/logoChrome.js";
+import BrandLogo from "../components/ui/BrandLogo";
 import api from "../utils/api";
 import { inAndroidApp } from "../utils/session";
 import { useLang } from "../context/LangContext";
@@ -119,7 +119,7 @@ export default function WebLogin({ onSuccess }) {
         {/* Brand — the only decoration on the screen, and the one thing that
             tells a visitor they are in the right place before they can read. */}
         <div className="flex flex-col items-center mb-7">
-          <img src={LOGO_SRC} alt="" className="h-12 w-auto mb-4" />
+          <BrandLogo alt="" className="h-12 w-auto mb-4" />
           <h1 className="text-xl font-semibold" style={{ color: "var(--text-1)" }}>
             {t("weblogin.title")}
           </h1>

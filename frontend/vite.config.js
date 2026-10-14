@@ -70,7 +70,9 @@ const ROOT_STATICS = [
   // Drawn by the ES5 boot screens in index.html (stale-version, slow-link,
   // recovery) and fetched by nothing else — the in-app logo is a data URI —
   // so without this the one screen that shows offline would show it broken.
+  // logo-light-v2.png is the same emblem on cream, for the light theme.
   '/logo.png',
+  '/logo-light-v2.png',
 ]
 function emitServiceWorker() {
   let root = process.cwd()

@@ -1,9 +1,9 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-// Inlined base64 logo baked into the JS bundle — no network fetch, so it can
-// never get stuck on a poisoned cache entry for the stable /logo.png URL. See
-// assets/logoChrome.js for the full rationale.
-import logoSrc from "../../assets/logoChrome.js";
+// Inlined base64 logo (one per theme) baked into the JS bundle — no network
+// fetch, so it can never get stuck on a poisoned cache entry for the stable
+// /logo.png URL. See assets/logoChrome.js for the full rationale.
+import BrandLogo from "../ui/BrandLogo";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
@@ -342,11 +342,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               title={t("nav.overview")}
               className="hidden md:flex w-full items-center justify-center transition-opacity hover:opacity-80"
             >
-              <img
-                src={logoSrc}
-                alt="Safia"
-                className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-              />
+              <BrandLogo className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
             </Link>
           )}
 
@@ -358,11 +354,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 onClick={onClose}
                 className="flex items-center gap-2 flex-1 min-w-0 rounded-lg transition-opacity hover:opacity-80"
               >
-                <img
-                  src={logoSrc}
-                  alt="Safia"
-                  className="w-9 h-9 rounded-full object-cover flex-shrink-0"
-                />
+                <BrandLogo className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
                 <div className="min-w-0 overflow-hidden">
                   <div
                     className="text-xs font-semibold uppercase tracking-widest mb-0.5 whitespace-nowrap"

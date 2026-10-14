@@ -8837,6 +8837,16 @@ no event; the route is the share sheet).
   (`-v2`) that the manifest, index.html and `ROOT_STATICS` name, and a
   re-render bumps it (see the Cloudflare note). The sidebar / loader / login
   copy is `assets/logo-chrome.png` (192 px, palette-quantised, inlined).
+  **The light theme has its own drawing** (2026-10-14): the same script
+  derives it — the ink ground band becomes cream `#F4EAD9` (the brand gold at
+  20% on white), every gold amount kept (the faded track stays gold-over-the-
+  ground), the white bar turns light `--text-1` ink; the mascot and the gold
+  disc are untouched — into `assets/logo-chrome-light.png` and
+  `public/logo-light-v2.png` (the ES5 boot screens, through `palette().logo`).
+  `components/ui/BrandLogo.jsx` is THE in-app logo: it renders both drawings
+  and index.css shows the one for `data-theme` (CSS, never `useTheme`, so it is
+  right from the first frame and outside every provider). Never put a bare
+  `<img src={logoChrome}>` in the chrome again.
 - An installed iOS app keeps its own storage, so the login is entered once
   more there; nothing else about the session model changes (`webSession`, the
   profile wallet and the JWT are exactly what the browser tab holds).
