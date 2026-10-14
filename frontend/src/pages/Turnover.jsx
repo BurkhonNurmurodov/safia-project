@@ -1,9 +1,10 @@
 // «Kadrlar qo'nimsizligi» (/turnover) — the leaders' turnover KPI, month by
 // month from Verifix, from October 2026 (2nd of the leaders' 5 KPIs).
 //
-// One question per screen: «what is each leader's turnover score this
+// One question per screen: «what is each owned cell's turnover score this
 // month, and why». The month is picked once; three tabs read the SAME payload
-// (leaders · cells · the people who left); every row opens the full working
+// (the ranking of owned cells · every cell · the people who left); every row
+// opens the full working
 // (cells → division → band → KPI → names). `services/turnover.py` computes;
 // this page never re-derives a figure, only filters what it shows by search.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -258,21 +259,25 @@ export default function Turnover() {
   const has = (...vals) => !needle || vals.some((v) => v && String(v).toLowerCase().includes(needle));
   const nameBoth = (v) => [v, v ? tl(v) : null];
 
-  const [sortL, onSortL] = useSort("turnover.sortL", { key: "rate", dir: "desc" });
+  const [sortL, onSortL] = useSort("turnover.sortR", { key: "rate", dir: "desc" });
   const [sortC, onSortC] = useSort("turnover.sortC", { key: "rate", dir: "desc" });
   const [sortP, onSortP] = useSort("turnover.sortP", { key: "leftOn", dir: "desc" });
 
-  // The KPI is the cell OWNER's («Egasi»). A leader who runs a cell and owns
-  // none (`owner: false`) is listed after the ranking, unscored.
-  const [leaders, notOwners] = useMemo(() => {
-    const rows = (data?.leaders || []).filter((x) => has(...nameBoth(x.name), ...x.brigadirs.flatMap((b) => nameBoth(b.name)),
-      ...x.cells.map((c) => c.code)));
-    const sorted = sortRows(rows, sortL, (x, k) => ({
-      name: tl(x.name || ""), brigadir: tl(x.brigadirs[0]?.name || ""), cells: x.cells[0]?.code,
+  // The ranking: one row per OWNED cell (an owner on the month's last day,
+  // standing on it), credited to its owner — the operator, 2026-10-14: «rank
+  // per cell … do not include the ones without owner». «Ishchi havotirlari»
+  // lists the same cells for the same period.
+  const ranking = useMemo(() => {
+    const rows = (data?.ranking || []).filter((x) => has(x.code, ...nameBoth(x.owner), ...nameBoth(x.brigadir)));
+    return sortRows(rows, sortL, (x, k) => ({
+      code: x.code, owner: tl(x.owner || ""), brigadir: tl(x.brigadir || ""),
       working: x.working, left: x.left, rate: x.rate, score: x.score, points: x.points,
     })[k]);
-    return [sorted.filter((x) => x.owner !== false), sorted.filter((x) => x.owner === false)];
   }, [data, needle, sortL, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const countText = (tot) => fill(T.nLeaders, {
+    o: n0(tot?.owners ?? new Set((data?.ranking || []).map((x) => x.owner_id)).size),
+    c: n0(tot?.owned_cells ?? (data?.ranking || []).length),
+  });
 
   const cells = useMemo(() => {
     const rows = (data?.cells || []).filter((c) => has(c.code, ...nameBoth(c.owner), ...nameBoth(c.leader), ...nameBoth(c.brigadir)));
@@ -361,7 +366,7 @@ export default function Turnover() {
             { label: T.mRead, value: data?.read?.ok ? dmHm(data.read.ok.at) : "—" },
             { label: T.mScope, value: scopeText },
           ],
-          leader_order: [...leaders, ...notOwners].map((x) => x.id),
+          leader_order: ranking.map((x) => x.key),
         },
         fallbackName: `turnover-${ym}.xlsx`,
       });
@@ -449,7 +454,7 @@ export default function Turnover() {
         sub={fill(T.kWorkingSub, { n: n0(tot.cells) })} />
       <Kpi icon={Calculator} label={T.kRate} value={pct1(tot.rate)}
         sub={fill(T.kRateSub, { left: n0(tot.left), working: n0(tot.working) })} />
-      <Kpi icon={Award} label={T.kLeaders} value={`${n0(tot.scored)} / ${n0(tot.leaders)}`}
+      <Kpi icon={Award} label={T.kLeaders} value={`${n0(tot.scored)} / ${n0(tot.owned_cells ?? tot.leaders)}`}
         sub={
           <span className="flex flex-wrap gap-x-2 gap-y-0.5">
             {[5, 4, 3, 2, 1].map((s) => (
@@ -498,59 +503,28 @@ export default function Turnover() {
     </div>
   );
 
-  const openLeader = (x) => setEx({ kind: "leader", item: x });
   const openCell = (c) => setEx({ kind: "cell", item: c });
   const emptyRow = (cols, text) => (
     <tr><td colSpan={cols} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{text}</td></tr>
   );
 
-  // Leaders who run a cell and own none — after the ranking, unnumbered and
-  // inert: their cells' figures belong to the cells' owners.
-  // One line in the table (the hint whole on hover); wrapped on a phone,
-  // which has no hover to finish a cut line.
-  const notOwnerHead = notOwners.length > 0 && (
-    <div className="flex items-center gap-2 text-xs font-semibold min-w-0" style={{ color: "var(--text-2)" }}>
-      <span className="whitespace-nowrap">{fill(T.notOwnerGroup, { n: n0(notOwners.length) })}</span>
-      <span className="font-normal truncate" style={{ color: "var(--text-3)" }} title={T.notOwnerHint}>— {T.notOwnerHint}</span>
-    </div>
-  );
-  const notOwnerHeadPhone = notOwners.length > 0 && (
-    <div className="text-xs" style={{ color: "var(--text-3)" }}>
-      <span className="font-semibold" style={{ color: "var(--text-2)" }}>{fill(T.notOwnerGroup, { n: n0(notOwners.length) })}</span>
-      {" — "}{T.notOwnerHint}
-    </div>
-  );
-  const leadersTable = (
-    <TableCard icon={Award} title={T.tLeaders} right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.nLeaders, { n: n0(leaders.length) })}</span>}
+  const rankingTable = (
+    <TableCard icon={Award} title={T.tLeaders}
+      right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{countText(tot)}</span>}
       footer={bandsFooter}
-      mobile={leaders.length || notOwners.length ? (
-        <>
-          {leaders.map((x) => (
-            <MobileRow key={x.id} onClick={() => openLeader(x)}
-              title={<>{tl(x.name)}<KindTag kind={x.kind} T={T} /></>}
-              sub={x.brigadirs.map((b) => tl(b.name)).join(", ")}
-              foot={`${x.cells.map((c) => c.code).join(", ")} · ${fill(T.exWorkingLeft, { w: n0(x.working), l: n0(x.left) })}`}
-              right={<><span className="text-sm font-semibold tabular-nums" style={{ color: toneInk(scoreTone(x.score)) }}>{pct1(x.rate)}</span><ScoreChip score={x.score} size="sm" /></>} />
-          ))}
-          {notOwnerHeadPhone && <div className="px-4 py-2.5" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}>{notOwnerHeadPhone}</div>}
-          {notOwners.map((x) => (
-            <div key={`n${x.id}`} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }} title={T.notOwnerHint}>
-              <div className="text-sm font-medium" style={{ color: "var(--text-2)" }}>
-                {tl(x.name)}<GreyChip>{T.notOwner}</GreyChip>
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-                {[x.brigadirs.map((b) => tl(b.name)).join(", "), fill(T.runsCells, { codes: x.cells.map((c) => c.code).join(", ") })].filter(Boolean).join(" · ")}
-              </div>
-            </div>
-          ))}
-        </>
-      ) : <p className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{T.nothing}</p>}>
+      mobile={ranking.length ? ranking.map((x, i) => (
+        <MobileRow key={x.key} onClick={() => openCell(x)}
+          title={<span className="tabular-nums">{i + 1}. {x.code} · {tl(x.owner)}</span>}
+          sub={x.brigadir ? tl(x.brigadir) : ""}
+          foot={fill(T.exWorkingLeft, { w: n0(x.working), l: n0(x.left) })}
+          right={<><span className="text-sm font-semibold tabular-nums" style={{ color: toneInk(scoreTone(x.score)) }}>{pct1(x.rate)}</span><ScoreChip score={x.score} size="sm" /></>} />
+      )) : <p className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{T.nothing}</p>}>
       <thead>
         <tr>
           <Th label={T.colN} align="center" cls="w-10" />
-          <Th label={T.colLeader} k="name" sort={sortL} onSort={onSortL} />
+          <Th label={T.colCell} k="code" sort={sortL} onSort={onSortL} />
+          <Th label={T.colOwner} k="owner" sort={sortL} onSort={onSortL} hint={T.hOwner} />
           <Th label={T.colBrigadir} k="brigadir" sort={sortL} onSort={onSortL} />
-          <Th label={T.colCells} k="cells" sort={sortL} onSort={onSortL} />
           <Th label={T.colWorking} k="working" sort={sortL} onSort={onSortL} align="right" hint={T.hWorking} />
           <Th label={T.colLeft} k="left" sort={sortL} onSort={onSortL} align="right" hint={T.hLeft} />
           <Th label={T.colRate} k="rate" sort={sortL} onSort={onSortL} align="right" hint={T.hRate} />
@@ -559,48 +533,23 @@ export default function Turnover() {
         </tr>
       </thead>
       <tbody>
-        {leaders.length === 0 && notOwners.length === 0 ? emptyRow(9, T.nothing) : leaders.map((x, i) => (
-          <tr key={x.id} className="cursor-pointer" onClick={() => openLeader(x)}>
+        {ranking.length === 0 ? emptyRow(9, T.nothing) : ranking.map((x, i) => (
+          <tr key={x.key} className="cursor-pointer" onClick={() => openCell(x)}>
             <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{i + 1}</td>
-            <td className="px-3 py-2">
+            <td className="px-3 py-2 tabular-nums"><CellLink id={x.id}>{x.code}</CellLink></td>
+            <td className="px-3 py-2 whitespace-nowrap">
               <button type="button" className="font-medium text-left hover:underline underline-offset-2 focus-visible:underline outline-none"
-                style={{ color: "var(--text-1)" }} onClick={(e) => { e.stopPropagation(); openLeader(x); }}>
-                {tl(x.name)}
+                style={{ color: "var(--text-1)" }} onClick={(e) => { e.stopPropagation(); openCell(x); }}>
+                {tl(x.owner)}
               </button>
-              <KindTag kind={x.kind} T={T} />
             </td>
-            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{x.brigadirs.map((b) => tl(b.name)).join(", ") || "—"}</td>
-            <td className="px-3 py-2 tabular-nums">
-              {x.cells.map((c, j) => (
-                <span key={c.key}>{j > 0 && ", "}<CellLink id={c.id}>{c.code}</CellLink></span>
-              ))}
-            </td>
+            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{x.brigadir ? tl(x.brigadir) : "—"}</td>
             <td className="px-3 py-2 text-right tabular-nums">{n0(x.working)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{n0(x.left)}</td>
             <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: toneInk(scoreTone(x.score)) }}
               title={x.rate == null ? T.noRateHint : undefined}>{pct1(x.rate)}</td>
             <td className="px-3 py-1.5 text-center"><ScoreChip score={x.score} size="sm" /></td>
             <td className="px-3 py-2 text-right tabular-nums">{pts(x.points)}</td>
-          </tr>
-        ))}
-        {notOwnerHead && (
-          <tr>
-            <td colSpan={9} className="px-3 py-2" style={{ background: "var(--bg-inner)" }}>{notOwnerHead}</td>
-          </tr>
-        )}
-        {notOwners.map((x) => (
-          <tr key={`n${x.id}`} title={T.notOwnerHint}>
-            <td className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>·</td>
-            <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
-              {tl(x.name)}<GreyChip>{T.notOwner}</GreyChip>
-            </td>
-            <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{x.brigadirs.map((b) => tl(b.name)).join(", ") || "—"}</td>
-            <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>
-              {x.cells.map((c, j) => (
-                <span key={c.key}>{j > 0 && ", "}<CellLink id={c.id}>{c.code}</CellLink></span>
-              ))}
-            </td>
-            <td colSpan={5} className="px-3 py-2 text-xs" style={{ color: "var(--text-3)" }}>{T.notOwnerCells}</td>
           </tr>
         ))}
       </tbody>
@@ -763,7 +712,7 @@ export default function Turnover() {
         {kpis}
         {formulaStrip}
         {noticeCard}
-        {tab === "cells" ? cellsTable : tab === "left" ? leaversTable : leadersTable}
+        {tab === "cells" ? cellsTable : tab === "left" ? leaversTable : rankingTable}
       </>
     );
   }

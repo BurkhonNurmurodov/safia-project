@@ -320,10 +320,6 @@ def _band_of(r: dict, bands: dict, plain: bool = False) -> str:
     nobody, here as on the page."""
     if not r.get("total"):
         return "none"
-    # A leader row names its Verifix kind; a profile that is not a leader on
-    # Verifix is listed, never graded (the router's RANKED_KIND).
-    if "kind" in r and r["kind"] != "leader":
-        return "nl"
     if not r.get("ranked"):
         return "low"
     if plain:
@@ -339,12 +335,12 @@ def _band_of(r: dict, bands: dict, plain: bool = False) -> str:
 
 
 _BAND_COLOR = {"green": GREEN, "yellow": AMBER, "red": RED, "low": SLATE, "none": SLATE,
-               "nl": SLATE, "plain": INK}
+               "plain": INK}
 
 
 def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     """Tab 2 — the KPI table itself: the grading legend first, then one row per
-    REGISTERED leader with the % cell tinted by the admin-set bands, the
+    OWNED cell, named by its owner, with the % cell tinted by the admin-set bands, the
     explicit «unassigned» bucket and a totals row. No merged cells in the table
     body, so Excel's own filter buttons stay usable."""
     tabs = p.get("sheets") or {}
@@ -353,8 +349,8 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     rows = ld.get("rows") or []
     bands = ld.get("bands") or {"green": 80, "yellow": 50}
 
-    ncols = 4 + len(sts) + 2                     # leader/brig/cells/total + sts + open/pct
-    widths = {2: 27.0, 3: 30.0, 4: 22.0, 5: 10.0}
+    ncols = 4 + len(sts) + 2                     # cell/owner/brig/total + sts + open/pct
+    widths = {2: 11.0, 3: 30.0, 4: 26.0, 5: 10.0}
     widths.update({5 + i: 11.5 for i in range(1, len(sts) + 1)})
     widths[5 + len(sts) + 1] = 11.5
     widths[5 + len(sts) + 2] = 12.5
@@ -394,12 +390,17 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                font=Font(name=FONT, size=8.5, italic=True, color=INK_SOFT))
     row += 2
 
+    # «N ta egasi · M ta yacheyka» — the ranking's size, the page's own line.
+    cnt = ld.get("counts") or {}
+    count = (lbl.get("countLine") or "{o} · {c}").replace(
+        "{o}", _n(cnt.get("owners", len({r.get("leader_id") for r in rows})))).replace(
+        "{c}", _n(cnt.get("cells", len(rows))))
     row = _section(ws, row, C1, C2, lbl.get("secLeaders", ""),
-                   f'{lbl.get("secLeadersSub", "")} · {_n(len(rows))} {lbl.get("leadersWord", "")}')
-    # Every row is a cell OWNER — the person the concerns of their cells count
-    # for (routers/worker_concerns._owner) — but the ones who own none.
-    head = [lbl.get("colCellOwner") or lbl.get("colLeader", ""), lbl.get("colBrig", ""),
-            lbl.get("colCells", ""),
+                   f'{lbl.get("secLeadersSub", "")} · {count}')
+    # One row per OWNED cell, named by its owner on the period's last day
+    # (routers/worker_concerns._cell_rows) — a cell with no owner is no row.
+    head = [lbl.get("colCell", ""), lbl.get("colCellOwner") or lbl.get("colLeader", ""),
+            lbl.get("colBrig", ""),
             lbl.get("colTotal", "")] + [_st_label(p, s) for s in sts] \
         + [lbl.get("colOpen", ""), lbl.get("colPct", "")]
     _head_row(ws, row, C1, head, span=1)
@@ -412,27 +413,17 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                align=Alignment(horizontal="center", vertical="center"),
                font=Font(name=FONT, size=10, color=INK_FAINT))
         row += 1
-    kind_lbl = lbl.get("kindLabels") or {}
     for i, r in enumerate(rows):
         bg = _fill(PANEL if i % 2 == 0 else BAND)
-        name = r.get("leader") or "—"
-        if r.get("owner") is False:
-            # A leader who owns no cell: listed, never ranked — their cells'
-            # concerns count for the cells' owners.
-            if lbl.get("notOwnerTag"):
-                name = f"{name} — {lbl['notOwnerTag']}"
-        elif "kind" in r and r["kind"] != "leader":
-            tag = kind_lbl.get(r["kind"] or "none")
-            if tag:
-                name = f"{name} — {tag}"
-        _block(ws, row, C1, row, C1, name, fill=bg, border=BOX,
-               align=Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1),
-               font=Font(name=FONT, size=9.5, bold=True, color=INK))
-        _block(ws, row, C1 + 1, row, C1 + 1, ", ".join(r.get("brigadirs") or []) or "—",
+        _block(ws, row, C1, row, C1, r.get("cell") or ", ".join(r.get("cells") or []) or "—",
                fill=bg, border=BOX,
+               align=Alignment(horizontal="center", vertical="center"),
+               font=Font(name=FONT, size=9.5, bold=True, color=INK))
+        _block(ws, row, C1 + 1, row, C1 + 1, r.get("leader") or "—", fill=bg, border=BOX,
                align=Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1),
-               font=Font(name=FONT, size=9, color=INK_SOFT))
-        _block(ws, row, C1 + 2, row, C1 + 2, ", ".join(r.get("cells") or []) or "—",
+               font=Font(name=FONT, size=9.5, color=INK))
+        _block(ws, row, C1 + 2, row, C1 + 2,
+               r.get("brigadir") or ", ".join(r.get("brigadirs") or []) or "—",
                fill=bg, border=BOX,
                align=Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1),
                font=Font(name=FONT, size=9, color=INK_SOFT))
@@ -457,20 +448,19 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
                border=BOX, align=Alignment(horizontal="center", vertical="center"),
                fmt=PCT0,
                font=Font(name=FONT, size=9.5, bold=True,
-                         color=bc if band not in ("low", "none", "nl") else INK_SOFT))
+                         color=bc if band not in ("low", "none") else INK_SOFT))
         row += 1
     last_data = row - 1
 
     ua = ld.get("unassigned")
     if ua:
-        # Cells with no registered leader — visible, never ranked (page rule).
+        # Concerns in no ranked cell (no owner, or outside the view) —
+        # visible, never ranked (page rule). Below the filter range, so the
+        # label may span the cell, owner and brigadir columns.
         bg = _fill(WC_TINT[SLATE])
-        _block(ws, row, C1, row, C1, lbl.get("unassignedRow", ""), fill=bg, border=BOX,
+        _block(ws, row, C1, row, C1 + 2, lbl.get("unassignedRow", ""), fill=bg, border=BOX,
                align=Alignment(horizontal="left", vertical="center", indent=1),
                font=Font(name=FONT, size=9.5, italic=True, color=INK_SOFT))
-        for c in (C1 + 1, C1 + 2):
-            _block(ws, row, c, row, c, "—", fill=bg, border=BOX,
-                   font=Font(name=FONT, size=9.5, color=INK_FAINT))
         _block(ws, row, C1 + 3, row, C1 + 3, ua.get("total"), fill=bg, border=BOX,
                align=RIGHT, fmt=NUM,
                font=Font(name=FONT, size=9.5, bold=True, italic=True, color=INK_SOFT))

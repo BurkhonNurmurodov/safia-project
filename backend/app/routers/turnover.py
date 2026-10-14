@@ -9,7 +9,7 @@ THE rule; this module only parses, scopes and delivers.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -160,7 +160,9 @@ class ExportIn(BaseModel):
     labels: dict = {}
     hints: dict = {}
     meta: list[dict] = []
-    leader_order: list[int] = []
+    # The ranking's row keys in the screen's order (cell keys; an older tab
+    # sends leader ids, which match nothing and leave the default order).
+    leader_order: list[Union[int, str]] = []
 
 
 @router.post("/export.xlsx")

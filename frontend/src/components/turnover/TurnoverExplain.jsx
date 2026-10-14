@@ -41,7 +41,8 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
   const left = item.left;
   const rate = item.rate;
   const score = item.score ?? null;
-  const points = kind === "leader" ? item.points : null;
+  // A ranking row (one owned cell) carries its KPI points; a register cell does not.
+  const points = item.points ?? null;
   const provisional = data.state === "open";
 
   const peopleQ = useQuery({
@@ -94,7 +95,7 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
               <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-2)" }}>
                 <ScoreChip score={score} size="sm" />
                 <span className="tabular-nums">{fill(T.exScore, { rate: pct1(rate), score })}</span>
-                {kind === "leader" && points != null && (
+                {points != null && (
                   <span className="tabular-nums">· {fill(T.exPoints, { score, w, p: pts(points) })}</span>
                 )}
               </div>

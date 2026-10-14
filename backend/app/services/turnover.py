@@ -20,16 +20,20 @@ places the file was ambiguous, so every figure can be explained:
 * **Cell** — the Verifix org unit's code (its `code`, else the digits its name
   starts with: 15 units carry the code only in the name), matched to /cells.
   A code /cells does not have counts toward nobody and is listed so.
-* **Leader** — the cell's OWNER («Egasi», `cells.owner_id`: the leader Verifix
-  seats in the cell) on the month's last day — never its «Boshqaruvchi»
-  (`leader_id`, who runs it), the operator's rule (2026-10-13: «the KPIs will
-  be calculated for the cell owner»). A leader with several cells gets ONE
-  figure over all of them: Σ left ÷ Σ working × 12 (HR's file averaged the
-  cells and then overwrote the average by hand). A leader who runs a cell and
-  owns none is listed apart, unranked («not a cell owner»); a cell with no
-  owner counts toward nobody and is said so. A month frozen before owners
-  were frozen with it reads them off the dated links (`with_owners`), so
-  every month — past ones included — is scored by the owner map.
+* **Owner** — the KPI is the CELL's, credited to its OWNER («Egasi»,
+  `cells.owner_id`: the leader Verifix seats in the cell) on the month's last
+  day — never its «Boshqaruvchi» (`leader_id`, who runs it), the operator's
+  rule (2026-10-13: «the KPIs will be calculated for the cell owner»). The
+  ranking is one row per OWNED cell (`owned`: an owner on the last day and
+  standing on it — the operator, 2026-10-14: «rank per cell … do not include
+  the ones without owner»), each with its own rate and score; a leader who
+  owns three cells is three rows. «Ishchi havotirlari» lists the very same
+  cells through this same reading (`cell_map` + `owned`), so for one period
+  the two pages name the same owners and the same cells. A leader who owns
+  no cell is on neither page; a cell with no owner counts toward nobody and
+  is said so. A month frozen before owners were frozen with it reads them off
+  the dated links (`with_owners`), so every month — past ones included — is
+  scored by the owner map.
 * **× 12** — one month as a yearly rate.
 * **Score** — the rate is rounded to one decimal (what the page prints) and
   judged by HR's bands: ≤ 50 → 5, ≤ 60 → 4, ≤ 70 → 3, ≤ 85 → 2, above → 1.
@@ -293,6 +297,14 @@ def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
             "owner_kind": o.leader_kind if o else None,
         }
     return out
+
+
+def owned(c: dict) -> bool:
+    """THE rule both leader KPI pages list by (this page and «Ishchi
+    havotirlari»): a cell of a `cell_map` reading that has an owner on that
+    day and stands on it. An archived cell keeps its owner column, and is
+    still nobody's figure."""
+    return bool(c.get("owner_id")) and not c.get("archived")
 
 
 OWNER_FIELDS = ("owner_id", "owner", "owner_kind")
@@ -674,7 +686,7 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             counted = "no_cell"
         else:
             cell(k)["left"] += 1
-            counted = "owner" if c.get("owner_id") else "no_owner"
+            counted = "owner" if owned(c) else "no_owner"
             if any_scope and not _scope_ok(c, scope):
                 continue
         if counted == "no_cell" and any_scope:
@@ -723,58 +735,53 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
         return [{"key": c["key"], "id": c["id"], "code": c["code"], "working": c["working"],
                  "left": c["left"], "archived": c.get("archived")} for c in cs]
 
-    # The KPI is the OWNER's: one figure over every cell they own.
-    by_owner: dict[int, list[str]] = defaultdict(list)
+    # The ranking: one row per OWNED cell (`owned` — an owner on the month's
+    # last day, standing on it), its own rate and score, credited to its owner
+    # (the operator, 2026-10-14: «rank per cell … do not include the ones
+    # without owner»). Worst rate first, the order HR reads it in.
+    ranking = []
     for k, c in cmap.items():
-        if c.get("owner_id"):
-            by_owner[c["owner_id"]].append(k)
-    out_leaders = []
-    for oid, keys in by_owner.items():
-        cs = [cells[k] for k in sorted(keys, key=lambda k: cmap[k].get("code") or "")]
-        if any_scope and not any(_scope_ok(c, scope) for c in cs):
+        if not owned(c):
             continue
+        x = cell(k)
+        if any_scope and not _scope_ok(x, scope):
+            continue
+        rt = rate_of(x["left"], x["working"], r)
+        sc = score_of(rt, r)
+        ranking.append({**x, "rate": rt, "score": sc, "points": points_of(sc, r)})
+    ranking.sort(key=lambda x: (x["rate"] is None, -(x["rate"] or 0), x["code"] or ""))
+
+    # The same cells grouped by owner — what a tab still open on an older
+    # bundle reads (`leaders`); the current page and the workbook read
+    # `ranking`.
+    by_owner: dict[int, list[dict]] = defaultdict(list)
+    for x in ranking:
+        by_owner[x["owner_id"]].append(x)
+    out_leaders = []
+    for oid, cs in by_owner.items():
+        cs = sorted(cs, key=lambda c: c.get("code") or "")
         working = sum(c["working"] for c in cs)
         left = sum(c["left"] for c in cs)
         rt = rate_of(left, working, r)
         sc = score_of(rt, r)
-        first = cs[0]
         out_leaders.append({
-            "id": oid, "name": first.get("owner"), "kind": first.get("owner_kind"), "owner": True,
+            "id": oid, "name": cs[0].get("owner"), "kind": cs[0].get("owner_kind"), "owner": True,
             "brigadirs": brigadirs_of(cs), "cells": cells_out(cs),
             "working": working, "left": left, "rate": rt, "score": sc, "points": points_of(sc, r),
         })
     out_leaders.sort(key=lambda x: (x["rate"] is None, -(x["rate"] or 0), x["name"] or ""))
 
-    # A leader who RUNS a cell and owns none — listed, never scored: their
-    # cells' figures are their owners'.
-    runs: dict[int, list[str]] = defaultdict(list)
-    for k, c in cmap.items():
-        lid = c.get("leader_id")
-        if lid and lid not in by_owner:
-            runs[lid].append(k)
-    not_owners = []
-    for lid, keys in runs.items():
-        cs = [cells[k] for k in sorted(keys, key=lambda k: cmap[k].get("code") or "")]
-        if any_scope and not any(_scope_ok(c, scope) for c in cs):
-            continue
-        first = cs[0]
-        not_owners.append({
-            "id": lid, "name": first.get("leader"), "kind": first.get("leader_kind"), "owner": False,
-            "brigadirs": brigadirs_of(cs), "cells": cells_out(cs),
-            "working": None, "left": None, "rate": None, "score": None, "points": None,
-        })
-    not_owners.sort(key=lambda x: x["name"] or "")
-
     scoped = out_cells
     working = sum(c["working"] for c in scoped)
     left = sum(c["left"] for c in scoped)
-    left_owner = sum(c["left"] for c in scoped if c.get("owner_id"))
+    left_owner = sum(c["left"] for c in scoped if owned(c))
     by_score: dict[str, int] = {str(s): 0 for s in range(1, 6)}
-    for x in out_leaders:
+    for x in ranking:
         if x["score"] is not None:
             by_score[str(x["score"])] = by_score.get(str(x["score"]), 0) + 1
     unregistered = [] if any_scope else sorted(unreg.values(), key=lambda u: -(u["working"] + u["left"]))
     rt = rate_of(left, working, r)
+    owners = len(by_owner)
     return {
         "totals": {
             "working": working, "left": left, "rate": rt,
@@ -782,16 +789,18 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             # The names a tab on an older bundle reads — the same figures.
             "left_leader": left_owner, "left_no_leader": left - left_owner,
             "cells": sum(1 for c in scoped if c["working"] or c["left"]),
-            "leaders": len(out_leaders),
-            "not_owners": len(not_owners),
-            "scored": sum(1 for x in out_leaders if x["score"] is not None),
-            "no_people": sum(1 for x in out_leaders if x["working"] == 0),
+            # The ranking's size: the distinct owners and their cells — the
+            # pair «Ishchi havotirlari» prints for the same period.
+            "owners": owners, "owned_cells": len(ranking),
+            "leaders": owners,
+            "scored": sum(1 for x in ranking if x["score"] is not None),
+            "no_people": sum(1 for x in ranking if x["working"] == 0),
             "by_score": by_score,
             "unregistered_left": sum(u["left"] for u in unregistered),
             "unregistered_working": sum(u["working"] for u in unregistered),
             "other_left": 0 if any_scope else other_left,
         },
-        "leaders": [*out_leaders, *not_owners], "cells": out_cells, "leavers": out_leavers,
+        "ranking": ranking, "leaders": out_leaders, "cells": out_cells, "leavers": out_leavers,
         "unregistered": unregistered,
     }
 
@@ -806,7 +815,9 @@ def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now:
         as_of = min(now.date(), local(ok.finished_at).date()) if ok and ok.finished_at else now.date()
         as_of = max(as_of, m)
         return {"roster": mirror_roster(db, as_of), "leavers": live_leavers(db, m, as_of),
-                "cmap": cell_map(db), "rule": rule(db), "as_of": as_of, "source": "live",
+                # Read on the month's LAST day, like every other state — the
+                # owner the month is credited to (scheduled links included).
+                "cmap": cell_map(db, last_day(m)), "rule": rule(db), "as_of": as_of, "source": "live",
                 "dropped": 0, "late": []}
     d = last_day(m)
     if state == "closing":

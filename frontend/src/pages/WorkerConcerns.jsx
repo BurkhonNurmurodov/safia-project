@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Boxes, CheckCheck, ChevronDown, CircleDot, ClipboardList, Clock,
+  AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Boxes, CheckCheck, CircleDot, ClipboardList, Clock,
   FileSpreadsheet, LayoutGrid, ListFilter, Megaphone, Settings2, TrendingUp, Trophy, UserCog, UserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -72,7 +72,7 @@ const ST_GLYPH = { done: "#052e16", doing: "#422006", todo: "#0f172a", uplifted:
 const BAND_TONE = { green: "ok", yellow: "warn", red: "bad" };
 const BAND_INK = {
   green: "var(--status-ok)", yellow: "var(--status-warn)", red: "var(--status-bad)",
-  low: "var(--text-2)", nl: "var(--text-2)", none: "var(--text-2)", plain: "var(--text-1)",
+  low: "var(--text-2)", none: "var(--text-2)", plain: "var(--text-1)",
 };
 // A period shorter than this is not colour-graded: its newest concerns have
 // not had the time to be resolved, so every leader would read red on the
@@ -124,18 +124,12 @@ const ratedOf = (r) => r?.rated ?? ((r?.total || 0) - (r?.uplifted || 0));
 // The exact share resolved — for ORDER only: two whole percents can tie where
 // the fractions behind them do not.
 const ratio = (r) => (ratedOf(r) ? r.done / ratedOf(r) : -1);
-// Only a leader on Verifix is ranked (services/leader_kind.py). A leader row
-// names its kind; any other row (a unit, the headline) carries none.
-const notLeader = (r) => r?.kind !== undefined && r.kind !== "leader";
-// A leader who owns no cell (routers/worker_concerns._with_roster): listed apart,
-// never ranked — the concerns of the cells they run count for the cells' owners.
-// A row from an older backend carries no flag and reads as an owner.
-const notOwner = (r) => r?.owner === false;
 // A concern nobody has resolved yet, wherever it sits.
 const unresolved = (c) => (c.status ? c.status !== "done" : c.st !== "done");
-// A leader row's key — its profile id, else its name. The Excel export is sent
-// the screen's order in these (routers/worker_concerns._row_key).
-const rankKey = (r) => (r.leader_id != null ? String(r.leader_id) : (r.leader || ""));
+// A ranking row is a CELL (routers/worker_concerns._cell_rows) and its key is
+// the cell's code — the Excel export is sent the screen's order in these
+// (routers/worker_concerns._row_key).
+const rankKey = (r) => String(r.key ?? r.cell ?? r.leader_id ?? r.leader ?? "");
 // What a failed export said. A browser asks for a blob, so the error body comes
 // back as one too and must be read before its words can be shown.
 const exportError = async (e) => {
@@ -148,9 +142,9 @@ const exportError = async (e) => {
   return { message: typeof d === "string" ? d : (e?.message || "") };
 };
 
-// The meta line under a concern: its cell, then who wrote it and to whom —
-// «worker → leader», the arrow being the filing itself. The leader is dropped
-// where every row is the viewer's own.
+// The meta line under a concern: its cell, then who wrote it and whose cell it
+// is — «worker → owner», the owner on the period's last day, whom the concern
+// counts for.
 const whoLine = (c, tl, showLeader) => {
   const who = surnameInitial(tl(c.owner || "")) || "—";
   const to = showLeader && c.leader ? ` → ${surnameInitial(tl(c.leader))}` : "";
@@ -166,11 +160,9 @@ const fillAround = (str, vars, key, node) => {
 
 // The band a % is judged by — the WHOLE percent the reader sees, never the raw
 // fraction (utils/statusBands.js's rule), and only with enough concerns behind
-// it: 1 of 1 is noise, not performance. A profile that is not a leader on
-// Verifix is never graded («nl»).
+// it: 1 of 1 is noise, not performance.
 const bandOf = (row, bands, plain = false) => {
   if (!row.total) return "none";
-  if (notLeader(row)) return "nl";
   const p = whole(row);
   if (!row.ranked || p == null) return "low";
   if (plain) return "plain";
@@ -191,7 +183,7 @@ function PctChip({ pct, band, big = false }) {
       style={{
         background: tone ? toneTint(tone) : "var(--bg-inner)",
         color: BAND_INK[band],
-        border: band === "low" || band === "nl" ? "1px dashed var(--border-md)" : "1px solid transparent",
+        border: band === "low" ? "1px dashed var(--border-md)" : "1px solid transparent",
       }}>
       {pct == null ? "—" : `${pct}%`}
     </span>
@@ -213,16 +205,6 @@ function ConcernStatus({ T, stL, c, inline = false }) {
         </span>
       )}
     </>
-  );
-}
-
-// «Lider o'rnida» / «Lavozimi aniqlanmagan» — why a row is listed and not ranked.
-function KindTag({ T, kind }) {
-  return (
-    <span className="inline-flex items-center px-1.5 py-px rounded-md text-[11px] font-medium whitespace-nowrap align-middle"
-      style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
-      {kind === "acting" ? T.kindActing : T.kindNone}
-    </span>
   );
 }
 
@@ -495,98 +477,86 @@ function SpanCell({ narrow, wide, className = "", style, children }) {
 }
 
 // The ranking's groups in on-screen order — ONE function, read by the card and
-// by the Excel export, which follows the screen (`leader_order`): ranked
-// leaders by the exact share resolved, then the leaders with too few concerns
-// to rank, then the profiles that are not leaders on Verifix (listed, never
-// ranked — the operator, 2026-10-04), then the cell owners whose cells had no
-// concern (shown, never folded — the operator, 2026-10-13: «show every single
-// leader who owns a cell»), then the leaders who own no cell. Names tie-break
-// in the reader's own alphabet (tl), the way they are printed.
+// by the Excel export, which follows the screen (`leader_order`): ranked CELLS
+// by the exact share resolved, then the cells with too few concerns to rank,
+// then the cells with none in the period (shown, never folded). Every row is a
+// cell an owner owns on the period's last day — the operator, 2026-10-14:
+// «rank per cell (one row for the cell) but do not include the ones without
+// owner»; every owner is ranked. Codes tie-break in their own order.
+const byCode = (a, b) => (a.cell.length - b.cell.length) || a.cell.localeCompare(b.cell);
+
 function rankGroups(rows, sort, tl) {
-  const name = (r) => tl(r.leader);
+  const name = (r) => tl(r.leader || "");
   const rankOf = new Map();
   rows.filter((r) => r.total > 0 && r.ranked)
-    .sort((a, b) => (ratio(b) - ratio(a)) || (b.total - a.total) || name(a).localeCompare(name(b)))
+    .sort((a, b) => (ratio(b) - ratio(a)) || (ratedOf(b) - ratedOf(a)) || byCode(a, b))
     .forEach((r, i) => rankOf.set(rankKey(r), i + 1));
   const dir = sort.dir === "asc" ? 1 : -1;
   const cmp = (a, b) => {
     switch (sort.key) {
-      case "leader": return name(a).localeCompare(name(b)) * dir;
+      case "cell": return byCode(a, b) * dir;
+      case "leader": return (name(a).localeCompare(name(b)) || byCode(a, b)) * dir;
       case "total": return ((a.total - b.total) || (ratio(a) - ratio(b))) * dir;
       case "open": return ((a.open - b.open) || (a.total - b.total)) * dir;
       default: return (rankOf.get(rankKey(b)) - rankOf.get(rankKey(a))) * dir;
     }
   };
-  const byColumn = sort.key === "leader" || sort.key === "open" || sort.key === "total";
+  const byColumn = ["cell", "leader", "open", "total"].includes(sort.key);
   return {
     rankOf,
     ranked: rows.filter((r) => r.total > 0 && r.ranked).sort(cmp),
-    low: rows.filter((r) => r.total > 0 && !r.ranked && !notLeader(r))
-      .sort((a, b) => (byColumn ? cmp(a, b) : (b.total - a.total) || name(a).localeCompare(name(b)))),
-    nl: rows.filter((r) => r.total > 0 && notLeader(r))
-      .sort((a, b) => (byColumn ? cmp(a, b) : (ratio(b) - ratio(a)) || (b.total - a.total) || name(a).localeCompare(name(b)))),
-    none: rows.filter((r) => !r.total && !notOwner(r)).sort((a, b) => name(a).localeCompare(name(b))),
-    notOwner: rows.filter((r) => !r.total && notOwner(r)).sort((a, b) => name(a).localeCompare(name(b))),
+    low: rows.filter((r) => r.total > 0 && !r.ranked)
+      .sort((a, b) => (byColumn ? cmp(a, b) : (b.total - a.total) || byCode(a, b))),
+    none: rows.filter((r) => !r.total).sort((a, b) => (byColumn ? cmp(a, b) : byCode(a, b))),
   };
 }
 
+// «12 ta egasi · 18 ta yacheyka» — the ranking's size, the pair «Kadrlar
+// qo'nimsizligi» prints for the same period (routers/worker_concerns._counts).
+const countLine = (T, counts, rows) => fill(T.rCounts, {
+  o: n0(counts?.owners ?? new Set(rows.map((r) => r.leader_id)).size),
+  c: n0(counts?.cells ?? rows.length),
+});
+
 function RankingCard({
-  T, stL, tl, rows, cellIds, bands, minRanked, isAdmin, onEditBands, onOpen,
-  sort, onSort, q, setQ, showNotOwner, setShowNotOwner, loading, error, onRetry, dim,
-  oneUnit, plain, days,
+  T, stL, tl, rows, counts, cellIds, bands, minRanked, isAdmin, onEditBands, onOpen,
+  sort, onSort, q, setQ, loading, error, onRetry, dim, oneUnit, plain, days,
 }) {
   const g = useMemo(() => rankGroups(rows, sort, tl), [rows, sort, tl]);
   const { rankOf } = g;
   const rankedCount = rankOf.size;
   const bandCounts = useMemo(() => {
-    const c = { green: 0, yellow: 0, red: 0, low: 0, nl: 0, none: 0 };
-    for (const r of rows) if (!notOwner(r)) c[bandOf(r, bands)] += 1;
+    const c = { green: 0, yellow: 0, red: 0, low: 0, none: 0 };
+    for (const r of rows) c[bandOf(r, bands)] += 1;
     return c;
   }, [rows, bands]);
-  // The table's subject is the cell owners; the leaders who own none are a
-  // folded footnote and are not counted in its headline.
-  const ownerCount = rows.length - g.notOwner.length;
-  // A phone opens the list on PHONE_ROWS leaders — the cells and the trend
+  // A phone opens the list on PHONE_ROWS cells — the cells card and the trend
   // under it are not seven screens down — and a search shows every match.
   const [expanded, setExpanded] = useState(false);
 
   const needle = q.trim().toLowerCase();
-  const match = (r) => !needle || r.leader.toLowerCase().includes(needle) || tl(r.leader).toLowerCase().includes(needle);
+  const match = (r) => !needle || r.cell.toLowerCase().includes(needle)
+    || (r.leader || "").toLowerCase().includes(needle) || tl(r.leader || "").toLowerCase().includes(needle);
   const groups = [
     { key: "ranked", rows: g.ranked.filter(match) },
     { key: "low", caption: T.gLow, rows: g.low.filter(match) },
-    { key: "nl", caption: T.gNotLeader, rows: g.nl.filter(match) },
     { key: "none", caption: T.gNone, rows: g.none.filter(match) },
-    { key: "notOwner", caption: T.gNotOwner, rows: showNotOwner ? g.notOwner.filter(match) : [] },
   ];
-  const noneCount = g.notOwner.filter(match).length;
   const shown = groups.reduce((s, x) => s + x.rows.length, 0);
   const capped = !expanded && !needle;
   let budget = PHONE_ROWS;
   const phoneGroups = groups.map((x) => {
     if (!capped) return x;
-    if (x.key === "notOwner") return { ...x, rows: [] };  // revealed with the rest
     const take = x.rows.slice(0, Math.max(0, budget));
     budget -= take.length;
     return { ...x, rows: take };
   });
-  const hiddenOnPhone = groups.reduce((n, x, i) => (x.key === "notOwner" ? n
-    : n + x.rows.length - phoneGroups[i].rows.length), 0);
+  const hiddenOnPhone = groups.reduce((n, x, i) => n + x.rows.length - phoneGroups[i].rows.length, 0);
 
-  const brigOf = (r) => (r.brigadirs || []).map((b) => surnameInitial(tl(b))).join(", ");
-  const cellsOf = (r) => (r.cells || []).join(", ");
-  const sub = (r) => [oneUnit ? null : brigOf(r), cellsOf(r)].filter(Boolean).join(" · ");
+  const brigOf = (r) => (r.brigadir ? surnameInitial(tl(r.brigadir)) : "");
   const open = (r) => onOpen(r, rankOf.get(rankKey(r)), rankedCount);
   const wideCols = oneUnit ? 6 : 7;          // columns shown from xl; 5 below it
 
-  const foldBtn = noneCount > 0 ? (
-    <button type="button" onClick={() => { setShowNotOwner((v) => !v); setExpanded(true); }} aria-expanded={showNotOwner}
-      className="inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-2 -mx-2 min-h-[44px] sm:min-h-[32px] transition-colors hover:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-      style={{ color: "var(--text-1)" }}>
-      <ChevronDown size={14} className={`transition-transform ${showNotOwner ? "rotate-180" : ""}`} aria-hidden style={{ color: "var(--brand-text)" }} />
-      {showNotOwner ? T.hideNotOwner : fill(T.showNotOwner, { n: noneCount })}
-    </button>
-  ) : null;
   // The admin's thresholds live in the card's header, as on /zagruzka's
   // tables — in the footer they cut the list off from its own fold.
   const bandsBtn = isAdmin ? (
@@ -606,13 +576,12 @@ function RankingCard({
       )}
     </div>
   );
-  const footer = foldBtn ? <div className="w-full">{foldBtn}</div> : null;
   // A separator keeps to the word before it (no line opens on «·»), and each
   // count keeps to its noun.
   const subtitle = (
     <>
-      {T.rSub}{"\u00A0·"}{" "}
-      <span className="whitespace-nowrap">{fill(T.rCount, { n: ownerCount })}{"\u00A0·"}</span>{" "}
+      {T.rSub}{" ·"}{" "}
+      <span className="whitespace-nowrap">{countLine(T, counts, rows)}{" ·"}</span>{" "}
       <span className="whitespace-nowrap">{fill(T.rRanked, { k: rankedCount })}</span>
     </>
   );
@@ -630,10 +599,11 @@ function RankingCard({
     );
   }
 
-  // A phone row: the name, where it works, its counts — and the % alone on the
-  // right, so the left keeps the width a name and its cell codes need.
+  // A phone row: the cell and its owner, where it works, its counts — and the
+  // % alone on the right, so the left keeps the width a name needs.
   const phoneRow = (r) => {
     const rank = rankOf.get(rankKey(r));
+    const brig = oneUnit ? "" : brigOf(r);
     return (
       <li key={rankKey(r)}>
         <button type="button" onClick={() => open(r)}
@@ -642,9 +612,10 @@ function RankingCard({
             {rank ?? "—"}
           </span>
           <span className="flex-1 min-w-0">
-            <span className="block text-sm font-medium leading-snug" style={{ color: "var(--text-1)" }}>{tl(twoWords(r.leader))}</span>
-            {notLeader(r) && <span className="block mt-1"><KindTag T={T} kind={r.kind} /></span>}
-            {sub(r) && <span className="block text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>{sub(r)}</span>}
+            <span className="block text-sm font-medium leading-snug" style={{ color: "var(--text-1)" }}>
+              <span className="tabular-nums">{r.cell}</span>{" · "}{tl(twoWords(r.leader))}
+            </span>
+            {brig && <span className="block text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>{brig}</span>}
             {r.total > 0 && (
               <span className="block text-xs mt-0.5 tabular-nums" style={{ color: "var(--text-2)" }}>
                 {fillAround(r.uplifted ? T.rowTotUpOpen : T.rowTotOpen, { t: n0(r.total), u: n0(r.uplifted) }, "o", (
@@ -687,13 +658,13 @@ function RankingCard({
   return (
     <div style={{ opacity: dim ? 0.6 : 1, transition: "opacity .15s" }}>
       <TableCard icon={Trophy} title={T.rTitle} subtitle={subtitle} right={bandsBtn} toolbar={toolbar}
-        pageScroll maxHeight="none" wrap fixed mobile={mobile} footer={footer}>
+        pageScroll maxHeight="none" wrap fixed mobile={mobile}>
         <thead>
           <tr>
             <Th label={T.colRank} align="right" cls="w-12" />
+            <Th label={T.colCell} k="cell" sort={sort} onSort={onSort} cls="w-[96px]" />
             <Th label={T.colOwner} k="leader" sort={sort} onSort={onSort} />
-            {!oneUnit && <Th label={T.xLabels.colBrig} cls="hidden xl:table-cell w-[22%]" />}
-            <Th label={T.xLabels.colCells} cls="hidden xl:table-cell w-[16%]" />
+            {!oneUnit && <Th label={T.xLabels.colBrig} cls="hidden xl:table-cell w-[24%]" />}
             <Th label={T.colTotal} k="total" sort={sort} onSort={onSort} align="right" cls="w-[88px]" />
             <Th label={T.colOpen} k="open" sort={sort} onSort={onSort} align="right" cls="w-[120px]" hint={T.colOpenHint} />
             <Th label={T.colPct} k="pct" sort={sort} onSort={onSort} align="right" cls="w-[132px]" hint={T.colPctHint} />
@@ -703,7 +674,7 @@ function RankingCard({
           {groups.map((x) => (x.rows.length ? [
             x.caption ? (
               <tr key={`cap-${x.key}`}>
-                <SpanCell narrow={5} wide={wideCols} className="px-3 py-2 text-xs font-semibold"
+                <SpanCell narrow={6} wide={wideCols} className="px-3 py-2 text-xs font-semibold"
                   style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
                   {x.caption}
                 </SpanCell>
@@ -715,28 +686,25 @@ function RankingCard({
               return (
                 <tr key={rankKey(r)} className="cursor-pointer" onClick={() => open(r)}>
                   <td className="px-3 py-2.5 text-right text-sm font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>{rank ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-sm tabular-nums whitespace-nowrap">
+                    <CellCodes codes={[r.cell]} cellIds={cellIds} />
+                  </td>
                   <td className="px-3 py-2.5">
                     <button type="button" onClick={(e) => { e.stopPropagation(); open(r); }}
                       className="text-left text-sm font-medium hover:underline underline-offset-2 focus-visible:outline-none focus-visible:underline"
                       style={{ color: "var(--text-1)" }}>
                       {tl(r.leader)}
                     </button>
-                    {notLeader(r) && <span className="ml-2"><KindTag T={T} kind={r.kind} /></span>}
-                    {(brig || (r.cells || []).length > 0) && (
-                      <div className="xl:hidden text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>
-                        {brig}{brig && (r.cells || []).length ? " · " : ""}<CellCodes codes={r.cells} cellIds={cellIds} />
-                      </div>
+                    {brig && (
+                      <div className="xl:hidden text-xs mt-0.5 break-words" style={{ color: "var(--text-2)" }}>{brig}</div>
                     )}
                   </td>
                   {!oneUnit && (
                     <td className="px-3 py-2.5 hidden xl:table-cell text-sm truncate" style={{ color: "var(--text-2)" }}
-                      title={(r.brigadirs || []).map((b) => tl(b)).join(", ")}>
-                      {(r.brigadirs || []).map((b) => tl(b)).join(", ") || "—"}
+                      title={r.brigadir ? tl(r.brigadir) : ""}>
+                      {r.brigadir ? tl(r.brigadir) : "—"}
                     </td>
                   )}
-                  <td className="px-3 py-2.5 hidden xl:table-cell text-sm break-words" style={{ color: "var(--text-2)" }}>
-                    {(r.cells || []).length ? <CellCodes codes={r.cells} cellIds={cellIds} /> : "—"}
-                  </td>
                   <td className="px-3 py-2.5 text-right text-sm tabular-nums" style={{ color: r.total ? "var(--text-1)" : "var(--text-2)" }}>
                     {n0(r.total)}
                     {r.uplifted > 0 && (
@@ -757,7 +725,7 @@ function RankingCard({
           ] : null))}
           {shown === 0 && (
             <tr>
-              <SpanCell narrow={5} wide={wideCols} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-2)" }}>
+              <SpanCell narrow={6} wide={wideCols} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-2)" }}>
                 {T.noMatchLeaders}
               </SpanCell>
             </tr>
@@ -801,28 +769,30 @@ function ConcernRows({ T, stL, tl, rows, today, onOpen, showLeader }) {
   );
 }
 
-function LeaderModal({ T, stL, tl, row, rank, rankedCount, bands, plain, cellIds, params, today, zIndex, onClose, onOpenConcern, onSeeAll }) {
+// One ranked cell: its figures, its owner, and what still waits in it —
+// opened from the ranking.
+function CellModal({ T, stL, tl, row, rank, rankedCount, bands, plain, cellIds, params, today, zIndex, onClose, onOpenConcern, onSeeAll }) {
   const listParams = useMemo(() => ({
-    ...params, leader_id: [row.leader_id], status: OPEN_KEYS, sort: "date_asc", page: 1, page_size: 20,
-  }), [params, row.leader_id]);
+    ...params, cell: [row.cell], status: OPEN_KEYS, sort: "date_asc", page: 1, page_size: 20,
+  }), [params, row.cell]);
   const openQ = useQuery({
     queryKey: ["wc-lm", listParams],
     queryFn: () => api.get("/api/worker-concerns/list", { params: listParams }).then((r) => r.data),
-    enabled: !!row.leader_id && row.open > 0,
+    enabled: !!row.cell && row.open > 0,
   });
   // Graded exactly as the ranking it was opened from — a short period grades nobody.
   const band = bandOf(row, bands, plain);
-  const brig = (row.brigadirs || []).map((b) => tl(b)).join(", ");
   const standing = rank ? fill(T.lmRank, { r: rank, n: rankedCount })
-    : notOwner(row) ? T.lmNotOwner : !row.total ? T.lmNone : notLeader(row) ? T.lmNotLeader : T.lmUnranked;
+    : !row.total ? T.lmNone : T.lmUnranked;
   const open = openQ.data;
   return (
-    <Modal open onClose={onClose} zIndex={zIndex} maxWidth="max-w-xl" icon={<UserRound size={16} />}
-      title={tl(row.leader)} subtitle={brig ? `${T.mBrig}: ${brig}` : undefined}
+    <Modal open onClose={onClose} zIndex={zIndex} maxWidth="max-w-xl" icon={<LayoutGrid size={16} />}
+      title={`${row.cell} · ${tl(row.leader)}`}
+      subtitle={row.brigadir ? `${T.mBrig}: ${tl(row.brigadir)}` : undefined}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} className={PHONE_TAP}>{T.close}</Button>
-          {row.total > 0 && row.leader_id && (
+          {row.total > 0 && (
             <Button icon={<ArrowUpRight size={14} />} onClick={onSeeAll} className={PHONE_TAP}>{T.lmAll}</Button>
           )}
         </>
@@ -831,18 +801,14 @@ function LeaderModal({ T, stL, tl, row, rank, rankedCount, bands, plain, cellIds
         <PctChip pct={whole(row)} band={band} big />
         <div className="min-w-0">
           {row.total > 0 && <OfLine T={T} r={row} color="var(--text-1)" />}
-          <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: "var(--text-2)" }}>
-            {notLeader(row) && <KindTag T={T} kind={row.kind} />}
-            {standing}
-          </div>
+          <div className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>{standing}</div>
         </div>
       </div>
       {row.total > 0 && <StatusSplit counts={row} stL={stL} upHint={T.stUpHint} />}
-      {(row.cells || []).length > 0 && (
-        <p className="text-xs" style={{ color: "var(--text-2)" }}>
-          {notOwner(row) ? T.lmRuns : T.lmCells}: <span style={{ color: "var(--text-1)" }}><CellCodes codes={row.cells} cellIds={cellIds} /></span>
-        </p>
-      )}
+      <p className="text-xs" style={{ color: "var(--text-2)" }}>
+        {T.colCell}: <span style={{ color: "var(--text-1)" }}><CellCodes codes={[row.cell]} cellIds={cellIds} /></span>
+        {" · "}{T.colOwner}: <span style={{ color: "var(--text-1)" }}>{tl(row.leader)}</span>
+      </p>
       {row.open > 0 && (
         <div className="pt-1">
           <h3 className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-2)" }}>
@@ -1081,7 +1047,7 @@ function DailyCard({ T, stL, parts, daily, chartFrom, dateTo, ready, isMobile })
 
 // ── register ─────────────────────────────────────────────────────────────────
 
-function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort, setSort, onOpen, leaderView, dim }) {
+function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort, setSort, onOpen, dim }) {
   const rows = list?.rows || [];
   const toolbar = <SearchInput value={q} onChange={setQ} placeholder={T.regSearch} className="w-full sm:w-80" />;
   const right = list ? (
@@ -1099,11 +1065,13 @@ function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort
     );
   }
   const today = localISO(new Date());
-  const cols = leaderView ? 6 : 7;
+  // Every row names its cell's OWNER — a leader's own list too: the cells they
+  // run may be owned by somebody else (the operator, 2026-10-14).
+  const cols = 7;
   const mobile = rows.length === 0 ? (
     <p className="px-4 py-10 text-center text-sm" style={{ color: "var(--text-2)" }}>{T.noMatch}</p>
   ) : (
-    <div className="px-4"><ConcernRows T={T} stL={stL} tl={tl} rows={rows} today={today} onOpen={onOpen} showLeader={!leaderView} /></div>
+    <div className="px-4"><ConcernRows T={T} stL={stL} tl={tl} rows={rows} today={today} onOpen={onOpen} showLeader /></div>
   );
   // People are «Surname I.» and WRAP rather than cut: three leaders here share
   // one surname, and «Hamdamjonov …» named none of them.
@@ -1121,12 +1089,12 @@ function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort
                 the header names them there. */}
             <Th label={(
               <>
-                <span className="xl:hidden">{leaderView ? T.colTextWorker : T.colTextWho}</span>
+                <span className="xl:hidden">{T.colTextWho}</span>
                 <span className="hidden xl:inline">{T.colText}</span>
               </>
             )} />
             <Th label={T.colWorker} cls="hidden xl:table-cell w-[15%]" />
-            {!leaderView && <Th label={T.colLeader} cls="hidden xl:table-cell w-[15%]" />}
+            <Th label={T.colOwner} cls="hidden xl:table-cell w-[15%]" />
             <Th label={T.colStatus} cls="w-[136px]" />
           </tr>
         </thead>
@@ -1151,15 +1119,13 @@ function RegisterCard({ T, stL, tl, list, loading, error, onRetry, q, setQ, sort
                   {r.text}
                 </button>
                 <span className="block xl:hidden text-xs mt-1 truncate" style={{ color: "var(--text-2)" }}>
-                  {whoLine({ ...r, cell: null }, tl, !leaderView)}
+                  {whoLine({ ...r, cell: null }, tl, true)}
                 </span>
               </td>
               <td className="px-3 py-2.5 text-sm hidden xl:table-cell break-words" style={{ color: "var(--text-2)" }} title={tl(r.owner || "")}>{surnameInitial(tl(r.owner || "")) || "—"}</td>
-              {!leaderView && (
-                <td className="px-3 py-2.5 text-sm hidden xl:table-cell break-words" style={{ color: "var(--text-2)" }} title={r.leader ? tl(r.leader) : ""}>
-                  {r.leader ? surnameInitial(tl(r.leader)) : "—"}
-                </td>
-              )}
+              <td className="px-3 py-2.5 text-sm hidden xl:table-cell break-words" style={{ color: "var(--text-2)" }} title={r.leader ? tl(r.leader) : ""}>
+                {r.leader ? surnameInitial(tl(r.leader)) : "—"}
+              </td>
               <td className="px-3 py-2.5"><ConcernStatus T={T} stL={stL} c={r} /></td>
             </tr>
           ))}
@@ -1209,7 +1175,6 @@ export default function WorkerConcerns() {
   // ranking's best-first default.
   const [rankSort, setRankSort] = usePersistentState("wc_rank_sort", { key: "pct", dir: "desc" });
   const [ldQ, setLdQ] = useState("");
-  const [showNotOwner, setShowNotOwner] = useState(false);
 
   // ── meta (options + bands + the viewer's locks) ───────────────────────────
   const metaQ = useQuery({
@@ -1510,9 +1475,9 @@ export default function WorkerConcerns() {
       },
       meta: metaFor(scopeChips),
       register_meta: metaFor(activeFilterChips),
-      // The leaders as the screen lists them — the file follows this order.
+      // The cells as the screen lists them — the file follows this order.
       leader_order: onRating && leadersQ.data
-        ? (({ ranked, low, nl, none, notOwner: no }) => [...ranked, ...low, ...nl, ...none, ...no].map(rankKey))(rankGroups(ldRows, rankSort, tl))
+        ? (({ ranked, low, none }) => [...ranked, ...low, ...none].map(rankKey))(rankGroups(ldRows, rankSort, tl))
         : [],
     };
   };
@@ -1544,12 +1509,10 @@ export default function WorkerConcerns() {
   if (kpi) {
     facts.push({ key: "w", text: fill(T.fWorkers, { n: n0(kpi.workers) }) });
     if (!leaderView && leadersQ.data) {
-      // Counted over the cell owners — the table's subject (notOwner rows are
-      // a folded footnote and never carry a concern).
-      const owners = ldRows.filter((r) => !notOwner(r));
-      const withN = owners.filter((r) => r.total > 0).length;
+      // Counted over the ranking's rows — the owned cells.
+      const withN = ldRows.filter((r) => r.total > 0).length;
       facts.push({ key: "l", text: fill(T.fWith, { n: n0(withN) }) });
-      if (owners.length > withN) facts.push({ key: "n", text: fill(T.fNone, { n: n0(owners.length - withN) }) });
+      if (ldRows.length > withN) facts.push({ key: "n", text: fill(T.fNone, { n: n0(ldRows.length - withN) }) });
     }
     if (leadersQ.data?.unassigned) facts.push({ key: "u", warn: true, text: fill(T.fUnassigned, { n: n0(leadersQ.data.unassigned.total) }) });
     if (!leaderView && leadersQ.isError) facts.push({ key: "lf", warn: true, text: T.fLeadersFailed });
@@ -1558,12 +1521,12 @@ export default function WorkerConcerns() {
   const plain = days > 0 && days < (meta?.short_days ?? SHORT_PERIOD_DAYS);
   const headBand = kpi ? bandOf({ ...kpi, ranked: ratedOf(kpi) >= minRanked }, bands, plain) : "none";
 
-  // A leader's cells: every cell they own, the quiet ones too, by open concerns
-  // (not the cells they only run — those count for their owners).
+  // A leader's cells: every cell they own or run, the quiet ones too, by open
+  // concerns (the operator, 2026-10-14: «the cells they own and they manage»).
   const myCells = useMemo(() => {
     if (!leaderView || !stats) return [];
     const byCode = Object.fromEntries((stats.top_cells || []).map((c) => [c.code, c]));
-    const own = new Set(ldRows.filter((r) => !notOwner(r)).flatMap((r) => r.cells || []));
+    const own = new Set(ldRows.map((r) => r.cell).filter(Boolean));
     for (const c of Object.keys(byCode)) own.add(c);
     return [...own].map((code) => byCode[code] || {
       code, cell_id: null, total: 0, open: 0, done: 0, doing: 0, todo: 0, uplifted: 0,
@@ -1578,7 +1541,7 @@ export default function WorkerConcerns() {
   // without its unit list.)
   const oneUnit = !!meta?.lock_own_unit || (stats
     ? units.length <= 1
-    : new Set(ldRows.flatMap((r) => r.brigadirs || [])).size <= 1);
+    : new Set(ldRows.map((r) => r.manager_id)).size <= 1);
 
   const exportBtn = meta && !noneYet ? (
     <Button size="lg" variant="secondary" loading={exporting}
@@ -1747,12 +1710,13 @@ export default function WorkerConcerns() {
                       <UnitsCard T={T} tl={tl} units={units} bands={bands} minRanked={minRanked} parts={parts}
                         onPick={pickUnit} plain={plain} />
                     )}
-                    <RankingCard T={T} stL={stL} tl={tl} rows={ldRows} cellIds={cellIds} bands={bands} minRanked={minRanked}
+                    <RankingCard T={T} stL={stL} tl={tl} rows={ldRows} counts={leadersQ.data?.counts}
+                      cellIds={cellIds} bands={bands} minRanked={minRanked}
                       isAdmin={!!meta.is_admin} onEditBands={openBands}
                       onOpen={openLeader}
                       sort={rankSort}
                       onSort={(k) => setRankSort((s) => ({ key: k, dir: s.key === k && s.dir === "desc" ? "asc" : "desc" }))}
-                      q={ldQ} setQ={setLdQ} showNotOwner={showNotOwner} setShowNotOwner={setShowNotOwner}
+                      q={ldQ} setQ={setLdQ}
                       loading={leadersQ.isLoading} error={leadersQ.isError} onRetry={() => leadersQ.refetch()}
                       dim={leadersQ.isPlaceholderData} oneUnit={oneUnit} plain={plain} days={days} />
                   </>
@@ -1776,7 +1740,7 @@ export default function WorkerConcerns() {
             <div className="space-y-3">
               <RegisterCard T={T} stL={stL} tl={tl} list={listQ.data} loading={listQ.isLoading}
                 error={listQ.isError} onRetry={() => listQ.refetch()} q={q} setQ={setQ}
-                sort={regSort} setSort={setRegSort} onOpen={setDetail} leaderView={leaderView}
+                sort={regSort} setSort={setRegSort} onOpen={setDetail}
                 dim={listQ.isPlaceholderData} />
               {listQ.data && (
                 <Pagination page={page} pageCount={Math.max(1, Math.ceil((listQ.data.total || 0) / PAGE_SIZE))}
@@ -1788,15 +1752,15 @@ export default function WorkerConcerns() {
         </>
       )}
 
-      {/* a leader's figures and what they still owe — opened from the ranking */}
+      {/* a cell's figures and what still waits in it — opened from the ranking */}
       {leaderOpen && (
-        <LeaderModal T={T} stL={stL} tl={tl} row={leaderOpen.row} rank={leaderOpen.rank}
+        <CellModal T={T} stL={stL} tl={tl} row={leaderOpen.row} rank={leaderOpen.rank}
           rankedCount={leaderOpen.rankedCount} bands={bands} plain={plain} cellIds={cellIds}
           params={kpiParams} today={today} zIndex={50}
           onClose={() => setLeaderOpen(null)}
           onOpenConcern={setDetail}
           onSeeAll={() => {
-            setLeadSel([leaderOpen.row.leader_id]);
+            setCellSel([leaderOpen.row.cell]);
             setLeaderOpen(null);
             setView("havotirlar");
           }} />
@@ -1826,8 +1790,7 @@ export default function WorkerConcerns() {
               [T.colStatus, <ConcernStatus key="s" T={T} stL={stL} c={detail} />],
               [T.colCell, detail.cell ? <CellCodes key="c" codes={[detail.cell]} cellIds={{ [detail.cell]: detail.cell_id }} /> : "—"],
               [T.colWorker, tl(detail.owner || "") || "—"],
-              [T.mOwner, detail.cell_owner ? tl(detail.cell_owner) : "—"],
-              [T.mFiledTo, detail.leader ? tl(detail.leader) : "—"],
+              [T.mOwner, detail.leader ? tl(detail.leader) : "—"],
               [T.mBrig, tl(detail.brigadir || "") || "—"],
               [T.mCategory, detail.category ? t(`concerns.category.${detail.category}`) : "—"],
               [T.mStep, t(`concerns.level.${detail.level}`)],

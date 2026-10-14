@@ -8,9 +8,9 @@ still gets a readable file. The house report style is `quality_export`'s.
 
     Umumiy          banner · scope · KPI cards · the formula · the score bands
                     · what counts toward nobody
-    Liderlar        one row per leader — the KPI itself (cell OWNERS), in the
-                    screen's order; leaders who run a cell and own none follow,
-                    marked and unscored
+    Reyting         one row per OWNED cell — the KPI itself, credited to the
+                    cell's owner, in the screen's order, under the count of
+                    owners and cells the page prints
     Yacheykalar     one row per cell, with its owner and its manager
     Ketganlar       every person who left, with where they were counted
     Ishlayotganlar  every person counted as working at the month's end
@@ -32,10 +32,10 @@ from app.services.quality_export import (
 from app.translit import transliterate, transliterate_text
 
 LABELS_UZ = {
-    "sheetSummary": "Umumiy", "sheetLeaders": "Liderlar", "sheetCells": "Yacheykalar",
+    "sheetSummary": "Umumiy", "sheetLeaders": "Reyting", "sheetCells": "Yacheykalar",
     "sheetLeft": "Ketganlar", "sheetWorking": "Ishlayotganlar",
     "left": "Ketganlar", "working": "Oy oxirida ishlayotganlar", "rate": "Qo'nimsizlik (yillik)",
-    "leaders": "Baholangan liderlar", "formula": "Qanday hisoblanadi",
+    "leaders": "Baholangan yacheykalar", "formula": "Qanday hisoblanadi",
     "bands": "Ball shkalasi", "bandRate": "Qo'nimsizlik", "bandScore": "Ball", "bandPoints": "KPI bali",
     "nobody": "Hech kimga hisoblanmaganlar",
     "colN": "№", "colLeader": "Lider", "colBrigadir": "Brigadir", "colCells": "Yacheykalar",
@@ -48,6 +48,7 @@ LABELS_UZ = {
     "colOwner": "Egasi", "colManager": "Boshqaruvchi",
     "countedOwner": "Egasiga", "countedNoOwner": "Egasi yo'q yacheyka", "noOwner": "Egasi yo'q",
     "notOwner": "Yacheyka egasi emas",
+    "rankTitle": "Yacheyka egalari reytingi", "countLine": "{o} ta egasi · {c} ta yacheyka",
     "formulaLines": [],
     "nobodyNoLeader": "Lidersiz yacheykalardan ketganlar",
     "nobodyNoOwner": "Egasi yo'q yacheykalardan ketganlar",
@@ -190,36 +191,31 @@ def _summary(wb: Workbook, p: dict) -> None:
 
 
 def _leaders(wb: Workbook, p: dict) -> None:
+    """The ranking — one row per OWNED cell, credited to its owner, in the
+    order the screen lists them (`leader_order`, the rows' keys)."""
     pay = p["payload"]
-    rows = list(pay.get("leaders") or [])
+    t = pay.get("totals") or {}
+    rows = list(pay.get("ranking") or [])
     order = p.get("leader_order") or []
     if order:
-        pos = {lid: i for i, lid in enumerate(order)}
-        rows.sort(key=lambda x: pos.get(x["id"], len(pos)))
-    ws = _sheet(wb, _l(p, "sheetLeaders"), {2: 6, 3: 34, 4: 28, 5: 18, 6: 14, 7: 12, 8: 14, 9: 9, 10: 11},
+        pos = {str(k): i for i, k in enumerate(order)}
+        rows.sort(key=lambda x: pos.get(str(x.get("key")), len(pos)))
+    ws = _sheet(wb, _l(p, "sheetLeaders"), {2: 6, 3: 12, 4: 34, 5: 28, 6: 14, 7: 12, 8: 14, 9: 9, 10: 11},
                 landscape=True)
     C1 = 2
-    labels = [_l(p, k) for k in ("colN", "colLeader", "colBrigadir", "colCells", "colWorking", "colLeft",
+    labels = [_l(p, k) for k in ("colN", "colCell", "colOwner", "colBrigadir", "colWorking", "colLeft",
                                  "colRate", "colScore", "colPoints")]
-    row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
-    # Owners first (the KPI); a leader who runs a cell and owns none follows,
-    # unnumbered and unscored — their cells' figures are their owners'.
-    rows = [x for x in rows if x.get("owner") is not False] + [x for x in rows if x.get("owner") is False]
+    C2 = C1 + len(labels) - 1
+    row = _banner(ws, 2, C1, C2, p.get("title") or "", p.get("subtitle") or "")
+    count = str(_l(p, "countLine")).replace("{o}", str(t.get("owners", 0))).replace(
+        "{c}", str(t.get("owned_cells", len(rows))))
+    row = _section(ws, row, C1, C2, _l(p, "rankTitle"), count)
     out = []
-    n = 0
-    for x in rows:
-        brig = ", ".join(_name(p, b.get("name")) for b in x.get("brigadirs") or []) or "—"
-        cells = ", ".join(c.get("code") or "" for c in x.get("cells") or [])
-        if x.get("owner") is False:
-            out.append((["", f"{_name(p, x.get('name'))} — {_l(p, 'notOwner')}", brig, cells,
-                         None, None, None, None, None],
-                        {"centers": (0, 3), "tints": {1: SLATE}}))
-            continue
-        n += 1
+    for n, x in enumerate(rows, 1):
         tone = _score_color(x.get("score")) if x.get("score") is not None else None
-        out.append(([n, _name(p, x.get("name")), brig, cells, x.get("working", 0), x.get("left", 0),
-                     x.get("rate"), x.get("score"), x.get("points")],
-                    {"fmts": {6: '0.0"%"', 8: "0.00"}, "tints": {7: tone} if tone else {}, "centers": (0, 3)}))
+        out.append(([n, x.get("code"), _name(p, x.get("owner")), _name(p, x.get("brigadir")) if x.get("brigadir") else None,
+                     x.get("working", 0), x.get("left", 0), x.get("rate"), x.get("score"), x.get("points")],
+                    {"fmts": {6: '0.0"%"', 8: "0.00"}, "tints": {7: tone} if tone else {}, "centers": (0, 1)}))
     _table(ws, row, C1, labels, out)
 
 

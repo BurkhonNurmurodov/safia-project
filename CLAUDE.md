@@ -256,9 +256,9 @@ manual | verifix, `at`, `by` — and `vfx`, what Verifix said at its last check:
 the matched NAME, job, cell, status, or why nobody was found).
 
 - **`services/leader_kind.py` is THE definition** (`KINDS`, `set_manual`, `out`).
-  A REGISTER, with ONE reader that ranks by it: «Ishchi havotirlari»
-  (/worker-concerns) ranks only `"leader"` profiles from 2026-10-04 (see that
-  section). Nothing else scores, filters or routes by it.
+  A REGISTER: nothing scores, filters or routes by it. «Ishchi havotirlari»
+  ranked only `"leader"` profiles from 2026-10-04 to 2026-10-14; since then it
+  ranks every cell OWNER (the operator: «every owner is ranked»).
 - **The switch** is a `SegmentedToggle` in the admin profile page's Details card
   (leaders only), a draft like every field there: the page's one Save sends
   `leader_kind` on `PUT /api/profiles/admin/leader/{id}` only when it moved, and
@@ -668,14 +668,16 @@ the same person.
   Verifix SEATS in the cell — a working employee with a leader's job whose org
   unit is the cell. It moves NOTHING (no unit, no checklist), and any leader may
   own a cell, one in another unit or in none.
-- **Both KPI pages read the Egasi from 2026-10-13** (the operator: «the KPIs
+- **Both KPI pages read the Egasi** (from 2026-10-13, the operator: «the KPIs
   will be calculated for the cell owner» — reversing the 12 Oct ruling 8 that
-  had them rank by `leader_id`). «Ishchi havotirlari»: a worker concern counts
-  for its cell's owner on the filing day; «Kadrlar qo'nimsizligi»: a cell's
-  turnover counts for its owner on the month's last day, every month (past
-  ones included) scored by the owner map. On both a leader who runs a cell and
-  owns none is shown unranked («Yacheyka egasi emas»). See their sections.
-  Every other page ranks as now.
+  had them rank by `leader_id`; made ONE rule on 2026-10-14). Both rank PER
+  CELL — one row per cell that has an owner ON THE PERIOD'S LAST DAY and stands
+  on it (`turnover.cell_map` + `turnover.owned`, the one reading both use), the
+  owner named on the row — so for one period «Ishchi havotirlari» and «Kadrlar
+  qo'nimsizligi» list the same owners and the same cells and print the same
+  «N ta egasi · M ta yacheyka». A leader who owns no cell is on neither page; a
+  cell with no owner is no row. See their sections. Every other page ranks as
+  now.
 - (SUPERSEDED 2026-10-12: «Egasi» is the Verifix seat and nothing else — the
   manual owner and its picker are retired; a person's choice lives on the
   «Boshqaruvchi», picked from the unit's Verifix workers. See «Cells, leaders
@@ -2472,48 +2474,50 @@ structure changed the same day — see the redesign bullets below).
   uplifted count as `↑N` under «Jami» and the headline/dialog say «N kept by
   the leader … M escalated — not in the %» (`OfLine`). Level moves only on an
   escalate or a return, so a concern sent back down is the leader's again.
-- **A concern counts for its CELL'S OWNER** (2026-10-13, the operator: «show
-  every single leader who owns a cell even they don't have the concerns … rank
-  based on the cell and write the cell owner's name»): the «Egasi»
-  (`cells.owner_id`, the Verifix seat) of the cell it names, AS IT STOOD ON THE
-  FILING DAY — `cell_links`' dated reading, so a seat that moves later keeps
-  its history. `_owner(db)` is THE rule and its only spelling: a scalar
-  subquery over the request's owner spans (`_owner_spans`, a VALUES list
-  mirroring `cell_links._resolve`), cached on `db.info`, so it composes into
-  every filter, aggregate and count with no join to forget. It decides the
-  ranking rows, the Lider filter (`_owned_by`), a LEADER's own lock and page
-  (and so exam tasks 40/41 through `leader_filings`), `/meta`'s Lider and
-  Yacheyka options, and the cells card's name (the cell's owner now). The unit
-  is still the row's own (`brigadir_manager_id`). A concern whose cell had no
-  owner that day is the «unassigned» bucket («egasi yo'q yacheykalarda»). The
-  register keeps printing whom it was FILED to (`leader`, the «Boshqaruvchi»
-  who answers it on /cell-concerns) and carries `cell_owner` beside it — the
-  detail dialog names both. Leaders are picked by PROFILE id (`leader_id`,
-  client key `wc_lead_ids`).
+- **A concern counts for its CELL'S OWNER ON THE PERIOD'S LAST DAY** (the
+  operator, 2026-10-14 — it was the filing day from 2026-10-13): the «Egasi»
+  (`cells.owner_id`, the Verifix seat) of the cell it names on `_end(date_to)`
+  (the period's last day; today for an open period), read through
+  `turnover.cell_map(db, end)` + `turnover.owned` — the very reading «Kadrlar
+  qo'nimsizligi» credits a month by. The owner on that day gets the WHOLE
+  period, history re-read: nothing is stored. `_owner(db, end)` is THE rule and
+  its only spelling: a scalar subquery over a VALUES list (code → owner),
+  cached on `db.info` per day, so it composes into every filter, aggregate and
+  count with no join to forget. It decides the Lider filter (`_owned_by`),
+  `/meta`'s options (read on today), the cells card's name and the register.
+  The unit is still the row's own (`brigadir_manager_id`). **The register
+  names the OWNER only** (the operator: «owner only») — `leader` IS the owner,
+  `cell_owner` repeats it for an older tab, whom it was filed to is no longer
+  printed, and the search finds the owner's name, not the filed-to one.
+  Leaders are picked by PROFILE id (`leader_id`, client key `wc_lead_ids`).
 - **Scope**: admin / top-manager / a page grant at "all" → everything;
   shift-manager → shift ∩ plant units; supervisor → their unit; leader → the
-  rows filed to them (`identity.leader_profile_ids_of`, every record that is
-  that person); any other role → nothing. The plant lock rides on top.
-- **«Liderlar KPI» lists EVERY cell owner in scope** (`_with_roster`): the
-  owners the view's concerns counted for, plus every leader who owns an alive
-  cell today (`_owners` — the cell's brigadir is what the viewer lock and the
-  plant / brigadir pick narrow; a brigadir-less cell only under «All
-  factories»), at zero when nothing was filed in their cells — SHOWN, never
-  folded («Bu davrda yacheykalarida havotir yo'q»), never graded, never «kam
-  ma'lumot». The /leaders roster leaders (`_roster`) who own no cell are rows
-  with `owner: false`, folded at the bottom («Yacheyka egasi emas»), never
-  ranked, naming the cells they run; they are not counted in the table's
-  headline or facts. The status filter does not narrow the list. The Excel
-  leaders sheet is the same list (non-owners tagged), and `/meta`'s Lider,
-  Brigadir and Yacheyka options include every name and cell the table shows.
-- **Only a LEADER on Verifix is ranked** (the operator, 2026-10-04: «rank only
-  those who are actually leaders») — `role_profiles.leader_kind == "leader"`
-  (`RANKED_KIND`, applied in `_with_roster`, which serves `kind` on every
-  leader row). «Lider o'rnida» and not-determined profiles stay on the table,
-  unranked and ungraded, in a group of their own after «kam ma'lumot»
-  («Reytingga kirmaydi — Verifixda lider lavozimida emas», a `KindTag` on each
-  row, band `nl`); the workbook appends the kind to the name. Their concerns
-  still count in the headline, the units and the cells.
+  concerns of every cell they OWN or RUN («Boshqaruvchi») on the period's last
+  day (`_led_by`, every profile record that is that person — the operator,
+  2026-10-14: «the cells they own and they manage»; exam tasks 40/41 read the
+  same through `leader_filings`); any other role → nothing. The plant lock
+  rides on top.
+- **The ranking is PER CELL** (the operator, 2026-10-14: «rank per cell (one
+  row for the cell) but do not include the ones without owner») —
+  `_scope_cells` + `_cell_rows`: one row per cell that has an owner on the
+  period's last day and stands on it, in the view (the cell's brigadir ON that
+  day is what the viewer lock and the plant / brigadir pick narrow; a
+  brigadir-less cell only under «All factories»), named by its owner, concerns
+  or not. An owner of three cells is three rows. A cell is ranked once
+  MIN_RANKED rated concerns stand behind it, else «kam ma'lumot»; a cell with
+  none in the period is listed under «Bu davrda havotir yo'q». **Every owner is
+  ranked** — the 2026-10-04 «Lider o'rnida» rule (`RANKED_KIND`) is gone. A
+  leader who owns no cell is on no row (the roster fold `_roster` /
+  `_with_roster` / «Yacheyka egasi emas» is gone). Concerns that land in no
+  row — a cell with no owner, or one outside the view — are the «unassigned»
+  bucket, so the rows and it add up to the headline. `/leaders` serves
+  `counts` = {owners, cells}, printed as «N ta egasi · M ta yacheyka»
+  (`rCounts`) in the ranking's subtitle — the pair «Kadrlar qo'nimsizligi»
+  prints for the same period. Each row also carries the old leader-row fields
+  (`leader`, `cells`, `brigadirs`, `kind: "leader"`) so a tab on an older
+  bundle reads one row per cell. A row opens `CellModal` (the cell's split and
+  its open concerns; «see all» picks the cell). The workbook's ranking sheet is
+  the same rows: Yacheyka · Yacheyka egasi · Brigadir · counts · %.
 - **The Google-sheet sync is GONE** (same day, the operator: «get rid of that
   sheet»): `services/worker_concerns.py` (the nightly crawl, its Drive sweep and
   the page's Refresh / sync pill / sheet-failure banners), the one-shot
@@ -2540,14 +2544,14 @@ structure changed the same day — see the redesign bullets below).
   counts concerns). «Ro'yxat» (view key `havotirlar`) is the register: phone
   cards, a wrapped table on sm+. Saved `wc_view` values from the three-tab page
   still load; the ranking's sort has a key of its own (`wc_rank_sort`).
-- **On a phone the ranking opens on 10 leaders** (`PHONE_ROWS`) with «Yana N
-  liderni ko'rsatish» under them — all 69 had put the cells and the trend seven
+- **On a phone the ranking opens on 10 cells** (`PHONE_ROWS`) with «Yana N
+  yacheykani ko'rsatish» under them — all 69 had put the cells and the trend seven
   screens down. A search shows every match. A phone row keeps the % alone on
   the right; its counts are a third line and its cell codes wrap.
 - **A LEADER (`lock_own_leader`) gets no ranking of one**: their headline, their
   unresolved concerns oldest first with the way to /cell-concerns at the TOP of
   that card (full width on a phone — it is the job they came to do),
-  «Yacheykalarim» (every cell they own, by open concerns) and the trend. Exam
+  «Yacheykalarim» (every cell they own or run, by open concerns) and the trend. Exam
   tasks 40 and 41 read straight off it.
 - **ONE whole percent, computed once: `pct0`** = `whole_pct(done, rated)`
   (`services/worker_concerns_export.py`), half UP from the raw counts, on every
@@ -2643,15 +2647,23 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   freezers 17xx/18xx, 0611 — carry the code only in the name), matched to
   /cells; a unit that is anybody's DEPARTMENT (`division_id`) is never a cell.
   A code /cells lacks counts toward nobody and is NAMED on the page.
-- **A cell's turnover is its OWNER's** (from 2026-10-13, the operator: «the
-  KPIs will be calculated for the cell owner») — `cells.owner_id`, the «Egasi»
-  Verifix seats in the cell, on the month's last day (`cell_links`), never the
-  «Boshqaruvchi» (`leader_id`), who is shown beside it on «Yacheykalar» and
-  scored nothing. A leader who owns several cells gets ONE figure: Σ left ÷ Σ
-  working × 12 (HR averaged the cells, then overwrote the average by hand). A
-  leader who RUNS a cell and owns none is listed after the ranking, unnumbered
-  and unscored («Yacheyka egasi emas», `owner: false` on the row, the workbook
-  marks them too). Cells with no owner (Verifix seats nobody there, or two),
+- **A cell's turnover is its OWNER's, and the ranking is PER CELL** (owner
+  from 2026-10-13, the operator: «the KPIs will be calculated for the cell
+  owner»; per cell from 2026-10-14: «rank per cell … do not include the ones
+  without owner») — `cells.owner_id`, the «Egasi» Verifix seats in the cell, on
+  the month's last day (`cell_links`), never the «Boshqaruvchi» (`leader_id`),
+  who is shown beside it on «Yacheykalar» and scored nothing. The «Reyting» tab
+  (`ranking` on the payload) is one row per OWNED cell — `turnover.owned`: an
+  owner on the last day and standing on it — with its own rate, score and KPI
+  points, the owner named on the row; an owner of several cells has a row for
+  each (the old one-figure-per-leader Σ is gone; `leaders`, the same cells
+  folded by owner, is served only for a tab on an older bundle). Totals carry
+  `owners` / `owned_cells` («N ta egasi · M ta yacheyka» in the ranking's
+  header — the pair «Ishchi havotirlari» prints, through the same `cell_map` +
+  `owned`), and `scored` / `by_score` / `no_people` now count cells. The open
+  month reads its map on its LAST day too (`cell_map(db, last_day(m))`). A
+  leader who owns no cell is on no row. A leaver in a cell not owned on the
+  last day is `counted: "no_owner"`. Cells with no owner (Verifix seats nobody there, or two),
   codes not on /cells, units that are not cells and owners whose cells hold
   nobody are each counted and said in the «Hech kimning baliga…» card — never
   silently dropped. **History re-read**: a month frozen before owners were
