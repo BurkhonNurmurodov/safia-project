@@ -117,6 +117,7 @@ async def lifespan(app: FastAPI):
         report_dispute_queue,
         report_wc_plan_history,
         report_dept_attendance,
+        report_trudoyomkost_register,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -586,6 +587,12 @@ async def lifespan(app: FastAPI):
     # `startup.report_dept_attendance` and `services/dept_attendance_report.py`
     # once it has landed.
     report_dept_attendance()
+    # ⚠ TEMPORARY one-shot (2026-10-14) — the whole Трудоемкость register
+    # (supervisor · SAP code · work centre · process · minutes per piece) as a
+    # workbook, DMed once to the operator. Remove this line,
+    # `startup.report_trudoyomkost_register` and
+    # `services/trudoyomkost_register_report.py` once it has landed.
+    report_trudoyomkost_register()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and

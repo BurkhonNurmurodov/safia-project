@@ -7496,6 +7496,37 @@ def _dept_attendance_job() -> None:
                       dept_attendance_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the whole Трудоемкость register, as a workbook ─────────────────
+# The operator asked on 2026-10-14 for every catalog line's trudoyomkost in one
+# table — supervisor · SAP code · work centre · process name · minutes per piece
+# — the current catalog, active lines of active units. It READS and writes
+# nothing but its flag (`services/trudoyomkost_register_report.py`). Changing
+# what it sends needs a NEW key.
+TRUDOYOMKOST_REGISTER_FLAG = "trudoyomkost_register_xlsx_2026_10_14_v1"
+_TRUDOYOMKOST_REGISTER_DELAY_S = 60
+
+
+def report_trudoyomkost_register() -> None:
+    """The catalog's trudoyomkost register, DMed once as a workbook. Never raises."""
+    try:
+        if not _report_pending(TRUDOYOMKOST_REGISTER_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("trudoyomkost-register-xlsx",
+                    datetime.now(timezone.utc)
+                    + timedelta(seconds=_TRUDOYOMKOST_REGISTER_DELAY_S),
+                    _trudoyomkost_register_job)
+    except Exception as exc:
+        print(f"[startup] trudoyomkost register report could not be scheduled: {exc}")
+
+
+def _trudoyomkost_register_job() -> None:
+    from app.services import trudoyomkost_register_report
+    _send_report_once(TRUDOYOMKOST_REGISTER_FLAG, "trudoyomkost register XLSX",
+                      trudoyomkost_register_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance
