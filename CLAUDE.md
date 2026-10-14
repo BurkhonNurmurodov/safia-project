@@ -183,6 +183,25 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   `services/leader_unit_fix_sep26.py` (TEMPORARY one-shot) moved his profile,
   role rows and every checklist day to Aripova without touching the cell, and
   marked her already-sent digests as including them so nothing was re-sent.
+- **The Verifix sync keeps such a cell where it is** —
+  `verifix_sync.KEPT_APART` (cell code → the unit's NAME; today
+  `{"0811": "Turdimurodov Nodirjon"}`, the operator 2026-10-14: «keep him as
+  an exception»). Verifix puts 0811 under Aripova's workshop, so the live sync
+  raised `brigadir_differs` for it, and applying that on 13 Oct moved the
+  cell to Aripova from 14 Oct 08:00: its people went onto her /staff list and
+  his /production read her unit, which has no A0081 line — an empty page. For
+  a kept-apart cell the sync now raises no `brigadir_differs` (and refuses one
+  already on the queue, 409 `kept_apart`), never suggests `leader_moved` (the
+  leader is counted elsewhere on purpose), and reads the seat heading that very
+  unit as expected (no `seat_other_role`). A person can still move it on
+  /cells. A new exception is one more entry. TEMPORARY
+  `services/cell_unit_fix_oct14.py` (`startup.put_cell_0811_back`, flag
+  `cell_0811_own_unit_2026_10_14_v1`, inline at boot, both entrypoints) put
+  0811 back by a dated link event from the day the wrong one landed (that day
+  and after read his unit; the wrong event stays), re-copied the closed live
+  days since, counted what Aripova's unit filed about 0811's people since, and
+  DMed it to `UNPRICED_DM_CHAT`. Delete it with its startup function and both
+  calls once its flag and DM flag read «done» — `KEPT_APART` STAYS.
 
 ## A leader's CHECKLIST may run on the other shift (`leader_shift`, 2026-10-05)
 

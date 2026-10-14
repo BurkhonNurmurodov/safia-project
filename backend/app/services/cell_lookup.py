@@ -258,7 +258,9 @@ def cells_unit_for_leader(db: Session, leader_id: int | None) -> int | None:
     measure its load. A leader's PRODUCTION readers — their /production page and
     the automatic checks #1 and #9 — read this unit, because the cell's catalog,
     plan and typed people are stored there and nowhere else; read in the
-    leader's own unit they find nothing and fail every day."""
+    leader's own unit they find nothing and fail every day. The Verifix sync
+    leaves such a cell where it is (`verifix_sync.KEPT_APART`) — a move to
+    Verifix's brigadir applied on 13 Oct 2026 emptied his page for a day."""
     if not leader_id:
         return None
     units = {m for (m,) in db.query(Cell.manager_id)

@@ -195,6 +195,7 @@ async def lifespan(app: FastAPI):
         move_sanjarbek_checklist_shift,
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
+        put_cell_0811_back,
         seed_one_process_cells,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
@@ -689,6 +690,11 @@ async def lifespan(app: FastAPI):
     # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
     # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
     repair_live_exchanges_oct08()
+    # ⚠ TEMPORARY one-shot (2026-10-14) — cell 0811 back in «Turdimurodov
+    # Nodirjon» from the day the 13 Oct Verifix-sync move landed. Remove this
+    # line, `startup.put_cell_0811_back` and `services/cell_unit_fix_oct14.py`
+    # once its flag and DM flag read «done».
+    put_cell_0811_back()
     # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
     # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
     # goes (the flag hands them the same text). Remove this line,

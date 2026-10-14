@@ -9758,6 +9758,33 @@ def repair_live_exchanges_oct08() -> None:
         print(f"[startup] live exchange repair skipped: {exc}")
 
 
+# ── cell 0811 back in its own unit (2026-10-14) ───────────────────────────────
+#
+# ⚠ TEMPORARY. `services/cell_unit_fix_oct14.py` is the whole of it; delete
+# it, this function and both entrypoint calls once its flag and DM flag read
+# «done». The exception that keeps it there is `verifix_sync.KEPT_APART`, and
+# STAYS.
+
+def put_cell_0811_back() -> None:
+    """Boot, inline (before /health, so the deploy's report step reads the
+    repaired state): the 13 Oct `brigadir_differs` move of cell 0811 to Aripova
+    Manzura's unit is undone from the day it landed, and the closed live days
+    since are re-copied. Never raises."""
+    try:
+        from app.services import cell_unit_fix_oct14 as fx
+        db = SessionLocal()
+        try:
+            rec = fx.run(db)
+            if rec is not None:
+                print(f"[startup] cell 0811 fix: {rec.get('result')} "
+                      f"(from {rec.get('since')}, {len(rec.get('days') or {})} days checked)")
+            fx.send_dm(db, UNPRICED_DM_CHAT)
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] cell 0811 fix skipped: {exc}")
+
+
 def seed_one_process_cells() -> None:
     """Boot, inline: the five leaders the operator named on 25 Sep get their
     cells marked «Bitta jarayon» and lose the leader-level task-3 text the flag

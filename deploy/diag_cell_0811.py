@@ -32,7 +32,8 @@ from sqlalchemy import func, or_  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.models import (  # noqa: E402
-    ActionLog, Attendance, Cell, CellLinkEvent, LiveDayClose, LiveProjection, Manager,
+    ActionLog, Attendance, Cell, CellLinkEvent, LeaderAutoCheck, LiveDayClose, LiveProjection,
+    Manager,
     PPDaily, PPProduct, PPWorkCenterDaily, RoleProfile, VerifixSyncItem, VerifixTie,
 )
 
@@ -184,6 +185,12 @@ def main() -> None:
                        .order_by(LiveProjection.day).all()):
                 n0811 = sum(1 for r in (pr.roster or []) if len(r) > 1 and r[1] == CODE)
                 P("  copy", pr.day, "rows", pr.rows, "roster 0811", n0811, t(pr.copied_at))
+        for r in (db.query(LeaderAutoCheck).filter(LeaderAutoCheck.leader_id.in_(pids or {-1}),
+                                                   LeaderAutoCheck.date >= "2026-10-12")
+                  .order_by(LeaderAutoCheck.date, LeaderAutoCheck.task_id).all()):
+            P("auto", r.date, "task", r.task_id, r.check, "unit", r.manager_id, "cell", r.cell_id,
+              "outcome", r.outcome, r.code, "checked", t(r.checked_at), "entry", r.entry_id,
+              j(r.facts, 300))
         for mid, d, n, h in (db.query(Attendance.manager_id, Attendance.date,
                                       func.count(Attendance.id),
                                       func.coalesce(func.sum(Attendance.hours_worked), 0))

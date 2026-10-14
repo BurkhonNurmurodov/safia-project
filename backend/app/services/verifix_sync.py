@@ -83,6 +83,24 @@ _SYNC_LOCK_KEY = 8_140_573_112_012_207
 UNTIED = ""
 PHOTO_RETRY_AFTER = timedelta(hours=24)   # a photo Verifix would not hand over waits this long
 REARM_AFTER = timedelta(hours=3)   # an armed «two reads» older than this starts over
+# Cells kept, on the operator's word, in a unit that is NOT the brigadir
+# Verifix puts over them: cell code → the unit's NAME (ids differ between
+# copies). The sync never suggests moving such a cell (`brigadir_differs`),
+# refuses a suggestion already on the queue, and reads the seat holding that
+# very unit as expected. 0811 (2026-10-14, the operator: «keep him as an
+# exception»): Turdimurodov Nodirjon is counted under Aripova Manzura while
+# his cell's загрузка is read in a unit made for it (the 26 Sep ruling,
+# `cell_lookup.cells_unit_for_leader`); a `brigadir_differs` applied on
+# 13 Oct moved 0811 to Aripova and his /production went blank.
+KEPT_APART = {"0811": "Turdimurodov Nodirjon"}
+
+
+def kept_apart(code) -> Optional[str]:
+    """The unit NAME a cell is kept in against Verifix's brigadir, or None."""
+    k = verifix_org.code_key(code)
+    if not k:
+        return None
+    return next((u for c, u in KEPT_APART.items() if verifix_org.code_key(c) == k), None)
 
 
 _pass_lock = threading.Lock()
@@ -156,6 +174,9 @@ class Ctx:
                 self.unit_by_emp[m.vfx_employee_id].append(m.id)
         live = {m.id for m in self.units if not m.archived}
         self.live_units = live
+        names = {(m.name or "").strip().casefold(): m.id for m in self.units if not m.archived}
+        self.kept_unit = {c.id: names.get(n.strip().casefold()) for c in self.cells
+                          if (n := kept_apart(c.verifix_code))}
         self.hand = _hand_ties(db)
         # Rows nothing automatic may reach this pass (a doubtful or missing
         # tie): filled by the people / units loops, read by the seats loop.
@@ -795,7 +816,10 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
                                                         "seat": verifix_org.who(s),
                                                         "profile": prof.id, "role": prof.role})
             continue
-        if s["id"] in ctx.unit_by_emp:
+        kept = ctx.kept_unit.get(c.id)
+        # The seat heading the very unit a kept-apart cell is kept in is the
+        # exception itself (0811: the unit made to measure its leader's cell).
+        if s["id"] in ctx.unit_by_emp and not (kept and set(ctx.unit_by_emp[s["id"]]) <= {kept}):
             pl.item("seat_other_role", f"cell:{c.id}", {"cell": c.id, "code": c.verifix_code,
                                                         "seat": verifix_org.who(s), "role": "supervisor"})
             continue
@@ -865,7 +889,10 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             continue
         if cur_mgr == prof.id:
             continue
-        if prof.manager_id and c.manager_id and prof.manager_id != c.manager_id:
+        # A kept-apart cell's leader is counted under ANOTHER brigadir on
+        # purpose: never suggest moving their profile to the cell's unit.
+        if (prof.manager_id and c.manager_id and prof.manager_id != c.manager_id
+                and c.id not in ctx.kept_unit):
             pl.item("leader_moved", f"profile:{prof.id}", {"profile": prof.id, "name": prof.name,
                                                            "cell": c.id, "code": c.verifix_code,
                                                            "from_unit": prof.manager_id,
@@ -908,6 +935,8 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
     for c in ctx.cells:
         if not c.vfx_division_id or c.archived_at is not None:
             continue
+        if c.id in ctx.kept_unit:
+            continue            # kept in its unit against Verifix's brigadir (KEPT_APART)
         bs = ctx.over(c.vfx_division_id)
         units = {u for b in bs for u in b["unit"]}
         pc = pend.get(c.id, {})
@@ -1567,6 +1596,10 @@ def apply_item(db: Session, item_id: int, *, by: Optional[str], choice: Optional
     k = it.kind
     if k == "brigadir_differs":
         c = _cell(db, p["cell"])
+        if kept_apart(c.verifix_code):
+            raise Refused("kept_apart", f"Cell {c.verifix_code} stays in «{kept_apart(c.verifix_code)}» "
+                          "(an exception) — dismiss this", 409,
+                          {"code": c.verifix_code, "unit": kept_apart(c.verifix_code)})
         ev = cell_register.set_unit(db, c, p["to_unit"], src="manual", by=by,
                                     vfx={"brigadir": p.get("brigadir")})
         out["from"] = ev.effective_from.isoformat() if ev is not None else None
