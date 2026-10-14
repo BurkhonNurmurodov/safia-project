@@ -1909,6 +1909,25 @@ export default function Production() {
   // No cell assigned (or none with a SAP code): every panel below would be a row
   // of zeros, which reads as "the factory did nothing today".
   const noCells = cellScope != null && !cellScope.cells?.length;
+  // …and WHY, when the server knows: a «Boshqaruvchi» pick waits for the unit's
+  // next shift opening (the profile page already lists it), or the cells this
+  // leader runs carry no SAP code. «No cell assigned» stays for the true case.
+  const waitingCells = cellScope?.waiting ?? [];
+  const noSapCells = cellScope?.no_sap ?? [];
+  const noCellsCopy = waitingCells.length
+    ? {
+        title: t("production.cellWaitingTitle")
+          .replace("{c}", waitingCells.map((w) => w.code).join(", "))
+          .replace("{d}", ddmmyyyy(waitingCells[0].from))
+          .replace("{t}", waitingCells[0].at),
+        message: t("production.cellWaitingMsg"),
+      }
+    : noSapCells.length
+      ? {
+          title: t("production.cellNoSapTitle").replace("{c}", noSapCells.join(", ")),
+          message: t("production.cellNoSapMsg"),
+        }
+      : { title: t("production.noCellsTitle"), message: t("production.noCellsMsg") };
   // Catalog SKU → work centers it's configured on. Lets us tell a true
   // "missing SKU" apart from a work-center mismatch (same SKU, different участок).
   const catalogWcsBySku = rows.reduce((m, r) => {
@@ -2645,8 +2664,8 @@ export default function Production() {
         />
       ) : noCells ? (
         <EmptyState
-          title={t("production.noCellsTitle")}
-          message={t("production.noCellsMsg")}
+          title={noCellsCopy.title}
+          message={noCellsCopy.message}
           showUploadLink={false}
         />
       ) : (<>

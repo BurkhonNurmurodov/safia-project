@@ -1113,10 +1113,22 @@ function EditCard({ ptype, item, data, notify, onDone }) {
             />
             {(form.cells || []).length > 0 && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {form.cells.map((c) => (
+                {form.cells.map((c) => {
+                  // A «Boshqaruvchi» pick waits for the unit's next shift
+                  // opening — say from when, or it reads as already in force.
+                  const from = item.cells_waiting?.[c];
+                  const d = from ? `${from.slice(8, 10)}.${from.slice(5, 7)}` : null;
+                  return (
                   <span key={c} className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded-full"
+                        title={d ? t("admin.profiles.cellWaitingHint").replace("{d}", d) : undefined}
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
                     {c}
+                    {d && (
+                      <span className="inline-flex items-center gap-0.5 font-sans" style={{ color: "var(--text-3)" }}>
+                        <Clock className="w-3 h-3" />
+                        {t("admin.profiles.cellWaitingFrom").replace("{d}", d)}
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="opacity-60 hover:opacity-100"
@@ -1125,7 +1137,8 @@ function EditCard({ ptype, item, data, notify, onDone }) {
                       <X className="w-3 h-3" />
                     </button>
                   </span>
-                ))}
+                  );
+                })}
               </div>
             )}
           </FormField>

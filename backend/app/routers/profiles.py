@@ -614,10 +614,14 @@ def admin_list_profiles(db: Session = Depends(get_db),
     # the cells `_set_leader_cells` treats as held (`cell_register.held_cells`),
     # so a profile save round-trips it instead of silently withdrawing it.
     waiting_picks = cell_links.pending(db, [c.id for c in cell_rows])
+    # …and the profile page says so: {leader: {code: the shift-day it lands}},
+    # or a waiting pick reads as one already in force (2026-10-14, cell 8911).
+    waiting_by_leader: dict[int, dict[str, str]] = {}
     for c in cell_rows:
         w = (waiting_picks.get(c.id) or {}).get("leader_id") or {}
         if w.get("value") and c.verifix_code not in cells_by_leader.get(w["value"], []):
             cells_by_leader.setdefault(w["value"], []).append(c.verifix_code)
+            waiting_by_leader.setdefault(w["value"], {})[c.verifix_code] = w["from"]
 
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
            "leaders": [], "admins": [], "guests": [], "idle_owners": []}
@@ -641,6 +645,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
             item["manager_id"] = p.manager_id
             item["supervisor"] = mgr_names.get(p.manager_id)
             item["cells"] = cells_by_leader.get(p.id, [])
+            item["cells_waiting"] = waiting_by_leader.get(p.id, {})
             # A leader on Verifix, or filling a leader's place — and where that
             # answer came from (services/leader_kind.py).
             item["leader_kind"] = p.leader_kind

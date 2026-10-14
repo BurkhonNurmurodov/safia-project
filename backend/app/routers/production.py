@@ -621,8 +621,41 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "kind": "leader",
             "cells": sorted(wc_scope),
             "work_centers": sorted(w["work_center"] for w in result["work_centers"]),
+            **_leader_cell_notes(db, payload),
         }
     return result
+
+
+def _leader_cell_notes(db: Session, payload: Optional[dict]) -> dict:
+    """Why a leader's page may be empty, so it can say so instead of «no cell».
+
+    `waiting`: cells picked for this leader whose «Boshqaruvchi» change has not
+    landed yet. A pick waits for the unit's next shift opening
+    (`cell_links.record`), while `cells.leader_id` — what the scope reads —
+    still names the previous holder. The profile page already lists such a
+    pick, so the page must not say nothing is assigned (2026-10-14, cell 8911).
+    `no_sap`: cells this leader runs now that carry no SAP code, so they name
+    no work centre. Both empty for anyone else."""
+    out: dict = {"waiting": [], "no_sap": []}
+    pid = viewer_leader_profile_id(db, payload) if payload else None
+    if not pid:
+        return out
+    from app.models import CellLinkEvent
+    from app.services.cell_links import TZ as LINK_TZ
+    out["no_sap"] = sorted(code for code, sap in
+                           db.query(Cell.verifix_code, Cell.sap_code)
+                           .filter(Cell.leader_id == pid).all()
+                           if not norm_code(sap))
+    rows = (db.query(Cell.verifix_code, CellLinkEvent.effective_from,
+                     CellLinkEvent.effective_at)
+            .join(CellLinkEvent, CellLinkEvent.cell_id == Cell.id)
+            .filter(CellLinkEvent.field == "leader_id", CellLinkEvent.value == pid,
+                    CellLinkEvent.applied_at.is_(None))
+            .order_by(CellLinkEvent.effective_at, Cell.verifix_code).all())
+    out["waiting"] = [{"code": code, "from": eff.isoformat(),
+                       "at": at.astimezone(LINK_TZ).strftime("%H:%M")}
+                      for code, eff, at in rows]
+    return out
 
 
 def _verifix_staffing(db: Session, manager_id: int, day: date,
