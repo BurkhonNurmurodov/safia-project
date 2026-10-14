@@ -185,6 +185,7 @@ def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | Non
         rev = by_task.get(tid)
         d = disputes.get(tid)
         is_auto = str(tk.get("reason") or "").startswith(leader_tasks.AUTO_PREFIX)
+        judge = rejected_by(tk, is_auto)
         tasks.append({
             "id": tid,
             "name": names.get(tid) or {l: f"#{tid}" for l in leader_ai.LANGS},
@@ -215,14 +216,15 @@ def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | Non
             "autoFacts": tk.get("auto_facts") if is_auto else None,
             "queued": bool(rev and rev.status == "pending"),
             "dispute": _dispute_out(d) if d is not None else None,
-            # May this verdict be ARGUED? Two kinds, one chain (2026-09-28, the
-            # operator's ruling): a proof the AI refused, and an automatic check
-            # that failed — «the platform judged this task wrong» is one
-            # question whichever judge it was. Not once an admin has already
-            # ruled the task done: there is nothing left to give back.
-            "objectable": bool(
-                tk.get("ai_rejected")
-                or (is_auto and not tk.get("done") and tk.get("admin_done") is None)),
+            # WHO refused this task — "ai" · "auto" · "admin" — or None when
+            # nothing did (`rejected_by`). The page groups, colours and counts
+            # a task as rejected off this one field.
+            "rejected_by": judge,
+            # May this verdict be ARGUED? Every rejection may, whichever of the
+            # three judges made it (the operator, 2026-10-14: «to every single
+            # one of the 13 tasks») — it was the AI's and the automatic checks'
+            # alone, so a task an admin ruled «not done» had no way back.
+            "objectable": judge is not None,
         })
 
     total, checked, rejected, errored, pending = _tally(tasks)
@@ -389,12 +391,48 @@ def _dispute_out(d) -> dict:
     }
 
 
+def rejected_by(task: dict, is_auto: bool) -> str | None:
+    """WHO refused this task, or None when nothing did — THE rule for «was this
+    task rejected», and so for «may it be objected to»: every rejection may,
+    whichever judge made it (the operator, 2026-10-14). `task` is a register
+    task with the overlays already applied (`routers.leaders._apply_overlays`).
+
+      "admin"  an admin ruled it NOT done by hand (LeaderTaskOverride) over an
+               answer that said it was — the leader's «Ha», or an automatic
+               check's verdict either way (the admin then reversed or
+               confirmed the platform, and the leader may argue with either).
+               First, because that ruling outranks every verdict in the score.
+      "ai"     the AI refused the proof (`ai_rejected`, which the overlay sets
+               only where no admin ruling exists).
+      "auto"   an automatic check failed and no admin has ruled on it.
+
+    None for everything that is not somebody else's judgement: the leader's own
+    «Yo'q», a task whose time ran out (the late proof is that door), a question
+    never asked, and anything that counts as done.
+    """
+    adm = task.get("admin_done")
+    if adm is False and (task.get("done") or is_auto):
+        return "admin"
+    if adm is not None:
+        return None
+    if task.get("ai_rejected"):
+        return "ai"
+    if is_auto and not task.get("done"):
+        return "auto"
+    return None
+
+
 def _tally(tasks: list[dict]) -> tuple[int, int, int, int, int]:
     """total answered · verdicts written · rejected · technical errors · queued.
 
     An `error` row is counted apart from a rejection on purpose: it is the
     platform failing to fetch a photo, not a leader failing to take one, and
     the two must never be added into one number a person is judged by.
+
+    «Rejected» is `rejected_by` — the same field the page groups by and the
+    objection button is offered off, so the header can never count a rejection
+    the list below it does not show (it counted a failed automatic check the
+    page filed under «not checked», and missed an admin's «not done» ruling).
     """
     total = checked = rejected = errored = pending = 0
     for t in tasks:
@@ -402,20 +440,17 @@ def _tally(tasks: list[dict]) -> tuple[int, int, int, int, int]:
             continue
         total += 1
         rev = t.get("review")
-        if t["ai_rejected"]:
+        if t.get("rejected_by"):
             rejected += 1
         # An AUTOMATIC task carries a verdict and will never carry a review
-        # row: no photo exists, so no queue door ever sees it. Counted apart
-        # from the AI's rejections and never as `ai_rejected`, which is what
-        # the score overlays read — the score already moved through `done`.
-        # Left out of both, it inflated `total` while contributing to nothing,
-        # so the report header read «13 tasks, 10 checked» forever and the
-        # brigadir's digest called a day whose only failures were automatic
-        # «verified».
-        if t.get("auto"):
+        # row: no photo exists, so no queue door ever sees it — it is counted
+        # checked here, never as `ai_rejected`, which is what the score
+        # overlays read. Left out, it inflated `total` while contributing to
+        # nothing, so the header read «13 tasks, 10 checked» forever. A task an
+        # ADMIN ruled on is checked too: a person decided it, and while that
+        # ruling stands no pending or failed AI verdict can move it.
+        if t.get("auto") or t.get("admin_done") is not None:
             checked += 1
-            if not t.get("done"):
-                rejected += 1
             continue
         if rev and rev["status"] in ("ok", "flagged"):
             checked += 1
@@ -636,8 +671,9 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     # Task NUMBERS, not names: the DM is read in four languages and a name list
     # would have to be resolved per recipient, while «№3, №7» is the same
     # reference the leader sees on their own checklist. The names are one tap
-    # away, on the page the button opens.
-    numbers = ", ".join(f"№{t['id']}" for t in report["tasks"] if t["ai_rejected"])
+    # away, on the page the button opens. EVERY rejected task, whichever judge
+    # refused it — the same `rejected_by` the count beside it is made of.
+    numbers = ", ".join(f"№{t['id']}" for t in report["tasks"] if t.get("rejected_by"))
 
     led = db.query(LeaderDayReport).filter_by(report_key=key).first()
     # A PARKED row is a placeholder, not a send: a day that was voided and has

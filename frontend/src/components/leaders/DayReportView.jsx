@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, CalendarDays, User, Users, Sparkles, Clock, CalendarCheck,
-  MessageSquareWarning, MessagesSquare, Camera, ChevronDown,
+  MessageSquareWarning, MessagesSquare, Camera, ChevronDown, ShieldX,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Lightbox from "../ui/Lightbox";
@@ -362,6 +362,15 @@ function clockOf(iso) {
   return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
+/** «dd.mm HH:MM» in Tashkent — when an admin made a ruling, which is not
+ *  necessarily the report's own day. */
+function stampOf(iso) {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() + 5 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
 
 /* ── one task ──────────────────────────────────────────────────────────────
  * A rejected card opens with everything visible; a passed one collapses to a
@@ -389,6 +398,12 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
   const shotInApp = photos.some((p) => p.cam);
   const rev = t.review;
   const dateFlagged = (rev?.flags || []).some((f) => f === "no_date" || f === "date_mismatch");
+  // The PERSON who refused this task, when a person did: an admin's «not
+  // done» ruling, or an admin's triage «rejected» on the AI verdict.
+  const ruledBy = t.admin_done === false && t.rejected_by === "admin"
+    ? { by: t.admin_by, at: t.admin_at }
+    : t.admin_done == null && rev?.resolution === "rejected"
+      ? { by: rev.resolvedBy, at: rev.resolvedAt } : null;
 
   return (
     <div className="rounded-xl overflow-hidden"
@@ -538,7 +553,23 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
             </p>
           )}
 
-          {t.admin_done != null && (
+          {/* An admin's «not done» ruling that refused the task is the verdict
+              an objection argues with, so it is stated like one — who and
+              when — rather than as a footnote under the AI's. The same for an
+              admin's triage «rejected» on the AI verdict itself, which costs
+              the task its weight even where the AI had passed it. */}
+          {ruledBy ? (
+            <p className="text-[11px] leading-snug rounded-lg px-2.5 py-2 flex items-start gap-1.5"
+              style={{ background: hexA(C_BAD, 0.08), border: `1px solid ${hexA(C_BAD, 0.25)}`,
+                       color: "var(--text-2)" }}>
+              <ShieldX size={13} className="flex-shrink-0 mt-px" style={{ color: C_BAD }} />
+              <span>
+                {fill(T.adminRuled, { v: T.ruledNot })}
+                {ruledBy.by ? ` — ${ruledBy.by}` : ""}
+                {ruledBy.at ? ` · ${stampOf(ruledBy.at)}` : ""}
+              </span>
+            </p>
+          ) : t.admin_done != null && (
             <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
               {fill(T.adminRuled, { v: t.admin_done ? T.ruledDone : T.ruledNot })}
               {t.admin_by ? ` — ${t.admin_by}` : ""}

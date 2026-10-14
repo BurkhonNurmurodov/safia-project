@@ -83,6 +83,9 @@ _LABELS = {
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "hdr_dispute_auto": "⚖️ Avtomatik tekshiruv natijasiga norozilik",
+        "hdr_dispute_admin": "⚖️ Admin qaroriga norozilik",
+        "admin_ruling":  "Admin qarori",
+        "ruled_not_done": "bajarilmagan deb belgilandi",
         "live_mark":     "Verifix",
         "auto_verdict":  "Avtomatik tekshiruv",
         "task":          "Vazifa",
@@ -131,6 +134,9 @@ _LABELS = {
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "hdr_dispute_auto": "⚖️ Возражение на результат автоматической проверки",
+        "hdr_dispute_admin": "⚖️ Возражение на решение администратора",
+        "admin_ruling":  "Решение администратора",
+        "ruled_not_done": "отмечено как не выполненное",
         "live_mark":     "Verifix",
         "auto_verdict":  "Автоматическая проверка",
         "task":          "Задача",
@@ -179,6 +185,9 @@ _LABELS = {
         "hdr_late":      "⏰ Request to open a late report",
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "hdr_dispute_auto": "⚖️ Objection to an automatic check",
+        "hdr_dispute_admin": "⚖️ Objection to an admin's ruling",
+        "admin_ruling":  "Admin's ruling",
+        "ruled_not_done": "marked not done",
         "live_mark":     "Verifix",
         "auto_verdict":  "Automatic check",
         "task":          "Task",
@@ -701,8 +710,15 @@ def _leader_dispute_data(db, d) -> dict:
             res = leader_auto.results_for(db, [e.id]).get(e.id)
             for line in leader_auto.result_lines(res, "uz"):
                 verdict += f"\n• {line}"
+    # An objection to an ADMIN's own «not done» ruling (2026-10-14): that
+    # ruling is what the admin is asked to reconsider — who made it, and when.
+    ruling = None
+    if leader_dispute.ruling_of(d) is not None:
+        by, at = leader_dispute.ruling_label(d)
+        ruling = {"by": by, "at": at}
     return {
         "auto":       auto,
+        "ruling":     ruling,
         "unit":       mgr.name if mgr else "—",
         "date":       d.date,
         "leader":     d.leader_name or "—",
@@ -738,15 +754,22 @@ def _render_leader_dispute(data, lang) -> str:
     half the evidence, which is the flow this chain replaced.
     """
     auto = bool(data.get("auto"))
-    lines = [_L(lang, "hdr_dispute_auto" if auto else "hdr_dispute"), ""]
+    ruling = data.get("ruling")
+    lines = [_L(lang, "hdr_dispute_admin" if ruling
+                else "hdr_dispute_auto" if auto else "hdr_dispute"), ""]
     lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
     lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
     lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
     lines.append(f"📋 {_L(lang, 'task')}: {_v(data['task'])}")
     lines.append("")
+    if ruling:
+        lines.append(f"🛡 {_L(lang, 'admin_ruling')}: {_L(lang, 'ruled_not_done')} — "
+                     f"{_v(ruling.get('by'))}, {_v(ruling.get('at'))}")
+    # Under an admin's ruling the AI's or the check's own verdict is context —
+    # printed only where there is one.
     if auto:
         lines.append(f"⚙️ {_L(lang, 'auto_verdict')}: {_v(data['verdict'])}")
-    else:
+    elif not ruling or data.get("verdict"):
         lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
     lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data.get('author'))}")
     lines.append(f"💬 {_L(lang, 'reason')}: {_v(data['reason'])}")

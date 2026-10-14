@@ -86,7 +86,7 @@ const reduceMotion = () =>
 
 const TXT = {
   uz: {
-    titleDispute: "AI qaroriga norozilik", titleLate: "Kechikkan isbot", titleNew: "Yangi norozilik",
+    titleDispute: "Norozilik", titleLate: "Kechikkan isbot", titleNew: "Yangi norozilik",
     back: "Orqaga", task: "Vazifa", shift1: "1-smena", shift2: "2-smena",
     stSupervisor: "Brigadir ko'rib chiqmoqda", stAdmin: "Admin qarorini kutmoqda",
     stApproved: "Qabul qilindi", stApprovedLate: "Tasdiqlandi", stRejected: "Rad etildi",
@@ -125,6 +125,8 @@ const TXT = {
     nfT: "Topilmadi", nfM: "Bu murojaat topilmadi yoki uni ko'rishga ruxsatingiz yo'q.",
     newIntro: "Nega bu vazifa noto'g'ri rad etilgan? Birinchi xabaringiz — norozilik: uni brigadiringiz o'qiydi, savol berishi, rad etishi yoki adminlarga yuborishi mumkin. Fayl ham biriktirishingiz mumkin.",
     newPh: "Masalan: rasmda soat ko'rinib turibdi, lekin AI o'qiy olmagan",
+    newPhAuto: "Masalan: reja soat 9:40 da kiritilgan edi",
+    newPhAdmin: "Masalan: vazifa bajarilgan, rasmda hammasi ko'rinib turibdi",
     newNot: "Bu vazifa bo'yicha norozilik bildirib bo'lmaydi.",
     f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
     f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
@@ -134,7 +136,7 @@ const TXT = {
     zoom: "Kattalashtirish", photosOne: "{n} ta rasm", photosMany: "{n} ta rasm",
   },
   uz_cyrl: {
-    titleDispute: "AI қарорига норозилик", titleLate: "Кечиккан исбот", titleNew: "Янги норозилик",
+    titleDispute: "Норозилик", titleLate: "Кечиккан исбот", titleNew: "Янги норозилик",
     back: "Орқага", task: "Вазифа", shift1: "1-смена", shift2: "2-смена",
     stSupervisor: "Бригадир кўриб чиқмоқда", stAdmin: "Админ қарорини кутмоқда",
     stApproved: "Қабул қилинди", stApprovedLate: "Тасдиқланди", stRejected: "Рад этилди",
@@ -173,6 +175,8 @@ const TXT = {
     nfT: "Топилмади", nfM: "Бу мурожаат топилмади ёки уни кўришга рухсатингиз йўқ.",
     newIntro: "Нега бу вазифа нотўғри рад этилган? Биринчи хабарингиз — норозилик: уни бригадирингиз ўқийди, савол бериши, рад этиши ёки админларга юбориши мумкин. Файл ҳам бириктиришингиз мумкин.",
     newPh: "Масалан: расмда соат кўриниб турибди, лекин AI ўқий олмаган",
+    newPhAuto: "Масалан: режа соат 9:40 да киритилган эди",
+    newPhAdmin: "Масалан: вазифа бажарилган, расмда ҳаммаси кўриниб турибди",
     newNot: "Бу вазифа бўйича норозилик билдириб бўлмайди.",
     f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
     f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
@@ -182,7 +186,7 @@ const TXT = {
     zoom: "Катталаштириш", photosOne: "{n} та расм", photosMany: "{n} та расм",
   },
   ru: {
-    titleDispute: "Возражение на решение ИИ", titleLate: "Позднее подтверждение", titleNew: "Новое возражение",
+    titleDispute: "Возражение", titleLate: "Позднее подтверждение", titleNew: "Новое возражение",
     back: "Назад", task: "Задача", shift1: "Смена 1", shift2: "Смена 2",
     stSupervisor: "У бригадира", stAdmin: "Ждёт решения администратора",
     stApproved: "Принято", stApprovedLate: "Принято", stRejected: "Отклонено",
@@ -221,6 +225,8 @@ const TXT = {
     nfT: "Не найдено", nfM: "Обращение не найдено или у вас нет доступа к нему.",
     newIntro: "Почему эта задача отклонена неверно? Ваше первое сообщение — это возражение: его прочитает бригадир, он может задать вопросы, отклонить его или передать администраторам. Можно прикрепить файлы.",
     newPh: "Например: часы на фото видны, но ИИ их не прочитал",
+    newPhAuto: "Например: план был внесён в 9:40",
+    newPhAdmin: "Например: задача выполнена, на фото всё видно",
     newNot: "По этой задаче возразить нельзя.",
     f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
     f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
@@ -230,7 +236,7 @@ const TXT = {
     zoom: "Увеличить", photosOne: "{n} фото", photosMany: "{n} фото",
   },
   en: {
-    titleDispute: "Objection to an AI ruling", titleLate: "Late proof", titleNew: "New objection",
+    titleDispute: "Objection", titleLate: "Late proof", titleNew: "New objection",
     back: "Back", task: "Task", shift1: "Shift 1", shift2: "Shift 2",
     stSupervisor: "With the brigadir", stAdmin: "Awaiting an admin decision",
     stApproved: "Upheld", stApprovedLate: "Approved", stRejected: "Refused",
@@ -269,6 +275,8 @@ const TXT = {
     nfT: "Not found", nfM: "This appeal does not exist or you may not see it.",
     newIntro: "Why was this task rejected wrongly? Your first message IS the objection: your brigadir reads it and may ask questions, refuse it or pass it to the admins. You can attach files.",
     newPh: "e.g. the clock is visible on the photo but the AI misread it",
+    newPhAuto: "e.g. the plan was entered at 9:40",
+    newPhAdmin: "e.g. the task was done, the photo shows everything",
     newNot: "This task cannot be objected to.",
     f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
     f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
@@ -732,7 +740,8 @@ function AppealView({ thread, path, id, onCompact }) {
               {/* An objection to an AUTOMATIC check carries no AI verdict —
                   what it argues with is the check's own sentinel. */}
               <VerdictBlock rev={item.verdict} autoReason={item.auto?.reason}
-                autoFacts={item.auto?.facts} autoTiming={timing} title={T.aiTitle} />
+                autoFacts={item.auto?.facts} autoTiming={timing} title={T.aiTitle}
+                ruling={item.ruling} />
             </>
           )}
         </div>
@@ -877,9 +886,10 @@ function NewObjection({ uid, taskId, onCompact }) {
     // Already argued — the conversation exists; go there instead of a second.
     return <Navigate to={`/leaders/appeal/dispute/${task.dispute.id}`} replace />;
   }
-  // A failed AUTOMATIC check can be argued too (2026-09-28) — the report says
-  // which tasks may be, and an older backend that does not say is read as
-  // «only an AI rejection», exactly as before.
+  // Every rejection can be argued — the AI's, a failed automatic check's
+  // (2026-09-28) and an admin's «not done» ruling (2026-10-14). The report says
+  // which tasks may be; an older backend that does not say is read as «only an
+  // AI rejection», exactly as before.
   const allowed = rep.canDispute && (task.objectable ?? task.ai_rejected);
   const photos = task.media?.length
     ? task.media.map((mid, i) => ({ kind: "bot", id: mid, cam: task.cam?.[i] || null }))
@@ -899,7 +909,8 @@ function NewObjection({ uid, taskId, onCompact }) {
         <div className="px-3 sm:px-6 py-4 space-y-4">
           <DisputePhotos photos={photos} uid={rep.uid} T={T} onZoom={setZoom} />
           <VerdictBlock rev={task.review} autoReason={task.auto ? task.reason : null}
-            autoFacts={task.autoFacts} title={T.aiTitle} />
+            autoFacts={task.autoFacts} title={T.aiTitle}
+            ruling={task.rejected_by === "admin" ? { by: task.admin_by, at: task.admin_at } : null} />
         </div>
       </Card>
       <Card>
@@ -916,7 +927,8 @@ function NewObjection({ uid, taskId, onCompact }) {
             minText={3}
             attachments
             kinds={kinds}
-            placeholder={T.newPh}
+            placeholder={task.rejected_by === "admin" ? T.newPhAdmin
+              : task.auto ? T.newPhAuto : T.newPh}
             emptyText={T.empty}
             refreshKeys={[["leaderDayReport", uid], ["leader-disputes"], ["leaderUnitReport"]]}
             onPosted={(res) => {

@@ -353,8 +353,13 @@ def _rows(db: Session, f: dict) -> list[dict]:
             "counts": c,
             # Id AND name: the DM prints the name in its reader's language, the
             # page and the plain fallback print the number.
+            # Every task somebody refused (`rejected_by` — the AI, or an admin
+            # by hand) — except a failed automatic check, which the block below
+            # names with what it read.
             "rejectedTasks": [{"id": t["id"], "name": t["name"]}
-                              for t in rep["tasks"] if t["ai_rejected"]],
+                              for t in rep["tasks"]
+                              if t.get("rejected_by")
+                              and not (t.get("auto") and not t["done"])],
             # The PLATFORM's own checks (#1 #8 #9 #11): every one that failed,
             # with what it read at its hour, and #11 even when it passed — the
             # digest prints when each list was fully filled (the operator,

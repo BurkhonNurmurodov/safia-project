@@ -2321,6 +2321,11 @@ _LT_MESSAGES = {
         "lp_not_yours": "Bu ariza sizga tegishli emas.",
         "btn_open_chat": "\U0001F4AC Chatni ochish",
         "appeal_in_chat": "Bu endi chatda hal qilinadi \u2014 \u00abChatni ochish\u00bb tugmasini bosing.",
+        "ad_card_sup_admin": ("⚖️ ADMIN QARORIGA NOROZILIK\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                              "🛡 Admin qarori:\n{verdict}\n\n📝 Lider izohi:\n{reason}\n\n"
+                              "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
+                              "yuboring — ikkalasi ham izoh talab qiladi."),
+        "ad_ruling_line": "Bajarilmagan deb belgilandi — {by}, {at}",
         "ad_card_sup": ("⚖️ AI QARORIGA NOROZILIK\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI xulosasi:\n{verdict}\n\n📝 Lider izohi:\n{reason}\n\n"
                         "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
@@ -2493,6 +2498,11 @@ _LT_MESSAGES = {
         "lp_not_yours": "Бу ариза сизга тегишли эмас.",
         "btn_open_chat": "\U0001F4AC Чатни очиш",
         "appeal_in_chat": "Бу энди чатда ҳал қилинади \u2014 \u00abЧатни очиш\u00bb тугмасини босинг.",
+        "ad_card_sup_admin": ("⚖️ АДМИН ҚАРОРИГА НОРОЗИЛИК\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                              "🛡 Админ қарори:\n{verdict}\n\n📝 Лидер изоҳи:\n{reason}\n\n"
+                              "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
+                              "юборинг — иккаласи ҳам изоҳ талаб қилади."),
+        "ad_ruling_line": "Бажарилмаган деб белгиланди — {by}, {at}",
         "ad_card_sup": ("⚖️ AI ҚАРОРИГА НОРОЗИЛИК\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI хулосаси:\n{verdict}\n\n📝 Лидер изоҳи:\n{reason}\n\n"
                         "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
@@ -2665,6 +2675,11 @@ _LT_MESSAGES = {
         "lp_not_yours": "Эта заявка не для вас.",
         "btn_open_chat": "\U0001F4AC Открыть чат",
         "appeal_in_chat": "Теперь это решается в чате \u2014 нажмите \u00abОткрыть чат\u00bb.",
+        "ad_card_sup_admin": ("⚖️ ВОЗРАЖЕНИЕ НА РЕШЕНИЕ АДМИНИСТРАТОРА\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                              "🛡 Решение администратора:\n{verdict}\n\n📝 Комментарий лидера:\n{reason}\n\n"
+                              "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
+                              "администраторам — в обоих случаях нужен комментарий."),
+        "ad_ruling_line": "Отмечено как не выполненное — {by}, {at}",
         "ad_card_sup": ("⚖️ ВОЗРАЖЕНИЕ НА РЕШЕНИЕ ИИ\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 Заключение ИИ:\n{verdict}\n\n📝 Комментарий лидера:\n{reason}\n\n"
                         "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
@@ -2837,6 +2852,11 @@ _LT_MESSAGES = {
         "lp_not_yours": "This request is not yours to decide.",
         "btn_open_chat": "\U0001F4AC Open chat",
         "appeal_in_chat": "This is decided in the chat now \u2014 tap \u201cOpen chat\u201d.",
+        "ad_card_sup_admin": ("⚖️ OBJECTION TO AN ADMIN'S RULING\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                              "🛡 The admin's ruling:\n{verdict}\n\n📝 The leader's note:\n{reason}\n\n"
+                              "Review it in the chat: ask what you need, then refuse it or pass it to "
+                              "the admins — both need your comment."),
+        "ad_ruling_line": "Marked not done — {by}, {at}",
         "ad_card_sup": ("⚖️ OBJECTION TO AN AI RULING\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI verdict:\n{verdict}\n\n📝 The leader's note:\n{reason}\n\n"
                         "Review it in the chat: ask what you need, then refuse it or pass it to "
@@ -5297,7 +5317,19 @@ def _ad_card(db, d, lang: str) -> str:
             lines = leader_auto.result_lines(res, lang)
             if lines:
                 verdict += "\n" + "\n".join(f"• {x}" for x in lines)
-    return _lt(lang, "ad_card_sup").format(
+    key = "ad_card_sup"
+    if leader_dispute.ruling_of(d) is not None:
+        # An objection to an ADMIN's own «not done» ruling: that ruling is what
+        # is argued with, so it leads — and whatever the AI or the automatic
+        # check said under it follows, as the context it was made in.
+        key = "ad_card_sup_admin"
+        by, at = leader_dispute.ruling_label(d)
+        lead = _lt(lang, "ad_ruling_line").format(by=by, at=at)
+        if verdict == "—":
+            verdict = lead
+        else:
+            verdict = f"{lead}\n{'🤖 ' if rev is not None else ''}{verdict}"
+    return _lt(lang, key).format(
         leader=d.leader_name or "—",
         task=leader_dispute.task_label(db, d),
         date=d.date, verdict=verdict,

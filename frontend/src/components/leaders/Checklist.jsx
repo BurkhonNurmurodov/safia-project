@@ -19,7 +19,7 @@ import { useClT, put, errText } from "./checklistText";
 import { hexA, pick, scoreColor } from "./DayReportView";
 import ChecklistTaskSheet from "./ChecklistTaskSheet";
 import {
-  C_OK, C_BAD, C_WARN, C_WAIT, GROUP_OF, KIND_ICON, DISPUTE_OPEN, leftText,
+  C_OK, C_BAD, C_WARN, C_WAIT, GROUP_OF, groupOfTask, KIND_ICON, DISPUTE_OPEN, leftText,
   urgency, disputeChip, lateChip, rowMeta, clock,
 } from "./checklistShared";
 
@@ -503,7 +503,7 @@ export default function Checklist({
 
   const groups = useMemo(() => {
     const by = { todo: [], rejected: [], failed: [], checking: [], done: [] };
-    for (const t of view?.tasks || []) (by[GROUP_OF[t.state] || "todo"]).push(t);
+    for (const t of view?.tasks || []) (by[groupOfTask(t)]).push(t);
     by.todo.sort((a, b) => {
       // Something to SUBMIT (a draft) before something to start, then the
       // nearest deadline, then the catalog order.

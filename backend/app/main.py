@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
         add_cell_owner_columns,
         add_verifix_sync_columns,
         add_late_window_columns,
+        add_dispute_ruling_column,
         seed_verifix_sync,
         add_cell_one_process,
         add_manager_kind_columns,
@@ -208,6 +209,7 @@ async def lifespan(app: FastAPI):
     add_cell_owner_columns()
     add_verifix_sync_columns()
     add_late_window_columns()
+    add_dispute_ruling_column()
     add_cell_one_process()
     add_last_seen_column()
     add_tg_name_column()

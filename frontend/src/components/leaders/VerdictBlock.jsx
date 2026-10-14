@@ -1,4 +1,4 @@
-import { Sparkles, Clock, CalendarCheck, Settings2, XCircle } from "lucide-react";
+import { Sparkles, Clock, CalendarCheck, Settings2, XCircle, ShieldX } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
@@ -8,20 +8,24 @@ import AutoTiming from "./AutoTiming";
 /**
  * What judged a task, and what it said — the verdict an objection argues with.
  *
- * TWO judges, one block (2026-09-28). A proof photo is judged by the AI: its
- * flags, its own prose and the rule it measured the photo by (the window when
- * hours were the rule, the day when only the day was, the bare clock when only
- * the hour was). An AUTOMATIC task (#1, #8, #9) is judged by the platform
- * reading its own data at a fixed hour: the hour, why it went as it did, and —
- * where the check stored them — the numbers it was taken on. Both can now be
- * objected to through the same chain, so both are drawn by the same block:
- * the «Chek-list» tab, the objection chat and the new-objection page all read
- * this one, and none of them can describe one verdict two ways.
+ * THREE judges, one block. A proof photo is judged by the AI: its flags, its
+ * own prose and the rule it measured the photo by (the window when hours were
+ * the rule, the day when only the day was, the bare clock when only the hour
+ * was). An AUTOMATIC task (#1, #8, #9, #11) is judged by the platform reading
+ * its own data at a fixed hour: the hour, why it went as it did, and — where
+ * the check stored them — the numbers it was taken on (2026-09-28). And from
+ * 2026-10-14 an ADMIN may have ruled the task «not done» by hand — that ruling
+ * outranks the other two in the score, so it leads, and whatever the AI or the
+ * check said follows as the context it was made in. All three can be objected
+ * to through the same chain, so all three are drawn by the same block: the
+ * «Chek-list» tab, the objection chat and the new-objection page all read this
+ * one, and none of them can describe one verdict two ways.
  *
  *   rev        — the AI verdict (`review` on the report / `verdict` on a card)
  *   autoReason — the `__auto__|HH:MM|code` sentinel of an automatic task
  *   autoFacts  — the check's stored facts at the hour (`utils/autoResult.js`)
  *   autoTiming — WHEN the ФАКТ behind a failed #9 was typed (`AutoTiming.jsx`)
+ *   ruling     — an admin's «not done» ruling, {by, at}
  *   title      — overrides the AI heading (the chat says "why it was rejected")
  */
 
@@ -30,6 +34,7 @@ const C_BAD = "#ef4444";
 const T_ALL = {
   uz: {
     ai: "AI xulosasi", auto: "Avtomatik tekshiruv",
+    admin: "Admin qarori", ruledNot: "Bajarilmagan deb belgilandi — {by}",
     window: "Ruxsat etilgan vaqt", needDate: "Kerakli sana",
     needTime: "Ruxsat etilgan soat", onPhoto: "Rasmda",
     autoLine: "Tizim soat {time} da tekshirdi — {why}.",
@@ -47,6 +52,7 @@ const T_ALL = {
   },
   uz_cyrl: {
     ai: "AI хулосаси", auto: "Автоматик текширув",
+    admin: "Админ қарори", ruledNot: "Бажарилмаган деб белгиланди — {by}",
     window: "Рухсат этилган вақт", needDate: "Керакли сана",
     needTime: "Рухсат этилган соат", onPhoto: "Расмда",
     autoLine: "Тизим соат {time} да текширди — {why}.",
@@ -64,6 +70,7 @@ const T_ALL = {
   },
   ru: {
     ai: "Заключение ИИ", auto: "Автоматическая проверка",
+    admin: "Решение администратора", ruledNot: "Отмечено как не выполненное — {by}",
     window: "Допустимое время", needDate: "Нужная дата",
     needTime: "Допустимый час съёмки", onPhoto: "На фото",
     autoLine: "Система проверила в {time} — {why}.",
@@ -81,6 +88,7 @@ const T_ALL = {
   },
   en: {
     ai: "AI verdict", auto: "Automatic check",
+    admin: "Admin's ruling", ruledNot: "Marked not done — {by}",
     window: "Allowed window", needDate: "Required date",
     needTime: "Allowed clock time", onPhoto: "On the photo",
     autoLine: "The platform checked at {time} — {why}.",
@@ -98,7 +106,44 @@ const T_ALL = {
   },
 };
 
-export default function VerdictBlock({ rev, autoReason, autoFacts, autoTiming, title }) {
+/** «dd.mm HH:MM» in Tashkent — when an admin's ruling was made. */
+function stampOf(iso) {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() + 5 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+export default function VerdictBlock({ ruling: given, title, ...rest }) {
+  const { lang } = useLang();
+  const T = T_ALL[lang] || T_ALL.ru;
+  // An admin's triage «rejected» on the AI verdict is a person's ruling too —
+  // stated the same way, off the verdict itself.
+  const rev = rest.rev;
+  const ruling = given || (rev?.resolution === "rejected"
+    ? { by: rev.resolvedBy, at: rev.resolvedAt } : null);
+  if (!ruling) return <Verdict {...rest} title={title} />;
+  // Under an admin's ruling the AI's own verdict keeps its plain heading: a
+  // caller's «why it was rejected» would sit over an AI that said «all fine».
+  return (
+    <div className="space-y-2">
+      <div className="rounded-xl px-3.5 py-3"
+        style={{ background: hexA(C_BAD, 0.08), border: `1px solid ${hexA(C_BAD, 0.25)}` }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+          style={{ color: C_BAD }}>
+          <ShieldX size={12} />{T.admin}
+        </div>
+        <p className="text-[15px] leading-[1.55]" style={{ color: "var(--text-1)" }}>
+          {T.ruledNot.replace("{by}", ruling.by || "—")}
+          {ruling.at && <span className="tabular-nums" style={{ color: "var(--text-3)" }}> · {stampOf(ruling.at)}</span>}
+        </p>
+      </div>
+      <Verdict {...rest} />
+    </div>
+  );
+}
+
+function Verdict({ rev, autoReason, autoFacts, autoTiming, title }) {
   const { lang } = useLang();
   const T = T_ALL[lang] || T_ALL.ru;
 

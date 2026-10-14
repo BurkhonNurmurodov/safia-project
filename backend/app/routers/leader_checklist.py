@@ -11,8 +11,10 @@ Built 2026-09-28 on the operator's rulings (asked one by one, with mockups):
     task by task (every unit, today) a task is reviewed minutes after it is
     submitted, while its DAY runs on until evening — so an objection may be
     filed on an OPEN day too (`build_report_row(allow_open=True)`).
-  * a failed AUTOMATIC check (#1, #8, #9) can be argued as well
-    (`leader_dispute.auto_entry`), through the same chain.
+  * a failed AUTOMATIC check (#1, #8, #9, #11) can be argued as well
+    (`leader_dispute.auto_entry`), through the same chain — and from
+    2026-10-14 so can an admin's «not done» ruling, so every rejected task of
+    the thirteen offers an objection (`leader_reports.rejected_by`).
   * a task whose time ran out while the day is open takes a LATE proof here,
     exactly as in the bot (`leader_late_proof`).
   * a brigadir, shift manager or admin picks the LEADER too and reads their day
@@ -194,6 +196,11 @@ def _ruled_state(state: str, rep_task: dict | None) -> str:
         return "ruledout"
     if state == "rejected" and not rep_task.get("ai_rejected"):
         return "passed"
+    # …and the other way round: an admin's triage «rejected» on a verdict the
+    # AI passed costs the task its weight (`leader_ai.rejected_by_uid`), so the
+    # tab must not print it as accepted beside an objection button.
+    if state == "passed" and rep_task.get("ai_rejected"):
+        return "rejected"
     return state
 
 
@@ -363,6 +370,8 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                            "at": t.get("admin_at")}
                           if t.get("admin_done") is not None else None),
                 "dispute": t.get("dispute"),
+                # Which judge refused it — "ai" · "auto" · "admin" — or None.
+                "rejectedBy": t.get("rejected_by"),
                 "objectable": bool(
                     may_object and appealable and t.get("objectable")
                     and (t.get("dispute") or {}).get("status")
@@ -466,6 +475,8 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                            "at": rt.get("admin_at")}
                           if rt and rt.get("admin_done") is not None else None),
                 "dispute": dispute,
+                # Which judge refused it — "ai" · "auto" · "admin" — or None.
+                "rejectedBy": (rt or {}).get("rejected_by"),
                 # A verdict exists only once the task was submitted (the AI's)
                 # or decided (the automatic check's), so `objectable` from the
                 # report already implies that; what is added here is WHO may

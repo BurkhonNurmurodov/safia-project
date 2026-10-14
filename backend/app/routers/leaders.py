@@ -2025,19 +2025,23 @@ def file_dispute(
     task = next((t for t in report["tasks"] if t["id"] == task_id), None)
     if task is None:
         raise HTTPException(status_code=404, detail="No such task on this report")
-    # Two kinds of verdict can be argued (`day_report`'s `objectable`): a proof
-    # the AI refused, and a failed AUTOMATIC check — which has no review row at
-    # all, since no photo was ever taken. The chain, the chat and the rulings
-    # are the same; only what an approval writes differs (`leader_dispute`).
+    # Every rejection can be argued (`day_report`'s `objectable`), whichever of
+    # three judges made it: a proof the AI refused, a failed AUTOMATIC check —
+    # which has no review row at all, since no photo was ever taken — and an
+    # ADMIN's «not done» ruling made by hand (2026-10-14). The chain, the chat
+    # and the rulings are the same; only what an approval writes differs
+    # (`leader_dispute`).
     if not task.get("objectable"):
         raise HTTPException(status_code=409, detail="This task was not rejected")
     live = task.get("dispute")
     if live and live["status"] in leader_dispute.OPEN_STATES:
         raise HTTPException(status_code=409, detail="Already awaiting a decision")
 
+    judge = task.get("rejected_by")
     ref = leader_reports.ref_of_task(db, uid, task_id)
     rev = db.query(LeaderAiReview).filter_by(ref=ref).first() if ref else None
-    if rev is None and not (task.get("auto") and ref):
+    if rev is None and not (ref and judge in (leader_dispute.KIND_AUTO,
+                                              leader_dispute.KIND_ADMIN)):
         raise HTTPException(status_code=404, detail="No verdict to dispute")
 
     role = payload.get("role")
@@ -2049,7 +2053,9 @@ def file_dispute(
         db, ref=ref, review_id=rev.id if rev is not None else None,
         report=report, task_id=task_id,
         reason=reason, role=role, profile=prof_key,
-        actor_name=who, actor_telegram=tid, files=stored)
+        actor_name=who, actor_telegram=tid, files=stored,
+        ruling=({"by": task.get("admin_by"), "at": task.get("admin_at")}
+                if judge == leader_dispute.KIND_ADMIN else None))
     db.commit()
 
     if role == "admin":
@@ -2072,7 +2078,8 @@ def file_dispute(
         target_kind="dispute", target_id=d.id, target_name=d.leader_name,
         unit_id=d.manager_id, day=d.date, reason=reason,
         details=[("leader", d.leader_name), ("task", task_id),
-                 ("filed_by", role), ("status", d.status), ("report", uid)],
+                 ("filed_by", role), ("status", d.status), ("report", uid),
+                 ("against", judge)],
     )
     fresh = leader_reports.day_report(db, uid, allow_open=True)
     return {"ok": True, "status": d.status, "id": d.id,
@@ -2452,6 +2459,12 @@ def _dispute_items(db: Session, payload: dict,
             # of `verdict`: the raw sentinel (every page expands it with
             # `showReason`) plus its two halves.
             "auto": autos.get(d.ref),
+            # Which judge this objection argues with — "ai" · "auto" · "admin"
+            # — and, for an ADMIN's «not done» ruling, who made it and when.
+            "kind": (leader_dispute.KIND_ADMIN if d.admin_ruling
+                     else leader_dispute.KIND_AUTO if d.ref in autos
+                     else leader_dispute.KIND_AI),
+            "ruling": leader_dispute.ruling_of(d),
             "dayOpen": d.ref in open_ref,
         })
     _attach_chat(db, payload, leader_appeal_chat.DISPUTE, items)

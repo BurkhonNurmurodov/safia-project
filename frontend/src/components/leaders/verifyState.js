@@ -81,13 +81,25 @@ export const disputeOpen = (d) => !!d && DISPUTE_OPEN.includes(d.status);
  * A live objection outranks the rejection it objects to: the number has not
  * changed yet, but what the reader should DO about it has — and that is true
  * at BOTH open stages, since neither has produced a ruling.
+ *
+ * REJECTED is `rejected_by` — whichever of the three judges refused the task:
+ * the AI, an automatic check (#1 #8 #9 #11), or an admin's «not done» ruling
+ * (2026-10-14). Until then only the AI's refusals read as rejected, so a failed
+ * automatic check sat under «Tekshirilmagan» with its objection button folded
+ * away, and a task an admin had ruled «not done» wore a green «Tasdiqlandi».
+ * `ai_rejected` stays the floor for a payload that predates the field.
  */
 export function taskState(t) {
   if (disputeOpen(t.dispute)) return VERIFY.disputed;
-  if (t.ai_rejected) return VERIFY.rejected;
+  if (t.rejected_by || t.ai_rejected) return VERIFY.rejected;
+  // An admin's «done» ruling outranks whatever the AI did or has yet to do.
+  if (t.admin_done === true) return VERIFY.verified;
   if (t.review?.status === "error") return VERIFY.error;
   if (t.queued) return VERIFY.checking;
   if (t.review?.status === "ok" || t.review?.status === "flagged") return VERIFY.verified;
+  // Checked by the PLATFORM at its hour and passed — no photo, no review row,
+  // and still a verdict, never «not checked».
+  if (t.auto && t.done) return VERIFY.verified;
   return null;
 }
 

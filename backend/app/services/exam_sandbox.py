@@ -706,13 +706,14 @@ def day_report(ctx: Ctx, db: Session, days_ago: int = 1) -> dict:
             "answered": True, "done": True, "reason": "", "photo": "", "media": [],
             "ai_rejected": False, "admin_done": None, "admin_by": None, "admin_at": None,
             "auto": False, "queued": False, "dispute": None, "review": None,
+            "rejected_by": None, "objectable": False,
         }
         if i in spec.get("missed", {}):
             t.update({"done": False, "reason": f"__missed__|{spec['missed'][i]}"})
         elif i in spec.get("notdone", {}):
             t.update({"done": False, "reason": spec["notdone"][i]})
         elif i in spec.get("rejected", ()):
-            t.update({"ai_rejected": True,
+            t.update({"ai_rejected": True, "rejected_by": "ai", "objectable": True,
                       "review": _verdict("flagged", ["not_proven"], REJECT_REASON, day)})
             if i in mine:
                 t["dispute"] = dispute_out(ctx, mine[i])

@@ -472,10 +472,10 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("Your day report is verified — {score}%", "Date: {date} | All {checked} of your proof photos were accepted. Thank you."),
     },
     "leader_day_flagged": {
-        "uz": ("{rejected} ta dalilingiz qabul qilinmadi — {score}%", "Sana: {date} | Topshirilgan: {raw}% → tasdiqlangan: {score}% | Vazifalar: {tasks}. Har biri uchun sababni hisobotdan ko'ring; rozi bo'lmasangiz brigadiringizga murojaat qiling."),
-        "uz_cyrl": ("{rejected} та далилингиз қабул қилинмади — {score}%", "Сана: {date} | Топширилган: {raw}% → тасдиқланган: {score}% | Вазифалар: {tasks}. Ҳар бири учун сабабни ҳисоботдан кўринг; рози бўлмасангиз бригадирингизга мурожаат қилинг."),
-        "ru": ("Не принято подтверждений: {rejected} — итог {score}%", "Дата: {date} | Сдано: {raw}% → подтверждено: {score}% | Задачи: {tasks}. Причина по каждой — в отчёте; если не согласны, обратитесь к своему бригадиру."),
-        "en": ("{rejected} of your proofs were not accepted — {score}%", "Date: {date} | Submitted: {raw}% → verified: {score}% | Tasks: {tasks}. The reason for each is in the report; if you disagree, talk to your supervisor."),
+        "uz": ("{rejected} ta vazifangiz qabul qilinmadi — {score}%", "Sana: {date} | Topshirilgan: {raw}% → tasdiqlangan: {score}% | Vazifalar: {tasks}. Har biri uchun sababni hisobotdan ko'ring; rozi bo'lmasangiz, o'sha vazifaga hisobotda «Norozilik bildirish» tugmasini bosing."),
+        "uz_cyrl": ("{rejected} та вазифангиз қабул қилинмади — {score}%", "Сана: {date} | Топширилган: {raw}% → тасдиқланган: {score}% | Вазифалар: {tasks}. Ҳар бири учун сабабни ҳисоботдан кўринг; рози бўлмасангиз, ўша вазифага ҳисоботда «Норозилик билдириш» тугмасини босинг."),
+        "ru": ("Не принято задач: {rejected} — итог {score}%", "Дата: {date} | Сдано: {raw}% → подтверждено: {score}% | Задачи: {tasks}. Причина по каждой — в отчёте; если не согласны, нажмите там у этой задачи «Возразить»."),
+        "en": ("{rejected} of your tasks were not accepted — {score}%", "Date: {date} | Submitted: {raw}% → verified: {score}% | Tasks: {tasks}. The reason for each is in the report; if you disagree, press «Object» under that task there."),
     },
     "leader_day_corrected": {
         "uz": ("Bahoyingiz yangilandi — {before}% → {score}%", "Sana: {date} | Qayta ko'rib chiqilgandan so'ng kun bahosi o'zgardi. Hozir qabul qilinmagan: {rejected} ta vazifa."),
@@ -680,6 +680,14 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{leader} возражает против результата автоматической проверки", "Дата: {date} | Задача: {task}\n«{reason}»"),
         "en": ("{leader} objects to an automatic check result", "Date: {date} | Task: {task}\n«{reason}»"),
     },
+    # …and when what was argued with is an ADMIN's own «not done» ruling, made
+    # by hand from the register (leader_dispute.KIND_ADMIN, 2026-10-14).
+    "leader_dispute_filed_admin": {
+        "uz": ("{leader} admin qaroriga norozilik bildirdi", "Sana: {date} | Vazifa: {task}\n«{reason}»"),
+        "uz_cyrl": ("{leader} админ қарорига норозилик билдирди", "Сана: {date} | Вазифа: {task}\n«{reason}»"),
+        "ru": ("{leader} возражает против решения администратора", "Дата: {date} | Задача: {task}\n«{reason}»"),
+        "en": ("{leader} objects to an admin's ruling", "Date: {date} | Task: {task}\n«{reason}»"),
+    },
     # One free message in an appeal's chat, to the other two parties.
     "leader_dispute_message": {
         "uz": ("{author}: norozilik chatida yangi xabar", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\n\U0001F4CE Fayllar: {files}"),
@@ -712,6 +720,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Автоматик текширув натижаси кучида қолади.\nИзоҳ: {note}"),
         "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Результат автоматической проверки остаётся в силе.\nКомментарий: {note}"),
         "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The automatic check result stands.\nComment: {note}"),
+    },
+    "leader_dispute_sup_rejected_admin": {
+        "uz": ("Norozilikni brigadir rad etdi", "Sana: {date} | Vazifa: {task} | Rad etdi: {by} | Admin qarori kuchida qoladi.\nIzoh: {note}"),
+        "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Админ қарори кучида қолади.\nИзоҳ: {note}"),
+        "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Решение администратора остаётся в силе.\nКомментарий: {note}"),
+        "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The admin's ruling stands.\nComment: {note}"),
     },
     # ── automatic checklist tasks (services/leader_auto.py) ──────────────────
     # Three messages, and the two result ones go out on a PASS as well as a
@@ -1542,7 +1556,7 @@ _NOTIF_TG_HTML = {
                "❌ <b>Qabul qilinmadi:</b> {total} tadan {rejected} ta\n\n"
                "🔻 <b>Vazifalar:</b> {tasks}\n\n"
                "<blockquote>Har bir vazifa bo'yicha sabab — quyidagi tugmadagi hisobotda. "
-               "Rozi bo'lmasangiz, brigadiringizga murojaat qiling.</blockquote>"),
+               "Rozi bo'lmasangiz, o'sha vazifa ostidagi «Norozilik bildirish» tugmasini bosing.</blockquote>"),
         "uz_cyrl": ("⚠️ <b>Кунингиз текширилди — {score}%</b>\n\n"
                     "📅 <b>Сана:</b> {date}\n\n"
                     "📤 <b>Топширилган:</b> {raw}%\n"
@@ -1550,7 +1564,7 @@ _NOTIF_TG_HTML = {
                     "❌ <b>Қабул қилинмади:</b> {total} тадан {rejected} та\n\n"
                     "🔻 <b>Вазифалар:</b> {tasks}\n\n"
                     "<blockquote>Ҳар бир вазифа бўйича сабаб — қуйидаги тугмадаги ҳисоботда. "
-                    "Рози бўлмасангиз, бригадирингизга мурожаат қилинг.</blockquote>"),
+                    "Рози бўлмасангиз, ўша вазифа остидаги «Норозилик билдириш» тугмасини босинг.</blockquote>"),
         "ru": ("⚠️ <b>Ваш день проверен — {score}%</b>\n\n"
                "📅 <b>Дата:</b> {date}\n\n"
                "📤 <b>Сдано:</b> {raw}%\n"
@@ -1558,7 +1572,7 @@ _NOTIF_TG_HTML = {
                "❌ <b>Не принято:</b> {rejected} из {total}\n\n"
                "🔻 <b>Задачи:</b> {tasks}\n\n"
                "<blockquote>Причина по каждой задаче — в отчёте по кнопке ниже. "
-               "Если вы не согласны, обратитесь к своему бригадиру.</blockquote>"),
+               "Если вы не согласны, нажмите «Возразить» под этой задачей.</blockquote>"),
         "en": ("⚠️ <b>Your day was verified — {score}%</b>\n\n"
                "📅 <b>Date:</b> {date}\n\n"
                "📤 <b>Submitted:</b> {raw}%\n"
@@ -1566,7 +1580,7 @@ _NOTIF_TG_HTML = {
                "❌ <b>Not accepted:</b> {rejected} of {total}\n\n"
                "🔻 <b>Tasks:</b> {tasks}\n\n"
                "<blockquote>The reason for each task is in the report behind the button below. "
-               "If you disagree, talk to your supervisor.</blockquote>"),
+               "If you disagree, press «Object» under that task.</blockquote>"),
     },
     "leader_day_report_excluded": {
         "uz": ("⊘ <b>Kun hisobdan chiqarildi</b>\n\n"

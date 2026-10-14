@@ -455,7 +455,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
       case "missing":
         return { color: C_BAD, Icon: CircleSlash, title: T.bMissingT };
       case "ruledout":
-        return { color: C_BAD, Icon: Gavel, title: T.bRuledoutT, message: task.admin?.by || "" };
+        return { color: C_BAD, Icon: Gavel, title: T.bRuledoutT,
+                 message: [task.admin?.by, task.objectable ? T.bRuledoutM : ""].filter(Boolean).join(" · ") };
       case "open":
         if (task.kind === "auto") return null;
         if (task.notStarted) {
@@ -484,7 +485,11 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   const media = task.media || [];
   const rollIds = task.roll?.ids || [];
   const sheetPhotos = task.photos || [];
-  const showVerdict = !!task.review || (task.kind === "auto" && ["autofail", "autopass"].includes(task.state));
+  // An admin's «not done» ruling refused it — the third judge, and the one an
+  // objection then argues with (VerdictBlock leads with it).
+  const ruled = task.rejectedBy === "admin";
+  const showVerdict = ruled || !!task.review
+    || (task.kind === "auto" && ["autofail", "autopass"].includes(task.state));
   const dc = disputeChip(task.dispute, T);
   const lc = lateChip(task.late?.proof, T);
   const camReady = task.kind === "camera" && isDraft;
@@ -518,7 +523,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
             numbers. The reader decides whether to object on THIS. */}
         {showVerdict && (
           <VerdictBlock rev={task.review} autoReason={task.kind === "auto" ? task.reason : null}
-            autoFacts={task.auto?.facts} />
+            autoFacts={task.auto?.facts}
+            ruling={ruled ? { by: task.admin?.by, at: task.admin?.at } : null} />
         )}
 
         {/* The objection — written right here, as the first message of the
@@ -526,7 +532,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {task.objectable && view.uid && (
           <Section title={T.objT} icon={ShieldQuestion} innerRef={objRef}>
             <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-              {task.kind === "auto" ? T.objIntroAuto : T.objIntro}
+              {ruled ? T.objIntroAdmin : task.kind === "auto" ? T.objIntroAuto : T.objIntro}
             </p>
             <div className="rounded-xl overflow-hidden flex flex-col"
               style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
@@ -539,7 +545,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 requireText
                 minText={3}
                 attachments
-                placeholder={task.kind === "auto" ? T.objPhAuto : T.objPh}
+                placeholder={ruled ? T.objPhAdmin : task.kind === "auto" ? T.objPhAuto : T.objPh}
                 emptyText={T.objEmpty}
                 refreshKeys={[["leader-disputes"], ["leaderDayReport", view.uid]]}
                 onPosted={() => { toast.success(T.objSent); onRefetch(); }}

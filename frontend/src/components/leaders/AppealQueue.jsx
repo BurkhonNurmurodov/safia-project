@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   MessageSquareWarning, Hourglass, ShieldCheck, Ban, UserCheck, CircleSlash,
-  Clock, Timer, MessagesSquare, ChevronRight, ChevronDown, Paperclip, Hand, Settings2,
+  Clock, Timer, MessagesSquare, ChevronRight, ChevronDown, Paperclip, Hand, Settings2, ShieldX,
 } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
@@ -63,7 +63,7 @@ const TXT = {
   uz: {
     titleDispute: "Norozliklar", titleLate: "Kechikkan isbotlar",
     introMore: "Batafsil", introLess: "Yig'ish",
-    ruleDispute: "AI rad etgan vazifa o'z og'irligini darhol yo'qotadi. Lider norozilik yozadi, brigadir savol berib rad etadi yoki adminlarga yuboradi, ball faqat admin qaroridan keyin qaytadi.",
+    ruleDispute: "AI, avtomatik tekshiruv yoki admin qarori bilan rad etilgan vazifa o'z og'irligini darhol yo'qotadi. Lider norozilik yozadi, brigadir savol berib rad etadi yoki adminlarga yuboradi, ball faqat admin qaroridan keyin qaytadi.",
     ruleLate: "Vazifa vaqti tugagach yuborilgan isbot uchun ball avtomatik berilmaydi: avval brigadir ko'rib chiqadi, so'ng adminlar hal qiladi.",
     ruleAdmin: "Kartani oching: tepada qaror tugmalari, keyin rasmlar va sabab, pastda chat — lider va brigadirdan so'rab, so'ng qaror qiling.",
     ruleSup: "Kartani oching: chatda savol bering, so'ng rad eting yoki adminlarga yuboring — ikkalasi ham izoh talab qiladi.",
@@ -81,17 +81,17 @@ const TXT = {
     kFiled: "Norozilik", kFiledLate: "Sabab", kSupRejected: "Brigadir rad etdi",
     kUplifted: "Adminlarga yuborildi", kApproved: "Qabul qilindi", kApprovedLate: "Tasdiqlandi",
     kRejected: "Rad etildi", kUndone: "Qaror bekor qilindi", kInvited: "Chatga qo'shildi",
-    emptyDispute: "Norozilik yo'q", emptyDisputeM: "Hech kim AI qaroriga e'tiroz bildirmagan.",
+    emptyDispute: "Norozilik yo'q", emptyDisputeM: "Hech kim rad etilgan vazifaga e'tiroz bildirmagan.",
     emptyLate: "Kechikkan isbot yo'q", emptyLateM: "Vaqtidan keyin yuborilgan isbotlar shu yerda ko'rinadi.",
     noMatchT: "Mos yozuv yo'q", noMatchM: "Filtr yoki qidiruvni o'zgartiring.",
     f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
     f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
-    f_unreadable: "Rasm o'qilmadi", autoCheck: "Avtomatik tekshiruv",
+    f_unreadable: "Rasm o'qilmadi", autoCheck: "Avtomatik tekshiruv", adminRuling: "Admin qarori",
   },
   uz_cyrl: {
     titleDispute: "Норозликлар", titleLate: "Кечиккан исботлар",
     introMore: "Батафсил", introLess: "Йиғиш",
-    ruleDispute: "AI рад этган вазифа ўз оғирлигини дарҳол йўқотади. Лидер норозилик ёзади, бригадир савол бериб рад этади ёки админларга юборади, балл фақат админ қароридан кейин қайтади.",
+    ruleDispute: "AI, автоматик текширув ёки админ қарори билан рад этилган вазифа ўз оғирлигини дарҳол йўқотади. Лидер норозилик ёзади, бригадир савол бериб рад этади ёки админларга юборади, балл фақат админ қароридан кейин қайтади.",
     ruleLate: "Вазифа вақти тугагач юборилган исбот учун балл автоматик берилмайди: аввал бригадир кўриб чиқади, сўнг админлар ҳал қилади.",
     ruleAdmin: "Картани очинг: тепада қарор тугмалари, кейин расмлар ва сабаб, пастда чат — лидер ва бригадирдан сўраб, сўнг қарор қилинг.",
     ruleSup: "Картани очинг: чатда савол беринг, сўнг рад этинг ёки админларга юборинг — иккаласи ҳам изоҳ талаб қилади.",
@@ -109,17 +109,17 @@ const TXT = {
     kFiled: "Норозилик", kFiledLate: "Сабаб", kSupRejected: "Бригадир рад этди",
     kUplifted: "Админларга юборилди", kApproved: "Қабул қилинди", kApprovedLate: "Тасдиқланди",
     kRejected: "Рад этилди", kUndone: "Қарор бекор қилинди", kInvited: "Чатга қўшилди",
-    emptyDispute: "Норозилик йўқ", emptyDisputeM: "Ҳеч ким AI қарорига эътироз билдирмаган.",
+    emptyDispute: "Норозилик йўқ", emptyDisputeM: "Ҳеч ким рад этилган вазифага эътироз билдирмаган.",
     emptyLate: "Кечиккан исбот йўқ", emptyLateM: "Вақтидан кейин юборилган исботлар шу ерда кўринади.",
     noMatchT: "Мос ёзув йўқ", noMatchM: "Филтр ёки қидирувни ўзгартиринг.",
     f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
     f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
-    f_unreadable: "Расм ўқилмади", autoCheck: "Автоматик текширув",
+    f_unreadable: "Расм ўқилмади", autoCheck: "Автоматик текширув", adminRuling: "Админ қарори",
   },
   ru: {
     titleDispute: "Возражения", titleLate: "Поздние подтверждения",
     introMore: "Подробнее", introLess: "Свернуть",
-    ruleDispute: "Задача, отклонённая ИИ, сразу теряет вес. Лидер пишет возражение, бригадир задаёт вопросы и отклоняет его или передаёт администраторам, а балл возвращается только по решению администратора.",
+    ruleDispute: "Задача, отклонённая ИИ, автоматической проверкой или решением администратора, сразу теряет вес. Лидер пишет возражение, бригадир задаёт вопросы и отклоняет его или передаёт администраторам, а балл возвращается только по решению администратора.",
     ruleLate: "За подтверждение, отправленное после срока, балл сам не начисляется: сначала смотрит бригадир, затем решают администраторы.",
     ruleAdmin: "Откройте карточку: вверху кнопки решения, затем фото и причина, ниже чат — спросите лидера и бригадира и решите.",
     ruleSup: "Откройте карточку: задайте вопросы в чате, затем отклоните или передайте администраторам — в обоих случаях нужен комментарий.",
@@ -137,17 +137,17 @@ const TXT = {
     kFiled: "Возражение", kFiledLate: "Причина", kSupRejected: "Бригадир отклонил",
     kUplifted: "Передано администраторам", kApproved: "Принято", kApprovedLate: "Принято",
     kRejected: "Отклонено", kUndone: "Решение отменено", kInvited: "Добавлен(а) в чат",
-    emptyDispute: "Возражений нет", emptyDisputeM: "Никто не оспорил решение ИИ.",
+    emptyDispute: "Возражений нет", emptyDisputeM: "Никто не оспорил отклонённую задачу.",
     emptyLate: "Поздних подтверждений нет", emptyLateM: "Здесь появятся подтверждения, отправленные после срока.",
     noMatchT: "Ничего не найдено", noMatchM: "Измените фильтр или поиск.",
     f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
     f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
-    f_unreadable: "Фото не прочиталось", autoCheck: "Автоматическая проверка",
+    f_unreadable: "Фото не прочиталось", autoCheck: "Автоматическая проверка", adminRuling: "Решение администратора",
   },
   en: {
     titleDispute: "Objections", titleLate: "Late proofs",
     introMore: "More", introLess: "Less",
-    ruleDispute: "A task the AI rejects loses its weight at once. The leader writes an objection, the brigadir asks what they need and refuses it or passes it to the admins, and the point comes back only on an admin's decision.",
+    ruleDispute: "A rejected task — by the AI, an automatic check or an admin's ruling — loses its weight at once. The leader writes an objection, the brigadir asks what they need and refuses it or passes it to the admins, and the point comes back only on an admin's decision.",
     ruleLate: "A proof sent after its deadline earns no point by itself: the brigadir looks first, then the admins decide.",
     ruleAdmin: "Open a card: the ruling buttons on top, then the photos and the reason, the chat below — ask the leader and the brigadir, then decide.",
     ruleSup: "Open a card: ask in the chat, then refuse it or pass it to the admins — both need your comment.",
@@ -165,12 +165,12 @@ const TXT = {
     kFiled: "Objection", kFiledLate: "Reason", kSupRejected: "The brigadir refused",
     kUplifted: "Passed to the admins", kApproved: "Upheld", kApprovedLate: "Approved",
     kRejected: "Refused", kUndone: "Ruling undone", kInvited: "Added to the chat",
-    emptyDispute: "No objections", emptyDisputeM: "Nobody has contested an AI ruling.",
+    emptyDispute: "No objections", emptyDisputeM: "Nobody has contested a rejected task.",
     emptyLate: "No late proofs", emptyLateM: "Proofs sent after their deadline appear here.",
     noMatchT: "Nothing matches", noMatchM: "Change the filter or the search.",
     f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
     f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
-    f_unreadable: "Photo unreadable", autoCheck: "Automatic check",
+    f_unreadable: "Photo unreadable", autoCheck: "Automatic check", adminRuling: "Admin's ruling",
   },
 };
 
@@ -470,9 +470,21 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
                         ))}
                       </div>
                     )}
-                    {/* An objection to an AUTOMATIC check (#1, #8, #9) has no AI
-                        flags — it says which judge it argues with instead. */}
-                    {!late && !flags.length && it.auto && (
+                    {/* An objection to an ADMIN's «not done» ruling names that
+                        ruling — it is what is argued with, whatever the AI or
+                        the automatic check said under it. */}
+                    {!late && it.ruling && (
+                      <div className="mt-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold"
+                          style={{ background: hexA(C_BAD, 0.1), color: C_BAD,
+                                   border: `1px solid ${hexA(C_BAD, 0.25)}` }}>
+                          <ShieldX size={11} />{T.adminRuling}{it.ruling.by ? ` · ${tl(it.ruling.by)}` : ""}
+                        </span>
+                      </div>
+                    )}
+                    {/* An objection to an AUTOMATIC check (#1, #8, #9, #11) has
+                        no AI flags — it says which judge it argues with instead. */}
+                    {!late && !flags.length && !it.ruling && it.auto && (
                       <div className="mt-1.5">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold"
                           style={{ background: "var(--bg-inner)", color: "var(--text-2)",

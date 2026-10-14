@@ -1803,6 +1803,22 @@ def add_late_window_columns() -> None:
     _ensure_columns(_LATE_WINDOW_DDL, "late window columns")
 
 
+_DISPUTE_RULING_DDL = (
+    ("leader_ai_disputes", (("admin_ruling", "JSONB"),), None),
+)
+
+
+def add_dispute_ruling_column() -> None:
+    """2026-10-14: an objection may argue with an ADMIN's «not done» ruling
+    (`leader_dispute.KIND_ADMIN`), and `admin_ruling` holds that ruling — and,
+    once an approval replaced it, what it replaced, so an undo restores it
+    exactly. NULL on every existing row = an objection to the AI or to an
+    automatic check, which is all there was. Pure DDL, idempotent, no flag,
+    FATAL on failure like the late-window columns: every read of an objection
+    selects this column, and the day report reads objections."""
+    _ensure_columns(_DISPUTE_RULING_DDL, "dispute ruling column")
+
+
 def _ensure_columns(spec, label: str) -> None:
     """Add missing columns (and one index per table) for a blue-green boot.
 

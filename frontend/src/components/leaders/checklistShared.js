@@ -19,6 +19,12 @@ export const GROUP_OF = {
   pending: "checking",
   passed: "done", autopass: "done",
 };
+
+// …read off the TASK, because one state means two things: «ruledout» is an
+// admin's «not done» ruling, and when it overrode an answer that said done it
+// is a REJECTION like the AI's — objectable, grouped with them (`rejectedBy`,
+// the report's `rejected_by`). Over a leader's own «Yo'q» it stays a failure.
+export const groupOfTask = (t) => (t.rejectedBy ? "rejected" : GROUP_OF[t.state] || "todo");
 export const KIND_ICON = { camera: Camera, screenshot: ImagePlus, auto: Settings2, none: CheckSquare };
 
 export const DISPUTE_OPEN = ["supervisor", "admin"];
@@ -96,7 +102,8 @@ export function rowMeta(task, T, now, perTask = true) {
     case "autopass":
       return { text: T.autoPassed, color: "var(--text-3)" };
     case "rejected":
-      return { text: T.flagged, color: C_BAD };
+      // An admin's triage «rejected» on the verdict — a person refused it.
+      return { text: task.review?.resolution === "rejected" ? T.ruledout : T.flagged, color: C_BAD };
     case "autofail":
       return { text: T.autoFailed, color: C_BAD };
     case "expired":
@@ -109,7 +116,7 @@ export function rowMeta(task, T, now, perTask = true) {
     case "missing":
       return { text: T.missing, color: "var(--text-3)" };
     case "ruledout":
-      return { text: T.ruledout, color: "var(--text-3)" };
+      return { text: T.ruledout, color: task.rejectedBy ? C_BAD : "var(--text-3)" };
     default:
       return { text: "", color: "var(--text-3)" };
   }

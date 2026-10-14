@@ -5745,8 +5745,9 @@ leader files, reads and argues their checklist on the web, one day at a time —
   back; the notices, the brigadir's and admins' cards and the queue say
   «automatic check», never «AI» (`leader_dispute_filed_auto`,
   `leader_dispute_sup_rejected_auto`). `day_report`'s `objectable` is THE test
-  for either kind; `VerdictBlock.jsx` draws either verdict (the tab, the chat,
-  the new-objection page).
+  for every kind; `VerdictBlock.jsx` draws every verdict (the tab, the chat,
+  the new-objection page). From 2026-10-14 an ADMIN's «not done» ruling is the
+  third kind — see «Every rejected task can be objected to».
 - **Brigadir, shift manager, admin: read-only**, except the admin's
   reopen/empty (the existing `/admin/leader-tasks/task/reopen`). Rights ride on
   the payload (`rights.file` = the session HOLDS the leader profile, the
@@ -6008,6 +6009,80 @@ So:
 - Read surfaces: `/leaders?tab=disputes` (admin · brigadir · **leader**, their
   own filings) and `/leaders/report/:uid`, where the objection is filed and
   where both stage rulings can also be made inline.
+
+## Every rejected task can be objected to — three judges (`rejected_by`, 2026-10-14)
+
+The operator (2026-10-14): «To every single one of the 13 tasks of the leaders,
+it should be possible to send an objection if it's rejected.» Until then two
+kinds of rejection could be argued, an AI-refused proof and a failed automatic
+check, and the day report filed the second under «Tekshirilmagan» with its
+button folded away. A third could not be argued at all: an admin ruling a task
+«not done» by hand from the register (`LeaderTaskOverride`), which the report
+even drew as a green «Tasdiqlandi».
+
+- **`leader_reports.rejected_by(task, is_auto)` is THE rule**, read off a
+  register task with the overlays applied:
+  - `"admin"`: an override `done=false` over an answer that said done, or over
+    an automatic check either way. It comes first because that ruling outranks
+    every verdict in the score.
+  - `"ai"`: `ai_rejected`, which the overlay sets only where no override exists.
+  - `"auto"`: a failed check nobody has ruled on.
+  - None: anything else.
+  `day_report` ships it on every task, with `objectable = rejected_by is not
+  None`. **Not rejections, so not objectable**: the leader's own «Yo'q» (an
+  admin's «not done» confirming it included), a task whose time ran out (the
+  late proof is that door), a question never asked, and anything that counts
+  as done.
+- **One field, every surface.**
+  - `_tally` counts `rejected` from it, and an admin-ruled task counts as
+    checked.
+  - The leader's day DM lists those task numbers.
+  - The brigadir's digest names them (`rejectedTasks`). A failed automatic
+    check stays in its own block with what it read. A day carrying an admin's
+    «not done» now reads «rejected» there.
+  - On the day report `verifyState.taskState` reads it first, so a failed
+    check and an admin ruling sit under «Qabul qilinmagan», each with its
+    «Norozilik bildirish». The header's «N ta o'tmadi» counts exactly the tasks
+    listed under it.
+  - On the «Chek-list» tab `groupOfTask` puts a task with `rejectedBy` in «Rad
+    etildi». An admin's triage «rejected» on a clean AI verdict reads rejected
+    there, not passed (`_ruled_state`).
+- **An objection to an admin's ruling uses the same row, chain and chat.** It
+  is marked by `leader_ai_disputes.admin_ruling`: JSONB `{by, at}`, the ruling
+  it argues with, written when `file_dispute` finds `rejected_by == "admin"`
+  and fixed at filing, because the override can change afterwards. The column
+  comes from `startup.add_dispute_ruling_column`, in both entrypoints.
+  `leader_dispute.kind_of` answers `KIND_AI` · `KIND_AUTO` · `KIND_ADMIN` for
+  the notices and the cards, and the item payload carries `kind` + `ruling`.
+- **Approval flips the ruling; undo puts it back** (`_write_ruling`).
+  - An admin's approval sets the override done. It keeps what the override
+    said just before (`before`) and the instant it wrote (`after`).
+  - A refusal writes nothing: the ruling stands.
+  - An undo restores `before` exactly, deleting the override if there was none
+    before. It does this only while the override is still the one the approval
+    wrote. If an admin has ruled the task again since, or lifted the ruling,
+    their decision stands and the row only reopens.
+  - `supersede` never retires an admin-ruling objection: a later ruling on the
+    AI verdict contradicts nothing it decided.
+  - An admin's triage «rejected» on an AI verdict stays an AI-kind objection.
+    Its weight still moves through `LeaderAiReview.resolution`, but the screens
+    name it as a person's ruling (`resolvedBy`).
+- **Words**:
+  - New notices `leader_dispute_filed_admin` and
+    `leader_dispute_sup_rejected_admin`.
+  - The brigadir's card `ad_card_sup_admin` and the admins'
+    `hdr_dispute_admin` open with «Admin qarori: bajarilmagan — who, when»,
+    with the AI's or the check's verdict under it.
+  - `VerdictBlock` (`ruling`) draws the same box first on the tab, the chat
+    and the new-objection page.
+  - The queue wears a red «Admin qarori» chip, and the chat's title is a
+    neutral «Norozilik».
+  - The leader's `leader_day_flagged` DM now says «N ta vazifangiz qabul
+    qilinmadi» and points to «Norozilik bildirish» under the task, not «talk
+    to your brigadir».
+- **Unchanged**: `APPEALS_FROM`, who may file (`canDispute`), the stages, the
+  required comments, and the bot. Its task screens still carry no objection
+  door; the DM's button and the «Chek-list» tab are the ways in.
 
 ## Nothing before 1 September 2026 can be argued (`APPEALS_FROM`)
 

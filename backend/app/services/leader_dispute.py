@@ -71,6 +71,12 @@ same field an admin's triage ruling writes — so nothing downstream learns a ne
 rule. This module is the paper trail and the queue; that column is the score.
 And it is written from the ADMIN stage ONLY: see `_write_verdict` for the two
 ways a stage-1 write breaks that, both of which this module shipped with.
+
+THREE JUDGES, one chain (`KIND_*`): the AI refusing a proof, an automatic check
+failing (2026-09-28), and — from 2026-10-14, the operator: «to every single one
+of the 13 tasks, it should be possible to send an objection if it's rejected» —
+an ADMIN ruling a task «not done» by hand. Which one a row argues with decides
+only what an approval writes (`_write_verdict`) and the words of its notices.
 """
 from __future__ import annotations
 
@@ -99,6 +105,12 @@ SUP_ACTIONS = ("rejected", "uplifted")
 ADM_ACTIONS = (APPROVED, REJECTED)
 
 REASON_MAX = 1000
+
+# WHICH judge an objection argues with — the three values of
+# `leader_reports.rejected_by`. Read off the row by `kind_of`.
+KIND_AI = "ai"          # the AI refused the proof
+KIND_AUTO = "auto"      # an automatic check (#1 #8 #9 #11) failed
+KIND_ADMIN = "admin"    # an admin ruled the task «not done» by hand
 
 # Nothing about a day BEFORE this can be argued any more — neither an objection
 # to an AI rejection nor a late proof (the operator, 2026-09-21: «anything
@@ -178,7 +190,15 @@ def _write_verdict(db: Session, d: LeaderAiDispute, resolution: str | None,
     The objection ROW is the paper trail for a brigadir's refusal. The triage
     queue is the ADMIN's queue, and a flag staying in it after a brigadir
     declined to argue for it is correct, not a leak.
+
+    An objection to an ADMIN's own «not done» ruling moves the weight through
+    that ruling and nothing else (`_write_ruling`): it outranks every verdict
+    in the score, so an approval that left it standing would give nothing
+    back, and the AI verdict under it is not what was argued with.
     """
+    if d.admin_ruling:
+        _write_ruling(db, d, resolution, by_name)
+        return
     rev = _review(db, d)
     if rev is None:
         # An objection to an AUTOMATIC check has no review row to write on —
@@ -260,13 +280,124 @@ def _write_auto(db: Session, d: LeaderAiDispute, entry, resolution: str | None,
     db.flush()
 
 
+# ── an objection to an ADMIN's «not done» ruling ─────────────────────────────
+#
+# From 2026-10-14 (the operator: «to every single one of the 13 tasks, it
+# should be possible to send an objection if it's rejected») the third way a
+# task is refused can be argued too: an admin ruling it «not done» by hand from
+# the register (LeaderTaskOverride), over the leader's «Ha» or over an
+# automatic check. Same table, same three stages, same chat. The row carries
+# that ruling in `admin_ruling` from the moment it is filed, which is what
+# tells it apart (`kind_of`) — an override can change afterwards, the filing
+# cannot.
+
+
+def kind_of(db: Session, d: LeaderAiDispute) -> str:
+    """WHICH judge this objection argues with — one of `KIND_*`."""
+    if d.admin_ruling:
+        return KIND_ADMIN
+    return KIND_AUTO if auto_entry(db, d) is not None else KIND_AI
+
+
+def ruling_of(d: LeaderAiDispute) -> dict | None:
+    """The admin ruling an objection argues with — who made it and when — for a
+    card or the chat; None for the other two judges. Never the "before" an
+    approval keeps for its undo."""
+    r = d.admin_ruling or None
+    if not isinstance(r, dict):
+        return None
+    return {"by": r.get("by"), "at": r.get("at")}
+
+
+def ruling_label(d: LeaderAiDispute) -> tuple[str, str]:
+    """(who, «dd.mm.yyyy HH:MM» on the plant's clock) of the admin ruling a
+    Telegram card names — «—» for whichever half is unknown."""
+    from app.services.leader_late_proof import local
+    r = ruling_of(d) or {}
+    at = local(_at(r.get("at")))
+    return (r.get("by") or "—"), (at.strftime("%d.%m.%Y %H:%M") if at else "—")
+
+
+def _override(db: Session, d: LeaderAiDispute):
+    """(the report uid, the admin ruling on this objection's task or None)."""
+    from app.models import LeaderTaskOverride
+    from app.services import leader_reports
+    uid = leader_reports.uid_of_ref(db, d.ref)
+    if not uid:
+        return None, None
+    return uid, (db.query(LeaderTaskOverride)
+                 .filter_by(uid=uid, task_id=d.task_id).first())
+
+
+def _at(iso: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat(iso) if iso else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _write_ruling(db: Session, d: LeaderAiDispute, resolution: str | None,
+                  by_name: str | None) -> None:
+    """The weight of an objection to an ADMIN's ruling, moved by the ruling on
+    the objection.
+
+    `approved` makes the task count as done: its override is set done, and
+    what it said just before is kept on the row ("before"; None when there was
+    none) — the ruling it replaces is somebody's own decision, and an undo has
+    to put THAT back, not merely delete. `rejected` writes nothing: the ruling
+    already stands. `None` (an undo) restores "before", and only after an
+    approval — the caller still holds the ruled status, and a refusal wrote
+    nothing to take back.
+
+    …and only while the override is still the one the approval wrote
+    ("after", its instant). An admin who ruled on the task again since — or
+    lifted the ruling altogether — made a decision of their own, and taking
+    the objection back must not overwrite it: the row still reopens, the
+    override stays as that admin left it.
+    """
+    from app.models import LeaderTaskOverride
+    rec = dict(d.admin_ruling or {})
+    uid, ov = _override(db, d)
+    if uid is None:
+        return
+    if resolution == APPROVED:
+        rec["before"] = ({"done": bool(ov.done), "by": ov.set_by,
+                          "at": ov.set_at.isoformat() if ov.set_at else None}
+                         if ov is not None else None)
+        if ov is None:
+            ov = LeaderTaskOverride(uid=uid, task_id=d.task_id, date=d.date,
+                                    leader=(d.leader_name or "")[:160] or None)
+            db.add(ov)
+        ov.done = True
+        ov.set_by = (by_name or "")[:160] or None
+        ov.set_at = datetime.now(timezone.utc)
+        rec["after"] = ov.set_at.isoformat()
+        d.admin_ruling = rec        # reassigned, never mutated: JSONB tracking
+    elif resolution is None and d.status == APPROVED and "before" in rec:
+        before = rec.pop("before")
+        after = _at(rec.pop("after", None))
+        # Compared as INSTANTS: the column comes back in the session's zone,
+        # so the same moment can print with a different offset.
+        mine = (ov is not None and ov.done
+                and (after is None or ov.set_at == after))
+        if mine and before is None:
+            db.delete(ov)
+        elif mine:
+            ov.done = bool(before.get("done"))
+            ov.set_by = before.get("by")
+            ov.set_at = _at(before.get("at"))
+        d.admin_ruling = rec
+    db.flush()
+
+
 # ── filing ───────────────────────────────────────────────────────────────────
 
 def create(db: Session, *, ref: str, review_id: int | None, report: dict,
            task_id: int, reason: str, role: str | None,
            profile: str | None, actor_name: str | None,
            actor_telegram: int | None,
-           files: list[dict] | tuple = ()) -> LeaderAiDispute:
+           files: list[dict] | tuple = (),
+           ruling: dict | None = None) -> LeaderAiDispute:
     """File one objection, at the stage its filer's role puts it.
 
     Replaces every earlier row for the same verdict, so one rejection never
@@ -286,6 +417,10 @@ def create(db: Session, *, ref: str, review_id: int | None, report: dict,
     note" and "the brigadir's case"), which is precisely the confusion
     `requested_by_profile` exists to prevent. `echoes_reason` is the guard for
     the rows already written that way, this module's own first cut included.
+
+    `ruling` is the ADMIN's «not done» ruling ({"by", "at"}) when that is what
+    the task was refused by — stored as `admin_ruling`, which makes this an
+    objection to it (`kind_of`) for good.
     """
     from app.services import leader_appeal_chat as chat
     old_ids = []
@@ -303,6 +438,8 @@ def create(db: Session, *, ref: str, review_id: int | None, report: dict,
         requested_by_profile=profile, requested_by_name=actor_name,
         requested_by_telegram=actor_telegram,
     )
+    if ruling:
+        d.admin_ruling = {"by": ruling.get("by"), "at": ruling.get("at")}
     if stage == ADMIN:
         # Filed by somebody who already outranks stage 1: the uplift IS the
         # filing, so it is recorded as one rather than leaving the admin card
@@ -511,7 +648,10 @@ def supersede(db: Session, ref: str, resolution: str | None,
     for d in (db.query(LeaderAiDispute)
               .filter(LeaderAiDispute.ref == ref,
                       LeaderAiDispute.status.in_(tuple(expects))).all()):
-        if expects[d.status] == resolution:
+        # An objection to an ADMIN's ruling argued with that ruling, not with
+        # the AI verdict: a later ruling on the verdict contradicts nothing it
+        # decided.
+        if d.admin_ruling or expects[d.status] == resolution:
             continue
         d.status = CANCELLED
         if by:
@@ -549,10 +689,12 @@ def notify_filed(db: Session, d: LeaderAiDispute, *,
     from app.services import leader_appeal_chat as chat
     params = {**_params(db, d),
               "reason": chat.notice_text(d.reason)}
-    # An objection to an automatic check must not be announced as one to the
-    # AI — the reader decides differently about the two.
-    nkey = ("leader_dispute_filed_auto" if auto_entry(db, d) is not None
-            else "leader_dispute_filed")
+    # An objection to an automatic check — or to an admin's own ruling — must
+    # not be announced as one to the AI: the reader decides differently about
+    # the three.
+    nkey = {KIND_AUTO: "leader_dispute_filed_auto",
+            KIND_ADMIN: "leader_dispute_filed_admin"}.get(
+        kind_of(db, d), "leader_dispute_filed")
     try:
         chat.fanout(db, chat.DISPUTE, d, nkey, params,
                     author_profile=d.requested_by_profile,
@@ -578,9 +720,9 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str,
     nkey = {
         ADMIN: "leader_dispute_uplifted",
         APPROVED: "leader_dispute_approved",
-        REJECTED: (("leader_dispute_sup_rejected_auto"
-                    if auto_entry(db, d) is not None
-                    else "leader_dispute_sup_rejected")
+        REJECTED: ({KIND_AUTO: "leader_dispute_sup_rejected_auto",
+                    KIND_ADMIN: "leader_dispute_sup_rejected_admin"}.get(
+                        kind_of(db, d), "leader_dispute_sup_rejected")
                    if stage == "supervisor" else "leader_dispute_rejected"),
     }.get(d.status)
     if not nkey:

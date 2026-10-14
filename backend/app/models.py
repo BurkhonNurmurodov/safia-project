@@ -2486,6 +2486,15 @@ class LeaderAiDispute(Base):
     decided_at = Column(DateTime(timezone=True), nullable=True)
     decision_note = Column(Text, nullable=True)
 
+    # ── an objection to an ADMIN's own ruling (2026-10-14) ───────────────────
+    # Set only when the task was refused by an admin's «not done» ruling
+    # (LeaderTaskOverride) — the third judge beside the AI and the automatic
+    # checks (`leader_dispute.KIND_ADMIN`). {"by", "at"}: the ruling argued
+    # with, as it stood at filing. An approval adds "before" — the ruling as it
+    # stood just before the approval replaced it, null when there was none —
+    # and an undo puts exactly that back. NULL = the AI or an automatic check.
+    admin_ruling = Column(JSONB, nullable=True)
+
 
 class LeaderLateProof(Base):
     """A proof filed AFTER its task's own deadline, and the two rulings on it.
