@@ -2,8 +2,10 @@
 
 The operator asked on 2026-10-14 for every catalog line's trudoyomkost as one
 table: supervisor · SAP code · work centre («Команда») · process name ·
-trudoyomkost in minutes. Production is not readable from the machine that wrote
-this, so the table is DMed from the server.
+trudoyomkost. Production is not readable from the machine that wrote this, so
+the table is DMed from the server. v1 printed minutes; the operator then asked
+for SECONDS, the unit the catalog stores (`labor_time`), so v2 prints it as
+stored.
 
 What it lists (the operator's answers, 2026-10-14):
   * the CURRENT catalog — `pp_products`, which is the catalog from the latest
@@ -12,8 +14,8 @@ What it lists (the operator's answers, 2026-10-14):
   * the product SAP code AND the work centre, because one product is often on
     several lines (other work centres, other operations) and the code alone
     would print rows that look identical;
-  * trudoyomkost per PIECE in minutes = `labor_time` (seconds) ÷ 60. A line with
-    no Трудоемкость is a blank cell, never 0, and is counted in the caption.
+  * trudoyomkost per PIECE in SECONDS = `labor_time`, as stored. A line with no
+    Трудоемкость is a blank cell, never 0, and is counted in the caption.
 
 It READS and writes nothing but its flag (written by `startup._send_report_once`).
 
@@ -42,7 +44,7 @@ _API = "https://api.telegram.org"
 SEND_RETRIES = 3
 
 HEAD = ["Supervisor", "SAP code", "Work centre (Команда)", "Process name",
-        "Trudoyomkost, min"]
+        "Trudoyomkost, sec"]
 WIDTHS = [30, 16, 22, 60, 18]
 
 
@@ -50,12 +52,12 @@ def _txt(v) -> str:
     return ILLEGAL_CHARACTERS_RE.sub("", str(v or "").strip())
 
 
-def _minutes(labor) -> float | None:
-    """Seconds per piece → minutes per piece. None stays None (blank, not 0)."""
+def _seconds(labor) -> float | None:
+    """Seconds per piece, as stored. None stays None (blank, not 0)."""
     if labor is None:
         return None
     try:
-        return round(float(labor) / 60.0, 6)
+        return round(float(labor), 4)
     except (TypeError, ValueError):
         return None
 
@@ -74,14 +76,14 @@ def collect(db: Session) -> dict:
             "sap": _txt(p.sap_code),
             "wc": _txt(p.work_center),
             "name": _txt(p.name),
-            "min": _minutes(p.labor_time),
+            "sec": _seconds(p.labor_time),
             "_order": (p.sort_order or 0, p.id),
         })
     rows.sort(key=lambda r: (r["sup"].lower(), r["wc"], r["_order"]))
     return {
         "rows": rows,
         "units": len({r["sup"] for r in rows}),
-        "no_labor": sum(1 for r in rows if r["min"] is None),
+        "no_labor": sum(1 for r in rows if r["sec"] is None),
         "no_code": sum(1 for r in rows if not r["sap"]),
         "at": datetime.now(TZ),
     }
@@ -99,10 +101,10 @@ def build_workbook(rep: dict) -> BytesIO:
         c.fill = fill
         c.alignment = Alignment(vertical="center", wrap_text=True)
     for r in rep["rows"]:
-        ws.append([r["sup"], r["sap"] or None, r["wc"], r["name"], r["min"]])
+        ws.append([r["sup"], r["sap"] or None, r["wc"], r["name"], r["sec"]])
     for row in ws.iter_rows(min_row=2, min_col=5, max_col=5):
         for c in row:
-            c.number_format = "0.00##"
+            c.number_format = "General"
     for i, w in enumerate(WIDTHS, start=1):
         ws.column_dimensions[chr(64 + i)].width = w
     ws.freeze_panes = "A2"
@@ -118,7 +120,7 @@ def caption(rep: dict) -> str:
         f"Trudoyomkost register · {rep['at'].strftime('%d.%m.%Y %H:%M')}",
         f"{len(rep['rows'])} catalog lines · {rep['units']} supervisors",
         "Current catalog, active lines of active units. "
-        "Trudoyomkost = minutes per piece (Трудоемкость seconds ÷ 60).",
+        "Trudoyomkost = seconds per piece (Трудоемкость as stored).",
     ]
     if rep["no_labor"]:
         lines.append(f"{rep['no_labor']} line(s) have no trudoyomkost — blank cells.")

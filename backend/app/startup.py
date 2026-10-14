@@ -7498,11 +7498,12 @@ def _dept_attendance_job() -> None:
 
 # ── one-shot: the whole Трудоемкость register, as a workbook ─────────────────
 # The operator asked on 2026-10-14 for every catalog line's trudoyomkost in one
-# table — supervisor · SAP code · work centre · process name · minutes per piece
-# — the current catalog, active lines of active units. It READS and writes
+# table — supervisor · SAP code · work centre · process name · trudoyomkost —
+# the current catalog, active lines of active units. v1 sent minutes per piece;
+# the operator then asked for SECONDS, so v2 is a new delivery under a new key. It READS and writes
 # nothing but its flag (`services/trudoyomkost_register_report.py`). Changing
 # what it sends needs a NEW key.
-TRUDOYOMKOST_REGISTER_FLAG = "trudoyomkost_register_xlsx_2026_10_14_v1"
+TRUDOYOMKOST_REGISTER_FLAG = "trudoyomkost_register_xlsx_seconds_2026_10_14_v2"
 _TRUDOYOMKOST_REGISTER_DELAY_S = 60
 
 
