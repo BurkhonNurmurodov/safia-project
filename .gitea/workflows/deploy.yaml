@@ -130,3 +130,14 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
+
+      # ⚠ TEMPORARY (2026-10-14): why Malikov Xasan Avaz O'g'li's /production
+      # says «no cell» while his profile lists 8911 — the cell, its link
+      # events, his profile, the session «open as» resolves and every
+      # «Boshqaruvchi» pick still waiting. Read-only, never fails the deploy,
+      # no worker names. Lives under deploy/ so adding it restarts nothing.
+      # Remove with the script.
+      - name: "Report: cell 8911 / Malikov on /production (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 120 .venv/bin/python ../deploy/diag_cell_8911.py || true
