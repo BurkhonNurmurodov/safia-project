@@ -54,6 +54,7 @@ function isoOf(ddmmyyyy) { const [d, m, y] = ddmmyyyy.split("."); return `${y}-$
 const NO_IDS  = {};
 const NO_SEGS = [];
 const NO_SET  = new Set();
+const NO_MARKS = {};
 const NOOP    = () => {};
 
 // Compute row statistic (only over approved days). `read` is the grid's one
@@ -116,6 +117,7 @@ const SingleGrid = memo(function SingleGrid({
   onCellClick, onPendingClick, segs, selection, toggleSel, clearSel,
   managerIds, commentedCells, isoOf, approvedCells,
   avgMode, onCycleAvg, cellTitle,
+  dateMarks = NO_MARKS,
   rowLabel = "Brigadir", labelWidth = LABEL_W,
   labelFor = null,
   pinnedRow = null,
@@ -357,6 +359,7 @@ const SingleGrid = memo(function SingleGrid({
             return (
               <th
                 key={d}
+                title={dateMarks[d] || undefined}
                 onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
                 style={{
                   ...thBase,
@@ -375,6 +378,12 @@ const SingleGrid = memo(function SingleGrid({
                 }}
               >
                 {shortDate(d)}
+                {dateMarks[d] && (
+                  <span aria-hidden style={{
+                    display: "inline-block", width: 5, height: 5, borderRadius: "50%",
+                    background: "#fff", marginLeft: 3, verticalAlign: "middle",
+                  }} />
+                )}
                 {thisSel && (
                   <span style={{
                     display: "block", height: 2, borderRadius: 1,
@@ -703,6 +712,11 @@ export default memo(function HeatmapChart({
   // spell out the counts behind it ("on the list 85 · came 70 · absent 15").
   // Pending cells keep their own blocked-reason title.
   cellTitle,
+  // Columns whose figures are not final yet: `{ "dd.mm.yyyy": text }`. The
+  // date header carries a small dot and `text` as its tooltip (/workers marks
+  // the shift-day still being worked, read live from Verifix). Omitted, every
+  // header reads exactly as before.
+  dateMarks = NO_MARKS,
   fullscreen = false,
   // Row-identity column: what the rows ARE, and how much room their names need.
   // Defaults are the fleet page's (supervisors, whose names fit 172px); the
@@ -782,7 +796,7 @@ export default memo(function HeatmapChart({
     onPendingClick,
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
-    avgMode, onCycleAvg: cycleAvg, cellTitle,
+    avgMode, onCycleAvg: cycleAvg, cellTitle, dateMarks,
     rowLabel, labelWidth, labelFor, pinnedRow, cellValue,
     loading, loadingRows, phoneFit,
   };

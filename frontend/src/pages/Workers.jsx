@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
-  ClipboardList, Grid3x3, LayoutGrid, Layers, PieChart, Repeat, TrendingUp,
+  ClipboardList, Grid3x3, LayoutGrid, Layers, PieChart, Radio, Repeat, TrendingUp,
   UserCheck, UserMinus, UserRound, Users,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
@@ -203,6 +203,33 @@ export default function Workers() {
   // The inline dropdown mirrors the global brigadir filter: a single pick maps to
   // one id, "All" clears it. A multi-select made in the drawer shows as "All".
   const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
+
+  // ── today, read live ───────────────────────────────────────────────────────
+  // Each unit's CURRENT shift-day is on the page before its brigadir closes it,
+  // read off the live Verifix read (backend `_live_rows`); its `daily` entry
+  // carries `live` + `read_at`. date → the oldest read behind that date's
+  // figures — every surface showing one of these days says it is «so far».
+  // date → { at: the oldest read behind it, n: how many units it is live for }
+  const liveDays = useMemo(() => {
+    const acc = {};
+    headcount.forEach((m) => (m.daily || []).forEach((d) => {
+      if (!d.live) return;
+      const prev = acc[d.date] || { at: null, n: 0 };
+      acc[d.date] = {
+        n: prev.n + 1,
+        at: !prev.at || (d.read_at && d.read_at < prev.at) ? (d.read_at || prev.at) : prev.at,
+      };
+    }));
+    return acc;
+  }, [headcount]);
+  const liveText = (time) => t("workers.live.cell").replace("{time}", time || "—");
+  // The column header speaks for the whole date, and on a date shared by both
+  // shifts only some units are still open — so it says how many.
+  const liveMarks = useMemo(
+    () => Object.fromEntries(Object.entries(liveDays).map(([d, v]) => [d,
+      t("workers.live.col").replace("{n}", v.n).replace("{time}", v.at || "—")])),
+    [liveDays, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveDates = Object.keys(liveDays).sort((a, b) => parseDate(a) - parseDate(b));
 
   // ── headcount aggregates ───────────────────────────────────────────────────────
   const totalWorkers  = headcount.reduce((s, m) => s + m.total, 0);
@@ -490,6 +517,10 @@ export default function Workers() {
     // Long formatted date in plain ink — the old brand-gold DD.MM.YYYY read as a
     // link; this is a state readout ("which day am I looking at"), not a control.
     const date = dateStr ? fmtLongDate(parseDate(dateStr), t, lang) : "";
+    // A day still being worked, read live: its figures are «so far».
+    const liveTag = trend?.live && dateStr in trend.live
+      ? `<span style="color:var(--brand-text);font-weight:500">${t("workers.live.soFar").replace("{time}", trend.live[dateStr] || "—")}</span>`
+      : "";
     const items = keptRoles.map((r) => ({
       name: roleLabel(r), color: roleColor(r), val: (trendSrc[r] || [])[idx] ?? 0,
     }));
@@ -506,7 +537,7 @@ export default function Workers() {
     const foldDetail = foldRoles.length ? `
       <span style="color:var(--text-4)">${foldRoles.map((r) =>
         `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${Math.round((trendSrc[r] || [])[idx] ?? 0)}</span>`).join(" · ")}</span>` : "";
-    return `<span style="color:var(--text-1);font-weight:600">${date}</span>${chips}${foldDetail}
+    return `<span style="color:var(--text-1);font-weight:600">${date}</span>${liveTag}${chips}${foldDetail}
       <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(Math.round(total), "2.8em")}</span>`;
   };
   const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
@@ -580,7 +611,8 @@ export default function Workers() {
         const absent   = d && (zag ? d.z_absent   ?? d.absent   : d.absent);
         const on_leave = d && (zag ? d.z_on_leave ?? d.on_leave : d.on_leave);
         row[dt] = roster
-          ? { net_util: (came + (on_leave || 0)) / roster, roster, came, absent, on_leave }
+          ? { net_util: (came + (on_leave || 0)) / roster, roster, came, absent, on_leave,
+              live: !!d.live, read_at: d.read_at || null }
           : { net_util: null };
       });
       out[m.name] = row;
@@ -597,7 +629,7 @@ export default function Workers() {
       `${t("workers.absent")}: ${cell.absent}`,
     ];
     if (cell.on_leave > 0) parts.push(`${t("workers.onLeave")}: ${cell.on_leave}`);
-    return parts.join(" · ");
+    return parts.join(" · ") + (cell.live ? `\n${liveText(cell.read_at)}` : "");
   };
   // …and the same breakdown on TAP, because `title` is a hover affordance and
   // this platform is read on a phone: without it the counts behind a cell would
@@ -820,6 +852,18 @@ export default function Workers() {
             )}
           </div>
 
+          {/* The shift-day still being worked is counted in, read live — say
+              so once, under the figures it moves. */}
+          {!isLoading && liveDates.length > 0 && (
+            <div className="-mt-3 mb-6 flex items-start gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+              <Radio size={13} className="shrink-0 mt-px" style={{ color: "var(--brand)" }} aria-hidden />
+              <span>
+                {t("workers.live.note").replace("{days}", liveDates
+                  .map((d) => `${d.slice(0, 5)} (${liveDays[d].at || "—"})`).join(", "))}
+              </span>
+            </div>
+          )}
+
           {/* Role-share donut + attendance trend (compact pair). Both switches
               drive both charts — role set adds/removes the non-zagruzka roles,
               measure swaps the roster numbers for the ones who turned up. */}
@@ -871,7 +915,7 @@ export default function Workers() {
             {isLoading ? <SkeletonChart className="h-72" />
               : heatManagers.length && heatDates.length
                 ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData}
-                    mode="actual" segments={ATT_SEGMENTS} cellTitle={heatTitle}
+                    mode="actual" segments={ATT_SEGMENTS} cellTitle={heatTitle} dateMarks={liveMarks}
                     onCellClick={(name, date, v, cell) => cell?.roster && setDayCell({ name, date, cell })} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
           </ChartCard>
@@ -888,6 +932,8 @@ export default function Workers() {
                 // switch is not visible from inside the modal, so a narrowed
                 // grid must say so here or the counts read as the whole list.
                 + (scope === "zagruzka" ? ` · ${t("workers.tmZagruzka")}` : "")
+                // A day still being worked: the four numbers are «so far».
+                + (dayCell.cell.live ? ` · ${liveText(dayCell.cell.read_at)}` : "")
               : ""}>
             {dayCell && (() => {
               const c = dayCell.cell;

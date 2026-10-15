@@ -1,3 +1,7 @@
+import logging
+import threading
+import time
+from collections import namedtuple
 from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
@@ -11,6 +15,8 @@ from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.exchange_rewind import original_rows
 from app.services.name_map import sheet_alias_map
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["workers"])
 
@@ -114,6 +120,100 @@ def _original_scoped(db: Session, date_from: date, date_to: date,
     return ex_names, keep, meta
 
 
+# ── TODAY, before it is closed (from 2026-10-15) ────────────────────────────
+# The operator: «show also today's infos». Every figure above reads a CLOSED,
+# confirmed day — the day-close gate — and a live day reaches `attendance` only
+# when its brigadir closes it (`live_projection`), so the day being worked was
+# blank here until the evening. Each unit's CURRENT shift-day is therefore read
+# off the stored live Verifix read the minute job keeps — never a Verifix call
+# from here — while that unit has not closed it: `live_staff.unit_people`, the
+# very list the shift dashboard's «Davomat» column counts, so the two pages
+# state one figure for one unit-day. «Current» is the shift frame
+# (`shift_report.report_days`): at 09:00 shift 2's day is the night that has
+# just ended. Only that day: an earlier day left unclosed stays blank, as the
+# gate has always shown it. The rows are disjoint from the SQL's by
+# construction — the gate keeps the unclosed (unit, day) out of every query.
+
+# One person of a live day, in the shape the Python fold below reads.
+PyRow = namedtuple("PyRow", "manager_id date worker_name job_title came on_leave is_supervisor")
+
+_LIVE_TTL_S = 30.0                       # a minute-old read, re-folded at most twice a minute
+_live_cache: dict = {}                   # day → (monotonic, {unit: unit_people entry})
+_live_lock = threading.Lock()
+
+
+def _live_people(db: Session, day: date) -> dict:
+    """{unit: live_staff.unit_people entry} for every unit, on one shift-day,
+    off the stored read — kept `_LIVE_TTL_S` (the page asks twice per load, and
+    re-folding a plant's people is not free). {} when nothing is stored."""
+    from app.services import live_staff, verifix_live
+    now = time.monotonic()
+    with _live_lock:
+        hit = _live_cache.get(day)
+        if hit and now - hit[0] < _LIVE_TTL_S:
+            return hit[1]
+    out: dict = {}
+    drow = verifix_live._row(db, "dir")
+    directory = (drow.data or None) if drow else None
+    row = verifix_live._row(db, verifix_live._day_key(day)) if directory else None
+    store = ((row.data or {}).get("emps") or {}) if row else {}
+    if store:
+        ctx = live_staff.load(db, day, directory, store)
+        out = live_staff.unit_people(ctx, {m for m, _c in ctx.homes.values()}, _py_on_leave)
+    with _live_lock:
+        _live_cache[day] = (now, out)
+        for k in [k for k, (t, _v) in _live_cache.items() if now - t > _LIVE_TTL_S * 4]:
+            _live_cache.pop(k, None)
+    return out
+
+
+def _live_rows(db: Session, date_from: date, date_to: date, shift: Optional[int],
+               scoped, confirmed) -> tuple[list, dict]:
+    """(rows, {(unit, day): read_at}) — each unit in scope whose CURRENT
+    shift-day falls in the period, is a live day and is not confirmed yet, read
+    off the stored live read (see the block comment above). In a savepoint: a
+    failure costs the live day, never the page."""
+    from app.services import cell_hours, live_day, live_overview, shift_report
+    if date_to < live_day.LIVE_FROM:
+        return [], {}
+    try:
+        with db.begin_nested():
+            now = live_overview.now_local()
+            windows = cell_hours.defaults(db)
+            q = db.query(Manager.id, Manager.shift).filter(Manager.archived.is_(False))
+            if shift:
+                q = q.filter(Manager.shift == shift)
+            if scoped is not None:
+                q = q.filter(Manager.id.in_(list(scoped)))
+            by_day: dict = {}
+            for mid, sft in q.all():
+                day = shift_report.report_days(now, sft, windows)[0]
+                if (date_from <= day <= date_to and live_day.is_live(day)
+                        and (mid, day) not in confirmed):
+                    by_day.setdefault(day, []).append(mid)
+            rows, info = [], {}
+            for day, mids in by_day.items():
+                people = _live_people(db, day)
+                for mid in mids:
+                    u = people.get(mid)
+                    if not u or not u["people"]:
+                        continue
+                    info[(mid, day)] = u["read_at"]
+                    for p in u["people"]:
+                        if p["name"] in ("nan", "NaN", ""):
+                            continue
+                        rows.append(PyRow(mid, day, p["name"], p["job"] or None,
+                                          p["came"], p["on_leave"], False))
+            return rows, info
+    except Exception:  # noqa: BLE001 — the live day, never the page
+        log.exception("workers: today's live read could not be folded")
+        return [], {}
+
+
+def _hm(dt) -> Optional[str]:
+    return dt.strftime("%H:%M") if dt is not None else None
+
+
 def normalize_role(job_title: str) -> str:
     if not job_title or job_title in ("nan", "NaN", ""):
         return "Other"
@@ -148,9 +248,12 @@ def get_headcount(
     if empty_scope(scoped):
         return []
 
-    # Day-close gate: only confirmed (manager, date) days count anywhere.
+    # Day-close gate: only confirmed (manager, date) days count anywhere —
+    # except each unit's CURRENT shift-day, read live until it is closed
+    # (`_live_rows`, see the block above it).
     confirmed = confirmed_pairs(db, date_from, date_to, scoped)
-    if not confirmed:
+    live_rows, live_at = _live_rows(db, date_from, date_to, shift, scoped, confirmed)
+    if not confirmed and not live_rows:
         return []
 
     # ── Original-brigadir basis ───────────────────────────────────────────────
@@ -168,6 +271,33 @@ def get_headcount(
         db, date_from, date_to, shift, scoped, confirmed)
     ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
 
+    # The live day's people are on the same original-brigadir basis already
+    # (`live_staff.unit_people` applies no exchange), and on (unit, day) pairs
+    # no query below reads — so per DAY they add with nothing double-counted.
+    # The PERIOD unions (`total`, `total_all`: distinct workers over the whole
+    # range) are another matter: somebody who came on Monday and is in today
+    # must not count twice, so the names those unions already hold for the live
+    # units are read once here and the live rows add only the new ones.
+    live_mids = {r.manager_id for r in live_rows}
+    seen_came: dict = {}                # mgr → role → {names the SQL period already counts}
+    seen_all:  dict = {}                # mgr → {names}
+    if live_mids and confirmed:
+        for mid, name, jt, came in (
+            db.query(Attendance.manager_id, Attendance.worker_name, Attendance.job_title,
+                     func.max(case((_CAME, 1), else_=0)))
+            .filter(Attendance.date >= date_from, Attendance.date <= date_to)
+            .filter(Attendance.manager_id.in_(list(live_mids)))
+            .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
+            .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+            .filter(*ex_only)
+            .group_by(Attendance.manager_id, Attendance.worker_name, Attendance.job_title)
+            .all()
+        ):
+            seen_all.setdefault(mid, set()).add(name)
+            if came:
+                seen_came.setdefault(mid, {}).setdefault(
+                    normalize_role(jt or ""), set()).add(name)
+
     # Name sets, not counters: every SQL total below is a COUNT(DISTINCT
     # worker_name) and one worker can hold two rows (two job titles) in a day.
     ex_pair:    dict = {}               # mgr → date → bucket → {names}
@@ -175,11 +305,14 @@ def get_headcount(
     ex_period:  dict = {}               # mgr → role → {names present ≥ once}
     ex_all:     dict = {}               # mgr → {names}, came or not
     ex_hc:      dict = {}               # mgr → date → {names} matching CALC_ROWS_FILTER
-    for r in ex_rows:
-        came  = _py_came(r.hours_worked)
-        leave = _py_on_leave(r.hours_worked, r.clock_in_out)
+    py_rows = [PyRow(r.manager_id, r.date, r.worker_name, r.job_title,
+                     _py_came(r.hours_worked), _py_on_leave(r.hours_worked, r.clock_in_out),
+                     bool(r.is_supervisor)) for r in ex_rows]
+    for r in py_rows + live_rows:
+        came, leave = r.came, r.on_leave
         known = _py_known_title(r.job_title)
         role  = normalize_role(r.job_title or "")
+        live  = (r.manager_id, r.date) in live_at
         day = ex_pair.setdefault(r.manager_id, {}).setdefault(r.date, {
             k: set() for k in ("roster", "came", "on_leave",
                                "z_roster", "z_came", "z_on_leave")})
@@ -199,8 +332,10 @@ def get_headcount(
         rd["roster"].add(r.worker_name)
         if came:
             rd["came"].add(r.worker_name)
-            ex_period.setdefault(r.manager_id, {}).setdefault(role, set()).add(r.worker_name)
-        ex_all.setdefault(r.manager_id, set()).add(r.worker_name)
+            if not (live and r.worker_name in seen_came.get(r.manager_id, {}).get(role, ())):
+                ex_period.setdefault(r.manager_id, {}).setdefault(role, set()).add(r.worker_name)
+        if not (live and r.worker_name in seen_all.get(r.manager_id, ())):
+            ex_all.setdefault(r.manager_id, set()).add(r.worker_name)
         if known and came and not r.is_supervisor:
             ex_hc.setdefault(r.manager_id, {}).setdefault(r.date, set()).add(r.worker_name)
 
@@ -242,12 +377,23 @@ def get_headcount(
     # …and the exchanged names, on the unit they started the day on. A unit that
     # lent out everyone who came would not be in `agg` at all, so the entry is
     # created rather than looked up — otherwise it silently drops off the page.
-    for mgr_id, roles in ex_period.items():
+    # `meta` covers the exchanged units only; a unit read live today may be in
+    # none of them, so the names of every unit the Python half names are read.
+    if any(m not in meta for m in ex_pair):
+        meta = {mid: (nm, sft) for mid, nm, sft in db.query(
+            Manager.id, Manager.name, Manager.shift
+        ).filter(Manager.archived.is_(False)).all()}
+
+    def _entry(mgr_id):
         if mgr_id not in agg:
             agg[mgr_id] = {"manager_id": mgr_id, "name": meta[mgr_id][0],
                            "shift": meta[mgr_id][1], "total": 0,
                            "by_role": {"Konditer": 0, "Fasovshik": 0,
                                        "Zagatovitel": 0, "Other": 0}}
+        return agg[mgr_id]
+
+    for mgr_id, roles in ex_period.items():
+        _entry(mgr_id)
         for role, names in roles.items():
             agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + len(names)
             if role in ZAGRUZKA_ROLES:
@@ -420,6 +566,13 @@ def get_headcount(
                 slot["roster"] += len(names["roster"])
                 slot["came"]   += len(names["came"])
 
+    # A unit on the page through the Python half alone — today's list read live
+    # before anybody of it came, or a list lent out whole — still has a row: a
+    # day where nobody came is the one 0 % the grid has to show.
+    for mgr_id in ex_pair:
+        if mgr_id in meta:
+            _entry(mgr_id)
+
     # Official HC per (manager name, day) — HeadcountData spells brigadirs in
     # either alphabet, so accept every known spelling and resolve rows back to
     # the canonical Manager.name (same convention as brigadirs.py).
@@ -455,7 +608,12 @@ def get_headcount(
         # would hide the only 0 % the grid ever needs to show. `hc` is the
         # zagruzka-role present count kept beside it (what official_hc compares
         # against); only confirmed days appear, the grid greys the rest.
-        m["daily"] = [{"date": d.strftime("%d.%m.%Y"), "hc": days.get(d), **rd[d]}
+        # `live` marks the unit's current shift-day read off the live Verifix
+        # read before its close — still being worked, so «so far» — with the
+        # time that read is from (`read_at`, Tashkent «HH:MM»).
+        m["daily"] = [{"date": d.strftime("%d.%m.%Y"), "hc": days.get(d), **rd[d],
+                       **({"live": True, "read_at": _hm(live_at[(m["manager_id"], d)])}
+                          if (m["manager_id"], d) in live_at else {})}
                       for d in sorted(rd)]
         # Period totals, summed then divided — NOT an average of daily rates,
         # which would let a 3-person day weigh as much as a 120-person one.
@@ -521,9 +679,11 @@ def get_role_trend(
     if empty_scope(scoped):
         return empty
 
-    # Day-close gate: only confirmed (manager, date) days count anywhere.
+    # Day-close gate: only confirmed (manager, date) days count anywhere —
+    # except each unit's current shift-day, read live (`_live_rows`).
     confirmed = confirmed_pairs(db, date_from, date_to, scoped)
-    if not confirmed:
+    live_rows, live_at = _live_rows(db, date_from, date_to, shift, scoped, confirmed)
+    if not confirmed and not live_rows:
         return empty
 
     # Same original-brigadir basis as the heatmap — see get_headcount. The trend
@@ -574,8 +734,19 @@ def get_role_trend(
         slot["roster"].add(r.worker_name)
         if _py_came(r.hours_worked):
             slot["came"].add(r.worker_name)
-    rows = list(rows) + [(d, jt, len(v["roster"]), len(v["came"]))
-                         for (d, jt), v in ex_group.items()]
+    # Today's live lists, the same way — their (unit, day) pairs are outside
+    # every query above, so they add. Kept in a group of their own: a live
+    # unit's name set must not swallow an exchanged worker the rows above
+    # already count on another unit that day.
+    live_group: dict = {}
+    for r in live_rows:
+        slot = live_group.setdefault((r.date, r.job_title), {"roster": set(), "came": set()})
+        slot["roster"].add(r.worker_name)
+        if r.came:
+            slot["came"].add(r.worker_name)
+    ex_group_rows = [(d, jt, len(v["roster"]), len(v["came"]))
+                     for (d, jt), v in list(ex_group.items()) + list(live_group.items())]
+    rows = list(rows) + ex_group_rows
 
     trend: dict[str, dict[str, int]] = {}          # came  — who turned up
     roster: dict[str, dict[str, int]] = {}         # on the list, came or not
@@ -597,8 +768,16 @@ def get_role_trend(
     extra = sorted(seen_roles - set(ZAGRUZKA_ROLES),
                    key=lambda r: -sum(roster.get(d, {}).get(r, 0) for d in dates))
     role_keys = list(ZAGRUZKA_ROLES) + extra
+    # The dates carrying a live day, each with the OLDEST read behind it
+    # («HH:MM»): those figures are «so far», and the page says so.
+    live: dict = {}
+    for (_mid, d), at in live_at.items():
+        k = d.strftime("%d.%m.%Y")
+        if k not in live or (at is not None and (live[k] is None or at < live[k])):
+            live[k] = at
     return {
         "dates": dates,
+        "live": {k: _hm(v) for k, v in live.items()},
         "series": {
             role: [trend.get(d, {}).get(role, 0) for d in dates]
             for role in role_keys

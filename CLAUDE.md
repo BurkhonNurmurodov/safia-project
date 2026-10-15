@@ -2111,6 +2111,23 @@ record of other people's paperwork.
   the five info tooltips). `role_change` documents are deliberately NOT rewound:
   they change a job title, i.e. which role column a present worker lands in,
   never whether they came.
+- **Today is on the page before it is closed** (2026-10-15, the operator:
+  «show also today's infos»). The day-close gate keeps every unconfirmed day
+  out — and a live day reaches `attendance` only at its close — so each unit's
+  CURRENT shift-day (`shift_report.report_days`, the shift dashboard's frame:
+  at 09:00 shift 2's is the night just ended) is read off the STORED live
+  Verifix read while that unit has not confirmed it: `routers/workers._live_rows`
+  over `live_staff.unit_people`, the very list the shift dashboard's «Davomat»
+  column counts (`live_staff.attendance` now just sums it), so the two pages
+  state one figure per unit-day. Already on the original-brigadir basis (no
+  exchange applied); per DAY it adds to the SQL with nothing double-counted,
+  and the period unions (`total`, `total_all`) add only names the period does
+  not already hold. Only that day — an earlier day left unclosed stays blank,
+  as before. Kept 30 s per day (`_LIVE_TTL_S`); a failure costs the live day,
+  never the page. The payload marks it (`daily[].live` + `read_at`; trend
+  `live: {date: "HH:MM"}`) and the page says «so far» once under the KPI row,
+  as a dot on the heatmap's date header (`HeatmapChart dateMarks`), in the
+  cell tooltip and day popup, and beside the date in the trend's panel.
 
 ## What a supervisor's ojidaniya bar is MADE OF (the detail modal)
 
@@ -10375,7 +10392,8 @@ operator's word («one column of the existing table»).
   bands: one unit-day must wear one colour on both pages. `attTone` (90 / 75)
   decides only bold-on-red, like every other column. Once the day is closed and
   copied, the heatmap prints the same number.
-- **`live_staff.attendance` is THE count**, off the STORED live read (the
+- **`live_staff.attendance` is THE count** (a sum over `unit_people`, which
+  /workers' live day reads too), off the STORED live read (the
   minute job's `live_verifix_reads`) inside the board's own request — never a
   Verifix call. The list is the unit's own people (`ctx.homes`, by Verifix org
   unit) with no exchange applied — the basis /workers rewinds a closed day to

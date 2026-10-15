@@ -1070,11 +1070,12 @@ def busy(day_rows: dict) -> list:
 
 # ── a unit's attendance on the day (the shift dashboard) ─────────────────────
 
-def attendance(ctx: Ctx, manager_ids, on_leave) -> dict:
-    """{unit: counts} — /workers' «Davomat issiqlik xaritasi» figure,
-    (came + on leave) ÷ on the list, for the day `ctx` holds while it is still
-    being worked: the «Davomat» column of the «Smena hisoboti» board
-    (`routers/shift_report.get_shift_report`).
+def unit_people(ctx: Ctx, manager_ids, on_leave) -> dict:
+    """{unit: {people, not_yet, unread, read_at}} — WHO is on each unit's own
+    list for the day `ctx` holds while it is still being worked, and whether
+    each came. THE rule behind `attendance` (the shift dashboard's «Davomat»)
+    and /workers' live day (`routers.workers._live_rows`), so the two pages can
+    never count one unit-day two ways.
 
     THE LIST is the unit's own people — everybody whose Verifix org unit is one
     of its workload cells (`ctx.homes`), every job title (the heatmap's «Jami»)
@@ -1086,16 +1087,18 @@ def attendance(ctx: Ctx, manager_ids, on_leave) -> dict:
     hold yet is `unread` — the next minute's read fills the gap — never an
     absence.
 
-    CAME = a clock-in, after the brigadir's answer for a missing check-out
-    (`_fixed`: «did not come» is an absence). ON LEAVE = no clock-in and a day
-    mark /workers reads as leave — `on_leave(hours, day cell)` is its own test
-    (`routers.workers._py_on_leave`), handed the mark the copy would write
-    (`day_mark`). Everybody else on the list is absent, a worker still due
-    while the shift runs included — /staff reads them «absent» from the shift's
-    first minute too. `read_at` = the oldest read among the unit's people
-    (`verifix_live._covered_at`'s rule), None = nobody read."""
-    keys = ("roster", "came", "on_leave", "not_yet", "unread")
-    out = {m: {**{k: 0 for k in keys}, "read_at": None} for m in set(manager_ids)}
+    Each person is `{name, job, came, on_leave}`: `job` is the title the copy
+    would write (after an approved role change), CAME = a clock-in, after the
+    brigadir's answer for a missing check-out (`_fixed`: «did not come» is an
+    absence), ON LEAVE = no clock-in and a day mark /workers reads as leave —
+    `on_leave(hours, day cell)` is its own test (`routers.workers._py_on_leave`),
+    handed the mark the copy would write (`day_mark`). Everybody else on the
+    list is absent, a worker still due while the shift runs included — /staff
+    reads them «absent» from the shift's first minute too. `read_at` = the
+    oldest read among the unit's people (`verifix_live._covered_at`'s rule),
+    None = nobody read."""
+    out = {m: {"people": [], "not_yet": 0, "unread": 0, "read_at": None}
+           for m in set(manager_ids)}
     for eid, (mid, _cell) in ctx.homes.items():
         acc = out.get(mid)
         if acc is None or (mid, eid) in ctx.deleted:
@@ -1110,12 +1113,32 @@ def attendance(ctx: Ctx, manager_ids, on_leave) -> dict:
                 acc["read_at"] = at
         except ValueError:
             pass
-        p = person(ctx, eid).p
+        w = person(ctx, eid)
+        p = w.p
         if p["in"] is None and p["status"] == "not_yet":
             acc["not_yet"] += 1
             continue
         came = p["in"] is not None
-        acc["roster"] += 1
-        acc["came"] += int(came)
-        acc["on_leave"] += int(not came and on_leave(None, day_mark(ctx, eid)))
+        acc["people"].append({
+            "name": w.name, "job": w.role, "came": came,
+            "on_leave": bool(not came and on_leave(None, day_mark(ctx, eid))),
+        })
+    return out
+
+
+def attendance(ctx: Ctx, manager_ids, on_leave) -> dict:
+    """{unit: counts} — /workers' «Davomat issiqlik xaritasi» figure,
+    (came + on leave) ÷ on the list, for the day `ctx` holds while it is still
+    being worked: the «Davomat» column of the «Smena hisoboti» board
+    (`routers/shift_report.get_shift_report`). The list and every rule are
+    `unit_people`'s; this only counts them."""
+    out = {}
+    for m, u in unit_people(ctx, manager_ids, on_leave).items():
+        ppl = u["people"]
+        out[m] = {
+            "roster": len(ppl),
+            "came": sum(1 for p in ppl if p["came"]),
+            "on_leave": sum(1 for p in ppl if p["on_leave"]),
+            "not_yet": u["not_yet"], "unread": u["unread"], "read_at": u["read_at"],
+        }
     return out
