@@ -58,7 +58,7 @@ const TXT = {
     kTracked: { profile: "Kuzatilgan profillar", account: "Kuzatilgan foydalanuvchilar" },
     kNew: "Yangi (7 kun)", kTotalTime: "Jami vaqt", cardTime: "Ilovadagi vaqt",
     perIdDay: { profile: "/ profil-kun", account: "/ foydalanuvchi-kun" }, perDayShort: "/kun",
-    hrs: (n) => `${n} soat`,
+    hrs: (n) => `${n}s`,
     noOnline: "Hozir hech kim yo'q", coverage30: "30 kunlik qamrov", dataSince: "Ma'lumot {d} dan",
     secTrend: "Vaqt bo'yicha faollik", trendSub: "Kunlik faollik va ilovadagi vaqt", mMinutes: "Daqiqa",
     secCalendar: "Faollik kalendari", calSub: "So'nggi 53 hafta — kunlik ishlatilgan vaqt, Toshkent vaqti bilan",
@@ -80,7 +80,7 @@ const TXT = {
     sessionsSoon: "Kirishlar soni endi hisoblana boshlaydi.",
     loadFailed: "Faollik ma'lumotini yuklab bo'lmadi.", retry: "Qayta urinish",
     rel: { now: "hozir", m: "daq", h: "soat", d: "kun", fmt: (n, u) => `${n} ${u}` },
-    dur: (h, m) => (h ? (m ? `${h} soat ${m} daq` : `${h} soat`) : `${m} daq`),
+    dur: (h, m) => (h ? (m ? `${h}s ${m}m` : `${h}s`) : `${m}m`),
     locale: "uz-Latn-UZ",
   },
   uz_cyrl: {
@@ -96,7 +96,7 @@ const TXT = {
     kTracked: { profile: "Кузатилган профиллар", account: "Кузатилган фойдаланувчилар" },
     kNew: "Янги (7 кун)", kTotalTime: "Жами вақт", cardTime: "Иловадаги вақт",
     perIdDay: { profile: "/ профил-кун", account: "/ фойдаланувчи-кун" }, perDayShort: "/кун",
-    hrs: (n) => `${n} соат`,
+    hrs: (n) => `${n}с`,
     noOnline: "Ҳозир ҳеч ким йўқ", coverage30: "30 кунлик қамров", dataSince: "Маълумот {d} дан",
     secTrend: "Вақт бўйича фаоллик", trendSub: "Кунлик фаоллик ва иловадаги вақт", mMinutes: "Дақиқа",
     secCalendar: "Фаоллик календари", calSub: "Сўнгги 53 ҳафта — кунлик ишлатилган вақт, Тошкент вақти билан",
@@ -118,7 +118,7 @@ const TXT = {
     sessionsSoon: "Киришлар сони энди ҳисоблана бошлайди.",
     loadFailed: "Фаоллик маълумотини юклаб бўлмади.", retry: "Қайта уриниш",
     rel: { now: "ҳозир", m: "дақ", h: "соат", d: "кун", fmt: (n, u) => `${n} ${u}` },
-    dur: (h, m) => (h ? (m ? `${h} соат ${m} дақ` : `${h} соат`) : `${m} дақ`),
+    dur: (h, m) => (h ? (m ? `${h}с ${m}м` : `${h}с`) : `${m}м`),
     locale: "uz-Cyrl-UZ",
   },
   ru: {
@@ -134,7 +134,7 @@ const TXT = {
     kTracked: { profile: "Отслеживается профилей", account: "Отслеживается пользователей" },
     kNew: "Новые (7 дней)", kTotalTime: "Всего времени", cardTime: "Время в приложении",
     perIdDay: { profile: "/ профиль-день", account: "/ пользователь-день" }, perDayShort: "/день",
-    hrs: (n) => `${n} ч`,
+    hrs: (n) => `${n}ч`,
     noOnline: "Сейчас никого нет", coverage30: "Охват за 30 дней", dataSince: "Данные с {d}",
     secTrend: "Активность по времени", trendSub: "Активность и время в приложении по дням", mMinutes: "Минуты",
     secCalendar: "Календарь активности", calSub: "Последние 53 недели — время в приложении по дням, по ташкентскому времени",
@@ -156,7 +156,7 @@ const TXT = {
     sessionsSoon: "Подсчёт входов только начинается.",
     loadFailed: "Не удалось загрузить данные активности.", retry: "Повторить",
     rel: { now: "сейчас", m: "мин", h: "ч", d: "дн", fmt: (n, u) => `${n} ${u}` },
-    dur: (h, m) => (h ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${m} мин`),
+    dur: (h, m) => (h ? (m ? `${h}ч ${m}м` : `${h}ч`) : `${m}м`),
     locale: "ru-RU",
   },
   en: {
@@ -215,28 +215,6 @@ const ROLE_COLOR = {
 const fmtDur = (min, T) => {
   const total = Math.round(min || 0);
   return T.dur(Math.floor(total / 60), total % 60);
-};
-// A duration as figures + units: each figure sits with its unit as one pair
-// (figure in the line's weight, unit smaller and muted, on the same baseline),
-// and the pairs stand a little apart — so «73 soat 2 daq» reads as two
-// quantities, not one bold phrase.
-const Dur = ({ min, T, unitClass = "text-[0.62em]", gap = "gap-[0.4em]" }) => {
-  const parts = fmtDur(min, T).match(/\d+|[^\d]+/g) || [];
-  const pairs = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (/^\d+$/.test(parts[i])) pairs.push([parts[i], (parts[i + 1] || "").trim()]), i++;
-    else pairs.push(["", parts[i].trim()]);
-  }
-  return (
-    <span className={`inline-flex items-baseline whitespace-nowrap ${gap}`}>
-      {pairs.map(([n, u], i) => (
-        <span key={i} className="inline-flex items-baseline gap-[0.18em]">
-          {n && <span>{n}</span>}
-          {u && <span className={`${unitClass} font-medium`} style={{ color: "var(--text-3)" }}>{u}</span>}
-        </span>
-      ))}
-    </span>
-  );
 };
 const fmtDate = (iso, T) => {
   if (!iso) return "—";
@@ -597,7 +575,7 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
           footer={<Sparkline values={shownDaily.map((d) => d.active_users)} color={C_ACTIVE} />} />
 
         <StatCard icon={Clock} label={T.cardTime} accent={C_TIME}
-          value={<Dur min={kpis.avg_minutes_day} T={T} />} valueSuffix={T.perIdDay[by]}
+          value={fmtDur(kpis.avg_minutes_day, T)} valueSuffix={T.perIdDay[by]}
           secLabel={T.kTotalTime} secValue={kpis.total_hours != null ? T.hrs(kpis.total_hours) : "—"}
           footer={<Sparkline values={shownDaily.map((d) => d.minutes)} color={C_TIME} />} />
 
@@ -674,8 +652,8 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
               const maxT = topUsers[0].total_minutes || 1;
               const sub = isProfile ? roleLabel(u.role) : (u.profiles?.[0] ? tl(u.profiles[0].name) : "");
               return (
-                <div key={u.id} className="rounded-xl p-3.5 min-w-0 flex flex-col gap-3" style={{ background: "var(--bg-inner)" }}>
-                  <div className="flex items-center gap-2 min-w-0">
+                <div key={u.id} className="rounded-xl p-3 min-w-0" style={{ background: "var(--bg-inner)" }}>
+                  <div className="flex items-center gap-2 mb-2 min-w-0">
                     <RankChip n={i + 1} />
                     <ProfileAvatar name={tl(u.full_name)} colorKey={u.full_name} size={28}
                       profileKey={isProfile ? u.profile_key : undefined} photoVer={isProfile ? u.photo : undefined} />
@@ -684,25 +662,12 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                       {sub && <div className="text-[10px] truncate" style={{ color: "var(--text-4)" }}>{sub}</div>}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[22px] font-semibold tabular-nums leading-none tracking-tight" style={{ color: "var(--text-1)" }}>
-                      <Dur min={u.total_minutes} T={T} unitClass="text-[12px]" gap="gap-2" />
-                    </div>
-                    <div className="h-1 rounded-full mt-2.5 overflow-hidden" style={{ background: "var(--bg-card)" }}>
-                      <div className="h-full rounded-full" style={{ width: `${(u.total_minutes / maxT) * 100}%`, background: C_TIME }} />
-                    </div>
+                  <div className="text-lg font-bold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{fmtDur(u.total_minutes, T)}</div>
+                  <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: "var(--bg-card)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${(u.total_minutes / maxT) * 100}%`, background: C_TIME }} />
                   </div>
-                  <div className="grid grid-cols-2 gap-2 pt-2.5 mt-auto" style={{ borderTop: "1px solid var(--border)" }}>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-4)" }}>{T.colActiveDays}</div>
-                      <div className="text-[13px] font-semibold tabular-nums mt-0.5" style={{ color: "var(--text-2)" }}>{u.active_days}</div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-4)" }}>{T.colAvg}</div>
-                      <div className="text-[13px] font-semibold tabular-nums mt-0.5" style={{ color: "var(--text-2)" }}>
-                        <Dur min={u.avg_minutes} T={T} unitClass="text-[10px]" gap="gap-1" />
-                      </div>
-                    </div>
+                  <div className="text-[10px] mt-1.5" style={{ color: "var(--text-4)" }}>
+                    {u.active_days} {T.activeDaysWord} · {fmtDur(u.avg_minutes, T)}{T.perDayShort}
                   </div>
                 </div>
               );
@@ -813,8 +778,8 @@ function ActivityView({ by, dateFrom, dateTo, T }) {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell" style={{ color: "var(--text-2)" }}>{u.active_days}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ color: "var(--text-1)" }}><Dur min={u.total_minutes} T={T} unitClass="text-[11px]" /></td>
-                  <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell whitespace-nowrap" style={{ color: "var(--text-2)" }}><Dur min={u.avg_minutes} T={T} unitClass="text-[11px]" /></td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ color: "var(--text-1)" }}>{fmtDur(u.total_minutes, T)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDur(u.avg_minutes, T)}</td>
                   <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell" style={{ color: "var(--text-3)" }}>{u.sessions ?? "—"}</td>
                 </tr>
               );
