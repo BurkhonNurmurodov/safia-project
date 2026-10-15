@@ -3370,9 +3370,11 @@ number.
   bounded so it cannot become the bulk auto-trigger the user banned three times:
   shift 1, from one fixed date, sheet layer only. It runs on the leaders-sheet
   **Refresh** and returns `ai_queued` so the press states what it produced.
-  (From 2026-10-15 that Refresh lives only on the admin data-sources tab: the
-  Monitoring page's «Oxirgi yangilanish» pill and «Yangilash» button were
-  removed — the Google sheet no longer receives filings.)
+  (From 2026-10-15 nothing in the UI presses it: the Monitoring page's
+  «Oxirgi yangilanish» pill and «Yangilash» button and the admin
+  «Ma'lumotlar» tab's «Liderlar jadvali» row were removed — the Google sheet
+  no longer receives filings. `POST /admin/refresh-sheet/leaders` still
+  answers; nothing calls it, and the rows already stored stay the history.)
   `discover()` — the walk of everything ever filed — is still reachable only
   from «Tekshirish», which counts first and asks.
 - **The drain walks the automatic regime FIRST and in order**: oldest day →

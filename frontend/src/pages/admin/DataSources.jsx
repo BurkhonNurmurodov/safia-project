@@ -17,12 +17,15 @@ import { useToast } from "../../components/ui/Toast";
  * now live in their own destination; the verifix dropzone is gone (the
  * «Davomat» tab ingests one factory-wide export instead), so what remains here
  * is one job: say where each sheet lives and pull it.
+ *
+ * The leaders checklist sheet is no longer listed (2026-10-15): the Google
+ * Form stopped receiving filings, so its row could only re-read a sheet that
+ * no longer changes. Its stored rows stay the history the register reads.
  */
 
 const SOURCES = [
   { name: "source",       labelKey: "admin.source" },
   { name: "shift_report", labelKey: "admin.shiftReport" },
-  { name: "leaders",      labelKey: "admin.leadersSheet" },
   { name: "quality",      labelKey: "admin.qualitySheet" },
 ];
 
@@ -114,7 +117,6 @@ export default function DataSources() {
         .replace("{p}", data.production_rows ?? 0)
         .replace("{h}", data.headcount_rows ?? 0);
     }
-    if (name === "leaders") return t("admin.refreshDetail.leaders").replace("{n}", data.leader_rows ?? 0);
     if (name === "quality") return t("admin.refreshDetail.quality").replace("{n}", data.quality_rows ?? 0);
     // A refiled day imports LESS than its rows add up to (the last form wins,
     // see read_downtime_data) — say so, or the drop looks like lost data.
