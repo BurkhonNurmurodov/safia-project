@@ -3370,6 +3370,9 @@ number.
   bounded so it cannot become the bulk auto-trigger the user banned three times:
   shift 1, from one fixed date, sheet layer only. It runs on the leaders-sheet
   **Refresh** and returns `ai_queued` so the press states what it produced.
+  (From 2026-10-15 that Refresh lives only on the admin data-sources tab: the
+  Monitoring page's «Oxirgi yangilanish» pill and «Yangilash» button were
+  removed — the Google sheet no longer receives filings.)
   `discover()` — the walk of everything ever filed — is still reachable only
   from «Tekshirish», which counts first and asks.
 - **The drain walks the automatic regime FIRST and in order**: oldest day →
@@ -10520,8 +10523,8 @@ destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
   written for `/api/` alone let the Leaders page's Refresh button
   (`POST /admin/refresh-sheet/leaders`) straight through to the real sheet
   sync in a browser test, on BOTH ends, because the client and server guards
-  shared the same blind spot. `canRefresh` on that page is also `!examOn`
-  now, and «Perenaladka» drops off `/idle-cell`'s tab strip during an exam
+  shared the same blind spot. That button is gone from the page altogether
+  (2026-10-15), and «Perenaladka» drops off `/idle-cell`'s tab strip during an exam
   (real `/api/setup-times`, no sandbox twin) — belt and braces: the button
   disappears, and the door behind it is shut either way.
 - **A tab closed WHILE sitting an exam must not strand the real filters it

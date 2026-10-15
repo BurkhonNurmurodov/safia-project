@@ -6,7 +6,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, TrendingDown, Minus, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
-  AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
+  AlertTriangle, Users, User, RefreshCw, Loader2, Clock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
   ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash, CalendarCheck,
   ChevronRight, ChevronDown, Medal, Globe,
@@ -166,7 +166,6 @@ const TXT = {
     aiRecheckOne: "Bu vazifani qaytadan tekshirish",
     aiRunning: "Tekshirilmoqda…",
     aiFlagsN: "shubhali",
-    aiQueuedN: "{n} ta yangi dalil AI tekshiruviga yuborildi",
     aiNote: "AI xulosasi — yordamchi belgi, yakuniy hukm emas.",
     tabAi: "AI tekshiruvi",
     aiBall: "Hammasi", aiB_forged: "Soxta dalil", aiB_undone: "Bajarilmagan",
@@ -267,8 +266,6 @@ const TXT = {
     searchPh: "Lider qidirish…", bandAll: "Barchasi", noMatch: "Filtrlarga mos hisobot yo'q",
     noMatchHint: "Tanlangan davr yoki filtrlar {n} ta hisobotni yashiryapti.",
     resetFilters: "Davr va filtrlarni tozalash",
-    refresh: "Yangilash", refreshing: "Yangilanmoqda…", refreshed: "Yangilandi",
-    lastSynced: "Oxirgi yangilanish", never: "hech qachon",
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
   },
   uz_cyrl: {
@@ -350,7 +347,6 @@ const TXT = {
     aiRecheckOne: "Бу вазифани қайтадан текшириш",
     aiRunning: "Текширилмоқда…",
     aiFlagsN: "шубҳали",
-    aiQueuedN: "{n} та янги далил AI текширувига юборилди",
     aiNote: "AI хулосаси — ёрдамчи белги, якуний ҳукм эмас.",
     tabAi: "AI текшируви",
     aiBall: "Ҳаммаси", aiB_forged: "Сохта далил", aiB_undone: "Бажарилмаган",
@@ -451,8 +447,6 @@ const TXT = {
     searchPh: "Лидер қидириш…", bandAll: "Барчаси", noMatch: "Филтрларга мос ҳисобот йўқ",
     noMatchHint: "Танланган давр ёки филтрлар {n} та ҳисоботни яширяпти.",
     resetFilters: "Давр ва филтрларни тозалаш",
-    refresh: "Янгилаш", refreshing: "Янгиланмоқда…", refreshed: "Янгиланди",
-    lastSynced: "Охирги янгиланиш", never: "ҳеч қачон",
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
   },
   ru: {
@@ -534,7 +528,6 @@ const TXT = {
     aiRecheckOne: "Проверить эту задачу заново",
     aiRunning: "Проверяется…",
     aiFlagsN: "сомнительных",
-    aiQueuedN: "Новых подтверждений отправлено на проверку ИИ: {n}",
     aiNote: "Вывод ИИ — подсказка, а не окончательное решение.",
     tabAi: "Проверка ИИ",
     aiBall: "Все", aiB_forged: "Подделка", aiB_undone: "Не выполнено",
@@ -635,8 +628,6 @@ const TXT = {
     searchPh: "Поиск лидера…", bandAll: "Все", noMatch: "Нет отчётов под фильтры",
     noMatchHint: "Выбранный период или фильтры скрывают отчётов: {n}.",
     resetFilters: "Сбросить период и фильтры",
-    refresh: "Обновить", refreshing: "Обновление…", refreshed: "Обновлено",
-    lastSynced: "Обновлено", never: "никогда",
     photoFailed: "Не удалось загрузить фото", retry: "Повторить",
   },
   en: {
@@ -718,7 +709,6 @@ const TXT = {
     aiRecheckOne: "Re-check this task",
     aiRunning: "Reviewing…",
     aiFlagsN: "flagged",
-    aiQueuedN: "{n} new proofs sent to AI review",
     aiNote: "The AI verdict is a hint, not a final ruling.",
     tabAi: "AI review",
     aiBall: "All", aiB_forged: "Forged", aiB_undone: "Not done",
@@ -819,8 +809,6 @@ const TXT = {
     searchPh: "Search leader…", bandAll: "All", noMatch: "No submissions match the filters",
     noMatchHint: "The period or filters are hiding {n} submission(s).",
     resetFilters: "Clear period and filters",
-    refresh: "Refresh", refreshing: "Refreshing…", refreshed: "Refreshed",
-    lastSynced: "Last updated", never: "never",
     photoFailed: "Failed to load image", retry: "Retry",
   },
 };
@@ -2622,15 +2610,6 @@ export default function Leaders() {
   // the page shows only their own monitoring.
   const isLeader = auth?.role === "leader" && !seesAllLeaders;
   const isAdmin = auth?.role === "admin";
-  // The refresh button is shown to every profile that can open this page — the
-  // backend allows the "leaders" sheet re-sync for anyone with page access, and
-  // each still only reads their own scoped rows afterwards. The sheet is still
-  // the history behind both shifts, so both locked pages keep it.
-  // Hidden mid-exam: it re-syncs the REAL leaders sheet (`POST
-  // /admin/refresh-sheet/leaders`), which the sandbox has no twin for — the
-  // write guard would refuse the call anyway, but a button that visibly does
-  // nothing is worse than no button.
-  const canRefresh = !examOn;
   const pageTitle = T.title;
 
   // Filters persist across visits under the pre-split "leaders" prefix; the
@@ -2896,34 +2875,9 @@ export default function Leaders() {
   // seen by a viewer whose scope spans shifts. A supervisor's unit and a
   // leader's own rows are single-shift by construction — the chip is noise.
   const showShiftChips = fShift == null && !isSupervisor && !isLeader;
-  const lastSynced = fmtDateTime(data?.last_synced);
 
-  // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [justSynced, setJustSynced] = useState(false);
-  // How many new proof rows this Refresh handed to the AI. Shift 1 files through
-  // the Google form, so Refresh IS the moment their photos become reviewable —
-  // the queueing has always happened here, silently, which left "12 new reports
-  // went to review" indistinguishable from "the reviewer is not running".
-  const [aiQueued, setAiQueued] = useState(null);
-  const refreshMut = useMutation({
-    mutationFn: () => api.post("/admin/refresh-sheet/leaders").then((r) => r.data),
-    onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["leaders"] });
-      qc.invalidateQueries({ queryKey: ["leader-standing"] });
-      setJustSynced(true);
-      setTimeout(() => setJustSynced(false), 2500);
-      if (d?.ai_queued > 0) {
-        setAiQueued(d.ai_queued);
-        // The progress strip is where the work becomes visible from here on —
-        // light it up now rather than on its next poll.
-        qc.invalidateQueries({ queryKey: ["leader-ai-progress"] });
-        qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
-        setTimeout(() => setAiQueued(null), 8000);
-      }
-    },
-  });
 
   // Verdict prose for the ONE report whose detail modal is open. Keyed on the
   // uid so reopening a report reuses the cached answer. Every viewer asks — the
@@ -3373,11 +3327,11 @@ export default function Leaders() {
 
   const hasData = filtered.length > 0;
   // Anything in flight that can still put rows on the page counts as loading —
-  // the first fetch, a background refetch, and the on-page re-sync. With nothing
+  // the first fetch and a background refetch. With nothing
   // to show yet the page renders skeletons; "Ma'lumot yo'q" is reserved for a
   // FINISHED fetch that genuinely has no rows, so a slow load never reads as an
   // empty period. Once rows are on screen a refetch leaves them standing.
-  const isBusy = isLoading || isFetching || refreshMut.isPending;
+  const isBusy = isLoading || isFetching;
   const showLoading = isBusy && !hasData && !isError;
 
   // Headline number: the mean Reyting of everyone in the period, so it reads as
@@ -4080,34 +4034,6 @@ export default function Leaders() {
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{pageTitle}</h2>
-          {/* phones can't spare a whole pill row — updated time rides under the title */}
-          {tab === "monitor" && (
-          <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }} title={lastSynced || T.never}>
-            <CalendarClock size={12} style={{ color: "var(--brand-text)" }} />
-            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
-          </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {tab === "monitor" && (
-          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-            <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
-            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
-          </span>
-          )}
-          {canRefresh && tab === "monitor" && (
-            <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
-              aria-label={T.refresh} title={T.refresh}
-              className="inline-flex items-center justify-center gap-1.5 h-[38px] min-w-[38px] px-3 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
-              style={justSynced
-                ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
-                : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
-              {refreshMut.isPending ? <Loader2 size={14} className="animate-spin" />
-                : justSynced ? <CheckCircle2 size={14} />
-                : <RefreshCw size={14} />}
-              <span className="hidden sm:inline">{refreshMut.isPending ? T.refreshing : justSynced ? T.refreshed : T.refresh}</span>
-            </button>
-          )}
         </div>
       </div>
   );
@@ -4331,29 +4257,12 @@ export default function Leaders() {
     </>
   );
 
-  // The run itself — the queued note and the progress strip — lives on the AI
+  // The run itself — the progress strip — lives on the AI
   // tab and nowhere else. A run can be STARTED from the register, but watching
   // it is AI work, and a permanent band of run chrome above every other tab's
   // charts is noise for the people who came to read those charts. The tab's
   // own badge is what tells them there is something to look at.
-  const aiRunStrip = isAdmin ? (
-    <>
-      {/* Shift 1's automatic hand-off, reported at the moment it happens. It
-          sits directly above the progress strip because that strip is what
-          carries the work from here — the note says «12 went in», the bar
-          underneath shows them being judged. Transient by design: it is
-          feedback for a press, not a standing statistic. */}
-      {aiQueued > 0 && (
-        <div className="mb-3 rounded-xl px-3 py-2 flex items-center gap-2 text-xs"
-          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)",
-                   color: "var(--brand-text)" }} role="status">
-          <Sparkles size={14} className="flex-shrink-0" />
-          <span className="tabular-nums">{T.aiQueuedN.replace("{n}", aiQueued.toLocaleString())}</span>
-        </div>
-      )}
-      <AiProgress showIdle />
-    </>
-  ) : null;
+  const aiRunStrip = isAdmin ? <AiProgress showIdle /> : null;
 
   if (tab === "checklist") {
     return (
@@ -4444,11 +4353,6 @@ export default function Leaders() {
       {headerBar}
       {pageChrome}
 
-      {refreshMut.isError && (
-        <div className="rounded-2xl p-3 text-xs mb-3" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
-          {refreshMut.error?.response?.data?.detail || String(refreshMut.error)}
-        </div>
-      )}
 
       {/* Where the reader stands — first, because it is the first thing a
           leader or a brigadir opens this page to find out. A leader has no
