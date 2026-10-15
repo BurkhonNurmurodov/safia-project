@@ -76,7 +76,7 @@ export default function PlanFulfillment() {
   }, [params.date_from, params.date_to, shift, brigSel, leadSel, cellSel, prodSel]);
   const reqParams = useFactoryParams(base);
 
-  const { data, isPending, isFetching, isError, refetch } = useQuery({
+  const { data, isPending, isPlaceholderData, isError, refetch } = useQuery({
     queryKey: ["plan-analysis", reqParams],
     queryFn: () => api.get("/api/plan-fulfillment/analysis", { params: reqParams }).then((r) => r.data),
     enabled: ready,
@@ -328,7 +328,11 @@ export default function PlanFulfillment() {
             ? <Button size="sm" variant="secondary" onClick={clearPicks}>{t("plan.clearPicks")}</Button> : null}
         />
       ) : (
-        <div style={{ opacity: isFetching ? 0.6 : 1, transition: "opacity 150ms" }} aria-busy={isFetching}>
+        // Dimmed only while the figures on screen belong to the PREVIOUS filters
+        // (keepPreviousData). A background refetch of the same answer (window
+        // focus, reconnect) leaves it at full colour — it dimmed the whole page
+        // for as long as that refetch took.
+        <div style={{ opacity: isPlaceholderData ? 0.6 : 1, transition: "opacity 150ms" }} aria-busy={isPlaceholderData}>
           {tab === "products" ? (
             <PlanProducts data={data} unitName={unitName} cellById={cellById} />
           ) : tab === "cells" ? (
