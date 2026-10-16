@@ -9132,6 +9132,97 @@ no event; the route is the share sheet).
   `vite-plugin-pwa` would have added a peer-dependency risk to a pipeline whose
   `npm ci` is a deploy.
 
+## The app works OFFLINE on what it loaded last (`offlineCache`, `connectivity`)
+
+From **2026-10-16** (the operator: «save caches like Instagram does — it should
+show the things loaded when it was online even if there's no single connection
+to the internet») every page's last answer is kept ON THE DEVICE and shown
+when the server cannot be reached, and the app itself opens with no connection
+on the identity it was last signed in with. Reads only: nothing a person
+changes is queued — a write made offline fails and says so.
+
+- **`utils/offlineCache.js` is THE store** — one IndexedDB (`safia-cache`,
+  store `rows`), two kinds of row. `queryPersister` is the query client's
+  default `persister` (App.jsx), so EVERY `useQuery` takes part without
+  knowing it: a successful answer is written (one row per query, deferred
+  past the paint, at most one write per key per 5 s), and a query that mounts
+  with nothing in memory is first answered from the device — with the stored
+  answer's own `dataUpdatedAt`, so it re-reads from the server at once when
+  that makes it stale — exactly as react-query already treats data a page
+  still holds in memory. Deliberately not the TanStack persist plugin, which
+  re-serialises the WHOLE cache on every change (the /leaders register alone
+  is ~20 MB); here one query moving costs one row.
+- **Rows are SCOPED to the profile** (`setCacheScope` / `adoptCacheScope`
+  from the session payload; `profile_key`, else role · ref · account) — a
+  wallet switch or a colleague on a shared PC is never handed the previous
+  person's pages — and **signing out clears them** (`clearCacheScope`, both
+  doors in `AuthContext.logout`). An impersonated «open as» tab has no scope
+  and caches nothing. **Nothing is stored or restored during an exam**: the
+  sandbox is reached under the SAME query keys.
+- **A row is trusted for 7 days and for the MINOR it was written under** —
+  the version is in the KEY (`q|4.285|<scope>|<queryHash>`), because a
+  payload's shape moves with a release and a page handed last week's shape can
+  crash on a field it expects. Other versions' rows are purged by key, values
+  never loaded. Only JSON is stored (a Blob — photos, workbooks — is not);
+  `meta: { persist: false }` opts a query out; `DENY` lists the keys that must
+  never come from yesterday (`build-info`, `exam-me`, `assistant`).
+  `cacheable(query)` is that test on its own — the band counts the sections
+  still waiting offline over exactly these, so a denied key never reads as a
+  section the reader is missing.
+- **Every read is BOUNDED (2 s) and the first failure turns the cache off for
+  the session**: the read sits inside the query's own fetch, and an IndexedDB
+  that hangs (a WebView in a locked-down mode) may cost one slow request,
+  never every page. No IndexedDB at all = no cache, nothing else changes.
+- **The boot survives offline too** — the browser PWA (the service worker
+  holds the shell) and the Android app (the pages are in the APK). The answer
+  of `/api/auth/web/session` is kept as the BOOT payload (`saveBootPayload`,
+  the token itself never stored), keyed by the token's claims (role · ref ·
+  account — stable across the app's daily renewals and a re-issue) and
+  re-written after every renewal. When the session check gets no answer (or a
+  5xx past the restart wait), `AuthContext` opens on that payload, marks the
+  app down, and re-asks the server the moment the connection is back
+  (`recheckSession`: a 401/403 then signs out as it always did). No payload
+  for this token → the «Aloqa yo'q» screen, as before. Telegram is unchanged
+  at boot (a mini app cannot load its shell offline) but its pages restore
+  and persist like everybody's.
+- **`utils/connectivity.js` is THE answer to «can we reach the server»** —
+  `navigator.onLine` cannot give it (true on a Wi-Fi with no internet). A
+  request that fails with NO answer (`isNetworkError`: axios ERR_NETWORK, a
+  fetch that threw — never a cancel) marks the app DOWN (`reason` network),
+  any answer of any status marks it UP (api.js interceptors); while down,
+  `/health` is probed every 10 s and at once on `online`, on focus and on the
+  page returning to the screen (/health is a server path for the service
+  worker and the Android bundle alike). A 5xx at BOOT is `reason: server`,
+  lifted only by an answer < 500 — nginx's own 503 fallback must not read as
+  the server being back.
+- **The query client's rule (App.jsx)**: a network failure is retried for as
+  long as it lasts (`retry: true` for it, every `OFFLINE_RETRY_MS` = 5 s while
+  down, the usual backoff otherwise) and never becomes an error — a page
+  keeps what it has, one with nothing keeps its skeleton; any other failure
+  keeps the single retry it always had. **`networkMode: "always"`** on queries
+  AND mutations: react-query's own pause follows `navigator.onLine`, a paused
+  pending query reads as «loaded, empty» to the pages, and a paused mutation
+  would FIRE LATER when the connection returns — an approval replayed behind
+  the person's back. Back online after ≥ 3 s down, every active query is
+  invalidated (a query sleeping between retries is cancelled and sent now).
+- **`components/layout/OfflineBand.jsx`** sits under the header, under
+  `ExamBand`: «Internet yo'q» / «Server bilan aloqa yo'q» · since HH:MM ·
+  «oxirgi yuklangan ma'lumotlar ko'rsatilmoqda — o'zgartirishlar hozircha
+  saqlanmaydi» · «N ta bo'lim hali yuklanmagan» (active queries still pending
+  with nothing cached) · «Qayta urinish» (a probe now). Green «Aloqa tiklandi
+  — ma'lumotlar yangilanmoqda» for 3.5 s on recovery. A band, not a Toast: a
+  state the reader keeps in mind, and the top right holds the update prompt.
+- **Consequences to know.** Online, a page now opens on its LAST data and
+  refreshes behind it (stale-while-revalidate across reloads, not only within
+  the 5-minute in-memory window) — a number can be a minute old for the
+  second it takes to refetch. A page that fetches with its own `useEffect` +
+  `api.get` (a dozen call sites) is not cached. Pages that render their error
+  state ahead of their data never reach it offline (no error is raised), but
+  a long outage with the server ANSWERING 5xx still ends in the error state
+  it always did. Avatars and photos are not cached here (Blobs).
+- Not built, by decision: queuing writes for later (dangerous on approvals and
+  attendance), a Web Worker for the serialisation (CSP), caching photos.
+
 ## The Android app (`android/`)
 
 From **2026-09-28** (the operator's go-ahead) the platform ships an Android app

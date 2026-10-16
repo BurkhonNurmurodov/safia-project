@@ -6086,6 +6086,13 @@ const t = {
     "auth.checkAgain":   "Qayta tekshirish",
     "auth.offlineTitle": "Aloqa yo'q",
     "auth.offlineMsg":   "Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.",
+    // ── Offline: the band under the header (components/layout/OfflineBand.jsx) ──
+    "offline.net": "Internet yo'q",
+    "offline.server": "Server bilan aloqa yo'q",
+    "offline.cached": "Oxirgi yuklangan ma'lumotlar ko'rsatilmoqda — o'zgartirishlar hozircha saqlanmaydi",
+    "offline.pending": "{n} ta bo'lim hali yuklanmagan",
+    "offline.restored": "Aloqa tiklandi — ma'lumotlar yangilanmoqda",
+    "offline.since": "{t} dan beri",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Rasmiy Xodimlar soni va Verifix Xodimlar soni",
@@ -13890,6 +13897,13 @@ const t = {
     "auth.checkAgain":   "Қайта текшириш",
     "auth.offlineTitle": "Алоқа йўқ",
     "auth.offlineMsg":   "Серверга уланиб бўлмади. Интернет алоқасини текшириб, қайта уриниб кўринг.",
+    // ── Offline: the band under the header (components/layout/OfflineBand.jsx) ──
+    "offline.net": "Интернет йўқ",
+    "offline.server": "Сервер билан алоқа йўқ",
+    "offline.cached": "Охирги юкланган маълумотлар кўрсатилмоқда — ўзгартиришлар ҳозирча сақланмайди",
+    "offline.pending": "{n} та бўлим ҳали юкланмаган",
+    "offline.restored": "Алоқа тикланди — маълумотлар янгиланмоқда",
+    "offline.since": "{t} дан бери",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Расмий Ходимлар сони ва Verifix Ходимлар сони",
@@ -21694,6 +21708,13 @@ const t = {
     "auth.checkAgain":   "Проверить снова",
     "auth.offlineTitle": "Нет связи",
     "auth.offlineMsg":   "Не удалось связаться с сервером. Проверьте интернет-соединение и попробуйте ещё раз.",
+    // ── Offline: the band under the header (components/layout/OfflineBand.jsx) ──
+    "offline.net": "Нет интернета",
+    "offline.server": "Нет связи с сервером",
+    "offline.cached": "Показаны последние загруженные данные — изменения пока не сохраняются",
+    "offline.pending": "Разделов ещё не загружено: {n}",
+    "offline.restored": "Связь восстановлена — данные обновляются",
+    "offline.since": "с {t}",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Официальная числ. и Verifix числ.",
@@ -29498,6 +29519,13 @@ const t = {
     "auth.checkAgain":   "Check again",
     "auth.offlineTitle": "No connection",
     "auth.offlineMsg":   "We couldn't reach the server. Check your internet connection and try again.",
+    // ── Offline: the band under the header (components/layout/OfflineBand.jsx) ──
+    "offline.net": "No internet connection",
+    "offline.server": "The server cannot be reached",
+    "offline.cached": "Showing the last data loaded — changes are not saved for now",
+    "offline.pending": "{n} sections not loaded yet",
+    "offline.restored": "Back online — refreshing the data",
+    "offline.since": "since {t}",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Official HC vs Verifix HC",

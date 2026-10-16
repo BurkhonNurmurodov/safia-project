@@ -14,6 +14,7 @@ import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
 import ServerRestartNotice from "./ServerRestartNotice";
 import ExamBand from "../exam/ExamBand";
+import OfflineBand from "./OfflineBand";
 import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
@@ -707,6 +708,9 @@ export default function Layout({ children, title, subtitle }) {
         </header>
         {/* «Imtihon»: while the exam mode is on, nothing on these pages is real. */}
         <ExamBand />
+        {/* No connection: the pages show what they loaded last, and this says so
+            (utils/offlineCache.js, utils/connectivity.js). */}
+        <OfflineBand />
 
         {/* Content viewport. Layout remounts on every route change, so the
             .page-enter wrapper replays its fade-up once per navigation — a

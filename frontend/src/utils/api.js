@@ -4,6 +4,7 @@ import { clearToken, getToken, isWebSession } from "./session";
 import { noteServerHeaders } from "./compat";
 import { noteStart, noteEnd } from "./requestLog";
 import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, isServerRestarting, sleep as waitMs } from "./serverRestart";
+import { isNetworkError, noteAnswer, noteNetworkFailure } from "./connectivity";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "",
@@ -241,6 +242,8 @@ api.interceptors.response.use(
   (response) => {
     noteEnd(response.config, response);
     noteServerHeaders(response.headers);
+    // Any answer proves the connection (utils/connectivity.js).
+    noteAnswer(response.status);
     if (isServerRestarting() && !restartKind(response)) setServerRestarting(false);
     // A sandbox write the exam may be waiting on — the strip re-checks the task.
     const m = String(response.config?.method || "get").toLowerCase();
@@ -253,6 +256,11 @@ api.interceptors.response.use(
   (error) => {
     noteEnd(error.config, error.response, axios.isCancel(error));
     noteServerHeaders(error.response?.headers);
+    // Where the request ended: at the server (any status is an answer) or
+    // nowhere (the connection) — the band under the header and the retry rule
+    // of the query client both read this (utils/connectivity.js).
+    if (error.response) noteAnswer(error.response.status);
+    else if (isNetworkError(error)) noteNetworkFailure();
     if (shouldWaitForRestart(error.config, error.response)) {
       return retryAfterRestart(error.config);
     }

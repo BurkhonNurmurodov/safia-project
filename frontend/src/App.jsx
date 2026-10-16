@@ -2,6 +2,8 @@ import { lazy, Suspense } from "react";
 import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, sleep } from "./utils/serverRestart";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { isNetworkError, isDown, subscribeConnectivity, OFFLINE_RETRY_MS } from "./utils/connectivity";
+import { queryPersister } from "./utils/offlineCache";
 import { FilterProvider } from "./context/FilterContext";
 import { FactoryProvider } from "./context/FactoryContext";
 import { ExamProvider } from "./context/ExamContext";
@@ -181,8 +183,46 @@ import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/p
 import { useTranslit } from "./utils/transliterate";
 import { inTelegram } from "./utils/session";
 
+// A request that failed for want of a CONNECTION is tried again for as long
+// as the connection is down (utils/connectivity.js) — every OFFLINE_RETRY_MS
+// while the app knows it is offline, with the usual backoff otherwise — and
+// never becomes an error: a page keeps showing what it has, and one that has
+// nothing yet keeps its skeleton rather than printing an empty table as
+// «nothing here». Any other failure keeps the one retry it always had.
+// `networkMode: "always"` is what makes that the ONLY rule: react-query's own
+// pause-while-offline follows `navigator.onLine`, which is true on a Wi-Fi
+// with no internet behind it, and a PAUSED pending query reads as «loaded,
+// empty» to every page. Mutations are "always" too — a change made offline
+// fails and says so; it is never queued and fired later behind the person's
+// back.
+// `persister`: every answer is kept on the device and served back the first
+// time a query mounts with nothing in memory (utils/offlineCache.js) — the
+// pages open on their last data at once, offline too, and refresh behind it.
+const backoff = (count) => Math.min(1000 * 2 ** count, 30_000);
 const qc = new QueryClient({
-  defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      retry: (count, err) => (isNetworkError(err) ? true : count < 1),
+      retryDelay: (count, err) => (isNetworkError(err) && isDown() ? OFFLINE_RETRY_MS : backoff(count)),
+      networkMode: "always",
+      persister: queryPersister,
+    },
+    mutations: { networkMode: "always" },
+  },
+});
+
+// Back online after a real gap: every page on screen re-reads at once (a
+// query still sleeping between two retries is cancelled and sent now), so the
+// data the band called «last loaded» is replaced within a second of the
+// connection returning, not at each query's own next attempt.
+let downSince = 0;
+subscribeConnectivity((s) => {
+  if (s.down) { downSince = s.since; return; }
+  if (!downSince) return;
+  const lasted = Date.now() - downSince;
+  downSince = 0;
+  if (lasted >= 3_000) qc.invalidateQueries({ refetchType: "active" }).catch(() => {});
 });
 
 function AuthGate({ children }) {

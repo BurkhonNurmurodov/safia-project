@@ -10,6 +10,10 @@ import {
 import { keepAppSignedIn } from "../utils/appSession";
 import { clearPush, registerPush } from "../utils/androidPush";
 import { hedged } from "../utils/hedge";
+import {
+  adoptCacheScope, clearCacheScope, dropBootPayload, getCacheScope, loadBootPayload, saveBootPayload,
+} from "../utils/offlineCache";
+import { isDown, markDown, subscribeConnectivity } from "../utils/connectivity";
 
 const AuthContext = createContext(null);
 
@@ -50,6 +54,33 @@ function exchangeImpersonation(code) {
     impersonateExchange = api.post("/api/auth/web/impersonate", { code });
   }
   return impersonateExchange;
+}
+
+/**
+ * The app opened OFFLINE on the payload this token was last answered with
+ * (utils/offlineCache.js). The server is asked again the moment the connection
+ * is back: its answer replaces the cached identity, and its NO (401 / 403 —
+ * revoked, expired, the profile gone) signs out exactly as it would have at
+ * boot. Any other failure — still unreachable, a 5xx — is asked again later.
+ */
+function recheckSession(accept) {
+  const ask = () => api.get("/api/auth/web/session")
+    .then((r) => accept(r.data))
+    .catch((e) => {
+      const status = e?.response?.status;
+      if (status === 401 || status === 403) {
+        clearToken();
+        window.location.reload();
+        return;
+      }
+      setTimeout(() => recheckSession(accept), 30_000);
+    });
+  if (!isDown()) { ask(); return; }
+  const unsub = subscribeConnectivity((s) => {
+    if (s.down) return;
+    unsub();
+    ask();
+  });
 }
 
 export function AuthProvider({ children }) {
@@ -127,36 +158,60 @@ export function AuthProvider({ children }) {
       keepAppSessionStored();
       keepAppProfilesStored();
       if (getToken() && isWebSession()) {
+        const acceptSession = (data) => {
+          // A re-issued token: the one held here still named the person as
+          // they were at sign-in (renamed, moved to another unit), and every
+          // API call is answered from the TOKEN, not from this payload. Same
+          // store, same lifetime — only the claims move. Swapped before
+          // setAuth, so no page asks with the stale one; rememberActive
+          // below then writes it into this profile's wallet row.
+          if (data?.token) {
+            setToken(data.token, { remember: isRemembered(), web: true, tab: isTabSession() });
+          }
+          // The pages' offline cache is kept per profile, and this payload is
+          // what lets the NEXT open happen with no connection at all
+          // (utils/offlineCache.js). Never for an impersonated tab.
+          if (!isTabSession()) {
+            adoptCacheScope(data);
+            saveBootPayload(getToken(), data);
+          }
+          setAuth(data);
+          setWebSession(true);
+          rememberActive(data);
+          // The phone's notifications ask with this session — after any
+          // renewal, so the app holds the token that lasts. The boot payload
+          // is written again then too, under the renewed token.
+          keepAppSignedIn().then(() => {
+            if (!isTabSession()) saveBootPayload(getToken(), data);
+            registerPush(data);
+          });
+        };
         // Asked again if it hangs (utils/hedge.js): the whole app waits on it.
         hedged((signal) => api.get("/api/auth/web/session", { signal }))
-          .then((r) => {
-            // A re-issued token: the one held here still named the person as
-            // they were at sign-in (renamed, moved to another unit), and every
-            // API call is answered from the TOKEN, not from this payload. Same
-            // store, same lifetime — only the claims move. Swapped before
-            // setAuth, so no page asks with the stale one; rememberActive
-            // below then writes it into this profile's wallet row.
-            if (r.data?.token) {
-              setToken(r.data.token, { remember: isRemembered(), web: true, tab: isTabSession() });
-            }
-            setAuth(r.data);
-            setWebSession(true);
-            rememberActive(r.data);
-            // The phone's notifications ask with this session — after any
-            // renewal, so the app holds the token that lasts.
-            keepAppSignedIn().then(() => registerPush(r.data));
-          })
-          .catch((e) => {
+          .then((r) => acceptSession(r.data))
+          .catch(async (e) => {
             // Only the server's NO ends a session: 401 (expired, revoked,
             // disabled) or 403 (the profile is gone). No connection, a timeout
             // or a 5xx says nothing about the token — dropping it there signed a
-            // phone out every time the app opened without signal. Keep it and
-            // offer a retry.
+            // phone out every time the app opened without signal. Keep it, and
+            // open on the identity this token was last answered with, if this
+            // device holds it: the pages then show what they loaded last
+            // (utils/offlineCache.js) and the server is asked again the moment
+            // it can be reached. With nothing cached, offer a retry.
             const status = e?.response?.status;
             if (status === 401 || status === 403) {
               clearToken();
               setWebSession(false);
               setAuth({ status: "web_login" });
+              return;
+            }
+            const cached = isTabSession() ? null : await loadBootPayload(getToken());
+            if (cached) {
+              markDown(e?.response ? "server" : "network");
+              adoptCacheScope(cached);
+              setAuth(cached);
+              setWebSession(true);
+              recheckSession(acceptSession);
             } else {
               setAuth({ status: "error" });
             }
@@ -207,6 +262,9 @@ export function AuthProvider({ children }) {
       .then((authRes) => {
         const data = authRes.data;
         if (data.token) setToken(data.token, { remember: true, web: false });
+        // The pages' offline cache is kept per profile (utils/offlineCache.js).
+        // No boot payload here: a mini app cannot load its shell offline.
+        adoptCacheScope(data);
         setAuth(data);
       })
       .catch(() => setAuth({ status: "error" }))
@@ -221,7 +279,10 @@ export function AuthProvider({ children }) {
     if (!webSession || !inAndroidApp()) return undefined;
     const onReturn = () => {
       if (document.visibilityState === "visible") {
-        keepAppSignedIn().then(() => registerPush(authRef.current));
+        keepAppSignedIn().then(() => {
+          if (!isTabSession()) saveBootPayload(getToken(), authRef.current);
+          registerPush(authRef.current);
+        });
       }
     };
     document.addEventListener("visibilitychange", onReturn);
@@ -290,6 +351,11 @@ export function AuthProvider({ children }) {
       return;
     }
     if (webSession) {
+      // What this profile loaded stays on no shared PC: its cached pages and
+      // the payload that would open the app as them offline go first (each
+      // bounded, so a slow store cannot hold the sign-out).
+      await clearCacheScope(getCacheScope());
+      await dropBootPayload(getToken());
       const active = auth?.web_login?.username;
       if (active) removeProfile(active);
       const next = listProfiles()[0];
@@ -304,6 +370,7 @@ export function AuthProvider({ children }) {
       window.location.href = "/";
       return;
     }
+    await clearCacheScope(getCacheScope());
     try {
       await api.delete("/api/auth/me");
     } catch (_) {}
@@ -313,6 +380,8 @@ export function AuthProvider({ children }) {
   /** Accept a successful password login and enter the app. */
   function webLogin(data, remember) {
     if (data?.token) setToken(data.token, { remember, web: true });
+    adoptCacheScope(data);
+    saveBootPayload(getToken(), data);
     setWebSession(true);
     setAuth(data);
     rememberActive(data, remember);
@@ -330,6 +399,7 @@ export function AuthProvider({ children }) {
   function addWebProfile(data, remember) {
     if (!data?.token) return;
     setToken(data.token, { remember, web: true });
+    saveBootPayload(data.token, data);
     saveProfile({
       username: data?.web_login?.username,
       full_name: data.full_name,
@@ -384,6 +454,7 @@ export function AuthProvider({ children }) {
     // just revoked; leaving it there would demand the new password the moment
     // the person switched away and back.
     rememberActive(auth);
+    if (!isTabSession()) saveBootPayload(token, auth);
   }
 
   // Swap the JWT for another approved role; a full reload re-fetches
