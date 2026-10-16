@@ -139,6 +139,7 @@ const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Kelish = lazyWithReload(() => import("./pages/Kelish"));
 const Turnover = lazyWithReload(() => import("./pages/Turnover"));
+const ForeignObjects = lazyWithReload(() => import("./pages/ForeignObjects"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
 const Education = lazyWithReload(() => import("./pages/Education"));
 const Exam = lazyWithReload(() => import("./pages/Exam"));
@@ -575,6 +576,7 @@ function AppWithLang() {
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/kelish" element={<AuthGate><RequirePage page="kelish"><Kelish /></RequirePage></AuthGate>} />
             <Route path="/turnover" element={<AuthGate><RequirePage page="turnover"><Turnover /></RequirePage></AuthGate>} />
+            <Route path="/foreign-objects" element={<AuthGate><RequirePage page="foreign-objects"><ForeignObjects /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
             {/* The two ARC pages are ONE from 2026-10-05 — /arc reads both apps. */}
             <Route path="/arc-legacy" element={<Navigate to="/arc" replace />} />

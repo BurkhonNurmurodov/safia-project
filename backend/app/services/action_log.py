@@ -417,6 +417,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/turnover/close",                       "leader_review", "turnover.month_closed"),
     (("POST",),   "/api/turnover/compute",                     "leader_review", "turnover.month_computed"),
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
+    (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
+    (("POST",),   "/api/foreign-objects/export.xlsx",          "sync_export", "export.foreign_objects"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never
     # files a lab document as a real one. Specific shapes stay above generic.

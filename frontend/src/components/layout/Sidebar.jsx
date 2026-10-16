@@ -14,7 +14,7 @@ import {
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, IdCard, Briefcase, CalendarRange,
-  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, UserMinus,
+  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, UserMinus, Microscope,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -66,6 +66,8 @@ const ALL_LINKS = [
   { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
   // «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (2nd of 5), from Verifix.
   { to: "/turnover", page: "turnover", key: "nav.turnover", icon: UserMinus, group: "leaders" },
+  // «Yot jismlar» — the leaders' foreign-objects KPI (3rd of 5), from the Quality register.
+  { to: "/foreign-objects", page: "foreign-objects", key: "nav.foreignObjects", icon: Microscope, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },

@@ -2760,6 +2760,46 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   (one leaver > 85%). Most «not on /cells» units of that copy were created by the
   4 Oct cell sync; the dispatch zones and freezers were not.
 
+## «Yot jismlar» — the leaders' foreign-objects KPI (`/foreign-objects`)
+
+From **2026-10-16** (the operator: «build the foreign objects KPI from the
+Quality register» — the 3rd of 5) HR's «Инородные предметы» is computed month
+by month from the Quality register. Page key `foreign-objects`, **admin-only
+until the operator opens it**; the refresh is admin-only in the endpoint.
+`services/foreign_objects.py` is THE rule, `foreign_objects_export.py` the
+workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
+`pages/foreignObjectsText.js`, four languages) and `components/foreign/`.
+
+- **The rule is HR's July file** (decoded 2026-10-16: its SUMIFS was broken
+  and every count was typed by hand; all 44 matched a manual count of the
+  complaints sheet, which is a copy of the Quality register's «инородный
+  предмет» rows): per cell, the month's complaints of `ctype == "foreign"`
+  with the cell AT FAULT (`fault` True), the «Номер виновного цеха» resolved
+  to a /cells cell (`cell_lookup`'s zero-padding rule) → 0 → 5, 1 → 4, 2–3 → 3,
+  4–5 → 2, 6+ → 1, KPI points = score × 0.25. A complaint with the flag «no»
+  or blank is LISTED and never counted; a code on no cell counts toward nobody
+  and is named (`unregistered`).
+- **The KPI is the CELL's, credited to its OWNER («Egasi») on the month's
+  last day, one ranking row per OWNED cell** — `turnover.cell_map` +
+  `turnover.owned`, the very reading /turnover and /worker-concerns list by,
+  so for one month the three KPI pages name the same owners and cells. An
+  owned cell with no complaint scores 5; a cell with no owner is a notice.
+- **Nothing is frozen.** A month is re-read from the register as it stands
+  (the sync time is printed; the admin's «Reyestrni yangilash» is the Quality
+  page's own refresh). Before `LINKS_FROM` (2026-10-12, the dated cell links)
+  owners have no history, so an older month says it is credited by the
+  earliest owners known (`approx_owners`). The rule is admin-editable
+  (`foreign_rule` in app_settings, the shape of `turnover_rule`).
+- **Scope** is the turnover page's: plant → shift → brigadir; a complaint on
+  no cell belongs to no plant and shows only unscoped. Three tabs over one
+  payload: «Reyting» (owned cells, worst first), «Yacheykalar» (every standing
+  cell, with its «Boshqaruvchi»), «Shikoyatlar» (every foreign-object complaint
+  of the month with its `counted` reason); a cell row opens the working
+  (count → band → score → KPI → the complaints behind it). Excel: four tabs,
+  the page's own words. Logged as `sync.foreign_refresh` / `export.foreign_objects`.
+- Not built: the two KPIs with no source on the platform (category compliance,
+  the technologists' audit) — HR's file holds only a final % per cell for each.
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its
