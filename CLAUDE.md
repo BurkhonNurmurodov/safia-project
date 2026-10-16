@@ -7928,6 +7928,21 @@ once, and followed through the tie from then on; history is never affected.
   boot seed promoted the 4–8 Oct ties (`leader_kind_meta.vfx.id`,
   `supervisor_kind_meta.vfx.id`), dropped ids shared by two profiles, opened
   archive spans for archived cells and marked the 5 Oct photos as the sync's.
+- **A hand tie brings the face at once** (2026-10-16, the operator's call — a
+  profile tied by hand showed initials while the sync sat in report mode):
+  «Bog'lash», a confirmed `tie_doubtful` and a seat tied to an existing leader
+  download Verifix's photo in the SAME request, in every mode
+  (`verifix_sync.fetch_photo_now`, called by the router AFTER the tie's
+  commit, the download holding no transaction; the pass's rules — a person's
+  upload stays `photo_kept`, a refused download is `photo_failed` and a pass
+  retries it after 24 h), and the toast says what happened («rasm Verifixdan
+  olindi» · «Verifixda rasm yo'q» · «qo'lda yuklangan rasm saqlab qolindi» ·
+  «olinmadi»). A hand tie or untie now KEEPS the photo bookkeeping
+  (`_photo_keys`: `photo_set` / `photo_kept` / `photo_failed`): dropped with
+  the rest of `vfx_meta`, the sync's own face read as a person's upload at the
+  next tie and was never replaced, so a profile re-tied to another person
+  kept the old face; a seeded value becomes the old person's sha (else
+  «stale»), so the new person's photo is fetched.
 - **The «Boshqaruvchi» is the Verifix seat by default; a brigadir may pick ONE
   worker of their unit instead.** The pool (`cell_register.manager_pool`, `GET
   /api/profiles/admin/cells/{id}/manager-pool`) is Verifix's working people in

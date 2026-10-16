@@ -429,6 +429,70 @@ def _tie_run(db: Session, *, dry: bool, by: Optional[str], force_read: bool) -> 
     return rep
 
 
+def _photo_keys(meta: dict, org: Optional[dict], old_vid: Optional[str]) -> dict:
+    """What the sync knows about a row's PHOTO, kept across a hand tie or an
+    untie while the rest of `vfx_meta` is replaced: `photo_set` (the photo the
+    sync itself wrote), `photo_kept` (a person's upload — never replaced) and
+    `photo_failed` (a download refused lately). Dropped with the rest, the
+    sync's own face read as a person's upload at the next tie (`_set_photo`:
+    a photo row with no `photo_set`) and was never replaced — a profile
+    re-tied to ANOTHER person kept the old face. A seeded value names no
+    photo and the pass adopts whatever sha it then finds without fetching,
+    which for another person would again be the old face: it becomes the OLD
+    person's sha, or «stale» when Verifix no longer lists them — either is
+    unequal to the new person's sha, so their photo is fetched."""
+    out = {k: meta[k] for k in ("photo_set", "photo_kept", "photo_failed") if k in meta}
+    if out.get("photo_set") == PHOTO_SEEDED:
+        old = ((org or {}).get("emps") or {}).get(old_vid or "") or {}
+        out["photo_set"] = old.get("photo") or "stale"
+    return out
+
+
+def fetch_photo_now(db: Session, kind: str, our_id: int) -> Optional[str]:
+    """Verifix's photo onto a row a PERSON has just tied («Bog'lash», a
+    confirmed doubtful tie, a seat tied to a leader) — in that request, in
+    every mode. Until 2026-10-16 the face came only with an «on» pass, and in
+    report mode never. The pass's own rules hold: the sync replaces only a
+    photo it wrote itself, a person's upload stays (`photo_kept`), a download
+    Verifix refuses is marked `photo_failed` and retried by a pass after
+    PHOTO_RETRY_AFTER. Called AFTER the tie is committed: the download runs
+    with no transaction open, and what it stores is committed here. Returns
+    what happened — "stored", "same" (the row already carries that photo),
+    "kept", "none" (Verifix holds no photo of the person), "failed" — or None
+    where there is nothing to fetch (a cell, an untied row)."""
+    from app.services import verifix_explore
+    if kind == "cell":
+        return None
+    model = Manager if kind == "unit" else RoleProfile
+    row = db.query(model).filter_by(id=our_id).first()
+    if row is None or not row.vfx_employee_id:
+        return None
+    org, _ = verifix_org.stored(db)
+    e = ((org or {}).get("emps") or {}).get(row.vfx_employee_id) or {}
+    sha = e.get("photo")
+    if not sha:
+        return "none"
+    meta = dict(row.vfx_meta or {})
+    if meta.get("photo_set") == sha:
+        return "same"
+    if meta.get("photo_kept"):
+        return "kept"
+    key = f"supervisor:{row.id}" if kind == "unit" else f"{row.role}:{row.id}"
+    act = {"kind": "photo", "key": key, "sha": sha, "row": (type(row).__name__, row.id),
+           "_fetched": True}
+    try:
+        cfg = verifix_explore.config(db)
+    except Exception:  # noqa: BLE001 — no credential on the card: a pass will try
+        log.exception("verifix sync: photo %s", key)
+        return "failed"
+    db.commit()                       # the download must hold no pooled connection
+    act["_jpeg"] = _fetch_jpeg(cfg, sha, key)
+    stored = _set_photo(db, act)
+    kept = not stored and bool((row.vfx_meta or {}).get("photo_kept"))
+    db.commit()
+    return "stored" if stored else ("kept" if kept else "failed")
+
+
 def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
                 by: Optional[str], release: bool = False) -> dict:
     """The operator names the pair: our row ↔ a Verifix person / subdivision
@@ -467,6 +531,7 @@ def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
         row = db.query(model).filter_by(id=our_id).first()
         if row is None:
             raise Refused("not_found", "Row not found", 404)
+        photo_keys = _photo_keys(dict(row.vfx_meta or {}), org, row.vfx_employee_id)
         if vid:
             e = (org.get("emps") or {}).get(vid)
             if not e:
@@ -481,9 +546,9 @@ def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
             row.vfx_employee_id = vid
             job = verifix_org.job_name(org, e.get("job"))
             row.vfx_meta = {**cell_register.person_meta({**e, "job": job}), "seen_at": _iso(at),
-                            "how": "hand", "confirmed": e.get("name")}
+                            "how": "hand", "confirmed": e.get("name"), **photo_keys}
         else:
-            row.vfx_employee_id, row.vfx_meta = None, None
+            row.vfx_employee_id, row.vfx_meta = None, (photo_keys or None)
     else:
         raise Refused("bad_kind", "Unknown kind")
     t = db.query(VerifixTie).filter_by(kind=kind, our_id=our_id).first()
@@ -1213,13 +1278,28 @@ def _describe(a: dict) -> dict:
     return out
 
 
+def _fetch_jpeg(cfg: dict, sha: str, key: Optional[str]) -> Optional[bytes]:
+    """Verifix's photo ``sha`` as the platform's square avatar JPEG — None when
+    Verifix would not hand it over or the bytes are no image (logged; the
+    caller marks the row `photo_failed`)."""
+    import io
+    from PIL import Image, ImageOps
+    from app.services import profile_photo, verifix_explore
+    try:
+        raw = verifix_explore.download(cfg, sha)
+        if raw:
+            img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+            return profile_photo.square_jpeg(img, top=0.35)
+    except Exception:  # noqa: BLE001 — the next pass tries again
+        log.exception("verifix sync: photo %s", key)
+    return None
+
+
 def _prefetch_photos(db: Session, pl: "Plan") -> None:
     """Download the planned photos BEFORE the write phase: a slow photo door
     must not hold rows the pass already updated (and a pooled connection) for
     minutes. A photo that cannot be fetched is simply not stored this pass."""
-    import io
-    from PIL import Image, ImageOps
-    from app.services import profile_photo, verifix_explore
+    from app.services import verifix_explore
     acts = [a for a in pl.auto if a["kind"] == "photo"]
     if not acts:
         return
@@ -1229,20 +1309,12 @@ def _prefetch_photos(db: Session, pl: "Plan") -> None:
         return
     for a in acts:
         a["_fetched"] = True
-        try:
-            raw = verifix_explore.download(cfg, a["sha"])
-            if raw:
-                img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
-                a["_jpeg"] = profile_photo.square_jpeg(img, top=0.35)
-        except Exception:  # noqa: BLE001 — the next pass tries again
-            log.exception("verifix sync: photo %s", a.get("key"))
+        a["_jpeg"] = _fetch_jpeg(cfg, a["sha"], a.get("key"))
 
 
 def _set_photo(db: Session, a: dict) -> bool:
     """Verifix's main photo onto the profile, unless a person uploaded one (a
     photo row the sync did not write). Returns True when stored."""
-    import io
-    from PIL import Image, ImageOps
     from app.services import profile_photo, verifix_explore
     model, rid = a["row"]
     row = (db.query(Manager) if model == "Manager" else db.query(RoleProfile)).filter_by(id=rid).first()
@@ -1257,11 +1329,7 @@ def _set_photo(db: Session, a: dict) -> bool:
     try:
         jpeg = a.get("_jpeg")
         if jpeg is None and not a.get("_fetched"):
-            cfg = verifix_explore.config(db)
-            raw = verifix_explore.download(cfg, a["sha"])
-            if raw:
-                img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
-                jpeg = profile_photo.square_jpeg(img, top=0.35)
+            jpeg = _fetch_jpeg(verifix_explore.config(db), a["sha"], a["key"])
         if not jpeg:
             row.vfx_meta = {**meta, "photo_failed": {"sha": a["sha"], "at": _iso(_now())}}
             return False
@@ -1629,6 +1697,9 @@ def apply_item(db: Session, item_id: int, *, by: Optional[str], choice: Optional
             row = (db.query(Manager).filter_by(id=p["unit"]).first() if "unit" in p
                    else db.query(RoleProfile).filter_by(id=p["profile"]).first())
             row.vfx_meta = {**(row.vfx_meta or {}), "confirmed": (p.get("vfx") or {}).get("name")}
+            # A confirmed tie is a person's tie: the router fetches its photo now.
+            out["tied"] = {"kind": "unit" if "unit" in p else "profile",
+                           "id": p.get("unit") or p.get("profile")}
     elif k == "two_seats":
         if not choice or choice not in {s["id"] for s in p.get("seats") or []}:
             raise Refused("choice_required", "Say which of them is the seat")
@@ -1680,11 +1751,13 @@ def apply_item(db: Session, item_id: int, *, by: Optional[str], choice: Optional
         c = _cell(db, p["cell"])
         if choice and choice.isdigit():
             tie_by_hand(db, "leader", int(choice), p["seat"]["id"], by=by)
+            out["tied"] = {"kind": "leader", "id": int(choice)}
         else:
             emp = dict((org.get("emps") or {}).get(p["seat"]["id"]) or {})
             emp.update(job=p["seat"].get("job"), cell_raw=p.get("code"))
-            cell_register.create_leader(db, emp=emp, manager_id=c.manager_id,
-                                        owes_from=leader_owes.UNCLAIMED, how="seat")
+            prof = cell_register.create_leader(db, emp=emp, manager_id=c.manager_id,
+                                               owes_from=leader_owes.UNCLAIMED, how="seat")
+            out["tied"] = {"kind": "leader", "id": prof.id}
     it.status, it.decided_at, it.decided_by = "applied", _now(), by
     it.note = choice
     return {"ok": True, "kind": k, **out}

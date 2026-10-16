@@ -329,6 +329,17 @@ class TieIn(BaseModel):
     release: bool = False
 
 
+def _photo_now(db: Session, kind: str, our_id: int) -> Optional[str]:
+    """Verifix's photo onto a row a person has just tied, in this request —
+    after the tie's commit, so a failure here can neither undo nor fail it."""
+    try:
+        return verifix_sync.fetch_photo_now(db, kind, our_id)
+    except Exception:  # noqa: BLE001
+        log.exception("verifix sync: photo after a hand tie (%s %s)", kind, our_id)
+        db.rollback()
+        return "failed"
+
+
 @router.post("/tie")
 def post_tie(body: TieIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
     try:
@@ -338,8 +349,13 @@ def post_tie(body: TieIn, db: Session = Depends(get_db), admin: dict = Depends(v
         raise _refused(exc)
     db.commit()
     cell_register.after_commit()
+    if body.vfx_id and not body.release:
+        photo = _photo_now(db, body.kind, body.our_id)
+        if photo:
+            out["photo"] = photo
     action_log.enrich(target_kind=body.kind, target_id=body.our_id,
-                      details=[("vfx_id", body.vfx_id), ("release", body.release or None)])
+                      details=[("vfx_id", body.vfx_id), ("release", body.release or None),
+                               ("photo", out.get("photo"))])
     return out
 
 
@@ -357,11 +373,16 @@ def post_apply(iid: int, body: ItemIn, db: Session = Depends(get_db),
         raise _refused(exc)
     db.commit()
     cell_register.after_commit()
+    tied = out.pop("tied", None)          # a tap that tied or confirmed a person
+    if tied:
+        photo = _photo_now(db, tied["kind"], tied["id"])
+        if photo:
+            out["photo"] = photo
     it = db.query(VerifixSyncItem).filter_by(id=iid).first()
     action_log.enrich(target_kind="verifix_item", target_id=iid,
                       target_name=it.kind if it else None,
                       details=[("kind", it.kind if it else None), ("key", it.key if it else None),
-                               ("choice", body.choice)])
+                               ("choice", body.choice), ("photo", out.get("photo"))])
     return out
 
 

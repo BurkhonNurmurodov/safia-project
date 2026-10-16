@@ -1603,6 +1603,8 @@ export default function VerifixSync() {
     if (res?.from) parts.push(fill(t("vsync.fromDate"), { d: fmtDM(res.from) }));
     if (res?.moved != null) parts.push(fill(t("vsync.movedRows"), { n: n0(res.moved) }));
     if (res?.unit) parts.push(t("vsync.unitCreated"));
+    const photo = res?.photo ? tOr(t, `vsync.photo.${res.photo}`, "") : "";
+    if (photo) parts.push(photo);
     return parts.join(" · ");
   };
 
@@ -1816,10 +1818,13 @@ export default function VerifixSync() {
           onClose={() => setTieTarget(null)}
           onDone={(res, target, picked) => {
             setTieTarget(null);
-            okToast(fill(t("vsync.tiedOk"), {
+            const tied = fill(t("vsync.tiedOk"), {
               what: target.label || "—",
               vfx: target.vkind === "division" ? (picked.code || picked.id) : tl(picked.name || ""),
-            }));
+            });
+            // What became of the person's photo, fetched with the tie.
+            const photo = res?.photo ? tOr(t, `vsync.photo.${res.photo}`, "") : "";
+            (res?.photo === "failed" ? warnToast : okToast)(photo ? `${tied} · ${photo}` : tied);
             refresh(true);
           }} />
       )}
