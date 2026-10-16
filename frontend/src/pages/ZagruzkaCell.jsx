@@ -103,6 +103,10 @@ function idleNote(inp, t) {
     parts.push(t("zcell.idleOverlap").replace("{n}", Math.round(m.overlap_min)));
   if (m.excluded_min > 0)
     parts.push(t("zcell.idleExcluded").replace("{n}", Math.round(m.excluded_min)));
+  // A crew-counted Tozalash (2026-09-29) is counted at its crew's share of the
+  // cell, so the figure sits below /idle-cell's whole-cell union by this much.
+  if (m.crew_min > 0)
+    parts.push(t("zcell.idleCrew").replace("{n}", Math.round(m.crew_min)));
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -888,21 +892,28 @@ export default function ZagruzkaCell() {
               </div>
             );
           })()}
-          {/* The size of the correction, and the size of what the загрузка rule
-              leaves out — the two numbers that explain why this page and
-              /idle-cell can print different minutes for the same cell-day. */}
-          {(diag.ojidaniya_overlap_min > 0 || diag.ojidaniya_excluded_min > 0) && (
-            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-[11px] py-1 pl-4"
-                 style={{ color: "var(--text-3)" }}>
-              {diag.ojidaniya_overlap_min > 0 && (
-                <span>{t("zcell.diagIdleOverlap").replace("{n}", Math.round(diag.ojidaniya_overlap_min))}</span>
-              )}
-              {diag.ojidaniya_overlap_min > 0 && diag.ojidaniya_excluded_min > 0 && <span>·</span>}
-              {diag.ojidaniya_excluded_min > 0 && (
-                <span>{t("zcell.diagIdleExcluded").replace("{n}", Math.round(diag.ojidaniya_excluded_min))}</span>
-              )}
-            </div>
-          )}
+          {/* The size of the correction, the size of what the загрузка rule
+              leaves out, and what the crew counts of Tozalash entries took off
+              the whole-cell unions — the numbers that explain why this page
+              and /idle-cell can print different minutes for the same cell-day. */}
+          {(() => {
+            const notes = [
+              diag.ojidaniya_overlap_min > 0 &&
+                t("zcell.diagIdleOverlap").replace("{n}", Math.round(diag.ojidaniya_overlap_min)),
+              diag.ojidaniya_excluded_min > 0 &&
+                t("zcell.diagIdleExcluded").replace("{n}", Math.round(diag.ojidaniya_excluded_min)),
+              diag.ojidaniya_crew_min > 0 &&
+                t("zcell.diagIdleCrew").replace("{n}", Math.round(diag.ojidaniya_crew_min)),
+            ].filter(Boolean);
+            return notes.length ? (
+              <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-[11px] py-1 pl-4"
+                   style={{ color: "var(--text-3)" }}>
+                {notes.map((s, i) => (
+                  <span key={i}>{i > 0 ? "· " : ""}{s}</span>
+                ))}
+              </div>
+            ) : null;
+          })()}
           {diag.collapsed_effective_hc > 0 && (
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />

@@ -26,9 +26,10 @@ To'xtamaganda half has no meaning on this measure.
 
 **Every category is priced, Cat H included.** A cell stopped for cleaning is
 paying the same wages as a cell stopped for a broken mixer, so
-``OJIDANIYA_ONLY_CATS`` is NOT applied. Consequence to know: this tab's minutes
-read higher than /downtime's headline, which drops Cat H under «Zagruzkada
-hisoblanadi». The category filter is how a reader takes one out.
+``OJIDANIYA_ONLY_CATS`` is NOT applied — a distinction without a difference
+since 2026-10-16, when that set became empty (Cat H counts on the workload too),
+but one that outlives it: a category taken back out of the загрузка is still
+priced here. The category filter is how a reader takes one out.
 
 **A cleaning is paid for its CLEANERS** (2026-09-29). A Tozalash entry names
 how many people cleaned («Tozalovchilar»), so a minute only cleaning covers is

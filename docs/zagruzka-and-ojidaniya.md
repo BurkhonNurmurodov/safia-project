@@ -63,12 +63,13 @@ Each stoppage has a **category** — the cause:
 | Cat E | Waiting on internal logistics |
 | Cat F | Waiting on a technologist's decision |
 | Cat G | The planning department was late or wrong |
-| Cat H | Cleaning — **excluded from загрузка** (planned work, not a stoppage) |
+| Cat H | Cleaning — **counted since 2026-10-16** (at the crew its entry names, «Tozalovchilar»; excluded before that as planned work) |
 | Cat I | Waiting for the previous shift to finish — **counted since 2026-08-22** |
 
 `sheets_reader.OJIDANIYA_ONLY_CATS` is THE list of categories that appear on the
-Ojidaniya page but are **not** counted in загрузка. Today it holds exactly one
-entry: `Cat H`.
+Ojidaniya page but are **not** counted in загрузка. It is **empty** since
+2026-10-16 — every category counts — and the list and every door reading it
+stay, so a category can be taken back out with one line.
 
 Every category is also recorded in two halves: minutes when the wait **stopped**
 the cell (тўхтаганда) and minutes when it did **not** (тўхтамаганда). Only the
@@ -130,7 +131,7 @@ input on the ladder — which brings us to the change.
 - The brigadir fills a form at the end of the shift: for each category, the
   minutes the cell stopped and the minutes it did not.
 - `equip_downtime` for the unit = that row's total, with `OJIDANIYA_ONLY_CATS`
-  stripped.
+  stripped (nothing, since the set emptied on 2026-10-16).
 
 What that shape could not carry:
 
@@ -167,9 +168,12 @@ Tᵢ = | ⋃ stopped ranges on cell i that day |      (idle_intervals.merged_spa
 ```
 
 Overlapping stoppages merge. A minute the cell stood still is one minute, however
-many causes were acting on it. Categories excluded from загрузка (`Cat H`) are
-dropped **before** the union, so a dropped category cannot survive inside a
-merged span.
+many causes were acting on it. Categories excluded from загрузка
+(`OJIDANIYA_ONLY_CATS` — none since 2026-10-16) are dropped **before** the
+union, so a dropped category cannot survive inside a merged span. A minute only
+a crew-counted Tozalash covers counts the crew, not the whole cell
+(`idle_intervals.people_pieces`, 2026-09-29) — on the fleet page and on
+/zagruzka-cell alike.
 
 **Step 2 — weight the cells by who actually stood in them.**
 

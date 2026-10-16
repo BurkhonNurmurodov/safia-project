@@ -37,7 +37,7 @@ import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilt
 
 // Downtime-category identity colors — the shared generic-first order, one hue
 // per category index, shared by the merged bar chart, the doughnut and the chips.
-import { catColor, CATS } from "../components/idle/categories";
+import { catColor, CATS, OJIDANIYA_ONLY_CATS } from "../components/idle/categories";
 import CatLockNotice from "../components/idle/CatLockNotice";
 
 // ── date helpers for the seasonality card's weekly axis ──────────────────────
@@ -110,11 +110,19 @@ export default function Downtime() {
   // Second axis, orthogonal to the halves above: WHICH categories count.
   // «загрузкада» (default) = only the categories the загрузка KPIs count, i.e.
   // the endpoint's kpi_only view; «hammasi» = every category the shift report
-  // has, including the Ojidaniya-only ones (Cat H; Cat I joined the загрузка on
-  // 2026-08-22). Server-side so the totals, flags and shares below stay
-  // consistent with the picked scope.
+  // has, including the Ojidaniya-only ones. Server-side so the totals, flags
+  // and shares below stay consistent with the picked scope.
+  //
+  // The axis EXISTS only while some category is Ojidaniya-only
+  // (`OJIDANIYA_ONLY_CATS`, the client twin of the backend's one set). Cat I
+  // joined the загрузка on 2026-08-22 and Cat H on 2026-10-16, so today the two
+  // views are one view: the toggle is not drawn, nothing is sent as `kpi_only`,
+  // and the export names the scope «Barchasi». A control that reports a change
+  // and changes nothing is worse than an absent one. The saved pick is kept so
+  // the toggle comes back where it was the day a category is taken back out.
   const [scope, setScope] = usePersistentState("downtime_scope", "zagruzka"); // "zagruzka" | "all"
-  const kpiOnly = scope === "zagruzka";
+  const scopeMatters = OJIDANIYA_ONLY_CATS.length > 0;
+  const kpiOnly = scopeMatters && scope === "zagruzka";
   const totalKey   = ns ? "total_ns" : "total";
   const catKey     = ns ? "by_category_ns" : "by_category";
   const flaggedKey = ns ? "flagged_days_ns" : "flagged_days";
@@ -1098,21 +1106,26 @@ export default function Downtime() {
           />
         </div>
         {/* Which categories count — the загрузка KPI set (default) or every
-            category the shift report carries. */}
-        <div className="overflow-x-auto">
-          <SegmentedToggle
-            value={scope}
-            onChange={setScope}
-            options={[
-              { value: "zagruzka", label: t("downtime.scopeZagruzka"), title: t("downtime.scopeZagruzkaSub") },
-              { value: "all", label: t("downtime.scopeAll"), title: t("downtime.scopeAllSub") },
-            ]}
-          />
-        </div>
+            category the shift report carries. Drawn only while the two sets
+            differ (see `scopeMatters`). */}
+        {scopeMatters && (
+          <div className="overflow-x-auto">
+            <SegmentedToggle
+              value={scope}
+              onChange={setScope}
+              options={[
+                { value: "zagruzka", label: t("downtime.scopeZagruzka"), title: t("downtime.scopeZagruzkaSub") },
+                { value: "all", label: t("downtime.scopeAll"), title: t("downtime.scopeAllSub") },
+              ]}
+            />
+          </div>
+        )}
         <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
           {ns ? t("downtime.tabNotStoppedSub") : t("downtime.tabStoppedSub")}
-          {" · "}
-          {kpiOnly ? t("downtime.scopeZagruzkaSub") : t("downtime.scopeAllSub")}
+          {scopeMatters && (<>
+            {" · "}
+            {kpiOnly ? t("downtime.scopeZagruzkaSub") : t("downtime.scopeAllSub")}
+          </>)}
         </span>
       </div>
 

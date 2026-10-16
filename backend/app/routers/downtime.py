@@ -1043,10 +1043,12 @@ def export_downtime(
 DECK_FACTORY = "Uchtepa"
 
 # The deck reports the ЗАГРУЗКА scope, and nothing else (the operator's ruling,
-# 2026-09-04). `sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat H», Тозалаш — is
-# planned work the shift does rather than a stoppage it suffered, and the
-# operator does not want it in this file: not in a total, not in a ranking, not
-# on a chart, not in the glossary.
+# 2026-09-04). Until 2026-10-16 that scope left out `sheets_reader.
+# OJIDANIYA_ONLY_CATS` — «Cat H», Тозалаш — and so did the deck: not in a total,
+# not in a ranking, not on a chart, not in the glossary. From that day the set
+# is EMPTY (Cat H counts on the workload, the operator's directive), so
+# Tozalash is in the deck exactly as it is in the загрузка — the flag below is
+# a no-op until a category is taken back out, and then it leaves the deck too.
 #
 # It is expressed as `kpi_only` on the two readers the deck already goes
 # through, never as a filter of its own inside `ojidaniya_deck`: that flag IS
@@ -1055,9 +1057,9 @@ DECK_FACTORY = "Uchtepa"
 # start disagreeing about one week. The deck therefore never sees a dropped
 # category at all — no total to subtract, no row to hide.
 #
-# Consequence to know: the deck's figures no longer match the /downtime page
-# with its «Barchasi» scope selected — they match its «Zagruzkada hisoblanadi»
-# scope, which is the default the page itself opens on.
+# Consequence to know (while any category is Ojidaniya-only): the deck's figures
+# do not match the /downtime page with its «Barchasi» scope selected — they
+# match its «Zagruzkada hisoblanadi» scope, the default the page opens on.
 DECK_KPI_ONLY = True
 
 

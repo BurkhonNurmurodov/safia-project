@@ -12,8 +12,10 @@ import { CATS, catColor, iconFor } from "../idle/categories";
  * explained, and `/api/downtime` builds its `cat_names` from the rows that
  * exist — so a data-driven legend silently omits every new category until
  * somebody has already used it, which is how Cat A2 shipped invisible here on
- * 2026-09-03. `kpi_only` drops Cat H from the chart for the same reason and it
- * is likewise still explained.
+ * 2026-09-03. `kpi_only` dropped Cat H from the chart the same way until
+ * 2026-10-16 (the Ojidaniya-only set is empty since), and it was likewise
+ * still explained — a glossary lists what a category MEANS, not what is on
+ * screen.
  *
  * Props:
  *   catNames  – the categories on the chart, in its own order (optional). Used

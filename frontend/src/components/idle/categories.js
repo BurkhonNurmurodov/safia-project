@@ -15,6 +15,14 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 // figures count only those who did. Mirrors the backend's
 // `sheets_reader.CLEANERS_CATS`; the form and the live recorder both ask it
 // off this flag, never off the category's name.
+//
+// `notInLoad` marks a category the загрузка does NOT count — shown on the
+// Ojidaniya page and nowhere else. Mirrors the backend's
+// `sheets_reader.OJIDANIYA_ONLY_CATS`, the ONE definition; nobody carries it
+// since 2026-10-16, when Cat H followed Cat I into the загрузка (the
+// operator's directive), so `OJIDANIYA_ONLY_CATS` below is empty and the
+// «Barchasi / Zagruzkada hisoblanadi» toggle on /downtime is not drawn —
+// flag a category here the day the backend's set gains one, and it is back.
 export const CATS = [
   { code: "A",  name: "Cat A" },
   { code: "A2", name: "Cat A2" },
@@ -29,6 +37,10 @@ export const CATS = [
   { code: "H",  name: "Cat H", alwaysStopped: true, cleaners: true },
   { code: "I",  name: "Cat I" },
 ];
+
+// The categories the загрузка leaves out, by stored name — the client twin of
+// `sheets_reader.OJIDANIYA_ONLY_CATS` (see `notInLoad` above). Empty today.
+export const OJIDANIYA_ONLY_CATS = CATS.filter((c) => c.notInLoad).map((c) => c.name);
 
 // Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
 export const CAT_ICON = {

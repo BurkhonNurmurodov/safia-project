@@ -61,8 +61,9 @@ cleaning for 20 minutes is 40, not 200. A minute another cause covers still
 counts the whole cell once. ``idle_intervals.people_pieces`` is THE rule; with
 no count on a day it is exactly ``Nᵢ·Tᵢ``, and every entry filed before the
 count existed is read as the whole cell, so no history moved. The Ojidaniya-only
-categories (`OJIDANIYA_ONLY_CATS` — today Cat H alone; Cat I joined the
-загрузка on 2026-08-22) are dropped BEFORE the union for the KPI figure,
+categories (`OJIDANIYA_ONLY_CATS` — EMPTY since 2026-10-16, when Cat H followed
+Cat I into the загрузка, so `total` equals `total_all` today) are dropped
+BEFORE the union for the KPI figure,
 never subtracted after it (they may overlap a counted category, and
 subtracting their minutes would also remove minutes a counted range was
 covering); the Ojidaniya page without `kpi_only` still shows them, so both
@@ -162,6 +163,22 @@ def _counted_hc(r) -> bool:
         return False
     name = r.worker_name
     return bool(name) and name not in ("nan", "NaN", "")
+
+
+def rows_headcount(rows) -> float:
+    """N of a list of attendance rows already in memory — Σ `hc_weight` over
+    the rows `_counted_hc` admits, rounded as `kpi_calculator.compute_metrics`
+    rounds its `verifix_hc`, so the two are one number. /zagruzka-cell reads it
+    for a day before `zagruzka_source.ZAGRUZKA_FROM`, where the fleet's weight
+    is the counted attendance and not a typed pin, to split a crew-counted
+    Tozalash by the very N the unit's mean multiplies it back by."""
+    n = 0.0
+    for r in rows:
+        if not _counted_hc(r):
+            continue
+        w = getattr(r, "hc_weight", None)
+        n += 1.0 if w is None else float(w)
+    return round(n, 2)
 
 
 def _stood_in(cells, date_from: date, date_to: date) -> dict:

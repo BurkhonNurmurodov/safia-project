@@ -1908,12 +1908,45 @@ drop, `/zagruzka-cell` — so a category enters or leaves the загрузка o
 surface at once. Never re-spell the rule at a call site: two lists is how the
 fleet page and the Daily donut start disagreeing about the same minutes.
 
-- From **2026-08-22** the set is **`{"Cat H"}`**. Cat I («Олдинги смена иши
-  тугашини кутиш» — waiting for the previous shift to finish) now COUNTS in the
-  загрузка by user directive: that wait is time the shift stood still, so it
-  belongs there like any other stoppage.
-- Cat H («Тозалаш» — cleaning) is what remains: planned work the shift does,
-  not a stoppage it suffered.
+- **From 2026-10-16 the set is EMPTY** — Cat H («Тозалаш», cleaning) joined the
+  загрузка by the operator's directive («count idle time Category H on workload
+  also»), so every category counts. The set and every door reading it STAY: a
+  category is taken back out with one line in `sheets_reader.py` and nowhere
+  else, and `kpi_only` stays on every endpoint (a no-op while the set is
+  empty) so the Daily donut, the deck's `DECK_KPI_ONLY` and an older tab keep
+  working. A Tozalash minute enters the way every other figure already counts
+  it (see «Tozalash counts its CLEANERS»): at its crew where the entry carries
+  «Tozalovchilar» — `people_pieces` inside the fleet mean, which `unit_downtime`
+  already applied to the KPI `total` — and at the whole cell where it carries
+  none (every entry filed before 2026-09-29). **`/zagruzka-cell` counts it the
+  same way**: its per-cell figure is `cell_share_minutes` of the same
+  person-minutes, by the N its roll-up multiplies back (the typed O. SONI from
+  the floor, the counted attendance before it — `idle_source.rows_headcount`,
+  the twin of `compute_metrics`' `verifix_hc`), so the reconciliation twin
+  stays the fleet's; a day with no count reads the union it always read. The
+  «Cat H: N daq hisobga olinmadi» note never prints now; «Tozalovchilar: −N
+  daq» (`crew_min` / `diagnostics.ojidaniya_crew_min`) names what a crew count
+  took off the whole-cell union instead, the gap against /idle-cell's
+  «To'xtaganda» total. **The Ojidaniya page's «Barchasi / Zagruzkada
+  hisoblanadi» toggle is NOT drawn while the set is empty** —
+  `OJIDANIYA_ONLY_CATS` in `components/idle/categories.js` is the client twin
+  (the `cleaners`
+  flag's precedent; flag a category `notInLoad` there the day the backend's set
+  gains one): the two views would be one view, and a control that reports a
+  change and changes nothing is worse than an absent one. The export then names
+  its scope «Barchasi»; the deck's confirm still names the загрузка scope,
+  which is what the deck reads. **Consequence to know: past загрузка figures
+  change** — on every stored day that carried Tozalash minutes, back to the
+  sheet era, because nothing is stored (the Cat I precedent): idle UP, net
+  utilisation DOWN, the 50-min flag may newly fire, and days before the count
+  existed are billed at the whole cell. The deck carries Tozalash from the next
+  Wednesday's press.
+- (Until 2026-10-16.) From **2026-08-22** the set was **`{"Cat H"}`**. Cat I
+  («Олдинги смена иши тугашини кутиш» — waiting for the previous shift to
+  finish) COUNTS in the загрузка from that day by user directive: that wait is
+  time the shift stood still, so it belongs there like any other stoppage.
+- (Until 2026-10-16.) Cat H («Тозалаш» — cleaning) was what remained: planned
+  work the shift does, not a stoppage it suffered.
 - **Nothing is stored, so nothing needs a re-sync.** `equip_downtime` and the
   category breakdowns are derived per request from `DowntimeData` /
   `cell_ojidaniya_intervals`, so every historical day re-reads under the new
@@ -1922,11 +1955,12 @@ fleet page and the Daily donut start disagreeing about the same minutes.
   the weekly svodka all move together. **Consequence to know: past загрузка
   figures change.** Idle goes UP and net utilisation DOWN on every day that
   carried Cat I minutes, and the 50-min idle flag may newly fire on them.
-- The Ojidaniya page's «Barchasi / Zagruzkada hisoblanadi» toggle is unchanged
-  and still says which scope is on screen; Cat H is now the only thing that
-  separates the two views.
-  `/zagruzka-cell`'s «Cat H: N daq hisobga olinmadi» note names the remaining
-  category, and its reconciliation delta shrinks accordingly.
+- (SUPERSEDED 2026-10-16 — the toggle is not drawn while the set is empty, see
+  the first bullet.) The Ojidaniya page's «Barchasi / Zagruzkada hisoblanadi»
+  toggle was unchanged by the Cat I move and still said which scope was on
+  screen; Cat H was then the only thing that separated the two views.
+  `/zagruzka-cell`'s «Cat H: N daq hisobga olinmadi» note named the remaining
+  category, and its reconciliation delta shrank accordingly.
 
 ## Tozalash counts its CLEANERS («Tozalovchilar»)
 
@@ -1941,9 +1975,10 @@ tozaladi»), and the old shift sheet asked it beside Cat H («Нечта ода�
 
 - **`sheets_reader.CLEANERS_CATS` is THE list** of categories that carry a count
   (today `{"Cat H"}`), beside `OJIDANIYA_ONLY_CATS`; the client twin is the
-  `cleaners` flag in `components/idle/categories.js`. Tozalash stays OUT of the
-  загрузка — this changes who a cleaning minute is counted for, not whether it
-  counts there.
+  `cleaners` flag in `components/idle/categories.js`. Tozalash stayed OUT of the
+  загрузка until 2026-10-16 — this changed who a cleaning minute is counted
+  for, not whether it counted there; since that day it counts there too, at the
+  same crew (see «Which ojidaniya categories the загрузка counts»).
 - **The count is `cell_ojidaniya_intervals.cleaners`** (nullable int,
   `startup.add_idle_interval_cleaners`, both entrypoints). **NULL is the whole
   cell** — every other cause, and every Tozalash filed before the count existed
@@ -1959,14 +1994,15 @@ tozaladi»), and the old shift sheet asked it beside Cat H («Нечта ода�
 - **Where it moves a number**: `idle_source.unit_downtime` (the weighted mean —
   «Barchasi» on /downtime, its bar modal, the Ojidaniya workbook, /live's
   waiting, and the weekly svodka — every all-categories view; a `kpi_only`
-  reader such as the Daily donut never had Cat H in it);
+  reader such as the Daily donut had no Cat H in it until 2026-10-16);
   «Toifalar bo'yicha» (a Tozalash minute is its SHARE of the cell's people — 20
   minutes by 2 of 10 read 4, so the row stays comparable with causes that stop
   everybody); «Xarajat» (priced at the crew — and priced even where the cell's
   own number was never typed, because the crew is on the entry; a row folding
   whole-cell and crew minutes prints their minute-weighted `hc` with `*`).
-  Unchanged: the загрузка and everything on it, the weekly deck (no Cat H),
-  /zagruzka-cell.
+  Unchanged THEN: the загрузка and everything on it, the weekly deck (no Cat H),
+  /zagruzka-cell — all three count Tozalash since 2026-10-16, at the crew, the
+  per-cell page through `cell_share_minutes` by its roll-up's own N.
 - **The entry rule is `routers/idle_cell._cleaners_for`**: required on every
   Tozalash save (create AND edit — an old entry is asked for its count the first
   time somebody edits it), a whole number from 1 to the cell's people that day
@@ -2221,9 +2257,12 @@ causes, lay out the slides).
   the button never fires without its `ConfirmDialog`, which writes the whole
   scope out.
 - **Its categories are the ЗАГРУЗКА's, not the page's «Barchasi»** (the
-  operator's ruling, 2026-09-04). `sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat
-  H», Тозалаш — is out of the deck entirely: no total, no ranking, no chart, no
-  glossary row. It is expressed as **`DECK_KPI_ONLY` in `routers/downtime.py`**,
+  operator's ruling, 2026-09-04). Whatever `sheets_reader.OJIDANIYA_ONLY_CATS`
+  holds is out of the deck entirely: no total, no ranking, no chart, no
+  glossary row — «Cat H», Тозалаш, until 2026-10-16; since then the set is
+  EMPTY and Tozalash is in the deck like every other cause (the set is now
+  imported by `ojidaniya_deck`, never restated). It is expressed as
+  **`DECK_KPI_ONLY` in `routers/downtime.py`**,
   i.e. the platform's own `kpi_only` flag on the two readers the deck already
   goes through, and applied BEFORE the per-cell union so a dropped category
   cannot survive inside a merged span. `ojidaniya_deck` filters nothing itself
@@ -2927,7 +2966,8 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
 - **It is a SUM, and every other ojidaniya figure on this platform is a
   headcount-weighted MEAN.** So its minutes do NOT match the «Tahlil» tab's, the
   same relationship «Toifalar bo'yicha» already has — the card says so before
-  anybody reads a figure. Pricing Cat H widens the gap again.
+  anybody reads a figure. (Pricing Cat H widened the gap further until
+  2026-10-16, when the загрузка started counting it too.)
 - **Only a STOPPED cell costs** (the operator's premise), so `stopped` is fixed
   and the page's To'xtaganda/To'xtamaganda toggle is not offered here. **Every
   category is priced, Cat H included** — a cell stopped for cleaning pays the

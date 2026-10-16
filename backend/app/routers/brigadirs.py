@@ -103,12 +103,12 @@ def build_metrics_list(
     for r in dt_rows:
         canon = alias.get(r.manager_name, r.manager_name)
         by_cat = r.by_category or {}
-        # Ojidaniya-only categories (today: Cat H/Тозалаш — see
-        # OJIDANIYA_ONLY_CATS, which is the ONE list) are analytics for the
-        # /downtime page alone — they must not depress the загрузка KPIs, so
-        # both the total and the breakdown lose them here. Cat I (waiting for
-        # the previous shift to finish) left that list on 2026-08-22 and now
-        # counts here like any other stoppage.
+        # Ojidaniya-only categories (OJIDANIYA_ONLY_CATS, which is the ONE
+        # list) are analytics for the /downtime page alone — they must not
+        # depress the загрузка KPIs, so both the total and the breakdown lose
+        # them here. Cat I (waiting for the previous shift to finish) left that
+        # list on 2026-08-22 and Cat H (cleaning) on 2026-10-16; it is EMPTY
+        # today, so every category counts here like any other stoppage.
         extra = sum(float(by_cat.get(c) or 0) for c in OJIDANIYA_ONLY_CATS)
         dt_total.setdefault(canon, {})[r.date] = max(float(r.total_minutes or 0) - extra, 0.0)
         dt_by_cat.setdefault(canon, {})[r.date] = {

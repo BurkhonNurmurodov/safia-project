@@ -69,8 +69,12 @@ Decisions taken with the user (2026-07-31), all deliberate:
     ROUND(W × Q ÷ S) still answers, so history is untouched.
   * Ojidaniya = the UNION of the day's To'xtaganda (stopped) ranges, the
     Ojidaniya-only categories dropped BEFORE the union (2026-08-20; see the
-    block that computes it). That list is `OJIDANIYA_ONLY_CATS` and today holds
-    Cat H alone — Cat I joined the загрузка on 2026-08-22.
+    block that computes it). That list is `OJIDANIYA_ONLY_CATS` — EMPTY since
+    2026-10-16, when Cat H followed Cat I into the загрузка, so every category
+    counts here as on the fleet page. A crew-counted Tozalash («Tozalovchilar»,
+    2026-09-29) enters as its SHARE of the cell's people
+    (`idle_intervals.cell_share_minutes`) — the per-person minutes the fleet
+    mean multiplies back by N — so the roll-up stays the fleet's twin.
     A not-stopped range never counts, here or anywhere else.
   * The unit's own row runs **/zagruzka's logic, not a sum of the cells**
     (the operator's directive, 2026-09-09). Its трудоёмкость is
@@ -786,8 +790,9 @@ def cell_zagruzka(
     # re-create precisely the over-count the interval model was built to kill
     # (one 30-minute stop filed under two categories reading as 60).
     #
-    # The Ojidaniya-only categories (OJIDANIYA_ONLY_CATS — Cat H today) are
-    # dropped BEFORE the union, never subtracted after it.
+    # The Ojidaniya-only categories (OJIDANIYA_ONLY_CATS — EMPTY since
+    # 2026-10-16, when Cat H followed Cat I into the загрузка; the door stays)
+    # are dropped BEFORE the union, never subtracted after it.
     # They must not count against загрузка (the fleet rule, 2026-07-25) and they
     # may overlap the categories that do, so subtracting their minutes from the
     # total would also remove minutes a counted range was covering. The
@@ -800,6 +805,10 @@ def cell_zagruzka(
     idle_by_cell: dict[tuple[int, str], float] = defaultdict(float)
     idle_cats: dict[tuple[int, str], dict] = defaultdict(dict)
     idle_meta: dict[tuple[int, str], dict] = {}
+    # The counted interval rows themselves, crew counts included — what
+    # `_cell_idle` below re-reads per cell-day once the cell's N is known, so a
+    # crew-counted Tozalash (2026-09-29) is weighed as the fleet weighs it.
+    idle_rows: dict[tuple[int, str], list[dict]] = {}
     iso_lo, iso_hi = date_from.isoformat(), date_to.isoformat()
 
     iv_by_cell: dict[tuple[int, str], list] = defaultdict(list)
@@ -818,9 +827,11 @@ def cell_zagruzka(
     for k, ivs in iv_by_cell.items():
         counted = [
             {"id": iv.id, "category": iv.category, "start": iv.start,
-             "end": iv.end, "stopped": bool(iv.stopped)}
+             "end": iv.end, "stopped": bool(iv.stopped),
+             "cleaners": iv.cleaners}
             for iv in ivs if iv.category not in OJIDANIYA_ONLY_CATS
         ]
+        idle_rows[k] = counted
         summary = idle_intervals.summarize(counted)
         # What /idle-cell shows for this cell-day: the union over EVERY stopped
         # category. The difference is what the загрузка rule leaves out, and an
@@ -843,6 +854,9 @@ def cell_zagruzka(
             "overlap_min": summary["overlap_min"],
             "excluded_min": max(0, all_union - summary["stopped_union_min"]),
             "all_cats_union_min": all_union,
+            # What the crew counts took off the whole-cell union — set by
+            # `_cell_idle` once the cell's N is known; 0 until then.
+            "crew_min": 0.0,
         }
 
     # Days that predate the interval model keep their old numbers. The fallback
@@ -873,10 +887,44 @@ def cell_zagruzka(
             # the over-count is unknown — null, never 0, which would claim the
             # old figure was checked and found clean.
             "overlap_min": None, "excluded_min": None,
-            "all_cats_union_min": None,
+            "all_cats_union_min": None, "crew_min": None,
         })
         meta["events"] += 1
         meta["sum_min"] += mins
+
+    def _cell_idle(k: tuple[int, str], n: float) -> tuple[float, dict]:
+        """The cell-day's waiting as PER-PERSON minutes of its own people — the
+        T the unit's mean multiplies back by N, by the one arithmetic the fleet
+        uses (`idle_intervals.people_pieces`, 2026-09-29): a minute any
+        whole-cell cause covers is one minute; a minute only a crew-counted
+        Tozalash covers is the crew's share of one, so 2 of 10 cleaning for 20
+        minutes read 4. With no count on the day — every entry filed before the
+        count existed — it is exactly the union, the figure this page always
+        printed; so is a legacy day, and a day with no N to share by.
+
+        Returns the total and the per-category figures on the same footing,
+        and records what the crew counts took off the whole-cell union on the
+        day's meta (`crew_min`), the way `excluded_min` named what the
+        Ojidaniya-only rule left out: a figure below /idle-cell's
+        «To'xtaganda» total must never read as a bug.
+        """
+        total = idle_by_cell.get(k, 0.0)
+        cats = idle_cats.get(k, {})
+        rows = idle_rows.get(k)
+        if rows is None or not n or n <= 0:
+            return total, cats
+        share = idle_intervals.cell_share_minutes(
+            idle_intervals.people_pieces(rows, n), n)
+        meta = idle_meta.get(k)
+        if meta is not None:
+            meta["crew_min"] = round(max(0.0, total - share), 2)
+        by_cat = {
+            cat: round(idle_intervals.cell_share_minutes(
+                idle_intervals.people_pieces(
+                    [r for r in rows if r["category"] == cat], n), n), 2)
+            for cat in cats
+        }
+        return share, by_cat
 
     # ── The unit's own inputs — the SAME three the fleet page reads ───────────
     # `totals` below is the brigadir's own row, and from v4.82.0 it is computed
@@ -942,7 +990,6 @@ def cell_zagruzka(
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 continue
             att_rows = att_by_cell.get((c.id, d), [])
-            downtime = idle_by_cell.get((c.id, d.isoformat()), 0.0)
             # This cell's slice of its work centre — its own group plus an even
             # share of the unclaimed rest where several cells name it (see the
             # `cells_at_wc` block above); the whole work centre otherwise.
@@ -992,6 +1039,14 @@ def cell_zagruzka(
                 no_typed_hc += 1
                 continue
 
+            # The cell's waiting as per-person minutes of ITS people, by the N
+            # the roll-up below multiplies it back by — the typed O. SONI from
+            # the загрузка floor, the counted attendance before it: the fleet's
+            # own split (`idle_source._n_by_cell`), never a second one.
+            downtime, downtime_cats = _cell_idle(
+                (c.id, d.isoformat()),
+                hc if on_prod else idle_source.rows_headcount(att_rows))
+
             m = compute_metrics(
                 manager_id=c.id,
                 manager_name=label,
@@ -1002,7 +1057,7 @@ def cell_zagruzka(
                 prod_actual=p_actual,
                 official_hc=hc,
                 equip_downtime=downtime,
-                downtime_by_cat=idle_cats.get((c.id, d.isoformat()), {}),
+                downtime_by_cat=downtime_cats,
                 hc_required=on_prod,
                 basis="production" if on_prod else "sheet",
             )
@@ -1068,7 +1123,7 @@ def cell_zagruzka(
                 "verifix_hc": m.verifix_hc,
                 "att_rows": len(att_rows),
                 "downtime": round(downtime, 2),
-                "downtime_by_cat": idle_cats.get((c.id, d.isoformat()), {}),
+                "downtime_by_cat": downtime_cats,
                 # Which model answered, what the old one would have said, and
                 # what the Ojidaniya-only rule left out — the page prints it
                 # under the figure, because a corrected number arriving with no
@@ -1253,6 +1308,7 @@ def cell_zagruzka(
 
     idle_overlap_min = sum(float(mt["overlap_min"] or 0) for mt in idle_meta.values())
     idle_excluded_min = sum(float(mt["excluded_min"] or 0) for mt in idle_meta.values())
+    idle_crew_min = sum(float(mt.get("crew_min") or 0) for mt in idle_meta.values())
 
     # ── What the groups leave unattributed ───────────────────────────────────
     # Both lists name something that is split EVENLY although a grouped work
@@ -1360,6 +1416,9 @@ def cell_zagruzka(
             # Ojidaniya-only minutes /idle-cell shows that загрузка never counts.
             "ojidaniya_overlap_min": round(idle_overlap_min, 1),
             "ojidaniya_excluded_min": round(idle_excluded_min, 1),
+            # …and what the crew counts of Tozalash entries took off the
+            # whole-cell unions (2026-10-16, Cat H counting at its crew).
+            "ojidaniya_crew_min": round(idle_crew_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
             # Work centres named by more than one cell and still split EVENLY —

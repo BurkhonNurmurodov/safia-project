@@ -65,10 +65,10 @@ _CAT_LOOKALIKE = str.maketrans({"а": "a", "в": "b", "с": "c", "е": "e", "н"
 _MARK_NOT_STOPPED = ("тухтамаганда", "to'xtamaganda", "toxtamaganda")
 _MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 
-# Categories shown ONLY on the Ojidaniya page (/api/downtime). They must never
-# count against the загрузка KPIs — equip_downtime, after_idle/net util, the
-# idle flag, the Daily idle donut — so build_metrics_list strips them from both
-# the downtime total and the per-category breakdown (user directive 2026-07-25).
+# Categories shown ONLY on the Ojidaniya page (/api/downtime) and never counted
+# against the загрузка KPIs — equip_downtime, after_idle/net util, the idle
+# flag, the Daily idle donut: build_metrics_list strips them from both the
+# downtime total and the per-category breakdown (user directive 2026-07-25).
 #
 # THIS SET IS THE ONE DEFINITION. Every KPI door reads it — build_metrics_list,
 # /api/downtime's `kpi_only`, idle_source's pre-union drop, /zagruzka-cell — so
@@ -80,9 +80,16 @@ _MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 # finish) LEFT this set on 2026-08-22 by user directive: that wait is time the
 # shift stood still, so it belongs in the загрузка like every other stoppage.
 #
-# Cat H («Тозалаш» — cleaning) is what remains: it is planned work the shift
-# does, not a stoppage it suffered.
-OJIDANIYA_ONLY_CATS = {"Cat H"}
+# Cat H («Тозалаш» — cleaning) LEFT it on 2026-10-16 — the operator's directive,
+# «count idle time Category H on workload also». It was the last member, so the
+# set is EMPTY and every category counts; the set and every door reading it
+# STAY, so a category can be taken back out with one line here and nowhere
+# else. A Tozalash minute enters the загрузка the way every other figure already
+# counts it (2026-09-29, `CLEANERS_CATS` below): at the crew its entry names —
+# `idle_intervals.people_pieces` inside the fleet mean, `cell_share_minutes` on
+# /zagruzka-cell — and at the whole cell where the entry carries no count, which
+# is every entry filed before the count existed.
+OJIDANIYA_ONLY_CATS: set[str] = set()
 
 # Categories whose entry names HOW MANY PEOPLE it took — «Tozalovchilar»
 # (2026-09-29, the operator's directive). Not everybody in a cell cleans: 2 of

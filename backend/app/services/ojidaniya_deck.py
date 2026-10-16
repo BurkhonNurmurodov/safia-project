@@ -28,11 +28,12 @@ replaces. What is on screen when the button is pressed changes nothing, which
 is why the button confirms with the scope written out.
 
 **Its category scope is the ЗАГРУЗКА's** (the operator's ruling, 2026-09-04):
-`sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat H», Тозалаш, the cleaning the shift
-does rather than a stoppage it suffers — is not in this file at all. The
-filtering happens where the data is fetched, `DECK_KPI_ONLY` in
-`routers/downtime.py`, so this module never sees a dropped category and has
-nothing to subtract. Do not add a second filter here.
+whatever `sheets_reader.OJIDANIYA_ONLY_CATS` holds is not in this file at all.
+Until 2026-10-16 that was «Cat H», Тозалаш; since then the set is EMPTY (Cat H
+counts on the workload, the operator's directive) and Tozalash is in the deck
+like every other cause. The filtering happens where the data is fetched,
+`DECK_KPI_ONLY` in `routers/downtime.py`, so this module never sees a dropped
+category and has nothing to subtract. Do not add a second filter here.
 
 **No text on a slide may ever land on other text.** Everything here is
 absolutely positioned and a PowerPoint text box does not clip, so a string
@@ -70,6 +71,7 @@ from pptx.text.text import Font as _Font
 from pptx.util import Emu, Inches, Pt
 
 from app.services import deck_text
+from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 from app.translit import transliterate
 
 log = logging.getLogger(__name__)
@@ -134,8 +136,9 @@ _PALETTE = [
 ]
 
 # Categories that show on the Ojidaniya page but never enter the загрузка —
-# `sheets_reader.OJIDANIYA_ONLY_CATS`, restated here only so a slide can name
-# the scope it is describing.
+# `sheets_reader.OJIDANIYA_ONLY_CATS` itself (it was restated here as a literal
+# until 2026-10-16; two spellings of one set is how a glossary row goes on
+# calling a category «not counted» after the загрузка started counting it).
 #
 # **They do not reach this module at all** (the operator's ruling, 2026-09-04).
 # The filtering happens where the deck's data is fetched — `DECK_KPI_ONLY` in
@@ -148,7 +151,7 @@ _PALETTE = [
 # today. It stays because it is a true statement about a category rather than
 # about this week's data, and because lifting the ruling must not mean
 # rediscovering which categories the flag was about.
-OJIDANIYA_ONLY = {"Cat H"}
+OJIDANIYA_ONLY = OJIDANIYA_ONLY_CATS
 
 
 def cat_meta(name: str) -> tuple[str, str, str, RGBColor]:

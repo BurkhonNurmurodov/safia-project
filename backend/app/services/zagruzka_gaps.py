@@ -342,8 +342,9 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     units_src = idle_source.cell_units(db)
     wanted = [d.isoformat() for d in _days(lo, date_to)]
     # Approved + stopped, minus the categories the загрузка never counts
-    # (`OJIDANIYA_ONLY_CATS` — Cat H today): a Cat H minute was never going to
-    # reach the load, so listing it as lost would be a false alarm.
+    # (`OJIDANIYA_ONLY_CATS` — empty since 2026-10-16, when Cat H joined): such
+    # a minute was never going to reach the load, so listing it as lost would
+    # be a false alarm.
     per_pair: dict[tuple[int, str], list] = defaultdict(list)
     for e in ojidaniya_cost._events(db, cells, wanted):
         if (e.category or "") in OJIDANIYA_ONLY_CATS:
@@ -642,7 +643,7 @@ def _scope(rep: dict) -> list[dict]:
             f"{rep['floor'].strftime('%d.%m.%Y')} — shu kundan загрузка "
             "«Zagruzka fayli» sahifasidan o'qiladi"},
         {"label": "Kutish", "value": "Tasdiqlangan · to'xtagan · загрузкада "
-                                     "hisoblanadigan toifalar (Cat H emas)"},
+                                     "hisoblanadigan toifalar"},
         {"label": "Hisoblash", "value": "Sahifaning o'z funksiyalari — bu yerda "
                                         "hech narsa qayta o'lchanmaydi"},
     ]
