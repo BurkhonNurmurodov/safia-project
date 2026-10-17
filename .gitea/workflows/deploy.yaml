@@ -130,14 +130,3 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
-
-      # ⚠ TEMPORARY (2026-10-17): what Verifix holds behind HR's «Соответствие
-      # категории» KPI — the rank dictionary, the positions, every employee's
-      # job / rank / employment type per cell (pseudonyms, no names, dates as
-      # months) and the rank-change journal — so the KPI can be defined
-      # against HR's July figures. Read-only, never fails the deploy. Lives
-      # under deploy/ so adding it restarts nothing. Remove with the script.
-      - name: "Probe: Verifix ranks for the category KPI (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 240 .venv/bin/python ../deploy/diag_category_compliance.py || true
