@@ -10062,13 +10062,26 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   no checked cell = PASS. **A cell passes** when every worker on its list is
   «Keladi» or «Kelmaydi» — who marked them does not matter. **The task passes**
   when every checked cell does; a per-cell unit gets ONE verdict for the leader.
-- **Today or tomorrow, per CELL** (`KelishCellKind`, `kelish_cell_kinds`):
-  fixed by the check on the cell's first check day with a plan — tomorrow's
-  list filled (whatever today's) → «tomorrow», only today's → «today», neither →
-  fail and decide later; until fixed either list counts. «Today» = the checklist
-  day, «tomorrow» = the day after (a night checked at 08:00: the night that
-  ended / the one opening that evening). Shown on each /kelish card (`KindLine`),
-  an ADMIN edits it (`PUT /api/kelish/kind`).
+- **Today's or tomorrow's list — EITHER, unless an admin pins one**
+  (`KelishCellKind`, `kelish_cell_kinds`; the operator, 2026-10-17). A cell
+  passes when its today's OR its tomorrow's list is full at the check; an ADMIN
+  may pin a cell to one of them on its /kelish card (`KindLine`, `PUT
+  /api/kelish/kind`, src «manual») and it is then judged on that list alone.
+  «Today» = the checklist day, «tomorrow» = the day after (a night checked at
+  08:00: the night that ended / the one opening that evening). Until 17 Oct the
+  check FIXED each cell's type itself on its first check day (tomorrow's filled
+  → «tomorrow», only today's → «today») and judged it on that list for good —
+  and guessed wrong for many cells: 27 of the 66 failed lists of 10—17 Oct had
+  the OTHER list full (a leader who fills today's list judged on tomorrow's
+  every day; shift 2, which fills a night's list when that night starts, judged
+  at 08:00 on the next night's). Those `src «auto»` rows stay in the table as
+  history and nothing reads them (`kelish.load_kinds` returns manual rows only);
+  nothing writes one any more. Every #11 surface names lists by DATE: the card
+  prints the next check and the date of each list it reads
+  (`leader_auto.next_staff_list_check` → `/week`'s `next_check`), the warning
+  card prints both dates, and a list filled before its own day says
+  «(oldindan)» — «To'liq to'ldirildi: 16.10» under a 17.10 list read as «the
+  16.10 list was checked». Past verdicts were NOT re-judged.
 - Read AT THE HOUR: a pass more than `LATE_GRACE` late reads marks, «+»/«−» and
   the file as they stood then (`file_workers_days(as_of=)`).
 - **Transition** (TEMPORARY `services/leader_auto_t11.py`): 4 Oct (S1) and the

@@ -4405,12 +4405,12 @@ class KelishCellKind(Base):
     automatic check (`leader_auto`, check `staff_list`, from 2026-10-05):
     «today» (the shift-day being checked) or «tomorrow» (the one after).
 
-    The operator's rule: it is fixed on the cell's FIRST check day that has a
-    plan — tomorrow's list filled (with or without today's) → «tomorrow»; only
-    today's → «today»; neither → the task fails that day and the type is decided
-    on the next check day. No row = not decided yet, and until then either list
-    passes. `src` "auto" (the check decided it) | "manual" (an admin set it on
-    «Ish grafigi»); an admin's value is never overwritten by the check.
+    Only an ADMIN's row counts (`src` "manual", set on «Ish grafigi»): the cell
+    is judged on that list alone. No such row = either list passes (the
+    operator, 2026-10-17). Rows with `src` "auto" are the check's own guess from
+    a cell's first check day (5—7 Oct 2026: tomorrow's list filled → «tomorrow»,
+    only today's → «today»); they guessed wrong for many cells and are kept as
+    history, read by nothing (`kelish.load_kinds`), and nothing writes one now.
     """
     __tablename__ = "kelish_cell_kinds"
 

@@ -37,6 +37,7 @@ const T_ALL = {
     doneK: "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t}",
     doneKLate: "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
     notDone: "Keyin ham to'liq to'ldirilmagan",
+    early: " (oldindan)",
     durH: "{h} soat", durM: "{m} daqiqa", durHM: "{h} soat {m} daqiqa",
   },
   uz_cyrl: {
@@ -61,6 +62,7 @@ const T_ALL = {
     doneK: "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t}",
     doneKLate: "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
     notDone: "Кейин ҳам тўлиқ тўлдирилмаган",
+    early: " (олдиндан)",
     durH: "{h} соат", durM: "{m} дақиқа", durHM: "{h} соат {m} дақиқа",
   },
   ru: {
@@ -85,6 +87,7 @@ const T_ALL = {
     doneK: "Список {kind} заполнен полностью: {d}, {t}",
     doneKLate: "Список {kind} заполнен полностью: {d}, {t} — через {dur} после проверки",
     notDone: "Позже тоже не был заполнен полностью",
+    early: " (заранее)",
     durH: "{h} ч", durM: "{m} мин", durHM: "{h} ч {m} мин",
   },
   en: {
@@ -109,6 +112,7 @@ const T_ALL = {
     doneK: "{kind} list fully filled: {d} at {t}",
     doneKLate: "{kind} list fully filled: {d} at {t} — {dur} after the check",
     notDone: "Not fully filled afterwards either",
+    early: " (in advance)",
     durH: "{h} h", durM: "{m} min", durHM: "{h} h {m} min",
   },
 };
@@ -154,14 +158,20 @@ const dur = (T, minutes) => {
 const isKind = (k) => k === "today" || k === "tomorrow";
 const kindWord = (T, k) => (k === "today" ? T.kToday : T.kTomorrow);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const fillLine = (T, it, kind) => {
+// A list filled BEFORE its own day (17.10's list, marked on 16.10 as
+// tomorrow's) says «(oldindan)» — without it «To'liq to'ldirildi: 16.10» read
+// as «the 16.10 list was checked» (the operator, 2026-10-17).
+const fillLine = (T, it, kind, days = []) => {
   const dt = dmText(it.filled_at);
   if (!dt) return it.ok ? "" : T.notDone;
   const late = Number(it.filled_late_min);
   const isLate = Number.isFinite(late) && late > 0;
   const fk = kind == null && isKind(it.filled_kind) ? it.filled_kind : null;
   const key = (fk ? "doneK" : "done") + (isLate ? "Late" : "");
-  return cap(put(T[key], { d: dt[0], t: dt[1], dur: isLate ? dur(T, late) : "", kind: fk ? kindWord(T, fk) : "" }));
+  const lk = kind || fk;
+  const ld = lk ? String(days[lk === "tomorrow" ? 1 : 0] || "").slice(0, 10) : "";
+  const early = !isLate && ld && String(it.filled_at).slice(0, 10) < ld ? T.early : "";
+  return cap(put(T[key], { d: dt[0], t: dt[1], dur: isLate ? dur(T, late) : "", kind: fk ? kindWord(T, fk) : "" })) + early;
 };
 const pair = (v) => (Array.isArray(v) ? [v[0] ?? 0, v[1] ?? 0] : [0, 0]);
 const staffLines = (T, f) => {
@@ -182,7 +192,7 @@ const staffLines = (T, f) => {
       out.push(put(T.lst2, { cell: it.cell, d0: ddmm(days[0]), d1: ddmm(days[1]) }));
       out.push(put(T.atChk2, { m0, n0, m1, n1 }));
     }
-    const line = fillLine(T, it, kind);
+    const line = fillLine(T, it, kind, days);
     if (line) out.push(line);
   }
   return out;

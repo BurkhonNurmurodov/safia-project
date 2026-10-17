@@ -659,12 +659,19 @@ KINDS = ("today", "tomorrow")
 
 
 def load_kinds(db: Session, cell_ids: Iterable[int]) -> dict[int, KelishCellKind]:
-    """{cell_id: KelishCellKind} — a cell with no row is not decided yet."""
+    """{cell_id: KelishCellKind} — the cells an ADMIN pinned to one list. A
+    cell with no such row passes #11 on EITHER list (the operator, 2026-10-17).
+
+    Rows the check wrote by itself (src «auto», 5—7 Oct 2026: its guess from a
+    cell's first check day) are left in the table as history and read by
+    nobody: they guessed wrong for many cells and cost leaders the point for a
+    list they had filled. Only `set_kind` writes a row now."""
     ids = list(set(cell_ids))
     if not ids:
         return {}
     return {k.cell_id: k for k in
-            db.query(KelishCellKind).filter(KelishCellKind.cell_id.in_(ids))}
+            db.query(KelishCellKind).filter(KelishCellKind.cell_id.in_(ids),
+                                            KelishCellKind.src == "manual")}
 
 
 def kind_out(k: Optional[KelishCellKind]) -> Optional[dict]:
@@ -675,23 +682,6 @@ def kind_out(k: Optional[KelishCellKind]) -> Optional[dict]:
             "decided_on": k.decided_on.isoformat() if k.decided_on else None,
             "by": k.by_name,
             "at": k.set_at.isoformat() if k.set_at else None}
-
-
-def decide_kind(db: Session, cell_id: int, kind: str, day: date) -> bool:
-    """The check fixing a cell's type on its first check day — written only
-    while the cell has none, so neither a second pass nor an admin's own value
-    is ever overwritten. Flushes; the caller commits."""
-    if kind not in KINDS:
-        return False
-    if db.query(KelishCellKind.cell_id).filter_by(cell_id=cell_id).first():
-        return False
-    try:
-        with db.begin_nested():
-            db.add(KelishCellKind(cell_id=cell_id, kind=kind, decided_on=day,
-                                  src="auto", by_name="Tizim (avtomatik)"))
-    except IntegrityError:
-        return False            # a parallel pass fixed it first — theirs stands
-    return True
 
 
 def set_kind(db: Session, cell_id: int, kind: Optional[str],

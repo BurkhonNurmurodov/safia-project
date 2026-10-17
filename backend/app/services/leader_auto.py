@@ -528,10 +528,15 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
       checked; a cell with a plan and nobody on its list is skipped too. No
       checked cell at all is a PASS: there was no list to fill.
     * Which list: the check day's («today», the shift-day being checked) or the
-      next one's («tomorrow») — per CELL, fixed on its first check day with a
-      plan: tomorrow's filled (whatever today's) → «tomorrow»; only today's →
-      «today»; neither → the task fails and the type is fixed on a later day.
-      Until it is fixed either list passes (`KelishCellKind`).
+      next one's («tomorrow»). A cell an ADMIN pinned to one of them on «Ish
+      grafigi» (`KelishCellKind`, src «manual») is judged on that list alone;
+      every other cell passes when EITHER list is full (the operator,
+      2026-10-17). The type the check used to fix by itself on a cell's first
+      check day (src «auto», 5—7 Oct) guessed wrong for many cells — 27 of the
+      66 failed lists of 10—17 Oct had the other list full: a leader who fills
+      today's list was judged on tomorrow's every day, and shift 2, which fills
+      a night's list when that night starts, was judged at 08:00 on the next
+      night's. A guess never costs a point any more, and nothing guesses.
     * Who marked a worker does not matter — only whether the list is filled.
 
     Read AT THE HOUR: a pass within `LATE_GRACE` reads the lists as they are;
@@ -553,9 +558,6 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
         return Verdict(PASSED, "ok", facts)
 
     cutoff = ctx.due if (ctx.now - ctx.due) > LATE_GRACE else None
-    # The check fixes a cell's type only when it is the real verdict at (or
-    # after) the hour of a day under this rule — never from the warning card.
-    decide = ctx.now >= ctx.due and str(ctx.date)[:10] >= check_floor("staff_list")
     files = kelish.file_workers_days(ctx.db, list(days), as_of=cutoff)
     ids = [c.id for c in planned]
     events = kelish.load_events(ctx.db, ids)
@@ -596,15 +598,14 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
             if got["today"][1] == 0 and got["tomorrow"][1] == 0:
                 facts["empty"].append(label)
                 continue
-            pick = ("tomorrow" if full["tomorrow"]
-                    else "today" if full["today"] else None)
+            # Either list passes. Where both are full, the one completed FIRST
+            # is named — it is the one that already answered the check.
+            full_ones = [k for k in kelish.KINDS if full[k]]
+            pick = (min(full_ones, key=lambda k: done_at.get(k) or "~")
+                    if full_ones else None)
             ok = pick is not None
             if pick is not None:
-                if decide and kelish.decide_kind(ctx.db, c.id, pick, d):
-                    item["kind"], item["decided"] = pick, True
-                else:
-                    item["would_be"] = pick
-                    item["filled_kind"] = pick
+                item["filled_kind"] = pick
                 if done_at.get(pick):
                     item["filled_at"] = done_at[pick]
         item["ok"] = ok
@@ -690,7 +691,6 @@ def late_fills(db: Session, jobs: list, now: datetime | None = None) -> list:
     files = kelish.file_workers_days(db, sorted(days))
     events = kelish.load_events(db, list(cells))
     marks = kelish.load_marks_days(db, list(cells), sorted(days))
-    kinds = kelish.load_kinds(db, list(cells))
 
     for j, i in todo:
         f = out[j] or dict(jobs[j][0])
@@ -700,9 +700,8 @@ def late_fills(db: Session, jobs: list, now: datetime | None = None) -> list:
         if c is None or not c.verifix_code:
             continue
         ds = [_as_date(x) for x in f["days"][:2]]
-        kr = kinds.get(c.id)
-        kind = it.get("kind") if it.get("kind") in kelish.KINDS else (
-            kr.kind if kr is not None and kr.kind in kelish.KINDS else None)
+        # The list the VERDICT judged — a pinned cell's one list, else either.
+        kind = it.get("kind") if it.get("kind") in kelish.KINDS else None
         names = [kind] if kind else list(kelish.KINDS)
         found = None
         for name in names:
@@ -1146,6 +1145,46 @@ def check_hour(db: Session, manager_id: int | None, shift: int | None,
                         m.shift, got[task_id][1], moved.minutes)
                 return got[task_id][1]
     return leader_close.task_deadline(cfg_entry or {}, shift)
+
+
+def next_staff_list_check(db: Session, manager_id: int | None,
+                          leader_id: int | None = None,
+                          now: datetime | None = None) -> dict | None:
+    """The next #11 check a cell will take — its checklist day, its hour and
+    the DATES of the two lists it can read — so «Ish grafigi» names the list by
+    its date and never by a bare «bugungi» / «ertangi», which reads two ways:
+    shift 2's 08:00 check reads the night that has just ENDED as «today», a
+    date that is yesterday's by then (the operator, 2026-10-17). None where the
+    unit's #11 is not checked here (not a per-task unit, no hour)."""
+    from app.services import leader_close
+    if not manager_id:
+        return None
+    td = (db.query(LeaderTaskDef)
+          .filter(LeaderTaskDef.auto_check.like("staff_list%")).first())
+    m = db.query(Manager).filter(Manager.id == manager_id).first()
+    if td is None or m is None or m.id not in leader_tasks.per_task_units(db):
+        return None
+    now = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
+    prof = (db.query(RoleProfile).filter(RoleProfile.id == leader_id).first()
+            if leader_id else None)
+    if prof is not None and leader_shift.moved(db, prof.id):
+        shift, d = leader_shift.current(db, prof, now)
+    else:
+        shift, d = m.shift, leader_tasks.effective_date(m.shift, now)
+    d = str(d)[:10]
+    for _ in range(3):
+        if d >= check_floor("staff_list"):
+            hhmm = check_hour(db, m.id, shift, td.id, None,
+                              leader_id=leader_id, date=d)
+            due = leader_close.due_at({"deadline": hhmm}, shift, d)
+            if due is not None and now < due:
+                due = due.astimezone(TASHKENT)
+                return {"date": d, "at": hhmm,
+                        "due": due.isoformat(timespec="minutes"),
+                        "today": d,
+                        "tomorrow": (_as_date(d) + timedelta(days=1)).isoformat()}
+        d = (_as_date(d) + timedelta(days=1)).isoformat()
+    return None
 
 
 def _ledger(db: Session, leader_id: int, date: str, task_id: int,
@@ -1686,7 +1725,7 @@ def staff_list_lines(f: dict, lang: str = "uz") -> list[str]:
             t, w = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
             out.append(L["lst2"].format(cell=cell, d0=_ddmm(days[0]), d1=_ddmm(days[1])))
             out.append(L["at_chk2"].format(m0=t[0], n0=t[1], m1=w[0], n1=w[1]))
-        out.append(_fill_line(L, it, kind))
+        out.append(_fill_line(L, it, kind, days))
     return out
 
 
@@ -1703,14 +1742,18 @@ def fill_summary(f: dict, lang: str = "uz") -> list[str]:
         fk = kind or (it.get("filled_kind") if it.get("filled_kind") in ("today", "tomorrow") else None)
         head = (f"{it.get('cell')} — {_ddmm(days[fk == 'tomorrow'])} ({L['k_' + fk]})"
                 if fk else str(it.get("cell")))
-        out.append(f"{head} · {_fill_line(L, it, kind)}")
+        out.append(f"{head} · {_fill_line(L, it, kind, days)}")
     return out
 
 
-def _fill_line(L: dict, it: dict, kind: str | None) -> str:
+def _fill_line(L: dict, it: dict, kind: str | None, days: list | None = None) -> str:
     """«To'liq to'ldirildi: 11.10, soat 08:53 — tekshiruvdan 12 soat 53 daqiqa
     keyin» (`filled_at` + `filled_late_min`), the list named when the cell's
-    type is not fixed, or «keyin ham to'liq to'ldirilmagan»."""
+    type is not fixed, or «keyin ham to'liq to'ldirilmagan».
+
+    A list filled BEFORE its own day (17.10's list, marked on 16.10 as «ertangi»)
+    says «(oldindan)»: without it «To'liq to'ldirildi: 16.10» read as «the
+    16.10 list was checked» (the operator, 2026-10-17)."""
     dt = _dm_text(it.get("filled_at"))
     if not dt:
         return L["not_done"] if not it.get("ok") else ""
@@ -1721,6 +1764,10 @@ def _fill_line(L: dict, it: dict, kind: str | None) -> str:
     fk = it.get("filled_kind") if (kind is None and it.get("filled_kind") in ("today", "tomorrow")) else None
     key = ("done_k" if fk else "done") + ("_late" if late > 0 else "")
     s = L[key].format(d=dt[0], t=dt[1], dur=_dur(L, late), kind=L["k_" + fk] if fk else "")
+    lk = kind or fk
+    ld = str((days or ["", ""])[lk == "tomorrow"] or "")[:10] if lk else ""
+    if late <= 0 and ld and str(it.get("filled_at"))[:10] < ld:
+        s += L["early"]
     return s[:1].upper() + s[1:]
 
 
@@ -1781,6 +1828,7 @@ _RESULT_TEXT = {
            "done_k": "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t}",
            "done_k_late": "{kind} ro'yxat to'liq to'ldirildi: {d}, soat {t} — tekshiruvdan {dur} keyin",
            "not_done": "Keyin ham to'liq to'ldirilmagan",
+           "early": " (oldindan)",
            "dur_h": "{h} soat", "dur_m": "{m} daqiqa", "dur_hm": "{h} soat {m} daqiqa"},
     "uz_cyrl": {"plan": "Режа киритилган позициялар: {a} / {b}",
                 "filled": "Режа ва одамлар киритилган ячейкалар: {codes}",
@@ -1803,6 +1851,7 @@ _RESULT_TEXT = {
                 "done_k": "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t}",
                 "done_k_late": "{kind} рўйхат тўлиқ тўлдирилди: {d}, соат {t} — текширувдан {dur} кейин",
                 "not_done": "Кейин ҳам тўлиқ тўлдирилмаган",
+                "early": " (олдиндан)",
                 "dur_h": "{h} соат", "dur_m": "{m} дақиқа", "dur_hm": "{h} соат {m} дақиқа"},
     "ru": {"plan": "Позиции с планом: {a} / {b}",
            "filled": "Ячейки с планом и людьми: {codes}",
@@ -1825,6 +1874,7 @@ _RESULT_TEXT = {
            "done_k": "Список {kind} заполнен полностью: {d}, {t}",
            "done_k_late": "Список {kind} заполнен полностью: {d}, {t} — через {dur} после проверки",
            "not_done": "Позже тоже не был заполнен полностью",
+           "early": " (заранее)",
            "dur_h": "{h} ч", "dur_m": "{m} мин", "dur_hm": "{h} ч {m} мин"},
     "en": {"plan": "Positions with a plan: {a} / {b}",
            "filled": "Cells with plan and people: {codes}",
@@ -1847,6 +1897,7 @@ _RESULT_TEXT = {
            "done_k": "{kind} list fully filled: {d} at {t}",
            "done_k_late": "{kind} list fully filled: {d} at {t} — {dur} after the check",
            "not_done": "Not fully filled afterwards either",
+           "early": " (in advance)",
            "dur_h": "{h} h", "dur_m": "{m} min", "dur_hm": "{h} h {m} min"},
 }
 

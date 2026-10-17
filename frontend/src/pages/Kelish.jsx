@@ -257,17 +257,23 @@ function DayHead({ day, t }) {
 
 // One line under the grid: on an open week it is the tap cycle itself, which
 // is also the whole legend; on a closed one, the three answers.
-// Which list checklist task #11's automatic check judges for this cell —
-// «today» or «tomorrow», fixed by the check on the cell's first check day
-// (services/leader_auto.py, `staff_list`). Shown on every card, under the grid
-// (a line above it would move the rows); an ADMIN may change it.
-function KindLine({ cellId, kind, canSet, t, toast, onSaved }) {
+// Which list checklist task #11's automatic check judges for this cell: an
+// ADMIN may pin it to «today» or «tomorrow»; unpinned, EITHER list passes
+// (services/leader_auto.py, `staff_list`; the operator, 2026-10-17). Shown on
+// every card, under the grid (a line above it would move the rows), with the
+// next check and the DATE of each list it reads (`next_check`) — a bare
+// «bugungi» reads two ways, and on shift 2 the 08:00 check's «today» is the
+// night that has just ended.
+function KindLine({ cellId, kind, next, canSet, t, toast, onSaved }) {
   const [saving, setSaving] = useState(false);
   const k = kind?.kind || "";
   const word = k === "today" ? t("kelish.kindToday") : k === "tomorrow" ? t("kelish.kindTomorrow") : t("kelish.kindNone");
-  const how = !kind ? ""
-    : kind.src === "manual" ? fill(t("kelish.kindManual"), { by: kind.by || "—" })
-    : fill(t("kelish.kindAuto"), { d: dm(kind.decided_on) });
+  const how = kind?.src === "manual" ? fill(t("kelish.kindManual"), { by: kind.by || "—" }) : "";
+  const dated = (label, iso) => (iso ? `${label} (${dm(iso)})` : label);
+  const what = !next ? ""
+    : k === "today" ? fill(t("kelish.nextList"), { d: dm(next.today) })
+    : k === "tomorrow" ? fill(t("kelish.nextList"), { d: dm(next.tomorrow) })
+    : fill(t("kelish.nextEither"), { d0: dm(next.today), d1: dm(next.tomorrow) });
   const save = async (v) => {
     if (v === k) return;
     setSaving(true);
@@ -292,8 +298,8 @@ function KindLine({ cellId, kind, canSet, t, toast, onSaved }) {
           triggerClassName="px-2.5 py-1.5 text-xs"
           options={[
             { value: "", label: t("kelish.kindUnset") },
-            { value: "today", label: t("kelish.kindToday") },
-            { value: "tomorrow", label: t("kelish.kindTomorrow") },
+            { value: "today", label: dated(t("kelish.kindToday"), next?.today) },
+            { value: "tomorrow", label: dated(t("kelish.kindTomorrow"), next?.tomorrow) },
           ]}
         />
       ) : (
@@ -301,6 +307,11 @@ function KindLine({ cellId, kind, canSet, t, toast, onSaved }) {
       )}
       {canSet && !k && <span style={{ color: "var(--text-3)" }}>{t("kelish.kindNone")}</span>}
       {how && <span style={{ color: "var(--text-3)" }}>· {how}</span>}
+      {next && (
+        <span className="basis-full" style={{ color: "var(--text-2)" }}>
+          {fill(t("kelish.nextCheck"), { d: dm(next.due), t: next.at, what })}
+        </span>
+      )}
     </div>
   );
 }
@@ -755,7 +766,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
         {view.length > 0 && <Legend open={openAny} gaps={closedGaps} t={t} />}
         <KindLine
-          cellId={cell.id} kind={data.kind} canSet={!!data.can_set_kind} t={t} toast={toast}
+          cellId={cell.id} kind={data.kind} next={data.next_check} canSet={!!data.can_set_kind} t={t} toast={toast}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["kelish-week", cell.id] });
             qc.invalidateQueries({ queryKey: ["kelish-cells"] });

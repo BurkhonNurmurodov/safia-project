@@ -131,16 +131,6 @@ jobs:
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
 
-      # ⚠ TEMPORARY (2026-10-17): the #11 «Ish grafigi» check report — ledger
-      # rows, cell list types, day closes and digest sends for the operator's
-      # complaints of 17 Oct. Read-only, never fails the deploy, no worker
-      # names. Lives under deploy/ so adding it restarts nothing. Remove with
-      # the script.
-      - name: "Report: task #11 staff-list checks (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 170 .venv/bin/python ../deploy/diag_staff_list.py || true
-
       # ⚠ TEMPORARY (2026-10-17): how IT's ARC apps serve a ticket's photos —
       # services/arc_files.py's resolver run on a few real tickets, each URL it
       # tried and what answered (URL shapes, status codes, sizes; no names, no
