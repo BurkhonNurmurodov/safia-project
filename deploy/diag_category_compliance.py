@@ -6,8 +6,10 @@ HR says a cell's category-compliance percentage comes from Verifix. The
 platform has never read Verifix's ranks («разряд» / category): `verifix_org`
 keeps an employee's job, division and org unit and nothing else. So this
 prints what the API carries — the rank dictionary (`pro/rank$list`), the
-positions (`pro/robot$list`), every employee of the Pro list with their job,
-rank, employment type and position per cell, and the rank-change journal
+positions (`pro/robot$list`: one per placement, with the job, the category
+and the org unit — the first run, 2026-10-17, found 18,504 of them and the
+Pro employee list closed to the API role), every employee of the Core list
+with their job, status and position per cell, and the rank-change journal
 (`pro/rank_change$list`) — so the KPI's definition can be worked out against
 HR's July figures and then built like the other three KPI pages.
 
@@ -45,7 +47,7 @@ from app.version import APP_VERSION, current_commit  # noqa: E402
 
 TZ = ZoneInfo("Asia/Tashkent")
 BUDGET_S = 200.0
-PRINT_MAX = {"emp": 7000, "rank_change": 6000, "robot": 60}
+PRINT_MAX = {"emp": 9000, "rank_change": 40000, "robot": 20, "robot_rows": 12000}
 DISMISSED_FROM = "2026-05"          # dismissed people kept, so July can be rebuilt
 
 # Pseudonyms, one counter per id kind, stable within the run.
@@ -63,7 +65,7 @@ VOCAB_NAMES = {
 DROP = ("npin", "pinfl", "passport", "phone", "mobile", "email", "birth", "address", "gender",
         "sex", "photo", "card", "account", "tin", "iapa", "nationality", "marital", "family",
         "citizen", "resident", "note", "comment", "login", "password", "telegram", "region",
-        "district", "street", "fio", "surname", "patronym")
+        "district", "street", "fio", "surname", "patronym", "base")
 
 
 def pseud(kind: str, v) -> str | None:
@@ -116,11 +118,16 @@ def clean(row: dict, person: bool) -> dict:
             continue
         if private_key(k, person):
             continue
-        if "date" in kl or kl.endswith("_at"):
+        if "date" in kl or kl.endswith(("_at", "_on")):
             out[k] = month(v)
             continue
         out[k] = v
     return out
+
+
+def _datey(k: str) -> bool:
+    kl = str(k).lower()
+    return "date" in kl or kl.endswith(("_at", "_on"))
 
 
 def fields(rows: list) -> list[str]:
@@ -140,8 +147,9 @@ def fieldstats(method: str, rows: list, person: bool) -> None:
                 st["none"] += 1
             if isinstance(v, (dict, list)):
                 continue
-            if len(st["vals"]) < 200 or str(v)[:60] in st["vals"]:
-                st["vals"][str(v)[:60]] += 1
+            sv = (month(v) or "?") if (_datey(k) and v not in (None, "")) else str(v)[:60]
+            if len(st["vals"]) < 200 or sv in st["vals"]:
+                st["vals"][sv] += 1
     for k, st in stats.items():
         out = {"method": method, "key": k, "n": st["n"], "blank": st["none"],
                "types": dict(st["t"]), "distinct": len(st["vals"])}
@@ -169,12 +177,26 @@ def flat(rows: list) -> list[dict]:
     return out
 
 
+def _pages(cl, path: str, body: dict, limit, deadline: float):
+    """`verifix.each_page` without its 60-page cap — the deadline is the bound."""
+    cursor = None
+    for _ in range(2000):
+        if time.monotonic() > deadline:
+            raise verifix.VerifixError("slow", "stopped at the time limit")
+        data, nxt = verifix.call(cl, path, body, limit=limit, cursor=cursor)
+        yield data
+        if not nxt or nxt == cursor:
+            return
+        cursor = nxt
+    raise verifix.VerifixError("slow", "stopped at the page limit")
+
+
 def rows_of(cl, path: str, body: dict, limit, deadline: float) -> dict:
     """Every page of one method, with the failure it hit (if any) instead of raising."""
     out: dict = {"path": path, "rows": [], "pages": 0, "error": None, "partial": False}
     t0 = time.monotonic()
     try:
-        for page in verifix.each_page(cl, path, body, limit=limit, deadline=deadline):
+        for page in _pages(cl, path, body, limit, deadline):
             out["pages"] += 1
             out["rows"].extend(page or [])
     except verifix.VerifixError as exc:
@@ -227,27 +249,19 @@ def main() -> None:
             o["fte"] = rows_of(cl, "core/fte$list", {"fte_ids": []}, verifix.LIMIT_LIST, deadline)
             o["ranks"] = rows_of(cl, "pro/rank$list", {"rank_ids": []}, None, deadline)
             o["robots"] = rows_of(cl, "pro/robot$list", {"robot_ids": []}, None, deadline)
-            try:
-                data, nxt = verifix.call(cl, "core/employee$list",
-                                         {"employee_ids": [], "statuses": [], "npins": []}, limit=40)
-                o["core_emp"] = {"path": "core/employee$list", "rows": data or [], "pages": 1,
-                                 "error": None, "partial": bool(nxt), "ms": 0}
-            except verifix.VerifixError as exc:
-                o["core_emp"] = {"path": "core/employee$list", "rows": [], "pages": 0,
-                                 "error": {"code": exc.code, "status": exc.status}, "partial": False, "ms": 0}
             return o
 
         def read_b(cl):
-            return rows_of(cl, "pro/employee$list",
-                           {"staff_ids": [], "fte_ids": [], "statuses": []}, verifix.LIMIT_LIST, deadline)
+            return rows_of(cl, "core/employee$list",
+                           {"employee_ids": [], "statuses": [], "npins": []}, verifix.LIMIT_LIST, deadline)
 
         def read_c(cl):
-            return rows_of(cl, "pro/rank_change$list", {"journal_ids": []}, None, deadline)
+            return rows_of(cl, "pro/rank_change$list", {"journal_ids": []}, verifix.LIMIT_LIST, deadline)
 
         a, b, c = _side_by_side(cfg, read_a, read_b, read_c)
 
         # ── what each method answered ──────────────────────────────────────────
-        methods = [a["divs"], a["jobs"], a["fte"], a["ranks"], a["robots"], a["core_emp"], b, c]
+        methods = [a["divs"], a["jobs"], a["fte"], a["ranks"], a["robots"], b, c]
         for m in methods:
             rec("method", path=m["path"], rows=len(m["rows"]), pages=m["pages"], ms=m.get("ms"),
                 error=m["error"], partial=m["partial"], fields=fields(m["rows"]))
@@ -274,44 +288,63 @@ def main() -> None:
         # ── positions ─────────────────────────────────────────────────────────
         robots = a["robots"]["rows"]
         fieldstats("pro/robot$list", robots, person=False)
-        for r in robots[:PRINT_MAX["robot"]]:
-            rec("robot", **clean(r, person=False))
+        robot_ids: set = set()
         by_pair: Counter = Counter()
         by_cell: Counter = Counter()
-        for r in robots:
+        printed_r = kept_r = 0
+        for i, r in enumerate(robots):
+            rid = str(r.get("robot_id") or "").strip()
+            robot_ids.add(rid)
             cr = clean(r, person=False)
-            job = cr.get("job_name") or cr.get("job_id")
-            rank = cr.get("rank_name") or cr.get("rank_id")
+            if i >= PRINT_MAX["robot"]:
+                cr.pop("name", None)          # «<job>, <rank>/<org unit path>/(<id>)» — shown on the sample
+            cr["sid"] = pseud("S", rid)       # the same book a staff id uses: equal ids, equal pseudonyms
+            cr.pop("robot_id", None)
+            unit = str(r.get("org_unit_id") or "").strip()
+            div = str(r.get("division_id") or "").strip()
+            cr.update(ucode=dcode.get(unit), dcode=dcode.get(div),
+                      cell=dcode.get(unit) if dcode.get(unit) in cells else None)
+            job = cr.get("job_id")
+            rank = cr.get("rank_id")
             by_pair[f"{job} | {rank}"] += 1
-            node = str(r.get("org_unit_id") or r.get("division_id") or "")
-            if dcode.get(node) in cells:
-                by_cell[dcode[node]] += 1
-        rec("robot_summary", n=len(robots), by_job_rank=by_pair.most_common(80),
-            by_cell=by_cell.most_common(200))
+            if cr["cell"]:
+                by_cell[cr["cell"]] += 1
+            open_ = not cr.get("closed_date")
+            if open_ or (cr.get("closed_date") or "") >= DISMISSED_FROM:
+                kept_r += 1
+                if printed_r < PRINT_MAX["robot_rows"]:
+                    rec("robot", **cr)
+                    printed_r += 1
+        rec("robot_summary", n=len(robots), kept=kept_r, printed=printed_r,
+            by_job_rank=by_pair.most_common(120), by_cell=by_cell.most_common(220))
 
         # ── people (pseudonymised) ────────────────────────────────────────────
-        fieldstats("core/employee$list", a["core_emp"]["rows"], person=True)
         emps = b["rows"]
-        fieldstats("pro/employee$list", emps, person=True)
-        oemps = ((org or {}).get("emps") or {})
+        fieldstats("core/employee$list", emps, person=True)
+        robot_by_id = {str(r.get("robot_id") or "").strip(): r for r in robots}
         status_count: Counter = Counter()
-        printed = 0
+        printed = staff_in_robots = working = 0
         cell_rows: dict[str, list[dict]] = defaultdict(list)
         for e in emps:
             cr = clean(e, person=True)
-            eid = str(e.get("employee_id") or "").strip()
-            oe = oemps.get(eid) or {}
-            unit = str(e.get("org_unit_id") or oe.get("unit") or "").strip()
-            div = str(e.get("division_id") or oe.get("div") or "").strip()
+            unit = str(e.get("org_unit_id") or "").strip()
+            div = str(e.get("division_id") or "").strip()
             ucode, vcode = dcode.get(unit), dcode.get(div)
             cell = ucode if ucode in cells else (vcode if vcode in cells else None)
-            cr.update(cell=cell, ucode=ucode, dcode=vcode, core_status=oe.get("status"),
-                      core_job=oe.get("job"), core_hired=month(oe.get("hired")),
-                      core_dismissed=month(oe.get("dismissed")))
-            status = str(cr.get("status") or oe.get("status") or "")
+            sid = str(e.get("staff_id") or "").strip()
+            rb = robot_by_id.get(sid)
+            cr.update(cell=cell, ucode=ucode, dcode=vcode,
+                      # the position the staff id names, when it is one: its job, rank and org unit
+                      r_job=(str(rb.get("job_id") or "") or None) if rb else None,
+                      r_rank=(str(rb.get("rank_id") or "") or None) if rb else None,
+                      r_ucode=dcode.get(str(rb.get("org_unit_id") or "")) if rb else None,
+                      r_closed=month(rb.get("closed_date")) if rb else None)
+            status = str(cr.get("status") or "")
             status_count[status] += 1
-            dism = cr.get("core_dismissed") or next((v for k, v in cr.items()
-                                                     if "dismiss" in k.lower() and v), None)
+            if status == "W":
+                working += 1
+                staff_in_robots += bool(rb)
+            dism = cr.get("dismissal_date")
             keep = status == "W" or (dism and dism >= DISMISSED_FROM) or status not in ("W", "D")
             if keep and printed < PRINT_MAX["emp"]:
                 rec("emp", **cr)
@@ -319,6 +352,7 @@ def main() -> None:
             if status == "W" and cell:
                 cell_rows[cell].append(cr)
         rec("emp_summary", total=len(emps), printed=printed, status=dict(status_count),
+            working=working, working_staff_in_robots=staff_in_robots,
             placed_working=sum(len(v) for v in cell_rows.values()))
         for code in sorted(cells):
             rows = cell_rows.get(code, [])
@@ -327,13 +361,14 @@ def main() -> None:
             pairs: Counter = Counter()
             n_rank = 0
             for r in rows:
-                rank = r.get("rank_name") or r.get("rank_id") or r.get("rank")
-                job = r.get("job_name") or r.get("job_id") or r.get("core_job")
+                rank = r.get("r_rank")
+                job = r.get("job_id")
                 ranks[str(rank)] += 1
                 jobs[str(job)] += 1
                 pairs[f"{job} | {rank}"] += 1
                 n_rank += bool(rank)
-            rec("cell", code=code, **cells[code], n_working=len(rows), n_rank=n_rank,
+            info = {k: v for k, v in cells[code].items() if k != "code"}
+            rec("cell", code=code, **info, n_working=len(rows), n_rank=n_rank,
                 ranks=ranks.most_common(12), jobs=jobs.most_common(12), job_rank=pairs.most_common(20))
 
         # ── the rank-change journal ───────────────────────────────────────────
