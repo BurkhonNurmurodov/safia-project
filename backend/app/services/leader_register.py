@@ -12,27 +12,35 @@ Now ONE build is kept — the unscoped («see all») one, which is the same for
 every viewer bar the header and a cutoff's reason — and a request is answered
 from it under three rules, in this order:
 
-1. **Nothing it read has changed → served, at once.** `fingerprint()` is one
-   query over every table the build reads: per table the row count and the
-   newest transaction that touched a row (`xmin`), which moves on every
-   committed insert, update or delete. The big per-day tables are counted over
-   CLOSED days only — a leader answering a task on an open day changes nothing
-   the register shows and must not throw the build away. The fingerprint is
-   taken BEFORE a build starts, so a change landing during the build reads as
-   changed at the next request. Exact: a kept build is served only while the
-   database would produce the same one.
+1. **Nothing it read has changed → served, at once, to EVERYBODY.**
+   `fingerprint()` is one query over every table the build reads: per table
+   the row count and the newest transaction that touched a row (`xmin`), which
+   moves on every committed insert, update or delete. The big per-day tables
+   — the AI verdicts included — are counted over CLOSED days only: a leader
+   answering a task on an open day, or the reviewer judging it, changes
+   nothing the register shows and must not throw the build away. The
+   fingerprint is taken BEFORE a build starts, so a change landing during the
+   build reads as changed at the next request. Exact: a kept build is served
+   only while the database would produce the same one — which is why a
+   viewer's own write does not stop it (17 Oct 2026: the Telegram sign-in
+   every app open sends counted as a write, so whoever opened the app and
+   went to Monitoring waited 6–8 s for a build identical to the kept one).
 2. **Something changed, but the kept build is young (`STALE_MAX_S`) → served,
    and a new one is built in the background.** A verdict landing or a day
    closing elsewhere does not make a viewer who did nothing wait 8 s; their
    next refetch (react-query's 60 s staleTime, or the next focus) gets the new
    build. Bounded: older than that, the request waits for the rebuild.
-3. **The viewer WROTE something since the kept build started → never served
-   it.** A ruling, an override, an exclusion, a sheet refresh — then the
-   refetch — must show the write. `wrote(actor)` is called for every mutating
-   request (the action-log middleware, before the response leaves) and every
+3. **…but never to a viewer who WROTE something since the kept build
+   started.** A ruling, an override, an exclusion — then the refetch — must
+   show the write. `wrote(actor)` is called for every mutating request but a
+   sign-in (the action-log middleware, before the response leaves) and every
    bot act (`record_bot`), keyed by the Telegram account, so it needs no door
    per endpoint and cannot miss one. The viewer then waits for a build that
    started after their write, sharing it with anybody else waiting.
+
+A request that waits for a build says why on the «Server was slow» DM
+(`perf_watch.add_note`): nothing kept yet, which tables changed and how old
+the kept build was, or that the viewer wrote something.
 
 Rebuilds share one flight exactly as before: at most one build runs, a request
 takes only a build that started after it arrived, and a failed build costs
@@ -65,7 +73,13 @@ log = logging.getLogger(__name__)
 
 # A kept build whose inputs have moved is still served while it is younger
 # than this, with a rebuild started behind it. Beyond it the request waits.
-STALE_MAX_S = 180.0
+# Ten minutes, the shift report's own window (`_CACHE_STALE_S`): at three, a
+# brigadir or a leader looking in every quarter of an hour — one slot each —
+# found their build "too old" on almost every visit while verdicts landed.
+STALE_MAX_S = 600.0
+# Background rebuilds running at once, across every slot. Each is seconds of
+# Python holding the GIL; a burst of stale serves must not start ten.
+_BG = threading.BoundedSemaphore(2)
 # How long a request waits on a build somebody else is running.
 FLIGHT_WAIT_S = 120.0
 # Scoped builds kept at once (one per viewer scope); the unscoped one is extra.
@@ -192,7 +206,15 @@ _ARMS = [
     ("leader_day_sources", "select count(*), max(xmin::text::bigint) from leader_day_sources"),
     ("leader_task_overrides", "select count(*), max(xmin::text::bigint) from leader_task_overrides"),
     ("leader_ai_disputes", "select count(*), max(xmin::text::bigint) from leader_ai_disputes"),
-    ("leader_ai_reviews", "select count(*), max(xmin::text::bigint) from leader_ai_reviews"),
+    # Verdicts on an OPEN day's entries are left out: a per-task unit's tasks
+    # are reviewed as each one closes, all shift long, and the register shows
+    # closed days only — so counted whole, this arm moved every few minutes and
+    # no kept build survived a shift (17 Oct 2026). A `bot:<entry>` ref is the
+    # only form that names a day; sheet refs always count. When the day closes
+    # its verdicts enter the count (and the day's own arm moves).
+    ("leader_ai_reviews", "select count(*), max(xmin::text::bigint) from leader_ai_reviews"
+                          " where ref not in (select 'bot:' || e.id from leader_task_entries e"
+                          " join leader_task_days d on d.id = e.day_id and d.closed_at is null)"),
     ("leader_task_days", "select count(*), max(xmin::text::bigint) from leader_task_days"
                          " where closed_at is not null"),
     ("leader_task_entries", "select count(*), max(e.xmin::text::bigint) from leader_task_entries e"
@@ -278,10 +300,11 @@ def kept(key: Hashable = None) -> Optional[Build]:
 
 
 def get(db: Session, payload: dict, build_fn: Callable[[Session], Build],
-        key: Hashable = None) -> Build:
+        key: Hashable = None, scope=None) -> Build:
     """The build to answer this viewer with — see the module docstring.
     `key` names a SCOPED build (None = the unscoped register): everything the
-    viewer's answer depends on besides the tables the fingerprint reads."""
+    viewer's answer depends on besides the tables the fingerprint reads.
+    `scope` is the request's ASGI scope, for the note a wait leaves on it."""
     if not enabled():
         return _run(db, build_fn, None, fp=(), key=key)
     arrived = monotonic()
@@ -293,16 +316,51 @@ def get(db: Session, payload: dict, build_fn: Callable[[Session], Build],
     since = _written_since(actor_key(payload))
     with _lock:
         k = _slot(key).kept
-    if k is not None and k.started > since:
+    if k is not None:
+        # Exact, so whoever asks: the database would build this very answer.
         if k.fp == fp:
             return k
-        if arrived - k.done_at < STALE_MAX_S:
+        if k.started > since and arrived - k.done_at < STALE_MAX_S:
             _refresh_later(build_fn, key)
             return k
-    return _wait_build(db, build_fn, after=arrived, fp=fp, key=key)
+    _note(scope, key, _why(k, fp, since, arrived))
+    return _wait_build(db, build_fn, after=arrived, fp=fp, key=key, scope=scope)
 
 
-def _wait_build(db: Session, build_fn, *, after: float, fp: tuple, key: Hashable) -> Build:
+def _moved(a: tuple, b: tuple) -> list[str]:
+    """The fingerprint arms that differ between two fingerprints."""
+    old = {t: (n, x) for t, n, x in a}
+    new = {t: (n, x) for t, n, x in b}
+    return sorted(("the date" if t == "_day" else t)
+                  for t in old.keys() | new.keys() if old.get(t) != new.get(t))
+
+
+def _why(k: Optional[Build], fp: tuple, since: float, arrived: float) -> str:
+    if k is None:
+        return "none kept yet"
+    moved = _moved(k.fp, fp)
+    what = ", ".join(moved[:3]) + (f" +{len(moved) - 3}" if len(moved) > 3 else "")
+    age = f"kept one {int(arrived - k.done_at)} s old"
+    if k.started <= since:
+        return f"viewer wrote {int(arrived - since)} s ago; changed: {what}"
+    return f"changed: {what}; {age}"
+
+
+def _note(scope, key: Hashable, why: str) -> None:
+    """Say on the request why it waits for a build (the slow-request DM prints
+    it beside the path). Never fails the request."""
+    if scope is None:
+        return
+    try:
+        from app.services import perf_watch
+        perf_watch.add_note(scope, f"register {'scoped' if key is not None else 'all'}"
+                                   f" rebuilt — {why}")
+    except Exception:
+        pass
+
+
+def _wait_build(db: Session, build_fn, *, after: float, fp: tuple, key: Hashable,
+                scope=None) -> Build:
     """A build that STARTED after `after`: start one, or join one somebody
     else started late enough. A build that started earlier may have read the
     data before a write this request is looking for, so it is waited out."""
@@ -320,12 +378,25 @@ def _wait_build(db: Session, build_fn, *, after: float, fp: tuple, key: Hashable
                 _clear_flight(key, f)
                 f.done.set()
         if f.started > after:
+            _note_join(scope)
             if f.done.wait(FLIGHT_WAIT_S) and f.build is not None:
                 return f.build
             break                       # it failed or hung — build alone
+        _note_join(scope, waited_out=True)
         if not f.done.wait(FLIGHT_WAIT_S):
             break
     return _run(db, build_fn, None, fp=fp, key=key)
+
+
+def _note_join(scope, waited_out: bool = False) -> None:
+    if scope is None:
+        return
+    try:
+        from app.services import perf_watch
+        perf_watch.add_note(scope, "waited out an older build first" if waited_out
+                            else "joined a build already under way")
+    except Exception:
+        pass
 
 
 def _run(db: Session, build_fn, flight: Optional[_Flight], *, fp: tuple,
@@ -360,16 +431,22 @@ def _refresh_later(build_fn, key: Hashable = None) -> None:
         sl = _slot(key)
         if sl.flight is not None:
             return
-        f = sl.flight = _Flight(monotonic())
+        # Queued until a background slot is free: it reads nothing before
+        # then, so a request waiting meanwhile may join it (`_wait_build`).
+        f = sl.flight = _Flight(float("inf"))
 
     def run():
-        db = SessionLocal()
+        db = None
         try:
-            _run(db, build_fn, f, fp=(), key=key)
+            with _BG:
+                f.started = monotonic()     # when it really starts reading
+                db = SessionLocal()
+                _run(db, build_fn, f, fp=(), key=key)
         except Exception:
             log.exception("leader-register: background rebuild of %r failed", key)
         finally:
-            db.close()
+            if db is not None:
+                db.close()
             _clear_flight(key, f)
             f.done.set()
 

@@ -5677,27 +5677,42 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   count and `max(xmin)`, the id of the last transaction that touched a row,
   which moves on every committed insert, update and delete (a freeze moves
   a hint bit, never the value). The per-day tables — days, entries, media,
-  camera shots, auto checks — are counted over CLOSED days only: a leader
-  answering a task on an open day changes nothing the register shows. The
-  fingerprint is taken BEFORE a build reads anything, so a change landing
-  mid-build reads as a change at the next request. **A table added to the
-  build is an arm added to `_ARMS`**, or a kept build goes stale on exactly
-  that table.
+  camera shots, auto checks and (from 2026-10-17) the AI VERDICTS — are
+  counted over CLOSED days only: a leader answering a task on an open day, or
+  the reviewer judging it, changes nothing the register shows. The verdicts
+  arm leaves out every `bot:<entry>` ref of an open day's entries (a hashed
+  `NOT IN`); counted whole it moved every few minutes all shift, because a
+  per-task unit's tasks are reviewed as each one closes. The fingerprint is
+  taken BEFORE a build reads anything, so a change landing mid-build reads as
+  a change at the next request. **An unchanged fingerprint serves EVERY viewer,
+  one who wrote something included** — the build is what the database would
+  produce now. **A table added to the build is an arm added to `_ARMS`**, or
+  a kept build goes stale on exactly that table.
 - **A young kept build is served while a new one is made** (`STALE_MAX_S`,
-  3 min): a verdict landing or a day closing elsewhere never makes a viewer
-  who did nothing wait; their next refetch (60 s staleTime, or the next
-  focus) gets the new build. Older than that, the request waits for the
-  rebuild — never a figure three minutes behind shown as current. Rebuilds
-  share one flight as before: at most one runs, a request takes only one that
-  started after it arrived.
-- **Never to a viewer who wrote something since it started.** `wrote(actor)`
-  is called for EVERY mutating request — in the action-log middleware on
-  `http.response.start`, before the response leaves, so the refetch it
-  triggers cannot miss it — and for every bot act (`record_bot`), keyed by
-  the Telegram account. No door per endpoint, nothing to forget: a ruling, an
-  override, an exclusion, a sheet refresh or a reopen in Telegram is followed
-  by a build that started after it. A write that could not move the register
-  costs that one account one rebuild.
+  10 min from 2026-10-17 — the shift report's window; it was 3 min, which a
+  brigadir or leader looking in every quarter of an hour, one slot each,
+  outlived on almost every visit): a verdict landing or a day closing
+  elsewhere never makes a viewer who did nothing wait; their next refetch
+  (60 s staleTime, or the next focus) gets the new build. Older than that,
+  the request waits for the rebuild. Rebuilds share one flight as before: at
+  most one per slot, a request takes only one that started after it arrived.
+  At most TWO background rebuilds run at once across every slot (`_BG`); one
+  queued for a turn has not read anything yet, so a request that must wait
+  may join it.
+- **…but never to a viewer who wrote something since it started.**
+  `wrote(actor)` is called for every mutating request but a SIGN-IN (category
+  `sessions`) — in the action-log middleware on `http.response.start`, before
+  the response leaves, so the refetch it triggers cannot miss it — and for
+  every bot act (`record_bot`), keyed by the Telegram account. No door per
+  endpoint, nothing to forget: a ruling, an override, an exclusion, a sheet
+  refresh or a reopen in Telegram is followed by a build that started after
+  it. The sign-in is out because every Telegram app open sends one with the
+  old token: counted, it made whoever opened the app and went to Monitoring
+  wait 6–8 s for a build identical to the kept one (the 17 Oct DM, ×17).
+- **A request that waits says why** on the «Server was slow» DM, beside its
+  path (`perf_watch.add_note`): «register all|scoped rebuilt — none kept
+  yet», «— changed: <tables>; kept one N s old», «— viewer wrote N s ago»,
+  plus «joined a build already under way» when it shared one.
 - **The build itself computes the exemption set fresh** (`leader_load.forget()`
   first): its own 60 s memory is harmless on a build thrown away, and wrong on
   one that is kept until the next change.
@@ -11489,6 +11504,24 @@ blocking work on the event loop freezes every request on the server at once.
     file_id it returns) AND for the bot's prompt redraw, a second Telegram
     round trip. The redraw (`_nudge_bot`, `_nudge_late_bot`) now runs after
     the answer (`tg_later`, its own session, in shot order).
+- **The sixteenth (17 Oct, 16:04–17:04) was `/api/leaders` ×17 at a 6.1 s
+  median, with no deploy in the window** — the kept register was rebuilt
+  almost every time it was asked. Two reasons, both fixed (see «The /leaders
+  register is KEPT»): every Telegram app open sends a sign-in carrying the old
+  token, which counted as a WRITE, so that person's next Monitoring load always
+  waited for a build — even one identical to the kept one; and the fingerprint
+  counted every AI verdict, the ones on still-open days included, so during a
+  shift it had nearly always «changed». An unchanged fingerprint now serves
+  everybody, a sign-in is not a write, open-day verdicts are out of the
+  fingerprint, a changed build is served 10 min (not 3) while rebuilt behind
+  the viewer, and a wait names its reason on the DM. Also from that DM: an
+  objection ruling (`POST /api/leaders/disputes/{id}/decide`, 3.2 s, 57% in
+  Telegram) sends its cards, the three parties' notices and the corrected
+  report after the answer (`_dispute_after_later`, `tg_later`; skipped when
+  the row's status moved meanwhile); and a rich bot message (`broadcast._tg_api`,
+  a fifth of a 5.7 s update in `ssl.do_handshake`) keeps one connection to
+  Telegram per thread. Not touched: `/api/arc-legacy/stats` (7.2 s once, its
+  own SQL) and `/api/heatmap` (3.1 s once).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).

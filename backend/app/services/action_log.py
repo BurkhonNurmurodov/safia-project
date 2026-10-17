@@ -1085,8 +1085,12 @@ class ActionLogMiddleware:
                 # The kept /api/leaders build must never answer this account's
                 # next read with rows from before this write — marked HERE,
                 # before the response leaves, so the refetch it triggers is
-                # too late to miss it (`services/leader_register.wrote`).
-                _note_write(payload)
+                # too late to miss it (`services/leader_register.wrote`). A
+                # sign-in changes no record: every app open sends one (with
+                # the old token, so it HAS an actor), and marking it made the
+                # next Monitoring load wait for a build (17 Oct 2026).
+                if category != "sessions":
+                    _note_write(payload)
             await send(message)
 
         token = _pending.set(row)

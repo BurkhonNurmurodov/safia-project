@@ -324,8 +324,22 @@ def sanitize_rich_html(raw: str) -> tuple[str, str, list[tuple[str, str]]]:
 # sendRichMessage postdates the pinned pyTelegramBotAPI (4.25 < 4.35), so rich
 # sends go straight to the HTTP API — no dependency bump needed on prod.
 
+_TG_LOCAL = threading.local()
+
+
+def _tg_session() -> requests.Session:
+    """One kept-alive connection to Telegram per thread — what pyTelegramBotAPI
+    does for its own calls. A bare `requests.post` opened a new TCP + TLS
+    connection on every call: the 17 Oct «Server was slow» DM put a fifth of a
+    5.7 s bot update in `ssl.do_handshake`."""
+    s = getattr(_TG_LOCAL, "s", None)
+    if s is None:
+        s = _TG_LOCAL.s = requests.Session()
+    return s
+
+
 def _tg_api(method: str, data: dict, files: dict | None = None) -> dict:
-    r = requests.post(
+    r = _tg_session().post(
         f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}",
         data=data, files=files or None, timeout=180,
     )
