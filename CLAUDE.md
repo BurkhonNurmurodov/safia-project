@@ -9593,26 +9593,33 @@ tickets in the same table but «stop the old app's sync». So:
   the old app's `arc_requests.files`; the new app's `photo_report` (the
   crew's photo, «Foto-hisobot») and the filer's attachments, which only IT's
   single-ticket card carries (`GET /arc/api/v1/requests/factory/{id}` →
-  `files[].file_path` «misc/YYYY/MM/DD/<uuid>.jpeg»), read on open and kept
-  10 min. A relative new-app path names no base, so `fetch` walks a short
-  list of bases on IT's host and remembers the one that served real bytes
-  (`_WIN`); a HTML page or JSON answer is never taken for a file. https only,
+  `files[].file_path` «misc/YYYY/MM/DD/<uuid>.jpg»), read on open and kept
+  10 min, plus its `document_url` (also a relative «misc/…» path, so the old
+  «Hujjat» link pointed at this site). The new app serves every such path at
+  `<api host>/base/<path>` (found by the deploy probe, 2026-10-17 — a «.heic»
+  there arrives as JPEG bytes); `fetch` tries that first, then a short list
+  of other bases, and remembers whichever served real bytes (`_WIN`); a HTML
+  page or JSON answer is never taken for a file. Old-app files answer at
+  `api.service.safiabakery.uz/files/…`. https only,
   relative paths only from `*.safiabakery.uz`, an absolute URL or redirect
   only to a public name, IT's credential only on IT's host, ≤ 20 MB.
-  `GET /api/arc-legacy/requests/{id}/files` lists them (`card` = ok · n/a ·
-  failed · not_configured — «none» and «could not ask» are two answers;
-  `force` re-reads a failed card) and `/file/{report|n}` streams one: a
+  `GET /api/arc-legacy/requests/{id}/files` lists them (`report`,
+  `document`, `files`; `card` = ok · n/a · failed · not_configured — «none»
+  and «could not ask» are two answers; `force` re-reads a failed card) and
+  `/file/{report|document|n}` streams one: a
   picture the BYTES prove is served inline, anything else as an attachment
   behind `nosniff`; unreachable is a 424, never 502/503. The modal
   (`components/arc/ArcAttachments.jsx`) shows «Rasmlar va fayllar» under the
   description — a lone photo at the card's width, several as squares, a
-  non-picture as a `FileTile` that downloads — and «Foto-hisobot» under the
-  crew's comment; a tap opens the shared `Lightbox`. Photos load through
+  non-picture as a `FileTile` that downloads — «Foto-hisobot» under the
+  crew's comment and «Hujjat» as a file; a tap opens the shared `Lightbox`.
+  IT names files by uuid (old app: a Telegram file id), so a machine name is
+  shown as what the file is («Hujjat.pdf», «Fayl 1.pdf»). Photos load through
   `ProxyPhoto`, which gained `zoomLabel` (the photo is a real button) and
   `failCaption` (a large thumb says what failed). TEMPORARY: the deploy step
-  «Probe: ARC attachment URLs» (`deploy/diag_arc_files.py`, read-only)
-  prints which base production's files answer on — delete the step and the
-  script once confirmed.
+  «Probe: ARC attachment URLs» (`deploy/diag_arc_files.py`, read-only) runs
+  the resolver on real tickets in every deploy log — it confirmed `/base`;
+  delete the step and the script once this has been seen working on /arc.
 - The two sections below describe each app's mirror and are still accurate for
   it; where they talk about «the page», read `/arc`.
 

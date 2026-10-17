@@ -14,12 +14,14 @@ Where each app keeps them:
 * **old app** (internal API, frozen 2026-10-05) — ``arc_requests.files``, paths
   relative to ``settings.internal_api_url`` («files/AgAC….jpg»), served
   unauthenticated (``arc_client.file_url``).
-* **new app** (login API) — ``photo_report`` on every list item (the crew's
-  report photo), and the filer's attachments, which only the SINGLE-ticket
-  endpoint carries (``GET /arc/api/v1/requests/factory/{id}`` → ``files``, each
-  with a ``file_path`` «misc/YYYY/MM/DD/<uuid>.jpeg»). The mirror never stores
-  that card, so it is read on demand when somebody opens the ticket
-  (:func:`card`, cached).
+* **new app** (login API) — ``photo_report`` (the crew's report) and
+  ``document_url`` on every list item, and the filer's attachments, which only
+  the SINGLE-ticket endpoint carries (``GET /arc/api/v1/requests/factory/{id}``
+  → ``files``, each ``{id, request_id, file_path, created_at}`` with a
+  ``file_path`` «misc/YYYY/MM/DD/<uuid>.jpg»). The mirror never stores that
+  card, so it is read on demand when somebody opens the ticket (:func:`card`,
+  cached). All of them are served at ``<api host>/base/<path>`` (confirmed on
+  production 2026-10-17; a «.heic» there arrives as JPEG bytes).
 
 A relative path on the new app's host does not say which URL serves it, so
 :func:`fetch` walks a short list of bases (`_new_bases`) and remembers the one
@@ -137,10 +139,12 @@ def card_files(card: Optional[dict], report: Optional[str]) -> list[dict]:
     return out
 
 
-def report_item(photo_report: Optional[str]) -> Optional[dict]:
+def report_item(photo_report: Optional[str], role: str = "report") -> Optional[dict]:
+    """A one-path field of the new app — ``photo_report`` (role report) or
+    ``document_url`` (role document); both are relative «misc/…» paths."""
     if not photo_report or not str(photo_report).strip():
         return None
-    return _item(photo_report, None, "new", "report")
+    return _item(photo_report, None, "new", role)
 
 
 # ── the new app's single-ticket card ─────────────────────────────────────────
@@ -224,8 +228,10 @@ def _new_bases() -> list[str]:
     """Where a relative new-app path may be served, most likely first. The
     winner of an earlier file is put in front (`_WIN`)."""
     b = _new_host()
-    tails = ("", "/arc", "/files", "/arc/files", "/media", "/static", "/uploads",
-             "/storage", "/arc/static", "/arc/media", "/arc/api/v1/files", "/base")
+    # «/base» is where production answered on 2026-10-17 (the deploy probe:
+    # every other tail 404) — first, so a restart costs no walk.
+    tails = ("/base", "", "/arc", "/files", "/arc/files", "/media", "/static",
+             "/uploads", "/storage", "/arc/static", "/arc/media", "/arc/api/v1/files")
     out = [b + t for t in tails]
     if settings.internal_api_url:
         i = settings.internal_api_url.rstrip("/")
@@ -344,10 +350,12 @@ def _get_one(client: httpx.Client, url: str, deadline: float) -> tuple[Optional[
                 if _looks_like_page(data, res.headers.get("content-type", "")):
                     return None, "200 page"
                 return data, "200"
+        # «net:» = the host did not answer at all — `fetch` then skips every
+        # other base on that host.
         except httpx.TimeoutException:
-            return None, "timeout"
+            return None, "net:timeout"
         except httpx.HTTPError as exc:
-            return None, type(exc).__name__
+            return None, f"net:{type(exc).__name__}"
 
 
 _cache: "OrderedDict[str, tuple[bytes, str]]" = OrderedDict()
@@ -389,8 +397,11 @@ def fetch(item: dict) -> tuple[Optional[bytes], str]:
                 return _cache[u]
     deadline = time.monotonic() + _WALK_BUDGET_S
     tried = []
+    dead: set[str] = set()     # hosts that did not answer at all
     with httpx.Client(follow_redirects=False) as client:
         for u in urls:
+            if _host(u) in dead:
+                continue
             data, why = _get_one(client, u, deadline)
             tried.append({"url": u, "answer": why})
             if data is not None:
@@ -405,6 +416,8 @@ def fetch(item: dict) -> tuple[Optional[bytes], str]:
                 return data, ctype
             if why == "budget":
                 break
+            if why.startswith("net:"):
+                dead.add(_host(u))
     _note(item, tried)
     log.warning("ARC file not found: %s — %s", item.get("path"),
                 "; ".join(f"{t['url']} {t['answer']}" for t in tried)[:600])

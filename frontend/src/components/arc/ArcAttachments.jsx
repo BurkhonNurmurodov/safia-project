@@ -33,6 +33,33 @@ const loadPhoto = (id, key) => () =>
     return res;
   });
 
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i;
+const extOf = (name) => {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(String(name || "").split("?")[0]);
+  return m ? m[1].toLowerCase() : "";
+};
+// IT names a stored file by a uuid («45968721-….jpg») or, in the old app, by
+// a Telegram file id («AgACAgIA….jpg») — noise to a reader. Such a name is
+// replaced by what the file IS («Hujjat.pdf», «Fayl 2.pdf»); a real name stays.
+const MACHINE = /^([0-9a-f-]{16,}|AgAC[\w-]{10,})$/i;
+export function displayName(rawName, label) {
+  const base = String(rawName || "").split("?")[0].split("/").pop() || "";
+  const ext = extOf(base);
+  const stem = ext ? base.slice(0, -(ext.length + 1)) : base;
+  if (!base || MACHINE.test(stem)) return ext ? `${label}.${ext}` : label;
+  return base;
+}
+
+/** One single-path field of a ticket (`report`, `document`) as gallery items,
+ *  or null when the ticket has none. Painted from the row at once; the listing,
+ *  once in, says whether the bytes are a picture. */
+export function arcSingle(key, path, listed, label) {
+  if (!path && !listed) return null;
+  const raw = listed?.name || path || "";
+  const kind = listed?.kind || (IMAGE_EXT.test(String(raw).split("?")[0]) ? "image" : "file");
+  return [{ key, name: displayName(raw, label), kind }];
+}
+
 /** The attachment list of one ticket. A new-app ticket's files live only on
  *  IT's single-ticket card, read on demand; `card` says whether it was read. */
 export function useArcFiles(remoteId) {
@@ -125,7 +152,12 @@ export function ArcFilesBody({ remoteId, q }) {
       </span>
     );
   }
-  const files = (q.data?.files || []).map((f) => ({ key: String(f.n), name: f.name, kind: f.kind }));
+  // Photos carry no name on screen, so only the other files are numbered.
+  let nth = 0;
+  const files = (q.data?.files || []).map((f) => ({
+    key: String(f.n), kind: f.kind,
+    name: f.kind === "image" ? f.name : displayName(f.name, `${t("arcl.dFileN")} ${++nth}`),
+  }));
   const cardFailed = q.isError || (q.data && !["ok", "n/a"].includes(q.data.card));
   if (files.length > 0) return <ArcGallery remoteId={remoteId} items={files} />;
   if (cardFailed) {

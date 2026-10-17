@@ -47,7 +47,7 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import LegacyApiPanel from "../components/arc/LegacyApiPanel";
 import ArcAnalysis from "../components/arc/ArcAnalysis";
-import { useArcFiles, ArcFilesBody, ArcGallery } from "../components/arc/ArcAttachments";
+import { useArcFiles, ArcFilesBody, ArcGallery, arcSingle } from "../components/arc/ArcAttachments";
 import { inTelegram } from "../utils/session";
 import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatusLegacy";
 
@@ -971,9 +971,8 @@ export default function Arc() {
   // Its photos and files — through our own origin (the CSP draws nothing off
   // IT's host); a new-app ticket's attachments are read off IT's card on open.
   const filesQ = useArcFiles(openId);
-  const reportPhoto = (d?.photo_report || filesQ.data?.report)
-    ? [{ key: "report", name: filesQ.data?.report?.name || "", kind: filesQ.data?.report?.kind || "image" }]
-    : null;
+  const reportItems = arcSingle("report", d?.photo_report, filesQ.data?.report, t("arcl.dPhoto"));
+  const documentItems = arcSingle("document", d?.document_url, filesQ.data?.document, t("arcl.dDocument"));
 
   // ── export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -1427,9 +1426,9 @@ export default function Arc() {
                 )}
                 {d.deny_reason && <Fact label={t("arcl.dDenyReason")} full>{d.deny_reason}</Fact>}
                 {d.comment_report && <Fact label={t("arcl.dComment")} full>{d.comment_report}</Fact>}
-                {reportPhoto && (
+                {reportItems && (
                   <Fact label={t("arcl.dPhoto")} full>
-                    <ArcGallery remoteId={openId} items={reportPhoto} />
+                    <ArcGallery remoteId={openId} items={reportItems} />
                   </Fact>
                 )}
                 {/* The old app's status history, oldest first. */}
@@ -1445,9 +1444,11 @@ export default function Arc() {
                     </span>
                   </Fact>
                 )}
-                {d.document_url && (
+                {/* A relative «misc/…» path on IT's host — through our origin like
+                    the photos, never a link (it would point at this site). */}
+                {documentItems && (
                   <Fact label={t("arcl.dDocument")} full>
-                    {extLink(d.document_url, <><FileText size={11} />{t("arcl.dOpenLink")}<ExternalLink size={11} /></>)}
+                    <ArcGallery remoteId={openId} items={documentItems} />
                   </Fact>
                 )}
                 {d.latitude != null && d.longitude != null && (
