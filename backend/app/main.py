@@ -198,6 +198,7 @@ async def lifespan(app: FastAPI):
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
         put_cell_0811_back,
+        land_waiting_leader_links,
         seed_one_process_cells,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
@@ -699,6 +700,11 @@ async def lifespan(app: FastAPI):
     # line, `startup.put_cell_0811_back` and `services/cell_unit_fix_oct14.py`
     # once its flag and DM flag read «done».
     put_cell_0811_back()
+    # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
+    # still waiting for the next shift opening count from the day they were
+    # made. Remove this line, `startup.land_waiting_leader_links` and its flag
+    # constant once the flag reads «done».
+    land_waiting_leader_links()
     # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
     # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
     # goes (the flag hands them the same text). Remove this line,

@@ -96,29 +96,30 @@ def iso(prof) -> Optional[str]:
     return f.isoformat() if f else None
 
 
-def _fileable(shift, day: date) -> date:
+def _fileable(shift, day: date, now: Optional[datetime] = None) -> date:
     """`day`, or the next one when its filing window has already shut — a
     night-shift day «running» at 11:30 closed at 09:00, so nobody claimed then
     can file it, and it must not be owed."""
     from datetime import timedelta
     from app.services import leader_tasks
     try:
-        shut = date.fromisoformat(leader_tasks.expired_through(shift)[:10])
+        shut = date.fromisoformat(leader_tasks.expired_through(shift, now)[:10])
     except (TypeError, ValueError):
         return day
     return day + timedelta(days=1) if day <= shut else day
 
 
-def unit_day(db, manager_id) -> date:
-    """The first checklist day a profile made for this unit NOW can still file
-    (a night after midnight is still its evening's date; a night already shut
-    is not) — the day it starts owing."""
+def unit_day(db, manager_id, now: Optional[datetime] = None) -> date:
+    """The first checklist day a profile made for this unit NOW (or at `now`)
+    can still file (a night after midnight is still its evening's date; a night
+    already shut is not) — the day it starts owing, and the day a leader's link
+    to a cell lands on (`cell_links.connected`)."""
     try:
         from app.services import leader_shift, leader_tasks
         sh = leader_shift.unit_shift(db, manager_id)
-        return _fileable(sh, date.fromisoformat(leader_tasks.effective_date(sh)[:10]))
+        return _fileable(sh, date.fromisoformat(leader_tasks.effective_date(sh, now)[:10]), now)
     except Exception:
-        return datetime.now(TZ).date()
+        return (now or datetime.now(TZ)).astimezone(TZ).date()
 
 
 def shift_day(db, prof) -> date:

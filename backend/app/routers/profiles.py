@@ -1621,11 +1621,19 @@ def cell_manager_pool(cid: int, db: Session = Depends(get_db), caller: dict = De
                     if cur else None),
         "pending": ({"id": nxt.id if nxt else None, "name": nxt.name if nxt else None,
                      "from": waiting["leader_id"]["from"]} if "leader_id" in waiting else None),
-        # A pick lands with a brigadir change already waiting (the later of the
-        # two units' openings), else at the unit's own next opening.
+        # When a BRIGADIR change made now would land (the cell form's own
+        # date for it): the later of the two units' openings while one is
+        # already waiting, else the unit's own next opening.
         "next_opening": (cell_links.opening_for_move(db, row.manager_id, waiting["manager_id"].get("value"))
                          if "manager_id" in waiting
                          else cell_links.opening(db, row.manager_id))[0].isoformat(),
+        # When a «Boshqaruvchi» pick made now counts from: the day it is made
+        # (`cell_links.connected`, 2026-10-17), or WITH a brigadir change
+        # already waiting (`pick_with_move`) — the record's own rule.
+        "pick_from": (cell_links.opening_for_move(db, row.manager_id, waiting["manager_id"].get("value"))
+                      if "manager_id" in waiting
+                      else cell_links.connected(db, row.manager_id))[0].isoformat(),
+        "pick_with_move": "manager_id" in waiting,
     }
 
 

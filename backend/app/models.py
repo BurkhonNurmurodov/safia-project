@@ -4913,7 +4913,8 @@ class CellLinkEvent(Base):
     reader): the value on day D is the latest event with `effective_from` ≤ D;
     a day before every event reads the first event's `prev`. The `cells`
     columns stay the CURRENT mirror — an event lands on them at
-    `effective_at` (the unit's next shift opening), by `cell_links.apply_due`.
+    `effective_at` (a brigadir change: the unit's next shift opening; a
+    leader's link: at once, from the day it is made), by `cell_links.apply_due`.
 
     `src`: "verifix" (the sync), "manual" (a person on /cells), "grandfather"
     (the first build's mark that a manager differing from the Verifix seat was

@@ -11,9 +11,13 @@ The operator's ruling (2026-10-12): «from the sync, the history shouldn't get
 affected». So:
 
 * every change of a link is an APPEND-ONLY event (`cell_link_events`) with the
-  day it takes effect — `opening()`, the unit's NEXT shift opening (the shift
-  frame /live and «Smena hisoboti» run on), so the running shift-day and its
-  closed copy never jump;
+  day it takes effect. A BRIGADIR change lands at `opening()`, the unit's NEXT
+  shift opening (the shift frame /live and «Smena hisoboti» run on), so the
+  running shift-day and its closed copy never jump. A LEADER's link — the
+  «Boshqaruvchi» and the «Egasi» — counts from the day it is made
+  (`connected()`, from 2026-10-17, the operator: «count it from the day it's
+  connected, not from the next day»), applied at once; only while the cell's
+  brigadir change is still waiting does it land with that move;
 * the `cells` columns stay the CURRENT mirror — present-tense readers (forms,
   pickers, the live day, the checklist being filed now) read them as before.
   An event reaches them at `effective_at` (`apply_due`, the minute job);
@@ -80,6 +84,21 @@ def opening(db: Session, manager_id: Optional[int],
                 datetime.fromisoformat(fr["next_start_at"]))
     d = now.astimezone(TZ).date() + timedelta(days=1)
     return d, datetime.combine(d, time(0), tzinfo=TZ)
+
+
+def connected(db: Session, manager_id: Optional[int],
+              now: Optional[datetime] = None) -> tuple[date, datetime]:
+    """(shift-day, instant) a LEADER's link to a cell lands on by default — the
+    day it is connected (2026-10-17, the operator: «count it from the day it's
+    connected, not from the next day»): the first checklist day of the cell's
+    unit that can still be filed (`leader_owes.unit_day` — the day a picked
+    profile starts owing), applied AT ONCE. A shift-1 unit → today, all day; a
+    shift-2 unit → the night running now (after midnight still its evening's
+    date), or tonight's once the last night's filing has shut at 09:00; no
+    shift → today."""
+    from app.services import leader_owes
+    now = now or datetime.now(timezone.utc)
+    return leader_owes.unit_day(db, manager_id, now), now
 
 
 def opening_for_move(db: Session, old_mid: Optional[int], new_mid: Optional[int],
@@ -374,9 +393,10 @@ def record(db: Session, cell, field: str, value: Optional[int], *, src: str,
            by: Optional[str] = None, vfx: Optional[dict] = None,
            effective_from: Optional[date] = None, effective_at: Optional[datetime] = None,
            mark: bool = False, now: Optional[datetime] = None):
-    """Record that `cell.field` becomes `value`, from the unit's next shift
-    opening (or `effective_from`). Returns the event, or None when nothing
-    changes. `mark=True` writes the event even when the value does not change
+    """Record that `cell.field` becomes `value` — a brigadir change from the
+    unit's next shift opening, a leader's link from the day it is made
+    (`connected`), or from `effective_from`. Returns the event, or None when
+    nothing changes. `mark=True` writes the event even when the value does not change
     — it records WHO decides the link from then on (a pick of the Verifix seat
     ends a person's override; the first build's grandfather mark).
 
@@ -397,8 +417,10 @@ def record(db: Session, cell, field: str, value: Optional[int], *, src: str,
             if field != "manager_id" else []
         if pend_m:
             eff, eff_at = opening_for_move(db, cell.manager_id, pend_m[-1].value)
-        else:
+        elif field == "manager_id":
             eff, eff_at = opening(db, cell.manager_id)
+        else:
+            eff, eff_at = connected(db, cell.manager_id, now)
     else:
         eff = effective_from
         eff_at = effective_at or datetime.combine(eff, time(0), tzinfo=TZ)

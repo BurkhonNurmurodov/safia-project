@@ -630,9 +630,11 @@ def _leader_cell_notes(db: Session, payload: Optional[dict]) -> dict:
     """Why a leader's page may be empty, so it can say so instead of «no cell».
 
     `waiting`: cells picked for this leader whose «Boshqaruvchi» change has not
-    landed yet. A pick waits for the unit's next shift opening
-    (`cell_links.record`), while `cells.leader_id` — what the scope reads —
-    still names the previous holder. The profile page already lists such a
+    landed yet. A pick counts from the day it is made (`cell_links.connected`),
+    but one made while the cell's brigadir change is still waiting lands WITH
+    that move, at the unit's next shift opening (`cell_links.record`), and
+    until then `cells.leader_id` — what the scope reads — still names the
+    previous holder. The profile page already lists such a
     pick, so the page must not say nothing is assigned (2026-10-14, cell 8911).
     `no_sap`: cells this leader runs now that carry no SAP code, so they name
     no work centre. Both empty for anyone else."""

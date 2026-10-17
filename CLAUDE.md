@@ -7966,10 +7966,26 @@ once, and followed through the tie from then on; history is never affected.
 - **A cell's brigadir, «Boshqaruvchi» and «Egasi» are DATED**
   (`cell_link_events`, append-only: field, value, prev, `effective_from` — the
   shift-day the change lands on — `effective_at`, `src` verifix | manual |
-  grandfather | release | restore, who, what Verifix said). A change lands at
-  the unit's NEXT shift opening (`cell_links.opening`; a brigadir change at the
-  LATER of the two units' openings, `opening_for_move`; a «Boshqaruvchi» change
-  recorded while a unit move is pending lands with the move). The `cells`
+  grandfather | release | restore, who, what Verifix said). A BRIGADIR change
+  lands at the unit's NEXT shift opening (`cell_links.opening`; at the LATER of
+  the two units' openings, `opening_for_move`). A LEADER's link — the
+  «Boshqaruvchi» and the «Egasi», by a person or by the sync, a pick, a release
+  — counts from the DAY IT IS MADE and is applied at once (2026-10-17, the
+  operator: «count it from the day it's connected, not from the next day» —
+  `cell_links.connected` = `leader_owes.unit_day`, the first checklist day of
+  the cell's unit still fileable: a shift-1 unit today, all day; a shift-2 unit
+  the night running now, else tonight's once 09:00 has shut the last one; the
+  day a picked profile starts owing), so the profile editor's chip «7331 ·
+  18.10 dan» no longer appears for an ordinary pick. Only a «Boshqaruvchi» /
+  «Egasi» change recorded while the cell's unit move is still pending lands
+  WITH the move — then the chip and «cellMgr.lands» still name its date (the
+  manager pool serves `pick_from` + `pick_with_move` beside `next_opening`,
+  which stays the brigadir change's date). TEMPORARY
+  `startup.land_waiting_leader_links` (flag
+  `cell_leader_links_today_2026_10_17_v1`, inline at boot, both entrypoints)
+  re-dated once the leader links still waiting under the old rule onto the day
+  each was made and applied them; delete it, its flag constant and both calls
+  once the flag reads «done». The `cells`
   columns stay the CURRENT mirror, put there by `apply_due` (the minute job
   `cell-links-apply`, and the start of every pass), which voids an event whose
   unit / profile was deleted since and settles work-centre letters the
