@@ -159,8 +159,8 @@ const fillAround = (str, vars, key, node) => {
 };
 
 // The band a % is judged by — the WHOLE percent the reader sees, never the raw
-// fraction (utils/statusBands.js's rule), and only with enough concerns behind
-// it: 1 of 1 is noise, not performance.
+// fraction (utils/statusBands.js's rule), and only for a ranked row — one with
+// a %, i.e. at least one concern the leader kept (no minimum since 2026-10-17).
 const bandOf = (row, bands, plain = false) => {
   if (!row.total) return "none";
   const p = whole(row);
@@ -287,14 +287,14 @@ function StatusSplit({ counts, stL, upHint, grid = "grid-cols-2 sm:grid-cols-4" 
 
 // The % bands as one short line, named where the coloured %s begin — not under
 // the last of seventy rows. With a count per band where the caller has one.
-function BandKey({ T, bands, minRanked, counts }) {
+function BandKey({ T, bands, counts }) {
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: "var(--text-2)" }}>
       {[
         ["green", `≥ ${bands.green}%`],
         ["yellow", `${bands.yellow}–${bands.green - 1}%`],
         ["red", `< ${bands.yellow}%`],
-        ["low", fill(T.bandLowL, { m: minRanked })],
+        ["low", T.bandLowL],
       ].map(([b, label]) => (
         <li key={b} className="inline-flex items-center gap-1.5 whitespace-nowrap">
           <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
@@ -478,8 +478,9 @@ function SpanCell({ narrow, wide, className = "", style, children }) {
 
 // The ranking's groups in on-screen order — ONE function, read by the card and
 // by the Excel export, which follows the screen (`leader_order`): ranked CELLS
-// by the exact share resolved, then the cells with too few concerns to rank,
-// then the cells with none in the period (shown, never folded). Every row is a
+// by the exact share resolved, then the cells with no % (every concern
+// escalated — there is no minimum count since 2026-10-17), then the cells with
+// none in the period (shown, never folded). Every row is a
 // cell an owner owns on the period's last day — the operator, 2026-10-14:
 // «rank per cell (one row for the cell) but do not include the ones without
 // owner»; every owner is ranked. Codes tie-break in their own order.
@@ -519,7 +520,7 @@ const countLine = (T, counts, rows) => fill(T.rCounts, {
 });
 
 function RankingCard({
-  T, stL, tl, rows, counts, cellIds, bands, minRanked, isAdmin, onEditBands, onOpen,
+  T, stL, tl, rows, counts, cellIds, bands, isAdmin, onEditBands, onOpen,
   sort, onSort, q, setQ, loading, error, onRetry, dim, oneUnit, plain, days,
 }) {
   const g = useMemo(() => rankGroups(rows, sort, tl), [rows, sort, tl]);
@@ -569,7 +570,7 @@ function RankingCard({
       <div className="min-w-0">
         {plain
           ? <p className="text-xs" style={{ color: "var(--text-2)" }}>{fill(T.hShort, { n: days })}</p>
-          : <BandKey T={T} bands={bands} minRanked={minRanked} counts={bandCounts} />}
+          : <BandKey T={T} bands={bands} counts={bandCounts} />}
       </div>
       {rows.length > 12 && (
         <SearchInput value={q} onChange={setQ} placeholder={T.rSearch} className="w-full sm:w-72 flex-shrink-0" />
@@ -871,7 +872,7 @@ function UnitsCard({ T, tl, units, bands, minRanked, parts, onPick, plain }) {
     <Card label={T.uTitle}>
       <SectionHead icon={UserCog} title={T.uTitle} subtitle={T.uSub} />
       <div className="px-4 pt-3 pb-3">
-        {!plain && <div className="mb-3"><BandKey T={T} bands={bands} minRanked={minRanked} /></div>}
+        {!plain && <div className="mb-3"><BandKey T={T} bands={bands} /></div>}
         <TwoColumns rows={rows} render={(c) => (
           <RankedList rows={c} max={1} full wrap parts={parts} unit={T.xLabels.concernsWord}
             onRowClick={(r) => r.mid && onPick(r.mid, r.name)}
@@ -1183,7 +1184,7 @@ export default function WorkerConcerns() {
   });
   const meta = metaQ.data;
   const bands = meta?.bands || { green: 80, yellow: 50 };
-  const minRanked = meta?.min_ranked ?? 5;
+  const minRanked = meta?.min_ranked ?? 1;
   const leaderView = !!meta?.lock_own_leader;
   // Nothing filed in this viewer's scope, ever, AND no leader to list.
   const noneYet = meta != null && (meta.total || 0) === 0 && (meta.leader_opts || []).length === 0;
@@ -1470,7 +1471,7 @@ export default function WorkerConcerns() {
           green: `≥ ${bands.green}%`,
           yellow: `${bands.yellow}–${bands.green - 1}%`,
           red: `< ${bands.yellow}%`,
-          low: `${T.xLabels.kamBand} (n<${minRanked})`,
+          low: T.xLabels.kamBand,
         },
       },
       meta: metaFor(scopeChips),
@@ -1711,7 +1712,7 @@ export default function WorkerConcerns() {
                         onPick={pickUnit} plain={plain} />
                     )}
                     <RankingCard T={T} stL={stL} tl={tl} rows={ldRows} counts={leadersQ.data?.counts}
-                      cellIds={cellIds} bands={bands} minRanked={minRanked}
+                      cellIds={cellIds} bands={bands}
                       isAdmin={!!meta.is_admin} onEditBands={openBands}
                       onOpen={openLeader}
                       sort={rankSort}

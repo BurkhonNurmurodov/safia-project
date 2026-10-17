@@ -48,8 +48,9 @@ row for the cell) but do not include the ones without owner»): every cell
 that has an owner on the period's last day and stands on it, in the view,
 concerns or not (``_scope_cells``), named by its owner. Every owner is ranked
 — the «Lider o'rnida» rule is gone (same day: «every owner is ranked») — once
-the cell has MIN_RANKED rated concerns; a cell with fewer is listed as «kam
-ma'lumot». A leader who owns no cell is on no row. Concerns that land in no
+ONE rated concern stands behind the cell (the operator, 2026-10-17: «there's
+no limit for low data» — it took 5 until then); a cell whose every concern was
+escalated has no % and is listed apart. A leader who owns no cell is on no row. Concerns that land in no
 row — a cell with no owner, or one outside the view — surface as one explicit
 «unassigned» bucket: counted, never ranked.
 
@@ -96,9 +97,11 @@ PAGE_KEY = "worker-concerns"
 BANDS_SETTING = "worker_concern_bands"
 DEFAULT_BANDS = {"green": 80, "yellow": 50}
 
-# Leaders with fewer concerns than this in the selected window are shown but
-# not color-ranked: 1/1 = 100% is noise, not performance.
-MIN_RANKED = 5
+# Rated concerns a row needs to be ranked. No minimum since 2026-10-17 (the
+# operator: «there's no limit for low data» — it was 5): a row is ranked once
+# it has a %, i.e. one concern the leader kept. A row whose every concern was
+# escalated has none and is listed apart, unranked.
+MIN_RANKED = 1
 # A period shorter than this many days grades nobody: its newest concerns have
 # not had the time to be resolved, so every leader would read red on the first
 # days of a month. /meta serves it to the page; the workbook applies it too.
@@ -571,7 +574,7 @@ def _cell_rows(cells: list[dict], agg_cells: dict) -> tuple[list[dict], Optional
     """THE ranking: one row per OWNED cell in the view (`_scope_cells`), its
     figures the concerns filed in it over the period, named by its owner on
     the period's last day — concerns or not. A cell is ``ranked`` once
-    MIN_RANKED rated concerns stand behind it; every owner is ranked (no
+    MIN_RANKED (one) rated concern stands behind it; every owner is ranked (no
     Verifix-kind rule since 2026-10-14). Concerns that land in no row — a cell
     with no owner, or one outside the view — are the «unassigned» bucket, so
     the rows and it add up to the headline. → (rows, unassigned or None)."""
@@ -611,7 +614,7 @@ def _counts(rows: list[dict]) -> dict:
 def _ranking_order(rows: list[dict]) -> list[dict]:
     """The ranking's DEFAULT order — ranked cells by their exact share
     resolved (best first, more concerns first on a tie), then the cells with
-    too few concerns to rank, then the cells with none — the page's groups.
+    no % (every concern escalated), then the cells with none — the page's groups.
     The file follows the order the page SENDS (`_in_order`); this is only for
     a request that sent none, or for a row the page did not list."""
     def key(r):

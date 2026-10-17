@@ -2521,7 +2521,8 @@ structure changed the same day — see the redesign bullets below).
   2026-10-04 — it was counted until then, a brigadir's resolution crediting the
   leader). Every % — leader, unit, headline, the change line (`_previous`), the
   workbook — is `done ÷ rated`, rated = total − uplifted (`_rated` /
-  `_figures`, client `ratedOf`); `MIN_RANKED` counts rated concerns. «Ochiq» /
+  `_figures`, client `ratedOf`); `MIN_RANKED` counts rated concerns (ONE since
+  2026-10-17 — see the ranking bullet). «Ochiq» /
   `open` = doing + todo, what still waits on the LEADER — the ranking, the
   cells card, the leader dialog's list (`OPEN_KEYS`) and exam task 41. The
   register prints a resolved-above row as «Ko'tarilgan» plus «yuqorida hal
@@ -2560,8 +2561,12 @@ structure changed the same day — see the redesign bullets below).
   day is what the viewer lock and the plant / brigadir pick narrow; a
   brigadir-less cell only under «All factories»), named by its owner, concerns
   or not. An owner of three cells is three rows. A cell is ranked once
-  MIN_RANKED rated concerns stand behind it, else «kam ma'lumot»; a cell with
-  none in the period is listed under «Bu davrda havotir yo'q». **Every owner is
+  ONE rated concern stands behind it (`MIN_RANKED = 1`; the operator,
+  2026-10-17: «there's no limit for low data» — it took 5 until then, and
+  the «kam ma'lumot — 5 tadan kam havotir» group is gone); a cell whose every
+  concern was escalated has no % and is listed under «Foiz yo'q — hamma
+  havotir yuqoriga ko'tarilgan»; a cell with none in the period is listed
+  under «Bu davrda havotir yo'q». The brigadirs card follows the same rule. **Every owner is
   ranked** — the 2026-10-04 «Lider o'rnida» rule (`RANKED_KIND`) is gone. A
   leader who owns no cell is on no row (the roster fold `_roster` /
   `_with_roster` / «Yacheyka egasi emas» is gone). Concerns that land in no
@@ -2592,8 +2597,9 @@ structure changed the same day — see the redesign bullets below).
   the previous period, ONE status bar that adds up to the total — its labels
   are the page's status key — and the facts) → «Brigadirlar» (only with more
   than one unit in scope; a tap narrows the page to that brigadir and says so in
-  a bottom toast) → «Liderlar reytingi» (by %, best first; «kam ma'lumot» n<5
-  next, unranked; leaders nobody wrote to folded at the bottom; a tap opens the
+  a bottom toast) → «Liderlar reytingi» (by %, best first; «foiz yo'q» — every
+  concern escalated — next, unranked: the n<5 «kam ma'lumot» group is gone since
+  2026-10-17; leaders nobody wrote to folded at the bottom; a tap opens the
   leader's dialog with their split and open concerns, oldest first) →
   «Yacheykalar» with the most open concerns → «Kunlik dinamika» («Haftalik
   dinamika» past 92 days, opening on the first filing; the y-axis says it
