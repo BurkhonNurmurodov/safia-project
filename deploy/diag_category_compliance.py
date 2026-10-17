@@ -60,7 +60,7 @@ JOURNALS_FROM = "01.01.2024"
 # the «page» id a journal line carries share the S book: if they are one id
 # space, the pseudonyms coincide and the link is visible without the id.
 _pseud: dict[str, dict[str, str]] = defaultdict(dict)
-ID_KINDS = {"employee_id": "E", "staff_id": "T", "page_id": "S", "robot_id": "S",
+ID_KINDS = {"employee_id": "E", "staff_id": "T", "page_id": "S", "robot_id": "S", "position_id": "S",
             "person_id": "P", "user_id": "U"}
 # `*_name` keys that are vocabulary, never a person.
 VOCAB_NAMES = {
@@ -228,6 +228,77 @@ def first_open(cl, tries: list[tuple[str, dict]], limit, deadline: float) -> dic
     return last or {"path": "", "rows": [], "pages": 0, "error": None, "partial": False, "ms": 0}
 
 
+def custom_fields(rows: list, method: str, person: bool) -> dict[str, dict]:
+    """What the `fields` list (Verifix's custom fields) carries, field by field:
+    the entry keys, how many rows fill it, its distinct values (printed only
+    for a categorical field — at most 40 distinct, short, nothing that looks
+    like a number of a person). Returns {field name: {"cat": bool, "key": …}}
+    so a categorical field can be printed per row."""
+    per: dict[str, dict] = {}
+    keys: Counter = Counter()
+    n_rows = n_with = 0
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        n_rows += 1
+        fl = r.get("fields")
+        if not isinstance(fl, list) or not fl:
+            continue
+        n_with += 1
+        for f in fl:
+            if not isinstance(f, dict):
+                keys["<non-dict>"] += 1
+                continue
+            for k in f:
+                keys[str(k)] += 1
+            name = str(f.get("name") or f.get("field_name") or f.get("label") or f.get("code")
+                       or f.get("field_id") or f.get("id") or "?")
+            val = f.get("value")
+            if val is None:
+                val = f.get("value_name") or f.get("text") or f.get("display_value")
+            st = per.setdefault(name, {"n": 0, "blank": 0, "vals": Counter(), "types": Counter()})
+            st["n"] += 1
+            st["types"][type(val).__name__] += 1
+            if val in (None, "", []):
+                st["blank"] += 1
+                continue
+            sv = str(val)[:60] if not isinstance(val, (dict, list)) else json.dumps(val, ensure_ascii=False)[:60]
+            if len(st["vals"]) < 200 or sv in st["vals"]:
+                st["vals"][sv] += 1
+    rec("custom_fields", method=method, rows=n_rows, rows_with_fields=n_with, entry_keys=keys.most_common(30))
+    out: dict[str, dict] = {}
+    for name, st in per.items():
+        private = any(x in name.lower() for x in DROP) or any(
+            re.search(r"\d{7,}", v) for v in st["vals"]) or any(len(v) > 40 for v in st["vals"])
+        cat = (not private) and len(st["vals"]) <= 40
+        o = {"method": method, "field": name, "n": st["n"], "blank": st["blank"],
+             "distinct": len(st["vals"]), "types": dict(st["types"])}
+        if cat:
+            o["values"] = st["vals"].most_common(40)
+        elif private:
+            o["private"] = True
+        rec("custom_field", **o)
+        out[name] = {"cat": cat}
+    return out
+
+
+def row_custom(r: dict, cats: dict[str, dict]) -> dict:
+    """The categorical custom fields of one row, as cf.<name>: value."""
+    out: dict = {}
+    for f in (r.get("fields") or []):
+        if not isinstance(f, dict):
+            continue
+        name = str(f.get("name") or f.get("field_name") or f.get("label") or f.get("code")
+                   or f.get("field_id") or f.get("id") or "?")
+        if cats.get(name, {}).get("cat"):
+            val = f.get("value")
+            if val is None:
+                val = f.get("value_name") or f.get("text") or f.get("display_value")
+            if val not in (None, "", []) and not isinstance(val, (dict, list)):
+                out["cf." + name] = str(val)[:60]
+    return out
+
+
 def code_of(node: dict | None) -> str | None:
     """A division's cell code: its `code`, else the four digits its NAME starts with."""
     if not node:
@@ -324,6 +395,7 @@ def main() -> None:
         # ── positions ─────────────────────────────────────────────────────────
         robots = a["robots"]["rows"]
         fieldstats("pro/robot$list", robots, person=False)
+        custom_fields(robots, "pro/robot$list", person=False)
         by_pair: Counter = Counter()
         by_cell: Counter = Counter()
         printed_r = kept_r = 0
@@ -346,12 +418,15 @@ def main() -> None:
         # ── people (pseudonymised) ────────────────────────────────────────────
         emps = b["rows"]
         fieldstats("core/employee$list", emps, person=True)
+        cf_emp = custom_fields([e for e in emps if str(e.get("status") or "") == "W"],
+                               "core/employee$list (working)", person=True)
         status_count: Counter = Counter()
         printed = 0
         cell_rows: dict[str, list[dict]] = defaultdict(list)
         for e in emps:
             cr = clean(e, person=True)
             cr.update(place(e))
+            cr.update(row_custom(e, cf_emp))
             status = str(cr.get("status") or "")
             status_count[status] += 1
             dism = cr.get("dismissal_date")
@@ -373,6 +448,7 @@ def main() -> None:
                                ("rank_change", c, PRINT_MAX["rank_change"])):
             lines = flat(got["rows"])
             fieldstats(got["path"] or kind, got["rows"], person=True)
+            custom_fields(got["rows"], got["path"] or kind, person=True)
             fieldstats((got["path"] or kind) + ":lines", lines, person=True)
             by_month: Counter = Counter()
             n_print = 0
