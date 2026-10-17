@@ -9586,6 +9586,33 @@ tickets in the same table but «stop the old app's sync». So:
   the ticket window shows an old row's start time, every attachment and its
   status history (read from `arc_requests` on open). Status slugs are printed
   through `arcl.st.<slug>`, an unknown one as sent.
+- **A ticket's photos and files are drawn through OUR origin** (2026-10-17,
+  the operator: «the image is not being displayed»). The CSP is
+  `img-src 'self'`, so every `<img>` pointing at IT's host was refused and
+  fell back to a link — for both apps. `services/arc_files.py` is THE door:
+  the old app's `arc_requests.files`; the new app's `photo_report` (the
+  crew's photo, «Foto-hisobot») and the filer's attachments, which only IT's
+  single-ticket card carries (`GET /arc/api/v1/requests/factory/{id}` →
+  `files[].file_path` «misc/YYYY/MM/DD/<uuid>.jpeg»), read on open and kept
+  10 min. A relative new-app path names no base, so `fetch` walks a short
+  list of bases on IT's host and remembers the one that served real bytes
+  (`_WIN`); a HTML page or JSON answer is never taken for a file. https only,
+  relative paths only from `*.safiabakery.uz`, an absolute URL or redirect
+  only to a public name, IT's credential only on IT's host, ≤ 20 MB.
+  `GET /api/arc-legacy/requests/{id}/files` lists them (`card` = ok · n/a ·
+  failed · not_configured — «none» and «could not ask» are two answers;
+  `force` re-reads a failed card) and `/file/{report|n}` streams one: a
+  picture the BYTES prove is served inline, anything else as an attachment
+  behind `nosniff`; unreachable is a 424, never 502/503. The modal
+  (`components/arc/ArcAttachments.jsx`) shows «Rasmlar va fayllar» under the
+  description — a lone photo at the card's width, several as squares, a
+  non-picture as a `FileTile` that downloads — and «Foto-hisobot» under the
+  crew's comment; a tap opens the shared `Lightbox`. Photos load through
+  `ProxyPhoto`, which gained `zoomLabel` (the photo is a real button) and
+  `failCaption` (a large thumb says what failed). TEMPORARY: the deploy step
+  «Probe: ARC attachment URLs» (`deploy/diag_arc_files.py`, read-only)
+  prints which base production's files answer on — delete the step and the
+  script once confirmed.
 - The two sections below describe each app's mirror and are still accurate for
   it; where they talk about «the page», read `/arc`.
 

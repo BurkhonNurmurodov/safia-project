@@ -47,6 +47,7 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import LegacyApiPanel from "../components/arc/LegacyApiPanel";
 import ArcAnalysis from "../components/arc/ArcAnalysis";
+import { useArcFiles, ArcFilesBody, ArcGallery } from "../components/arc/ArcAttachments";
 import { inTelegram } from "../utils/session";
 import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatusLegacy";
 
@@ -110,7 +111,6 @@ const CELL_COLS = [
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
-const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)(\?|$)/i;
 
 // ── dates ────────────────────────────────────────────────────────────────────
 // ARC timestamps arrive as UTC ISO strings; every reader here is in Tashkent,
@@ -968,8 +968,12 @@ export default function Arc() {
     const why = !d?.cell_code ? t("arcl.cNoCellHint") : !dCell ? t("arcl.cUnknown") : t("arcl.ownerNone");
     return <span style={{ color: "var(--text-4)" }} title={why}>—</span>;
   };
-  const [photoBroken, setPhotoBroken] = useState(false);
-  useEffect(() => { setPhotoBroken(false); }, [openId]);
+  // Its photos and files — through our own origin (the CSP draws nothing off
+  // IT's host); a new-app ticket's attachments are read off IT's card on open.
+  const filesQ = useArcFiles(openId);
+  const reportPhoto = (d?.photo_report || filesQ.data?.report)
+    ? [{ key: "report", name: filesQ.data?.report?.name || "", kind: filesQ.data?.report?.kind || "image" }]
+    : null;
 
   // ── export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -1406,6 +1410,9 @@ export default function Arc() {
                 </Fact>
                 <Fact label={t("arcl.dSap")}>{d.sended_to_sap ? t("common.yes") : t("common.no")}</Fact>
                 <Fact label={t("arcl.dDescription")} full>{d.description || "—"}</Fact>
+                <Fact label={t("arcl.dAttachments")} full>
+                  <ArcFilesBody remoteId={openId} q={filesQ} />
+                </Fact>
                 <Fact label={t("arcl.dDeadline")}><span className="tabular-nums">{fmtDateTime(d.deadline) || "—"}</span></Fact>
                 <Fact label={t("arcl.dDeadlineTime")}><span className="tabular-nums">{fmtDateTime(d.deadline_time) || "—"}</span></Fact>
                 <Fact label={t("arcl.dCreated")}><span className="tabular-nums">{fmtDateTime(d.created_at) || "—"}</span></Fact>
@@ -1420,33 +1427,9 @@ export default function Arc() {
                 )}
                 {d.deny_reason && <Fact label={t("arcl.dDenyReason")} full>{d.deny_reason}</Fact>}
                 {d.comment_report && <Fact label={t("arcl.dComment")} full>{d.comment_report}</Fact>}
-                {d.photo_report && (
+                {reportPhoto && (
                   <Fact label={t("arcl.dPhoto")} full>
-                    {photoBroken ? (
-                      extLink(d.photo_report, <><Camera size={11} />{t("arcl.dOpenLink")}<ExternalLink size={11} /></>)
-                    ) : (
-                      <a href={d.photo_report} target="_blank" rel="noopener noreferrer" onClick={(e) => openExt(e, d.photo_report)} className="inline-block">
-                        <img src={d.photo_report} alt="" className="max-h-64 rounded-lg" style={{ border: "1px solid var(--border)" }}
-                          onError={() => setPhotoBroken(true)} />
-                      </a>
-                    )}
-                  </Fact>
-                )}
-                {/* The old app's attachments — every file, images inline. */}
-                {Array.isArray(d.files) && d.files.length > 0 && (
-                  <Fact label={t("arcl.dFiles")} full>
-                    <span className="flex flex-wrap gap-2">
-                      {d.files.map((f, i) => (IMG_RE.test(f.url || "") ? (
-                        <a key={f.id ?? i} href={f.url} target="_blank" rel="noopener noreferrer"
-                          onClick={(e) => openExt(e, f.url)} className="inline-block">
-                          <img src={f.url} alt="" className="max-h-40 rounded-lg" style={{ border: "1px solid var(--border)" }} />
-                        </a>
-                      ) : (
-                        <span key={f.id ?? i}>
-                          {extLink(f.url, <><FileText size={11} />{truncate(String(f.url).split("/").pop(), 28)}<ExternalLink size={11} /></>)}
-                        </span>
-                      )))}
-                    </span>
+                    <ArcGallery remoteId={openId} items={reportPhoto} />
                   </Fact>
                 )}
                 {/* The old app's status history, oldest first. */}
