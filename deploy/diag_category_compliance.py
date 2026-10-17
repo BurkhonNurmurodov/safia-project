@@ -3,25 +3,29 @@
 production a cloud session can read.
 
 HR says a cell's category-compliance percentage comes from Verifix. The
-platform has never read Verifix's ranks («разряд» / category): `verifix_org`
-keeps an employee's job, division and org unit and nothing else. So this
-prints what the API carries — the rank dictionary (`pro/rank$list`), the
-positions (`pro/robot$list`: one per placement, with the job, the category
-and the org unit — the first run, 2026-10-17, found 18,504 of them and the
-Pro employee list closed to the API role), every employee of the Core list
-with their job, status and position per cell, and the rank-change journal
+platform has never read Verifix's categories («разряд» / «категория»):
+`verifix_org` keeps an employee's job, division and org unit and nothing
+else. So this prints what the API carries — the rank dictionary
+(`pro/rank$list`), the positions (`pro/robot$list`: one per placement, with
+the job, the category and the org unit; 18,504 on 2026-10-17), every employee
+of the Core list (the Pro list is closed to the API role), and the three
+journals that carry a person's category and cell through time — hirings
+(`pro/hiring$list`, the category a person starts on), transfers
+(`pro/transfer$list`, the cell they moved to) and rank changes
 (`pro/rank_change$list`) — so the KPI's definition can be worked out against
 HR's July figures and then built like the other three KPI pages.
 
 Run by `.gitea/workflows/deploy.yaml` after the health check, from `backend/`
 as `python ../deploy/diag_category_compliance.py`. READ-ONLY: reads Verifix
 with the stored credential, writes nothing, commits nothing. NO PERSON leaves
-it: every employee / staff id is a pseudonym («E1», «S1» …) stable within one
-run; names, PINFL, phones, birth dates, addresses, photos and every wage field
-are dropped (`verifix_explore.scrub` plus a denylist of its own); every date is
-printed as a month. Job titles, rank names, employment types and cell codes
-are vocabulary and are printed. Lives under deploy/ so adding it restarts
-nothing. Delete it with its workflow step.
+it: every employee / staff / position id is a pseudonym («E1», «T1», «S1» …)
+stable within one run (a position and the «page» a journal line names share
+one book, so the link shows without an id); names, PINFL, phones, birth dates,
+addresses, photos, free-text notes and reasons and every wage field are
+dropped (`verifix_explore.scrub` plus a denylist of its own); every date is
+printed as a month. Job titles, category names, employment types and cell
+codes are vocabulary and are printed. Lives under deploy/ so adding it
+restarts nothing. Delete it with its workflow step.
 """
 from __future__ import annotations
 
@@ -40,20 +44,24 @@ sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "backend")))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models import Cell  # noqa: E402
-from app.services import verifix, verifix_org  # noqa: E402
+from app.services import verifix  # noqa: E402
 from app.services import verifix_explore as vx  # noqa: E402
 from app.services.verifix_live import _side_by_side  # noqa: E402
 from app.version import APP_VERSION, current_commit  # noqa: E402
 
 TZ = ZoneInfo("Asia/Tashkent")
 BUDGET_S = 200.0
-PRINT_MAX = {"emp": 9000, "rank_change": 40000, "robot": 20, "robot_rows": 12000}
-DISMISSED_FROM = "2026-05"          # dismissed people kept, so July can be rebuilt
+PRINT_MAX = {"emp": 9000, "rank_change": 40000, "robot": 20, "robot_rows": 12000,
+             "hire": 20000, "transfer": 20000}
+DISMISSED_FROM = "2026-05"          # dismissed people and closed positions kept from here, so July can be rebuilt
+JOURNALS_FROM = "01.01.2024"
 
-# Pseudonyms, one counter per id kind, stable within the run.
+# Pseudonyms, one counter per id kind, stable within the run. A position id and
+# the «page» id a journal line carries share the S book: if they are one id
+# space, the pseudonyms coincide and the link is visible without the id.
 _pseud: dict[str, dict[str, str]] = defaultdict(dict)
-ID_KINDS = {"employee_id": "E", "staff_id": "S", "person_id": "P", "user_id": "U",
-            "employee": "E", "staff": "S"}
+ID_KINDS = {"employee_id": "E", "staff_id": "T", "page_id": "S", "robot_id": "S",
+            "person_id": "P", "user_id": "U"}
 # `*_name` keys that are vocabulary, never a person.
 VOCAB_NAMES = {
     "job_name", "rank_name", "fte_name", "division_name", "org_unit_name", "position_name",
@@ -61,11 +69,12 @@ VOCAB_NAMES = {
     "legal_person_name", "location_name", "calendar_name", "labor_function_name", "job_group_name",
     "category_name", "grade_name", "level_name", "rank_group_name", "parent_name", "unit_name",
     "fixed_term_base_name", "contract_type_name", "reason_name", "base_name", "source_name",
+    "dismissal_reason_name", "dismissal_source_name", "transfer_reason_name",
 }
 DROP = ("npin", "pinfl", "passport", "phone", "mobile", "email", "birth", "address", "gender",
         "sex", "photo", "card", "account", "tin", "iapa", "nationality", "marital", "family",
         "citizen", "resident", "note", "comment", "login", "password", "telegram", "region",
-        "district", "street", "fio", "surname", "patronym", "base")
+        "district", "street", "fio", "surname", "patronym", "base", "reason")
 
 
 def pseud(kind: str, v) -> str | None:
@@ -93,12 +102,17 @@ def month(v) -> str | None:
     return None
 
 
+def _datey(k: str) -> bool:
+    kl = str(k).lower()
+    return "date" in kl or kl.endswith(("_at", "_on", "_begin", "_end"))
+
+
 def private_key(k: str, person: bool) -> bool:
     kl = str(k).lower()
     if kl in ID_KINDS:
         return False                      # pseudonymised instead
     if kl == "pin" or any(s in kl for s in DROP):
-        return True
+        return kl not in VOCAB_NAMES
     if "name" in kl:
         if kl in VOCAB_NAMES:
             return False
@@ -118,16 +132,11 @@ def clean(row: dict, person: bool) -> dict:
             continue
         if private_key(k, person):
             continue
-        if "date" in kl or kl.endswith(("_at", "_on")):
+        if _datey(k):
             out[k] = month(v)
             continue
         out[k] = v
     return out
-
-
-def _datey(k: str) -> bool:
-    kl = str(k).lower()
-    return "date" in kl or kl.endswith(("_at", "_on"))
 
 
 def fields(rows: list) -> list[str]:
@@ -208,6 +217,17 @@ def rows_of(cl, path: str, body: dict, limit, deadline: float) -> dict:
     return out
 
 
+def first_open(cl, tries: list[tuple[str, dict]], limit, deadline: float) -> dict:
+    """The first method of `tries` the role opens (the registers' Pro-then-Start rule)."""
+    last = None
+    for path, body in tries:
+        got = rows_of(cl, path, body, limit, deadline)
+        last = got
+        if not (got["error"] and got["error"].get("code") in ("forbidden", "not_found", "http") and not got["rows"]):
+            return got
+    return last or {"path": "", "rows": [], "pages": 0, "error": None, "partial": False, "ms": 0}
+
+
 def code_of(node: dict | None) -> str | None:
     """A division's cell code: its `code`, else the four digits its NAME starts with."""
     if not node:
@@ -224,8 +244,9 @@ def main() -> None:
     deadline = started + BUDGET_S
     db = SessionLocal()
     try:
+        now = datetime.now(TZ)
         rec("meta", version=APP_VERSION, commit=(current_commit() or "")[:10],
-            at=datetime.now(TZ).isoformat(timespec="seconds"), budget_s=BUDGET_S)
+            at=now.isoformat(timespec="seconds"), budget_s=BUDGET_S)
         cfg = verifix.config(db, with_password=True)
         if not (cfg.get("login") and cfg.get("password") and cfg.get("filial_id")):
             rec("error", what="not_configured")
@@ -234,13 +255,11 @@ def main() -> None:
         for c in db.query(Cell).all():
             if c.verifix_code:
                 cells[verifix._code_key(c.verifix_code)] = {
-                    "code": c.verifix_code, "unit": c.manager_id, "archived": bool(c.archived_at),
+                    "unit": c.manager_id, "archived": bool(c.archived_at),
                     "in_load": bool(getattr(c, "in_load", False)), "owner": bool(getattr(c, "owner_id", None)),
                     "leader": bool(getattr(c, "leader_id", None))}
-        org, org_at = verifix_org.stored(db)
-        rec("cells", n=len(cells), active=sum(1 for v in cells.values() if not v["archived"]),
-            org_stored_at=str(org_at) if org_at else None,
-            org_emps=len((org or {}).get("emps") or {}))
+        rec("cells", n=len(cells), active=sum(1 for v in cells.values() if not v["archived"]))
+        today = now.strftime("%d.%m.%Y")
 
         def read_a(cl):
             o: dict = {}
@@ -258,21 +277,33 @@ def main() -> None:
         def read_c(cl):
             return rows_of(cl, "pro/rank_change$list", {"journal_ids": []}, verifix.LIMIT_LIST, deadline)
 
-        a, b, c = _side_by_side(cfg, read_a, read_b, read_c)
+        def read_d(cl):
+            return first_open(cl, [
+                ("pro/hiring$list", {"journal_ids": [], "journal_begin_date": JOURNALS_FROM,
+                                     "journal_end_date": today}),
+                ("start/hiring$list", {"journal_ids": []}),
+            ], verifix.LIMIT_LIST, deadline)
+
+        def read_e(cl):
+            return first_open(cl, [
+                ("pro/transfer$list", {"journal_ids": []}),
+                ("start/transfer$list", {"journal_ids": []}),
+            ], verifix.LIMIT_LIST, deadline)
+
+        a, b, c, d, e_ = _side_by_side(cfg, read_a, read_b, read_c, read_d, read_e)
 
         # ── what each method answered ──────────────────────────────────────────
-        methods = [a["divs"], a["jobs"], a["fte"], a["ranks"], a["robots"], b, c]
-        for m in methods:
+        for m in [a["divs"], a["jobs"], a["fte"], a["ranks"], a["robots"], b, c, d, e_]:
             rec("method", path=m["path"], rows=len(m["rows"]), pages=m["pages"], ms=m.get("ms"),
                 error=m["error"], partial=m["partial"], fields=fields(m["rows"]))
 
-        # ── vocabulary: divisions → codes, jobs, employment types, ranks ──────
+        # ── vocabulary: divisions → codes, jobs, employment types, categories ──
         divs: dict[str, dict] = {}
-        for d in a["divs"]["rows"]:
-            did = str(d.get("division_id") or "").strip()
+        for dv in a["divs"]["rows"]:
+            did = str(dv.get("division_id") or "").strip()
             if did:
-                divs[did] = d
-        dcode = {did: code_of(d) for did, d in divs.items()}
+                divs[did] = dv
+        dcode = {did: code_of(dv) for did, dv in divs.items()}
         coded = {k: v for k, v in dcode.items() if v}
         rec("divisions", total=len(divs), coded=len(coded),
             ours_found=len(set(coded.values()) & set(cells)),
@@ -283,34 +314,28 @@ def main() -> None:
             rec("fte", **clean(f, person=False))
         for r in a["ranks"]["rows"]:
             rec("rank", **clean(r, person=False))
-        fieldstats("pro/rank$list", a["ranks"]["rows"], person=False)
+
+        def place(row: dict) -> dict:
+            unit = str(row.get("org_unit_id") or "").strip()
+            div = str(row.get("division_id") or "").strip()
+            uc, dc = dcode.get(unit), dcode.get(div)
+            return {"ucode": uc, "dcode": dc, "cell": uc if uc in cells else (dc if dc in cells else None)}
 
         # ── positions ─────────────────────────────────────────────────────────
         robots = a["robots"]["rows"]
         fieldstats("pro/robot$list", robots, person=False)
-        robot_ids: set = set()
         by_pair: Counter = Counter()
         by_cell: Counter = Counter()
         printed_r = kept_r = 0
         for i, r in enumerate(robots):
-            rid = str(r.get("robot_id") or "").strip()
-            robot_ids.add(rid)
             cr = clean(r, person=False)
             if i >= PRINT_MAX["robot"]:
                 cr.pop("name", None)          # «<job>, <rank>/<org unit path>/(<id>)» — shown on the sample
-            cr["sid"] = pseud("S", rid)       # the same book a staff id uses: equal ids, equal pseudonyms
-            cr.pop("robot_id", None)
-            unit = str(r.get("org_unit_id") or "").strip()
-            div = str(r.get("division_id") or "").strip()
-            cr.update(ucode=dcode.get(unit), dcode=dcode.get(div),
-                      cell=dcode.get(unit) if dcode.get(unit) in cells else None)
-            job = cr.get("job_id")
-            rank = cr.get("rank_id")
-            by_pair[f"{job} | {rank}"] += 1
+            cr.update(place(r))
+            by_pair[f"{cr.get('job_id')} | {cr.get('rank_id')}"] += 1
             if cr["cell"]:
                 by_cell[cr["cell"]] += 1
-            open_ = not cr.get("closed_date")
-            if open_ or (cr.get("closed_date") or "") >= DISMISSED_FROM:
+            if not cr.get("closed_date") or (cr.get("closed_date") or "") >= DISMISSED_FROM:
                 kept_r += 1
                 if printed_r < PRINT_MAX["robot_rows"]:
                     rec("robot", **cr)
@@ -321,69 +346,47 @@ def main() -> None:
         # ── people (pseudonymised) ────────────────────────────────────────────
         emps = b["rows"]
         fieldstats("core/employee$list", emps, person=True)
-        robot_by_id = {str(r.get("robot_id") or "").strip(): r for r in robots}
         status_count: Counter = Counter()
-        printed = staff_in_robots = working = 0
+        printed = 0
         cell_rows: dict[str, list[dict]] = defaultdict(list)
         for e in emps:
             cr = clean(e, person=True)
-            unit = str(e.get("org_unit_id") or "").strip()
-            div = str(e.get("division_id") or "").strip()
-            ucode, vcode = dcode.get(unit), dcode.get(div)
-            cell = ucode if ucode in cells else (vcode if vcode in cells else None)
-            sid = str(e.get("staff_id") or "").strip()
-            rb = robot_by_id.get(sid)
-            cr.update(cell=cell, ucode=ucode, dcode=vcode,
-                      # the position the staff id names, when it is one: its job, rank and org unit
-                      r_job=(str(rb.get("job_id") or "") or None) if rb else None,
-                      r_rank=(str(rb.get("rank_id") or "") or None) if rb else None,
-                      r_ucode=dcode.get(str(rb.get("org_unit_id") or "")) if rb else None,
-                      r_closed=month(rb.get("closed_date")) if rb else None)
+            cr.update(place(e))
             status = str(cr.get("status") or "")
             status_count[status] += 1
-            if status == "W":
-                working += 1
-                staff_in_robots += bool(rb)
             dism = cr.get("dismissal_date")
             keep = status == "W" or (dism and dism >= DISMISSED_FROM) or status not in ("W", "D")
             if keep and printed < PRINT_MAX["emp"]:
                 rec("emp", **cr)
                 printed += 1
-            if status == "W" and cell:
-                cell_rows[cell].append(cr)
+            if status == "W" and cr["cell"]:
+                cell_rows[cr["cell"]].append(cr)
         rec("emp_summary", total=len(emps), printed=printed, status=dict(status_count),
-            working=working, working_staff_in_robots=staff_in_robots,
             placed_working=sum(len(v) for v in cell_rows.values()))
         for code in sorted(cells):
             rows = cell_rows.get(code, [])
-            ranks: Counter = Counter()
-            jobs: Counter = Counter()
-            pairs: Counter = Counter()
-            n_rank = 0
-            for r in rows:
-                rank = r.get("r_rank")
-                job = r.get("job_id")
-                ranks[str(rank)] += 1
-                jobs[str(job)] += 1
-                pairs[f"{job} | {rank}"] += 1
-                n_rank += bool(rank)
-            info = {k: v for k, v in cells[code].items() if k != "code"}
-            rec("cell", code=code, **info, n_working=len(rows), n_rank=n_rank,
-                ranks=ranks.most_common(12), jobs=jobs.most_common(12), job_rank=pairs.most_common(20))
+            jobs: Counter = Counter(str(r.get("job_id")) for r in rows)
+            rec("cell", code=code, **cells[code], n_working=len(rows), jobs=jobs.most_common(12))
 
-        # ── the rank-change journal ───────────────────────────────────────────
-        lines = flat(c["rows"])
-        fieldstats("pro/rank_change$list", c["rows"], person=True)
-        fieldstats("pro/rank_change$list:lines", lines, person=True)
-        by_month: Counter = Counter()
-        for i, ln in enumerate(lines):
-            cr = clean(ln, person=True)
-            m = next((v for k, v in cr.items() if "date" in k.lower() and v), None)
-            by_month[m or "?"] += 1
-            if i < PRINT_MAX["rank_change"]:
-                rec("rank_change", **cr)
-        rec("rank_change_summary", journals=len(c["rows"]), lines=len(lines),
-            by_month=sorted(by_month.items()))
+        # ── the journals: hirings, transfers, rank changes ────────────────────
+        for kind, got, cap in (("hire", d, PRINT_MAX["hire"]), ("transfer", e_, PRINT_MAX["transfer"]),
+                               ("rank_change", c, PRINT_MAX["rank_change"])):
+            lines = flat(got["rows"])
+            fieldstats(got["path"] or kind, got["rows"], person=True)
+            fieldstats((got["path"] or kind) + ":lines", lines, person=True)
+            by_month: Counter = Counter()
+            n_print = 0
+            for ln in lines:
+                cr = clean(ln, person=True)
+                cr.update(place(ln))
+                m = next((v for k, v in cr.items() if _datey(k) and v and "journal" not in k.lower()
+                          and not k.lower().endswith(("_on", "_at"))), None) or cr.get("journal_date")
+                by_month[m or "?"] += 1
+                if n_print < cap:
+                    rec(kind, **cr)
+                    n_print += 1
+            rec(kind + "_summary", source=got["path"], journals=len(got["rows"]), lines=len(lines),
+                printed=n_print, by_month=sorted(by_month.items()))
         rec("done", s=round(time.monotonic() - started, 1),
             pseudonyms={k: len(v) for k, v in _pseud.items()})
     except Exception:  # noqa: BLE001 — never fail the deploy
