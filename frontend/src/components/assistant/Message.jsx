@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, Database, FileSpreadsheet,
+  AlertTriangle, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, Clock3, Database, FileSpreadsheet,
   Loader2, Mic, RotateCcw, Search, BotMessageSquare,
 } from "lucide-react";
 import { FileTile } from "../ui/FileIcon";
-import Markdown from "./Markdown";
+import Markdown, { toPlainText } from "./Markdown";
 import PlanCard from "./PlanCard";
+import CopyButton from "./CopyButton";
 import useAT from "./useAT";
 import { ACTIVE } from "../../context/AssistantContext";
 
@@ -17,7 +18,7 @@ const STEP_ICON = { docs: BookOpen, search: Search, data: Database, file: FileSp
  * under the trail of what it did to get there (live while it works, folded
  * once it has answered — the answer is the point, the trail is the proof).
  */
-export default function Message({ m, run, onConfirm, onCancel, onRetry, onFile, onNavigate }) {
+export default function Message({ m, run, elapsed, onConfirm, onCancel, onRetry, onFile, onNavigate }) {
   const t = useAT();
   if (m.role === "user") return <UserBubble m={m} onFile={onFile} />;
 
@@ -33,12 +34,7 @@ export default function Message({ m, run, onConfirm, onCancel, onRetry, onFile, 
       </span>
       <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
         {steps.length > 0 && <Steps steps={steps} live={working} />}
-        {working && d.thinking && (
-          <p className="flex items-center gap-2 text-sm" style={{ color: "var(--text-3)" }} role="status">
-            <Loader2 size={14} className="animate-spin" style={{ color: "var(--brand-text)" }} />
-            {t(steps.length ? "assistant.thinkingMore" : "assistant.thinking")}
-          </p>
-        )}
+        {working && <WorkingLine thinking={!!d.thinking} more={steps.length > 0} elapsed={elapsed} />}
         {d.plan && (
           <PlanCard plan={d.plan} runId={m.run_id}
             onConfirm={(approve) => onConfirm(m.run_id, approve)}
@@ -65,6 +61,14 @@ export default function Message({ m, run, onConfirm, onCancel, onRetry, onFile, 
               <FileTile key={f.id} name={f.name} bytes={f.size} onClick={() => onFile(f)}
                 title={t("assistant.fileOpen")} />
             ))}
+          </div>
+        )}
+        {/* The answer as plain text — tables tab-separated, so it pastes into
+            a Telegram chat and into Excel alike. Not while it is still being
+            written. */}
+        {m.text && !working && (
+          <div className="-ml-1.5 -mt-1">
+            <CopyButton getText={() => toPlainText(m.text)} label={t("assistant.copy")} />
           </div>
         )}
         <StatusLine status={status} error={d.error} onRetry={onRetry} last={run?.id === m.run_id} />
@@ -108,6 +112,51 @@ export const fmtSecs = (s) => {
   const n = Math.max(0, Number(s) || 0);
   return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
 };
+
+// From this long on the line also says the reader need not wait here.
+const SLOW_HINT_S = 30;
+
+/** Seconds the reply has been worked on: the server's count at the last read
+ *  (`run.elapsed_s`), carried on by the local clock between reads — so a
+ *  reload mid-reply, or a phone whose clock is wrong, still counts right. */
+function useElapsed(elapsed) {
+  const [now, setNow] = useState(() => Date.now());
+  const on = !!elapsed;
+  useEffect(() => {
+    if (!on) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [on]);
+  if (!elapsed) return null;
+  return Math.max(0, (Number(elapsed.base) || 0) + Math.floor(Math.max(0, now - elapsed.at) / 1000));
+}
+
+/** The one line that says the assistant is still at it, for as long as it is:
+ *  thinking (spinner) or running a step (the step's own row spins above),
+ *  with the time so far. The time is not announced — a screen reader would
+ *  read it out every second. */
+function WorkingLine({ thinking, more, elapsed }) {
+  const t = useAT();
+  const secs = useElapsed(elapsed);
+  const label = thinking ? t(more ? "assistant.thinkingMore" : "assistant.thinking") : t("assistant.working");
+  return (
+    <div className="space-y-1">
+      <p className="flex items-center gap-2 text-sm" style={{ color: "var(--text-3)" }}>
+        {thinking
+          ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+          : <Clock3 size={14} className="flex-shrink-0" />}
+        <span role="status">{label}</span>
+        {secs != null && <span className="tabular-nums" aria-hidden="true">{fmtSecs(secs)}</span>}
+      </p>
+      {secs != null && secs >= SLOW_HINT_S && (
+        <p className="text-xs leading-snug pl-[22px]" style={{ color: "var(--text-3)" }}>
+          {t("assistant.slowHint")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Steps({ steps, live }) {
   const t = useAT();

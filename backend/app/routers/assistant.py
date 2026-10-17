@@ -137,7 +137,31 @@ def thread(tid: int, request: Request, db: Session = Depends(get_db),
             .order_by(AssistantMessage.id.asc()).all())
     return {"thread": {"id": t.id, "title": t.title or "", "updated_at": _iso(t.updated_at)},
             "messages": [_msg_out(m) for m in msgs],
-            "run": ({"id": run.id, "status": run.status} if run else None)}
+            "run": ({"id": run.id, "status": run.status, "elapsed_s": _elapsed(run, msgs)}
+                    if run else None)}
+
+
+def _elapsed(run: AssistantRun, msgs: list) -> Optional[int]:
+    """How long the reply has been worked on, by the SERVER's clock — the
+    page ticks it on from here, so a phone whose clock is off still counts
+    right. From the run's start, or from the Confirm (`since`) once a plan
+    was approved. None at rest."""
+    if run.status not in ("running", "executing"):
+        return None
+    since = None
+    m = next((x for x in msgs if x.id == run.message_id), None)
+    raw = (m.data or {}).get("since") if m is not None else None
+    if raw:
+        try:
+            since = datetime.fromisoformat(raw)
+        except (TypeError, ValueError):
+            since = None
+    since = since or run.created_at
+    if since is None:
+        return None
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - since).total_seconds()))
 
 
 @router.delete("/threads/{tid}")

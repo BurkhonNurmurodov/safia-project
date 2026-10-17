@@ -814,7 +814,9 @@ def begin_execute(db, run: AssistantRun, approve: list[int]) -> bool:
     data = _message_data(db, run.id)
     view = dict(data.get("plan") or {})
     view["state"] = "running"
-    _save(db, run.id, msg={"plan": view, "status": "running"})
+    # `since` restarts the reply's clock: the minutes the plan waited on the
+    # user are not time the assistant spent working (routers/assistant.py).
+    _save(db, run.id, msg={"plan": view, "status": "running", "since": _now().isoformat()})
     return True
 
 

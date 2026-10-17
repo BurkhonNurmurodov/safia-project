@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, History, Maximize2, Settings, SquarePen, BotMessageSquare, X } from "lucide-react";
+import { ArrowLeft, History, Loader2, Maximize2, Settings, SquarePen, BotMessageSquare, X } from "lucide-react";
 import api from "../../utils/api";
 import useAT from "./useAT";
 import { useAssistant } from "../../context/AssistantContext";
@@ -28,12 +28,22 @@ function useMedia(query) {
 }
 
 /** The ✦ in the header — opens and closes the panel. Only for those the
- *  server says may use the assistant, and not on its own full page. */
+ *  server says may use the assistant, and not on its own full page.
+ *
+ *  It also says what the watched answer is doing while it is out of sight:
+ *  a spinner while it is being worked on, the bell's gold dot once it is
+ *  ready or a plan waits for a Confirm (AssistantContext). Same size as the
+ *  bell beside it — on a phone an invisible pad takes the tap area to 44px
+ *  without making the header lopsided. */
 export function AssistantButton() {
   const t = useAT();
   const A = useAssistant();
   if (!A?.allowed || A.onPage) return null;
+  const spin = A.busy && !A.viewing;
+  const dot = A.attention && !spin;
   const label = t("nav.assistant");
+  const state = spin ? t("assistant.state.busy") : dot ? t("assistant.state.attention") : "";
+  const full = state ? `${label} — ${state}` : label;
   return (
     <button type="button" onClick={A.toggle}
       className="relative flex items-center justify-center p-1.5 rounded-lg transition-colors flex-shrink-0"
@@ -42,8 +52,18 @@ export function AssistantButton() {
         border: `1px solid ${A.open ? "var(--brand)" : "var(--border)"}`,
         color: A.open ? "var(--on-brand)" : "var(--text-2)",
       }}
-      title={label} aria-label={label} aria-expanded={A.open} aria-controls="assistant-panel">
-      <BotMessageSquare size={15} />
+      title={full} aria-label={full} aria-expanded={A.open} aria-controls="assistant-panel">
+      {spin
+        ? <Loader2 size={15} className="motion-safe:animate-spin"
+            style={{ color: A.open ? "inherit" : "var(--brand-text)" }} />
+        : <BotMessageSquare size={15} />}
+      {dot && (
+        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full badge-pop"
+          style={{ background: "var(--brand)", border: "2px solid var(--bg-base)" }} aria-hidden="true" />
+      )}
+      {/* 27px inside the border + 2 × 8.5 = 44px; it stops 0.5px short of
+          the bell 8px away, so the two never compete for a tap. */}
+      <span className="absolute -inset-[8.5px] md:hidden" aria-hidden="true" />
     </button>
   );
 }

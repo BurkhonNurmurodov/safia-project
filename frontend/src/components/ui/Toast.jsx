@@ -36,6 +36,9 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
  *   zIndex    – default 9999 (above modals; a toast reports on what they did)
  *   icon      – a lucide icon in place of the tone's own, for a notice whose
  *               subject says more than its tone does (OpenInAppPrompt's phone)
+ *   action    – { label, onClick }: ONE button on the toast, for a notice that
+ *               points somewhere («Answer ready — Open»). Pressing it also
+ *               closes the toast.
  */
 
 const TONES = {
@@ -56,6 +59,7 @@ export default function Toast({
   position = "top",
   zIndex = 9999,
   icon,
+  action,
 }) {
   const { bg, fg, Icon: ToneIcon, live } = TONES[tone] ?? TONES.success;
   const Icon = icon || ToneIcon;
@@ -99,6 +103,16 @@ export default function Toast({
     >
       <Icon size={15} style={{ flexShrink: 0, marginTop: 1 }} />
       <span className="flex-1 leading-snug break-words">{message}</span>
+      {action && (
+        <button
+          type="button"
+          onClick={() => { action.onClick?.(); onClose?.(); }}
+          className="flex-shrink-0 -my-1 px-2 py-1 rounded-md text-sm font-semibold hover:underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-1"
+          style={{ color: tone === "info" ? "var(--brand-text)" : fg }}
+        >
+          {action.label}
+        </button>
+      )}
       {showClose && (
         <button
           type="button"
@@ -131,16 +145,17 @@ export function useToast({ position = "top" } = {}) {
   // Keeps `show` identity stable so it can sit in effect/callback deps safely.
   const seq = useRef(0);
 
-  const show = useCallback((message, tone = "success", duration) => {
+  // `extra` carries the optional `icon` and `action` props (see Toast).
+  const show = useCallback((message, tone = "success", duration, extra) => {
     seq.current += 1;
-    setState({ message, tone, duration, key: seq.current });
+    setState({ message, tone, duration, icon: extra?.icon, action: extra?.action, key: seq.current });
   }, []);
   const hide = useCallback(() => setState(null), []);
 
-  const success = useCallback((m, d) => show(m, "success", d), [show]);
-  const error   = useCallback((m, d) => show(m, "error", d), [show]);
-  const warning = useCallback((m, d) => show(m, "warning", d), [show]);
-  const info    = useCallback((m, d) => show(m, "info", d), [show]);
+  const success = useCallback((m, d, x) => show(m, "success", d, x), [show]);
+  const error   = useCallback((m, d, x) => show(m, "error", d, x), [show]);
+  const warning = useCallback((m, d, x) => show(m, "warning", d, x), [show]);
+  const info    = useCallback((m, d, x) => show(m, "info", d, x), [show]);
 
   const node = (
     <Toast
@@ -149,6 +164,8 @@ export function useToast({ position = "top" } = {}) {
       message={state?.message}
       tone={state?.tone}
       duration={state?.duration}
+      icon={state?.icon}
+      action={state?.action}
       position={position}
       onClose={hide}
     />

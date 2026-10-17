@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, BotMessageSquare } from "lucide-react";
+import { AlertTriangle, KeyRound, BotMessageSquare } from "lucide-react";
 import api from "../../utils/api";
 import { saveBlob } from "../../utils/exportXlsx";
 import useAT from "./useAT";
@@ -14,6 +15,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import Button from "../ui/Button";
 import Message from "./Message";
 import Composer from "./Composer";
+import { tipsFor } from "./tips";
 
 // Refusals of a SEND, each with words of its own (backend routers/assistant.py).
 const SEND_ERRORS = ["running", "busy", "not_configured", "no_access", "exam"];
@@ -61,6 +63,10 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
   const msgs = useMemo(() => q.data?.messages || [], [q.data]);
   const run = q.data?.run || null;
   const running = !!run && ACTIVE.includes(run.status);
+  const planWaiting = run?.status === "awaiting_confirm";
+  // The clock of the reply being written: the server's count at the last read,
+  // and when that read landed (Message ticks it on from there).
+  const elapsed = running ? { base: run.elapsed_s ?? 0, at: q.dataUpdatedAt } : null;
 
   // Follow the bottom while the reader is already there; never yank them
   // back down while they are reading something further up.
@@ -142,11 +148,12 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
             <SkeletonBlock className="h-24 w-full rounded-xl" />
           </div>
         ) : empty ? (
-          <Welcome onPick={(s) => send({ text: s })} />
+          <Welcome onPick={(s) => send({ text: s })} onPage={page} />
         ) : (
           <div className={`space-y-5 ${page ? "max-w-3xl mx-auto" : ""}`}>
             {msgs.map((m) => (
               <Message key={m.id} m={m} run={run}
+                elapsed={running && m.run_id === run.id ? elapsed : null}
                 onConfirm={(rid, approve) => A.confirm(rid, approve)}
                 onCancel={(rid) => A.cancel(rid)}
                 onRetry={retry}
@@ -160,6 +167,14 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
       <div className={`flex-shrink-0 ${page ? "px-1 sm:px-2 pt-2" : "px-3 pt-2"}`}
         style={{ paddingBottom: page ? "0.25rem" : "calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
         <div className={page ? "max-w-3xl mx-auto" : ""}>
+          {/* A new message cancels a waiting plan (services/assistant.py) —
+              said BEFORE somebody types «also add …» expecting to amend it. */}
+          {planWaiting && (
+            <p className="flex items-start gap-1.5 text-xs leading-snug mb-1.5 px-0.5" style={{ color: "var(--text-2)" }}>
+              <AlertTriangle size={13} className="mt-px flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />
+              <span>{t("assistant.planWaiting")}</span>
+            </p>
+          )}
           <Composer ref={composer} onSend={send} running={running}
             onStop={() => run && A.cancel(run.id)} disabled={!configured}
             autoFocus={variant === "panel"} />
@@ -173,9 +188,13 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
   );
 }
 
-function Welcome({ onPick }) {
+/** An empty chat: who this is, and questions to start from — about the page
+ *  the panel was opened on (tips.js), since that is what the reader is
+ *  looking at. The full page has no page beside it, so it gets general ones. */
+function Welcome({ onPick, onPage }) {
   const t = useAT();
-  const tips = ["assistant.tip.page", "assistant.tip.lowest", "assistant.tip.tasks", "assistant.tip.excel"];
+  const { pathname } = useLocation();
+  const tips = tipsFor(pathname, onPage);
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-2 py-6">
       <span className="w-11 h-11 rounded-2xl flex items-center justify-center mb-3"

@@ -1,5 +1,7 @@
 import { Fragment } from "react";
 import { useNavigate } from "react-router-dom";
+import CopyButton from "./CopyButton";
+import useAT from "./useAT";
 
 /**
  * The assistant's answers, rendered from the small Markdown subset it is told
@@ -38,9 +40,17 @@ function Block({ b, onNavigate }) {
       </Tag>
     );
   }
-  if (b.type === "table") {
-    return (
-      <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--border)" }}>
+  if (b.type === "table") return <TableBlock b={b} onNavigate={onNavigate} />;
+  return <p><Inline text={b.text} onNavigate={onNavigate} /></p>;
+}
+
+/** A table, with a footer that copies it tab-separated — what Excel and
+ *  Google Sheets paste into cells, and what reads as columns in a chat. */
+function TableBlock({ b, onNavigate }) {
+  const t = useAT();
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+      <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr style={{ background: "var(--bg-inner)" }}>
@@ -65,9 +75,41 @@ function Block({ b, onNavigate }) {
           </tbody>
         </table>
       </div>
-    );
-  }
-  return <p><Inline text={b.text} onNavigate={onNavigate} /></p>;
+      <div className="flex justify-end px-1" style={{ borderTop: "1px solid var(--border)" }}>
+        <CopyButton getText={() => tableTsv(b)} label={t("assistant.copyTable")} showLabel />
+      </div>
+    </div>
+  );
+}
+
+/** An answer as plain text, for the copy button: no Markdown marks, links as
+ *  their words, lists as «•» / «1.» lines, tables tab-separated. */
+export function toPlainText(src) {
+  return parseBlocks(src || "").map((b) => {
+    if (b.type === "code") return b.text;
+    if (b.type === "ul") return b.items.map((it) => `• ${plainInline(it)}`).join("\n");
+    if (b.type === "ol") return b.items.map((it, i) => `${i + 1}. ${plainInline(it)}`).join("\n");
+    if (b.type === "table") return tableTsv(b);
+    return plainInline(b.text);
+  }).filter(Boolean).join("\n\n");
+}
+
+function tableTsv(b) {
+  const row = (cs) => b.head.map((_, i) => plainInline(cs[i] ?? "").replace(/[\t\n]+/g, " ")).join("\t");
+  return [row(b.head), ...b.rows.map(row)].join("\n");
+}
+
+// The twin of `Inline` below, producing text instead of nodes.
+function plainInline(text) {
+  return String(text).split(TOKEN).map((part) => {
+    if (!part) return "";
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) return part.slice(2, -2);
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) return part.slice(1, -1);
+    const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+    if (link) return link[1];
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return part.slice(1, -1);
+    return part;
+  }).join("");
 }
 
 const isNumeric = (s) => /^\s*[-+]?[\d\s.,]+%?\s*$/.test(s || "") && /\d/.test(s || "");
