@@ -10963,7 +10963,7 @@ the same loop there (`cloud-setup.sh` pulls, `auto-commit.sh cloud` ships) — s
   - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
   - The pull only runs at session start. If `main` moves on gitea mid-session the push at turn end is *rejected*, not silently merged — you will see `PUSH FAILED` in the summary; pull and re-run.
 - `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
-- Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
+- Backend changes need the new code loaded on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline does it automatically for `backend/**` and `bot/**` — from 2026-10-18 as a worker SWAP inside the running unit (see «Zero-downtime on ONE port»), a full restart only when `app/supervisor.py` itself changes. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via transliteration — **`tl()` for a PERSON's name, `tx()` for every other DB text** (both from `useTranslit()`).
   - **The English form is for NAMES only** (the operator, 2026-09-21: «if the text is in Uzbek, do not translate it into English except the names of people»). For `en`, `tl` applies the name convention — x→kh, q→k, oʻ→u, gʻ→gh, apostrophes dropped (Burxon → Burkhon). On Uzbek words that is a misspelling: a leader-auto notice printed the task «…planini **qayd qilish**» as «…**kayd kilish**» and the floor noticed at once. `tx` / `transliterateText` still turn Cyrillic into Latin for uz/en but keep the Uzbek spelling for English. Task names, job titles, categories, SKUs, notes, reasons, comments, broadcast text and plant names are all `tx`.
   - Backend twin: `app/translit.py` `transliterate` (names) / `transliterate_text` (everything else). Notification params are split by `staff._NAME_PARAMS`: a new param that carries a person's name must be added there, or English readers see it in Uzbek spelling. A new prose param needs nothing.
@@ -11169,9 +11169,12 @@ manual step, no SSH.
 - **Never edit files directly on the server** — the next deploy hard-resets the
   checkout. Server-only state (`backend/.env`, the Google service-account key,
   the venv) is untracked and survives; everything else comes from git.
-- **Backend deploys swap two copies, once IT has run the one-time root step**
-  (see «Zero-downtime deploys» below). Until then a backend deploy is still a
-  plain restart, and the app waits it out instead of reloading.
+- **Backend deploys swap WORKERS inside the one process** (see «Zero-downtime
+  on ONE port» below): `deploy.sh` sends SIGHUP to the unit's main process,
+  the supervisor, which starts a worker on the new code and retires the old
+  one only once the new one is ready. No gap, no root, no second port. A
+  change to `app/supervisor.py` itself is the one deploy that still restarts
+  the unit.
 - Run a deploy by hand with `bash /var/www/production/deploy/deploy.sh`, or
   force a restart with `FORCE_RESTART=1 bash …` (also available as
   "Run workflow" in the Actions tab).
@@ -11573,7 +11576,116 @@ blocking work on the event loop freezes every request on the server at once.
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
 
+## Zero-downtime on ONE port — the supervisor (`app/supervisor.py`, 2026-10-18)
+
+From **2026-10-18** the unit's main process is a SUPERVISOR that holds
+`127.0.0.1:8030` and never goes away; the app runs as its child WORKER. IT
+declined the blue-green root step and a second port (the operator's report:
+«around 30 apps run on that server», our problem «unprofessional and easily
+solvable»), so the whole of what nginx did for us in that design moved into
+our own process, where nobody's cooperation is needed. The Cloudflare 502
+users saw at every backend deploy — and at every restart nobody deployed — is
+gone with it, in Telegram, the browser and the Android app alike.
+
+- **How it starts.** The unit file is IT's and unchanged: systemd still runs
+  `uvicorn app.main:app …`. The first lines of `app/main.py` call
+  `supervisor.maybe_exec_supervisor()`: under systemd (`INVOCATION_ID` set)
+  the uvicorn CLI that imported us `os.execv`s itself into
+  `python -m app.supervisor <the same args>` — same PID, so systemd's MainPID
+  IS the supervisor. It binds the socket (SO_REUSEADDR, backlog 2048) and
+  spawns the worker, `python -m app.supervisor --worker --fd 3`, which runs
+  `uvicorn.Server.run(sockets=[fd 3])` — the ordinary app, `--proxy-headers`
+  and the rest passed through, `backend/.env` laid over the environment at
+  EVERY spawn, so a key written there later (`deploy/sync-env.sh`, startup's
+  own writers) reaches the next worker without a `systemctl restart`. The
+  lifespan's LAST line, `signal_ready()`, writes one word down a pipe the
+  supervisor handed it (`SAFIA_READY_FD`) — that is the whole readiness
+  protocol. Off systemd nothing happens (a laptop, a cloud session,
+  `--reload`); `SAFIA_SUPERVISE=1` forces it, `SAFIA_SUPERVISE=0` in `.env`
+  plus one restart is the opt-out back to plain uvicorn.
+- **A deploy is `kill -HUP <MainPID>`** — `deploy/deploy.sh`, the same user,
+  no sudo. The supervisor spawns a worker on the code now in the checkout and
+  only once that worker says ready retires the old one (SIGTERM, which
+  uvicorn takes as «finish the open requests, then exit»; killed after 60 s).
+  Connections queue in the kernel on a socket that is never closed, so there
+  is NO gap: measured on the cloud stack, 55 of 55 health checks answered 200
+  across a swap. A new worker that exits before it is ready is DROPPED and
+  the old one keeps serving; deploy.sh reads
+  `backend/data/supervisor/status.json` (`state`, `worker.gen`, `last_swap`)
+  to know, rolls the checkout back and fails the job. Only a change to
+  `app/supervisor.py` itself still takes the old `systemctl restart` (a running
+  supervisor cannot swap itself), and so did the first deploy, whose main
+  process was still plain uvicorn. deploy.sh prefers blue-green if its
+  template unit ever exists, then this, then the plain restart. `kill -USR1`
+  forces a status write; the file is the one place `systemctl status` cannot
+  reach: which worker serves, since when, its RSS, the last swap's outcome.
+- **While no worker is ready the supervisor answers for it** — the first
+  boot, a boot after a crash, a swap done stop-then-start: the page files
+  from `frontend/dist` (index.html for every page path, `no-store`;
+  `/assets/*` immutable), a JSON 503 with `X-Safia-Restarting: 1` on the
+  backend paths (nginx's `$safia_backend_only` map, mirrored in
+  `backend_only()` — keep the two in step). That is exactly what
+  `serverRestart.js` already waits out behind «Server yangilanmoqda», and
+  what the service worker reads as the shell. Never a 502, never Cloudflare's
+  page. The request body is drained first (nginx streams uploads,
+  `proxy_request_buffering off`, and closing on one is ITS 502), and a path
+  never leaves `dist` (`realpath`). The fallback page carries no CSP — one
+  load, then the worker's own page takes over.
+- **A worker that dies is replaced** — at once when it had lived ≥ 90 s,
+  with a backoff of 5 → 10 → 20 → 40 → 60 s between quick deaths — behind
+  the fallback; a worker not ready after 600 s is killed and retried. The
+  supervisor itself is stdlib only, imports nothing of the app, ~16 MB (a bug
+  in it is the outage it exists to prevent); if IT dies, systemd restarts the
+  unit (`Restart=on-failure`) exactly as before.
+- **Memory.** An overlapping swap holds two workers for one boot. Short of
+  room (`MemAvailable` below the live worker's RSS + 200 MB) the swap is
+  stop-then-start behind the fallback: a boot-long «Server yangilanmoqda»,
+  never a 502, and never the OOM killer invited onto a box that already
+  swaps. The jobs lock (`app/scheduler.py`) and the ADDITIVE-migration rule
+  of the blue-green section apply unchanged: two workers share the database
+  for the length of a boot.
+- **It records how workers die, and the boot report tells the chat.**
+  `backend/data/supervisor/events.jsonl` (append-only, rotated at 2 MB, `seq`
+  climbing across restarts) holds every spawn, readiness (boot seconds, how
+  long the fallback answered and for how many requests), retirement, failed
+  start and DEATH — exit code or signal, uptime, the worker's RSS at its last
+  sample and `/proc/meminfo` at that moment. `services/boot_report.py` runs a
+  few seconds after every worker's lifespan: it reads the events since its
+  cursor and DMs the support chat (`perf_watch`'s recipients) when the boot was
+  anything but an ordinary deploy swap — a worker that DIED, with the verdict
+  (SIGKILL on a host with under 300 MB free or half its swap used = the OOM
+  killer; SIGSEGV / SIGBUS / SIGABRT = a native library of ours; exit 3 = the
+  app's startup failed; a Python exit code = our code), a failed start, the
+  whole unit restarted with the SAME code (systemd, a host reboot or a
+  `systemctl restart` — never a deploy), the one full restart a supervisor.py
+  change costs. An ordinary swap is QUIET: three to twenty a day would bury
+  the line that matters. Without a supervisor (plain uvicorn) it sends only
+  when the commit equals the previous boot's — the same code booting again is
+  a restart nobody deployed. `last-boot.json` and `boot-report.cursor` beside
+  the events are its memory; `/health` carries `started_at`, `pid`,
+  `supervised` and `worker_gen`, so a swapped-in worker can be told from the
+  old one. The stall report no longer calls every restart «a deploy».
+- **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
+  for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
+  near it: the process dying on its own, on a shared box the stall reports
+  had shown starved of CPU and memory. IT's reading («the Telegram mini app
+  sends a wrong request») was wrong — the mini app's requests are a browser's
+  plus one initData header, and the web merely hides a navigation 502 behind
+  the service worker — but the restarts were ours to make harmless, and the
+  cause of the unexplained one is what the boot report now names.
+- Tested on the cloud stack before it shipped: the exec guard → the fallback
+  during the boot (503 + the mark on /api, 200 index.html on pages, immutable
+  assets, a POST with a body, no traversal) → ready → a HUP swap with zero
+  non-200 answers → `kill -9` → fallback → respawn → SIGTERM → a clean exit,
+  with the events and the report text as described.
+
 ## Zero-downtime deploys (blue-green, v4.196.0)
+
+**Superseded on 2026-10-18** — IT declined the root step and a second port, so
+the supervisor above does this on ONE port with no root. Everything in this
+section stays as written: the files are in the repo and `deploy.sh` still
+prefers blue-green if its template unit ever exists; the nginx fallback and
+the additive-migration rule are now the supervisor's too.
 
 From **2026-10-01** (the operator's report: every backend deploy showed users
 Cloudflare's «502 Bad gateway» page for as long as the app took to boot) a backend

@@ -20,14 +20,23 @@
 # On an unhealthy service it rolls the checkout back to the previous commit,
 # rebuilds if it had built, restarts, and exits non-zero.
 #
-# TWO WAYS TO RESTART, picked automatically:
+# THREE WAYS TO RESTART, picked automatically:
+#   the in-process supervisor (backend/app/supervisor.py, from 2026-10-18 —
+#     CLAUDE.md «Zero-downtime on ONE port»): under systemd the unit's main
+#     process is a small supervisor holding port 8030 and the app is its child
+#     worker. A deploy is `kill -HUP <MainPID>` — the same user, no sudo: the
+#     supervisor starts a worker on the new code and swaps once it is READY,
+#     the old worker serving meanwhile; a worker that never gets ready is
+#     dropped and the old one keeps serving. Needs nothing from root.
 #   blue-green (once deploy/03-bluegreen-setup.sh has been run as root): the
 #     app runs as safia-production@8030 / @8031. A restart STARTS the idle copy,
 #     waits for its /health, and only then stops the old one — nginx sends
 #     traffic to whichever answers, so users see no gap. A new copy that never
 #     gets healthy is stopped and the old one, never touched, keeps serving.
-#   single copy (before that setup, or after its --undo): `systemctl restart
-#     safia-production`, which leaves nothing answering while the app boots.
+#   single copy (neither of the above): `systemctl restart safia-production`,
+#     which leaves nothing answering while the app boots. Still used for the
+#     first deploy that introduces the supervisor and whenever the
+#     supervisor's OWN file changes — a running supervisor cannot swap itself.
 #
 # Needs, on the deploy host:
 #   - passwordless sudo for exactly `systemctl restart|is-active safia-production`
@@ -143,6 +152,9 @@ if matches '^frontend/package(-lock)?\.json$'; then NEED_NPM=1; fi
 NEED_RESTART=$FORCE_RESTART
 if matches '^(backend|bot)/'; then NEED_RESTART=1; fi
 if matches '^deploy/safia-production\.service$'; then NEED_RESTART=1; fi
+# The supervisor swaps WORKERS; its own code only lands on a real restart.
+NEED_FULL_RESTART=0
+if matches '^backend/app/supervisor\.py$'; then NEED_FULL_RESTART=1; fi
 
 # Rebuild only when the sources moved and the committed build did NOT follow
 # them — a commit that already carries a fresh frontend/dist needs no build.
@@ -187,6 +199,28 @@ else
 fi
 
 # ---------------------------------------------------------------- restart
+# The in-process supervisor (see the header): is the unit's main process it,
+# and what does its status file say? Same user as the service, so /proc and
+# the status file are readable and SIGHUP needs no sudo.
+SUP_STATUS="$APP_DIR/backend/data/supervisor/status.json"
+sup_pid() { systemctl show -p MainPID --value "$SVC" 2>/dev/null || true; }
+sup_live() {  # 0 when the unit's main process is the supervisor
+  local pid; pid=$(sup_pid)
+  [ -n "$pid" ] && [ "$pid" != "0" ] && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'app\.supervisor'
+}
+sup_field() {  # a dotted field of status.json, printed as JSON ("ready", 7, null)
+  "$APP_DIR/backend/.venv/bin/python" - "$SUP_STATUS" "$1" <<'PYEOF' 2>/dev/null || echo null
+import json, sys
+try:
+    cur = json.load(open(sys.argv[1]))
+    for part in sys.argv[2].split("."):
+        cur = cur.get(part) if isinstance(cur, dict) else None
+    print(json.dumps(cur))
+except Exception:
+    print("null")
+PYEOF
+}
+
 wait_healthy() {  # url, unit — 0 when /health answers, 1 on timeout or a dead unit
   local url=$1 unit=$2 i
   for i in $(seq 1 "$HEALTH_TIMEOUT"); do
@@ -230,9 +264,55 @@ if [ "$NEED_RESTART" = "1" ] && [ "$BG" = "1" ]; then
     wait_healthy "http://127.0.0.1:$NEW_PORT/health" "$NEW_UNIT" || true
   fi
   die "deploy of ${NEW:0:8} failed; production is still on ${PREV:0:8}"
+elif [ "$NEED_RESTART" = "1" ] && [ "$NEED_FULL_RESTART" != "1" ] && sup_live; then
+  SUP_PID=$(sup_pid)
+  GEN_BEFORE=$(sup_field worker.gen)
+  SWAP_BEFORE=$(sup_field last_swap.requested_at)
+  log "Supervisor (pid $SUP_PID) holds port 8030 — swapping in a worker on ${NEW:0:8}; worker gen $GEN_BEFORE keeps serving meanwhile"
+  kill -HUP "$SUP_PID"
+  swapped=0
+  swap_error=""
+  for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+    sleep 1
+    state=$(sup_field state)
+    gen=$(sup_field worker.gen)
+    if [ "$state" = '"ready"' ] && [ "$gen" != "null" ] && [ "$gen" != "$GEN_BEFORE" ]; then
+      swapped=1; info "new worker (gen $gen) ready after ${i}s — the old one is retiring"; break
+    fi
+    if [ "$(sup_field last_swap.ok)" = "false" ] && [ "$(sup_field last_swap.requested_at)" != "$SWAP_BEFORE" ]; then
+      swap_error=$(sup_field last_swap.error); break
+    fi
+    if ! systemctl is-active --quiet "$SVC"; then swap_error="the unit is not active"; break; fi
+  done
+  if [ "$swapped" != "1" ]; then
+    printf '\n\033[1;31m✗ the new worker never got ready%s — rolling the checkout back to %s\033[0m\n' \
+           "${swap_error:+ ($swap_error)}" "${PREV:0:8}" >&2
+    journalctl -u "$SVC" -n 40 --no-pager 2>/dev/null || true
+    git reset --hard --quiet "$PREV"
+    if [ "$NEED_BUILD" = "1" ]; then
+      ( cd "$APP_DIR/frontend" && npm run build --silent ) || true
+    fi
+    if [ "$(sup_field worker)" = "null" ]; then
+      # Nothing is serving (a stop-then-start swap for want of memory, or the
+      # old worker died meanwhile): ask for a worker on the previous commit.
+      info "no worker is serving — asking the supervisor for one on ${PREV:0:8}"
+      kill -HUP "$SUP_PID" 2>/dev/null || true
+      for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+        [ "$(sup_field state)" = '"ready"' ] && { info "back on ${PREV:0:8} after ${i}s"; break; }
+        sleep 1
+      done
+    else
+      info "the previous worker never stopped serving — production is still on ${PREV:0:8}"
+    fi
+    die "deploy of ${NEW:0:8} failed; production is on ${PREV:0:8}"
+  fi
 elif [ "$NEED_RESTART" = "1" ]; then
   [ "$SUDO_OK" = "1" ] || die "$SUDO_HINT"
-  log "Restarting $SVC"
+  if [ "$NEED_FULL_RESTART" = "1" ] && sup_live; then
+    log "Restarting $SVC — the supervisor's own code changed (the one deploy that still leaves a gap)"
+  else
+    log "Restarting $SVC"
+  fi
   sudo -n systemctl restart "$SVC"
 else
   log "Backend untouched — no restart (the SPA is served from disk per request)"

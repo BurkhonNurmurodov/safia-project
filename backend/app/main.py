@@ -8,6 +8,15 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
+# One port, no root (app/supervisor.py — CLAUDE.md «Zero-downtime on ONE
+# port»): under systemd the uvicorn CLI that imported this module becomes the
+# SUPERVISOR holding the port, and the app runs in a child worker it swaps on
+# a deploy and replaces after a crash. First thing, before anything heavy is
+# imported — the supervisor stays tiny. A no-op for the worker and off systemd.
+from app.supervisor import maybe_exec_supervisor  # noqa: E402
+
+maybe_exec_supervisor()
+
 # Configure logging before the rest of the app is imported, so anything that
 # logs during import lands in backend/logs/app.log. Mirrored in
 # passenger_wsgi.py — prod boots through there, not through the lifespan.
@@ -741,6 +750,16 @@ async def lifespan(app: FastAPI):
     from app.routers import leaders as _leaders_router
     _leaders_router.warm_standing()
 
+    # One port, no root (app/supervisor.py): this worker is READY — the
+    # supervisor stops answering for it and retires the worker it replaces.
+    # A no-op when nothing supervises. Then why this process booted, told to
+    # the support chat when it was not an ordinary deploy swap
+    # (services/boot_report.py) — off the loop, a few seconds from now.
+    from app.supervisor import signal_ready
+    from app.services import boot_report
+    signal_ready()
+    boot_report.schedule()
+
     yield
     perf_watch.stop()
     shutdown_scheduler()
@@ -1165,10 +1184,16 @@ app.include_router(assistant.router)
 
 @app.get("/health")
 def health():
-    # `jobs`: whether THIS copy fires the background jobs. During a blue-green
-    # swap the new copy answers false until the old one has exited.
+    # `jobs`: whether THIS copy fires the background jobs. During a swap (two
+    # workers under the supervisor, or two blue-green copies) the new one
+    # answers false until the old one has exited. `started_at` / `pid` /
+    # `worker_gen` say WHICH process answered — deploy.sh and the «Versiya»
+    # dialog tell a swapped-in worker from the old one by them.
     from app.scheduler import runs_jobs
-    return {"status": "ok", "version": APP_VERSION, "jobs": runs_jobs()}
+    from app.supervisor import supervised, worker_gen
+    return {"status": "ok", "version": APP_VERSION, "jobs": runs_jobs(),
+            "started_at": STARTED_AT, "pid": os.getpid(),
+            "supervised": supervised(), "worker_gen": worker_gen() or None}
 
 
 @app.get("/api/version")

@@ -244,7 +244,8 @@ def verdict(stall, server_events: list[dict]) -> str:
     where = f"{_t(slow.get('m'), 8)} {_t(slow.get('p'))}"
     c = cause(st, server_events)
     if c == "restart":
-        return "The server was RESTARTING (a deploy) — the app waited for it to come back."
+        return ("The server was RESTARTING — the app waited for it to come back "
+                "(a deploy swap, or a worker the supervisor replaced: the boot report in this chat says which).")
     if c == "froze":
         return (f"The SERVER froze — its event loop was held for up to {_s(_froze_ms(st, server_events))}, "
                 "and no request was answered meanwhile (see the server's record below).")
