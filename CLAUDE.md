@@ -10963,7 +10963,7 @@ the same loop there (`cloud-setup.sh` pulls, `auto-commit.sh cloud` ships) — s
   - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
   - The pull only runs at session start. If `main` moves on gitea mid-session the push at turn end is *rejected*, not silently merged — you will see `PUSH FAILED` in the summary; pull and re-run.
 - `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
-- Backend changes need the new code loaded on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline does it automatically for `backend/**` and `bot/**` — from 2026-10-18 as a worker SWAP inside the running unit (see «Zero-downtime on ONE port»), a full restart only when `app/supervisor.py` itself changes. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
+- Backend changes need the new code loaded on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline does it automatically for `backend/**` and `bot/**` — from 2026-10-18 as a worker SWAP inside the running unit (see «Zero-downtime on ONE port»), a full restart only when `app/supervisor.py` itself changes. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today — in the lifespan as `run(step)` (schema, what a request needs) or `later(step)` (data fixes, reports, DMs, syncs — on a thread after readiness); see «Zero-downtime on ONE port».
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via transliteration — **`tl()` for a PERSON's name, `tx()` for every other DB text** (both from `useTranslit()`).
   - **The English form is for NAMES only** (the operator, 2026-09-21: «if the text is in Uzbek, do not translate it into English except the names of people»). For `en`, `tl` applies the name convention — x→kh, q→k, oʻ→u, gʻ→gh, apostrophes dropped (Burxon → Burkhon). On Uzbek words that is a misspelling: a leader-auto notice printed the task «…planini **qayd qilish**» as «…**kayd kilish**» and the floor noticed at once. `tx` / `transliterateText` still turn Cyrillic into Latin for uz/en but keep the Uzbek spelling for English. Task names, job titles, categories, SKUs, notes, reasons, comments, broadcast text and plant names are all `tx`.
   - Backend twin: `app/translit.py` `transliterate` (names) / `transliterate_text` (everything else). Notification params are split by `staff._NAME_PARAMS`: a new param that carries a person's name must be added there, or English readers see it in Uzbek spelling. A new prose param needs nothing.
@@ -11222,9 +11222,10 @@ blocking work on the event loop freezes every request on the server at once.
   ONE «Server was slow» DM, at most every 30 min, only when it was real
   trouble: a stall ≥ 2 s, a sign-in / page-access answer ≥ 5 s, a full DB pool,
   or ≥ 5 slow requests in 2 min not counting paths slow BY DESIGN
-  (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started at the
-  END of the lifespan (startup migrations run on the loop by design and must
-  not read as a stall), stopped first at shutdown. Never fails a request.
+  (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started once the
+  DEFERRED startup work has finished (startup migrations run on the loop by
+  design and the deferred walks hold the GIL — neither must read as a stall;
+  from 2026-10-18, see «Zero-downtime on ONE port»), stopped first at shutdown. Never fails a request.
 - **A slow request says WHERE its time went** («time went to: 62%
   staff_live:_send_dms ↳ ssl:read»). From `SAMPLE_AFTER_S` (1 s) on, the
   watcher looks at each running request's thread every `SAMPLE_S` (0.25 s) —
@@ -11665,6 +11666,35 @@ gone with it, in Telegram, the browser and the Android app alike.
   the events are its memory; `/health` carries `started_at`, `pid`,
   `supervised` and `worker_gen`, so a swapped-in worker can be told from the
   old one. The stall report no longer calls every restart «a deploy».
+- **The boot itself is TWO phases (`services/boot_steps.py`, the same day,
+  the operator: «move the heavy startup work off the boot path too»).** The
+  lifespan calls `run(step)` for what a request needs — `create_all`, every
+  `add_*` / `migrate_*` column, index and table, the seeds a first request
+  resolves against, `ensure_internal_api_key`, the scheduler and its job
+  registrations, `_warm_import_app` (the lazy-import hazard of a swap still
+  holds), the link and span caches — and `later(step)` for everything else,
+  which runs on a thread, in the same order as before, once `signal_ready()`
+  has gone out: the flag-guarded one-shots, the backfills, every `report_*`
+  and DM, the Telegram webhook call, `sync_leader_ai_dates` (the corpus
+  walk), the leader-rule passes. 119 steps before readiness, 104 after, on
+  the day it shipped. **The rule for a new startup step**: a column, a table,
+  anything a request could hit → `run`; a data fix, a seed behind a flag, a
+  report, a DM, a sync → `later`. A `run` step that raises still fails the
+  boot (uvicorn exits 3, deploy.sh rolls back); a `later` step that raises is
+  recorded, the rest still run, and the boot report names it to the support
+  chat — never the site down over a report that could not be sent. Every
+  step is timed: a step over 0.5 s prints its time, `[startup] ready for
+  requests after N s` and `deferred startup work done in M s (slowest: …)`
+  print the totals, and the boot report carries both. `perf_watch` starts
+  only after the deferred work, handed back to the loop with
+  `call_soon_threadsafe` (it records the loop's thread id), so the walks on
+  the deferred thread are never read as freezes; shutdown waits up to 45 s
+  for the thread rather than dying mid-step. Consequences: a swap's memory
+  overlap and a crash's «Server yangilanmoqda» last the schema phase only;
+  the first requests after a boot share the CPU with the deferred walks (a
+  slow first minute, where it used to be no minute at all); and a one-shot's
+  DM now lands a few seconds after the deploy rather than before the first
+  request. `passenger_wsgi.py` keeps its one-phase mirror — it never runs.
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports

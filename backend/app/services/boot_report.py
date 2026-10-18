@@ -65,6 +65,10 @@ def schedule(delay_s: float = 4.0) -> None:
 def _run(delay_s: float) -> None:
     try:
         time.sleep(delay_s)
+        # The deferred startup work (services/boot_steps.py): wait for it, so
+        # the report can say what it cost — or that it is still running.
+        from app.services.boot_steps import boot
+        boot.wait(90)
         built = build()
         _remember_boot()
         if built is None:
@@ -146,6 +150,21 @@ def build() -> Optional[tuple[str, bool]]:
     when = _local(STARTED_AT)
     if boot_s is not None:
         lines.append(f"Boot took {_dur(float(boot_s))} (process started {when}, commit {_esc(str(commit))}).")
+    from app.services.boot_steps import boot
+    ph = boot.summary()
+    if ph.get("ready_s") is not None:
+        line = f"The startup work a request needs took {_dur(ph['ready_s'])}"
+        if ph.get("deferred_running"):
+            line += f"; the deferred startup work ({ph['deferred_queued']} steps) is still running"
+        elif ph.get("deferred_s") is not None:
+            line += f"; the deferred startup work took {_dur(ph['deferred_s'])} more on a thread"
+        slow = ph.get("slowest_later") or ph.get("slowest_boot")
+        if slow:
+            line += " (slowest: " + ", ".join(f"{_esc(n)} {_dur(t)}" for n, t in slow[:2]) + ")"
+        lines.append(line + ".")
+    for name, err in ph.get("failed") or []:
+        lines.append(f"⚠ Deferred startup step <code>{_esc(name)}</code> failed: {_esc(err)}.")
+        send = True
     fb_s, fb_n = (ready or {}).get("fallback_s"), (ready or {}).get("fallback_served")
     if fb_s:
         lines.append(f"Meanwhile the supervisor answered {fb_n or 0} request(s) over {_dur(float(fb_s))} "
