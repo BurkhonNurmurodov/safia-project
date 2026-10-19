@@ -28,7 +28,7 @@ or copy-paste its markup into a page.
 | Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
 | Whole-number count (how many people / pieces) | `CountStepper.jsx` | THE count field: − · number · + in the house control skin at the 38px baseline, 16px text below md so iOS never zooms. `value`/`onChange` are a whole number or `null` (the handler gets the NUMBER) — blank means «not answered yet», never 0. The ± buttons stop AT `min`/`max` (a − from a number typed above `max` lands on it); a TYPED number above `max` is kept as typed and left to the caller's `FormField` `error` + `invalid` — silently clamping somebody's number is a guess. First callers: the «Tozalovchilar» count on the /idle-cell form and in the «Jonli» recorder. Never hand-roll another numeric input for a count. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
-| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. `pageScroll` drops the card's own scroller (no `maxHeight` cap, the card clips with `overflow: clip`) so a phone scrolls ONE thing — sticky header/footer cells then stick to Layout's `<main>` and offset by `calc(var(--main-pad) * -1)` (a `Th` inside a `pageScroll` card does this itself, through the card's context); only for a table that fits its card's width (/kelish, /worker-concerns). `mobileMaxHeight="none"` lets the phone list grow with the page instead of scrolling inside its own 70vh box (the /leaders-kpi board, whose rows open in place). `head` draws a node in place of the SectionHead and `collapsed` shows the card with its head alone — an accordion card whose body is the table (one per cell on /kelish); the head stays the same node either way, so its toggle keeps focus. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
+| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. `pageScroll` drops the card's own scroller (no `maxHeight` cap, the card clips with `overflow: clip`) so a phone scrolls ONE thing — sticky header/footer cells then stick to Layout's `<main>` and offset by `calc(var(--main-pad) * -1)` (a `Th` inside a `pageScroll` card does this itself, through the card's context); only for a table that fits its card's width (/kelish, /worker-concerns). `mobileMaxHeight="none"` lets the phone list grow with the page instead of scrolling inside its own 70vh box (the /leaders-kpi board, whose rows open in place). `head` draws a node in place of the SectionHead and `collapsed` shows the card with its head alone — an accordion card whose body is the table (one per cell on /kelish); the head stays the same node either way, so its toggle keeps focus. `scrollRef` hands the caller the table's own scroller — its clientWidth is the part on screen (the /leaders-kpi ranking fits its columns to it and pins an opened row inside it). Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Cell row identity (the head of a cell's accordion card) | `CellIdent.jsx` | The verifix CODE in a NEUTRAL chip (a hashed colour read as a traffic light), under it the cell's leader behind a flag — `noLeader` words, dimmer, when nobody leads. `leader` arrives transliterated. /idle-cell and /kelish head their cell cards with it, so a cell reads the same on both. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. `size="lg"` titles a whole card rather than labelling a table — a sentence-case 15px title with its `subtitle` under it and a 22px icon (the appeal chat card). The icon sits on the TITLE's line (`items-start`) whatever a wrapping subtitle under it does — centred on the whole block it ended up beside the subtitle. |
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
@@ -1754,6 +1754,16 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
 - **`official_hc` is the headcount either way**, so nothing here cares which
   basis the day is on: it is the typed «Bugungi fakt» from
   `zagruzka_source.ZAGRUZKA_FROM` and the «Одам сони» sheet before it.
+- **The «AVG за день» footer is the WHOLE TABLE, not a mean of the rows**
+  (the operator, 2026-10-19 — on all three comparison tables; the label stays
+  «AVG»). `ComparisonTable pooledAvg`: per day, Σ numerators ÷ Σ capacities over
+  every row the grid shows (P = Σ prod_plan over the rows' P capacities, A =
+  Σ prod_actual over their A capacities, each capacity = the cell's numerator ÷
+  its own value, so the basis, the ⚙ factors and the approval gate are the
+  cells' own); D pairs the halves over rows carrying both; the corner is the
+  whole table over the whole period. A small brigade weighs what it is worth.
+  MIN/MAX and every row's own summary are unchanged; `/zagruzka-cell` keeps the
+  mean (its unit row already is the measured whole).
 - **`/zagruzka` only** (the operator's call). `/zagruzka-cell` was considered
   and deliberately left alone — its rows are cells, whose headcount is a
   per-group SHARE, so the same formula there is a different decision.
@@ -1908,6 +1918,37 @@ five, is gone.
 - A bar is sized off the SAVED bands and the period's own values (read through
   the table's own functions), never off the draft — a bar that grew as an edge
   was dragged toward its end would rescale under the pointer.
+
+## «Excel» on every /zagruzka table (2026-10-19)
+
+The operator: every table on «Zagruzka foizi» gets its OWN Excel button, the
+file styled exactly as the table, and the data cells FILLED with their colour
+rather than a coloured number. Six buttons — the three comparison tables (in
+their own header, beside the icons) and the three heatmaps (in the card
+header) — each one file of one table. The funnel is a chart and has none.
+
+- **The table describes itself; the server only lays it out.** Every figure
+  on those tables is computed in the browser (`utils/formulas.js`), so a
+  Python twin would be a second spelling. `ComparisonTable onExport` and
+  `HeatmapChart exportRef` build a grid spec off the very readers, approval
+  gate, sort, summary mode (AVG / MIN / MAX) and P·A or D view the grid is
+  drawn with, every cell carrying the band colour it is painted with;
+  `utils/gridExport.js` is the vocabulary and the POST; the page
+  (`Zagruzka.jsx` `exportTable`) adds the title, the period the tables were
+  served, the plant / shift / brigadir scope and the time. Both props are
+  opt-in — /zagruzka-cell and /workers draw no button.
+- **`services/grid_export.py` is the layout** (`POST /api/zagruzka/export.xlsx`,
+  `require_page("zagruzka")`, logged as `export.zagruzka`, delivered by
+  `xlsx_delivery`): the gold header in upper case with the name header over
+  both rows, the screen's thick edges (name column, each date group, the
+  summary column, over the footer), a value as a real number under a `0"%"`
+  / `+0"%"` format filled with its band colour and its contrast ink, «—» on a
+  blank day, a pending day as a diagonal-stripe fill with its ⏳ / 👥 / 📄,
+  the footer after a spacer row, and the colour key under the table (one band
+  per line, the pending icons the file holds). Frozen header + names,
+  landscape, fit to width. Bounded (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`); it
+  computes nothing.
+- The pinned summary is in the file on a phone too, where the screen drops it.
 
 ## Which ojidaniya categories the загрузка counts
 
@@ -2657,6 +2698,21 @@ tasks 40/41 name it.
       words in the tooltip.
     - The audit column is gone while the audit is not live (it could only
       read «—»). A KPI that goes live grows its column (`liveKeys`).
+    - **It fits its card — no sideways scroll on a desktop** (the same
+      evening: sized by its longest names it ran past the card's edge and
+      cut «Jami» and an opened radar off). `fitColumns` in `LeaderboardTab`
+      plans a `table-fixed` `<colgroup>` against the scroller's visible
+      width (`TableCard scrollRef` + `useElementWidth("client")`): every
+      column but the names is as wide as its header label in the reader's
+      language (measured, so no language is cut) or its content; the owner
+      comes first, its longest name whole where the card allows; the
+      brigadir column takes what is left and shows only while the owner
+      still keeps 280px (or its whole name) — never with one brigadir in
+      scope — else it is named on the owner's hover. Names cut with «…»,
+      whole on hover. Short of a 200px owner, «Jami» drops its bar; below
+      that (a tablet) the table scrolls and an opened row's panel is
+      `sticky left-0` at the visible width, so it never scrolls away.
+      Verified 1280 (sidebar pinned) → 1920 in uz_cyrl and en.
   - **A row opens in place onto `BoardPanel`**. Several rows can be open at
     once, so closing one never moves the row tapped.
     - **The radar** (`KpiRadar`, plain SVG) has one spoke per KPI in the
@@ -5490,9 +5546,13 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   on its first day.
 - **Filling a task and SUBMITTING it are two different acts.** Proofs, answers
   and retakes save as they always did; «Vazifani yopish» is what locks the task
-  and hands it to the AI. The button is only offered once the task is complete
-  (Ha + all required photos, or Yo'q + reason) — Telegram has no disabled
-  button, so an unusable one is a button that silently does nothing.
+  and hands it to the AI. From 2026-10-19 the button is ALWAYS on the task's
+  screen: live once the task is complete (Ha + all required photos, or Yo'q +
+  reason), DISABLED before that with what is missing as its label
+  («🔒 Yopish uchun yana 2 ta rasm kerak») — Bot API 10.3's disabled button,
+  which sends no callback at all. It used to be left off the screen because
+  Telegram had no disabled button. A Yo'q draft is always closable (its reason
+  is saved with the answer), so «no reason» is not a state this screen has.
 - **Closing is FINAL for the LEADER.** Nothing they press and no config change
   reopens a closed task; switching the unit back to day mode does not either.
   `leader_close.locked(entry, day)` is THE predicate and every writer consults
@@ -5664,6 +5724,90 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   that can be done to it.
 
 Related memory: `leader-per-task-submission`.
+
+## Coloured and disabled Telegram buttons (`app/tg_buttons.py`, 2026-10-19)
+
+The pinned telebot (4.25) knows neither Bot API 9.4's button `style` nor 10.3's
+`disabled`. `tg_buttons.Button` adds both in `to_dict()`, which every keyboard
+is serialised through, so no send or edit call changed (an upgrade to telebot
+4.37 was rejected: twelve releases under the whole bot for two fields, and it
+still lacks `InlineKeyboardMarkup.force_reply`). Incoming updates parse as
+before (telebot swallows unknown button keys).
+
+- **Colour means a DECISION and nothing else**: `approve()` is green
+  (`success`) and `reject()` red (`danger`) on the approval cards
+  (`approvals._approve_reject_kb`: hr_document, edit_request, edit_batch,
+  leader_late, live_document, live_batch). No other button is coloured. The
+  registration card (`ap:reg`, `telegram_bot.py`) was left out of scope.
+- **A disabled button is a button TYPE**: it carries no callback, url or
+  web_app, so a tap reaches nobody whatever app draws it — the safety argument
+  for an old app the spec says nothing about. Never coloured.
+- **A decided card keeps a keyboard** (`approvals.decided_markup`, and
+  `telegram_bot._appeal_decided_kb` for the late-proof / objection cards):
+  one disabled button with the outcome and who decided it, surname + initial
+  (`outcome_label` — «✅ Tasdiqlandi · Aripova M.»), over the card's panel or
+  chat link, which stays live and opens where the pending card did
+  (`_decided_link` re-derives it from the record — a notice stores only the
+  text). The outcome LINE stays in the message text too, for an app that does
+  not draw the disabled button. They were stripped of every button before.
+- Known, unchanged: an undo that reopens a record leaves its old decided cards
+  stating the old outcome (the text line did so before too).
+
+### Buttons INSIDE a message (Bot API 10.3, Phase 2 — 2026-10-19)
+
+Two rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
+instead of, or beside, the keyboard under them — the day digest and the
+auto-check warning. The operator's ruling: the late-proof / objection rulings
+stay in the appeal chat (no reply prompt on those cards). A third, the call
+forecast's «Tasdiqlash» / «O'zgartirish», shipped and was REMOVED the same
+day (below).
+
+- **Every such send is TWO tries** — `telegram_bot.RichTry`, a list a
+  `rich_fn` may return: the body with its buttons (no keyboard, or only the
+  whole-page one), then the same body without them and the ordinary keyboard;
+  the photo and classic fallbacks always get the keyboard. None of it could be
+  tried against Telegram from where it was written, so a refusal costs the
+  in-body buttons — logged at WARNING «Rich notification … refused
+  [label] … trying the next shape» — never the rich layout or the message.
+  `send_tg_notification(on_sent=)` / `notify_profile(sent_fn=)` report which
+  shape reached each holder and its message id. `_plain_retry` gives the photo
+  and classic fallbacks `tg_buttons.send`'s rule (a refused coloured/disabled
+  keyboard is resent plain).
+- **The day digest** (`leader_unit_rich.body(buttons=True)`): a fourth column
+  with «Ochish» on every leader row that has a report, opening that day
+  report; the whole-unit button stays under the message. Its fallback
+  keyboard (`fallback_markup`) is one row per leader with a report, worst
+  first, at most 8, then the unit button.
+- **The auto-check warning** (`leader_auto_rich.body(button=True)`): «Ochish»
+  sits at the end of the first step, which names the page; the rich card then
+  has no keyboard. The classic DM keeps its page button.
+- **The call forecast carries NO buttons** (the operator, 2026-10-19). Its
+  «Tasdiqlash» («I will call this many») and «O'zgartirish» (the brigadir's
+  own number) lived in v4.305.0–4.306.x and were removed the same day: the
+  answer showed only in the «Smenaga chaqirish» modal, so it asked brigadirs
+  for a tap nobody would read. `services/forecast_answer.py` now only retires
+  the cards sent with them: a tap (`fa:…`) records nothing, says «Bu tugma endi
+  ishlatilmaydi», and takes the buttons off every copy of that card (a body
+  with buttons is re-sent from `ForecastCallNotice.tg_bodies` with
+  `forecast_rich.TOKEN` emptied, the figure by its file_id; other copies lose
+  their keyboard); a «how many» question still open is closed. The answer
+  columns (`answer`, `answer_count`, `answered_*`, `tg_messages`, `tg_bodies`,
+  `startup.add_forecast_answer_columns`) STAY, unused. `TEST_SENDER` (-1)
+  marks the test notices the button test sent then; `production._call_rows`
+  keeps skipping them.
+- **«Tugmalar sinovi»** (`services/button_test.py`, `/buttontest` in the bot,
+  admins only): the two messages sent to the admin who asks, through the
+  real builders and send path — the latest unit-day a digest went out for,
+  rebuilt; task 9's warning with sample figures — then a summary saying, per
+  message, whether Telegram took the buttons inside it or the fallback went
+  out. (The forecast card was the third while it had buttons.) The first run
+  showed Telegram drawing buttons inside a rich message. TEMPORARY `startup.send_button_test` (flag
+  `button_test_dm_2026_10_19_v1`, both entrypoints, deferred) sent it once to
+  `UNPRICED_DM_CHAT`; delete it and both calls once the flag reads «sent» —
+  the module and the command stay.
+- Not built: buttons on the in-message rows of any other DM; callbacks from a
+  rich message are parsed by the pinned telebot like any other (it ignores the
+  unknown message field) — the first real tap in production is the test.
 
 ## Filing a proof AFTER the deadline (late proofs)
 
@@ -6085,6 +6229,19 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   seconds — but only once per change, not once per focus.
 - Postgres only (`xmin`); on any other database every request builds.
   `forget()` drops the kept build. Nothing is stored; a restart starts empty.
+- **A build never holds the GIL for long** (2026-10-19 — a rebuild on its
+  background thread froze the whole server 3.4 s): it runs with the cyclic
+  garbage collector PAUSED (`services/gc_pause.py`, counted across threads —
+  its objects are freed by reference counting, and full collections were 1.2 s
+  of the freeze), its answer is encoded ROW BY ROW into byte pieces of ~256 KB
+  (`encode_list` / `encode_dict`; `Build.data` is a tuple of pieces, `nbytes`
+  their size) instead of one `json.dumps` of the whole register, and it is SENT
+  as those pieces (`routers/leaders.PartsResponse`, Content-Length set) — no
+  20 MB string is joined or encoded per request. Byte-identical to the old
+  answer. The «Mening o'rnim» pool build runs paused too. **The unscoped build
+  is made ~45 s after a process starts** (`leader_register.warm`, after the
+  standing pool, from `warm_standing`), so the first Monitoring load after a
+  deploy is not the one that waits («none kept yet», 7.4 s).
 
 ## «Mening o'rnim» — a leader's and a brigadir's own place (`/leaders`)
 
@@ -11560,7 +11717,15 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   (`ai_usage_since`), and the column says «(19.10 dan)» while that day lies
   inside the month. Status per row: `ok` · `error` + the reason in words
   (limit · key refused · no balance · model not found · provider did not
-  answer · no connection · unreadable answer) · `unused` · `off` · `broken`.
+  answer · too slow · no connection · unreadable answer) · `unused` · `off` ·
+  `broken`. **The status describes the pair running NOW**: saving a feature
+  onto another key or model clears the old pair's last call, success and
+  error (`assign`; the month's figures stay in `ai_usage`), so the row reads
+  «Hali ishlatilmagan» until the new pair is asked something. Until
+  2026-10-19 the old error stayed on the row, and every re-pick looked
+  broken before it had been used — the operator moved the assistant to Claude
+  Opus, Claude Sonnet and back to Gemini Pro, saw «Xato» each time, and never
+  sent the chat a message on Claude. Re-saving the SAME pair keeps its result.
 - **A failure a person must act on is told ONCE** (`_maybe_alert`): a key
   refused, a model the key cannot reach, the account out of credit, or a quota
   that has lasted 15 min or failed 3 times running DMs the support chat (else
@@ -11572,9 +11737,26 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   itself** — the operator's ruling: moving to another billing account is a
   person's decision. The error vocabulary is `GeminiError.kind` (quota ·
   unavailable · key · credit · model · no_key · bad_response · network ·
-  other) for both providers (`claude_ai.mapped`: 404 → model, «credit
+  other, plus `slow` — the assistant's call that sent nothing for 150 s or
+  passed `assistant_ai.DEADLINE_S`) for both providers (`claude_ai.mapped`: 404 → model, «credit
   balance» → credit, connection → network); the exception CLASS still
   decides control flow (`GeminiQuotaError` stops the reviewer's drain).
+- **Gemini Pro was too slow for the chat on 2026-10-19** (measured from the
+  server by a deploy-log probe, removed the same day): on the operator's
+  Gemini key a one-word «OK» took 55 s on `gemini-pro-latest`, ONE step of
+  the chat's real prompt 86 s, and the same without tools passed 150 s. The
+  engine's real loop answered on Claude Sonnet 5.5 in 12 s (3 steps), on
+  Claude Opus 5.5 in 17 s (2 steps), on Gemini Flash in ~21 s. Nothing in the
+  request was at fault (a 10k-token prompt, ~100–250 thought tokens); it was
+  the provider's latency. A chat answer is several steps, so the assistant on
+  Pro failed every time with «juda uzoq kutildi», now worded «tanlangan model
+  juda sekin … tezroq model tanlasin». The operator moved it to Claude Sonnet
+  5.5 the same day. The tab's own save check can still pass on a slow model
+  (it allows 60 s and needs one tiny call). One thing seen on Claude and not
+  fixed: a step sent with `tool_choice: none` straight after a tool turn came
+  back `end_turn` with NO text block — the engine sends that only past its
+  step budget (`MAX_STEPS` / `RUN_WALL_S`), where it would read «bo'sh
+  javob»; a real loop with tools allowed answered every time.
 - **The assistant speaks Claude too** (`services/assistant_claude.py`,
   `assistant_ai.py`). The transcript stays in Gemini's `contents` shape;
   a Claude reply is translated into it and its raw content blocks are kept
@@ -12300,6 +12482,22 @@ blocking work on the event loop freezes every request on the server at once.
   a fifth of a 5.7 s update in `ssl.do_handshake`) keeps one connection to
   Telegram per thread. Not touched: `/api/arc-legacy/stats` (7.2 s once, its
   own SQL) and `/api/heatmap` (3.1 s once).
+- **The seventeenth (19 Oct, 12:49) was the register's own rebuild**: one
+  3.4 s freeze, «one thread used the CPU the whole time — «leader-register»
+  (2.0 s)», GC 1.2 s of it. A build allocates a few hundred thousand objects
+  and the collector walked them all, holding the GIL; then a one-shot
+  `json.dumps` of the whole register and, per request, a 20 MB string join and
+  encode held it again. Fixed in the build (see «The /leaders register is
+  KEPT»: GC paused, encoded and sent as pieces, warmed after boot — the cold
+  `/api/leaders` of the same DM, 7.4 s «none kept yet», was the first load
+  after a deploy). Same DM, `/api/leader-ai/queue` ×2 at 4.2 s: its count pass
+  built up to 12,000 ORM objects (`_sheet_scope`, `_project` and the identity
+  map were most of it) and asked `one_process` two or three queries per task-3
+  card. It reads COLUMNS now (a Row answers the same attribute names; the page
+  slice still re-reads its rows whole), and `_one_process` reads every row's
+  day cell in one query (`one_process.day_cells`) and answers each cell /
+  (leader, day) once per request. Not touched: `/api/leaders-kpi` (4.3 s, small
+  reads queued behind the freeze) and `/health` (3.1 s, the same).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).

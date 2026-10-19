@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, memo } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import useGridHover from "../../hooks/useGridHover";
@@ -10,6 +10,8 @@ import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/Pending
 // that owns the bands and both read it there.
 import { contrastText } from "../../utils/statusBands";
 import { SkeletonBlock, SKELETON_NAME_WIDTHS, skeletonWave } from "../ui/Skeleton";
+import { segmentBands } from "../../utils/segments";
+import { pctCell, hatchCell, pendingLegend } from "../../utils/gridExport";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,7 @@ const SingleGrid = memo(function SingleGrid({
   loadingRows = 6,
   phoneFit = false,
   fullscreen = false,
+  exportRef = null,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -253,6 +256,46 @@ const SingleGrid = memo(function SingleGrid({
     whiteSpace: "nowrap",
     background: "var(--brand)",
   };
+
+  // ── The grid as a workbook (`exportRef`, /zagruzka) ──
+  // The caller's header holds the «Excel» button, the grid holds the state
+  // (sort, AVG/MAX/MIN) — so the grid hands the caller a builder. It reads the
+  // very values, approval gate, sort and statistic the cells above are drawn
+  // with, and every cell carries the band colour it is painted with here.
+  // The pinned statistic is in the file on a phone too.
+  useImperativeHandle(exportRef, () => ({
+    build: () => {
+      const reasons = new Set();
+      const statLabel = t(`zagruzka.stat${avgMode.charAt(0).toUpperCase() + avgMode.slice(1)}`);
+      const cols = [{ w: 30 }, ...dates.map(() => ({ w: 8 })), { w: 9, sep: true }];
+      const head = [[{ t: rowLabel }, ...dates.map(d => ({ t: shortDate(d) })), { t: statLabel }]];
+      // The unit's own row (`name` null) carries no pending marker on screen.
+      const valueCell = (cell, name, d) => {
+        const val = read(cell);
+        const v = val != null ? Math.round(val * 100) : -1;
+        const pending = name == null ? null
+          : cell?.pending ?? (v >= 0 && !isApproved(name, d) ? "not_closed" : null);
+        if (pending !== null) { reasons.add(pending); return hatchCell(pending); }
+        return v < 0 ? pctCell(null) : pctCell(v, getSegmentColor(v, segs));
+      };
+      const statCell = (stat) => pctCell(stat, stat !== null ? getSegmentColor(stat, segs) : null);
+      const body = displayManagers.map(name => [
+        { t: shown(name, true) },
+        ...dates.map(d => valueCell(data[name]?.[d], name, d)),
+        statCell(rowStat(name, read, data, dates, avgMode, isApproved)),
+      ]);
+      const foot = pinnedRow?.data ? [[
+        { t: tl(pinnedRow.label), unit: true },
+        ...dates.map(d => valueCell(pinnedRow.data[d], null, d)),
+        statCell(rowStat(pinnedRow.label, read, { [pinnedRow.label]: pinnedRow.data }, dates, avgMode, null)),
+      ]] : [];
+      const legend = [
+        { title: t("zagruzka.xl.colors"), items: segmentBands(segs) },
+        ...pendingLegend(reasons, t, t("zagruzka.xl.pending")),
+      ];
+      return { cols, head, body, foot, legend };
+    },
+  }));
 
   // Loading rows: the real row in every measure — the sticky name column, a
   // full-bleed fill per day where the coloured cell will land (inset a pixel so
@@ -766,6 +809,11 @@ export default memo(function HeatmapChart({
   // page reads exactly as before; from sm up it changes nothing at all. The
   // bleed to the card's edges is the caller's — it owns the card's padding.
   phoneFit = false,
+  // A ref the caller's «Excel» button reads: `exportRef.current.build()` hands
+  // back this grid as a workbook spec (utils/gridExport.js) — rows in screen
+  // order, the statistic in its current mode, every cell's band colour.
+  // Omitted, nothing changes.
+  exportRef = null,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
@@ -798,7 +846,7 @@ export default memo(function HeatmapChart({
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle, dateMarks,
     rowLabel, labelWidth, labelFor, pinnedRow, cellValue,
-    loading, loadingRows, phoneFit,
+    loading, loadingRows, phoneFit, exportRef,
   };
 
   return (

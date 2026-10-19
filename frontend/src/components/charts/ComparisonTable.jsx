@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useImperativeHandle, useMemo, memo } from "react";
-import { Maximize2, Minimize2, Info, Calculator, SlidersHorizontal } from "lucide-react";
+import { Maximize2, Minimize2, Info, Calculator, SlidersHorizontal, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import useGridHover from "../../hooks/useGridHover";
-import { orderedSegments } from "../../utils/segments";
+import { orderedSegments, segmentBands } from "../../utils/segments";
+import { pctCell, hatchCell, pendingLegend } from "../../utils/gridExport";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -310,6 +311,13 @@ function ComparisonTable({
   // (the per-cell загрузка) turn it on — there "how did the whole unit do on
   // 06.08?" is the question the grid is actually asked.
   columnSummary = false,
+  // What that footer's AVG means. Off (the default, and the per-cell page):
+  // the mean of the rows' percentages. On (/zagruzka, the operator 2026-10-19):
+  // the load of the WHOLE TABLE — every row's minutes of work over every
+  // row's capacity, summed first and divided once — so a 2-person brigade
+  // weighs what it is worth, not as much as a 60-person one. The label stays
+  // «AVG»; MIN/MAX are unchanged.
+  pooledAvg = false,
   // The UNIT the rows belong to, as its own footer row: `{ label, note, data }`
   // where `data` is keyed by date exactly like one row of `data`. It is NOT a
   // statistic over the rows above — it is measured, computed from the unit's
@@ -356,6 +364,13 @@ function ComparisonTable({
   // it in the P·A view. Opt-in, so every other page reads exactly as before;
   // from sm up it changes nothing at all.
   phoneFit = false,
+  // An «Excel» button in the header (/zagruzka): pressed, the table describes
+  // itself — rows in screen order, the summary in its current mode, the P·A or
+  // D view, every cell's band colour — and hands that grid to this async
+  // callback as `(grid, { table: basis, title })`, which words and posts it
+  // (utils/gridExport.js). Absent, no button: every other caller reads
+  // exactly as before.
+  onExport = null,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
@@ -537,6 +552,27 @@ function ComparisonTable({
     background: HDR_BG,
   };
 
+  // ── One row's pinned statistic ───────────────────────────────────────────────
+  // The row's own values through the approval gate (un-approved days are left
+  // out), in the mode on screen. The grid and its workbook both read it.
+  const rowSummary = (name) => {
+    const pVals = dates.map(d => {
+      const cell = data[name]?.[d];
+      return isApproved(name, d) ? pctOf(planOf(cell)) : null;
+    });
+    const aVals = dates.map(d => {
+      const cell = data[name]?.[d];
+      return isApproved(name, d) ? pctOf(actOf(cell)) : null;
+    });
+    const dVals = dates.map((d, i) =>
+      (pVals[i] !== null && aVals[i] !== null) ? pVals[i] - aVals[i] : null);
+    if (summaryMode === "avg") return { p: rowAvg(pVals), a: rowAvg(aVals), d: rowAvg(dVals) };
+    const idx = findExtremeIdx(dVals, pVals, summaryMode);
+    return idx !== null
+      ? { p: pVals[idx], a: aVals[idx], d: dVals[idx] }
+      : { p: null, a: null, d: null };
+  };
+
   // ── Column statistics (the optional footer) ──────────────────────────────────
   // The pinned column on the right summarises a ROW — one name across the whole
   // period. This footer is its transpose: ONE row summarising a COLUMN — one day
@@ -558,13 +594,48 @@ function ComparisonTable({
 
     const valuesOf = (name, d) => {
       const cell = data[name]?.[d];
-      if (!isApproved(name, d)) return { p: null, a: null, d: null };
+      if (!isApproved(name, d)) return { p: null, a: null, d: null, cell: null };
       const p = pctOf(planOf(cell));
       const a = pctOf(actOf(cell));
-      return { p, a, d: (p !== null && a !== null) ? p - a : null };
+      return { p, a, d: (p !== null && a !== null) ? p - a : null, cell };
+    };
+
+    // The whole table as ONE unit. Every reader on every basis is a numerator
+    // over a capacity — P = prod_plan ÷ (…), A = prod_actual ÷ (…) — so each
+    // cell's capacity is its numerator over its own value, and Σ numerators ÷
+    // Σ capacities is the table's load, read through the very readers (basis,
+    // ⚙ factors, approval gate) the cells use. A cell the grid leaves blank
+    // adds nothing to either side.
+    const pooled = (cells, reader, key) => {
+      let num = 0, den = 0;
+      for (const c of cells) {
+        const u = reader(c);
+        const n = Number(c?.[key]);
+        if (!(u > 0) || !(n > 0)) continue;
+        num += n;
+        den += n / u;
+      }
+      return den > 0 ? num / den : null;
+    };
+    const pooledStat = (vals) => {
+      const pCells = vals.filter(v => v.p !== null).map(v => v.cell);
+      const aCells = vals.filter(v => v.a !== null).map(v => v.cell);
+      // D pairs the halves the way a cell does: only rows carrying BOTH, or a
+      // day with a plan and no fact yet would read as a shortfall.
+      const both = vals.filter(v => v.d !== null).map(v => v.cell);
+      const bp = pctOf(pooled(both, planOf, "prod_plan"));
+      const ba = pctOf(pooled(both, actOf, "prod_actual"));
+      return {
+        p: pctOf(pooled(pCells, planOf, "prod_plan")),
+        a: pctOf(pooled(aCells, actOf, "prod_actual")),
+        d: bp !== null && ba !== null ? bp - ba : null,
+        n: pCells.length,
+        pooled: true,
+      };
     };
 
     const stat = (vals) => {
+      if (summaryMode === "avg" && pooledAvg) return pooledStat(vals);
       const pV = vals.map(v => v.p), aV = vals.map(v => v.a), dV = vals.map(v => v.d);
       const n = pV.filter(v => v !== null).length;
       if (summaryMode === "avg") return { p: rowAvg(pV), a: rowAvg(aV), d: rowAvg(dV), n };
@@ -581,7 +652,8 @@ function ComparisonTable({
     }
     // The corner closes the row with the same statistic over EVERY value in the
     // grid — not an average of the column averages, which is a different number
-    // whenever the columns hold different counts of filled cells.
+    // whenever the columns hold different counts of filled cells. Pooled, that
+    // is the whole table over the whole period.
     return { byDate, all: stat(everything) };
   })();
 
@@ -597,7 +669,7 @@ function ComparisonTable({
       // of seven rows carry a number averages two values, not seven. The count
       // rides along in the tooltip — a mean whose denominator you can't see is a
       // mean you can't argue with.
-      <td key={key} colSpan={2} title={t("comparison.statCount").replace("{n}", s.n)} style={{
+      <td key={key} colSpan={2} title={t(s.pooled ? "comparison.pooledCount" : "comparison.statCount").replace("{n}", s.n)} style={{
         padding: 0, position: "relative",
         border: "1px solid var(--border)",
         height: 30, verticalAlign: "middle",
@@ -809,8 +881,90 @@ function ComparisonTable({
     </div>
   );
 
+  // ── The table as a workbook (`onExport`) ─────────────────────────────────────
+  // Built from the very readers, approval gate, sort, summary mode and P·A / D
+  // view the grid above is drawn with, so the file states exactly what the
+  // screen does: each date a P | A pair (one D in the D view), the pinned
+  // summary pair, the footer, every cell carrying the band colour it is
+  // painted with here. The pinned summary is in the file on a phone too,
+  // where the screen has no room for it.
+  const buildExport = () => {
+    const per = isDiff ? 1 : 2;                       // columns per date
+    const halves = (p, a, dd) => (isDiff
+      ? [pctCell(dd, dd !== null ? getColor(dd, dsegs) : null, "diff")]
+      : [pctCell(p, p !== null ? getColor(p, psegs) : null),
+         // A is painted by D, as on screen — with no D (no plan that day) it
+         // stands unpainted, in the faint ink the screen gives it.
+         pctCell(a, dd !== null ? getColor(dd, dsegs) : { noData: true, fg: "#9CA3AF" })]);
+    const sub = isDiff ? [{ t: "D" }] : [{ t: "P", dim: true }, { t: "A" }];
+    const reasons = new Set();
+
+    const cols = [{ w: 30 }];
+    for (let i = 0; i <= dates.length; i++) {
+      for (let k = 0; k < per; k++) cols.push({ w: isDiff ? 9 : 7.5, sep: k === 0 });
+    }
+    const head = [
+      [{ t: rowLabel }, ...dates.map(d => ({ t: shortDate(d), span: per })),
+       { t: summaryMode.toUpperCase(), span: per }],
+      [{ t: "" }, ...dates.flatMap(() => sub), ...sub],
+    ];
+    const body = displayManagers.map(name => {
+      const row = [{ t: shown(name, true) }];
+      for (const d of dates) {
+        const cell = data[name]?.[d];
+        const pv = pctOf(planOf(cell));
+        const av = pctOf(actOf(cell));
+        const pending = cell?.pending
+          ?? ((pv !== null || av !== null) && !isApproved(name, d) ? "not_closed" : null);
+        if (pending !== null) {
+          reasons.add(pending);
+          row.push(hatchCell(pending, per));
+          continue;
+        }
+        row.push(...halves(pv, av, pv !== null && av !== null ? pv - av : null));
+      }
+      const s = rowSummary(name);
+      row.push(...halves(s.p, s.a, s.d));
+      return row;
+    });
+    const foot = [];
+    if (unitVals) {
+      foot.push([{ t: tl(pinnedRow.label), unit: true },
+        ...unitVals.per.flatMap(v => halves(v.p, v.a, v.d)),
+        ...halves(unitVals.sum.p, unitVals.sum.a, unitVals.sum.d)]);
+    }
+    if (columnStats) {
+      foot.push([{ t: `${summaryMode.toUpperCase()} ${t("comparison.perDay")}` },
+        ...dates.flatMap(d => {
+          const st = columnStats.byDate[d];
+          return halves(st.p, st.a, st.d);
+        }),
+        ...halves(columnStats.all.p, columnStats.all.a, columnStats.all.d)]);
+    }
+    const legend = [
+      ...(isDiff ? [] : [{ title: t("zagruzka.guide.pSection"), items: segmentBands(psegs) }]),
+      { title: isDiff ? "D = P−A" : t("zagruzka.guide.adSection"), items: diffLegendBands(dsegs, t) },
+      ...pendingLegend(reasons, t, t("zagruzka.xl.pending")),
+    ];
+    const lines = [
+      `${t("zagruzka.xl.view")}: ${t(isDiff ? "zagruzka.modeDiff" : "zagruzka.modeCompare")}`
+        + ((isDiff || !simple) ? ` — ${t(isDiff ? "zagruzka.diffSubtitle" : "zagruzka.compareSubtitle")}` : ""),
+      ...(note ? [note] : []),
+      ...(calcModified ? [t("zagruzka.calcActive").replace("{list}", excludedNames)] : []),
+    ];
+    return { cols, head, body, foot, legend, lines };
+  };
+  const [exporting, setExporting] = useState(false);
+  const runExport = async () => {
+    if (!onExport || exporting) return;
+    setExporting(true);
+    try {
+      await onExport(buildExport(), { table: basis, title: title || t("zagruzka.comparisonTable") });
+    } finally { setExporting(false); }
+  };
+
   // The header's icon buttons — the calculator and the band editor are the
-  // admin's, fullscreen everyone's.
+  // admin's, the workbook and fullscreen everyone's.
   const iconButtons = (
     <>
       {isAdmin && factorsApply && onCalcFactorsChange && (
@@ -840,6 +994,22 @@ function ComparisonTable({
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
         >
           <SlidersHorizontal size={16} />
+        </button>
+      )}
+      {onExport && (
+        // «Excel» beside the icons; the word goes on a phone, where the row
+        // has no room for it. Inert while loading or empty — there is no
+        // table yet to put in a file.
+        <button
+          onClick={runExport}
+          disabled={loading || exporting || !displayManagers.length}
+          title={t("zagruzka.xl.tooltip")}
+          aria-label={t("zagruzka.xl.tooltip")}
+          className={`flex-shrink-0 ${fit ? `${iconBtn} justify-center` : "h-[32px] px-2.5 gap-1.5"} inline-flex items-center rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-default`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+        >
+          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+          {!fit && <span>{t("zagruzka.xl.button")}</span>}
         </button>
       )}
       {onToggleFullscreen && (
@@ -1062,28 +1232,7 @@ function ComparisonTable({
       <tbody>
         {loading ? skRows(part) : displayManagers.map((name, ri) => {
           // Un-approved days are excluded from the visible summaries.
-          const pVals = dates.map(d => {
-            const cell = data[name]?.[d];
-            return isApproved(name, d) ? pctOf(planOf(cell)) : null;
-          });
-          const aVals = dates.map(d => {
-            const cell = data[name]?.[d];
-            return isApproved(name, d) ? pctOf(actOf(cell)) : null;
-          });
-          const dVals = dates.map((d, i) =>
-            (pVals[i] !== null && aVals[i] !== null) ? pVals[i] - aVals[i] : null);
-
-          let pSummary, aSummary, dSummary;
-          if (summaryMode === "avg") {
-            pSummary = rowAvg(pVals);
-            aSummary = rowAvg(aVals);
-            dSummary = rowAvg(dVals);
-          } else {
-            const idx = findExtremeIdx(dVals, pVals, summaryMode);
-            pSummary = idx !== null ? pVals[idx] : null;
-            aSummary = idx !== null ? aVals[idx] : null;
-            dSummary = idx !== null ? dVals[idx] : null;
-          }
+          const { p: pSummary, a: aSummary, d: dSummary } = rowSummary(name);
 
           const pSumColor = pSummary !== null ? getColor(pSummary, psegs) : { bg: "transparent", fg: "var(--text-4)" };
           const aSumColor = dSummary !== null ? getColor(dSummary, dsegs) : { bg: "transparent", fg: "var(--text-4)" };

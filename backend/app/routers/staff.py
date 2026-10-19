@@ -2011,7 +2011,7 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
                    skip_accounts: set[int] | None = None,
                    markup_fn=None, rich_fn=None, photo_fn=None,
-                   html_fn=None, subject=None) -> set[int]:
+                   html_fn=None, subject=None, sent_fn=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -2060,6 +2060,12 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     the leader stands right now, which an hour later is no longer true). It is
     what a client refusing ``rich_fn`` receives, so the two DMs can carry one
     card. Guarded like the others: a failure falls back to the template's HTML.
+
+    ``rich_fn`` may also return a list of ``telegram_bot.RichTry`` — a body
+    with buttons inside it, then the same body without them (see there).
+    ``sent_fn(tid, lang, kind, index, result)`` is told what reached each
+    holder (``send_tg_notification``'s ``on_sent``), for a caller that edits
+    its copies later.
     """
     if notifications_suppressed() or not profile:
         return set()
@@ -2117,9 +2123,13 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                 photo = photo_fn(lang)
             except Exception:
                 logger.exception("notify_profile: photo build failed for %s", nkey)
+        on_sent = None
+        if sent_fn is not None:
+            def on_sent(kind, index, result, _tid=tid, _lang=lang):
+                sent_fn(_tid, _lang, kind, index, result)
         try:
             send_tg_notification(tid, title, body, html=html, markup=markup,
-                                 rich=rich, photo=photo)
+                                 rich=rich, photo=photo, on_sent=on_sent)
         except Exception:
             pass
         dmed.add(tid)

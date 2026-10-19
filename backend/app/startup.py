@@ -5957,6 +5957,27 @@ def add_pp_line_container_cap() -> None:
     _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
 
 
+_FORECAST_ANSWER_DDL = (
+    ("forecast_call_notices", (("answer", "VARCHAR(8)"),
+                               ("answer_count", "INTEGER"),
+                               ("answered_at", "TIMESTAMPTZ"),
+                               ("answered_by", "BIGINT"),
+                               ("answered_name", "VARCHAR"),
+                               ("tg_messages", "JSONB"),
+                               ("tg_bodies", "JSONB")), None),
+)
+
+
+def add_forecast_answer_columns() -> None:
+    """2026-10-19: the brigadir's «Tasdiqlash» / «O'zgartirish» on the call
+    forecast card, and the copies of the card an answer re-draws
+    (models.ForecastCallNotice, services/forecast_answer). NULL on every row
+    stored before = not answered, no copies kept. Pure DDL, idempotent, FATAL
+    on failure: the ORM selects these columns on every read of a notice, and
+    the call modal reads the notices."""
+    _ensure_columns(_FORECAST_ANSWER_DDL, "forecast_call_notices answer")
+
+
 _ASSISTANT_LEASE_DDL = (
     ("assistant_runs", (("lease", "VARCHAR(36)"),), None),
 )
@@ -6850,6 +6871,22 @@ def _send_report_once(flag: str, what: str, sender, chat: int,
         db.close()
 
 
+def send_button_test() -> None:
+    """TEMPORARY (2026-10-19): the «Tugmalar sinovi» — the messages that
+    carry buttons inside them (services/button_test) — sent once to the
+    operator after Phase 2 shipped, so they can be checked on a real phone.
+    `/buttontest` in the bot sends them again on demand. Delete this function
+    and its call in BOTH entrypoints once the flag reads «sent»; the module and
+    the command stay."""
+    def sender(db, chat, _a, _b) -> int:
+        from app.services import button_test
+        from app.telegram_bot import _get_lang
+        button_test.run(chat, _get_lang(chat) or "uz")
+        return 5
+    _send_report_once("button_test_dm_2026_10_19_v1", "button test DM",
+                      sender, UNPRICED_DM_CHAT)
+
+
 def report_unpriced_ojidaniya() -> None:
     """The register as a rich-message TABLE (v4.85.0). Inert once it has landed;
     kept so a delivery that failed on the first boot still gets its retries."""
@@ -7661,10 +7698,11 @@ def _dept_attendance_job() -> None:
 # The operator asked on 2026-10-14 for every catalog line's trudoyomkost in one
 # table — supervisor · SAP code · work centre · process name · trudoyomkost —
 # the current catalog, active lines of active units. v1 sent minutes per piece;
-# the operator then asked for SECONDS, so v2 is a new delivery under a new key. It READS and writes
-# nothing but its flag (`services/trudoyomkost_register_report.py`). Changing
-# what it sends needs a NEW key.
-TRUDOYOMKOST_REGISTER_FLAG = "trudoyomkost_register_xlsx_seconds_2026_10_14_v2"
+# the operator then asked for SECONDS (v2), then on 2026-10-19 for the line's
+# «Faza» beside it (v3) — each a new delivery under a new key. It READS and
+# writes nothing but its flag (`services/trudoyomkost_register_report.py`).
+# Changing what it sends needs a NEW key.
+TRUDOYOMKOST_REGISTER_FLAG = "trudoyomkost_register_xlsx_faza_2026_10_19_v3"
 _TRUDOYOMKOST_REGISTER_DELAY_S = 60
 
 

@@ -197,13 +197,16 @@ export function RankBadge({ rank, medal }) {
 
 // A total out of 5 on one line: a slim brand bar, then the figure. Brand gold
 // states a share here and nothing more — no band exists for a total.
+// `width={0}` draws the figure alone (the ranking on a card too narrow for both).
 export function TotalBar({ total, max = MAX_POINTS, width = 64 }) {
   const v = total == null ? 0 : Math.min(1, Math.max(0, total / max));
   return (
     <span className="inline-flex items-center justify-end gap-2.5 w-full">
-      <span className="block h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ width, background: "var(--border-md)" }} aria-hidden>
-        <span className="block h-full rounded-full" style={{ width: `${v * 100}%`, background: "var(--brand)" }} />
-      </span>
+      {width > 0 && (
+        <span className="block h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ width, background: "var(--border-md)" }} aria-hidden>
+          <span className="block h-full rounded-full" style={{ width: `${v * 100}%`, background: "var(--brand)" }} />
+        </span>
+      )}
       <span className="text-sm font-semibold tabular-nums w-9 text-right" style={{ color: "var(--text-1)" }}>
         {total == null ? "—" : Number(total).toFixed(2)}
       </span>

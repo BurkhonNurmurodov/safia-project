@@ -1394,18 +1394,19 @@ def strip_custom_emoji(html_text: str) -> str:
     return _TG_EMOJI_RE.sub(r"\1", html_text or "")
 
 
-def _send_html_message(chat_id: int, html_text: str, reply_markup=None) -> None:
+def _send_html_message(chat_id: int, html_text: str, reply_markup=None):
     """send_message in HTML mode, retrying once with premium emoji stripped to
-    their fallback chars if Telegram rejects them (see strip_custom_emoji)."""
+    their fallback chars if Telegram rejects them (see strip_custom_emoji).
+    Returns the sent Message."""
     try:
-        bot.send_message(chat_id, html_text, parse_mode="HTML",
-                         reply_markup=reply_markup)
+        return bot.send_message(chat_id, html_text, parse_mode="HTML",
+                                reply_markup=reply_markup)
     except Exception:
         stripped = strip_custom_emoji(html_text)
         if stripped == html_text:
             raise
-        bot.send_message(chat_id, stripped, parse_mode="HTML",
-                         reply_markup=reply_markup)
+        return bot.send_message(chat_id, stripped, parse_mode="HTML",
+                                reply_markup=reply_markup)
 
 
 # Telegram refusals that mean "this account can never be DMed as things stand"
@@ -1450,11 +1451,11 @@ _TG_CAPTION_MAX = 1024
 
 
 def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None,
-                       photo: dict | None = None) -> None:
+                       photo: dict | None = None) -> dict:
     """sendRichMessage (Bot API 10.1+) with one Rich-HTML body. The pinned
     telebot predates the method, so this goes through the raw HTTP door the
     Broadcast tab already uses. Raises on any refusal — the caller decides what
-    to fall back to.
+    to fall back to. Returns the sent Message as Telegram's raw JSON.
 
     ``photo`` (``{"id", "name", "data"}``) is attached as the body's media, so a
     ``tg://photo?id=…`` figure inside it resolves — the shape /ojidaniya has
@@ -1471,37 +1472,71 @@ def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None,
         data["reply_markup"] = (reply_markup.to_json()
                                 if hasattr(reply_markup, "to_json")
                                 else json.dumps(reply_markup))
-    _tg_api("sendRichMessage", data, files)
+    return _tg_api("sendRichMessage", data, files)
+
+
+class RichTry:
+    """One shape of a rich DM, for ``send_tg_notification``'s ``rich`` list.
+
+    A message that carries buttons INSIDE its body (Bot API 10.3,
+    ``<tg-button>`` / ``<tg-button-row>``) is sent as two tries: the body with
+    its buttons and no keyboard under it, then the same body without them and
+    the ordinary keyboard. Those buttons could not be tried against Telegram
+    from where they were written, so a refusal must cost the in-body buttons —
+    never the rich layout, and never the message. ``markup`` is the keyboard
+    for THIS try; the default ``SAME`` is the notification's own."""
+
+    SAME = object()
+
+    def __init__(self, html: str, markup=SAME, label: str = ""):
+        self.html, self.markup, self.label = html, markup, label
+
+
+def _plain_retry(send, markup):
+    """Call ``send(markup)``; if it fails while the keyboard carries a colour or
+    a disabled button (``tg_buttons``), send it again as the plain keyboard
+    telebot 4.25 would have built — the rule ``tg_buttons.send`` applies to the
+    approval cards, for a send path that is not a telebot call."""
+    from app import tg_buttons
+    try:
+        return send(markup)
+    except Exception:
+        if markup is None or not tg_buttons._uses_new(markup):
+            raise
+        logger.warning("Telegram refused a styled/disabled keyboard on a DM — "
+                       "sent it plain")
+        return send(tg_buttons.plain(markup))
 
 
 def _send_photo_card(chat_id: int, photo: dict, caption: str | None,
-                     reply_markup=None, parse_mode: str = "HTML") -> None:
+                     reply_markup=None, parse_mode: str = "HTML"):
     """A picture with its words as the caption — the step between a refused
     rich message and plain text, so a client that cannot render rich still gets
     the IMAGE instead of losing it along with the layout. A photo, not a
     document: the card is meant to be looked at in the chat, and at 1000 px it
     sits under the size Telegram re-scales. A caption over the cap is refused
     outright, so a long one follows as its own message rather than costing the
-    picture. Raises on refusal, like ``_send_rich_message``."""
+    picture. Raises on refusal, like ``_send_rich_message``. Returns the sent
+    Message that carries the keyboard."""
     pic = (photo["name"], photo["data"])
     if caption and len(caption) <= _TG_CAPTION_MAX:
-        bot.send_photo(chat_id, photo=pic, caption=caption,
-                       parse_mode=parse_mode, reply_markup=reply_markup)
-        return
-    bot.send_photo(chat_id, photo=pic,
-                   reply_markup=None if caption else reply_markup)
+        return bot.send_photo(chat_id, photo=pic, caption=caption,
+                              parse_mode=parse_mode, reply_markup=reply_markup)
+    sent = bot.send_photo(chat_id, photo=pic,
+                          reply_markup=None if caption else reply_markup)
     if caption:
         if parse_mode == "HTML":
-            _send_html_message(chat_id, caption, reply_markup=reply_markup)
-        else:
-            bot.send_message(chat_id, caption, parse_mode=parse_mode,
-                             reply_markup=reply_markup)
+            return _send_html_message(chat_id, caption, reply_markup=reply_markup)
+        return bot.send_message(chat_id, caption, parse_mode=parse_mode,
+                                reply_markup=reply_markup)
+    return sent
 
 
 def send_tg_notification(telegram_id: int, title: str, body: str,
                          html: str | None = None, markup=None,
-                         rich: str | None = None,
-                         photo: dict | None = None) -> bool:
+                         rich=None,
+                         photo: dict | None = None,
+                         on_sent=None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
@@ -1520,39 +1555,72 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
     the rich body's figure. When rich is refused, or there is no rich body, it
     is sent as a photo with the classic HTML as its caption, and only when that
     is refused too does the classic text go out. Each step gives up one thing —
-    the layout, then the picture — and never the message."""
+    the layout, then the picture — and never the message.
+
+    ``rich`` may also be a LIST of ``RichTry`` — shapes of the rich body tried
+    in order, each with its own keyboard (a body with buttons inside it, then
+    the same body without them; see ``RichTry``). ``on_sent(kind, index,
+    result)`` is told what went out — ``"rich"`` with the try's index and
+    Telegram's raw JSON, or ``"photo"`` / ``"text"`` with the telebot Message
+    that carries the keyboard — for a caller that edits its copies later (the
+    call forecast's answer). It never fails the DM."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
     _set_menu_button(telegram_id, _get_lang(telegram_id))
     msg = f"🔔 *{title}*\n{body}"
-    if rich is not None:
+
+    def _told(kind: str, index, result) -> None:
+        if on_sent is None:
+            return
         try:
-            _send_rich_message(telegram_id, rich, reply_markup=markup,
-                               photo=photo)
+            on_sent(kind, index, result)
+        except Exception:
+            logger.exception("send_tg_notification: on_sent failed")
+
+    tries = ([] if rich is None else
+             [rich] if isinstance(rich, RichTry) else
+             [RichTry(rich)] if isinstance(rich, str) else list(rich))
+    for i, tr in enumerate(tries):
+        kb = markup if tr.markup is RichTry.SAME else tr.markup
+        try:
+            res = _send_rich_message(telegram_id, tr.html, reply_markup=kb,
+                                     photo=photo)
             _record_dm_outcome(telegram_id, None)
+            _told("rich", i, res)
             return True
         except Exception as e:
-            logger.info("Rich notification to %s not accepted, falling back: %s",
-                        telegram_id, e)
+            if i + 1 < len(tries):
+                # A shape refused with another left to try is worth a WARNING:
+                # it is how a refusal of buttons inside the body shows up.
+                logger.warning("Rich notification to %s refused%s (%s) — "
+                               "trying the next shape", telegram_id,
+                               f" [{tr.label}]" if tr.label else "", e)
+            else:
+                logger.info("Rich notification to %s not accepted, falling "
+                            "back: %s", telegram_id, e)
     if photo is not None:
         try:
-            _send_photo_card(telegram_id, photo,
-                             html if html is not None else msg,
-                             reply_markup=markup,
-                             parse_mode="HTML" if html is not None else "Markdown")
+            sent = _plain_retry(lambda kb: _send_photo_card(
+                telegram_id, photo, html if html is not None else msg,
+                reply_markup=kb,
+                parse_mode="HTML" if html is not None else "Markdown"), markup)
             _record_dm_outcome(telegram_id, None)
+            _told("photo", None, sent)
             return True
         except Exception as e:
             logger.info("Photo notification to %s not accepted, sending the "
                         "classic text instead: %s", telegram_id, e)
     try:
         if html is not None:
-            _send_html_message(telegram_id, html, reply_markup=markup)
+            sent = _plain_retry(lambda kb: _send_html_message(
+                telegram_id, html, reply_markup=kb), markup)
         else:
-            bot.send_message(telegram_id, msg, parse_mode="Markdown",
-                             reply_markup=markup)
+            sent = _plain_retry(lambda kb: bot.send_message(
+                telegram_id, msg, parse_mode="Markdown", reply_markup=kb),
+                markup)
         _record_dm_outcome(telegram_id, None)
+        _told("text", None, sent)
         return True
     except Exception as e:
         # Legacy Markdown rejects the WHOLE message over a single unbalanced
@@ -1563,10 +1631,12 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
         # unknown chat must fail on the first attempt, not be retried.
         if html is None and "parse" in str(e).lower():
             try:
-                bot.send_message(telegram_id, msg, reply_markup=markup)
+                sent = _plain_retry(lambda kb: bot.send_message(
+                    telegram_id, msg, reply_markup=kb), markup)
                 logger.warning("Telegram notification to %s sent unformatted "
                                "(Markdown rejected): %s", telegram_id, e)
                 _record_dm_outcome(telegram_id, None)
+                _told("text", None, sent)
                 return True
             except Exception as e2:
                 e = e2
@@ -2209,13 +2279,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} ta tekshirilmoqda",
         "pt_menu_hint": "\n\nHar bir vazifa alohida topshiriladi.",
         "btn_close_task": "\U0001F512 Vazifani yopish",
+        "btn_close_need": "\U0001F512 Yopish uchun yana {n} ta rasm kerak",
+        "btn_close_need_1": "\U0001F512 Yopish uchun yana {n} ta rasm kerak",
+        "btn_close_incomplete": "\U0001F512 Yopish uchun vazifani to'ldiring",
+        "btn_done_approved": "\u2705 Tasdiqlandi",
+        "btn_done_rejected": "\u274C Rad etildi",
+        "btn_done_uplifted": "\u2B06\uFE0F Adminlarga yuborildi",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Vazifa yopilgandan keyin rasm qo'shib ham, o'zgartirib ham BO'LMAYDI. U darhol tekshiruvga yuboriladi.\n\nYopilsinmi?",
         "task_closed_ok": "\U0001F512 Vazifa yopildi va tekshiruvga yuborildi",
         "task_locked_alert": "Bu vazifa yopilgan \u2014 o'zgartirib bo'lmaydi.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} rasm saqlandi.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Sabab: {reason}",
         "pt_draft_hint": "\n\nMa'lumot saqlandi. Yopmaguningizcha o'zgartirishingiz mumkin.",
-        "pt_need_more": "\n\nYopish uchun kamida {min} ta rasm kerak.",
         "pt_auto": "\n\n\u23f0 {t} da avtomatik yopiladi.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nBu vazifani tizim o‘zi tekshiradi — rasm yuborish shart emas.\n\n🕑 Tekshiruv vaqti: {t}\n',
@@ -2387,13 +2462,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} та текширилмоқда",
         "pt_menu_hint": "\n\nҲар бир вазифа алоҳида топширилади.",
         "btn_close_task": "\U0001F512 Вазифани ёпиш",
+        "btn_close_need": "\U0001F512 Ёпиш учун яна {n} та расм керак",
+        "btn_close_need_1": "\U0001F512 Ёпиш учун яна {n} та расм керак",
+        "btn_close_incomplete": "\U0001F512 Ёпиш учун вазифани тўлдиринг",
+        "btn_done_approved": "\u2705 Тасдиқланди",
+        "btn_done_rejected": "\u274C Рад этилди",
+        "btn_done_uplifted": "\u2B06\uFE0F Админларга юборилди",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Вазифа ёпилгандан кейин расм қўшиб ҳам, ўзгартириб ҳам БЎЛМАЙДИ. У дарҳол текширувга юборилади.\n\nЁпилсинми?",
         "task_closed_ok": "\U0001F512 Вазифа ёпилди ва текширувга юборилди",
         "task_locked_alert": "Бу вазифа ёпилган \u2014 ўзгартириб бўлмайди.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} расм сақланди.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Сабаб: {reason}",
         "pt_draft_hint": "\n\nМаълумот сақланди. Ёпмагунингизча ўзгартиришингиз мумкин.",
-        "pt_need_more": "\n\nЁпиш учун камида {min} та расм керак.",
         "pt_auto": "\n\n\u23f0 {t} да автоматик ёпилади.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nБу вазифани тизим ўзи текширади — расм юбориш шарт эмас.\n\n🕑 Текширув вақти: {t}\n',
@@ -2564,13 +2644,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 проверяется: {n}",
         "pt_menu_hint": "\n\nКаждая задача сдаётся отдельно.",
         "btn_close_task": "\U0001F512 Закрыть задачу",
+        "btn_close_need": "\U0001F512 Чтобы закрыть, нужно ещё {n} фото",
+        "btn_close_need_1": "\U0001F512 Чтобы закрыть, нужно ещё {n} фото",
+        "btn_close_incomplete": "\U0001F512 Заполните задачу, чтобы закрыть",
+        "btn_done_approved": "\u2705 Принято",
+        "btn_done_rejected": "\u274C Отклонено",
+        "btn_done_uplifted": "\u2B06\uFE0F Передано администраторам",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f После закрытия добавить или изменить фото БУДЕТ НЕЛЬЗЯ. Задача сразу уйдёт на проверку.\n\nЗакрыть?",
         "task_closed_ok": "\U0001F512 Задача закрыта и отправлена на проверку",
         "task_locked_alert": "Задача закрыта \u2014 изменить нельзя.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 Сохранено {k}/{min} фото.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Причина: {reason}",
         "pt_draft_hint": "\n\nДанные сохранены. Пока не закроете \u2014 можно менять.",
-        "pt_need_more": "\n\nДля закрытия нужно минимум {min} фото.",
         "pt_auto": "\n\n\u23f0 Автоматически закроется в {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nЭту задачу проверяет система — фото отправлять не нужно.\n\n🕑 Время проверки: {t}\n',
@@ -2741,13 +2826,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} being checked",
         "pt_menu_hint": "\n\nEach task is submitted on its own.",
         "btn_close_task": "\U0001F512 Close the task",
+        "btn_close_need": "\U0001F512 {n} more photos needed to close",
+        "btn_close_need_1": "\U0001F512 {n} more photo needed to close",
+        "btn_close_incomplete": "\U0001F512 Complete the task to close it",
+        "btn_done_approved": "\u2705 Approved",
+        "btn_done_rejected": "\u274C Rejected",
+        "btn_done_uplifted": "\u2B06\uFE0F Passed to the admins",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Once closed you CANNOT add or change a photo. It goes straight to review.\n\nClose it?",
         "task_closed_ok": "\U0001F512 Task closed and sent for review",
         "task_locked_alert": "This task is closed \u2014 it cannot be changed.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} photo(s) saved.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Reason: {reason}",
         "pt_draft_hint": "\n\nSaved. You can change it until you close it.",
-        "pt_need_more": "\n\nAt least {min} photo(s) are needed before closing.",
         "pt_auto": "\n\n\u23f0 Closes automatically at {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nThis task is checked by the system — no photo is needed.\n\n🕑 Check time: {t}\n',
@@ -3140,15 +3230,27 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
 
 
 def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool,
-                     cid: int | None = None):
-    """The submit button — offered ONLY when the task is finished.
+                     cid: int | None = None, missing: int = 0):
+    """The submit button — always on the task's screen, live only once the task
+    is finished.
 
-    Not offered-and-disabled: Telegram has no disabled button, so an unusable
-    one is a button that silently does nothing, and the leader is left deciding
-    whether they pressed it wrong or the bot is broken. Absent means "not yet",
-    and the line above it says what is still missing.
+    Until then it is DISABLED (Bot API 10.3) and its label is what stands in
+    the way — «🔒 Yopish uchun yana 2 ta rasm kerak» — so the leader sees from
+    the first shot where submitting will happen and what it still needs. It
+    was left off the screen while Telegram had no disabled button, because a
+    button that silently does nothing leaves the leader deciding whether they
+    pressed it wrong or the bot is broken; a disabled one says so itself and
+    sends nothing (no callback exists to send). `tcconf` re-checks the task
+    whatever the screen showed, exactly as before.
     """
-    return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}") if ready else None
+    if ready:
+        return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}")
+    from app import tg_buttons
+    if missing > 0:
+        label = _lt(lang, "btn_close_need_1" if missing == 1 else "btn_close_need").format(n=missing)
+    else:
+        label = _lt(lang, "btn_close_incomplete")
+    return tg_buttons.disabled(label)
 
 
 # Why an automatic check went the way it did, in the reader's own language.
@@ -3405,14 +3507,17 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
     k = _lt_roll_count(db, prof, task_id, cid) if entry_cfg.get("proof_kind") == "camera" \
         else (db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).count()
               if entry is not None else 0)
+    missing = 0
     if entry is not None and not entry.done:
         text = _lt(lang, "pt_draft_reason").format(task=name, reason=entry.reason or "")
         ready = True
     else:
         text = _lt(lang, "pt_draft_photos").format(task=name, min=need or 1, k=k)
         ready = entry is not None and k >= max(1, need)
-        if not ready:
-            text += _lt(lang, "pt_need_more").format(min=max(1, need))
+        # What stands in the way is said ON the disabled close button below
+        # (`_lt_pt_close_btn`), beside «k/min rasm saqlandi» above — a third
+        # line repeating the minimum would say it twice.
+        missing = max(1, need) - k if not ready else 0
     text += _lt(lang, "pt_draft_hint")
     # A task an admin reopened is on the DAY's filing deadline now, not on the
     # one that already fired — this line has to name the hour that will
@@ -3439,8 +3544,7 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         db.commit()
     else:
         kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{_lt_ref(pid, cid)}:{task_id}"))
-    if btn := _lt_pt_close_btn(lang, pid, task_id, ready, cid):
-        kb.add(btn)
+    kb.add(_lt_pt_close_btn(lang, pid, task_id, ready, cid, missing))
     kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
     _lt_edit(chat_id, msg_id, text, kb)
 
@@ -3455,15 +3559,16 @@ def _lt_edit(chat_id: int, msg_id: int | None, text: str, kb) -> None:
     a leader saw when they pressed a button that re-renders the same state
     (reported from production, 2026-08-30: two identical late screens).
     """
+    from app import tg_buttons
     if msg_id:
         try:
-            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
-                                  reply_markup=kb)
+            tg_buttons.send(bot.edit_message_text, text, chat_id=chat_id,
+                            message_id=msg_id, reply_markup=kb)
             return
         except Exception as exc:
             if "not modified" in str(exc).lower():
                 return
-    bot.send_message(chat_id, text, reply_markup=kb)
+    tg_buttons.send(bot.send_message, chat_id, text, reply_markup=kb)
 
 
 def refresh_camera_prompt(db, leader_id: int, task_id: int,
@@ -4805,7 +4910,9 @@ def _lp_deliver(db, row, recipients: set[int], stage: str) -> set[int]:
 
 
 def _lp_retire(db, row, stage: str, outcome_key: str) -> None:
-    """Strip the buttons off every copy of a card that has now been decided.
+    """Turn every copy of a card that has now been decided into its decided
+    form: the outcome on a disabled button over the live chat button
+    (`_appeal_decided_kb`), the outcome sentence appended to the text.
 
     Takes a MESSAGE KEY, not a rendered string: the card sits in several
     people's chats and each of them reads it in their own language, so a
@@ -4813,20 +4920,56 @@ def _lp_retire(db, row, stage: str, outcome_key: str) -> None:
     else's copy. It is also why the outcome cannot be `row.status` — that is a
     storage word ("admin"), not a sentence anybody should be shown.
     """
+    from app.services.leader_appeal_chat import LATE
     kind = f"leader_lateproof_{stage}"
+    who = row.sup_by_name if stage == "sup" else row.adm_by_name
     notes = (db.query(ApprovalNotice)
              .filter(ApprovalNotice.kind == kind,
                      ApprovalNotice.ref == str(row.id)).all())
     for n in notes:
-        try:
-            bot.edit_message_text(
-                (n.text or "") + "\n\n" + _lt(_get_lang(n.admin_telegram_id), outcome_key),
-                chat_id=n.admin_telegram_id,
-                message_id=n.message_id, reply_markup=None)
-        except Exception:
-            pass
+        lang = _get_lang(n.admin_telegram_id)
+        _appeal_card_decided(n, (n.text or "") + "\n\n" + _lt(lang, outcome_key),
+                             lang, LATE, row.id, outcome_key, who)
         db.delete(n)
     db.commit()
+
+
+def _appeal_card_decided(n, text: str, lang: str, thread: str, rid: int,
+                         outcome_key: str, who: str | None) -> None:
+    """Edit one copy of a decided appeal card. Never raises: a card that cannot
+    be edited must not undo, or stop the retiring of, the ruling it reports. A
+    keyboard that cannot be BUILT still lets the outcome line land, on the
+    plain chat button."""
+    from app import tg_buttons
+    from app.services.leader_appeal_chat import open_chat_markup
+    try:
+        kb = _appeal_decided_kb(lang, thread, rid, outcome_key, who)
+    except Exception:
+        logger.warning("decided appeal card: keyboard failed", exc_info=True)
+        kb = open_chat_markup(thread, rid, lang)
+    try:
+        tg_buttons.send(bot.edit_message_text, text, chat_id=n.admin_telegram_id,
+                        message_id=n.message_id, reply_markup=kb)
+    except Exception:
+        pass
+
+
+def _appeal_decided_kb(lang: str, thread: str, rid: int, outcome_key: str,
+                       who: str | None):
+    """A decided appeal card: the outcome on a DISABLED button (Bot API 10.3)
+    over the chat button, which stays live — the conversation goes on after a
+    ruling, and an undo reopens it. `outcome_key` is the card's own outcome
+    sentence key («lp_done_rejected», «ad_done_uplifted»…); the button takes
+    the short form of the same outcome, the sentence stays in the text."""
+    from app import tg_buttons
+    from app.services.leader_appeal_chat import open_chat_markup
+    tail = outcome_key.rsplit("_", 1)[-1]
+    label = _lt(lang, f"btn_done_{tail}")
+    if label == f"btn_done_{tail}":
+        label = _lt(lang, outcome_key)
+    kb = open_chat_markup(thread, rid, lang)
+    kb.keyboard.insert(0, [tg_buttons.disabled(tg_buttons.outcome_label(label, who, lang))])
+    return kb
 
 
 def _lp_supervisor_ids(db, row) -> set[int]:
@@ -5386,23 +5529,21 @@ def _ad_send_to_admins(db, d) -> None:
 
 
 def _ad_retire(db, d, outcome_key: str) -> None:
-    """Strip the buttons off every copy of a stage-1 card that is now decided.
+    """Turn every copy of a stage-1 card that is now decided into its decided
+    form (`_appeal_decided_kb`), the outcome sentence appended to the text.
 
     Takes a message KEY, never a rendered string: the card sits in several
     chats and each reader has their own language, so a pre-rendered outcome
     would stamp the decider's language onto everybody else's copy.
     """
+    from app.services.leader_appeal_chat import DISPUTE
     notes = (db.query(ApprovalNotice)
              .filter(ApprovalNotice.kind == "leader_dispute_sup",
                      ApprovalNotice.ref == str(d.id)).all())
     for n in notes:
-        try:
-            bot.edit_message_text(
-                (n.text or "") + "\n\n" + _lt(_get_lang(n.admin_telegram_id), outcome_key),
-                chat_id=n.admin_telegram_id,
-                message_id=n.message_id, reply_markup=None)
-        except Exception:
-            pass
+        lang = _get_lang(n.admin_telegram_id)
+        _appeal_card_decided(n, (n.text or "") + "\n\n" + _lt(lang, outcome_key),
+                             lang, DISPUTE, d.id, outcome_key, d.sup_by_name)
         db.delete(n)
     db.commit()
 
@@ -6024,6 +6165,72 @@ def _fc_callback(call: types.CallbackQuery):
         # The real send goes quietly past a card that failed to render — it
         # must never cost a brigadir the message. A TEST must say so instead.
         bot.send_message(chat, _msg(lang, "shot_failed"))
+
+
+@bot.message_handler(commands=["buttontest"])
+def _buttontest_cmd(message: types.Message):
+    """«Tugmalar sinovi» — the three messages with buttons inside them, sent to
+    the admin who asks (services/button_test). Admins only: the digest it
+    rebuilds is a real unit's."""
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    if tid not in _admin_ids():
+        bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+        return
+    from app.services import button_test
+    button_test.run(tid, lang)
+
+
+# ── The call forecast card's old buttons («Tasdiqlash» / «O'zgartirish») ─────
+# Retired the day they shipped (services/forecast_answer). A card sent with
+# them still has them: a tap records nothing, says so, and takes the buttons
+# off every copy of that card; a «how many» question still open is closed.
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fa:"))
+def _fa_callback(call: types.CallbackQuery):
+    from app.services import forecast_answer
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    parts = call.data.split(":")
+    try:
+        action, nid = parts[1], int(parts[2])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id)
+        return
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid)
+        if cap is not None and cap.stage == "fa_count":
+            db.delete(cap)
+            db.commit()
+    bot.answer_callback_query(call.id, forecast_answer.retired_text(lang),
+                              show_alert=True)
+    if action == "x":
+        # «Bekor qilish» under the old «how many» question: close the question.
+        try:
+            bot.edit_message_text(forecast_answer.retired_text(lang),
+                                  call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
+        return
+    forecast_answer.retire(nid)
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "fa_count",
+                     content_types=["text"])
+def _fa_count(message: types.Message):
+    """A number typed into a «how many» question asked before the buttons were
+    retired: close the capture and say the answer is not taken."""
+    from app.services import forecast_answer
+
+    tid = message.from_user.id
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "fa_count":
+            return
+        db.delete(cap)
+        db.commit()
+    bot.send_message(message.chat.id, forecast_answer.retired_text(_get_lang(tid)))
 
 
 # ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»

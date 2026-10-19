@@ -117,6 +117,7 @@ async def lifespan(app: FastAPI):
         seed_full90_bands,
         set_gemini_model_pro,
         report_unpriced_ojidaniya,
+        send_button_test,
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
         report_shared_work_centers,
@@ -155,6 +156,7 @@ async def lifespan(app: FastAPI):
         report_auto_schema,
         add_pp_product_auto_fill,
         add_pp_line_container_cap,
+        add_forecast_answer_columns,
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -298,6 +300,7 @@ async def lifespan(app: FastAPI):
     later(set_gemini_model_pro)
     run(add_pp_product_auto_fill)
     run(add_pp_line_container_cap)
+    run(add_forecast_answer_columns)
     run(add_assistant_run_lease)
     run(add_education_duration)
     run(migrate_pp_line_daily_key)
@@ -507,6 +510,7 @@ async def lifespan(app: FastAPI):
     # `services/unpriced_report.py` and `build_unpriced_workbook` once the file
     # has landed.
     later(report_unpriced_ojidaniya)
+    later(send_button_test)
     later(report_unpriced_ojidaniya_xlsx)
     # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for what is
     # still UNFILLED before the загрузка can be trusted: «Odam soni» missing on a
@@ -630,7 +634,7 @@ async def lifespan(app: FastAPI):
     # once it has landed.
     later(report_dept_attendance)
     # ⚠ TEMPORARY one-shot (2026-10-14) — the whole Трудоемкость register
-    # (supervisor · SAP code · work centre · process · seconds per piece) as a
+    # (supervisor · SAP code · work centre · faza · process · seconds per piece) as a
     # workbook, DMed once to the operator. Remove this line,
     # `startup.report_trudoyomkost_register` and
     # `services/trudoyomkost_register_report.py` once it has landed.

@@ -40,6 +40,11 @@ from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t, basis_line
 # it. Must match the ``id`` in the sendRichMessage media array.
 PHOTO_ID = "fc1"
 
+# Where the card's «Tasdiqlash» / «O'zgartirish» stood in the bodies stored for
+# the cards sent with them (19 Oct 2026, retired the same day —
+# services/forecast_answer). Read only to take those buttons off old cards.
+TOKEN = "[[fc-buttons]]"
+
 logger = logging.getLogger(__name__)
 
 

@@ -1,14 +1,19 @@
+import re
 from datetime import date, datetime, timedelta
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from typing import Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Manager, Attendance, DayApproval, EditRequest
 from app.permissions import require_page
 from app.routers.brigadirs import aggregate_units, build_metrics_list
+from app.services import action_log
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services.grid_export import build_grid_workbook, validate as validate_grid
 from app.services.shared_build import SharedBuild
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api", tags=["heatmap"])
 
@@ -181,3 +186,51 @@ def _heatmap(db: Session, date_from: date, date_to: date, shift: Optional[int], 
     if units:
         out["units"] = aggregate_units(metrics)
     return out
+
+
+class GridExportBody(BaseModel):
+    """One /zagruzka table as the viewer sees it — see services/grid_export.py
+    for the spec. The figures are the page's own (utils/formulas.js); this
+    endpoint only lays them out."""
+    title: str = ""
+    lines: list[str] = []
+    sheet: str = ""
+    filename: str = ""
+    caption: str = ""
+    table: str = ""
+    cols: list[dict[str, Any]] = []
+    head: list[list[dict[str, Any]]] = []
+    body: list[list[dict[str, Any]]] = []
+    foot: list[list[dict[str, Any]]] = []
+    legend: list[dict[str, Any]] = []
+
+
+@router.post("/zagruzka/export.xlsx")
+def export_zagruzka_table(
+    request: Request,
+    body: GridExportBody,
+    payload: dict = Depends(require_page("zagruzka")),
+):
+    """One table of «Zagruzka foizi» as a workbook — each of the six tables has
+    its own button. Read-only, so it rides PAGE access like the page itself,
+    and it goes to the caller alone: a browser downloads it, Telegram gets a DM
+    (app/xlsx_delivery.py)."""
+    spec = body.model_dump()
+    why = validate_grid(spec)
+    if why:
+        raise HTTPException(status_code=400, detail=why)
+    data = build_grid_workbook(spec).getvalue()
+    # A translated title and two dates; path separators are the one thing a
+    # filename must never carry.
+    fname = re.sub(r'[\\/:*?"<>|]+', " ", (body.filename or "").strip()).strip() or "zagruzka"
+    if not fname.lower().endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 {body.title}"
+    resp = deliver_xlsx(request, payload, fname, data, caption)
+    action_log.enrich(
+        target_kind="report", target_id=fname, target_name=body.title[:200],
+        details=[("file", fname), ("table", body.table[:40]),
+                 ("rows", len(body.body)), ("columns", len(body.cols)),
+                 ("size", len(data))],
+    )
+    return resp

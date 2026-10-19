@@ -27,7 +27,7 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    leader_owes,
+    leader_owes, gc_pause,
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
     leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof, leader_load,
     leader_register, leader_reports, leader_unit_report)
@@ -450,7 +450,7 @@ def get_leaders(
     key = ("scoped", sees_all, _la_hides(payload), *view.values())
     b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key,
                             scope=request.scope)
-    return Response(content=b.data, media_type="application/json")
+    return PartsResponse(b.data)
 
 
 # ── one build for everybody ──────────────────────────────────────────────────
@@ -464,11 +464,40 @@ def get_leaders(
 
 _ADMIN_BUILD = {"role": "admin"}     # nothing else in an unscoped build reads the payload
 _JSON = dict(ensure_ascii=False, separators=(",", ":"), default=_json_default)
+# One encoder for the row-by-row encode (`leader_register.encode_list`): the
+# same output `json.dumps(…, **_JSON)` gives, without building an encoder per row.
+_ENC = json.JSONEncoder(**_JSON)
+
+
+class PartsResponse(Response):
+    """A JSON answer held as byte PIECES, sent one after another — never
+    joined into one buffer. Gluing the 20 MB register to its header was a
+    single C copy per request that held every other thread meanwhile (19 Oct
+    2026 DM), and a 20 MB body handed to the transport in one write is copied
+    into its buffer on the event loop. Each piece here is a short send the
+    transport can pace; the length is known, so it still goes out with a
+    Content-Length, not chunked."""
+    media_type = "application/json"
+
+    def __init__(self, parts, status_code: int = 200):
+        self.parts = tuple(p for p in parts if p)
+        super().__init__(None, status_code=status_code,
+                         headers={"content-length": str(sum(len(p) for p in self.parts))})
+
+    async def __call__(self, scope, receive, send) -> None:
+        await send({"type": "http.response.start", "status": self.status_code,
+                    "headers": self.raw_headers})
+        last = len(self.parts) - 1
+        if last < 0:
+            await send({"type": "http.response.body", "body": b""})
+        for i, p in enumerate(self.parts):
+            await send({"type": "http.response.body", "body": p, "more_body": i < last})
 
 
 def _build_shared(db: Session) -> leader_register.Build:
     """`_leaders_feed(db, ADMIN, True)`, its rows already encoded — the 20 MB
-    half of the answer is bytes once per build, not a dict per request."""
+    half of the answer is bytes once per build, not a dict per request; in
+    pieces, row by row, so no single call holds the GIL for the whole of it."""
     # The exemption set has its own 60 s memory; a build that is going to be
     # KEPT must compute it fresh, or a leader's first October filing would be
     # read as absent until the next unrelated change.
@@ -476,7 +505,7 @@ def _build_shared(db: Session) -> leader_register.Build:
     feed = _leaders_feed(db, _ADMIN_BUILD, True)
     rows = feed["data"]
     return leader_register.Build(
-        data=json.dumps(rows, **_JSON).encode("utf-8"),
+        data=leader_register.encode_list(rows, _ENC.encode),
         roster=feed["roster"], cutoffs=feed["cutoffs"], cut_units=feed["cutUnits"],
         last_synced=feed["last_synced"], rows=len(rows))
 
@@ -496,7 +525,7 @@ def _build_scoped(db: Session, view: dict, sees_all: bool) -> leader_register.Bu
     if _la_hides(view):
         _la_hide(feed)
     return leader_register.Build.body(
-        json.dumps(feed, **_JSON).encode("utf-8"))
+        leader_register.encode_dict(feed, _ENC.encode, "data"))
 
 
 def _assemble(b: leader_register.Build, payload: dict) -> Response:
@@ -520,9 +549,8 @@ def _assemble(b: leader_register.Build, payload: dict) -> Response:
         "can_request_late": role in ("admin", "supervisor"),
         "can_decide_late": _may_decide(payload),
     }, **_JSON)
-    body = b"".join((head[:-1].encode("utf-8"), b',"data":', b.data, b",",
-                     tail[1:].encode("utf-8")))
-    return Response(content=body, media_type="application/json")
+    return PartsResponse((head[:-1].encode("utf-8") + b',"data":', *b.data,
+                          b"," + tail[1:].encode("utf-8")))
 
 
 def _cells_gone_from(cells: list) -> str | None:
@@ -1293,11 +1321,21 @@ def _standing_refresh() -> None:
 def warm_standing() -> None:
     """Build the pool in the background shortly after the process starts, so
     the first «Mening o'rnim» after a deploy does not wait for it (4.8 s in the
-    9 Oct «Server was slow» DM). Late enough to stay out of the boot's way."""
+    9 Oct «Server was slow» DM). Late enough to stay out of the boot's way.
+
+    The unscoped register is warmed the same way, once the pool is in — one
+    heavy build at a time — so the first Monitoring after a deploy is served a
+    kept build (7.4 s, «none kept yet», in the 19 Oct DM)."""
     def later():
         _sleep(_STANDING_WARM_S)
         if _standing_fresh() is None:
             _standing_refresh()
+        with _standing_build:          # waits out the pool's own build
+            pass
+        try:
+            leader_register.warm(_build_shared)
+        except Exception:
+            logger.exception("leader register: warm-up failed")
     threading.Thread(target=later, name="standing-warm", daemon=True).start()
 
 
@@ -1340,8 +1378,14 @@ def _store_standing(pool: dict) -> None:
 def _build_standing(db: Session) -> dict:
     # No role, so nothing in the builder reads as a viewer: no scoping pass
     # runs (`sees_all`), and no admin-only field (a cutoff's reason and
-    # author) is filled in.
-    feed = _leaders_feed(db, {"role": None}, True, lite=True)
+    # author) is filled in. The collector paused, as for the register's own
+    # build (`gc_pause`).
+    with gc_pause.paused():
+        return _standing_from(_leaders_feed(db, {"role": None}, True, lite=True))
+
+
+def _standing_from(feed: dict) -> dict:
+    """The pool a ranking reads, cut from an unscoped `lite` feed."""
     rows, filed = [], set()
     for r in feed["data"]:
         leader = r.get("leader") or ""

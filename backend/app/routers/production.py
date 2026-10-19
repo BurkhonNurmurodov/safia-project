@@ -4351,9 +4351,12 @@ def _call_rows(db: Session, target: date, capacity_pct: float,
     }
     # latest notice per unit for the target date (ascending order → last wins)
     last_notice: dict[int, ForecastCallNotice] = {}
+    # the «Tugmalar sinovi»'s test notices (2026-10-19) are nobody's resend guard
+    from app.services.forecast_answer import TEST_SENDER
     for n in db.query(ForecastCallNotice).filter(
         ForecastCallNotice.for_date == target,
         ForecastCallNotice.manager_id.in_(ids),
+        ForecastCallNotice.sent_by != TEST_SENDER,
     ).order_by(ForecastCallNotice.sent_at):
         last_notice[n.manager_id] = n
     sender_names = {}

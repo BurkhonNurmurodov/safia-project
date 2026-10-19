@@ -147,7 +147,11 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   collapsed – the card with its head only — no toolbar, table or footer. The
  *               head stays the same node either way, so the accordion's toggle
  *               keeps focus when it opens or shuts the card.
- *   children  – <thead> + <tbody>
+ *   scrollRef – a ref (object or callback) handed the table's own scroller:
+ *               its clientWidth is the part of the card on screen. The
+ *               /leaders-kpi ranking sizes its columns to it and pins an
+ *               opened row's panel inside it while the table scrolls sideways.
+ *   children  – <colgroup>? + <thead> + <tbody>
  */
 const PAGE_SCROLL = { pageScroll: true };
 const NO_PAGE_SCROLL = { pageScroll: false };
@@ -171,6 +175,7 @@ export default function TableCard({
   pageScroll = false,
   head,
   collapsed = false,
+  scrollRef,
   className = "",
   children,
 }) {
@@ -183,7 +188,7 @@ export default function TableCard({
           {toolbar}
         </div>
       )}
-      {!collapsed && <div className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
+      {!collapsed && <div ref={scrollRef} className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
         <table
           className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)", ...(minWidth ? { minWidth } : {}) }}

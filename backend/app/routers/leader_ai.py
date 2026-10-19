@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
@@ -293,17 +293,20 @@ def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
         return {"enabled": False, "items": [], "buckets": {}, "facets": {}}
 
     q = (
-        db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status.in_(("flagged", "ok")))
-        # Column-projected: this pass exists to COUNT, and the four language
-        # columns of verdict prose are the heaviest thing on the row. The page
-        # slice re-reads its own rows whole (`_full`).
-        .options(load_only(
-            LeaderAiReview.ref, LeaderAiReview.date, LeaderAiReview.task_id,
-            LeaderAiReview.leader_id, LeaderAiReview.manager_id,
-            LeaderAiReview.shift, LeaderAiReview.status, LeaderAiReview.flags,
+        db.query(
+            LeaderAiReview.id, LeaderAiReview.ref, LeaderAiReview.date,
+            LeaderAiReview.task_id, LeaderAiReview.leader_id,
+            LeaderAiReview.manager_id, LeaderAiReview.shift,
+            LeaderAiReview.status, LeaderAiReview.flags,
             LeaderAiReview.resolution,
-        ))
+        )
+        .filter(LeaderAiReview.status.in_(("flagged", "ok")))
+        # COLUMNS, not entities: this pass exists to COUNT, over up to
+        # `SCAN_CAP` rows, and twelve thousand ORM objects — the identity map,
+        # an instrumented read per attribute — were most of its time (19 Oct
+        # 2026 DM). A row answers the same attribute names. The four language
+        # columns of verdict prose stay out; the page slice re-reads its own
+        # rows whole (`_full`).
     )
     # `date` is a 'YYYY-MM-DD' string, so a lexical compare IS a date compare —
     # and it narrows BEFORE the scan cap, which is the point: the newest rows of
@@ -391,10 +394,10 @@ def _full(db: Session, rows: list[LeaderAiReview]) -> list[LeaderAiReview]:
     pass is exactly what kept the old ceiling at 4 000. Only the page needs the
     whole record, and the page is at most `limit` rows.
 
-    `populate_existing` is not optional: these objects are already in the
-    session's identity map with their text columns deferred, so a plain re-query
-    hands back the same half-loaded instances and every `reason_*` read after it
-    becomes a lazy round-trip per row.
+    `populate_existing` keeps it whole-row whatever the session already
+    holds: an instance loaded with its text columns deferred would otherwise be
+    handed back half-loaded, and every `reason_*` read after it would become a
+    lazy round-trip per row.
     """
     if not rows:
         return []
@@ -428,9 +431,12 @@ class _Cfg(tuple):
     walkers below can ask `services/leader_shift` about a leader whose
     checklist runs on another shift than their unit's — every caller still
     unpacks three values. `eras` is the dated rule changes, read once
-    (services/leader_rule_eras)."""
+    (services/leader_rule_eras). `rows` are the rows it was built over and
+    `memo` what `_one_process` has answered for them."""
     db = None
     eras = None
+    rows = ()
+    memo = None
 
 
 def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict]:
@@ -450,6 +456,8 @@ def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict
     out = _Cfg((defs, sup_cfg, own_cfg))
     out.db = db
     out.eras = leader_rule_eras.load(db)
+    out.rows = rows
+    out.memo = {}
     return out
 
 
@@ -470,11 +478,28 @@ def _criteria(cfg, rev) -> str:
     db = getattr(cfg, "db", None)
     if db is not None and rev.task_id == one_process.TASK and rev.leader_id:
         own = cfg[2].get((rev.leader_id, rev.task_id))
-        if not (own is not None and (own.criteria or "").strip()) and one_process.applies(
-                db, task_id=rev.task_id, leader_id=rev.leader_id, day=rev.date,
-                cell_id=one_process.day_cell(db, rev.ref)):
+        if not (own is not None and (own.criteria or "").strip()) and _one_process(cfg, rev):
             return one_process.CRITERIA
     return _chain(cfg, rev, "criteria")
+
+
+def _one_process(cfg, rev) -> bool:
+    """`one_process.applies` for this row, read once per request: the day
+    cells of every task-3 row `cfg` was built over in ONE query
+    (`one_process.day_cells`), and each (leader, day) and cell answered once.
+    Per row it was two or three queries a card (19 Oct 2026 DM)."""
+    db, memo = cfg.db, cfg.memo
+    cells = memo.get("cells")
+    if cells is None:
+        cells = memo["cells"] = one_process.day_cells(
+            db, [r.ref for r in cfg.rows if r.task_id == one_process.TASK])
+    # A row `cfg` was not built over is asked on its own, as before.
+    cell = cells[rev.ref] if rev.ref in cells else one_process.day_cell(db, rev.ref)
+    key =("cell", cell) if cell else ("leader", rev.leader_id, str(rev.date or "")[:10])
+    if key not in memo:
+        memo[key] = one_process.applies(db, task_id=rev.task_id, leader_id=rev.leader_id,
+                                        day=rev.date, cell_id=cell)
+    return memo[key]
 
 
 def _levels(cfg, rev):

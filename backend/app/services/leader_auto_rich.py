@@ -13,7 +13,9 @@ that gets ignored, so the card answers all of them (the operator's directive,
     📊 state       the leader's LIVE figures — what the check would read now
     ✅ steps       what to do, page by page, in the order it is done
     quote          the rule: no photo, the page is read, late = not done (−N)
-    button         the page itself (web_app, so the WebView carries the identity)
+    button         the page itself (web_app, so the WebView carries the identity),
+                   inside the first step from 2026-10-19 — the keyboard only
+                   where Telegram refuses a button in the body
 
 **Three surfaces, two contents.** The rich body and the classic HTML fallback
 (`classic`, for a client that refuses rich messages) carry the SAME card, live
@@ -101,6 +103,7 @@ L: dict[str, dict] = {
             "min": "daq",
             "pcs": "ta",
             "btn_production": "Zagruzka faylini ochish",
+            "open": "Ochish",
             "btn_concerns": "Xavotir yozish",
             "no_data": "Ma'lumot o'qilmadi — sahifani o'zingiz tekshiring.",
             "no_sap": ("Yacheykangizda SAP kodi yo'q — tizim rejani o'qiy olmaydi. "
@@ -187,6 +190,7 @@ L: dict[str, dict] = {
             "min": "дақ",
             "pcs": "та",
             "btn_production": "Загрузка файлини очиш",
+            "open": "Очиш",
             "btn_concerns": "Хавотир ёзиш",
             "no_data": "Маълумот ўқилмади — саҳифани ўзингиз текширинг.",
             "no_sap": ("Ячейкангизда SAP коди йўқ — тизим режани ўқий олмайди. "
@@ -271,6 +275,7 @@ L: dict[str, dict] = {
             "min": "мин",
             "pcs": "шт",
             "btn_production": "Открыть файл загрузки",
+            "open": "Открыть",
             "btn_concerns": "Написать обеспокоенность",
             "no_data": "Данные не прочитались — проверьте страницу сами.",
             "no_sap": ("У вашей ячейки нет кода SAP — система не может прочитать "
@@ -354,6 +359,7 @@ L: dict[str, dict] = {
             "min": "min",
             "pcs": "",
             "btn_production": "Open the workload file",
+            "open": "Open",
             "btn_concerns": "Write a concern",
             "no_data": "The data could not be read — check the page yourself.",
             "no_sap": ("Your cell has no SAP code — the system cannot read the "
@@ -668,10 +674,20 @@ def _quote(c: dict, hhmm: str, weight) -> str:
     return c["quote"].format(time=hhmm, pts=c["pts"].format(w=w) if w else "")
 
 
+def page_url(check: str) -> str:
+    return f"{settings.webapp_url.rstrip('/')}{PAGE.get(check, '/production')}"
+
+
 def body(check: str, *, task_id: int, task_name: str, due: datetime,
          hhmm: str, now: datetime, snap: dict, lang: str = "uz",
-         weight=None) -> str:
-    """The Rich-HTML body for ONE recipient language."""
+         weight=None, button: bool = False) -> str:
+    """The Rich-HTML body for ONE recipient language.
+
+    `button` puts the page's «Ochish» INSIDE the first step — the one that
+    names the page (Bot API 10.3, `<tg-button>`) — so the way in sits where
+    the card says to go, and the card carries no keyboard under it. The sender
+    tries this body first and the one without the button, with the keyboard,
+    after it (`telegram_bot.RichTry`)."""
     lt = _t(lang)
     c, t = lt["common"], lt[check]
     rows, gap = _state_rows(check, snap, t, c, hhmm)
@@ -694,8 +710,13 @@ def body(check: str, *, task_id: int, task_name: str, due: datetime,
             + "\n</table>")
     if gap:
         parts.append(f"<p>{_esc(gap)}</p>")
+    steps = [_esc(s) for s in _steps(t, hhmm)]
+    if button and steps:
+        url = escape(page_url(check), quote=True)
+        steps[0] += (f' <tg-button type="web_app" url="{url}">'
+                     f"{_esc(c['open'])}</tg-button>")
     parts.append(f"<h4>{_esc(c['todo'])}</h4>\n<ol>\n"
-                 + "\n".join(f"<li>{_esc(s)}</li>" for s in _steps(t, hhmm))
+                 + "\n".join(f"<li>{s}</li>" for s in steps)
                  + "\n</ol>")
     parts.append(f"<blockquote>{_esc(_quote(c, hhmm, weight))}</blockquote>")
     return "\n".join(parts)
@@ -737,6 +758,5 @@ def markup(check: str, lang: str = "uz"):
              else c["btn_kelish"] if page == "/kelish" else c["btn_production"])
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(
-        label, web_app=types.WebAppInfo(
-            url=f"{settings.webapp_url.rstrip('/')}{page}")))
+        label, web_app=types.WebAppInfo(url=page_url(check))))
     return kb

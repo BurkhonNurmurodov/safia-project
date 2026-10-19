@@ -470,20 +470,31 @@ def _render_leader_late(data, lang) -> str:
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 
-def _approve_reject_kb(code: str, ref, lang: str, panel: str = "/staff"):
+def _panel_button(lang: str, panel: str):
     from telebot import types
+    return types.InlineKeyboardButton(
+        _L(lang, "open_panel"),
+        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}{panel}"),
+    )
+
+
+def _approve_reject_kb(code: str, ref, lang: str, panel: str = "/staff"):
+    """Approve (green) and reject (red) on one row, the panel under them.
+
+    The two colours are the only colours a card carries (Bot API 9.4 `style`):
+    they say which tap decides which way, and every other button stays the
+    app's own neutral."""
+    from telebot import types
+    from app import tg_buttons
     kb = types.InlineKeyboardMarkup()
     kb.row(
-        types.InlineKeyboardButton(_L(lang, "approve"), callback_data=f"ap:{code}:a:{ref}"),
-        types.InlineKeyboardButton(_L(lang, "reject"),  callback_data=f"ap:{code}:r:{ref}"),
+        tg_buttons.approve(_L(lang, "approve"), f"ap:{code}:a:{ref}"),
+        tg_buttons.reject(_L(lang, "reject"), f"ap:{code}:r:{ref}"),
     )
     # "Keep both" — the panel escape hatch alongside the inline actions. It lands
     # on the page the request belongs to, so an admin who would rather see the
     # full picture before deciding is one tap from it.
-    kb.add(types.InlineKeyboardButton(
-        _L(lang, "open_panel"),
-        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}{panel}"),
-    ))
+    kb.add(_panel_button(lang, panel))
     return kb
 
 
@@ -516,7 +527,8 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn,
         try:
             kb = (kb_fn(lang) if kb_fn is not None
                   else _approve_reject_kb(code, ref, lang, panel))
-            sent = bot.send_message(recipient_id, text, reply_markup=kb)
+            from app import tg_buttons
+            sent = tg_buttons.send(bot.send_message, recipient_id, text, reply_markup=kb)
         except Exception:
             logger.exception("Failed to send %s notice to %s (ref=%s)", kind, recipient_id, ref)
             continue
@@ -805,28 +817,85 @@ def send_leader_late_to_admins(db, req) -> None:
 
 # ── Cross-edit primitive — the single source of "decision happened" ───────────
 
+def _outcome_key(status: str) -> str:
+    return {"approved": "approved_by", "rejected": "rejected_by"}.get(status, "cancelled_by")
+
+
 def _outcome_line(lang: str, status: str, decided_by: str | None) -> str:
-    key = {"approved": "approved_by", "rejected": "rejected_by"}.get(status, "cancelled_by")
-    label = _L(lang, key)
+    label = _L(lang, _outcome_key(status))
     return f"{label} — {decided_by}" if decided_by else label
+
+
+def _decided_link(db, kind: str, ref, lang: str):
+    """The card's way onward, still live after the decision: the page the
+    request belongs to, or the appeal's chat. The SAME target `_broadcast` gave
+    the card when it was sent — re-derived from the record because a notice
+    stores only the text — so a decided card opens where its pending self did.
+    None when the record is gone; the outcome button then stands alone."""
+    if kind == "leader_dispute":
+        from app.services.leader_appeal_chat import DISPUTE, open_chat_markup
+        return open_chat_markup(DISPUTE, int(ref), lang).keyboard[0][0]
+    if kind == "leader_late":
+        return _panel_button(lang, "/leaders?tab=late")
+    if kind == "live_document":
+        from app.models import LiveDocument
+        doc = db.query(LiveDocument).filter_by(id=int(ref)).first()
+        return _panel_button(lang, _live_panel(doc.day if doc else None))
+    if kind == "live_batch":
+        from app.models import LiveDeletion
+        row = db.query(LiveDeletion.day).filter_by(batch_id=str(ref)).first()
+        return _panel_button(lang, _live_panel(row[0] if row else None))
+    return _panel_button(lang, "/staff")
+
+
+def decided_markup(db, kind: str, ref, lang: str, status: str,
+                   decided_by: str | None):
+    """What every copy of a DECIDED card shows in place of approve / reject:
+    one DISABLED button carrying the outcome and who decided it (Bot API 10.3)
+    — «✅ Tasdiqlandi · Aripova M.» — over the card's panel or chat link, which
+    stays live. The disabled button has no callback, so no app, old or new, can
+    act on a decided card; the outcome line also stays in the message text for
+    an app that does not draw the button at all."""
+    from telebot import types
+    from app import tg_buttons
+    kb = types.InlineKeyboardMarkup()
+    kb.add(tg_buttons.disabled(tg_buttons.outcome_label(
+        _L(lang, _outcome_key(status)), decided_by, lang)))
+    try:
+        link = _decided_link(db, kind, ref, lang)
+    except Exception:  # noqa: BLE001 — the outcome must still land without its link
+        logger.warning("decided card: no link for %s %s", kind, ref, exc_info=True)
+        db.rollback()
+        link = None
+    if link is not None:
+        kb.add(link)
+    return kb
 
 
 def edit_admin_notices(kind: str, ref, status: str, decided_by: str | None = None) -> None:
     """Edit every admin's tracked message for (kind, ref) with the outcome (in
-    each admin's own language), drop the buttons, and forget the notices.
-    Best-effort per message — a single unreachable admin must not block others.
+    each admin's own language), turn its buttons into the decided keyboard
+    (`decided_markup`: the outcome, disabled, over the live panel link), and
+    forget the notices. Best-effort per message — a single unreachable admin
+    must not block others.
 
     Called from BOTH the Telegram callbacks and the web-app decision endpoints,
     so any decision keeps all admin messages consistent."""
+    from app import tg_buttons
     from app.telegram_bot import bot, _get_lang
     with SessionLocal() as db:
         notices = db.query(ApprovalNotice).filter_by(kind=kind, ref=str(ref)).all()
+        marks: dict[str, object] = {}
         for n in notices:
             lang = _get_lang(n.admin_telegram_id)
+            if lang not in marks:
+                marks[lang] = decided_markup(db, kind, ref, lang, status, decided_by)
             try:
-                bot.edit_message_text(
+                tg_buttons.send(
+                    bot.edit_message_text,
                     f"{n.text}\n\n{_outcome_line(lang, status, decided_by)}",
-                    chat_id=n.admin_telegram_id, message_id=n.message_id, reply_markup=None,
+                    chat_id=n.admin_telegram_id, message_id=n.message_id,
+                    reply_markup=marks[lang],
                 )
             except Exception:
                 logger.warning("Could not edit %s notice msg %s for admin %s",

@@ -1249,7 +1249,16 @@ def _warn(db: Session, prof, td, due: datetime, hhmm: str, *,
                 return dict(task_id=td.id, task_name=_task_name(td, lang),
                             due=due, hhmm=hhmm, now=at, snap=snap, lang=lang,
                             weight=weight)
-            kw = dict(rich_fn=lambda lang: card.body(check, **_args(lang)),
+            from app.telegram_bot import RichTry
+
+            def _rich(lang: str) -> list:
+                # The button inside the step that names the page, and nothing
+                # under the card; then, if Telegram refuses a button in the
+                # body, the card as before with the page button under it.
+                return [RichTry(card.body(check, **_args(lang), button=True),
+                                None, label="auto-check step button"),
+                        RichTry(card.body(check, **_args(lang)))]
+            kw = dict(rich_fn=_rich,
                       html_fn=lambda lang: card.classic(check, **_args(lang)),
                       markup_fn=lambda lang: card.markup(check, lang))
         except Exception:                          # noqa: BLE001 - see doc

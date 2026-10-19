@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2, Minimize2, Info, Layers, UserRound, SlidersHorizontal } from "lucide-react";
+import { Maximize2, Minimize2, Info, Layers, UserRound, SlidersHorizontal, FileSpreadsheet, Loader2 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -27,6 +27,7 @@ import { useTranslit } from "../utils/transliterate";
 import { surnameInitial } from "../utils/personName";
 import useIsMobile from "../hooks/useIsMobile";
 import api from "../utils/api";
+import { postGridXlsx } from "../utils/gridExport";
 import { hasOpenDialog } from "../components/ui/dialogLayers";
 
 const HEATMAP_MODES = ["planned", "actual"];
@@ -67,15 +68,15 @@ const COMPARISON = {
 function HeatmapHeader({
   heatmap, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t,
   title = null, subtitle = null, note = null, showMode = true, guideHeading = null,
-  onEditBands = null, phone = false,
+  onEditBands = null, phone = false, onExport = null, exporting = false, canExport = false,
 }) {
   const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
   // On a phone the icon buttons meet the 38px toggle beside them and small
   // print never drops under 11px; desktop keeps its measures exactly.
   const iconBtn = phone ? "h-[38px] w-[38px]" : "h-[32px] w-[32px]";
   const small = phone ? "text-[11px]" : "text-[10px]";
-  // The card's icon buttons — the band editor is the admin's, fullscreen
-  // everyone's.
+  // The card's icon buttons — the band editor is the admin's, the workbook
+  // and fullscreen everyone's.
   const icons = (
     <>
       {onEditBands && (
@@ -87,6 +88,21 @@ function HeatmapHeader({
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
         >
           <SlidersHorizontal size={16} />
+        </button>
+      )}
+      {onExport && (
+        // «Excel» — this card's own table as a workbook. The word goes on a
+        // phone, where the row has no room for it.
+        <button
+          onClick={onExport}
+          disabled={!canExport || exporting}
+          title={t("zagruzka.xl.tooltip")}
+          aria-label={t("zagruzka.xl.tooltip")}
+          className={`flex-shrink-0 ${phone ? `${iconBtn} justify-center` : "h-[32px] px-2.5 gap-1.5"} inline-flex items-center rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-default`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+        >
+          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+          {!phone && <span>{t("zagruzka.xl.button")}</span>}
         </button>
       )}
       <button
@@ -198,9 +214,13 @@ function HeatmapHeader({
 const MetricHeatmapCard = memo(function MetricHeatmapCard({
   which, cellValue, title, note, heatmap, hmLoading, segments,
   managerIds, commentedCells, approvedCells, onCellClick, full, setOpenFull, t,
-  skDates, skRows, onEditBands = null, phone = false,
+  skDates, skRows, onEditBands = null, phone = false, onExport, exporting = false,
 }) {
   const phoneGrid = phone ? PHONE_GRID : NO_DATA;
+  // The inline grid and the fullscreen one keep their own sort and statistic,
+  // so each header exports the grid it sits on.
+  const inlineGrid = useRef(null);
+  const fullGrid = useRef(null);
   const header = (isFull) => (
     <HeatmapHeader
       heatmap={heatmap ?? { dates: skDates }}
@@ -212,6 +232,9 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       guideHeading={title}
       showMode={false}
       onEditBands={onEditBands}
+      onExport={() => onExport((isFull ? fullGrid : inlineGrid).current?.build(), { table: which, title })}
+      exporting={exporting}
+      canExport={!hmLoading && !!heatmap?.managers?.length}
       phone={phone}
       t={t}
     />
@@ -239,6 +262,7 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       approvedCells={approvedCells}
       onCellClick={onCellClick}
       fullscreen={isFull}
+      exportRef={isFull ? fullGrid : inlineGrid}
       phoneFit {...phoneGrid}
     />
   );
@@ -454,6 +478,71 @@ export default function Zagruzka() {
     };
   }, [brigadirs]);
 
+  // ── «Excel» on every table, each its own file ──
+  // A table builds its own grid — what it shows and how: its rows in screen
+  // order, its summary mode, its view, every cell's band colour — and this
+  // adds the words around it (the title, the period and scope on screen, when
+  // the file was made) and sends it (utils/gridExport.js). The scope is read
+  // through a ref so the one callback stays stable for the memoised tables.
+  const [exportingKey, setExportingKey] = useState(null);
+  const exportCtx = useRef(null);
+  useEffect(() => {
+    exportCtx.current = {
+      t, toast, dateFrom, dateTo, factorySection, shift, supValue, supOptions, brigadirIds,
+      days: heatmap?.dates,
+    };
+  });
+  // `(grid, { table, title })` — every table hands over its grid, its key and
+  // its own title.
+  const exportTable = useCallback(async (grid, { table: which, title } = {}) => {
+    const c = exportCtx.current;
+    if (!grid || !c) return;
+    const tt = c.t;
+    // The period is the one the tables were served — their own first and last
+    // day — and the picker's only where no payload has landed yet.
+    const fmt = (iso) => (iso ? iso.split("-").reverse().join(".") : "");
+    const from = c.days?.[0] || fmt(c.dateFrom);
+    const to = c.days?.[c.days.length - 1] || fmt(c.dateTo);
+    const label = (id) => c.supOptions.find((o) => o.value === String(id))?.label;
+    const sup = c.supValue !== "All"
+      ? (label(c.supValue) || "")
+      : c.brigadirIds.length > 1
+        ? c.brigadirIds.map(label).filter(Boolean).join(", ")
+        : tt("tasks.allSupervisors");
+    const scope = [
+      `${tt("zagruzka.xl.period")}: ${from} — ${to}`,
+      ...(c.factorySection
+        ? [`${tt("zagruzka.xl.factory")}: ${c.factorySection.active ? c.factorySection.display : tt("factory.all")}`]
+        : []),
+      `${tt("filter.shift")}: ${c.shift != null ? `S${c.shift}` : tt("filter.all")}`,
+      `${tt("tasks.colSupervisor")}: ${sup}`,
+    ].join("   ·   ");
+    const made = new Date().toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+    setExportingKey(which);
+    try {
+      const where = await postGridXlsx(grid, {
+        title, table: which,
+        lines: [scope, `${tt("zagruzka.xl.generated")}: ${made}`],
+        filename: `${title} ${from}–${to}.xlsx`,
+        caption: `📊 ${title} · ${from} — ${to}`,
+      });
+      c.toast.success(tt(where === "download" ? "zagruzka.xl.downloaded" : "zagruzka.xl.sentToChat"));
+    } catch (e) {
+      const why = e?.response?.data?.detail;
+      c.toast.error(typeof why === "string" && why
+        ? `${tt("zagruzka.xl.failed")}: ${why}`
+        : tt("zagruzka.xl.failed"));
+    } finally {
+      setExportingKey(null);
+    }
+  }, []);
+  // The fleet heatmap's inline and fullscreen grids keep their own sort and
+  // statistic, so each header exports the grid it sits on.
+  const fleetInline = useRef(null);
+  const fleetFull = useRef(null);
+  const fleetTitle = `${t("zagruzka.fleetHeatmap")} — ${t(`zagruzka.mode.${heatmapMode}`)}`;
+  const canExport = !hmLoading && !!heatmap?.managers?.length;
+
   // One comparison table, inline or fullscreen. The tables differ only in the
   // arithmetic they read (`basis`), the bands they paint with and their words,
   // so one set of props serves all three and they cannot drift apart. The
@@ -474,10 +563,12 @@ export default function Zagruzka() {
       {...(which === "full" ? { calcFactors, onCalcFactorsChange: setCalcFactors } : {})}
       onEditBands={editBands(which)}
       columnSummary
+      pooledAvg
       title={t(COMPARISON[which].title)}
       note={t(COMPARISON[which].note)}
       fullscreen={isFull}
       onToggleFullscreen={isFull ? fullToggle.close : fullToggle.open[which]}
+      onExport={exportTable}
       phoneFit {...phoneGrid}
     />
   );
@@ -581,13 +672,16 @@ export default function Zagruzka() {
           fullscreen={false}
           onToggleFullscreen={() => setOpenFull("heatmap")}
           onEditBands={editBands("load")}
+          onExport={() => exportTable(fleetInline.current?.build(), { table: "load", title: fleetTitle })}
+          exporting={exportingKey === "load"}
+          canExport={canExport}
           phone={isMobile}
           t={t}
         />
         {hmLoading ? bleed(isMobile,
           <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} phoneFit {...phoneGrid} />,
         ) : heatmap?.managers?.length ? bleed(isMobile,
-          <HeatmapChart dates={heatmap.dates} managers={heatmap.managers} data={heatmap.data} mode={heatmapMode} managerIds={managerIds} segments={segments} commentedCells={commentedCells} approvedCells={approvedCells} onCellClick={handleCellClick} phoneFit {...phoneGrid} />,
+          <HeatmapChart dates={heatmap.dates} managers={heatmap.managers} data={heatmap.data} mode={heatmapMode} managerIds={managerIds} segments={segments} commentedCells={commentedCells} approvedCells={approvedCells} onCellClick={handleCellClick} exportRef={fleetInline} phoneFit {...phoneGrid} />,
         ) : (
           <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
         )}
@@ -612,6 +706,9 @@ export default function Zagruzka() {
               fullscreen={true}
               onToggleFullscreen={() => setOpenFull(null)}
               onEditBands={editBands("load")}
+              onExport={() => exportTable(fleetFull.current?.build(), { table: "load", title: fleetTitle })}
+              exporting={exportingKey === "load"}
+              canExport={canExport}
               phone={isMobile}
               t={t}
             />
@@ -633,6 +730,7 @@ export default function Zagruzka() {
                 approvedCells={approvedCells}
                 onCellClick={handleCellClick}
                 fullscreen
+                exportRef={fleetFull}
                 phoneFit {...phoneGrid}
               />
             ) : (
@@ -660,6 +758,7 @@ export default function Zagruzka() {
         onEditBands={editBands("fulfil")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick.fulfil}
+        onExport={exportTable} exporting={exportingKey === "fulfil"}
         full={openFull === "fulfil"} setOpenFull={setOpenFull} t={t} phone={isMobile}
         skDates={skDates} skRows={skRows}
       />
@@ -672,6 +771,7 @@ export default function Zagruzka() {
         onEditBands={editBands("eff")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick.eff}
+        onExport={exportTable} exporting={exportingKey === "eff"}
         full={openFull === "eff"} setOpenFull={setOpenFull} t={t} phone={isMobile}
         skDates={skDates} skRows={skRows}
       />
