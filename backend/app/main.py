@@ -39,6 +39,7 @@ from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi
+from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -243,8 +244,11 @@ async def lifespan(app: FastAPI):
     run(migrate_cells_leaders_columns)
     # The proof reviewer's single sealed Gemini key becomes a row of the
     # saved-key store (services/ai_review), once.
-    from app.startup import adopt_legacy_ai_key
-    run(adopt_legacy_ai_key)
+    # Every feature that calls an AI gets the key + model it ran on before the
+    # per-feature «AI kalitlari» tab (once; services/ai_features.seed). Schema
+    # phase: the reviewer, the assistant and the decks resolve through it.
+    from app.startup import seed_ai_features
+    run(seed_ai_features)
     run(migrate_cell_supervisor_column)
     run(migrate_cell_in_load_column)
     # Every cell of a unit whose загрузка is calculated starts ON (once).
@@ -1212,6 +1216,9 @@ app.include_router(verifix_explore.router)
 # user's work THROUGH their own session (services/assistant_api.py), so it can
 # never reach further than the person typing. Page key `assistant`.
 app.include_router(assistant.router)
+# «AI kalitlari» — every AI API key, and which key + model each feature runs
+# on (services/ai_keys, services/ai_features). Admin-only, not grantable.
+app.include_router(ai_admin_router.router)
 
 
 @app.get("/health")

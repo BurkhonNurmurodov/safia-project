@@ -176,7 +176,7 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
             </p>
           )}
           <Composer ref={composer} onSend={send} running={running}
-            onStop={() => run && A.cancel(run.id)} disabled={!configured}
+            onStop={() => run && A.cancel(run.id)} disabled={!configured} voiceOn={A.me?.voice !== false}
             autoFocus={variant === "panel"} />
           <p className="text-[11px] mt-1.5 text-center" style={{ color: "var(--text-3)" }}>
             {t("assistant.footnote")}
@@ -229,7 +229,7 @@ function NotConfigured({ onConfigure, canConfigure }) {
         {t(canConfigure ? "assistant.noKey.admin" : "assistant.noKey.user")}
       </p>
       {canConfigure && onConfigure && (
-        <Button className="mt-4" size="lg" onClick={onConfigure}>{t("assistant.settings.open")}</Button>
+        <Button className="mt-4" size="lg" onClick={onConfigure}>{t("assistant.noKey.open")}</Button>
       )}
     </div>
   );

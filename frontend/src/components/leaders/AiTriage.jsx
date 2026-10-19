@@ -3,11 +3,11 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, ChevronDown, Undo2, Keyboard, X, Gauge,
-  ClipboardCheck, Flag, SearchX, Settings2, Gavel, RotateCcw,
+  ClipboardCheck, Flag, SearchX, Gavel, RotateCcw,
   ImageOff, MinusCircle,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import Button from "../ui/Button";
-import Modal from "../ui/Modal";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { SectionHead } from "../ui/DataTable";
@@ -16,7 +16,6 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { QueuePhoto } from "./ProofPhoto";
-import KeySetup from "./AiKeys";
 import api from "../../utils/api";
 
 /* ══ AI proof review ══════════════════════════════════════════════════════════
@@ -162,7 +161,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   const [photoIx, setPhotoIx] = useState(0);
   const [zoom, setZoom] = useState(null);       // object URL of the enlarged photo
   const [keysOpen, setKeysOpen] = useState(false);
-  const [cfgOpen, setCfgOpen] = useState(false);
+  const navigate = useNavigate();
   // The last dispatch, kept until the next one so Z can put it back. Only one
   // deep on purpose: an undo stack nobody can see is a worse promise than a
   // single step everybody understands.
@@ -430,7 +429,22 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
     );
   }
 
-  if (data && !data.enabled) return <KeySetup T={T} qc={qc} />;
+  // Switched off: the reviewer has no AI key. Keys and models are chosen on
+  // the admin «AI kalitlari» tab and nowhere else (from 2026-10-19), so this
+  // only says so and points there.
+  if (data && !data.enabled) {
+    return (
+      <div className="rounded-2xl overflow-hidden max-w-2xl"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead icon={Sparkles} title={T.aiOffTitle} />
+        <div className="p-4 flex flex-col items-start gap-3">
+          <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>{T.aiOffBody}</p>
+          <Button size="lg" variant="primary" icon={<Sparkles size={14} />}
+            onClick={() => navigate("/admin/upload?tab=aikeys")}>{T.aiOpenKeys}</Button>
+        </div>
+      </div>
+    );
+  }
 
   // Every tab counts the whole scanned set inside the OTHER filters — the
   // strip's own pick excluded — so the tabs stay a way back out of a narrow
@@ -569,17 +583,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
             {T.aiUndo}
           </Button>
         )}
-        {/* Key + model, reachable WITH a key configured. The setup card only
-            ever rendered in the disabled state, so once a key existed there
-            was no way to rotate it, clear it or see which one was in use —
-            and swapping to a different billing account is exactly the errand
-            an operator has when a spend cap stops the queue. */}
-        {/* Named on a phone: there the button wraps onto a row of its own,
-            and a lone unlabelled glyph under the actions reads as debris. */}
-        <Button size="lg" variant="ghost" icon={<Settings2 size={15} />}
-          title={T.aiSettings} aria-label={T.aiSettings} onClick={() => setCfgOpen(true)}>
-          <span className="sm:hidden">{T.aiSettings}</span>
-        </Button>
         {/* Shortcut chrome only exists where a keyboard does — on a phone this
             button answered a question nobody there can act on. */}
         {/* `max-lg:hidden`, never `hidden lg:inline-flex`: Button carries its
@@ -599,12 +602,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
 
       {keysOpen && <KeyLegend T={T} />}
 
-      {cfgOpen && (
-        <Modal open onClose={() => setCfgOpen(false)} title={T.aiSettings}
-          icon={Sparkles} maxWidth="max-w-2xl">
-          <KeySetup T={T} qc={qc} embedded />
-        </Modal>
-      )}
 
       {!cur ? (
         /* THREE different emptinesses, and reading one as another is the trap.

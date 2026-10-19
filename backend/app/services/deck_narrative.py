@@ -1,4 +1,5 @@
-"""The prose half of the weekly Ojidaniya deck, written by Gemini.
+"""The prose half of the weekly Ojidaniya deck, written by the AI the
+«AI kalitlari» tab gives it (feature `deck_ojidaniya` — Gemini or Claude).
 
 Nine slots on eight slides are prose by nature — an executive summary, a
 week-over-week read, the «asosiy dard» under each brigadir, the «ildiz» under
@@ -7,7 +8,7 @@ sentences, and a deck without them is a stack of bar charts.
 
 Three rules the whole module is built on:
 
-**Gemini never rewrites a note.** A leader's note is the recorded evidence of
+**The model never rewrites a note.** A leader's note is the recorded evidence of
 what happened on a shift; a paraphrase of it is something the register does not
 say, and somebody acts on the paraphrase. So the notes go in as read-only
 material and the model's job is the SYNTHESIS around them — what these events
@@ -28,8 +29,10 @@ import concurrent.futures
 import json
 import logging
 
-from app.services import gemini
+from app.services import ai_features
 from app.translit import transliterate
+
+FEATURE = "deck_ojidaniya"
 
 log = logging.getLogger(__name__)
 
@@ -246,19 +249,20 @@ MA'LUMOT:
 
 
 def write(data: dict) -> dict | None:
-    """The deck's prose, or None if Gemini could not produce it.
+    """The deck's prose, or None if the AI could not produce it — on the key
+    and model the «AI kalitlari» tab gives this deck (`deck_ojidaniya`).
 
     Never raises: the caller ships the deck either way, with the slots marked
     unavailable. A deck that fails to download because a third-party API had a
     bad minute is a worse outcome than a deck with plain commentary.
     """
-    if not gemini.available():
-        log.warning("DECK narrative skipped — no Gemini key configured")
+    if not ai_features.available(FEATURE):
+        log.warning("DECK narrative skipped — no AI key chosen for it")
         return None
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     # The prompt is built INSIDE the job, so a failure there surfaces through
     # `result()` and is caught below like any other — `write()` never raises.
-    job = pool.submit(lambda: gemini.generate_json(_prompt(data), [], _SCHEMA))
+    job = pool.submit(lambda: ai_features.generate_json(FEATURE, _prompt(data), [], _SCHEMA))
     try:
         out = job.result(timeout=BUDGET_S)
     except concurrent.futures.TimeoutError:

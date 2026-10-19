@@ -110,8 +110,6 @@ SOURCES = ("telegram", "web", "bot", "system", "assistant")
 # that quietly loses whole features.
 
 _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
-    # ── «Yordamchi» — the assistant's own Gemini key (the chats are skipped) ──
-    (("PUT",),    "/api/assistant/settings",                   "config", "config.assistant_key_set"),
     # ── attendance & the day ──────────────────────────────────────────────────
     (("POST",),   "/api/attendance-batch/verifix",             "attendance", "attendance.verifix_read"),
     (("DELETE",), "/api/attendance-batch/uploads/{}",          "attendance", "attendance.batch_file_removed"),
@@ -476,12 +474,14 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/translations",                   "config", "config.translation_saved"),
     (("POST",),   "/api/admin/translations/keys",              "config", "config.translation_key_added"),
     (("POST",),   "/api/admin/translations/languages",         "config", "config.language_added"),
-    (("POST",),   "/api/leader-ai/model",                      "config", "config.ai_model_set"),
-    (("POST",),   "/api/leader-ai/key",                        "config", "config.ai_key_set"),
-    (("POST",),   "/api/leader-ai/keys/{}/test",               "config", "config.ai_key_tested"),
-    (("POST",),   "/api/leader-ai/keys",                       "config", "config.ai_key_added"),
-    (("DELETE",), "/api/leader-ai/keys/{}",                    "config", "config.ai_key_deleted"),
-    (("PUT",),    "/api/leader-ai/active",                     "config", "config.ai_active_set"),
+    # The «AI kalitlari» tab (routers/ai_admin.py): every AI key, and which
+    # key + model each feature runs on. The value never reaches a row — the
+    # provider, the last four characters and the LENGTH do.
+    (("POST",),   "/api/admin/ai/keys/{}/test",                "config", "config.ai_key_tested"),
+    (("POST",),   "/api/admin/ai/keys",                        "config", "config.ai_key_added"),
+    (("PUT",),    "/api/admin/ai/keys/{}",                     "config", "config.ai_key_renamed"),
+    (("DELETE",), "/api/admin/ai/keys/{}",                     "config", "config.ai_key_deleted"),
+    (("PUT",),    "/api/admin/ai/features/{}",                 "config", "config.ai_feature_set"),
     (("PUT",),    "/api/admin/verifix",                        "config", "config.verifix_saved"),
 
     # ── the danger zone ───────────────────────────────────────────────────────

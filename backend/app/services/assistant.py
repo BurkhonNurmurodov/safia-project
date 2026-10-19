@@ -3,8 +3,9 @@
 It answers anything about the platform and does the user's work, the way the
 operator decided it, point by point:
 
-* **Gemini's latest Pro** (``assistant_gemini.MODEL``), on a key of its own
-  that falls back to the proof reviewer's.
+* **The AI the «AI kalitlari» tab gives it** (feature «assistant»: Gemini or
+  Claude, any key, any model — ``services/assistant_ai``); a run stays on the
+  model it started on, and is flattened to text if the tab moves it.
 * **As the user, never beyond them.** Every read and change goes through
   ``assistant_api.call`` — an ordinary request to an ordinary endpoint with the
   user's own session. An «open as» tab acts as that profile.
@@ -37,7 +38,7 @@ from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantT
 from app.services import assistant_api as api
 from app.services import assistant_docs as docs
 from app.services import assistant_files as files
-from app.services import assistant_gemini as ai
+from app.services import assistant_ai as ai
 
 log = logging.getLogger(__name__)
 
@@ -358,7 +359,10 @@ unless the user asked for code.
 
 def _system(ctx: Ctx, context: dict) -> str:
     p = ctx.payload
-    now = datetime.now(TZ)
+    # The run's own «now», frozen when it started: a Claude thinking signature
+    # is bound to the system prompt it was written under, so the prompt must
+    # be the same text again when the run resumes after a Confirm.
+    now = (context or {}).get("_now") or datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
     who = [f"Name: {p.get('full_name') or '?'}",
            f"Role: {_ROLE_WORDS.get(p.get('role'), p.get('role') or '?')}"]
     if p.get("imp"):
@@ -383,7 +387,7 @@ def _system(ctx: Ctx, context: dict) -> str:
         "THE USER",
         *who,
         f"UI language: {lang}",
-        f"Now: {now:%Y-%m-%d %H:%M} (Tashkent). Shift 1 runs by day, shift 2 by night "
+        f"Now: {now} (Tashkent). Shift 1 runs by day, shift 2 by night "
         "(a night belongs to the date it started).",
         "",
         "WHAT THEY ARE LOOKING AT",
@@ -522,21 +526,33 @@ async def drive(run_id: int, ctx: Ctx) -> None:
         state = await _db(_load, run_id)
         if state is None:
             return
-        contents, usage, context = state
+        contents, usage, context, run_model = state
+        if not context.get("_now"):
+            context["_now"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+            await _db(_save, run_id, run={"context": context})
         system = _system(ctx, context)
         steps_used = sum(1 for c in contents if c.get("role") == "model")
         while True:
             if await _db(_cancel_asked, run_id):
                 await _db(_finish, run_id, "cancelled", msg={"status": "stopped"})
                 return
+            # The tab's pick NOW (cached): moved onto another model mid-run,
+            # the transcript is flattened once — another model's thinking
+            # signatures and tool blocks are not accepted back.
+            a = await asyncio.to_thread(ai.current)
+            if a.model and run_model and a.model != run_model:
+                log.info("assistant run %s: moved from %s to %s — transcript flattened",
+                         run_id, run_model, a.model)
+                contents = ai.transcode(contents)
+            run_model = a.model or run_model
             over = steps_used >= MAX_STEPS or (time.monotonic() - started) > RUN_WALL_S
             if over:
                 _append_text(contents, "You have used all the steps this request "
                              "allows. Answer now with what you have, and say what is missing.")
-            await _db(_save, run_id, run={"contents": contents, "usage": usage},
+            await _db(_save, run_id, run={"contents": contents, "usage": usage, "model": run_model},
                       msg={"thinking": True})
-            reply = await ai.generate(system=system, contents=contents,
-                                      tools=None if over else TOOLS)
+            reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
+                                      mode="NONE" if over else "AUTO")
             steps_used += 1
             usage = _usage_add(usage, reply.usage)
             contents.append(reply.content)
@@ -599,7 +615,7 @@ def _load(db, run_id: int):
     r = db.get(AssistantRun, run_id)
     if r is None or r.status not in ACTIVE:
         return None
-    return list(r.contents or []), dict(r.usage or {}), dict(r.context or {})
+    return list(r.contents or []), dict(r.usage or {}), dict(r.context or {}), r.model
 
 
 def _cancel_asked(db, run_id: int) -> bool:

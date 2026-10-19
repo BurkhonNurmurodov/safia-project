@@ -228,6 +228,10 @@ try:
     add_profiles_columns()
     migrate_cells_table()
     migrate_cells_leaders_columns()
+    # Every feature that calls an AI gets the key + model it ran on before the
+    # per-feature «AI kalitlari» tab (once; services/ai_features.seed).
+    from app.startup import seed_ai_features
+    seed_ai_features()
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     # Every cell of a unit whose загрузка is calculated starts ON (once).

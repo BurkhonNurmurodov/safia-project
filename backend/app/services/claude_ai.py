@@ -1,6 +1,6 @@
 """Claude (Anthropic) transport for the proof reviewer — vision + JSON, nothing else.
 
-The twin of `gemini.py` behind `ai_review.generate_json`: the same contract
+The twin of `gemini.py` behind `ai_features.generate_json`: the same contract
 (prompt + images + a Gemini-dialect schema → one dict) and the SAME two error
 classes — `gemini.GeminiError` (this row's own failure) and
 `gemini.GeminiQuotaError` (stop the drain, leave the row pending) — so
@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 # The curated picker list, newest generation first. `id` is the exact model id
 # the API takes (never a date suffix). A key's LIVE list (`list_models`) is
-# laid over it by `ai_review.model_options`, so a model the key can reach but
+# laid over it by `ai_keys.model_options`, so a model the key can reach but
 # this list does not name is still offered.
 MODELS = (
     {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "note": "recommended"},
@@ -111,34 +111,56 @@ def _image_block(raw: bytes, mime: str) -> dict:
                        "data": base64.b64encode(data).decode()}}
 
 
-def _raise_mapped(exc):
-    """Map an SDK exception onto the reviewer's two error classes — the exact
-    split `gemini.generate_json` makes: 429 and 5xx stop the drain and leave
-    the row pending; anything else is this row's own failure."""
+def mapped(exc):
+    """An SDK exception as the reviewer's error classes — the exact split
+    `gemini.generate_json` makes: 429 and 5xx stop the drain and leave the
+    row pending; anything else is this row's own failure. `kind` names it for
+    the «AI kalitlari» tab (services/ai_features)."""
     import anthropic
 
     if isinstance(exc, anthropic.RateLimitError):
-        raise GeminiQuotaError(f"Claude 429: {_msg(exc)}") from exc
+        return GeminiQuotaError(f"Claude 429: {_msg(exc)}")
     if isinstance(exc, anthropic.APIStatusError):
         code = exc.status_code
         if code >= 500:
-            raise GeminiQuotaError(f"Claude {code}: {_msg(exc)}") from exc
+            return GeminiQuotaError(f"Claude {code}: {_msg(exc)}", kind="unavailable")
         if code in (401, 403):
-            raise GeminiAuthError(f"Claude {code}: {_msg(exc)}") from exc
-        raise GeminiError(f"Claude {code}: {_msg(exc)}") from exc
+            return GeminiAuthError(f"Claude {code}: {_msg(exc)}")
+        text = _msg(exc)
+        if code == 404:
+            return GeminiError(f"Claude 404: {text}", kind="model")
+        if "credit balance" in text.lower():
+            return GeminiError(f"Claude {code}: {text}", kind="credit")
+        return GeminiError(f"Claude {code}: {text}")
     if isinstance(exc, anthropic.APIConnectionError):
-        raise GeminiError(f"Claude unreachable: {_msg(exc)}") from exc
-    raise GeminiError(f"Claude: {_msg(exc)}") from exc
+        return GeminiError(f"Claude unreachable: {_msg(exc)}", kind="network")
+    return GeminiError(f"Claude: {_msg(exc)}")
+
+
+def _raise_mapped(exc):
+    raise mapped(exc) from exc
+
+
+def meter_usage(meter: dict | None, usage) -> None:
+    """Fill a caller's meter from Claude's `usage`: tokens IN (the prompt,
+    cached reads and writes included) and OUT (thinking is billed as output)."""
+    if meter is None or usage is None:
+        return
+    g = (lambda k: int(getattr(usage, k, None) or (usage.get(k) if isinstance(usage, dict) else 0) or 0))
+    meter["in"] = (g("input_tokens") + g("cache_creation_input_tokens")
+                   + g("cache_read_input_tokens"))
+    meter["out"] = g("output_tokens")
 
 
 def generate_json(prompt: str, images: list[tuple[bytes, str]], schema: dict, *,
-                  model: str, api_key: str) -> dict:
+                  model: str, api_key: str, meter: dict | None = None) -> dict:
     """One vision call constrained to `schema`. Returns the parsed object.
-    Raises GeminiQuotaError / GeminiError exactly as the Gemini transport does."""
+    Raises GeminiQuotaError / GeminiError exactly as the Gemini transport does.
+    `meter`, when given, receives the tokens spent."""
     import anthropic
 
     if not api_key:
-        raise GeminiError("No Claude API key configured")
+        raise GeminiError("No Claude API key configured", kind="no_key")
     content: list[dict] = [_image_block(raw, mime) for raw, mime in images]
     content.append({"type": "text", "text": prompt})
     try:
@@ -154,19 +176,38 @@ def generate_json(prompt: str, images: list[tuple[bytes, str]], schema: dict, *,
     except anthropic.AnthropicError as exc:
         _raise_mapped(exc)
 
+    meter_usage(meter, getattr(res, "usage", None))
     if res.stop_reason == "refusal":
         cat = getattr(getattr(res, "stop_details", None), "category", None)
-        raise GeminiError(f"Declined by Claude's safety classifier ({cat or 'unspecified'})")
+        raise GeminiError(f"Declined by Claude's safety classifier ({cat or 'unspecified'})",
+                          kind="bad_response")
     text = "".join(b.text for b in res.content if getattr(b, "type", "") == "text")
     if not text.strip():
-        raise GeminiError(f"Empty response (stop={res.stop_reason})")
+        raise GeminiError(f"Empty response (stop={res.stop_reason})", kind="bad_response")
     try:
         out = json.loads(text)
     except ValueError as exc:
-        raise GeminiError(f"Response was not JSON (stop={res.stop_reason}): {exc}") from exc
+        raise GeminiError(f"Response was not JSON (stop={res.stop_reason}): {exc}",
+                          kind="bad_response") from exc
     if not isinstance(out, dict):
-        raise GeminiError("Response JSON was not an object")
+        raise GeminiError("Response JSON was not an object", kind="bad_response")
     return out
+
+
+def ping(api_key: str, model: str) -> None:
+    """One tiny real call — proves THIS key may call THIS model before a
+    feature is moved onto the pair (`ai_features.assign`). The answer itself
+    is not read: any 200 (even one cut short by max_tokens) is a yes."""
+    import anthropic
+
+    try:
+        _client(api_key).messages.create(
+            model=model, max_tokens=1024,
+            messages=[{"role": "user", "content": "Reply with the single word OK."}],
+            output_config={"effort": "low"},
+        )
+    except anthropic.AnthropicError as exc:
+        _raise_mapped(exc)
 
 
 def list_models(api_key: str) -> list[dict]:

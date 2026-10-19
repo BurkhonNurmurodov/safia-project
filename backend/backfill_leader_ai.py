@@ -209,7 +209,7 @@ def main() -> int:
         from app.config import settings
         from app.database import SessionLocal
         from app.models import LeaderAiReview, LeaderTaskDef, RoleProfile
-        from app.services import gemini, leader_ai
+        from app.services import ai_review, gemini, leader_ai
     except ImportError as exc:
         print(f"{st.red}Cannot import the app ({exc}).{st.off}\n"
               f"Run this from the backend/ directory, with the Python App's "
@@ -227,17 +227,18 @@ def main() -> int:
         # Built as plain strings, not nested f-strings: quoting an f-string's
         # own quote inside it needs Python 3.12+, and the cPanel Python App may
         # be older than that.
-        keyless = "" if gemini.available() else st.red + "   (no GEMINI_API_KEY!)" + st.off
+        keyless = "" if ai_review.available() else st.red + "   (no AI key chosen!)" + st.off
         stuck = f" ({counts['stuck']} out of retries)" if counts.get("stuck") else ""
         print(f"{st.bold}AI proof review — backfill{st.off}")
-        print(f"  model        {gemini.active_model()}{keyless}")
+        print(f"  model        {ai_review.active_model() or '—'}{keyless}")
         print(f"  queue        {counts['pending']} pending · {counts['ok']} ok · "
               f"{counts['flagged']} flagged · {counts['error']} errors{stuck}")
         if args.stats:
             return 0
 
-        if not gemini.available():
-            print(f"\n{st.red}GEMINI_API_KEY is not set — add it to backend/.env.{st.off}")
+        if not ai_review.available():
+            print(f"\n{st.red}The proof checker has no AI key — choose one on the "
+                  f"admin «AI kalitlari» tab.{st.off}")
             return 2
 
         # ── claim the drain slot ─────────────────────────────────────────────
@@ -307,7 +308,7 @@ def main() -> int:
             return 0
 
         if not args.yes and _TTY:
-            ans = input(f"\nReview {len(ids)} item(s) with {gemini.active_model()}? [y/N] ")
+            ans = input(f"\nReview {len(ids)} item(s) with {ai_review.active_model()}? [y/N] ")
             if ans.strip().lower() not in ("y", "yes"):
                 print("Cancelled.")
                 return 1

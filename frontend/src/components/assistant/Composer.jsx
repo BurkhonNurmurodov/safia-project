@@ -20,7 +20,7 @@ let seq = 0;
  * assistant is working. Files can be picked, dropped or pasted; one that is
  * refused stays as a red tile saying why.
  */
-const Composer = forwardRef(function Composer({ onSend, running, onStop, disabled, autoFocus }, ref) {
+const Composer = forwardRef(function Composer({ onSend, running, onStop, disabled, autoFocus, voiceOn = true }, ref) {
   const { lang } = useLang();
   const t = useAT();
   const [text, setText] = useState("");
@@ -31,7 +31,9 @@ const Composer = forwardRef(function Composer({ onSend, running, onStop, disable
   const taRef = useRef(null);
   const pickRef = useRef(null);
   const rec = useVoiceRecorder();
-  const canVoice = voiceSupported();
+  // The mic shows only where the platform can listen: a device that records,
+  // and a voice key chosen on the admin «AI kalitlari» tab.
+  const canVoice = voiceSupported() && voiceOn;
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
@@ -120,8 +122,8 @@ const Composer = forwardRef(function Composer({ onSend, running, onStop, disable
       const ok = await submit({ text: said, attachments: ready.map((f) => f.id), voice: { seconds: out.seconds } });
       if (ok !== false) setFiles([]);
       else setText(said);
-    } catch {
-      setVoiceErr(t("assistant.voice.failed"));
+    } catch (e) {
+      setVoiceErr(t(e?.response?.data?.detail === "no_key" ? "assistant.voice.noKey" : "assistant.voice.failed"));
     } finally {
       setTranscribing(false);
     }

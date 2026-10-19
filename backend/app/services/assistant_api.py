@@ -53,8 +53,8 @@ _HIDDEN_PREFIXES = (
     "/api/translations", "/api/education/seen/", "/api/education/progress",
     "/api/education/resolve", "/api/version", "/health", "/docs", "/openapi",
     # Reads that are not data: the database-dump inventory, a raw Telegram file
-    # fetcher that takes any file id, the reviewer's key card.
-    "/admin/db-dump", "/admin/tg-file", "/api/leader-ai/key",
+    # fetcher that takes any file id, the «AI kalitlari» tab.
+    "/admin/db-dump", "/admin/tg-file", "/api/admin/ai",
 )
 
 # A file the page itself would hand over. Reading, not changing.
@@ -85,7 +85,7 @@ _RULES: list[tuple[Optional[tuple[str, ...]], str, str]] = [
     (("POST",), r"/api/admin/logs/[^/]+/undo", "blocked:danger"),
     (None, r"/admin/delete-attendance", "blocked:delete"),
     # — logins, keys and platform-wide settings —
-    (None, r"/api/leader-ai/(key|keys|model|active)(/.*)?", "blocked:credentials"),
+    (None, r"/api/admin/ai(/.*)?", "blocked:credentials"),
     (None, r"/api/admin/verifix(/.*)?", "blocked:credentials"),
     # The Verifix sync's ties, taps and mode move people, cells and access.
     (None, r"/api/admin/verifix-sync(/.*)?", "blocked:people_access"),

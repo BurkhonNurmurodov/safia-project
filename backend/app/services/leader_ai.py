@@ -1839,8 +1839,11 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         # and an in-app date says nothing about it.
         screen_dates=checked and dayed and not timed,
     )
+    # Resolved ONCE: the verdict is stamped with the model that answered it,
+    # even when an admin moves the reviewer onto another pair mid-call.
+    assign = ai_review.active()
     try:
-        out = ai_review.generate_json(prompt, examples + images, _SCHEMA)
+        out = ai_review.generate_json(prompt, examples + images, _SCHEMA, assign=assign)
     except gemini.GeminiQuotaError:
         # Leave it pending and give the attempt back — the row never got a
         # verdict, and a capped queue head would strand the whole backlog.
@@ -1888,7 +1891,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     for l in LANGS:
         setattr(rev, f"reason_{l}", (out.get(f"reason_{l}") or "").strip()[:1500] or None)
     rev.photos = len(images)
-    rev.model = ai_review.active_model()
+    rev.model = assign.model or ai_review.active_model()
     rev.error = None
     rev.reviewed_at = datetime.now(timezone.utc)
     db.commit()
@@ -4235,19 +4238,19 @@ STALL_SETTING = "leader_ai_stall_alert"
 WATCH_EVERY_MIN = 20
 
 _STALL_WHY = {
-    "no_key":  "Gemini API kaliti sozlanmagan — tekshiruv o'chiq.",
-    "quota":   "Gemini so'rovlarni limit (kvota) bilan rad etmoqda.",
-    "api":     "Gemini har bir so'rovni xato bilan rad etmoqda.",
+    "no_key":  "Tekshiruvga AI kaliti tanlanmagan — tekshiruv o'chiq.",
+    "quota":   "AI so'rovlarni limit (kvota) bilan rad etmoqda.",
+    "api":     "AI har bir so'rovni xato bilan rad etmoqda.",
     "crashed": "Tekshiruv jarayoni xato bilan to'xtadi.",
     "refused": "Tekshiruvni ishga tushirish rad etildi — qulf band.",
     "silent":  "Tekshiruv boshlangan, lekin javob bermayapti.",
     "idle":    "Tekshiruvni hech narsa ishga tushirmadi.",
 }
 _STALL_DO = {
-    "no_key":  "Admin panel → AI kartasida kalitni kiriting.",
-    "quota":   ("AI Studio'da limit va to'lovni tekshiring yoki AI kartasida "
-                "modelni almashtiring."),
-    "api":     "AI Studio'da API kalitini, to'lovni va modelni tekshiring.",
+    "no_key":  "Admin panel → Vositalar → «AI kalitlari»da tekshiruvga kalit tanlang.",
+    "quota":   ("Provayderda limit va to'lovni tekshiring yoki «AI kalitlari»da "
+                "boshqa kalit yoki modelni tanlang."),
+    "api":     "«AI kalitlari»da kalitni, modelni va provayderdagi to'lovni tekshiring.",
     "crashed": "Xato matnini dasturchiga yuboring.",
     "refused": "Boshqa tekshiruv jarayoni ishlayaptimi — tekshiring.",
     "silent":  "Serverni qayta ishga tushirish (deploy) jarayonni tiklaydi.",

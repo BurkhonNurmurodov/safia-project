@@ -1,10 +1,9 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { History, Settings } from "lucide-react";
+import { History } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Chat from "../components/assistant/Chat";
 import ThreadList from "../components/assistant/ThreadList";
-import AssistantSettings from "../components/assistant/AssistantSettings";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import useAT from "../components/assistant/useAT";
 import { useAssistant } from "../context/AssistantContext";
@@ -18,7 +17,6 @@ export default function Assistant() {
   const t = useAT();
   const A = useAssistant();
   const navigate = useNavigate();
-  const [settings, setSettings] = useState(false);
   const [phoneList, setPhoneList] = useState(false);
   const box = useRef(null);
   const [height, setHeight] = useState(null);
@@ -56,14 +54,6 @@ export default function Assistant() {
             <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
               {t("assistant.history")}
             </p>
-            {A.me?.can_configure && (
-              <button type="button" onClick={() => setSettings(true)}
-                aria-label={t("assistant.settings.open")} title={t("assistant.settings.open")}
-                className="w-8 h-8 max-sm:w-10 max-sm:h-10 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)]"
-                style={{ color: "var(--text-3)" }}>
-                <Settings size={16} />
-              </button>
-            )}
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             <ThreadList onPick={() => setPhoneList(false)} />
@@ -80,11 +70,10 @@ export default function Assistant() {
             </button>
           </div>
           <div className="flex-1 min-h-0">
-            <Chat variant="page" onNavigate={go} onConfigure={() => setSettings(true)} />
+            <Chat variant="page" onNavigate={go} onConfigure={() => go("/admin/upload?tab=aikeys")} />
           </div>
         </section>
       </div>
-      <AssistantSettings open={settings} onClose={() => setSettings(false)} />
     </Layout>
   );
 }
