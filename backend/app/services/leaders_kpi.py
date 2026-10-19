@@ -310,6 +310,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     c_total = sum(c_sum.values())
     c_rated = c_total - c_sum["uplifted"]
     concerns = {**c_sum, "total": c_total, "rated": c_rated, "open": c_sum["doing"] + c_sum["todo"],
+                "pct0": cc.whole_pct(c_sum["done"], c_rated),
                 "no_concern_cells": sum(1 for r in rows if r["concerns"]["total"] == 0),
                 "no_pct_cells": sum(1 for r in rows if r["concerns"]["total"] and not r["concerns"]["rated"])}
     return {**base, "rows": rows, "totals": totals, "concerns": concerns, "options": options(cmap)}

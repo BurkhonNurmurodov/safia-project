@@ -5,7 +5,6 @@
 import { Trophy, ChevronRight } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
-import CellLink from "../ui/CellLink";
 import { fill } from "../../pages/leadersKpiText";
 import { ScoreChip, TotalCell } from "./KpiBits";
 import { KPI_KEYS, LIVE, MAX_POINTS, figureOf, pointsOf, pts, scoreOf, w100 } from "./kpiUtil";
@@ -55,18 +54,12 @@ export default function CellKpiModal({ T, tl, row, data, count, onClose, onExpla
       </ul>
       <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl"
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-        <div>
-          <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.cmTotal}</div>
-          <div className="text-xs" style={{ color: "var(--text-3)" }}>
-            <CellLink id={row.id}>{row.code}</CellLink> · {row.pct}%
-          </div>
-        </div>
+        <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.cmTotal}</div>
         <div className="flex items-baseline gap-1">
           <TotalCell total={row.total} max={MAX_POINTS} />
           <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>/ {MAX_POINTS}</span>
         </div>
       </div>
-      {data?.state === "open" && <p className="text-xs" style={{ color: "var(--status-warn)" }}>{T.provisional}</p>}
     </Modal>
   );
 }

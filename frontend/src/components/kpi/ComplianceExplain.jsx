@@ -80,7 +80,6 @@ export default function ComplianceExplain({ open, onClose, item, data, ym, T, tl
   const compliant = item.compliant ?? 0;
   const score = item.score ?? null;
   const points = item.points ?? null;
-  const provisional = data.state === "open";
   const peopleQ = useQuery({
     queryKey: ["cc-people", ym, item.key],
     queryFn: () => fetchPeople(ym, [item.key]),
@@ -110,10 +109,6 @@ export default function ComplianceExplain({ open, onClose, item, data, ym, T, tl
             <ScoreChip score={score} size="sm" />
             {points != null && <span className="tabular-nums">{fill(T.cpExPoints, { score, w, p: pts(points) })}</span>}
           </div>
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>
-            {rule?.mode === "exact" ? T.cpModeExact : T.cpModeAtLeast} · {rule?.no_category === "skip" ? T.cpNoCatSkip : T.cpNoCatFail}
-          </p>
-          {provisional && <p className="text-xs" style={{ color: "var(--status-warn)" }}>{T.provisional}</p>}
         </div>
       </Section>
 

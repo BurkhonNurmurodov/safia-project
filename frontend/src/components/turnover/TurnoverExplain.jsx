@@ -43,7 +43,6 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
   const score = item.score ?? null;
   // A ranking row (one owned cell) carries its KPI points; a register cell does not.
   const points = item.points ?? null;
-  const provisional = data.state === "open";
 
   const peopleQ = useQuery({
     queryKey: ["turnover-people", data.month, keys.join(",")],
@@ -100,9 +99,6 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
                 )}
               </div>
             </>
-          )}
-          {provisional && (
-            <p className="text-xs" style={{ color: "var(--status-warn)" }}>{T.provisional}</p>
           )}
         </div>
       </Section>

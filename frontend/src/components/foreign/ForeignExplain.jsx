@@ -59,7 +59,6 @@ export default function ForeignExplain({ open, onClose, item, data, T, tx, title
   const count = item.count ?? 0;
   const score = item.score ?? null;
   const points = item.points ?? null;
-  const provisional = data.state === "open";
   const rows = (data.complaints || []).filter((c) => c.cell_key === item.key);
   const counted = rows.filter((c) => c.counted === "owner" || c.counted === "no_owner");
   const other = rows.filter((c) => c.counted !== "owner" && c.counted !== "no_owner");
@@ -84,7 +83,6 @@ export default function ForeignExplain({ open, onClose, item, data, T, tx, title
               <span className="tabular-nums">{fill(T.exPoints, { score, w, p: pts(points) })}</span>
             )}
           </div>
-          {provisional && <p className="text-xs" style={{ color: "var(--status-warn)" }}>{T.provisional}</p>}
         </div>
       </Section>
 
