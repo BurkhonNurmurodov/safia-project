@@ -14,10 +14,11 @@ chat's call reaches Gemini in a second. This prints, from the box:
   3. the AI feature rows (kind of the last error, model, key hint);
   4. the network as the worker sees it: proxy variable NAMES, the addresses
      Gemini's host resolves to;
-  5. a live probe, all candidates at once: two steps of the real chat (the
-     question → a tool call → a stub result → the answer) on Gemini Flash and
-     Gemini Pro with the assistant's key, and on Claude Sonnet / Opus with the
-     reviewer's Claude key — each step timed, with its outcome.
+  5. a live probe, all candidates at once: the engine's own loop (tools
+     allowed, the rule book's real answers handed back, up to five steps) on
+     Gemini Flash with the assistant's key and on Claude Sonnet / Opus with
+     the reviewer's Claude key — each step timed, with the kinds of blocks the
+     reply held, and whether it ended in an answer.
 
 Run by `.gitea/workflows/deploy.yaml` after the health check, from `backend/`
 as `python ../deploy/diag_assistant_ai.py`. READ-ONLY on the database; its
@@ -168,20 +169,39 @@ async def probe():
     gem = chat if chat.provider == "gemini" else None
     cands = [c for c in (
         cand("Gemini Flash", gem or chat, "gemini", "gemini-flash-latest") if gem else None,
-        cand("Gemini Pro", gem or chat, "gemini", "gemini-pro-latest") if gem else None,
-        cand("Claude Sonnet 5.5", review, "claude", "claude-sonnet-5-5"),
+                cand("Claude Sonnet 5.5", review, "claude", "claude-sonnet-5-5"),
         cand("Claude Opus 5.5", review, "claude", "claude-opus-5-5"),
     ) if c]
 
-    async def two_steps(label, a):
+    from app.services import assistant_docs as docs
+
+    def tool_result(c):
+        """What the engine itself answers: the rule book for real, a stub for
+        anything that would act as a person."""
+        name, args = c.get("name"), c.get("args") or {}
+        if name == "search_docs":
+            return {"results": docs.search(str(args.get("query") or ""))}
+        if name == "read_doc":
+            return docs.read(args.get("section"), args.get("part") or 1)
+        return {"error": "not available in this probe — answer from the rule book"}
+
+    def blocks_of(r):
+        raw = (r.content or {}).get("_claude")
+        if raw:
+            return [f"{b.get('type')}({len(b.get('text') or b.get('thinking') or '')})" for b in raw]
+        return [("thought" if p.get("thought") else "call" if "functionCall" in p
+                 else f"text({len(p.get('text') or '')})") for p in (r.content or {}).get("parts") or []]
+
+    async def real_loop(label, a):
+        """The engine's own loop: tools allowed until the last step, the rule
+        book's real answers handed back, at most five steps."""
         contents = [{"role": "user", "parts": [{"text": "Zagruzka qanday hisoblanadi? Qisqa javob ber."}]}]
         t = time.monotonic()
-        for step in (1, 2):
+        for step in range(1, 6):
+            mode = "NONE" if step == 5 else "AUTO"
             s0 = time.monotonic()
             try:
-                r = await asyncio.wait_for(
-                    ai._call(a, system, contents, engine.TOOLS, "AUTO" if step == 1 else "NONE"),
-                    CALL_CAP_S)
+                r = await asyncio.wait_for(ai._call(a, system, contents, engine.TOOLS, mode), CALL_CAP_S)
             except asyncio.TimeoutError:
                 say(f"{label} step {step}: NO ANSWER within {CALL_CAP_S:.0f} s")
                 return
@@ -189,17 +209,17 @@ async def probe():
                 say(f"{label} step {step}: {type(exc).__name__} {getattr(exc, 'code', '')} after "
                     f"{time.monotonic() - s0:.1f} s — {str(getattr(exc, 'message', exc))[:300]}")
                 return
-            say(f"{label} step {step}: OK in {time.monotonic() - s0:.1f} s · finish={r.finish} "
-                f"tools={[c.get('name') for c in r.calls]} text={len(r.text)} chars")
+            say(f"{label} step {step} ({mode}): {time.monotonic() - s0:.1f} s · finish={r.finish} "
+                f"tools={[c.get('name') for c in r.calls]} text={len(r.text)} · blocks={blocks_of(r)}")
             contents.append(r.content)
             if not r.calls:
-                break
-            contents.append({"role": "user", "parts": [
-                engine._fresp(c, {"note": "Probe: the rule book is not available here — answer from "
-                                          "what you know in two sentences."}) for c in r.calls]})
-        say(f"{label}: whole answer in {time.monotonic() - t:.1f} s")
+                verdict = "ANSWERED" if r.text.strip() else "EMPTY — the chat would show «bo'sh javob»"
+                say(f"{label}: {verdict} after {step} step(s), {time.monotonic() - t:.1f} s")
+                return
+            contents.append({"role": "user", "parts": [engine._fresp(c, tool_result(c)) for c in r.calls]})
+        say(f"{label}: still calling tools after 5 steps")
 
-    await asyncio.gather(*(two_steps(label, a) for label, a in cands))
+    await asyncio.gather(*(real_loop(label, a) for label, a in cands))
 
 
 def main():
