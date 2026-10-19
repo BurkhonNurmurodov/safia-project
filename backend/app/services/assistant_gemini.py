@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -22,13 +23,16 @@ log = logging.getLogger(__name__)
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 # A Pro call with thinking can take a minute on a long context; give it room,
-# but never so much that a dead connection holds a run forever.
-_TIMEOUT = httpx.Timeout(170.0, connect=20.0)
+# but never so much that a dead connection holds a run forever. A call that
+# sent nothing for 150 s is NOT asked again — the same question thinks just as
+# long the second time and is billed twice (it cost one reply 8½ minutes) —
+# and no one call, retries included, outlasts `assistant_ai.DEADLINE_S`.
+_TIMEOUT = httpx.Timeout(150.0, connect=20.0)
 
 
 class AssistantAIError(RuntimeError):
     """An AI failure the chat must show in words. ``code`` is one of
-    no_key · quota · unavailable · rejected · key · model · credit · empty."""
+    no_key · quota · unavailable · slow · rejected · key · model · credit · empty."""
 
     def __init__(self, code: str, message: str = ""):
         super().__init__(message or code)
@@ -52,9 +56,12 @@ def _detail(res: httpx.Response) -> str:
         return res.text[:400]
 
 
-async def _post(model: str, body: dict, key: str) -> dict:
+async def _post(model: str, body: dict, key: str, on_retry=None) -> dict:
     """One POST with the retries a chat can afford: two for an overloaded or
-    flaky upstream, one for a per-minute rate limit. Raises AssistantAIError."""
+    flaky upstream, one for a per-minute rate limit. Raises AssistantAIError.
+    ``on_retry(attempt, why)`` (async) is told before each retry — why is
+    timeout · network · busy · limit — so the chat can say what it waits on
+    instead of «thinking» for minutes."""
     url = f"{_BASE}/{model}:generateContent"
     headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
     waits = [2.0, 6.0]
@@ -62,28 +69,39 @@ async def _post(model: str, body: dict, key: str) -> dict:
     attempt = 0
     while True:
         attempt += 1
+        t0 = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 res = await client.post(url, headers=headers, json=body)
+        except httpx.ReadTimeout as exc:
+            raise AssistantAIError("slow", f"Gemini sent nothing for {_TIMEOUT.read:.0f} s") from exc
         except httpx.HTTPError as exc:
             if waits:
+                await _told(on_retry, attempt + 1,
+                            "timeout" if isinstance(exc, httpx.TimeoutException) else "network")
                 await asyncio.sleep(waits.pop(0))
                 continue
             raise AssistantAIError("unavailable", f"Gemini unreachable: {exc}") from exc
 
         if res.status_code == 200:
             try:
-                return res.json()
+                out = res.json()
+                log.info("assistant Gemini call: %s in %.1f s (thoughts %s)",
+                         out.get("modelVersion") or model, time.monotonic() - t0,
+                         (out.get("usageMetadata") or {}).get("thoughtsTokenCount"))
+                return out
             except ValueError as exc:
                 raise AssistantAIError("empty", f"Unreadable Gemini response: {exc}") from exc
         if res.status_code == 429:
             if quota_retry:
                 quota_retry = False
+                await _told(on_retry, attempt + 1, "limit")
                 await asyncio.sleep(8.0)
                 continue
             raise AssistantAIError("quota", _detail(res) or "Rate limit reached")
         if res.status_code >= 500:
             if waits:
+                await _told(on_retry, attempt + 1, "busy")
                 await asyncio.sleep(waits.pop(0))
                 continue
             raise AssistantAIError("unavailable", f"Gemini {res.status_code}: {_detail(res)}")
@@ -108,8 +126,18 @@ def _clean(contents: list[dict]) -> list[dict]:
             for c in contents if c.get("parts")]
 
 
+async def _told(on_retry, attempt: int, why: str) -> None:
+    log.warning("assistant Gemini call: retry %d (%s)", attempt, why)
+    if on_retry is None:
+        return
+    try:
+        await on_retry(attempt, why)
+    except Exception:  # telling the chat must never cost the answer
+        log.warning("assistant: could not record a retry", exc_info=True)
+
+
 async def generate(*, system: str, contents: list[dict], tools: list[dict] | None,
-                   mode: str = "AUTO", model: str, key: str) -> Reply:
+                   mode: str = "AUTO", model: str, key: str, on_retry=None) -> Reply:
     """One turn of the conversation. ``contents`` is the Gemini transcript
     (user / model turns, function responses as user parts); the model content
     that comes back is returned VERBATIM so the caller can append it — Gemini 3
@@ -127,7 +155,7 @@ async def generate(*, system: str, contents: list[dict], tools: list[dict] | Non
         body["tools"] = [{"functionDeclarations": tools}]
         body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
-    payload = await _post(mdl, body, key)
+    payload = await _post(mdl, body, key, on_retry)
     cands = payload.get("candidates") or []
     usage = payload.get("usageMetadata") or {}
     if not cands:

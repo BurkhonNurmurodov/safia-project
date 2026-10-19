@@ -4946,6 +4946,9 @@ class AssistantRun(Base):
     error        = Column(Text, nullable=True)
     cancel_asked = Column(Boolean, nullable=False, default=False)
     heartbeat_at = Column(DateTime(timezone=True), server_default=func.now())
+    # The task driving it (a uuid): every write it makes checks this, so after
+    # a deploy hands the run on, the old process can no longer write to it.
+    lease        = Column(String(36), nullable=True)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
     finished_at  = Column(DateTime(timezone=True), nullable=True)
 

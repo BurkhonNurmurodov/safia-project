@@ -11294,11 +11294,66 @@ hides it, the server refuses `X-Exam-Attempt`).
   the whole state is in `assistant_runs` (Gemini contents kept VERBATIM —
   Gemini 3 function calls carry thought signatures it validates; a Claude
   turn keeps its raw blocks beside them, `assistant_claude`), so a
-  Confirm landing on the other blue-green copy resumes there. A run that
-  stops heart-beating (a deploy) reads «interrupted» (`heal`). ≤ 18 model
-  steps and 7 minutes per reply, ≤ 2 running per person, 8 overall.
+  Confirm landing on the other blue-green copy resumes there. ≤ 18 model
+  steps and 7 minutes per reply (a resumed reply keeps what it spent, plus
+  at least two minutes), ≤ 2 running per person, 8 overall.
   Earlier turns are replayed as TEXT (asked / answered / plan summary), never
   tool traffic.
+- **An answer survives a deploy** (2026-10-19, the operator: «Загрузка қандай
+  ҳисобланади?» sat on «thinking» for 5 minutes — not a hard question: the
+  12:21 deploy retired the worker mid-answer). uvicorn re-raises SIGTERM
+  after its shutdown and BEFORE asyncio cancels leftover tasks, so a run's
+  own `except CancelledError` never ran on a deploy and the run sat
+  «running» until the old 6-minute staleness rule ended it. Now:
+  - **A ticker beats every `BEAT_S` (15 s)** while a run's task lives, the
+    Gemini call included; `STALE_S` is 75 s.
+  - **`handoff()` runs first in the lifespan's shutdown** (before
+    `boot.join`): a run waiting on the model is cancelled at once, one making
+    confirmed changes finishes the change in hand and stops before the next
+    (≤ 8 s, then cut); each leaves its heartbeat at 2000-01-01, i.e. stale at
+    once.
+  - **The owner's next read picks it up** — `revive`, from `GET
+    /threads/{id}` (polled every second) or `send()`: ONE conditional UPDATE
+    claims it (one reader wins) with a new `lease`, and the loop continues
+    from the last saved step on the new process (measured locally: handed off
+    13:00:13, resumed 13:00:15, answered). Only in the session the run
+    started in, within `RESUME_WINDOW_S` (30 min) and `MAX_RESUMES` (3);
+    otherwise it is ended «interrupted» (`end_stale`). Nothing resumes while
+    nobody has the chat open — the next open does.
+  - **`assistant_runs.lease` fences every write** (`_fence`: the driving
+    task's lease is checked under a row lock in `_save`, `_resume_with`,
+    `_beat`, `_hand_off`), so a process that lost the run — the old worker
+    still draining, a loop frozen past 75 s — writes nothing more
+    (`LeaseLost`). Column added by `startup.add_assistant_run_lease` (both
+    entrypoints, `run` phase).
+  - **Confirmed changes are never made twice.** `begin_execute` is one
+    conditional UPDATE (a double tap or a second tab gets 409). A plan picked
+    up after a restart keeps every outcome already recorded, reports the
+    change that was in flight as «unknown» (`restart_unknown` — it may or may
+    not have applied; the report says to check its page) and makes only the
+    ones never started.
+  - **Stop is immediate**: a thinking run's task is cancelled on the spot
+    (`stop_now`, `_LIVE`); during confirmed changes it stops before the next
+    one (`_stop_plan`, «To'xtatildi — kiritilmadi»); a run no process drives
+    is ended stopped. A stopped run is never resumed.
+  - **One Gemini call is bounded**: read timeout 150 s, NOT retried (the same
+    question thinks just as long again and is billed twice), `DEADLINE_S`
+    240 s over all retries → error `slow`. Network errors and 5xx keep two
+    retries, a 429 one. Each call logs the model version, seconds and
+    thought tokens. The thinking level is NOT set — untested, a wrong value
+    would 400 every call.
+  - **The chat says what it is waiting on** (`live_state` on `run`: `phase`
+    model · tool · retry · executing · stopping · stalled, `phase_s`, `retry`
+    {n, why}, `resumes` / `resumed_s`, `stop_asked`, `alive`), never a
+    judgement about the question: «AI javob bermadi — qayta so'rayapman
+    (2/3)», «Server yangilandi — javob shu yerdan davom etmoqda», «AI xizmati
+    hozir sekin javob bermoqda» after 60 s on one call. The old «Murakkab
+    so'rov bir necha daqiqa olishi mumkin» — a plain 30-second timer that
+    blamed the question — is gone; «interrupted» no longer claims a server
+    update.
+  - Known limit: uvicorn drains open requests before the lifespan shutdown
+    with no bound; a drain past the supervisor's 60 s ends in SIGKILL, and
+    then the 75 s staleness rule is the fallback.
 - **Chats belong to the acting PROFILE** (`owner_key`) and, in an «open as»
   tab, to the admin who opened it (`opened_by`) — only their author ever
   sees them. Files (`assistant_files`, bytes in the DB, owner-only): images,
@@ -11326,8 +11381,8 @@ hides it, the server refuses `X-Exam-Attempt`).
   (working → finished) is announced; a reply the user stopped is not. The
   working line prints the time so far — the server's `run.elapsed_s` (from
   the run's start, or from the Confirm: `begin_execute` stamps `since`)
-  ticked on by the local clock — and from 30 s says the reader may get on
-  with other work. A waiting plan puts a line above the composer saying a
+  ticked on by the local clock — and from 60 s says the reader need not wait
+  on this page («Kutish shart emas…»). A waiting plan puts a line above the composer saying a
   new message cancels it. A finished answer and each table carry a copy
   button (`CopyButton`, `utils/copyText.js`): plain text, tables
   tab-separated. The empty chat's questions follow the PAGE the panel is

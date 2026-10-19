@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
 
+import anyio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -118,9 +119,11 @@ def threads(request: Request, db: Session = Depends(get_db), payload: dict = Dep
     q = q.filter(AssistantThread.opened_by == opened_by) if opened_by else \
         q.filter(AssistantThread.opened_by.is_(None))
     rows = q.order_by(AssistantThread.updated_at.desc()).limit(200).all()
-    active = {r.thread_id for r in db.query(AssistantRun.thread_id)
+    # A run nobody drives that can no longer be picked up is not «working».
+    active = {r.thread_id for r in db.query(AssistantRun)
               .filter(AssistantRun.owner_key == owner,
-                      AssistantRun.status.in_(("running", "executing", "awaiting_confirm"))).all()}
+                      AssistantRun.status.in_(("running", "executing", "awaiting_confirm"))).all()
+              if r.status == "awaiting_confirm" or not engine.stale(r) or engine._resumable(r)}
     return [{"id": t.id, "title": t.title or "", "updated_at": _iso(t.updated_at),
              "active": t.id in active} for t in rows]
 
@@ -133,13 +136,24 @@ def thread(tid: int, request: Request, db: Session = Depends(get_db),
     run = (db.query(AssistantRun).filter(AssistantRun.thread_id == t.id)
            .order_by(AssistantRun.id.desc()).first())
     if run is not None:
-        engine.heal(db, run)
+        # The chat polls this every second while a run works, so this is
+        # where a run whose process went away (a deploy) is picked up again —
+        # with the poller's own session, which is the run owner's.
+        ctx = _ctx(request, payload, owner, opened_by)
+        engine.revive(db, run, ctx, lambda coro: anyio.from_thread.run_sync(engine.spawn, coro))
     msgs = (db.query(AssistantMessage).filter(AssistantMessage.thread_id == t.id)
             .order_by(AssistantMessage.id.asc()).all())
     return {"thread": {"id": t.id, "title": t.title or "", "updated_at": _iso(t.updated_at)},
             "messages": [_msg_out(m) for m in msgs],
-            "run": ({"id": run.id, "status": run.status, "elapsed_s": _elapsed(run, msgs)}
-                    if run else None)}
+            "run": (_run_out(run, msgs) if run else None)}
+
+
+def _run_out(run: AssistantRun, msgs: list) -> dict:
+    out = {"id": run.id, "status": run.status, "elapsed_s": _elapsed(run, msgs)}
+    if run.status in engine.ACTIVE:
+        m = next((x for x in msgs if x.id == run.message_id), None)
+        out.update(engine.live_state(run, (m.data or {}) if m is not None else {}))
+    return out
 
 
 def _elapsed(run: AssistantRun, msgs: list) -> Optional[int]:
@@ -204,12 +218,20 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
     if len(json.dumps(context, ensure_ascii=False, default=str)) > MAX_CONTEXT:
         context = {k: context.get(k) for k in ("path", "search", "title", "lang") if k in context}
 
-    # A run whose task died with a deploy must not hold a slot forever.
-    for stale in db.query(AssistantRun).filter(AssistantRun.status.in_(engine.ACTIVE)).all():
-        engine.heal(db, stale)
-    busy_global = db.query(AssistantRun).filter(AssistantRun.status.in_(engine.ACTIVE)).count()
-    busy_owner = db.query(AssistantRun).filter(AssistantRun.owner_key == owner,
-                                               AssistantRun.status.in_(engine.ACTIVE)).count()
+    # A run whose process went away (a deploy) must not hold a slot forever:
+    # the caller's own such runs are picked up again with their session, and
+    # anybody else's is ended once it is past picking up. A stale run that
+    # still waits for its owner holds no global slot meanwhile.
+    ctx = _ctx(request, payload, owner, opened_by)
+    for r in db.query(AssistantRun).filter(AssistantRun.status.in_(engine.ACTIVE)).all():
+        th = db.get(AssistantThread, r.thread_id) if r.owner_key == owner else None
+        if th is not None and (th.opened_by or None) == (opened_by or None):
+            engine.revive(db, r, ctx, engine.spawn)  # only with the session it started in
+        else:
+            engine.heal(db, r)
+    active = db.query(AssistantRun).filter(AssistantRun.status.in_(engine.ACTIVE)).all()
+    busy_global = sum(1 for r in active if not engine.stale(r))
+    busy_owner = sum(1 for r in active if r.owner_key == owner)
     if busy_owner >= PER_OWNER_ACTIVE or busy_global >= GLOBAL_ACTIVE:
         raise HTTPException(status_code=429, detail="busy")
 
@@ -218,7 +240,6 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
         last = (db.query(AssistantRun).filter(AssistantRun.thread_id == t.id)
                 .order_by(AssistantRun.id.desc()).first())
         if last is not None:
-            engine.heal(db, last)
             if last.status in engine.ACTIVE:
                 raise HTTPException(status_code=409, detail="running")
             if last.status == "awaiting_confirm":
@@ -260,7 +281,7 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
     t.updated_at = datetime.now(timezone.utc)
     db.commit()
 
-    engine.spawn(engine.drive(run.id, _ctx(request, payload, owner, opened_by)))
+    engine.spawn(engine.drive(run.id, ctx))
     return {"thread_id": t.id, "run_id": run.id,
             "user_message": _msg_out(um), "assistant_message": _msg_out(am)}
 
@@ -287,9 +308,10 @@ async def confirm(rid: int, body: ConfirmIn, request: Request, db: Session = Dep
     if not body.approve:
         engine.cancel_plan(db, run, "cancelled")
         return {"ok": True, "status": "cancelled"}
-    if not engine.begin_execute(db, run, body.approve):
+    lease = engine.begin_execute(db, run, body.approve)
+    if not lease:  # a second tap, or another tab, already confirmed it
         raise HTTPException(status_code=409, detail="not_waiting")
-    engine.spawn(engine.execute_and_resume(run.id, _ctx(request, payload, owner, opened_by)))
+    engine.spawn(engine.execute_and_resume(run.id, _ctx(request, payload, owner, opened_by), lease))
     return {"ok": True, "status": "executing"}
 
 
@@ -301,9 +323,17 @@ def cancel(rid: int, request: Request, db: Session = Depends(get_db),
     if run.status == "awaiting_confirm":
         engine.cancel_plan(db, run, "cancelled")
         return {"ok": True, "status": "cancelled"}
-    if run.status == "running":
+    if run.status in engine.ACTIVE:
         run.cancel_asked = True
         db.commit()
+        # A run no process drives any more is recorded stopped right here.
+        if engine.stale(run) and engine.end_stale(db, run, stopped=True):
+            return {"ok": True, "status": "cancelled"}
+        # Thinking: cut it now — the task would otherwise read the flag only
+        # after the Gemini call it waits on came back, minutes later. Making
+        # confirmed changes: never cut mid-change — it stops before the next.
+        if run.status == "running":
+            anyio.from_thread.run_sync(engine.stop_now, run.id)
         return {"ok": True, "status": "stopping"}
     return {"ok": True, "status": run.status}
 

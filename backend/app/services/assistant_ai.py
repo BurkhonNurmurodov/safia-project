@@ -28,11 +28,15 @@ log = logging.getLogger(__name__)
 
 FEATURE = "assistant"
 VOICE = "voice"
+# No one model step — the provider's own retries included — outlasts this.
+# A step that sends nothing for this long is not going to answer well either;
+# the user gets «slow» and a Retry button instead of a clock ticking for 8 min.
+DEADLINE_S = 240
 
 # AssistantAIError.code → the ledger's kind.
 _KIND = {"quota": "quota", "unavailable": "unavailable", "key": "key", "model": "model",
          "credit": "credit", "rejected": "other", "empty": "bad_response", "no_key": "no_key",
-         "thinking_binding": "other"}
+         "thinking_binding": "other", "slow": "unavailable"}
 
 
 def current() -> ai_features.Assign:
@@ -63,13 +67,15 @@ async def _record(a, *, ok: bool, usage: dict | None = None, err: AssistantAIErr
 
 
 async def generate(a: ai_features.Assign, *, system: str, contents: list[dict],
-                   tools: list[dict] | None, mode: str = "AUTO") -> Reply:
-    """One turn on the chat's provider. Raises AssistantAIError."""
+                   tools: list[dict] | None, mode: str = "AUTO", on_retry=None) -> Reply:
+    """One turn on the chat's provider. Raises AssistantAIError.
+    ``on_retry(attempt, why)`` hears each retry the transport makes (Gemini's;
+    Claude's SDK retries out of sight), so the chat can say what it waits on."""
     if not a.key:
         raise AssistantAIError("no_key", "No AI key is chosen for the assistant")
     try:
         try:
-            reply = await _call(a, system, contents, tools, mode)
+            reply = await _bounded(a, system, contents, tools, mode, on_retry)
         except AssistantAIError as exc:
             if exc.code != "thinking_binding":
                 raise
@@ -80,7 +86,7 @@ async def generate(a: ai_features.Assign, *, system: str, contents: list[dict],
             log.warning("assistant: Claude refused a replayed thinking block — "
                         "transcript flattened and asked again (%s)", exc.message[:200])
             contents[:] = transcode(contents)
-            reply = await _call(a, system, contents, tools, mode)
+            reply = await _bounded(a, system, contents, tools, mode, on_retry)
     except AssistantAIError as exc:
         await _record(a, ok=False, err=exc)
         raise
@@ -88,12 +94,19 @@ async def generate(a: ai_features.Assign, *, system: str, contents: list[dict],
     return reply
 
 
-async def _call(a, system, contents, tools, mode) -> Reply:
+async def _bounded(a, system, contents, tools, mode, on_retry) -> Reply:
+    try:
+        return await asyncio.wait_for(_call(a, system, contents, tools, mode, on_retry), DEADLINE_S)
+    except asyncio.TimeoutError as exc:
+        raise AssistantAIError("slow", f"No answer within {DEADLINE_S} s") from exc
+
+
+async def _call(a, system, contents, tools, mode, on_retry=None) -> Reply:
     if a.provider == "claude":
         return await claude.generate(system=system, contents=contents, tools=tools,
                                      mode=mode, model=a.model, key=a.key)
     return await gemini_t.generate(system=system, contents=contents, tools=tools,
-                                   mode=mode, model=a.model, key=a.key)
+                                   mode=mode, model=a.model, key=a.key, on_retry=on_retry)
 
 
 async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:

@@ -175,7 +175,7 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
               <span>{t("assistant.planWaiting")}</span>
             </p>
           )}
-          <Composer ref={composer} onSend={send} running={running}
+          <Composer ref={composer} onSend={send} running={running} stopping={running && !!run?.stop_asked}
             onStop={() => run && A.cancel(run.id)} disabled={!configured} voiceOn={A.me?.voice !== false}
             autoFocus={variant === "panel"} />
           <p className="text-[11px] mt-1.5 text-center" style={{ color: "var(--text-3)" }}>

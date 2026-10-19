@@ -20,7 +20,7 @@ let seq = 0;
  * assistant is working. Files can be picked, dropped or pasted; one that is
  * refused stays as a red tile saying why.
  */
-const Composer = forwardRef(function Composer({ onSend, running, onStop, disabled, autoFocus, voiceOn = true }, ref) {
+const Composer = forwardRef(function Composer({ onSend, running, stopping, onStop, disabled, autoFocus, voiceOn = true }, ref) {
   const { lang } = useLang();
   const t = useAT();
   const [text, setText] = useState("");
@@ -220,11 +220,12 @@ const Composer = forwardRef(function Composer({ onSend, running, onStop, disable
               style={{ color: "var(--text-1)", maxHeight: "33vh" }}
             />
             {running ? (
-              <button type="button" onClick={onStop}
-                aria-label={t("assistant.stop")} title={t("assistant.stop")}
-                className="w-9 h-9 flex items-center justify-center rounded-full flex-shrink-0"
+              <button type="button" onClick={onStop} disabled={stopping}
+                aria-label={t(stopping ? "assistant.phase.stopping" : "assistant.stop")}
+                title={t(stopping ? "assistant.phase.stopping" : "assistant.stop")}
+                className="w-9 h-9 flex items-center justify-center rounded-full flex-shrink-0 disabled:opacity-60"
                 style={{ background: "var(--text-1)", color: "var(--bg-card)" }}>
-                <Square size={13} fill="currentColor" />
+                {stopping ? <Loader2 size={14} className="animate-spin" /> : <Square size={13} fill="currentColor" />}
               </button>
             ) : !hasContent && canVoice && !uploading ? (
               <button type="button" onClick={() => { setVoiceErr(""); rec.start(); }} disabled={disabled || transcribing}

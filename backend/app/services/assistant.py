@@ -20,18 +20,33 @@ operator decided it, point by point:
 
 A run is an asyncio task on the server's own loop. Its whole state is in the
 database at every pause (contents, plan), so a Confirm that lands on the other
-blue-green copy resumes it there. A run whose task died (a deploy) stops
-heart-beating and is reported interrupted by the next read.
+blue-green copy resumes it there.
+
+A run OUTLIVES the process it started in (2026-10-19). A deploy swaps the
+worker, and uvicorn re-raises SIGTERM after its shutdown, which killed the old
+process before a running answer could say anything — the chat then read
+«thinking» until the six-minute heal. Now: the task beats every BEAT_S, also
+while it waits on Gemini; at shutdown it hands the run OFF (`handoff`); and the
+next read by the run's owner — the chat polls every second — picks it up again
+on the new process (`revive`), from the last step saved. A run whose process
+died without a word (a crash, a kill) is picked up the same way once its beat
+is STALE_S old. Only a run past RESUME_WINDOW_S, or one resumed MAX_RESUMES
+times already, is reported interrupted.
 """
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
+import uuid
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import text as _sql
 
 from app.database import SessionLocal
 from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantThread
@@ -45,7 +60,14 @@ log = logging.getLogger(__name__)
 TZ = ZoneInfo("Asia/Tashkent")
 MAX_STEPS = 18
 RUN_WALL_S = 420
-STALE_S = 360
+# The task writes its heartbeat every BEAT_S, also while a Gemini call is
+# open, so a beat older than STALE_S means the process driving it is gone.
+BEAT_S = 15
+STALE_S = 75
+# A run whose process went away is picked up again by its owner's next read —
+# within this long of its start, and at most MAX_RESUMES times.
+RESUME_WINDOW_S = 30 * 60
+MAX_RESUMES = 3
 MAX_PLAN = 50
 HISTORY_MESSAGES = 20
 HISTORY_CHARS = 40_000
@@ -54,6 +76,26 @@ MAX_FILE = 25 * 1024 * 1024
 
 ACTIVE = ("running", "executing")
 _TASKS: set[asyncio.Task] = set()
+# The task driving each run in THIS process, so Stop can cut a Gemini call
+# short instead of waiting minutes for it to come back.
+_LIVE: dict[int, asyncio.Task] = {}
+# Tasks making CONFIRMED changes: at shutdown they are let finish the change in
+# hand (they stop before the next one) instead of being cut mid-write.
+_EXEC: set[asyncio.Task] = set()
+# The lease the current task drives its run with (see `_fence`).
+_LEASE: ContextVar[Optional[str]] = ContextVar("assistant_lease", default=None)
+# A plan item cut mid-change by a restart: it may or may not have applied.
+RESTART_UNKNOWN = "restart_unknown"
+
+
+class LeaseLost(Exception):
+    """Another task took this run over (a deploy handed it to the new
+    process, or it was ended for having no driver): stop, write nothing."""
+# Set by handoff(): the process is shutting down, so a cancelled run is handed
+# over to the next process instead of being reported interrupted.
+_STOPPING = False
+# What a handed-off run's heartbeat is set to: stale at once.
+_HANDED_OFF = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
 # ── who is asking ────────────────────────────────────────────────────────────
@@ -314,10 +356,12 @@ E. TREND / CHANGE OVER TIME → the direction and size in one sentence
 F. HOW IS X CALCULATED → the formula on one line in the page's own words
    ("Reja bajarilishi = Fakt trudoyomkost ÷ Plan trudoyomkost"); then a
    numbered list of the terms, one line each (what it is, where it comes
-   from); then a worked example with the user's real numbers when you have
-   read every one of them, else none ("Masalan, 18.10, Ergashev M.: 2 960 ÷
-   3 400 daq = **87%**"); other versions the page shows get one line at the
-   very end, not a formula each.
+   from); then a worked example with the user's real numbers ONLY when this
+   conversation has already read every one of them or the user named a unit
+   and a day, else none — never fetch data just to make an example: the
+   formula is answered from the documentation in a step or two ("Masalan,
+   18.10, Ergashev M.: 2 960 ÷ 3 400 daq = **87%**"); other versions the
+   page shows get one line at the very end, not a formula each.
 G. HOW DO I DO X → numbered steps, one action each (at most 7), UI names in «»;
    if the user's word differs from the screen's, tie them once («E'tiroz
    bildirish» — norozilik). Then open_page to where it starts, unless the user
@@ -452,8 +496,35 @@ def _flatten(m: AssistantMessage) -> str:
 
 # ── persistence helpers ──────────────────────────────────────────────────────
 
+def _fence(db, run_id: int) -> None:
+    """Every write a driving task makes starts here: lock the run's row and
+    check the task still holds its lease. A claim by another process (which
+    takes the same row) either waits for this write — and then finds a fresh
+    heartbeat and gives up — or has already landed, and this write is refused.
+    Requests (the router) carry no lease and are not fenced."""
+    lease = _LEASE.get()
+    if lease is None:
+        return
+    row = db.execute(_sql("SELECT lease FROM assistant_runs WHERE id = :id FOR UPDATE"),
+                     {"id": run_id}).first()
+    if row is None or row[0] != lease:
+        raise LeaseLost(run_id)
+
+
+def _claim(db, run_id: int) -> str:
+    """Take the run for the task about to drive it. Called only where nothing
+    else can be driving it (a new run, a retry, a confirm already claimed)."""
+    lease = str(uuid.uuid4())
+    (db.query(AssistantRun).filter(AssistantRun.id == run_id)
+     .update({AssistantRun.lease: lease, AssistantRun.heartbeat_at: _now()},
+             synchronize_session=False))
+    db.commit()
+    return lease
+
+
 def _save(db, run_id: int, *, run: Optional[dict] = None, msg: Optional[dict] = None,
           msg_text: Optional[str] = None, msg_data: Optional[dict] = None) -> None:
+    _fence(db, run_id)
     r = db.get(AssistantRun, run_id)
     if r is None:
         return
@@ -486,9 +557,13 @@ def _message_data(db, run_id: int) -> dict:
     return dict(m.data or {}) if m else {}
 
 
-def _usage_add(acc: dict, u: dict) -> dict:
+def _usage_add(acc: dict, u: dict, secs: float = 0.0) -> dict:
     acc = dict(acc or {})
     acc["calls"] = acc.get("calls", 0) + 1
+    # How long Gemini took — in total and at worst — so a slow answer can be
+    # told from a slow model afterwards (the settings card, the run row).
+    acc["model_s"] = round(acc.get("model_s", 0) + secs, 1)
+    acc["model_max_s"] = round(max(acc.get("model_max_s", 0), secs), 1)
     for k_src, k_dst in (("promptTokenCount", "prompt"), ("candidatesTokenCount", "output"),
                          ("thoughtsTokenCount", "thoughts"), ("cachedContentTokenCount", "cached")):
         acc[k_dst] = acc.get(k_dst, 0) + int(u.get(k_src) or 0)
@@ -518,82 +593,221 @@ def spawn(coro) -> None:
     task.add_done_callback(_TASKS.discard)
 
 
-async def drive(run_id: int, ctx: Ctx) -> None:
-    """Run (or continue) the model loop until it answers, pauses on a plan,
-    is stopped, or fails. Every step is saved before the next one starts."""
-    started = time.monotonic()
-    try:
-        state = await _db(_load, run_id)
-        if state is None:
-            return
-        contents, usage, context, run_model = state
-        if not context.get("_now"):
-            context["_now"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
-            await _db(_save, run_id, run={"context": context})
-        system = _system(ctx, context)
-        steps_used = sum(1 for c in contents if c.get("role") == "model")
+def _beat(db, run_id: int) -> None:
+    """The heartbeat alone — nothing else about the run moves. Only while this
+    task still holds the run: a task that lost it must not keep it «alive»."""
+    q = db.query(AssistantRun).filter(AssistantRun.id == run_id,
+                                      AssistantRun.status.in_(ACTIVE),
+                                      # a beat queued behind a hand-off must not undo it
+                                      AssistantRun.heartbeat_at > _HANDED_OFF)
+    lease = _LEASE.get()
+    if lease is not None:
+        q = q.filter(AssistantRun.lease == lease)
+    q.update({AssistantRun.heartbeat_at: _now()}, synchronize_session=False)
+    db.commit()
+
+
+@contextlib.asynccontextmanager
+async def _beating(run_id: int):
+    """Keep the run's heartbeat fresh while its task is alive — including the
+    minutes a Gemini call can take, during which nothing else is saved."""
+    async def tick():
         while True:
-            if await _db(_cancel_asked, run_id):
-                await _db(_finish, run_id, "cancelled", msg={"status": "stopped"})
-                return
-            # The tab's pick NOW (cached): moved onto another model mid-run,
-            # the transcript is flattened once — another model's thinking
-            # signatures and tool blocks are not accepted back.
-            a = await asyncio.to_thread(ai.current)
-            if a.model and run_model and a.model != run_model:
-                log.info("assistant run %s: moved from %s to %s — transcript flattened",
-                         run_id, run_model, a.model)
-                contents = ai.transcode(contents)
-            run_model = a.model or run_model
-            over = steps_used >= MAX_STEPS or (time.monotonic() - started) > RUN_WALL_S
-            if over:
-                _append_text(contents, "You have used all the steps this request "
-                             "allows. Answer now with what you have, and say what is missing.")
-            await _db(_save, run_id, run={"contents": contents, "usage": usage, "model": run_model},
-                      msg={"thinking": True})
-            reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
-                                      mode="NONE" if over else "AUTO")
-            steps_used += 1
-            usage = _usage_add(usage, reply.usage)
-            contents.append(reply.content)
-            if not reply.calls:
-                text = reply.text.strip()
-                if not text:
-                    raise ai.AssistantAIError("empty", f"No answer (finish={reply.finish})")
-                await _db(_save, run_id, run={"contents": contents, "usage": usage},
-                          msg={"thinking": False})
-                await _db(_finish, run_id, "done", text=text, usage=usage)
-                return
-            responses: list[dict] = []
-            extra: list[dict] = []
-            plan_call = None
-            for call in reply.calls:
-                if call.get("name") == "propose_changes" and plan_call is None:
-                    plan_call = call
-                    continue
-                res, more = await _dispatch(run_id, ctx, call)
-                responses.append(_fresp(call, res))
-                extra.extend(more)
-            if plan_call is not None:
-                verdict = await _db(_validate_plan, run_id, ctx, plan_call.get("args") or {})
-                if verdict.get("error"):
-                    responses.append(_fresp(plan_call, verdict))
-                else:
-                    await _db(_pause_on_plan, run_id, contents, usage, plan_call,
-                              responses + extra, verdict)
-                    return
-            contents.append({"role": "user", "parts": responses + extra})
+            await asyncio.sleep(BEAT_S)
+            try:
+                await _db(_beat, run_id)
+            except Exception:  # a missed beat is not worth the run
+                log.warning("assistant run %s: heartbeat failed", run_id, exc_info=True)
+    ticker = asyncio.get_running_loop().create_task(tick())
+    try:
+        yield
+    finally:
+        ticker.cancel()
+
+
+async def _last_word(fn, *a, **kw) -> None:
+    """A write in an error handler: a task that lost its run says nothing."""
+    try:
+        await _db(fn, *a, **kw)
+    except LeaseLost:
+        pass
+
+
+async def drive(run_id: int, ctx: Ctx, lease: Optional[str] = None) -> None:
+    """Run (or continue) the model loop until it answers, pauses on a plan,
+    is stopped, or fails. Every step is saved before the next one starts —
+    which is what lets another process pick the run up where it stopped.
+    ``lease`` is the claim `revive` / `execute_and_resume` already made; a
+    fresh run takes its own."""
+    if lease is None:
+        lease = await _db(_claim, run_id)
+    _LEASE.set(lease)
+    started = time.monotonic()
+    me = asyncio.current_task()
+    if me is not None:
+        _LIVE[run_id] = me
+    try:
+        async with _beating(run_id):
+            await _drive(run_id, ctx, started)
+    except LeaseLost:
+        log.info("assistant run %s: driven elsewhere now — this task stops", run_id)
     except asyncio.CancelledError:
-        await _db(_finish, run_id, "interrupted", msg={"status": "interrupted", "thinking": False})
+        await _last_word(_hand_off if _STOPPING else _cut, run_id)
         raise
     except ai.AssistantAIError as exc:
         log.warning("assistant run %s: %s %s", run_id, exc.code, exc.message)
-        await _db(_finish, run_id, "error", error=f"{exc.code}: {exc.message}",
-                  msg={"status": "error", "error": exc.code, "thinking": False})
+        await _last_word(_finish, run_id, "error", error=f"{exc.code}: {exc.message}",
+                         msg={"status": "error", "error": exc.code, "thinking": False})
     except Exception as exc:  # pragma: no cover - the safety net
         log.exception("assistant run %s crashed", run_id)
-        await _db(_finish, run_id, "error", error=f"crash: {exc}",
-                  msg={"status": "error", "error": "crash", "thinking": False})
+        await _last_word(_finish, run_id, "error", error=f"crash: {exc}",
+                         msg={"status": "error", "error": "crash", "thinking": False})
+    finally:
+        if _LIVE.get(run_id) is me:
+            _LIVE.pop(run_id, None)
+
+
+def stop_now(run_id: int) -> bool:
+    """Stop pressed: cut the run's task here and now (its handler records it
+    as stopped). False when no task of this process drives it."""
+    task = _LIVE.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
+
+
+async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
+    state = await _db(_load, run_id)
+    if state is None:
+        return
+    contents, usage, context, run_model, spent = state
+    if usage.get("resumes"):
+        # A resumed run keeps what it spent, but always gets two minutes more.
+        started -= max(0.0, min(spent, RUN_WALL_S - 120))
+    if not context.get("_now"):
+        context["_now"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+        await _db(_save, run_id, run={"context": context})
+    system = _system(ctx, context)
+    steps_used = sum(1 for c in contents if c.get("role") == "model")
+
+    async def on_retry(attempt: int, why: str) -> None:
+        await _db(_save, run_id, msg={"retry": {"n": attempt, "why": why, "at": _now().isoformat()}})
+
+    while True:
+        if await _db(_cancel_asked, run_id):
+            await _db(_finish, run_id, "cancelled", msg={"status": "stopped"})
+            return
+        if _STOPPING:  # shutting down: hand it on before the next call
+            raise asyncio.CancelledError()
+        # The tab's pick NOW (cached): moved onto another model mid-run,
+        # the transcript is flattened once — another model's thinking
+        # signatures and tool blocks are not accepted back.
+        a = await asyncio.to_thread(ai.current)
+        if a.model and run_model and a.model != run_model:
+            log.info("assistant run %s: moved from %s to %s — transcript flattened",
+                     run_id, run_model, a.model)
+            contents = ai.transcode(contents)
+        run_model = a.model or run_model
+        over = steps_used >= MAX_STEPS or (time.monotonic() - started) > RUN_WALL_S
+        if over:
+            _append_text(contents, "You have used all the steps this request "
+                         "allows. Answer now with what you have, and say what is missing.")
+        # `call_at` says when this model call began, so the chat can tell a
+        # slow answer from a stuck one; `retry` is cleared until one happens.
+        await _db(_save, run_id, run={"contents": contents, "usage": usage, "model": run_model},
+                  msg={"thinking": True, "call_at": _now().isoformat(), "retry": None})
+        t0 = time.monotonic()
+        reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
+                                  mode="NONE" if over else "AUTO", on_retry=on_retry)
+        steps_used += 1
+        usage = _usage_add(usage, reply.usage, time.monotonic() - t0)
+        contents.append(reply.content)
+        if not reply.calls:
+            text = reply.text.strip()
+            if not text:
+                raise ai.AssistantAIError("empty", f"No answer (finish={reply.finish})")
+            await _db(_save, run_id, run={"contents": contents, "usage": usage},
+                      msg={"thinking": False, "call_at": None, "retry": None})
+            await _db(_finish, run_id, "done", text=text, usage=usage)
+            return
+        await _db(_save, run_id, msg={"call_at": None, "retry": None})
+        responses: list[dict] = []
+        extra: list[dict] = []
+        plan_call = None
+        for call in reply.calls:
+            if call.get("name") == "propose_changes" and plan_call is None:
+                plan_call = call
+                continue
+            res, more = await _dispatch(run_id, ctx, call)
+            responses.append(_fresp(call, res))
+            extra.extend(more)
+        if plan_call is not None:
+            verdict = await _db(_validate_plan, run_id, ctx, plan_call.get("args") or {})
+            if verdict.get("error"):
+                responses.append(_fresp(plan_call, verdict))
+            else:
+                await _db(_pause_on_plan, run_id, contents, usage, plan_call,
+                          responses + extra, verdict)
+                return
+        contents.append({"role": "user", "parts": responses + extra})
+
+
+def _interrupted(db, run_id: int) -> None:
+    _finish(db, run_id, "interrupted", msg={"status": "interrupted", "thinking": False})
+
+
+def _stopped(db, run_id: int) -> None:
+    _finish(db, run_id, "cancelled", msg={"status": "stopped"})
+
+
+def _cut(db, run_id: int) -> None:
+    """The task was cancelled while the process goes on: Stop, or something
+    unforeseen."""
+    r = db.get(AssistantRun, run_id)
+    if r is not None and r.cancel_asked:
+        _stopped(db, run_id)
+    else:
+        _interrupted(db, run_id)
+
+
+def _hand_off(db, run_id: int) -> None:
+    """This process is shutting down (a deploy): leave the run ACTIVE with a
+    heartbeat that is stale at once, so the owner's next read picks it up on
+    the new process. Nothing else moves — the last saved step is where it
+    continues from."""
+    try:
+        _fence(db, run_id)
+    except LeaseLost:
+        return  # already someone else's
+    r = db.get(AssistantRun, run_id)
+    if r is None or r.status not in ACTIVE:
+        return
+    r.heartbeat_at = _HANDED_OFF
+    db.commit()
+    log.info("assistant run %s handed off at shutdown", run_id)
+
+
+async def handoff(timeout: float = 8.0) -> None:
+    """Called first in the lifespan's shutdown. A run waiting on the model is
+    cancelled at once; one making confirmed changes is let finish the change
+    in hand and stops before the next (cut mid-write, a change may or may not
+    land). Each hands its run over — before uvicorn re-raises SIGTERM and the
+    process dies, which is what used to leave an answer «thinking» for six
+    minutes after every backend deploy."""
+    global _STOPPING
+    _STOPPING = True
+    tasks = [t for t in list(_TASKS) if not t.done()]
+    for t in tasks:
+        if t not in _EXEC:
+            t.cancel()
+    if tasks:
+        _, late = await asyncio.wait(tasks, timeout=timeout)
+        for t in late:
+            t.cancel()
+        if late:
+            await asyncio.wait(late, timeout=2.0)
+        log.info("assistant: %d run(s) handed off at shutdown", len(tasks))
 
 
 def _append_text(contents: list[dict], text: str) -> None:
@@ -615,7 +829,16 @@ def _load(db, run_id: int):
     r = db.get(AssistantRun, run_id)
     if r is None or r.status not in ACTIVE:
         return None
-    return list(r.contents or []), dict(r.usage or {}), dict(r.context or {}), r.model
+    # Seconds this reply has already been worked on (a run picked up after a
+    # restart keeps the time it spent — the clock starts again after a plan
+    # the user confirmed, as the chat's own clock does).
+    since = _message_data(db, run_id).get("since")
+    try:
+        t0 = _aware(datetime.fromisoformat(since)) if since else _aware(r.created_at)
+    except (TypeError, ValueError):
+        t0 = _aware(r.created_at)
+    spent = max(0.0, (_now() - t0).total_seconds()) if t0 else 0.0
+    return list(r.contents or []), dict(r.usage or {}), dict(r.context or {}), r.model, spent
 
 
 def _cancel_asked(db, run_id: int) -> bool:
@@ -938,37 +1161,112 @@ def cancel_plan(db, run: AssistantRun, why: str = "cancelled") -> None:
     _save(db, run.id, msg={"plan": plan, "status": "cancelled", "thinking": False})
 
 
-def begin_execute(db, run: AssistantRun, approve: list[int]) -> bool:
+def begin_execute(db, run: AssistantRun, approve: list[int]) -> Optional[str]:
+    """Confirm: ONE statement moves the run from awaiting to executing, so a
+    double tap or a second tab can never make the changes twice. Returns the
+    lease the executing task drives with, or None when it was not waiting."""
     if run.status != "awaiting_confirm" or not run.plan:
-        return False
-    run.status = "executing"
+        return None
     plan = dict(run.plan)
     plan["approve"] = sorted({int(i) for i in approve if isinstance(i, int)
                               and 0 <= i < len(plan.get("actions") or [])})
-    run.plan = plan
+    lease = str(uuid.uuid4())
+    n = (db.query(AssistantRun)
+         .filter(AssistantRun.id == run.id, AssistantRun.status == "awaiting_confirm")
+         .update({AssistantRun.status: "executing", AssistantRun.plan: plan,
+                  AssistantRun.lease: lease, AssistantRun.heartbeat_at: _now()},
+                 synchronize_session=False))
     db.commit()
+    if n != 1:
+        db.refresh(run)
+        return None
+    db.refresh(run)
     data = _message_data(db, run.id)
     view = dict(data.get("plan") or {})
     view["state"] = "running"
     # `since` restarts the reply's clock: the minutes the plan waited on the
     # user are not time the assistant spent working (routers/assistant.py).
     _save(db, run.id, msg={"plan": view, "status": "running", "since": _now().isoformat()})
-    return True
+    return lease
 
 
-async def execute_and_resume(run_id: int, ctx: Ctx) -> None:
+async def execute_and_resume(run_id: int, ctx: Ctx, lease: Optional[str] = None) -> None:
     """Make the confirmed changes one by one, as the user, then hand the
-    results back to the model for its report."""
+    results back to the model for its report. Picked up after a restart it
+    continues with the changes not yet started — never one already made, and
+    one cut mid-change is reported as unknown, never made again."""
+    if lease is None:
+        lease = await _db(_claim, run_id)
+    _LEASE.set(lease)
+    me = asyncio.current_task()
+    if me is not None:
+        _EXEC.add(me)
+        _LIVE[run_id] = me
     try:
-        plan = await _db(lambda db: dict((db.get(AssistantRun, run_id).plan or {})))
+        async with _beating(run_id):
+            ok = await _execute(run_id, ctx)
+    except LeaseLost:
+        log.info("assistant run %s: driven elsewhere now — this task stops", run_id)
+        return
+    except asyncio.CancelledError:
+        await _last_word(_hand_off if _STOPPING else _cut, run_id)
+        raise
+    finally:
+        _EXEC.discard(me)
+        if _LIVE.get(run_id) is me:
+            _LIVE.pop(run_id, None)
+    if ok:
+        await drive(run_id, ctx, lease)
+
+
+def _plan_state(db, run_id: int) -> tuple[dict, list[dict]]:
+    r = db.get(AssistantRun, run_id)
+    view = _message_data(db, run_id).get("plan") or {}
+    return dict((r.plan if r else None) or {}), list(view.get("items") or [])
+
+
+async def _execute(run_id: int, ctx: Ctx) -> bool:
+    try:
+        plan, items = await _db(_plan_state, run_id)
         actions = plan.get("actions") or []
         approve = set(plan.get("approve") or [])
         results = []
         for i, a in enumerate(actions):
+            st = (items[i].get("state") if i < len(items) else None) or "pending"
+            note = (items[i].get("note") if i < len(items) else None) or ""
             if i not in approve:
                 results.append({"label": a["label"], "outcome": "skipped by the user"})
-                await _db(_plan_item, run_id, i, "skipped", "")
+                if st != "skipped":
+                    await _db(_plan_item, run_id, i, "skipped", "")
                 continue
+            # Settled by an earlier process (a restart picked this plan up):
+            # its outcome stands, nothing is made again.
+            if st == "done":
+                results.append({"label": a["label"], "outcome": "done"})
+                continue
+            if st == "running" or (st == "failed" and note == RESTART_UNKNOWN):
+                results.append({"label": a["label"], "outcome": "unknown",
+                                "detail": "the server restarted while this change was being "
+                                          "made; it may or may not have applied — tell the "
+                                          "user to check it on its page"})
+                if st == "running":
+                    await _db(_plan_item, run_id, i, "failed", RESTART_UNKNOWN)
+                continue
+            if st == "failed":
+                results.append({"label": a["label"], "outcome": "failed",
+                                **({"detail": note} if note else {})})
+                continue
+            if st == "skipped":
+                results.append({"label": a["label"], "outcome": "not made"})
+                continue
+            # Never started: make it now — unless the process is going away
+            # (the next one continues from here) or the user pressed Stop.
+            if _STOPPING:
+                raise asyncio.CancelledError()
+            if await _db(_cancel_asked, run_id):
+                rest = [j for j in range(i, len(actions)) if j in approve]
+                await _db(_stop_plan, run_id, rest)
+                return False
             await _db(_plan_item, run_id, i, "running", "")
             # Re-asked WITH the body at the moment of acting: the policy is the
             # policy now, not when the plan was drawn.
@@ -994,12 +1292,27 @@ async def execute_and_resume(run_id: int, ctx: Ctx) -> None:
                             **({"answer": api.shrink(res.data, 3000)[0]} if res.ok and res.data is not None else {})})
             await _db(_plan_item, run_id, i, "done" if res.ok else "failed", detail)
         await _db(_resume_with, run_id, plan, results)
+    except LeaseLost:
+        raise
     except Exception as exc:
         log.exception("assistant: executing plan of run %s failed", run_id)
-        await _db(_finish, run_id, "error", error=f"execute: {exc}",
-                  msg={"status": "error", "error": "crash"})
-        return
-    await drive(run_id, ctx)
+        await _last_word(_finish, run_id, "error", error=f"execute: {exc}",
+                         msg={"status": "error", "error": "crash"})
+        return False
+    return True
+
+
+def _stop_plan(db, run_id: int, rest: list[int]) -> None:
+    """Stop pressed while the changes were being made: the ones not started
+    are not made; what was made stays made."""
+    view = dict(_message_data(db, run_id).get("plan") or {})
+    items = list(view.get("items") or [])
+    for j in rest:
+        if j < len(items) and items[j].get("state") == "pending":
+            items[j] = {**items[j], "state": "skipped", "note": "stopped"}
+    view["items"] = items
+    view["state"] = "finished"
+    _finish(db, run_id, "cancelled", msg={"status": "stopped", "plan": view})
 
 
 def _upload_of(db, fid: int, owner_key: str, field: str):
@@ -1023,6 +1336,7 @@ def _plan_item(db, run_id: int, i: int, state: str, note: str) -> None:
 
 
 def _resume_with(db, run_id: int, plan: dict, results: list) -> None:
+    _fence(db, run_id)
     r = db.get(AssistantRun, run_id)
     contents = list(r.contents or [])
     call = plan.get("call") or {}
@@ -1037,12 +1351,137 @@ def _resume_with(db, run_id: int, plan: dict, results: list) -> None:
 
 # ── reading a thread ─────────────────────────────────────────────────────────
 
+def _aware(d: Optional[datetime]) -> Optional[datetime]:
+    if d is None:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def stale(run: AssistantRun) -> bool:
+    """No process is driving this run any more: its heartbeat stopped."""
+    hb = _aware(run.heartbeat_at)
+    return run.status in ACTIVE and hb is not None and _now() - hb > timedelta(seconds=STALE_S)
+
+
+def _resumable(run: AssistantRun) -> bool:
+    born = _aware(run.created_at)
+    young = born is None or _now() - born <= timedelta(seconds=RESUME_WINDOW_S)
+    return young and int((run.usage or {}).get("resumes") or 0) < MAX_RESUMES
+
+
+def end_stale(db, run: AssistantRun, *, stopped: bool = False) -> bool:
+    """End a run nobody drives any more — Stop was pressed on it, or it is past
+    picking up. ONE conditional statement takes it (and voids its lease, so a
+    process still holding it somewhere writes nothing more); then it is
+    recorded stopped or interrupted."""
+    cutoff = _now() - timedelta(seconds=STALE_S)
+    n = (db.query(AssistantRun)
+         .filter(AssistantRun.id == run.id, AssistantRun.status.in_(ACTIVE),
+                 AssistantRun.heartbeat_at < cutoff)
+         .update({AssistantRun.lease: None, AssistantRun.heartbeat_at: _now()},
+                 synchronize_session=False))
+    db.commit()
+    if n == 1:
+        (_stopped if stopped else _interrupted)(db, run.id)
+    db.refresh(run)
+    return n == 1
+
+
 def heal(db, run: AssistantRun) -> None:
-    """A run whose task died with its process (a deploy) stops heart-beating."""
-    if run.status in ACTIVE and run.heartbeat_at is not None:
-        hb = run.heartbeat_at if run.heartbeat_at.tzinfo else run.heartbeat_at.replace(tzinfo=timezone.utc)
-        if _now() - hb > timedelta(seconds=STALE_S):
-            run.status = "interrupted"
-            run.finished_at = _now()
-            db.commit()
-            _save(db, run.id, msg={"status": "interrupted", "thinking": False})
+    """For a reader that cannot pick a run up (it has no session of the
+    owner's): end a run whose process is gone AND that is past picking up —
+    too old, or resumed too often. A stale run that can still be picked up is
+    left for its owner's next read (`revive`)."""
+    if stale(run) and not _resumable(run):
+        end_stale(db, run)
+
+
+def revive(db, run: AssistantRun, ctx: Ctx, spawner) -> bool:
+    """The owner's read found their run with no process behind it — a deploy
+    handed it off, or the process died. Pick it up here: claim it in ONE
+    statement (one reader wins, and the claim's new lease shuts out whatever
+    still held the old one), close the tool step the dead process was in, and
+    hand the loop — or the confirmed changes not yet made — to ``spawner``.
+    Returns True when this call resumed it. Stop pressed, or past picking up:
+    ended instead."""
+    if not stale(run):
+        return False
+    mine = _LIVE.get(run.id)
+    if mine is not None and not mine.done():
+        return False  # still driven here — its beats were only late (a frozen loop)
+    if run.cancel_asked or not _resumable(run):
+        end_stale(db, run, stopped=bool(run.cancel_asked))
+        return False
+    cutoff = _now() - timedelta(seconds=STALE_S)
+    lease = str(uuid.uuid4())
+    claimed = (db.query(AssistantRun)
+               .filter(AssistantRun.id == run.id, AssistantRun.status == run.status,
+                       AssistantRun.heartbeat_at < cutoff)
+               .update({AssistantRun.heartbeat_at: _now(), AssistantRun.lease: lease},
+                       synchronize_session=False))
+    db.commit()
+    if claimed != 1:
+        return False  # another reader (or the old process) got there first
+    db.refresh(run)
+    usage = dict(run.usage or {})
+    usage["resumes"] = int(usage.get("resumes") or 0) + 1
+    run.usage = usage
+    db.commit()
+    _end_dead_steps(db, run.id)
+    _save(db, run.id, msg={"thinking": run.status == "running", "resumed_at": _now().isoformat(),
+                           "call_at": None, "retry": None})
+    log.info("assistant run %s resumed (%d) after its process went away", run.id, usage["resumes"])
+    executing = run.status == "executing"
+    spawner(execute_and_resume(run.id, ctx, lease) if executing
+            else drive(run.id, ctx, lease))
+    return True
+
+
+def live_state(run: AssistantRun, data: dict) -> dict:
+    """What the chat says while a run works, all on the server's clock:
+    the PHASE (model · tool · retry · stopping · stalled), how long it has
+    been in it, the retry being made, and whether the run was picked up
+    again after a server update. Never a judgement about the question."""
+    out: dict = {"alive": not stale(run), "stop_asked": bool(run.cancel_asked),
+                 "resumes": int((run.usage or {}).get("resumes") or 0)}
+    now = _now()
+
+    def secs(iso: Optional[str]) -> Optional[int]:
+        try:
+            d = _aware(datetime.fromisoformat(iso)) if iso else None
+        except (TypeError, ValueError):
+            d = None
+        return max(0, int((now - d).total_seconds())) if d else None
+
+    retry = data.get("retry") if isinstance(data.get("retry"), dict) else None
+    running_step = any(s.get("state") == "running" for s in data.get("steps") or [])
+    if run.cancel_asked:
+        phase = "stopping"
+    elif not out["alive"]:
+        phase = "stalled"
+    elif run.status == "executing":
+        phase = "executing"
+    elif retry:
+        phase = "retry"
+        out["retry"] = {"n": retry.get("n"), "why": retry.get("why")}
+        out["phase_s"] = secs(retry.get("at"))
+    elif running_step:
+        phase = "tool"
+    else:
+        phase = "model"
+        out["phase_s"] = secs(data.get("call_at"))
+    out["phase"] = phase
+    if out["resumes"]:
+        out["resumed_s"] = secs(data.get("resumed_at"))
+    return out
+
+
+def _end_dead_steps(db, run_id: int) -> None:
+    """A tool step the dead process was running never finished: say so, the
+    model will ask for it again if it still needs it."""
+    data = _message_data(db, run_id)
+    steps = list(data.get("steps") or [])
+    if any(s.get("state") == "running" for s in steps):
+        steps = [{**s, "state": "failed", "note": "restart"} if s.get("state") == "running" else s
+                 for s in steps]
+        _save(db, run_id, msg={"steps": steps})

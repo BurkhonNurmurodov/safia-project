@@ -5957,6 +5957,21 @@ def add_pp_line_container_cap() -> None:
     _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
 
 
+_ASSISTANT_LEASE_DDL = (
+    ("assistant_runs", (("lease", "VARCHAR(36)"),), None),
+)
+
+
+def add_assistant_run_lease() -> None:
+    """2026-10-19: `assistant_runs.lease` — which task drives a run. Every
+    write the driving task makes checks it (services/assistant.py `_fence`), so
+    once a deploy hands a run to the new process the old one cannot write to
+    it again. NULL on every row stored before = no driver, which is what a
+    finished run has. Pure DDL, idempotent, FATAL on failure: the ORM selects
+    the column on every read of a run."""
+    _ensure_columns(_ASSISTANT_LEASE_DDL, "assistant_runs.lease")
+
+
 def add_education_duration() -> None:
     """2026-09-10: «Ta'lim» measures HOW MUCH of a lesson was watched.
 

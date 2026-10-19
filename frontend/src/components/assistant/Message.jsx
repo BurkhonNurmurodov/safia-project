@@ -34,7 +34,10 @@ export default function Message({ m, run, elapsed, onConfirm, onCancel, onRetry,
       </span>
       <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
         {steps.length > 0 && <Steps steps={steps} live={working} />}
-        {working && <WorkingLine thinking={!!d.thinking} more={steps.length > 0} elapsed={elapsed} />}
+        {working && (
+          <WorkingLine thinking={!!d.thinking} more={steps.length > 0} elapsed={elapsed}
+            live={run && run.id === m.run_id ? run : null} />
+        )}
         {d.plan && (
           <PlanCard plan={d.plan} runId={m.run_id}
             onConfirm={(approve) => onConfirm(m.run_id, approve)}
@@ -114,7 +117,11 @@ export const fmtSecs = (s) => {
 };
 
 // From this long on the line also says the reader need not wait here.
-const SLOW_HINT_S = 30;
+const AWAY_HINT_S = 60;
+// One model call this long is worth saying the AI itself is slow.
+const SLOW_MODEL_S = 60;
+// For this long after a restart picked the answer up again, the line says so.
+const RESUMED_SHOW_S = 60;
 
 /** Seconds the reply has been worked on: the server's count at the last read
  *  (`run.elapsed_s`), carried on by the local clock between reads — so a
@@ -132,27 +139,46 @@ function useElapsed(elapsed) {
   return Math.max(0, (Number(elapsed.base) || 0) + Math.floor(Math.max(0, now - elapsed.at) / 1000));
 }
 
-/** The one line that says the assistant is still at it, for as long as it is:
- *  thinking (spinner) or running a step (the step's own row spins above),
- *  with the time so far. The time is not announced — a screen reader would
- *  read it out every second. */
-function WorkingLine({ thinking, more, elapsed }) {
+/** The one line that says the assistant is still at it, for as long as it is,
+ *  in the words of what it is doing — read off the server (`live`: the run's
+ *  phase, how long the current AI call has taken, a retry, a pick-up after a
+ *  server update), never guessed from the clock. The time is not announced —
+ *  a screen reader would read it out every second. */
+function WorkingLine({ thinking, more, elapsed, live }) {
   const t = useAT();
   const secs = useElapsed(elapsed);
-  const label = thinking ? t(more ? "assistant.thinkingMore" : "assistant.thinking") : t("assistant.working");
+  const phase = live?.phase;
+  let label;
+  if (phase === "stopping") label = t("assistant.phase.stopping");
+  else if (phase === "stalled") label = t("assistant.phase.stalled");
+  else if (phase === "executing") label = t("assistant.phase.executing");
+  else if (phase === "retry") label = live.retry?.why === "limit"
+    ? t("assistant.phase.limit")
+    : t("assistant.phase.retry", { n: Math.min(Number(live.retry?.n) || 2, 3) });
+  else if (phase === "tool") label = t("assistant.phase.tool");
+  else label = thinking ? t(more ? "assistant.thinkingMore" : "assistant.thinking") : t("assistant.working");
+  const warn = phase === "stalled" || phase === "retry";
+  // At most one line of why, then whether the reader has to wait here.
+  let why = null;
+  if (live?.resumes > 0 && live.resumed_s != null && live.resumed_s < RESUMED_SHOW_S) why = t("assistant.phase.resumed");
+  else if (phase === "model" && live.phase_s >= SLOW_MODEL_S) why = t("assistant.phase.slowModel");
+  const away = secs != null && secs >= AWAY_HINT_S && phase !== "stopping";
   return (
     <div className="space-y-1">
-      <p className="flex items-center gap-2 text-sm" style={{ color: "var(--text-3)" }}>
-        {thinking
-          ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />
-          : <Clock3 size={14} className="flex-shrink-0" />}
+      <p className="flex items-center gap-2 text-sm" style={{ color: warn ? "var(--status-warn, #eab308)" : "var(--text-3)" }}>
+        {phase === "stalled"
+          ? <AlertTriangle size={14} className="flex-shrink-0" />
+          : thinking || (phase && phase !== "tool")
+            ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: warn ? undefined : "var(--brand-text)" }} />
+            : <Clock3 size={14} className="flex-shrink-0" />}
         <span role="status">{label}</span>
-        {secs != null && <span className="tabular-nums" aria-hidden="true">{fmtSecs(secs)}</span>}
+        {secs != null && <span className="tabular-nums" style={{ color: "var(--text-3)" }} aria-hidden="true">{fmtSecs(secs)}</span>}
       </p>
-      {secs != null && secs >= SLOW_HINT_S && (
-        <p className="text-xs leading-snug pl-[22px]" style={{ color: "var(--text-3)" }}>
-          {t("assistant.slowHint")}
-        </p>
+      {why && (
+        <p className="text-xs leading-snug pl-[22px]" style={{ color: "var(--text-3)" }}>{why}</p>
+      )}
+      {away && (
+        <p className="text-xs leading-snug pl-[22px]" style={{ color: "var(--text-3)" }}>{t("assistant.awayHint")}</p>
       )}
     </div>
   );

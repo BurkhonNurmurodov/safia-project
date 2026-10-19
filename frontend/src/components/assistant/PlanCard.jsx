@@ -90,7 +90,7 @@ export default function PlanCard({ plan, runId, onConfirm, onCancel }) {
                   </span>
                   {it.note && (
                     <span className="block text-xs mt-0.5" style={{ color: it.state === "failed" ? "var(--status-bad, #ef4444)" : "var(--text-3)" }}>
-                      {it.note}
+                      {noteText(t, it.note)}
                     </span>
                   )}
                   {detail && (
@@ -141,4 +141,12 @@ function ItemState({ state }) {
   if (state === "running")
     return <Loader2 size={15} className="mt-0.5 animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />;
   return <span className={common} style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}><Minus size={10} /></span>;
+}
+
+/** A note the engine writes as a KEY (a restart, a Stop) is said in the
+ *  reader's language; anything else is the server's own words. */
+function noteText(t, note) {
+  const key = `assistant.plan.note.${note}`;
+  const said = t(key);
+  return said === key ? note : said;
 }
