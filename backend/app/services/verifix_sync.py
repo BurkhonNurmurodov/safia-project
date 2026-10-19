@@ -124,6 +124,14 @@ def mode(db: Session) -> str:
     return v if v in MODES else DEFAULT_MODE
 
 
+def name_locked(cell, on: bool) -> bool:
+    """Whether a cell's RU name is Verifix's and no person's to edit: tied,
+    named by Verifix, and the sync is ON (`on` = `mode(db) == "on"`, read once
+    by the caller) — the pass writes it back within ten minutes, so the cell
+    form shows it read-only and the register's PUT does not write it."""
+    return bool(on) and verifix_org.cell_vfx_name(cell) is not None
+
+
 def set_mode(db: Session, m: str) -> None:
     if m not in MODES:
         raise Refused("bad_mode", "Mode is off, report or on")
@@ -703,9 +711,17 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             if node["key"] and node["key"] != verifix_org.code_key(c.verifix_code):
                 pl.item("code_changed", f"cell:{c.id}", {"cell": c.id, "code": c.verifix_code,
                                                          "new_code": node["code"]})
-            elif (meta.get("name") or None) != (node["name"] or None) and meta.get("name") is not None:
+            else:
+                # The name FOLLOWS Verifix (2026-10-19): pulled whenever the
+                # cell's RU name is not Verifix's — not only when Verifix's
+                # spelling changed, which left every name that already differed
+                # as it was. A Verifix rename still clears the translations of
+                # the old name even where the RU name already matched.
                 v = verifix_org.vx_name(node["name"], c.verifix_code)
-                if v and verifix_org.renamed(c, v) is not None:
+                spelled = ((meta.get("name") or None) != (node["name"] or None)
+                           and meta.get("name") is not None)
+                if (v and (spelled or verifix_org.ru_differs(c, v))
+                        and verifix_org.renamed(c, v) is not None):
                     pl.act("cell_renamed", cell=c.id, code=c.verifix_code, name=v)
         if _changed(c.vfx_meta, new_meta):
             pl.meta.append((c, new_meta))
@@ -1546,7 +1562,9 @@ def _save_run(db, kind, *, ok, org_at, counts, changes, t0, guard=None, mode=Non
 def _line(d: dict) -> str:
     k = d.get("kind")
     who = d.get("code") or d.get("name") or d.get("key") or ""
-    extra = d.get("to") if k in ("owner", "manager") else d.get("date") or d.get("why") or ""
+    extra = (d.get("to") if k in ("owner", "manager")
+             else ("→ " + d["name"]) if k == "cell_renamed" and d.get("name")
+             else d.get("date") or d.get("why") or "")
     return f"{k} {who} {extra or ''}".strip()
 
 

@@ -95,7 +95,8 @@ def create_cell(db: Session, code: str, *, name_ru: Optional[str] = None,
 
 def rename_cell(db: Session, cell: Cell, v: str) -> Optional[tuple[dict, dict]]:
     """Verifix's name onto the four name columns (`verifix_org.renamed`) —
-    never printed anywhere (a cell is its CODE). (before, after) or None."""
+    printed only on the /cells register (2026-10-19; everywhere else a cell is
+    its CODE). (before, after) or None."""
     from app.services import verifix_org
     after = verifix_org.renamed(cell, v)
     if after is None:

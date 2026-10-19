@@ -54,6 +54,11 @@ import CellManagerPicker, { PendingChip } from "./CellManagerPicker";
  * «Jarayonlar» (`one_process`, 2026-10-10): «Bitta jarayon» marks a cell
  * specialised for ONE process; a leader whose cells are all such is not asked
  * for 3 different processes on checklist task 3. «Ko'p jarayon» is the default.
+ *
+ * The NAME (2026-10-19): a cell tied to Verifix carries Verifix's name while
+ * the live sync is on (`item.name_from_verifix`) — the Russian tab is shown
+ * read-only and never sent; the other three languages stay translations a
+ * person types.
  */
 
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
@@ -198,6 +203,12 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
   // letter instead of drawing a refusal.
   const canGroup = !!(form.sap_code || "").trim() && !!form.manager_id;
 
+  // A cell tied to Verifix carries Verifix's name while the live sync is on
+  // (backend `verifix_sync.name_locked`): its Russian tab is read-only and the
+  // name is not sent — the next pass would put Verifix's back. The other
+  // languages are translations, still typed here.
+  const ruLocked = isEdit && !!item.name_from_verifix;
+
   function submit() {
     setFormError("");
     const code = (form.verifix_code || "").trim();
@@ -209,11 +220,11 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       wc_group: canGroup ? (form.wc_group || "") : "",
       name_workshop_uz: form.name_workshop_uz || "",
       name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
-      name_workshop_ru: form.name_workshop_ru || "",
       name_workshop_en: form.name_workshop_en || "",
       in_load: inLoad,
       one_process: !!form.one_process,
     };
+    if (!ruLocked) body.name_workshop_ru = form.name_workshop_ru || "";
     // `owner_id` is never sent («Egasi» is Verifix's). A new cell takes its
     // brigadir at once and starts with no «Boshqaruvchi»; an existing one sends
     // the brigadir only when it changed, and its «Boshqaruvchi» goes through
@@ -283,7 +294,8 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           ]}
         />
       </FormField>
-      <FormField label={t("admin.profiles.colWorkshop")}>
+      <FormField label={t("admin.profiles.colWorkshop")}
+        hint={ruLocked ? t("admin.profiles.cellNameFromVerifix") : undefined}>
         {/* One tabbed field, not four stacked inputs: every language column
             is optional and a blank one falls back to Russian on display,
             so the empty tabs preview the Russian text as a placeholder. */}
@@ -296,6 +308,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
             en: form.name_workshop_en,
           }}
           onChange={(l, v) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: v }))}
+          readOnlyLangs={ruLocked ? ["ru"] : []}
         />
       </FormField>
       <FormField label={t("admin.profiles.colSupervisor")}>

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
   FileSpreadsheet, ShieldCheck, UserRound, UserCheck, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
-  Workflow, Target,
+  Workflow, Target, Tag,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -75,6 +75,12 @@ import { exportXlsx } from "../utils/exportXlsx";
  * (no edit grant, `can_pick_manager` on the payload) gets ONE row action on
  * their own unit's cells, «Boshqaruvchi», opening the picker dialog — nothing
  * else of the cell is theirs to edit. «Egasi» is Verifix's, read-only.
+ *
+ * The NAME (2026-10-19, the operator: «show the cell names on cells page»):
+ * this register prints the cell's name beside its code — «Sex nomi», in the
+ * viewer's language (Russian when theirs is blank), cut with «…» and whole on
+ * hover. Verifix's name, kept in step by the live sync. Every OTHER page still
+ * names a cell by its code alone (utils/cellName.js).
  */
 
 // Whole-sentence templates with {placeholders} — word order differs per language.
@@ -207,6 +213,13 @@ function ProcessMark({ one, t, long = false }) {
   );
 }
 
+// The cell's name (2026-10-19 — this register only; everywhere else a cell is
+// its code). One line, cut with «…», whole on hover; «—» when none is stored.
+function NameCell({ name, className = "" }) {
+  if (!name) return <span className={className} style={{ color: "var(--text-4)" }}>—</span>;
+  return <span className={`block truncate min-w-0 text-[var(--text-2)] ${className}`} title={name}>{name}</span>;
+}
+
 // "2026-10-13" → "13.10" — the operator's «{dd.mm} dan» form.
 const ddmm = (iso) => {
   const s = String(iso || "");
@@ -320,12 +333,10 @@ function RowActions({ t, onEdit, onDelete, deleting, archived, onArchive, archiv
   );
 }
 
-// Phone-only card: code + SAP chip and the actions up top, brigadir + leader
-// pinned to the footer so a stack lines up. The code is the whole identity —
-// the workshop name is never printed (utils/cellName.js), and the two people
-// answerable for the cell are what the card carries instead.
+// Phone-only card: code + SAP chip and the actions up top, the cell's name
+// under them, brigadir + leader pinned to the footer so a stack lines up.
 // The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue, onPick }) {
+function CellCard({ c, name, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue, onPick }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -358,6 +369,7 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
           </div>
         )}
       </div>
+      {name && <NameCell name={name} className="-mt-1.5 text-sm" />}
 
       <div className="mt-auto pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--border)" }}>
         <div className="flex items-center gap-2 text-xs min-w-0">
@@ -391,7 +403,7 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, ar
 
 export default function Cells() {
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { can, isLoading: capLoading } = useCapabilities();
   // Default to read-only while the grant query is in flight so a slow response
   // never briefly exposes edit controls. Admins hold the whole catalog.
@@ -411,12 +423,11 @@ export default function Cells() {
   const leaders = data?.leaders ?? [];
 
   // Workshop name in the viewer's language, Russian as the fallback (shared
-  // resolver — every language column is nullable, see utils/cellName).
-  //
-  // SEARCH ONLY. A cell is never written out by its name — not in this table,
-  // not on a card, not in the export — so this feeds the match test and nothing
-  // else: typing «яблоки» still finds 1612, and 1612 is what comes back.
+  // resolver — every language column is nullable, see utils/cellName). The
+  // search matches it as stored; the column, the card and the export print it
+  // through `tx`, the platform's rule for DB text.
   const wname = (c) => cellName(c, lang);
+  const shownName = (c) => tx(wname(c)) || "";
 
   const [search, setSearch] = usePersistentState("cells_search", "");
   const [fBrigadir, setFBrigadir] = usePersistentState("cells_filter_brigadir", "");  // "" all · "none" unassigned · manager_id
@@ -518,7 +529,7 @@ export default function Cells() {
   const filtered = useMemo(() => {
     const q = latinFold(search.trim());
     return cells.filter((c) => {
-      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""} ${tl(c.owner) || ""}`)
+      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${shownName(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""} ${tl(c.owner) || ""}`)
             .includes(q)) return false;
       if (brigadirSel === "none" ? c.manager_id : brigadirSel && String(c.manager_id) !== brigadirSel) return false;
       if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
@@ -534,13 +545,14 @@ export default function Cells() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, brigadirSel, leaderSel, ownerSel, statusSel, zagSel, procSel, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, ownerSel, statusSel, zagSel, procSel, lang, tl, tx]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
   const sorted = useMemo(() => {
     const val = (c) => {
       switch (sort.key) {
+        case "name":       return shownName(c);
         case "sap_code":   return c.sap_code || "";
         case "wc_group":   return c.wc_group || "";
         case "supervisor": return tl(c.supervisor) || "";
@@ -555,7 +567,7 @@ export default function Cells() {
     return [...filtered].sort((a, b) =>
       String(val(a)).localeCompare(String(val(b)), undefined, { numeric: true }) * dir);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sort, tl, lang]);
+  }, [filtered, sort, tl, tx, lang]);
 
   // Excel export — ships what the page is SHOWING (filtered + sorted, names
   // already resolved to the viewer's language and transliterated), so the
@@ -571,6 +583,7 @@ export default function Cells() {
           total: cells.length,
           rows: sorted.map((c) => ({
             verifix_code: c.verifix_code || "",
+            workshop: shownName(c),
             sap_code: c.sap_code || "",
             wc_group: c.wc_group || "",
             supervisor: c.supervisor ? tl(c.supervisor) : "",
@@ -586,7 +599,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = showActions ? 9 : 8;
+  const colSpan = showActions ? 10 : 9;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -643,6 +656,7 @@ export default function Cells() {
         <CellCard
           key={c.id}
           c={c}
+          name={shownName(c)}
           tl={tl}
           t={t}
           canEdit={canEdit}
@@ -666,6 +680,9 @@ export default function Cells() {
         title={t("admin.profiles.cellsTab")}
         wrap
         fixed
+        // Ten columns since the name joined them (2026-10-19): below this the
+        // table scrolls sideways instead of cutting every header short.
+        minWidth={1060}
         mobile={mobileList}
         mobileCards
         right={
@@ -780,15 +797,16 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[11%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[9%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Tag} label={t("admin.profiles.colWorkshop")} k="name" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[8%]" />
             <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[7%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[14%]" />
-            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[15%]" />
-            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[14%]" />
-            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[10%]" />
-            {showActions && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[10%]" />}
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[13%]" />
+            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[11%]" />
+            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[9%]" />
+            <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[9%]" />
+            {showActions && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[9%]" />}
           </tr>
         </thead>
         <tbody>
@@ -814,6 +832,9 @@ export default function Cells() {
                   <CellLink id={c.id}>{c.verifix_code}</CellLink>
                   <ArchivedChip c={c} t={t} />
                 </span>
+              </td>
+              <td className="px-3 py-2">
+                <NameCell name={shownName(c)} />
               </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
               <td className="px-3 py-2 whitespace-nowrap">

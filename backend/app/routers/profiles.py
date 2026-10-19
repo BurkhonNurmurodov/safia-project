@@ -891,7 +891,15 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
             raise HTTPException(status_code=409, detail=(
                 "Bu oyna platformaning eski versiyasida ochilgan — sahifani "
                 "yangilang va qaytadan saqlang."))
+    # The RU name of a cell tied to Verifix IS Verifix's while the live sync is
+    # on (2026-10-19, `verifix_sync.name_locked`): the form shows it read-only
+    # and it is not written from here — taken behind a 200, the next pass would
+    # quietly put Verifix's back. The translations stay a person's to type.
+    from app.services import verifix_sync
+    ru_locked = dated and verifix_sync.name_locked(row, verifix_sync.mode(db) == "on")
     for col in _CELL_TEXT_COLS:
+        if ru_locked and col == "name_workshop_ru":
+            continue
         val = getattr(payload, col)
         if val is not None:
             val = val.strip() or None
@@ -1105,6 +1113,8 @@ def admin_list_cells(db: Session = Depends(get_db),
     waiting = cell_links.pending(db, [c.id for c in cell_rows])
     modes = cell_links.manager_mode(db, [c.id for c in cell_rows])
     pick_all = _may_pick_all(db, caller)
+    from app.services import verifix_sync
+    names_on = verifix_sync.mode(db) == "on"
     try:
         own_unit = (int(caller.get("role_id")) if caller.get("role") == "supervisor"
                     and caller.get("role_id") is not None else None)
@@ -1152,6 +1162,8 @@ def admin_list_cells(db: Session = Depends(get_db),
             # who decides the «Boshqaruvchi» (the seat / a person), the changes
             # recorded and not yet in force ({field: {value, name, from}}).
             "vfx_tied": bool(c.vfx_division_id),
+            # The RU name is Verifix's and the form shows it read-only.
+            "name_from_verifix": verifix_sync.name_locked(c, names_on),
             "manager_mode": modes.get(c.id) or "verifix",
             "pending": {f: {"value": w.get("value"), "from": w.get("from"),
                             "name": (mgr_names.get(w.get("value")) if f == "manager_id"
@@ -1242,14 +1254,15 @@ _XLSX_MUTED   = "9CA3AF"   # placeholder text ("—", "not assigned")
 
 
 class CellsExportRow(BaseModel):
-    """One register row. No workshop name: a cell is identified by its CODE and
-    by the two people answerable for it (frontend `utils/cellName.js`), and the
-    workbook mirrors the screen. The field stays declared so an older bundle
-    still sending it is accepted rather than 422'd — it is simply not written."""
+    """One register row, as the screen shows it. The workbook mirrors /cells,
+    which shows the cell's name beside its code from 2026-10-19 (the operator's
+    call — Verifix's name, kept in step by the live sync)."""
     verifix_code: str = ""
     sap_code:     str = ""
     wc_group:     str = ""   # the work-centre group letter; "" = none
-    workshop:     str = ""   # accepted from older bundles, never written
+    # The name in the viewer's language. None = a bundle from 2026-08-29 to
+    # 2026-10-19, which sent none and showed none: printed «—».
+    workshop:     Optional[str] = None
     supervisor:   str = ""   # "" = unassigned; the label is applied here
     leader:       str = ""   # «Boshqaruvchi»; "" = unassigned
     # «Egasi». None = a bundle from before the slot, printed «—»; "" = none.
@@ -1318,8 +1331,9 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
     ws = wb.active
     ws.title = L["sheet"]
 
-    # The screen's order: brigadir, then who RUNS the cell, then who OWNS it.
-    headers = [L["num"], L["verifix"], L["sap"], L["group"], L["brigadir"],
+    # The screen's order: the code and its name, then brigadir, who RUNS the
+    # cell and who OWNS it.
+    headers = [L["num"], L["verifix"], L["workshop"], L["sap"], L["group"], L["brigadir"],
                L["leader"], L["owner"], L["load"], L["proc"]]
     ncols = len(headers)
     last_col = get_column_letter(ncols)
@@ -1345,44 +1359,47 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 1, n).alignment = center
         ws.cell(y, 2, r.verifix_code or "—").font = Font(bold=True, size=10, color="111827")
         ws.cell(y, 2).alignment = center
-        ws.cell(y, 3, r.sap_code or "—").alignment = center
+        ws.cell(y, 3, r.workshop or "—")
+        ws.cell(y, 4, r.sap_code or "—").alignment = center
         # The group sits right after the code it qualifies (services/wc_group.py).
-        ws.cell(y, 4, r.wc_group or "—").alignment = center
-        ws.cell(y, 5, r.supervisor or L["no_brigadir"])
-        ws.cell(y, 6, r.leader or L["unassigned"])
-        ws.cell(y, 7, "—" if r.owner is None else (r.owner or L["unassigned"]))
-        ws.cell(y, 8, "—" if r.in_load is None else L["load_on" if r.in_load else "load_off"])
-        ws.cell(y, 9, "—" if r.one_process is None
+        ws.cell(y, 5, r.wc_group or "—").alignment = center
+        ws.cell(y, 6, r.supervisor or L["no_brigadir"])
+        ws.cell(y, 7, r.leader or L["unassigned"])
+        ws.cell(y, 8, "—" if r.owner is None else (r.owner or L["unassigned"]))
+        ws.cell(y, 9, "—" if r.in_load is None else L["load_on" if r.in_load else "load_off"])
+        ws.cell(y, 10, "—" if r.one_process is None
                 else L["proc_one" if r.one_process else "proc_many"])
         for i in range(1, ncols + 1):
             c = ws.cell(y, i)
             c.border = grid
-            if i in (1, 3, 4):
+            if i in (1, 4, 5):
                 c.font = Font(size=10, color="6B7280")
-            elif i >= 5:
+            elif i == 3 or i >= 6:
                 c.alignment = left_mid
                 c.font = body_font
             if n % 2 == 0:
                 c.fill = zebra
         # Placeholders read as absent data, never as a value.
-        if not r.sap_code:
+        if not r.workshop:
             ws.cell(y, 3).font = muted
-        if not r.wc_group:
+        if not r.sap_code:
             ws.cell(y, 4).font = muted
-        if not r.supervisor:
+        if not r.wc_group:
             ws.cell(y, 5).font = muted
-        if not r.leader:
+        if not r.supervisor:
             ws.cell(y, 6).font = muted
-        if not r.owner:
+        if not r.leader:
             ws.cell(y, 7).font = muted
-        ws.cell(y, 8).alignment = center
-        if r.in_load is None:
+        if not r.owner:
             ws.cell(y, 8).font = muted
         ws.cell(y, 9).alignment = center
-        if r.one_process is None:
+        if r.in_load is None:
             ws.cell(y, 9).font = muted
+        ws.cell(y, 10).alignment = center
+        if r.one_process is None:
+            ws.cell(y, 10).font = muted
 
-    for col, width in zip("ABCDEFGHI", (5, 14, 13, 9, 30, 34, 34, 16, 20)):
+    for col, width in zip("ABCDEFGHIJ", (5, 14, 34, 13, 9, 30, 34, 34, 16, 20)):
         ws.column_dimensions[col].width = width
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
@@ -1815,6 +1832,7 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
     eff_start, eff_end, hours_source = cell_hours.resolve(
         c.shift_start, c.shift_end, mgr.shift if mgr else None,
         cell_hours.defaults(db))
+    from app.services import verifix_sync
 
     return {
         "cell": {
@@ -1831,6 +1849,8 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "att_included": c.att_included,  # None = derived from supervisor
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
+            # The RU name is Verifix's (the shared cell form shows it read-only).
+            "name_from_verifix": verifix_sync.name_locked(c, verifix_sync.mode(db) == "on"),
         },
         # The Verifix live sync (2026-10-12): the tie, the seat, who decides the
         # «Boshqaruvchi», the changes recorded and not in force yet, and every

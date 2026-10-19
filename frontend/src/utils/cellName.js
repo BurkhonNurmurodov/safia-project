@@ -18,6 +18,8 @@
  * what the plant calls these rooms, and the register is where that is kept), so
  * `cellName` survives for the editor and for SEARCH — typing «яблоки» still
  * finds 1612. It must not be rendered as a label; use `cellLabel` for that.
+ * ONE exception (2026-10-19, the operator): the `/cells` register itself shows
+ * it in a «Sex nomi» column beside the code (Verifix's name, synced live).
  *
  * Endpoints spell the name keys differently, so `prefix` names the key family:
  *   "name_workshop_" → /api/profiles/admin/cells   (the register itself)

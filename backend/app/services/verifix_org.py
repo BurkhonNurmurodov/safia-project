@@ -287,6 +287,22 @@ def vx_name(raw: Optional[str], code: str) -> Optional[str]:
     return s
 
 
+def cell_vfx_name(cell) -> Optional[str]:
+    """The name Verifix gives a TIED cell, its code in front left out — what
+    the live sync keeps on the RU name (`renamed`). None for an untied cell
+    and for a subdivision Verifix names with a bare number."""
+    if not getattr(cell, "vfx_division_id", None):
+        return None
+    return vx_name((cell.vfx_meta or {}).get("name"), cell.verifix_code)
+
+
+def ru_differs(cell, v: str) -> bool:
+    """The cell's RU name is not Verifix's `v` — from 2026-10-19 the names
+    FOLLOW Verifix (the operator: «sync the cell names also»), not only when
+    Verifix's own spelling changes, so a name that differs is pulled."""
+    return _strip(cell.name_workshop_ru) != v
+
+
 def _strip(v) -> str:
     return (v or "").strip()
 

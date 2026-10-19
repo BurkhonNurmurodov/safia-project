@@ -33,6 +33,10 @@ import { useLang } from "../../context/LangContext";
  *                  what lets per-language name editors adopt the template
  *                  instead of forking it into one stacked input per language.
  *   hint         – false to drop the "empty → Russian is shown" explainer line
+ *   readOnlyLangs – languages whose text is not the editor's to type (shown,
+ *                  selectable, read-only on a recessed fill) — the cell form's
+ *                  Russian name, which the Verifix live sync keeps. Say WHY in
+ *                  the surrounding FormField's `hint`.
  *   className    – extra wrapper classes (spacing only)
  */
 
@@ -58,6 +62,7 @@ export default function LangTextInput({
   placeholderFn = null,
   action = null,
   hint = true,
+  readOnlyLangs = [],
   autoFocus = false,
   className = "",
 }) {
@@ -67,6 +72,7 @@ export default function LangTextInput({
   );
 
   const current = value[active] || "";
+  const locked = readOnlyLangs.includes(active);
   const fallback = (value[fallbackLang] || "").trim();
   const computed = placeholderFn ? (placeholderFn(active) || "").trim() : "";
   // An empty non-fallback tab previews the Russian text rather than saving it —
@@ -92,11 +98,15 @@ export default function LangTextInput({
         <input
           type="text"
           value={current}
-          onChange={(e) => onChange?.(active, e.target.value)}
+          onChange={(e) => { if (!locked) onChange?.(active, e.target.value); }}
+          readOnly={locked}
+          aria-readonly={locked || undefined}
           placeholder={shownPlaceholder}
           className={inputCls + " flex-1 min-w-0"}
-          style={inputStyle}
-          autoFocus={autoFocus}
+          style={locked
+            ? { ...inputStyle, background: "var(--bg-inner)", color: "var(--text-2)", cursor: "default" }
+            : inputStyle}
+          autoFocus={autoFocus && !locked}
         />
         {typeof action === "function" ? action(active) : action}
       </div>
