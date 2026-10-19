@@ -25,7 +25,7 @@ export const PENDING_MSG_KEYS = {
   no_headcount: "zagruzka.pendingNoHeadcount",
   no_labor:     "zagruzka.pendingNoLabor",
 };
-const PENDING_TITLE_KEYS = {
+export const PENDING_TITLE_KEYS = {
   not_closed:   "zagruzka.pendingTitle",
   requests:     "zagruzka.pendingTitle",
   no_headcount: "zagruzka.pendingNoHcTitle",
