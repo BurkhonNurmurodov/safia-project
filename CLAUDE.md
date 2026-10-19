@@ -1919,6 +1919,37 @@ five, is gone.
   the table's own functions), never off the draft — a bar that grew as an edge
   was dragged toward its end would rescale under the pointer.
 
+## «Excel» on every /zagruzka table (2026-10-19)
+
+The operator: every table on «Zagruzka foizi» gets its OWN Excel button, the
+file styled exactly as the table, and the data cells FILLED with their colour
+rather than a coloured number. Six buttons — the three comparison tables (in
+their own header, beside the icons) and the three heatmaps (in the card
+header) — each one file of one table. The funnel is a chart and has none.
+
+- **The table describes itself; the server only lays it out.** Every figure
+  on those tables is computed in the browser (`utils/formulas.js`), so a
+  Python twin would be a second spelling. `ComparisonTable onExport` and
+  `HeatmapChart exportRef` build a grid spec off the very readers, approval
+  gate, sort, summary mode (AVG / MIN / MAX) and P·A or D view the grid is
+  drawn with, every cell carrying the band colour it is painted with;
+  `utils/gridExport.js` is the vocabulary and the POST; the page
+  (`Zagruzka.jsx` `exportTable`) adds the title, the period the tables were
+  served, the plant / shift / brigadir scope and the time. Both props are
+  opt-in — /zagruzka-cell and /workers draw no button.
+- **`services/grid_export.py` is the layout** (`POST /api/zagruzka/export.xlsx`,
+  `require_page("zagruzka")`, logged as `export.zagruzka`, delivered by
+  `xlsx_delivery`): the gold header in upper case with the name header over
+  both rows, the screen's thick edges (name column, each date group, the
+  summary column, over the footer), a value as a real number under a `0"%"`
+  / `+0"%"` format filled with its band colour and its contrast ink, «—» on a
+  blank day, a pending day as a diagonal-stripe fill with its ⏳ / 👥 / 📄,
+  the footer after a spacer row, and the colour key under the table (one band
+  per line, the pending icons the file holds). Frozen header + names,
+  landscape, fit to width. Bounded (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`); it
+  computes nothing.
+- The pinned summary is in the file on a phone too, where the screen drops it.
+
 ## Which ojidaniya categories the загрузка counts
 
 `sheets_reader.OJIDANIYA_ONLY_CATS` is **THE list** of categories that show on
