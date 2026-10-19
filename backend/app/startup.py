@@ -6871,6 +6871,22 @@ def _send_report_once(flag: str, what: str, sender, chat: int,
         db.close()
 
 
+def send_button_test() -> None:
+    """TEMPORARY (2026-10-19): the «Tugmalar sinovi» — the three messages that
+    carry buttons inside them (services/button_test) — sent once to the
+    operator after Phase 2 shipped, so they can be checked on a real phone.
+    `/buttontest` in the bot sends them again on demand. Delete this function
+    and its call in BOTH entrypoints once the flag reads «sent»; the module and
+    the command stay."""
+    def sender(db, chat, _a, _b) -> int:
+        from app.services import button_test
+        from app.telegram_bot import _get_lang
+        button_test.run(chat, _get_lang(chat) or "uz")
+        return 5
+    _send_report_once("button_test_dm_2026_10_19_v1", "button test DM",
+                      sender, UNPRICED_DM_CHAT)
+
+
 def report_unpriced_ojidaniya() -> None:
     """The register as a rich-message TABLE (v4.85.0). Inert once it has landed;
     kept so a delivery that failed on the first boot still gets its retries."""

@@ -44,6 +44,13 @@ TASHKENT = ZoneInfo("Asia/Tashkent")
 # The largest count «O'zgartirish» takes — a typo guard, not a rule.
 MAX_COUNT = 999
 
+# `sent_by` of a notice sent by the «Tugmalar sinovi» (services/button_test) —
+# AUTO_SENDER's shape (0 = the clock). A test notice works end to end for the
+# admin it was sent to, and is invisible everywhere else: the modal and the
+# automatic send skip it (`production._call_rows`), it is never the «latest»
+# notice of a real unit-day, and its answers file no «Jurnal» row.
+TEST_SENDER = -1
+
 
 def today() -> date:
     return datetime.now(TASHKENT).date()
@@ -86,6 +93,7 @@ class Tracker:
 def latest(db: Session, manager_id: int, for_date) -> ForecastCallNotice | None:
     return (db.query(ForecastCallNotice)
             .filter_by(manager_id=manager_id, for_date=for_date)
+            .filter(ForecastCallNotice.sent_by != TEST_SENDER)
             .order_by(ForecastCallNotice.sent_at.desc(),
                       ForecastCallNotice.id.desc())
             .first())
@@ -97,6 +105,10 @@ def refusal(db: Session, n: ForecastCallNotice | None, tid: int) -> str | None:
     number lands: a minute of typing is time for a newer notice to go out."""
     if n is None:
         return "gone"
+    if n.sent_by == TEST_SENDER:
+        # A test card answers to the account it was sent to, and to nobody else.
+        chats = {m.get("chat") for m in (n.tg_messages or [])}
+        return None if tid in chats else "not_yours"
     from app.identity import profile_holders, profile_key
     if tid not in set(profile_holders(db, profile_key("supervisor", n.manager_id))):
         return "not_yours"
@@ -131,6 +143,8 @@ def answer(db: Session, n: ForecastCallNotice, tid: int, kind: str,
     n.answered_at = datetime.now(timezone.utc)
     n.answered_by = tid
     n.answered_name = _name(db, tid, n.manager_id)
+    if n.sent_by == TEST_SENDER:
+        return
     mgr = db.get(Manager, n.manager_id)
     action_log.record_bot(
         db, tid, "comms",

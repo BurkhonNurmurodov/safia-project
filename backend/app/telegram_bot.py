@@ -6174,6 +6174,20 @@ def _fc_callback(call: types.CallbackQuery):
         bot.send_message(chat, _msg(lang, "shot_failed"))
 
 
+@bot.message_handler(commands=["buttontest"])
+def _buttontest_cmd(message: types.Message):
+    """«Tugmalar sinovi» — the three messages with buttons inside them, sent to
+    the admin who asks (services/button_test). Admins only: the digest it
+    rebuilds is a real unit's."""
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    if tid not in _admin_ids():
+        bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+        return
+    from app.services import button_test
+    button_test.run(tid, lang)
+
+
 # ── The call forecast card's answer («Tasdiqlash» / «O'zgartirish») ─────────
 # services/forecast_answer is THE rule; these are its Telegram doors. `fa:ok`
 # confirms the notice's count, `fa:ch` asks for the brigadir's own number (a

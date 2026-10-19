@@ -100,6 +100,7 @@ try:
         seed_full90_bands,
         set_gemini_model_pro,
         report_unpriced_ojidaniya,
+        send_button_test,
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
         report_shared_work_centers,
@@ -427,6 +428,7 @@ try:
     # `services/unpriced_report.py` and `build_unpriced_workbook` once the file
     # has landed.
     report_unpriced_ojidaniya()
+    send_button_test()
     report_unpriced_ojidaniya_xlsx()
     # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for what is
     # still UNFILLED before the загрузка can be trusted: «Odam soni» missing on a

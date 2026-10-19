@@ -5809,6 +5809,18 @@ many»; «O'zgartirish» takes the brigadir's own number.
   both buttons disabled.
 - Columns: `startup.add_forecast_answer_columns` (both entrypoints, schema
   phase, FATAL on failure).
+- **«Tugmalar sinovi»** (`services/button_test.py`, `/buttontest` in the bot,
+  admins only): the three messages sent to the admin who asks, through the
+  real builders and send path — the latest unit-day a digest went out for,
+  rebuilt; task 9's warning with sample figures; a real unit's forecast for
+  its next shift-day on a TEST notice (`forecast_answer.TEST_SENDER` = -1:
+  answerable only by the account it was sent to, invisible to the modal and
+  the automatic send, never a unit-day's «latest», no «Jurnal» row) — then a
+  summary saying, per message, whether Telegram took the buttons inside it or
+  the fallback went out. TEMPORARY `startup.send_button_test` (flag
+  `button_test_dm_2026_10_19_v1`, both entrypoints, deferred) sent it once to
+  `UNPRICED_DM_CHAT`; delete it and both calls once the flag reads «sent» —
+  the module and the command stay.
 - Not built: buttons on the in-message rows of any other DM; callbacks from a
   rich message are parsed by the pinned telebot like any other (it ignores the
   unknown message field) — the first real tap in production is the test.
