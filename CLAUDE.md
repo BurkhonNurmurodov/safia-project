@@ -11322,6 +11322,14 @@ The platform forces three differences, and the cloud mode handles each:
   at its header, nothing deployed, and nothing on screen said so. The hook
   reads no other ref; a fetch of `main` takes seconds. If the log ever ends at
   a header again, the stall is before the first logged step.
+- **So does the session-start script** (`scripts/cloud-setup.sh` `setup_git`,
+  2026-10-19): its `git fetch gitea` of every ref made gitea pack ~244,000
+  objects — 28 % done after 280 s, measured from the cloud — far past the
+  SessionStart hook's 180 s cap, so no cloud session ever fast-forwarded onto
+  production (this one opened 15 commits behind) and `gitea/main` was not even
+  known locally. It fetches `main` alone under a 120 s cap now; the pack is
+  whatever the other six branches hold that `main` does not, and nothing here
+  reads them.
 - **Nothing that cannot be undone.** The per-session `.git/hooks/pre-push`
   allows a fast-forward of `main` and refuses **deleting** it or **rewriting** it
   (any non-fast-forward, i.e. `--force`). If another deploy moved `gitea/main`
