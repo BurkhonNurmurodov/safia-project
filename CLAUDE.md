@@ -11275,6 +11275,12 @@ The platform forces three differences, and the cloud mode handles each:
   itself is left alone. The commit message describes the whole deploy since
   `gitea/main`. The frontend is **always rebuilt**, so the bundle carries the
   `VERSION` it ships with even when Claude committed everything itself.
+- **The hook fetches `gitea/main` ALONE, under a 120 s cap** (2026-10-19). It
+  fetched every ref of the remote, and from the cloud that fetch stalled past
+  the hook's own 7-minute timeout three turns in a row — each run's log ended
+  at its header, nothing deployed, and nothing on screen said so. The hook
+  reads no other ref; a fetch of `main` takes seconds. If the log ever ends at
+  a header again, the stall is before the first logged step.
 - **Nothing that cannot be undone.** The per-session `.git/hooks/pre-push`
   allows a fast-forward of `main` and refuses **deleting** it or **rewriting** it
   (any non-fast-forward, i.e. `--force`). If another deploy moved `gitea/main`
