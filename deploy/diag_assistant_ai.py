@@ -14,14 +14,14 @@ chat's call reaches Gemini in a second. This prints, from the box:
   3. the AI feature rows (kind of the last error, model, key hint);
   4. the network as the worker sees it: proxy variable NAMES, the addresses
      Gemini's host resolves to;
-  5. a live probe with the assistant's own key and model, all at once: a tiny
-     sync call (the tab's own check), a tiny async call (the chat's
-     transport), the chat's real system prompt + tools, the same without
-     tools, and the same on Flash — each timed, with its outcome.
+  5. a live probe, all candidates at once: two steps of the real chat (the
+     question → a tool call → a stub result → the answer) on Gemini Flash and
+     Gemini Pro with the assistant's key, and on Claude Sonnet / Opus with the
+     reviewer's Claude key — each step timed, with its outcome.
 
 Run by `.gitea/workflows/deploy.yaml` after the health check, from `backend/`
 as `python ../deploy/diag_assistant_ai.py`. READ-ONLY on the database; its
-only outside effect is five small Gemini calls billed to the assistant's key.
+only outside effect is a few small AI calls billed to those two keys.
 No key, token or person's words are printed. Delete it with its step.
 """
 from __future__ import annotations
@@ -140,78 +140,66 @@ def network():
 
 
 async def probe():
-    import httpx
+    """Two steps of the real chat on each candidate — the question, the tool
+    call it answers with, a stub tool result handed back, the answer — so the
+    replay of a step (Gemini's thought signatures, Claude's raw blocks) is
+    exercised exactly as the engine does it. All candidates run at once."""
+    from app.services import ai_features, assistant as engine, assistant_ai as ai
 
-    from app.services import ai_features, assistant as engine, assistant_gemini as g, gemini
-    a = ai_features.resolve("assistant")
-    say(f"assistant assignment: provider={a.provider} model={a.model} hint={a.hint} "
-        f"source={a.source} key={'yes' if a.key else 'NO'}")
-    if not a.key or a.provider != "gemini":
-        say("not a Gemini key — live probe skipped")
-        return
+    chat = ai_features.resolve("assistant")
+    review = ai_features.resolve("review")
+    say(f"assistant assignment: provider={chat.provider} model={chat.model} hint={chat.hint}")
+    say(f"review assignment: provider={review.provider} model={review.model} hint={review.hint}")
 
     class P:  # the chat's own Ctx, minus a live token
         payload = {"full_name": "Diagnostics", "role": "admin", "web": True}
         web = True
 
-    ctx = P()
     context = {"path": "/zagruzka", "lang": "uz", "_now": datetime.now().strftime("%Y-%m-%d %H:%M")}
-    system = engine._system(ctx, context)
-    say(f"system prompt {len(system)} chars, tools {len(engine.TOOLS)} "
-        f"({len(json.dumps(engine.TOOLS))} chars)")
-    question = [{"role": "user", "parts": [{"text": "Zagruzka qanday hisoblanadi? Qisqa javob ber."}]}]
-    tiny = [{"role": "user", "parts": [{"text": "Reply with the single word OK."}]}]
+    system = engine._system(P(), context)
+    say(f"system prompt {len(system)} chars, tools {len(engine.TOOLS)}")
 
-    async def timed(label, coro):
+    def cand(label, base, provider, model):
+        if not base.key or base.provider != provider:
+            return None
+        return label, ai_features.Assign("probe", provider, model, base.key, base.ref,
+                                         base.label, base.hint, base.source)
+
+    gem = chat if chat.provider == "gemini" else None
+    cands = [c for c in (
+        cand("Gemini Flash", gem or chat, "gemini", "gemini-flash-latest") if gem else None,
+        cand("Gemini Pro", gem or chat, "gemini", "gemini-pro-latest") if gem else None,
+        cand("Claude Sonnet 5.5", review, "claude", "claude-sonnet-5-5"),
+        cand("Claude Opus 5.5", review, "claude", "claude-opus-5-5"),
+    ) if c]
+
+    async def two_steps(label, a):
+        contents = [{"role": "user", "parts": [{"text": "Zagruzka qanday hisoblanadi? Qisqa javob ber."}]}]
         t = time.monotonic()
-        try:
-            r = await asyncio.wait_for(coro, CALL_CAP_S)
-            u = r.usage or {}
-            say(f"{label}: OK in {time.monotonic() - t:.1f} s · finish={r.finish} "
-                f"calls={[c.get('name') for c in r.calls]} text={len(r.text)} chars · "
-                f"prompt={u.get('promptTokenCount')} thoughts={u.get('thoughtsTokenCount')} "
-                f"out={u.get('candidatesTokenCount')}")
-        except asyncio.TimeoutError:
-            say(f"{label}: NO ANSWER within {CALL_CAP_S:.0f} s")
-        except g.AssistantAIError as exc:
-            say(f"{label}: {exc.code} after {time.monotonic() - t:.1f} s — {exc.message[:300]}")
-        except Exception as exc:  # noqa: BLE001
-            say(f"{label}: {type(exc).__name__} after {time.monotonic() - t:.1f} s — {str(exc)[:300]}")
+        for step in (1, 2):
+            s0 = time.monotonic()
+            try:
+                r = await asyncio.wait_for(
+                    ai._call(a, system, contents, engine.TOOLS, "AUTO" if step == 1 else "NONE"),
+                    CALL_CAP_S)
+            except asyncio.TimeoutError:
+                say(f"{label} step {step}: NO ANSWER within {CALL_CAP_S:.0f} s")
+                return
+            except Exception as exc:  # noqa: BLE001
+                say(f"{label} step {step}: {type(exc).__name__} {getattr(exc, 'code', '')} after "
+                    f"{time.monotonic() - s0:.1f} s — {str(getattr(exc, 'message', exc))[:300]}")
+                return
+            say(f"{label} step {step}: OK in {time.monotonic() - s0:.1f} s · finish={r.finish} "
+                f"tools={[c.get('name') for c in r.calls]} text={len(r.text)} chars")
+            contents.append(r.content)
+            if not r.calls:
+                break
+            contents.append({"role": "user", "parts": [
+                engine._fresp(c, {"note": "Probe: the rule book is not available here — answer from "
+                                          "what you know in two sentences."}) for c in r.calls]})
+        say(f"{label}: whole answer in {time.monotonic() - t:.1f} s")
 
-    async def sync_ping():
-        t = time.monotonic()
-        try:
-            await asyncio.to_thread(gemini.ping, a.key, a.model)
-            say(f"sync ping ({a.model}): OK in {time.monotonic() - t:.1f} s")
-        except Exception as exc:  # noqa: BLE001
-            say(f"sync ping ({a.model}): {type(exc).__name__} after {time.monotonic() - t:.1f} s — {str(exc)[:300]}")
-
-    async def raw_async():
-        """The chat's transport with nothing of the chat: one bare AsyncClient POST."""
-        t = time.monotonic()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{a.model}:generateContent"
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=20.0)) as c:
-                res = await c.post(url, headers={"x-goog-api-key": a.key},
-                                   json={"contents": tiny})
-            say(f"raw async POST: HTTP {res.status_code} in {time.monotonic() - t:.1f} s "
-                f"(http {res.http_version})")
-        except Exception as exc:  # noqa: BLE001
-            say(f"raw async POST: {type(exc).__name__} after {time.monotonic() - t:.1f} s — {str(exc)[:300]}")
-
-    flash = "gemini-flash-latest"
-    await asyncio.gather(
-        sync_ping(),
-        raw_async(),
-        timed(f"tiny chat call ({a.model})",
-              g.generate(system="Be brief.", contents=tiny, tools=None, model=a.model, key=a.key)),
-        timed(f"full prompt + tools ({a.model})",
-              g.generate(system=system, contents=question, tools=engine.TOOLS, model=a.model, key=a.key)),
-        timed(f"full prompt, no tools ({a.model})",
-              g.generate(system=system, contents=question, tools=None, model=a.model, key=a.key)),
-        timed(f"full prompt + tools ({flash})",
-              g.generate(system=system, contents=question, tools=engine.TOOLS, model=flash, key=a.key)),
-    )
+    await asyncio.gather(*(two_steps(label, a) for label, a in cands))
 
 
 def main():

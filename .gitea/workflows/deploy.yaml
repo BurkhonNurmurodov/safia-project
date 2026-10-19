@@ -113,8 +113,8 @@ jobs:
           bash "$SCRIPT"
 
       # ⚠ TEMPORARY (2026-10-19): why «Yordamchi» gets no answer from Gemini —
-      # the assistant's runs and log lines, and a timed live probe of its own
-      # key and model (tiny call vs the chat's real prompt + tools). Read-only,
+      # the assistant's runs and log lines, and two timed steps of the real
+      # chat on Gemini Flash / Pro and Claude Sonnet / Opus. Read-only,
       # never fails the deploy, prints no key and nobody's words. Lives under
       # deploy/ so adding it restarts nothing. Remove with the script.
       - name: "Probe: assistant AI calls (temporary)"

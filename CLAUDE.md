@@ -11591,7 +11591,15 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   (`ai_usage_since`), and the column says «(19.10 dan)» while that day lies
   inside the month. Status per row: `ok` · `error` + the reason in words
   (limit · key refused · no balance · model not found · provider did not
-  answer · no connection · unreadable answer) · `unused` · `off` · `broken`.
+  answer · too slow · no connection · unreadable answer) · `unused` · `off` ·
+  `broken`. **The status describes the pair running NOW**: saving a feature
+  onto another key or model clears the old pair's last call, success and
+  error (`assign`; the month's figures stay in `ai_usage`), so the row reads
+  «Hali ishlatilmagan» until the new pair is asked something. Until
+  2026-10-19 the old error stayed on the row, and every re-pick looked
+  broken before it had been used — the operator moved the assistant to Claude
+  Opus, Claude Sonnet and back to Gemini Pro, saw «Xato» each time, and never
+  sent the chat a message on Claude. Re-saving the SAME pair keeps its result.
 - **A failure a person must act on is told ONCE** (`_maybe_alert`): a key
   refused, a model the key cannot reach, the account out of credit, or a quota
   that has lasted 15 min or failed 3 times running DMs the support chat (else
@@ -11603,9 +11611,22 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   itself** — the operator's ruling: moving to another billing account is a
   person's decision. The error vocabulary is `GeminiError.kind` (quota ·
   unavailable · key · credit · model · no_key · bad_response · network ·
-  other) for both providers (`claude_ai.mapped`: 404 → model, «credit
+  other, plus `slow` — the assistant's call that sent nothing for 150 s or
+  passed `assistant_ai.DEADLINE_S`) for both providers (`claude_ai.mapped`: 404 → model, «credit
   balance» → credit, connection → network); the exception CLASS still
   decides control flow (`GeminiQuotaError` stops the reviewer's drain).
+- **Gemini Pro was too slow for the chat on 2026-10-19** (measured from the
+  server by the temporary deploy step «Probe: assistant AI calls»,
+  `deploy/diag_assistant_ai.py`): on the operator's Gemini key a one-word
+  «OK» took 55 s on `gemini-pro-latest`, ONE step of the chat's real prompt
+  86 s, and the same without tools passed 150 s — while Flash answered that
+  prompt in 3 s. Nothing in the request was at fault (a 10k-token prompt,
+  ~100–250 thought tokens); it was the provider's latency. A chat answer is
+  several steps, so the assistant on Pro failed every time with «juda uzoq
+  kutildi», now worded «tanlangan model juda sekin … tezroq model tanlasin».
+  The tab's own save check can still pass on a slow model (it allows 60 s and
+  needs one tiny call). Delete the probe step and its script once the
+  assistant runs on a fast pair.
 - **The assistant speaks Claude too** (`services/assistant_claude.py`,
   `assistant_ai.py`). The transcript stays in Gemini's `contents` shape;
   a Claude reply is translated into it and its raw content blocks are kept

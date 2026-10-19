@@ -423,12 +423,18 @@ def assign(db, feature: str, key_ref, model: str, actor: str, actor_tg) -> dict:
     row.updated_at = _now()
     row.updated_by = (actor or "")[:120] or None
     row.updated_tg = actor_tg
-    # A new pair is a new start: an alert about the old one is not about it.
+    # A new pair is a new start: an alert about the old one is not about it,
+    # and neither is its last result — the row's status describes the pair
+    # running NOW. Kept, «Xato» stayed on the row after every re-pick and every
+    # new pair looked broken before it had been asked anything (2026-10-19).
+    # The month's figures stay in `ai_usage`.
     if (row.key_ref, row.model) != (before["ref"], before["model"]):
         row.alert_kind = row.alert_ref = None
         row.alert_at = None
         row.fail_streak = 0
         row.first_fail_at = None
+        row.last_at = row.last_ok_at = row.last_error_at = None
+        row.last_error = row.last_error_text = None
     db.commit()
     invalidate()
     return {"before": before, "after": {"ref": row.key_ref, "model": row.model}, "check": check}

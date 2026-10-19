@@ -36,7 +36,7 @@ DEADLINE_S = 240
 # AssistantAIError.code → the ledger's kind.
 _KIND = {"quota": "quota", "unavailable": "unavailable", "key": "key", "model": "model",
          "credit": "credit", "rejected": "other", "empty": "bad_response", "no_key": "no_key",
-         "thinking_binding": "other", "slow": "unavailable"}
+         "thinking_binding": "other", "slow": "slow"}
 
 
 def current() -> ai_features.Assign:
