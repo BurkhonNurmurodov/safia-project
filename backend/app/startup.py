@@ -10119,3 +10119,26 @@ def _leader_auto_t11_grant_job() -> None:
                 f"<pre>{esc(str(exc)[:600])}</pre>")
     finally:
         db.close()
+
+
+def adopt_legacy_ai_key() -> None:
+    """The proof reviewer's single-key era kept ONE sealed Gemini key in
+    `app_settings["gemini_api_key"]`. From 2026-10-19 keys live in `ai_keys`
+    (services/ai_review); this copies that setting into a row once — active
+    where nothing else runs — so the key list shows what the reviewer has
+    been running on. Idempotent by the row's `source`; the setting stays until
+    the row is deleted, so an old copy in the blue-green window still reads it.
+    """
+    from app.database import SessionLocal
+    from app.services import ai_review
+
+    import logging
+
+    db = SessionLocal()
+    try:
+        ai_review.adopt_legacy(db)
+    except Exception:
+        logging.getLogger(__name__).exception("adopt_legacy_ai_key failed")
+        db.rollback()
+    finally:
+        db.close()

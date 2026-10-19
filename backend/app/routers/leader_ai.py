@@ -53,7 +53,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import (action_log, gemini, leader_ai, leader_rule_eras, leader_shift,
+from app.services import (action_log, ai_review, gemini, leader_ai, leader_rule_eras, leader_shift,
                           leader_tasks, one_process)
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
@@ -95,7 +95,7 @@ def overview(db: Session = Depends(get_db),
     the rows they may see; the flag map that used to be resolved here for the
     same chip was a second spelling of the same number and is gone.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False, "counts": {}}
     if payload.get("role") != "admin":
         return {"enabled": True}
@@ -110,7 +110,7 @@ def overview(db: Session = Depends(get_db),
 
     return {
         "enabled": True,
-        "model": gemini.active_model(),
+        "model": ai_review.active_model(),
         "counts": leader_ai.counts(db),
         # Where review begins. Every "why has this old day never been checked"
         # question has this as its answer, and until it shipped in a payload the
@@ -179,7 +179,7 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     404 rather than 403, as the day report does: a probe must not learn which
     uids name a real report in another unit.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False, "tasks": {}}
 
     if payload.get("role") != "admin":
@@ -289,7 +289,7 @@ def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
     `bucket` is one of those dimensions, the tab counts come from the same pass:
     a tab reading «333» beside a four-row rail is not a filter, it is a bug.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False, "items": [], "buckets": {}, "facets": {}}
 
     q = (
@@ -983,7 +983,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     admin waits about three seconds for, which is what makes the wait feel like
     an action instead of a queue.
     """
-    if not gemini.available():
+    if not ai_review.available():
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
 
@@ -1138,34 +1138,63 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
 
 
 class ApiKeyIn(BaseModel):
-    # "" clears the stored key and turns the feature back off.
+    # The single-key era's door (a tab from before the store): a Gemini key.
     key: str = Field(default="", max_length=400)
 
 
-@router.get("/key")
-def get_key(_: dict = Depends(verify_admin)):
-    """Whether a key is configured, where it came from, and a masked preview.
+def _actor(admin: dict) -> tuple[str, int | None]:
+    who = (admin.get("full_name") or admin.get("username")
+           or str(admin.get("telegram_id") or "admin"))
+    try:
+        tg = int(admin.get("telegram_id") or 0) or None
+    except (TypeError, ValueError):
+        tg = None
+    return who, tg
 
-    Never returns the key. The preview is first-4 + last-4 so an operator can
-    tell "the key I pasted" from "some other key" without the value being
-    readable — enough to diagnose a bad paste, useless to anyone reading over a
-    shoulder or scrolling back through a screen share.
+
+def _arm_and_kick() -> None:
+    """A key saved or switched from the UI is precisely the moment the
+    periodic drain may not exist yet — boot DECLINES to schedule it without a
+    key — so arm it (`replace_existing` makes a re-registration a no-op), and
+    drain what is ALREADY queued, nothing more: turning the feature on and
+    deciding what it should read are two acts, and the backlog is one
+    «Tekshirish» away, which shows the count first and asks."""
+    try:
+        leader_ai.register_drain_job()
+    except Exception:
+        log.exception("leader-ai: could not arm the periodic drain")
+    try:
+        leader_ai.run_async(discover_first=False)
+    except Exception:
+        log.exception("leader-ai: could not kick a drain after the key changed")
+
+
+def _provider_models(provider: str) -> list[str]:
+    p = ai_review.PROVIDERS.get(provider) or ai_review.PROVIDERS["gemini"]
+    return [m["id"] for m in p["models"]]
+
+
+@router.get("/key")
+def get_key(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """The reviewer's AI settings: every saved key (never the value — the last
+    four characters as a hint), the active key + model, and each provider's
+    model catalog (services/ai_review). The single-key era's fields ride
+    along for a tab on an older bundle: `configured`, `source`, `editable`,
+    `preview`, `model`, `modelSource`, `models`.
     """
-    src = gemini.key_source()
-    raw = gemini.api_key()
+    a = ai_review.active(db)
     return {
-        "configured": bool(raw),
-        # env wins over the stored key, so the form says so rather than letting
-        # somebody type a value that silently never takes effect.
-        "source": src,
-        "editable": src != "env",
-        "preview": f"{raw[:4]}…{raw[-4:]}" if len(raw) >= 12 else ("…" if raw else ""),
-        # The model rides along: it is the other half of "what will this cost
-        # and how well will it judge", and a second request for one string on a
-        # card that is already open is a round-trip for nothing.
-        "model": gemini.active_model(),
-        "modelSource": gemini.model_source(),
-        "models": list(gemini.MODELS),
+        "configured": bool(a.key),
+        "source": a.source,
+        "editable": a.source != ai_review.ENV_ID,
+        "preview": f"····{a.hint}" if a.hint else "",
+        "model": a.model,
+        "modelSource": ai_review.model_source(a),
+        "models": _provider_models(a.provider),
+        "active": ai_review.active_out(a),
+        "keys": ai_review.list_keys(db),
+        "providers": ai_review.catalog(),
+        "envKey": ai_review.has_env_key(),
     }
 
 
@@ -1176,122 +1205,148 @@ class ModelIn(BaseModel):
 @router.post("/model")
 def set_model(body: ModelIn, db: Session = Depends(get_db),
               admin: dict = Depends(verify_admin)):
-    """Choose which Gemini model the reviewer runs on.
-
-    The binding constraint moves and nobody can predict when: `flash` judges
-    the relevance question better, `flash-lite` goes several times further per
-    day, and which one is right flips the moment the account lands on the free
-    tier or runs into a spend cap. Until now that choice lived in `config.py`
-    and needed a push, which means it needed someone with repo access at the
-    exact moment the quota ran out — the same trap the API key was in.
-
-    Restricted to the curated aliases. A free-text field here is a way to type
-    a retired model id and get a 404 on every row until somebody notices, and
-    the three on offer (pro · flash · flash-lite) are the ones known to resolve.
+    """Choose the model for the key the reviewer runs on now — the single-key
+    era's picker, kept for a tab on an older bundle; the current page sends
+    the pair through `PUT /active`. Validated against the active provider's
+    catalog: a free-text field here is a way to type a retired model id and
+    get a 404 on every row until somebody notices.
     """
-    name = (body.model or "").strip()
-    if name not in gemini.MODELS:
-        raise HTTPException(status_code=400,
-                            detail=f"Unknown model. Choose one of: "
-                                   f"{', '.join(gemini.MODELS)}")
-
-    row = db.query(AppSetting).filter_by(key=gemini.MODEL_SETTING).first()
-    was = (row.value or "") if row is not None else ""
-    if row is None:
-        db.add(AppSetting(key=gemini.MODEL_SETTING, value=name))
-    else:
-        row.value = name
-    db.commit()
-    # Same reason the key invalidates its cache: the next thing the operator
-    # does is press «Tekshirish» and expect the model they just picked.
-    gemini.invalidate_model_cache()
-    log.info("leader-ai: %s set the model to %s",
-             admin.get("telegram_id"), name)
-    action_log.enrich(
-        target_kind="setting", target_id=gemini.MODEL_SETTING,
-        changes=[("model", was or "default", name)],
-    )
-    return {"ok": True, "model": gemini.active_model(),
-            "modelSource": gemini.model_source()}
+    who, _ = _actor(admin)
+    a = ai_review.active(db)
+    if not a.key:
+        raise HTTPException(status_code=400, detail="No AI key is active yet")
+    try:
+        new = ai_review.set_active(db, a.key_id if a.key_id is not None else ai_review.ENV_ID,
+                                   body.model)
+    except ai_review.BadModel as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=400, detail="No AI key is active yet")
+    log.info("leader-ai: %s set the model to %s", who, new.model)
+    action_log.enrich(target_kind="ai_key", target_id=str(new.key_id),
+                      changes=[("model", a.model or "default", new.model)])
+    return {"ok": True, "model": new.model, "modelSource": ai_review.model_source(new)}
 
 
 @router.post("/key")
 def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
             admin: dict = Depends(verify_admin)):
-    """Store (or clear) the Gemini API key from the admin UI.
-
-    This endpoint exists because the key's only other homes are `backend/.env`
-    (needs a shell on the VPS) and a CI secret (needs repo-admin on Gitea). An
-    operator with neither could not turn the feature on at all — it shipped and
-    then sat dark. Now the person who runs the plant can paste their own key.
-
-    Stored SEALED (`web_auth.seal_password`, keyed off SECRET_KEY, which is in
-    .env and never in the database), so a `dbdump` export carries ciphertext.
-    The value is never logged and never read back — see GET above.
+    """The single-key era's door: save a GEMINI key and run on it. Kept for a
+    tab on an older bundle; the current page uses `POST /keys` (any provider)
+    and the list. Clearing is no longer done here — a key is deleted from the
+    list, and the active one only once another runs.
     """
-    from app.web_auth import seal_password
-
-    if gemini.key_source() == "env":
-        raise HTTPException(
-            status_code=409,
-            detail="A key is pinned in backend/.env on the server; "
-                   "it takes precedence and must be changed there.",
-        )
-
+    who, tg = _actor(admin)
     raw = (body.key or "").strip()
-    who = (admin.get("full_name") or admin.get("username")
-           or str(admin.get("telegram_id") or "admin"))
-
-    row = db.query(AppSetting).filter_by(key=gemini.KEY_SETTING).first()
     if not raw:
-        if row is not None:
-            db.delete(row)
-            db.commit()
-        gemini.invalidate_key_cache()
-        log.info("leader-ai: %s CLEARED the Gemini API key", who)
-        # THAT it changed, never what it is. A secret in the action register is
-        # a secret in every export of that register.
-        action_log.enrich(target_kind="setting", target_id=gemini.KEY_SETTING,
-                          details=[("key", "cleared")])
-        return {"ok": True, "configured": False}
-
-    sealed = seal_password(raw)
-    if row is None:
-        db.add(AppSetting(key=gemini.KEY_SETTING, value=sealed))
-    else:
-        row.value = sealed
-    db.commit()
-    # Without this the new key would not be live until the 30s cache expired,
-    # and the very next thing the operator does is press «Tekshirish».
-    gemini.invalidate_key_cache()
-    # Length only. A key in the log is a key in a rotated logfile nobody thinks
-    # to shred, and this file is read by everyone debugging the bot.
+        raise HTTPException(status_code=409,
+                            detail="Keys are removed from the key list now.")
+    try:
+        row, _activated = ai_review.add_key(db, "gemini", raw, "", who, tg)
+        new = ai_review.set_active(db, row.id, ai_review.PROVIDERS["gemini"]["default"])
+    except (ai_review.KeyRefused, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     log.info("leader-ai: %s set a Gemini API key (%s chars)", who, len(raw))
-    # Same rule as the log line above: the length, and nothing else.
-    action_log.enrich(target_kind="setting", target_id=gemini.KEY_SETTING,
-                      details=[("key", "set"), ("size", len(raw))])
+    # THAT it changed, never what it is: the length and the hint, nothing else.
+    action_log.enrich(target_kind="ai_key", target_id=str(row.id),
+                      details=[("provider", "gemini"), ("hint", row.hint or ""),
+                               ("size", len(raw)), ("activated", True)])
+    _arm_and_kick()
+    return {"ok": True, "configured": True, "source": new.source}
 
-    # Arm the periodic drain, which boot DECLINED to schedule because there was
-    # no key yet — and a key set from this form is precisely the case where
-    # there wasn't one. Without this the timer never exists on that process, so
-    # the queue only ever moves when a request happens to kick it, and a
-    # swallowed kick strands it until the next restart rather than 20 minutes.
-    # `replace_existing` makes re-registration a no-op when it is already armed.
-    try:
-        leader_ai.register_drain_job()
-    except Exception:
-        log.exception("leader-ai: could not arm the periodic drain")
 
-    # Drain what is ALREADY queued, nothing more. Setting a key used to back-fill
-    # the entire corpus — one form submit, thousands of rows and a quota bill
-    # nobody chose. Turning the feature on and deciding what it should read are
-    # two different acts; the backlog is one «Tekshirish» away in the re-check
-    # modal, which shows the count first and asks.
+class NewKeyIn(BaseModel):
+    provider: str = Field(..., max_length=20)
+    key: str = Field(..., min_length=8, max_length=400)
+    label: str = Field(default="", max_length=60)
+
+
+@router.post("/keys")
+def add_key(body: NewKeyIn, db: Session = Depends(get_db),
+            admin: dict = Depends(verify_admin)):
+    """Save a key for one provider. Tested at once (its model list is read
+    with it): a key the provider rejects is refused, not stored. The first
+    key saved while nothing runs switches the reviewer on; every later one
+    waits to be picked in `PUT /active`.
+    """
+    who, tg = _actor(admin)
+    raw = body.key.strip()
     try:
-        leader_ai.run_async(discover_first=False)
-    except Exception:
-        log.exception("leader-ai: could not kick a drain after the key was set")
-    return {"ok": True, "configured": True, "source": "db"}
+        row, activated = ai_review.add_key(db, body.provider, raw, body.label, who, tg)
+    except (ai_review.KeyRefused, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    log.info("leader-ai: %s added a %s API key (%s chars, test %s)", who, row.provider,
+             len(raw), "ok" if row.test_ok else "failed")
+    action_log.enrich(target_kind="ai_key", target_id=str(row.id),
+                      details=[("provider", row.provider), ("hint", row.hint or ""),
+                               ("size", len(raw)), ("test", "ok" if row.test_ok else "failed"),
+                               ("activated", activated)])
+    if activated:
+        _arm_and_kick()
+    return {"ok": True, "key": ai_review.to_dict(row), "activated": activated,
+            "active": ai_review.active_out(ai_review.active(db))}
+
+
+@router.post("/keys/{key_id}/test")
+def test_key(key_id: str, db: Session = Depends(get_db),
+             admin: dict = Depends(verify_admin)):
+    """Re-test a saved key (or the .env one): reads its provider's model list,
+    stores the outcome and the list the picker offers."""
+    try:
+        info = ai_review.test_key(db, key_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No such key")
+    action_log.enrich(target_kind="ai_key", target_id=str(info.get("id")),
+                      details=[("provider", info.get("provider")), ("hint", info.get("hint")),
+                               ("test", "ok" if info.get("testOk") else "failed")])
+    return {"ok": True, "key": info}
+
+
+@router.delete("/keys/{key_id}")
+def delete_key(key_id: str, db: Session = Depends(get_db),
+               admin: dict = Depends(verify_admin)):
+    """Delete a saved key. The ACTIVE one is refused (409): activate another
+    first, or the reviewer fails every row until somebody notices."""
+    who, _ = _actor(admin)
+    try:
+        info = ai_review.delete_key(db, key_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No such key")
+    except ai_review.ActiveKey:
+        raise HTTPException(status_code=409, detail="active")
+    log.info("leader-ai: %s deleted a %s API key (…%s)", who, info["provider"], info["hint"])
+    action_log.enrich(target_kind="ai_key", target_id=str(key_id),
+                      details=[("provider", info["provider"]), ("hint", info["hint"])])
+    return {"ok": True}
+
+
+class ActiveIn(BaseModel):
+    keyId: int | str
+    model: str = Field(..., max_length=80)
+
+
+@router.put("/active")
+def set_active(body: ActiveIn, db: Session = Depends(get_db),
+               admin: dict = Depends(verify_admin)):
+    """Switch the reviewer onto one saved key AND one of its provider's models —
+    the pair is one act. Arms and kicks the drain like saving a key did."""
+    who, _ = _actor(admin)
+    before = ai_review.active(db)
+    try:
+        new = ai_review.set_active(db, body.keyId, body.model)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No such key")
+    except ai_review.BadModel as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    log.info("leader-ai: %s switched the reviewer to %s · %s (…%s)",
+             who, new.provider, new.model, new.hint)
+    action_log.enrich(target_kind="ai_key", target_id=str(new.key_id),
+                      changes=[("provider", before.provider or "—", new.provider),
+                               ("model", before.model or "—", new.model),
+                               ("key", f"…{before.hint}" if before.hint else "—",
+                                f"…{new.hint}" if new.hint else "—")])
+    _arm_and_kick()
+    return {"ok": True, "active": ai_review.active_out(new)}
 
 
 @router.post("/run")
@@ -1317,7 +1372,7 @@ def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     Returns immediately — a backlog takes far longer than a request may — so the
     page polls `progress`.
     """
-    if not gemini.available():
+    if not ai_review.available():
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
     leader_ai.run_async(discover_first=False)
@@ -1478,7 +1533,7 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
       paces itself instead of becoming one enormous request that dies with its
       worker.
     """
-    if not gemini.available():
+    if not ai_review.available():
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
 
@@ -1787,7 +1842,7 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     `leader_ai_reviews` made this box answer "no proof photos in this range"
     about a range full of unchecked reports.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False}
 
     # A pick naming every task in the catalog is no narrowing at all — kept as
@@ -2364,7 +2419,7 @@ def kick(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     the drain has always been a background thread and reports itself through the
     heartbeat that `/progress` reads.
     """
-    if not gemini.available():
+    if not ai_review.available():
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
     leader_ai.run_async(discover_first=False)
@@ -2587,7 +2642,7 @@ def activity(limit: int = Query(60, ge=1, le=ACTIVITY_CAP),
     """
     import json
 
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False, "people": [], "recent": [], "totals": {}}
 
     started = None
@@ -2671,7 +2726,7 @@ def activity(limit: int = Query(60, ge=1, le=ACTIVITY_CAP),
 
     return {
         "enabled": True,
-        "model": gemini.active_model(),
+        "model": ai_review.active_model(),
         "since": cutoff.isoformat(),
         # Whether this window IS the run, or the fallback 24h — the caption over
         # the list says which, and guessing wrong makes "0 reviewed" read as
@@ -2727,7 +2782,7 @@ def activity_queue(db: Session = Depends(get_db), _: dict = Depends(verify_admin
     across a day. Without this the only evidence of what happened is the size of
     the queue — the one fact that cannot tell those two apart.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"enabled": False, "groups": [], "bursts": [], "dates": [],
                 "totals": {}}
 

@@ -50,6 +50,15 @@ class GeminiQuotaError(GeminiError):
     """
 
 
+class GeminiAuthError(GeminiError):
+    """The provider rejected the KEY itself — a 401/403, or Gemini's 400 «API
+    key not valid». Raised by `list_models` of BOTH transports (claude_ai.py
+    reuses these three classes: they are the reviewer's error contract, not
+    Gemini's), so a key being saved is refused as a typo rather than stored to
+    fail every review.
+    """
+
+
 # ── where the key comes from ─────────────────────────────────────────────────
 # Two sources, env first:
 #
@@ -92,9 +101,20 @@ def _stored_key() -> str:
 
         db = SessionLocal()
         try:
-            row = db.query(AppSetting).filter_by(key=KEY_SETTING).first()
-            if row and row.value:
-                val = (open_password(row.value) or "").strip()
+            # The saved-key store first (services/ai_review): the active Gemini
+            # row, else the newest one — then the single-key era's sealed
+            # setting, which `ai_review.adopt_legacy` copies into a row at boot
+            # and `delete_key` removes together with that row.
+            from app.models import AiKey
+
+            krow = (db.query(AiKey).filter(AiKey.provider == "gemini")
+                    .order_by(AiKey.active.desc(), AiKey.id.desc()).first())
+            if krow is not None and krow.key_enc:
+                val = (open_password(krow.key_enc) or "").strip()
+            if not val:
+                row = db.query(AppSetting).filter_by(key=KEY_SETTING).first()
+                if row and row.value:
+                    val = (open_password(row.value) or "").strip()
         finally:
             db.close()
     except Exception:
@@ -169,6 +189,12 @@ def set_model_override(name: str) -> None:
     """
     global _model_override
     _model_override = (name or "").strip()
+
+
+def cli_model_override() -> str:
+    """The backfill CLI's per-process `--model`, for `ai_review` to honour on a
+    Gemini key exactly as `active_model` does."""
+    return _model_override
 
 
 def _stored_model() -> str:
@@ -250,20 +276,27 @@ def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
         return data, mime or "image/jpeg"
 
 
+def _key_or_default(explicit: str | None) -> str:
+    return (explicit or "").strip() or api_key()
+
+
 def generate_json(
     prompt: str,
     images: list[tuple[bytes, str]],
     schema: dict,
     *,
     model: str | None = None,
+    api_key: str | None = None,
 ) -> dict:
     """One vision call constrained to `schema`. Returns the parsed object.
 
     `images` is [(bytes, mime), …]; they are shrunk here so no caller has to
     remember to. Raises GeminiQuotaError on 429, GeminiError on anything else
-    that leaves us without a usable object.
+    that leaves us without a usable object. `api_key` names the key to call
+    with (the store's active one, through `ai_review`); without it the
+    resolver's answer is used, as every narrative caller still does.
     """
-    key = api_key()
+    key = _key_or_default(api_key)
     if not key:
         raise GeminiError("GEMINI_API_KEY is not configured")
     mdl = (model or "").strip() or active_model()
@@ -321,6 +354,42 @@ def generate_json(
         raise GeminiError(f"Response was not JSON: {exc}") from exc
     if not isinstance(out, dict):
         raise GeminiError("Response JSON was not an object")
+    return out
+
+
+def list_models(key: str) -> list[dict]:
+    """[{id, label}] of the Gemini models `key` may call generateContent with —
+    the live ListModels answer, which doubles as the key test: a bad key is a
+    400 «API key not valid» / 403 (GeminiAuthError). The three `-latest`
+    aliases are not always in it; `ai_review.model_options` lays them over."""
+    key = (key or "").strip()
+    if not key:
+        raise GeminiAuthError("No Gemini API key")
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            res = client.get(_BASE, params={"pageSize": 200},
+                             headers={"x-goog-api-key": key})
+    except httpx.HTTPError as exc:
+        raise GeminiError(f"Gemini unreachable: {exc}") from exc
+    if res.status_code in (400, 401, 403):
+        raise GeminiAuthError(f"Gemini {res.status_code}: {_detail(res) or 'key refused'}")
+    if res.status_code == 429:
+        raise GeminiQuotaError(_detail(res) or "Rate limit reached")
+    if res.status_code != 200:
+        raise GeminiError(f"Gemini {res.status_code}: {_detail(res)}")
+    out: list[dict] = []
+    try:
+        models = res.json().get("models") or []
+    except ValueError as exc:
+        raise GeminiError(f"Unreadable Gemini response: {exc}") from exc
+    for m in models:
+        name = str(m.get("name") or "")
+        if not name.startswith("models/gemini"):
+            continue
+        if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+            continue
+        mid = name.split("/", 1)[1]
+        out.append({"id": mid, "label": str(m.get("displayName") or mid)})
     return out
 
 

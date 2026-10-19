@@ -5078,3 +5078,30 @@ class VerifixSyncRun(Base):
     error       = Column(Text, nullable=True)
     ms          = Column(Integer, nullable=True)
 
+
+
+class AiKey(Base):
+    """A saved AI API key for the proof reviewer (services/ai_review.py) — any
+    number per provider, the VALUE sealed (`web_auth.seal_password`, keyed off
+    SECRET_KEY, which lives in .env) so a dbdump carries ciphertext. Never read
+    back whole: the UI gets `hint`, the last four characters. The reviewer runs
+    on exactly ONE row at a time (`active`), on the `model` picked for that
+    row; `models` caches the provider's live list from the last test, so the
+    picker offers what the key can actually reach."""
+    __tablename__ = "ai_keys"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    provider    = Column(String, nullable=False, index=True)            # "gemini" | "claude"
+    label       = Column(String, nullable=True)
+    key_enc     = Column(Text, nullable=False)                          # sealed — never logged, never returned
+    hint        = Column(String, nullable=True)                         # the last 4 characters
+    model       = Column(String, nullable=True)                         # the model picked for THIS key
+    active      = Column(Boolean, nullable=False, default=False, server_default=text("false"), index=True)
+    source      = Column(String, nullable=False, default="ui", server_default="ui")   # "ui" | "legacy"
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    created_by  = Column(String, nullable=True)
+    created_tg  = Column(BigInteger, nullable=True)
+    tested_at   = Column(DateTime(timezone=True), nullable=True)
+    test_ok     = Column(Boolean, nullable=True)
+    test_note   = Column(String, nullable=True)
+    models      = Column(JSONB, nullable=True)                          # [{id, label}] from the last test

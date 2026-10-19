@@ -239,6 +239,10 @@ async def lifespan(app: FastAPI):
     run(add_profiles_columns)
     run(migrate_cells_table)
     run(migrate_cells_leaders_columns)
+    # The proof reviewer's single sealed Gemini key becomes a row of the
+    # saved-key store (services/ai_review), once.
+    from app.startup import adopt_legacy_ai_key
+    run(adopt_legacy_ai_key)
     run(migrate_cell_supervisor_column)
     run(migrate_cell_in_load_column)
     # Every cell of a unit whose загрузка is calculated starts ON (once).
