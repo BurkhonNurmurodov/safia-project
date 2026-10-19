@@ -112,6 +112,16 @@ jobs:
 
           bash "$SCRIPT"
 
+      # ⚠ TEMPORARY (2026-10-19): why «Yordamchi» gets no answer from Gemini —
+      # the assistant's runs and log lines, and a timed live probe of its own
+      # key and model (tiny call vs the chat's real prompt + tools). Read-only,
+      # never fails the deploy, prints no key and nobody's words. Lives under
+      # deploy/ so adding it restarts nothing. Remove with the script.
+      - name: "Probe: assistant AI calls (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 230 .venv/bin/python ../deploy/diag_assistant_ai.py || true
+
       # ⚠ TEMPORARY (2026-10-06): read-only status of the cell 9123 / 5 Oct
       # one-shot, printed into this log. Never fails the deploy. Remove with
       # backend/diag_cell_9123.py and the one-shot itself.
