@@ -88,24 +88,7 @@ def outcome_label(label: str, who=None, lang: str = "uz") -> str:
     return f"{label} · {name}" if name else label
 
 
-class ReplyPrompt(types.InlineKeyboardMarkup):
-    """An inline keyboard that also opens the reader's reply field (Bot API
-    10.3, `InlineKeyboardMarkup.force_reply`) — a question with a «Bekor
-    qilish» button under it, which a plain `ForceReply` cannot carry. The
-    field is fixed when the message is SENT (the spec: it "can't be changed
-    when the inline keyboard is edited"), so it belongs on a prompt, never on a
-    card. `plain()` drops it: an app or API that refuses it still gets the
-    question and the button, and the answer is read the same way."""
-
-    def to_dict(self):
-        d = super().to_dict()
-        d["force_reply"] = True
-        return d
-
-
 def _uses_new(markup) -> bool:
-    if isinstance(markup, ReplyPrompt):
-        return True
     rows = getattr(markup, "keyboard", None) or []
     return any(isinstance(b, Button) and (b.disabled or b.style)
                for row in rows for b in row)

@@ -1024,10 +1024,11 @@ class ForecastCallNotice(Base):
     workers    = Column(Integer, nullable=False)             # the (possibly hand-edited) number sent
     sent_by    = Column(BigInteger, nullable=False)          # actor's telegram id
     sent_at    = Column(DateTime(timezone=True), server_default=func.now())
-    # The brigadir's answer from the card (2026-10-19, services/forecast_answer):
-    # "ok" = «Tasdiqlash», I will call `workers`; "own" = «O'zgartirish», their
-    # own number in `answer_count`. NULL = not answered. The latest answer wins;
-    # each one is also a «Jurnal» row. The forecast itself never changes.
+    # The brigadir's answer from the card's «Tasdiqlash» / «O'zgartirish» —
+    # 19 Oct 2026 only (v4.305–4.306), retired the same day: nothing writes or
+    # reads these any more except `forecast_answer.retire`, which takes the
+    # buttons off cards sent with them (it reads `tg_messages` / `tg_bodies`).
+    # Kept: dropping columns is a separate decision.
     answer          = Column(String(8), nullable=True)
     answer_count    = Column(Integer, nullable=True)
     answered_at     = Column(DateTime(timezone=True), nullable=True)

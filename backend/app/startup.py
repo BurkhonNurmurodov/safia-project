@@ -6872,7 +6872,7 @@ def _send_report_once(flag: str, what: str, sender, chat: int,
 
 
 def send_button_test() -> None:
-    """TEMPORARY (2026-10-19): the «Tugmalar sinovi» — the three messages that
+    """TEMPORARY (2026-10-19): the «Tugmalar sinovi» — the messages that
     carry buttons inside them (services/button_test) — sent once to the
     operator after Phase 2 shipped, so they can be checked on a real phone.
     `/buttontest` in the bot sends them again on demand. Delete this function

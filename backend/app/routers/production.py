@@ -4351,7 +4351,7 @@ def _call_rows(db: Session, target: date, capacity_pct: float,
     }
     # latest notice per unit for the target date (ascending order → last wins)
     last_notice: dict[int, ForecastCallNotice] = {}
-    # the «Tugmalar sinovi»'s test notices are nobody's resend guard
+    # the «Tugmalar sinovi»'s test notices (2026-10-19) are nobody's resend guard
     from app.services.forecast_answer import TEST_SENDER
     for n in db.query(ForecastCallNotice).filter(
         ForecastCallNotice.for_date == target,
@@ -4400,13 +4400,6 @@ def _call_rows(db: Session, target: date, capacity_pct: float,
                 # the platform's own send carries a sentinel actor, so the modal
                 # says «Avtomatik» instead of printing an unresolvable name
                 "auto": ln.sent_by == forecast_autocall.AUTO_SENDER,
-                # the brigadir's answer from the card (services/forecast_answer):
-                # "ok" = confirmed the count, "own" = their own number
-                "answer": {
-                    "kind": ln.answer, "count": ln.answer_count,
-                    "at": ln.answered_at.isoformat() if ln.answered_at else None,
-                    "by": ln.answered_name,
-                } if ln.answer else None,
             } if ln else None,
         })
     return rows
@@ -4467,47 +4460,25 @@ def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
     """
     # function-level import: staff.py is heavy and imports would be circular-prone
     from app.routers.staff import _notify_supervisor_all
-    from app.services import forecast_answer, forecast_rich
-    from app.telegram_bot import RichTry
 
-    # The notice first: its id is what the card's «Tasdiqlash» / «O'zgartirish»
-    # carry (services/forecast_answer).
-    notice = ForecastCallNotice(manager_id=mgr.id, for_date=target,
-                                workers=workers, sent_by=actor)
-    db.add(notice)
-    db.flush()
-    track = forecast_answer.Tracker()
-
-    # A copy sent without buttons in its body carries them as a keyboard.
-    card_kw = {"markup_fn": lambda lang: forecast_rich.keyboard(notice.id, None, lang)}
+    card_kw = {}
     if row is not None:
+        from app.services import forecast_rich
+
         built: dict[str, tuple] = {}
 
         def _card(lang: str) -> tuple:
             # One render per LANGUAGE, shared by every holder who reads it — and
             # the body and the picture always come out of the SAME call, so a
-            # body can never point at a figure that failed to render. The body
-            # carries `forecast_rich.TOKEN` where its buttons go.
+            # body can never point at a figure that failed to render.
             if lang not in built:
                 built[lang] = forecast_rich.card(
                     row, target, lang, eff, FORECAST_WEEKS,
-                    count=workers, max_count=max_workers,
-                    buttons_html=forecast_rich.TOKEN)
+                    count=workers, max_count=max_workers)
             return built[lang]
 
-        def _rich(lang: str):
-            tpl = _card(lang)[0]
-            if tpl is None:
-                return None
-            track.bodies[lang] = tpl
-            # The buttons inside the body, nothing under it; if Telegram
-            # refuses buttons in a body, the same card with them as a keyboard.
-            return [RichTry(tpl.replace(forecast_rich.TOKEN,
-                                        forecast_rich.button_row(notice.id, None, lang)),
-                            None, label="forecast buttons"),
-                    RichTry(tpl.replace(forecast_rich.TOKEN, ""))]
-
-        card_kw.update(rich_fn=_rich, photo_fn=lambda lang: _card(lang)[1])
+        card_kw = {"rich_fn": lambda lang: _card(lang)[0],
+                   "photo_fn": lambda lang: _card(lang)[1]}
 
     _notify_supervisor_all(
         db, mgr.id,
@@ -4515,11 +4486,10 @@ def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
         params={"name": mgr.name, "date": target, "eff": eff,
                 "count": workers, "max": max_workers},
         subject=("forecast", str(target)[:10]),
-        sent_fn=track.sent,
         **card_kw,
     )
-    notice.tg_messages = track.messages or None
-    notice.tg_bodies = track.bodies or None
+    db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
+                              workers=workers, sent_by=actor))
 
 
 @router.post("/api/production/trudoyomkost/call-notify")

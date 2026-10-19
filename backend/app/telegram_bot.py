@@ -6127,8 +6127,7 @@ def _fc_callback(call: types.CallbackQuery):
             # «Maksimum», the recommendation standing in when there is no band.
             fc = row["forecast"]
             max_workers = row["band_hi"] if row["band_hi"] is not None else fc
-            rich, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS,
-                                             buttons_html=forecast_rich.TOKEN)
+            rich, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS)
             body = _mk_notif_tg("call_forecast", {
                 "name": mgr.name, "date": target, "eff": eff,
                 "count": fc if fc is not None else "—",
@@ -6145,17 +6144,11 @@ def _fc_callback(call: types.CallbackQuery):
     chat = call.message.chat.id
     delivered = False
     if rich:
-        # The card's «Tasdiqlash» / «O'zgartirish» are drawn DISABLED here — a
-        # test has no notice to answer — then, if Telegram refuses buttons in a
-        # body, the card without them, as the real send does.
-        for shape in (forecast_rich.button_row(None, None, lang, preview=True), ""):
-            try:
-                _send_rich_message(chat, rich.replace(forecast_rich.TOKEN, shape),
-                                   photo=photo)
-                delivered = True
-                break
-            except Exception as exc:
-                logger.warning("Forecast rich message refused for %s: %s", tid, exc)
+        try:
+            _send_rich_message(chat, rich, photo=photo)
+            delivered = True
+        except Exception as exc:
+            logger.warning("Forecast rich message refused for %s: %s", tid, exc)
     if not delivered and photo is not None:
         try:
             _send_photo_card(chat, photo, body)
@@ -6188,147 +6181,56 @@ def _buttontest_cmd(message: types.Message):
     button_test.run(tid, lang)
 
 
-# ── The call forecast card's answer («Tasdiqlash» / «O'zgartirish») ─────────
-# services/forecast_answer is THE rule; these are its Telegram doors. `fa:ok`
-# confirms the notice's count, `fa:ch` asks for the brigadir's own number (a
-# `fa_count` capture), `fa:x` cancels that question.
+# ── The call forecast card's old buttons («Tasdiqlash» / «O'zgartirish») ─────
+# Retired the day they shipped (services/forecast_answer). A card sent with
+# them still has them: a tap records nothing, says so, and takes the buttons
+# off every copy of that card; a «how many» question still open is closed.
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fa:"))
 def _fa_callback(call: types.CallbackQuery):
-    from app import tg_buttons
-    from app.models import ForecastCallNotice
-    from app.services import forecast_answer, forecast_rich
+    from app.services import forecast_answer
 
     tid = call.from_user.id
     lang = _get_lang(tid)
-    w = forecast_rich.a(lang)
-    people = forecast_rich._t(lang)["people"]
     parts = call.data.split(":")
     try:
         action, nid = parts[1], int(parts[2])
     except (IndexError, ValueError):
         bot.answer_callback_query(call.id)
         return
-    msg = call.message
-    chat = msg.chat.id if msg is not None else tid
-    mid = getattr(msg, "message_id", None)
-
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid)
+        if cap is not None and cap.stage == "fa_count":
+            db.delete(cap)
+            db.commit()
+    bot.answer_callback_query(call.id, forecast_answer.retired_text(lang),
+                              show_alert=True)
     if action == "x":
-        with SessionLocal() as db:
-            cap = _lt_capture(db, tid)
-            if cap is not None and cap.stage == "fa_count" and cap.task_id == nid:
-                db.delete(cap)
-                db.commit()
-        bot.answer_callback_query(call.id)
+        # «Bekor qilish» under the old «how many» question: close the question.
         try:
-            bot.edit_message_text(w["cancelled"], chat, mid)
+            bot.edit_message_text(forecast_answer.retired_text(lang),
+                                  call.message.chat.id, call.message.message_id)
         except Exception:
             pass
         return
-
-    try:
-        with SessionLocal() as db:
-            n = db.get(ForecastCallNotice, nid)
-            why = forecast_answer.refusal(db, n, tid)
-            if why is None and action == "ok":
-                forecast_answer.answer(db, n, tid, "ok")
-                db.commit()
-            if why is None:
-                day = forecast_rich.day_label(n.for_date, lang)
-                count, manager_id = n.workers, n.manager_id
-    except Exception:
-        logger.exception("forecast answer failed for %s (notice %s)", tid, nid)
-        bot.answer_callback_query(call.id, w["failed"], show_alert=True)
-        return
-
-    if why is not None:
-        bot.answer_callback_query(call.id, w[why], show_alert=True)
-        if why == "newer" and mid is not None:
-            forecast_answer.redraw(nid, stale=True, only_mid=mid)
-        return
-
-    if action == "ok":
-        bot.answer_callback_query(call.id, w["toast_ok"])
-        drawn = forecast_answer.redraw(nid)
-        if mid not in drawn:
-            # The tapped card could not be re-drawn: say it in words instead.
-            bot.send_message(chat, w["saved_ok"].format(day=day, n=count, p=people))
-        return
-
-    if action == "ch":
-        bot.answer_callback_query(call.id)
-        _lt_clear(tid)
-        kb = tg_buttons.ReplyPrompt()
-        kb.add(tg_buttons.Button(w["cancel"], callback_data=f"fa:x:{nid}"))
-        try:
-            sent = tg_buttons.send(bot.send_message, chat,
-                                   w["ask"].format(day=day, n=count, p=people),
-                                   reply_markup=kb)
-        except Exception:
-            logger.exception("forecast answer: could not ask %s for a count", tid)
-            return
-        with SessionLocal() as db:
-            db.add(LeaderTaskCapture(
-                telegram_id=tid, stage="fa_count", leader_id=manager_id,
-                task_id=nid, chat_id=chat, message_id=sent.message_id,
-                min_media=0, media=[]))
-            db.commit()
-        return
-    bot.answer_callback_query(call.id)
+    forecast_answer.retire(nid)
 
 
 @bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "fa_count",
                      content_types=["text"])
 def _fa_count(message: types.Message):
-    """The brigadir's own count, typed after «O'zgartirish». The capture row
-    reuses `leader_task_captures`: `leader_id` holds the UNIT, `task_id` the
-    notice. A non-number asks again; the notice is re-checked here, since the
-    typing takes a moment and a newer notice may have gone out."""
-    from app.models import ForecastCallNotice
-    from app.services import forecast_answer, forecast_rich
+    """A number typed into a «how many» question asked before the buttons were
+    retired: close the capture and say the answer is not taken."""
+    from app.services import forecast_answer
 
     tid = message.from_user.id
-    lang = _get_lang(tid)
-    w = forecast_rich.a(lang)
-    people = forecast_rich._t(lang)["people"]
-    chat = message.chat.id
-    text = (message.text or "").strip()
     with SessionLocal() as db:
         cap = _lt_capture(db, tid, lock=True)
         if not cap or cap.stage != "fa_count":
             return
-        nid, prompt = cap.task_id, cap.message_id
-        if text.startswith("/"):
-            db.delete(cap)
-            db.commit()
-            bot.send_message(chat, _msg(lang, "unknown_command"))
-            return
-        n = db.get(ForecastCallNotice, nid)
-        digits = text.replace(" ", "")
-        if not digits.isdigit() or int(digits) > forecast_answer.MAX_COUNT:
-            db.commit()
-            bot.send_message(chat, w["bad"].format(
-                max=forecast_answer.MAX_COUNT, n=n.workers if n else 0))
-            return
-        count = int(digits)
         db.delete(cap)
-        why = forecast_answer.refusal(db, n, tid)
-        if why is not None:
-            db.commit()
-            bot.send_message(chat, w[why])
-            return
-        forecast_answer.answer(db, n, tid, "own", count)
         db.commit()
-        day = forecast_rich.day_label(n.for_date, lang)
-        forecast = n.workers
-    if prompt:
-        try:
-            bot.edit_message_reply_markup(chat, prompt, reply_markup=None)
-        except Exception:
-            pass
-    forecast_answer.redraw(nid)
-    bot.send_message(chat, w["saved_own"].format(day=day, n=count, p=people,
-                                                 f=forecast))
+    bot.send_message(message.chat.id, forecast_answer.retired_text(_get_lang(tid)))
 
 
 # ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»

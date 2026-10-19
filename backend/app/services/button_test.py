@@ -1,4 +1,4 @@
-"""«Tugmalar sinovi» — the three messages with buttons inside them, sent to ONE
+"""«Tugmalar sinovi» — the messages with buttons inside them, sent to ONE
 admin, so the operator can see on a real phone that Telegram takes them
 (2026-10-19, after Phase 2 shipped untested against Telegram).
 
@@ -8,19 +8,17 @@ Sent through the very builders and the very send path the real DMs use:
    rebuilt now (`leader_unit_report.build`), so its «Ochish» buttons open real
    day reports;
 2. the auto-check warning — task 9's card, with sample figures, its «Ochish»
-   inside the first step;
-3. the call forecast — a real unit's forecast for its next shift-day, on a TEST
-   notice (`forecast_answer.TEST_SENDER`): its «Tasdiqlash» / «O'zgartirish»
-   work end to end, but the notice is invisible to the «Smenaga chaqirish»
-   modal and the 19:00 / 06:00 send, the brigadir is never told, and no
-   «Jurnal» row is written.
+   inside the first step.
 
-Nobody but the tester receives anything. After the three, a summary says for
-each one which shape Telegram accepted: buttons inside the message, or the
+(The call forecast card was the third until its «Tasdiqlash» /
+«O'zgartirish» were removed the same day — services/forecast_answer.)
+
+Nobody but the tester receives anything. After them, a summary says for each
+one which shape Telegram accepted: buttons inside the message, or the
 fallback with the buttons under it — the answer the test exists for.
 
-Two doors: `/buttontest` in the bot (admins), and a one-shot at deploy to the
-operator (`startup.send_button_test`).
+Two doors: `/buttontest` in the bot (admins), and the one-shot at deploy to
+the operator (`startup.send_button_test`).
 """
 from __future__ import annotations
 
@@ -33,12 +31,10 @@ logger = logging.getLogger(__name__)
 
 W = {
     "uz": {
-        "intro": ("🧪 Tugmalar sinovi — quyida 3 ta xabar. Hammasi sinov: "
-                  "brigadirlar hech narsa olmaydi, javoblaringiz hech qayerda "
-                  "hisobga kirmaydi."),
+        "intro": ("🧪 Tugmalar sinovi — quyida 2 ta xabar. Hammasi sinov: "
+                  "brigadirlar va liderlar hech narsa olmaydi."),
         "digest": "1) Brigadirning kunlik hisoboti — har lider qatorida «Ochish»",
         "warn": "2) Avtomatik tekshiruv ogohlantirishi — 1-qadamda «Ochish»",
-        "forecast": "3) Chaqiruv prognozi — «Tasdiqlash» va «O'zgartirish» (bosib ko'ring)",
         "inside": "✅ tugmalar xabar ichida",
         "below": "⚠️ Telegram xabar ichidagi tugmalarni qabul qilmadi — tugmalar ostida",
         "photo": "⚠️ rasm sifatida, tugmalar ostida",
@@ -48,12 +44,10 @@ W = {
         "summary": "Natija:",
     },
     "uz_cyrl": {
-        "intro": ("🧪 Тугмалар синови — қуйида 3 та хабар. Ҳаммаси синов: "
-                  "бригадирлар ҳеч нарса олмайди, жавобларингиз ҳеч қаерда "
-                  "ҳисобга кирмайди."),
+        "intro": ("🧪 Тугмалар синови — қуйида 2 та хабар. Ҳаммаси синов: "
+                  "бригадирлар ва лидерлар ҳеч нарса олмайди."),
         "digest": "1) Бригадирнинг кунлик ҳисоботи — ҳар лидер қаторида «Очиш»",
         "warn": "2) Автоматик текширув огоҳлантириши — 1-қадамда «Очиш»",
-        "forecast": "3) Чақирув прогнози — «Тасдиқлаш» ва «Ўзгартириш» (босиб кўринг)",
         "inside": "✅ тугмалар хабар ичида",
         "below": "⚠️ Telegram хабар ичидаги тугмаларни қабул қилмади — тугмалар остида",
         "photo": "⚠️ расм сифатида, тугмалар остида",
@@ -63,11 +57,10 @@ W = {
         "summary": "Натижа:",
     },
     "ru": {
-        "intro": ("🧪 Проверка кнопок — ниже 3 сообщения. Всё тестовое: "
-                  "бригадиры ничего не получат, ваши ответы нигде не учитываются."),
+        "intro": ("🧪 Проверка кнопок — ниже 2 сообщения. Всё тестовое: "
+                  "бригадиры и лидеры ничего не получат."),
         "digest": "1) Дневной отчёт бригадира — «Открыть» в строке каждого лидера",
         "warn": "2) Предупреждение об автопроверке — «Открыть» в 1-м шаге",
-        "forecast": "3) Прогноз вызова — «Подтвердить» и «Изменить» (нажмите)",
         "inside": "✅ кнопки внутри сообщения",
         "below": "⚠️ Telegram не принял кнопки внутри сообщения — кнопки под ним",
         "photo": "⚠️ как фото, кнопки под ним",
@@ -77,11 +70,10 @@ W = {
         "summary": "Итог:",
     },
     "en": {
-        "intro": ("🧪 Button test — 3 messages below. All of it is a test: no "
-                  "supervisor receives anything and your answers count nowhere."),
+        "intro": ("🧪 Button test — 2 messages below. All of it is a test: no "
+                  "supervisor or leader receives anything."),
         "digest": "1) Supervisor's day digest — «Open» on each leader's row",
         "warn": "2) Auto-check warning — «Open» in step 1",
-        "forecast": "3) Call forecast — «Confirm» and «Change» (tap them)",
         "inside": "✅ buttons inside the message",
         "below": "⚠️ Telegram refused buttons inside the message — buttons under it",
         "photo": "⚠️ as a photo, buttons under it",
@@ -187,67 +179,8 @@ def _warning(tid: int, lang: str, w: dict) -> str:
     return shape.word(w, ok)
 
 
-def _forecast(tid: int, lang: str, w: dict) -> str:
-    from app.models import ForecastCallNotice, Manager
-    from app.routers.production import FORECAST_WEEKS, _call_rows
-    from app.routers.staff import _mk_notif, _mk_notif_tg
-    from app.services import forecast_answer, forecast_autocall, forecast_rich
-    from app.telegram_bot import RichTry, send_tg_notification
-
-    with SessionLocal() as db:
-        eff_pct = forecast_autocall.settings(db)["capacity_pct"]
-        eff = int(round(eff_pct))
-        row = target = None
-        for shift in (1, 2):
-            day = forecast_autocall.target_date(shift)
-            rows = [r for r in _call_rows(db, day, eff_pct, shift)
-                    if r["forecast"] is not None]
-            if rows:
-                row, target = rows[0], day
-                break
-        if row is None:
-            return w["none"]
-        mgr = db.get(Manager, row["manager_id"])
-        count = row["forecast"]
-        mx = row["band_hi"] if row["band_hi"] is not None else count
-        n = ForecastCallNotice(manager_id=mgr.id, for_date=target, workers=count,
-                               sent_by=forecast_answer.TEST_SENDER)
-        db.add(n)
-        db.flush()
-        nid = n.id
-        tpl, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS,
-                                        count=count, max_count=mx,
-                                        buttons_html=forecast_rich.TOKEN)
-        params = {"name": mgr.name, "date": target, "eff": eff,
-                  "count": count, "max": mx}
-        title, body = _mk_notif("call_forecast", params, lang)
-        html = _mk_notif_tg("call_forecast", params, lang)
-        track = forecast_answer.Tracker()
-        rich = None
-        if tpl is not None:
-            track.bodies[lang] = tpl
-            rich = [RichTry(tpl.replace(forecast_rich.TOKEN,
-                                        forecast_rich.button_row(nid, None, lang)),
-                            None, label="test forecast buttons"),
-                    RichTry(tpl.replace(forecast_rich.TOKEN, ""))]
-        shape = _Shape()
-
-        def sent(kind, index, result):
-            shape(kind, index, result)
-            track.sent(tid, lang, kind, index, result)
-
-        ok = send_tg_notification(
-            tid, title, body, html=html,
-            markup=forecast_rich.keyboard(nid, None, lang),
-            rich=rich, photo=photo, on_sent=sent)
-        n.tg_messages = track.messages or None
-        n.tg_bodies = track.bodies or None
-        db.commit()
-    return shape.word(w, ok)
-
-
 def run(tid: int, lang: str = "uz") -> str:
-    """Send the three test messages to ONE account; returns the summary text,
+    """Send the test messages to ONE account; returns the summary text,
     which is also sent to them last."""
     from app.telegram_bot import bot
 
@@ -257,8 +190,7 @@ def run(tid: int, lang: str = "uz") -> str:
     except Exception:
         logger.exception("button test: intro failed for %s", tid)
     lines = []
-    for key, fn in (("digest", _digest), ("warn", _warning),
-                    ("forecast", _forecast)):
+    for key, fn in (("digest", _digest), ("warn", _warning)):
         try:
             res = fn(tid, lang, w)
         except Exception:

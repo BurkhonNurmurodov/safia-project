@@ -5755,11 +5755,12 @@ before (telebot swallows unknown button keys).
 
 ### Buttons INSIDE a message (Bot API 10.3, Phase 2 — 2026-10-19)
 
-Three rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
-instead of, or beside, the keyboard under them. The operator's rulings: the
-late-proof / objection rulings stay in the appeal chat (no reply prompt on
-those cards); the forecast card's «Tasdiqlash» records «I will call this
-many»; «O'zgartirish» takes the brigadir's own number.
+Two rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
+instead of, or beside, the keyboard under them — the day digest and the
+auto-check warning. The operator's ruling: the late-proof / objection rulings
+stay in the appeal chat (no reply prompt on those cards). A third, the call
+forecast's «Tasdiqlash» / «O'zgartirish», shipped and was REMOVED the same
+day (below).
 
 - **Every such send is TWO tries** — `telegram_bot.RichTry`, a list a
   `rich_fn` may return: the body with its buttons (no keyboard, or only the
@@ -5780,44 +5781,27 @@ many»; «O'zgartirish» takes the brigadir's own number.
 - **The auto-check warning** (`leader_auto_rich.body(button=True)`): «Ochish»
   sits at the end of the first step, which names the page; the rich card then
   has no keyboard. The classic DM keeps its page button.
-- **The call forecast** (`services/forecast_answer.py` is THE rule;
-  `forecast_rich.button_row` / `keyboard` the two drawings): «✅ Tasdiqlash»
-  (green) and «✏️ O'zgartirish» right under the facts table. The notice is
-  created BEFORE the send (its id is in the callback, `fa:ok:<id>` /
-  `fa:ch:<id>` / `fa:x:<id>`). Only a holder of the unit's supervisor profile
-  may answer, only on the LATEST notice of the unit-day, and not once the day
-  has passed (plant clock); the latest answer wins and each is a «Jurnal» row
-  (`notification.call_confirmed` / `call_count_changed`, source bot). The
-  forecast never changes. Stored on `forecast_call_notices`: `answer` ("ok" |
-  "own"), `answer_count`, `answered_at/by/name`, and every copy that went out
-  (`tg_messages` — chat, message id, language, shape, the figure's file_id)
-  with each language's body holding `forecast_rich.TOKEN` where the buttons
-  go (`tg_bodies`). An answer RE-DRAWS every copy: a body with buttons is
-  re-sent through `editMessageText` with `rich_message` (the figure by its
-  file_id) — the outcome as a disabled button («✅ Tasdiqlandi · 54 nafar ·
-  08:12» / «✏️ O'zgartirildi: 50 nafar · 08:20»), «O'zgartirish» live under it
-  — else its keyboard is replaced; a copy that cannot be re-drawn gets the
-  keyboard instead, and the tapped one gets a text reply. «O'zgartirish» asks
-  in a prompt that opens the reply field (`tg_buttons.ReplyPrompt`,
-  `InlineKeyboardMarkup.force_reply`, with «✖️ Bekor qilish»; dropped by
-  `plain()` if refused) and a `fa_count` capture on `leader_task_captures`
-  (`leader_id` = the unit, `task_id` = the notice; a whole number 0–999,
-  re-checked when it lands). A tap on an older card is refused and that card
-  is marked «🔄 Bu kun uchun yangi prognoz yuborilgan». The «Smenaga
-  chaqirish» modal shows the answer beside the sent notice
-  (`last_notice.answer`). Nobody is notified. The `/forecast` test door draws
-  both buttons disabled.
-- Columns: `startup.add_forecast_answer_columns` (both entrypoints, schema
-  phase, FATAL on failure).
+- **The call forecast carries NO buttons** (the operator, 2026-10-19). Its
+  «Tasdiqlash» («I will call this many») and «O'zgartirish» (the brigadir's
+  own number) lived in v4.305.0–4.306.x and were removed the same day: the
+  answer showed only in the «Smenaga chaqirish» modal, so it asked brigadirs
+  for a tap nobody would read. `services/forecast_answer.py` now only retires
+  the cards sent with them: a tap (`fa:…`) records nothing, says «Bu tugma endi
+  ishlatilmaydi», and takes the buttons off every copy of that card (a body
+  with buttons is re-sent from `ForecastCallNotice.tg_bodies` with
+  `forecast_rich.TOKEN` emptied, the figure by its file_id; other copies lose
+  their keyboard); a «how many» question still open is closed. The answer
+  columns (`answer`, `answer_count`, `answered_*`, `tg_messages`, `tg_bodies`,
+  `startup.add_forecast_answer_columns`) STAY, unused. `TEST_SENDER` (-1)
+  marks the test notices the button test sent then; `production._call_rows`
+  keeps skipping them.
 - **«Tugmalar sinovi»** (`services/button_test.py`, `/buttontest` in the bot,
-  admins only): the three messages sent to the admin who asks, through the
+  admins only): the two messages sent to the admin who asks, through the
   real builders and send path — the latest unit-day a digest went out for,
-  rebuilt; task 9's warning with sample figures; a real unit's forecast for
-  its next shift-day on a TEST notice (`forecast_answer.TEST_SENDER` = -1:
-  answerable only by the account it was sent to, invisible to the modal and
-  the automatic send, never a unit-day's «latest», no «Jurnal» row) — then a
-  summary saying, per message, whether Telegram took the buttons inside it or
-  the fallback went out. TEMPORARY `startup.send_button_test` (flag
+  rebuilt; task 9's warning with sample figures — then a summary saying, per
+  message, whether Telegram took the buttons inside it or the fallback went
+  out. (The forecast card was the third while it had buttons.) The first run
+  showed Telegram drawing buttons inside a rich message. TEMPORARY `startup.send_button_test` (flag
   `button_test_dm_2026_10_19_v1`, both entrypoints, deferred) sent it once to
   `UNPRICED_DM_CHAT`; delete it and both calls once the flag reads «sent» —
   the module and the command stay.

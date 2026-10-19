@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CalendarRange, ChevronLeft, ChevronRight, X, Sparkles,
   TrendingUp, TrendingDown, Check, AlertTriangle, History,
-  Target, Award, Send, CheckCircle, Clock, ThumbsUp, Pencil,
+  Target, Award, Send, CheckCircle, Clock,
 } from "lucide-react";
 import api from "../utils/api";
 import { SkeletonBlock } from "./ui/Skeleton";
@@ -47,9 +47,6 @@ const T = {
     resendTitle: "Qayta yuborish?", resendMsg: (n) => `${n} brigadirga tanlangan sana uchun chaqiruv allaqachon yuborilgan. Yana yuborilsinmi?`,
     toastSent: (n) => `${n} brigadirga chaqiruv yuborildi`,
     autoChip: "Avto", autoTitle: "Avtomatik chaqiruv", autoBy: "Avtomatik",
-    answerOk: "Brigadir tasdiqladi", answerOwn: "Brigadir javobi:",
-    answerOkTitle: "Brigadir Telegram'da «Tasdiqlash»ni bosdi — shuncha odam chaqiradi",
-    answerOwnTitle: "Brigadir Telegram'da «O'zgartirish» orqali o'z sonini yozdi — prognoz o'zgarmaydi",
     autoOn: "Yoqilgan", autoOff: "O'chirilgan",
     autoLead: "Chaqiruv har kuni belgilangan vaqtda o'zi yuboriladi — xuddi shu oynadagi kabi, lekin hech kim tugma bosmaydi.",
     autoRow: (n, at, d) => `${n}-smena · soat ${at} → ${d}`,
@@ -80,9 +77,6 @@ const T = {
     resendTitle: "Қайта юбориш?", resendMsg: (n) => `${n} бригадирга танланган сана учун чақирув аллақачон юборилган. Яна юборилсинми?`,
     toastSent: (n) => `${n} бригадирга чақирув юборилди`,
     autoChip: "Авто", autoTitle: "Автоматик чақирув", autoBy: "Автоматик",
-    answerOk: "Бригадир тасдиқлади", answerOwn: "Бригадир жавоби:",
-    answerOkTitle: "Бригадир Telegram'да «Тасдиқлаш»ни босди — шунча одам чақиради",
-    answerOwnTitle: "Бригадир Telegram'да «Ўзгартириш» орқали ўз сонини ёзди — прогноз ўзгармайди",
     autoOn: "Ёқилган", autoOff: "Ўчирилган",
     autoLead: "Чақирув ҳар куни белгиланган вақтда ўзи юборилади — худди шу ойнадаги каби, лекин ҳеч ким тугма босмайди.",
     autoRow: (n, at, d) => `${n}-смена · соат ${at} → ${d}`,
@@ -113,9 +107,6 @@ const T = {
     resendTitle: "Отправить повторно?", resendMsg: (n) => `${n} бригадир(ам) уже отправлен вызов на выбранную дату. Отправить ещё раз?`,
     toastSent: (n) => `Вызов отправлен: ${n} бригадир(ов)`,
     autoChip: "Авто", autoTitle: "Автоматический вызов", autoBy: "Автоматически",
-    answerOk: "Бригадир подтвердил", answerOwn: "Ответ бригадира:",
-    answerOkTitle: "Бригадир нажал «Подтвердить» в Telegram — вызовет столько людей",
-    answerOwnTitle: "Бригадир указал своё число через «Изменить» в Telegram — прогноз не меняется",
     autoOn: "Включён", autoOff: "Выключен",
     autoLead: "Вызов отправляется сам каждый день в заданное время — то же, что в этом окне, только кнопку никто не нажимает.",
     autoRow: (n, at, d) => `${n}-я смена · в ${at} → ${d}`,
@@ -146,9 +137,6 @@ const T = {
     resendTitle: "Send again?", resendMsg: (n) => `${n} brigadir(s) were already notified for the selected date. Send again?`,
     toastSent: (n) => `Notified ${n} brigadir(s)`,
     autoChip: "Auto", autoTitle: "Automatic call", autoBy: "Automatic",
-    answerOk: "Supervisor confirmed", answerOwn: "Supervisor's answer:",
-    answerOkTitle: "The supervisor pressed «Confirm» in Telegram — they will call this many",
-    answerOwnTitle: "The supervisor typed their own number via «Change» in Telegram — the forecast is unchanged",
     autoOn: "On", autoOff: "Off",
     autoLead: "The call is sent by itself every day at a fixed time — the same message as in this window, with nobody pressing the button.",
     autoRow: (n, at, d) => `Shift ${n} · at ${at} → ${d}`,
@@ -508,21 +496,6 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
                               ? ` · ${t.autoBy}`
                               : r.last_notice.by ? ` · ${tl(r.last_notice.by)}` : ""}
                           </span>
-                        )}
-                        {r.last_notice?.answer && (
-                          r.last_notice.answer.kind === "ok" ? (
-                            <span className="inline-flex items-center gap-1 font-medium tabular-nums"
-                              style={{ color: "#22c55e" }} title={t.answerOkTitle}>
-                              <ThumbsUp size={11} />
-                              {t.answerOk} {hhmm(r.last_notice.answer.at)}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 font-medium tabular-nums"
-                              style={{ color: "var(--text-2)" }} title={t.answerOwnTitle}>
-                              <Pencil size={11} />
-                              {t.answerOwn} {r.last_notice.answer.count} · {hhmm(r.last_notice.answer.at)}
-                            </span>
-                          )
                         )}
                       </div>
                     </div>
