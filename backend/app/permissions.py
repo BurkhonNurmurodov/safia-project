@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "turnover", "foreign-objects", "education", "exam", "assistant"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "turnover", "foreign-objects", "category-compliance", "education", "exam", "assistant"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -163,6 +163,11 @@ DEFAULT_PAGE_ACCESS = {
     # month by month from the Quality register. Admin-only until the operator
     # opens it (HR is who it is for); it lists every complaint's text.
     "foreign-objects": [],
+    # «Toifaga muvofiqlik» — the leaders' category-compliance KPI
+    # (routers/category_compliance.py), month by month from Verifix's HR
+    # journals and HR's grade ladder. Admin-only until the operator opens it
+    # (HR is who it is for); it lists every worker's category and tenure.
+    "category-compliance": [],
     # «Ta'lim» video lessons (routers/education.py). Open to every role by
     # default, and that is deliberate rather than permissive: the page shows a
     # viewer exactly the lessons an admin ADDRESSED to their profile and nothing

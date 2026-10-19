@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -450,6 +450,10 @@ async def lifespan(app: FastAPI):
     # months at 09:05, catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
     run(register_turnover_jobs)
+    # «Toifaga muvofiqlik»: read Verifix's three HR journals nightly at 23:55
+    # (after the directory), catch up after boot (mirrored in passenger_wsgi.py).
+    from app.services.category_sync import register_jobs as register_category_jobs
+    run(register_category_jobs)
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
@@ -1159,6 +1163,11 @@ app.include_router(turnover.router)
 # Quality register; reads self-gate via require_page("foreign-objects")
 # (admin-only by default), the refresh is admin-only in the endpoint.
 app.include_router(foreign_objects.router)
+# «Toifaga muvofiqlik» — the leaders' category-compliance KPI from Verifix's HR
+# journals and HR's grade ladder; reads self-gate via
+# require_page("category-compliance") (admin-only by default), the Verifix
+# read and the rule's edit are admin-only in the endpoint.
+app.include_router(category_compliance.router)
 app.include_router(android.router)
 app.include_router(push.router)
 app.include_router(education.router)

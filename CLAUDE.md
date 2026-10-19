@@ -2806,6 +2806,86 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
 - Not built: the two KPIs with no source on the platform (category compliance,
   the technologists' audit) — HR's file holds only a final % per cell for each.
 
+## «Toifaga muvofiqlik» — the leaders' category-compliance KPI (backend only, 2026-10-19)
+
+From **2026-10-19** (the operator: «build this 4th category … for now, only
+backend») HR's «Соответствие категории» (the 4th of 5, weight 0.2) is computed
+month by month from Verifix's HR journals and HR's grade ladder. **No page of
+its own**: another session builds ONE page for all five KPIs, and this KPI is
+to be shown inside it — `routers/category_compliance.py` (`/api/category-compliance`)
+is the door that page will read; its `PAGE` constant (`category-compliance`,
+admin-only by default in `DEFAULT_PAGE_ACCESS`) is the one line to change if
+the unified page gates under a key of its own. `services/category_compliance.py`
+is THE rule, `services/category_sync.py` the Verifix read, the tables
+`category_events` + `category_reads` (created by `create_all`, nothing to
+migrate).
+
+- **The rule** (HR's ladder, the PDF of 2026-10-18, categories and MONTHS
+  only — its pay columns were never read in and must never be): tenure =
+  whole months from the hire month to the report month; expected = the
+  ladder's highest step whose start month ≤ tenure (the lowest step from
+  month 0); a worker complies when the category in force on the month's last
+  day is that step or a HIGHER one of the ladder (`mode: at_least`; `exact`
+  is the other mode); no category or an old «S…» grade = not compliant
+  (`no_category: fail`; `skip` leaves them out); a job the ladder does not
+  name (office / HR titles, «Практикант») is OUT of the count and listed.
+  rate = compliant ÷ counted per cell, one decimal, judged as printed:
+  100 % → 5 · > 70 % → 3 · > 65 % → 2 · else 1 (HR's IFS names no band for
+  0 %, so it takes the worst); points = score × 0.2. `pct0` beside it is the
+  half-up whole percent (`whole_pct`).
+- **Credited to the cell's OWNER («Egasi») on the month's last day**,
+  `turnover.cell_map` + `turnover.owned` — one ranking row per owned cell,
+  the reading /turnover, /worker-concerns and /foreign-objects list by. A cell
+  with no owner is a notice; one with nobody counted has no rate and no
+  score. Scope plant → shift → brigadir, the KPI pages' own.
+- **Who works where**: the turnover KPI's directory (`turnover_people`, the
+  23:40 read) — hired by the last day, not dismissed by it. On a day not yet
+  passed a person stands where the directory puts them NOW; on a PAST day
+  where the last hiring / transfer dated by then put them (the journals are
+  Verifix's only placement history; a temporary transfer that ended hands
+  back), the directory only where the journals name no placement. The
+  category is always the journals' — the directory carries none. Nothing is
+  frozen; a month is re-read as the journals stand (`approx_owners` before
+  `LINKS_FROM`, `approx_roster` for a past month).
+- **The read** (`category_sync`): `pro/rank$list` (the category names),
+  `pro/hiring$list` (Pro, with a journal span from 2020; `start/hiring$list`
+  where Pro is closed), `pro/transfer$list` (/ `start/`), `pro/rank_change$list`,
+  `core/division$list` (each line's org unit → cell code by
+  `turnover.unit_code`; a unit that is somebody's DEPARTMENT on the lines is
+  not a cell). Unposted journals are left out and counted. Read side by side
+  (`verifix_live._side_by_side`), replaced whole in one transaction, kept in
+  memory per read (`events_by_person`). Nightly at **23:55** (after the
+  directory's 23:40), a boot catch-up ~200 s in when the last complete read
+  is older than six hours, the admin's `POST /read`. Logged as
+  `sync.category_read`.
+- **Endpoints**: `GET` the month payload (`?month=YYYY-MM&factory&shift&managers`
+  → `totals`, `ranking`, `cells`, `notices` {no_ladder jobs, ambiguous jobs,
+  unregistered codes, no_cell, no_owner_cells}, `rule`, `read` + `directory`
+  states, `options`); `GET /people?month&keys=` (every judged person of those
+  cells: job, ladder, tenure, expected, actual, since, verdict ok · above ·
+  below · no_category · old_grade · no_ladder · no_hire — failures first);
+  `GET /read`; `POST /read` (admin); `GET /rule`; `PUT /rule` (admin:
+  `{rule: {…any subset…}}` validated WHOLE — a bad part refuses the save with
+  its reason — or `{reset: true}`; logged as `config.category_rule_saved`).
+  The rule is `category_rule` in app_settings: weight, mode, no_category,
+  full / bands / worst, `levels` (the step order across the names one ladder
+  uses), `ladders` (job → [[category, month]…]), `jobs` (Verifix title →
+  ladder; a title that IS a ladder name needs no entry), `ambiguous`.
+- **HR's July figures are NOT reproduced** — by this rule or any reading of
+  the journals tried (26 of 87 comparable cells at best; three cells of the
+  file contradict the record outright): the file's percentages were typed by
+  hand. The ladder is the one definition written down, so the platform
+  computes THAT and says so. Open with HR, each a line of the rule and never
+  of the code: at-least or exact; how tenure is counted; «Приемщик-отправитель»
+  and «Оператор», which the sheet lists under a production AND a logistics
+  ladder with different months (read against production, the people named
+  under `notices.ambiguous`); what July counted.
+- Not built: the page (the unified KPI page's session), a workbook, a frozen
+  month. Verified on synthetic data in the cloud stack (a transfer-and-back
+  read on a past month, the exact / skip modes, the bands' edges, a bad
+  override falling back whole); the first real read lands with the deploy's
+  boot catch-up.
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its
