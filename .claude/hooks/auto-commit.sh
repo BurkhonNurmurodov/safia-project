@@ -71,7 +71,13 @@ mkdir -p "$(dirname "$LOG")"
 # so the baseline is what production actually runs: gitea/main, fetched fresh.
 DEPLOYED=""
 if [ "$MODE" = "cloud" ]; then
-  git fetch -q gitea >>"$LOG" 2>&1 || echo "gitea fetch failed" >>"$LOG"
+  # ONLY main, and bounded. The hook reads nothing but gitea/main, and a fetch
+  # of EVERY ref of this remote stalled from the cloud three turns running
+  # (2026-10-19) — past the hook's own 7-minute limit, so each run's log ended
+  # at its header and nothing was deployed. A fetch of main alone takes seconds.
+  if ! timeout 120 git fetch -q gitea main >>"$LOG" 2>&1; then
+    echo "gitea fetch failed or timed out — baseline may be stale" >>"$LOG"
+  fi
   git rev-parse -q --verify gitea/main >/dev/null 2>&1 && DEPLOYED="gitea/main"
 fi
 

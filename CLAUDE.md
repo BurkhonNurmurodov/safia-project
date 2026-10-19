@@ -7475,6 +7475,47 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
   closed-day lock; and the SAP snapshot itself, which is still written for every
   group the file names.
 
+### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19)
+
+From **2026-10-19** (the operator's request: «one column … empty by default,
+and if supervisors want they can type any number on it») the «Pozitsiyalar»
+table carries a **«Kontiner krishka»** column (ru «Крышка контейнера», en
+«Container cap») — a number the brigadir types per LINE per DAY, blank until
+somebody does. Read as a daily fact about the line (how many lids that day),
+not a constant of the catalog line — a constant would be a catalog field,
+dated by `pp_catalog.freeze` and edited by an admin, which is not what was
+asked.
+
+- **It rides the ПЛАН/ФАКТ door.** `POST /api/production/override` with
+  `field: "container_cap"` (`OVERRIDE_COLS` maps a field to its
+  `pp_line_daily` column), stored on `pp_line_daily.container_cap` — NULL =
+  nothing typed, never 0 (`startup.add_pp_line_container_cap`, both
+  entrypoints, through `_ensure_columns`, FATAL on failure since every overlay
+  read selects it). The same `QtyCell`, the same leader cell/group scope, the
+  same closed-day lock (`idle_lock.require_open`), the same Jurnal row
+  (`production.override_set`, change key `container_cap`, label
+  `logs.f.container_cap`), the same undo. **It always names a line**: the
+  group level (`pp_daily`) has no such column, so the whole-group path has
+  nowhere to write it and a body without `line_key` is a 400 — the current
+  bundle always sends one, and `_set_line_override` explodes and clears the
+  shared value only for a column `pp_daily` carries.
+- **Nothing reads it.** No load, minutes, ЛЮДИ, загрузка, leader check or
+  export figure moves with it; the ABC workbook (the fixed brigadir form)
+  does not carry it. It is a column after «Manba» (so that chip keeps
+  answering for ПЛАН/ФАКТ alone), sortable, in the `ColumnsPicker` like every
+  other column — a profile that saved an order before it existed gets it
+  seated where `COLS` puts it, shown.
+- **A SAP upload leaves it alone.** `_ingest_for_manager` in mode «both»
+  deletes the date's per-line rows; a row carrying a lid count instead loses
+  its ПЛАН/ФАКТ overrides (exactly as before) and KEEPS the count — the file
+  says nothing about lids, so there is no restatement to outlive. The
+  field-by-field modes never touched it.
+- **A catalog edit carries it with the line** (`_carry_manual_quantities`,
+  beside the two quantities, from the day the edit counts on). A catalog
+  IMPORT cannot — the same limit the quantities have.
+- Deliberately NOT built: arithmetic over it, an export column, a per-line
+  constant.
+
 ## «Plan Bajarish» — which products, cells and brigadirs fall short (`/plan`)
 
 From **2026-09-30** (the operator's directive: management must see which
@@ -11133,6 +11174,92 @@ hides it, the server refuses `X-Exam-Attempt`).
   segment; the full page gets general ones). The header button keeps the
   bell's size; on a phone an invisible pad takes its tap area to 44px.
 
+## The proof reviewer's AI keys and models (`ai_review`, 2026-10-19)
+
+The operator (2026-10-19): «make it possible to set and save different API
+keys — saved and easily switched at any time — and make the models of the AI
+selectable: to save a key I first select the AI and paste the key; when I
+select one AI to use, I also select one of its available models.» So the
+proof reviewer (`leader_ai`) no longer reads ONE Gemini key: it runs on exactly
+one SAVED key at a time, on a model picked for that key, from a store that
+holds any number of keys for any provider.
+
+- **`services/ai_review.py` is THE door** — `active()` (provider · model · key
+  · key_id · source, cached 30 s), `available()`, `active_model()`,
+  `generate_json()`, the store (`list_keys`, `add_key`, `delete_key`,
+  `test_key`, `set_active`, `adopt_legacy`) and `PROVIDERS`, the catalog.
+  `leader_ai` and `routers/leader_ai` ask only it; a third provider is one
+  more `PROVIDERS` entry plus a module with `generate_json` + `list_models`.
+  `gemini.py` and `services/claude_ai.py` are the two transports — the Claude
+  one through the official SDK (`anthropic`, the one dependency this added),
+  raising Gemini's THREE error classes (`GeminiError` the row's own failure,
+  `GeminiQuotaError` stop the drain, `GeminiAuthError` the key itself), which
+  are the reviewer's error contract and not Gemini's any more.
+- **The store is `ai_keys`** (`AiKey`): provider, label, the value SEALED
+  (`web_auth.seal_password`), `hint` = the last four characters, the `model`
+  picked for that key, `active`, `source` (ui | legacy), who added it, the
+  last test (`tested_at` / `test_ok` / `test_note`) and the provider's live
+  model list from it (`models`). **A key is never returned whole** — the UI
+  gets the hint; the action register gets the provider, the hint and the
+  LENGTH (`config.ai_key_added` / `ai_key_tested` / `ai_key_deleted` /
+  `ai_active_set`); the assistant is blocked from every door
+  (`blocked:credentials`). Admin-only, not grantable, as the single key was.
+- **Resolution** (`active()`): the row marked active → else the env-pinned
+  `GEMINI_API_KEY` on the legacy `gemini_model` setting (what every box ran
+  before, so nothing moved on deploy) → else whatever Gemini key
+  `gemini.api_key()` still finds → else off. The env key is the one entry with
+  no row (`id: "env"`): listed, activatable, never deleted or tested away. The
+  single-key era's sealed `app_settings["gemini_api_key"]` is copied into a
+  row at boot (`startup.adopt_legacy_ai_key`, idempotent by `source`), and
+  `delete_key` removes the setting with that row; `gemini._stored_key()` reads
+  the rows first, so the narratives (`deck_narrative`, `concerns_narrative`,
+  which stay on Gemini and are deliberately NOT routed through the store)
+  keep finding a Gemini key while one exists.
+- **A key is TESTED as it is saved** — its provider's model list is read with
+  it (`gemini.list_models` / `claude_ai.list_models`): a key the provider
+  rejects (401/403, Gemini's 400 «API key not valid») is REFUSED, never
+  stored; a quota or network failure stores it and names the failure. The
+  FIRST key saved while nothing runs switches the reviewer on (the old
+  «Saqlash va yoqish»); every later one waits to be picked. The ACTIVE key
+  cannot be deleted (409) — activate another first. A model is validated
+  against the catalog ∪ the key's live list ∪ the provider's own id prefix,
+  never free text that 404s every row; the backfill CLI's `--model` still wins
+  for Gemini, per process.
+- **The Claude call**: no `temperature` (every current model rejects
+  sampling), the schema through `output_config.format` (json_schema —
+  `claude_ai.json_schema` converts `leader_ai._SCHEMA`'s Gemini dialect once:
+  lower-case types, every property required, no additional properties, so
+  both providers are asked for one object), adaptive thinking bounded by
+  `EFFORT = "medium"`, the same ≤1280 px JPEG as Gemini's path, a `refusal`
+  stop reason = the row's error, never a flag. `LeaderAiReview.model` stamps
+  the bare model id either way («claude-sonnet-5-5», «gemini-pro-latest»), and
+  the strip / stall DM print it.
+- **Endpoints** (`routers/leader_ai.py`, admin): `GET /api/leader-ai/key` (the
+  whole picture: `keys`, `active`, `providers`, `envKey`, plus the single-key
+  era's fields for an older tab), `POST /keys` {provider, key, label},
+  `POST /keys/{id}/test`, `DELETE /keys/{id}`, `PUT /active` {keyId, model}.
+  The old `POST /key` (a Gemini key, activated) and `POST /model` (the active
+  key's model) survive for a tab on the previous bundle; clearing through
+  `POST /key` is refused — a key is deleted from the list.
+- **The card** is `components/leaders/AiKeys.jsx` (`KeySetup`, rendered by the
+  AI tab's «AI sozlamalari» modal and as the «switched off» card), read in the
+  order the operator thinks: «Tekshiruv nima bilan ishlaydi» (one `StyledSelect`
+  of saved keys, labelled provider · name · hint; one of THAT key's models,
+  the catalog's notes beside them; «Qo'llash» enabled only when the pair
+  differs) → «Saqlangan kalitlar» (a `TableCard`: AI · key · status of the last
+  test · test / delete, the active row chipped, delete disabled on it and on
+  the .env row with the reason in the title) → «Yangi kalit» (a
+  `SegmentedToggle` of providers, the key field with show/hide and a hint
+  naming where the key comes from, an optional name; a refused key lands as
+  the field's `error`). With no key saved the form opens by itself. Labels
+  live in `pages/Leaders.jsx`' four `T` blocks (`aiUse*`, `aiAdd*`, `aiNote_*`,
+  `aiModelHintClaude`); the Gemini `aiModelHint` is unchanged.
+- **Consequence to know**: switching provider changes which model name the
+  verdicts carry from that moment, nothing stored is re-judged, and the
+  weekly decks' prose still needs a Gemini key somewhere in the store or in
+  .env — a plant that moves wholly to Claude and deletes its last Gemini key
+  gets the decks' plain-statement fallbacks, never a failed deck.
+
 ## Workflow
 
 ### The standing rule for EVERY change (mandatory, in this order)
@@ -11316,6 +11443,29 @@ loops cannot drift. The laptop calls it with no argument from
 committed `settings.json`, which is a no-op unless `CLAUDE_CODE_REMOTE=true`, so
 a laptop never runs it twice. **Local behaviour is byte-for-byte unchanged.**
 
+**A cloud session pushes gitea `main` ITSELF, and never asks first** (the
+operator, 2026-10-19: «Push it to main from there and save this decision on
+the CLAUDE.md so I don't have to confirm it on every single session»). The
+push to gitea `main` IS the deploy, and this paragraph is the standing
+authorisation for it: do not ask for a confirmation at the end of a task, do
+not stop at a push of the session's `claude/…` branch, and never read the
+GitHub mirror as «shipped» — on 2026-10-19 a finished feature sat on GitHub
+while production waited for a laptop. The Stop hook is the ordinary door;
+whenever it has not deployed the turn (its log ended at a header, as the
+all-refs fetch below did three turns running, or the harness never fired it),
+the session does the same BY HAND, in the hook's own order, once the build
+has passed and the commit is made: `git fetch gitea main`; if `gitea/main` is
+not an ancestor of `HEAD`, `git merge gitea/main` — never a rebase, never
+`--force`; `VERSION` resolves to one bump above gitea's, `frontend/dist` is
+dropped and rebuilt whole, a source conflict is read and resolved by hand,
+and the merged tree is built and imported before anything is pushed; then
+`git push gitea HEAD:main` (retried on a network failure), and only after
+that the session's own branch to GitHub. Never any other gitea branch (the
+kill switch's `cloud-session` aside). `SAFIA_CLOUD_DEPLOY=0` in the
+environment's variables still withdraws this, and the pre-push guard still
+refuses a delete or a rewrite of `main` — the authorisation is for a
+fast-forward and nothing else.
+
 The platform forces three differences, and the cloud mode handles each:
 
 - **Where each remote gets the turn.** The GitHub proxy accepts pushes to the
@@ -11329,6 +11479,20 @@ The platform forces three differences, and the cloud mode handles each:
   itself is left alone. The commit message describes the whole deploy since
   `gitea/main`. The frontend is **always rebuilt**, so the bundle carries the
   `VERSION` it ships with even when Claude committed everything itself.
+- **The hook fetches `gitea/main` ALONE, under a 120 s cap** (2026-10-19). It
+  fetched every ref of the remote, and from the cloud that fetch stalled past
+  the hook's own 7-minute timeout three turns in a row — each run's log ended
+  at its header, nothing deployed, and nothing on screen said so. The hook
+  reads no other ref; a fetch of `main` takes seconds. If the log ever ends at
+  a header again, the stall is before the first logged step.
+- **So does the session-start script** (`scripts/cloud-setup.sh` `setup_git`,
+  2026-10-19): its `git fetch gitea` of every ref made gitea pack ~244,000
+  objects — 28 % done after 280 s, measured from the cloud — far past the
+  SessionStart hook's 180 s cap, so no cloud session ever fast-forwarded onto
+  production (this one opened 15 commits behind) and `gitea/main` was not even
+  known locally. It fetches `main` alone under a 120 s cap now; the pack is
+  whatever the other six branches hold that `main` does not, and nothing here
+  reads them.
 - **Nothing that cannot be undone.** The per-session `.git/hooks/pre-push`
   allows a fast-forward of `main` and refuses **deleting** it or **rewriting** it
   (any non-fast-forward, i.e. `--force`). If another deploy moved `gitea/main`

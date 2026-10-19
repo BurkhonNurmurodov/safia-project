@@ -17,6 +17,9 @@ python-pptx==1.0.2
 gspread==6.1.4
 google-auth==2.36.0
 httpx==0.28.1
+# The proof reviewer's Claude transport (services/claude_ai.py) — the official
+# SDK, pinned. Built on httpx2, a separate package, so it leaves httpx alone.
+anthropic==1.15.0
 python-dotenv==1.2.2
 pyTelegramBotAPI==4.25.0
 # Image rendering for the bot's /ojidaniya dashboard card.

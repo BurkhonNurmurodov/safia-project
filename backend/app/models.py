@@ -1415,6 +1415,14 @@ class PPLineDaily(Base):
     line_key        = Column(String, nullable=False)   # pp_calc.line_keys — name|labor#n
     plan_override   = Column(Numeric(14, 4), nullable=True)
     actual_override = Column(Numeric(14, 4), nullable=True)
+    # 2026-10-19 «Kontiner krishka» (ru «Крышка контейнера», en «Container
+    # cap»): a number the brigadir types for THIS line on THIS day on the
+    # «Pozitsiyalar» table, through the same /override door as ПЛАН/ФАКТ. NULL =
+    # nothing typed, which is the column's whole default — never 0. Nothing
+    # computes with it (no load, no minutes, no export); a SAP upload leaves it
+    # where it is (the file says nothing about lids) and a catalog edit carries
+    # it with the line like the two quantities. startup.add_pp_line_container_cap.
+    container_cap   = Column(Numeric(14, 4), nullable=True)
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Every component is NOT NULL, so a plain UniqueConstraint is enough — the
@@ -5078,3 +5086,30 @@ class VerifixSyncRun(Base):
     error       = Column(Text, nullable=True)
     ms          = Column(Integer, nullable=True)
 
+
+
+class AiKey(Base):
+    """A saved AI API key for the proof reviewer (services/ai_review.py) — any
+    number per provider, the VALUE sealed (`web_auth.seal_password`, keyed off
+    SECRET_KEY, which lives in .env) so a dbdump carries ciphertext. Never read
+    back whole: the UI gets `hint`, the last four characters. The reviewer runs
+    on exactly ONE row at a time (`active`), on the `model` picked for that
+    row; `models` caches the provider's live list from the last test, so the
+    picker offers what the key can actually reach."""
+    __tablename__ = "ai_keys"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    provider    = Column(String, nullable=False, index=True)            # "gemini" | "claude"
+    label       = Column(String, nullable=True)
+    key_enc     = Column(Text, nullable=False)                          # sealed — never logged, never returned
+    hint        = Column(String, nullable=True)                         # the last 4 characters
+    model       = Column(String, nullable=True)                         # the model picked for THIS key
+    active      = Column(Boolean, nullable=False, default=False, server_default=text("false"), index=True)
+    source      = Column(String, nullable=False, default="ui", server_default="ui")   # "ui" | "legacy"
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    created_by  = Column(String, nullable=True)
+    created_tg  = Column(BigInteger, nullable=True)
+    tested_at   = Column(DateTime(timezone=True), nullable=True)
+    test_ok     = Column(Boolean, nullable=True)
+    test_note   = Column(String, nullable=True)
+    models      = Column(JSONB, nullable=True)                          # [{id, label}] from the last test

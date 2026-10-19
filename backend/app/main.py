@@ -153,6 +153,7 @@ async def lifespan(app: FastAPI):
         open_kelish_page,
         report_auto_schema,
         add_pp_product_auto_fill,
+        add_pp_line_container_cap,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
         migrate_pp_line_daily_key,
@@ -240,6 +241,10 @@ async def lifespan(app: FastAPI):
     run(add_profiles_columns)
     run(migrate_cells_table)
     run(migrate_cells_leaders_columns)
+    # The proof reviewer's single sealed Gemini key becomes a row of the
+    # saved-key store (services/ai_review), once.
+    from app.startup import adopt_legacy_ai_key
+    run(adopt_legacy_ai_key)
     run(migrate_cell_supervisor_column)
     run(migrate_cell_in_load_column)
     # Every cell of a unit whose загрузка is calculated starts ON (once).
@@ -287,6 +292,7 @@ async def lifespan(app: FastAPI):
     later(seed_full90_bands)
     later(set_gemini_model_pro)
     run(add_pp_product_auto_fill)
+    run(add_pp_line_container_cap)
     run(add_education_duration)
     run(migrate_pp_line_daily_key)
     later(correct_pp_double_counted_days)

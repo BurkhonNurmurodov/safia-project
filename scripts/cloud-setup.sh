@@ -356,8 +356,14 @@ HOOK_EOF
   # and for the same reason: a merge or rebase nobody looked at is how you ship
   # someone else's half-finished work to a factory floor. GIT_TERMINAL_PROMPT=0:
   # with no credential git would otherwise wait at a password prompt nobody sees.
-  if ! GIT_TERMINAL_PROMPT=0 git -C "$REPO" fetch gitea >/dev/null 2>&1; then
-    log "cannot reach gitea — allowlist $host and give the environment a token (an API credential or GITEA_TOKEN); offline: no pull, no deploy"
+  # ONLY main, and bounded (2026-10-19): this script reads nothing but gitea/main,
+  # and a fetch of EVERY ref of the remote made gitea pack ~244,000 objects —
+  # 28 % done after 280 s, measured from the cloud — far past this hook's 180 s
+  # cap, so no session ever fast-forwarded and gitea/main was not even known
+  # locally. A fetch of main alone takes seconds. The Stop hook carries the
+  # same fix (.claude/hooks/auto-commit.sh).
+  if ! GIT_TERMINAL_PROMPT=0 timeout 120 git -C "$REPO" fetch gitea main >/dev/null 2>&1; then
+    log "cannot reach gitea (fetch of main failed or took over 120 s) — allowlist $host and give the environment a token (an API credential or GITEA_TOKEN); offline: no pull, no deploy"
     return 0
   fi
   # The CURRENT branch, whatever it is called: a GitHub-started session sits on

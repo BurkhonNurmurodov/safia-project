@@ -85,7 +85,7 @@ _RULES: list[tuple[Optional[tuple[str, ...]], str, str]] = [
     (("POST",), r"/api/admin/logs/[^/]+/undo", "blocked:danger"),
     (None, r"/admin/delete-attendance", "blocked:delete"),
     # — logins, keys and platform-wide settings —
-    (None, r"/api/leader-ai/(key|model)", "blocked:credentials"),
+    (None, r"/api/leader-ai/(key|keys|model|active)(/.*)?", "blocked:credentials"),
     (None, r"/api/admin/verifix(/.*)?", "blocked:credentials"),
     # The Verifix sync's ties, taps and mode move people, cells and access.
     (None, r"/api/admin/verifix-sync(/.*)?", "blocked:people_access"),

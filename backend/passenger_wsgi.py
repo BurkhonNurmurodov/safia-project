@@ -143,6 +143,7 @@ try:
         open_kelish_page,
         report_auto_schema,
         add_pp_product_auto_fill,
+        add_pp_line_container_cap,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
         migrate_pp_line_daily_key,
@@ -274,6 +275,7 @@ try:
     seed_full90_bands()
     set_gemini_model_pro()
     add_pp_product_auto_fill()
+    add_pp_line_container_cap()
     add_education_duration()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()

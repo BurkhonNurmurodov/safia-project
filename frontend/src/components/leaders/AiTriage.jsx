@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
-import StyledSelect from "../ui/StyledSelect";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { SectionHead } from "../ui/DataTable";
@@ -17,6 +16,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { QueuePhoto } from "./ProofPhoto";
+import KeySetup from "./AiKeys";
 import api from "../../utils/api";
 
 /* ══ AI proof review ══════════════════════════════════════════════════════════
@@ -601,7 +601,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
 
       {cfgOpen && (
         <Modal open onClose={() => setCfgOpen(false)} title={T.aiSettings}
-          icon={Sparkles} maxWidth="max-w-lg">
+          icon={Sparkles} maxWidth="max-w-2xl">
           <KeySetup T={T} qc={qc} embedded />
         </Modal>
       )}
@@ -828,151 +828,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
  * SECRET_KEY, which lives in .env and never in the database, so a dbdump is
  * ciphertext) and afterwards will only ever say "configured", plus a
  * first4…last4 preview — enough to spot a bad paste, useless to a shoulder. */
-function KeySetup({ T, qc, embedded = false }) {
-  const [key, setKey] = useState("");
-  const [show, setShow] = useState(false);
-  const { show: toast, node } = useToast({ position: "bottom" });
-
-  const { data: st } = useQuery({
-    queryKey: ["leader-ai-key"],
-    queryFn: () => api.get("/api/leader-ai/key").then((r) => r.data),
-  });
-
-  // The model is the other half of "what will this cost and how well will it
-  // judge", and which half binds flips with the billing account — free tier or
-  // a spent cap makes requests-per-day the constraint, and the cheap model
-  // suddenly beats the accurate one. It lived in config.py behind a push,
-  // which meant it needed repo access at the exact moment the quota ran out.
-  const setModel = useMutation({
-    mutationFn: (m) => api.post("/api/leader-ai/model", { model: m }).then((r) => r.data),
-    onSuccess: () => {
-      toast(T.aiModelSaved, "success");
-      qc.invalidateQueries({ queryKey: ["leader-ai-key"] });
-    },
-    onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
-  });
-
-  const modelOpts = (st?.models || []).map((m) => ({
-    value: m,
-    label: m.includes("lite") ? T.aiModelLite
-      : m.includes("pro") ? T.aiModelPro : T.aiModelFlash,
-    title: m,
-  }));
-
-  const save = useMutation({
-    // The value is an ARGUMENT, not read from state: «Clear» sets the field
-    // empty and submits in the same tick, and state would still hold the old
-    // text at that point — so clearing would have re-saved what was typed.
-    mutationFn: (value) => api.post("/api/leader-ai/key", { key: value }).then((r) => r.data),
-    onSuccess: (_res, value) => {
-      setKey("");
-      toast(value ? T.aiKeySaved : T.aiKeyCleared, "success");
-      // The tab badge, the queue and the register strip all read `enabled`.
-      qc.invalidateQueries({ queryKey: ["leader-ai-key"] });
-      qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
-      qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
-    },
-    onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
-  });
-
-  // A key pinned in backend/.env wins server-side. Saying so beats letting
-  // somebody type a value that silently never takes effect.
-  const locked = st?.source === "env";
-
-  const body = (
-    <div className={embedded ? "flex flex-col gap-3" : "p-4 flex flex-col gap-3"}>
-          {!embedded && (
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {T.aiOffBody}
-            </p>
-          )}
-
-          {locked ? (
-            <p className="text-xs rounded-lg p-2.5"
-              style={{ color: "var(--text-3)", background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-              {T.aiKeyEnvPinned}
-            </p>
-          ) : (
-            <>
-              <label className="text-[11px] font-bold uppercase tracking-wide"
-                style={{ color: "var(--text-4)" }} htmlFor="gkey">
-                {T.aiKeyLabel}
-              </label>
-              <div className="flex gap-2">
-                <input id="gkey" type={show ? "text" : "password"} value={key}
-                  onChange={(e) => setKey(e.target.value)}
-                  autoComplete="off" spellCheck={false} placeholder="AIza…"
-                  className="flex-1 min-w-0 px-3 rounded-lg text-sm font-mono"
-                  style={{ height: 38, background: "var(--bg-inner)",
-                           border: "1px solid var(--border)", color: "var(--text-1)" }} />
-                <Button size="lg" variant="secondary" onClick={() => setShow((s) => !s)}
-                  title={show ? T.aiKeyHide : T.aiKeyShow}>
-                  {show ? T.aiKeyHide : T.aiKeyShow}
-                </Button>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button size="lg" variant="primary" loading={save.isPending}
-                  disabled={!key.trim()} onClick={() => save.mutate(key.trim())}>
-                  {T.aiKeySave}
-                </Button>
-                {st?.configured && (
-                  <>
-                    <span className="text-xs font-mono tabular-nums" style={{ color: "var(--text-4)" }}>
-                      {st.preview}
-                    </span>
-                    <Button size="lg" variant="ghost" onClick={() => save.mutate("")}>
-                      {T.aiKeyClear}
-                    </Button>
-                  </>
-                )}
-              </div>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>
-                {T.aiKeyHint}
-              </p>
-            </>
-          )}
-
-          {/* The model. Shown even when the key is env-pinned — the two are
-              stored separately and a locked key is no reason to lock the
-              choice that decides how far the day's quota goes. */}
-          {!!modelOpts.length && (
-            <div className="flex flex-col gap-1.5 pt-1"
-              style={{ borderTop: "1px solid var(--border)" }}>
-              <label className="text-[11px] font-bold uppercase tracking-wide pt-2"
-                style={{ color: "var(--text-4)" }}>
-                {T.aiModelLabel}
-              </label>
-              <StyledSelect value={st?.model} options={modelOpts}
-                disabled={setModel.isPending}
-                onChange={(v) => v && v !== st?.model && setModel.mutate(v)} />
-              {/* The hint carries the consequence, at --text-3 rather than
-                  --text-4: this is the line that says which model to pick and
-                  why, and at the fainter weight the eye skips exactly it. */}
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-                {T.aiModelHint}
-              </p>
-              <p className="text-[11px] font-mono" style={{ color: "var(--text-4)" }}>
-                {st?.model}{st?.modelSource === "config" ? ` · ${T.aiModelCfg}` : ""}
-              </p>
-            </div>
-          )}
-    </div>
-  );
-
-  return (
-    <>
-      {embedded ? body : (
-        <div className="rounded-2xl overflow-hidden max-w-xl"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={Sparkles} title={T.aiOffTitle} />
-          {body}
-        </div>
-      )}
-      {node}
-    </>
-  );
-}
-
 const Card = ({ children, className = "" }) => (
   <div className={`rounded-2xl overflow-hidden ${className}`}
     style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

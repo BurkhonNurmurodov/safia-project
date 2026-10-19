@@ -5940,6 +5940,23 @@ def add_pp_product_auto_fill() -> None:
         db.close()
 
 
+_PP_LINE_CAP_DDL = (
+    ("pp_line_daily", (("container_cap", "NUMERIC(14, 4)"),), None),
+)
+
+
+def add_pp_line_container_cap() -> None:
+    """2026-10-19: «Kontiner krishka» — a per-line, per-day number the brigadir
+    may type on the «Pozitsiyalar» table (`pp_line_daily.container_cap`, see
+    models.PPLineDaily). NULL on every existing row = nothing typed, which is
+    the column's whole default. Pure DDL, idempotent, no flag; through
+    `_ensure_columns` (one table, a lock_timeout, nothing taken once the column
+    exists) because the old blue-green copy reads this table while the new one
+    boots — and FATAL on failure like the late-window columns: every read of
+    the overlay selects this column, and the dashboard reads the overlay."""
+    _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
+
+
 def add_education_duration() -> None:
     """2026-09-10: «Ta'lim» measures HOW MUCH of a lesson was watched.
 
@@ -10196,5 +10213,28 @@ def _leader_auto_t11_grant_job() -> None:
             pass
         _t11_dm("\U0001F6D1 <b>#11 o'tish kuni bali berilmadi</b>\n"
                 f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
+def adopt_legacy_ai_key() -> None:
+    """The proof reviewer's single-key era kept ONE sealed Gemini key in
+    `app_settings["gemini_api_key"]`. From 2026-10-19 keys live in `ai_keys`
+    (services/ai_review); this copies that setting into a row once — active
+    where nothing else runs — so the key list shows what the reviewer has
+    been running on. Idempotent by the row's `source`; the setting stays until
+    the row is deleted, so an old copy in the blue-green window still reads it.
+    """
+    from app.database import SessionLocal
+    from app.services import ai_review
+
+    import logging
+
+    db = SessionLocal()
+    try:
+        ai_review.adopt_legacy(db)
+    except Exception:
+        logging.getLogger(__name__).exception("adopt_legacy_ai_key failed")
+        db.rollback()
     finally:
         db.close()

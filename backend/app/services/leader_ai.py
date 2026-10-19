@@ -66,7 +66,7 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import (action_log, gemini, leader_bot, leader_exclusions, leader_shift,
+from app.services import (action_log, ai_review, gemini, leader_bot, leader_exclusions, leader_shift,
                           one_process)
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
@@ -1840,7 +1840,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         screen_dates=checked and dayed and not timed,
     )
     try:
-        out = gemini.generate_json(prompt, examples + images, _SCHEMA)
+        out = ai_review.generate_json(prompt, examples + images, _SCHEMA)
     except gemini.GeminiQuotaError:
         # Leave it pending and give the attempt back — the row never got a
         # verdict, and a capped queue head would strand the whole backlog.
@@ -1888,7 +1888,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     for l in LANGS:
         setattr(rev, f"reason_{l}", (out.get(f"reason_{l}") or "").strip()[:1500] or None)
     rev.photos = len(images)
-    rev.model = gemini.active_model()
+    rev.model = ai_review.active_model()
     rev.error = None
     rev.reviewed_at = datetime.now(timezone.utc)
     db.commit()
@@ -2176,7 +2176,7 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     sitting at 0% cannot say whether the first row is slow or the drain never
     started. The web kick passes it; the backfill CLI has its own progress bar.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return {"ok": False, "reason": "no_key", "done": 0, "flagged": 0, "errors": 0}
     limit = limit or settings.gemini_batch_size
     q = (
@@ -4048,7 +4048,7 @@ def run_async(discover_first: bool = False, _chain: int = 0) -> None:
     to people. A caller that wants it says so out loud — forgetting the kwarg
     now costs nothing instead of silently reinstating a bulk submit.
     """
-    if not gemini.available():
+    if not ai_review.available():
         return
 
     def _work():
@@ -4156,7 +4156,7 @@ def register_drain_job() -> None:
     """
     from app.scheduler import schedule_interval
     schedule_interval("leader-ai-watch", watch_stall, minutes=WATCH_EVERY_MIN)
-    if not gemini.available():
+    if not ai_review.available():
         log.info("leader-ai: no API key, periodic drain not scheduled")
         return
     schedule_interval("leader-ai-drain", lambda: run_async(discover_first=False),
@@ -4275,7 +4275,7 @@ def stall_state(db: Session) -> dict | None:
     waiting = [_utc(c) for a, c in recent
                if (a or 0) < MAX_ATTEMPTS and c is not None]
     beat = _read_beat(db) or {}
-    if not gemini.available():
+    if not ai_review.available():
         code, detail = "no_key", ""
     elif beat.get("quota"):
         code, detail = "quota", str(beat.get("quotaMsg") or "")
@@ -4311,7 +4311,7 @@ def stall_state(db: Session) -> dict | None:
            .first())
     return {"code": code, "detail": detail, "queued": queued,
             "gave_up": len(recent) - queued, "oldest": oldest, "last": last,
-            "beat_at": beat.get("at"), "model": gemini.active_model(),
+            "beat_at": beat.get("at"), "model": ai_review.active_model(),
             "error": err[0] if err else None, "error_n": err[1] if err else 0}
 
 

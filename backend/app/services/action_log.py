@@ -478,6 +478,10 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/admin/translations/languages",         "config", "config.language_added"),
     (("POST",),   "/api/leader-ai/model",                      "config", "config.ai_model_set"),
     (("POST",),   "/api/leader-ai/key",                        "config", "config.ai_key_set"),
+    (("POST",),   "/api/leader-ai/keys/{}/test",               "config", "config.ai_key_tested"),
+    (("POST",),   "/api/leader-ai/keys",                       "config", "config.ai_key_added"),
+    (("DELETE",), "/api/leader-ai/keys/{}",                    "config", "config.ai_key_deleted"),
+    (("PUT",),    "/api/leader-ai/active",                     "config", "config.ai_active_set"),
     (("PUT",),    "/api/admin/verifix",                        "config", "config.verifix_saved"),
 
     # ── the danger zone ───────────────────────────────────────────────────────
