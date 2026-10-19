@@ -10,7 +10,7 @@ or copy-paste its markup into a page.
 
 | Element type | Template | Rules |
 |---|---|---|
-| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). |
+| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). An option's `short` is what the closed trigger shows for it — a panel label carrying a note, the bare name on the control («AI kalitlari»' model pickers). |
 | Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. |
 | "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. The subtitle is readable text (`--text-2`, 12px) and WRAPS: it often names who a record belongs to (a brigadir, a cell), and a phone has no hover to finish a cut line. **It is a real dialog (2026-10-05)**: `role=dialog` + `aria-modal`, labelled by the title (described by the subtitle); on open focus moves onto the CARD (never into a field — that raises a phone keyboard — unless a child autoFocuses), Tab is trapped, and focus returns to the opener on close. **Escape is an implicit close, like the backdrop**: it obeys `dismissable`, and it NEVER silently discards entered work — with a draft it asks first (`ConfirmDialog`, «Saqlamasdan yopilsinmi?», the safe button focused). The draft is `dirty` when the caller passes it; otherwise «the user changed something in this card since it opened»: any typed / ticked / chosen native field (`SearchInput` and anything under `data-no-draft` excepted) plus a pick in `StyledSelect` / `DateRangePicker` / `CountStepper`, which report through `useMarkDraft()` — a new value template inside dialogs must do the same. The X never asks; the backdrop click is unchanged. Only the TOPMOST dialog answers the keyboard: `dialogLayers.js` is THE stack (Modal, ConfirmDialog and Lightbox register; top = highest z-index, then later in the DOM). A popover inside a dialog that closes on Escape must `e.preventDefault()` so the dialog stays standing, and a page-level Escape (a fullscreen overlay) steps aside while `hasOpenDialog()`. |
@@ -95,7 +95,7 @@ never moves the frame.
 - Four groups, ordered by how often they are used and how much they can destroy:
   **Kunlik** (attendance · data · production · cellatt) → **Odamlar va ruxsat**
   (users · profiles · access · permissions · actions) → **Vositalar** (broadcast ·
-  ltasks · translations) → **Xavfli zona** (cleanup · dbdump). Danger
+  ltasks · … · aikeys · translations) → **Xavfli zona** (cleanup · dbdump). Danger
   items are marked red and stay last; never put a data-destroying tool next to a
   daily one.
 - Navigation is a grouped sidebar on `lg+` and a grouped bottom sheet on phones.
@@ -2256,7 +2256,9 @@ cell stopped, when or why.
 From **2026-09-03** the toolbar of `/downtime` carries a second export beside
 «Excel»: a fourteen-slide PowerPoint report of the week — `POST
 /api/downtime/export.pptx` → `services/ojidaniya_deck.py`, with the prose
-written by Gemini in `services/deck_narrative.py`. It replaces a deck somebody
+written in `services/deck_narrative.py` by the AI the «AI kalitlari» tab gives
+feature `deck_ojidaniya` (Gemini, or Claude, from 2026-10-19 — Gemini alone
+before; «Gemini» below means that model). It replaces a deck somebody
 was building by hand every week (read every leader's entry, total the minutes
 per category and per brigadir, find the three that matter, write the root
 causes, lay out the slides).
@@ -2362,7 +2364,7 @@ causes, lay out the slides).
   reads as though written by somebody who has never been on it, and `_STYLE`
   demands Uzbek that sounds native rather than translated.
 - **A Gemini failure must not cost the operator the deck.** `write()` returns
-  None on anything — no key, quota, malformed answer — and each prose slot
+  None on anything — the feature switched off, quota, malformed answer — and each prose slot
   falls back to a plain statement of its own numbers. `narrative: false` on the
   body skips the call outright.
 - **`cat_key()` normalises whatever spelling the model returns** («Cat D3» /
@@ -2460,7 +2462,8 @@ row is the day it reached whoever holds it NOW, not the day it was filed.
 
 From **2026-09-23** (the operator's rulings, asked and answered one by one)
 `/concerns` carries a PPTX beside «Excel» — `POST /api/concerns/export.pptx` →
-`services/concerns_deck.py`, prose by Gemini in `services/concerns_narrative.py`.
+`services/concerns_deck.py`, prose in `services/concerns_narrative.py` by the AI
+the «AI kalitlari» tab gives feature `deck_concerns` (Gemini until 2026-10-19).
 It is the Ojidaniya deck's twin: same look, same `_text` / `deck_text` no-overlap
 rule (imported from `ojidaniya_deck`, never copied), same delivery, same shape.
 
@@ -3666,6 +3669,22 @@ number.
   **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
   flag and never deducts: a dead Drive permission must not mass-fail a shift.
   Only a human `approved` lifts an automatic rejection; `requeried` does not.
+- **Every image reaches the model behind its OWN LABEL** (2026-10-19) —
+  «NAMUNA i/k — baholanmaydi» for an example, «TEKSHIRILADIGAN RASM i/n» for a
+  proof (`leader_ai.image_labels`), a text block right before the image on both
+  providers (`gemini.labelled`, read by `gemini` and `claude_ai`). Up to three
+  examples ride in front of the proofs, and the prompt used to name only their
+  ORDER: on its first day Claude Sonnet 5.5 counted the examples as proofs — it
+  transcribed an example's clock (a `date_mismatch` on an honest SAP
+  screenshot), named a «third photo» on a two-photo report, and failed a camera
+  proof «taken on another day» whose stamps all read 19.10. Never send review
+  images unlabelled. The same day the prompt gained three judging rules for
+  question 3 (`judge_rules` in `_prompt`, both providers): a date never decides
+  `proves_done`; a fault fails a photo only when it is actually SEEN (a uniform
+  «not clearly visible» is not a missing uniform); and with written criteria the
+  example is one illustration, never the rule. A reason names a photo by its
+  proof number («2-rasm»). Verdicts already written are not re-judged —
+  «Qayta tekshirish» re-reads them.
 - **A photo window's hours are anchored to the SHIFT, not to the calendar
   date** (user, 2026-08-22). `leader_ai.window_offset(shift, win)` is THE
   anchor and `date_window`, `date_days` and `clock_in_window` all read it, so
@@ -11213,9 +11232,10 @@ destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
 
 From **2026-10-05** (the operator's rulings, asked in three rounds) an AI
 assistant answers anything about the platform and does the user's work for
-them — «Yordamchi» (ru «Помощник», en «Assistant»). Gemini's latest PRO
-model (`gemini-pro-latest`); voice is transcribed by `gemini-flash-latest`.
-Page key `assistant`, **admin-only until the operator opens it** — plus any
+them — «Yordamchi» (ru «Помощник», en «Assistant»). It answers on the key and
+model the «AI kalitlari» tab gives feature «assistant» (Gemini or Claude) and
+turns voice into text on feature «voice» (Gemini only); until 2026-10-19 both
+were fixed — Gemini Pro and Gemini Flash. Page key `assistant`, **admin-only until the operator opens it** — plus any
 tab an admin opened AS somebody else (the `imp` claim), which is how it is
 tested inside another person's permissions. Never during an exam (the client
 hides it, the server refuses `X-Exam-Attempt`).
@@ -11264,13 +11284,16 @@ hides it, the server refuses `X-Exam-Attempt`).
   names internal decisions. Live data: `api.index_text()` (every path it may
   use, by area) + `find_endpoints` / `describe_endpoint` (docstrings, params,
   body schema from the route itself).
-- **Gemini key**: its own sealed key (`assistant_gemini_api_key`, admin card
-  on the assistant's ⚙), else the proof reviewer's — so a busy chat day never
-  spends the quota the photo reviews need. Usage (tokens per run) is shown
-  there for the month.
+- **Which AI answers** is decided on the «AI kalitlari» tab, nowhere else
+  (see «AI keys, and which feature runs on which»): its own ⚙ card is gone,
+  and its sealed key (`assistant_gemini_api_key`) was copied into the key
+  store at the 2026-10-19 boot, where the chat kept running on it (deleting
+  that row deletes the old setting with it). A run is stamped with the model
+  it started on. This month's calls and tokens are on that tab («Shu oy»).
 - **Engine** (`services/assistant.py`): an asyncio task on the server loop;
   the whole state is in `assistant_runs` (Gemini contents kept VERBATIM —
-  Gemini 3 function calls carry thought signatures it validates), so a
+  Gemini 3 function calls carry thought signatures it validates; a Claude
+  turn keeps its raw blocks beside them, `assistant_claude`), so a
   Confirm landing on the other blue-green copy resumes there. A run that
   stops heart-beating (a deploy) reads «interrupted» (`heal`). ≤ 18 model
   steps and 7 minutes per reply, ≤ 2 running per person, 8 overall.
@@ -11291,7 +11314,7 @@ hides it, the server refuses `X-Exam-Attempt`).
   by; overlays below; full screen on a phone), `Chat` (shared by panel and
   page; polls every second while a run works, never at rest), `Message`,
   `PlanCard`, `Composer`, `Markdown` (React nodes only, never innerHTML),
-  `ThreadList`, `AssistantSettings`; `pages/Assistant.jsx` is the full page.
+  `ThreadList`; `pages/Assistant.jsx` is the full page.
   The page context sent with each message: route, query, global filters,
   plant, and the pages this person can open.
 - **An answer is never waited for blind** (2026-10-17). The context WATCHES
@@ -11340,91 +11363,151 @@ hides it, the server refuses `X-Exam-Attempt`).
   then bounce back). A new Markdown element is a renderer change AND a line in
   the guide — never one without the other.
 
-## The proof reviewer's AI keys and models (`ai_review`, 2026-10-19)
+## AI keys, and which feature runs on which («AI kalitlari», `/admin/upload?tab=aikeys`)
 
-The operator (2026-10-19): «make it possible to set and save different API
-keys — saved and easily switched at any time — and make the models of the AI
-selectable: to save a key I first select the AI and paste the key; when I
-select one AI to use, I also select one of its available models.» So the
-proof reviewer (`leader_ai`) no longer reads ONE Gemini key: it runs on exactly
-one SAVED key at a time, on a model picked for that key, from a store that
-holds any number of keys for any provider.
+From **2026-10-19** (the operator, the day the proof reviewer got its key
+list: «build a tab dedicated to AI API keys on the admin panel. On there we
+store all API keys. On there we'll decide which feature uses which key and
+which model. Remove API key saving or settings from other pages»; then, asked
+one by one: all five features separately, every one switchable between
+Gemini and Claude, a failure alerts and is switched by hand, and each row
+shows this month's usage) every AI key the platform holds lives on ONE admin
+tab, and so does the choice of key + model for every feature that calls an AI.
 
-- **`services/ai_review.py` is THE door** — `active()` (provider · model · key
-  · key_id · source, cached 30 s), `available()`, `active_model()`,
-  `generate_json()`, the store (`list_keys`, `add_key`, `delete_key`,
-  `test_key`, `set_active`, `adopt_legacy`) and `PROVIDERS`, the catalog.
-  `leader_ai` and `routers/leader_ai` ask only it; a third provider is one
-  more `PROVIDERS` entry plus a module with `generate_json` + `list_models`.
-  `gemini.py` and `services/claude_ai.py` are the two transports — the Claude
-  one through the official SDK (`anthropic`, the one dependency this added),
-  raising Gemini's THREE error classes (`GeminiError` the row's own failure,
-  `GeminiQuotaError` stop the drain, `GeminiAuthError` the key itself), which
-  are the reviewer's error contract and not Gemini's any more.
-- **The store is `ai_keys`** (`AiKey`): provider, label, the value SEALED
-  (`web_auth.seal_password`), `hint` = the last four characters, the `model`
-  picked for that key, `active`, `source` (ui | legacy), who added it, the
-  last test (`tested_at` / `test_ok` / `test_note`) and the provider's live
-  model list from it (`models`). **A key is never returned whole** — the UI
-  gets the hint; the action register gets the provider, the hint and the
-  LENGTH (`config.ai_key_added` / `ai_key_tested` / `ai_key_deleted` /
-  `ai_active_set`); the assistant is blocked from every door
-  (`blocked:credentials`). Admin-only, not grantable, as the single key was.
-- **Resolution** (`active()`): the row marked active → else the env-pinned
-  `GEMINI_API_KEY` on the legacy `gemini_model` setting (what every box ran
-  before, so nothing moved on deploy) → else whatever Gemini key
-  `gemini.api_key()` still finds → else off. The env key is the one entry with
-  no row (`id: "env"`): listed, activatable, never deleted or tested away. The
-  single-key era's sealed `app_settings["gemini_api_key"]` is copied into a
-  row at boot (`startup.adopt_legacy_ai_key`, idempotent by `source`), and
-  `delete_key` removes the setting with that row; `gemini._stored_key()` reads
-  the rows first, so the narratives (`deck_narrative`, `concerns_narrative`,
-  which stay on Gemini and are deliberately NOT routed through the store)
-  keep finding a Gemini key while one exists.
-- **A key is TESTED as it is saved** — its provider's model list is read with
-  it (`gemini.list_models` / `claude_ai.list_models`): a key the provider
-  rejects (401/403, Gemini's 400 «API key not valid») is REFUSED, never
-  stored; a quota or network failure stores it and names the failure. The
-  FIRST key saved while nothing runs switches the reviewer on (the old
-  «Saqlash va yoqish»); every later one waits to be picked. The ACTIVE key
-  cannot be deleted (409) — activate another first. A model is validated
-  against the catalog ∪ the key's live list ∪ the provider's own id prefix,
-  never free text that 404s every row; the backfill CLI's `--model` still wins
-  for Gemini, per process.
-- **The Claude call**: no `temperature` (every current model rejects
-  sampling), the schema through `output_config.format` (json_schema —
-  `claude_ai.json_schema` converts `leader_ai._SCHEMA`'s Gemini dialect once:
-  lower-case types, every property required, no additional properties, so
-  both providers are asked for one object), adaptive thinking bounded by
-  `EFFORT = "medium"`, the same ≤1280 px JPEG as Gemini's path, a `refusal`
-  stop reason = the row's error, never a flag. `LeaderAiReview.model` stamps
-  the bare model id either way («claude-sonnet-5-5», «gemini-pro-latest»), and
-  the strip / stall DM print it.
-- **Endpoints** (`routers/leader_ai.py`, admin): `GET /api/leader-ai/key` (the
-  whole picture: `keys`, `active`, `providers`, `envKey`, plus the single-key
-  era's fields for an older tab), `POST /keys` {provider, key, label},
-  `POST /keys/{id}/test`, `DELETE /keys/{id}`, `PUT /active` {keyId, model}.
-  The old `POST /key` (a Gemini key, activated) and `POST /model` (the active
-  key's model) survive for a tab on the previous bundle; clearing through
-  `POST /key` is refused — a key is deleted from the list.
-- **The card** is `components/leaders/AiKeys.jsx` (`KeySetup`, rendered by the
-  AI tab's «AI sozlamalari» modal and as the «switched off» card), read in the
-  order the operator thinks: «Tekshiruv nima bilan ishlaydi» (one `StyledSelect`
-  of saved keys, labelled provider · name · hint; one of THAT key's models,
-  the catalog's notes beside them; «Qo'llash» enabled only when the pair
-  differs) → «Saqlangan kalitlar» (a `TableCard`: AI · key · status of the last
-  test · test / delete, the active row chipped, delete disabled on it and on
-  the .env row with the reason in the title) → «Yangi kalit» (a
-  `SegmentedToggle` of providers, the key field with show/hide and a hint
-  naming where the key comes from, an optional name; a refused key lands as
-  the field's `error`). With no key saved the form opens by itself. Labels
-  live in `pages/Leaders.jsx`' four `T` blocks (`aiUse*`, `aiAdd*`, `aiNote_*`,
-  `aiModelHintClaude`); the Gemini `aiModelHint` is unchanged.
-- **Consequence to know**: switching provider changes which model name the
-  verdicts carry from that moment, nothing stored is re-judged, and the
-  weekly decks' prose still needs a Gemini key somewhere in the store or in
-  .env — a plant that moves wholly to Claude and deletes its last Gemini key
-  gets the decks' plain-statement fallbacks, never a failed deck.
+- **The tab** is `pages/admin/AiKeys.jsx`, «Vositalar» group, after «Verifix
+  sinxron». Admin-only and NOT grantable (no `capKey`), and refused from an
+  «open as» tab too (`routers/ai_admin._admin`, 403 `admin_only`): these doors
+  hand out the platform's paid accounts. Two cards, read in the order the
+  decision is made: «Funksiyalar — qaysi kalit va model» (one row per feature:
+  key picker · model picker · status · this month) → «Saqlangan kalitlar»
+  (provider · name · last four, who uses it, last test, this month; test /
+  rename / delete as icon buttons; «Yangi kalit» opens the add form). Every
+  write answers with the whole tab (`ai_features.overview`), so the page never
+  re-derives a rule.
+- **THE FIVE FEATURES** (`ai_features.FEATURES`, one row each in
+  `ai_features`): `review` (the checklist proof checker, Lider nazorati → AI
+  tekshiruvi), `assistant` («Yordamchi», the chat), `voice` (a voice message
+  turned into text), `deck_ojidaniya` and `deck_concerns` (the two weekly
+  PowerPoints' prose). Each may run on any provider it can speak — Gemini and
+  Claude for all but `voice`: Claude takes text, images and PDFs, never audio,
+  so the voice picker lists a Claude key DISABLED with the reason in its title.
+- **Three modules, one job each.** `services/ai_keys.py` is THE key store (the
+  2026-10-19 reviewer list moved here whole — the `ai_keys` table, the value
+  SEALED with `web_auth.seal_password`, `hint` = the last four characters,
+  the .env `GEMINI_API_KEY` as the one row-less entry `id: "env"`).
+  `services/ai_features.py` is THE assignment — `resolve(feature)` (cached
+  30 s, `invalidate()` on every write), `generate_json(feature, …)`, the
+  ledger, the alerts, the seed. `routers/ai_admin.py` is the door
+  (`/api/admin/ai`). **Every AI caller asks `ai_features`** and holds no key
+  of its own: the reviewer (`leader_ai.review_one` resolves ONCE per row and
+  stamps `LeaderAiReview.model` from it; `ai_review` is now a thin shim over
+  feature «review»), both deck narratives (`deck_narrative`,
+  `concerns_narrative`), and the assistant through `assistant_ai`.
+- **A feature runs on exactly what its row says, nothing else.**
+  `ai_features.key_ref` ("env", an `ai_keys.id`, or NULL = switched off) +
+  `model`. There is no implicit «whatever Gemini key exists» any more. Off =
+  the reviewer queues nothing and its AI tab shows a card pointing here; the
+  assistant says no key is set (an admin gets a button here); a weekly deck
+  ships with its plain fallback prose, never a failed deck. A row naming a key
+  that cannot be opened reads «Kalit topilmadi» (`broken`).
+- **Nothing moved on the deploy** — `startup.seed_ai_features` (flag
+  `ai_features_seed_2026_10_19_v1`, schema phase `run`, RAISES on failure,
+  both entrypoints; it replaced `adopt_legacy_ai_key`) wrote each feature the
+  pair it ran on the day before: `review` its active key and that key's model
+  (else the shared Gemini key on the shared model); `assistant` its own sealed
+  key (copied into the store as a row, source «assistant») else the shared
+  Gemini key, on gemini-pro-latest; `voice` that same key on
+  gemini-flash-latest; both decks the shared Gemini key on
+  `gemini.active_model()`. «Shared» is what `gemini.api_key()` answered
+  before — the .env key, else the store's Gemini row (active first, newest) —
+  and it is read BEFORE anything is copied in, or a freshly adopted row would
+  become «the newest Gemini row». A feature with no key to take starts off.
+  Later boots only add a row (off) for a feature the list gains, and leave
+  every existing row alone.
+- **Saving is checked, row by row, behind ONE button.** A pick is a DRAFT
+  (`useAdminDirty` guards leaving) until the header's «Saqlash (N)» — in the
+  card's header, beside where «Yangi kalit» sits on the other card, because a
+  button at the end of a row scrolled off a laptop. Each changed row is sent
+  on its own, in table order (`PUT /api/admin/ai/features/{feature}`
+  {keyRef, model}), and checked first with ONE tiny real call with the pair
+  (`ai_features.ping`): a key the provider refuses or a model it does not
+  serve answers 400 `refused_key` / `refused_model` (`bad_model` for a model
+  outside the provider's ids), NOTHING changes, the row keeps its draft and
+  says why («Saqlanmadi · kalit rad etildi»); a check that could not finish
+  (quota, network) saves the pick and says so. Rows still waiting read
+  «O'zgartirildi — saqlanmagan» (the pair running now in the tooltip), rows
+  being checked «Tekshirilmoqda…». Switching a feature off asks first and
+  names what stops. A changed pair clears that feature's alert state; saving
+  `review` arms and kicks the reviewer's drain. On a phone a change also pins
+  the same buttons to the bottom edge.
+- **Keys**: `POST /keys` {provider, key, label} — tested the moment it is
+  saved (its provider's model list is read with it): a key the provider
+  rejects is REFUSED (400 `key_refused`, on the field that caused it), a key
+  already saved (the .env one included) is refused as `duplicate`, a quota or
+  network failure stores it and names the failure. A new key runs NOTHING
+  until a feature is moved onto it (the old «the first key switches the
+  reviewer on» is gone). `PUT /keys/{id}` names it; `POST /keys/{id}/test`
+  re-reads its model list (what its pickers offer); `DELETE /keys/{id}` is
+  refused (409 `in_use`, naming the features) while any feature runs on it —
+  the button is disabled with that reason — and refused (403 `env_key`) for the
+  .env key. Deleting a row copied in from an old setting deletes the setting
+  too, so nothing can still find the value. **A key is never returned
+  whole**: the tab gets the hint; the action register gets the provider, the
+  hint and the LENGTH (`config.ai_key_added` / `ai_key_tested` /
+  `ai_key_renamed` / `ai_key_deleted`; `config.ai_feature_set` records
+  provider · model · key hint before → after and the check's outcome). The
+  assistant can neither see nor call `/api/admin/ai` (hidden + `blocked:credentials`).
+- **Every call is counted** (`ai_features.record`, never raises; an async
+  caller hands it to a thread): `ai_usage` holds one row per plant day ×
+  feature × key × model — calls, ok, failed, tokens in / out — upserted on
+  `uq_ai_usage_day`, and the feature's row keeps its last call, last success
+  and last error (kind + the provider's own words). The tab's «Shu oy» per
+  feature and per key reads it; the ledger starts on the first boot
+  (`ai_usage_since`), and the column says «(19.10 dan)» while that day lies
+  inside the month. Status per row: `ok` · `error` + the reason in words
+  (limit · key refused · no balance · model not found · provider did not
+  answer · no connection · unreadable answer) · `unused` · `off` · `broken`.
+- **A failure a person must act on is told ONCE** (`_maybe_alert`): a key
+  refused, a model the key cannot reach, the account out of credit, or a quota
+  that has lasted 15 min or failed 3 times running DMs the support chat (else
+  every admin — the stall alert's recipients) with a button onto the tab;
+  again only after 6 h or when the failure changes; and one «AI yana
+  ishlayapti» when the feature works again. A compare-and-set means two
+  threads failing at once send one message, and it goes out after the
+  answer (`tg_later`). **Nothing ever moves a feature to another key by
+  itself** — the operator's ruling: moving to another billing account is a
+  person's decision. The error vocabulary is `GeminiError.kind` (quota ·
+  unavailable · key · credit · model · no_key · bad_response · network ·
+  other) for both providers (`claude_ai.mapped`: 404 → model, «credit
+  balance» → credit, connection → network); the exception CLASS still
+  decides control flow (`GeminiQuotaError` stops the reviewer's drain).
+- **The assistant speaks Claude too** (`services/assistant_claude.py`,
+  `assistant_ai.py`). The transcript stays in Gemini's `contents` shape;
+  a Claude reply is translated into it and its raw content blocks are kept
+  VERBATIM beside it (`_claude`), because a tool loop with thinking on must
+  hand Claude its thinking blocks back unchanged. `tool_result` blocks come
+  first in a user message; the step after the budget still declares the tools
+  with `tool_choice: none`; the request carries a top-level `cache_control`
+  (retried without it on a 400 about it); the system prompt is byte-identical
+  across a run's steps and its resume after a Confirm (its «now» is frozen in
+  `context._now`), since a thinking signature is bound to it; a 400 about a
+  replayed signature retries once on the transcript flattened to text
+  (`transcode`), and so does a run whose feature the tab moved to another
+  model mid-way. Effort medium, max_tokens 16000, no sampling parameters.
+  Voice stays Gemini (`transcribe` on feature «voice»); `/api/assistant/me`
+  says `voice: false` when it has no key and the composer hides the mic.
+- **Removed from the other pages**: the AI tab's «AI sozlamalari» modal and
+  `components/leaders/AiKeys.jsx` (switched off, the tab is a card with
+  «AI kalitlari»ni ochish); the assistant's ⚙ and `AssistantSettings.jsx`
+  (`PUT /api/assistant/settings` is gone; `GET` answers a slim payload with
+  `moved_to`); `/api/leader-ai/key`, `/keys`, `/keys/{id}/test`,
+  `DELETE /keys/{id}`, `/active` and `/model`. A tab still open on the old
+  bundle can only break on the settings it was showing, so this is a MINOR.
+- `StyledSelect` options gained `short`: the trigger shows it for the picked
+  option (the model pickers list «<model> · eng aniq», the closed control
+  shows the model alone).
+- **Consequence to know**: moving a feature changes which model name its
+  results carry from that moment; nothing stored is re-judged or re-written.
 
 ## Workflow
 

@@ -1,9 +1,10 @@
-"""The prose half of the weekly Concerns deck, written by Gemini.
+"""The prose half of the weekly Concerns deck, written by the AI the
+«AI kalitlari» tab gives it (feature `deck_concerns` — Gemini or Claude).
 
 The twin of `services/deck_narrative.py` (the Ojidaniya deck's prose) and built
 on the same three rules, restated here because they carry the weight:
 
-**Gemini never rewrites a concern.** A concern and its closing note are what a
+**The model never rewrites a concern.** A concern and its closing note are what a
 leader, a worker or a brigadir actually wrote down; a paraphrase is something
 the register does not say. They go in as read-only evidence, quoted verbatim
 where the model points at one, and its job is the SYNTHESIS around them — which
@@ -26,11 +27,13 @@ import concurrent.futures
 import json
 import logging
 
-from app.services import gemini
+from app.services import ai_features
 from app.services.concerns_deck import LEVEL_LABEL, days1
 # The plant's own words and the house writing style — ONE definition for every
 # generated report, so the two decks cannot drift into two voices.
 from app.services.deck_narrative import _STYLE, _VOCAB
+
+FEATURE = "deck_concerns"
 
 log = logging.getLogger(__name__)
 
@@ -239,14 +242,16 @@ MA'LUMOT:
 
 
 def write(d: dict) -> dict | None:
-    """The deck's prose, or None if Gemini could not produce it. Never raises:
-    the deck ships either way, with the slots stating their own numbers."""
-    if not gemini.available():
-        log.warning("CONCERNS DECK narrative skipped — no Gemini key configured")
+    """The deck's prose, or None if the AI could not produce it — on the key
+    and model the «AI kalitlari» tab gives this deck (`deck_concerns`). Never
+    raises: the deck ships either way, with the slots stating their own
+    numbers."""
+    if not ai_features.available(FEATURE):
+        log.warning("CONCERNS DECK narrative skipped — no AI key chosen for it")
         return None
     prompt = _prompt(d)
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    job = pool.submit(gemini.generate_json, prompt, [], _SCHEMA)
+    job = pool.submit(ai_features.generate_json, FEATURE, prompt, [], _SCHEMA)
     try:
         out = job.result(timeout=BUDGET_S)
     except concurrent.futures.TimeoutError:

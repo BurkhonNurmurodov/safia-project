@@ -1,27 +1,22 @@
-"""The assistant's Gemini door — chat with function calling, and voice → text.
+"""The assistant's Gemini transport — chat with function calling, and voice → text.
 
 Kept apart from ``services/gemini.py`` on purpose: that module is the proof
 reviewer's (vision + JSON, synchronous, run by a drain thread) and is tuned for
-it. The assistant needs multi-turn contents, tools and an async client, and —
-the operator's call (2026-10-05) — a KEY OF ITS OWN, so a busy chat day can
-never spend the quota the checklist photo reviews depend on. When no own key is
-set, the reviewer's key is used, so the assistant works the day it ships.
+it. The assistant needs multi-turn contents, tools and an async client.
 
-The own key is stored exactly like the reviewer's: SEALED in ``app_settings``
-(``web_auth.seal_password``, keyed off SECRET_KEY, which never sits in the
-database), never logged, never read back.
+WHICH key and model it calls with is not decided here (from 2026-10-19): the
+«AI kalitlari» tab gives the chat and the voice transcription a key and a
+model each (`services/ai_features`, features «assistant» and «voice»), and
+`services/assistant_ai` hands them in.
 """
 from __future__ import annotations
 
 import asyncio
 import base64
 import logging
-import time
 from dataclasses import dataclass, field
 
 import httpx
-
-from app.services import gemini as shared
 
 log = logging.getLogger(__name__)
 
@@ -30,75 +25,15 @@ _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 # but never so much that a dead connection holds a run forever.
 _TIMEOUT = httpx.Timeout(170.0, connect=20.0)
 
-# The operator's choice: Gemini's latest PRO model, through the alias that
-# follows Google's releases (a pinned id 404s the day it is retired — see
-# services/gemini.py). Voice is transcribed by the latest FLASH: a transcript is
-# not a judgement, and Pro's thinking would make the user wait seconds longer
-# for words they already said.
-MODEL = "gemini-pro-latest"
-VOICE_MODEL = "gemini-flash-latest"
-
-KEY_SETTING = "assistant_gemini_api_key"
-
-_KEY_TTL = 30.0
-_key_cache: tuple[float, str] = (0.0, "")
-
 
 class AssistantAIError(RuntimeError):
-    """A Gemini failure the chat must show in words. ``code`` is one of
-    no_key · quota · unavailable · rejected · empty."""
+    """An AI failure the chat must show in words. ``code`` is one of
+    no_key · quota · unavailable · rejected · key · model · credit · empty."""
 
     def __init__(self, code: str, message: str = ""):
         super().__init__(message or code)
         self.code = code
         self.message = message
-
-
-def _stored_key() -> str:
-    global _key_cache
-    now = time.monotonic()
-    if now - _key_cache[0] < _KEY_TTL:
-        return _key_cache[1]
-    val = ""
-    try:
-        from app.database import SessionLocal
-        from app.models import AppSetting
-        from app.web_auth import open_password
-
-        db = SessionLocal()
-        try:
-            row = db.query(AppSetting).filter_by(key=KEY_SETTING).first()
-            if row and row.value:
-                val = (open_password(row.value) or "").strip()
-        finally:
-            db.close()
-    except Exception:
-        log.exception("assistant: could not read its stored API key")
-        val = ""
-    _key_cache = (now, val)
-    return val
-
-
-def invalidate_key_cache() -> None:
-    global _key_cache
-    _key_cache = (0.0, "")
-
-
-def api_key() -> str:
-    """THE resolver: the assistant's own key, else the reviewer's."""
-    return _stored_key() or shared.api_key()
-
-
-def key_source() -> str:
-    """own · shared · none — shown on the settings card, so an admin can see
-    whose quota a chat is spending."""
-    if _stored_key():
-        return "own"
-    return "shared" if shared.api_key() else "none"
-
-
-def available() -> bool:
-    return bool(api_key())
 
 
 @dataclass
@@ -154,24 +89,41 @@ async def _post(model: str, body: dict, key: str) -> dict:
             raise AssistantAIError("unavailable", f"Gemini {res.status_code}: {_detail(res)}")
         # 400 (a bad key answers 400 "API key not valid"), 403, 404 (a retired
         # model) — none of them improves on a retry.
-        raise AssistantAIError("rejected", f"Gemini {res.status_code}: {_detail(res)}")
+        detail = _detail(res)
+        low = detail.lower()
+        if res.status_code in (401, 403) or (res.status_code == 400 and "api key" in low):
+            code = "key"
+        elif res.status_code == 404 or ("model" in low and ("not found" in low or "not supported" in low)):
+            code = "model"
+        else:
+            code = "rejected"
+        raise AssistantAIError(code, f"Gemini {res.status_code}: {detail}")
+
+
+def _clean(contents: list[dict]) -> list[dict]:
+    """The transcript as Gemini takes it: role + parts and nothing else (a
+    turn another provider answered carries its own raw blocks, `_claude`,
+    which Gemini would refuse as an unknown field)."""
+    return [{"role": c.get("role") or "user", "parts": list(c.get("parts") or [])}
+            for c in contents if c.get("parts")]
 
 
 async def generate(*, system: str, contents: list[dict], tools: list[dict] | None,
-                   mode: str = "AUTO", model: str | None = None) -> Reply:
+                   mode: str = "AUTO", model: str, key: str) -> Reply:
     """One turn of the conversation. ``contents`` is the Gemini transcript
     (user / model turns, function responses as user parts); the model content
     that comes back is returned VERBATIM so the caller can append it — Gemini 3
     function calls carry thought signatures it validates on the next call."""
-    key = api_key()
     if not key:
         raise AssistantAIError("no_key", "No Gemini API key is configured")
-    mdl = (model or MODEL).strip()
+    mdl = (model or "gemini-pro-latest").strip()
     body: dict = {
         "systemInstruction": {"parts": [{"text": system}]},
-        "contents": contents,
+        "contents": _clean(contents),
     }
-    if tools:
+    # «NONE» (answer now, the step budget is spent) leaves the tools out —
+    # the request Gemini was always sent at that step.
+    if tools and mode != "NONE":
         body["tools"] = [{"functionDeclarations": tools}]
         body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
@@ -204,9 +156,10 @@ _VOICE_PROMPT = (
 )
 
 
-async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
-    """Voice → text with the latest Flash model. Raises AssistantAIError."""
-    key = api_key()
+async def transcribe(audio: bytes, mime: str, lang: str = "uz", *, model: str,
+                     key: str, usage: dict | None = None) -> str:
+    """Voice → text. Raises AssistantAIError. ``usage`` receives Gemini's
+    `usageMetadata`."""
     if not key:
         raise AssistantAIError("no_key", "No Gemini API key is configured")
     script = "Cyrillic" if lang == "uz_cyrl" else "Latin"
@@ -218,7 +171,9 @@ async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
         ]}],
         "generationConfig": {"temperature": 0},
     }
-    payload = await _post(VOICE_MODEL, body, key)
+    payload = await _post((model or "gemini-flash-latest").strip(), body, key)
+    if usage is not None:
+        usage.update(payload.get("usageMetadata") or {})
     try:
         parts = ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
     except (IndexError, AttributeError):

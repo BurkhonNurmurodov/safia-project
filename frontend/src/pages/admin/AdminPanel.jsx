@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
-  ClipboardList, CircleSlash, GraduationCap, Fingerprint, RefreshCcwDot,
+  ClipboardList, CircleSlash, GraduationCap, Fingerprint, RefreshCcwDot, Sparkles,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -40,6 +40,7 @@ import Logs from "./Logs";
 import ExamAdmin from "./ExamAdmin";
 import VerifixSettings from "./VerifixSettings";
 import VerifixSync from "./VerifixSync";
+import AiKeys from "./AiKeys";
 
 /**
  * The admin panel shell.
@@ -150,6 +151,11 @@ export const ADMIN_NAV = [
   // pass log. No capKey: it moves people, cells and access — admin-only and
   // never grantable (the `permissions` / `logs` model).
   { id: "verifixsync",  group: "tools",  Icon: RefreshCcwDot,  labelKey: "admin.tabVerifixSync",  descKey: "admin.desc.verifixsync" },
+  // «AI kalitlari» — EVERY AI API key, and which key + model each feature
+  // runs on (the proof checker, the assistant's chat and voice, both weekly
+  // reports). No capKey: these are the platform's paid accounts — admin-only
+  // and never grantable (the `verifix` model). Keys are set nowhere else.
+  { id: "aikeys",       group: "tools",  Icon: Sparkles,       labelKey: "admin.tabAiKeys",       descKey: "admin.desc.aikeys" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
   // on /zagruzka now carries its own colour bands and its own admin button.
@@ -182,6 +188,7 @@ const VIEWS = {
   docaudit:     DocAudit,
   verifix:      VerifixSettings,
   verifixsync:  VerifixSync,
+  aikeys:       AiKeys,
   translations: TranslationsEditor,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,

@@ -5089,13 +5089,14 @@ class VerifixSyncRun(Base):
 
 
 class AiKey(Base):
-    """A saved AI API key for the proof reviewer (services/ai_review.py) — any
-    number per provider, the VALUE sealed (`web_auth.seal_password`, keyed off
-    SECRET_KEY, which lives in .env) so a dbdump carries ciphertext. Never read
-    back whole: the UI gets `hint`, the last four characters. The reviewer runs
-    on exactly ONE row at a time (`active`), on the `model` picked for that
-    row; `models` caches the provider's live list from the last test, so the
-    picker offers what the key can actually reach."""
+    """A saved AI API key (services/ai_keys.py) — any number per provider, the
+    VALUE sealed (`web_auth.seal_password`, keyed off SECRET_KEY, which lives
+    in .env) so a dbdump carries ciphertext. Never read back whole: the UI gets
+    `hint`, the last four characters. WHICH feature runs on which key and model
+    is `ai_features` (from 2026-10-19); `active` / `model` here are the
+    reviewer's single-choice era and are read by nothing any more. `models`
+    caches the provider's live list from the last test, so a picker offers
+    what the key can actually reach."""
     __tablename__ = "ai_keys"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
@@ -5113,3 +5114,54 @@ class AiKey(Base):
     test_ok     = Column(Boolean, nullable=True)
     test_note   = Column(String, nullable=True)
     models      = Column(JSONB, nullable=True)                          # [{id, label}] from the last test
+
+
+class AiFeature(Base):
+    """ONE platform feature that calls an AI — which saved key (`key_ref`:
+    "env" = backend/.env's GEMINI_API_KEY, else an `ai_keys.id`; NULL = the
+    feature is switched off) and which model it runs on, picked on the admin
+    «AI kalitlari» tab (services/ai_features.py). The rest is what the tab
+    shows about it: the last call, the last error in its own words, the
+    alert DM that is open, and the check that ran when the pair was saved."""
+    __tablename__ = "ai_features"
+
+    feature         = Column(String, primary_key=True)    # review · assistant · voice · deck_ojidaniya · deck_concerns
+    key_ref         = Column(String, nullable=True)
+    model           = Column(String, nullable=True)
+    updated_at      = Column(DateTime(timezone=True), nullable=True)
+    updated_by      = Column(String, nullable=True)
+    updated_tg      = Column(BigInteger, nullable=True)
+    check_at        = Column(DateTime(timezone=True), nullable=True)
+    check_ok        = Column(Boolean, nullable=True)
+    check_note      = Column(String, nullable=True)
+    last_at         = Column(DateTime(timezone=True), nullable=True)
+    last_ok_at      = Column(DateTime(timezone=True), nullable=True)
+    last_error_at   = Column(DateTime(timezone=True), nullable=True)
+    last_error      = Column(String, nullable=True)       # the kind: quota · key · credit · model · …
+    last_error_text = Column(Text, nullable=True)         # the provider's own sentence
+    fail_streak     = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    first_fail_at   = Column(DateTime(timezone=True), nullable=True)
+    alert_kind      = Column(String, nullable=True)       # the kind an open alert DM named
+    alert_ref       = Column(String, nullable=True)       # the key·model it named
+    alert_at        = Column(DateTime(timezone=True), nullable=True)
+
+
+class AiUsage(Base):
+    """What each feature spent, per plant day × key × model — the «Shu oy»
+    column of the «AI kalitlari» tab. Upserted by every AI call
+    (`ai_features.record`); tokens IN = the prompt (cached reads included),
+    OUT = the answer plus thinking, as both providers bill it."""
+    __tablename__ = "ai_usage"
+    __table_args__ = (UniqueConstraint("day", "feature", "key_ref", "model", name="uq_ai_usage_day"),)
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    day        = Column(Date, nullable=False, index=True)
+    feature    = Column(String, nullable=False)
+    key_ref    = Column(String, nullable=False, default="")
+    provider   = Column(String, nullable=True)
+    model      = Column(String, nullable=False, default="")
+    calls      = Column(Integer, nullable=False, default=0)
+    ok         = Column(Integer, nullable=False, default=0)
+    failed     = Column(Integer, nullable=False, default=0)
+    tokens_in  = Column(BigInteger, nullable=False, default=0)
+    tokens_out = Column(BigInteger, nullable=False, default=0)

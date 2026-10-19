@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, History, Loader2, Maximize2, Settings, SquarePen, BotMessageSquare, X } from "lucide-react";
+import { ArrowLeft, History, Loader2, Maximize2, SquarePen, BotMessageSquare, X } from "lucide-react";
 import api from "../../utils/api";
 import useAT from "./useAT";
 import { useAssistant } from "../../context/AssistantContext";
 import { hasOpenDialog } from "../ui/dialogLayers";
 import Chat from "./Chat";
 import ThreadList from "./ThreadList";
-import AssistantSettings from "./AssistantSettings";
 
 const DOCK_QUERY = "(min-width: 1280px)";
 const PHONE_QUERY = "(max-width: 767px)";
@@ -82,7 +81,6 @@ export default function AssistantPanel() {
   const dock = useMedia(DOCK_QUERY);
   const phone = useMedia(PHONE_QUERY);
   const [view, setView] = useState("chat");
-  const [settings, setSettings] = useState(false);
   const show = !!A?.allowed && A.open && !A.onPage;
 
   // Docking: the content column reads --assistant-dock (Layout).
@@ -172,12 +170,6 @@ export default function AssistantPanel() {
                 <Maximize2 size={15} />
               </button>
             )}
-            {A.me?.can_configure && (
-              <button type="button" onClick={() => setSettings(true)} className={icon}
-                aria-label={t("assistant.settings.open")} title={t("assistant.settings.open")} style={{ color: "var(--text-2)" }}>
-                <Settings size={16} />
-              </button>
-            )}
           </>
         )}
         <button type="button" onClick={() => A.setOpen(false)} className={icon}
@@ -192,10 +184,9 @@ export default function AssistantPanel() {
             <ThreadList compact onPick={() => setView("chat")} />
           </div>
         ) : (
-          <Chat variant="panel" onNavigate={go} onConfigure={() => setSettings(true)} />
+          <Chat variant="panel" onNavigate={go} onConfigure={() => go("/admin/upload?tab=aikeys")} />
         )}
       </div>
-      <AssistantSettings open={settings} onClose={() => setSettings(false)} />
     </aside>,
     document.body,
   );

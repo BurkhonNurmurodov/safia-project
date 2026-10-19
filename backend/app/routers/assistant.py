@@ -25,14 +25,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.identity import viewer_profile_key
-from app.models import AppSetting, AssistantFile, AssistantMessage, AssistantRun, AssistantThread
+from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantThread
 from app.permissions import page_allowed
 from app.security import require_auth
 from app.services import action_log
 from app.services import assistant as engine
 from app.services import assistant_api
 from app.services import assistant_files as files
-from app.services import assistant_gemini as ai
+from app.services import assistant_ai as ai
 
 log = logging.getLogger(__name__)
 
@@ -103,7 +103,8 @@ def me(request: Request, db: Session = Depends(get_db), payload: dict = Depends(
     return {
         "allowed": bool(allowed),
         "configured": ai.available(),
-        "model": ai.MODEL,
+        "voice": ai.voice_available(),
+        "model": ai.model_now(),
         "can_configure": payload.get("role") == "admin" and not payload.get("imp"),
         "impersonated": bool(payload.get("imp")),
         "web": bool(payload.get("web")),
@@ -252,7 +253,7 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
     parts = engine.user_parts(db, text, [f.id for f in att_rows], owner, voice)
     contents = engine._history(db, t.id, um.id) + [{"role": "user", "parts": parts}]
     run = AssistantRun(thread_id=t.id, message_id=am.id, owner_key=owner, status="running",
-                       contents=contents, context=context, usage={}, model=ai.MODEL)
+                       contents=contents, context=context, usage={}, model=ai.model_now())
     db.add(run)
     db.flush()
     am.run_id = run.id
@@ -384,6 +385,10 @@ async def transcribe(request: Request, audio: UploadFile = File(...), lang: str 
 
 
 # ── settings (admins) ────────────────────────────────────────────────────────
+# The assistant's key and model are chosen on the admin «AI kalitlari» tab now
+# (from 2026-10-19 — services/ai_features, features «assistant» and «voice»).
+# `GET /settings` stays for a tab still open on an older bundle; the key door
+# (`PUT /settings`) is gone with the card that used it.
 
 def _admin_only(payload: dict) -> None:
     if payload.get("role") != "admin" or payload.get("imp"):
@@ -393,7 +398,8 @@ def _admin_only(payload: dict) -> None:
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
     _admin_only(payload)
-    own = ai._stored_key()
+    a = ai.current()
+    v = ai.voice_current()
     start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     runs = db.query(AssistantRun).filter(AssistantRun.created_at >= start).all()
     tokens = 0
@@ -401,44 +407,11 @@ def get_settings(db: Session = Depends(get_db), payload: dict = Depends(require_
         u = r.usage or {}
         tokens += int(u.get("prompt") or 0) + int(u.get("output") or 0) + int(u.get("thoughts") or 0)
     return {
-        "key_source": ai.key_source(),
-        "own_preview": f"{own[:4]}…{own[-4:]}" if len(own) >= 12 else ("…" if own else ""),
-        "model": ai.MODEL,
-        "voice_model": ai.VOICE_MODEL,
+        "key_source": "own" if a.key else "none",
+        "own_preview": f"····{a.hint}" if a.hint else "",
+        "model": a.model, "voice_model": v.model,
         "month": {"replies": len(runs),
                   "people": len({r.owner_key for r in runs}),
                   "tokens": tokens},
+        "moved_to": "/admin/upload?tab=aikeys",
     }
-
-
-class KeyIn(BaseModel):
-    key: str = Field(default="", max_length=400)
-
-
-@router.put("/settings")
-def set_key(body: KeyIn, db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
-    """The assistant's OWN Gemini key ("" clears it, and it falls back to the
-    proof reviewer's). Sealed; never logged; never read back."""
-    _admin_only(payload)
-    from app.web_auth import seal_password
-
-    raw = (body.key or "").strip()
-    row = db.query(AppSetting).filter_by(key=ai.KEY_SETTING).first()
-    if not raw:
-        if row is not None:
-            db.delete(row)
-        db.commit()
-        ai.invalidate_key_cache()
-        action_log.enrich(target_kind="setting", target_id=ai.KEY_SETTING,
-                          details=[("key", "cleared")])
-        return {"ok": True, "key_source": ai.key_source()}
-    sealed = seal_password(raw)
-    if row is None:
-        db.add(AppSetting(key=ai.KEY_SETTING, value=sealed))
-    else:
-        row.value = sealed
-    db.commit()
-    ai.invalidate_key_cache()
-    action_log.enrich(target_kind="setting", target_id=ai.KEY_SETTING,
-                      details=[("key", "set"), ("size", len(raw))])
-    return {"ok": True, "key_source": ai.key_source()}

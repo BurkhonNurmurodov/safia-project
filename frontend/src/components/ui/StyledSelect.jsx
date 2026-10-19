@@ -17,7 +17,11 @@ import { useMarkDraft } from "./dialogLayers";
  *                  be a node, `title` is the plain-text tooltip (and what
  *                  `searchable` matches on) for labels that ellipsise in the
  *                  panel. A `disabled` option is listed, dimmed and cannot be
- *                  picked (put the reason in its `title`); «select all» skips it
+ *                  picked (put the reason in its `title`); «select all» skips it.
+ *                  `short` (string/node) is what the TRIGGER shows for the
+ *                  picked option, when the panel label carries a note the
+ *                  closed control has no room for («<model> · eng aniq» in
+ *                  the panel, «<model>» on the trigger — the AI keys tab)
  *   placeholder  – text shown when nothing is selected (optional)
  *   className    – extra classes on the wrapper element (optional)
  *   triggerClassName – size/spacing classes for the trigger button; override to
@@ -431,7 +435,7 @@ export default function StyledSelect({
         }}
       >
         <span className="truncate min-w-0">
-          {multiple ? multiLabel : (selectedOpt?.label ?? placeholder ?? "—")}
+          {multiple ? multiLabel : (selectedOpt?.short ?? selectedOpt?.label ?? placeholder ?? "—")}
         </span>
         <ChevronDown
           size={14}

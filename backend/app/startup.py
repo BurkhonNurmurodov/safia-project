@@ -10217,24 +10217,34 @@ def _leader_auto_t11_grant_job() -> None:
         db.close()
 
 
-def adopt_legacy_ai_key() -> None:
-    """The proof reviewer's single-key era kept ONE sealed Gemini key in
-    `app_settings["gemini_api_key"]`. From 2026-10-19 keys live in `ai_keys`
-    (services/ai_review); this copies that setting into a row once — active
-    where nothing else runs — so the key list shows what the reviewer has
-    been running on. Idempotent by the row's `source`; the setting stays until
-    the row is deleted, so an old copy in the blue-green window still reads it.
-    """
-    from app.database import SessionLocal
-    from app.services import ai_review
+def seed_ai_features() -> None:
+    """From 2026-10-19 every feature that calls an AI is told on the admin
+    «AI kalitlari» tab which key and model it runs on (services/ai_features).
+    This gives each one, ONCE (flag), what it ran on the day before — the
+    reviewer its active key + model, the assistant its own key (copied into
+    the key store) or the reviewer's Gemini key, voice that key on Flash, the
+    two weekly decks the shared Gemini key on the shared model — so nothing
+    moves on the deploy. Later boots only add a row (switched off) for a
+    feature the list gains. It replaces `adopt_legacy_ai_key` (2026-10-19),
+    whose copy of the single-key setting now runs inside the seed.
 
+    Schema phase, and it RAISES on failure: every AI caller resolves through
+    these rows, so a worker that could not write them must not take over.
+    """
     import logging
+
+    from app.database import SessionLocal
+    from app.services import ai_features
 
     db = SessionLocal()
     try:
-        ai_review.adopt_legacy(db)
+        out = ai_features.seed(db)
+        if out:
+            logging.getLogger(__name__).info(
+                "[startup] AI features seeded: %s",
+                ", ".join(f"{k}={v[0] or 'off'}·{v[1] or '—'}" for k, v in out.items()))
     except Exception:
-        logging.getLogger(__name__).exception("adopt_legacy_ai_key failed")
         db.rollback()
+        raise
     finally:
         db.close()
