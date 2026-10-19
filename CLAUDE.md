@@ -11608,6 +11608,41 @@ hides it, the server refuses `X-Exam-Attempt`).
     Counter, Decimal by name). The assistant is admin-only, and running a
     model's code on the server is the second reason to re-check that before
     opening it.
+  - **A document the platform has a TEMPLATE for comes out IN that template**
+    (2026-10-19, the operator, shown the «Samaradorlik» month as a bare sheet
+    with filter arrows: «If there's template for it, use that template»). A
+    table of whole percents per brigadir (cell, plant) per day or period —
+    загрузка, samaradorlik, reja bajarilishi, the comparison tables' P / A /
+    D, davomat — is a **`grid` block** of `make_document` (or a `make_excel`
+    sheet carrying `bands`) and is laid out by `grid_export.lay_out`, the
+    very module the «Excel» button on /zagruzka draws its file with: the
+    title, the scope line, «Tayyorlandi: …», the gold header, every cell
+    FILLED with its band colour under a `0"%"` format, «—» blanks, hatched
+    pending days (⏳ 👥 📄), the AVG · MIN · MAX summary column (the
+    heatmap's `rowStat`: each cell rounded first, then the mean), unit rows,
+    the legend (`segmentBands` / `diffLegendBands` wording), frozen panes,
+    landscape. `bands` names the /zagruzka table whose edges the cells wear
+    — load · fulfil · eff · full · full90 · simple (kind `pct` for P or A,
+    `diff` for D) — read by `assistant._read_band_scales` from the admin's
+    own settings (`routers.settings.ZAGRUZKA_BANDS`), so the file is coloured
+    exactly as the screen is; `att` is /workers' fixed davomat scale (the
+    twin of `statusBands.ATT_SEGMENTS`), `default` the platform's defaults,
+    a list of `{from, color}` a scale of the model's own. The fixed words
+    («Tayyorlandi», «Ranglar», «O'RT»…) follow the run's UI language
+    (`GRID_WORDS`, `_run_lang`). **Every assistant workbook wears the house
+    look** from the same day — the plain `make_xlsx` sheet (a bold header on
+    a soft band, filter arrows, nothing else) left its doors: `build_xlsx`
+    opens every sheet with the title, the scope line and «Tayyorlandi»; a
+    table gets a gold upper-case header, thin rules, zebra rows,
+    right-aligned numbers under number formats, «—» blanks, a frozen header
+    and name column and an autofilter; `make_excel` builds through the same
+    `build_xlsx`, so the two tools cannot drift. Where no cell can be filled
+    (docx, pdf, pptx, csv, md, txt) a grid is a table of percents cut into
+    the chunks of days a page holds (8 for PDF and slides, 12 for Word; the
+    summary over the WHOLE period on the last chunk; «…» for a pending day in
+    the PDF, whose one font has no emoji); the HTML keeps the colours. Rule
+    11 and shape M say the template wins; a page's own export endpoint still
+    wins where it matches the ask exactly.
   - **Rule 11 and shape M of the prompt**: a missing export is never an
     answer — fetch what the page reads, derive what the page derives with the
     rule book's formula, build the file, and say in one line which formula

@@ -2,7 +2,7 @@
 
 The operator: «the AI assistant should be able to create any kind of
 documents when it's asked even when we don't have a template for it». Until
-then it could hand over an Excel workbook (``assistant_files.make_xlsx``) or
+then it could hand over an Excel workbook (a plain sheet, gone since 2026-10-19) or
 a file an export endpoint already produced, and it refused the «Samaradorlik»
 table because the browser computes it and nothing exports it.
 
@@ -15,7 +15,8 @@ lays them out. One model, eight outputs, one look:
   resolver) — a report somebody prints or forwards as it is.
 * **pptx** (python-pptx) — every level-1 heading opens a slide; a long table
   continues onto the next with «(davomi)».
-* **xlsx** — every table its own sheet (``make_xlsx``), the text on a first
+* **xlsx** — every table its own sheet (the house look — title, scope line, gold header, zebra, frozen panes, autofilter; a
+  «grid» block is the /zagruzka «Excel» template itself, laid out by ``grid_export.lay_out``), the text on a first
   sheet; **csv** — the tables, comma-separated, UTF-8 with a BOM so Excel
   opens Cyrillic right.
 * **md**, **txt**, **html** — the same blocks as text a chat, a wiki or a
@@ -76,8 +77,10 @@ MAX_COLS = 80
 MAX_ITEMS = 500
 MAX_TEXT = 20_000
 
-BLOCK_TYPES = ("heading", "paragraph", "bullets", "numbered", "table", "facts", "quote",
+BLOCK_TYPES = ("heading", "paragraph", "bullets", "numbered", "table", "grid", "facts", "quote",
                "page_break")
+MAX_GRID_COLS = 200
+MAX_GRID_TEXT = 60
 
 
 class DocError(Exception):
@@ -127,6 +130,48 @@ def _rows_from_ref(obj: Any, columns: list[str]) -> tuple[list[str], list[list]]
     raise DocError("the ref is not a table (not a list) — compute one first")
 
 
+def _norm_table_rows(b: dict, i: int, resolve_ref, what: str = "table",
+                     max_cols: int = MAX_COLS) -> tuple[list[str], list[list], int]:
+    """A table's or a grid's columns and rows, checked and padded: rows_json or
+    a list, or rows_ref resolved through the caller. → (columns, rows, how
+    many rows the cap dropped)."""
+    cols = [str(c) for c in (b.get("columns") or [])][:max_cols]
+    rows = b.get("rows")
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except ValueError as exc:
+            raise DocError(f"block #{i} ({what}): rows is not valid JSON: {exc}") from exc
+    ref = b.get("rows_ref")
+    if ref:
+        if resolve_ref is None:
+            raise DocError(f"block #{i} ({what}): rows_ref cannot be used here")
+        found, obj = resolve_ref(str(ref))
+        if not found:
+            raise DocError(f"block #{i} ({what}): ref «{ref}» is not available — "
+                           f"compute it again or fetch it again")
+        cols, rows = _rows_from_ref(obj, cols)
+        cols = cols[:max_cols]
+    if rows is None:
+        rows = []
+    if not isinstance(rows, list):
+        raise DocError(f"block #{i} ({what}): rows must be a list of rows")
+    clean = []
+    for r in rows[:MAX_ROWS]:
+        if isinstance(r, dict):
+            r = [r.get(c) for c in cols] if cols else list(r.values())
+        elif not isinstance(r, (list, tuple)):
+            r = [r]
+        clean.append(list(r)[:max_cols])
+    if not cols and clean:
+        cols = [f"{j + 1}" for j in range(max(len(r) for r in clean))]
+    if not cols:
+        raise DocError(f"block #{i} ({what}): no columns and no rows")
+    width = len(cols)
+    clean = [r + [None] * (width - len(r)) if len(r) < width else r[:width] for r in clean]
+    return cols, clean, max(0, len(rows) - MAX_ROWS)
+
+
 def normalise(raw: Any, resolve_ref: Optional[Callable[[str], tuple[bool, Any]]] = None) -> list[dict]:
     """The model's blocks (a JSON string or a list) checked and filled in:
     bad types named, tables resolved from their refs, caps applied."""
@@ -151,7 +196,8 @@ def normalise(raw: Any, resolve_ref: Optional[Callable[[str], tuple[bool, Any]]]
         typ = {"h1": "heading", "h2": "heading", "h3": "heading", "text": "paragraph", "p": "paragraph",
                "list": "bullets", "ul": "bullets", "ol": "numbered", "steps": "numbered",
                "kv": "facts", "note": "quote", "callout": "quote", "break": "page_break",
-               "pagebreak": "page_break"}.get(typ, typ)
+               "pagebreak": "page_break", "heatmap": "grid", "zagruzka_grid": "grid",
+               "zagruzka": "grid", "bands": "grid", "pct_grid": "grid"}.get(typ, typ)
         if typ not in BLOCK_TYPES:
             raise DocError(f"block #{i}: unknown type «{b.get('type')}» — one of: {', '.join(BLOCK_TYPES)}")
         if typ == "heading":
@@ -188,42 +234,11 @@ def normalise(raw: Any, resolve_ref: Optional[Callable[[str], tuple[bool, Any]]]
                     raise DocError(f"block #{i} (facts): every item is a [label, value] pair")
             out.append({"type": "facts", "items": pairs})
         elif typ == "table":
-            cols = [str(c) for c in (b.get("columns") or [])][:MAX_COLS]
-            rows = b.get("rows")
-            if isinstance(rows, str):
-                try:
-                    rows = json.loads(rows)
-                except ValueError as exc:
-                    raise DocError(f"block #{i} (table): rows is not valid JSON: {exc}") from exc
-            ref = b.get("rows_ref")
-            if ref:
-                if resolve_ref is None:
-                    raise DocError(f"block #{i} (table): rows_ref cannot be used here")
-                found, obj = resolve_ref(str(ref))
-                if not found:
-                    raise DocError(f"block #{i} (table): ref «{ref}» is not available — "
-                                   f"compute it again or fetch it again")
-                cols, rows = _rows_from_ref(obj, cols)
-            if rows is None:
-                rows = []
-            if not isinstance(rows, list):
-                raise DocError(f"block #{i} (table): rows must be a list of rows")
-            clean = []
-            for r in rows[:MAX_ROWS]:
-                if isinstance(r, dict):
-                    r = [r.get(c) for c in cols] if cols else list(r.values())
-                elif not isinstance(r, (list, tuple)):
-                    r = [r]
-                clean.append(list(r)[:MAX_COLS])
-            if not cols and clean:
-                cols = [f"{j + 1}" for j in range(max(len(r) for r in clean))]
-            if not cols:
-                raise DocError(f"block #{i} (table): no columns and no rows")
-            width = len(cols)
-            clean = [r + [None] * (width - len(r)) if len(r) < width else r[:width] for r in clean]
+            cols, clean, truncated = _norm_table_rows(b, i, resolve_ref)
             out.append({"type": "table", "columns": cols, "rows": clean,
-                        "caption": _text(b.get("caption"), 200),
-                        "truncated": max(0, len(rows) - MAX_ROWS)})
+                        "caption": _text(b.get("caption"), 200), "truncated": truncated})
+        elif typ == "grid":
+            out.append(_norm_grid(b, i, resolve_ref))
         else:
             out.append({"type": "page_break"})
     if not out:
@@ -337,6 +352,384 @@ def _col_weights(cols: list[str], rows: list[list[str]], sample: int = 200) -> l
 
 
 # ── docx ─────────────────────────────────────────────────────────────────────
+
+
+# ── The /zagruzka grid — the platform's template for a brigadir × day table ──
+# From 2026-10-19 (the operator: «If there's template for it, use that
+# template» — the assistant had handed over the «Samaradorlik» month as a bare
+# sheet with filter arrows) a table of whole percents per unit per day —
+# загрузка, samaradorlik, plan fulfilment, the comparison tables' P / A or D,
+# /workers' davomat — is never a plain sheet. It is laid out through
+# `grid_export.lay_out`, the very module the «Excel» button on /zagruzka draws
+# its file with: the title, the scope line, the «generated» line, the gold
+# header, every cell FILLED with its band colour under a percent format, «—»
+# blanks, hatched pending days, the summary column, the legend, frozen panes,
+# landscape. The bands are the admin's own edges for the table named
+# (`routers.settings.ZAGRUZKA_BANDS`, read by the assistant and attached here
+# as `segments`), so the file is coloured exactly as the screen is. In a
+# format that is not a workbook (docx, pdf, pptx, csv, md, txt) the grid is a
+# table of percents (`grid_as_table`); the HTML keeps the colours.
+
+GRID_WORDS = {
+    "uz": {"generated": "Tayyorlandi", "colors": "Ranglar",
+           "pending": "Ko'rsatkich hali chiqmagan kunlar",
+           "pending_title": "Tasdiqlanishi kutilmoqda", "pending_hc": "Odam soni kutilmoqda",
+           "pending_labor": "Trudoyomkost yo'q",
+           "stat": {"avg": "O'RT", "min": "MIN", "max": "MAKS"},
+           "below": "D < {v}", "range": "{a} dan {b} gacha", "above": "> {v}"},
+    "uz_cyrl": {"generated": "Тайёрланди", "colors": "Ранглар",
+                "pending": "Кўрсаткич ҳали чиқмаган кунлар",
+                "pending_title": "Тасдиқланиши кутилмоқда", "pending_hc": "Одам сони кутилмоқда",
+                "pending_labor": "Трудоёмкость йўқ",
+                "stat": {"avg": "ЎРТ", "min": "МИН", "max": "МАКС"},
+                "below": "D < {v}", "range": "{a} дан {b} гача", "above": "> {v}"},
+    "ru": {"generated": "Сформирован", "colors": "Цвета",
+           "pending": "Дни, где показатель ещё не показан",
+           "pending_title": "Ожидает подтверждения", "pending_hc": "Ожидается «Одам сони»",
+           "pending_labor": "Нет трудоёмкости",
+           "stat": {"avg": "СРД", "min": "МИН", "max": "МАКС"},
+           "below": "D < {v}", "range": "от {a} до {b}", "above": "> {v}"},
+    "en": {"generated": "Generated", "colors": "Colours",
+           "pending": "Days whose figure is not shown yet",
+           "pending_title": "Awaiting confirmation", "pending_hc": "Waiting for headcount",
+           "pending_labor": "No trudoyomkost",
+           "stat": {"avg": "AVG", "min": "MIN", "max": "MAX"},
+           "below": "D < {v}", "range": "{a} to {b}", "above": "> {v}"},
+}
+# The screen's pending icons (components/ui/PendingInfoModal.jsx) and the
+# legend line each one gets.
+PENDING = {"⏳": "pending_title", "👥": "pending_hc", "📄": "pending_labor"}
+PENDING_REASONS = {"not_closed": "⏳", "requests": "⏳", "no_headcount": "👥", "no_labor": "📄"}
+
+# `bands` names the /zagruzka table whose colour edges the grid wears — the
+# registry's own names (`ZAGRUZKA_BANDS`), plus `att` (/workers' davomat
+# scale, fixed) and `default` (the platform's default heatmap / diff edges).
+# The aliases are the words a question is asked with.
+BAND_NAMES = ("load", "fulfil", "eff", "full", "full90", "simple", "att", "default")
+BAND_ALIASES = {
+    "zagruzka": "load", "загрузка": "load", "heatmap": "load", "nagruzka": "load",
+    "yuklanish": "load", "yuk": "load", "karta": "load", "map": "load",
+    "fulfilment": "fulfil", "fulfillment": "fulfil", "plan": "fulfil", "reja": "fulfil",
+    "bajarilish": "fulfil", "reja_bajarilishi": "fulfil", "plan_pct": "fulfil", "vyp": "fulfil",
+    "efficiency": "eff", "samaradorlik": "eff", "effektivnost": "eff", "эффективность": "eff",
+    "comparison": "full", "toliq": "full", "to'liq": "full", "pa": "full", "full_table": "full",
+    "verifix90": "full90", "full_90": "full90", "verifix": "full90",
+    "simplified": "simple", "smena": "simple", "shift": "simple", "simple_pa": "simple",
+    "soddalashtirilgan": "simple",
+    "attendance": "att", "davomat": "att", "kelish": "att", "workers": "att",
+    "": "default", "none": "default", "pct": "default", "diff": "default", "heat": "default",
+}
+# /workers' «Davomat issiqlik xaritasi» scale — the twin of `ATT_SEGMENTS` in
+# frontend/src/utils/statusBands.js; change one and change the other.
+ATT_SEGMENTS = [
+    {"from": 0, "color": "#b91c1c"}, {"from": 60, "color": "#ef4444"},
+    {"from": 75, "color": "#eab308"}, {"from": 85, "color": "#84cc16"},
+    {"from": 90, "color": "#22c55e"}, {"from": 95, "color": "#15803d"},
+]
+_HEX6 = re.compile(r"^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$")
+_GRID_NUM = re.compile(r"^[-+−]?\d[\d\s ]*([.,]\d+)?\s*%?$")
+
+
+def _grid_words(lang: Optional[str]) -> dict:
+    return GRID_WORDS.get(str(lang or "").strip()) or GRID_WORDS["uz"]
+
+
+def _grid_value(v: Any) -> Any:
+    """One grid cell as the template reads it: a number (the figure a whole
+    percent is rounded from), None (no figure — the «—»), a pending day
+    ({"pending": icon}) or a short text."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return float(v)
+    if isinstance(v, dict):
+        p = v.get("pending") or v.get("hatch") or v.get("reason")
+        if p:
+            key = str(p).strip().lower()
+            icon = PENDING_REASONS.get(key) or (str(p)[:1] if str(p)[:1] in PENDING else "⏳")
+            return {"pending": icon}
+        return _grid_value(v.get("v", v.get("value")))
+    s = str(v).strip()
+    if not s or s in ("—", "-", "–", "n/a", "N/A", "null", "None"):
+        return None
+    if s[:1] in PENDING:
+        return {"pending": s[:1]}
+    if s.lower() in PENDING_REASONS:
+        return {"pending": PENDING_REASONS[s.lower()]}
+    if _GRID_NUM.match(s):
+        return float(s.replace("−", "-").replace("%", "").replace(",", ".")
+                     .replace(" ", "").replace(" ", ""))
+    return {"text": s[:MAX_GRID_TEXT]}
+
+
+def _custom_scale(items: list, i: int) -> list[dict]:
+    """A scale the model wrote itself: [{from, color}], colours as hex."""
+    out = []
+    for it in items[:16]:
+        if not isinstance(it, dict):
+            raise DocError(f"block #{i} (grid): every band is {{from, color}}")
+        m = _HEX6.match(str(it.get("color") or ""))
+        try:
+            frm = float(it.get("from"))
+        except (TypeError, ValueError):
+            raise DocError(f"block #{i} (grid): a band's from must be a number") from None
+        if not m:
+            raise DocError(f"block #{i} (grid): a band's color must be a hex colour (#22c55e)")
+        h = m.group(1)
+        if len(h) == 3:
+            h = "".join(ch * 2 for ch in h)
+        out.append({"from": frm, "color": "#" + h.lower()})
+    if not out:
+        raise DocError(f"block #{i} (grid): bands is an empty list")
+    return _ordered(out)
+
+
+def _ordered(segs: list) -> list[dict]:
+    """The scale sorted by its edges, numbers as numbers — `orderedSegments`."""
+    out = []
+    for sg in segs or []:
+        try:
+            out.append({"from": float(sg.get("from")), "color": str(sg.get("color") or "#9ca3af")})
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return sorted(out, key=lambda x: x["from"])
+
+
+def _norm_grid(b: dict, i: int, resolve_ref) -> dict:
+    cols, rows, truncated = _norm_table_rows(b, i, resolve_ref, "grid", MAX_GRID_COLS)
+    if len(cols) < 2:
+        raise DocError(f"block #{i} (grid): the first column is the row's name and every other "
+                       f"column a day (or a period) — give at least two columns")
+    kind = str(b.get("kind") or "pct").strip().lower()
+    kind = {"percent": "pct", "%": "pct", "p": "pct", "a": "pct", "d": "diff", "difference": "diff",
+            "delta": "diff", "farq": "diff"}.get(kind, kind)
+    if kind not in ("pct", "diff"):
+        raise DocError(f"block #{i} (grid): kind is pct (a percentage) or diff (D = P − A)")
+    stat = str(b.get("stat") if b.get("stat") is not None else "avg").strip().lower()
+    stat = {"average": "avg", "mean": "avg", "o'rt": "avg", "": "avg", "no": "none", "false": "none",
+            "off": "none", "maks": "max", "minimum": "min", "maximum": "max"}.get(stat, stat)
+    if stat not in ("avg", "min", "max", "none"):
+        raise DocError(f"block #{i} (grid): stat is avg, min, max or none")
+    bands = b.get("bands")
+    segments = None
+    if isinstance(bands, list):
+        segments = _custom_scale(bands, i)
+        bands = "custom"
+    else:
+        key = str(bands or "default").strip().lower().replace("-", "_").replace(" ", "_")
+        name = BAND_ALIASES.get(key, key)
+        if name not in BAND_NAMES:
+            raise DocError(f"block #{i} (grid): bands «{bands}» names no /zagruzka table — one of: "
+                           f"load (the загрузка heatmap), fulfil (reja bajarilishi), eff "
+                           f"(samaradorlik), full / full90 / simple (the comparison tables: kind "
+                           f"pct for P or A, diff for D), att (davomat), default")
+        bands = name
+    body = [[("" if r[0] is None else str(r[0])[:200]), *[_grid_value(v) for v in r[1:]]] for r in rows]
+    foot: list[list] = []
+    if b.get("foot") is not None or b.get("foot_ref"):
+        _c, frows, _t = _norm_table_rows({"columns": cols, "rows": b.get("foot"), "rows_ref": b.get("foot_ref")},
+                                         i, resolve_ref, "grid foot", MAX_GRID_COLS)
+        foot = [[("" if r[0] is None else str(r[0])[:200]), *[_grid_value(v) for v in r[1:]]] for r in frows[:12]]
+    return {"type": "grid", "columns": cols, "rows": body, "foot": foot, "kind": kind, "stat": stat,
+            "bands": bands, "segments": segments, "caption": _text(b.get("caption"), 200),
+            "truncated": truncated}
+
+
+def band_requests(blocks: list[dict]) -> set[tuple[str, str]]:
+    """The (table, kind) scales the grids still need — read by the assistant
+    from the admin's settings and attached with `attach_scales`."""
+    return {(b["bands"], b["kind"]) for b in blocks
+            if b["type"] == "grid" and b.get("segments") is None}
+
+
+def attach_scales(blocks: list[dict], scales: dict) -> None:
+    for b in blocks:
+        if b["type"] != "grid" or b.get("segments") is not None:
+            continue
+        segs = scales.get((b["bands"], b["kind"]))
+        if not segs:
+            raise DocError(f"no colour scale for the «{b['bands']}» grid")
+        b["segments"] = _ordered(segs)
+
+
+def _whole(v: float) -> int:
+    """JS `Math.round` — the heatmap rounds every cell before it looks."""
+    return int(math.floor(v + 0.5))
+
+
+def _contrast(color: str) -> str:
+    """`contrastText` of utils/statusBands.js: the ink on a band colour."""
+    h = color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(ch * 2 for ch in h)
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return "#111827"
+    return "#111827" if (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.52 else "#ffffff"
+
+
+def _paint(p: float, segs: list[dict]) -> dict:
+    """The band a whole value falls in — `getSegmentColor` / `segmentFill`."""
+    if not segs:
+        return {}
+    hit = segs[0]
+    for sg in segs:
+        if p >= sg["from"]:
+            hit = sg
+        else:
+            break
+    return {"bg": hit["color"], "fg": _contrast(hit["color"])}
+
+
+def _edge(x: float, minus: bool = False) -> str:
+    s = str(int(x)) if float(x).is_integer() else f"{x:g}"
+    return s.replace("-", "−") if minus else s
+
+
+def legend_items(segs: list[dict], kind: str, words: dict) -> list[dict]:
+    """The colour key — `segmentBands` (a percent) or the comparison table's
+    `diffLegendBands` (a difference), band by band."""
+    out = []
+    for i, sg in enumerate(segs):
+        nxt = segs[i + 1] if i + 1 < len(segs) else None
+        if kind == "diff":
+            if i == 0 and nxt:
+                label = words["below"].replace("{v}", _edge(nxt["from"], True))
+            elif not nxt:
+                label = words["above"].replace("{v}", _edge(sg["from"] - 1, True))
+            else:
+                label = (words["range"].replace("{a}", _edge(sg["from"], True))
+                         .replace("{b}", _edge(nxt["from"] - 1, True)))
+        else:
+            if i == 0:
+                label = f"< {_edge(nxt['from'])}%" if nxt else f"≥ {_edge(sg['from'])}%"
+            elif not nxt:
+                label = f"≥ {_edge(sg['from'])}%"
+            else:
+                label = f"{_edge(sg['from'])} to {_edge(nxt['from'] - 1)}%"
+        out.append({"color": sg["color"], "label": label})
+    return out
+
+
+def grid_spec(block: dict, *, title: str, lines: list[str], lang: Optional[str] = None) -> dict:
+    """A normalised grid block as the spec `grid_export.lay_out` draws —
+    the shape `utils/gridExport.js` builds for the page's own «Excel»."""
+    words = _grid_words(lang)
+    segs = block.get("segments") or []
+    kind, stat = block["kind"], block["stat"]
+    cols = block["columns"]
+    spec_cols = [{"w": 30}] + [{"w": 9 if kind == "diff" else 8} for _ in cols[1:]]
+    head = [{"t": cols[0]}] + [{"t": c} for c in cols[1:]]
+    if stat != "none":
+        spec_cols.append({"w": 9, "sep": True})
+        head.append({"t": words["stat"][stat]})
+    seen: dict[str, str] = {}
+
+    def cell(v: Any) -> dict:
+        if isinstance(v, dict):
+            if "pending" in v:
+                icon = v["pending"]
+                seen.setdefault(icon, words[PENDING.get(icon, "pending_title")])
+                return {"hatch": True, "t": icon}
+            return {"t": v.get("text", "")}
+        if v is None:
+            return {"t": "—"}
+        p = _whole(v)
+        return {"v": p, "k": kind, **_paint(p, segs)}
+
+    def row_cells(r: list, unit: bool = False) -> list[dict]:
+        name: dict = {"t": r[0]}
+        if unit:
+            name["unit"] = True
+        out = [name, *[cell(v) for v in r[1:]]]
+        if stat != "none":
+            nums = [_whole(v) for v in r[1:] if isinstance(v, (int, float))]
+            if nums:
+                sv = (max(nums) if stat == "max" else min(nums) if stat == "min"
+                      else _whole(sum(nums) / len(nums)))
+                out.append({"v": sv, "k": kind, **_paint(sv, segs)})
+            else:
+                out.append({"t": "—"})
+        return out
+
+    body = [row_cells(r) for r in block["rows"]]
+    foot = [row_cells(r, unit=True) for r in block.get("foot") or []]
+    legend = []
+    if segs:
+        legend.append({"title": words["colors"], "items": legend_items(segs, kind, words)})
+    if seen:
+        legend.append({"title": words["pending"],
+                       "items": [{"hatch": True, "icon": ic, "label": lb} for ic, lb in seen.items()]})
+    return {"title": title, "lines": list(lines), "sheet": title, "cols": spec_cols,
+            "head": [head], "body": body, "foot": foot, "legend": legend}
+
+
+def grid_as_tables(block: dict, lang: Optional[str] = None, per: int = 0,
+                   plain_pending: bool = False) -> list[dict]:
+    """The grid for a format that cannot fill a cell: a table of percents, the
+    unit rows after the body. A page or a slide holds only so many day
+    columns, so `per` cuts the days into chunks — the name column repeated,
+    the chunk's days named in the caption, the summary column (over the WHOLE
+    period) on the last chunk."""
+    cols = block["columns"]
+    days = cols[1:]
+    if not per or len(days) <= per:
+        return [grid_as_table(block, lang, plain_pending)]
+    out = []
+    for k in range(0, len(days), per):
+        sub = dict(block)
+        sub["columns"] = [cols[0], *days[k:k + per]]
+        sub["rows"] = [[r[0], *r[1 + k:1 + k + per]] for r in block["rows"]]
+        sub["foot"] = [[r[0], *r[1 + k:1 + k + per]] for r in block.get("foot") or []]
+        last = k + per >= len(days)
+        if not last:
+            sub["stat"] = "none"
+        cap = block.get("caption") or ""
+        sub["caption"] = f"{cap} ({days[k]} – {days[min(k + per, len(days)) - 1]})".strip()
+        t = grid_as_table(sub, lang, plain_pending)
+        if last and block["stat"] != "none":
+            # The summary is the whole period's, not this chunk's.
+            whole = grid_as_table(block, lang, plain_pending)
+            for row, full in zip(t["rows"], whole["rows"]):
+                row[-1] = full[-1]
+        out.append(t)
+    return out
+
+
+def grid_as_table(block: dict, lang: Optional[str] = None, plain_pending: bool = False) -> dict:
+    """The grid for a format that cannot fill a cell: a table of percents,
+    the unit rows after the body. `plain_pending` prints a pending day as «…»
+    — the PDF's one font has no emoji."""
+    words = _grid_words(lang)
+    kind, stat = block["kind"], block["stat"]
+
+    def txt(v: Any) -> str:
+        if isinstance(v, dict):
+            if "pending" in v:
+                return "…" if plain_pending else v["pending"]
+            return v.get("text", "")
+        if v is None:
+            return "—"
+        p = _whole(v)
+        if kind == "diff":
+            return f"+{p}%" if p > 0 else (f"−{-p}%" if p < 0 else "0%")
+        return f"{p}%"
+
+    cols = list(block["columns"]) + ([words["stat"][stat]] if stat != "none" else [])
+    rows = []
+    for r in list(block["rows"]) + list(block.get("foot") or []):
+        cells = [r[0] or ""] + [txt(v) for v in r[1:]]
+        if stat != "none":
+            nums = [_whole(v) for v in r[1:] if isinstance(v, (int, float))]
+            cells.append(txt(float(max(nums) if stat == "max" else min(nums) if stat == "min"
+                                   else _whole(sum(nums) / len(nums)))) if nums else "—")
+        rows.append(cells)
+    return {"type": "table", "columns": cols, "rows": rows,
+            "caption": block.get("caption", ""), "truncated": block.get("truncated", 0)}
+
 
 def build_docx(title: str, subtitle: str, blocks: list[dict]) -> bytes:
     from docx import Document
@@ -942,38 +1335,202 @@ def _sheet_name(block: dict, last_heading: str, i: int) -> str:
     return plain(block.get("caption") or last_heading or f"Jadval {i}")
 
 
-def build_xlsx(title: str, subtitle: str, blocks: list[dict]) -> bytes:
-    from app.services.assistant_files import make_xlsx
+def _unique_sheet(name: str, used: set) -> str:
+    from app.services.grid_export import _sheet_name as clean
+    base = clean(name)
+    out, n = base, 2
+    while out.lower() in used:
+        suffix = f" ({n})"
+        out = base[: 31 - len(suffix)] + suffix
+        n += 1
+    used.add(out.lower())
+    return out
 
-    sheets: list[dict] = []
-    notes: list[list] = []
+
+def _num_format(v: float) -> str:
+    if float(v).is_integer():
+        return "#,##0"
+    return "#,##0.0" if round(v, 1) == v else "#,##0.00"
+
+
+def _sheet_head(ws, title: str, lines: list[str]) -> int:
+    """The template's opening on every sheet — title, scope lines, a blank
+    row — as the /zagruzka export writes it. → the first free row."""
+    from openpyxl.styles import Alignment, Font
+    from app.services import grid_export as ge
+
+    ws.sheet_view.showGridLines = False
+    ws.sheet_properties.tabColor = ge.BRAND
+    row = 1
+    c = ws.cell(row, 1, title[:300])
+    c.font = Font(name=ge.FONT, size=14, bold=True, color=ge.INK)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[row].height = 24
+    row += 1
+    for line in lines[:12]:
+        if not line:
+            continue
+        c = ws.cell(row, 1, str(line)[:300])
+        c.font = Font(name=ge.FONT, size=9, color=ge.SOFT)
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        row += 1
+    return row + 1
+
+
+def _table_sheet(ws, title: str, lines: list[str], block: dict) -> None:
+    """An ordinary table in the house look: the template's head, a gold
+    header row, thin rules, zebra rows, numbers right-aligned under a
+    number format, «—» blanks, frozen header + name column, an autofilter,
+    landscape fit to width."""
+    from openpyxl.styles import Alignment, Border, Font
+    from openpyxl.utils import get_column_letter
+    from app.services import grid_export as ge
+
+    cols, rows = block["columns"], block["rows"]
+    n = len(cols)
+    row = _sheet_head(ws, title, lines)
+    thin = Border(left=ge.THIN, right=ge.THIN, top=ge.THIN, bottom=ge.THIN)
+    head_row = row
+    ws.row_dimensions[row].height = 21
+    for j, name in enumerate(cols, 1):
+        c = ws.cell(row, j, str(name).upper()[:300])
+        c.fill = ge._fill(ge.BRAND)
+        c.font = Font(name=ge.FONT, size=9, bold=True, color=ge.HEAD_INK)
+        c.alignment = Alignment(horizontal="left" if j == 1 else "center", vertical="center",
+                                indent=1 if j == 1 else 0, wrap_text=True)
+        c.border = thin
+    row += 1
+    text_rows = table_text(block)
+    nums = numeric_columns(text_rows, n)
+    zebra = ge._fill(ZEBRA)
+    for k, r in enumerate(rows):
+        ws.row_dimensions[row].height = 20
+        for j, v in enumerate(r, 1):
+            c = ws.cell(row, j)
+            c.border = thin
+            if k % 2:
+                c.fill = zebra
+            if v is None or isinstance(v, bool) or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+                c.value = "✓" if v is True else "—"
+                c.font = Font(name=ge.FONT, size=9, color=ge.INK if v is True else ge.DASH)
+                c.alignment = Alignment(horizontal="center", vertical="center")
+            elif isinstance(v, (int, float)):
+                c.value = v
+                c.number_format = _num_format(v)
+                c.font = Font(name=ge.FONT, size=10, color=ge.INK)
+                c.alignment = Alignment(horizontal="right", vertical="center")
+            else:
+                txt = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+                c.value = txt[:MAX_TEXT]
+                c.font = Font(name=ge.FONT, size=10, color=ge.NAME_INK if j == 1 else ge.INK)
+                c.alignment = Alignment(horizontal="right" if nums[j - 1] and j > 1 else "left",
+                                        vertical="center", indent=1 if j == 1 else 0)
+        row += 1
+    if block.get("truncated"):
+        c = ws.cell(row, 1, f"… +{block['truncated']}")
+        c.font = Font(name=ge.FONT, size=9, color=ge.SOFT)
+        row += 1
+    for j in range(1, n + 1):
+        longest = max([len(str(cols[j - 1]))] +
+                      [len(text_rows[k][j - 1]) for k in range(min(len(text_rows), 500))])
+        ws.column_dimensions[get_column_letter(j)].width = min(max(longest + 3, 8), 48 if j == 1 else 28)
+    ws.freeze_panes = ws.cell(head_row + 1, 2 if n >= 3 else 1)
+    if rows:
+        ws.auto_filter.ref = f"A{head_row}:{get_column_letter(n)}{head_row + len(rows)}"
+    ws.print_title_rows = f"{head_row}:{head_row}"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def _notes_sheet(ws, title: str, lines: list[str], notes: list[tuple]) -> None:
+    """The document's prose — headings, paragraphs, lists, facts — on a sheet
+    of its own, first in the workbook."""
+    from openpyxl.styles import Alignment, Font
+    from app.services import grid_export as ge
+
+    row = _sheet_head(ws, title, lines)
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 80
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    for note in notes:
+        kind = note[0]
+        if kind == "blank":
+            row += 1
+            continue
+        if kind == "h":
+            c = ws.cell(row, 1, note[1][:300])
+            c.font = Font(name=ge.FONT, size=11, bold=True, color=ge.INK)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        elif kind == "kv":
+            a = ws.cell(row, 1, note[1][:300])
+            a.font = Font(name=ge.FONT, size=10, color=ge.SOFT)
+            b = ws.cell(row, 2, note[2][:MAX_TEXT])
+            b.font = Font(name=ge.FONT, size=10, bold=True, color=ge.INK)
+            b.alignment = Alignment(wrap_text=True, vertical="top")
+        else:
+            c = ws.cell(row, 1, note[1][:MAX_TEXT])
+            c.font = Font(name=ge.FONT, size=10, color=ge.INK)
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+            ws.row_dimensions[row].height = max(15, 15 * (1 + len(note[1]) // 110))
+        row += 1
+
+
+def build_xlsx(title: str, subtitle: str, blocks: list[dict], lang: Optional[str] = None) -> bytes:
+    """The workbook in the platform's own look. A «grid» block is the
+    /zagruzka «Excel» template, sheet for sheet (`grid_export.lay_out`); a
+    table is a house sheet; the prose goes on a first sheet. Every sheet
+    opens with the title, the scope line and «Tayyorlandi: …», as the page's
+    file does."""
+    from openpyxl import Workbook
+    from app.services import grid_export as ge
+
+    words = _grid_words(lang)
+    lines = [plain(subtitle)] if subtitle else []
+    lines.append(f"{words['generated']}: {datetime.now(TZ).strftime('%d.%m.%Y, %H:%M')}")
+    wb = Workbook()
+    wb.remove(wb.active)
+    used: set = set()
+    notes: list[tuple] = []
     last_heading = ""
     n = 0
     for b in blocks:
         t = b["type"]
-        if t == "table":
+        if t == "grid":
             n += 1
-            sheets.append({"name": _sheet_name(b, last_heading, n), "columns": b["columns"],
-                           "rows": b["rows"]})
+            name = _sheet_name(b, last_heading, n)
+            ws = wb.create_sheet(_unique_sheet(name, used))
+            ge.lay_out(ws, grid_spec(b, title=plain(b.get("caption") or title), lines=lines, lang=lang))
+        elif t == "table":
+            n += 1
+            name = _sheet_name(b, last_heading, n)
+            ws = wb.create_sheet(_unique_sheet(name, used))
+            _table_sheet(ws, plain(b.get("caption") or title), lines, b)
         elif t == "heading":
             last_heading = plain(b["text"])
-            notes.append([])
-            notes.append([last_heading])
+            notes.append(("blank",))
+            notes.append(("h", last_heading))
         elif t in ("paragraph", "quote"):
-            notes.append([plain(b["text"])])
+            notes.append(("p", plain(b["text"])))
         elif t in ("bullets", "numbered"):
             for i, item in enumerate(b["items"], 1):
-                notes.append([("• " if t == "bullets" else f"{i}. ") + plain(item)])
+                notes.append(("p", ("• " if t == "bullets" else f"{i}. ") + plain(item)))
         elif t == "facts":
             for label, value in b["items"]:
-                notes.append([plain(label), plain(value)])
+                notes.append(("kv", plain(label), plain(value)))
     if notes:
-        head = [[plain(title)]] + ([[plain(subtitle)]] if subtitle else []) + [[]]
-        sheets.insert(0, {"name": plain(title)[:31] or "Hisobot", "columns": [],
-                          "rows": head + notes})
-    if not sheets:
+        ws = wb.create_sheet(_unique_sheet(plain(title)[:31] or "Hisobot", used), 0)
+        _notes_sheet(ws, plain(title), lines, notes)
+    if not wb.worksheets:
         raise DocError("an Excel file needs a table or some text")
-    return make_xlsx(plain(title), sheets)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def build_csv(title: str, subtitle: str, blocks: list[dict]) -> bytes:
@@ -1107,6 +1664,17 @@ blockquote{{margin:12px 0 18px;padding:10px 14px;border-left:4px solid var(--gol
 .note{{color:var(--muted);font-size:12.5px}}
 footer{{margin-top:48px;color:var(--muted);font-size:12px;text-align:right}}
 .pb{{page-break-after:always;break-after:page;height:0;margin:0}}
+table.grid{{width:auto;max-width:100%}}table.grid th{{text-align:center;font-size:12px;text-transform:uppercase}}
+table.grid th:first-child{{text-align:left}}
+table.grid td{{text-align:center;font-weight:600;border:1px solid var(--rule);padding:6px 8px;font-variant-numeric:tabular-nums;white-space:nowrap}}
+table.grid td:first-child{{text-align:left;font-weight:400;color:#374151;border-right:2px solid #C4C9D0}}
+table.grid tr:nth-child(even) td{{background:none}}table.grid td.dash{{color:#C9CDD3;font-weight:400}}
+table.grid td.hatch{{background:repeating-linear-gradient(135deg,#fff 0 4px,#D9DCE1 4px 6px);color:#9CA3AF;font-weight:400}}
+table.grid td.stat,table.grid th.stat{{border-left:2px solid #C4C9D0}}
+table.grid tfoot td{{font-weight:700;background:#F5F1EA;border-top:2px solid #C4C9D0}}
+ul.legend{{list-style:none;padding:0;margin:-14px 0 22px;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted)}}
+ul.legend .sw{{display:inline-block;width:14px;height:14px;border:1px solid var(--rule);vertical-align:-2px;margin-right:6px}}
+ul.legend .sw.hatch{{background:repeating-linear-gradient(135deg,#fff 0 3px,#D9DCE1 3px 5px)}}
 @media print{{body{{padding:0}}}}
 """
 
@@ -1115,7 +1683,7 @@ def _html_inline(text: str) -> str:
     return "".join(f"<strong>{html.escape(s)}</strong>" if b else html.escape(s) for s, b in runs(text))
 
 
-def build_html(title: str, subtitle: str, blocks: list[dict]) -> bytes:
+def build_html(title: str, subtitle: str, blocks: list[dict], lang: Optional[str] = None) -> bytes:
     out = ["<!doctype html>", '<html lang="uz"><head><meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width, initial-scale=1">',
            f"<title>{html.escape(plain(title))}</title>", f"<style>{_HTML_CSS}</style></head><body><main>",
@@ -1148,6 +1716,43 @@ def build_html(title: str, subtitle: str, blocks: list[dict]) -> bytes:
             out.append(f"<table>{cap}<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
             if b.get("truncated"):
                 out.append(f'<p class="note">… yana {b["truncated"]} qator</p>')
+        elif t == "grid":
+            spec = grid_spec(b, title=plain(b.get("caption") or title), lines=[], lang=lang)
+            cap = f"<caption>{html.escape(plain(b['caption']))}</caption>" if b.get("caption") else ""
+            n_cols = len(spec["cols"])
+
+            def gcell(c: dict, j: int, tag: str = "td") -> str:
+                cls = ["stat"] if (j == n_cols - 1 and spec["cols"][j].get("sep")) else []
+                if tag == "th":
+                    return f'<th class="{" ".join(cls)}">{html.escape(str(c.get("t") or ""))}</th>'
+                if c.get("hatch"):
+                    cls.append("hatch")
+                    return f'<td class="{" ".join(cls)}">{html.escape(str(c.get("t") or "⏳"))}</td>'
+                v = c.get("v")
+                if isinstance(v, (int, float)):
+                    val = (f"+{v}%" if v > 0 else f"−{-v}%" if v < 0 else "0%") if c.get("k") == "diff" else f"{v}%"
+                    style = f' style="background:{c["bg"]};color:{c["fg"]}"' if c.get("bg") else ""
+                    return f'<td class="{" ".join(cls)}"{style}>{val}</td>'
+                txt = str(c.get("t") or "—")
+                if txt == "—":
+                    cls.append("dash")
+                return f'<td class="{" ".join(cls)}">{html.escape(txt)}</td>'
+
+            head = "".join(gcell(c, j, "th") for j, c in enumerate(spec["head"][0]))
+            body = "".join("<tr>" + "".join(gcell(c, j) for j, c in enumerate(r)) + "</tr>" for r in spec["body"])
+            foot = ("<tfoot>" + "".join("<tr>" + "".join(gcell(c, j) for j, c in enumerate(r)) + "</tr>"
+                                        for r in spec["foot"]) + "</tfoot>") if spec["foot"] else ""
+            out.append(f'<table class="grid">{cap}<thead><tr>{head}</tr></thead><tbody>{body}</tbody>{foot}</table>')
+            items = []
+            for group in spec["legend"]:
+                for it in group["items"]:
+                    sw = ('<span class="sw hatch"></span>' if it.get("hatch")
+                          else f'<span class="sw" style="background:{it["color"]}"></span>')
+                    items.append(f"<li>{sw}{html.escape(str(it.get('icon') or ''))} {html.escape(it['label'])}</li>")
+            if items:
+                out.append('<ul class="legend">' + "".join(items) + "</ul>")
+            if b.get("truncated"):
+                out.append(f'<p class="note">… yana {b["truncated"]} qator</p>')
         elif t == "page_break":
             out.append('<hr class="pb">')
     out.append(f"<footer>{html.escape(footer_text())}</footer></main></body></html>")
@@ -1160,15 +1765,26 @@ _BUILDERS = {"docx": build_docx, "pdf": build_pdf, "pptx": build_pptx, "xlsx": b
              "csv": build_csv, "md": build_md, "txt": build_txt, "html": build_html}
 
 
-def build(fmt: str, title: str, subtitle: str, blocks: list[dict]) -> tuple[str, str, bytes]:
+def build(fmt: str, title: str, subtitle: str, blocks: list[dict],
+          lang: Optional[str] = None) -> tuple[str, str, bytes]:
     """→ (extension, mime, bytes). Blocking (python-docx, fpdf2 and python-pptx
     are CPU work) — call it from a worker thread."""
     fmt = norm_format(fmt)
     ext, mime = FORMATS[fmt]
     title = _text(title, 300) or "Hujjat"
     subtitle = _text(subtitle, 400)
+    if fmt not in ("xlsx", "html"):
+        # A page or a slide holds only so many day columns; a sheet holds them all.
+        per = {"pdf": 8, "docx": 12, "pptx": 8}.get(fmt, 0)
+        flat: list[dict] = []
+        for b in blocks:
+            flat.extend(grid_as_tables(b, lang, per, fmt == "pdf") if b["type"] == "grid" else [b])
+        blocks = flat
     try:
-        data = _BUILDERS[fmt](title, subtitle, blocks)
+        if fmt in ("xlsx", "html"):
+            data = _BUILDERS[fmt](title, subtitle, blocks, lang)
+        else:
+            data = _BUILDERS[fmt](title, subtitle, blocks)
     except DocError:
         raise
     except Exception as exc:

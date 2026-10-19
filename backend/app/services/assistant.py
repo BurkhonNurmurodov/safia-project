@@ -49,7 +49,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text as _sql
 
 from app.database import SessionLocal
-from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantThread
+from app.models import AppSetting, AssistantFile, AssistantMessage, AssistantRun, AssistantThread
 from app.services import assistant_api as api
 from app.services import assistant_calc as calc
 from app.services import assistant_docs as docs
@@ -237,8 +237,20 @@ TOOLS: list[dict] = [
                     "{type: table, columns: [..], rows: [[..]] OR rows_ref: \"c1\", "
                     "caption} · {type: facts, items: [[label, value], ..]} (a few key "
                     "figures) · {type: quote, text} (a note or a formula) · "
-                    "{type: page_break}. A table's rows_ref names a compute result or "
-                    "a call_api answer (r2), so figures go into the file untouched. "
+                    "{type: page_break} · {type: grid, bands, kind, stat, columns, rows OR "
+                    "rows_ref, foot, caption} — THE PLATFORM'S TEMPLATE for a table of whole "
+                    "percents per brigadir (cell, plant) per day or period, i.e. the "
+                    "/zagruzka «Excel» itself: columns = [the name header, then one per "
+                    "day], rows = [[name, 87, null, …], …] (null = no figure «—»; \"⏳\" / "
+                    "\"👥\" / \"📄\" = a pending day); bands names the table whose colour "
+                    "edges the cells wear — load (the zagruzka heatmap) · fulfil (reja "
+                    "bajarilishi) · eff (samaradorlik) · full / full90 / simple (the "
+                    "comparison tables: kind pct for P or A, kind diff for D = P − A) · "
+                    "att (davomat) · default; stat adds the summary column (avg · min · "
+                    "max · none); foot = unit rows (the plant's). Such a table NEVER goes "
+                    "in a plain table block. A table's or grid's rows_ref names a compute "
+                    "result or a call_api answer (r2), so figures go into the file "
+                    "untouched. "
                     "**bold** is allowed in any text. In pptx every level-1 heading "
                     "opens a slide; a long table continues on the next slides. The "
                     "look (fonts, colours, a footer naming the platform and the day) "
@@ -247,22 +259,35 @@ TOOLS: list[dict] = [
          "format": {"type": "string", "enum": ["docx", "pdf", "pptx", "xlsx", "csv", "md", "txt", "html"]},
          "filename": {"type": "string", "description": "Without extension, in the user's language"},
          "title": {"type": "string", "description": "The document's title — its subject"},
-         "subtitle": {"type": "string", "description": "ONE muted line under the title: period · scope · the day it was made"},
+         "subtitle": {"type": "string", "description": "ONE scope line under the title, in the user's language, the shape the platform's exports print: «Davr: 01.09.2026 — 30.09.2026 · Zavod: … · Smena: … · Brigadir: …» (the day it was made is added by the platform)"},
          "blocks_json": {"type": "string", "description": "The blocks, as a JSON array"},
          "purpose": _PURPOSE}, "required": ["format", "filename", "title", "blocks_json", "purpose"]}},
     {"name": "make_excel",
-     "description": "Build an Excel workbook from data you gathered and hand it "
-                    "to the user (a download in a browser, a Telegram DM in "
-                    "Telegram). Prefer the page's own export when one fits exactly. "
-                    "A sheet's rows come as rows_json, or as rows_ref — a compute "
-                    "result or a call_api answer kept for this reply (c1, r2).",
+     "description": "Build an Excel workbook in the platform's house look (the title, "
+                    "the scope line, a gold header, frozen panes, an autofilter) from "
+                    "data you gathered and hand it to the user (a download in a browser, "
+                    "a Telegram DM in Telegram). Prefer the page's own export when one "
+                    "fits exactly. A sheet's rows come as rows_json, or as rows_ref — a "
+                    "compute result or a call_api answer kept for this reply (c1, r2). A "
+                    "sheet that is a table of whole percents per brigadir (cell, plant) "
+                    "per day MUST carry bands — load · fulfil · eff · full · full90 · "
+                    "simple · att · default — and is then laid out as the /zagruzka "
+                    "«Excel» template itself, every cell filled with its band colour, "
+                    "with kind (pct | diff), stat (avg · min · max · none) and optional "
+                    "foot rows, exactly as make_document's grid block.",
      "parameters": {"type": "object", "properties": {
          "filename": {"type": "string", "description": "Without extension"},
+         "title": {"type": "string", "description": "The workbook's subject (defaults to the filename)"},
+         "subtitle": {"type": "string", "description": "ONE scope line printed under the title on every sheet, in the user's language — «Davr: 01.09.2026 — 30.09.2026 · Zavod: … · Smena: … · Brigadir: …»; the day it was made is added by the platform"},
          "sheets": {"type": "array", "items": {"type": "object", "properties": {
              "name": {"type": "string"},
              "columns": {"type": "array", "items": {"type": "string"}},
              "rows_json": {"type": "string", "description": "JSON array of rows, each an array of cell values"},
              "rows_ref": {"type": "string", "description": "A kept ref holding the rows (c1, r2) — instead of rows_json"},
+             "bands": {"type": "string", "description": "Makes the sheet a /zagruzka grid: the table whose colour edges the cells wear (load, fulfil, eff, full, full90, simple, att, default)"},
+             "kind": {"type": "string", "enum": ["pct", "diff"]},
+             "stat": {"type": "string", "enum": ["avg", "min", "max", "none"]},
+             "foot_json": {"type": "string", "description": "Unit rows under a grid (the plant's row), a JSON array of rows"},
          }, "required": ["name", "columns"]}},
          "purpose": _PURPOSE}, "required": ["filename", "sheets", "purpose"]}},
     {"name": "read_attachment",
@@ -335,7 +360,15 @@ HOW YOU WORK
     the data the page reads (call_api), derive the figures the page derives
     with compute — the rule book gives every formula (read it first) — and
     build the file; then say in one line which formula and which source you
-    used. Never calculate a table in your head and never retype figures into
+    used. THE PLATFORM'S TEMPLATE WINS where one exists: a table of percents
+    per brigadir (cell, plant) per day or period — загрузка, samaradorlik,
+    reja bajarilishi, P / A / D, davomat — is the /zagruzka «Excel» and goes
+    out as a grid block (make_document) or a sheet with bands (make_excel),
+    never as a plain table: the file then wears that table's own colour
+    bands (the admin's edges), its gold header, its «—» blanks, its summary
+    column and its legend. Where a page's own export matches the ask exactly,
+    call that endpoint rather than rebuilding its file. Never calculate a
+    table in your head and never retype figures into
     a file: compute them, and pass the table by rows_ref. Compose a document
     the way its reader will look for things: a title that is the subject, a
     subtitle with period · scope · the day, a heading per section, a table
@@ -462,7 +495,9 @@ L. CHANGES → no text before propose_changes: its title and labels ARE the
 M. A FILE OR DOCUMENT ASKED FOR ("Excel qilib ber", "PDF hisobot tayyorla",
    "Wordda ro'yxat", "prezentatsiya") → build it BEFORE writing: the page's
    own export when one matches exactly, else call_api → compute →
-   make_document / make_excel. Then one or two lines: what the file holds
+   make_document / make_excel — in the platform's template where one exists
+   (a brigadir × day table of percents → a grid block, or a sheet with
+   bands; never a plain table). Then one or two lines: what the file holds
    (rows · period · scope) and, where you derived the figures, the formula
    and the source in the page's own words — the file tile under the answer
    carries the rest, so never retell its contents and never paste its table
@@ -1129,32 +1164,95 @@ def _tool_open_page(db, run_id: int, args: dict) -> dict:
     return {"ok": True}
 
 
+def _run_lang(db, run_id: int) -> str:
+    """The UI language the run was opened in — the fixed words of a file's
+    template («Tayyorlandi», the legend) are written in it."""
+    r = db.get(AssistantRun, run_id)
+    lang = str(((r.context if r else None) or {}).get("lang") or "uz")
+    return lang if lang in adoc.GRID_WORDS else "uz"
+
+
+def _read_band_scales(db, wanted: set) -> dict:
+    """The colour edges a grid wears — the admin's own bands for the named
+    /zagruzka table (`routers.settings.ZAGRUZKA_BANDS`, the very settings the
+    page paints with), /workers' fixed davomat scale, or the platform's
+    defaults. Keyed by (table, kind)."""
+    from app.routers import settings as st  # the band registry lives on the router
+
+    out: dict = {}
+    keys: dict = {}
+    for name, kind in wanted:
+        if name == "att":
+            out[(name, kind)] = adoc.ATT_SEGMENTS
+        elif name == "default":
+            out[(name, kind)] = st.DEFAULT_DIFF_SEGMENTS if kind == "diff" else st.DEFAULT_HEATMAP_SEGMENTS
+        else:
+            fields = st.ZAGRUZKA_BANDS.get(name) or {}
+            field = ("segments" if "segments" in fields
+                     else "diff_segments" if kind == "diff" else "p_segments")
+            if field in fields:
+                keys[(name, kind)] = fields[field]
+    if keys:
+        rows = {r.key: r.value for r in
+                db.query(AppSetting).filter(AppSetting.key.in_([k for k, _d in keys.values()])).all()}
+        for nk, (key, default) in keys.items():
+            out[nk] = st._segments(rows.get(key), default)
+    return out
+
+
+async def _scale_grids(blocks: list[dict]) -> None:
+    wanted = adoc.band_requests(blocks)
+    if wanted:
+        adoc.attach_scales(blocks, await _db(_read_band_scales, wanted))
+
+
+def _file_summary(out: dict, blocks: list[dict]) -> dict:
+    if out.get("ok"):
+        out["blocks"] = len(blocks)
+        out["rows"] = sum(len(b["rows"]) for b in blocks if b["type"] in ("table", "grid"))
+        grids = sorted({b["bands"] for b in blocks if b["type"] == "grid"})
+        if grids:
+            out["template"] = ("the /zagruzka grid — the page's own Excel layout, cells filled "
+                               "with the " + ", ".join(grids) + " bands in force")
+    return out
+
+
 async def _tool_make_excel(run_id: int, ctx: Ctx, args: dict) -> dict:
-    sheets = []
+    """A workbook: every sheet a table in the house look, or — with `bands` —
+    the /zagruzka grid template. Built through the one document builder, so
+    make_excel and make_document's xlsx cannot drift apart."""
+    blocks_in = []
     for sh in (args.get("sheets") or [])[:12]:
         if not isinstance(sh, dict):
             continue
-        cols = [str(c) for c in (sh.get("columns") or [])][:80]
-        ref = str(sh.get("rows_ref") or "").strip()
-        if ref:
-            found, obj = calc.get(run_id, ref)
-            if not found:
-                return {"error": calc.missing_message(run_id, ref)}
-            try:
-                cols, rows = adoc._rows_from_ref(obj, cols)
-            except adoc.DocError as exc:
-                return {"error": f"sheet «{sh.get('name')}»: {exc}"}
+        b: dict = {"type": "grid" if sh.get("bands") else "table",
+                   "columns": sh.get("columns") or [], "caption": str(sh.get("name") or "Sheet")}
+        if str(sh.get("rows_ref") or "").strip():
+            b["rows_ref"] = str(sh["rows_ref"]).strip()
         else:
-            rows = files.parse_rows(sh.get("rows_json"))
-        sheets.append({"name": str(sh.get("name") or "Sheet"), "columns": cols,
-                       "rows": rows[:20000]})
-    if not sheets:
+            b["rows"] = files.parse_rows(sh.get("rows_json"))
+        if sh.get("bands"):
+            b.update({"bands": sh.get("bands"), "kind": sh.get("kind") or "pct",
+                      "stat": sh.get("stat") or "avg"})
+            if sh.get("foot_json"):
+                b["foot"] = files.parse_rows(sh.get("foot_json"))
+            if sh.get("foot_ref"):
+                b["foot_ref"] = sh.get("foot_ref")
+        blocks_in.append(b)
+    if not blocks_in:
         return {"error": "no sheets"}
     fname = adoc.safe_filename(args.get("filename"), "Yordamchi")
-    data = await asyncio.to_thread(files.make_xlsx, fname, sheets)
-    out = await _deliver(run_id, ctx, fname + ".xlsx", files.XLSX, data)
-    out["rows"] = sum(len(s["rows"]) for s in sheets)
-    return out
+    title = str(args.get("title") or "").strip() or fname
+    try:
+        blocks = adoc.normalise(blocks_in, lambda n: calc.get(run_id, n))
+        await _scale_grids(blocks)
+        lang = await _db(_run_lang, run_id)
+        _ext, mime, data = await asyncio.to_thread(
+            adoc.build, "xlsx", title, str(args.get("subtitle") or ""), blocks, lang)
+    except adoc.DocError as exc:
+        return {"error": str(exc)}
+    out = await _deliver(run_id, ctx, fname + ".xlsx", mime, data)
+    return _file_summary(out, blocks)
 
 
 async def _deliver(run_id: int, ctx: Ctx, name: str, mime: str, data: bytes) -> dict:
@@ -1179,16 +1277,15 @@ async def _tool_make_document(run_id: int, ctx: Ctx, args: dict) -> dict:
     try:
         fmt = adoc.norm_format(args.get("format"))
         blocks = adoc.normalise(args.get("blocks_json"), lambda n: calc.get(run_id, n))
+        await _scale_grids(blocks)
+        lang = await _db(_run_lang, run_id)
         ext, mime, data = await asyncio.to_thread(
-            adoc.build, fmt, str(args.get("title") or ""), str(args.get("subtitle") or ""), blocks)
+            adoc.build, fmt, str(args.get("title") or ""), str(args.get("subtitle") or ""), blocks, lang)
     except adoc.DocError as exc:
         return {"error": str(exc)}
     fname = adoc.safe_filename(args.get("filename"), adoc.safe_filename(args.get("title"), "Hujjat"))
     out = await _deliver(run_id, ctx, f"{fname}.{ext}", mime, data)
-    if out.get("ok"):
-        out["blocks"] = len(blocks)
-        out["tables"] = sum(len(b["rows"]) for b in blocks if b["type"] == "table")
-    return out
+    return _file_summary(out, blocks)
 
 
 async def _tool_compute(run_id: int, args: dict) -> dict:

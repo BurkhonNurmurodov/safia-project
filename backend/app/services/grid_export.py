@@ -8,7 +8,9 @@ drifts. So the table DESCRIBES ITSELF instead: the grid exactly as it is drawn
 the P·A or D view, each cell's band colour) arrives as a spec, and this module
 only lays it out. Nothing here computes a figure.
 
-The spec (built by `utils/gridExport.js` on the client):
+The spec (built by `utils/gridExport.js` on the client — and, from 2026-10-19,
+by `assistant_documents.grid_spec` for a «grid» block of «Yordamchi»'s
+documents, which lays it onto one sheet of ITS workbook through `lay_out`):
 
     title, lines[], sheet
     cols:   [{w, sep}]           one per column; `sep` = a thick LEFT edge
@@ -249,7 +251,12 @@ def _legend(ws, row: int, groups: list[dict], n_cols: int) -> int:
     return row
 
 
-def build_grid_workbook(spec: dict) -> BytesIO:
+def lay_out(ws, spec: dict) -> None:
+    """Lay one spec onto an existing worksheet — the whole of the template
+    (the title, the scope lines, the gold header, the filled cells, the
+    footer, the legend, the frozen panes and the print setup), so a caller
+    composing a workbook of several sheets (the assistant's documents) draws
+    the very same table the «Excel» button on /zagruzka does."""
     cols = spec.get("cols") or []
     n_cols = len(cols)
     # A thick LEFT edge before each flagged column, and before column 2 — the
@@ -258,9 +265,6 @@ def build_grid_workbook(spec: dict) -> BytesIO:
     if n_cols >= 2:
         seps.add(2)                 # the name column's 2px right edge
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = _sheet_name(_text(spec.get("sheet")) or _text(spec.get("title")))
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.tabColor = BRAND
     _widths(ws, cols)
@@ -322,6 +326,13 @@ def build_grid_workbook(spec: dict) -> BytesIO:
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def build_grid_workbook(spec: dict) -> BytesIO:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _sheet_name(_text(spec.get("sheet")) or _text(spec.get("title")))
+    lay_out(ws, spec)
 
     bio = BytesIO()
     wb.save(bio)

@@ -6,7 +6,8 @@ reviewer's); a sheet is read HERE into plain rows, because Gemini reads tables
 as text far better than it reads a zip of XML. A file it cannot read is refused
 at the door rather than sent along to fail later.
 
-OUT: a workbook it builds from data it gathered (``make_xlsx``), any other
+OUT: every file it makes — the house workbook included — is built by
+``assistant_documents`` (the plain ``make_xlsx`` sheet left on 2026-10-19); any other
 document (``assistant_documents`` — docx, pdf, pptx, csv, md, txt, html), or a
 file an existing export endpoint returned. In a browser the file is a download link in
 the chat; in Telegram, where a web view cannot save a download, the bot DMs it
@@ -137,74 +138,6 @@ def to_parts(f: AssistantFile) -> list[dict]:
 
 
 # ── a workbook it builds ─────────────────────────────────────────────────────
-
-def _safe_sheet(name: str, used: set) -> str:
-    n = re.sub(r"[\[\]\*\?/\\:]", " ", (name or "Sheet").strip())[:31] or "Sheet"
-    base, i = n, 2
-    while n.lower() in used:
-        n = f"{base[:28]} {i}"
-        i += 1
-    used.add(n.lower())
-    return n
-
-
-def _num(v: Any) -> Any:
-    """Keep numbers numeric (a spreadsheet must be able to sum them)."""
-    if isinstance(v, (int, float)) or v is None:
-        return v
-    s = str(v).strip()
-    if re.fullmatch(r"-?\d+", s) and not (len(s) > 1 and s.startswith("0")):
-        try:
-            return int(s)
-        except ValueError:
-            return s
-    if re.fullmatch(r"-?\d+[.,]\d+", s):
-        try:
-            return float(s.replace(",", "."))
-        except ValueError:
-            return s
-    return s
-
-
-def make_xlsx(title: str, sheets: list[dict]) -> bytes:
-    """A plain, readable workbook: a header row in bold on a soft gold band,
-    frozen, filterable, columns sized to what they hold."""
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    wb = Workbook()
-    wb.remove(wb.active)
-    used: set = set()
-    head_fill = PatternFill("solid", fgColor="F3E7CC")
-    for sh in sheets or []:
-        ws = wb.create_sheet(_safe_sheet(sh.get("name") or title, used))
-        cols = [str(c) for c in (sh.get("columns") or [])]
-        rows = sh.get("rows") or []
-        if cols:
-            ws.append(cols)
-            for i in range(1, len(cols) + 1):
-                c = ws.cell(row=1, column=i)
-                c.font = Font(bold=True)
-                c.fill = head_fill
-                c.alignment = Alignment(vertical="center", wrap_text=True)
-        for r in rows:
-            ws.append([_num(v) for v in (r if isinstance(r, (list, tuple)) else [r])])
-        width = max(len(cols), max((len(r) for r in rows if isinstance(r, (list, tuple))), default=0))
-        for i in range(1, width + 1):
-            longest = max((len(str(ws.cell(row=j, column=i).value or ""))
-                           for j in range(1, min(ws.max_row, 400) + 1)), default=8)
-            ws.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 8), 50)
-        if cols:
-            ws.freeze_panes = "A2"
-            if ws.max_row > 1:
-                ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{ws.max_row}"
-    if not wb.worksheets:
-        wb.create_sheet("Sheet")
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
 
 def parse_rows(raw: Any) -> list:
     """Rows the model sent as a JSON string (or already a list)."""
