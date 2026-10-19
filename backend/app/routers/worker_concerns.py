@@ -1,24 +1,28 @@
 """
-Worker-concerns («Ishchi havotirlari») analytics API — the leaders' KPI over
-the concerns workers file to their cell leader.
+Worker concerns («Ishchi havotirlari») — the rows behind the leaders' concerns
+KPI: the concerns workers file to their cell leader on /cell-concerns.
+
+From 2026-10-19 the page `/worker-concerns` is a TAB of «Liderlar KPI»
+(`/leaders-kpi`; the old route redirects). The KPI's per-cell figures ride the
+board (`services/leaders_kpi`, which calls this module's own filter and
+aggregation — `_apply_scope_and_filters`, `_aggregate`, `_figures` — so the
+board and /cell-concerns can never count one filing two ways); what stays here
+is the paged REGISTER (`/list`) the tab and its cell dialog read, and
+`leader_filings`, which the exam's expected answers are computed from.
 
 THE SOURCE IS THE PLATFORM (from 2026-10-03, the operator's directive). Every
 figure here is read from the ``leader_concerns`` rows a WORKER filed on
 /cell-concerns — ``worker_name IS NOT NULL``, the one marker of a floor filing
 (models.LeaderConcern) — and from nothing else. Until that date the page read
 the ~180 per-cell Google sheets the «Liderlar Havotirlar» registry links,
-crawled nightly into ``worker_concerns``. The floor moved to /cell-concerns on
-2026-09-06, the sheets were never switched off, and this page went on reporting
-them. The crawl was removed the same day (the operator: «get rid of that
-sheet»); the three tables it filled — ``worker_concerns``,
-``worker_concern_sync``, ``worker_concern_sheet_state`` — were left in the
-database, unread by anything.
+crawled nightly into ``worker_concerns``; the crawl was removed the same day
+and the three tables it filled are left in the database, unread by anything.
 
-Every filing is LISTED here at whatever level it now sits — /cell-concerns
-drops a concern the moment it is uplifted, this page does not. But only what
+Every filing is LISTED at whatever level it now sits — /cell-concerns drops a
+concern the moment it is uplifted, this register does not. But only what
 stayed with the LEADER is held against them (the operator, 2026-10-04: «if
 they have uplifted the concern to their supervisor, it shouldn't affect their
-rating»). So the page's statuses are read off two columns:
+rating»). So the statuses are read off two columns:
 
   uplifted — handed up the chain (brigadir or above), whatever became of it
              after: still open there, or resolved there — the sheets'
@@ -28,34 +32,23 @@ rating»). So the page's statuses are read off two columns:
   todo     — still waiting at the leader step
 
 ``BUCKET`` is that rule as SQL and its only spelling: the filter, every
-aggregate, the register and the export read the same expression, so
-«resolved» can never mean two things on one page. Every percentage is
-done ÷ rated, rated = total − uplifted (``_rated``), computed here; «open» is
-what still waits on the leader (doing + todo).
+aggregate, the register and the board read the same expression, so «resolved»
+can never mean two things. Every percentage is done ÷ rated, rated = total −
+uplifted (``_rated``), computed here as the WHOLE percent printed
+(``whole_pct``); «open» is what still waits on the leader (doing + todo). The
+concerns KPI's 1–5 score over that % is `services/leaders_kpi.concerns_score`
+(HR's bands, the operator's 2026-10-19 ruling).
 
 A concern counts for the CELL'S OWNER — the «Egasi», ``cells.owner_id``, the
 leader Verifix seats in the cell — ON THE PERIOD'S LAST DAY (the operator,
 2026-10-14: «owner on the last day» gets the whole period), read through
 `turnover.cell_map` + `turnover.owned`: the very reading «Kadrlar
-qo'nimsizligi» credits a month by, so for one period the two pages name the
-same owners and the same cells. ``_owner`` is that rule as SQL and its only
-spelling: the leader filter, every aggregate, the register and the export
-read it. The UNIT is still the one a concern was filed under
+qo'nimsizligi» credits a month by. ``_owner`` is that rule as SQL and its only
+spelling. The UNIT is still the one a concern was filed under
 (``brigadir_manager_id``).
 
-The ranking is one row PER CELL (the operator, 2026-10-14: «rank per cell (one
-row for the cell) but do not include the ones without owner»): every cell
-that has an owner on the period's last day and stands on it, in the view,
-concerns or not (``_scope_cells``), named by its owner. Every owner is ranked
-— the «Lider o'rnida» rule is gone (same day: «every owner is ranked») — once
-ONE rated concern stands behind the cell (the operator, 2026-10-17: «there's
-no limit for low data» — it took 5 until then); a cell whose every concern was
-escalated has no % and is listed apart. A leader who owns no cell is on no row. Concerns that land in no
-row — a cell with no owner, or one outside the view — surface as one explicit
-«unassigned» bucket: counted, never ranked.
-
-Scoping (the page opens to supervisor + leader by default), narrowed the way
-/concerns narrows these same rows:
+Scoping (the merged page is admin-only until the operator opens it), narrowed
+the way /concerns narrows these same rows:
 
   * admin, top-manager, or a page grant at "all" → everything;
   * shift-manager → the units of their shift ∩ plant (shift_scope);
@@ -71,8 +64,7 @@ from datetime import date as date_cls, datetime, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import (Integer, String, case, cast, column, false, func, null, or_,
                         select, values)
 from sqlalchemy.orm import Session
@@ -86,26 +78,16 @@ from app.routers.concerns import _no, _shift_unit_ids
 from app.services import action_log
 from app.services.turnover import cell_map as dated_cells, owned
 from app.services.factory_scope import scoped_manager_ids, viewer_factory_id
-from app.services.worker_concerns_export import build_worker_concerns_workbook, whole_pct
-from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/worker-concerns", tags=["worker-concerns"])
 
-PAGE_KEY = "worker-concerns"
+# The page key of «Liderlar KPI» — the concerns tab of the merged page (2026-10-19).
+PAGE_KEY = "leaders-kpi"
 
-# KPI traffic-light bands (admin-editable on the page; AppSetting-backed).
-BANDS_SETTING = "worker_concern_bands"
-DEFAULT_BANDS = {"green": 80, "yellow": 50}
-
-# Rated concerns a row needs to be ranked. No minimum since 2026-10-17 (the
-# operator: «there's no limit for low data» — it was 5): a row is ranked once
-# it has a %, i.e. one concern the leader kept. A row whose every concern was
-# escalated has none and is listed apart, unranked.
+# Rated concerns a brigadir row needs to be «ranked». No minimum since
+# 2026-10-17 (the operator: «there's no limit for low data» — it was 5): a row
+# is ranked once it has a %, i.e. one concern the leader kept.
 MIN_RANKED = 1
-# A period shorter than this many days grades nobody: its newest concerns have
-# not had the time to be resolved, so every leader would read red on the first
-# days of a month. /meta serves it to the page; the workbook applies it too.
-SHORT_PERIOD_DAYS = 7
 
 UPLIFTED = "uplifted"
 
@@ -192,19 +174,6 @@ _ORDER = {
 }
 
 
-def get_bands(db: Session) -> dict:
-    row = db.query(AppSetting).filter_by(key=BANDS_SETTING).first()
-    if row:
-        try:
-            v = json.loads(row.value)
-            g, y = int(v.get("green")), int(v.get("yellow"))
-            if 0 < y < g <= 100:
-                return {"green": g, "yellow": y}
-        except (ValueError, TypeError):
-            pass
-    return dict(DEFAULT_BANDS)
-
-
 # ── scoping ──────────────────────────────────────────────────────────────────
 
 def _filed(query):
@@ -284,39 +253,6 @@ def _viewer_scope(db: Session, payload: dict, query, lock=None,
     if leaders is not None:
         query = query.filter(_led_by(db, leaders, end or _today()))
     return query
-
-
-def _scope_cells(db: Session, payload: dict, *, end: date_cls, factory: Optional[int] = None,
-                 manager_id: Optional[list[int]] = None, leader_id: Optional[list[int]] = None,
-                 cell: Optional[list[str]] = None, lock=None, units=_COMPUTE) -> list[dict]:
-    """The ranking's rows before any figure: every OWNED cell on `end`
-    (`turnover.owned`) in the view, concerns or not. The cell's brigadir ON
-    `end` is what the viewer lock and the plant / brigadir pick narrow (a cell
-    with no brigadir only under «All factories», as on «Kadrlar
-    qo'nimsizligi»); a leader viewer reads the cells they own or run; the
-    Lider pick narrows the owners, the Yacheyka pick the codes."""
-    lock_units, lock_leaders = lock if lock is not None else _viewer_lock(db, payload)
-    picked = scoped_manager_ids(db, payload, factory, manager_id or []) if units is _COMPUTE else units
-    mine = set(lock_leaders or [])
-    want_l = set(leader_id or [])
-    want_c = {c.strip() for c in cell or []}
-    out = []
-    for code, c in _cells_on(db, end).items():
-        if not owned(c):
-            continue
-        mid = c.get("manager_id")
-        if lock_units is not None and mid not in lock_units:
-            continue
-        if lock_leaders is not None and not (mine & {c.get("owner_id"), c.get("leader_id")}):
-            continue
-        if picked is not None and mid not in picked:
-            continue
-        if want_l and c["owner_id"] not in want_l:
-            continue
-        if want_c and code not in want_c:
-            continue
-        out.append(c)
-    return out
 
 
 def _apply_scope_and_filters(
@@ -426,6 +362,15 @@ def _agg_cols(db: Session, end: date_cls) -> tuple:
             LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
             LeaderConcern.cell_code, _owner(db, end), LeaderConcern.leader_profile_id,
             LeaderConcern.leader_name)
+
+
+def whole_pct(done: int, total: int) -> Optional[int]:
+    """THE whole percent of ``done`` out of ``total`` — rounded half UP from the
+    raw counts, exactly once. The page prints this integer (``pct0`` on every
+    payload) and the concerns KPI is scored by it: Python's ``round`` rounds
+    halves to EVEN (5 of 8 read 62% here and 63% on screen), and rounding the
+    one-decimal figure a second time made 17 of 19 read 90%."""
+    return (200 * done + total) // (2 * total) if total else None
 
 
 def _zero() -> dict:
@@ -559,91 +504,11 @@ def _aggregate(db: Session, rows, lo: Optional[date_cls], hi: Optional[date_cls]
         "daily": daily,
         "by_brigadir": by_brigadir,
         "top_cells": top_cells,
-        # Per cell code, the period's counts — what the ranking rows read
-        # (`_cell_rows`); per owner, the same rows folded by person.
+        # Per cell code, the period's counts — what the board's concerns KPI
+        # reads (services/leaders_kpi); per owner, the same rows folded by person.
         "cells": cells,
         "leaders": by_leader,
     }
-
-
-def _cell_key(v: str):
-    return (len(v), v)
-
-
-def _cell_rows(cells: list[dict], agg_cells: dict) -> tuple[list[dict], Optional[dict]]:
-    """THE ranking: one row per OWNED cell in the view (`_scope_cells`), its
-    figures the concerns filed in it over the period, named by its owner on
-    the period's last day — concerns or not. A cell is ``ranked`` once
-    MIN_RANKED (one) rated concern stands behind it; every owner is ranked (no
-    Verifix-kind rule since 2026-10-14). Concerns that land in no row — a cell
-    with no owner, or one outside the view — are the «unassigned» bucket, so
-    the rows and it add up to the headline. → (rows, unassigned or None)."""
-    rows = []
-    for c in cells:
-        v = agg_cells.get(c["code"]) or {}
-        counts = {s: v.get(s, 0) for s in STATUSES}
-        f = _figures(counts)
-        brig = c.get("brigadir")
-        rows.append({
-            "key": c["code"], "cell": c["code"], "cell_id": c.get("id"),
-            "leader_id": c["owner_id"], "leader": c.get("owner") or "—",
-            "manager_id": c.get("manager_id"), "brigadir": brig,
-            # The shape a tab still open on an older bundle reads (one leader
-            # row per cell, ranked like any leader).
-            "cells": [c["code"]], "brigadirs": [brig] if brig else [],
-            "kind": "leader", "owner": True,
-            "total": sum(counts.values()), **counts, **f,
-            "ranked": f["rated"] >= MIN_RANKED,
-        })
-    seen = {r["cell"] for r in rows}
-    ua = _zero()
-    for code, v in agg_cells.items():
-        if code not in seen:
-            for s in STATUSES:
-                ua[s] += v.get(s, 0)
-    total = sum(ua.values())
-    return rows, ({**ua, "total": total, **_figures(ua)} if total else None)
-
-
-def _counts(rows: list[dict]) -> dict:
-    """«N ta egasi · M ta yacheyka» — the ranking's size, the pair «Kadrlar
-    qo'nimsizligi» prints for the same period."""
-    return {"owners": len({r["leader_id"] for r in rows}), "cells": len(rows)}
-
-
-def _ranking_order(rows: list[dict]) -> list[dict]:
-    """The ranking's DEFAULT order — ranked cells by their exact share
-    resolved (best first, more concerns first on a tie), then the cells with
-    no % (every concern escalated), then the cells with none — the page's groups.
-    The file follows the order the page SENDS (`_in_order`); this is only for
-    a request that sent none, or for a row the page did not list."""
-    def key(r):
-        t, rated = r["total"], r.get("rated") or 0
-        code = (len(r["cell"]), r["cell"])
-        if t and r["ranked"]:
-            return (0, -(r["done"] / rated), -rated, code)
-        if t:
-            return (1, 0, -t, code)
-        return (2, 0, 0, code)
-    return sorted(rows, key=key)
-
-
-def _row_key(r: dict) -> str:
-    """A ranking row's key on the wire — its cell code. The page sends the
-    same key (`rankKey`) for its on-screen order."""
-    return str(r.get("key") or r.get("cell") or "")
-
-
-def _in_order(rows: list[dict], order: list[str]) -> list[dict]:
-    """The leaders in the order the reader's screen lists them. Names tie-break
-    by the viewer's own alphabet and collation in the browser, which no server
-    sort can reproduce — so the page sends its order and the file follows it;
-    a row the page did not list goes after, in the default order."""
-    if not order:
-        return _ranking_order(rows)
-    pos = {k: i for i, k in enumerate(order)}
-    known = sorted((r for r in rows if _row_key(r) in pos), key=lambda r: pos[_row_key(r)])
-    return known + _ranking_order([r for r in rows if _row_key(r) not in pos])
 
 
 def _cell_ids(db: Session, codes) -> dict[str, int]:
@@ -654,259 +519,6 @@ def _cell_ids(db: Session, codes) -> dict[str, int]:
         return {}
     return {code: cid for cid, code in
             db.query(Cell.id, Cell.verifix_code).filter(Cell.verifix_code.in_(codes))}
-
-
-def _first_filing(db: Session, payload: dict, lock=None) -> Optional[date_cls]:
-    """The first day anything was filed in this viewer's scope — before it
-    nothing was being recorded. ONE floor for the page's «records start on …»
-    notice (/meta) and for whether the comparison window had anything to say
-    (_previous)."""
-    return (_viewer_scope(db, payload, _filed(db.query(LeaderConcern)), lock, _today())
-            .with_entities(func.min(LeaderConcern.entry_date)).scalar())
-
-
-# ── endpoints ────────────────────────────────────────────────────────────────
-
-@router.get("/meta")
-def get_meta(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE_KEY)),
-):
-    """Filter options + KPI bands — one boot call for the page. The options
-    are what THIS viewer can read (their locks applied, no filter): the units
-    and owners of their concerns plus every owned cell in view, because a cell
-    or a name the ranking shows must be one the filters can pick. Owners are
-    read on TODAY (`_owner`, `_scope_cells`) — /meta knows no period; the
-    Lider filter then picks by the owner on the period's last day."""
-    sees_all = page_scope_is_all(db, payload, PAGE_KEY)
-    lock = _viewer_lock(db, payload, sees_all)
-    today = _today()
-    base = _viewer_scope(db, payload, _filed(db.query(LeaderConcern)), lock, today)
-    # ONE pass over the viewer's filings, grouped by everything the options
-    # need — the units, the leaders, the cells, the count and the first day
-    # are all read off these groups (a few hundred rows, not the filings). The
-    # owner is an expression, so it is grouped on through a subquery.
-    sub = base.with_entities(
-        LeaderConcern.id.label("id"), LeaderConcern.entry_date.label("d"),
-        LeaderConcern.cell_code.label("code"), _owner(db, today).label("lid"),
-        LeaderConcern.leader_profile_id.label("fid"), LeaderConcern.leader_name.label("fname"),
-        LeaderConcern.brigadir_manager_id.label("mid")).subquery()
-    groups = (db.query(sub.c.code, sub.c.lid, sub.c.fid, sub.c.fname, sub.c.mid,
-                       func.count(sub.c.id), func.min(sub.c.d))
-              .group_by(sub.c.code, sub.c.lid, sub.c.fid, sub.c.fname, sub.c.mid)
-              .all())
-    total = sum(g[5] for g in groups)
-    first = _first_filing(db, payload, lock)
-    unit_ids = {g[4] for g in groups if g[4]}
-    lnames = _leader_names(db, (g[1] for g in groups))
-    leader_opts: dict[int, str] = {}
-    # A leader's units: the ones the concerns that counted for them name, plus
-    # the units of the cells they own (else of their profile) — what the Lider
-    # list is narrowed by under a brigadir pick.
-    leader_units: dict[int, set] = {}
-    for code, lid, fid, fname, mid, _n, _d in groups:
-        if not lid:
-            continue
-        name = lnames.get(lid) or (fname if fid == lid else None)
-        if name:
-            leader_opts.setdefault(lid, name)
-        if mid:
-            leader_units.setdefault(lid, set()).add(mid)
-    owned_cells = _scope_cells(db, payload, end=today, lock=lock, units=None)
-    for c in owned_cells:
-        lid, mid = c["owner_id"], c.get("manager_id")
-        leader_opts.setdefault(lid, c.get("owner") or "—")
-        if mid:
-            leader_units.setdefault(lid, set()).add(mid)
-            unit_ids.add(mid)
-    # A cell's units and leaders, from the filings that name it — the same
-    # rows a cell pick narrows, so the Yacheyka list cascades under a
-    # brigadir or leader pick without offering a cell that would empty the page
-    # — and from who owns it now, so every cell the table names is pickable.
-    cell_of: dict[str, dict] = {}
-
-    def note(code, lid, mid):
-        c = cell_of.setdefault(code, {"units": set(), "leaders": set(), "pairs": set()})
-        if mid:
-            c["units"].add(mid)
-        if lid:
-            c["leaders"].add(lid)
-        # Both together: a leader who moved units keeps their old filings under
-        # the old unit, so «this leader» and «this unit» separately would offer
-        # a cell their combination never touched.
-        c["pairs"].add((lid or 0, mid or 0))
-
-    for code, lid, mid in {(g[0], g[1], g[4]) for g in groups}:
-        if code:
-            note(code, lid, mid)
-    for c in owned_cells:
-        note(c["code"], c["owner_id"], c.get("manager_id"))
-    cells = sorted(cell_of, key=_cell_key)
-    units = _units(db, unit_ids)
-
-    role = payload.get("role")
-    leaders = sorted(({"id": k, "name": v, "units": sorted(leader_units.get(k, ()))}
-                      for k, v in leader_opts.items()),
-                     key=lambda r: r["name"].lower())
-    return {
-        "source": "cell-concerns",
-        "total": total,
-        "bands": get_bands(db),
-        "min_ranked": MIN_RANKED,
-        "short_days": SHORT_PERIOD_DAYS,
-        "is_admin": role == "admin",
-        "lock_own_unit": role == "supervisor" and not sees_all,
-        "lock_own_leader": role == "leader" and not sees_all,
-        "locked_factory_id": viewer_factory_id(db, payload),
-        "supervisors": sorted(
-            ({"id": m.id, "name": m.name, "shift": m.shift, "factory_id": m.factory_id}
-             for m in units.values()),
-            key=lambda m: m["name"] or "",
-        ),
-        "leader_opts": leaders,
-        "cells": [{"code": c, "units": sorted(cell_of[c]["units"]),
-                   "leaders": sorted(cell_of[c]["leaders"]),
-                   "pairs": sorted([list(p) for p in cell_of[c]["pairs"]])} for c in cells],
-        # The first day anything was filed in this viewer's scope — what an
-        # empty period earlier than it is told («records start on …»).
-        "first_date": first.isoformat() if first else None,
-        # What a tab still open on the sheet-era bundle reads to decide it has
-        # data at all; it names the leaders and nothing else as strings.
-        "leaders": [r["name"] for r in leaders],
-        "can_refresh": False,
-        "sync": {"last_synced": None, "ok": True, "message": None, "row_count": total,
-                 "invalid_dates": 0, "failed_sheets": 0, "failures": [], "running": False,
-                 "progress_done": 0, "progress_total": 0,
-                 "sweep": {"ok": True, "code": None, "detail": "", "url": None, "skipped": 0}},
-    }
-
-
-@router.get("/stats")
-def get_stats(
-    chart_from: Optional[date_cls] = Query(None),
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE_KEY)),
-    flt: dict = Depends(_filter_params),
-):
-    """KPI cards + daily trend + per-brigadir and per-cell breakdowns.
-
-    ``chart_from`` (≤ date_from) widens ONLY the daily series so the trend
-    chart honors the platform's 7-day minimum window while the KPI numbers
-    keep the exact range the user picked (utils/chartRange.js contract)."""
-    lock = _viewer_lock(db, payload)
-    units = scoped_manager_ids(db, payload, flt["factory"], flt["manager_id"])
-    wide = dict(flt)
-    if chart_from and (not wide["date_from"] or chart_from < wide["date_from"]):
-        wide["date_from"] = chart_from
-    end = _end(flt["date_to"])
-    rows = (_apply_scope_and_filters(db, payload, **wide, lock=lock, units=units)
-            .with_entities(*_agg_cols(db, end)).all())
-    agg = _aggregate(db, rows, flt["date_from"], flt["date_to"], end)
-    return {
-        # `undated_in_scope` is the sheet era's unreadable date; a filing
-        # always carries its day, so it is 0 — kept for an older bundle.
-        "kpi": {**agg["kpi"], "undated_in_scope": 0},
-        "prev": _previous(db, payload, flt, lock, units),
-        "daily": [{"d": d.isoformat(), **v} for d, v in sorted(agg["daily"].items())],
-        "by_brigadir": agg["by_brigadir"],
-        "top_cells": agg["top_cells"][:12],
-    }
-
-
-def _previous(db: Session, payload: dict, flt: dict, lock=None,
-              units=_COMPUTE) -> Optional[dict]:
-    """The same scope over the period of the same length that ends the day
-    before this one starts — what the headline's change is measured against.
-
-    It is read AS IT STOOD at the same distance past its own end as the current
-    period is past its end today: a concern of the earlier window counts as
-    resolved only if it was resolved by then. Read as it stands today instead,
-    the earlier window has had a month longer to be resolved, and every period
-    would compare worse than the one before it. «By then» is the server's own
-    stamp (`done_at`, on the plant's clock) — `completion_date` is typed by
-    whoever closes the concern and only stands in where no stamp exists.
-
-    None — no comparison at all — wherever one would mislead:
-      * no closed period (an open range has no «before»);
-      * a status filter, which judges rows by TODAY's status, so it cannot
-        describe the earlier window as it stood;
-      * an earlier window starting before the first filing in the VIEWER's
-        scope (`_first_filing`, the day the page's «records start on …» names)
-        — nothing was being recorded then, so «nothing was filed» is not what
-        it would mean. Measured with no brigadir / leader / cell pick: a cell
-        whose first concern came later really had none before it, and the
-        line says so;
-      * dates outside what a date can hold."""
-    lo, hi = flt["date_from"], flt["date_to"]
-    if not lo or not hi or hi < lo or flt.get("status"):
-        return None
-    today = _today()
-    hi = min(hi, today)              # a range reaching into the future ends today
-    if hi < lo:
-        return None
-    try:
-        days = (hi - lo).days + 1
-        p_hi = lo - timedelta(days=1)
-        p_lo = p_hi - timedelta(days=days - 1)
-        as_of = p_hi + timedelta(days=(today - hi).days)
-    except OverflowError:
-        return None
-    first = _first_filing(db, payload, lock)
-    if first is None or p_lo < first:
-        return None
-    # A resolved concern that carries no date of its own resolution cannot be
-    # shown to have been resolved BY THEN, so it is not counted as such (the
-    # filing day would credit it with a resolution on the day it was raised).
-    # Rated the way the period itself is (BUCKET): what was handed up is out
-    # of both halves, read off where each concern sits today.
-    resolved_on = func.coalesce(func.date(func.timezone(PLANT_TZ, LeaderConcern.done_at)),
-                                LeaderConcern.completion_date)
-    rated = BUCKET != UPLIFTED
-    done_then = rated & (LeaderConcern.status == "done") & (resolved_on <= as_of)
-    total, done = (
-        _apply_scope_and_filters(db, payload, **{**flt, "date_from": p_lo, "date_to": p_hi},
-                                 lock=lock, units=units)
-        .with_entities(func.count(case((rated, LeaderConcern.id))),
-                       func.count(case((done_then, LeaderConcern.id))))
-        .one()
-    )
-    return {"from": p_lo.isoformat(), "to": p_hi.isoformat(), "as_of": as_of.isoformat(),
-            "total": total, "done": done, "pct": _pct(done, total),
-            "pct0": whole_pct(done, total)}
-
-
-@router.get("/leaders")
-def get_leaders(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE_KEY)),
-    flt: dict = Depends(_filter_params),
-):
-    """The KPI table: one row per OWNED cell in the view, named by its owner
-    on the period's last day — concerns or not (`_cell_rows`). Concerns that
-    land in no row fold into one explicit «unassigned» summary — counted,
-    displayed, never ranked. `counts` is the ranking's size, «N ta egasi · M
-    ta yacheyka», the pair «Kadrlar qo'nimsizligi» prints for the period."""
-    lock = _viewer_lock(db, payload)
-    units = scoped_manager_ids(db, payload, flt["factory"], flt["manager_id"])
-    end = _end(flt["date_to"])
-    rows = (_apply_scope_and_filters(db, payload, **flt, lock=lock, units=units)
-            .with_entities(*_agg_cols(db, end)).all())
-    agg = _aggregate(db, rows, flt["date_from"], flt["date_to"], end)
-    cells = _scope_cells(db, payload, end=end, factory=flt["factory"],
-                         manager_id=flt["manager_id"], leader_id=flt["leader_id"],
-                         cell=flt["cell"], lock=lock, units=units)
-    out, unassigned = _cell_rows(cells, agg["cells"])
-    return {
-        "rows": out,
-        "counts": _counts(out),
-        "end": end.isoformat(),
-        # The cells the rows name → their register ids, for the page's links.
-        "cell_ids": {r["cell"]: r["cell_id"] for r in out if r.get("cell_id")},
-        "bands": get_bands(db),
-        "min_ranked": MIN_RANKED,
-        "unassigned": unassigned,
-        "undated": 0,
-    }
 
 
 def _register_rows(db: Session, items) -> list[dict]:
@@ -968,198 +580,3 @@ def get_list(
              .offset((page - 1) * page_size).limit(page_size).all())
     return {"total": total, "page": page, "page_size": page_size,
             "rows": _register_rows(db, items)}
-
-
-class WcExportFilters(BaseModel):
-    """The EFFECTIVE filter set — the scope modal's «filtered / whole period»
-    choice is already resolved client-side into plain filters, so the export
-    never needs a second copy of that decision."""
-    date_from: Optional[date_cls] = None
-    date_to: Optional[date_cls] = None
-    factory: Optional[int] = None
-    manager_id: list[int] = []
-    leader_id: list[int] = []
-    cell: list[str] = []
-    status: list[str] = []
-    q: Optional[str] = None
-    sort: str = "date_desc"
-
-
-def _scope_line(f: "WcExportFilters") -> str:
-    """The narrowings that produced the file, as one sentence — only the ones
-    actually applied, so «who pulled what data» reads at a glance."""
-    parts = []
-    for key in ("date_from", "date_to", "factory", "q"):
-        v = getattr(f, key, None)
-        if v:
-            parts.append(f"{key}={v}")
-    for key in ("manager_id", "leader_id", "cell", "status"):
-        vals = getattr(f, key, None) or []
-        if vals:
-            parts.append(f"{key}={','.join(str(v) for v in vals)}")
-    parts.append(f"sort={f.sort}")
-    return " · ".join(parts)[:1000]
-
-
-class WcExportBody(BaseModel):
-    """Presentation comes from the page (labels, sheet names, meta lines —
-    already in the viewer's language); the data is re-queried HERE, because the
-    register is server-paginated and the file must carry ALL matching rows."""
-    filename: Optional[str] = None
-    title: str = "Worker concerns"
-    subtitle: Optional[str] = None
-    caption: Optional[str] = None
-    filters: WcExportFilters = Field(default_factory=WcExportFilters)
-    sheets: dict[str, str] = {}
-    labels: dict[str, Any] = {}
-    status_labels: dict[str, str] = {}
-    # The scope strip of the overview and ranking sheets — the KPI's scope,
-    # which the status pick and the search do not narrow …
-    meta: list[dict[str, Any]] = []
-    # … and the register sheet's, which they do. Absent (an older tab), the
-    # register prints `meta`.
-    register_meta: list[dict[str, Any]] = []
-    # The leaders as the screen orders them (`_row_key` per row); empty → the
-    # default ranking order.
-    leader_order: list[str] = []
-
-
-@router.post("/export.xlsx")
-def export_excel(
-    request: Request,
-    body: WcExportBody,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE_KEY)),
-):
-    """Multi-sheet Excel report of the page (Obzor · Liderlar KPI · Reyestr).
-
-    Everything is re-queried through the same ``_apply_scope_and_filters`` the
-    page's own endpoints use, so viewer locks hold no matter what the body
-    claims, and all three sheets agree about what «the current scope» means. A
-    browser session downloads the file; inside Telegram it lands in the
-    caller's private chat (app/xlsx_delivery.py)."""
-    f = body.filters
-    _check_range(f.date_from, f.date_to)
-    flt = {"date_from": f.date_from, "date_to": f.date_to, "factory": f.factory,
-           "manager_id": f.manager_id, "leader_id": f.leader_id, "cell": f.cell,
-           "status": f.status}
-    lock = _viewer_lock(db, payload)
-    units = scoped_manager_ids(db, payload, f.factory, f.manager_id)
-    # The overview and the ranking are the KPI, which a status pick would
-    # redefine (pick «done» and every leader reads 100%) — the page offers the
-    # status filter on its register only, and so does the file.
-    kpi_flt = {**flt, "status": []}
-    scope = dict(factory=f.factory, manager_id=f.manager_id, leader_id=f.leader_id,
-                 cell=f.cell, lock=lock, units=units)
-    end = _end(f.date_to)
-    rows = (_apply_scope_and_filters(db, payload, **kpi_flt, lock=lock, units=units)
-            .with_entities(*_agg_cols(db, end)).all())
-    agg = _aggregate(db, rows, f.date_from, f.date_to, end)
-    cell_rows, unassigned = _cell_rows(_scope_cells(db, payload, end=end, **scope), agg["cells"])
-
-    top_cells = [c for c in agg["top_cells"] if c["open"] > 0][:12]
-
-    # Full day axis — a day with zero concerns is data — over the part of the
-    # range where anything COULD have been filed: from the later of its start
-    # and the first filing in this viewer's scope, to the earlier of its end
-    # and today. «Barcha vaqt» starts in 2015 and a crafted body in year 1;
-    # neither may become thousands of empty styled rows on the one worker.
-    daily = agg["daily"]
-    first = _first_filing(db, payload, lock)
-    today = _today()
-    start = max(f.date_from or first, first) if first else None
-    end = min(f.date_to or today, today)
-    day_list = []
-    if start and end and start <= end:
-        cur = start
-        while cur <= end:
-            day_list.append(cur.isoformat())
-            cur += timedelta(days=1)
-
-    # The register: same scope + the text search, ALL rows in on-screen order.
-    reg = _register_rows(db, (
-        _apply_scope_and_filters(db, payload, **flt, q=f.q, lock=lock, units=units)
-        .with_entities(LeaderConcern, BUCKET, _owner(db, end))
-        .order_by(*(_ORDER.get(f.sort) or _ORDER["date_desc"])).all()
-    ))
-
-    bio = build_worker_concerns_workbook({
-        "title": body.title,
-        "subtitle": body.subtitle or "",
-        "sheets": body.sheets,
-        "labels": body.labels,
-        "status_labels": body.status_labels,
-        "meta": body.meta,
-        "register_meta": body.register_meta,
-        "status_counts": agg["kpi"],
-        "kpi": {**agg["kpi"], "undated": 0},
-        "daily": {"days": day_list,
-                  "rows": {d.isoformat(): v for d, v in daily.items()}},
-        "brigadirs": agg["by_brigadir"],
-        "top_cells": top_cells,
-        "leaders": {
-            # The page's «too short to judge» rule, so the file grades exactly
-            # what the screen grades.
-            "plain": bool(f.date_from and f.date_to
-                          and 0 < (f.date_to - f.date_from).days + 1 < SHORT_PERIOD_DAYS),
-            "rows": _in_order(cell_rows, body.leader_order),
-            "counts": _counts(cell_rows),
-            "unassigned": unassigned,
-            "undated": 0,
-            "bands": get_bands(db),
-        },
-        "register": reg,
-    })
-
-    fname = (body.filename or "worker-concerns").strip() or "worker-concerns"
-    if not fname.endswith(".xlsx"):
-        fname += ".xlsx"
-    caption = body.caption or f"📊 {body.title}"
-    try:
-        data = bio.read()
-        resp = deliver_xlsx(request, payload, fname, data, caption)
-        action_log.enrich(
-            target_kind="report", target_id=fname, target_name=body.title,
-            details=[("file", fname), ("rows", len(reg)), ("size", len(data)),
-                     ("workers", agg["kpi"]["workers"]), ("scope", _scope_line(f))],
-        )
-        return resp
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-
-
-class BandsBody(BaseModel):
-    green: int
-    yellow: int
-
-
-@router.put("/thresholds")
-def set_thresholds(
-    body: BandsBody,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE_KEY)),
-):
-    """KPI color bands — ADMIN-ONLY (narrower than the page): the bands define
-    what counts as good performance on a real evaluation, which is a policy
-    decision, not a viewer preference."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    if not (0 < body.yellow < body.green <= 100):
-        raise HTTPException(status_code=422,
-                            detail="Expected 0 < yellow < green ≤ 100")
-    row = db.query(AppSetting).filter_by(key=BANDS_SETTING).first()
-    value = json.dumps({"green": body.green, "yellow": body.yellow})
-    was = row.value if row else None
-    if row:
-        row.value = value
-    else:
-        db.add(AppSetting(key=BANDS_SETTING, value=value))
-    db.commit()
-    action_log.enrich(
-        target_kind="threshold", target_id=BANDS_SETTING,
-        details=[("key", BANDS_SETTING)],
-        changes=[("threshold", was, value)],
-    )
-    return {"green": body.green, "yellow": body.yellow}

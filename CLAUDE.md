@@ -2498,7 +2498,112 @@ rule (imported from `ojidaniya_deck`, never copied), same delivery, same shape.
 - Logged as `export.concerns_deck`. A deadline typed as a huge number is a
   deadline that never comes (`_deadline` catches the overflow).
 
-## «Ishchi havotirlari» reads the CELL CONCERNS (`/worker-concerns`)
+## «Liderlar KPI» — the five KPIs on ONE page (`/leaders-kpi`, 2026-10-19)
+
+From **2026-10-19** (the operator's directive: «merge them into one Leaders'
+KPI page, show it like a leaderboard … 5 categories and one leaderboard on
+different tabs … remove the existing KPI pages», eight rulings asked one by
+one) the three leaders' KPI pages — `/worker-concerns` «Ishchi havotirlari»,
+`/turnover` «Kadrlar qo'nimsizligi», `/foreign-objects` «Yot jismlar» — are
+ONE page, «Liderlar KPI» (ru «KPI лидеров», en «Leaders' KPI»), page key
+**`leaders-kpi`**, in the «Liderlar» nav group. The three old routes REDIRECT
+onto their own tab (`/worker-concerns` → `?tab=concerns`, `/turnover` →
+`?tab=turnover`, `/foreign-objects` → `?tab=foreign`, the query kept —
+`KpiTabRedirect` in App.jsx), their page files, text bundle
+(`workerConcernsText.js`) and three export modules are deleted, and their page
+keys are gone from `PAGE_KEYS` — `startup.merge_leader_kpi_pages` (no flag:
+the trigger state cannot recur) drops them from a stored Access matrix,
+renames a personal `page.view.<old>` grant to `page.view.leaders-kpi` where no
+row exists (else drops it) and drops a deny. **Admin-only until the operator
+opens it on the Access tab** — `DEFAULT_PAGE_ACCESS["leaders-kpi"] = []`; the
+concerns page's supervisor / leader roles were deliberately NOT carried over.
+`leaders-kpi` sits in `capabilities.SCOPED_PAGES` (a «see all» grant at "all"
+widens a supervisor's or leader's reach as it did on the concerns page); exam
+tasks 40/41 name it.
+
+- **`services/leaders_kpi.py` is THE board rule.** `board(db, payload, m,
+  scope)` composes the three services it never re-measures —
+  `turnover.month_payload`, `foreign_objects.month_payload` and the concerns
+  KPI's own aggregate over `leader_concerns` (`_concerns_by_cell`, the
+  `routers/worker_concerns` helpers: `BUCKET`, `_viewer_lock`,
+  `_apply_scope_and_filters`, `_owner`) — joined PER OWNED CELL
+  (`turnover.cell_map` + `turnover.owned` on the month's LAST day, the 14 Oct
+  reading all three KPIs already listed by). One row per cell with an owner
+  («Egasi») on that day, standing on it, in scope — the owner named on the
+  row, an owner of three cells three rows. `GET /api/leaders-kpi?month&factory
+  &shift&managers` (`routers/leaders_kpi.py`) is the ONE read every tab draws
+  from: `rows[]` (`concerns` / `turnover` / `foreign` / `compliance` / `audit`
+  each `{…figure, score, points}` or null, `total`, `pct`, `rank` — ties share
+  a place — `owner_key` + `photo_ver` for the avatar), `totals`, `kpis`
+  (key · live · weight · max_points), `rules`, the `turnover` half (its month
+  payload minus the old-bundle `leaders` / `cells`) and the `foreign` half
+  (minus `cells`), `options`. The board's `state` is the calendar month's
+  (before · future · open · ended); the turnover half keeps its own
+  (past · open · closing · closed · saved).
+- **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
+  the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
+  category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file).
+  **The two KPIs the platform has no source for count 0**, so a perfect cell
+  today reads 3.5 / 5 (70%), said on the board's strip; their tabs are an
+  EMPTY STATE printing HR's rule (weight and bands, `COMPLIANCE_RULE` /
+  `AUDIT_RULE` in `leaders_kpi.py`), nothing to enter. A KPI with no score —
+  no concern in the month or every one escalated, no people working, a month
+  not computed — reads «—» and counts 0 in that row's total (ruling 6).
+- **The concerns KPI gained a RULE** (it had bands on the page and no score):
+  `concerns_rule(db)` — app setting `concerns_rule`, admin-editable like
+  `turnover_rule` / `foreign_rule`, default HR's bands on the page's own %
+  (resolved ÷ rated, escalated «Ko'tarilgan» excluded): > 95 → 5, > 90 → 4,
+  > 80 → 3, > 70 → 2, else 1; `concerns_score(pct0, rule)` is the one
+  spelling. **Counted by CALENDAR MONTH** (ruling 2: one month for every
+  tab; `/worker-concerns`' free period is gone), the current month open «so
+  far», the owner the cell's on the month's last day (`_owner(db, end)` in
+  the concerns helpers, unchanged).
+- **Every category tab is ONE shape** (ruling 7): a ranking table — cell ·
+  owner · brigadir · the figure · score · KPI points, worst first — with the
+  register behind a `SegmentedToggle` (leavers · complaints · the concerns
+  list), and a row opening that KPI's own working: `TurnoverExplain` and
+  `ForeignExplain` (unchanged, now taking `zIndex`), `ConcernsCellModal` (the
+  cell's split and its open concerns, oldest first). The concerns page's
+  headline, brigadirs card, trend chart and per-leader dialog are GONE.
+- **The board** (`components/kpi/LeaderboardTab.jsx`): rank (gold / silver /
+  bronze ink for the podium, the /leaders medal inks), cell, owner with their
+  `ProfileAvatar`, brigadir, five score chips (the figure in the tooltip),
+  the total with a brand bar underneath it — brand gold is the single-metric
+  accent here, never a verdict: no band exists for a total — and the percent.
+  A row opens `CellKpiModal` (five lines: figure · score × weight = points,
+  a chevron into each live KPI's working); `KpiRulesModal` prints the five
+  rules off the payload. Month (`DateRangePicker month`, from `PAST_FROM`),
+  plant → shift → brigadir (`FilterPanel`) and the search narrow EVERY tab;
+  the tab strip (`asTabs`, `lkpi.tab`, `?tab=` honoured once per mount) is the
+  page's first row, above the toolbar.
+- **The frontend**: `pages/LeadersKpi.jsx` (+ `pages/leadersKpiText.js`, four
+  languages, the board's / concerns tab's / placeholders' / rules' words),
+  `components/kpi/` (`kpiUtil`, `KpiBits`, `LeaderboardTab`, `ConcernsTab` +
+  `ConcernsPieces`, `TurnoverTab`, `ForeignTab`, `PlaceholderTab`,
+  `CellKpiModal`, `KpiRulesModal`). The turnover and foreign-objects tabs keep
+  reading their OWN bundles (`turnoverText.js`, `foreignObjectsText.js`) and
+  components (`components/turnover/`, `components/foreign/`) — their state
+  lines, notices, columns and dialogs did not move.
+- **The workbook is ONE** — `POST /api/leaders-kpi/export.xlsx` →
+  `services/leaders_kpi_export.py`, eight sheets (Umumiy · Reyting ·
+  Havotirlar · Qo'nimsizlik · Yot jismlar · Ketganlar · Shikoyatlar ·
+  Havotirlar ro'yxati), the page's own words (`labels` carries the kinds /
+  sources / statuses), logged as `export.leaders_kpi`. The three per-page
+  exports (`turnover_export.py`, `foreign_objects_export.py`,
+  `worker_concerns_export.py`) and their routes are gone, as are
+  `/api/worker-concerns/{meta,stats,leaders,thresholds}`; `/api/turnover/*`
+  (the month's actions: read · close · reopen · compute, people) and
+  `/api/foreign-objects/{,refresh}` stay, re-gated on `leaders-kpi`, and
+  `/api/worker-concerns/list` is the concerns register.
+- **Consequence to know**: a supervisor or leader who could open
+  `/worker-concerns` cannot open the merged page until the operator ticks
+  their role on the Access tab (their personal `page.view.worker-concerns`
+  grant, if any, was renamed and still opens it).
+
+The three sections below describe the KPIs' figures and rules, which did not
+change; where they speak of their own PAGE, read «a tab of /leaders-kpi».
+
+## «Ishchi havotirlari» reads the CELL CONCERNS (`/worker-concerns` — MERGED into `/leaders-kpi`, 2026-10-19)
 
 From **2026-10-03** (the operator's directive: «use our Cell concerns data, not
 the Excel») the leaders' KPI page reads the concerns workers file on
@@ -2685,7 +2790,7 @@ structure changed the same day — see the redesign bullets below).
   the ranking card's header. Alternating row shading on the wide table was
   proposed and declined by the operator.
 
-## «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (`/turnover`)
+## «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (`/turnover` — MERGED into `/leaders-kpi`, 2026-10-19)
 
 From **2026-10-04** (the operator: "ignore the past — from October HR
 calculates the KPIs on the IMS; this is the 2nd of 5") HR's «Текучесть» is
@@ -2766,7 +2871,7 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   (one leaver > 85%). Most «not on /cells» units of that copy were created by the
   4 Oct cell sync; the dispatch zones and freezers were not.
 
-## «Yot jismlar» — the leaders' foreign-objects KPI (`/foreign-objects`)
+## «Yot jismlar» — the leaders' foreign-objects KPI (`/foreign-objects` — MERGED into `/leaders-kpi`, 2026-10-19)
 
 From **2026-10-16** (the operator: «build the foreign objects KPI from the
 Quality register» — the 3rd of 5) HR's «Инородные предметы» is computed month

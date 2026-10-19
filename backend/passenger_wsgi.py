@@ -84,6 +84,7 @@ try:
         migrate_dispute_stages, purge_pre_september_appeals, purge_kelish_marks_before_start,
         backfill_appeal_threads, repair_appeal_threads,
         merge_brigadir_tasks_page,
+        merge_leader_kpi_pages,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
         report_leader_task_catalog,
@@ -246,6 +247,9 @@ try:
     add_late_proof_timing()
     migrate_dispute_stages()
     merge_brigadir_tasks_page()
+    # 2026-10-19: the three leaders' KPI page keys → `leaders-kpi` (the
+    # merged page); the stored matrix's roles are dropped, grants renamed.
+    merge_leader_kpi_pages()
     create_action_log()
     # After the dispute stage columns and the action register it reports
     # into. One-shot: pre-September objections + late proofs, deleted.

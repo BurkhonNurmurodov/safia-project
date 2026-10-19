@@ -47,7 +47,7 @@ export const PAGES = [
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "cell-concerns", route: "/cell-concerns", labelKey: "nav.cellConcerns" },
-  { key: "worker-concerns", route: "/worker-concerns", labelKey: "nav.workerConcerns" },
+  { key: "leaders-kpi", route: "/leaders-kpi", labelKey: "nav.leadersKpi" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
@@ -55,7 +55,6 @@ export const PAGES = [
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "kelish", route: "/kelish", labelKey: "nav.kelish" },
-  { key: "turnover", route: "/turnover", labelKey: "nav.turnover" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
   { key: "exam", route: "/exam", labelKey: "nav.exam" },
@@ -94,10 +93,11 @@ export const DEFAULT_PAGE_ACCESS = {
   // leader_concerns at level="leader"; uplifting one is the ordinary escalate,
   // after which it belongs to the brigadir on /concerns and leaves this page.
   "cell-concerns": ["supervisor", "leader"],
-  // Worker-concerns KPI («Ishchi havotirlari») — over the concerns workers file
-  // on /cell-concerns; supervisors see their unit, leaders their own numbers
-  // (server-scoped).
-  "worker-concerns": ["supervisor", "leader"],
+  // «Liderlar KPI» — the leaders' five KPIs on one page (it merged the
+  // worker-concerns, turnover and foreign-objects pages, 2026-10-19).
+  // Admin-only until the operator opens it on the Access tab; a role's reach
+  // is enforced server-side (routers/leaders_kpi.py, worker_concerns.py).
+  "leaders-kpi": [],
   // THE task board — both tiers on one page: shift managers set tasks for
   // brigadirs, brigadirs for leaders, each assignee works their own queue.
   tasks: ["shift-manager", "supervisor", "leader"],
@@ -117,8 +117,6 @@ export const DEFAULT_PAGE_ACCESS = {
   // tomorrow. Admin-only until the operator opens it; the reach for leaders,
   // supervisors and shift-managers is enforced server-side (routers/kelish.py).
   kelish: [],
-  // «Kadrlar qo'nimsizligi» — admin-only until the operator opens it (HR).
-  turnover: [],
   // ARC service-ticket register (synced from the ARC API) — admin-only until
   // a role is enabled from the Access tab.
   arc: [],

@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "turnover", "foreign-objects", "education", "exam", "assistant"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "leaders-kpi", "education", "exam", "assistant"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -108,11 +108,6 @@ DEFAULT_PAGE_ACCESS = {
     # this page. Leader + supervisor + admin by default: the leader answers the
     # concerns, the brigadir sees what their unit's cells are filing.
     "cell-concerns": ["supervisor", "leader"],
-    # Worker-concerns KPI («Ishchi havotirlari») — the concerns workers file to
-    # their cell leader, synced from the per-cell Google sheets. Role-scoped
-    # server-side: supervisors see their own unit's leaders, leaders their own
-    # numbers only, admins everything. Manager tiers can be toggled on here.
-    "worker-concerns": ["supervisor", "leader"],
     # THE task board, both tiers on one page (from 2026-09-04): shift managers
     # set tasks for the brigadirs of their shift (∩ their plant, per
     # services/shift_scope), brigadirs set tasks for their leaders, and each
@@ -155,14 +150,17 @@ DEFAULT_PAGE_ACCESS = {
     # stored matrix): leader (own cells), supervisor (own unit, fills too) and
     # shift-manager (reads their shift) — reach enforced server-side.
     "kelish": ["leader", "supervisor", "shift-manager"],
-    # «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (routers/turnover.py),
-    # month by month from Verifix, from October 2026. Admin-only until the
-    # operator opens it (HR is who it is for); it lists who left and why.
-    "turnover": [],
-    # «Yot jismlar» — the leaders' foreign-objects KPI (routers/foreign_objects.py),
-    # month by month from the Quality register. Admin-only until the operator
-    # opens it (HR is who it is for); it lists every complaint's text.
-    "foreign-objects": [],
+    # «Liderlar KPI» — the leaders' five KPIs on ONE page, as a leaderboard
+    # (routers/leaders_kpi.py; 2026-10-19). It merged «Ishchi havotirlari»
+    # (which supervisors and leaders had by role), «Kadrlar qo'nimsizligi» and
+    # «Yot jismlar» (admin-only). ADMIN-ONLY until the operator opens it on the
+    # Access tab — the operator's call at the merge: the roles the concerns
+    # page had are NOT carried over (startup.merge_leader_kpi_pages drops the
+    # three retired keys from a stored matrix; a personal page grant on one of
+    # them is renamed onto this key, its scope carried). It lists who left and
+    # why and every complaint's text, and a leader's own scope is enforced
+    # server-side by every endpoint it reads.
+    "leaders-kpi": [],
     # «Ta'lim» video lessons (routers/education.py). Open to every role by
     # default, and that is deliberate rather than permissive: the page shows a
     # viewer exactly the lessons an admin ADDRESSED to their profile and nothing

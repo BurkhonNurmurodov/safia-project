@@ -356,7 +356,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/comments",                             "collab", "comment.added"),
     (("PUT",),    "/api/comments/{}",                          "collab", "comment.edited"),
     (("DELETE",), "/api/comments/{}",                          "collab", "comment.deleted"),
-    (("PUT",),    "/api/worker-concerns/thresholds",           "collab", "concern.thresholds_set"),
 
     # ── communication ─────────────────────────────────────────────────────────
     # «Ta'lim» video lessons. Publishing DMs a chosen slice of the plant, so it
@@ -413,12 +412,11 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/verifix-sync/caps",              "config", "config.verifix_sync_caps"),
     (("POST",),   "/api/staff-live/attendance/export",         "sync_export", "export.staff_live"),
     (("POST",),   "/api/turnover/read",                        "sync_export", "sync.turnover_read"),
-    (("POST",),   "/api/turnover/export.xlsx",                 "sync_export", "export.turnover"),
     (("POST",),   "/api/turnover/close",                       "leader_review", "turnover.month_closed"),
     (("POST",),   "/api/turnover/compute",                     "leader_review", "turnover.month_computed"),
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
-    (("POST",),   "/api/foreign-objects/export.xlsx",          "sync_export", "export.foreign_objects"),
+    (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never
     # files a lab document as a real one. Specific shapes stay above generic.
@@ -447,7 +445,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/arc-legacy/probe",                     "sync_export", "sync.arc_legacy_probed"),
     (("POST",),   "/api/arc-legacy/export.xlsx",               "sync_export", "export.arc_legacy"),
     (("POST",),   "/api/quality/export.xlsx",                  "sync_export", "export.quality"),
-    (("POST",),   "/api/worker-concerns/export.xlsx",          "sync_export", "export.worker_concerns"),
     (("POST",),   "/api/concerns/export.xlsx",                 "sync_export", "export.concerns"),
     (("POST",),   "/api/concerns/export.pptx",                 "sync_export", "export.concerns_deck"),
     (("POST",),   "/api/production/export.xlsx",               "sync_export", "export.production"),

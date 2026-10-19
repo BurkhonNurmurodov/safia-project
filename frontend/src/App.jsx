@@ -76,6 +76,15 @@ function StaffLiveRedirect() {
   return <Navigate to={{ pathname: "/staff", search, hash }} replace />;
 }
 
+// The three leaders' KPI pages were merged into «Liderlar KPI» (2026-10-19):
+// each retired route lands on its own tab, the rest of the query kept.
+function KpiTabRedirect({ tab }) {
+  const { search, hash } = useLocation();
+  const sp = new URLSearchParams(search);
+  sp.set("tab", tab);
+  return <Navigate to={{ pathname: "/leaders-kpi", search: `?${sp.toString()}`, hash }} replace />;
+}
+
 function lazyWithReload(importer) {
   return lazy(() =>
     importer().catch(async (err) => {
@@ -130,7 +139,7 @@ const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
-const WorkerConcerns = lazyWithReload(() => import("./pages/WorkerConcerns"));
+const LeadersKpi = lazyWithReload(() => import("./pages/LeadersKpi"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const CellConcerns = lazyWithReload(() => import("./pages/CellConcerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
@@ -140,8 +149,6 @@ const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Kelish = lazyWithReload(() => import("./pages/Kelish"));
-const Turnover = lazyWithReload(() => import("./pages/Turnover"));
-const ForeignObjects = lazyWithReload(() => import("./pages/ForeignObjects"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
 const Education = lazyWithReload(() => import("./pages/Education"));
 const Exam = lazyWithReload(() => import("./pages/Exam"));
@@ -598,7 +605,8 @@ function AppWithLang() {
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
             <Route path="/cell-concerns" element={<AuthGate><RequirePage page="cell-concerns"><CellConcerns /></RequirePage></AuthGate>} />
-            <Route path="/worker-concerns" element={<AuthGate><RequirePage page="worker-concerns"><WorkerConcerns /></RequirePage></AuthGate>} />
+            <Route path="/leaders-kpi" element={<AuthGate><RequirePage page="leaders-kpi"><LeadersKpi /></RequirePage></AuthGate>} />
+            <Route path="/worker-concerns" element={<KpiTabRedirect tab="concerns" />} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
             {/* Retired 2026-09-04: both tiers of the task board live on /tasks. A bot
                 deep-link or a bookmark onto the old page lands on the merged one. */}
@@ -615,8 +623,8 @@ function AppWithLang() {
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/kelish" element={<AuthGate><RequirePage page="kelish"><Kelish /></RequirePage></AuthGate>} />
-            <Route path="/turnover" element={<AuthGate><RequirePage page="turnover"><Turnover /></RequirePage></AuthGate>} />
-            <Route path="/foreign-objects" element={<AuthGate><RequirePage page="foreign-objects"><ForeignObjects /></RequirePage></AuthGate>} />
+            <Route path="/turnover" element={<KpiTabRedirect tab="turnover" />} />
+            <Route path="/foreign-objects" element={<KpiTabRedirect tab="foreign" />} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
             {/* The two ARC pages are ONE from 2026-10-05 — /arc reads both apps. */}
             <Route path="/arc-legacy" element={<Navigate to="/arc" replace />} />

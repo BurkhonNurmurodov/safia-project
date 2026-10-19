@@ -29,7 +29,7 @@ function Section({ icon: Icon, title, count, caption, children }) {
   );
 }
 
-export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl, tx, title, subtitle }) {
+export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl, tx, title, subtitle, zIndex }) {
   const cells = kind === "leader"
     ? item.cells
     : [{ key: item.key, id: item.id, code: item.code, working: item.working, left: item.left }];
@@ -57,7 +57,7 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
   const codeOf = Object.fromEntries(cells.map((c) => [c.key, c]));
 
   return (
-    <Modal open={open} onClose={onClose} title={title} subtitle={subtitle} maxWidth="max-w-2xl"
+    <Modal open={open} onClose={onClose} title={title} subtitle={subtitle} maxWidth="max-w-2xl" zIndex={zIndex}
       icon={<Calculator size={18} style={{ color: "var(--brand-text)" }} />}
       bodyClassName="px-5 py-4 space-y-6"
       footer={<Button variant="secondary" onClick={onClose}>{T.done}</Button>}>

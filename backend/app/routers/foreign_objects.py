@@ -1,18 +1,21 @@
-"""`/api/foreign-objects` — «Yot jismlar» (`/foreign-objects`), the leaders'
-foreign-objects KPI, month by month from the Quality register.
+"""`/api/foreign-objects` — «Yot jismlar», the leaders' foreign-objects KPI,
+month by month from the Quality register — the «Yot jismlar» tab of «Liderlar
+KPI» (`/leaders-kpi`, 2026-10-19; the page `/foreign-objects` is retired
+behind a redirect).
 
-Page key ``foreign-objects`` — ADMIN-ONLY until the operator opens it on the
-Access tab (HR is who it is for; `permissions.DEFAULT_PAGE_ACCESS`). Reads go
-through the page key; re-pulling the Quality register from its sheet is
-admin-only in the endpoint, whatever the UI draws. `services/foreign_objects.py`
-is THE rule; this module only parses, scopes and delivers.
+Page key ``leaders-kpi`` — ADMIN-ONLY until the operator opens it on the Access
+tab (`permissions.DEFAULT_PAGE_ACCESS`). The month's figures ride the board
+(`/api/leaders-kpi`, services/leaders_kpi); what stays here is the month read
+for a tab on an older bundle and the Quality refresh, admin-only in the
+endpoint, whatever the UI draws. The workbook is the merged page's
+(`/api/leaders-kpi/export.xlsx`). `services/foreign_objects.py` is THE rule;
+this module only parses, scopes and delivers.
 """
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,13 +23,11 @@ from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.routers.quality import refresh_quality
 from app.services import action_log, foreign_objects, turnover
-from app.services.foreign_objects_export import build_foreign_workbook
-from app.xlsx_delivery import deliver_file
 
 router = APIRouter(prefix="/api/foreign-objects", tags=["foreign-objects"])
 
-PAGE = "foreign-objects"
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# The page key of «Liderlar KPI» — the foreign-objects tab of the merged page (2026-10-19).
+PAGE = "leaders-kpi"
 
 
 def _month(raw: Optional[str]):
@@ -72,52 +73,3 @@ def refresh(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
     date without leaving the page."""
     out = refresh_quality(db=db, payload=admin)
     return {**out, "sync": foreign_objects.sync_info(db)}
-
-
-class ExportIn(BaseModel):
-    month: str
-    factory: Optional[int] = None
-    shift: Optional[int] = None
-    managers: list[int] = []
-    lang: str = "uz"
-    title: str = ""
-    subtitle: str = ""
-    filename: str = ""
-    caption: str = ""
-    labels: dict = {}
-    hints: dict = {}
-    meta: list[dict] = []
-    # The ranking's row keys (cell keys) in the screen's order.
-    order: list[Union[int, str]] = []
-
-
-@router.post("/export.xlsx")
-def export_xlsx(
-    request: Request,
-    body: ExportIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """The month as the page shows it, in four tabs. A browser downloads it;
-    inside Telegram it lands in the caller's chat (app/xlsx_delivery.py)."""
-    m = _month(body.month)
-    scope = {"factory": body.factory, "shift": body.shift if body.shift in (1, 2) else None,
-             "managers": {int(x) for x in body.managers}}
-    pay = foreign_objects.month_payload(db, m, scope)
-    if pay.get("state") in ("before", "future"):
-        raise HTTPException(status_code=409, detail={"code": "no_month", "message": "nothing to export"})
-    bio = build_foreign_workbook({
-        "title": body.title or f"Yot jismlar — {turnover.ym(m)}",
-        "subtitle": body.subtitle, "lang": body.lang, "labels": body.labels, "hints": body.hints,
-        "meta": body.meta, "order": body.order, "payload": pay,
-    })
-    fname = (body.filename or f"foreign-objects-{turnover.ym(m)}").strip() or f"foreign-objects-{turnover.ym(m)}"
-    if not fname.endswith(".xlsx"):
-        fname += ".xlsx"
-    data = bio.read()
-    resp = deliver_file(request, payload, fname, data, XLSX, body.caption or f"📊 {body.title or fname}")
-    action_log.enrich(target_kind="report", target_id=fname, target_name=body.title or fname,
-                      details=[("file", fname), ("month", turnover.ym(m)), ("size", len(data)),
-                               ("cells", len(pay.get("ranking") or [])),
-                               ("complaints", len(pay.get("complaints") or []))])
-    return resp

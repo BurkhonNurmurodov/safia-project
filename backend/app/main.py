@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, leaders_kpi
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
         migrate_dispute_stages, purge_pre_september_appeals, purge_kelish_marks_before_start,
         backfill_appeal_threads, repair_appeal_threads,
         merge_brigadir_tasks_page,
+        merge_leader_kpi_pages,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
         report_leader_task_catalog,
@@ -243,6 +244,9 @@ async def lifespan(app: FastAPI):
     add_late_proof_timing()
     migrate_dispute_stages()
     merge_brigadir_tasks_page()
+    # 2026-10-19: the three leaders' KPI page keys → `leaders-kpi` (the
+    # merged page); the stored matrix's roles are dropped, grants renamed.
+    merge_leader_kpi_pages()
     create_action_log()
     # After the dispute stage columns and the action register it reports
     # into. One-shot: pre-September objections + late proofs, deleted.
@@ -1114,13 +1118,14 @@ app.include_router(shift_report.router)
 # «Kelish ro'yxati» (`/kelish`) — the T11 staff list; every route self-gates via
 # require_page("kelish") (admin-only by default), so no admin guard here.
 app.include_router(kelish.router)
-# «Kadrlar qo'nimsizligi» (`/turnover`) — the leaders' turnover KPI; reads
-# self-gate via require_page("turnover") (admin-only by default), the
-# refresh / close / reopen routes via verify_admin, so no admin guard here.
+# «Liderlar KPI» (`/leaders-kpi`, 2026-10-19) — the leaders' five KPIs on one
+# page: the board and the workbook self-gate via require_page("leaders-kpi")
+# (admin-only by default), so no admin guard here. The two routers under it
+# keep the turnover month's actions (refresh / close / reopen / compute,
+# verify_admin) and the Quality refresh (admin-only in the endpoint), re-gated
+# on the same page key; `/api/worker-concerns/list` serves the concerns tab.
+app.include_router(leaders_kpi.router)
 app.include_router(turnover.router)
-# «Yot jismlar» (`/foreign-objects`) — the leaders' foreign-objects KPI from the
-# Quality register; reads self-gate via require_page("foreign-objects")
-# (admin-only by default), the refresh is admin-only in the endpoint.
 app.include_router(foreign_objects.router)
 app.include_router(android.router)
 app.include_router(push.router)

@@ -1070,6 +1070,83 @@ def merge_brigadir_tasks_page() -> None:
         db.close()
 
 
+def merge_leader_kpi_pages() -> None:
+    """2026-10-19: the three leaders' KPI pages — «Ishchi havotirlari»
+    (``worker-concerns``), «Kadrlar qo'nimsizligi» (``turnover``) and «Yot
+    jismlar» (``foreign-objects``) — became ONE page under the one page key
+    ``leaders-kpi``, and the three keys left ``permissions.PAGE_KEYS``.
+
+    The operator's call at the merge: the merged page is ADMIN-ONLY until it is
+    opened on the Access tab, so the stored matrix's roles under the three old
+    keys are DROPPED, not folded (the ``brigadir-tasks`` → ``tasks`` fold
+    carried them; this one deliberately does not). Two records still spell
+    the old keys and are tidied so nothing stale lingers:
+
+    1. The saved Access matrix: the three keys are removed from the blob
+       (``get_page_access`` would ignore them anyway).
+    2. Per-person page grants (``page.view.<old>``, on profiles and on
+       accounts). A GRANT is a person's explicit decision, so it is renamed
+       to ``page.view.leaders-kpi`` where the holder has no such row yet (its
+       scope carried) and dropped where they do; a DENY is dropped — the only
+       page it could now close is the merged one.
+
+    No flag: the trigger state — an old key present anywhere — cannot recur,
+    since nothing writes it any more, so a second pass finds nothing to do.
+    """
+    import json
+    from app.models import ProfilePermission, UserCapability
+    from app.permissions import SETTING_KEY
+
+    OLD_PAGES = ("worker-concerns", "turnover", "foreign-objects")
+    NEW_PAGE = "leaders-kpi"
+    NEW_CAP = f"page.view.{NEW_PAGE}"
+    db = SessionLocal()
+    try:
+        dropped_keys = []
+        row = db.query(AppSetting).filter(AppSetting.key == SETTING_KEY).first()
+        if row:
+            try:
+                blob = json.loads(row.value or "{}")
+            except (ValueError, TypeError):
+                blob = None
+            if isinstance(blob, dict):
+                for old in OLD_PAGES:
+                    if old in blob:
+                        blob.pop(old)
+                        dropped_keys.append(old)
+                if dropped_keys:
+                    row.value = json.dumps(blob)
+
+        moved = {}
+        old_caps = [f"page.view.{o}" for o in OLD_PAGES]
+        for model, holder_col in ((ProfilePermission, "profile_key"),
+                                  (UserCapability, "telegram_id")):
+            renamed = dropped = 0
+            for r in db.query(model).filter(model.capability.in_(old_caps)).all():
+                holder = getattr(r, holder_col)
+                if r.mode == "grant":
+                    has = db.query(model).filter(
+                        getattr(model, holder_col) == holder,
+                        model.capability == NEW_CAP,
+                    ).first()
+                    if has is None:
+                        r.capability = NEW_CAP
+                        renamed += 1
+                        continue
+                db.delete(r)
+                dropped += 1
+            moved[model.__tablename__] = (renamed, dropped)
+        db.commit()
+        if dropped_keys or any(v != (0, 0) for v in moved.values()):
+            print(f"[startup] leaders' KPI pages merged into leaders-kpi: "
+                  f"matrix_dropped={dropped_keys} grants={moved}")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leaders-kpi page merge skipped: {exc}")
+    finally:
+        db.close()
+
+
 DISPUTE_STAGES_FLAG = "leader_dispute_stages_2026_08_30_v1"
 
 

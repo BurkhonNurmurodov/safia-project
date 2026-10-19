@@ -53,7 +53,7 @@ function ComplaintList({ rows, T, tx, reason }) {
   );
 }
 
-export default function ForeignExplain({ open, onClose, item, data, T, tx, title, subtitle }) {
+export default function ForeignExplain({ open, onClose, item, data, T, tx, title, subtitle, zIndex }) {
   const rule = data.rule;
   const w = weightPct(rule);
   const count = item.count ?? 0;
@@ -65,7 +65,7 @@ export default function ForeignExplain({ open, onClose, item, data, T, tx, title
   const other = rows.filter((c) => c.counted !== "owner" && c.counted !== "no_owner");
 
   return (
-    <Modal open={open} onClose={onClose} title={title} subtitle={subtitle} maxWidth="max-w-2xl"
+    <Modal open={open} onClose={onClose} title={title} subtitle={subtitle} maxWidth="max-w-2xl" zIndex={zIndex}
       icon={<Calculator size={18} style={{ color: "var(--brand-text)" }} />}
       bodyClassName="px-5 py-4 space-y-6"
       footer={<Button variant="secondary" onClick={onClose}>{T.done}</Button>}>

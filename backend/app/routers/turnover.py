@@ -1,17 +1,21 @@
-"""`/api/turnover` — «Kadrlar qo'nimsizligi» (`/turnover`), the leaders'
-turnover KPI, month by month from October 2026.
+"""`/api/turnover` — «Kadrlar qo'nimsizligi», the leaders' turnover KPI, month
+by month from October 2026 — the «Qo'nimsizlik» tab of «Liderlar KPI»
+(`/leaders-kpi`, 2026-10-19; the page `/turnover` is retired behind a redirect).
 
-Page key ``turnover`` — ADMIN-ONLY until the operator opens it on the Access tab
-(HR is who it is for; `permissions.DEFAULT_PAGE_ACCESS`). Reads go through
-the page key; refreshing from Verifix, closing and reopening a month are
-admin-only in the endpoint, whatever the UI draws. `services/turnover.py` is
-THE rule; this module only parses, scopes and delivers.
+Page key ``leaders-kpi`` — ADMIN-ONLY until the operator opens it on the Access
+tab (`permissions.DEFAULT_PAGE_ACCESS`). The month's figures ride the board
+(`/api/leaders-kpi`, services/leaders_kpi); what stays here is the explain
+dialog's people list and the month's actions — refreshing from Verifix,
+closing, reopening and computing a past month are admin-only in the endpoint,
+whatever the UI draws. The workbook is the merged page's
+(`/api/leaders-kpi/export.xlsx`). `services/turnover.py` is THE rule; this
+module only parses, scopes and delivers.
 """
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -19,13 +23,11 @@ from app.database import get_db
 from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.services import action_log, turnover, turnover_sync
-from app.services.turnover_export import build_turnover_workbook
-from app.xlsx_delivery import deliver_file
 
 router = APIRouter(prefix="/api/turnover", tags=["turnover"])
 
-PAGE = "turnover"
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# The page key of «Liderlar KPI» — the turnover tab of the merged page (2026-10-19).
+PAGE = "leaders-kpi"
 
 
 def _month(raw: Optional[str]):
@@ -145,55 +147,3 @@ def compute_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = De
     started = turnover_sync.start_read(f"compute:{turnover.ym(m)}", month=m, by=_who(admin))
     action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m))
     return {"started": started, "reason": None if started else "busy", **turnover.read_info(db)}
-
-
-class ExportIn(BaseModel):
-    month: str
-    factory: Optional[int] = None
-    shift: Optional[int] = None
-    managers: list[int] = []
-    lang: str = "uz"
-    title: str = ""
-    subtitle: str = ""
-    filename: str = ""
-    caption: str = ""
-    labels: dict = {}
-    hints: dict = {}
-    meta: list[dict] = []
-    # The ranking's row keys in the screen's order (cell keys; an older tab
-    # sends leader ids, which match nothing and leave the default order).
-    leader_order: list[Union[int, str]] = []
-
-
-@router.post("/export.xlsx")
-def export_xlsx(
-    request: Request,
-    body: ExportIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """The month as the page shows it, in five tabs. A browser downloads it;
-    inside Telegram it lands in the caller's chat (app/xlsx_delivery.py)."""
-    m = _month(body.month)
-    scope = {"factory": body.factory, "shift": body.shift if body.shift in (1, 2) else None,
-             "managers": {int(x) for x in body.managers}}
-    pay = turnover.month_payload(db, m, scope)
-    if pay.get("state") in ("before", "future", "past"):
-        raise HTTPException(status_code=409, detail={"code": "no_month", "message": "nothing to export"})
-    keys = [c["key"] for c in pay.get("cells") or []]
-    working = turnover.people_of(db, m, keys)["working"] if keys else {}
-    bio = build_turnover_workbook({
-        "title": body.title or f"Kadrlar qo'nimsizligi — {turnover.ym(m)}",
-        "subtitle": body.subtitle, "lang": body.lang, "labels": body.labels, "hints": body.hints,
-        "meta": body.meta, "leader_order": body.leader_order, "payload": pay, "working": working,
-    })
-    fname = (body.filename or f"turnover-{turnover.ym(m)}").strip() or f"turnover-{turnover.ym(m)}"
-    if not fname.endswith(".xlsx"):
-        fname += ".xlsx"
-    data = bio.read()
-    resp = deliver_file(request, payload, fname, data, XLSX, body.caption or f"📊 {body.title or fname}")
-    action_log.enrich(target_kind="report", target_id=fname, target_name=body.title or fname,
-                      details=[("file", fname), ("month", turnover.ym(m)), ("size", len(data)),
-                               ("leaders", len(pay.get("leaders") or [])),
-                               ("leavers", len(pay.get("leavers") or []))])
-    return resp

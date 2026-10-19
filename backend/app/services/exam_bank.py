@@ -89,8 +89,11 @@ TASKS = [
     # ── F · Tahlil (zagruzka · worker concerns) ────────────────────────────
     _t(38, "analysis", 2, "answer", "zagruzka",        {"type": "number", "tolerance": 1}, {"op": "unit_zagruzka_yesterday"}),
     _t(39, "analysis", 2, "ui",     "zagruzka",        check={"op": "ui_equals", "key": "zagruzka_heatmap_mode", "value": "planned"}),
-    _t(40, "analysis", 2, "answer", "worker-concerns", {"type": "number"}, {"op": "wc_month_total"}),
-    _t(41, "analysis", 3, "answer", "worker-concerns", {"type": "choice"}, {"op": "wc_month_top_cell"}),
+    # The concerns KPI is a tab of «Liderlar KPI» from 2026-10-19 — admin-only
+    # until the operator opens it, so for a leader these two read «unavailable»
+    # (out of the denominator) until then.
+    _t(40, "analysis", 2, "answer", "leaders-kpi", {"type": "number"}, {"op": "wc_month_total"}),
+    _t(41, "analysis", 3, "answer", "leaders-kpi", {"type": "choice"}, {"op": "wc_month_top_cell"}),
     # ── G · Ta'lim (/education) ────────────────────────────────────────────
     _t(42, "education", 1, "answer", "education", {"type": "number"}, {"op": "edu_count"}),
     _t(43, "education", 2, "answer", "education", {"type": "choice"}, {"op": "edu_longest"}),
