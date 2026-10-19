@@ -11647,17 +11647,21 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   balance» → credit, connection → network); the exception CLASS still
   decides control flow (`GeminiQuotaError` stops the reviewer's drain).
 - **Gemini Pro was too slow for the chat on 2026-10-19** (measured from the
-  server by the temporary deploy step «Probe: assistant AI calls»,
-  `deploy/diag_assistant_ai.py`): on the operator's Gemini key a one-word
-  «OK» took 55 s on `gemini-pro-latest`, ONE step of the chat's real prompt
-  86 s, and the same without tools passed 150 s — while Flash answered that
-  prompt in 3 s. Nothing in the request was at fault (a 10k-token prompt,
-  ~100–250 thought tokens); it was the provider's latency. A chat answer is
-  several steps, so the assistant on Pro failed every time with «juda uzoq
-  kutildi», now worded «tanlangan model juda sekin … tezroq model tanlasin».
-  The tab's own save check can still pass on a slow model (it allows 60 s and
-  needs one tiny call). Delete the probe step and its script once the
-  assistant runs on a fast pair.
+  server by a deploy-log probe, removed the same day): on the operator's
+  Gemini key a one-word «OK» took 55 s on `gemini-pro-latest`, ONE step of
+  the chat's real prompt 86 s, and the same without tools passed 150 s. The
+  engine's real loop answered on Claude Sonnet 5.5 in 12 s (3 steps), on
+  Claude Opus 5.5 in 17 s (2 steps), on Gemini Flash in ~21 s. Nothing in the
+  request was at fault (a 10k-token prompt, ~100–250 thought tokens); it was
+  the provider's latency. A chat answer is several steps, so the assistant on
+  Pro failed every time with «juda uzoq kutildi», now worded «tanlangan model
+  juda sekin … tezroq model tanlasin». The operator moved it to Claude Sonnet
+  5.5 the same day. The tab's own save check can still pass on a slow model
+  (it allows 60 s and needs one tiny call). One thing seen on Claude and not
+  fixed: a step sent with `tool_choice: none` straight after a tool turn came
+  back `end_turn` with NO text block — the engine sends that only past its
+  step budget (`MAX_STEPS` / `RUN_WALL_S`), where it would read «bo'sh
+  javob»; a real loop with tools allowed answered every time.
 - **The assistant speaks Claude too** (`services/assistant_claude.py`,
   `assistant_ai.py`). The transcript stays in Gemini's `contents` shape;
   a Claude reply is translated into it and its raw content blocks are kept
