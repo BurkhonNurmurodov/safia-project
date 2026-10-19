@@ -29,7 +29,7 @@ import json
 import logging
 
 from app.services.gemini import (GeminiAuthError, GeminiError, GeminiQuotaError,
-                                 shrink_image)
+                                 labelled, shrink_image)
 
 log = logging.getLogger(__name__)
 
@@ -161,7 +161,13 @@ def generate_json(prompt: str, images: list[tuple[bytes, str]], schema: dict, *,
 
     if not api_key:
         raise GeminiError("No Claude API key configured", kind="no_key")
-    content: list[dict] = [_image_block(raw, mime) for raw, mime in images]
+    # Each image right after its own label (`gemini.labelled`), the question
+    # last — Claude's documented shape for several images in one message.
+    content: list[dict] = []
+    for raw, mime, label in labelled(images):
+        if label:
+            content.append({"type": "text", "text": label})
+        content.append(_image_block(raw, mime))
     content.append({"type": "text", "text": prompt})
     try:
         res = _client(api_key).messages.create(

@@ -289,6 +289,21 @@ def model_source() -> str:
     return "db" if _stored_model() else "config"
 
 
+def labelled(images) -> list[tuple[bytes, str, str]]:
+    """The callers' images as (bytes, mime, label). An item may be (bytes, mime)
+    or (bytes, mime, label); the label is a line of text sent right BEFORE that
+    image, by both transports. Without one the model has only the ORDER to tell
+    a reference image from a photo it must judge — the proof reviewer sends up
+    to three examples ahead of the proofs, and Claude counted the examples as
+    proofs: it read an example's clock as the proof's, and named a «third
+    photo» on a two-photo report (2026-10-19)."""
+    out = []
+    for item in images:
+        raw, mime = item[0], item[1]
+        out.append((raw, mime, (item[2] if len(item) > 2 else "") or ""))
+    return out
+
+
 def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
     """Downscale to `_MAX_EDGE` — but never past `_MIN_EDGE` on the short edge —
     when Pillow is present. Falls back to the original bytes for anything Pillow
@@ -346,7 +361,9 @@ def generate_json(
     mdl = (model or "").strip() or active_model()
 
     parts: list[dict] = [{"text": prompt}]
-    for raw, mime in images:
+    for raw, mime, label in labelled(images):
+        if label:
+            parts.append({"text": label})
         data, mime = shrink_image(raw, mime)
         parts.append({"inline_data": {"mime_type": mime,
                                       "data": base64.b64encode(data).decode()}})

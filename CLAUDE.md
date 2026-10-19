@@ -3597,6 +3597,22 @@ number.
   **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
   flag and never deducts: a dead Drive permission must not mass-fail a shift.
   Only a human `approved` lifts an automatic rejection; `requeried` does not.
+- **Every image reaches the model behind its OWN LABEL** (2026-10-19) —
+  «NAMUNA i/k — baholanmaydi» for an example, «TEKSHIRILADIGAN RASM i/n» for a
+  proof (`leader_ai.image_labels`), a text block right before the image on both
+  providers (`gemini.labelled`, read by `gemini` and `claude_ai`). Up to three
+  examples ride in front of the proofs, and the prompt used to name only their
+  ORDER: on its first day Claude Sonnet 5.5 counted the examples as proofs — it
+  transcribed an example's clock (a `date_mismatch` on an honest SAP
+  screenshot), named a «third photo» on a two-photo report, and failed a camera
+  proof «taken on another day» whose stamps all read 19.10. Never send review
+  images unlabelled. The same day the prompt gained three judging rules for
+  question 3 (`judge_rules` in `_prompt`, both providers): a date never decides
+  `proves_done`; a fault fails a photo only when it is actually SEEN (a uniform
+  «not clearly visible» is not a missing uniform); and with written criteria the
+  example is one illustration, never the rule. A reason names a photo by its
+  proof number («2-rasm»). Verdicts already written are not re-judged —
+  «Qayta tekshirish» re-reads them.
 - **A photo window's hours are anchored to the SHIFT, not to the calendar
   date** (user, 2026-08-22). `leader_ai.window_offset(shift, win)` is THE
   anchor and `date_window`, `date_days` and `clock_in_window` all read it, so

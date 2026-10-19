@@ -769,6 +769,11 @@ def date_days(date: str, plus: int = 0, shift: int | None = None,
             for k in range(span + 1)]
 
 
+def _span(word: str, n: int) -> str:
+    """How the prompt names a run of labels: «W 1/1», or «W 1/n» … «W n/n»."""
+    return f"«{word} 1/{n}»" if n <= 1 else f"«{word} 1/{n}» … «{word} {n}/{n}»"
+
+
 def _prompt(*, task: str, note: str, criteria: str,
             n_images: int, omitted: int, n_examples: int = 0,
             screen_dates: bool = False) -> str:
@@ -837,15 +842,25 @@ def _prompt(*, task: str, note: str, criteria: str,
     # exempt from question 1: an example is an old photo by definition, and
     # without the carve-out the date check would flag every proof against the
     # example's clock.
+    # Every image arrives behind its own label (`image_labels`), and the model
+    # is told to go by the labels alone. Told only the ORDER, Claude counted the
+    # examples as proofs (2026-10-19): it transcribed an example's clock as the
+    # proof's — a date rejection on an honest screenshot — named a «third photo»
+    # on a two-photo report, and failed a proof over an example's older date.
     if n_examples:
         intro = (
             f"Senga avval {n_examples} ta NAMUNA rasm, keyin {n_images} ta "
-            f"TEKSHIRILADIGAN isbot rasmi berilgan.\n"
+            f"TEKSHIRILADIGAN isbot rasmi berilgan. Har bir rasmning oldida uning "
+            f"yorlig'i turibdi: {_span('NAMUNA', n_examples)}, keyin "
+            f"{_span('TEKSHIRILADIGAN RASM', n_images)}. Rasmlarni FAQAT shu "
+            f"yorliqlarga qarab ajrat va o'zing qayta raqamlama.\n"
             f"NAMUNA rasmlar — to'g'ri topshirilgan isbot qanday ko'rinishini "
             f"ko'rsatadigan eski misollar. Ular BAHOLANMAYDI: ulardagi sana, soat "
             f"va qiymatlar tekshirilmaydi (eski bo'lishi tabiiy), ular faqat "
-            f"taqqoslash uchun berilgan. Quyidagi BARCHA savollar FAQAT oxirgi "
-            f"{n_images} ta TEKSHIRILADIGAN rasmga tegishli."
+            f"taqqoslash uchun berilgan. Quyidagi BARCHA savollar FAQAT "
+            f"«TEKSHIRILADIGAN RASM» yorlig'li {n_images} ta rasmga tegishli: "
+            f"NAMUNA rasmdagi narsani, sanasini yoki kamchiligini hech qachon "
+            f"isbotga yozma."
         )
         ex_date = ("\n- NAMUNA rasmlardagi sana-vaqtni image_date ga YOZMA va "
                    "tekshiruvda ishlatma — faqat TEKSHIRILADIGAN rasmlarnikini o'qi.")
@@ -855,8 +870,34 @@ def _prompt(*, task: str, note: str, criteria: str,
             "mazmuni o'xshash bo'lishi kutiladi, sanasi va qiymatlari farq "
             "qilishi tabiiy.")
     else:
-        intro = f"Senga bitta vazifa uchun {n_images} ta isbot rasmi berilgan."
+        intro = (f"Senga bitta vazifa uchun {n_images} ta isbot rasmi berilgan; "
+                 f"har birining oldida {_span('TEKSHIRILADIGAN RASM', n_images)} "
+                 f"yorlig'i turibdi.")
         ex_date = ""
+    # How question 3 is judged, whatever the task: the three ways a correct
+    # proof was refused on 19 Oct. A date is the system's question, not the
+    # model's (it failed a camera proof «taken on another day» — every stamp
+    # read 19.10); a fault is refused only when it is SEEN (a uniform «not
+    # clearly visible» is not a missing uniform — the rule the task-3 sleeve
+    # text already states for arms); and the written rule outranks the example
+    # (a worker beside a vagonetka passes task 6 whatever the example shows).
+    judge_rules = (
+        "3-savolni qanday baholash kerak:\n"
+        "- Sana va soat ISBOT savoliga TA'SIR QILMAYDI: rasm qaysi kunda yoki "
+        "soatda olinganini bu yerda hisobga olma (buni tizim alohida "
+        "tekshiradi). Sana sababli proves_done=false QO'YMA.\n"
+        "- Kamchilik (stoldagi ortiqcha narsa, formasiz ishchi, yalang'och bilak "
+        "va h.k.) uchun proves_done=false faqat o'sha kamchilik rasmda haqiqatan "
+        "KO'RINSA qo'yiladi (qisman ko'rinsa ham). Biror narsani ajratib bo'lmasa "
+        "— kichik, xira yoki qisman yopiq bo'lsa — buni kamchilik deb hisoblama. "
+        "Lekin talab qilingan narsaning O'ZI (masalan to'ldirilgan jadval yoki "
+        "bajarilgan ish) ko'rinishi shart. TALABda boshqacha yozilgan bo'lsa — "
+        "TALAB ustun.")
+    if criteria and n_examples:
+        judge_rules += (
+            "\n- Qaror TALAB bo'yicha qilinadi. NAMUNA — to'g'ri isbotning faqat "
+            "BITTA misoli: rasm namunadan farq qilsa-yu TALABni bajarsa — "
+            "proves_done=true.")
     omit = (f"\nEslatma: bu vazifada ko'proq rasm bor, faqat birinchi "
             f"{n_images} tasi yuborildi ({omitted} tasi yuborilmadi).") if omitted else ""
     # Question 1, in its two forms — which SOURCES may be read, and when to add
@@ -971,6 +1012,8 @@ olinmaydi.
 
 {done_block}
 
+{judge_rules}
+
 4) O'QILISHI. Rasm juda xira, qorong'i yoki kesilgan bo'lib, hech narsani
 aniqlab bo'lmasa — readable=false.
 
@@ -979,7 +1022,20 @@ kirill alifbosida, reason_ru — rus, reason_en — ingliz). Har biri 1-2 qisqa 
 matn, markdown ishlatma. Sababda MAVZU va ISBOT haqida yoz — sana to'g'ri yoki
 noto'g'ri ekani haqida HECH NARSA yozma (buni tizim o'zi hisoblaydi va o'zi
 yozadi). Soatni qayerdan o'qiganingni ayta olasan («Windows soati», «macOS menyu
-satri», «kamera muhri»). Muammo bo'lmasa — qisqa tasdiq yoz."""
+satri», «kamera muhri»). Rasmni tilga olsang, uning TEKSHIRILADIGAN raqamini yoz
+(«1-rasm» = «TEKSHIRILADIGAN RASM 1/{n_images}»): tekshiriladigan rasm jami
+{n_images} ta, undan katta raqamli rasm yo'q; NAMUNA rasmlarni sababda tilga olma.
+Muammo bo'lmasa — qisqa tasdiq yoz."""
+
+
+def image_labels(n_examples: int, n_images: int) -> list[str]:
+    """The line sent right BEFORE each image (`gemini.labelled`), examples
+    first — the order `review_one` sends them in and `_prompt` describes."""
+    return ([f"NAMUNA {i}/{n_examples} — faqat taqqoslash uchun. Bu rasm "
+             f"BAHOLANMAYDI: undagi sana, soat va mazmun tekshirilmaydi."
+             for i in range(1, n_examples + 1)]
+            + [f"TEKSHIRILADIGAN RASM {i}/{n_images}"
+               for i in range(1, n_images + 1)])
 
 
 # ── image fetching ───────────────────────────────────────────────────────────
@@ -1842,8 +1898,10 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # Resolved ONCE: the verdict is stamped with the model that answered it,
     # even when an admin moves the reviewer onto another pair mid-call.
     assign = ai_review.active()
+    sent = [(raw, mime, label) for (raw, mime), label in
+            zip(examples + images, image_labels(len(examples), len(images)))]
     try:
-        out = ai_review.generate_json(prompt, examples + images, _SCHEMA, assign=assign)
+        out = ai_review.generate_json(prompt, sent, _SCHEMA, assign=assign)
     except gemini.GeminiQuotaError:
         # Leave it pending and give the attempt back — the row never got a
         # verdict, and a capped queue head would strand the whole backlog.
