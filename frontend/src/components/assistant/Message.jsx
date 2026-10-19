@@ -68,7 +68,7 @@ export default function Message({ m, run, elapsed, onConfirm, onCancel, onRetry,
             written. */}
         {m.text && !working && (
           <div className="-ml-1.5 -mt-1">
-            <CopyButton getText={() => toPlainText(m.text)} label={t("assistant.copy")} />
+            <CopyButton getText={() => toPlainText(m.text, { caution: t("assistant.md.caution") })} label={t("assistant.copy")} />
           </div>
         )}
         <StatusLine status={status} error={d.error} onRetry={onRetry} last={run?.id === m.run_id} />

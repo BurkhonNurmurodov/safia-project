@@ -11239,6 +11239,34 @@ hides it, the server refuses `X-Exam-Attempt`).
   open on (`components/assistant/tips.js`, keyed by the route's first
   segment; the full page gets general ones). The header button keeps the
   bell's size; on a phone an invisible pad takes its tap area to 44px.
+- **An answer's SHAPE follows its question** (2026-10-19, the operator: «it
+  needs to think what type of answer will be more comfortable»). The prompt's
+  «HOW AN ANSWER LOOKS» (`services/assistant.py` `_RULES`, rule 8 points to
+  it) has the model first decide the KIND of question — one figure · yes/no ·
+  ranking · list of records · trend · how it is calculated · how do I · why ·
+  what is · several at once · nothing to show · a change — and answer in that
+  kind's shape: the first line IS the answer, only figures read with a tool
+  (never an estimate or an example value), the version of a figure the page
+  context names else the page's default (named — it cannot see a page's own
+  toggles), bold only the key figure (at most three, never a person's name, a
+  label or a table cell), UI names in «», every figure with its unit, day and
+  whose, dd.mm dates, thousands with a space, «—» for a missing figure,
+  at most 3 table columns and 12 rows (more → the top 10 and an Excel offer),
+  no text before a change plan (its labels are the preview). Its examples are
+  Uzbek with made-up figures: shape only. Tested by two dry runs (15 questions
+  each in uz / uz_cyrl / ru / en, written by the guide, judged; the second
+  chose the right shape for all 15, and the nine contradictions its judge
+  found were fixed) — not on Gemini: the local key had no credit. `components/assistant/Markdown.jsx` draws what the guide allows: a
+  "> " summary box, a "> [!WARNING]" caution box («Diqqat», and the copy says
+  so), nested lists (two-space indent) whose items may hold their own table,
+  box or code, numbered steps that keep counting across a blank line, a
+  "---" rule, figure columns right-aligned and unwrapped (never the first
+  column, never dates; Cyrillic units, «3/5» and «87%*» are figures), a
+  closing «Jami / Итого / Total» row set apart, and more than 12 rows folding
+  to 10 behind «Yana N qator» (the copy takes every row). An in-answer
+  [label](/route) link hands the route to the panel (it used to navigate and
+  then bounce back). A new Markdown element is a renderer change AND a line in
+  the guide — never one without the other.
 
 ## The proof reviewer's AI keys and models (`ai_review`, 2026-10-19)
 
