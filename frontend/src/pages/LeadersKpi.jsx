@@ -6,9 +6,10 @@
 // this month, and why». Six tabs over ONE request (`GET /api/leaders-kpi`):
 // the board (one row per OWNED cell, the Σ of five KPI scores × weights out
 // of 5), then one tab per KPI — the four the platform computes (worker
-// concerns · turnover · foreign objects · category compliance: a ranking with
-// its register behind a toggle) and the one it has no source for yet (the
-// technologists' audit: an empty state with HR's rule). The month, the plant / shift / brigadir scope and the search are
+// concerns · turnover · foreign objects · category compliance: one summary
+// line, then a ranking whose card header switches to its register) and the
+// one it has no source for yet (the technologists' audit: an empty state with
+// HR's rule). The month, the plant / shift / brigadir scope and the search are
 // shared by every tab. `services/leaders_kpi.py` computes; this page never
 // re-derives a figure, only filters what it shows.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -281,7 +282,7 @@ export default function LeadersKpi() {
   if (dataQ.isLoading && !data) {
     body = (
       <>
-        <SkeletonBlock className="h-[88px] rounded-2xl mb-4" />
+        <SkeletonBlock className="h-[52px] w-full max-w-sm rounded-xl mb-4" />
         <SkeletonTable rows={8} cols={7} />
       </>
     );
@@ -301,13 +302,13 @@ export default function LeadersKpi() {
         break;
       case "turnover":
         body = (
-          <TurnoverTab T={TT} tl={tl} tx={tx} data={data} ym={ym} mLabel={mLabel} needle={needle}
+          <TurnoverTab T={TT} TK={T} tl={tl} tx={tx} data={data} ym={ym} mLabel={mLabel} needle={needle}
             isAdmin={isAdmin} toast={toast} refetch={refetch} onExplain={openExplain} />
         );
         break;
       case "foreign":
         body = (
-          <ForeignTab T={TF} tl={tl} tx={tx} data={data} mLabel={mLabel} needle={needle}
+          <ForeignTab T={TF} TK={T} tl={tl} tx={tx} data={data} mLabel={mLabel} needle={needle}
             isAdmin={isAdmin} toast={toast} refetch={refetch} onExplain={openExplain} />
         );
         break;

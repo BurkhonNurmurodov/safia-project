@@ -64,7 +64,7 @@ const uz = {
 
   phTitle: "{kpi} — hali platformada yo'q",
   phCompliance: "HR har oy har bir yacheyka uchun kategoriya talablariga muvofiqlik foizini qo'lda hisoblaydi; platformada bu uchun manba yo'q.",
-  phAudit: "Texnologlar auditi — har oy har bir yacheyka uchun bitta foiz, HR faylida qo'lda yoziladi; platformada bu uchun manba yo'q.",
+  phAudit: "Texnologlar auditi — har oy har bir yacheyka uchun bitta foiz, HR faylida qo'lda yoziladi.",
   phWeight: "Vazn: {w}% · eng ko'p {max} ball", phBands: "HR shkalasi",
   phNote: "Reytingda bu ustun «—», jamida 0 ball. Manba paydo bo'lganda shu yerda hisoblanadi.",
 
@@ -85,6 +85,17 @@ const uz = {
   tExportDl: "Excel yuklab olindi", tExportTg: "Excel Telegram'ga yuborildi", tExportFail: "Excel tayyorlanmadi: {e}",
   loadFailed: "Ma'lumot yuklanmadi", loadFailedMsg: "Server javob bermadi. Qayta urinib ko'ring.",
   mMonth: "Oy", mState: "Holat", mScope: "Tanlov", mScopeAll: "Butun zavod",
+  // — the one summary every tab opens with, and its meta line (2026-10-19) —
+  notOver: "oy hali tugamagan", notesN: "{n} ta izoh",
+  sumAvg: "o'rtacha jami", sumCells: "{n} ta yacheyka",
+  sumMaxNow: "{kpis} hali hisoblanmaydi — bugun eng ko'pi {max}", sumConcerns: "hal bo'lgan",
+  sumOpen: "{n} tasi ochiq", sumUp: "{n} tasi ko'tarilgan", sumCompliance: "mos keladi",
+  sumCompOf: "{ok} / {n} xodim", sumTurnover: "qo'nimsizlik (yillik)", sumTurnOf: "{l} ketgan / {w} ishlayotgan",
+  sumForeign: "aybli shikoyat", sumForeignOf: "{n} ta yot jism shikoyatidan", tvCloses: "{at} da yopiladi",
+  tvClosing: "oy tugadi — kechikkan buyruqlar uchun {at} gacha ochiq",
+  tvClosingApprox: "ro'yxat oy oxirida olinmagan — taxminiy", tvReopened: "{by} qayta ochgan, {at}",
+  tvClosed: "{at} da yopilgan ({by}) — raqamlar qotgan", tvSaved: "{at} da hisoblangan ({by}) — taxminiy",
+  ruleOneTitle: "{kpi} — qanday hisoblanadi", srcVerifix: "Verifix: {at}",
   // — the compliance tab («Muvofiqlik», live from 2026-10-19) —
   cpRule: "Ball: toifasi kutilganiga mos kelganlar ÷ hisoblanganlar",
   cpModeAtLeast: "Kutilgan toifa yoki undan yuqorisi — mos keladi",
@@ -220,7 +231,7 @@ const uz_cyrl = {
 
   phTitle: "{kpi} — ҳали платформада йўқ",
   phCompliance: "HR ҳар ой ҳар бир ячейка учун категория талабларига мувофиқлик фоизини қўлда ҳисоблайди; платформада бу учун манба йўқ.",
-  phAudit: "Технологлар аудити — ҳар ой ҳар бир ячейка учун битта фоиз, HR файлида қўлда ёзилади; платформада бу учун манба йўқ.",
+  phAudit: "Технологлар аудити — ҳар ой ҳар бир ячейка учун битта фоиз, HR файлида қўлда ёзилади.",
   phWeight: "Вазн: {w}% · энг кўп {max} балл", phBands: "HR шкаласи",
   phNote: "Рейтингда бу устун «—», жамида 0 балл. Манба пайдо бўлганда шу ерда ҳисобланади.",
 
@@ -241,6 +252,17 @@ const uz_cyrl = {
   tExportDl: "Excel юклаб олинди", tExportTg: "Excel Telegram'га юборилди", tExportFail: "Excel тайёрланмади: {e}",
   loadFailed: "Маълумот юкланмади", loadFailedMsg: "Сервер жавоб бермади. Қайта уриниб кўринг.",
   mMonth: "Ой", mState: "Ҳолат", mScope: "Танлов", mScopeAll: "Бутун завод",
+  // — the one summary every tab opens with, and its meta line (2026-10-19) —
+  notOver: "ой ҳали тугамаган", notesN: "{n} та изоҳ",
+  sumAvg: "ўртача жами", sumCells: "{n} та ячейка",
+  sumMaxNow: "{kpis} ҳали ҳисобланмайди — бугун энг кўпи {max}", sumConcerns: "ҳал бўлган",
+  sumOpen: "{n} таси очиқ", sumUp: "{n} таси кўтарилган", sumCompliance: "мос келади",
+  sumCompOf: "{ok} / {n} ходим", sumTurnover: "қўнимсизлик (йиллик)", sumTurnOf: "{l} кетган / {w} ишлаётган",
+  sumForeign: "айбли шикоят", sumForeignOf: "{n} та ёт жисм шикоятидан", tvCloses: "{at} да ёпилади",
+  tvClosing: "ой тугади — кечиккан буйруқлар учун {at} гача очиқ",
+  tvClosingApprox: "рўйхат ой охирида олинмаган — тахминий", tvReopened: "{by} қайта очган, {at}",
+  tvClosed: "{at} да ёпилган ({by}) — рақамлар қотган", tvSaved: "{at} да ҳисобланган ({by}) — тахминий",
+  ruleOneTitle: "{kpi} — қандай ҳисобланади", srcVerifix: "Verifix: {at}",
   // — the compliance tab («Мувофиқлик», live from 2026-10-19) —
   cpRule: "Балл: тоифаси кутилганига мос келганлар ÷ ҳисобланганлар",
   cpModeAtLeast: "Кутилган тоифа ёки ундан юқориси — мос келади",
@@ -376,7 +398,7 @@ const ru = {
 
   phTitle: "{kpi} — на платформе пока нет",
   phCompliance: "HR каждый месяц вручную считает для каждой ячейки процент соответствия требованиям категории; источника на платформе нет.",
-  phAudit: "Аудит технологов — один процент на ячейку в месяц, вписывается в файл HR вручную; источника на платформе нет.",
+  phAudit: "Аудит технологов — один процент на ячейку в месяц, вписывается в файл HR вручную.",
   phWeight: "Вес: {w}% · максимум {max} балла", phBands: "Шкала HR",
   phNote: "В рейтинге этот столбец «—», в итоге 0 баллов. Как появится источник — будет считаться здесь.",
 
@@ -397,6 +419,16 @@ const ru = {
   tExportDl: "Excel скачан", tExportTg: "Excel отправлен в Telegram", tExportFail: "Excel не сформирован: {e}",
   loadFailed: "Данные не загрузились", loadFailedMsg: "Сервер не ответил. Попробуйте ещё раз.",
   mMonth: "Месяц", mState: "Статус", mScope: "Выборка", mScopeAll: "Вся фабрика",
+  // — the one summary every tab opens with, and its meta line (2026-10-19) —
+  notOver: "месяц ещё идёт", notesN: "Пояснения: {n}",
+  sumAvg: "средний итог", sumCells: "ячеек: {n}", sumMaxNow: "{kpis} пока не считается — сегодня максимум {max}",
+  sumConcerns: "решено", sumOpen: "открыто: {n}", sumUp: "поднято выше: {n}", sumCompliance: "соответствуют",
+  sumCompOf: "{ok} из {n}", sumTurnover: "текучесть (годовая)", sumTurnOf: "ушло {l}, работает {w}",
+  sumForeign: "по вине ячеек", sumForeignOf: "всего жалоб на посторонние предметы: {n}",
+  tvCloses: "закроется {at}", tvClosing: "месяц закончен — открыт для поздних приказов до {at}",
+  tvClosingApprox: "список на конец месяца не снят — приблизительно", tvReopened: "переоткрыт: {by}, {at}",
+  tvClosed: "закрыт {at} ({by}) — цифры зафиксированы", tvSaved: "рассчитан {at} ({by}) — приблизительно",
+  ruleOneTitle: "{kpi} — как считается", srcVerifix: "Verifix: {at}",
   // — the compliance tab («Соответствие», live from 2026-10-19) —
   cpRule: "Балл: сотрудники с положенной категорией ÷ учтённые",
   cpModeAtLeast: "Положенная категория или выше — соответствует",
@@ -532,7 +564,7 @@ const en = {
 
   phTitle: "{kpi} — not on the platform yet",
   phCompliance: "HR computes a category-compliance percentage per cell by hand every month; the platform has no source for it.",
-  phAudit: "The technologists' audit is one percentage per cell per month, typed into HR's file by hand; the platform has no source for it.",
+  phAudit: "The technologists' audit is one percentage per cell per month, typed into HR's file by hand.",
   phWeight: "Weight: {w}% · at most {max} points", phBands: "HR's scale",
   phNote: "On the leaderboard this column reads “—” and counts 0 in the total. Once a source exists it is computed here.",
 
@@ -553,6 +585,17 @@ const en = {
   tExportDl: "Excel downloaded", tExportTg: "Excel sent to Telegram", tExportFail: "Excel failed: {e}",
   loadFailed: "The data did not load", loadFailedMsg: "The server did not answer. Try again.",
   mMonth: "Month", mState: "State", mScope: "Scope", mScopeAll: "Whole plant",
+  // — the one summary every tab opens with, and its meta line (2026-10-19) —
+  notOver: "month still running", notesN: "Notes: {n}",
+  sumAvg: "average total", sumCells: "cells: {n}",
+  sumMaxNow: "{kpis} not computed yet — today's maximum is {max}", sumConcerns: "resolved", sumOpen: "open: {n}",
+  sumUp: "escalated: {n}", sumCompliance: "comply", sumCompOf: "{ok} of {n} people",
+  sumTurnover: "turnover (annualised)", sumTurnOf: "{l} left / {w} working", sumForeign: "at the cell's fault",
+  sumForeignOf: "of {n} foreign-object complaints", tvCloses: "closes {at}",
+  tvClosing: "month over — open for late orders until {at}",
+  tvClosingApprox: "no month-end list was taken — approximate", tvReopened: "reopened by {by}, {at}",
+  tvClosed: "closed {at} ({by}) — figures frozen", tvSaved: "computed {at} ({by}) — approximate",
+  ruleOneTitle: "{kpi} — how it is scored", srcVerifix: "Verifix: {at}",
   // — the compliance tab («Compliance», live from 2026-10-19) —
   cpRule: "Score: people on their due category ÷ people counted",
   cpModeAtLeast: "The due category or a higher one — complies",

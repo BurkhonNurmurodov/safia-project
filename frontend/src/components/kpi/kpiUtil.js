@@ -141,3 +141,6 @@ export async function fetchPeople(ym, keys) {
 
 export const scoreOf = (row, key) => (row?.[key]?.score ?? null);
 export const pointsOf = (row, key) => (row?.[key]?.points ?? null);
+
+// «19.10» — a day of the month the picker above already names in full.
+export const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}.${String(iso).slice(5, 7)}` : "");

@@ -1,6 +1,15 @@
 // «Liderlar KPI» — the small components the board and its tabs share. The
 // score chip is turnover's (one chip for every leaders' KPI surface).
-import { ChevronRight, CircleCheck, CircleDot } from "lucide-react";
+//
+// Every tab reads the same way, top to bottom (2026-10-19, the operator: «remove
+// the noise»): ONE summary — the headline figure with what it measures and its
+// base on one line, a muted line saying as of when and from where, the rules
+// behind «Qanday hisoblanadi?» — then ONE card whose header is the view switch,
+// and under the table, folded, whatever the month could not count. The scale,
+// the weight and the mode are the rules dialog's, never printed on the tab.
+import { ChevronDown, ChevronRight, HelpCircle, Info } from "lucide-react";
+import Button from "../ui/Button";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { MAX_POINTS } from "./kpiUtil";
 
 export { ScoreChip } from "../turnover/TurnoverBits";
@@ -22,27 +31,73 @@ export function TotalCell({ total, max = MAX_POINTS, align = "right" }) {
   );
 }
 
-export function StateChip({ state, T }) {
-  const map = {
-    open: { Icon: CircleDot, label: T.stOpen, color: "var(--status-warn)", bg: "rgba(234,179,8,0.12)" },
-    ended: { Icon: CircleCheck, label: T.stEnded, color: "var(--status-ok)", bg: "rgba(34,197,94,0.12)" },
-  };
-  const s = map[state];
-  if (!s) return null;
+// The tab's one summary — no box around it. `value` is the headline figure,
+// `label` what it measures and its base; `meta` the muted facts under it (an
+// array; falsy entries are dropped, the rest joined by «·»); `actions` sit at
+// the right edge and wrap under the figure on a phone.
+export function Summary({ value, label, meta = [], actions }) {
+  const items = meta.filter(Boolean);
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap"
-      style={{ color: s.color, background: s.bg }}>
-      <s.Icon size={13} aria-hidden /> {s.label}
-    </span>
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 mb-4">
+      <div className="min-w-0">
+        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: value === "—" ? "var(--text-4)" : "var(--text-1)" }}>{value}</span>
+          {label && <span className="text-sm" style={{ color: "var(--text-2)" }}>{label}</span>}
+        </p>
+        {items.length > 0 && (
+          <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--text-3)" }}>
+            {items.map((m, i) => (
+              <span key={i}>{i > 0 && <span aria-hidden> · </span>}{m}</span>
+            ))}
+          </p>
+        )}
+      </div>
+      {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+    </div>
   );
 }
 
-export function GreyChip({ children, title }) {
+// A meta fact that needs looking at — a read that failed, data gone stale.
+export const Warn = ({ children }) => <span style={{ color: "var(--status-warn)" }}>{children}</span>;
+
+// «Qanday hisoblanadi?» — the one way to the rules, the same on every tab.
+export function RulesButton({ label, onClick }) {
+  return <Button size="md" variant="ghost" icon={<HelpCircle size={14} />} onClick={onClick}>{label}</Button>;
+}
+
+// A card header that IS the view switch — the ranking or the list behind it —
+// with the rows' count on the right. It replaces the card's title: a title
+// repeating the switch's own selected word was the same word twice.
+export function ViewHead({ value, onChange, options, ariaLabel, right }) {
   return (
-    <span className="ml-1.5 px-1.5 py-px rounded text-[11px] font-medium whitespace-nowrap" title={title}
-      style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-      {children}
-    </span>
+    <div className="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap px-4 py-2"
+      style={{ borderBottom: "1px solid var(--border)" }}>
+      <SegmentedToggle asTabs size="sm" value={value} onChange={onChange} ariaLabel={ariaLabel} options={options} />
+      {right}
+    </div>
+  );
+}
+
+export const Count = ({ children }) => (
+  <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{children}</span>
+);
+
+// What the month could not count (a cell with no owner, a code not on /cells,
+// a job off the scale …), folded under the table: said, never dropped, and
+// never louder than the ranking it qualifies.
+export function Notes({ notes, label }) {
+  if (!notes?.length) return null;
+  return (
+    <details className="group w-full text-xs">
+      <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-1.5 py-1 outline-none rounded text-[var(--text-3)] hover:text-[var(--text-2)] focus-visible:text-[var(--text-1)] focus-visible:underline">
+        <Info size={13} aria-hidden />
+        {label}
+        <ChevronDown size={13} aria-hidden className="transition-transform group-open:rotate-180" />
+      </summary>
+      <ul className="mt-1.5 mb-0.5 space-y-1.5 list-disc pl-5 leading-snug" style={{ color: "var(--text-2)" }}>
+        {notes.map((n, i) => <li key={i}>{n}</li>)}
+      </ul>
+    </details>
   );
 }
 
@@ -59,27 +114,6 @@ export function MobileRow({ onClick, title, sub, right, foot }) {
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">{right}<ChevronRight size={14} style={{ color: "var(--text-4)" }} /></div>
     </button>
-  );
-}
-
-// One figure of a tab's strip: label over value, a sub-line under it.
-export function Figure({ label, value, sub, tone }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[11px] uppercase tracking-wide leading-tight" style={{ color: "var(--text-3)" }}>{label}</div>
-      <div className="text-xl font-bold tabular-nums leading-tight mt-0.5" style={{ color: tone || "var(--text-1)" }}>{value}</div>
-      {sub && <div className="text-xs leading-snug" style={{ color: "var(--text-3)" }}>{sub}</div>}
-    </div>
-  );
-}
-
-// The strip card every tab opens with — the month's state, the figures, the rule.
-export function StripCard({ children, className = "" }) {
-  return (
-    <div className={`rounded-2xl px-4 py-3 mb-4 ${className}`}
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      {children}
-    </div>
   );
 }
 

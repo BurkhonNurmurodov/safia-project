@@ -11,7 +11,6 @@ import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
 import Pagination from "../ui/Pagination";
-import SearchInput from "../ui/SearchInput";
 import TableCard, { Th } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { TONE_HEX } from "../../utils/statusBands";
@@ -153,10 +152,6 @@ export function ConcernsCellModal({ T, tl, row, data, listParams, zIndex, onClos
         </div>
       </div>
       {c.total > 0 && <StatusSplit T={T} c={c} />}
-      <p className="text-xs" style={{ color: "var(--text-2)" }}>
-        {T.colCell}: <CellLink id={row.id}>{row.code}</CellLink>
-        {" · "}{T.colOwner}: <span style={{ color: "var(--text-1)" }}>{row.owner ? tl(row.owner) : "—"}</span>
-      </p>
       {c.open > 0 && (
         <div className="pt-1">
           <h3 className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-2)" }}>
@@ -175,7 +170,6 @@ export function ConcernsCellModal({ T, tl, row, data, listParams, zIndex, onClos
             )}
         </div>
       )}
-      {data?.state === "open" && <p className="text-xs" style={{ color: "var(--status-warn)" }}>{T.provisional}</p>}
     </Modal>
   );
 }
@@ -218,12 +212,18 @@ export function ConcernDetailModal({ T, t, tl, detail, zIndex, onClose, mayConce
   );
 }
 
-// The month's filings, paged and searchable — the register behind the
-// ranking. Every row names its cell's OWNER (the operator, 2026-10-14).
-export function ConcernsRegister({ T, tl, listParams, onOpen }) {
-  const [q, setQ] = useState("");
+// The month's filings, paged — the register behind the ranking. Every row
+// names its cell's OWNER (the operator, 2026-10-14). The page's own search box
+// narrows it (`q`), so the screen carries one search, not two; `head` is the
+// tab's view switch, handed the row count to put on its right.
+export function ConcernsRegister({ T, tl, listParams, q = "", onOpen, head }) {
   const [sort, setSort] = usePersistentState("lkpi.cSort", "date_desc");
-  const [page, setPage] = useState(1);
+  // The page goes back to 1 whenever what is asked for changes — kept beside
+  // the question it answered rather than reset by an effect.
+  const ask = `${q}|${JSON.stringify(listParams)}`;
+  const [pg, setPg] = useState({ ask, n: 1 });
+  const page = pg.ask === ask ? pg.n : 1;
+  const setPage = (n) => setPg({ ask, n });
   const params = useMemo(() => ({
     ...listParams, q: q.trim() || undefined, sort, page, page_size: PAGE_SIZE,
   }), [listParams, q, sort, page]);
@@ -235,8 +235,7 @@ export function ConcernsRegister({ T, tl, listParams, onOpen }) {
   const list = listQ.data;
   const rows = list?.rows || [];
   const today = localISO(new Date());
-  const toolbar = <SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={T.cRegSearch} className="w-full sm:w-80" />;
-  const right = list ? <span className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>{fill(T.cRegCount, { n: n0(list.total) })}</span> : null;
+  const right = list ? <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.cRegCount, { n: n0(list.total) })}</span> : null;
   const pageCount = list ? Math.max(1, Math.ceil(list.total / PAGE_SIZE)) : 1;
   const mobile = listQ.isLoading && !list ? (
     <div className="p-4 space-y-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-12 w-full" />)}</div>
@@ -247,7 +246,7 @@ export function ConcernsRegister({ T, tl, listParams, onOpen }) {
   );
   return (
     <div style={{ opacity: listQ.isFetching && list ? 0.7 : 1, transition: "opacity .15s" }}>
-      <TableCard icon={ClipboardList} title={T.cRegister} right={right} toolbar={toolbar} wrap fixed mobile={mobile}
+      <TableCard head={head ? head(right) : undefined} icon={ClipboardList} title={T.cRegister} right={right} wrap fixed mobile={mobile}
         footer={list && pageCount > 1 ? <Pagination page={page} pageCount={pageCount} total={list.total} pageSize={PAGE_SIZE} onPage={setPage} /> : null}>
         <thead>
           <tr>

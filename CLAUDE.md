@@ -2556,11 +2556,12 @@ tasks 40/41 name it.
   **A KPI the platform has no source for counts 0** — the technologists'
   audit alone since the evening of 2026-10-19 (category compliance went live
   the same day — see its own section and the tab bullet below), so a perfect
-  cell today reads 4.7 / 5 (94%). The board's footer COMPUTES that line from
-  the `kpis[]` the server sends (5 minus the `max_points` of every KPI not
-  `live`), never a typed number, and is gone once every KPI is live; the audit
-  tab is an EMPTY STATE printing HR's rule (weight and bands, `AUDIT_RULE` in
-  `leaders_kpi.py`), nothing to enter. A KPI with no score —
+  cell today reads 4.7 / 5 (94%). The board's summary line COMPUTES that
+  figure from the `kpis[]` the server sends (5 minus the `max_points` of every
+  KPI not `live`, «Texnologlar auditi hali hisoblanmaydi — bugun eng ko'pi
+  4.7»), never a typed number, and drops it once every KPI is live; the audit
+  tab is an EMPTY STATE printing HR's rule on one line (weight and bands,
+  `AUDIT_RULE` in `leaders_kpi.py`), nothing to enter. A KPI with no score —
   no concern in the month or every one escalated, no people working, a month
   not computed — reads «—» and counts 0 in that row's total (ruling 6).
 - **The concerns KPI gained a RULE** (it had bands on the page and no score):
@@ -2574,16 +2575,52 @@ tasks 40/41 name it.
   the concerns helpers, unchanged).
 - **Every category tab is ONE shape** (ruling 7): a ranking table — cell ·
   owner · brigadir · the figure · score · KPI points, worst first — with the
-  register behind a `SegmentedToggle` (leavers · complaints · the concerns
-  list), and a row opening that KPI's own working: `TurnoverExplain` and
+  register behind the card header's view switch (leavers · complaints · the
+  concerns list · the judged people), and a row opening that KPI's own working: `TurnoverExplain` and
   `ForeignExplain` (unchanged, now taking `zIndex`), `ConcernsCellModal` (the
   cell's split and its open concerns, oldest first). The concerns page's
   headline, brigadirs card, trend chart and per-leader dialog are GONE.
+- **Every tab reads ONE way, and nothing on it says a thing twice**
+  (2026-10-19, the operator on the first build: «remove the noise … check
+  every single tab»). Top to bottom:
+  - **ONE summary, no box** (`KpiBits.Summary`): the headline figure, what it
+    measures and its base beside it — board «1.97 / 5 o'rtacha jami · N ta
+    yacheyka», concerns «63% hal bo'lgan · 5 / 8 · 3 tasi ochiq · 1 tasi
+    ko'tarilgan» (`concerns.pct0` on the board payload, `whole_pct`, half
+    up), turnover «200.0% qo'nimsizlik (yillik) · 2 ketgan / 12 ishlayotgan»,
+    foreign «2 aybli shikoyat · 4 ta yot jism shikoyatidan», compliance «63.6%
+    mos keladi · 7 / 11 xodim». A headline nobody can state is a dim «—».
+  - **ONE muted line under it**: «oy hali tugamagan» while the month runs
+    (said ONCE — the amber state pill, the state sentence and the amber
+    «provisional» line under every table and in every dialog are gone), the
+    turnover month's own state (closes · closing · closed · saved), the
+    source's read time («Verifix: 19.10 11:51», «Sifat reyestri: …»), and a
+    failed or stale read in amber (`Warn`). At the right edge, «Qanday
+    hisoblanadi?» (`RulesButton`) and the admin's read / refresh / close.
+  - **ONE card whose header IS the view switch** (`KpiBits.ViewHead`,
+    `asTabs`; the card's title is gone — it repeated the switch's selected
+    word), the rows' count on its right.
+  - **What the month counted toward nobody folds UNDER the ranking** — cells
+    with no owner, codes not on /cells, jobs off the ladder, not-at-fault
+    complaints … — as «N ta izoh» (`KpiBits.Notes`, a collapsed `<details>`
+    in the card's footer): said, never dropped, never louder than the
+    ranking. The amber notices box is gone.
+  - **The scale, the weight, the KPI formula and compliance's mode live in
+    the rules dialogs ONLY** (`KpiRulesModal only="concerns"` is the concerns
+    tab's own); they were printed on the tab up to twice.
+  - **Gone as repeats**: the four-figure strips and their score-distribution
+    chips; the «№» column (a worst-first position that read like a rank);
+    the board's «Foiz» (the total's bar says it); compliance's «Shkala» (the
+    job's hover names a ladder that differs); the complaints' «Yacheyka aybi»
+    («Kimga hisoblandi» says it); the leavers' hire date (the tenure says it);
+    the concerns register's own search box (the page's search narrows it, as
+    `q`); the foreign tab's «Lider o'rnida» chip; the cell dialog's
+    code-and-owner line under a title that already names both.
 - **The board** (`components/kpi/LeaderboardTab.jsx`): rank (gold / silver /
   bronze ink for the podium, the /leaders medal inks), cell, owner with their
   `ProfileAvatar`, brigadir, five score chips (the figure in the tooltip),
   the total with a brand bar underneath it — brand gold is the single-metric
-  accent here, never a verdict: no band exists for a total — and the percent.
+  accent here, never a verdict: no band exists for a total.
   A row opens `CellKpiModal` (five lines: figure · score × weight = points,
   a chevron into each live KPI's working); `KpiRulesModal` prints the five
   rules off the payload. Month (`DateRangePicker month`, from `PAST_FROM`),
@@ -2597,22 +2634,24 @@ tasks 40/41 name it.
   `ComplianceExplain` + `ComplianceRules`, `PlaceholderTab`, `CellKpiModal`,
   `KpiRulesModal`). The turnover and foreign-objects tabs keep
   reading their OWN bundles (`turnoverText.js`, `foreignObjectsText.js`) and
-  components (`components/turnover/`, `components/foreign/`) — their state
-  lines, notices, columns and dialogs did not move.
+  components (`components/turnover/`, `components/foreign/`) — their notices,
+  columns and dialogs did not move — and take the page's bundle as `TK` for
+  the summary's shared words (`notOver`, `notesN`, `sum*`, `tv*`).
 - **The compliance tab («Muvofiqlik», live from the evening of 2026-10-19)**
   reads the board payload's `compliance` half — `category_compliance
-  .month_payload`, its `cells` list dropped — and computes nothing: the strip
-  states BOTH Verifix reads (the HR journals, `read`, this KPI's own; the
-  turnover directory, `directory`, which places people) with the admin's
-  «Verifix'dan o'qish» (`POST /api/category-compliance/read`; the page polls
-  the board every 4 s while either read runs), the rule, its mode and its
-  no-category answer, four figures (counted of working · comply · rate ·
-  cells scored by score), and the notices (cells with no owner, jobs off the
-  ladder, ambiguous jobs, codes not on /cells, people in no cell, approximate
-  owners / roster). «Reyting» (one row per owned cell, worst rate first) or
+  .month_payload`, its `cells` list dropped — and computes nothing: the
+  summary prints the rate with comply / counted, the HR journals' read time
+  (`read`, this KPI's own; the turnover directory, `directory`, which places
+  people, speaks only when it was never read) and the admin's «Verifix'dan
+  o'qish» (`POST /api/category-compliance/read`; the page polls the board
+  every 4 s while either read runs); the notices (cells with no owner, jobs
+  off the ladder, ambiguous jobs, codes not on /cells, people in no cell,
+  approximate owners / roster) fold under the ranking; the rule, its mode and
+  its no-category answer are `ComplianceRules`'. «Reyting» (one row per owned
+  cell, worst rate first) or
   «Xodimlar» (every judged person of the ranking's cells — `GET
   /api/category-compliance/people` in chunks of 40 keys, `kpiUtil.fetchPeople`,
-  asked only when the view opens) behind a toggle; a row opens
+  asked only when the view opens) behind the card header's switch; a row opens
   `ComplianceExplain` (the rate, the band framed on the scale, the points, the
   people grouped: do not comply · comply · out of the count, each with job,
   tenure, the due and the current category); «Qanday hisoblanadi?» opens
