@@ -632,7 +632,7 @@ async def lifespan(app: FastAPI):
     # once it has landed.
     later(report_dept_attendance)
     # ⚠ TEMPORARY one-shot (2026-10-14) — the whole Трудоемкость register
-    # (supervisor · SAP code · work centre · process · seconds per piece) as a
+    # (supervisor · SAP code · work centre · faza · process · seconds per piece) as a
     # workbook, DMed once to the operator. Remove this line,
     # `startup.report_trudoyomkost_register` and
     # `services/trudoyomkost_register_report.py` once it has landed.
