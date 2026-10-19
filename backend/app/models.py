@@ -1024,6 +1024,21 @@ class ForecastCallNotice(Base):
     workers    = Column(Integer, nullable=False)             # the (possibly hand-edited) number sent
     sent_by    = Column(BigInteger, nullable=False)          # actor's telegram id
     sent_at    = Column(DateTime(timezone=True), server_default=func.now())
+    # The brigadir's answer from the card (2026-10-19, services/forecast_answer):
+    # "ok" = «Tasdiqlash», I will call `workers`; "own" = «O'zgartirish», their
+    # own number in `answer_count`. NULL = not answered. The latest answer wins;
+    # each one is also a «Jurnal» row. The forecast itself never changes.
+    answer          = Column(String(8), nullable=True)
+    answer_count    = Column(Integer, nullable=True)
+    answered_at     = Column(DateTime(timezone=True), nullable=True)
+    answered_by     = Column(BigInteger, nullable=True)   # telegram id
+    answered_name   = Column(String, nullable=True)       # snapshot
+    # Every copy of the card that went out — [{chat, mid, lang, kind, photo}],
+    # kind rich_btn (buttons in the body) · rich · photo · text — so an answer
+    # re-draws them all; and per language the rich body with a token where its
+    # buttons go (`forecast_rich.TOKEN`), which an edit re-sends.
+    tg_messages     = Column(JSONB, nullable=True)
+    tg_bodies       = Column(JSONB, nullable=True)
 
 
 class EditRequest(Base):

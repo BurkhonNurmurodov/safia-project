@@ -625,14 +625,31 @@ def _send(db: Session, p: dict, led: LeaderUnitReport | None,
         "changes": leader_unit_rich.classic_changes(diff, "; ") or "—",
         "changes_lines": leader_unit_rich.classic_changes(diff, "\n") or "—",
     }
+    from app.telegram_bot import RichTry
+
+    url = unit_url(p["managerId"], p["date"])
+    unit_kb = leader_reports._button_markup(url)
+
+    def fallback_kb(lang: str):
+        # Without buttons in the body, each leader's report is a keyboard row.
+        return leader_unit_rich.fallback_markup(
+            p, lang, url, leader_reports._BTN.get(lang) or leader_reports._BTN["ru"])
+
+    def rich(lang: str) -> list:
+        d = None if first else diff
+        # First the table with an «Ochish» button on each leader's row and only
+        # the whole-unit button under it; if Telegram refuses buttons inside a
+        # body, the same table without them and every report as a keyboard row.
+        return [RichTry(leader_unit_rich.body(p, lang, d, buttons=True),
+                        unit_kb(lang), label="digest buttons"),
+                RichTry(leader_unit_rich.body(p, lang, d), fallback_kb(lang))]
+
     notify_profile(
         db, profile_key("supervisor", p["managerId"]),
         "leader_unit_report" if first else "leader_unit_report_corrected",
         params, type="warning" if trouble else "success",
-        markup_fn=leader_reports._button_markup(
-            unit_url(p["managerId"], p["date"])),
-        rich_fn=lambda lang: leader_unit_rich.body(p, lang,
-                                                   None if first else diff),
+        markup_fn=fallback_kb,
+        rich_fn=rich,
         subject=("unit_report", f"{p['managerId']}:{p['date']}"),
     )
 

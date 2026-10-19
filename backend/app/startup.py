@@ -5957,6 +5957,27 @@ def add_pp_line_container_cap() -> None:
     _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
 
 
+_FORECAST_ANSWER_DDL = (
+    ("forecast_call_notices", (("answer", "VARCHAR(8)"),
+                               ("answer_count", "INTEGER"),
+                               ("answered_at", "TIMESTAMPTZ"),
+                               ("answered_by", "BIGINT"),
+                               ("answered_name", "VARCHAR"),
+                               ("tg_messages", "JSONB"),
+                               ("tg_bodies", "JSONB")), None),
+)
+
+
+def add_forecast_answer_columns() -> None:
+    """2026-10-19: the brigadir's «Tasdiqlash» / «O'zgartirish» on the call
+    forecast card, and the copies of the card an answer re-draws
+    (models.ForecastCallNotice, services/forecast_answer). NULL on every row
+    stored before = not answered, no copies kept. Pure DDL, idempotent, FATAL
+    on failure: the ORM selects these columns on every read of a notice, and
+    the call modal reads the notices."""
+    _ensure_columns(_FORECAST_ANSWER_DDL, "forecast_call_notices answer")
+
+
 _ASSISTANT_LEASE_DDL = (
     ("assistant_runs", (("lease", "VARCHAR(36)"),), None),
 )

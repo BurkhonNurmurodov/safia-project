@@ -62,6 +62,11 @@ L = {
         "quote": ("Har bir liderning vazifalari, dalil rasmlari va AI xulosasi — "
                   "quyidagi tugmadagi hisobotda. Noto'g'ri qarorga e'tiroz ham "
                   "o'sha yerdan beriladi."),
+        "open": "Ochish",
+        "quote_rows": ("Har bir liderning vazifalari, dalil rasmlari va AI xulosasi — "
+                       "uning qatoridagi «Ochish» tugmasida. Noto'g'ri qarorga "
+                       "e'tiroz ham o'sha yerdan beriladi. Butun brigada — "
+                       "quyidagi tugmada."),
     },
     "uz_cyrl": {
         "title": "Лидерлар ҳисоботи",
@@ -88,6 +93,11 @@ L = {
         "quote": ("Ҳар бир лидернинг вазифалари, далил расмлари ва AI хулосаси — "
                   "қуйидаги тугмадаги ҳисоботда. Нотўғри қарорга эътироз ҳам "
                   "ўша ердан берилади."),
+        "open": "Очиш",
+        "quote_rows": ("Ҳар бир лидернинг вазифалари, далил расмлари ва AI хулосаси — "
+                       "унинг қаторидаги «Очиш» тугмасида. Нотўғри қарорга "
+                       "эътироз ҳам ўша ердан берилади. Бутун бригада — "
+                       "қуйидаги тугмада."),
     },
     "ru": {
         "title": "Отчёт лидеров",
@@ -114,6 +124,11 @@ L = {
         "quote": ("Задачи каждого лидера, фото-подтверждения и заключение ИИ — "
                   "в отчёте по кнопке ниже. Там же подаётся возражение на "
                   "ошибочное решение."),
+        "open": "Открыть",
+        "quote_rows": ("Задачи каждого лидера, фото-подтверждения и заключение ИИ — "
+                       "по кнопке «Открыть» в его строке. Там же подаётся "
+                       "возражение на ошибочное решение. Вся бригада — по "
+                       "кнопке ниже."),
     },
     "en": {
         "title": "Leaders' report",
@@ -140,6 +155,11 @@ L = {
         "quote": ("Each leader's tasks, proof photos and the AI's verdict are in "
                   "the report behind the button below. An objection to a wrong "
                   "ruling is filed from there too."),
+        "open": "Open",
+        "quote_rows": ("Each leader's tasks, proof photos and the AI's verdict are "
+                       "behind the «Open» button on their row. An objection to a "
+                       "wrong ruling is filed from there too. The whole unit is "
+                       "behind the button below."),
     },
 }
 
@@ -209,10 +229,26 @@ def _title_icon(counts: dict) -> str:
     return "✅"
 
 
-def body(p: dict, lang: str = "ru", diff: list[dict] | None = None) -> str:
+def _btn_url(url: str) -> str:
+    """A URL inside a `<tg-button>` attribute — the one attribute on this body
+    that is not a literal, so it is the one place quotes are escaped."""
+    return escape(url, quote=True)
+
+
+def body(p: dict, lang: str = "ru", diff: list[dict] | None = None,
+         buttons: bool = False) -> str:
     """The Rich-HTML body for ONE recipient language. `diff` is the update's
-    `leader_unit_report.changes`, and None on the first send."""
+    `leader_unit_report.changes`, and None on the first send.
+
+    `buttons` puts an «Ochish» button INSIDE the leaders table (Bot API 10.3,
+    `<tg-button>`), on every row that has a report — the day report of that
+    one leader, the page the per-leader DM used to open. A leader with no
+    report («not filed») gets no button: there is nothing behind it. The
+    sender tries this body first and the one without buttons after it
+    (`telegram_bot.RichTry`), so a refusal costs the buttons, never the
+    digest."""
     from app.routers.staff import _fmt_date
+    from app.services.leader_reports import report_url
 
     t = L.get(lang) or L["ru"]
     counts = p["counts"]
@@ -258,19 +294,28 @@ def body(p: dict, lang: str = "ru", diff: list[dict] | None = None) -> str:
                              + "".join(f"<br/>{_esc(x)}" for x in fills) + "</li>")
         parts.append(f"<h4>{_esc(t['changed'])}</h4>\n<ul>\n" + "\n".join(items) + "\n</ul>")
 
+    # The fourth column exists only when a row has something to open, so a
+    # digest of leaders who all filed nothing keeps its three columns.
+    with_btn = buttons and any(r.get("uid") for r in p["rows"])
     trs = []
     for r in p["rows"]:
         score = ("—" if r["state"] in NO_SCORE or r["score"] is None
                  else f"<b>{r['score']}%</b>")
+        btn = ""
+        if with_btn:
+            btn = (f'<td><tg-button type="web_app" url="{_btn_url(report_url(r["uid"]))}">'
+                   f"{_esc(t['open'])}</tg-button></td>" if r.get("uid")
+                   else "<td></td>")
         trs.append(f"<tr><td>{ICON[r['state']]} {who(r['leader'])}"
                    f"{code(r.get('cell'))}</td>"
                    f'<td align="right">{score}</td>'
-                   f"<td>{_esc(_state_words(r, t))}</td></tr>")
+                   f"<td>{_esc(_state_words(r, t))}</td>{btn}</tr>")
     parts.append(
         "<table bordered striped>\n"
         f'<tr><th align="left">{_esc(t["th_leader"])}</th>'
         f'<th align="right">{_esc(t["th_score"])}</th>'
-        f'<th align="left">{_esc(t["th_state"])}</th></tr>\n'
+        f'<th align="left">{_esc(t["th_state"])}</th>'
+        + ("<th></th>" if with_btn else "") + "</tr>\n"
         + "\n".join(trs) + "\n</table>")
 
     if counts["checking"]:
@@ -304,7 +349,7 @@ def body(p: dict, lang: str = "ru", diff: list[dict] | None = None) -> str:
             parts.append(f"<p><b>{who(r['leader'])}</b>{code(r.get('cell'))}</p>\n"
                          f"<ul>\n" + "\n".join(items) + "\n</ul>")
 
-    note = t["quote"]
+    note = t["quote_rows"] if with_btn else t["quote"]
     if counts["missing"] or counts["open"]:
         note = f"{t['zero']} {note}"
     parts.append(f"<blockquote>{_esc(note)}</blockquote>")
@@ -321,6 +366,34 @@ def _fill_lines(r: dict | None, lang: str) -> list[str]:
 
 
 # ── the classic fallback ─────────────────────────────────────────────────────
+
+# The most per-leader rows a fallback keyboard carries: a unit's full roster as
+# buttons would push the whole-unit button off a phone screen.
+FALLBACK_ROWS = 8
+
+
+def fallback_markup(p: dict, lang: str, unit_url: str, unit_label: str):
+    """The keyboard of a digest sent WITHOUT buttons in its body (a refused
+    rich try, or the classic DM): one row per leader with a report — «Aripova
+    M. · 80% ›», worst first like the table, at most `FALLBACK_ROWS` — then the
+    whole-unit button the digest always carried. Every button is a web_app one
+    (`leader_reports._button_markup`: the page needs the WebView's identity)."""
+    from telebot import types
+    from app.services.leader_reports import report_url
+
+    shown = _display(p, None, lang)
+    kb = types.InlineKeyboardMarkup()
+    for r in [r for r in p["rows"] if r.get("uid")][:FALLBACK_ROWS]:
+        name = shown.get(str(r["leader"] or ""), r["leader"] or "—")
+        where = f" {r['cell']}" if r.get("cell") else ""
+        score = ("" if r["state"] in NO_SCORE or r["score"] is None
+                 else f" · {r['score']}%")
+        kb.add(types.InlineKeyboardButton(
+            f"{ICON[r['state']]} {name}{where}{score} ›"[:60],
+            web_app=types.WebAppInfo(url=report_url(r["uid"]))))
+    kb.add(types.InlineKeyboardButton(
+        unit_label, web_app=types.WebAppInfo(url=unit_url)))
+    return kb
 
 def classic_lines(p: dict) -> str:
     """The table as plain lines — a glyph, the name, the score and task NUMBERS

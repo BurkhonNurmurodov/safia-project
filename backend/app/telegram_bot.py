@@ -1394,18 +1394,19 @@ def strip_custom_emoji(html_text: str) -> str:
     return _TG_EMOJI_RE.sub(r"\1", html_text or "")
 
 
-def _send_html_message(chat_id: int, html_text: str, reply_markup=None) -> None:
+def _send_html_message(chat_id: int, html_text: str, reply_markup=None):
     """send_message in HTML mode, retrying once with premium emoji stripped to
-    their fallback chars if Telegram rejects them (see strip_custom_emoji)."""
+    their fallback chars if Telegram rejects them (see strip_custom_emoji).
+    Returns the sent Message."""
     try:
-        bot.send_message(chat_id, html_text, parse_mode="HTML",
-                         reply_markup=reply_markup)
+        return bot.send_message(chat_id, html_text, parse_mode="HTML",
+                                reply_markup=reply_markup)
     except Exception:
         stripped = strip_custom_emoji(html_text)
         if stripped == html_text:
             raise
-        bot.send_message(chat_id, stripped, parse_mode="HTML",
-                         reply_markup=reply_markup)
+        return bot.send_message(chat_id, stripped, parse_mode="HTML",
+                                reply_markup=reply_markup)
 
 
 # Telegram refusals that mean "this account can never be DMed as things stand"
@@ -1450,11 +1451,11 @@ _TG_CAPTION_MAX = 1024
 
 
 def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None,
-                       photo: dict | None = None) -> None:
+                       photo: dict | None = None) -> dict:
     """sendRichMessage (Bot API 10.1+) with one Rich-HTML body. The pinned
     telebot predates the method, so this goes through the raw HTTP door the
     Broadcast tab already uses. Raises on any refusal — the caller decides what
-    to fall back to.
+    to fall back to. Returns the sent Message as Telegram's raw JSON.
 
     ``photo`` (``{"id", "name", "data"}``) is attached as the body's media, so a
     ``tg://photo?id=…`` figure inside it resolves — the shape /ojidaniya has
@@ -1471,37 +1472,71 @@ def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None,
         data["reply_markup"] = (reply_markup.to_json()
                                 if hasattr(reply_markup, "to_json")
                                 else json.dumps(reply_markup))
-    _tg_api("sendRichMessage", data, files)
+    return _tg_api("sendRichMessage", data, files)
+
+
+class RichTry:
+    """One shape of a rich DM, for ``send_tg_notification``'s ``rich`` list.
+
+    A message that carries buttons INSIDE its body (Bot API 10.3,
+    ``<tg-button>`` / ``<tg-button-row>``) is sent as two tries: the body with
+    its buttons and no keyboard under it, then the same body without them and
+    the ordinary keyboard. Those buttons could not be tried against Telegram
+    from where they were written, so a refusal must cost the in-body buttons —
+    never the rich layout, and never the message. ``markup`` is the keyboard
+    for THIS try; the default ``SAME`` is the notification's own."""
+
+    SAME = object()
+
+    def __init__(self, html: str, markup=SAME, label: str = ""):
+        self.html, self.markup, self.label = html, markup, label
+
+
+def _plain_retry(send, markup):
+    """Call ``send(markup)``; if it fails while the keyboard carries a colour or
+    a disabled button (``tg_buttons``), send it again as the plain keyboard
+    telebot 4.25 would have built — the rule ``tg_buttons.send`` applies to the
+    approval cards, for a send path that is not a telebot call."""
+    from app import tg_buttons
+    try:
+        return send(markup)
+    except Exception:
+        if markup is None or not tg_buttons._uses_new(markup):
+            raise
+        logger.warning("Telegram refused a styled/disabled keyboard on a DM — "
+                       "sent it plain")
+        return send(tg_buttons.plain(markup))
 
 
 def _send_photo_card(chat_id: int, photo: dict, caption: str | None,
-                     reply_markup=None, parse_mode: str = "HTML") -> None:
+                     reply_markup=None, parse_mode: str = "HTML"):
     """A picture with its words as the caption — the step between a refused
     rich message and plain text, so a client that cannot render rich still gets
     the IMAGE instead of losing it along with the layout. A photo, not a
     document: the card is meant to be looked at in the chat, and at 1000 px it
     sits under the size Telegram re-scales. A caption over the cap is refused
     outright, so a long one follows as its own message rather than costing the
-    picture. Raises on refusal, like ``_send_rich_message``."""
+    picture. Raises on refusal, like ``_send_rich_message``. Returns the sent
+    Message that carries the keyboard."""
     pic = (photo["name"], photo["data"])
     if caption and len(caption) <= _TG_CAPTION_MAX:
-        bot.send_photo(chat_id, photo=pic, caption=caption,
-                       parse_mode=parse_mode, reply_markup=reply_markup)
-        return
-    bot.send_photo(chat_id, photo=pic,
-                   reply_markup=None if caption else reply_markup)
+        return bot.send_photo(chat_id, photo=pic, caption=caption,
+                              parse_mode=parse_mode, reply_markup=reply_markup)
+    sent = bot.send_photo(chat_id, photo=pic,
+                          reply_markup=None if caption else reply_markup)
     if caption:
         if parse_mode == "HTML":
-            _send_html_message(chat_id, caption, reply_markup=reply_markup)
-        else:
-            bot.send_message(chat_id, caption, parse_mode=parse_mode,
-                             reply_markup=reply_markup)
+            return _send_html_message(chat_id, caption, reply_markup=reply_markup)
+        return bot.send_message(chat_id, caption, parse_mode=parse_mode,
+                                reply_markup=reply_markup)
+    return sent
 
 
 def send_tg_notification(telegram_id: int, title: str, body: str,
                          html: str | None = None, markup=None,
-                         rich: str | None = None,
-                         photo: dict | None = None) -> bool:
+                         rich=None,
+                         photo: dict | None = None,
+                         on_sent=None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
@@ -1520,39 +1555,72 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
     the rich body's figure. When rich is refused, or there is no rich body, it
     is sent as a photo with the classic HTML as its caption, and only when that
     is refused too does the classic text go out. Each step gives up one thing —
-    the layout, then the picture — and never the message."""
+    the layout, then the picture — and never the message.
+
+    ``rich`` may also be a LIST of ``RichTry`` — shapes of the rich body tried
+    in order, each with its own keyboard (a body with buttons inside it, then
+    the same body without them; see ``RichTry``). ``on_sent(kind, index,
+    result)`` is told what went out — ``"rich"`` with the try's index and
+    Telegram's raw JSON, or ``"photo"`` / ``"text"`` with the telebot Message
+    that carries the keyboard — for a caller that edits its copies later (the
+    call forecast's answer). It never fails the DM."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
     _set_menu_button(telegram_id, _get_lang(telegram_id))
     msg = f"🔔 *{title}*\n{body}"
-    if rich is not None:
+
+    def _told(kind: str, index, result) -> None:
+        if on_sent is None:
+            return
         try:
-            _send_rich_message(telegram_id, rich, reply_markup=markup,
-                               photo=photo)
+            on_sent(kind, index, result)
+        except Exception:
+            logger.exception("send_tg_notification: on_sent failed")
+
+    tries = ([] if rich is None else
+             [rich] if isinstance(rich, RichTry) else
+             [RichTry(rich)] if isinstance(rich, str) else list(rich))
+    for i, tr in enumerate(tries):
+        kb = markup if tr.markup is RichTry.SAME else tr.markup
+        try:
+            res = _send_rich_message(telegram_id, tr.html, reply_markup=kb,
+                                     photo=photo)
             _record_dm_outcome(telegram_id, None)
+            _told("rich", i, res)
             return True
         except Exception as e:
-            logger.info("Rich notification to %s not accepted, falling back: %s",
-                        telegram_id, e)
+            if i + 1 < len(tries):
+                # A shape refused with another left to try is worth a WARNING:
+                # it is how a refusal of buttons inside the body shows up.
+                logger.warning("Rich notification to %s refused%s (%s) — "
+                               "trying the next shape", telegram_id,
+                               f" [{tr.label}]" if tr.label else "", e)
+            else:
+                logger.info("Rich notification to %s not accepted, falling "
+                            "back: %s", telegram_id, e)
     if photo is not None:
         try:
-            _send_photo_card(telegram_id, photo,
-                             html if html is not None else msg,
-                             reply_markup=markup,
-                             parse_mode="HTML" if html is not None else "Markdown")
+            sent = _plain_retry(lambda kb: _send_photo_card(
+                telegram_id, photo, html if html is not None else msg,
+                reply_markup=kb,
+                parse_mode="HTML" if html is not None else "Markdown"), markup)
             _record_dm_outcome(telegram_id, None)
+            _told("photo", None, sent)
             return True
         except Exception as e:
             logger.info("Photo notification to %s not accepted, sending the "
                         "classic text instead: %s", telegram_id, e)
     try:
         if html is not None:
-            _send_html_message(telegram_id, html, reply_markup=markup)
+            sent = _plain_retry(lambda kb: _send_html_message(
+                telegram_id, html, reply_markup=kb), markup)
         else:
-            bot.send_message(telegram_id, msg, parse_mode="Markdown",
-                             reply_markup=markup)
+            sent = _plain_retry(lambda kb: bot.send_message(
+                telegram_id, msg, parse_mode="Markdown", reply_markup=kb),
+                markup)
         _record_dm_outcome(telegram_id, None)
+        _told("text", None, sent)
         return True
     except Exception as e:
         # Legacy Markdown rejects the WHOLE message over a single unbalanced
@@ -1563,10 +1631,12 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
         # unknown chat must fail on the first attempt, not be retried.
         if html is None and "parse" in str(e).lower():
             try:
-                bot.send_message(telegram_id, msg, reply_markup=markup)
+                sent = _plain_retry(lambda kb: bot.send_message(
+                    telegram_id, msg, reply_markup=kb), markup)
                 logger.warning("Telegram notification to %s sent unformatted "
                                "(Markdown rejected): %s", telegram_id, e)
                 _record_dm_outcome(telegram_id, None)
+                _told("text", None, sent)
                 return True
             except Exception as e2:
                 e = e2
@@ -6057,7 +6127,8 @@ def _fc_callback(call: types.CallbackQuery):
             # «Maksimum», the recommendation standing in when there is no band.
             fc = row["forecast"]
             max_workers = row["band_hi"] if row["band_hi"] is not None else fc
-            rich, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS)
+            rich, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS,
+                                             buttons_html=forecast_rich.TOKEN)
             body = _mk_notif_tg("call_forecast", {
                 "name": mgr.name, "date": target, "eff": eff,
                 "count": fc if fc is not None else "—",
@@ -6074,11 +6145,17 @@ def _fc_callback(call: types.CallbackQuery):
     chat = call.message.chat.id
     delivered = False
     if rich:
-        try:
-            _send_rich_message(chat, rich, photo=photo)
-            delivered = True
-        except Exception as exc:
-            logger.warning("Forecast rich message refused for %s: %s", tid, exc)
+        # The card's «Tasdiqlash» / «O'zgartirish» are drawn DISABLED here — a
+        # test has no notice to answer — then, if Telegram refuses buttons in a
+        # body, the card without them, as the real send does.
+        for shape in (forecast_rich.button_row(None, None, lang, preview=True), ""):
+            try:
+                _send_rich_message(chat, rich.replace(forecast_rich.TOKEN, shape),
+                                   photo=photo)
+                delivered = True
+                break
+            except Exception as exc:
+                logger.warning("Forecast rich message refused for %s: %s", tid, exc)
     if not delivered and photo is not None:
         try:
             _send_photo_card(chat, photo, body)
@@ -6095,6 +6172,149 @@ def _fc_callback(call: types.CallbackQuery):
         # The real send goes quietly past a card that failed to render — it
         # must never cost a brigadir the message. A TEST must say so instead.
         bot.send_message(chat, _msg(lang, "shot_failed"))
+
+
+# ── The call forecast card's answer («Tasdiqlash» / «O'zgartirish») ─────────
+# services/forecast_answer is THE rule; these are its Telegram doors. `fa:ok`
+# confirms the notice's count, `fa:ch` asks for the brigadir's own number (a
+# `fa_count` capture), `fa:x` cancels that question.
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fa:"))
+def _fa_callback(call: types.CallbackQuery):
+    from app import tg_buttons
+    from app.models import ForecastCallNotice
+    from app.services import forecast_answer, forecast_rich
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    w = forecast_rich.a(lang)
+    people = forecast_rich._t(lang)["people"]
+    parts = call.data.split(":")
+    try:
+        action, nid = parts[1], int(parts[2])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id)
+        return
+    msg = call.message
+    chat = msg.chat.id if msg is not None else tid
+    mid = getattr(msg, "message_id", None)
+
+    if action == "x":
+        with SessionLocal() as db:
+            cap = _lt_capture(db, tid)
+            if cap is not None and cap.stage == "fa_count" and cap.task_id == nid:
+                db.delete(cap)
+                db.commit()
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_text(w["cancelled"], chat, mid)
+        except Exception:
+            pass
+        return
+
+    try:
+        with SessionLocal() as db:
+            n = db.get(ForecastCallNotice, nid)
+            why = forecast_answer.refusal(db, n, tid)
+            if why is None and action == "ok":
+                forecast_answer.answer(db, n, tid, "ok")
+                db.commit()
+            if why is None:
+                day = forecast_rich.day_label(n.for_date, lang)
+                count, manager_id = n.workers, n.manager_id
+    except Exception:
+        logger.exception("forecast answer failed for %s (notice %s)", tid, nid)
+        bot.answer_callback_query(call.id, w["failed"], show_alert=True)
+        return
+
+    if why is not None:
+        bot.answer_callback_query(call.id, w[why], show_alert=True)
+        if why == "newer" and mid is not None:
+            forecast_answer.redraw(nid, stale=True, only_mid=mid)
+        return
+
+    if action == "ok":
+        bot.answer_callback_query(call.id, w["toast_ok"])
+        drawn = forecast_answer.redraw(nid)
+        if mid not in drawn:
+            # The tapped card could not be re-drawn: say it in words instead.
+            bot.send_message(chat, w["saved_ok"].format(day=day, n=count, p=people))
+        return
+
+    if action == "ch":
+        bot.answer_callback_query(call.id)
+        _lt_clear(tid)
+        kb = tg_buttons.ReplyPrompt()
+        kb.add(tg_buttons.Button(w["cancel"], callback_data=f"fa:x:{nid}"))
+        try:
+            sent = tg_buttons.send(bot.send_message, chat,
+                                   w["ask"].format(day=day, n=count, p=people),
+                                   reply_markup=kb)
+        except Exception:
+            logger.exception("forecast answer: could not ask %s for a count", tid)
+            return
+        with SessionLocal() as db:
+            db.add(LeaderTaskCapture(
+                telegram_id=tid, stage="fa_count", leader_id=manager_id,
+                task_id=nid, chat_id=chat, message_id=sent.message_id,
+                min_media=0, media=[]))
+            db.commit()
+        return
+    bot.answer_callback_query(call.id)
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "fa_count",
+                     content_types=["text"])
+def _fa_count(message: types.Message):
+    """The brigadir's own count, typed after «O'zgartirish». The capture row
+    reuses `leader_task_captures`: `leader_id` holds the UNIT, `task_id` the
+    notice. A non-number asks again; the notice is re-checked here, since the
+    typing takes a moment and a newer notice may have gone out."""
+    from app.models import ForecastCallNotice
+    from app.services import forecast_answer, forecast_rich
+
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    w = forecast_rich.a(lang)
+    people = forecast_rich._t(lang)["people"]
+    chat = message.chat.id
+    text = (message.text or "").strip()
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "fa_count":
+            return
+        nid, prompt = cap.task_id, cap.message_id
+        if text.startswith("/"):
+            db.delete(cap)
+            db.commit()
+            bot.send_message(chat, _msg(lang, "unknown_command"))
+            return
+        n = db.get(ForecastCallNotice, nid)
+        digits = text.replace(" ", "")
+        if not digits.isdigit() or int(digits) > forecast_answer.MAX_COUNT:
+            db.commit()
+            bot.send_message(chat, w["bad"].format(
+                max=forecast_answer.MAX_COUNT, n=n.workers if n else 0))
+            return
+        count = int(digits)
+        db.delete(cap)
+        why = forecast_answer.refusal(db, n, tid)
+        if why is not None:
+            db.commit()
+            bot.send_message(chat, w[why])
+            return
+        forecast_answer.answer(db, n, tid, "own", count)
+        db.commit()
+        day = forecast_rich.day_label(n.for_date, lang)
+        forecast = n.workers
+    if prompt:
+        try:
+            bot.edit_message_reply_markup(chat, prompt, reply_markup=None)
+        except Exception:
+            pass
+    forecast_answer.redraw(nid)
+    bot.send_message(chat, w["saved_own"].format(day=day, n=count, p=people,
+                                                 f=forecast))
 
 
 # ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»

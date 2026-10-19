@@ -5753,6 +5753,66 @@ before (telebot swallows unknown button keys).
 - Known, unchanged: an undo that reopens a record leaves its old decided cards
   stating the old outcome (the text line did so before too).
 
+### Buttons INSIDE a message (Bot API 10.3, Phase 2 — 2026-10-19)
+
+Three rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
+instead of, or beside, the keyboard under them. The operator's rulings: the
+late-proof / objection rulings stay in the appeal chat (no reply prompt on
+those cards); the forecast card's «Tasdiqlash» records «I will call this
+many»; «O'zgartirish» takes the brigadir's own number.
+
+- **Every such send is TWO tries** — `telegram_bot.RichTry`, a list a
+  `rich_fn` may return: the body with its buttons (no keyboard, or only the
+  whole-page one), then the same body without them and the ordinary keyboard;
+  the photo and classic fallbacks always get the keyboard. None of it could be
+  tried against Telegram from where it was written, so a refusal costs the
+  in-body buttons — logged at WARNING «Rich notification … refused
+  [label] … trying the next shape» — never the rich layout or the message.
+  `send_tg_notification(on_sent=)` / `notify_profile(sent_fn=)` report which
+  shape reached each holder and its message id. `_plain_retry` gives the photo
+  and classic fallbacks `tg_buttons.send`'s rule (a refused coloured/disabled
+  keyboard is resent plain).
+- **The day digest** (`leader_unit_rich.body(buttons=True)`): a fourth column
+  with «Ochish» on every leader row that has a report, opening that day
+  report; the whole-unit button stays under the message. Its fallback
+  keyboard (`fallback_markup`) is one row per leader with a report, worst
+  first, at most 8, then the unit button.
+- **The auto-check warning** (`leader_auto_rich.body(button=True)`): «Ochish»
+  sits at the end of the first step, which names the page; the rich card then
+  has no keyboard. The classic DM keeps its page button.
+- **The call forecast** (`services/forecast_answer.py` is THE rule;
+  `forecast_rich.button_row` / `keyboard` the two drawings): «✅ Tasdiqlash»
+  (green) and «✏️ O'zgartirish» right under the facts table. The notice is
+  created BEFORE the send (its id is in the callback, `fa:ok:<id>` /
+  `fa:ch:<id>` / `fa:x:<id>`). Only a holder of the unit's supervisor profile
+  may answer, only on the LATEST notice of the unit-day, and not once the day
+  has passed (plant clock); the latest answer wins and each is a «Jurnal» row
+  (`notification.call_confirmed` / `call_count_changed`, source bot). The
+  forecast never changes. Stored on `forecast_call_notices`: `answer` ("ok" |
+  "own"), `answer_count`, `answered_at/by/name`, and every copy that went out
+  (`tg_messages` — chat, message id, language, shape, the figure's file_id)
+  with each language's body holding `forecast_rich.TOKEN` where the buttons
+  go (`tg_bodies`). An answer RE-DRAWS every copy: a body with buttons is
+  re-sent through `editMessageText` with `rich_message` (the figure by its
+  file_id) — the outcome as a disabled button («✅ Tasdiqlandi · 54 nafar ·
+  08:12» / «✏️ O'zgartirildi: 50 nafar · 08:20»), «O'zgartirish» live under it
+  — else its keyboard is replaced; a copy that cannot be re-drawn gets the
+  keyboard instead, and the tapped one gets a text reply. «O'zgartirish» asks
+  in a prompt that opens the reply field (`tg_buttons.ReplyPrompt`,
+  `InlineKeyboardMarkup.force_reply`, with «✖️ Bekor qilish»; dropped by
+  `plain()` if refused) and a `fa_count` capture on `leader_task_captures`
+  (`leader_id` = the unit, `task_id` = the notice; a whole number 0–999,
+  re-checked when it lands). A tap on an older card is refused and that card
+  is marked «🔄 Bu kun uchun yangi prognoz yuborilgan». The «Smenaga
+  chaqirish» modal shows the answer beside the sent notice
+  (`last_notice.answer`). Nobody is notified. The `/forecast` test door draws
+  both buttons disabled.
+- Columns: `startup.add_forecast_answer_columns` (both entrypoints, schema
+  phase, FATAL on failure).
+- Not built: buttons on the in-message rows of any other DM; callbacks from a
+  rich message are parsed by the pinned telebot like any other (it ignores the
+  unknown message field) — the first real tap in production is the test.
+
 ## Filing a proof AFTER the deadline (late proofs)
 
 From **2026-08-30** a leader whose task deadline has gone by can still send the
