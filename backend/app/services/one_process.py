@@ -142,6 +142,19 @@ def day_cell(db: Session, ref: str | None) -> int | None:
             .scalar())
 
 
+def day_cells(db: Session, refs) -> dict[str, int | None]:
+    """`day_cell` for many refs in one query — ref → cell id, for the `bot:`
+    refs asked about; every other ref answers None, as `day_cell` does."""
+    out = {r: None for r in refs or () if r}
+    ids = {int(r[4:]) for r in out if r.startswith("bot:") and r[4:].isdigit()}
+    if ids:
+        rows = (db.query(LeaderTaskEntry.id, LeaderTaskDay.cell_id)
+                .join(LeaderTaskDay, LeaderTaskEntry.day_id == LeaderTaskDay.id)
+                .filter(LeaderTaskEntry.id.in_(ids)).all())
+        out.update({f"bot:{eid}": cid for eid, cid in rows})
+    return out
+
+
 def leader_ids(db: Session, day=None) -> set[int]:
     """Every leader whose cells on `day` (today when omitted) are ALL
     one-process — `leader_applies` for the whole platform in one query, for the

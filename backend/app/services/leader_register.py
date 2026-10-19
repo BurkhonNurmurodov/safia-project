@@ -55,6 +55,15 @@ them a supervisor's or a leader's own build, which nothing kept. The rules are
 the unscoped build's, slot by slot; at most `MAX_SLOTS` scopes are kept, the
 least recently asked forgotten first (never the unscoped one).
 
+A build never holds the GIL for long (the 19 Oct 2026 DM: a 3.4 s freeze of
+the whole server during a background rebuild). It runs with the cyclic
+collector paused (`gc_pause`), and what is kept is a tuple of byte PIECES of
+about `CHUNK` each, encoded row by row (`encode_list`, `encode_dict`) — one
+`json.dumps` of the 20 MB list is a single C call that held every other thread
+for most of a second, and so was the copy that glued the pieces together. A
+request sends the pieces as they are (`routers/leaders.PartsResponse`); nothing
+ever joins them into one buffer.
+
 Postgres only (`xmin`); on any other database every request builds, as before.
 """
 from __future__ import annotations
@@ -62,12 +71,13 @@ from __future__ import annotations
 import logging
 import threading
 from time import monotonic
-from typing import Callable, Hashable, Optional
+from typing import Callable, Hashable, Iterable, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, engine
+from app.services import gc_pause
 
 log = logging.getLogger(__name__)
 
@@ -88,25 +98,78 @@ MAX_SLOTS = 160
 # leader's own rows far less, but a LEADER with «see all» keeps the whole
 # platform rewritten for them (~20 MB) — so the count alone bounds nothing.
 MAX_SCOPED_BYTES = 120 * 1024 * 1024
+# The size of one encoded piece. Small enough that building or sending one is
+# a few milliseconds of the GIL; large enough that the 20 MB register is ~80 of
+# them, not sixteen thousand.
+CHUNK = 256 * 1024
+
+
+# ── encoding in pieces ───────────────────────────────────────────────────────
+
+def encode_list(items: Iterable, encode: Callable[[object], str]) -> list[bytes]:
+    """`json.dumps(items)` — byte for byte, given `encode` is the same
+    encoder's `.encode` — as pieces of about `CHUNK`. Each item is its own
+    short C call, so another thread gets the GIL between items; one call over
+    the whole list held it until the last byte."""
+    out: list[bytes] = []
+    group: list[bytes] = []
+    size = 0
+    first = True
+    for it in items:
+        b = encode(it).encode("utf-8")
+        group.append(b)
+        size += len(b) + 1
+        if size >= CHUNK:
+            out.append(b",".join(group if first else [b"", *group]))
+            first, group, size = False, [], 0
+    if group:
+        out.append(b",".join(group if first else [b"", *group]))
+    if not out:
+        return [b"[]"]
+    out[0] = b"[" + out[0]
+    out[-1] = out[-1] + b"]"
+    return out
+
+
+def encode_dict(obj: dict, encode: Callable[[object], str], big: str) -> list[bytes]:
+    """`json.dumps(obj)` as pieces, its `big` list through `encode_list` and
+    every other key as it stands — same keys, same order, same bytes."""
+    out: list[bytes] = []
+    head = ["{"]
+    for i, (k, v) in enumerate(obj.items()):
+        key = encode(k if isinstance(k, str) else str(k))
+        sep = "," if i else ""
+        if k == big and isinstance(v, list):
+            head.append(f"{sep}{key}:")
+            out.append("".join(head).encode("utf-8"))
+            out.extend(encode_list(v, encode))
+            head = []
+        else:
+            head.append(f"{sep}{key}:{encode(v)}")
+    head.append("}")
+    out.append("".join(head).encode("utf-8"))
+    return out
 
 
 class Build:
     """One finished build: the encoded rows plus the small per-viewer parts.
     A SCOPED build keeps its whole answer, already encoded, in `data` and
-    nothing else (`body()`)."""
-    __slots__ = ("fp", "started", "done_at", "data", "roster", "cutoffs",
+    nothing else (`body()`). `data` is a tuple of byte PIECES (`encode_list`),
+    sent one after another and never joined."""
+    __slots__ = ("fp", "started", "done_at", "data", "nbytes", "roster", "cutoffs",
                  "cut_units", "last_synced", "rows")
 
     @classmethod
-    def body(cls, data: bytes) -> "Build":
+    def body(cls, data: Iterable[bytes]) -> "Build":
         return cls(data=data, roster=[], cutoffs={}, cut_units={}, last_synced=None, rows=0)
 
-    def __init__(self, *, data: bytes, roster: list, cutoffs: dict,
+    def __init__(self, *, data: Iterable[bytes], roster: list, cutoffs: dict,
                  cut_units: dict, last_synced, rows: int):
         self.fp: tuple = ()
         self.started: float = 0.0
         self.done_at: float = 0.0
-        self.data = data
+        self.data: tuple[bytes, ...] = (data,) if isinstance(data, bytes) else tuple(data)
+        self.nbytes = sum(len(p) for p in self.data)
         self.roster = roster
         self.cutoffs = cutoffs
         self.cut_units = cut_units
@@ -157,7 +220,7 @@ def _slot(key: Hashable) -> _Slot:
 def _trim_bytes(keep: Hashable) -> None:
     """(Under `_lock`.) Past `MAX_SCOPED_BYTES` the least recently asked scoped
     builds are dropped — their slots stay, so the next ask simply rebuilds."""
-    held = [(v.used, k, len(v.kept.data)) for k, v in _slots.items()
+    held = [(v.used, k, v.kept.nbytes) for k, v in _slots.items()
             if k is not None and v.kept is not None]
     total = sum(n for _u, _k, n in held)
     for _u, k, n in sorted(held, key=lambda x: x[0]):
@@ -411,7 +474,9 @@ def _run(db: Session, build_fn, flight: Optional[_Flight], *, fp: tuple,
         except Exception:
             log.exception("leader-register: fingerprint failed; building unkept")
             fp = ()
-    b = build_fn(db)
+    # The collector paused for the build's own allocations (`gc_pause`).
+    with gc_pause.paused():
+        b = build_fn(db)
     b.fp, b.started, b.done_at = fp, started, monotonic()
     if fp:
         with _lock:
@@ -451,6 +516,15 @@ def _refresh_later(build_fn, key: Hashable = None) -> None:
             f.done.set()
 
     threading.Thread(target=run, name="leader-register", daemon=True).start()
+
+
+def warm(build_fn: Callable[[Session], Build], key: Hashable = None) -> None:
+    """Build this scope in the background now, unless one is kept or running —
+    so the first viewer after a deploy is served a kept build instead of
+    waiting for the first one (7.4 s, «none kept yet», 19 Oct 2026 DM)."""
+    if not enabled() or kept(key) is not None:
+        return
+    _refresh_later(build_fn, key)
 
 
 def forget() -> None:

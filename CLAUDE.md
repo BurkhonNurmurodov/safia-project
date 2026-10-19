@@ -6085,6 +6085,19 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   seconds — but only once per change, not once per focus.
 - Postgres only (`xmin`); on any other database every request builds.
   `forget()` drops the kept build. Nothing is stored; a restart starts empty.
+- **A build never holds the GIL for long** (2026-10-19 — a rebuild on its
+  background thread froze the whole server 3.4 s): it runs with the cyclic
+  garbage collector PAUSED (`services/gc_pause.py`, counted across threads —
+  its objects are freed by reference counting, and full collections were 1.2 s
+  of the freeze), its answer is encoded ROW BY ROW into byte pieces of ~256 KB
+  (`encode_list` / `encode_dict`; `Build.data` is a tuple of pieces, `nbytes`
+  their size) instead of one `json.dumps` of the whole register, and it is SENT
+  as those pieces (`routers/leaders.PartsResponse`, Content-Length set) — no
+  20 MB string is joined or encoded per request. Byte-identical to the old
+  answer. The «Mening o'rnim» pool build runs paused too. **The unscoped build
+  is made ~45 s after a process starts** (`leader_register.warm`, after the
+  standing pool, from `warm_standing`), so the first Monitoring load after a
+  deploy is not the one that waits («none kept yet», 7.4 s).
 
 ## «Mening o'rnim» — a leader's and a brigadir's own place (`/leaders`)
 
@@ -12261,6 +12274,22 @@ blocking work on the event loop freezes every request on the server at once.
   a fifth of a 5.7 s update in `ssl.do_handshake`) keeps one connection to
   Telegram per thread. Not touched: `/api/arc-legacy/stats` (7.2 s once, its
   own SQL) and `/api/heatmap` (3.1 s once).
+- **The seventeenth (19 Oct, 12:49) was the register's own rebuild**: one
+  3.4 s freeze, «one thread used the CPU the whole time — «leader-register»
+  (2.0 s)», GC 1.2 s of it. A build allocates a few hundred thousand objects
+  and the collector walked them all, holding the GIL; then a one-shot
+  `json.dumps` of the whole register and, per request, a 20 MB string join and
+  encode held it again. Fixed in the build (see «The /leaders register is
+  KEPT»: GC paused, encoded and sent as pieces, warmed after boot — the cold
+  `/api/leaders` of the same DM, 7.4 s «none kept yet», was the first load
+  after a deploy). Same DM, `/api/leader-ai/queue` ×2 at 4.2 s: its count pass
+  built up to 12,000 ORM objects (`_sheet_scope`, `_project` and the identity
+  map were most of it) and asked `one_process` two or three queries per task-3
+  card. It reads COLUMNS now (a Row answers the same attribute names; the page
+  slice still re-reads its rows whole), and `_one_process` reads every row's
+  day cell in one query (`one_process.day_cells`) and answers each cell /
+  (leader, day) once per request. Not touched: `/api/leaders-kpi` (4.3 s, small
+  reads queued behind the freeze) and `/health` (3.1 s, the same).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
