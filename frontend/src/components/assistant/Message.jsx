@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, Clock3, Database, FileSpreadsheet,
+  AlertTriangle, ArrowUpRight, BookOpen, Calculator, ChevronDown, ChevronRight, Clock3, Database, FileSpreadsheet,
   Loader2, Mic, RotateCcw, Search, BotMessageSquare,
 } from "lucide-react";
 import { FileTile } from "../ui/FileIcon";
@@ -10,7 +10,7 @@ import CopyButton from "./CopyButton";
 import useAT from "./useAT";
 import { ACTIVE } from "../../context/AssistantContext";
 
-const STEP_ICON = { docs: BookOpen, search: Search, data: Database, file: FileSpreadsheet };
+const STEP_ICON = { docs: BookOpen, search: Search, data: Database, file: FileSpreadsheet, calc: Calculator };
 
 /**
  * One message. The user's own words sit on the right in the warm bubble the

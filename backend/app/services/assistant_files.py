@@ -6,8 +6,9 @@ reviewer's); a sheet is read HERE into plain rows, because Gemini reads tables
 as text far better than it reads a zip of XML. A file it cannot read is refused
 at the door rather than sent along to fail later.
 
-OUT: a workbook it builds from data it gathered (``make_xlsx``), or a file an
-existing export endpoint returned. In a browser the file is a download link in
+OUT: a workbook it builds from data it gathered (``make_xlsx``), any other
+document (``assistant_documents`` — docx, pdf, pptx, csv, md, txt, html), or a
+file an existing export endpoint returned. In a browser the file is a download link in
 the chat; in Telegram, where a web view cannot save a download, the bot DMs it
 — the platform's standing rule for every export (``xlsx_delivery``).
 """

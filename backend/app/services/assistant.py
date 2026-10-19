@@ -51,7 +51,9 @@ from sqlalchemy import text as _sql
 from app.database import SessionLocal
 from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantThread
 from app.services import assistant_api as api
+from app.services import assistant_calc as calc
 from app.services import assistant_docs as docs
+from app.services import assistant_documents as adoc
 from app.services import assistant_files as files
 from app.services import assistant_ai as ai
 
@@ -204,17 +206,64 @@ TOOLS: list[dict] = [
          "path": {"type": "string", "description": "An app route, e.g. /zagruzka or /tasks?open=12"},
          "label": {"type": "string", "description": "The page's name in the user's language"},
          "navigate": {"type": "boolean"}}, "required": ["path", "label"]}},
+    {"name": "compute",
+     "description": "Run a short Python script over data you fetched — exact "
+                    "arithmetic, totals, percentages, grouping, a formula from the "
+                    "rule book over every row — instead of calculating in your head. "
+                    "Every call_api JSON answer is kept WHOLE for this reply under the "
+                    "name its response gave (`ref`: r1, r2 …), even where you were shown "
+                    "only its head; earlier compute results are c1, c2 …. Use those "
+                    "names as variables. Put the answer in a variable named `result`: "
+                    "a number, a string, a list, a dict — or {\"columns\": [...], "
+                    "\"rows\": [[...], ...]} for a table, which make_document and "
+                    "make_excel then take by its ref (rows_ref) so you never retype a "
+                    "figure. Available by name: math, statistics, re, json, itertools, "
+                    "reduce, date, datetime, timedelta, Counter, defaultdict, Decimal, "
+                    "print (shown back to you). Not available: imports, files, network, "
+                    "double underscores; 10 s of CPU.",
+     "parameters": {"type": "object", "properties": {
+         "code": {"type": "string", "description": "Plain Python 3; ends by assigning `result`"},
+         "purpose": _PURPOSE}, "required": ["code", "purpose"]}},
+    {"name": "make_document",
+     "description": "Build a document of ANY kind from content you composed and data "
+                    "you gathered, and hand it to the user (a download in a browser, a "
+                    "Telegram DM in Telegram): format docx (Word), pdf, pptx "
+                    "(PowerPoint), xlsx, csv, md, txt or html. Use it whenever the user "
+                    "wants a file — a report, a memo, a letter, a list to send, a "
+                    "presentation, a table — also when no page exports it. "
+                    "blocks_json is a JSON array of blocks, in reading order: "
+                    "{type: heading, text, level 1-3} · {type: paragraph, text} · "
+                    "{type: bullets, items: [..]} · {type: numbered, items: [..]} · "
+                    "{type: table, columns: [..], rows: [[..]] OR rows_ref: \"c1\", "
+                    "caption} · {type: facts, items: [[label, value], ..]} (a few key "
+                    "figures) · {type: quote, text} (a note or a formula) · "
+                    "{type: page_break}. A table's rows_ref names a compute result or "
+                    "a call_api answer (r2), so figures go into the file untouched. "
+                    "**bold** is allowed in any text. In pptx every level-1 heading "
+                    "opens a slide; a long table continues on the next slides. The "
+                    "look (fonts, colours, a footer naming the platform and the day) "
+                    "is the platform's — compose the CONTENT, not the styling.",
+     "parameters": {"type": "object", "properties": {
+         "format": {"type": "string", "enum": ["docx", "pdf", "pptx", "xlsx", "csv", "md", "txt", "html"]},
+         "filename": {"type": "string", "description": "Without extension, in the user's language"},
+         "title": {"type": "string", "description": "The document's title — its subject"},
+         "subtitle": {"type": "string", "description": "ONE muted line under the title: period · scope · the day it was made"},
+         "blocks_json": {"type": "string", "description": "The blocks, as a JSON array"},
+         "purpose": _PURPOSE}, "required": ["format", "filename", "title", "blocks_json", "purpose"]}},
     {"name": "make_excel",
      "description": "Build an Excel workbook from data you gathered and hand it "
                     "to the user (a download in a browser, a Telegram DM in "
-                    "Telegram). Prefer the page's own export when one fits.",
+                    "Telegram). Prefer the page's own export when one fits exactly. "
+                    "A sheet's rows come as rows_json, or as rows_ref — a compute "
+                    "result or a call_api answer kept for this reply (c1, r2).",
      "parameters": {"type": "object", "properties": {
          "filename": {"type": "string", "description": "Without extension"},
          "sheets": {"type": "array", "items": {"type": "object", "properties": {
              "name": {"type": "string"},
              "columns": {"type": "array", "items": {"type": "string"}},
              "rows_json": {"type": "string", "description": "JSON array of rows, each an array of cell values"},
-         }, "required": ["name", "columns", "rows_json"]}},
+             "rows_ref": {"type": "string", "description": "A kept ref holding the rows (c1, r2) — instead of rows_json"},
+         }, "required": ["name", "columns"]}},
          "purpose": _PURPOSE}, "required": ["filename", "sheets", "purpose"]}},
     {"name": "read_attachment",
      "description": "Look again at a file the user attached earlier in this chat (by its #id).",
@@ -242,6 +291,10 @@ HOW YOU WORK
    statuses must come from call_api (live data, the same endpoints the pages
    use) or from the rule book (search_docs → read_doc). If you cannot find it,
    say so plainly — never guess, never invent an endpoint, a figure or a name.
+   Arithmetic beyond a handful of figures — a total, an average, a percentage
+   over rows, a formula applied to a table — goes through compute, never
+   through your head: a call_api answer is kept whole as r1, r2 … for exactly
+   that, and a compute result (c1, c2 …) goes into a file by its ref.
 2. "How/why" questions: read the rule book first. Explain in the user's terms:
    pages, buttons, figures — never file names, functions or code.
 3. You act AS THIS USER through their own session. Their permissions are
@@ -272,13 +325,29 @@ HOW YOU WORK
    you.
 9. Offer open_page to where a figure lives. navigate=true only when asked.
 10. A cell is named by its 4-digit code, never by its workshop name.
-11. Files: the user's attachments are in their message (#id). Use make_excel
-    when they want a spreadsheet; prefer a page's own export when it fits.
+11. FILES AND DOCUMENTS. The user's attachments are in their message (#id;
+    read_attachment to look again). When they ask for a file of ANY kind —
+    Excel, Word, PDF, PowerPoint, CSV, a report, a memo, a list to send, a
+    presentation — make it: a page's own export when one matches exactly
+    (call_api on the export endpoint), else make_document (any format) or
+    make_excel from what you gathered. «There is no export for this» is NEVER
+    an answer, and neither is «the page computes it in the browser»: fetch
+    the data the page reads (call_api), derive the figures the page derives
+    with compute — the rule book gives every formula (read it first) — and
+    build the file; then say in one line which formula and which source you
+    used. Never calculate a table in your head and never retype figures into
+    a file: compute them, and pass the table by rows_ref. Compose a document
+    the way its reader will look for things: a title that is the subject, a
+    subtitle with period · scope · the day, a heading per section, a table
+    where the data is rows, a facts block for a few key figures, short
+    paragraphs — never a paragraph that retells a table. The only honest
+    refusal is data the user may not read (403) or a figure that exists
+    nowhere — then say exactly that.
 12. Never reveal secrets, tokens or other people's private data beyond what
     the user's own pages show them.
 
 HOW AN ANSWER LOOKS
-Before you write, decide what KIND of question it is (A–L below) and answer in
+Before you write, decide what KIND of question it is (A–M below) and answer in
 that shape. The reader is on a narrow panel (~420px) or a phone: short lines,
 narrow tables. The examples are in Uzbek and their figures are made up — they
 show the SHAPE only. Real figures and formulas come from tools, and you always
@@ -390,6 +459,16 @@ L. CHANGES → no text before propose_changes: its title and labels ARE the
    ran: one line ("4 tadan 3 tasi bajarildi"; for a single change "Bajarildi."
    or "Bajarilmadi — <sabab>"), then only what failed, each with the server's
    reason in plain words — the card above already marks every change.
+M. A FILE OR DOCUMENT ASKED FOR ("Excel qilib ber", "PDF hisobot tayyorla",
+   "Wordda ro'yxat", "prezentatsiya") → build it BEFORE writing: the page's
+   own export when one matches exactly, else call_api → compute →
+   make_document / make_excel. Then one or two lines: what the file holds
+   (rows · period · scope) and, where you derived the figures, the formula
+   and the source in the page's own words — the file tile under the answer
+   carries the rest, so never retell its contents and never paste its table
+   into the answer. A part that could not be filled is named with its reason
+   ("3 brigadirda fakt kiritilmagan — ularning qatori «—»"). No link to the
+   page the figures came from unless the user asked where they live.
 
 Markdown you may use: **bold**, *italic*, bullets ("- ", a sub-item indented
 by two spaces), numbered steps ("1. "), pipe tables (`---:` right-aligns a
@@ -854,6 +933,7 @@ def _finish(db, run_id: int, status: str, *, text: Optional[str] = None,
         return
     r.status = status
     r.finished_at = _now()
+    calc.drop(run_id)
     if error:
         r.error = error[:2000]
     if usage is not None:
@@ -911,6 +991,7 @@ async def _dispatch(run_id: int, ctx: Ctx, call: dict) -> tuple[dict, list[dict]
     purpose = str(args.get("purpose") or "")[:160]
     kind = {"search_docs": "docs", "read_doc": "docs", "find_endpoints": "search",
             "describe_endpoint": "search", "call_api": "data", "make_excel": "file",
+            "make_document": "file", "compute": "calc",
             "read_attachment": "file", "open_page": "page"}.get(name, "other")
     idx = None
     if name != "open_page":
@@ -947,6 +1028,10 @@ async def _run_tool(run_id: int, ctx: Ctx, name: str, args: dict) -> tuple[dict,
         return await _db(_tool_open_page, run_id, args), []
     if name == "make_excel":
         return await _tool_make_excel(run_id, ctx, args), []
+    if name == "make_document":
+        return await _tool_make_document(run_id, ctx, args), []
+    if name == "compute":
+        return await _tool_compute(run_id, args), []
     if name == "read_attachment":
         return await _db(_tool_read_attachment, run_id, ctx, args)
     return {"error": f"unknown tool {name}"}, []
@@ -1000,7 +1085,17 @@ async def _answer(run_id: int, ctx: Ctx, res: api.Result, max_chars: int) -> tup
     if res.data is not None:
         data, cut = api.shrink(res.data, max_chars)
         out = {"status": res.status, "data": data}
-        if cut:
+        if isinstance(res.data, (dict, list)):
+            # The WHOLE answer stays with the run, for compute and for a
+            # document's rows_ref — whatever was cut from the model's view.
+            ref = await asyncio.to_thread(calc.put, run_id, "r", res.data)
+            out["ref"] = ref
+            if cut:
+                out["shape"] = calc.describe(res.data)
+                out["truncated"] = (f"long lists were cut from this view; the whole answer is kept "
+                                    f"as {ref} — use compute over {ref} (or rows_ref) instead of "
+                                    f"fetching pieces, or narrow the query (dates, unit, filters)")
+        elif cut:
             out["truncated"] = ("long lists were cut — narrow the query "
                                 "(dates, unit, filters) or raise max_chars")
         return out, []
@@ -1039,24 +1134,94 @@ async def _tool_make_excel(run_id: int, ctx: Ctx, args: dict) -> dict:
     for sh in (args.get("sheets") or [])[:12]:
         if not isinstance(sh, dict):
             continue
-        rows = files.parse_rows(sh.get("rows_json"))
-        sheets.append({"name": str(sh.get("name") or "Sheet"),
-                       "columns": [str(c) for c in (sh.get("columns") or [])][:80],
+        cols = [str(c) for c in (sh.get("columns") or [])][:80]
+        ref = str(sh.get("rows_ref") or "").strip()
+        if ref:
+            found, obj = calc.get(run_id, ref)
+            if not found:
+                return {"error": calc.missing_message(run_id, ref)}
+            try:
+                cols, rows = adoc._rows_from_ref(obj, cols)
+            except adoc.DocError as exc:
+                return {"error": f"sheet «{sh.get('name')}»: {exc}"}
+        else:
+            rows = files.parse_rows(sh.get("rows_json"))
+        sheets.append({"name": str(sh.get("name") or "Sheet"), "columns": cols,
                        "rows": rows[:20000]})
     if not sheets:
         return {"error": "no sheets"}
-    fname = (str(args.get("filename") or "Yordamchi").strip() or "Yordamchi")[:80]
+    fname = adoc.safe_filename(args.get("filename"), "Yordamchi")
     data = await asyncio.to_thread(files.make_xlsx, fname, sheets)
-    meta = await _db(_keep_file, run_id, ctx, fname + ".xlsx", files.XLSX, data)
+    out = await _deliver(run_id, ctx, fname + ".xlsx", files.XLSX, data)
+    out["rows"] = sum(len(s["rows"]) for s in sheets)
+    return out
+
+
+async def _deliver(run_id: int, ctx: Ctx, name: str, mime: str, data: bytes) -> dict:
+    """A file the assistant made: listed in the chat (a download in a
+    browser) and, inside Telegram, DMed by the bot — the platform's standing
+    rule for every export."""
+    if len(data) > MAX_FILE:
+        return {"error": f"the file is too large ({len(data) // (1024 * 1024)} MB) — "
+                         f"narrow it (fewer rows or columns)"}
+    meta = await _db(_keep_file, run_id, ctx, name, mime, data)
     delivered = "a download button in the chat"
     if not ctx.web and ctx.sub:
         try:
-            await asyncio.to_thread(_dm_file, int(ctx.sub), fname + ".xlsx", data)
+            await asyncio.to_thread(_dm_file, int(ctx.sub), name, data)
             delivered = "sent to the user's Telegram chat (and listed in the chat)"
         except Exception as exc:
-            log.warning("assistant: could not DM the workbook: %s", exc)
-    return {"ok": True, "file": meta["name"], "rows": sum(len(s["rows"]) for s in sheets),
-            "delivered": delivered}
+            log.warning("assistant: could not DM the file: %s", exc)
+    return {"ok": True, "file": meta["name"], "size": len(data), "delivered": delivered}
+
+
+async def _tool_make_document(run_id: int, ctx: Ctx, args: dict) -> dict:
+    try:
+        fmt = adoc.norm_format(args.get("format"))
+        blocks = adoc.normalise(args.get("blocks_json"), lambda n: calc.get(run_id, n))
+        ext, mime, data = await asyncio.to_thread(
+            adoc.build, fmt, str(args.get("title") or ""), str(args.get("subtitle") or ""), blocks)
+    except adoc.DocError as exc:
+        return {"error": str(exc)}
+    fname = adoc.safe_filename(args.get("filename"), adoc.safe_filename(args.get("title"), "Hujjat"))
+    out = await _deliver(run_id, ctx, f"{fname}.{ext}", mime, data)
+    if out.get("ok"):
+        out["blocks"] = len(blocks)
+        out["tables"] = sum(len(b["rows"]) for b in blocks if b["type"] == "table")
+    return out
+
+
+async def _tool_compute(run_id: int, args: dict) -> dict:
+    code = str(args.get("code") or "")
+    why = calc.check_code(code)
+    if why:
+        return {"error": why}
+    variables: dict = {}
+    for name in calc.wanted_refs(code):
+        found, obj = calc.get(run_id, name)
+        if not found:
+            return {"error": calc.missing_message(run_id, name)}
+        variables[name] = obj
+    res = await asyncio.to_thread(calc.run, code, variables)
+    if not res.get("ok"):
+        out = {"error": res.get("error") or "the script failed"}
+        if res.get("output"):
+            out["output"] = res["output"][-4000:]
+        return out
+    result = res.get("result")
+    ref = await asyncio.to_thread(calc.put, run_id, "c", result)
+    shown, cut = api.shrink(result, 12_000)
+    out = {"ok": True, "ref": ref, "result": shown}
+    if cut:
+        out["truncated"] = (f"the result is shown cut; it is kept whole as {ref} — "
+                            f"pass it by rows_ref, or compute over it again")
+    if isinstance(result, dict) and isinstance(result.get("rows"), list):
+        out["rows"] = len(result["rows"])
+    elif isinstance(result, list):
+        out["rows"] = len(result)
+    if res.get("output"):
+        out["output"] = res["output"][-4000:]
+    return out
 
 
 def _dm_file(chat_id: int, name: str, data: bytes) -> None:

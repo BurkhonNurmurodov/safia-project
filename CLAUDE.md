@@ -11418,6 +11418,45 @@ hides it, the server refuses `X-Exam-Attempt`).
   then bounce back). A new Markdown element is a renderer change AND a line in
   the guide — never one without the other.
 
+- **It makes ANY document, and it computes before it writes** (2026-10-19,
+  the operator: «The AI assistant should be able to create any kind of
+  documents when it's asked even when we don't have a template for it» — it
+  had answered «Give me excel file» on the «Samaradorlik» table, which the
+  browser computes and nothing exports, with «21 brigadir × 30 kun by hand is
+  not reliable, so I gave no file»). Two tools, one rule:
+  - **`make_document`** (`services/assistant_documents.py`) builds **docx ·
+    pdf · pptx · xlsx · csv · md · txt · html** from ONE block model —
+    heading · paragraph · bullets · numbered · table · facts · quote ·
+    page_break — in one house look: the title, a muted subtitle (period ·
+    scope · the day), a gold header row with white text, zebra rows, numbers
+    right-aligned, columns sized to what they hold (never a two-column table
+    stretched across a slide), a quiet «Safia IMS · dd.mm.yyyy» footer. In a
+    deck every level-1 heading opens a slide and a long table continues with
+    «(davomi)»; in a workbook every table is a sheet. `make_excel` stays as
+    the spreadsheet shorthand. Word is python-docx, PDF is fpdf2 on the
+    server's Unicode TTF (the camera stamp's `downtime_card._find_font`;
+    none → the tool says to make a Word file), slides are python-pptx. The
+    rendered look was checked through LibreOffice before it shipped.
+  - **`compute`** (`services/assistant_calc.py`) runs the model's short
+    Python over the data it fetched. Every `call_api` JSON answer is kept
+    WHOLE for the run as `r1, r2…` (24 MB a run, 96 MB a process, in memory,
+    dropped when the run ends — a run picked up on another process after a
+    deploy finds none, and the tool says to fetch again), a result is kept as
+    `c1, c2…`, and a table block or a sheet takes `rows_ref`, so a figure
+    goes from the endpoint into the file without the model retyping it. The
+    sandbox is a subprocess (`python -I -S`, 10 s CPU, 1 GB, 15 s wall, no
+    imports, no files, no network, no `__` anywhere in the source — the text
+    is checked, not only the tree, since a format string carries one — and a
+    whitelist of builtins; math, statistics, re, json, itertools, dates,
+    Counter, Decimal by name). The assistant is admin-only, and running a
+    model's code on the server is the second reason to re-check that before
+    opening it.
+  - **Rule 11 and shape M of the prompt**: a missing export is never an
+    answer — fetch what the page reads, derive what the page derives with the
+    rule book's formula, build the file, and say in one line which formula
+    and which source; never a table calculated in the model's head. A
+    `compute` step wears a calculator icon in the chat's trail (`calc`).
+
 ## AI keys, and which feature runs on which («AI kalitlari», `/admin/upload?tab=aikeys`)
 
 From **2026-10-19** (the operator, the day the proof reviewer got its key

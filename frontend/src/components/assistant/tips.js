@@ -23,7 +23,7 @@ const BY_PAGE = {
   daily: ["assistant.tip.sdBelow"],
 };
 
-const GENERAL = ["assistant.tip.lowest", "assistant.tip.tasks", "assistant.tip.excel"];
+const GENERAL = ["assistant.tip.lowest", "assistant.tip.tasks", "assistant.tip.excel", "assistant.tip.report"];
 const MAX = 4;
 
 /** Translation keys of the questions to show. `onPage` = the assistant's own
