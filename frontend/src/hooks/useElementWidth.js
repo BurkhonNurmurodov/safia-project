@@ -20,7 +20,12 @@ import { useCallback, useRef, useState } from "react";
 //
 // Returns [ref, width]; width is 0 until the node mounts — read that as "not
 // measured yet", never as a real width.
-export default function useElementWidth() {
+//
+// `box = "client"` measures the inside of a SCROLLER instead — its clientWidth,
+// the part on screen without its scrollbar (the /leaders-kpi ranking pins an
+// opened row's panel to it). The border box would count the scrollbar too and
+// make anything sized to it wider than what the reader can see.
+export default function useElementWidth(box = "border") {
   const [width, setWidth] = useState(0);
   const roRef = useRef(null);
   const rafRef = useRef(0);
@@ -31,7 +36,7 @@ export default function useElementWidth() {
     cancelAnimationFrame(rafRef.current);
     if (!el) return;
 
-    const measure = () => setWidth(Math.round(el.getBoundingClientRect().width));
+    const measure = () => setWidth(box === "client" ? el.clientWidth : Math.round(el.getBoundingClientRect().width));
     measure();
     if (typeof ResizeObserver === "undefined") return;
     // rAF-debounced: a drag-resize or an orientation flip redraws the chart
@@ -42,7 +47,7 @@ export default function useElementWidth() {
     });
     ro.observe(el);
     roRef.current = ro;
-  }, []);
+  }, [box]);
 
   return [ref, width];
 }
