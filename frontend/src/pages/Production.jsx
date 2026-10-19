@@ -118,6 +118,10 @@ const COLS = [
   // Where the two columns above come from — the file, or a person. It sits
   // directly after them because that is the question it answers.
   { key: "autofill", labelKey: "production.col.source", align: "center", hintKey: "production.col.sourceHint" },
+  // «Kontiner krishka» (2026-10-19, the operator's request): a number the
+  // brigadir types per line per day — empty until somebody does, read by
+  // nothing. AFTER «Manba», so that chip keeps answering for ПЛАН/ФАКТ alone.
+  { key: "container_cap", labelKey: "production.col.containerCap", align: "center", edit: true, hintKey: "production.col.containerCapHint" },
   { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
   { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
   { key: "minutes", labelKey: "production.col.minutes", align: "center" },
@@ -212,6 +216,7 @@ const sortVal = (r, key) => {
     // Groups the manual rows together; the chip below says which is which.
     case "autofill":     return r.sap_filled === false ? 0 : 1;
     case "plan":         return r.plan_qty;
+    case "container_cap": return r.container_cap ?? null;
     case "actual_labor": return r.actual_labor;
     case "labor_total":  return r.total_labor;
     case "minutes":      return r.minutes;
@@ -2118,9 +2123,11 @@ export default function Production() {
   const saveOverride = (row, field) => (value) => {
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
                  field, line_key: row.line_key };
-    const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
+    const prev = (field === "actual" ? row.actual_qty
+      : field === "container_cap" ? row.container_cap : row.plan_qty) ?? null;
     tracked({
-      label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,
+      label: `${row.name} · ${t(field === "actual" ? "production.col.fact"
+        : field === "container_cap" ? "production.col.containerCap" : "production.col.plan")}`,
       forward: () => override.mutateAsync({ ...at, value }),
       back: () => override.mutateAsync({ ...at, value: prev }),
     });
@@ -2222,6 +2229,14 @@ export default function Production() {
             title={r.sap_filled === false ? t("production.autofill.cellHint")
               : r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.plan_qty} onSave={saveOverride(r, "plan")} />
+        );
+      case "container_cap":
+        // Typed like ПЛАН/ФАКТ — the same spreadsheet cell, the same closed-day
+        // lock — and blank until somebody types: a lid count nobody entered is
+        // not 0, and the file never fills it.
+        return (
+          <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
+            value={r.container_cap} onSave={saveOverride(r, "container_cap")} />
         );
       case "autofill": {
         // Two states, never three: a row is filled by the file or it is typed.

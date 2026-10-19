@@ -7335,6 +7335,47 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
   closed-day lock; and the SAP snapshot itself, which is still written for every
   group the file names.
 
+### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19)
+
+From **2026-10-19** (the operator's request: «one column … empty by default,
+and if supervisors want they can type any number on it») the «Pozitsiyalar»
+table carries a **«Kontiner krishka»** column (ru «Крышка контейнера», en
+«Container cap») — a number the brigadir types per LINE per DAY, blank until
+somebody does. Read as a daily fact about the line (how many lids that day),
+not a constant of the catalog line — a constant would be a catalog field,
+dated by `pp_catalog.freeze` and edited by an admin, which is not what was
+asked.
+
+- **It rides the ПЛАН/ФАКТ door.** `POST /api/production/override` with
+  `field: "container_cap"` (`OVERRIDE_COLS` maps a field to its
+  `pp_line_daily` column), stored on `pp_line_daily.container_cap` — NULL =
+  nothing typed, never 0 (`startup.add_pp_line_container_cap`, both
+  entrypoints, through `_ensure_columns`, FATAL on failure since every overlay
+  read selects it). The same `QtyCell`, the same leader cell/group scope, the
+  same closed-day lock (`idle_lock.require_open`), the same Jurnal row
+  (`production.override_set`, change key `container_cap`, label
+  `logs.f.container_cap`), the same undo. **It always names a line**: the
+  group level (`pp_daily`) has no such column, so the whole-group path has
+  nowhere to write it and a body without `line_key` is a 400 — the current
+  bundle always sends one, and `_set_line_override` explodes and clears the
+  shared value only for a column `pp_daily` carries.
+- **Nothing reads it.** No load, minutes, ЛЮДИ, загрузка, leader check or
+  export figure moves with it; the ABC workbook (the fixed brigadir form)
+  does not carry it. It is a column after «Manba» (so that chip keeps
+  answering for ПЛАН/ФАКТ alone), sortable, in the `ColumnsPicker` like every
+  other column — a profile that saved an order before it existed gets it
+  seated where `COLS` puts it, shown.
+- **A SAP upload leaves it alone.** `_ingest_for_manager` in mode «both»
+  deletes the date's per-line rows; a row carrying a lid count instead loses
+  its ПЛАН/ФАКТ overrides (exactly as before) and KEEPS the count — the file
+  says nothing about lids, so there is no restatement to outlive. The
+  field-by-field modes never touched it.
+- **A catalog edit carries it with the line** (`_carry_manual_quantities`,
+  beside the two quantities, from the day the edit counts on). A catalog
+  IMPORT cannot — the same limit the quantities have.
+- Deliberately NOT built: arithmetic over it, an export column, a per-line
+  constant.
+
 ## «Plan Bajarish» — which products, cells and brigadirs fall short (`/plan`)
 
 From **2026-09-30** (the operator's directive: management must see which

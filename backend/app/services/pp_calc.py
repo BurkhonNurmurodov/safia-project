@@ -576,7 +576,8 @@ def compute_dashboard(
     quantities:  {(daily_key, work_center): {plan_qty, actual_qty}}  (already
                  override-resolved by the caller; the key is pp_daily.sap_code —
                  see daily_key(), which a code-less line derives from its name)
-    line_overrides: {(daily_key, work_center, line_key): {plan, actual}} — the
+    line_overrides: {(daily_key, work_center, line_key): {plan, actual,
+                 container_cap}} — the
                  per-CATALOG-LINE manual values (models.PPLineDaily). They sit ON
                  TOP of `quantities`, which stays the group's shared answer, so a
                  line with no entry here reads exactly what it read before this
@@ -737,6 +738,10 @@ def compute_dashboard(
             "auto_fill": p.get("auto_fill", True) is not False,
             # what the client echoes back when it overrides this line's quantity
             "line_key": line_key,
+            # «Kontiner krishka» (2026-10-19): a number the brigadir typed for
+            # this line on this day, or None — never 0. Nothing computes with it.
+            "container_cap": (_f(lo["container_cap"])
+                              if lo.get("container_cap") is not None else None),
             # how many catalog lines currently share this quantity record, and
             # whether THIS row is still reading the shared one. The page says so
             # rather than leaving the reader to discover it by typing.

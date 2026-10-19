@@ -1415,6 +1415,14 @@ class PPLineDaily(Base):
     line_key        = Column(String, nullable=False)   # pp_calc.line_keys — name|labor#n
     plan_override   = Column(Numeric(14, 4), nullable=True)
     actual_override = Column(Numeric(14, 4), nullable=True)
+    # 2026-10-19 «Kontiner krishka» (ru «Крышка контейнера», en «Container
+    # cap»): a number the brigadir types for THIS line on THIS day on the
+    # «Pozitsiyalar» table, through the same /override door as ПЛАН/ФАКТ. NULL =
+    # nothing typed, which is the column's whole default — never 0. Nothing
+    # computes with it (no load, no minutes, no export); a SAP upload leaves it
+    # where it is (the file says nothing about lids) and a catalog edit carries
+    # it with the line like the two quantities. startup.add_pp_line_container_cap.
+    container_cap   = Column(Numeric(14, 4), nullable=True)
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Every component is NOT NULL, so a plain UniqueConstraint is enough — the

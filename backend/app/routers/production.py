@@ -7,7 +7,8 @@ AND narrowed to the cells they own — catalog, teams, day snapshot, staffing pi
 raw SAP rows and the Excel export all follow `_leader_wc_scope`:
     GET  /api/production/dashboard?date=YYYY-MM-DD
     GET  /api/production/dates
-    POST /api/production/override          {date, sap_code, work_center, field, value}
+    POST /api/production/override          {date, sap_code, work_center, field, value, line_key}
+                                            field = plan | actual | container_cap
     POST /api/production/reconciliation     {date, data}
 
 Admin-only:
@@ -447,6 +448,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         line_overrides[(lo.qty_key, lo.work_center, lo.line_key)] = {
             "plan": (float(lo.plan_override) if lo.plan_override is not None else None),
             "actual": (float(lo.actual_override) if lo.actual_override is not None else None),
+            # «Kontiner krishka» — typed for this line on this day, else None
+            "container_cap": (float(lo.container_cap) if lo.container_cap is not None else None),
         }
 
     quantities: dict[tuple[str, str], dict] = {}
@@ -1354,11 +1357,22 @@ def list_production_managers(
     ]}
 
 
+# What a brigadir may type on a row of the «Pozitsiyalar» table, and the
+# pp_line_daily column each lands on. ПЛАН/ФАКТ also exist one level up
+# (pp_daily.*_override, the group's shared value); «Kontiner krishka»
+# (2026-10-19) belongs to ONE line and has no group level at all.
+OVERRIDE_COLS = {
+    "plan": "plan_override",
+    "actual": "actual_override",
+    "container_cap": "container_cap",
+}
+
+
 class OverrideBody(BaseModel):
     date: str
     sap_code: str         # the row's `qty_key` = pp_daily.sap_code (see pp_calc.daily_key)
     work_center: str
-    field: str            # 'plan' | 'actual'
+    field: str            # 'plan' | 'actual' | 'container_cap' (OVERRIDE_COLS)
     value: Optional[float]  # null clears the override
     # WHICH catalog line of the (qty_key, work centre) group this is — the row's
     # own `line_key` (pp_calc.line_keys). Absent = the caller does not know about
@@ -1377,8 +1391,9 @@ def set_override(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    if body.field not in ("plan", "actual"):
-        raise HTTPException(status_code=400, detail="field must be 'plan' or 'actual'")
+    if body.field not in OVERRIDE_COLS:
+        raise HTTPException(status_code=400,
+                            detail="field must be 'plan', 'actual' or 'container_cap'")
     # The client sends the row's `qty_key`, which is the SAP code for a coded line
     # and a name-derived token for a code-less one — never blank. A blank would
     # write a row the dashboard then looks for under a different key, i.e. an edit
@@ -1422,7 +1437,14 @@ def set_override(
     # admin re-opens the day first (`can_reopen` on the payload says who may).
     idle_lock.require_open(db, mid, day)
 
-    col = "plan_override" if body.field == "plan" else "actual_override"
+    col = OVERRIDE_COLS[body.field]
+    # «Kontiner krishka» is a line's own number and nothing else: pp_daily has
+    # no such column, so the whole-group path below — what a bundle older than
+    # v4.32.0 asks for, and one that never sends this field — has nowhere to
+    # write it. Refused rather than written somewhere no reader looks.
+    if body.field == "container_cap" and line is None:
+        raise HTTPException(status_code=400,
+                            detail="line_key is required for container_cap")
 
     # ONE writer either way, and the retry is what makes it safe to run twice.
     # Every first edit of a line on a day is an INSERT against
@@ -1454,7 +1476,7 @@ def set_override(
         target_name=body.sap_code, unit_id=mid, day=day,
         details=[("date", str(day)), ("sap_code", body.sap_code),
                  ("work_center", body.work_center), ("line", line)],
-        changes=[("plan" if body.field == "plan" else "fact",
+        changes=[({"plan": "plan", "actual": "fact"}.get(body.field, body.field),
                   float(was) if was is not None else None, body.value)],
     )
     return _build_dashboard(db, mid, day, scope, payload)
@@ -1597,7 +1619,9 @@ def _set_line_override(db, mid: int, day: date, key: str, wc: str, line: str,
     have = _overlay(db, mid, day, key, wc)
     was = getattr(have[line], col) if line in have else None
 
-    if shared is not None and getattr(shared, col) is not None:
+    # The group level carries ПЛАН/ФАКТ only: a column pp_daily does not have
+    # («Kontiner krishka») has nothing to explode and nothing to clear.
+    if shared is not None and hasattr(shared, col) and getattr(shared, col) is not None:
         carry = getattr(shared, col)
         for other in lines:
             r = _row_for(db, mid, day, key, wc, other, have)
@@ -2225,6 +2249,12 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                     PPLineDaily.manager_id == manager_id,
                     PPLineDaily.date == day).all():
                 if (lo.qty_key, lo.work_center, lo.line_key) in manual_lines:
+                    continue
+                # «Kontiner krishka» is not a figure the file restates — nothing
+                # in SAP says how many lids a line used — so a row carrying one
+                # loses its ПЛАН/ФАКТ exactly as before and KEEPS the lid count.
+                if lo.container_cap is not None:
+                    lo.plan_override = lo.actual_override = None
                     continue
                 db.delete(lo)
             db.flush()
@@ -3239,8 +3269,9 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
 
     What travels is what a PERSON typed, and only that:
 
-      • `pp_line_daily` — the per-line overrides. They are that line's own
-        numbers and nobody else's, so they always follow it.
+      • `pp_line_daily` — the per-line overrides, and the line's «Kontiner
+        krishka» beside them. They are that line's own numbers and nobody
+        else's, so they always follow it.
       • `pp_daily.*_override` — the group's shared manual value, carried only
         when the line was ALONE in its old group, and carried onto the line's
         own per-line row rather than onto the destination group. Siblings on
@@ -3297,6 +3328,8 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
             slot["plan"] = r.plan_override
         if r.actual_override is not None:
             slot["actual"] = r.actual_override
+        if r.container_cap is not None:
+            slot["container_cap"] = r.container_cap
         have.pop((r.qty_key, r.work_center or "", r.line_key, r.date), None)
         db.delete(r)
 
@@ -3359,6 +3392,9 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
             carried += 1
         if "actual" in vals:
             dest.actual_override = vals["actual"]
+            carried += 1
+        if "container_cap" in vals:
+            dest.container_cap = vals["container_cap"]
             carried += 1
     return carried
 
