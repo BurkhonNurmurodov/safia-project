@@ -474,6 +474,7 @@ export default function Zagruzka() {
       {...(which === "full" ? { calcFactors, onCalcFactorsChange: setCalcFactors } : {})}
       onEditBands={editBands(which)}
       columnSummary
+      pooledAvg
       title={t(COMPARISON[which].title)}
       note={t(COMPARISON[which].note)}
       fullscreen={isFull}

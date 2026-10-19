@@ -1754,6 +1754,16 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
 - **`official_hc` is the headcount either way**, so nothing here cares which
   basis the day is on: it is the typed «Bugungi fakt» from
   `zagruzka_source.ZAGRUZKA_FROM` and the «Одам сони» sheet before it.
+- **The «AVG за день» footer is the WHOLE TABLE, not a mean of the rows**
+  (the operator, 2026-10-19 — on all three comparison tables; the label stays
+  «AVG»). `ComparisonTable pooledAvg`: per day, Σ numerators ÷ Σ capacities over
+  every row the grid shows (P = Σ prod_plan over the rows' P capacities, A =
+  Σ prod_actual over their A capacities, each capacity = the cell's numerator ÷
+  its own value, so the basis, the ⚙ factors and the approval gate are the
+  cells' own); D pairs the halves over rows carrying both; the corner is the
+  whole table over the whole period. A small brigade weighs what it is worth.
+  MIN/MAX and every row's own summary are unchanged; `/zagruzka-cell` keeps the
+  mean (its unit row already is the measured whole).
 - **`/zagruzka` only** (the operator's call). `/zagruzka-cell` was considered
   and deliberately left alone — its rows are cells, whose headcount is a
   per-group SHARE, so the same formula there is a different decision.

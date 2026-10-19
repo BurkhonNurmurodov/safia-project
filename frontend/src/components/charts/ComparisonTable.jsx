@@ -310,6 +310,13 @@ function ComparisonTable({
   // (the per-cell загрузка) turn it on — there "how did the whole unit do on
   // 06.08?" is the question the grid is actually asked.
   columnSummary = false,
+  // What that footer's AVG means. Off (the default, and the per-cell page):
+  // the mean of the rows' percentages. On (/zagruzka, the operator 2026-10-19):
+  // the load of the WHOLE TABLE — every row's minutes of work over every
+  // row's capacity, summed first and divided once — so a 2-person brigade
+  // weighs what it is worth, not as much as a 60-person one. The label stays
+  // «AVG»; MIN/MAX are unchanged.
+  pooledAvg = false,
   // The UNIT the rows belong to, as its own footer row: `{ label, note, data }`
   // where `data` is keyed by date exactly like one row of `data`. It is NOT a
   // statistic over the rows above — it is measured, computed from the unit's
@@ -558,13 +565,48 @@ function ComparisonTable({
 
     const valuesOf = (name, d) => {
       const cell = data[name]?.[d];
-      if (!isApproved(name, d)) return { p: null, a: null, d: null };
+      if (!isApproved(name, d)) return { p: null, a: null, d: null, cell: null };
       const p = pctOf(planOf(cell));
       const a = pctOf(actOf(cell));
-      return { p, a, d: (p !== null && a !== null) ? p - a : null };
+      return { p, a, d: (p !== null && a !== null) ? p - a : null, cell };
+    };
+
+    // The whole table as ONE unit. Every reader on every basis is a numerator
+    // over a capacity — P = prod_plan ÷ (…), A = prod_actual ÷ (…) — so each
+    // cell's capacity is its numerator over its own value, and Σ numerators ÷
+    // Σ capacities is the table's load, read through the very readers (basis,
+    // ⚙ factors, approval gate) the cells use. A cell the grid leaves blank
+    // adds nothing to either side.
+    const pooled = (cells, reader, key) => {
+      let num = 0, den = 0;
+      for (const c of cells) {
+        const u = reader(c);
+        const n = Number(c?.[key]);
+        if (!(u > 0) || !(n > 0)) continue;
+        num += n;
+        den += n / u;
+      }
+      return den > 0 ? num / den : null;
+    };
+    const pooledStat = (vals) => {
+      const pCells = vals.filter(v => v.p !== null).map(v => v.cell);
+      const aCells = vals.filter(v => v.a !== null).map(v => v.cell);
+      // D pairs the halves the way a cell does: only rows carrying BOTH, or a
+      // day with a plan and no fact yet would read as a shortfall.
+      const both = vals.filter(v => v.d !== null).map(v => v.cell);
+      const bp = pctOf(pooled(both, planOf, "prod_plan"));
+      const ba = pctOf(pooled(both, actOf, "prod_actual"));
+      return {
+        p: pctOf(pooled(pCells, planOf, "prod_plan")),
+        a: pctOf(pooled(aCells, actOf, "prod_actual")),
+        d: bp !== null && ba !== null ? bp - ba : null,
+        n: pCells.length,
+        pooled: true,
+      };
     };
 
     const stat = (vals) => {
+      if (summaryMode === "avg" && pooledAvg) return pooledStat(vals);
       const pV = vals.map(v => v.p), aV = vals.map(v => v.a), dV = vals.map(v => v.d);
       const n = pV.filter(v => v !== null).length;
       if (summaryMode === "avg") return { p: rowAvg(pV), a: rowAvg(aV), d: rowAvg(dV), n };
@@ -581,7 +623,8 @@ function ComparisonTable({
     }
     // The corner closes the row with the same statistic over EVERY value in the
     // grid — not an average of the column averages, which is a different number
-    // whenever the columns hold different counts of filled cells.
+    // whenever the columns hold different counts of filled cells. Pooled, that
+    // is the whole table over the whole period.
     return { byDate, all: stat(everything) };
   })();
 
@@ -597,7 +640,7 @@ function ComparisonTable({
       // of seven rows carry a number averages two values, not seven. The count
       // rides along in the tooltip — a mean whose denominator you can't see is a
       // mean you can't argue with.
-      <td key={key} colSpan={2} title={t("comparison.statCount").replace("{n}", s.n)} style={{
+      <td key={key} colSpan={2} title={t(s.pooled ? "comparison.pooledCount" : "comparison.statCount").replace("{n}", s.n)} style={{
         padding: 0, position: "relative",
         border: "1px solid var(--border)",
         height: 30, verticalAlign: "middle",
