@@ -271,9 +271,14 @@ body.sidebar-open { overflow: hidden; }
 /* Honor reduced-motion for every shell animation — same stance as the
    Leaderboard podium halo. Base states are already the visible state, so
    killing the animation is safe. */
+/* «Liderlar KPI» radar — the cell's shape grows out of the centre once, when a
+   board row opens (transform-origin is set inline: the radar's own centre). */
+@keyframes kpiRadarIn { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: none; } }
+.kpi-radar-in { transform-box: view-box; animation: kpiRadarIn .45s cubic-bezier(.2,.8,.2,1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .page-enter, .modal-backdrop, .modal-card, .toast-in, .bell-swing, .badge-pop,
-  .savebar-in, .brk-in { animation: none !important; }
+  .savebar-in, .brk-in, .kpi-radar-in { animation: none !important; }
   .sidebar-ind { transition: none !important; }
   .nav-grp-items, .nav-grp-chev { transition: none !important; }
 }

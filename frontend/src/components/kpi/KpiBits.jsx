@@ -7,10 +7,13 @@
 // behind «Qanday hisoblanadi?» — then ONE card whose header is the view switch,
 // and under the table, folded, whatever the month could not count. The scale,
 // the weight and the mode are the rules dialog's, never printed on the tab.
-import { ChevronDown, ChevronRight, HelpCircle, Info } from "lucide-react";
+// The board is the one exception to the summary: its headline is its first
+// tile (BoardHero), under the podium.
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, HelpCircle, Info } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
-import { MAX_POINTS } from "./kpiUtil";
+import { TONE_HEX } from "../../utils/statusBands";
+import { MAX_POINTS, fracTone } from "./kpiUtil";
 
 export { ScoreChip } from "../turnover/TurnoverBits";
 
@@ -134,4 +137,76 @@ export function VerdictChip({ counted, compliant, children }) {
 // The one «nothing here» row of a table on this page.
 export function EmptyRow({ cols, text }) {
   return <tr><td colSpan={cols} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{text}</td></tr>;
+}
+
+// A score as a meter: one segment per point of the KPI's scale, lit up to the
+// score in its band's colour, the rest a lighter step of the same hue (the
+// track reads the band across the whole bar), the figure beside it in text
+// ink. No score: an empty grey track and «—».
+export function ScorePips({ score, max = 5, size = "md", label }) {
+  const tone = fracTone(score, max);
+  const hex = tone ? TONE_HEX[tone] : null;
+  const seg = size === "sm" ? { w: 7, h: 5, gap: 2 } : { w: 9, h: 6, gap: 2 };
+  return (
+    <span className="inline-flex items-center gap-2" role="img" aria-label={label || (score == null ? "—" : `${score} / ${max}`)}>
+      <span className={`font-semibold tabular-nums leading-none text-right ${size === "sm" ? "text-xs w-2.5" : "text-sm w-3"}`}
+        style={{ color: score == null ? "var(--text-4)" : "var(--text-1)" }} aria-hidden>{score ?? "—"}</span>
+      <span className="inline-flex" style={{ gap: seg.gap }} aria-hidden>
+        {Array.from({ length: max }, (_, i) => (
+          <span key={i} className="block rounded-[2px]" style={{
+            width: seg.w, height: seg.h,
+            background: hex ? (i < score ? hex : `${hex}30`) : "var(--border-md)",
+          }} />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+// A change since the month before — up good, down bad, «=» none. `digits` for
+// a total; a place or a score moves in whole steps.
+export function Delta({ d, digits = 0, title, size = "xs" }) {
+  if (d == null || Number.isNaN(d)) return null;
+  const v = Number(Number(d).toFixed(digits));
+  const cls = size === "sm" ? "text-xs" : "text-[11px]";
+  if (v === 0) return <span className={`${cls} tabular-nums font-semibold`} title={title} style={{ color: "var(--text-3)" }}>=</span>;
+  const up = v > 0;
+  const Icon = up ? ArrowUp : ArrowDown;
+  return (
+    <span className={`inline-flex items-center gap-px ${cls} font-semibold tabular-nums whitespace-nowrap`} title={title}
+      style={{ color: up ? "var(--status-ok)" : "var(--status-bad)" }}>
+      <Icon size={size === "sm" ? 12 : 11} strokeWidth={2.75} aria-hidden />{Math.abs(v).toFixed(digits)}
+    </span>
+  );
+}
+
+// The place, as a badge: the podium's three wear their medal, everybody else
+// a plain figure in the same box, so the column lines up.
+export function RankBadge({ rank, medal }) {
+  if (medal) {
+    return (
+      <span className="inline-grid place-items-center w-7 h-7 rounded-full text-xs font-bold tabular-nums flex-shrink-0"
+        style={{ color: medal, background: `${medal}1f`, boxShadow: `inset 0 0 0 1.5px ${medal}99` }}>{rank}</span>
+    );
+  }
+  return (
+    <span className="inline-grid place-items-center w-7 h-7 text-sm font-semibold tabular-nums flex-shrink-0"
+      style={{ color: "var(--text-3)" }}>{rank}</span>
+  );
+}
+
+// A total out of 5 on one line: a slim brand bar, then the figure. Brand gold
+// states a share here and nothing more — no band exists for a total.
+export function TotalBar({ total, max = MAX_POINTS, width = 64 }) {
+  const v = total == null ? 0 : Math.min(1, Math.max(0, total / max));
+  return (
+    <span className="inline-flex items-center justify-end gap-2.5 w-full">
+      <span className="block h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ width, background: "var(--border-md)" }} aria-hidden>
+        <span className="block h-full rounded-full" style={{ width: `${v * 100}%`, background: "var(--brand)" }} />
+      </span>
+      <span className="text-sm font-semibold tabular-nums w-9 text-right" style={{ color: "var(--text-1)" }}>
+        {total == null ? "—" : Number(total).toFixed(2)}
+      </span>
+    </span>
+  );
 }

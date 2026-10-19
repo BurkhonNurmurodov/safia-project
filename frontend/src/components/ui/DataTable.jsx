@@ -123,6 +123,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   mobile    – optional stacked-card list for phones: when given, the table
  *               renders from `sm:` up only and this node takes its place
  *               below `sm:` (same scroll cap)
+ *   mobileMaxHeight – the phone list's own cap ("none" lets it grow with the
+ *               page: a list whose rows open in place must not become a box
+ *               scrolled inside the page). Defaults to `maxHeight`.
  *   mobileCards – render the `mobile` node OUTSIDE the card as a stack of
  *               standalone cards (each child styles itself as a card); the
  *               card keeps only the header/toolbar on phones and the stack
@@ -162,6 +165,7 @@ export default function TableCard({
   hover = true,
   mobile,
   mobileCards = false,
+  mobileMaxHeight,
   footer,
   headSize = "sm",
   pageScroll = false,
@@ -188,7 +192,7 @@ export default function TableCard({
         </table>
       </div>}
       {!collapsed && mobile != null && !mobileCards && (
-        <div className="sm:hidden overflow-y-auto" style={{ maxHeight }}>
+        <div className="sm:hidden overflow-y-auto" style={{ maxHeight: mobileMaxHeight ?? maxHeight }}>
           {mobile}
         </div>
       )}

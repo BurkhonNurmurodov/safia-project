@@ -51,7 +51,7 @@ import { ConcernsCellModal, ConcernDetailModal } from "../components/kpi/Concern
 import TurnoverExplain from "../components/turnover/TurnoverExplain";
 import ForeignExplain from "../components/foreign/ForeignExplain";
 import ComplianceExplain from "../components/kpi/ComplianceExplain";
-import { PAST_FROM, curMonth, errText, monthLabel, scoreOf, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
+import { PAST_FROM, START_MONTH, curMonth, errText, monthLabel, prevMonth, scoreOf, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
 
 const TAB_KEYS = ["board", "concerns", "turnover", "foreign", "compliance", "audit"];
 
@@ -122,6 +122,19 @@ export default function LeadersKpi() {
   });
   const data = dataQ.data;
   const refetch = () => dataQ.refetch();
+
+  // The board compares with the month before only from the month after the
+  // platform began computing every month (START_MONTH): earlier months are not
+  // KPI months (HR's ruling) and their turnover is saved only by hand. The
+  // board still checks the two measured the same things (`comparable`).
+  const prevYm = prevMonth(ym);
+  const prevParams = useMemo(() => ({ ...params, month: prevYm }), [params, prevYm]);
+  const prevQ = useQuery({
+    queryKey: ["leaders-kpi", prevParams],
+    queryFn: () => api.get("/api/leaders-kpi", { params: prevParams }).then((r) => r.data),
+    enabled: tabKey === "board" && prevYm >= START_MONTH && ["open", "ended"].includes(data?.state),
+    staleTime: 10 * 60_000,
+  });
 
   // A brigadir pick the narrowed list no longer offers is dropped — a filter
   // naming a value the page cannot show is worse than a reset.
@@ -323,8 +336,9 @@ export default function LeadersKpi() {
         break;
       default:
         body = noMonth ? monthEmpty : (
-          <LeaderboardTab T={T} tl={tl} data={data} rows={rows} sort={sort} onSort={onSort}
-            onOpen={(x) => setOpenKey(x.key)} onRules={() => setRulesOpen(true)} />
+          <LeaderboardTab T={T} tl={tl} data={data} rows={rows} prev={prevQ.data} sort={sort} onSort={onSort}
+            onOpen={(x) => setOpenKey(x.key)} onExplain={(kind, x) => openExplain(kind, x)}
+            onRules={() => setRulesOpen(true)} />
         );
     }
   }

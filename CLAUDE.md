@@ -28,7 +28,7 @@ or copy-paste its markup into a page.
 | Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
 | Whole-number count (how many people / pieces) | `CountStepper.jsx` | THE count field: − · number · + in the house control skin at the 38px baseline, 16px text below md so iOS never zooms. `value`/`onChange` are a whole number or `null` (the handler gets the NUMBER) — blank means «not answered yet», never 0. The ± buttons stop AT `min`/`max` (a − from a number typed above `max` lands on it); a TYPED number above `max` is kept as typed and left to the caller's `FormField` `error` + `invalid` — silently clamping somebody's number is a guess. First callers: the «Tozalovchilar» count on the /idle-cell form and in the «Jonli» recorder. Never hand-roll another numeric input for a count. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
-| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. `pageScroll` drops the card's own scroller (no `maxHeight` cap, the card clips with `overflow: clip`) so a phone scrolls ONE thing — sticky header/footer cells then stick to Layout's `<main>` and offset by `calc(var(--main-pad) * -1)` (a `Th` inside a `pageScroll` card does this itself, through the card's context); only for a table that fits its card's width (/kelish, /worker-concerns). `head` draws a node in place of the SectionHead and `collapsed` shows the card with its head alone — an accordion card whose body is the table (one per cell on /kelish); the head stays the same node either way, so its toggle keeps focus. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
+| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. `pageScroll` drops the card's own scroller (no `maxHeight` cap, the card clips with `overflow: clip`) so a phone scrolls ONE thing — sticky header/footer cells then stick to Layout's `<main>` and offset by `calc(var(--main-pad) * -1)` (a `Th` inside a `pageScroll` card does this itself, through the card's context); only for a table that fits its card's width (/kelish, /worker-concerns). `mobileMaxHeight="none"` lets the phone list grow with the page instead of scrolling inside its own 70vh box (the /leaders-kpi board, whose rows open in place). `head` draws a node in place of the SectionHead and `collapsed` shows the card with its head alone — an accordion card whose body is the table (one per cell on /kelish); the head stays the same node either way, so its toggle keeps focus. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Cell row identity (the head of a cell's accordion card) | `CellIdent.jsx` | The verifix CODE in a NEUTRAL chip (a hashed colour read as a traffic light), under it the cell's leader behind a flag — `noLeader` words, dimmer, when nobody leads. `leader` arrives transliterated. /idle-cell and /kelish head their cell cards with it, so a cell reads the same on both. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. `size="lg"` titles a whole card rather than labelling a table — a sentence-case 15px title with its `subtitle` under it and a 22px icon (the appeal chat card). The icon sits on the TITLE's line (`items-start`) whatever a wrapping subtitle under it does — centred on the whole block it ended up beside the subtitle. |
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
@@ -2556,7 +2556,7 @@ tasks 40/41 name it.
   **A KPI the platform has no source for counts 0** — the technologists'
   audit alone since the evening of 2026-10-19 (category compliance went live
   the same day — see its own section and the tab bullet below), so a perfect
-  cell today reads 4.7 / 5 (94%). The board's summary line COMPUTES that
+  cell today reads 4.7 / 5 (94%). The board's meta line COMPUTES that
   figure from the `kpis[]` the server sends (5 minus the `max_points` of every
   KPI not `live`, «Texnologlar auditi hali hisoblanmaydi — bugun eng ko'pi
   4.7»), never a typed number, and drops it once every KPI is live; the audit
@@ -2584,12 +2584,12 @@ tasks 40/41 name it.
   (2026-10-19, the operator on the first build: «remove the noise … check
   every single tab»). Top to bottom:
   - **ONE summary, no box** (`KpiBits.Summary`): the headline figure, what it
-    measures and its base beside it — board «1.97 / 5 o'rtacha jami · N ta
-    yacheyka», concerns «63% hal bo'lgan · 5 / 8 · 3 tasi ochiq · 1 tasi
+    measures and its base beside it — concerns «63% hal bo'lgan · 5 / 8 · 3 tasi ochiq · 1 tasi
     ko'tarilgan» (`concerns.pct0` on the board payload, `whole_pct`, half
     up), turnover «200.0% qo'nimsizlik (yillik) · 2 ketgan / 12 ishlayotgan»,
     foreign «2 aybli shikoyat · 4 ta yot jism shikoyatidan», compliance «63.6%
     mos keladi · 7 / 11 xodim». A headline nobody can state is a dim «—».
+    The board has no summary: its headline is the «Jamoa o'rtachasi» tile.
   - **ONE muted line under it**: «oy hali tugamagan» while the month runs
     (said ONCE — the amber state pill, the state sentence and the amber
     «provisional» line under every table and in every dialog are gone), the
@@ -2616,20 +2616,92 @@ tasks 40/41 name it.
     the concerns register's own search box (the page's search narrows it, as
     `q`); the foreign tab's «Lider o'rnida» chip; the cell dialog's
     code-and-owner line under a title that already names both.
-- **The board** (`components/kpi/LeaderboardTab.jsx`): rank (gold / silver /
-  bronze ink for the podium, the /leaders medal inks), cell, owner with their
-  `ProfileAvatar`, brigadir, five score chips (the figure in the tooltip),
-  the total with a brand bar underneath it — brand gold is the single-metric
-  accent here, never a verdict: no band exists for a total.
-  A row opens `CellKpiModal` (five lines: figure · score × weight = points,
-  a chevron into each live KPI's working); `KpiRulesModal` prints the five
-  rules off the payload. Month (`DateRangePicker month`, from `PAST_FROM`),
-  plant → shift → brigadir (`FilterPanel`) and the search narrow EVERY tab;
-  the tab strip (`asTabs`, `lkpi.tab`, `?tab=` honoured once per mount) is the
-  page's first row, above the toolbar.
+- **The board** (`components/kpi/LeaderboardTab.jsx`; redesigned the same
+  evening — the operator: «more rich … definitely use that web chart»), top
+  to bottom:
+  - **ONE muted meta line** (month in progress · the KPIs not live and
+    today's maximum) with «Qanday hisoblanadi?» at its right edge.
+  - **The podium** (`BoardHero.BoardPodium`): the three best cells by the
+    server's rank, ordered #2 · #1 · #3 with #1 raised. Each card shows the
+    owner's photo (`ProfileAvatar`) in a medal ring, the place as a big
+    medal-ink numeral, the cell · brigadir, the total out of 5, and the live
+    KPIs' score meters (2×2 from xl, none on a phone). Medal inks come from
+    `kpiUtil.medalOf` — /leaders' own on dark, darker on light, where silver
+    on white was a ghost. It shows only above three cells, with three totals
+    above 0 (the /leaders rule). A card opens its row in the ranking and
+    scrolls to it; a row the search or a zone hides opens `CellKpiModal`
+    instead.
+  - **Four equal tiles** (`BoardHero.BoardTiles`):
+    - «Jamoa o'rtachasi» — the average total / 5 with a brand bar.
+    - «Yashil zona» — cells whose every live KPI scores in the green band.
+    - «Diqqat zonasi» — cells with a KPI in the red band.
+    - «Jamoa KPI bo'yicha» — the team's average score per KPI, each bar in
+      the band of that average.
+
+    **The zones are the score tones every chip on these pages wears,
+    counted** (`kpiUtil.fracTone`: ≥ 0.8 of the KPI's scale green, > 0.4
+    amber, else red). They are never a threshold of their own: no band exists
+    for a total. A zone tile is a toggle (`aria-pressed`) that narrows the
+    ranking, together with the search, without moving anything above the
+    list. Below lg the average and the team tiles span the row and the two
+    zones pair up.
+  - **The ranking** (`TableCard`, one-line rows): rank badge (medal ring for
+    the podium) · cell · owner with photo · brigadir · one `ScorePips` per
+    LIVE KPI · the total (`TotalBar`, a brand bar then the figure) · a
+    chevron.
+    - `ScorePips` is a segment per point of the KPI's scale, lit in its
+      band's colour, with the figure beside it in text ink and the figure in
+      words in the tooltip.
+    - The audit column is gone while the audit is not live (it could only
+      read «—»). A KPI that goes live grows its column (`liveKeys`).
+  - **A row opens in place onto `BoardPanel`**. Several rows can be open at
+    once, so closing one never moves the row tapped.
+    - **The radar** (`KpiRadar`, plain SVG) has one spoke per KPI in the
+      page's order, every score drawn as a share of its OWN scale (the
+      audit's ends at 3), with rings at each fifth on a card-coloured plate.
+    - The cell is the emphasis (brand gold, filled, dots with a surface
+      ring). The team average (`totals.by_kpi[k].avg_score`, over cells with
+      a score) is a dashed neutral outline.
+    - A KPI the platform does not compute keeps its spoke, dimmed with «hali
+      hisoblanmaydi», and gets NO vertex: «not measured» must never read as
+      0. A KPI with no score this month also gets no vertex, and its label
+      reads «—».
+    - Every score is printed in its axis label, so the radar has no ticks
+      and no tooltip.
+    - Beside the radar, «Kuchli tomonlar» lists the green-band KPIs and
+      «O'sish zonalari» the amber, the red, then the unscored ones («bu oy
+      baho yo'q — jamiga 0 qo'shildi»). Every live KPI sits in exactly one
+      list, so the two lists are the radar's table view.
+    - Each item shows the KPI's figure, the team average and a meter, and a
+      click opens that KPI's explain dialog. Hovering an item lights its
+      spoke, and hovering a spoke lights its item.
+    - «Ballar hisobi» opens `CellKpiModal` (score × weight = points).
+    - On a phone the row is a card with the meters under the name, and the
+      panel stacks.
+  - **The month before.** `LeadersKpi` asks for
+    `GET /api/leaders-kpi?month=<prev>` with the same scope, only on the
+    board tab, and only when the previous month is ≥ `START_MONTH` (2026-10,
+    HR's first KPI month — earlier months are not KPI months, and their
+    turnover is saved only by hand). `kpiUtil.comparable` must also hold:
+    the same live KPIs, each scored in both months or in neither. Otherwise
+    a KPI one month lacks would read as everybody rising at once.
+    - When the months compare, the board shows the place moved (▲/▼/=
+      beside the rank and on the podium, «yangi» for a new cell), the change
+      in the team average and in each KPI's average (tiles 1 and 4), and each
+      score's change (radar labels, panel items).
+    - **Nothing shows in October 2026; it appears by itself from November.**
+      There is no sparkline yet, with one month of history.
+  - `T.figForeign` / `figForeignNone` were missing from all four bundles (the
+    board dialog printed a blank line for foreign objects); they are added.
+  - Month (`DateRangePicker month`, from `PAST_FROM`), plant → shift →
+    brigadir (`FilterPanel`) and the search narrow EVERY tab. The tab strip
+    (`asTabs`, `lkpi.tab`, `?tab=` honoured once per mount) is the page's
+    first row, above the toolbar. `KpiRulesModal` prints the five rules off
+    the payload.
 - **The frontend**: `pages/LeadersKpi.jsx` (+ `pages/leadersKpiText.js`, four
   languages, the board's / concerns tab's / placeholders' / rules' words),
-  `components/kpi/` (`kpiUtil`, `KpiBits`, `LeaderboardTab`, `ConcernsTab` +
+  `components/kpi/` (`kpiUtil`, `KpiBits`, `LeaderboardTab` + `BoardHero` +
+  `BoardPanel` + `KpiRadar`, `ConcernsTab` +
   `ConcernsPieces`, `TurnoverTab`, `ForeignTab`, `ComplianceTab` +
   `ComplianceExplain` + `ComplianceRules`, `PlaceholderTab`, `CellKpiModal`,
   `KpiRulesModal`). The turnover and foreign-objects tabs keep

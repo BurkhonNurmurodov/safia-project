@@ -7,7 +7,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import api from "../../utils/api";
 import { fill } from "../../pages/leadersKpiText";
 
-export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM } from "../turnover/turnoverUtil";
+export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM, START_MONTH } from "../turnover/turnoverUtil";
 
 export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit"];
 export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance"]);
@@ -144,3 +144,80 @@ export const pointsOf = (row, key) => (row?.[key]?.points ?? null);
 
 // «19.10» — a day of the month the picker above already names in full.
 export const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}.${String(iso).slice(5, 7)}` : "");
+
+// ── the board («Reyting») — its podium, zones, radar and the month before ────
+
+// Gold · silver · bronze — the /leaders podium's own inks on the dark theme,
+// pulled darker on the light one (silver on white is otherwise a ghost).
+const MEDAL_DARK = { 1: "#E0A82E", 2: "#C3CBD6", 3: "#C0703A" };
+const MEDAL_LIGHT = { 1: "#C8902A", 2: "#8C97A8", 3: "#B4642E" };
+export const medalOf = (rank, theme) => (theme === "light" ? MEDAL_LIGHT : MEDAL_DARK)[rank] || null;
+
+export const hexA = (hex, a) => {
+  const h = String(hex).replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+};
+
+// The KPIs the board scores — the server's `kpis[].live`, in the page's order.
+export const liveKeys = (data) => (data?.kpis?.length
+  ? KPI_KEYS.filter((k) => data.kpis.some((x) => x.key === k && x.live))
+  : KPI_KEYS.filter((k) => LIVE.has(k)));
+
+// A KPI's highest score — its rule's own (the audit's scale ends at 3).
+export const maxScore = (rules, key) => Number(rules?.[key]?.max_score) || 5;
+
+// A score as a share of its scale, judged by the score tones every chip on
+// these pages wears (4–5 of 5 green, 3 amber, 1–2 red), so a zone is never a
+// threshold of its own — only the existing bands, counted.
+export const fracTone = (score, max = 5) => {
+  if (score == null) return null;
+  const f = score / (max || 5);
+  return f >= 0.8 ? "ok" : f > 0.4 ? "warn" : "bad";
+};
+export const avgTone = (v, max = 5) => (v == null ? null : fracTone(v, max));
+
+// «green» — every live KPI scored in the green band; «attention» — at least
+// one in the red band; null — anything between (or a KPI with no score yet).
+export function zoneOf(row, keys, rules) {
+  const tones = keys.map((k) => fracTone(scoreOf(row, k), maxScore(rules, k)));
+  if (tones.includes("bad")) return "attention";
+  if (tones.length && tones.every((t) => t === "ok")) return "green";
+  return null;
+}
+
+// «YYYY-MM» → the month before it.
+export const prevMonth = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+};
+
+// Two boards compare only when they measured the same things: the same live
+// KPIs, each scored in both months or in neither. Otherwise a KPI one month
+// lacks (a past month whose turnover nobody computed, a KPI that went live in
+// between) would read as everybody rising or falling at once.
+export function comparable(prev, cur) {
+  if (!prev?.rows?.length || !cur?.rows?.length) return false;
+  const live = (d) => (d.kpis || []).filter((k) => k.live).map((k) => k.key).join(",");
+  if (live(prev) !== live(cur)) return false;
+  return (cur.kpis || []).filter((k) => k.live).every((k) =>
+    (prev.totals?.by_kpi?.[k.key]?.scored > 0) === (cur.totals?.by_kpi?.[k.key]?.scored > 0));
+}
+
+// One board row's radar axes: every KPI in the page's order — its score, the
+// team's average, the month before where it compares, and whether it is live.
+export function boardAxes(row, data, prevRow, keys, T) {
+  const live = new Set(keys);
+  return KPI_KEYS.map((k) => {
+    const value = scoreOf(row, k);
+    const before = prevRow ? scoreOf(prevRow, k) : null;
+    return {
+      key: k, label: T.tabs[k], full: T.kpi[k], live: live.has(k), value,
+      max: maxScore(data?.rules, k),
+      team: data?.totals?.by_kpi?.[k]?.avg_score ?? null,
+      prev: before,
+      delta: value != null && before != null ? value - before : null,
+    };
+  });
+}
