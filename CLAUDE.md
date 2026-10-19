@@ -5490,9 +5490,13 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   on its first day.
 - **Filling a task and SUBMITTING it are two different acts.** Proofs, answers
   and retakes save as they always did; «Vazifani yopish» is what locks the task
-  and hands it to the AI. The button is only offered once the task is complete
-  (Ha + all required photos, or Yo'q + reason) — Telegram has no disabled
-  button, so an unusable one is a button that silently does nothing.
+  and hands it to the AI. From 2026-10-19 the button is ALWAYS on the task's
+  screen: live once the task is complete (Ha + all required photos, or Yo'q +
+  reason), DISABLED before that with what is missing as its label
+  («🔒 Yopish uchun yana 2 ta rasm kerak») — Bot API 10.3's disabled button,
+  which sends no callback at all. It used to be left off the screen because
+  Telegram had no disabled button. A Yo'q draft is always closable (its reason
+  is saved with the answer), so «no reason» is not a state this screen has.
 - **Closing is FINAL for the LEADER.** Nothing they press and no config change
   reopens a closed task; switching the unit back to day mode does not either.
   `leader_close.locked(entry, day)` is THE predicate and every writer consults
@@ -5664,6 +5668,34 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   that can be done to it.
 
 Related memory: `leader-per-task-submission`.
+
+## Coloured and disabled Telegram buttons (`app/tg_buttons.py`, 2026-10-19)
+
+The pinned telebot (4.25) knows neither Bot API 9.4's button `style` nor 10.3's
+`disabled`. `tg_buttons.Button` adds both in `to_dict()`, which every keyboard
+is serialised through, so no send or edit call changed (an upgrade to telebot
+4.37 was rejected: twelve releases under the whole bot for two fields, and it
+still lacks `InlineKeyboardMarkup.force_reply`). Incoming updates parse as
+before (telebot swallows unknown button keys).
+
+- **Colour means a DECISION and nothing else**: `approve()` is green
+  (`success`) and `reject()` red (`danger`) on the approval cards
+  (`approvals._approve_reject_kb`: hr_document, edit_request, edit_batch,
+  leader_late, live_document, live_batch). No other button is coloured. The
+  registration card (`ap:reg`, `telegram_bot.py`) was left out of scope.
+- **A disabled button is a button TYPE**: it carries no callback, url or
+  web_app, so a tap reaches nobody whatever app draws it — the safety argument
+  for an old app the spec says nothing about. Never coloured.
+- **A decided card keeps a keyboard** (`approvals.decided_markup`, and
+  `telegram_bot._appeal_decided_kb` for the late-proof / objection cards):
+  one disabled button with the outcome and who decided it, surname + initial
+  (`outcome_label` — «✅ Tasdiqlandi · Aripova M.»), over the card's panel or
+  chat link, which stays live and opens where the pending card did
+  (`_decided_link` re-derives it from the record — a notice stores only the
+  text). The outcome LINE stays in the message text too, for an app that does
+  not draw the disabled button. They were stripped of every button before.
+- Known, unchanged: an undo that reopens a record leaves its old decided cards
+  stating the old outcome (the text line did so before too).
 
 ## Filing a proof AFTER the deadline (late proofs)
 

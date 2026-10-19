@@ -2209,13 +2209,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} ta tekshirilmoqda",
         "pt_menu_hint": "\n\nHar bir vazifa alohida topshiriladi.",
         "btn_close_task": "\U0001F512 Vazifani yopish",
+        "btn_close_need": "\U0001F512 Yopish uchun yana {n} ta rasm kerak",
+        "btn_close_need_1": "\U0001F512 Yopish uchun yana {n} ta rasm kerak",
+        "btn_close_incomplete": "\U0001F512 Yopish uchun vazifani to'ldiring",
+        "btn_done_approved": "\u2705 Tasdiqlandi",
+        "btn_done_rejected": "\u274C Rad etildi",
+        "btn_done_uplifted": "\u2B06\uFE0F Adminlarga yuborildi",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Vazifa yopilgandan keyin rasm qo'shib ham, o'zgartirib ham BO'LMAYDI. U darhol tekshiruvga yuboriladi.\n\nYopilsinmi?",
         "task_closed_ok": "\U0001F512 Vazifa yopildi va tekshiruvga yuborildi",
         "task_locked_alert": "Bu vazifa yopilgan \u2014 o'zgartirib bo'lmaydi.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} rasm saqlandi.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Sabab: {reason}",
         "pt_draft_hint": "\n\nMa'lumot saqlandi. Yopmaguningizcha o'zgartirishingiz mumkin.",
-        "pt_need_more": "\n\nYopish uchun kamida {min} ta rasm kerak.",
         "pt_auto": "\n\n\u23f0 {t} da avtomatik yopiladi.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nBu vazifani tizim o‘zi tekshiradi — rasm yuborish shart emas.\n\n🕑 Tekshiruv vaqti: {t}\n',
@@ -2387,13 +2392,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} та текширилмоқда",
         "pt_menu_hint": "\n\nҲар бир вазифа алоҳида топширилади.",
         "btn_close_task": "\U0001F512 Вазифани ёпиш",
+        "btn_close_need": "\U0001F512 Ёпиш учун яна {n} та расм керак",
+        "btn_close_need_1": "\U0001F512 Ёпиш учун яна {n} та расм керак",
+        "btn_close_incomplete": "\U0001F512 Ёпиш учун вазифани тўлдиринг",
+        "btn_done_approved": "\u2705 Тасдиқланди",
+        "btn_done_rejected": "\u274C Рад этилди",
+        "btn_done_uplifted": "\u2B06\uFE0F Админларга юборилди",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Вазифа ёпилгандан кейин расм қўшиб ҳам, ўзгартириб ҳам БЎЛМАЙДИ. У дарҳол текширувга юборилади.\n\nЁпилсинми?",
         "task_closed_ok": "\U0001F512 Вазифа ёпилди ва текширувга юборилди",
         "task_locked_alert": "Бу вазифа ёпилган \u2014 ўзгартириб бўлмайди.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} расм сақланди.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Сабаб: {reason}",
         "pt_draft_hint": "\n\nМаълумот сақланди. Ёпмагунингизча ўзгартиришингиз мумкин.",
-        "pt_need_more": "\n\nЁпиш учун камида {min} та расм керак.",
         "pt_auto": "\n\n\u23f0 {t} да автоматик ёпилади.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nБу вазифани тизим ўзи текширади — расм юбориш шарт эмас.\n\n🕑 Текширув вақти: {t}\n',
@@ -2564,13 +2574,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 проверяется: {n}",
         "pt_menu_hint": "\n\nКаждая задача сдаётся отдельно.",
         "btn_close_task": "\U0001F512 Закрыть задачу",
+        "btn_close_need": "\U0001F512 Чтобы закрыть, нужно ещё {n} фото",
+        "btn_close_need_1": "\U0001F512 Чтобы закрыть, нужно ещё {n} фото",
+        "btn_close_incomplete": "\U0001F512 Заполните задачу, чтобы закрыть",
+        "btn_done_approved": "\u2705 Принято",
+        "btn_done_rejected": "\u274C Отклонено",
+        "btn_done_uplifted": "\u2B06\uFE0F Передано администраторам",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f После закрытия добавить или изменить фото БУДЕТ НЕЛЬЗЯ. Задача сразу уйдёт на проверку.\n\nЗакрыть?",
         "task_closed_ok": "\U0001F512 Задача закрыта и отправлена на проверку",
         "task_locked_alert": "Задача закрыта \u2014 изменить нельзя.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 Сохранено {k}/{min} фото.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Причина: {reason}",
         "pt_draft_hint": "\n\nДанные сохранены. Пока не закроете \u2014 можно менять.",
-        "pt_need_more": "\n\nДля закрытия нужно минимум {min} фото.",
         "pt_auto": "\n\n\u23f0 Автоматически закроется в {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nЭту задачу проверяет система — фото отправлять не нужно.\n\n🕑 Время проверки: {t}\n',
@@ -2741,13 +2756,18 @@ _LT_MESSAGES = {
         "pt_pending": " \u00b7 \u23f3 {n} being checked",
         "pt_menu_hint": "\n\nEach task is submitted on its own.",
         "btn_close_task": "\U0001F512 Close the task",
+        "btn_close_need": "\U0001F512 {n} more photos needed to close",
+        "btn_close_need_1": "\U0001F512 {n} more photo needed to close",
+        "btn_close_incomplete": "\U0001F512 Complete the task to close it",
+        "btn_done_approved": "\u2705 Approved",
+        "btn_done_rejected": "\u274C Rejected",
+        "btn_done_uplifted": "\u2B06\uFE0F Passed to the admins",
         "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Once closed you CANNOT add or change a photo. It goes straight to review.\n\nClose it?",
         "task_closed_ok": "\U0001F512 Task closed and sent for review",
         "task_locked_alert": "This task is closed \u2014 it cannot be changed.",
         "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} photo(s) saved.",
         "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Reason: {reason}",
         "pt_draft_hint": "\n\nSaved. You can change it until you close it.",
-        "pt_need_more": "\n\nAt least {min} photo(s) are needed before closing.",
         "pt_auto": "\n\n\u23f0 Closes automatically at {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
         "auto_head": '⚙️ {task}\n\nThis task is checked by the system — no photo is needed.\n\n🕑 Check time: {t}\n',
@@ -3140,15 +3160,27 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
 
 
 def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool,
-                     cid: int | None = None):
-    """The submit button — offered ONLY when the task is finished.
+                     cid: int | None = None, missing: int = 0):
+    """The submit button — always on the task's screen, live only once the task
+    is finished.
 
-    Not offered-and-disabled: Telegram has no disabled button, so an unusable
-    one is a button that silently does nothing, and the leader is left deciding
-    whether they pressed it wrong or the bot is broken. Absent means "not yet",
-    and the line above it says what is still missing.
+    Until then it is DISABLED (Bot API 10.3) and its label is what stands in
+    the way — «🔒 Yopish uchun yana 2 ta rasm kerak» — so the leader sees from
+    the first shot where submitting will happen and what it still needs. It
+    was left off the screen while Telegram had no disabled button, because a
+    button that silently does nothing leaves the leader deciding whether they
+    pressed it wrong or the bot is broken; a disabled one says so itself and
+    sends nothing (no callback exists to send). `tcconf` re-checks the task
+    whatever the screen showed, exactly as before.
     """
-    return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}") if ready else None
+    if ready:
+        return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}")
+    from app import tg_buttons
+    if missing > 0:
+        label = _lt(lang, "btn_close_need_1" if missing == 1 else "btn_close_need").format(n=missing)
+    else:
+        label = _lt(lang, "btn_close_incomplete")
+    return tg_buttons.disabled(label)
 
 
 # Why an automatic check went the way it did, in the reader's own language.
@@ -3405,14 +3437,17 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
     k = _lt_roll_count(db, prof, task_id, cid) if entry_cfg.get("proof_kind") == "camera" \
         else (db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).count()
               if entry is not None else 0)
+    missing = 0
     if entry is not None and not entry.done:
         text = _lt(lang, "pt_draft_reason").format(task=name, reason=entry.reason or "")
         ready = True
     else:
         text = _lt(lang, "pt_draft_photos").format(task=name, min=need or 1, k=k)
         ready = entry is not None and k >= max(1, need)
-        if not ready:
-            text += _lt(lang, "pt_need_more").format(min=max(1, need))
+        # What stands in the way is said ON the disabled close button below
+        # (`_lt_pt_close_btn`), beside «k/min rasm saqlandi» above — a third
+        # line repeating the minimum would say it twice.
+        missing = max(1, need) - k if not ready else 0
     text += _lt(lang, "pt_draft_hint")
     # A task an admin reopened is on the DAY's filing deadline now, not on the
     # one that already fired — this line has to name the hour that will
@@ -3439,8 +3474,7 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         db.commit()
     else:
         kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{_lt_ref(pid, cid)}:{task_id}"))
-    if btn := _lt_pt_close_btn(lang, pid, task_id, ready, cid):
-        kb.add(btn)
+    kb.add(_lt_pt_close_btn(lang, pid, task_id, ready, cid, missing))
     kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
     _lt_edit(chat_id, msg_id, text, kb)
 
@@ -3455,15 +3489,16 @@ def _lt_edit(chat_id: int, msg_id: int | None, text: str, kb) -> None:
     a leader saw when they pressed a button that re-renders the same state
     (reported from production, 2026-08-30: two identical late screens).
     """
+    from app import tg_buttons
     if msg_id:
         try:
-            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
-                                  reply_markup=kb)
+            tg_buttons.send(bot.edit_message_text, text, chat_id=chat_id,
+                            message_id=msg_id, reply_markup=kb)
             return
         except Exception as exc:
             if "not modified" in str(exc).lower():
                 return
-    bot.send_message(chat_id, text, reply_markup=kb)
+    tg_buttons.send(bot.send_message, chat_id, text, reply_markup=kb)
 
 
 def refresh_camera_prompt(db, leader_id: int, task_id: int,
@@ -4805,7 +4840,9 @@ def _lp_deliver(db, row, recipients: set[int], stage: str) -> set[int]:
 
 
 def _lp_retire(db, row, stage: str, outcome_key: str) -> None:
-    """Strip the buttons off every copy of a card that has now been decided.
+    """Turn every copy of a card that has now been decided into its decided
+    form: the outcome on a disabled button over the live chat button
+    (`_appeal_decided_kb`), the outcome sentence appended to the text.
 
     Takes a MESSAGE KEY, not a rendered string: the card sits in several
     people's chats and each of them reads it in their own language, so a
@@ -4813,20 +4850,56 @@ def _lp_retire(db, row, stage: str, outcome_key: str) -> None:
     else's copy. It is also why the outcome cannot be `row.status` — that is a
     storage word ("admin"), not a sentence anybody should be shown.
     """
+    from app.services.leader_appeal_chat import LATE
     kind = f"leader_lateproof_{stage}"
+    who = row.sup_by_name if stage == "sup" else row.adm_by_name
     notes = (db.query(ApprovalNotice)
              .filter(ApprovalNotice.kind == kind,
                      ApprovalNotice.ref == str(row.id)).all())
     for n in notes:
-        try:
-            bot.edit_message_text(
-                (n.text or "") + "\n\n" + _lt(_get_lang(n.admin_telegram_id), outcome_key),
-                chat_id=n.admin_telegram_id,
-                message_id=n.message_id, reply_markup=None)
-        except Exception:
-            pass
+        lang = _get_lang(n.admin_telegram_id)
+        _appeal_card_decided(n, (n.text or "") + "\n\n" + _lt(lang, outcome_key),
+                             lang, LATE, row.id, outcome_key, who)
         db.delete(n)
     db.commit()
+
+
+def _appeal_card_decided(n, text: str, lang: str, thread: str, rid: int,
+                         outcome_key: str, who: str | None) -> None:
+    """Edit one copy of a decided appeal card. Never raises: a card that cannot
+    be edited must not undo, or stop the retiring of, the ruling it reports. A
+    keyboard that cannot be BUILT still lets the outcome line land, on the
+    plain chat button."""
+    from app import tg_buttons
+    from app.services.leader_appeal_chat import open_chat_markup
+    try:
+        kb = _appeal_decided_kb(lang, thread, rid, outcome_key, who)
+    except Exception:
+        logger.warning("decided appeal card: keyboard failed", exc_info=True)
+        kb = open_chat_markup(thread, rid, lang)
+    try:
+        tg_buttons.send(bot.edit_message_text, text, chat_id=n.admin_telegram_id,
+                        message_id=n.message_id, reply_markup=kb)
+    except Exception:
+        pass
+
+
+def _appeal_decided_kb(lang: str, thread: str, rid: int, outcome_key: str,
+                       who: str | None):
+    """A decided appeal card: the outcome on a DISABLED button (Bot API 10.3)
+    over the chat button, which stays live — the conversation goes on after a
+    ruling, and an undo reopens it. `outcome_key` is the card's own outcome
+    sentence key («lp_done_rejected», «ad_done_uplifted»…); the button takes
+    the short form of the same outcome, the sentence stays in the text."""
+    from app import tg_buttons
+    from app.services.leader_appeal_chat import open_chat_markup
+    tail = outcome_key.rsplit("_", 1)[-1]
+    label = _lt(lang, f"btn_done_{tail}")
+    if label == f"btn_done_{tail}":
+        label = _lt(lang, outcome_key)
+    kb = open_chat_markup(thread, rid, lang)
+    kb.keyboard.insert(0, [tg_buttons.disabled(tg_buttons.outcome_label(label, who, lang))])
+    return kb
 
 
 def _lp_supervisor_ids(db, row) -> set[int]:
@@ -5386,23 +5459,21 @@ def _ad_send_to_admins(db, d) -> None:
 
 
 def _ad_retire(db, d, outcome_key: str) -> None:
-    """Strip the buttons off every copy of a stage-1 card that is now decided.
+    """Turn every copy of a stage-1 card that is now decided into its decided
+    form (`_appeal_decided_kb`), the outcome sentence appended to the text.
 
     Takes a message KEY, never a rendered string: the card sits in several
     chats and each reader has their own language, so a pre-rendered outcome
     would stamp the decider's language onto everybody else's copy.
     """
+    from app.services.leader_appeal_chat import DISPUTE
     notes = (db.query(ApprovalNotice)
              .filter(ApprovalNotice.kind == "leader_dispute_sup",
                      ApprovalNotice.ref == str(d.id)).all())
     for n in notes:
-        try:
-            bot.edit_message_text(
-                (n.text or "") + "\n\n" + _lt(_get_lang(n.admin_telegram_id), outcome_key),
-                chat_id=n.admin_telegram_id,
-                message_id=n.message_id, reply_markup=None)
-        except Exception:
-            pass
+        lang = _get_lang(n.admin_telegram_id)
+        _appeal_card_decided(n, (n.text or "") + "\n\n" + _lt(lang, outcome_key),
+                             lang, DISPUTE, d.id, outcome_key, d.sup_by_name)
         db.delete(n)
     db.commit()
 
