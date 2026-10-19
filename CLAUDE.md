@@ -2543,10 +2543,14 @@ tasks 40/41 name it.
 - **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
   category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file).
-  **The two KPIs the platform has no source for count 0**, so a perfect cell
-  today reads 3.5 / 5 (70%), said on the board's strip; their tabs are an
-  EMPTY STATE printing HR's rule (weight and bands, `COMPLIANCE_RULE` /
-  `AUDIT_RULE` in `leaders_kpi.py`), nothing to enter. A KPI with no score —
+  **A KPI the platform has no source for counts 0** — the technologists'
+  audit alone since the evening of 2026-10-19 (category compliance went live
+  the same day — see its own section and the tab bullet below), so a perfect
+  cell today reads 4.7 / 5 (94%). The board's footer COMPUTES that line from
+  the `kpis[]` the server sends (5 minus the `max_points` of every KPI not
+  `live`), never a typed number, and is gone once every KPI is live; the audit
+  tab is an EMPTY STATE printing HR's rule (weight and bands, `AUDIT_RULE` in
+  `leaders_kpi.py`), nothing to enter. A KPI with no score —
   no concern in the month or every one escalated, no people working, a month
   not computed — reads «—» and counts 0 in that row's total (ruling 6).
 - **The concerns KPI gained a RULE** (it had bands on the page and no score):
@@ -2579,15 +2583,40 @@ tasks 40/41 name it.
 - **The frontend**: `pages/LeadersKpi.jsx` (+ `pages/leadersKpiText.js`, four
   languages, the board's / concerns tab's / placeholders' / rules' words),
   `components/kpi/` (`kpiUtil`, `KpiBits`, `LeaderboardTab`, `ConcernsTab` +
-  `ConcernsPieces`, `TurnoverTab`, `ForeignTab`, `PlaceholderTab`,
-  `CellKpiModal`, `KpiRulesModal`). The turnover and foreign-objects tabs keep
+  `ConcernsPieces`, `TurnoverTab`, `ForeignTab`, `ComplianceTab` +
+  `ComplianceExplain` + `ComplianceRules`, `PlaceholderTab`, `CellKpiModal`,
+  `KpiRulesModal`). The turnover and foreign-objects tabs keep
   reading their OWN bundles (`turnoverText.js`, `foreignObjectsText.js`) and
   components (`components/turnover/`, `components/foreign/`) — their state
   lines, notices, columns and dialogs did not move.
+- **The compliance tab («Muvofiqlik», live from the evening of 2026-10-19)**
+  reads the board payload's `compliance` half — `category_compliance
+  .month_payload`, its `cells` list dropped — and computes nothing: the strip
+  states BOTH Verifix reads (the HR journals, `read`, this KPI's own; the
+  turnover directory, `directory`, which places people) with the admin's
+  «Verifix'dan o'qish» (`POST /api/category-compliance/read`; the page polls
+  the board every 4 s while either read runs), the rule, its mode and its
+  no-category answer, four figures (counted of working · comply · rate ·
+  cells scored by score), and the notices (cells with no owner, jobs off the
+  ladder, ambiguous jobs, codes not on /cells, people in no cell, approximate
+  owners / roster). «Reyting» (one row per owned cell, worst rate first) or
+  «Xodimlar» (every judged person of the ranking's cells — `GET
+  /api/category-compliance/people` in chunks of 40 keys, `kpiUtil.fetchPeople`,
+  asked only when the view opens) behind a toggle; a row opens
+  `ComplianceExplain` (the rate, the band framed on the scale, the points, the
+  people grouped: do not comply · comply · out of the count, each with job,
+  tenure, the due and the current category); «Qanday hisoblanadi?» opens
+  `ComplianceRules` (the rule in words, HR's ladder step by step and the
+  Verifix job → ladder map, read off the FULL rule the payload carries). Three
+  empty states say which door is shut: Verifix not connected (`configured`),
+  the journals never read (the admin's read button), the directory never read
+  (the turnover tab's). Its words are the `cp*` keys of `leadersKpiText.js`;
+  a person's verdict is `KpiBits.VerdictChip` (green comply · red not · grey
+  out of the count, always with the word).
 - **The workbook is ONE** — `POST /api/leaders-kpi/export.xlsx` →
-  `services/leaders_kpi_export.py`, eight sheets (Umumiy · Reyting ·
-  Havotirlar · Qo'nimsizlik · Yot jismlar · Ketganlar · Shikoyatlar ·
-  Havotirlar ro'yxati), the page's own words (`labels` carries the kinds /
+  `services/leaders_kpi_export.py`, nine sheets (Umumiy · Reyting ·
+  Havotirlar · Qo'nimsizlik · Yot jismlar · Muvofiqlik · Ketganlar ·
+  Shikoyatlar · Havotirlar ro'yxati), the page's own words (`labels` carries the kinds /
   sources / statuses), logged as `export.leaders_kpi`. The three per-page
   exports (`turnover_export.py`, `foreign_objects_export.py`,
   `worker_concerns_export.py`) and their routes are gone, as are
@@ -2910,6 +2939,92 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
   the page's own words. Logged as `sync.foreign_refresh` / `export.foreign_objects`.
 - Not built: the two KPIs with no source on the platform (category compliance,
   the technologists' audit) — HR's file holds only a final % per cell for each.
+
+## «Toifaga muvofiqlik» — the leaders' category-compliance KPI (2026-10-19)
+
+From **2026-10-19** (the operator: «build this 4th category … for now, only
+backend») HR's «Соответствие категории» (the 4th of 5, weight 0.2) is computed
+month by month from Verifix's HR journals and HR's grade ladder. **No page of
+its own**: it is the «Muvofiqlik» tab of «Liderlar KPI» (`/leaders-kpi`, the
+same evening — see that section). The month's figures ride that page's one
+request (`services/leaders_kpi.board` folds `month_payload` in as the
+`compliance` half and the board's fourth column, `_slim_cc_rule` the rule
+the rules dialog prints), and `routers/category_compliance.py`
+(`/api/category-compliance`, gated on the page key `leaders-kpi`) serves what
+stays here: the explain dialog's people list, the read states, the Verifix
+read and the rule. The `category-compliance` page key it shipped with is
+folded into `leaders-kpi` at boot (`startup.merge_leader_kpi_pages`, the
+retired pages' own fold). `services/category_compliance.py`
+is THE rule, `services/category_sync.py` the Verifix read, the tables
+`category_events` + `category_reads` (created by `create_all`, nothing to
+migrate).
+
+- **The rule** (HR's ladder, the PDF of 2026-10-18, categories and MONTHS
+  only — its pay columns were never read in and must never be): tenure =
+  whole months from the hire month to the report month; expected = the
+  ladder's highest step whose start month ≤ tenure (the lowest step from
+  month 0); a worker complies when the category in force on the month's last
+  day is that step or a HIGHER one of the ladder (`mode: at_least`; `exact`
+  is the other mode); no category or an old «S…» grade = not compliant
+  (`no_category: fail`; `skip` leaves them out); a job the ladder does not
+  name (office / HR titles, «Практикант») is OUT of the count and listed.
+  rate = compliant ÷ counted per cell, one decimal, judged as printed:
+  100 % → 5 · > 70 % → 3 · > 65 % → 2 · else 1 (HR's IFS names no band for
+  0 %, so it takes the worst); points = score × 0.2. `pct0` beside it is the
+  half-up whole percent (`whole_pct`).
+- **Credited to the cell's OWNER («Egasi») on the month's last day**,
+  `turnover.cell_map` + `turnover.owned` — one ranking row per owned cell,
+  the reading /turnover, /worker-concerns and /foreign-objects list by. A cell
+  with no owner is a notice; one with nobody counted has no rate and no
+  score. Scope plant → shift → brigadir, the KPI pages' own.
+- **Who works where**: the turnover KPI's directory (`turnover_people`, the
+  23:40 read) — hired by the last day, not dismissed by it. On a day not yet
+  passed a person stands where the directory puts them NOW; on a PAST day
+  where the last hiring / transfer dated by then put them (the journals are
+  Verifix's only placement history; a temporary transfer that ended hands
+  back), the directory only where the journals name no placement. The
+  category is always the journals' — the directory carries none. Nothing is
+  frozen; a month is re-read as the journals stand (`approx_owners` before
+  `LINKS_FROM`, `approx_roster` for a past month).
+- **The read** (`category_sync`): `pro/rank$list` (the category names),
+  `pro/hiring$list` (Pro, with a journal span from 2020; `start/hiring$list`
+  where Pro is closed), `pro/transfer$list` (/ `start/`), `pro/rank_change$list`,
+  `core/division$list` (each line's org unit → cell code by
+  `turnover.unit_code`; a unit that is somebody's DEPARTMENT on the lines is
+  not a cell). Unposted journals are left out and counted. Read side by side
+  (`verifix_live._side_by_side`), replaced whole in one transaction, kept in
+  memory per read (`events_by_person`). Nightly at **23:55** (after the
+  directory's 23:40), a boot catch-up ~200 s in when the last complete read
+  is older than six hours, the admin's `POST /read`. Logged as
+  `sync.category_read`.
+- **Endpoints**: `GET` the month payload (`?month=YYYY-MM&factory&shift&managers`
+  → `totals`, `ranking`, `cells`, `notices` {no_ladder jobs, ambiguous jobs,
+  unregistered codes, no_cell, no_owner_cells}, `rule`, `read` + `directory`
+  states, `options`); `GET /people?month&keys=` (every judged person of those
+  cells: job, ladder, tenure, expected, actual, since, verdict ok · above ·
+  below · no_category · old_grade · no_ladder · no_hire — failures first);
+  `GET /read`; `POST /read` (admin); `GET /rule`; `PUT /rule` (admin:
+  `{rule: {…any subset…}}` validated WHOLE — a bad part refuses the save with
+  its reason — or `{reset: true}`; logged as `config.category_rule_saved`).
+  The rule is `category_rule` in app_settings: weight, mode, no_category,
+  full / bands / worst, `levels` (the step order across the names one ladder
+  uses), `ladders` (job → [[category, month]…]), `jobs` (Verifix title →
+  ladder; a title that IS a ladder name needs no entry), `ambiguous`.
+- **HR's July figures are NOT reproduced** — by this rule or any reading of
+  the journals tried (26 of 87 comparable cells at best; three cells of the
+  file contradict the record outright): the file's percentages were typed by
+  hand. The ladder is the one definition written down, so the platform
+  computes THAT and says so. Open with HR, each a line of the rule and never
+  of the code: at-least or exact; how tenure is counted; «Приемщик-отправитель»
+  and «Оператор», which the sheet lists under a production AND a logistics
+  ladder with different months (read against production, the people named
+  under `notices.ambiguous`); what July counted.
+- Not built: a frozen month, an admin editor for the rule (`PUT /rule` is the
+  door). The page and the workbook's «Muvofiqlik» sheet landed with the merged
+  page the same day. Verified on synthetic data in the cloud stack (a transfer-and-back
+  read on a past month, the exact / skip modes, the bands' edges, a bad
+  override falling back whole); the first real read lands with the deploy's
+  boot catch-up.
 
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
@@ -5782,27 +5897,42 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   count and `max(xmin)`, the id of the last transaction that touched a row,
   which moves on every committed insert, update and delete (a freeze moves
   a hint bit, never the value). The per-day tables — days, entries, media,
-  camera shots, auto checks — are counted over CLOSED days only: a leader
-  answering a task on an open day changes nothing the register shows. The
-  fingerprint is taken BEFORE a build reads anything, so a change landing
-  mid-build reads as a change at the next request. **A table added to the
-  build is an arm added to `_ARMS`**, or a kept build goes stale on exactly
-  that table.
+  camera shots, auto checks and (from 2026-10-17) the AI VERDICTS — are
+  counted over CLOSED days only: a leader answering a task on an open day, or
+  the reviewer judging it, changes nothing the register shows. The verdicts
+  arm leaves out every `bot:<entry>` ref of an open day's entries (a hashed
+  `NOT IN`); counted whole it moved every few minutes all shift, because a
+  per-task unit's tasks are reviewed as each one closes. The fingerprint is
+  taken BEFORE a build reads anything, so a change landing mid-build reads as
+  a change at the next request. **An unchanged fingerprint serves EVERY viewer,
+  one who wrote something included** — the build is what the database would
+  produce now. **A table added to the build is an arm added to `_ARMS`**, or
+  a kept build goes stale on exactly that table.
 - **A young kept build is served while a new one is made** (`STALE_MAX_S`,
-  3 min): a verdict landing or a day closing elsewhere never makes a viewer
-  who did nothing wait; their next refetch (60 s staleTime, or the next
-  focus) gets the new build. Older than that, the request waits for the
-  rebuild — never a figure three minutes behind shown as current. Rebuilds
-  share one flight as before: at most one runs, a request takes only one that
-  started after it arrived.
-- **Never to a viewer who wrote something since it started.** `wrote(actor)`
-  is called for EVERY mutating request — in the action-log middleware on
-  `http.response.start`, before the response leaves, so the refetch it
-  triggers cannot miss it — and for every bot act (`record_bot`), keyed by
-  the Telegram account. No door per endpoint, nothing to forget: a ruling, an
-  override, an exclusion, a sheet refresh or a reopen in Telegram is followed
-  by a build that started after it. A write that could not move the register
-  costs that one account one rebuild.
+  10 min from 2026-10-17 — the shift report's window; it was 3 min, which a
+  brigadir or leader looking in every quarter of an hour, one slot each,
+  outlived on almost every visit): a verdict landing or a day closing
+  elsewhere never makes a viewer who did nothing wait; their next refetch
+  (60 s staleTime, or the next focus) gets the new build. Older than that,
+  the request waits for the rebuild. Rebuilds share one flight as before: at
+  most one per slot, a request takes only one that started after it arrived.
+  At most TWO background rebuilds run at once across every slot (`_BG`); one
+  queued for a turn has not read anything yet, so a request that must wait
+  may join it.
+- **…but never to a viewer who wrote something since it started.**
+  `wrote(actor)` is called for every mutating request but a SIGN-IN (category
+  `sessions`) — in the action-log middleware on `http.response.start`, before
+  the response leaves, so the refetch it triggers cannot miss it — and for
+  every bot act (`record_bot`), keyed by the Telegram account. No door per
+  endpoint, nothing to forget: a ruling, an override, an exclusion, a sheet
+  refresh or a reopen in Telegram is followed by a build that started after
+  it. The sign-in is out because every Telegram app open sends one with the
+  old token: counted, it made whoever opened the app and went to Monitoring
+  wait 6–8 s for a build identical to the kept one (the 17 Oct DM, ×17).
+- **A request that waits says why** on the «Server was slow» DM, beside its
+  path (`perf_watch.add_note`): «register all|scoped rebuilt — none kept
+  yet», «— changed: <tables>; kept one N s old», «— viewer wrote N s ago»,
+  plus «joined a build already under way» when it shared one.
 - **The build itself computes the exemption set fresh** (`leader_load.forget()`
   first): its own 60 s memory is harmless on a build thrown away, and wrong on
   one that is kept until the next change.
@@ -8071,10 +8201,26 @@ once, and followed through the tie from then on; history is never affected.
 - **A cell's brigadir, «Boshqaruvchi» and «Egasi» are DATED**
   (`cell_link_events`, append-only: field, value, prev, `effective_from` — the
   shift-day the change lands on — `effective_at`, `src` verifix | manual |
-  grandfather | release | restore, who, what Verifix said). A change lands at
-  the unit's NEXT shift opening (`cell_links.opening`; a brigadir change at the
-  LATER of the two units' openings, `opening_for_move`; a «Boshqaruvchi» change
-  recorded while a unit move is pending lands with the move). The `cells`
+  grandfather | release | restore, who, what Verifix said). A BRIGADIR change
+  lands at the unit's NEXT shift opening (`cell_links.opening`; at the LATER of
+  the two units' openings, `opening_for_move`). A LEADER's link — the
+  «Boshqaruvchi» and the «Egasi», by a person or by the sync, a pick, a release
+  — counts from the DAY IT IS MADE and is applied at once (2026-10-17, the
+  operator: «count it from the day it's connected, not from the next day» —
+  `cell_links.connected` = `leader_owes.unit_day`, the first checklist day of
+  the cell's unit still fileable: a shift-1 unit today, all day; a shift-2 unit
+  the night running now, else tonight's once 09:00 has shut the last one; the
+  day a picked profile starts owing), so the profile editor's chip «7331 ·
+  18.10 dan» no longer appears for an ordinary pick. Only a «Boshqaruvchi» /
+  «Egasi» change recorded while the cell's unit move is still pending lands
+  WITH the move — then the chip and «cellMgr.lands» still name its date (the
+  manager pool serves `pick_from` + `pick_with_move` beside `next_opening`,
+  which stays the brigadir change's date). TEMPORARY
+  `startup.land_waiting_leader_links` (flag
+  `cell_leader_links_today_2026_10_17_v1`, inline at boot, both entrypoints)
+  re-dated once the leader links still waiting under the old rule onto the day
+  each was made and applied them; delete it, its flag constant and both calls
+  once the flag reads «done». The `cells`
   columns stay the CURRENT mirror, put there by `apply_due` (the minute job
   `cell-links-apply`, and the start of every pass), which voids an event whose
   unit / profile was deleted since and settles work-centre letters the
@@ -9660,6 +9806,40 @@ tickets in the same table but «stop the old app's sync». So:
   the ticket window shows an old row's start time, every attachment and its
   status history (read from `arc_requests` on open). Status slugs are printed
   through `arcl.st.<slug>`, an unknown one as sent.
+- **A ticket's photos and files are drawn through OUR origin** (2026-10-17,
+  the operator: «the image is not being displayed»). The CSP is
+  `img-src 'self'`, so every `<img>` pointing at IT's host was refused and
+  fell back to a link — for both apps. `services/arc_files.py` is THE door:
+  the old app's `arc_requests.files`; the new app's `photo_report` (the
+  crew's photo, «Foto-hisobot») and the filer's attachments, which only IT's
+  single-ticket card carries (`GET /arc/api/v1/requests/factory/{id}` →
+  `files[].file_path` «misc/YYYY/MM/DD/<uuid>.jpg»), read on open and kept
+  10 min, plus its `document_url` (also a relative «misc/…» path, so the old
+  «Hujjat» link pointed at this site). The new app serves every such path at
+  `<api host>/base/<path>` (found by the deploy probe, 2026-10-17 — a «.heic»
+  there arrives as JPEG bytes); `fetch` tries that first, then a short list
+  of other bases, and remembers whichever served real bytes (`_WIN`); a HTML
+  page or JSON answer is never taken for a file. Old-app files answer at
+  `api.service.safiabakery.uz/files/…`. https only,
+  relative paths only from `*.safiabakery.uz`, an absolute URL or redirect
+  only to a public name, IT's credential only on IT's host, ≤ 20 MB.
+  `GET /api/arc-legacy/requests/{id}/files` lists them (`report`,
+  `document`, `files`; `card` = ok · n/a · failed · not_configured — «none»
+  and «could not ask» are two answers; `force` re-reads a failed card) and
+  `/file/{report|document|n}` streams one: a
+  picture the BYTES prove is served inline, anything else as an attachment
+  behind `nosniff`; unreachable is a 424, never 502/503. The modal
+  (`components/arc/ArcAttachments.jsx`) shows «Rasmlar va fayllar» under the
+  description — a lone photo at the card's width, several as squares, a
+  non-picture as a `FileTile` that downloads — «Foto-hisobot» under the
+  crew's comment and «Hujjat» as a file; a tap opens the shared `Lightbox`.
+  IT names files by uuid (old app: a Telegram file id), so a machine name is
+  shown as what the file is («Hujjat.pdf», «Fayl 1.pdf»). Photos load through
+  `ProxyPhoto`, which gained `zoomLabel` (the photo is a real button) and
+  `failCaption` (a large thumb says what failed). TEMPORARY: the deploy step
+  «Probe: ARC attachment URLs» (`deploy/diag_arc_files.py`, read-only) runs
+  the resolver on real tickets in every deploy log — it confirmed `/base`;
+  delete the step and the script once this has been seen working on /arc.
 - The two sections below describe each app's mirror and are still accurate for
   it; where they talk about «the page», read `/arc`.
 
@@ -10102,13 +10282,26 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   no checked cell = PASS. **A cell passes** when every worker on its list is
   «Keladi» or «Kelmaydi» — who marked them does not matter. **The task passes**
   when every checked cell does; a per-cell unit gets ONE verdict for the leader.
-- **Today or tomorrow, per CELL** (`KelishCellKind`, `kelish_cell_kinds`):
-  fixed by the check on the cell's first check day with a plan — tomorrow's
-  list filled (whatever today's) → «tomorrow», only today's → «today», neither →
-  fail and decide later; until fixed either list counts. «Today» = the checklist
-  day, «tomorrow» = the day after (a night checked at 08:00: the night that
-  ended / the one opening that evening). Shown on each /kelish card (`KindLine`),
-  an ADMIN edits it (`PUT /api/kelish/kind`).
+- **Today's or tomorrow's list — EITHER, unless an admin pins one**
+  (`KelishCellKind`, `kelish_cell_kinds`; the operator, 2026-10-17). A cell
+  passes when its today's OR its tomorrow's list is full at the check; an ADMIN
+  may pin a cell to one of them on its /kelish card (`KindLine`, `PUT
+  /api/kelish/kind`, src «manual») and it is then judged on that list alone.
+  «Today» = the checklist day, «tomorrow» = the day after (a night checked at
+  08:00: the night that ended / the one opening that evening). Until 17 Oct the
+  check FIXED each cell's type itself on its first check day (tomorrow's filled
+  → «tomorrow», only today's → «today») and judged it on that list for good —
+  and guessed wrong for many cells: 27 of the 66 failed lists of 10—17 Oct had
+  the OTHER list full (a leader who fills today's list judged on tomorrow's
+  every day; shift 2, which fills a night's list when that night starts, judged
+  at 08:00 on the next night's). Those `src «auto»` rows stay in the table as
+  history and nothing reads them (`kelish.load_kinds` returns manual rows only);
+  nothing writes one any more. Every #11 surface names lists by DATE: the card
+  prints the next check and the date of each list it reads
+  (`leader_auto.next_staff_list_check` → `/week`'s `next_check`), the warning
+  card prints both dates, and a list filled before its own day says
+  «(oldindan)» — «To'liq to'ldirildi: 16.10» under a 17.10 list read as «the
+  16.10 list was checked». Past verdicts were NOT re-judged.
 - Read AT THE HOUR: a pass more than `LATE_GRACE` late reads marks, «+»/«−» and
   the file as they stood then (`file_workers_days(as_of=)`).
 - **Transition** (TEMPORARY `services/leader_auto_t11.py`): 4 Oct (S1) and the
@@ -10990,7 +11183,7 @@ the same loop there (`cloud-setup.sh` pulls, `auto-commit.sh cloud` ships) — s
   - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
   - The pull only runs at session start. If `main` moves on gitea mid-session the push at turn end is *rejected*, not silently merged — you will see `PUSH FAILED` in the summary; pull and re-run.
 - `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
-- Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
+- Backend changes need the new code loaded on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline does it automatically for `backend/**` and `bot/**` — from 2026-10-18 as a worker SWAP inside the running unit (see «Zero-downtime on ONE port»), a full restart only when `app/supervisor.py` itself changes. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today — in the lifespan as `run(step)` (schema, what a request needs) or `later(step)` (data fixes, reports, DMs, syncs — on a thread after readiness); see «Zero-downtime on ONE port».
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via transliteration — **`tl()` for a PERSON's name, `tx()` for every other DB text** (both from `useTranslit()`).
   - **The English form is for NAMES only** (the operator, 2026-09-21: «if the text is in Uzbek, do not translate it into English except the names of people»). For `en`, `tl` applies the name convention — x→kh, q→k, oʻ→u, gʻ→gh, apostrophes dropped (Burxon → Burkhon). On Uzbek words that is a misspelling: a leader-auto notice printed the task «…planini **qayd qilish**» as «…**kayd kilish**» and the floor noticed at once. `tx` / `transliterateText` still turn Cyrillic into Latin for uz/en but keep the Uzbek spelling for English. Task names, job titles, categories, SKUs, notes, reasons, comments, broadcast text and plant names are all `tx`.
   - Backend twin: `app/translit.py` `transliterate` (names) / `transliterate_text` (everything else). Notification params are split by `staff._NAME_PARAMS`: a new param that carries a person's name must be added there, or English readers see it in Uzbek spelling. A new prose param needs nothing.
@@ -11196,9 +11389,12 @@ manual step, no SSH.
 - **Never edit files directly on the server** — the next deploy hard-resets the
   checkout. Server-only state (`backend/.env`, the Google service-account key,
   the venv) is untracked and survives; everything else comes from git.
-- **Backend deploys swap two copies, once IT has run the one-time root step**
-  (see «Zero-downtime deploys» below). Until then a backend deploy is still a
-  plain restart, and the app waits it out instead of reloading.
+- **Backend deploys swap WORKERS inside the one process** (see «Zero-downtime
+  on ONE port» below): `deploy.sh` sends SIGHUP to the unit's main process,
+  the supervisor, which starts a worker on the new code and retires the old
+  one only once the new one is ready. No gap, no root, no second port. A
+  change to `app/supervisor.py` itself is the one deploy that still restarts
+  the unit.
 - Run a deploy by hand with `bash /var/www/production/deploy/deploy.sh`, or
   force a restart with `FORCE_RESTART=1 bash …` (also available as
   "Run workflow" in the Actions tab).
@@ -11246,9 +11442,10 @@ blocking work on the event loop freezes every request on the server at once.
   ONE «Server was slow» DM, at most every 30 min, only when it was real
   trouble: a stall ≥ 2 s, a sign-in / page-access answer ≥ 5 s, a full DB pool,
   or ≥ 5 slow requests in 2 min not counting paths slow BY DESIGN
-  (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started at the
-  END of the lifespan (startup migrations run on the loop by design and must
-  not read as a stall), stopped first at shutdown. Never fails a request.
+  (`_EXPECTED_SLOW` — exports, Verifix reads, the assistant). Started once the
+  DEFERRED startup work has finished (startup migrations run on the loop by
+  design and the deferred walks hold the GIL — neither must read as a stall;
+  from 2026-10-18, see «Zero-downtime on ONE port»), stopped first at shutdown. Never fails a request.
 - **A slow request says WHERE its time went** («time went to: 62%
   staff_live:_send_dms ↳ ssl:read»). From `SAMPLE_AFTER_S` (1 s) on, the
   watcher looks at each running request's thread every `SAMPLE_S` (0.25 s) —
@@ -11578,11 +11775,167 @@ blocking work on the event loop freezes every request on the server at once.
     file_id it returns) AND for the bot's prompt redraw, a second Telegram
     round trip. The redraw (`_nudge_bot`, `_nudge_late_bot`) now runs after
     the answer (`tg_later`, its own session, in shot order).
+- **The sixteenth (17 Oct, 16:04–17:04) was `/api/leaders` ×17 at a 6.1 s
+  median, with no deploy in the window** — the kept register was rebuilt
+  almost every time it was asked. Two reasons, both fixed (see «The /leaders
+  register is KEPT»): every Telegram app open sends a sign-in carrying the old
+  token, which counted as a WRITE, so that person's next Monitoring load always
+  waited for a build — even one identical to the kept one; and the fingerprint
+  counted every AI verdict, the ones on still-open days included, so during a
+  shift it had nearly always «changed». An unchanged fingerprint now serves
+  everybody, a sign-in is not a write, open-day verdicts are out of the
+  fingerprint, a changed build is served 10 min (not 3) while rebuilt behind
+  the viewer, and a wait names its reason on the DM. Also from that DM: an
+  objection ruling (`POST /api/leaders/disputes/{id}/decide`, 3.2 s, 57% in
+  Telegram) sends its cards, the three parties' notices and the corrected
+  report after the answer (`_dispute_after_later`, `tg_later`; skipped when
+  the row's status moved meanwhile); and a rich bot message (`broadcast._tg_api`,
+  a fifth of a 5.7 s update in `ssl.do_handshake`) keeps one connection to
+  Telegram per thread. Not touched: `/api/arc-legacy/stats` (7.2 s once, its
+  own SQL) and `/api/heatmap` (3.1 s once).
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
 
+## Zero-downtime on ONE port — the supervisor (`app/supervisor.py`, 2026-10-18)
+
+From **2026-10-18** the unit's main process is a SUPERVISOR that holds
+`127.0.0.1:8030` and never goes away; the app runs as its child WORKER. IT
+declined the blue-green root step and a second port (the operator's report:
+«around 30 apps run on that server», our problem «unprofessional and easily
+solvable»), so the whole of what nginx did for us in that design moved into
+our own process, where nobody's cooperation is needed. The Cloudflare 502
+users saw at every backend deploy — and at every restart nobody deployed — is
+gone with it, in Telegram, the browser and the Android app alike.
+
+- **How it starts.** The unit file is IT's and unchanged: systemd still runs
+  `uvicorn app.main:app …`. The first lines of `app/main.py` call
+  `supervisor.maybe_exec_supervisor()`: under systemd (`INVOCATION_ID` set)
+  the uvicorn CLI that imported us `os.execv`s itself into
+  `python -m app.supervisor <the same args>` — same PID, so systemd's MainPID
+  IS the supervisor. It binds the socket (SO_REUSEADDR, backlog 2048) and
+  spawns the worker, `python -m app.supervisor --worker --fd 3`, which runs
+  `uvicorn.Server.run(sockets=[fd 3])` — the ordinary app, `--proxy-headers`
+  and the rest passed through, `backend/.env` laid over the environment at
+  EVERY spawn, so a key written there later (`deploy/sync-env.sh`, startup's
+  own writers) reaches the next worker without a `systemctl restart`. The
+  lifespan's LAST line, `signal_ready()`, writes one word down a pipe the
+  supervisor handed it (`SAFIA_READY_FD`) — that is the whole readiness
+  protocol. Off systemd nothing happens (a laptop, a cloud session,
+  `--reload`); `SAFIA_SUPERVISE=1` forces it, `SAFIA_SUPERVISE=0` in `.env`
+  plus one restart is the opt-out back to plain uvicorn.
+- **A deploy is `kill -HUP <MainPID>`** — `deploy/deploy.sh`, the same user,
+  no sudo. The supervisor spawns a worker on the code now in the checkout and
+  only once that worker says ready retires the old one (SIGTERM, which
+  uvicorn takes as «finish the open requests, then exit»; killed after 60 s).
+  Connections queue in the kernel on a socket that is never closed, so there
+  is NO gap: measured on the cloud stack, 55 of 55 health checks answered 200
+  across a swap. A new worker that exits before it is ready is DROPPED and
+  the old one keeps serving; deploy.sh reads
+  `backend/data/supervisor/status.json` (`state`, `worker.gen`, `last_swap`)
+  to know, rolls the checkout back and fails the job. Only a change to
+  `app/supervisor.py` itself still takes the old `systemctl restart` (a running
+  supervisor cannot swap itself), and so did the first deploy, whose main
+  process was still plain uvicorn. deploy.sh prefers blue-green if its
+  template unit ever exists, then this, then the plain restart. `kill -USR1`
+  forces a status write; the file is the one place `systemctl status` cannot
+  reach: which worker serves, since when, its RSS, the last swap's outcome.
+- **While no worker is ready the supervisor answers for it** — the first
+  boot, a boot after a crash, a swap done stop-then-start: the page files
+  from `frontend/dist` (index.html for every page path, `no-store`;
+  `/assets/*` immutable), a JSON 503 with `X-Safia-Restarting: 1` on the
+  backend paths (nginx's `$safia_backend_only` map, mirrored in
+  `backend_only()` — keep the two in step). That is exactly what
+  `serverRestart.js` already waits out behind «Server yangilanmoqda», and
+  what the service worker reads as the shell. Never a 502, never Cloudflare's
+  page. The request body is drained first (nginx streams uploads,
+  `proxy_request_buffering off`, and closing on one is ITS 502), and a path
+  never leaves `dist` (`realpath`). The fallback page carries no CSP — one
+  load, then the worker's own page takes over.
+- **A worker that dies is replaced** — at once when it had lived ≥ 90 s,
+  with a backoff of 5 → 10 → 20 → 40 → 60 s between quick deaths — behind
+  the fallback; a worker not ready after 600 s is killed and retried. The
+  supervisor itself is stdlib only, imports nothing of the app, ~16 MB (a bug
+  in it is the outage it exists to prevent); if IT dies, systemd restarts the
+  unit (`Restart=on-failure`) exactly as before.
+- **Memory.** An overlapping swap holds two workers for one boot. Short of
+  room (`MemAvailable` below the live worker's RSS + 200 MB) the swap is
+  stop-then-start behind the fallback: a boot-long «Server yangilanmoqda»,
+  never a 502, and never the OOM killer invited onto a box that already
+  swaps. The jobs lock (`app/scheduler.py`) and the ADDITIVE-migration rule
+  of the blue-green section apply unchanged: two workers share the database
+  for the length of a boot.
+- **It records how workers die, and the boot report tells the chat.**
+  `backend/data/supervisor/events.jsonl` (append-only, rotated at 2 MB, `seq`
+  climbing across restarts) holds every spawn, readiness (boot seconds, how
+  long the fallback answered and for how many requests), retirement, failed
+  start and DEATH — exit code or signal, uptime, the worker's RSS at its last
+  sample and `/proc/meminfo` at that moment. `services/boot_report.py` runs a
+  few seconds after every worker's lifespan: it reads the events since its
+  cursor and DMs the support chat (`perf_watch`'s recipients) when the boot was
+  anything but an ordinary deploy swap — a worker that DIED, with the verdict
+  (SIGKILL on a host with under 300 MB free or half its swap used = the OOM
+  killer; SIGSEGV / SIGBUS / SIGABRT = a native library of ours; exit 3 = the
+  app's startup failed; a Python exit code = our code), a failed start, the
+  whole unit restarted with the SAME code (systemd, a host reboot or a
+  `systemctl restart` — never a deploy), the one full restart a supervisor.py
+  change costs. An ordinary swap is QUIET: three to twenty a day would bury
+  the line that matters. Without a supervisor (plain uvicorn) it sends only
+  when the commit equals the previous boot's — the same code booting again is
+  a restart nobody deployed. `last-boot.json` and `boot-report.cursor` beside
+  the events are its memory; `/health` carries `started_at`, `pid`,
+  `supervised` and `worker_gen`, so a swapped-in worker can be told from the
+  old one. The stall report no longer calls every restart «a deploy».
+- **The boot itself is TWO phases (`services/boot_steps.py`, the same day,
+  the operator: «move the heavy startup work off the boot path too»).** The
+  lifespan calls `run(step)` for what a request needs — `create_all`, every
+  `add_*` / `migrate_*` column, index and table, the seeds a first request
+  resolves against, `ensure_internal_api_key`, the scheduler and its job
+  registrations, `_warm_import_app` (the lazy-import hazard of a swap still
+  holds), the link and span caches — and `later(step)` for everything else,
+  which runs on a thread, in the same order as before, once `signal_ready()`
+  has gone out: the flag-guarded one-shots, the backfills, every `report_*`
+  and DM, the Telegram webhook call, `sync_leader_ai_dates` (the corpus
+  walk), the leader-rule passes. 119 steps before readiness, 104 after, on
+  the day it shipped. **The rule for a new startup step**: a column, a table,
+  anything a request could hit → `run`; a data fix, a seed behind a flag, a
+  report, a DM, a sync → `later`. A `run` step that raises still fails the
+  boot (uvicorn exits 3, deploy.sh rolls back); a `later` step that raises is
+  recorded, the rest still run, and the boot report names it to the support
+  chat — never the site down over a report that could not be sent. Every
+  step is timed: a step over 0.5 s prints its time, `[startup] ready for
+  requests after N s` and `deferred startup work done in M s (slowest: …)`
+  print the totals, and the boot report carries both. `perf_watch` starts
+  only after the deferred work, handed back to the loop with
+  `call_soon_threadsafe` (it records the loop's thread id), so the walks on
+  the deferred thread are never read as freezes; shutdown waits up to 45 s
+  for the thread rather than dying mid-step. Consequences: a swap's memory
+  overlap and a crash's «Server yangilanmoqda» last the schema phase only;
+  the first requests after a boot share the CPU with the deferred walks (a
+  slow first minute, where it used to be no minute at all); and a one-shot's
+  DM now lands a few seconds after the deploy rather than before the first
+  request. `passenger_wsgi.py` keeps its one-phase mirror — it never runs.
+- **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
+  for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
+  near it: the process dying on its own, on a shared box the stall reports
+  had shown starved of CPU and memory. IT's reading («the Telegram mini app
+  sends a wrong request») was wrong — the mini app's requests are a browser's
+  plus one initData header, and the web merely hides a navigation 502 behind
+  the service worker — but the restarts were ours to make harmless, and the
+  cause of the unexplained one is what the boot report now names.
+- Tested on the cloud stack before it shipped: the exec guard → the fallback
+  during the boot (503 + the mark on /api, 200 index.html on pages, immutable
+  assets, a POST with a body, no traversal) → ready → a HUP swap with zero
+  non-200 answers → `kill -9` → fallback → respawn → SIGTERM → a clean exit,
+  with the events and the report text as described.
+
 ## Zero-downtime deploys (blue-green, v4.196.0)
+
+**Superseded on 2026-10-18** — IT declined the root step and a second port, so
+the supervisor above does this on ONE port with no root. Everything in this
+section stays as written: the files are in the repo and `deploy.sh` still
+prefers blue-green if its template unit ever exists; the nginx fallback and
+the additive-migration rule are now the supervisor's too.
 
 From **2026-10-01** (the operator's report: every backend deploy showed users
 Cloudflare's «502 Bad gateway» page for as long as the app took to boot) a backend

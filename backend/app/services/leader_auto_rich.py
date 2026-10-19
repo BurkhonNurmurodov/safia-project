@@ -425,7 +425,7 @@ _STAFF_LIST = {
     "uz": {
         "where": "«Ish grafigi» sahifasi",
         "k_today": "bugungi", "k_tomorrow": "ertangi",
-        "either": "bugungi {t} · ertangi {w}",
+        "either": "bugungi ({d0}): {t} · ertangi ({d1}): {w}",
         "gap_none": ("Bugun rejasi bor yacheykangiz yo'q — tekshiriladigan "
                      "ro'yxat yo'q."),
         "gap_missing": "Hali belgilanmagan xodimlar bor: {codes}.",
@@ -443,7 +443,7 @@ _STAFF_LIST = {
     "uz_cyrl": {
         "where": "«Иш графиги» саҳифаси",
         "k_today": "бугунги", "k_tomorrow": "эртанги",
-        "either": "бугунги {t} · эртанги {w}",
+        "either": "бугунги ({d0}): {t} · эртанги ({d1}): {w}",
         "gap_none": ("Бугун режаси бор ячейкангиз йўқ — текшириладиган рўйхат "
                      "йўқ."),
         "gap_missing": "Ҳали белгиланмаган ходимлар бор: {codes}.",
@@ -461,7 +461,7 @@ _STAFF_LIST = {
     "ru": {
         "where": "Страница «График работы»",
         "k_today": "на сегодня", "k_tomorrow": "на завтра",
-        "either": "на сегодня {t} · на завтра {w}",
+        "either": "на сегодня ({d0}): {t} · на завтра ({d1}): {w}",
         "gap_none": "Сегодня у ваших ячеек нет плана — проверять нечего.",
         "gap_missing": "Есть неотмеченные работники: {codes}.",
         "gap_ok": "✅ Списки отмечены полностью — пусть так и останется до {time}.",
@@ -478,7 +478,7 @@ _STAFF_LIST = {
     "en": {
         "where": "The «Work schedule» page",
         "k_today": "today's", "k_tomorrow": "tomorrow's",
-        "either": "today's {t} · tomorrow's {w}",
+        "either": "today's ({d0}): {t} · tomorrow's ({d1}): {w}",
         "gap_none": "None of your cells has a plan today — there is no list to check.",
         "gap_missing": "Workers still unmarked: {codes}.",
         "gap_ok": "✅ The lists are fully marked — keep them so until {time}.",
@@ -514,7 +514,8 @@ def _staff_rows(f: dict, t: dict, hhmm: str) -> tuple[list[tuple[str, str]], str
             val = f"{t['k_' + kind]} ({dm.get(kind, '')}): <b>{m}/{n}</b>"
         else:
             tt, ww = it.get("today") or [0, 0], it.get("tomorrow") or [0, 0]
-            val = _esc(t["either"].format(t=f"{tt[0]}/{tt[1]}", w=f"{ww[0]}/{ww[1]}"))
+            val = _esc(t["either"].format(t=f"{tt[0]}/{tt[1]}", w=f"{ww[0]}/{ww[1]}",
+                                          d0=dm.get("today", ""), d1=dm.get("tomorrow", "")))
         val = ("✅ " if it.get("ok") else "") + val
         rows.append((str(it.get("cell") or "—"), val))
         if not it.get("ok"):

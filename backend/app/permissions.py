@@ -152,8 +152,8 @@ DEFAULT_PAGE_ACCESS = {
     "kelish": ["leader", "supervisor", "shift-manager"],
     # «Liderlar KPI» — the leaders' five KPIs on ONE page, as a leaderboard
     # (routers/leaders_kpi.py; 2026-10-19). It merged «Ishchi havotirlari»
-    # (which supervisors and leaders had by role), «Kadrlar qo'nimsizligi» and
-    # «Yot jismlar» (admin-only). ADMIN-ONLY until the operator opens it on the
+    # (which supervisors and leaders had by role), «Kadrlar qo'nimsizligi»,
+    # «Yot jismlar» and «Toifaga muvofiqlik» (admin-only). ADMIN-ONLY until the operator opens it on the
     # Access tab — the operator's call at the merge: the roles the concerns
     # page had are NOT carried over (startup.merge_leader_kpi_pages drops the
     # three retired keys from a stored matrix; a personal page grant on one of

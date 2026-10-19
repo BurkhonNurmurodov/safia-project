@@ -1097,7 +1097,9 @@ def merge_leader_kpi_pages() -> None:
     from app.models import ProfilePermission, UserCapability
     from app.permissions import SETTING_KEY
 
-    OLD_PAGES = ("worker-concerns", "turnover", "foreign-objects")
+    # `category-compliance` (the 4th KPI, v4.292.0) joined the merged page the
+    # same day; its key never reached a nav row, so it is folded here as well.
+    OLD_PAGES = ("worker-concerns", "turnover", "foreign-objects", "category-compliance")
     NEW_PAGE = "leaders-kpi"
     NEW_CAP = f"page.view.{NEW_PAGE}"
     db = SessionLocal()
@@ -9910,6 +9912,67 @@ def put_cell_0811_back() -> None:
             db.close()
     except Exception as exc:  # pragma: no cover — never block startup
         print(f"[startup] cell 0811 fix skipped: {exc}")
+
+
+# ── a leader's cell link counts from the day it is made (2026-10-17) ─────────
+#
+# The operator: «count it from the day it's connected, not from the next day».
+# From this build a «Boshqaruvchi» / «Egasi» change lands on the day it is made
+# (`cell_links.connected`); this one-shot moves the changes still WAITING under
+# the old rule (the unit's next shift opening) onto the day each was made, the
+# rule every new one follows. A change waiting WITH a brigadir move is left: it
+# lands with that move. Changing what it does needs a NEW flag key.
+
+LEADER_LINKS_TODAY_FLAG = "cell_leader_links_today_2026_10_17_v1"
+
+
+def land_waiting_leader_links() -> None:
+    """Boot, inline, once. Re-dates the waiting leader links, then applies
+    them at once (`cell_links.apply_due`, the minute job's own door). The flag
+    is claimed in the same transaction as the re-dating. Never raises."""
+    try:
+        from app.models import Cell, CellLinkEvent
+        from app.services import action_log, cell_links, cell_register
+        db = SessionLocal()
+        try:
+            if db.query(AppSetting).filter_by(key=LEADER_LINKS_TODAY_FLAG).first():
+                return
+            now = datetime.now(timezone.utc)
+            waiting = (db.query(CellLinkEvent).filter(CellLinkEvent.applied_at.is_(None))
+                       .with_for_update().all())
+            moving = {e.cell_id for e in waiting if e.field == "manager_id"}
+            moved = []
+            for e in waiting:
+                if e.field not in ("leader_id", "owner_id") or e.cell_id in moving:
+                    continue
+                cell = db.query(Cell).filter_by(id=e.cell_id).first()
+                if cell is None:
+                    continue
+                at = e.created_at or now
+                day, _ = cell_links.connected(db, cell.manager_id, at)
+                if day >= e.effective_from:
+                    continue
+                moved.append(f"{cell.verifix_code} {e.field}: "
+                             f"{e.effective_from.isoformat()} → {day.isoformat()}")
+                e.effective_from = day
+                e.effective_at = min(at, now)
+            db.add(AppSetting(key=LEADER_LINKS_TODAY_FLAG, value=now.isoformat()))
+            db.commit()
+            cell_links.forget()
+            if moved:
+                cell_links.apply_due(db)
+                db.commit()
+                cell_register.after_commit()
+                action_log.record_system(
+                    "org", "org.cell_links_applied", db,
+                    details=[("count", len(moved)), ("from", "connected_day")]
+                    + [("cell", m) for m in moved[:40]])
+            print(f"[startup] leader cell links: {len(moved)} waiting change(s) now count "
+                  f"from the day they were made")
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] leader cell links re-date skipped: {exc}")
 
 
 def seed_one_process_cells() -> None:

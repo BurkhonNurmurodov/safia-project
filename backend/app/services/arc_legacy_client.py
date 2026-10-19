@@ -248,14 +248,16 @@ def _classify(res: httpx.Response, path: str) -> ArcError:
 
 
 def get_json(client: httpx.Client, path: str, params: Optional[dict] = None,
-             _retried: bool = False) -> Any:
+             _retried: bool = False, timeout: Optional[httpx.Timeout] = None) -> Any:
     """GET ``path`` with the bearer token; on 401 log in again ONCE and retry.
-    Returns the decoded JSON body. Raises the typed ArcError family."""
+    Returns the decoded JSON body. Raises the typed ArcError family.
+    ``timeout`` overrides the sync's generous one — a reader somebody is
+    waiting on (one ticket's card) cannot afford a minute."""
     token = _get_token(client)
     url = _base() + path
     log.debug("ARC-legacy GET %s params=%s", url, params or {})
     try:
-        res = client.get(url, params=params or None, timeout=_TIMEOUT,
+        res = client.get(url, params=params or None, timeout=timeout or _TIMEOUT,
                          headers={"Authorization": f"Bearer {token}"})
     except httpx.TimeoutException as exc:
         raise ArcTransientError(f"ARC timed out on {path}: {type(exc).__name__}") from None
@@ -267,7 +269,7 @@ def get_json(client: httpx.Client, path: str, params: Optional[dict] = None,
         # log in once more. A second 401 is reported as such, not looped.
         _forget_token()
         _get_token(client, force=True)
-        return get_json(client, path, params, _retried=True)
+        return get_json(client, path, params, _retried=True, timeout=timeout)
     if not (200 <= res.status_code < 300):
         raise _classify(res, path)
     try:

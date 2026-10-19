@@ -42,7 +42,7 @@ from app.database import get_db
 from app.models import ArcLegacyRequest, ArcLegacySyncMeta, ArcRequest
 from app.permissions import require_page
 from app.translit import transliterate
-from app.services import action_log, arc_cells, arc_client, arc_hidden, arc_legacy_client, arc_legacy_discovery
+from app.services import action_log, arc_cells, arc_client, arc_files, arc_hidden, arc_legacy_client, arc_legacy_discovery
 from app.services.arc_legacy_export import build_arc_legacy_workbook
 from app.services.arc_legacy_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -1003,6 +1003,114 @@ def get_request(
                      for k, v in (a.update_time or {}).items() if v]
             out["timeline"] = sorted(steps, key=lambda x: str(x["at"]))
     return out
+
+
+# ── attachments (photos and files), through our own origin ────────────────────
+# The page's CSP draws no picture off IT's host, so the modal asks HERE —
+# services/arc_files.py is the whole of how a file is found and fetched.
+
+def _ticket_files(db: Session, remote_id: str, with_card: bool = True, force: bool = False
+                  ) -> tuple[dict[str, Optional[dict]], list[dict], Optional[str]]:
+    """``(singles, files, card_error)`` for one mirrored ticket — ``singles``
+    is the one-path fields by key (``report``, ``document``), ``files`` the
+    filer's attachments. 404 for a ticket the mirror does not hold — a typed
+    id is never a fetch from IT. The DB connection is handed back before IT's
+    card is read: a slow card must not hold one of the pool's fifteen."""
+    R = _R()
+    row = db.query(R.photo_report, R.document_url).filter(R.remote_id == remote_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if remote_id.startswith(OLD_PREFIX):
+        a = (db.query(ArcRequest.files)
+             .filter(ArcRequest.remote_id == remote_id[len(OLD_PREFIX):]).first())
+        db.close()
+        return {"report": None, "document": None}, arc_files.old_files(a[0] if a else None), None
+    report, document = row[0], row[1]
+    db.close()
+    files, err = [], None
+    if with_card:
+        card, err = arc_files.card(remote_id, force=force)
+        if isinstance(card, dict):
+            for k in ("photo_report", "document_url"):
+                v = card.get(k)
+                if isinstance(v, str) and v.strip():
+                    if k == "photo_report":
+                        report = v
+                    else:
+                        document = v
+        files = arc_files.card_files(card, report)
+    return ({"report": arc_files.report_item(report),
+             "document": arc_files.report_item(document, role="document")}, files, err)
+
+
+@router.get("/requests/{remote_id}/files")
+def request_files(
+    remote_id: str,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """What a ticket carries: the filer's attachments (``files``, addressed
+    by position), the crew's report photo (``report``) and the ticket's
+    document (``document``), each null when the ticket has none.
+    ``card`` says whether IT's single-ticket card could be read — a new-app
+    ticket's attachments live only there, so «none» and «could not ask» are
+    two different answers. ``force`` (a person's retry) reads the card again
+    past the minute a failure is remembered."""
+    singles, files, err = _ticket_files(db, remote_id, force=force)
+    one = lambda it: ({"name": it["name"], "kind": it["kind"]} if it else None)  # noqa: E731
+    return {
+        "report": one(singles["report"]),
+        "document": one(singles["document"]),
+        "files": [{"n": i, "name": f["name"], "kind": f["kind"]} for i, f in enumerate(files)],
+        "card": ("n/a" if remote_id.startswith(OLD_PREFIX) else (err or "ok")),
+    }
+
+
+@router.get("/requests/{remote_id}/file/{key}")
+def request_file(
+    remote_id: str,
+    key: str,
+    download: bool = False,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """One attachment's bytes — ``key`` is ``report``, ``document`` or a
+    file's position.
+    An image the bytes PROVE is a picture is served inline; anything else
+    is an attachment, never rendered in our origin (``nosniff``)."""
+    from urllib.parse import quote
+    from fastapi.responses import Response
+
+    singles, files, _err = _ticket_files(db, remote_id, with_card=(key not in ("report", "document")))
+    if key in ("report", "document"):
+        item = singles[key]
+    else:
+        try:
+            n = int(key)
+        except ValueError:
+            n = -1
+        item = files[n] if 0 <= n < len(files) else None
+    if item is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    data, ctype = arc_files.fetch(item)
+    if data is None:
+        # 424, never 502/503 — the client reads those as a server restart.
+        raise HTTPException(status_code=424, detail={"code": "unreachable"})
+    inline = ctype in arc_files.INLINE_TYPES and not download
+    name = item["name"] or "file"
+    disp = "inline" if inline else "attachment"
+    ascii_name = name.encode("ascii", "ignore").decode() or "file"
+    ascii_name = ascii_name.replace('"', "").replace("\\", "")
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={
+            "Content-Disposition": f"{disp}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/refresh")

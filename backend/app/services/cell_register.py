@@ -6,8 +6,9 @@ calling none of the cascades the form runs (group letters, `leader_load`, the
 Jurnal). From this build every writer of a cell's links goes through here:
 
 * `set_unit` / `set_manager` / `set_owner` record a DATED change
-  (`cell_links.record` — it lands at the unit's next shift opening, so no
-  filed day moves). A manager pick NEVER moves the cell to another unit (the
+  (`cell_links.record` — a brigadir change lands at the unit's next shift
+  opening, so no filed day moves; a leader's link counts from the day it is
+  made, `cell_links.connected`). A manager pick NEVER moves the cell to another unit (the
   operator's ruling 3); a brigadir change is a dated event like any other.
 * `archive` / `restore` go through `cell_archive` (archive at now; a restore
   from the next shift opening — the archived days stay archived).
@@ -123,8 +124,9 @@ def set_unit(db: Session, cell: Cell, manager_id: Optional[int], *, src: str,
 def set_manager(db: Session, cell: Cell, leader_id: Optional[int], *, src: str,
                 by: Optional[str] = None, vfx: Optional[dict] = None, mark: bool = False,
                 apply_now: bool = False):
-    """The cell's «Boshqaruvchi», from the unit's next shift opening. Never
-    moves the cell's unit (ruling 3)."""
+    """The cell's «Boshqaruvchi», from the day it is made (with a brigadir
+    change already waiting: with that move). Never moves the cell's unit
+    (ruling 3)."""
     if leader_id and not db.query(RoleProfile.id).filter(
             RoleProfile.id == leader_id, RoleProfile.role == "leader").first():
         raise Refused("leader_not_found", "Leader profile not found")

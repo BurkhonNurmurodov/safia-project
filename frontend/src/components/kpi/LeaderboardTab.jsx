@@ -17,7 +17,16 @@ const MEDAL = { 1: "#E0A82E", 2: "#C3CBD6", 3: "#C0703A" };
 export default function LeaderboardTab({ T, tl, data, rows, sort, onSort, onOpen, onRules }) {
   const tot = data?.totals;
   const rules = data?.rules || {};
-  const live = (data?.kpis || []).filter((k) => k.live).length;
+  const kpis = data?.kpis || [];
+  const live = kpis.filter((k) => k.live).length;
+  // The KPIs the platform has no source for yet count 0, so the best total a
+  // cell can reach today is 5 minus their maximum points — read off the rules
+  // the server sent, never typed into the note; gone once every KPI is live.
+  const missing = kpis.filter((k) => !k.live);
+  const maxNow = MAX_POINTS - missing.reduce((s, k) => s + (Number(k.max_points) || 0), 0);
+  const formulaNote = missing.length
+    ? fill(T.formulaNote, { m: missing.length, max: maxNow.toFixed(1).replace(".", T.dec), pct: Math.round((maxNow / MAX_POINTS) * 100) })
+    : "";
   const stateLine = data?.state === "open"
     ? fill(T.lineOpen, { from: dmy(data.period?.from), asOf: dmy(data.as_of) })
     : fill(T.lineEnded, { from: dmy(data?.period?.from), to: dmy(data?.period?.to) });
@@ -45,7 +54,7 @@ export default function LeaderboardTab({ T, tl, data, rows, sort, onSort, onOpen
 
   const footer = (
     <div className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
-      <span>{T.formulaNote}</span>
+      {formulaNote && <span>{formulaNote}</span>}
       {data?.state === "open" && <span className="w-full" style={{ color: "var(--status-warn)" }}>{T.provisional}</span>}
     </div>
   );

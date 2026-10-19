@@ -8,6 +8,15 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
+# One port, no root (app/supervisor.py — CLAUDE.md «Zero-downtime on ONE
+# port»): under systemd the uvicorn CLI that imported this module becomes the
+# SUPERVISOR holding the port, and the app runs in a child worker it swaps on
+# a deploy and replaces after a crash. First thing, before anything heavy is
+# imported — the supervisor stays tiny. A no-op for the worker and off systemd.
+from app.supervisor import maybe_exec_supervisor  # noqa: E402
+
+maybe_exec_supervisor()
+
 # Configure logging before the rest of the app is imported, so anything that
 # logs during import lands in backend/logs/app.log. Mirrored in
 # passenger_wsgi.py — prod boots through there, not through the lifespan.
@@ -29,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, leaders_kpi
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -43,10 +52,17 @@ async def lifespan(app: FastAPI):
     # Fail-closed before anything is served: never run production on the public
     # placeholder signing key or with the dev auth bypass enabled.
     assert_secure_config()
-    Base.metadata.create_all(bind=engine)
+    # Two phases (services/boot_steps.py): `run` = before the first request,
+    # `later` = on a thread once the worker is ready, in this same order.
+    # A column or a table is `run`; a data fix, a seed behind a flag, a
+    # report or a DM is `later`. Each step is timed into the journal.
+    from app.services.boot_steps import boot
+    boot.begin()
+    run, later = boot.run, boot.later
+    run(Base.metadata.create_all, bind=engine)
     # A switched-off Verifix method keeps no probe row (wages, 2026-10-03).
     from app.services.verifix_explore import purge_blocked_probes
-    purge_blocked_probes()
+    later(purge_blocked_probes)
     from app.startup import (
         backfill_day_approvals, backfill_day_closures, backfill_deletion_batch_ids,
         seed_admins, seed_languages, seed_managers_and_sources, seed_exchange_tasks,
@@ -199,124 +215,125 @@ async def lifespan(app: FastAPI):
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
         put_cell_0811_back,
+        land_waiting_leader_links,
         seed_one_process_cells,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
     from app.onetime_purge_test_units import purge_test_units
     # First: every ORM read of a profile selects these two columns.
-    add_manager_kind_columns()
-    add_leader_kind_columns()
-    add_cell_owner_columns()
-    add_verifix_sync_columns()
-    add_late_window_columns()
-    add_dispute_ruling_column()
-    add_cell_one_process()
-    add_last_seen_column()
-    add_tg_name_column()
-    add_edit_requests_batch_id()
-    add_notification_template_columns()
-    add_notification_recipient_profile()
-    add_notification_center()
-    add_admin_language_column()
-    add_dm_reachability_columns()
-    add_profiles_columns()
-    migrate_cells_table()
-    migrate_cells_leaders_columns()
-    migrate_cell_supervisor_column()
-    migrate_cell_in_load_column()
+    run(add_manager_kind_columns)
+    run(add_leader_kind_columns)
+    run(add_cell_owner_columns)
+    run(add_verifix_sync_columns)
+    run(add_late_window_columns)
+    run(add_dispute_ruling_column)
+    run(add_cell_one_process)
+    run(add_last_seen_column)
+    run(add_tg_name_column)
+    run(add_edit_requests_batch_id)
+    run(add_notification_template_columns)
+    run(add_notification_recipient_profile)
+    run(add_notification_center)
+    run(add_admin_language_column)
+    run(add_dm_reachability_columns)
+    run(add_profiles_columns)
+    run(migrate_cells_table)
+    run(migrate_cells_leaders_columns)
+    run(migrate_cell_supervisor_column)
+    run(migrate_cell_in_load_column)
     # Every cell of a unit whose загрузка is calculated starts ON (once).
-    turn_on_cells_of_counted_units()
+    later(turn_on_cells_of_counted_units)
     # The operator's list of cells NOT counted in the загрузка (once).
-    untick_cells_in_load()
-    add_attendance_upload_source()
-    add_arc_legacy_warehouse_columns()
-    add_cell_shift_times()
-    add_cell_archive()
-    seed_verifix_sync()
-    add_wc_groups()
-    add_education_thumb_url()
-    add_idle_interval_client_key()
-    add_idle_interval_cleaners()
-    add_turnover_month_people_approx()
-    add_leader_task_cell()
-    add_late_proof_provenance()
-    add_late_proof_timing()
-    migrate_dispute_stages()
-    merge_brigadir_tasks_page()
-    # 2026-10-19: the three leaders' KPI page keys → `leaders-kpi` (the
-    # merged page); the stored matrix's roles are dropped, grants renamed.
-    merge_leader_kpi_pages()
-    create_action_log()
+    later(untick_cells_in_load)
+    run(add_attendance_upload_source)
+    run(add_arc_legacy_warehouse_columns)
+    run(add_cell_shift_times)
+    run(add_cell_archive)
+    later(seed_verifix_sync)
+    run(add_wc_groups)
+    run(add_education_thumb_url)
+    run(add_idle_interval_client_key)
+    run(add_idle_interval_cleaners)
+    run(add_turnover_month_people_approx)
+    run(add_leader_task_cell)
+    run(add_late_proof_provenance)
+    run(add_late_proof_timing)
+    run(migrate_dispute_stages)
+    run(merge_brigadir_tasks_page)
+    # 2026-10-19: the four leaders' KPI page keys → `leaders-kpi` (the merged
+    # page); the stored matrix's roles are dropped, grants renamed.
+    run(merge_leader_kpi_pages)
+    run(create_action_log)
     # After the dispute stage columns and the action register it reports
     # into. One-shot: pre-September objections + late proofs, deleted.
-    purge_pre_september_appeals()
+    later(purge_pre_september_appeals)
     # One-shot: «Ish grafigi» starts 4 Oct 2026 — earlier marks cleared.
-    purge_kelish_marks_before_start()
+    later(purge_kelish_marks_before_start)
     # After the purge, so appeals it deletes never get a thread written.
-    backfill_appeal_threads()
-    repair_appeal_threads()
-    letter_shared_cells()
-    migrate_cell_ojidaniya_percat()
-    migrate_cell_perenaladka()
-    migrate_idle_interval_status()
-    approve_pending_idle_requests()
-    migrate_attendance_batches()
-    seed_att_included_from_last_day()
-    seed_idle_source_pilot()
-    seed_pp_autofill_default()
-    set_forecast_autocall_capacity()
-    split_zagruzka_bands()
-    seed_full90_bands()
-    set_gemini_model_pro()
-    add_pp_product_auto_fill()
-    add_education_duration()
-    migrate_pp_line_daily_key()
-    correct_pp_double_counted_days()
-    purge_production_history()
-    reorder_positions_plan_before_fact()
-    latin_twin_codes()
-    seed_snabjenets_english_label()
-    fix_orazov_schedule_2026_09_01()
-    map_arc_brigadas_db()
-    add_concern_profile_columns()
-    add_concern_done_at()
-    add_concern_level_columns()
-    add_concern_level_since()
-    add_concern_escalation_names()
-    add_concern_shift_manager()
-    add_concern_category()
-    add_concern_seq()
-    add_concern_worker_name()
-    add_concern_deadline_from()
-    add_concern_owner_columns()
-    add_task_comment_author_ref()
-    add_concern_comment_kind_column()
-    add_task_assignee_kind_column()
-    migrate_concern_solutions_to_thread()
-    add_leader_submission_columns()
-    add_broadcast_rich_columns()
-    add_broadcast_resume_columns()
-    add_broadcast_schedule_column()
-    add_action_log_undo_column()
-    add_broadcast_failures_column()
-    add_broadcast_pin_columns()
-    add_pp_product_op()
-    add_downtime_ns_columns()
-    add_attendance_supervisor_column()
-    add_attendance_split_columns()
-    purge_cell_exchange_sandbox()
+    later(backfill_appeal_threads)
+    later(repair_appeal_threads)
+    later(letter_shared_cells)
+    run(migrate_cell_ojidaniya_percat)
+    run(migrate_cell_perenaladka)
+    run(migrate_idle_interval_status)
+    later(approve_pending_idle_requests)
+    run(migrate_attendance_batches)
+    later(seed_att_included_from_last_day)
+    later(seed_idle_source_pilot)
+    later(seed_pp_autofill_default)
+    later(set_forecast_autocall_capacity)
+    later(split_zagruzka_bands)
+    later(seed_full90_bands)
+    later(set_gemini_model_pro)
+    run(add_pp_product_auto_fill)
+    run(add_education_duration)
+    run(migrate_pp_line_daily_key)
+    later(correct_pp_double_counted_days)
+    later(purge_production_history)
+    later(reorder_positions_plan_before_fact)
+    later(latin_twin_codes)
+    later(seed_snabjenets_english_label)
+    later(fix_orazov_schedule_2026_09_01)
+    later(map_arc_brigadas_db)
+    run(add_concern_profile_columns)
+    run(add_concern_done_at)
+    run(add_concern_level_columns)
+    run(add_concern_level_since)
+    run(add_concern_escalation_names)
+    run(add_concern_shift_manager)
+    run(add_concern_category)
+    run(add_concern_seq)
+    run(add_concern_worker_name)
+    run(add_concern_deadline_from)
+    run(add_concern_owner_columns)
+    run(add_task_comment_author_ref)
+    run(add_concern_comment_kind_column)
+    run(add_task_assignee_kind_column)
+    run(migrate_concern_solutions_to_thread)
+    run(add_leader_submission_columns)
+    run(add_broadcast_rich_columns)
+    run(add_broadcast_resume_columns)
+    run(add_broadcast_schedule_column)
+    run(add_action_log_undo_column)
+    run(add_broadcast_failures_column)
+    run(add_broadcast_pin_columns)
+    run(add_pp_product_op)
+    run(add_downtime_ns_columns)
+    run(add_attendance_supervisor_column)
+    run(add_attendance_split_columns)
+    later(purge_cell_exchange_sandbox)
     # After the column exists — it inserts rows carrying the flag.
-    backfill_supervisor_attendance()
-    add_leader_task_setting_names()
-    add_leader_task_criteria()
-    add_leader_task_windows()
-    add_leader_task_deadlines()
-    add_leader_task_description()
-    add_leader_task_date_check()
-    add_leader_task_time_check()
-    add_leader_task_day_check()
-    add_leader_task_date_plus()
+    later(backfill_supervisor_attendance)
+    run(add_leader_task_setting_names)
+    run(add_leader_task_criteria)
+    run(add_leader_task_windows)
+    run(add_leader_task_deadlines)
+    run(add_leader_task_description)
+    run(add_leader_task_date_check)
+    run(add_leader_task_time_check)
+    run(add_leader_task_day_check)
+    run(add_leader_task_date_plus)
     # Schema for the automatic checklist tasks. Permanent, not a one-shot:
     # `create_all` never ALTERs an existing table, and the ledger's unique key
     # is an EXPRESSION index. It MUST run here, with the other DDL and before
@@ -324,171 +341,175 @@ async def lifespan(app: FastAPI):
     # `leader_auto_rollout.self_check`, and with the column still missing every
     # ORM read of LeaderTaskDef raises, so the boot that applies the rollout
     # would be the one boot whose self-check was skipped.
-    add_leader_auto_checks()
-    add_leader_task_proof_kind()
-    add_leader_task_catalog()
-    add_leader_task_example_scope()
-    add_leader_entry_closed_at()
-    add_leader_day_reopened()
-    add_leader_unit_bot_from()
+    run(add_leader_auto_checks)
+    run(add_leader_task_proof_kind)
+    run(add_leader_task_catalog)
+    run(add_leader_task_example_scope)
+    run(add_leader_entry_closed_at)
+    run(add_leader_day_reopened)
+    run(add_leader_unit_bot_from)
     # After the column exists — both of these write values into it.
-    reset_leader_camera_pilot()
-    set_camera_pilot_bot_from()
-    add_leader_photo_client_key()
-    add_leader_ai_resolution()
-    add_leader_ai_reviewed_index()
+    later(reset_leader_camera_pilot)
+    later(set_camera_pilot_bot_from)
+    run(add_leader_photo_client_key)
+    run(add_leader_ai_resolution)
+    run(add_leader_ai_reviewed_index)
     # After add_leader_ai_resolution — the backfill reads reviewed rows.
-    add_leader_ai_clocks()
-    add_profile_identity_columns()
-    add_activity_profile_key()
-    add_web_credential_password_enc()
+    run(add_leader_ai_clocks)
+    run(add_profile_identity_columns)
+    run(add_activity_profile_key)
+    run(add_web_credential_password_enc)
     # The /arc integration: seed the internal key into .env (and into this
     # process) BEFORE the mirror reset and before register_arc_jobs below,
     # which declines outright without one.
-    ensure_internal_api_key()
-    reset_arc_mirror()
-    migrate_multi_roles()
+    run(ensure_internal_api_key)
+    run(reset_arc_mirror)
+    run(migrate_multi_roles)
     # After migrate_multi_roles — it owns the table's columns; this re-keys it.
-    migrate_leader_role_uniqueness()
-    backfill_leader_page_access()
-    open_cells_page_to_supervisors()
-    open_production_page_to_managers()
-    seed_admins()
-    seed_languages()
-    seed_managers_and_sources()
+    run(migrate_leader_role_uniqueness)
+    later(backfill_leader_page_access)
+    later(open_cells_page_to_supervisors)
+    later(open_production_page_to_managers)
+    run(seed_admins)
+    run(seed_languages)
+    run(seed_managers_and_sources)
     # After the manager seed, so freshly seeded units land in the first factory
     # instead of staying unassigned.
-    migrate_factories()
-    add_role_profile_factory()
-    repoint_shift_report_sheet()
-    wipe_cell_perenaladka_history()
-    purge_leader_ai_history()
+    run(migrate_factories)
+    run(add_role_profile_factory)
+    later(repoint_shift_report_sheet)
+    later(wipe_cell_perenaladka_history)
+    later(purge_leader_ai_history)
     # After purge_leader_ai_history (no point re-judging rows about to be
     # dropped) and after the window + clocks columns it reads exist.
-    sync_leader_ai_dates()
+    later(sync_leader_ai_dates)
     # After the date sync, which is what settles a row's shift: the pause
     # cleanup reads it to decide what leaves the queue.
-    drop_paused_shift_reviews()
+    later(drop_paused_shift_reviews)
     # After the pause cleanup and the date sync it reads: the backlog is only
     # queueable once a row's shift is settled, and only while nothing is paused.
-    queue_shift2_backlog()
-    backfill_role_profiles()
-    backfill_concern_profiles()
-    backfill_concern_owner()
+    later(queue_shift2_backlog)
+    later(backfill_role_profiles)
+    later(backfill_concern_profiles)
+    later(backfill_concern_owner)
     # After the cell + manager seeds — it reads both to resolve a concern's unit.
-    backfill_concern_units()
-    backfill_role_profile_keys()
-    backfill_task_profiles()
-    backfill_comment_profiles()
-    migrate_user_capabilities()
-    migrate_permission_modes()
-    seed_exchange_tasks()
-    seed_production_pilot()
-    seed_setup_times()
-    resync_production_catalog()
-    relax_pp_upload_manager()
-    backfill_pp_actual_from_deliv()
-    rescale_pp_efficiency_base()
-    backfill_day_approvals()
-    backfill_day_closures()
-    backfill_deletion_batch_ids()
+    later(backfill_concern_units)
+    later(backfill_role_profile_keys)
+    later(backfill_task_profiles)
+    later(backfill_comment_profiles)
+    run(migrate_user_capabilities)
+    run(migrate_permission_modes)
+    later(seed_exchange_tasks)
+    later(seed_production_pilot)
+    later(seed_setup_times)
+    later(resync_production_catalog)
+    later(relax_pp_upload_manager)
+    later(backfill_pp_actual_from_deliv)
+    later(rescale_pp_efficiency_base)
+    later(backfill_day_approvals)
+    later(backfill_day_closures)
+    later(backfill_deletion_batch_ids)
     from app.telegram_bot import setup_webhook
-    setup_webhook()
+    later(setup_webhook)
     # Continue any broadcast fan-out orphaned by a process restart mid-send
     # (mirrored in passenger_wsgi.py — prod boots through that entrypoint).
     from app.routers.broadcast import register_scheduled_broadcasts, resume_stuck_broadcasts
-    resume_stuck_broadcasts()
+    run(resume_stuck_broadcasts)
     # Background jobs. The scheduler holds its timers in memory only, so every
     # boot rebuilds them from the rows that own them; a deploy landing between
     # composing a broadcast and its send time therefore costs nothing.
-    start_scheduler()
-    register_scheduled_broadcasts()
+    run(start_scheduler)
+    run(register_scheduled_broadcasts)
     # The AI proof reviewer used to move only when a human hit Refresh; now the
     # queue drains itself (mirrored in passenger_wsgi.py).
     from app.services.leader_ai import register_drain_job
-    register_drain_job()
+    run(register_drain_job)
     # Per-task submission: close tasks whose deadline has gone by.
     from app.services.leader_close import register_autoclose_job
-    register_autoclose_job()
+    run(register_autoclose_job)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).
     from app.services.attendance_watch import register_watch as register_reconcile_watch
-    register_reconcile_watch()
+    run(register_reconcile_watch)
     # ARC ticket mirror: quick pass every 15 min, full walk nightly + boot
     # catch-up (mirrored in passenger_wsgi.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs
-    register_arc_jobs()
+    run(register_arc_jobs)
     # The OLD login API's mirror (/arc-legacy): same cadence, its own tables and
     # job ids, full walk at 03:45 (mirrored in passenger_wsgi.py; skips without
     # the ARC_USERNAME/ARC_PASSWORD credential).
     from app.services.arc_legacy_sync import register_boot_jobs as register_arc_legacy_jobs
-    register_arc_legacy_jobs()
+    run(register_arc_legacy_jobs)
     # The call forecast, sent by the clock: shift 1 at 19:00, shift 2 at 06:00,
     # each for its own next shift-day (mirrored in passenger_wsgi.py).
     from app.services.forecast_autocall import register_jobs as register_autocall_jobs
-    register_autocall_jobs()
+    run(register_autocall_jobs)
     # «Imtihon»: expire overdue attempts at 00:05, due-soon notices at 09:00
     # (mirrored in passenger_wsgi.py).
     from app.services.exam import register_jobs as register_exam_jobs
-    register_exam_jobs()
+    run(register_exam_jobs)
     # «Kadrlar qo'nimsizligi»: read Verifix's directory nightly at 23:40 (a
     # month's last read takes its list of working people), close ended
     # months at 09:05, catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
-    register_turnover_jobs()
+    run(register_turnover_jobs)
+    # «Toifaga muvofiqlik»: read Verifix's three HR journals nightly at 23:55
+    # (after the directory), catch up after boot (mirrored in passenger_wsgi.py).
+    from app.services.category_sync import register_jobs as register_category_jobs
+    run(register_category_jobs)
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
-    register_staff_live_jobs()
+    run(register_staff_live_jobs)
     # The Verifix live sync (2026-10-12): the org read + pass, and the dated
     # cell links landing at each unit's shift opening.
     from app.services.verifix_sync import register_jobs as register_verifix_sync_jobs
-    register_verifix_sync_jobs()
+    run(register_verifix_sync_jobs)
     from app.services.cell_links import register_jobs as register_cell_link_jobs
-    register_cell_link_jobs()
+    run(register_cell_link_jobs)
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —
     # this is what keeps ONE list from quietly going stale.
-    report_unclassified_routes(app)
+    later(report_unclassified_routes, app)
     # …and whether the task-closing arithmetic still holds. Twice a task
     # has been closed at an hour nobody intended and nothing said so; the
     # only signal was a leader losing points. There is no test suite here
     # and a push to main is a deploy, so boot is the earliest a
     # regression can be caught.
-    report_leader_deadline_rules()
+    later(report_leader_deadline_rules)
     # …and whether the task CATALOG still adds up: an archived task units
     # still switch on, a spent floor, or weights that no longer total 100 —
     # the last of which silently re-bases every leader's percentage.
-    report_leader_task_catalog()
-    report_wc_groups()
+    later(report_leader_task_catalog)
+    later(report_wc_groups)
     # ⚠ TEMPORARY one-shot — remove this line and its module in the NEXT
     # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
     # every table it deletes from is guaranteed to exist by now.
-    purge_test_units()
+    later(purge_test_units)
     # ⚠ TEMPORARY one-shots (2026-09-09) — the operator asked, once, for the
     # register behind «Xarajat»'s «Narxlanmagan, daq» card: first as a table in
     # the message, then as a workbook. Each is flag-guarded, so each delivers on
     # the first boot after its own deploy and never again. Remove both lines,
     # `services/unpriced_report.py` and `build_unpriced_workbook` once the file
     # has landed.
-    report_unpriced_ojidaniya()
-    report_unpriced_ojidaniya_xlsx()
+    later(report_unpriced_ojidaniya)
+    later(report_unpriced_ojidaniya_xlsx)
     # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for what is
     # still UNFILLED before the загрузка can be trusted: «Odam soni» missing on a
     # work centre that has a plan, ojidaniya filed on a cell with no plan, and
     # everything else that blanks or skews the number. Flag-guarded, so it
     # delivers on the first boot after this deploy and never again. Remove this
     # line and `services/zagruzka_gaps.py` once the file has landed.
-    report_zagruzka_gaps_xlsx()
+    later(report_zagruzka_gaps_xlsx)
     # Which SAP work centres more than one unit claims — the registry, the
     # catalog overlaps and the quantities written twice. One DM, once; delete
     # this line and `services/shared_wc_report.py` once it has landed.
-    report_shared_work_centers()
+    later(report_shared_work_centers)
     # …and the same register as a four-sheet workbook. Its own flag: the
     # operator asked for the file after the message.
-    report_shared_work_centers_xlsx()
+    later(report_shared_work_centers_xlsx)
     # ⚠ TEMPORARY one-shot (2026-09-10) — the cells the verifix upload put
     # PEOPLE in, where nobody wrote a plan or an «Odam soni» on «Zagruzka
     # fayli» for that cell on that date. Not a widening of the report above:
@@ -496,33 +517,33 @@ async def lifespan(app: FastAPI):
     # a cell where people stood all shift and nothing was filed is invisible
     # to it. Flag-guarded — first boot after this deploy, never again. Remove
     # this line and `services/cell_input_gaps.py` once the file has landed.
-    report_cell_input_gaps_xlsx()
+    later(report_cell_input_gaps_xlsx)
     # ⚠ TEMPORARY one-shot (2026-09-11) — the operator asked to receive, once,
     # the notification the only «Ta'lim» lesson sends its audience: the same
     # card and button, DMed to their own chat, and nothing else. Flag-guarded —
     # first boot after this deploy, never again. Remove this line and
     # `startup.notify_operator_education_lesson` once it has landed.
-    notify_operator_education_lesson()
+    later(notify_operator_education_lesson)
     # ⚠ TEMPORARY one-shot (2026-09-11) — every group of cells that carry one
     # SAP code, as an UNFORMATTED workbook (header row + one row per cell) in
     # the operator's chat. Broader than the shared-work-centre file above: a
     # code several cells of ONE unit carry is in too. Flag-guarded — first boot
     # after this deploy, never again. Remove this line and
     # `shared_wc_report.send_cells_raw_xlsx` once it has landed.
-    report_shared_sap_cells_raw_xlsx()
+    later(report_shared_sap_cells_raw_xlsx)
     # ⚠ TEMPORARY one-shot (2026-09-17) — the leader checklist as production
     # runs it (every level of the task chain, filing times, a proof sample), as
     # ZIP files in the operator's chat, before the new rules go to every unit.
     # Scheduled, flag-guarded — delivers once. Remove this line,
     # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
     # once it has landed.
-    report_checklist_setup()
+    later(report_checklist_setup)
     # ⚠ TEMPORARY one-shot (2026-10-12) — every checklist proof of 9–11 Oct
     # with a manifest, as ZIP files in the operator's chat, for a LOCAL test
     # of another vision model. Scheduled, flag-guarded — delivers once.
     # Remove this line, `startup.export_ai_proofs` and
     # `services/ai_proof_export.py` once it has landed.
-    export_ai_proofs()
+    later(export_ai_proofs)
     # ⚠ TEMPORARY one-shot (2026-09-18) — a SAMPLE of the last 7 days' leader
     # proofs: PER_GROUP filings per (shift, task) over the ten tasks that have
     # new requirements (1, 8 and 9 are out — they become automatic checks and
@@ -533,7 +554,7 @@ async def lifespan(app: FastAPI):
     # Scheduled, flag-guarded — delivers once. Remove this line,
     # `startup.report_proof_archive` and `services/proof_archive.py` once the
     # files have landed.
-    report_proof_archive()
+    later(report_proof_archive)
     # ⚠ TEMPORARY one-shot (2026-09-21) — EVERY proof photo of the checklist
     # days 19.09 and 20.09 with its AI verdict, the criteria it was judged
     # against, admin approvals and upheld objections, as ZIP parts in the
@@ -541,36 +562,36 @@ async def lifespan(app: FastAPI):
     # resumes after a restart — delivers once. Remove this line,
     # `startup.report_proof_review_sep19_20` and
     # `services/proof_review_report.py` once the files have landed.
-    report_proof_review_sep19_20()
+    later(report_proof_review_sep19_20)
     # ⚠ TEMPORARY one-shot (2026-09-22) — the automatic checks of 20–21.09
     # (#1, #9, #8), every verdict with its cause and whose fault it was, as a
     # summary + .xlsx + .json in the operator's chat. Scheduled, flag-guarded —
     # delivers once. Remove this line, `startup.report_auto_checks_sep20_21`
     # and `services/auto_check_report.py` once the files have landed.
-    report_auto_checks_sep20_21()
+    later(report_auto_checks_sep20_21)
     # ⚠ TEMPORARY one-shot (2026-09-22) — the points «one cell is enough» gives
     # back: every earlier auto-check failure of a multi-cell leader that the new
     # rule passes, proven on time, as a list + ONE button in the operator's
     # chat. Remove this line, `startup.report_auto_check_restore`, the `acr:`
     # callback and `services/auto_check_restore.py` once the button is used.
-    report_auto_check_restore()
+    later(report_auto_check_restore)
     # ⚠ TEMPORARY one-shot (2026-09-22) — every leader-day since 1 Sep: was its
     # day report sent, and if not, why (a day parked while still open and never
     # retried). Summary + .xlsx + .json in the operator's chat, flag-guarded —
     # delivers once. Remove this line, `startup.report_missed_day_reports` and
     # `services/missed_report_audit.py` once the files have landed.
-    report_missed_day_reports()
+    later(report_missed_day_reports)
     # ⚠ TEMPORARY one-shot (2026-09-23) — day reports 16 Sep → today: did the
     # leaders get them, who missed which dates; the 16–22 Sep ones never sent
     # go out only when the operator taps one of its two buttons. Flag-guarded
     # — delivers once. Remove this line, `startup.report_missed_reports_resend`,
     # the `mrr:` callback and `services/missed_report_resend.py` once used.
-    report_missed_reports_resend()
+    later(report_missed_reports_resend)
     # ⚠ TEMPORARY one-shot (2026-09-23) — when Normanov finished filling his
     # plan and people on 23 Sep, and what stood at 10:00, DMed once to the
     # operator. Remove this line, `startup.report_filling_times` and
     # `services/filling_times_report.py` once it has been sent.
-    report_filling_times()
+    later(report_filling_times)
     # ⚠ TEMPORARY one-shot (2026-09-28) — every task-11 proof of 21–27.09
     # with its AI verdict, the reason for a rejection and who approved it
     # (the operator or another admin, by Telegram id), as a zipped folder
@@ -578,44 +599,44 @@ async def lifespan(app: FastAPI):
     # flag-guarded, resumes after a restart — delivers once. Remove this
     # line, `startup.report_t11_proofs` and `services/t11_proof_report.py`
     # once the files have landed.
-    report_t11_proofs()
+    later(report_t11_proofs)
     # ⚠ TEMPORARY one-shot (2026-09-28) — September's objections to AI
     # rejections still waiting on a brigadir, in total and per brigadir,
     # DMed once to the operator as text. Remove this line,
     # `startup.report_dispute_queue` and `services/dispute_queue_report.py`
     # once it has been sent.
-    report_dispute_queue()
+    later(report_dispute_queue)
     # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
     # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
     # and `services/wc_plan_history_report.py` once it has landed.
-    report_wc_plan_history()
+    later(report_wc_plan_history)
     # ⚠ TEMPORARY one-shot (2026-10-05) — «Департамент по продукту и
     # технологиям»: its clock-in/out for 28.09–04.10 from Verifix, DMed once to
     # the operator as text + a workbook. Remove this line,
     # `startup.report_dept_attendance` and `services/dept_attendance_report.py`
     # once it has landed.
-    report_dept_attendance()
+    later(report_dept_attendance)
     # ⚠ TEMPORARY one-shot (2026-10-14) — the whole Трудоемкость register
     # (supervisor · SAP code · work centre · process · seconds per piece) as a
     # workbook, DMed once to the operator. Remove this line,
     # `startup.report_trudoyomkost_register` and
     # `services/trudoyomkost_register_report.py` once it has landed.
-    report_trudoyomkost_register()
+    later(report_trudoyomkost_register)
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and
     # `services/leader_verifix_check.py` once it has been sent.
-    check_leader_kinds()
+    later(check_leader_kinds)
     # …and the operator's name corrections to it (`leader_verifix_check.PINS`),
     # once per pin set. Goes with the line above.
-    check_leader_kind_pins()
+    later(check_leader_kind_pins)
     # ⚠ TEMPORARY one-shot (2026-10-12) — Kenjayeva Dinora Sobir Qizi's
     # Verifix photo (and Verifix tie) on the leader profile renamed to her
     # from Mukimova Marxabo; DMs the result with the photo. Remove this
     # line, `startup.set_kenjayeva_photo_from_verifix` and
     # `services/leader_photo_fix_oct12.py` once the DM has landed.
-    set_kenjayeva_photo_from_verifix()
+    later(set_kenjayeva_photo_from_verifix)
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
@@ -623,12 +644,12 @@ async def lifespan(app: FastAPI):
     # `startup.write_leader_task_examples`,
     # `services/leader_task_examples_sep19.py` and `app/data/task_examples/`
     # once it has landed.
-    write_leader_task_examples()
+    later(write_leader_task_examples)
     # ⚠ TEMPORARY one-shot (2026-09-19) — clear what the go-live left behind:
     # the «YANGI TALAB» preview notice, which now contradicts itself, and the
     # example photos of the three tasks that become automatic checks. Inline and
     # flag-guarded. Remove with `leader_rules_sep19`.
-    cleanup_rules_sep19()
+    later(cleanup_rules_sep19)
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
@@ -636,7 +657,7 @@ async def lifespan(app: FastAPI):
     # running. Re-armed on every boot (memory jobstore); the flags stop a second
     # run. Remove this line, `startup.register_leader_rules_sep19` and
     # `services/leader_rules_sep19.py` once BOTH passes have landed.
-    register_leader_rules_sep19()
+    later(register_leader_rules_sep19)
     # ⚠ TEMPORARY one-shot (2026-09-25) — the AI criteria revised from the
     # operator's reasons for the 50 flags lifted on 19–20 Sep: tasks 3, 6, 7,
     # 11, 13 + a leader-level «one-process cell» text for task 3. CRITERIA only
@@ -645,19 +666,19 @@ async def lifespan(app: FastAPI):
     # `startup.register_leader_rules_sep26` and `services/leader_rules_sep26.py`
     # once all three flags are set — and BEFORE removing leader_rules_sep19,
     # whose texts the pass compares against.
-    register_leader_rules_sep26()
+    later(register_leader_rules_sep26)
     # ⚠ TEMPORARY one-shot (2026-10-07) — task 4 (obxod): every Tasker
     # inspection at 100%, date + time over the whole shift. Two flag-guarded
     # passes, each in its own shift's gap, then the global baseline. Remove this
     # line, `startup.register_leader_rules_oct07` (+ its job and DM) and
     # `services/leader_rules_oct07.py` once all three flags are set — but KEEP
     # `services/leader_rule_eras.py` and its frozen row: they date the change.
-    register_leader_rules_oct07()
+    later(register_leader_rules_oct07)
     # Temporary task hours (2026-09-28): cells working later for a few nights
     # move their leaders' checklist hours on those nights only — see
     # `services/leader_temp_hours.py`. NOT a one-shot to delete: the frozen
     # rows are history the verdict re-derive reads on every boot.
-    register_leader_temp_hours()
+    later(register_leader_temp_hours)
     # ⚠ TEMPORARY (20.09.2026): tasks 1, 8 and 9 become automatic checks.
     # Delete this line, `startup.register_leader_auto_sep20`,
     # `startup._leader_auto_job/_leader_auto_dm/_auto_run_at/_auto_first_check`
@@ -666,49 +687,54 @@ async def lifespan(app: FastAPI):
     # the feature, not the rollout.
     # Says once whether that schema really landed. The only way to see
     # production's catalog from outside — see its docstring.
-    report_auto_schema()
-    register_leader_auto_sep20()
+    later(report_auto_schema)
+    later(register_leader_auto_sep20)
     # ⚠ TEMPORARY (05.10.2026): task #11 becomes the «Ish grafigi» automatic
     # check, /kelish opens to leaders/brigadirs/shift-managers, and the 4 Oct
     # transition grant runs. Delete these two lines, `startup.open_kelish_page`
     # (keep the access it wrote), `startup.register_leader_auto_t11` + its two
     # jobs and `services/leader_auto_t11.py` once all three flags are set.
-    open_kelish_page()
-    register_leader_auto_t11()
+    later(open_kelish_page)
+    later(register_leader_auto_t11)
     # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
     # early so leaders can read them and prepare. Descriptions only: nothing
     # they are scored by changes until the two passes above fire on the 19th.
     # Remove with them.
-    preview_leader_rules_sep19()
-    patch_task10_description_sep19()
+    later(preview_leader_rules_sep19)
+    later(patch_task10_description_sep19)
     # ⚠ TEMPORARY one-shot (2026-09-26) — Turdimurodov Nodirjon's checklist
     # days stamped with Aripova Manzura's unit go back to his own unit. Inline
     # and flag-guarded. Remove this line, `startup.fix_nodirjon_leader_unit`
     # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
-    fix_nodirjon_leader_unit()
+    later(fix_nodirjon_leader_unit)
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
-    move_sanjarbek_checklist_shift()
+    later(move_sanjarbek_checklist_shift)
     # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
     # for Raximova Kamola (it moved a day early); re-checks every 10 min until
     # it lands. Remove this line, `startup.fix_cell_9123_oct05` and
     # `services/cell_day_fix_oct05.py` once its flag reads «done».
-    fix_cell_9123_oct05()
+    later(fix_cell_9123_oct05)
     # ⚠ TEMPORARY one-shot (2026-10-08) — the exit-minute exchanges of 6–7 Oct
     # become whole-day moves and the closed live days of 6–7 Oct are re-copied
     # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
     # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
-    repair_live_exchanges_oct08()
+    later(repair_live_exchanges_oct08)
     # ⚠ TEMPORARY one-shot (2026-10-14) — cell 0811 back in «Turdimurodov
     # Nodirjon» from the day the 13 Oct Verifix-sync move landed. Remove this
     # line, `startup.put_cell_0811_back` and `services/cell_unit_fix_oct14.py`
     # once its flag and DM flag read «done».
-    put_cell_0811_back()
+    later(put_cell_0811_back)
+    # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
+    # still waiting for the next shift opening count from the day they were
+    # made. Remove this line, `startup.land_waiting_leader_links` and its flag
+    # constant once the flag reads «done».
+    later(land_waiting_leader_links)
     # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
     # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
     # goes (the flag hands them the same text). Remove this line,
     # `startup.seed_one_process_cells` and `services/one_process_seed_oct10.py`
     # once its DM flag reads «done».
-    seed_one_process_cells()
+    later(seed_one_process_cells)
 
     # Import every app module NOW, while this copy's files are still the ones
     # it was started from. A blue-green deploy (deploy/deploy.sh) checks the
@@ -716,7 +742,7 @@ async def lifespan(app: FastAPI):
     # the next one boots, so a module imported lazily for the first time in
     # that window would be the NEW file inside the OLD process. After this,
     # every later `import` inside a function is a sys.modules lookup.
-    _warm_import_app()
+    run(_warm_import_app)
     # The dated-link and archive-span caches, read once before the first
     # request: cold, every reader of a cell's day waits on ONE loader that
     # needs a second pool connection — at the post-deploy reload burst, with
@@ -728,20 +754,35 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — a cold cache still works, slower
         print(f"[startup] cell link / span cache warm-up skipped: {exc}", flush=True)
 
-    # The server's own account of being slow (services/perf_watch): the event
-    # loop's heartbeat starts only NOW, so the startup work above — which runs
-    # on the loop by design — is never read as a stall.
+    # The server's own account of being slow (services/perf_watch) starts
+    # only once the DEFERRED startup work below has finished — on the loop,
+    # where it must run — so neither the startup work on the loop nor the
+    # walks on the deferred thread are ever read as a stall.
+    import asyncio
     from app.services import perf_watch
-    perf_watch.start()
+    _loop = asyncio.get_running_loop()
 
     # «Mening o'rnim»'s pool, built off the boot path so the first leader or
     # brigadir after a deploy is not the one who waits for it.
     from app.routers import leaders as _leaders_router
     _leaders_router.warm_standing()
 
+    # One port, no root (app/supervisor.py): this worker is READY — the
+    # supervisor stops answering for it and retires the worker it replaces.
+    # A no-op when nothing supervises. Then why this process booted, told to
+    # the support chat when it was not an ordinary deploy swap
+    # (services/boot_report.py) — off the loop, a few seconds from now.
+    from app.supervisor import signal_ready
+    from app.services import boot_report
+    boot.ready()
+    signal_ready()
+    boot_report.schedule()
+    boot.start_deferred(finally_=lambda: _loop.call_soon_threadsafe(perf_watch.start))
+
     yield
+    boot.join(45)
     perf_watch.stop()
-    shutdown_scheduler()
+    run(shutdown_scheduler)
 
 
 def _warm_import_app() -> None:
@@ -1127,6 +1168,11 @@ app.include_router(kelish.router)
 app.include_router(leaders_kpi.router)
 app.include_router(turnover.router)
 app.include_router(foreign_objects.router)
+# «Toifaga muvofiqlik» — the leaders' category-compliance KPI from Verifix's HR
+# journals and HR's grade ladder; reads self-gate via
+# require_page("category-compliance") (admin-only by default), the Verifix
+# read and the rule's edit are admin-only in the endpoint.
+app.include_router(category_compliance.router)
 app.include_router(android.router)
 app.include_router(push.router)
 app.include_router(education.router)
@@ -1164,10 +1210,16 @@ app.include_router(assistant.router)
 
 @app.get("/health")
 def health():
-    # `jobs`: whether THIS copy fires the background jobs. During a blue-green
-    # swap the new copy answers false until the old one has exited.
+    # `jobs`: whether THIS copy fires the background jobs. During a swap (two
+    # workers under the supervisor, or two blue-green copies) the new one
+    # answers false until the old one has exited. `started_at` / `pid` /
+    # `worker_gen` say WHICH process answered — deploy.sh and the «Versiya»
+    # dialog tell a swapped-in worker from the old one by them.
     from app.scheduler import runs_jobs
-    return {"status": "ok", "version": APP_VERSION, "jobs": runs_jobs()}
+    from app.supervisor import supervised, worker_gen
+    return {"status": "ok", "version": APP_VERSION, "jobs": runs_jobs(),
+            "started_at": STARTED_AT, "pid": os.getpid(),
+            "supervised": supervised(), "worker_gen": worker_gen() or None}
 
 
 @app.get("/api/version")

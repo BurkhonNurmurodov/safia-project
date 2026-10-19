@@ -18,7 +18,8 @@ import api from "../utils/api";
  * text, never somebody who is not on Verifix: the list is the server's pool,
  * GET /api/profiles/admin/cells/{id}/manager-pool, and nothing else.
  *
- * A pick is DATED — it lands at the unit's next shift opening — and the
+ * A pick is DATED — it counts from the day it is made (2026-10-17), or WITH a
+ * brigadir change already waiting, at the unit's next shift opening — and the
  * control says so under itself, beside what runs the cell now and any change
  * already waiting. Picking «Verifix bo'yicha» returns the cell to its seat.
  *
@@ -282,9 +283,11 @@ export default function CellManagerPicker({ cellId, value, onChange, disabled = 
       {changed && picked && picked.profile_id == null && (
         <Note icon={UserPlus}>{fill(t("cellMgr.willCreate"), { name: tl(picked.name) })}</Note>
       )}
-      {pool.next_opening && (
+      {(pool.pick_from || pool.next_opening) && (
         <Note icon={changed ? Check : CalendarClock}>
-          {fill(t("cellMgr.lands"), { date: ddmm(pool.next_opening) })}
+          {pool.pick_from && !pool.pick_with_move
+            ? fill(t("cellMgr.landsNow"), { date: ddmm(pool.pick_from) })
+            : fill(t("cellMgr.lands"), { date: ddmm(pool.pick_from || pool.next_opening) })}
         </Note>
       )}
     </div>

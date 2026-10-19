@@ -130,3 +130,14 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
+
+      # ⚠ TEMPORARY (2026-10-17): how IT's ARC apps serve a ticket's photos —
+      # services/arc_files.py's resolver run on a few real tickets, each URL it
+      # tried and what answered (URL shapes, status codes, sizes; no names, no
+      # descriptions). Read-only, never fails the deploy. Lives under deploy/
+      # so adding it restarts nothing. Remove with the script once the base the
+      # new app serves `misc/…` from is confirmed.
+      - name: "Probe: ARC attachment URLs (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 100 .venv/bin/python ../deploy/diag_arc_files.py || true

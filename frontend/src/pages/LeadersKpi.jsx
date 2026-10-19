@@ -5,10 +5,10 @@
 // One question per screen: «which cell — and so which owner — stands where
 // this month, and why». Six tabs over ONE request (`GET /api/leaders-kpi`):
 // the board (one row per OWNED cell, the Σ of five KPI scores × weights out
-// of 5), then one tab per KPI — the three the platform computes (worker
-// concerns · turnover · foreign objects: a ranking with its register behind
-// a toggle) and the two it has no source for yet (an empty state with HR's
-// rule). The month, the plant / shift / brigadir scope and the search are
+// of 5), then one tab per KPI — the four the platform computes (worker
+// concerns · turnover · foreign objects · category compliance: a ranking with
+// its register behind a toggle) and the one it has no source for yet (the
+// technologists' audit: an empty state with HR's rule). The month, the plant / shift / brigadir scope and the search are
 // shared by every tab. `services/leaders_kpi.py` computes; this page never
 // re-derives a figure, only filters what it shows.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,12 +42,14 @@ import LeaderboardTab from "../components/kpi/LeaderboardTab";
 import ConcernsTab from "../components/kpi/ConcernsTab";
 import TurnoverTab from "../components/kpi/TurnoverTab";
 import ForeignTab from "../components/kpi/ForeignTab";
+import ComplianceTab from "../components/kpi/ComplianceTab";
 import PlaceholderTab from "../components/kpi/PlaceholderTab";
 import CellKpiModal from "../components/kpi/CellKpiModal";
 import KpiRulesModal from "../components/kpi/KpiRulesModal";
 import { ConcernsCellModal, ConcernDetailModal } from "../components/kpi/ConcernsPieces";
 import TurnoverExplain from "../components/turnover/TurnoverExplain";
 import ForeignExplain from "../components/foreign/ForeignExplain";
+import ComplianceExplain from "../components/kpi/ComplianceExplain";
 import { PAST_FROM, curMonth, errText, monthLabel, scoreOf, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
 
 const TAB_KEYS = ["board", "concerns", "turnover", "foreign", "compliance", "audit"];
@@ -110,9 +112,12 @@ export default function LeadersKpi() {
     queryKey: ["leaders-kpi", params],
     queryFn: () => api.get("/api/leaders-kpi", { params }).then((r) => r.data),
     placeholderData: keepPreviousData,
-    // A Verifix read the turnover tab started finishes in the background —
-    // ask again until it has.
-    refetchInterval: (query) => (query.state.data?.turnover?.read?.running ? 4000 : false),
+    // A Verifix read the turnover or the compliance tab started finishes in
+    // the background — ask again until it has.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d?.turnover?.read?.running || d?.compliance?.read?.running ? 4000 : false;
+    },
   });
   const data = dataQ.data;
   const refetch = () => dataQ.refetch();
@@ -241,6 +246,12 @@ export default function LeadersKpi() {
       const b = allRows.find((x) => x.key === ex.key) || ex.item;
       return { key: b.key, id: b.id, code: b.code, owner: b.owner, brigadir: b.brigadir, ...(b.foreign || {}) };
     }
+    if (ex.kind === "compliance") {
+      const r = (data.compliance?.ranking || []).find((x) => x.key === ex.key);
+      if (r) return r;
+      const b = allRows.find((x) => x.key === ex.key) || ex.item;
+      return { key: b.key, id: b.id, code: b.code, owner: b.owner, brigadir: b.brigadir, ...(b.compliance || {}) };
+    }
     return allRows.find((x) => x.key === ex.key) || ex.item;
   }, [ex, data, allRows]);
   const exTitle = exItem ? `${exItem.code} · ${exItem.owner ? tl(exItem.owner) : "—"}` : "";
@@ -301,6 +312,11 @@ export default function LeadersKpi() {
         );
         break;
       case "compliance":
+        body = (
+          <ComplianceTab T={T} tl={tl} tx={tx} data={data} ym={ym} mLabel={mLabel} needle={needle}
+            isAdmin={isAdmin} toast={toast} refetch={refetch} onExplain={openExplain} />
+        );
+        break;
       case "audit":
         body = <PlaceholderTab T={T} kind={tabKey} rule={data.rules?.[tabKey]} />;
         break;
@@ -332,6 +348,10 @@ export default function LeadersKpi() {
       {ex?.kind === "foreign" && exItem && data?.foreign && (
         <ForeignExplain open onClose={() => setEx(null)} item={exItem} data={data.foreign}
           T={TF} tx={tx} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
+      )}
+      {ex?.kind === "compliance" && exItem && data?.compliance && (
+        <ComplianceExplain open onClose={() => setEx(null)} item={exItem} data={data.compliance} ym={ym}
+          T={T} tl={tl} tx={tx} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
       )}
       {ex?.kind === "concerns" && exItem && data && (
         <ConcernsCellModal T={T} tl={tl} row={exItem} data={data} listParams={listParams}

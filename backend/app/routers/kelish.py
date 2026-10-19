@@ -24,10 +24,11 @@ The reach (the operator's rulings, 2026-09-28):
     opened. `page.view.kelish` at "all" widens reading, never filling.
 
 From 2026-10-05 checklist task #11 is DECIDED on these lists — an automatic
-check at the end of the shift (`leader_auto`, check `staff_list`). Each cell
-carries which list it is judged on, «today» or «tomorrow» (`KelishCellKind`,
-fixed by the check on the cell's first check day), shown on its card; an ADMIN
-may change it (`PUT /kind`).
+check at the end of the shift (`leader_auto`, check `staff_list`). A cell
+passes when EITHER its today's or its tomorrow's list is full, unless an ADMIN
+pinned it to one of them (`KelishCellKind`, `PUT /kind`; the operator,
+2026-10-17 — the type the check used to fix by itself is no longer read). The
+card names the next check and the DATE of each list it can read (`next_check`).
 """
 from datetime import date
 from typing import Optional
@@ -307,6 +308,12 @@ def get_week(
         })
     open_any = any(d["editable"] for d in out_days)
     kind = kelish.kind_out(kelish.load_kinds(db, [c.id]).get(c.id))
+    try:
+        from app.services import leader_auto     # heavy; only this endpoint needs it
+        next_check = leader_auto.next_staff_list_check(db, c.manager_id, c.leader_id)
+    except Exception:                            # noqa: BLE001 - never costs the page
+        db.rollback()
+        next_check = None
     src = listed[-1]
     lo, hi = kelish.window(src)
     last = files[src][1]
@@ -325,6 +332,7 @@ def get_week(
         "can_roster": x["can_roster"],
         "kind": kind,
         "can_set_kind": x["ctx"]["role"] == "admin",
+        "next_check": next_check,
         "days": out_days,
         "rows": rows,
         "removed": kelish.removed(events) if open_any and x["can_roster"] else [],
@@ -532,16 +540,16 @@ def remove_workers(body: RemoveIn, db: Session = Depends(get_db),
 
 class KindIn(BaseModel):
     cell_id: int
-    # "today" | "tomorrow" | null — null puts the cell back to «not decided»,
-    # and the check fixes it again on the next check day.
+    # "today" | "tomorrow" | null — null unpins the cell: either list passes.
     kind: Optional[str] = None
 
 
 @router.put("/kind")
 def put_kind(body: KindIn, db: Session = Depends(get_db),
              payload: dict = Depends(require_page(PAGE))):
-    """Which list task #11 judges for this cell — ADMIN only (the operator,
-    2026-10-05: «shown, and an admin can edit it»)."""
+    """Pin the list task #11 judges for this cell — ADMIN only (the operator,
+    2026-10-05: «shown, and an admin can edit it»). Null unpins it: the cell
+    then passes on either list (2026-10-17)."""
     if payload.get("role") != "admin":
         _refuse(403, "read_only")
     x = _cell(db, payload, body.cell_id)

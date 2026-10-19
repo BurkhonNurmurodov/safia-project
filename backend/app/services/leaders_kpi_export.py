@@ -34,7 +34,7 @@ from app.translit import transliterate, transliterate_text
 LABELS_UZ = {
     "sheetSummary": "Umumiy", "sheetBoard": "Reyting", "sheetConcerns": "Havotirlar",
     "sheetTurnover": "Qo'nimsizlik", "sheetForeign": "Yot jismlar", "sheetLeavers": "Ketganlar",
-    "sheetComplaints": "Shikoyatlar", "sheetRegister": "Havotirlar ro'yxati",
+    "sheetComplaints": "Shikoyatlar", "sheetRegister": "Havotirlar ro'yxati", "sheetCompliance": "Muvofiqlik",
     "kConcerns": "Ishchi havotirlari", "kTurnover": "Kadrlar qo'nimsizligi", "kForeign": "Yot jismlar",
     "kCompliance": "Kategoriya muvofiqligi", "kAudit": "Texnologlar auditi",
     "cardOwners": "Egalari", "cardCells": "Yacheykalar", "cardAvg": "O'rtacha jami", "cardBest": "Eng yuqori jami",
@@ -47,6 +47,7 @@ LABELS_UZ = {
     "colFiled": "Yuborilgan", "colDone": "Hal bo'lgan", "colUplifted": "Ko'tarilgan", "colOpen": "Ochiq",
     "colShare": "Hal bo'lgan, %", "colWorking": "Ishlayotganlar", "colLeft": "Ketganlar", "colRate": "Qo'nimsizlik, %",
     "colCount": "Aybli shikoyatlar", "colKinds": "Turlari",
+    "colCpCounted": "Hisoblanganlar", "colCpCompliant": "Mos kelganlar", "colCpRate": "Mos kelish, %",
     "colName": "F.I.Sh.", "colJob": "Lavozim", "colHired": "Ishga kirgan", "colLeftOn": "Ketgan sana",
     "colDays": "Ishlagan kuni", "colReason": "Sabab", "colCounted": "Kimga hisoblandi",
     "colDate": "Sana", "colKind": "Turi", "colSource": "Manba", "colProduct": "Mahsulot", "colPlace": "Joy",
@@ -151,6 +152,12 @@ def _bands_text(key: str, rule: dict) -> str:
             prev = int(b["max"])
         parts.append(f"{(prev or 0) + 1}+ → {rule.get('worst', 1)}")
         return " · ".join(parts)
+    if key == "compliance":
+        parts = [f"= 100% → {rule.get('full', 5)}"]
+        parts += [f"> {float(b['above']):g}% → {b['score']}"
+                  for b in sorted(rule.get("bands") or [], key=lambda b: -float(b["above"]))]
+        parts.append(f"→ {rule.get('worst', 1)}")
+        return " · ".join(parts)
     return " · ".join(f"{rng} → {sc}" for rng, sc in (rule.get("bands") or []))
 
 
@@ -185,7 +192,7 @@ def _summary(wb: Workbook, p: dict) -> None:
         ws.row_dimensions[row].height = 18
         c = C1
         for j, (v, span) in enumerate(zip(vals, spans)):
-            _block(ws, row, c, row, c + span - 1, v, fill=_fill(PANEL if key in ("concerns", "foreign") else BAND),
+            _block(ws, row, c, row, c + span - 1, v, fill=_fill(PANEL if key in ("concerns", "foreign", "audit") else BAND),
                    border=BOX, font=Font(name=FONT, size=9.5, bold=j == 0, color=INK if k.get("live") or j == 0 else INK_SOFT),
                    align=Alignment(horizontal="left" if j in (0, 4) else "center", vertical="center", indent=1 if j in (0, 4) else 0),
                    fmt="0.00" if j == 2 else None)
@@ -212,7 +219,7 @@ def _board(wb: Workbook, p: dict) -> None:
     row = _section(ws, row, C1, C2, _l(p, "boardTitle"), count)
     out = []
     for x in rows:
-        scores = [(x.get(k) or {}).get("score") if k in ("concerns", "turnover", "foreign") else None for k in KPI_KEYS]
+        scores = [(x.get(k) or {}).get("score") if k in ("concerns", "turnover", "foreign", "compliance") else None for k in KPI_KEYS]
         tints = {4 + i: _score_color(s) for i, s in enumerate(scores) if s is not None}
         out.append(([x.get("rank"), x.get("code"), _name(p, x.get("owner")),
                      _name(p, x.get("brigadir")) if x.get("brigadir") else None, *scores,
@@ -285,6 +292,29 @@ def _foreign(wb: Workbook, p: dict) -> None:
     _table(ws, row, C1, labels, out)
 
 
+def _compliance(wb: Workbook, p: dict) -> None:
+    pay = p["payload"]
+    rows = [r for r in pay.get("rows") or [] if r.get("compliance")]
+    rows.sort(key=lambda r: (r["compliance"].get("rate") is None, r["compliance"].get("rate") or 0,
+                             -(r["compliance"].get("counted") or 0), r.get("code") or ""))
+    ws = _sheet(wb, _l(p, "sheetCompliance"), {2: 6, 3: 12, 4: 34, 5: 28, 6: 15, 7: 15, 8: 14, 9: 9, 10: 11},
+                landscape=True)
+    C1 = 2
+    labels = [_l(p, k) for k in ("colN", "colCell", "colOwner", "colBrigadir", "colCpCounted", "colCpCompliant",
+                                 "colCpRate", "colScore", "colPoints")]
+    row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
+    row = _section(ws, row, C1, C1 + len(labels) - 1, _l(p, "kCompliance"),
+                   _bands_text("compliance", (pay.get("rules") or {}).get("compliance") or {}))
+    out = []
+    for n, x in enumerate(rows, 1):
+        c = x["compliance"]
+        tone = _score_color(c.get("score"))
+        out.append(([n, x.get("code"), _name(p, x.get("owner")), _name(p, x.get("brigadir")) if x.get("brigadir") else None,
+                     c.get("counted", 0), c.get("compliant", 0), c.get("rate"), c.get("score"), c.get("points")],
+                    {"fmts": {6: '0.0"%"', 8: "0.00"}, "tints": {7: tone} if tone else {}, "centers": (0, 1)}))
+    _table(ws, row, C1, labels, out)
+
+
 def _leavers(wb: Workbook, p: dict) -> None:
     pay = (p["payload"].get("turnover") or {})
     ws = _sheet(wb, _l(p, "sheetLeavers"), {2: 34, 3: 10, 4: 28, 5: 24, 6: 22, 7: 12, 8: 12, 9: 10, 10: 30, 11: 22},
@@ -351,6 +381,7 @@ def build_leaders_kpi_workbook(p: dict) -> BytesIO:
     _concerns(wb, p)
     _turnover(wb, p)
     _foreign(wb, p)
+    _compliance(wb, p)
     _leavers(wb, p)
     _complaints(wb, p)
     _register(wb, p)

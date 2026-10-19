@@ -12,7 +12,7 @@ model: five KPIs per cell, each scored 1–5 and weighted, the total = Σ score
     Obespokoennost (concerns)          0.25    live — this platform's /cell-concerns
     Tekuchest (turnover)               0.20    live — Verifix
     Inorodnye predmety (foreign obj.)  0.25    live — the Quality register
-    Sootvetstvie kategorii             0.20    NOT on the platform (HR holds one % per cell)
+    Sootvetstvie kategorii             0.20    live — Verifix's HR journals + HR's ladder (2026-10-19)
     Audit tekhnologov                  0.10    NOT on the platform (HR holds one % per cell)
 
 The operator's rulings (2026-10-19, asked one by one):
@@ -22,9 +22,10 @@ The operator's rulings (2026-10-19, asked one by one):
   month's last day, standing on it). An owner of three cells is three rows.
 * **One MONTH for every tab.** The concerns KPI is re-read by calendar month
   (its free date range went with the page); the current month reads «so far».
-* **The total is out of 5.0 and the two missing KPIs count 0** — honest about
-  what is missing, so a perfect leader today reads 3.5 / 5 (70%). When a KPI
-  arrives its points simply join the sum.
+* **The total is out of 5.0 and a missing KPI counts 0** — honest about what
+  is missing, so a perfect leader today reads 4.5 / 5 (90%) with the audit
+  still to come. When a KPI arrives its points simply join the sum — the
+  category-compliance KPI did on the day the page shipped.
 * **Admin-only until the operator opens it on the Access tab** (page key
   `leaders-kpi`; the roles /worker-concerns had are NOT carried — the
   operator's call).
@@ -41,9 +42,10 @@ The operator's rulings (2026-10-19, asked one by one):
   (leavers · complaints · the concerns list); a row opens its working.
 * **The two missing KPIs are an empty state with HR's rule printed.**
 
-Nothing is re-measured here: the turnover and foreign-object figures are the
-two modules' own month payloads (`turnover.month_payload`,
-`foreign_objects.month_payload`), the concerns counts the worker-concerns
+Nothing is re-measured here: the turnover, foreign-object and compliance
+figures are the three modules' own month payloads (`turnover.month_payload`,
+`foreign_objects.month_payload`, `category_compliance.month_payload`), the
+concerns counts the worker-concerns
 router's own aggregation (`_aggregate` / `_figures` — the very rows
 /cell-concerns holds). This module only joins them per cell, scores the
 concerns KPI and ranks. The board is derived per request; nothing is stored.
@@ -57,7 +59,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting
-from app.services import foreign_objects, turnover
+from app.services import category_compliance as cc, foreign_objects, turnover
 from app.services.turnover import (
     PAST_FROM, cell_map, last_day, local, month_start, now_aware, options, owned, ym,
 )
@@ -67,12 +69,19 @@ MAX_POINTS = 5.0
 # The five, in the page's order — the platform's own numbering (concerns 1st,
 # turnover 2nd, foreign objects 3rd, then the two HR still counts by hand).
 KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit")
-LIVE = {"concerns", "turnover", "foreign"}
+LIVE = {"concerns", "turnover", "foreign", "compliance"}
 
 # HR's July 2026 rules for the two KPIs the platform cannot compute yet — printed
 # on their tabs so the reader knows what will come; nothing scores by them.
-COMPLIANCE_RULE = {"weight": 0.2, "max_score": 5,
-                   "bands": [["= 100%", 5], ["> 70%", 3], ["> 65%", 2], ["> 0%", 1]]}
+def _slim_cc_rule(r: dict) -> dict:
+    """The compliance rule's SCORING part for the board: weight, mode, how a
+    person with no category counts, the score at 100 %, the bands (rate
+    strictly above → score) and the worst score. The ladders, levels and the
+    job map stay on the tab's own payload (`category_compliance.rule`)."""
+    return {"weight": float(r.get("weight", 0.2)), "mode": r.get("mode", "at_least"),
+            "no_category": r.get("no_category", "fail"), "full": int(r.get("full", 5)),
+            "bands": [{"above": float(b["above"]), "score": int(b["score"])} for b in (r.get("bands") or [])],
+            "worst": int(r.get("worst", 1)), "max_score": 5}
 AUDIT_RULE = {"weight": 0.1, "max_score": 3,
               "bands": [["> 90%", 3], ["> 80%", 2], ["> 70%", 1], ["≤ 70%", 0]]}
 
@@ -195,11 +204,14 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     d = last_day(m)
     tv = turnover.month_payload(db, m, scope, at)
     fo = foreign_objects.month_payload(db, m, scope, at)
+    cp = cc.month_payload(db, m, scope, at)
     rules = {
         "concerns": concerns_rule(db),
         "turnover": tv.get("rule") or turnover.rule(db),
         "foreign": fo.get("rule") or foreign_objects.rule(db),
-        "compliance": json.loads(json.dumps(COMPLIANCE_RULE)),
+        # The scoring part alone: the ladders and the job map ride the tab's
+        # own half (`compliance.rule`), the board's rule dialog needs the bands.
+        "compliance": _slim_cc_rule(cp.get("rule") or cc.rule(db)),
         "audit": json.loads(json.dumps(AUDIT_RULE)),
     }
     kpis = [{"key": k, "live": k in LIVE,
@@ -212,13 +224,14 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     for key in ("leaders", "cells"):
         tv.pop(key, None)
     fo.pop("cells", None)
+    cp.pop("cells", None)
     base = {
         "month": ym(m), "past_from": ym(PAST_FROM), "state": state,
         "period": {"from": m.isoformat(), "to": d.isoformat()},
         "as_of": fo.get("as_of") or (min(now.date(), d) if state == "open" else d).isoformat(),
         "now": now.isoformat(timespec="minutes"),
         "max_points": MAX_POINTS, "kpis": kpis, "rules": rules,
-        "turnover": tv, "foreign": fo,
+        "turnover": tv, "foreign": fo, "compliance": cp,
     }
     if state in ("before", "future"):
         return {**base, "rows": [], "totals": None, "concerns": None, "options": {"shifts": [], "brigadirs": []}}
@@ -227,8 +240,10 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     per_cell = _concerns_by_cell(db, payload, m, d, scope)
     trank = {x["key"]: x for x in tv.get("ranking") or []}
     frank = {x["key"]: x for x in fo.get("ranking") or []}
+    crank = {x["key"]: x for x in cp.get("ranking") or []}
     w_t = float(rules["turnover"]["weight"])
     w_f = float(rules["foreign"]["weight"])
+    w_c = float(rules["compliance"]["weight"])
 
     rows: list[dict] = []
     for k, c in cmap.items():
@@ -245,7 +260,14 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
         if f is not None:
             foreign = {"count": f.get("count", 0), "all": f.get("all", 0), "kinds": f.get("kinds") or {},
                        "score": f.get("score"), "points": points_of(f.get("score"), w_f)}
-        parts = [concerns.get("points"), (turn or {}).get("points"), (foreign or {}).get("points")]
+        cm = crank.get(k)
+        compliance = None
+        if cm is not None:
+            compliance = {"all": cm.get("all", 0), "counted": cm.get("counted", 0),
+                          "compliant": cm.get("compliant", 0), "rate": cm.get("rate"), "pct0": cm.get("pct0"),
+                          "score": cm.get("score"), "points": points_of(cm.get("score"), w_c)}
+        parts = [concerns.get("points"), (turn or {}).get("points"), (foreign or {}).get("points"),
+                 (compliance or {}).get("points")]
         total = round(sum(p for p in parts if p is not None), 2)
         rows.append({
             "key": k, "id": c.get("id"), "code": c.get("code"),
@@ -255,7 +277,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
             "manager_id": c.get("manager_id"), "brigadir": c.get("brigadir"),
             "shift": c.get("shift"), "factory_id": c.get("factory_id"),
             "concerns": concerns, "turnover": turn, "foreign": foreign,
-            "compliance": None, "audit": None,
+            "compliance": compliance, "audit": None,
             "total": total, "pct": int(round(total / MAX_POINTS * 100)),
         })
     _rank(rows)
@@ -279,6 +301,8 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
                          "avg_score": avg([(r["turnover"] or {}).get("score") for r in rows])},
             "foreign": {"scored": sum(1 for r in rows if (r["foreign"] or {}).get("score") is not None),
                         "avg_score": avg([(r["foreign"] or {}).get("score") for r in rows])},
+            "compliance": {"scored": sum(1 for r in rows if (r["compliance"] or {}).get("score") is not None),
+                           "avg_score": avg([(r["compliance"] or {}).get("score") for r in rows])},
         },
     }
     # The concerns tab's own headline: the month's filings over the rows.

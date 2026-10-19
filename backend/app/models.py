@@ -4405,12 +4405,12 @@ class KelishCellKind(Base):
     automatic check (`leader_auto`, check `staff_list`, from 2026-10-05):
     «today» (the shift-day being checked) or «tomorrow» (the one after).
 
-    The operator's rule: it is fixed on the cell's FIRST check day that has a
-    plan — tomorrow's list filled (with or without today's) → «tomorrow»; only
-    today's → «today»; neither → the task fails that day and the type is decided
-    on the next check day. No row = not decided yet, and until then either list
-    passes. `src` "auto" (the check decided it) | "manual" (an admin set it on
-    «Ish grafigi»); an admin's value is never overwritten by the check.
+    Only an ADMIN's row counts (`src` "manual", set on «Ish grafigi»): the cell
+    is judged on that list alone. No such row = either list passes (the
+    operator, 2026-10-17). Rows with `src` "auto" are the check's own guess from
+    a cell's first check day (5—7 Oct 2026: tomorrow's list filled → «tomorrow»,
+    only today's → «today»); they guessed wrong for many cells and are kept as
+    history, read by nothing (`kelish.load_kinds`), and nothing writes one now.
     """
     __tablename__ = "kelish_cell_kinds"
 
@@ -4817,6 +4817,63 @@ class TurnoverRead(Base):
     captured    = Column(String, nullable=True)       # months whose list this read took
 
 
+
+# ── «Toifaga muvofiqlik» — the leaders' category-compliance KPI ───────────────
+# The 4th of HR's five leader KPIs («Соответствие категории», weight 0.2):
+# per cell, the share of workers whose Verifix CATEGORY («разряд») is the one
+# HR's grade ladder («тарифная сетка») prescribes for their job and tenure.
+# Verifix's directory carries no category and no history, so the platform keeps
+# the three HR journals that do — every hiring (the category a person starts
+# on), every transfer (the cell and job they moved to) and every rank change —
+# as one dated event table, replaced whole by each read (nightly, after boot,
+# the admin's button). `services/category_compliance.py` is THE rule;
+# `services/category_sync.py` fills these tables. Names, dates, unit, job and
+# category only — no phone, birthday, passport, PINFL or pay.
+
+class CategoryEvent(Base):
+    """One line of an HR journal, dated: a hiring, a transfer or a rank
+    change, with the category it names (`rank_*`), the job and the unit it
+    put the person in (a hiring / transfer). Placement and category on a day
+    are the last events dated on or before it."""
+    __tablename__ = "category_events"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    employee_id = Column(String, nullable=False)
+    staff_id    = Column(String, nullable=True)      # the employment cycle
+    kind        = Column(String(8), nullable=False)  # hire | transfer | rank
+    date        = Column(Date, nullable=False)       # hiring_date · transfer_begin · change_date
+    date_end    = Column(Date, nullable=True)        # a temporary transfer's end
+    journal_id  = Column(String, nullable=True)
+    page_id     = Column(String, nullable=True)
+    rank_id     = Column(String, nullable=True)
+    rank_name   = Column(String, nullable=True)      # the category as Verifix names it
+    job_id      = Column(String, nullable=True)
+    job_name    = Column(String, nullable=True)
+    unit_id     = Column(String, nullable=True)      # the org unit («отдел») the line names
+    unit_name   = Column(String, nullable=True)
+    code        = Column(String, nullable=True)      # that unit's cell code; None = not a cell
+
+    __table_args__ = (Index("ix_category_events_emp_date", "employee_id", "date"),)
+
+
+class CategoryRead(Base):
+    """One read of the three journals and the rank dictionary — when, why,
+    how much, what failed. The page names the last one."""
+    __tablename__ = "category_reads"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    started_at  = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    trigger     = Column(String, nullable=True)       # night · boot · admin:<name>
+    ok          = Column(Boolean, nullable=True)
+    error       = Column(Text, nullable=True)
+    journals    = Column(Integer, nullable=True)      # posted journals read, all three kinds
+    skipped     = Column(Integer, nullable=True)      # unposted journals left out
+    events      = Column(Integer, nullable=True)      # lines stored
+    employees   = Column(Integer, nullable=True)      # distinct people the lines name
+    sources     = Column(JSONB, nullable=True)        # {hire: "pro"|"start"|"closed", transfer: …, rank: …}
+    ranks       = Column(JSONB, nullable=True)        # rank_id → name (Verifix's category dictionary)
+
 # ── «Yordamchi» — the AI assistant (services/assistant.py) ────────────────────
 # A chat that answers questions about the platform and does the user's work
 # THROUGH THE USER'S OWN SESSION: every read and every change it makes is an
@@ -4913,7 +4970,8 @@ class CellLinkEvent(Base):
     reader): the value on day D is the latest event with `effective_from` ≤ D;
     a day before every event reads the first event's `prev`. The `cells`
     columns stay the CURRENT mirror — an event lands on them at
-    `effective_at` (the unit's next shift opening), by `cell_links.apply_due`.
+    `effective_at` (a brigadir change: the unit's next shift opening; a
+    leader's link: at once, from the day it is made), by `cell_links.apply_due`.
 
     `src`: "verifix" (the sync), "manual" (a person on /cells), "grandfather"
     (the first build's mark that a manager differing from the Verifix seat was

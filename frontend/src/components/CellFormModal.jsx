@@ -38,8 +38,9 @@ import CellManagerPicker, { PendingChip } from "./CellManagerPicker";
  * ojidaniya — and the «Egasi» (`owner_id`) is the leader Verifix seats in it.
  *
  * From the Verifix live sync (2026-10-12, ruling 3) the brigadir and the
- * «Boshqaruvchi» of an EXISTING cell are DATED links: a change lands at the
- * unit's next shift opening and never rewrites a day already filed — so the
+ * «Boshqaruvchi» of an EXISTING cell are DATED links: a brigadir change lands
+ * at the unit's next shift opening and never rewrites a day already filed, a
+ * «Boshqaruvchi» pick counts from the day it is made (2026-10-17) — so the
  * form says from when, and shows a change already waiting beside the value in
  * force. The «Boshqaruvchi» is the Verifix seat by default; a person may pick
  * ONE worker Verifix places in the unit's cells (CellManagerPicker, applied

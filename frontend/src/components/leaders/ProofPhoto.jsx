@@ -28,6 +28,14 @@ export function ProxyPhoto({
   // an index into a zoom view, not the evidence itself. The failed state
   // shrinks to a bare retry so a dead photo can't outgrow its own cell.
   thumb = false,
+  // When set, the loaded photo is a BUTTON with this name (keyboard and
+  // screen-reader reachable) rather than a bare clickable <img> — for a
+  // gallery whose photos open a zoom. Omitted, the markup is unchanged.
+  zoomLabel = "",
+  // A thumb big enough to carry words (a gallery square, not a 64px index)
+  // says what failed and what the tap does — icons alone read as nothing on
+  // a phone, which has no hover to show the title.
+  failCaption = false,
 }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
@@ -56,7 +64,15 @@ export function ProxyPhoto({
           className={`${className} w-full h-full rounded-lg border flex flex-col items-center justify-center gap-1`}
           style={{ borderColor: "var(--border)", background: "var(--bg-inner)" }}>
           <ImageOff size={16} color="var(--text-4)" />
-          <RefreshCw size={12} color="var(--brand)" />
+          {failCaption && (
+            <span className="text-[11px] leading-tight px-1 text-center" style={{ color: "var(--text-3)" }}>
+              {T.photoFailed}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--brand-text)" }}>
+            <RefreshCw size={12} color="var(--brand)" />
+            {failCaption && T.retry}
+          </span>
         </button>
       );
     }
@@ -78,9 +94,21 @@ export function ProxyPhoto({
       ? <SkeletonBlock className={`${className} w-full h-full`} style={{ height: "100%" }} />
       : <SkeletonBlock className={`${className} w-full`} style={{ height: maxHeight }} />;
   }
+  const open = () => (onClick ? onClick(url) : window.open(href || url, "_blank"));
+  if (zoomLabel) {
+    return (
+      <button type="button" onClick={open} aria-label={zoomLabel} title={zoomLabel}
+        className={`${className} block w-full ${thumb ? "h-full" : ""} rounded-lg cursor-zoom-in outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]`}>
+        <img src={url} alt="" loading="lazy"
+          className={`w-full ${thumb ? "h-full" : ""} rounded-lg border`}
+          style={{ objectFit: fit, borderColor: "var(--border)", background: "var(--bg-inner)",
+                   ...(thumb ? {} : { maxHeight }) }} />
+      </button>
+    );
+  }
   return (
     <img src={url} alt="" loading="lazy"
-      onClick={() => (onClick ? onClick(url) : window.open(href || url, "_blank"))}
+      onClick={open}
       className={`${className} w-full ${thumb ? "h-full" : ""} rounded-lg border cursor-zoom-in`}
       style={{ objectFit: fit, borderColor: "var(--border)", ...(thumb ? {} : { maxHeight }) }} />
   );

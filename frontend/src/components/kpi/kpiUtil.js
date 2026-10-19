@@ -4,12 +4,13 @@
 // KPI surfaces), the score's colour, sorting, and the scales drawn from the
 // rules the server sent (never a second copy of a rule).
 import { usePersistentState } from "../../hooks/usePersistentState";
+import api from "../../utils/api";
 import { fill } from "../../pages/leadersKpiText";
 
 export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM } from "../turnover/turnoverUtil";
 
 export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit"];
-export const LIVE = new Set(["concerns", "turnover", "foreign"]);
+export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance"]);
 export const MAX_POINTS = 5;
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -32,7 +33,8 @@ export const errText = async (e) => {
 };
 
 const NUM_KEYS = new Set(["rank", "total", "pct", "score", "points", "working", "left", "rate", "days", "hired", "leftOn",
-  "count", "all", "filed", "done", "uplifted", "open", "pct0", "concerns", "turnover", "foreign", "compliance", "audit", "date"]);
+  "count", "all", "filed", "done", "uplifted", "open", "pct0", "concerns", "turnover", "foreign", "compliance", "audit", "date",
+  "counted", "compliant", "tenure", "since", "verdict"]);
 
 export function sortRows(rows, sort, get) {
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -74,6 +76,11 @@ export function bandLines(key, rule) {
     out.push([`> ${prev ?? 0}%`, rule.worst ?? 1]);
     return out;
   }
+  if (key === "compliance") {
+    // HR's IFS: exactly 100 % → full; strictly above a band's edge → its score; else the worst.
+    const bands = [...(rule.bands || [])].sort((a, b) => b.above - a.above);
+    return [["= 100%", rule.full ?? 5], ...bands.map((b) => [`> ${b.above}%`, b.score]), ["", rule.worst ?? 1]];
+  }
   if (key === "foreign") {
     const bands = [...(rule.bands || [])].sort((a, b) => a.max - b.max);
     const out = [];
@@ -109,7 +116,27 @@ export function figureOf(row, key, T) {
     if (!f) return T.notLive;
     return f.count ? fill(T.figForeign, { n: f.count }) : T.figForeignNone;
   }
+  if (key === "compliance") {
+    const c = row.compliance;
+    if (!c) return T.notLive;
+    if (!c.counted) return T.figComplianceNone;
+    return fill(T.figCompliance, { ok: c.compliant, n: c.counted, pct: c.rate == null ? "—" : `${Number(c.rate).toFixed(1)}%` });
+  }
   return T.cmNotLive;
+}
+
+// The order the compliance tab lists verdicts in — failures first, the
+// server's own (`category_compliance._VERDICT_ORDER`).
+export const VERDICT_RANK = { below: 0, no_category: 1, old_grade: 2, above: 3, ok: 4, no_ladder: 5, no_hire: 6 };
+
+// The judged people of these cells (by code key) for the month — asked in
+// chunks of 40 keys, the most one call answers; the explain dialog asks for one.
+export async function fetchPeople(ym, keys) {
+  const chunks = [];
+  for (let i = 0; i < keys.length; i += 40) chunks.push(keys.slice(i, i + 40));
+  const parts = await Promise.all(chunks.map((c) =>
+    api.get("/api/category-compliance/people", { params: { month: ym, keys: c.join(",") } }).then((r) => r.data?.people || {})));
+  return Object.assign({}, ...parts);
 }
 
 export const scoreOf = (row, key) => (row?.[key]?.score ?? null);

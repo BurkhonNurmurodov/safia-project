@@ -83,6 +83,20 @@ export function StripCard({ children, className = "" }) {
   );
 }
 
+// A person's verdict on the compliance tab: green where they comply, red
+// where they count and do not, grey where they are out of the count — the
+// colour says the same as the word, so neither stands alone.
+export function VerdictChip({ counted, compliant, children }) {
+  const tone = !counted ? null : compliant ? "ok" : "bad";
+  const ink = tone === "ok" ? "var(--status-ok)" : tone === "bad" ? "var(--status-bad)" : "var(--text-3)";
+  const bg = tone === "ok" ? "rgba(34,197,94,0.12)" : tone === "bad" ? "rgba(239,68,68,0.12)" : "var(--bg-inner)";
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap" style={{ color: ink, background: bg }}>
+      {children}
+    </span>
+  );
+}
+
 // The one «nothing here» row of a table on this page.
 export function EmptyRow({ cols, text }) {
   return <tr><td colSpan={cols} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{text}</td></tr>;

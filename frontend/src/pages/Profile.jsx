@@ -1085,8 +1085,9 @@ function EditCard({ ptype, item, data, notify, onDone }) {
             {(form.cells || []).length > 0 && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {form.cells.map((c) => {
-                  // A «Boshqaruvchi» pick waits for the unit's next shift
-                  // opening — say from when, or it reads as already in force.
+                  // A «Boshqaruvchi» pick counts from the day it is made; one
+                  // made while the cell's brigadir change waits lands with that
+                  // move — say from when, or it reads as already in force.
                   const from = item.cells_waiting?.[c];
                   const d = from ? `${from.slice(8, 10)}.${from.slice(5, 7)}` : null;
                   return (

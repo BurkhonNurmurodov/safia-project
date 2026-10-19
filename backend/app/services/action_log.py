@@ -417,6 +417,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
     (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
+    (("POST",),   "/api/category-compliance/read",             "sync_export", "sync.category_read"),
+    (("PUT",),    "/api/category-compliance/rule",             "config", "config.category_rule_saved"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never
     # files a lab document as a real one. Specific shapes stay above generic.
@@ -1082,8 +1084,12 @@ class ActionLogMiddleware:
                 # The kept /api/leaders build must never answer this account's
                 # next read with rows from before this write — marked HERE,
                 # before the response leaves, so the refetch it triggers is
-                # too late to miss it (`services/leader_register.wrote`).
-                _note_write(payload)
+                # too late to miss it (`services/leader_register.wrote`). A
+                # sign-in changes no record: every app open sends one (with
+                # the old token, so it HAS an actor), and marking it made the
+                # next Monitoring load wait for a build (17 Oct 2026).
+                if category != "sessions":
+                    _note_write(payload)
             await send(message)
 
         token = _pending.set(row)

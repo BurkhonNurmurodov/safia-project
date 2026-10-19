@@ -406,6 +406,7 @@ def _la_hide(obj):
 
 @router.get("/leaders")
 def get_leaders(
+    request: Request,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("leaders")),
 ):
@@ -439,14 +440,16 @@ def get_leaders(
     # another viewer shares.
     scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
     if not scoped and not _la_hides(payload):
-        return _assemble(leader_register.get(db, payload, _build_shared), payload)
+        return _assemble(leader_register.get(db, payload, _build_shared,
+                                             scope=request.scope), payload)
     # A scoped build is KEPT too, one per viewer scope, under the same rules
     # (the 13 Oct «Server was slow» DM: /api/leaders ×10, median 5.8 s — every
     # one a supervisor's or a leader's own build). The key is everything in the
     # payload a scoped build reads; the tables are the fingerprint's.
     view = {k: payload.get(k) for k in _SCOPED_KEYS}
     key = ("scoped", sees_all, _la_hides(payload), *view.values())
-    b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key)
+    b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key,
+                            scope=request.scope)
     return Response(content=b.data, media_type="application/json")
 
 
@@ -2214,11 +2217,34 @@ def decide_dispute(
         details=[("leader", d.leader_name), ("task", d.task_id)],
         changes=[("status", was, d.status)],
     )
-    _dispute_after(db, d, stage=stage,
-                   uplifted=(action == "uplifted"),
-                   actor_profile=prof_key, actor_telegram=tid)
-    return {"ok": True, "status": d.status,
-            "reported": _report_after_ruling(db, d)}
+    # The cards, the three parties' notices and a corrected report are all
+    # Telegram round trips whose answer this response does not need — sent
+    # after it (`tg_later`, in order). The 17 Oct «Server was slow» DM: a
+    # ruling took 3.2 s, 57% of it waiting on Telegram. `reported` is no
+    # longer known here; nothing reads it.
+    from app.services import tg_later
+    tg_later.run(_dispute_after_later, d.id, d.status, stage=stage,
+                 uplifted=(action == "uplifted"),
+                 actor_profile=prof_key, actor_telegram=tid)
+    return {"ok": True, "status": d.status, "reported": None}
+
+
+def _dispute_after_later(dispute_id: int, status: str, **kw) -> None:
+    """`_dispute_after` + the report re-send, on a session of their own, after
+    the ruling's answer has gone. A row whose status moved on meanwhile (an
+    undo pressed while the queue was busy) is told nothing about a ruling that
+    no longer stands — the undo sends its own notices."""
+    db = SessionLocal()
+    try:
+        d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+        if d is None or d.status != status:
+            return
+        _dispute_after(db, d, **kw)
+        db.commit()
+        _report_after_ruling(db, d)
+        db.commit()
+    finally:
+        db.close()
 
 
 def _dispute_after(db: Session, d: LeaderAiDispute, *, stage: str,
