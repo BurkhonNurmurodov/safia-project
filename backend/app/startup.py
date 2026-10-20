@@ -7770,7 +7770,7 @@ def _admin_objections_job() -> None:
 # with the Jurnal and the shift's grid in all three tables
 # (`services/closed_day_trace_report.py`). READ-ONLY: it writes nothing but
 # its flag. Changing what it sends needs a NEW flag key.
-CLOSED_DAY_TRACE_FLAG = "closed_day_trace_yogmirov_2026_10_18_v1"
+CLOSED_DAY_TRACE_FLAG = "closed_day_trace_yogmirov_2026_10_18_v2"
 _CLOSED_DAY_TRACE_DELAY_S = 70
 
 

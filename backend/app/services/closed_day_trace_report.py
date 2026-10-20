@@ -46,7 +46,7 @@ import requests
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font
-from sqlalchemy import Text, and_, cast, or_
+from sqlalchemy import Text, and_, cast, or_, text as sql_text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -61,6 +61,7 @@ from app.routers.brigadirs import build_metrics_list
 from app.services import cell_links, zagruzka_source
 from app.services.day_state import day_state
 from app.services.idle_source import cells_with_moved
+from app.services.live_day import LIVE_FROM
 from app.services.name_map import _norm
 
 # `name_map._norm` folds Ёгмиров / Yog'mirov / Yogmirov / Yo‘g‘mirov to this.
@@ -204,15 +205,26 @@ def _closes(db: Session, mid: int) -> dict:
     """Every trace of the day being closed or re-opened, oldest first, and the
     two moments everything else is measured against: the FIRST close (what the
     brigadir saw when he closed) and the current one."""
+    # Two doors close a day and each logs under its own key: /staff
+    # (`attendance.day_*`) and /staff-live (`lab.live_day_*`). A live close
+    # also logs how many attendance rows it copied and when Verifix was read —
+    # the baseline the copy can be measured against afterwards.
     jur = (db.query(ActionLog)
            .filter(ActionLog.unit_id == mid, ActionLog.day == DAY,
-                   ActionLog.action.in_(("attendance.day_closed", "attendance.day_reopened")))
+                   ActionLog.action.in_(("attendance.day_closed", "attendance.day_reopened",
+                                         "lab.live_day_closed", "lab.live_day_reopened")))
            .order_by(ActionLog.created_at).all())
     appr = db.query(DayApproval).filter_by(manager_id=mid, date=DAY).first()
     live = (db.query(LiveDayClose).filter_by(manager_id=mid, day=DAY)
             .order_by(LiveDayClose.closed_at).all())
-    events = [(_aware(j.created_at), j.action.split(".")[-1], j.actor_name, j.source,
-               j.outcome) for j in jur]
+    events, copies = [], []
+    for j in jur:
+        what = j.action.split(".")[-1].replace("live_", "")
+        det = {str(k[0]): k[1] for k in (j.details or [])
+               if isinstance(k, (list, tuple)) and len(k) >= 2}
+        events.append((_aware(j.created_at), what, j.actor_name, j.source, j.outcome))
+        if what == "day_closed" and j.outcome == "done" and det.get("rows") is not None:
+            copies.append((_aware(j.created_at), det.get("rows"), det.get("read_at")))
     if appr:
         events.append((_aware(appr.approved_at), "approval row", appr.approved_by_name,
                        "day_approvals", "current"))
@@ -228,6 +240,8 @@ def _closes(db: Session, mid: int) -> dict:
         "current": _aware(appr.approved_at) if appr else None,
         "reopens": sum(1 for e in events if e[1] == "day_reopened" and e[4] == "done"),
         "state": state, "counts": counts,
+        # (when, attendance rows copied, Verifix read HH:MM) per live close
+        "copies": copies,
     }
 
 
@@ -349,20 +363,29 @@ def _links(db: Session, mid: int, cells: list) -> list[dict]:
     } for e in q.order_by(CellLinkEvent.created_at)]
 
 
-def _jurnal(db: Session, mid: int, cells: list) -> list[dict]:
+# Rows that can never move a closed day's figures and would fill the cap: v1
+# read the day oldest-first and its 600 rows were all 18.10 00:05–00:36
+# «Kelish» marks, so nothing after the close was ever reached.
+_JURNAL_NOISE = ("kelish.%", "session.%")
+
+
+def _jurnal(db: Session, mid: int, cells: list, ref) -> list[dict]:
     """The unit's rows, the day's rows (any unit — an SAP upload is plant-wide
     and names no unit), and rows naming one of the unit's cells, from the
-    morning of the day on."""
-    since = datetime.combine(DAY, dtime(0, 0), tzinfo=TZ)
+    close on (from the morning of the day when no close is known)."""
+    since = ref or datetime.combine(DAY, dtime(0, 0), tzinfo=TZ)
     codes = [c.verifix_code for c in cells if c.verifix_code]
     by_cell = [cast(ActionLog.details, Text).ilike(f"%{c}%") for c in codes[:40]]
     cell_ids = [str(c.id) for c in cells]
     q = (db.query(ActionLog)
-         .filter(ActionLog.created_at >= since, or_(
-             ActionLog.unit_id == mid,
-             ActionLog.day == DAY,
-             and_(ActionLog.target_kind == "cell", ActionLog.target_id.in_(cell_ids or ["-"])),
-             *by_cell))
+         .filter(ActionLog.created_at >= since,
+                 *[~ActionLog.action.like(p) for p in _JURNAL_NOISE],
+                 or_(
+                     ActionLog.unit_id == mid,
+                     ActionLog.day == DAY,
+                     and_(ActionLog.target_kind == "cell",
+                          ActionLog.target_id.in_(cell_ids or ["-"])),
+                     *by_cell))
          .order_by(ActionLog.created_at).limit(_JURNAL_MAX))
 
     def why(j) -> str:
@@ -384,6 +407,62 @@ def _jurnal(db: Session, mid: int, cells: list) -> list[dict]:
         "changes": j.changes, "details": j.details, "path": j.path,
         "version": j.app_version,
     } for j in q]
+
+
+def _duplicates(db: Session) -> list[dict]:
+    """Every live unit-day whose `attendance` holds EXACT duplicate rows.
+
+    v1 found 18.10 of this unit at 130 rows for 65 people, each row twice and
+    identical, while `live_projections.rows` said 65: `live_projection.write`
+    deletes the unit-day and inserts the copy with no lock, so two copies
+    running at once each delete what they can see and both insert. A split
+    worker's two halves differ in cell and hours, so they are not counted."""
+    q = sql_text("""
+        SELECT a.manager_id, a.date, count(*) AS n,
+               count(DISTINCT (a.worker_name, a.clock_in_out, a.verifix_code,
+                               a.hours_worked, a.early_arrival_min, a.job_title)) AS d,
+               lp.rows AS copy_rows, lp.copied_at, da.approved_at AS closed_at
+        FROM attendance a
+        LEFT JOIN live_projections lp ON lp.manager_id = a.manager_id AND lp.day = a.date
+        LEFT JOIN day_approvals da ON da.manager_id = a.manager_id AND da.date = a.date
+        WHERE a.date >= :lo
+        GROUP BY a.manager_id, a.date, lp.rows, lp.copied_at, da.approved_at
+        HAVING count(*) > count(DISTINCT (a.worker_name, a.clock_in_out, a.verifix_code,
+                                          a.hours_worked, a.early_arrival_min, a.job_title))
+        ORDER BY lp.copied_at NULLS LAST, a.date
+    """)
+    names = {m.id: m.name for m in db.query(Manager.id, Manager.name)}
+    return [{"unit": names.get(r.manager_id, r.manager_id), "unit_id": r.manager_id,
+             "date": r.date, "rows": r.n, "distinct": r.d, "copy_rows": r.copy_rows,
+             "copied_at": r.copied_at, "closed_at": r.closed_at}
+            for r in db.execute(q, {"lo": LIVE_FROM})]
+
+
+def _around(db: Session, stamps: list) -> list[dict]:
+    """What the Jurnal holds within two minutes of each bad copy — any unit,
+    any day — so the request that set the re-copy off can be named."""
+    out, seen = [], set()
+    for t in sorted({_aware(s) for s in stamps if s}):
+        for j in (db.query(ActionLog)
+                  .filter(ActionLog.created_at >= t - timedelta(minutes=2),
+                          ActionLog.created_at <= t + timedelta(minutes=2),
+                          *[~ActionLog.action.like(p) for p in _JURNAL_NOISE])
+                  .order_by(ActionLog.created_at).limit(200)):
+            if j.id in seen:
+                continue
+            seen.add(j.id)
+            out.append({"copy": t, "at": j.created_at, "action": j.action,
+                        "outcome": j.outcome, "source": j.source, "who": j.actor_name,
+                        "unit": j.unit_name, "day": j.day,
+                        "target": j.target_name or j.target_id, "details": j.details,
+                        "path": j.path})
+    return out
+
+
+def _dup_part(db: Session) -> dict:
+    dups = _duplicates(db)
+    stamps = sorted({d["copied_at"] for d in dups if d["copied_at"]})[-20:]
+    return {"dups": dups, "around": _around(db, stamps)}
 
 
 def collect(db: Session) -> dict:
@@ -491,7 +570,8 @@ def collect(db: Session) -> dict:
         "batch": ({"status": batch.status, "uploaded": batch.uploaded_at,
                    "by": batch.uploaded_by_name, "saved": batch.saved_at,
                    "saved_by": batch.saved_by_name} if batch else None),
-        "jurnal": _jurnal(db, mid, cells), "grid": _grid(db, u.shift),
+        "jurnal": _jurnal(db, mid, cells, ref), "grid": _grid(db, u.shift),
+        **_dup_part(db),
     }
 
 
@@ -583,6 +663,15 @@ def text(rep: dict) -> str:
     say("attendance copy (live_projections)", dd.get("copied_at"),
         f"{dd.get('copy_rows')} rows copied · now {dd.get('att_rows', 0)} rows, "
         f"{dd.get('att_workers', 0)} people, Σ {_g(dd.get('att_hours'), 1)} h")
+    for at, rows, read in close["copies"]:
+        L.append(f"    the close at {_dt(at)} copied {rows} rows (Verifix read {read or '—'})"
+                 + ("" if rows == dd.get("copy_rows") else
+                    f" — the copy holds {dd.get('copy_rows')} now  ◀ RE-COPIED"))
+    if _after(dd.get("copied_at"), ref):
+        L.append("    A closed live day's copy follows Verifix until the unit's next "
+                 "shift-day opens (shift 2: 20:00 the day after) — the every-minute "
+                 "read re-copies it and writes NO Jurnal row; a live document or "
+                 "request decided for this day re-copies it too (Jurnal lab.live_*).")
     late_iv = [i for i in rep["intervals"] if i["date"] == DAY and i["after_close"]]
     found.append(bool(late_iv))
     n_day = sum(1 for i in rep["intervals"] if i["date"] == DAY and i["here"])
@@ -640,6 +729,20 @@ def text(rep: dict) -> str:
                                    if isinstance(c, (list, tuple)) and len(c) >= 3)
         L.append(f"{_dt(j['at'])} {j['action']} — {j['who'] or j['source']}"
                  f" [{j['unit'] or '—'} · {_d(j['day'])}] v{j['version'] or '?'}{ch}"[:300])
+    L.append("")
+
+    dups = rep["dups"]
+    L.append(f"LIVE DAYS WITH DUPLICATED ATTENDANCE ROWS (whole plant, from "
+             f"{LIVE_FROM:%d.%m}): {len(dups)}")
+    for x in dups[:25]:
+        L.append(f"• {x['unit']} {_d(x['date'])}: {x['rows']} rows, {x['distinct']} distinct · "
+                 f"copy says {x['copy_rows']} · copied {_dt(x['copied_at'])} · closed "
+                 f"{_dt(x['closed_at'])}")
+    if rep["around"]:
+        L.append("Jurnal within 2 min of those copies (what set them off):")
+        for j in rep["around"][:25]:
+            L.append(f"  {_dt(j['at'])} {j['action']} ({j['outcome']}, {j['source']}) — "
+                     f"{j['who'] or '—'} [{j['unit'] or '—'} · {_d(j['day'])}]"[:200])
     L.append("")
 
     L.append(f"SHIFT {rep['shift']} GRID {GRID_FROM:%d.%m}–{GRID_TO:%d.%m} — match the "
@@ -768,6 +871,14 @@ def build_workbook(rep: dict) -> BytesIO:
              j["unit"],
              j["day"], j["target"], j["changes"], j["details"], j["path"], j["version"],
              "ha" if _after(j["at"], ref) else ""] for j in rep["jurnal"]])
+    _sheet(wb, "Takroriy davomat", ["Bo'lim", "Sana", "Qatorlar", "Turli qatorlar",
+                                    "Nusxa qatorlari", "Nusxa vaqti", "Yopilgan"],
+           [[x["unit"], x["date"], x["rows"], x["distinct"], x["copy_rows"], x["copied_at"],
+             x["closed_at"]] for x in rep["dups"]])
+    _sheet(wb, "Nusxa atrofida", ["Nusxa", "Vaqt", "Amal", "Natija", "Manba", "Kim", "Bo'lim",
+                                  "Kun", "Nishon", "Tafsilotlar", "Yo'l"],
+           [[j["copy"], j["at"], j["action"], j["outcome"], j["source"], j["who"], j["unit"],
+             j["day"], j["target"], j["details"], j["path"]] for j in rep["around"]])
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
