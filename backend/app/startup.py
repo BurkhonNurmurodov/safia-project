@@ -7795,6 +7795,39 @@ def _closed_day_trace_job() -> None:
                       closed_day_trace_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the live copies that were written twice (2026-10-20) ──────────
+# The trace above found Yog'mirov Feruz's 18.10 copied into `attendance` twice
+# at once: 130 rows for 65 people, every row twice. `live_projection.lock` now
+# serializes every copy of a unit-day; this pass deletes the EXACT duplicates
+# of every live unit-day that holds more rows than its copy wrote, split halves
+# untouched, records each fix in the Jurnal and DMs the operator the list
+# (`services/live_copy_dedup_oct20.py`). WRITES production data. Scheduled:
+# it fires on the copy that runs the jobs, so only once the old code's minute
+# job has stopped. Changing what it does needs a NEW flag key.
+LIVE_COPY_DEDUP_FLAG = "live_copy_dedup_2026_10_20_v1"
+_LIVE_COPY_DEDUP_DELAY_S = 150
+
+
+def repair_live_copy_dupes() -> None:
+    """The doubled live copies, mended once and DMed. Never raises."""
+    try:
+        if not _report_pending(LIVE_COPY_DEDUP_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("live-copy-dedup",
+                    datetime.now(timezone.utc) + timedelta(seconds=_LIVE_COPY_DEDUP_DELAY_S),
+                    _live_copy_dedup_job)
+    except Exception as exc:
+        print(f"[startup] live copy dedup could not be scheduled: {exc}")
+
+
+def _live_copy_dedup_job() -> None:
+    from app.services import live_copy_dedup_oct20
+    _send_report_once(LIVE_COPY_DEDUP_FLAG, "live copy dedup",
+                      live_copy_dedup_oct20.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance

@@ -27,10 +27,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import zlib
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import Attendance, DayApproval, LiveDayClose, LiveProjection
@@ -191,16 +193,53 @@ def _digest(rows: list[dict]) -> str:
     return hashlib.sha1(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
 
 
+# Every writer of one unit-day's copy — the minute job (`refresh`), a decision
+# on a document (`staff_live._recopy`), the close, the reopen — holds this lock
+# from before it reads the copy to its commit. Without it two copies running at
+# once each DELETE only the rows their own snapshot can see, and both INSERT:
+# Yog'mirov Feruz's 18.10 was re-copied on 20.10 at 17:51 into 130 rows for 65
+# people, every row twice, while `live_projections.rows` said 65. A row lock on
+# `live_projections` cannot do it alone — that row does not exist before the
+# first copy. The two-int4 key space (namespace, unit-day), which no other lock
+# here uses; two unit-days whose keys collide only wait for each other.
+_LOCK_NS = 61_006_202
+
+
+def _lock_key(mid: int, day: date) -> int:
+    k = zlib.crc32(f"{mid}:{day.isoformat()}".encode())
+    return k - (1 << 32) if k >= (1 << 31) else k
+
+
+def lock(db: Session, mid: int, day: date) -> None:
+    """Take the unit-day's copy lock; it holds until `db` commits or rolls
+    back. A no-op off Postgres."""
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:ns, :k)"),
+               {"ns": _LOCK_NS, "k": _lock_key(mid, day)})
+
+
 def write(db: Session, mid: int, ctx: live_staff.Ctx, force: bool = False) -> Optional[int]:
     """Copy the unit-day into `attendance` when it changed (always with
     `force`). Returns the rows written, or None when nothing moved. The caller
-    commits."""
+    commits — which is what releases the unit-day's lock."""
     day = ctx.day
     rows = rows_for(ctx, mid)
     digest = _digest(rows)
-    rec = db.query(LiveProjection).filter(LiveProjection.manager_id == mid,
-                                          LiveProjection.day == day).first()
-    if rec is not None and rec.digest == digest and not force:
+
+    def stored() -> Optional[str]:
+        # A column read, never the mapped object: the identity map would hand
+        # back what this session saw before the lock.
+        return db.query(LiveProjection.digest).filter(LiveProjection.manager_id == mid,
+                                                      LiveProjection.day == day).scalar()
+
+    # The minute job finds most units unchanged: those are answered without the
+    # lock. A copy that will write takes it and asks again — another writer may
+    # have committed this very copy while it waited.
+    if not force and stored() == digest:
+        return None
+    lock(db, mid, day)
+    if not force and stored() == digest:
         return None
     db.query(Attendance).filter(Attendance.manager_id == mid,
                                 Attendance.date == day).delete(synchronize_session=False)
@@ -217,6 +256,8 @@ def write(db: Session, mid: int, ctx: live_staff.Ctx, force: bool = False) -> Op
             a.split_of = written[r["split_ix"]].id
         db.add(a)
         written.append(a)
+    rec = (db.query(LiveProjection).populate_existing()
+           .filter(LiveProjection.manager_id == mid, LiveProjection.day == day).first())
     if rec is None:
         rec = LiveProjection(manager_id=mid, day=day)
         db.add(rec)
@@ -243,6 +284,7 @@ def close(db: Session, mid: int, ctx: live_staff.Ctx, closer_tg: Optional[int],
 def unproject(db: Session, mid: int, day: date) -> int:
     """A reopen: the copy and the `DayApproval` go (ruling 1); the next close
     copies again. Returns the attendance rows removed. The caller commits."""
+    lock(db, mid, day)
     n = db.query(Attendance).filter(Attendance.manager_id == mid,
                                     Attendance.date == day).delete(synchronize_session=False)
     db.query(LiveProjection).filter(LiveProjection.manager_id == mid,
@@ -264,6 +306,10 @@ def refresh(db: Session, ctx: live_staff.Ctx, units=None) -> int:
         if not units:
             return 0
         q = q.filter(LiveDayClose.manager_id.in_(units))
+    # In one order everywhere: a unit whose copy turned out unchanged after its
+    # lock keeps that lock to the next commit, and two passes taking theirs in
+    # different orders could wait on each other.
+    q = q.order_by(LiveDayClose.manager_id)
     done = 0
     for (mid, closer) in q.all():
         try:

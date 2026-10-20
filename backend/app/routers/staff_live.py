@@ -1365,6 +1365,11 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
     done, refused, notify, rejected = 0, [], [], []
     forgotten: list[int] = []        # deleted outright — their cards are dropped
     reads: dict = {}
+    # The days whose copy THIS call moved: a document approved, un-posted, or
+    # deleted while approved — never every day the ids name. On 20.10 at 17:51
+    # seven calls in 3 s asked to approve one document; one did, six skipped
+    # it, and all seven re-copied 18.10 at once.
+    moved_days: set = set()
     if body.action in ("cancel", "delete"):
         # Newest approval first: a move that depends on another was approved
         # after it, so un-posting in this order never trips over a dependent.
@@ -1390,6 +1395,7 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
                                 "reason": exc.detail.get("code") if isinstance(exc.detail, dict) else "refused"})
                 continue
             notify.append((doc, "approved"))
+            moved_days.add(doc.day)
         elif body.action == "reject":
             if doc.status != "draft" or not _may_reject(doc, caller, db):
                 continue
@@ -1402,12 +1408,14 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
                 continue
             _cancel(doc, caller, db)
             notify.append((doc, "cancelled"))
+            moved_days.add(doc.day)
         elif body.action == "delete":
             if doc.status == "approved":
                 if not _can_approve(doc, caller, db) or _depended(doc):
                     continue
                 db.query(LiveDocumentHistory).filter(LiveDocumentHistory.document_id == doc.id).delete()
                 forgotten.append(doc.id)
+                moved_days.add(doc.day)
                 db.delete(doc)
             elif doc.status == "draft":
                 if not _may_reject(doc, caller, db):
@@ -1426,7 +1434,6 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
     # Ids before the commit expires the instances — the cards are settled after it.
     approved_ids = [doc.id for doc, event in notify if event == "approved"]
     rejected_ids = [doc.id for doc in rejected]
-    touched_days = {doc.day for doc in docs if doc.day}
     db.commit()
     for doc, event in notify:
         _notify_doc(db, doc, event, _tg(caller))
@@ -1442,9 +1449,8 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
     action_log.enrich(target_kind="batch", target_id=",".join(str(i) for i in body.ids[:20]),
                       details=[("mode", body.action), ("count", done),
                                ("skipped", max(len(body.ids) - done, 0))])
-    if body.action in ("approve", "cancel", "delete"):
-        for d in sorted(touched_days):
-            _recopy(db, d)
+    for d in sorted(x for x in moved_days if x):
+        _recopy(db, d)
     return {"ok": True, "affected": done, "refused": refused}
 
 

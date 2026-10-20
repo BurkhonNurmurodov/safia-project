@@ -1516,18 +1516,20 @@ export function CellDayView({ date, cellSel, hasCellData }) {
  *  refusing a request are two different acts, so they never share an icon and
  *  never share a weight: the tinted button is a decision, the solid one is
  *  destruction. */
-function BulkBtn({ icon: Icon, label, count, fg, bg, bd, solid = false, onClick, title }) {
-  const off = count === 0;
+function BulkBtn({ icon: Icon, label, count, fg, bg, bd, solid = false, onClick, title,
+                   busy = false, loading = false }) {
+  // `busy`: another bulk press is still in flight — the bar takes no second one.
+  const off = count === 0 || busy;
   return (
-    <button onClick={onClick} disabled={off} title={title}
+    <button onClick={onClick} disabled={off} title={title} aria-busy={loading || undefined}
       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity max-sm:min-h-[38px] max-sm:text-xs"
       style={{
         background: solid ? fg : bg,
         color:      solid ? "#fff" : fg,
         border:     `1px solid ${solid ? fg : bd}`,
-        opacity: off ? 0.4 : 1, cursor: off ? "not-allowed" : "pointer",
+        opacity: off && !loading ? 0.4 : 1, cursor: off ? "not-allowed" : "pointer",
       }}>
-      <Icon size={12} /> {label}
+      {loading ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />} {label}
       {count > 0 && <span className="tabular-nums opacity-80">· {count}</span>}
     </button>
   );
@@ -3406,13 +3408,30 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   // applies to are sent. The bar's counts and this partition read the SAME
   // rights function, so a button can never post ids the endpoint would skip
   // without saying so.
+  // One press is one request, and the bar takes no other until it settles: on
+  // 20.10 «Tasdiqlash» for ONE document went out seven times in 3 s, and each
+  // call re-copied the day. The ref answers a second tap that lands before
+  // React has re-rendered the disabled bar.
+  const bulkBusyRef = useRef(null);
+  const [bulkBusy, setBulkBusy] = useState(null);
   async function handleBulk(action) {
+    if (bulkBusyRef.current) return;
     const take = selRows.filter(({ r }) =>
       action === "approve" ? r.canApprove :
       action === "cancel"  ? r.canCancel  :
       action === "reject"  ? r.canReject  : r.canDelete);
     if (!take.length) return;
+    bulkBusyRef.current = action;
+    setBulkBusy(action);
+    try {
+      await sendBulk(action, take);
+    } finally {
+      bulkBusyRef.current = null;
+      setBulkBusy(null);
+    }
+  }
 
+  async function sendBulk(action, take) {
     const calls  = [];
     const docIds = take.filter(x => !x.r.isDeletion).map(x => x.doc.id);
     if (docIds.length) calls.push(api.post(`${S.base}/documents/bulk`, { ids: docIds, action }));
@@ -3717,16 +3736,19 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             <BulkBtn icon={Check} label={t("staff.post")} count={bulkCount.approve}
               fg="#16a34a" bg="#22c55e22" bd="#22c55e44"
               title={bulkCount.approve === 0 ? t("staff.bulkNoneApprove") : undefined}
+              busy={!!bulkBusy} loading={bulkBusy === "approve"}
               onClick={() => runBulk("approve")} />
             {/* Un-post reverses an APPROVAL — it has nothing to do with refusing
                 a pending request, which is «Rad etish» next to it. */}
             <BulkBtn icon={Ban} label={t("staff.unpost")} count={bulkCount.cancel}
               fg="#d97706" bg="#f59e0b22" bd="#f59e0b44"
               title={bulkCount.cancel === 0 ? t("staff.bulkNoneCancel") : undefined}
+              busy={!!bulkBusy} loading={bulkBusy === "cancel"}
               onClick={() => runBulk("cancel")} />
             <BulkBtn icon={XCircle} label={t("staff.reject")} count={bulkCount.reject}
               fg="#ef4444" bg="#ef444422" bd="#ef444444"
               title={bulkCount.reject === 0 ? t("staff.bulkNoneReject") : undefined}
+              busy={!!bulkBusy} loading={bulkBusy === "reject"}
               onClick={() => runBulk("reject")} />
           </>
         )}
@@ -3735,6 +3757,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
         <BulkBtn icon={Trash2} label={t("staff.delete")} count={bulkCount.delete} solid
           fg="#ef4444" bg="#ef444422" bd="#ef444444"
           title={bulkCount.delete === 0 ? t("staff.bulkNoneDelete") : undefined}
+          busy={!!bulkBusy}
           onClick={() => { setDelErr(""); setConfirmDel(true); }} />
 
         {/* Selected-count chip — appears inside the bar once rows are selected */}

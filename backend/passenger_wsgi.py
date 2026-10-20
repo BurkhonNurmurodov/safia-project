@@ -124,6 +124,7 @@ try:
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
+        repair_live_copy_dupes,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -565,6 +566,11 @@ try:
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     report_closed_day_trace()
+    # ⚠ TEMPORARY one-shot (2026-10-20) — the doubled live copies' exact
+    # duplicates deleted and DMed once to the operator. WRITES attendance.
+    # Remove this line, `startup.repair_live_copy_dupes`,
+    # `services/live_copy_dedup_oct20.py` and its test once the DM has landed.
+    repair_live_copy_dupes()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and
