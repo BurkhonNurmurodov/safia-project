@@ -123,6 +123,7 @@ try:
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
+        report_closed_day_trace,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -559,6 +560,11 @@ try:
     # line, `startup.report_admin_objections` and
     # `services/admin_objections_report.py` once the files have landed.
     report_admin_objections()
+    # ⚠ TEMPORARY one-shot (2026-10-20) — Yog'mirov Feruz's 18.10 against its
+    # close, DMed once to the operator. Read-only. Remove this line,
+    # `startup.report_closed_day_trace` and
+    # `services/closed_day_trace_report.py` once it has landed.
+    report_closed_day_trace()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and

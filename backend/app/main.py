@@ -140,6 +140,7 @@ async def lifespan(app: FastAPI):
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
+        report_closed_day_trace,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -651,6 +652,13 @@ async def lifespan(app: FastAPI):
     # resumes after a restart. Remove this line, `startup.report_admin_objections`
     # and `services/admin_objections_report.py` once the files have landed.
     later(report_admin_objections)
+    # ⚠ TEMPORARY one-shot (2026-10-20) — Yog'mirov Feruz says his 18.10 was
+    # not red when he closed it: every input of that unit-day with its
+    # timestamps against the close, the Jurnal and the shift-2 grid, DMed once
+    # to the operator. Read-only. Remove this line,
+    # `startup.report_closed_day_trace` and
+    # `services/closed_day_trace_report.py` once it has landed.
+    later(report_closed_day_trace)
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and

@@ -7761,6 +7761,40 @@ def _admin_objections_job() -> None:
                       admin_objections_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: did Yog'mirov Feruz's 18.10 change after he closed it? ─────────
+# The supervisor wrote on 2026-10-20 that his 18.10 on /zagruzka was not red
+# when he closed it and is red now. Every input of that unit-day — the SAP
+# rows, the typed values and people, the cells' ojidaniya and their dated
+# moves, the catalog versions, the live day's attendance copy and documents —
+# is read with its timestamps and set against the moment the day was closed,
+# with the Jurnal and the shift's grid in all three tables
+# (`services/closed_day_trace_report.py`). READ-ONLY: it writes nothing but
+# its flag. Changing what it sends needs a NEW flag key.
+CLOSED_DAY_TRACE_FLAG = "closed_day_trace_yogmirov_2026_10_18_v1"
+_CLOSED_DAY_TRACE_DELAY_S = 70
+
+
+def report_closed_day_trace() -> None:
+    """Yog'mirov Feruz's 18.10 before and after its close, DMed once.
+    Never raises."""
+    try:
+        if not _report_pending(CLOSED_DAY_TRACE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("closed-day-trace-yogmirov",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CLOSED_DAY_TRACE_DELAY_S),
+                    _closed_day_trace_job)
+    except Exception as exc:
+        print(f"[startup] closed-day trace report could not be scheduled: {exc}")
+
+
+def _closed_day_trace_job() -> None:
+    from app.services import closed_day_trace_report
+    _send_report_once(CLOSED_DAY_TRACE_FLAG, "closed-day trace report",
+                      closed_day_trace_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance
