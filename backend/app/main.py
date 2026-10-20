@@ -139,6 +139,7 @@ async def lifespan(app: FastAPI):
         report_wc_plan_history,
         report_dept_attendance,
         report_trudoyomkost_register,
+        report_admin_objections,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -639,6 +640,13 @@ async def lifespan(app: FastAPI):
     # `startup.report_trudoyomkost_register` and
     # `services/trudoyomkost_register_report.py` once it has landed.
     later(report_trudoyomkost_register)
+    # ⚠ TEMPORARY one-shot (2026-10-20) — every objection waiting on an ADMIN
+    # ruling, with every detail needed to check it (task rules, AI verdict,
+    # proof photos, the examples the AI was shown, the whole chat), DMed once
+    # to the operator as a workbook + ZIP parts. Scheduled, flag-guarded,
+    # resumes after a restart. Remove this line, `startup.report_admin_objections`
+    # and `services/admin_objections_report.py` once the files have landed.
+    later(report_admin_objections)
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and

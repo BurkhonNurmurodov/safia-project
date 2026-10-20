@@ -122,6 +122,7 @@ try:
         report_wc_plan_history,
         report_dept_attendance,
         report_trudoyomkost_register,
+        report_admin_objections,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
         write_leader_task_examples,
@@ -553,6 +554,11 @@ try:
     # `startup.report_trudoyomkost_register` and
     # `services/trudoyomkost_register_report.py` once it has landed.
     report_trudoyomkost_register()
+    # ⚠ TEMPORARY one-shot (2026-10-20) — every objection waiting on an ADMIN
+    # ruling, with all its evidence, DMed once to the operator. Remove this
+    # line, `startup.report_admin_objections` and
+    # `services/admin_objections_report.py` once the files have landed.
+    report_admin_objections()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and

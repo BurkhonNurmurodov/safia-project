@@ -7727,6 +7727,40 @@ def _trudoyomkost_register_job() -> None:
                       trudoyomkost_register_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: every objection waiting on an ADMIN, with all its evidence ─────
+# The operator asked on 2026-10-20, looking at «Norozliklar» → «Adminlarda
+# 116»: every objection waiting on an admin ruling, with every detail needed to
+# check whether it is true — the task's rules (the leader's instruction and the
+# AI's criteria), the AI's verdict, every proof photo, the examples the AI was
+# shown, an automatic check's evidence and the whole appeal chat.
+# `services/admin_objections_report.py` builds it and DMs a workbook plus ZIP
+# parts. READ-ONLY (its flag and progress row aside); a restart resumes it.
+# Changing what it sends needs a NEW flag key.
+ADMIN_OBJECTIONS_FLAG = "admin_objections_report_2026_10_20_v1"
+_ADMIN_OBJECTIONS_DELAY_S = 90
+
+
+def report_admin_objections() -> None:
+    """Every objection waiting on an admin, DMed once with its evidence.
+    Never raises."""
+    try:
+        if not _report_pending(ADMIN_OBJECTIONS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("admin-objections-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_ADMIN_OBJECTIONS_DELAY_S),
+                    _admin_objections_job)
+    except Exception as exc:
+        print(f"[startup] admin objections report could not be scheduled: {exc}")
+
+
+def _admin_objections_job() -> None:
+    from app.services import admin_objections_report
+    _send_report_once(ADMIN_OBJECTIONS_FLAG, "admin objections report",
+                      admin_objections_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance
