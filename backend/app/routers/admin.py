@@ -398,6 +398,16 @@ def refresh_sheet(
             _log_sheet_refresh(name, result)
             return {"status": "ok", "sheet": name, **result}
 
+        if name == "ontime":
+            # 1.2 M order rows take minutes to read — longer than Cloudflare
+            # waits — so the read runs on a thread of its own and the press
+            # answers at once (services/ontime_sync.py); /ontime shows it land.
+            from app.services import ontime_sync
+            started = ontime_sync.start_read(
+                f"admin:{caller.get('full_name') or caller.get('username') or ''}")
+            _log_sheet_refresh(name, None, started=started)
+            return {"status": "started" if started else "busy", "sheet": name}
+
         _log_sheet_refresh(name)
         return {"status": "ok", "sheet": name}
 

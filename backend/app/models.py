@@ -5184,3 +5184,82 @@ class AiUsage(Base):
     failed     = Column(Integer, nullable=False, default=0)
     tokens_in  = Column(BigInteger, nullable=False, default=0)
     tokens_out = Column(BigInteger, nullable=False, default=0)
+
+
+# ── «O'z vaqtida yetkazish» — the on-time delivery report (services/ontime.py) ──
+# The logistics team's «on time report» Google sheet, read by the server: the
+# stores' orders («заявки»), the factory's SAP production receipts («поставка»)
+# and the shipping waves' time windows («заход»). Stored as the aggregates the
+# sheet's own formula reads, replaced WHOLE by every read
+# (services/ontime_sync.py), so the page computes nothing the sheet would not.
+
+class OntimeDemand(Base):
+    """What the stores ordered: Σ «Количествозаказа» per order day × material
+    × wave («заход»), with the material group the order lines name."""
+    __tablename__ = "ontime_demand"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    day      = Column(Date, nullable=False)          # «Дата документа»
+    material = Column(String, nullable=False)        # «Материал» (F00000002)
+    wave     = Column(Integer, nullable=False)       # «заход» № 1 / 2 / 3
+    grp      = Column(String, nullable=True)         # «Группа материалов»
+    qty      = Column(Float, nullable=False, default=0)
+    stores   = Column(Integer, nullable=True)        # distinct «Завод» (stores) ordering it
+    lines    = Column(Integer, nullable=True)        # order lines summed
+
+    __table_args__ = (Index("ix_ontime_demand_day", "day"),)
+
+
+class OntimeReceipt(Base):
+    """What production posted: Σ «Кол-вовЕИввода» per entry day × second of the
+    day × material (SAP movement 101 receipts into the factory's stores)."""
+    __tablename__ = "ontime_receipts"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    day      = Column(Date, nullable=False)          # «Дата ввода»
+    sec      = Column(Integer, nullable=False)       # «Время ввода», seconds after midnight
+    material = Column(String, nullable=False)
+    qty      = Column(Float, nullable=False, default=0)
+
+    __table_args__ = (Index("ix_ontime_receipts_day", "day"),)
+
+
+class OntimeMaterial(Base):
+    """A material's name and group, as the sheet's rows last named them."""
+    __tablename__ = "ontime_materials"
+
+    material = Column(String, primary_key=True)
+    name     = Column(String, nullable=True)
+    grp      = Column(String, nullable=True)
+
+
+class OntimeWindow(Base):
+    """One wave's time window for one material group («заход» F:I): products
+    posted between `start_s` and `end_s` count for that wave. Wave 3 runs after
+    midnight, on the day AFTER the order day."""
+    __tablename__ = "ontime_windows"
+
+    id      = Column(Integer, primary_key=True, autoincrement=True)
+    grp     = Column(String, nullable=False)
+    wave    = Column(Integer, nullable=False)
+    start_s = Column(Integer, nullable=False)
+    end_s   = Column(Integer, nullable=False)
+    pos     = Column(Integer, nullable=True)         # the row it was read from — the sheet's own order
+
+
+class OntimeRead(Base):
+    """One read of the sheet — when, why, how much, what failed. The page
+    names the last one; a failed read leaves the stored data as it was."""
+    __tablename__ = "ontime_reads"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    started_at    = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at   = Column(DateTime(timezone=True), nullable=True)
+    trigger       = Column(String, nullable=True)    # schedule · boot · admin:<name>
+    ok            = Column(Boolean, nullable=True)
+    error         = Column(Text, nullable=True)
+    order_rows    = Column(Integer, nullable=True)   # «заявки» rows read
+    receipt_rows  = Column(Integer, nullable=True)   # «поставка» rows read
+    first_day     = Column(Date, nullable=True)
+    last_day      = Column(Date, nullable=True)
+    notes         = Column(JSONB, nullable=True)     # rows left out and why, duplicate windows

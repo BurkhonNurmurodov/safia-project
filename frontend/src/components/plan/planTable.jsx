@@ -5,9 +5,9 @@ import { fmtPct, toneOf, toneHex } from "./planUtil";
 
 // «96%» in its band's colour on a soft tint of it — the ink alone carries the
 // verdict for colour-blind readers too, because the number is printed.
-export function FulfilChip({ r, title }) {
+export function FulfilChip({ r, title, toneFn = toneOf }) {
   if (r == null) return <span style={{ color: "var(--text-4)" }} title={title}>—</span>;
-  const tone = toneOf(r);
+  const tone = toneFn(r);
   return (
     <span className="inline-flex items-center justify-center min-w-[3.25rem] px-1.5 py-0.5 rounded-md text-xs font-bold tabular-nums"
       style={{ background: toneTint(tone), color: toneHex(tone) }} title={title}>

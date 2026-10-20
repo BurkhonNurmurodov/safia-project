@@ -6886,6 +6886,11 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Jonli monitoring",
+    "nav.ontime": "O'z vaqtida yetkazish",
+    "logs.act.sync.ontime_read": "O'z vaqtida yetkazish: jadval o'qildi",
+    "admin.ontimeSheet": "O'z vaqtida yetkazish (on time report)",
+    "admin.refreshDetail.ontime": "Jadval o'qilmoqda — bir necha daqiqa. Natija «O'z vaqtida yetkazish» sahifasida ko'rinadi.",
+    "admin.refreshDetail.ontimeBusy": "Jadval allaqachon o'qilmoqda.",
     "staffLive.sum.soFar": "hozirgacha",
     "staffLive.backToday": "Bugungi smena",
     "staffClose.cameAt": "Kelgan: {t}",
@@ -14923,6 +14928,11 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Жонли мониторинг",
+    "nav.ontime": "Ўз вақтида етказиш",
+    "logs.act.sync.ontime_read": "Ўз вақтида етказиш: жадвал ўқилди",
+    "admin.ontimeSheet": "Ўз вақтида етказиш (on time report)",
+    "admin.refreshDetail.ontime": "Жадвал ўқилмоқда — бир неча дақиқа. Натижа «Ўз вақтида етказиш» саҳифасида кўринади.",
+    "admin.refreshDetail.ontimeBusy": "Жадвал аллақачон ўқилмоқда.",
     "staffLive.sum.soFar": "ҳозиргача",
     "staffLive.backToday": "Бугунги смена",
     "staffClose.cameAt": "Келган: {t}",
@@ -22960,6 +22970,11 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Живой мониторинг",
+    "nav.ontime": "On time поставки",
+    "logs.act.sync.ontime_read": "On time поставки: таблица прочитана",
+    "admin.ontimeSheet": "On time поставки (on time report)",
+    "admin.refreshDetail.ontime": "Таблица читается — несколько минут. Результат появится на странице «On time поставки».",
+    "admin.refreshDetail.ontimeBusy": "Таблица уже читается.",
     "staffLive.sum.soFar": "на данный момент",
     "staffLive.backToday": "Текущая смена",
     "staffClose.cameAt": "Пришёл: {t}",
@@ -30997,6 +31012,11 @@ const t = {
 
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Live monitor",
+    "nav.ontime": "On-time delivery",
+    "logs.act.sync.ontime_read": "On-time delivery: sheet read",
+    "admin.ontimeSheet": "On-time delivery (on time report)",
+    "admin.refreshDetail.ontime": "Reading the sheet — a few minutes. The result appears on the «On-time delivery» page.",
+    "admin.refreshDetail.ontimeBusy": "The sheet is already being read.",
     "staffLive.sum.soFar": "so far",
     "staffLive.backToday": "Current shift",
     "staffClose.cameAt": "Came: {t}",

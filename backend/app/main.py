@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, ontime
 from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -474,6 +474,10 @@ async def lifespan(app: FastAPI):
     # (after the directory), catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.category_sync import register_jobs as register_category_jobs
     run(register_category_jobs)
+    # «O'z vaqtida yetkazish»: read the on-time sheet every two hours from
+    # 07:20, and catch up after boot (mirrored in passenger_wsgi.py).
+    from app.services.ontime_sync import register_jobs as register_ontime_jobs
+    run(register_ontime_jobs)
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
@@ -1205,6 +1209,9 @@ app.include_router(foreign_objects.router)
 # require_page("category-compliance") (admin-only by default), the Verifix
 # read and the rule's edit are admin-only in the endpoint.
 app.include_router(category_compliance.router)
+# «O'z vaqtida yetkazish» (/ontime): the on-time delivery report read out of
+# the logistics team's Google sheet — page-gated, the read is admin-only.
+app.include_router(ontime.router)
 app.include_router(android.router)
 app.include_router(push.router)
 app.include_router(education.router)

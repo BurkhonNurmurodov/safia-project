@@ -14,7 +14,7 @@ import {
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, IdCard, Briefcase, CalendarRange,
-  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, Award,
+  ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, Award, Truck,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -48,6 +48,9 @@ const ALL_LINKS = [
   { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
+  // «O'z vaqtida yetkazish» — the on-time delivery report (the logistics
+  // team's «on time report» sheet, read by the server). Admin-only by default.
+  { to: "/ontime", page: "ontime", key: "nav.ontime", icon: Truck, group: "prod" },
   // Leader monitoring — ONE page for every role (the per-shift admin copies
   // are retired): the Smena filter inside it narrows to a shift, «All» shows
   // both. Shift 2's days come from the bot once the leader closed one there.

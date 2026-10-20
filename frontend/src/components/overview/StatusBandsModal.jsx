@@ -52,7 +52,11 @@ const rowError = (band, dir) => {
   return dir === "high" ? (ok > warn ? null : "high") : (warn > ok ? null : "low");
 };
 
-export default function StatusBandsModal({ open, onClose, bands }) {
+// `figures` narrows the rows to the ones a page paints (default: the four of
+// «Smena hisoboti»); the draft is still the WHOLE set, so saving from one page
+// never resets a band another page edits. `scope` replaces the sentence naming
+// where the bands are read. A figure may carry its own `label` text.
+export default function StatusBandsModal({ open, onClose, bands, figures = FIGURES, scope }) {
   const { t } = useLang();
   const qc = useQueryClient();
   const toast = useToast();
@@ -64,8 +68,8 @@ export default function StatusBandsModal({ open, onClose, bands }) {
   useEffect(() => { if (open) setDraft(bands); }, [open, bands]);
 
   const errors = useMemo(
-    () => Object.fromEntries(FIGURES.map((f) => [f.key, rowError(draft[f.key] || {}, f.dir)])),
-    [draft],
+    () => Object.fromEntries(figures.map((f) => [f.key, rowError(draft[f.key] || {}, f.dir)])),
+    [draft, figures],
   );
   const invalid = Object.values(errors).some(Boolean);
 
@@ -101,7 +105,8 @@ export default function StatusBandsModal({ open, onClose, bands }) {
         maxWidth="max-w-xl"
         footer={
           <div className="flex items-center justify-between gap-2 w-full">
-            <Button variant="ghost" size="md" onClick={() => setDraft(BAND_DEFAULTS)}>
+            <Button variant="ghost" size="md"
+              onClick={() => setDraft((d) => ({ ...d, ...Object.fromEntries(figures.map((f) => [f.key, BAND_DEFAULTS[f.key]])) }))}>
               {t("overview.sr.bands.reset")}
             </Button>
             <div className="flex items-center gap-2">
@@ -114,10 +119,10 @@ export default function StatusBandsModal({ open, onClose, bands }) {
         }
       >
         <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-          {t("overview.sr.bands.scope")}
+          {scope ?? t("overview.sr.bands.scope")}
         </p>
 
-        {FIGURES.map((f) => {
+        {figures.map((f) => {
           const band = draft[f.key] || BAND_DEFAULTS[f.key];
           const err = errors[f.key];
           const ranges = err ? null : preview(band, f.dir, f.unit);
@@ -129,7 +134,7 @@ export default function StatusBandsModal({ open, onClose, bands }) {
             >
               <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
                 <span className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>
-                  {t(f.labelKey)}
+                  {f.label ?? t(f.labelKey)}
                 </span>
                 <span className="text-[10.5px]" style={{ color: "var(--text-4)" }}>
                   {t(`overview.sr.bands.${f.dir}`)}

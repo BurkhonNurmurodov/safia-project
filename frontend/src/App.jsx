@@ -125,6 +125,7 @@ const Leaderboard = lazyWithReload(() => import("./pages/Leaderboard"));
 const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
 const Workers = lazyWithReload(() => import("./pages/Workers"));
 const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
+const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
 const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
@@ -566,6 +567,7 @@ function AppWithLang() {
             <Route path="/brigadir/:id" element={<AuthGate><RequirePage page="overview"><BrigadirProfile /></RequirePage></AuthGate>} />
             <Route path="/workers" element={<AuthGate><RequirePage page="workers"><Workers /></RequirePage></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
+            <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />

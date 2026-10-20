@@ -27,6 +27,9 @@ const SOURCES = [
   { name: "source",       labelKey: "admin.source" },
   { name: "shift_report", labelKey: "admin.shiftReport" },
   { name: "quality",      labelKey: "admin.qualitySheet" },
+  // The logistics team's «on time report» (/ontime). Its read takes minutes, so
+  // Refresh only starts it (services/ontime_sync.py) and the page shows it land.
+  { name: "ontime",       labelKey: "admin.ontimeSheet" },
 ];
 
 export default function DataSources() {
@@ -118,6 +121,7 @@ export default function DataSources() {
         .replace("{h}", data.headcount_rows ?? 0);
     }
     if (name === "quality") return t("admin.refreshDetail.quality").replace("{n}", data.quality_rows ?? 0);
+    if (name === "ontime") return t(data.status === "busy" ? "admin.refreshDetail.ontimeBusy" : "admin.refreshDetail.ontime");
     // A refiled day imports LESS than its rows add up to (the last form wins,
     // see read_downtime_data) — say so, or the drop looks like lost data.
     const refiled = data.resubmitted ?? 0;

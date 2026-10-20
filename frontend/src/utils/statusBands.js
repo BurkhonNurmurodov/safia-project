@@ -136,6 +136,13 @@ export const resolvedTone = (v) => pctTone(v, ACTIVE.quality);
 // roughly even thirds, and they are printed in the legend precisely because
 // nobody has ruled on them yet: they are numbers to move, not a measurement.
 export const CONCERN_BANDS = { ok: 5, warn: 20 };
+
+// On-time delivery (/ontime): on-time quantity ÷ ordered quantity, the share of
+// what the stores ordered that production posted inside its wave's window.
+// ≥95% green, 85–94% yellow, below that red — numbers nobody has ruled on yet,
+// moved by an admin from the page's own header like every band here.
+export const ONTIME_BANDS = { ok: 95, warn: 85 };
+export const ontimeTone = (v) => pctTone(v, ACTIVE.ontime);
 export const concernsTone = (n) => {
   if (n === null || n === undefined || Number.isNaN(n)) return null;
   return n <= ACTIVE.concerns.ok ? "ok" : n <= ACTIVE.concerns.warn ? "warn" : "bad";
@@ -162,6 +169,7 @@ export const concernsTone = (n) => {
 // settings fetch.
 export const BAND_DEFAULTS = Object.freeze({
   load: LOAD_BANDS, compl: COMPL_BANDS, quality: RESOLVED_BANDS, concerns: CONCERN_BANDS,
+  ontime: ONTIME_BANDS,
 });
 
 let ACTIVE = { ...BAND_DEFAULTS };

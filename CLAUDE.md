@@ -7858,6 +7858,88 @@ views; `PlanLegend`, `DayStrip` and `planUtil.js` are its shared vocabulary.
 - The pre-redesign `GET /api/plan-fulfillment` stays for tabs still open on an
   older bundle; nothing in the current one calls it.
 
+## «O'z vaqtida yetkazish» — the logistics on-time report (`/ontime`, 2026-10-20)
+
+The operator's request: «a new screen for the analytics of the last 4 tabs of
+that google sheet … meaningful and easy to use without much of a noise». The
+sheet is the logistics team's «on time report». It holds raw tabs «заявки»
+(the stores' orders per day, material and wave) and «поставка» (production
+receipts from SAP, with date and time), plus «заход» (each group's wave
+windows). Four analysis tabs are computed from those: «заход», «свод»,
+«свод по группам» and «средний on time». The platform reads the RAW tabs and
+computes the four itself (the operator's pick, asked).
+
+- **The arithmetic is the sheet's, exactly** (the operator's ruling, asked):
+  `services/ontime.py` `evaluate` is THE formula. Per order day d, material
+  and wave:
+  - H1 = production on d inside wave 1's window.
+  - H2 = production on d inside wave 2's window, minus wave 1's shortfall
+    (floored at 0); when wave 1 had no order, the two windows' production
+    together.
+  - H3 = production on d+1 from 00:00:01 to wave 3's end (its start is
+    ignored, as the sheet does).
+  - Each share is capped at 100%. Wave 1's surplus is added to wave 2, and
+    waves 1+2's surplus to wave 3.
+  - Windows that OVERLAP («МЯСНАЯ ВЫПЕЧКА» and «Мини Кухня NEW», waves 1
+    and 2 both 10:00–22:00) count the same production for both waves, as the
+    sheet does. The page says so in a notice.
+  - Verified against the sheet: 310/310 product-wave rows on 18.08 and
+    01.06.2026, every group × wave and group average to 0 difference, and
+    «СДОБА» 90.84% = «средний on time».
+  - **The sheet's «средний %» cell for 18.08 (99.04%) is a stale paste**: Σ of
+    its own column gives 98.67%, which is what the platform prints.
+- **Aggregation**:
+  - A day, period or product total is quantity-weighted: Σ on-time ÷ Σ
+    ordered.
+  - A group's day is the mean of its waves; each wave is the mean of its
+    materials («свод по группам»). A group's period is the mean of its days
+    («средний on time»).
+  - The headline covers every group that has a window. The sheet's B column
+    covered the bakery rows only; the group filter narrows it.
+  - An order in a wave with no window is counted nowhere and named
+    (`notes.no_window`).
+- **The reader** — `services/ontime_sync.py`:
+  - Runs every 2 hours at :20 from 07:20 to 23:20 Tashkent, plus a boot
+    catch-up 240 s in when the last good read is older than 2 hours. An
+    admin can also press it: the page's refresh button, or the «Ma'lumotlar»
+    row «O'z vaqtida yetkazish (on time report)» (`SheetSource` `ontime`).
+  - Reads through the platform's Google service account. Columns are found by
+    HEADER text (`ORDER_COLS` / `RECEIPT_COLS`), never by position. Rows are
+    read 40,000 at a time.
+  - Dates and times are taken as serials or text. Unreadable rows are
+    counted and named.
+  - Stored whole in one transaction: `ontime_demand`, `ontime_receipts`,
+    `ontime_materials`, `ontime_windows`, plus `ontime_reads` (the log). A
+    failed read keeps the previous data and says why on the page.
+  - Logged as `sync.ontime_read`.
+- **Connecting it**: an admin pastes the LIVE sheet's id on «Ma'lumotlar» and
+  shares the sheet as Viewer with the service-account e-mail shown there. A
+  copy with «заявки» removed cannot be the source.
+- **The page** — `pages/Ontime.jsx` + `components/ontime/` + `pages/ontimeText.js`
+  (4 languages); page key `ontime`, **admin-only until opened on the Access
+  tab**; «Ishlab chiqarish» nav group.
+  - Three tabs over ONE request (`GET /api/ontime/analysis`):
+    - «Umumiy»: KPIs against the previous period of equal length; the daily
+      trend with the green edge; each wave; groups by late quantity or %;
+      the 8 most-late products.
+    - «Mahsulotlar»: every product with ordered, on time, late, % and per
+      wave; days below the edge; a day strip.
+    - «Kunlar bo'yicha»: group × day heatmap with an optional per-wave
+      unfold.
+  - A product opens its working day by day (`GET /api/ontime/product`).
+    Production times list only the receipts that count for that day: after
+    the previous night's wave-3 window, and through the next night's.
+  - Filters: group and wave (pinned), product. The period defaults to the
+    last 14 days ending on the newest order day.
+  - Group names in capitals are printed in sentence case
+    (`ontimeUtil.calmName`).
+- **Bands**: `ontime` in the admin-editable `status_bands` (≥ 95 green,
+  85–94 yellow, below red). They are edited from the page's own sliders
+  button (`StatusBandsModal figures/scope`), and every cell is judged by the
+  whole percent it prints.
+- Not built: an export, and per-unit or cell attribution (the sheet carries
+  neither).
+
 ## The call forecast, sent by the clock (`forecast_autocall`)
 
 From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:

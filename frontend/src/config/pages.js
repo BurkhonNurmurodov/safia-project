@@ -41,6 +41,7 @@ export const PAGES = [
   { key: "shift-daily", route: "/shift-daily", labelKey: "nav.shiftDaily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
+  { key: "ontime", route: "/ontime", labelKey: "nav.ontime" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -78,6 +79,7 @@ export const DEFAULT_PAGE_ACCESS = {
   daily:    ["shift-manager", "supervisor"],
   production: ["top-manager", "shift-manager"], // opened 2026-09-30 for the «Smena hisoboti» cell links
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
+  ontime: [], // admin-only until the operator opens it (the on-time delivery report)
   leaders: [], // pilot: admin-only until enabled from the Access tab
   cells: ["supervisor"], // Cell registry — supervisors read their OWN unit's
   //            cells, read-only (narrowed server-side); admins and per-person

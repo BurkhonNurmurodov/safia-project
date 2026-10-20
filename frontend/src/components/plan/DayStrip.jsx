@@ -13,7 +13,9 @@ import { dayRatio, pctOf, toneOf, toneHex, ddmm } from "./planUtil";
 // fortnight and a quarter both fit; each carries its date and value on hover.
 const HATCH = "repeating-linear-gradient(135deg, var(--border-md) 0 2px, transparent 2px 4px)";
 
-function DayStrip({ daily, days, labels, height = 14, className = "" }) {
+// `tone` reads a ratio against a band other than completion (the /ontime page
+// passes its own); omitted, every square is judged as before.
+function DayStrip({ daily, days, labels, height = 14, className = "", tone = toneOf }) {
   const n = daily?.length || 0;
   if (!n) return null;
   return (
@@ -39,7 +41,7 @@ function DayStrip({ daily, days, labels, height = 14, className = "" }) {
             style={{ background: "var(--bg-inner)" }} />;
         }
         return <span key={i} title={`${date} · ${pctOf(r)}%`} className="rounded-[2px]"
-          style={{ background: toneHex(toneOf(r)) }} />;
+          style={{ background: toneHex(tone(r)) }} />;
       })}
     </div>
   );

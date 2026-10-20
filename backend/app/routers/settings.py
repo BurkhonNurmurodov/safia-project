@@ -114,6 +114,8 @@ DEFAULT_STATUS_BANDS = {
     "compl":    {"ok": 95, "warn": 70},
     "quality":  {"ok": 90, "warn": 70},
     "concerns": {"ok": 5,  "warn": 20},
+    # On-time delivery (/ontime): on-time quantity ÷ ordered quantity.
+    "ontime":   {"ok": 95, "warn": 85},
 }
 
 

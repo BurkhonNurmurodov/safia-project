@@ -714,6 +714,9 @@ try:
     # «Toifaga muvofiqlik»: the nightly HR-journals read + boot catch-up (mirrors main.py).
     from app.services.category_sync import register_jobs as register_category_jobs
     register_category_jobs()
+    # «O'z vaqtida yetkazish»: the on-time sheet read (mirrors main.py).
+    from app.services.ontime_sync import register_jobs as register_ontime_jobs
+    register_ontime_jobs()
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs

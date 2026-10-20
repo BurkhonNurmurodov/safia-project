@@ -416,6 +416,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
     (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
     (("POST",),   "/api/category-compliance/read",             "sync_export", "sync.category_read"),
+    (("POST",),   "/api/ontime/read",                          "sync_export", "sync.ontime_read"),
     (("PUT",),    "/api/category-compliance/rule",             "config", "config.category_rule_saved"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never
