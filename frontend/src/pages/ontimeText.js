@@ -69,7 +69,7 @@ const uz = {
   noWindowNote: "«заход»da oynasi yo'q buyurtmalar hisobga kirmadi: {g}.",
   skippedNote: "Jadvalning {n} ta qatori o'qilmadi (sana, miqdor yoki zaxod yo'q).",
 
-  colProduct: "Mahsulot", colGroup: "Guruh", colOrdered: "Buyurtma", colOntime: "O'z vaqtida",
+  colCode: "SAP kodi", colProduct: "Mahsulot", colGroup: "Guruh", colOrdered: "Buyurtma", colOntime: "O'z vaqtida",
   colLate: "Kechikkan", colPct: "Foiz", colWaves: "Zaxodlar",
   colWavesHint: "Har bir zaxod bo'yicha: o'z vaqtida ÷ buyurtma",
   colDays: "Kunlar", colDaysHint: "{ok}% dan past kunlar / buyurtma bo'lgan kunlar",
@@ -159,7 +159,7 @@ const uz_cyrl = {
   noWindowNote: "«заход»да ойнаси йўқ буюртмалар ҳисобга кирмади: {g}.",
   skippedNote: "Жадвалнинг {n} та қатори ўқилмади (сана, миқдор ёки заход йўқ).",
 
-  colProduct: "Маҳсулот", colGroup: "Гуруҳ", colOrdered: "Буюртма", colOntime: "Ўз вақтида",
+  colCode: "SAP коди", colProduct: "Маҳсулот", colGroup: "Гуруҳ", colOrdered: "Буюртма", colOntime: "Ўз вақтида",
   colLate: "Кечиккан", colPct: "Фоиз", colWaves: "Заходлар",
   colWavesHint: "Ҳар бир заход бўйича: ўз вақтида ÷ буюртма",
   colDays: "Кунлар", colDaysHint: "{ok}% дан паст кунлар / буюртма бўлган кунлар",
@@ -249,7 +249,7 @@ const ru = {
   noWindowNote: "Заявки групп без окна на листе «заход» не учтены: {g}.",
   skippedNote: "Не прочитано строк таблицы: {n} (нет даты, количества или захода).",
 
-  colProduct: "Продукт", colGroup: "Группа", colOrdered: "Заявка", colOntime: "Вовремя",
+  colCode: "Код SAP", colProduct: "Продукт", colGroup: "Группа", colOrdered: "Заявка", colOntime: "Вовремя",
   colLate: "Не успели", colPct: "Процент", colWaves: "Заходы",
   colWavesHint: "По каждому заходу: вовремя ÷ заявка",
   colDays: "Дни", colDaysHint: "дни ниже {ok}% / дни с заявками",
@@ -339,7 +339,7 @@ const en = {
   noWindowNote: "Orders of groups with no window on «заход» are not counted: {g}.",
   skippedNote: "{n} rows of the sheet were not read (no date, quantity or wave).",
 
-  colProduct: "Product", colGroup: "Group", colOrdered: "Ordered", colOntime: "On time",
+  colCode: "SAP code", colProduct: "Product", colGroup: "Group", colOrdered: "Ordered", colOntime: "On time",
   colLate: "Late", colPct: "Percent", colWaves: "Waves",
   colWavesHint: "Per wave: on time ÷ ordered",
   colDays: "Days", colDaysHint: "days below {ok}% / days with orders",

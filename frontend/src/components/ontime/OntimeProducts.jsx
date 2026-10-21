@@ -49,7 +49,8 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
     else if (show === "zero") list = list.filter((p) => p.ontime <= 1e-6);
     if (needle) list = list.filter((p) => p.hay.includes(needle));
     return sortRows(list, sort, (p, k) => {
-      if (k === "name") return tx(p.name) || p.material;
+      if (k === "material") return p.material;
+      if (k === "name") return tx(p.name) || "";
       if (k === "grp") return gn(p.grp) || "";
       if (k === "r") return p.r;
       if (k === "days") return p.st.counted ? p.st.short / p.st.counted : null;
@@ -81,9 +82,8 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
   const nameCell = (p) => (
     <button type="button" onClick={() => open(p)}
       className="group flex items-center gap-1.5 min-w-0 max-w-[24rem] text-left rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--brand)]"
-      title={`${tx(p.name)} · ${p.material}`}>
-      <span className="truncate font-medium group-hover:underline" style={{ color: "var(--text-1)" }}>{tx(p.name) || p.material}</span>
-      <span className="flex-shrink-0 font-mono text-[11px]" style={{ color: "var(--text-4)" }}>{p.material}</span>
+      title={tx(p.name) || p.material}>
+      <span className="truncate font-medium group-hover:underline" style={{ color: "var(--text-1)" }}>{tx(p.name) || "—"}</span>
     </button>
   );
 
@@ -105,12 +105,12 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
         <button type="button" key={p.material} onClick={() => open(p)}
           className="w-full text-left px-4 py-3 space-y-1.5 active:bg-[var(--bg-inner)]" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-center gap-2">
-            <span className="flex-1 min-w-0 truncate text-sm font-medium" style={{ color: "var(--text-1)" }}>{tx(p.name) || p.material}</span>
+            <span className="flex-1 min-w-0 truncate text-sm font-medium" style={{ color: "var(--text-1)" }}>{tx(p.name) || "—"}</span>
             <FulfilChip r={p.r} toneFn={toneOf} />
             <ChevronRight size={14} style={{ color: "var(--text-4)" }} />
           </div>
           <div className="flex items-center justify-between gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-            <span className="truncate">{gn(p.grp)}</span>
+            <span className="truncate"><span className="font-mono" style={{ color: "var(--text-2)" }}>{p.material}</span> · {gn(p.grp)}</span>
             <span className="tabular-nums">{fmtQty(p.ontime)} / {fmtQty(p.demand)} {T.pcs}</span>
           </div>
           <div className="flex items-center justify-between gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
@@ -133,10 +133,11 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.rows, { n: shown.length })}</span>}
         toolbar={toolbar}
         mobile={mobile}
-        minWidth={1180}
+        minWidth={1280}
       >
         <thead>
           <tr>
+            <Th label={T.colCode} k="material" sort={sort} onSort={onSort} />
             <Th label={T.colProduct} k="name" sort={sort} onSort={onSort} />
             <Th label={T.colGroup} k="grp" sort={sort} onSort={onSort} />
             <Th label={T.colOrdered} k="demand" sort={sort} onSort={onSort} align="right" />
@@ -151,6 +152,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
         <tbody>
           {slice.map((p) => (
             <tr key={p.material} className="cursor-pointer" onClick={(e) => { if (!e.target.closest("button")) open(p); }}>
+              <td className="px-3 py-2 whitespace-nowrap font-mono text-xs tabular-nums" style={{ color: "var(--text-2)" }}>{p.material}</td>
               <td className="px-3 py-2">{nameCell(p)}</td>
               <td className="px-3 py-2 max-w-[12rem] truncate" title={gn(p.grp)}>{gn(p.grp)}</td>
               <td className={num}>{fmtQty(p.demand)}</td>
@@ -165,7 +167,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
             </tr>
           ))}
           {!slice.length && (
-            <tr><td colSpan={9} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
+            <tr><td colSpan={10} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
           )}
         </tbody>
       </TableCard>
