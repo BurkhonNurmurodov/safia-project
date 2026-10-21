@@ -12,13 +12,14 @@ import {
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
-import DateRangePicker from "../components/ui/DateRangePicker";
+import DateRangePicker, { ALL_TIME_FROM } from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
+import Pagination from "../components/ui/Pagination";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import ColumnsPicker from "../components/ui/ColumnsPicker";
 import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
@@ -42,6 +43,7 @@ import { dayParam, listParam } from "../utils/scopeLinks";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
+import { bucketTrend, bucketTick, bucketTitle } from "../utils/trendBuckets";
 import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
 import { shortPerson } from "../utils/personName";
 import { cellLabel } from "../utils/cellName";
@@ -155,6 +157,8 @@ const COLS = [
 // Per-profile pref key, and the column that can never be hidden — the concern
 // text IS the row's identity, hiding it would leave anonymous rows.
 const COL_PREF_KEY = "concerns.list.cols";
+// Rows per register page — the table and the phone cards both draw one page.
+const PAGE_SIZE = 50;
 const LOCKED_COLS = new Set(["concern"]);
 
 // Card chrome (mirrors Kaizen).
@@ -1145,13 +1149,16 @@ export default function Concerns() {
     // does — so quiet days plot as a flat line instead of gaps.
     const dayKeys = [...opened.keys(), ...closed.keys()].sort();
     const trend = [];
-    let maxOpen = 0, maxFlow = 0;
     if (dayKeys.length) {
       // The axis opens at the chart window's start. A row the window holds that
       // was FILED before it (it reached its current holder inside the period)
       // is part of the pool the axis opens with — never a bar ahead of the
       // window, which would stretch a week's chart back to its filing day.
-      const firstIso = chartStart || dayKeys[0];
+      // «Barcha vaqt» opens in 2015, years before the first concern: there the
+      // axis starts on the first dated day instead of plotting years of zeros
+      // (nothing is dated before it, so the pool it opens with is the same).
+      const allTime = startDate && startDate <= ALL_TIME_FROM;
+      const firstIso = allTime && chartStart && dayKeys[0] > chartStart ? dayKeys[0] : (chartStart || dayKeys[0]);
       let run = 0;
       for (const [iso, n] of opened) if (iso < firstIso) run += n;
       for (const [iso, n] of closed) if (iso < firstIso) run -= n;
@@ -1167,15 +1174,17 @@ export default function Concerns() {
         const inn = opened.get(iso) || 0;
         const out = closed.get(iso) || 0;
         run += inn - out;
-        const open = Math.max(0, run);
-        if (open > maxOpen) maxOpen = open;
-        if (inn > maxFlow) maxFlow = inn;
-        if (out > maxFlow) maxFlow = out;
-        trend.push({ day: iso, open, opened: inn, closed: out });
+        trend.push({ day: iso, open: Math.max(0, run), opened: inn, closed: out });
       }
     }
-    return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen, maxFlow };
-  }, [filtered, chartFiltered, chartStart, endDate]);
+    // A long axis is folded into weeks or months (utils/trendBuckets) — a
+    // point per day since 2015 froze the page.
+    const folded = bucketTrend(trend);
+    return {
+      done, doing, todo, overdue, total: filtered.length,
+      trend: folded.points, grain: folded.grain, maxOpen: folded.maxOpen, maxFlow: folded.maxFlow,
+    };
+  }, [filtered, chartFiltered, chartStart, startDate, endDate]);
 
   // ── analytics-tab aggregates ────────────────────────────────────────────────
   // Category / responsible-holder / level splits plus the age-vs-resolution histogram,
@@ -1271,7 +1280,14 @@ export default function Concerns() {
     // No column picked: newest DATE first — the date each row prints, so a
     // concern handed on today sits at the top instead of under the day it was
     // filed (the server lists by filing day). Stable, so ties keep its order.
-    if (!sort.key) return [...filtered].sort((a, b) => dateSortKey(b).localeCompare(dateSortKey(a)));
+    // Every key is computed ONCE per row, never inside the comparator: a
+    // transliterated name or text per comparison was ~200k conversions on an
+    // «all time» register.
+    if (!sort.key) {
+      return filtered.map((r) => [dateSortKey(r), r])
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map((k) => k[1]);
+    }
     const val = (r) => {
       switch (sort.key) {
         case "num":      return concernNo(r);
@@ -1290,8 +1306,10 @@ export default function Concerns() {
       }
     };
     const dir = sort.dir === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) => {
-      const va = val(a), vb = val(b);
+    // One collator, not one per comparison — localeCompare with options
+    // builds a fresh one every call. Same order.
+    const textOrder = new Intl.Collator(undefined, { numeric: true });
+    return filtered.map((r) => [val(r), r]).sort(([va], [vb]) => {
       if (sort.key === "comments" || sort.key === "num") return (va - vb) * dir;
       if (sort.key === "deadline" || sort.key === "resolution") {   // blanks always sink
         const an = va == null, bn = vb == null;
@@ -1301,9 +1319,36 @@ export default function Concerns() {
         return (Number(va) - Number(vb)) * dir;
       }
       if (sort.key === "status" || sort.key === "level") return (va - vb) * dir;
-      return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
-    });
+      return textOrder.compare(String(va), String(vb)) * dir;
+    }).map((k) => k[1]);
   }, [filtered, sort, tl, tx]);
+
+  // ── the register is PAGED (Pagination template) ─────────────────────────
+  // «Barcha vaqt» holds ~9,000 concerns, and a table row plus a phone card for
+  // every one of them froze the page. A new question — any filter, the period,
+  // the search, the sort, the plant — starts on page 1; a refetch after a save
+  // keeps the page the reader is on (an action in a list never moves the list).
+  // Keyed on the filter VALUES, never on derived sets: those are rebuilt from
+  // the rows on every refetch.
+  const pageKey = JSON.stringify([startDate, endDate, shiftF, fSups, fCells, search, sort,
+    statusSel, ownerSel, levelSel, onlyMyLevel, respSel, categorySel, deadlineMin, deadlineMax, factory]);
+  const [pageAt, setPageAt] = useState({ key: pageKey, page: 1 });
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const page = Math.min(pageAt.key === pageKey ? pageAt.page : 1, pageCount);
+  const pageRows = useMemo(
+    () => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [sorted, page]);
+  const listTopRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const goPage = (p) => {
+    setPageAt({ key: pageKey, page: p });
+    setExpandedId(null);
+    // Back to the top of the new page: the table scrolls inside its card, the
+    // phone cards with the page.
+    if (tableScrollRef.current) tableScrollRef.current.scrollTop = 0;
+    const top = listTopRef.current?.getBoundingClientRect().top;
+    if (top != null && top < 0) listTopRef.current.scrollIntoView({ block: "start" });
+  };
 
   // ── register column visibility / order ──────────────────────────────────
   // Notion-style picker, persisted per ACTIVE profile via /api/ui-prefs (so it
@@ -1812,11 +1857,15 @@ export default function Concerns() {
   ];
   const clearPage = () => { clearAllFilters(); setFShift(null); setFSups([]); setFCells([]); };
 
-  // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
-  // Category axis over the pre-built day list (one point per day) keeps the
-  // ticks on whole days — a datetime axis would interpolate 12:00 ticks.
+  // ── charts: still-open trend + status donut (Kaizen styling) ────────────────
+  // Category axis over the pre-built bucket list (a day, a week or a month per
+  // point — charts.grain) keeps the ticks on whole buckets — a datetime axis
+  // would interpolate 12:00 ticks.
   const trendDays = charts.trend.map((p) => p.day);
-  const dayTick = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
+  const dayTick = (iso) => bucketTick(iso, charts.grain);
+  const bucketTip = (_v, { dataPointIndex }) =>
+    bucketTitle(charts.trend[dataPointIndex], charts.grain, (iso) => fmtDate(iso, lang), t);
+  const grainSuffix = charts.grain === "week" ? "Week" : charts.grain === "month" ? "Month" : "";
   const lineSeries = [
     { name: t("concerns.seriesOpen"), data: charts.trend.map((p) => p.open) },
   ];
@@ -1847,7 +1896,7 @@ export default function Concerns() {
     legend: { show: false },
     tooltip: {
       theme: tooltipTheme,
-      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+      x: { formatter: bucketTip },
     },
   };
 
@@ -1903,8 +1952,8 @@ export default function Concerns() {
     labels: { ...axisLabel, formatter: (v) => (typeof v === "number" ? Math.round(v) : v) },
   });
 
-  // 1 ─ opened vs closed per day: is the inflow being kept up with? Shares the
-  // trend chart's padded (≥ 7-day) day axis.
+  // 1 ─ opened vs closed per bucket (day / week / month): is the inflow being
+  // kept up with? Shares the trend chart's padded (≥ 7-day) axis.
   const flowSeries = [
     { name: t("concerns.seriesOpened"), data: charts.trend.map((p) => p.opened) },
     { name: t("concerns.seriesClosed"), data: charts.trend.map((p) => p.closed) },
@@ -1927,7 +1976,7 @@ export default function Concerns() {
     legend: topLegend,
     tooltip: {
       theme: tooltipTheme,
-      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+      x: { formatter: bucketTip },
     },
   };
 
@@ -2513,7 +2562,7 @@ export default function Concerns() {
           {t("concerns.empty")}
         </div>
       )}
-      {!isLoading && sorted.map((r) => {
+      {!isLoading && pageRows.map((r) => {
         const expanded = expandedId === r.id;
         // Deadline as a state, not arithmetic: days remaining until the due
         // day the server resolved, negative = overdue (rowOverdue's rule — the
@@ -2802,7 +2851,7 @@ export default function Concerns() {
         <div className="pb-8 space-y-3">
           {/* Trend line + end-of-day status strip · status donut */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <ChartCard className="lg:col-span-2" icon={TrendingUp} title={t("concerns.chartTrend")} subtitle={t("concerns.chartTrendSub")}>
+            <ChartCard className="lg:col-span-2" icon={TrendingUp} title={t("concerns.chartTrend")} subtitle={t(`concerns.chartTrendSub${grainSuffix}`)}>
               {isLoading ? (
                 <div className="p-4"><SkeletonChart className="h-52" /></div>
               ) : charts.trend.length ? (
@@ -2851,7 +2900,7 @@ export default function Concerns() {
 
           {/* Inflow vs outflow per day · where the open pool sits on the chain */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <ChartCard className="lg:col-span-2" icon={ArrowLeftRight} title={t("concerns.chartFlow")} subtitle={t("concerns.chartFlowSub")}>
+            <ChartCard className="lg:col-span-2" icon={ArrowLeftRight} title={t("concerns.chartFlow")} subtitle={t(`concerns.chartFlowSub${grainSuffix}`)}>
               {isLoading ? (
                 <div className="p-4"><SkeletonChart className="h-52" /></div>
               ) : charts.trend.length ? (
@@ -2981,9 +3030,10 @@ export default function Concerns() {
       {/* ── Concerns tab — the register: canonical POSITIONS-style TableCard
           with per-column sort. */}
       {view === "list" && (
+      <div ref={listTopRef} className="mb-8 scroll-mt-4">
       <TableCard
-        className="mb-8"
         icon={ClipboardList}
+        scrollRef={tableScrollRef}
         title={t("concerns.listTitle")}
         wrap
         mobile={mobileList}
@@ -3063,7 +3113,7 @@ export default function Concerns() {
                     {t("concerns.empty")}
                   </td></tr>
                 )}
-                {!isLoading && sorted.map((r) => {
+                {!isLoading && pageRows.map((r) => {
                   const expanded = expandedId === r.id;
                   return (
                     <Fragment key={r.id}>
@@ -3091,6 +3141,8 @@ export default function Concerns() {
                 })}
               </tbody>
       </TableCard>
+      <Pagination page={page} pageCount={pageCount} total={sorted.length} pageSize={PAGE_SIZE} onPage={goPage} />
+      </div>
       )}
 
       {/* Create / edit modal */}

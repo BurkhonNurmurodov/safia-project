@@ -34,7 +34,7 @@ import {
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import DateRangePicker from "../components/ui/DateRangePicker";
+import DateRangePicker, { ALL_TIME_FROM } from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
@@ -62,6 +62,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useOpenParam } from "../hooks/useOpenParam";
 import { padChartFrom } from "../utils/chartRange";
+import { bucketTrend, bucketTick, bucketTitle } from "../utils/trendBuckets";
 
 const KIND_SUP = "supervisor";
 const KIND_LEADER = "leader";
@@ -347,10 +348,12 @@ export default function Tasks() {
 
     const dayKeys = [...opened.keys(), ...closed.keys()].sort();
     const trend = [];
-    let maxOpen = 0, maxFlow = 0;
     if (dayKeys.length) {
+      // «Barcha vaqt» opens in 2015: there the axis starts on the first dated
+      // day rather than plotting years of zeros before it.
+      const allTime = startDate && startDate <= ALL_TIME_FROM;
       let firstIso = dayKeys[0];
-      if (chartStart && chartStart < firstIso) firstIso = chartStart;
+      if (chartStart && chartStart < firstIso && !allTime) firstIso = chartStart;
       let lastIso = dayKeys[dayKeys.length - 1];
       if (trendOpen > 0 && lastIso < today) lastIso = today;
       if (endDate && endDate > lastIso) lastIso = endDate;
@@ -361,15 +364,16 @@ export default function Tasks() {
         const inn = opened.get(iso) || 0;
         const out = closed.get(iso) || 0;
         run += inn - out;
-        const open = Math.max(0, run);
-        if (open > maxOpen) maxOpen = open;
-        if (inn > maxFlow) maxFlow = inn;
-        if (out > maxFlow) maxFlow = out;
-        trend.push({ day: iso, open, opened: inn, closed: out });
+        trend.push({ day: iso, open: Math.max(0, run), opened: inn, closed: out });
       }
     }
-    return { done, doing, todo, overdue, open: doing + todo, total: filtered.length, trend, maxOpen, maxFlow };
-  }, [filtered, chartFiltered, chartStart, endDate, today]); // eslint-disable-line react-hooks/exhaustive-deps
+    // A long axis is folded into weeks or months (utils/trendBuckets).
+    const folded = bucketTrend(trend);
+    return {
+      done, doing, todo, overdue, open: doing + todo, total: filtered.length,
+      trend: folded.points, grain: folded.grain, maxOpen: folded.maxOpen, maxFlow: folded.maxFlow,
+    };
+  }, [filtered, chartFiltered, chartStart, startDate, endDate, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── analysis aggregates ────────────────────────────────────────────────────
   // Who sets the work, who receives it, which unit it lands in, how long it
@@ -757,8 +761,12 @@ export default function Tasks() {
   };
 
   // ── charts (Concerns styling) ──────────────────────────────────────────────
+  // One point per day, week or month (stats.grain) — see utils/trendBuckets.
   const trendDays = stats.trend.map((p) => p.day);
-  const dayTick = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
+  const dayTick = (iso) => bucketTick(iso, stats.grain);
+  const bucketTip = (_v, { dataPointIndex }) =>
+    bucketTitle(stats.trend[dataPointIndex], stats.grain, (iso) => fmtDate(iso, lang), t);
+  const grainSuffix = stats.grain === "week" ? "Week" : stats.grain === "month" ? "Month" : "";
   const axisLabel = { style: { colors: labelColor, fontSize: "11px" } };
   const gridStyle = { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } };
   const topLegend = {
@@ -796,7 +804,7 @@ export default function Tasks() {
     legend: { show: false },
     tooltip: {
       theme: tooltipTheme,
-      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+      x: { formatter: bucketTip },
     },
   };
 
@@ -835,7 +843,7 @@ export default function Tasks() {
     } } },
   };
 
-  // Opened vs closed per day — is the inflow being kept up with?
+  // Opened vs closed per bucket (day / week / month) — is the inflow being kept up with?
   const flowSeries = [
     { name: t("tasks.seriesOpened"), data: stats.trend.map((p) => p.opened) },
     { name: t("tasks.seriesClosed"), data: stats.trend.map((p) => p.closed) },
@@ -858,7 +866,7 @@ export default function Tasks() {
     legend: topLegend,
     tooltip: {
       theme: tooltipTheme,
-      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+      x: { formatter: bucketTip },
     },
   };
 
@@ -1046,7 +1054,7 @@ export default function Tasks() {
 
           {/* Open-task trend + status strip · status donut */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <ChartCard className="lg:col-span-2" icon={TrendingUp} title={t("tasks.chartTrend")} subtitle={t("tasks.chartTrendSub")}>
+            <ChartCard className="lg:col-span-2" icon={TrendingUp} title={t("tasks.chartTrend")} subtitle={t(`tasks.chartTrendSub${grainSuffix}`)}>
               {isLoading ? (
                 <div className="p-4"><SkeletonChart className="h-52" /></div>
               ) : stats.trend.length ? (
@@ -1103,7 +1111,7 @@ export default function Tasks() {
 
           {/* Inflow vs outflow per day · where the work lands, by unit */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <ChartCard className="lg:col-span-2" icon={ArrowLeftRight} title={t("tasks.chartFlow")} subtitle={t("tasks.chartFlowSub")}>
+            <ChartCard className="lg:col-span-2" icon={ArrowLeftRight} title={t("tasks.chartFlow")} subtitle={t(`tasks.chartFlowSub${grainSuffix}`)}>
               {isLoading ? (
                 <div className="p-4"><SkeletonChart className="h-52" /></div>
               ) : stats.trend.length ? (
