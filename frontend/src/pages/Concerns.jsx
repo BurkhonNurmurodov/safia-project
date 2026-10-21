@@ -2303,6 +2303,37 @@ export default function Concerns() {
         },
         rows: sorted.map((r) => Object.assign({}, ...visibleCols.map((c) => exportCell[c.key]?.(r) || {}))),
       },
+      // The two stage sheets — which steps each concern went through and how
+      // long it held on each. A row's trail is not on the page, so only the
+      // ids (in the register's order) and the words travel; the server reads
+      // each trail through the history modal's own function.
+      stages: {
+        ids: sorted.map((r) => r.id),
+        lang,
+        sheets: { summary: t("concerns.xShStages"), log: t("concerns.xShStageLog") },
+        summary: { title: t("concerns.xStagesTitle"), subtitle: t("concerns.xStagesSub"), count },
+        log: { title: t("concerns.xLogTitle"), subtitle: t("concerns.xLogSub") },
+        labels: {
+          num: t("concerns.colNum"), filed: t("concerns.createdDate"), cell: t("concerns.colCell"),
+          text: t("concerns.colConcern"), status: t("concerns.colStatus"), level: t("concerns.colLevel"),
+          path: t("concerns.xPath"), moves: t("concerns.xMoves"), total: t("concerns.xTotalTime"),
+          step: t("concerns.xStep"), holder: t("concerns.responsible"), since: t("concerns.xArrived"),
+          until: t("concerns.xLeft"), held: t("concerns.xHeld"), outcome: t("concerns.xOutcome"),
+          note: t("concerns.xNote"), actor: t("concerns.actor"),
+          reached: t("concerns.xReached"), average: t("concerns.xAverage"),
+          unit: `(${t("general.unitHour")}:${t("general.unitMin")})`,
+        },
+        levels: Object.fromEntries(LEVELS.map((l) => [l, { label: levelLabel(l), color: LEVEL_COLOR[l] }])),
+        statuses: Object.fromEntries(["todo", "doing", "done"].map((s) => [s, { label: statusLabel(s), color: STATUS_COLOR[s] }])),
+        roles: Object.fromEntries([...LEVELS, "admin"].map((r) => [r, roleLabel(r)])),
+        // The history modal's own words and colours for how a stay ended.
+        outcomes: {
+          up: { label: t("concerns.evUplifted"), color: "#3b82f6" },
+          down: { label: t("concerns.evSentBack"), color: "#f59e0b" },
+          resolved: { label: t("concerns.evResolved"), color: STATUS_COLOR.done },
+          now: { label: t("concerns.evNow") },
+        },
+      },
     };
   };
 

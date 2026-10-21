@@ -71,6 +71,7 @@ from app.services import (action_log, cell_archive, concerns_deck, concerns_narr
 from app.services.concerns_export import build_concerns_workbook
 from app.services.factory_scope import factory_manager_ids, resolve_factory
 from app.services.ojidaniya_matrix import TZ as PLANT_TZ, today_local
+from app.translit import transliterate, transliterate_text
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
 # Reuse the shared notification helpers: notify_profile addresses a PERSON (one
 # bell row on the profile + a DM to every account holding it), _notify is the
@@ -108,6 +109,9 @@ PICKER_ROLES = ("admin", "shift-manager", "supervisor")
 # job, and a bound that keeps `deadline_from + days` inside a date — the old
 # free field, typed by creators, accepted «999999».
 MAX_DEADLINE_DAYS = 365
+# The most concerns one export writes stage sheets for — «Barcha vaqt» holds
+# ~9,000 today; the cap only stops a body nobody's register could have sent.
+STAGE_EXPORT_MAX = 50000
 
 # Pages whose grant opens the ROW-LEVEL actions on one concern — edit/status,
 # escalate, history, delete and the comment thread. «Yacheyka havotirlari»
@@ -1109,12 +1113,17 @@ class ConcernsExportBody(BaseModel):
     categories: Optional[dict[str, Any]] = None
     responsible: Optional[dict[str, Any]] = None
     register: Optional[dict[str, Any]] = None
+    # The two stage sheets: the register's concern ids in its order plus the
+    # words for them. The one block the page does NOT compute — a row's trail
+    # is not on the page — so the server reads it (``_export_stages``).
+    stages: Optional[dict[str, Any]] = None
 
 
 @router.post("/export.xlsx")
 def export_concerns(
     request: Request,
     body: ConcernsExportBody,
+    db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
     """Excel export of the page as it stands: the register under exactly the
@@ -1122,8 +1131,16 @@ def export_concerns(
     analysis board built over the same rows. Read-only, so it rides PAGE access
     like the list itself. It is built from what the page was served and goes to
     the caller alone — a browser session downloads it, inside Telegram it lands
-    in their own chat (app/xlsx_delivery.py)."""
-    bio = build_concerns_workbook(body.model_dump())
+    in their own chat (app/xlsx_delivery.py).
+
+    The stage sheets are the exception to «built from what the page was
+    served»: which steps each concern went through and how long each held it
+    is the history modal's answer, read here per concern through the same
+    ``_trail_events``."""
+    p = body.model_dump()
+    if body.stages:
+        p["stages"] = {**body.stages, "rows": _export_stages(db, payload, body.stages)}
+    bio = build_concerns_workbook(p)
     # A translated title and two dates; path separators are the one thing a
     # filename must never carry.
     fname = re.sub(r'[\\/:*?"<>|]+', " ", (body.filename or "").strip()).strip() or "concerns"
@@ -2011,34 +2028,50 @@ def _span_seconds(start, end) -> Optional[int]:
     return max(0, int((end - start).total_seconds()))
 
 
-@router.get("/{concern_id}/history")
-def concern_history(
-    concern_id: int,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
-):
-    """The concern's WHOLE life, oldest first: raised (when, by whom, onto which
-    step), then every uplift and send-back with the person on BOTH sides of the
-    handover and how long the level it left actually held it, then the
-    resolution. Readable by anyone who can SEE the concern (scope-filtered, not
-    edit-gated) — a handover nobody can audit is a handover nobody trusts.
+def _resolution_notes(db: Session, concerns) -> dict:
+    """concern id → the note a CLOSED concern was closed with, for a batch.
 
-    Creation and resolution are DERIVED from the concern row (created_at,
-    done_at), not stored twice: the trail table keeps only the moves, so the
-    timeline can never drift from the row it describes. ``kind`` names each
-    event; every one carries ``created_at``, so a client that only wants
-    timestamps needs to understand nothing else."""
-    c = _visible_concern(concern_id, payload, db)
-    rows = db.query(ConcernEscalation).filter_by(concern_id=concern_id).order_by(
-        ConcernEscalation.id.asc()
-    ).all()
-    sm_names = _sm_names(db)
-    owner_names = _owner_names(db, [c])
+    The note is a message in the thread (``kind="resolution"``); ``solution``
+    is the column the concerns closed before that carry. Either way it is the
+    newest one, because a reopened concern is closed again with a note of its
+    own. Open concerns carry none."""
+    out = {c.id: c.solution for c in concerns if c.done_at and c.solution}
+    need = [c.id for c in concerns if c.done_at and not c.solution]
+    for chunk in _chunks(need):
+        # Oldest first, so the newest note is the one left standing.
+        for cid, text in (
+            db.query(LeaderConcernComment.concern_id, LeaderConcernComment.text)
+            .filter(LeaderConcernComment.concern_id.in_(chunk),
+                    LeaderConcernComment.kind == "resolution")
+            .order_by(LeaderConcernComment.created_at.asc(),
+                      LeaderConcernComment.id.asc())
+        ):
+            out[cid] = text
+    return out
+
+
+def _chunks(ids: list, size: int = 1000):
+    for i in range(0, len(ids), size):
+        yield ids[i:i + size]
+
+
+def _trail_events(c: LeaderConcern, moves: list, sm_names: dict, owner_names: dict,
+                  note: Optional[str] = None) -> list[dict]:
+    """THE trail of one concern — what the history modal draws and what the
+    export's stage sheets are read from, so the two can never disagree.
+
+    Raised (when, by whom, onto which step), then every uplift and send-back
+    with the person on BOTH sides of the handover and how long the level it
+    left actually held it, then the resolution. Creation and resolution are
+    DERIVED from the concern row (created_at, done_at), not stored twice: the
+    trail table keeps only the moves, so the timeline can never drift from the
+    row it describes. ``moves`` are the concern's escalation rows, oldest
+    first; ``note`` is its closing note (``_resolution_notes``)."""
     # The step the concern OPENED at — the first move's origin, or the one it
     # still sits on when it never moved. Its holder comes from that same move's
     # snapshot when there is one; only a never-moved row is resolved live.
-    opened_at = rows[0].from_level if rows else _level(c)
-    opened_holder = (rows[0].from_name if rows and rows[0].from_name
+    opened_at = moves[0].from_level if moves else _level(c)
+    opened_holder = (moves[0].from_name if moves and moves[0].from_name
                      else _holder_name(c, opened_at, sm_names, owner_names))
 
     events = [{
@@ -2054,7 +2087,7 @@ def concern_history(
     }]
 
     prev = c.created_at
-    for e in rows:
+    for e in moves:
         events.append({
             "key": f"esc-{e.id}",
             "kind": "move",
@@ -2076,21 +2109,6 @@ def concern_history(
         prev = e.created_at or prev
 
     if c.done_at:
-        # The closing note is a message in the thread; `solution` is the column
-        # the concerns closed before that carry. Either way the trail prints the
-        # note the concern was closed with — the newest one, because a reopened
-        # concern is closed again with a note of its own.
-        note = c.solution
-        if not note:
-            last = (
-                db.query(LeaderConcernComment)
-                .filter(LeaderConcernComment.concern_id == c.id,
-                        LeaderConcernComment.kind == "resolution")
-                .order_by(LeaderConcernComment.created_at.desc(),
-                          LeaderConcernComment.id.desc())
-                .first()
-            )
-            note = last.text if last else None
         events.append({
             "key": "resolved",
             "kind": "resolved",
@@ -2101,6 +2119,154 @@ def concern_history(
             "held_seconds": _span_seconds(prev, c.done_at),
         })
     return events
+
+
+@router.get("/{concern_id}/history")
+def concern_history(
+    concern_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
+):
+    """The concern's WHOLE life, oldest first (see ``_trail_events``). Readable
+    by anyone who can SEE the concern (scope-filtered, not edit-gated) — a
+    handover nobody can audit is a handover nobody trusts. ``kind`` names each
+    event; every one carries ``created_at``, so a client that only wants
+    timestamps needs to understand nothing else."""
+    c = _visible_concern(concern_id, payload, db)
+    rows = db.query(ConcernEscalation).filter_by(concern_id=concern_id).order_by(
+        ConcernEscalation.id.asc()
+    ).all()
+    return _trail_events(c, rows, _sm_names(db), _owner_names(db, [c]),
+                         _resolution_notes(db, [c]).get(c.id))
+
+
+def _iso_dt(value: Optional[str]) -> Optional[datetime]:
+    return datetime.fromisoformat(value) if value else None
+
+
+def _stage_visits(c: LeaderConcern, events: list[dict], sm_names: dict,
+                  owner_names: dict, now: datetime) -> list[dict]:
+    """The trail read as STAYS — one entry per time the concern sat on a step:
+    which step, who held it there, from when to when, how long, and how the
+    stay ended (handed up, sent back down, resolved there, or still there).
+
+    Every figure is the trail's own: a stay that ended in a move is that move's
+    ``held_seconds``, one that ended in the resolution is the resolution's, so
+    the export states exactly the durations the history modal prints. The one
+    stay the trail cannot end — where an OPEN concern sits now — is counted up
+    to ``now`` and names the live holder, as the modal's «Hozir shu yerda»
+    does."""
+    visits: list[dict] = []
+
+    def close(at, outcome, seconds, note=None, actor=None, role=None):
+        if not visits:
+            return
+        v = visits[-1]
+        v.update(until=at, outcome=outcome, seconds=seconds, note=note,
+                 actor=actor, actor_role=role)
+
+    for e in events:
+        at = _iso_dt(e.get("created_at"))
+        if e["kind"] == "created":
+            visits.append({"level": e.get("to_level"), "holder": e.get("target_name"),
+                           "since": at, "until": None, "outcome": None, "seconds": None})
+        elif e["kind"] == "move":
+            close(at, e.get("direction") or "up", e.get("held_seconds"),
+                  note=e.get("reason"), actor=e.get("actor_name"), role=e.get("actor_role"))
+            visits.append({"level": e.get("to_level"), "holder": e.get("target_name"),
+                           "since": at, "until": None, "outcome": None, "seconds": None})
+        elif e["kind"] == "resolved":
+            close(at, "resolved", e.get("held_seconds"), note=e.get("solution"))
+
+    if visits and visits[-1]["outcome"] is None:
+        last = visits[-1]
+        if c.status == "done":
+            # Closed before done_at existed: the stay ended, nobody knows when.
+            last["outcome"] = "resolved"
+        else:
+            level = _level(c)
+            last.update(level=level, outcome="now",
+                        holder=_holder_name(c, level, sm_names, owner_names) or last.get("holder"),
+                        seconds=_span_seconds(last.get("since"), now))
+    return visits
+
+
+def _export_stages(db: Session, payload: dict, spec: dict) -> list[dict]:
+    """The stage rows of the export: every concern the page put in its register
+    (``spec["ids"]``, in the register's order) that the caller may SEE — the
+    ids travel from the browser, so they pass the same scope the list does and
+    an id outside it is simply not written. Names and texts come out in the
+    reader's script, the way the page shows them."""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for v in spec.get("ids") or []:
+        try:
+            i = int(v)
+        except (TypeError, ValueError):
+            continue
+        if i not in seen:
+            seen.add(i)
+            ids.append(i)
+    if not ids:
+        return []
+    if len(ids) > STAGE_EXPORT_MAX:
+        raise HTTPException(status_code=400, detail="Too many concerns for one file")
+    lang = str(spec.get("lang") or "uz")
+
+    by_id: dict[int, LeaderConcern] = {}
+    for chunk in _chunks(ids):
+        for c in _scope_query(db.query(LeaderConcern).filter(LeaderConcern.id.in_(chunk)),
+                              payload, db).all():
+            by_id[c.id] = c
+    concerns = [by_id[i] for i in ids if i in by_id]
+    if not concerns:
+        return []
+
+    moves: dict[int, list] = {}
+    for chunk in _chunks([c.id for c in concerns]):
+        for e in (db.query(ConcernEscalation)
+                  .filter(ConcernEscalation.concern_id.in_(chunk))
+                  .order_by(ConcernEscalation.id.asc())):
+            moves.setdefault(e.concern_id, []).append(e)
+    sm_names = _sm_names(db)
+    owner_names = _owner_names(db, concerns)
+    notes = _resolution_notes(db, concerns)
+    now = datetime.now(timezone.utc)
+
+    def local(at: Optional[datetime]) -> Optional[datetime]:
+        # The plant's wall clock, written as a plain date-time — what the
+        # history modal prints and what Excel can sort and filter.
+        if at is None:
+            return None
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        return at.astimezone(PLANT_TZ).replace(tzinfo=None)
+
+    out = []
+    for c in concerns:
+        events = _trail_events(c, moves.get(c.id, []), sm_names, owner_names, notes.get(c.id))
+        visits = _stage_visits(c, events, sm_names, owner_names, now)
+        out.append({
+            "num": _no(c),
+            "filed": c.entry_date.isoformat() if c.entry_date else None,
+            "cell": c.cell_code or None,
+            "text": transliterate_text(c.concern_text or "", lang),
+            "status": c.status,
+            "level": _level(c),
+            "moves": len(moves.get(c.id, [])),
+            "visits": [{
+                "level": v.get("level"),
+                "holder": transliterate(v.get("holder") or "", lang) or None,
+                "since": local(v.get("since")),
+                "until": local(v.get("until")),
+                "seconds": v.get("seconds"),
+                "outcome": v.get("outcome"),
+                "note": transliterate_text(v.get("note") or "", lang) or None,
+                "actor": transliterate(v.get("actor") or "", lang) or None,
+                "actor_role": v.get("actor_role"),
+            } for v in visits],
+        })
+    return out
 
 
 @router.delete("/{concern_id}", status_code=204)

@@ -30,6 +30,18 @@ Workbook, in the page's reading order:
     Analysis   status stacks by category (+ stacked bars) · by responsible
                holder, every one of them (data bars, auto-filter)
     Register   every filtered row, visible columns only, auto-filter, frozen head
+    Stages     the same rows, one per concern: the steps it went through (the
+               path), how many handovers, and how long it sat on each step —
+               summed where it came back to a step — plus the reached count
+               and the average per step under the table
+    Stage log  one row per STAY on a step, the history modal laid flat: the
+               step, who held it, arrived · left · how long, and how the stay
+               ended (handed up, sent back, resolved, still there) with the
+               reason or the closing note and who made the move
+
+The stage sheets are the one block the page does not compute (a row's trail
+is not on the page): the router reads each concern's trail through the same
+function as the history modal and hands the stays in as ``stages.rows``.
 """
 import re
 from datetime import date, datetime, time
@@ -657,8 +669,305 @@ def _register(wb: Workbook, p: dict) -> None:
     ws.print_title_rows = f"{head_row}:{head_row}"
 
 
+# ── Stages ───────────────────────────────────────────────────────────────────
+
+LEVEL_ORDER = ("leader", "supervisor", "shift-manager", "top-manager")
+
+
+def _secs_cell(ws: Worksheet, row: int, col: int, seconds: Optional[int], bg, *,
+               fill=None, bold: bool = False, italic: bool = False) -> None:
+    """A span as a real duration ([h]:mm — sorts, sums, and stays readable past
+    a day), the register's own duration form; «—» where nothing is known."""
+    if seconds is None:
+        _block(ws, row, col, row, col, "—", fill=fill or bg, border=BOX, align=MID,
+               font=Font(name=FONT, size=9.5, color=INK_FAINT))
+        return
+    _block(ws, row, col, row, col, seconds / 86400, fill=fill or bg, border=BOX, align=RIGHT,
+           fmt="[h]:mm", font=Font(name=FONT, size=9.5, bold=bold, italic=italic, color=INK))
+
+
+def _chip_cell(ws: Worksheet, row: int, col: int, label: Optional[str], color: Optional[str],
+               bg, *, align=MID) -> None:
+    if label and color:
+        c = _hex(color)
+        _block(ws, row, col, row, col, label, fill=_fill(_tint(c)), border=BOX, align=align,
+               font=Font(name=FONT, size=9, bold=True, color=_ink(c)))
+    else:
+        _block(ws, row, col, row, col, label or "—", fill=bg, border=BOX, align=align,
+               font=Font(name=FONT, size=9.5, bold=bool(label), color=INK if label else INK_FAINT))
+
+
+def _text_cell(ws: Worksheet, row: int, col: int, value: Any, bg, *, size: float = 9.5,
+               muted: bool = False) -> None:
+    """One line, never wrapped: the stage sheets are read across, a row per
+    concern or per stay, and a wrapped cell would make every row a different
+    height. The whole text is in the cell — Excel shows it on select."""
+    _block(ws, row, col, row, col, value or "—", fill=bg, border=BOX, align=LEFT_IN,
+           font=Font(name=FONT, size=size,
+                     color=(INK_SOFT if muted else INK) if value else INK_FAINT))
+
+
+def _level_head(ws: Worksheet, row: int, col: int, color: Optional[str]) -> None:
+    """A step's column header wears the step's own colour — the chip the
+    register and the page put on that step."""
+    if not color:
+        return
+    c = _hex(color)
+    cell = ws.cell(row, col)
+    cell.fill = _fill(_tint(c))
+    cell.font = Font(name=FONT, size=9, bold=True, color=_ink(c))
+    cell.border = Border(left=_side(), right=_side(), top=_side(c, "thick"), bottom=_side())
+
+
+def _stages(wb: Workbook, p: dict) -> None:
+    """Tab 5 — one row per concern, in the register's order: the steps it went
+    through and how long it held on each, so «where does the time go» can be
+    filtered, sorted and averaged like any other column."""
+    st = p.get("stages") or {}
+    rows = st.get("rows") or []
+    if not st or not st.get("ids"):
+        return
+    tabs = st.get("sheets") or {}
+    lbl = st.get("labels") or {}
+    levels = st.get("levels") or {}
+    statuses = st.get("statuses") or {}
+    sec = st.get("summary") or {}
+
+    def lvl(key: Optional[str]) -> dict:
+        return levels.get(key or "") or {}
+
+    unit = lbl.get("unit") or ""
+    level_cols = [(k, f"{lvl(k).get('label') or k}" + (f" {unit}" if unit else "")) for k in LEVEL_ORDER]
+    heads = ([lbl.get("num") or "№", lbl.get("filed") or "", lbl.get("cell") or "",
+              lbl.get("text") or "", lbl.get("status") or "", lbl.get("level") or "",
+              lbl.get("path") or "", lbl.get("moves") or ""]
+             + [h for _, h in level_cols]
+             + [f"{lbl.get('total') or ''}" + (f" {unit}" if unit else "")])
+    widths = [8.0, 12.5, 10.0, 48.0, 15.0, 19.0, 52.0, 11.0] + [14.0] * len(level_cols) + [14.0]
+    CS1 = 2
+    CS2 = CS1 + len(heads) - 1
+    ws = _sheet(wb, _tab(tabs.get("summary"), "Stages"),
+                {CS1 + i: w for i, w in enumerate(widths)}, landscape=True)
+    row = _banner(ws, 2, CS1, CS2, p.get("title") or "", p.get("subtitle") or "")
+    row = _section(ws, row, CS1, CS2, sec.get("title") or "", sec.get("count") or "")
+    # How to read the sheet, on the spacer row under the band: a sentence too
+    # long for the band's right third.
+    if sec.get("subtitle"):
+        ws.row_dimensions[row - 1].height = 16
+        _block(ws, row - 1, CS1, row - 1, CS2, sec.get("subtitle"),
+               font=Font(name=FONT, size=9, italic=True, color=INK_SOFT), align=LEFT_IN)
+        row += 1
+    _head_row(ws, row, CS1, heads, height=34)
+    head_row = row
+    first_lvl = CS1 + 8
+    for j, (k, _) in enumerate(level_cols):
+        _level_head(ws, head_row, first_lvl + j, lvl(k).get("color"))
+    row += 1
+    first = row
+
+    if not rows:
+        _block(ws, row, CS1, row, CS2, (p.get("labels") or {}).get("empty") or "—", border=BOX,
+               align=MID, font=Font(name=FONT, size=10, color=INK_FAINT))
+        row += 1
+
+    reached = {k: [] for k in LEVEL_ORDER}
+    totals: list[int] = []
+    moves_all: list[int] = []
+    for i, r in enumerate(rows):
+        bg = _zebra(i)
+        ws.row_dimensions[row].height = 18
+        visits = r.get("visits") or []
+        spent: dict[str, int] = {}
+        known: set[str] = set()
+        for v in visits:
+            k = v.get("level")
+            if not k:
+                continue
+            spent.setdefault(k, 0)
+            if v.get("seconds") is not None:
+                spent[k] += int(v["seconds"])
+                known.add(k)
+        open_level = next((v.get("level") for v in visits if v.get("outcome") == "now"), None)
+        total = (sum(int(v["seconds"]) for v in visits)
+                 if visits and all(v.get("seconds") is not None for v in visits) else None)
+        st_info = statuses.get(r.get("status") or "") or {}
+        cur = lvl(r.get("level"))
+        path = " → ".join(lvl(v.get("level")).get("label") or (v.get("level") or "?") for v in visits)
+        n = _int(r.get("num"))
+        _block(ws, row, CS1, row, CS1, n if n is not None else "—", fill=bg, border=BOX, align=MID,
+               fmt=NUM if n is not None else None, font=Font(name=FONT, size=9.5, color=INK_SOFT))
+        d = _day(r.get("filed"))
+        _block(ws, row, CS1 + 1, row, CS1 + 1, d or "—", fill=bg, border=BOX, align=MID,
+               fmt=DATE_FMT if d else None,
+               font=Font(name=FONT, size=9.5, color=INK if d else INK_FAINT))
+        code = r.get("cell")
+        _block(ws, row, CS1 + 2, row, CS1 + 2, code or "—", fill=bg, border=BOX, align=MID,
+               font=Font(name=FONT, size=9.5, bold=bool(code), color=INK if code else INK_FAINT))
+        _text_cell(ws, row, CS1 + 3, r.get("text"), bg)
+        _chip_cell(ws, row, CS1 + 4, st_info.get("label") or r.get("status"), st_info.get("color"), bg)
+        _chip_cell(ws, row, CS1 + 5, cur.get("label") or r.get("level"), cur.get("color"), bg)
+        _text_cell(ws, row, CS1 + 6, path, bg, size=9)
+        mv = _int(r.get("moves")) or 0
+        moves_all.append(mv)
+        _block(ws, row, CS1 + 7, row, CS1 + 7, mv, fill=bg, border=BOX, align=MID, fmt=NUM,
+               font=Font(name=FONT, size=9.5, bold=bool(mv), color=INK if mv else INK_FAINT))
+        for j, (k, _) in enumerate(level_cols):
+            col = first_lvl + j
+            if k not in spent:
+                # Never on this step: an empty cell, apart from «—» (on it,
+                # for a span nobody recorded).
+                _block(ws, row, col, row, col, None, fill=bg, border=BOX)
+                continue
+            secs = spent[k] if k in known else None
+            if secs is not None:
+                reached[k].append(secs)
+            # The step an open concern sits on now is still counting: it wears
+            # its step's tint, so a running clock never reads as a finished stay.
+            here = k == open_level
+            tint = _fill(_tint(_hex(lvl(k).get("color")))) if here else None
+            _secs_cell(ws, row, col, secs, bg, fill=tint, bold=here, italic=here)
+        if total is not None:
+            totals.append(total)
+        _secs_cell(ws, row, CS2, total, bg, bold=True)
+        row += 1
+    last = row - 1
+
+    if rows:
+        ws.auto_filter.ref = f"{get_column_letter(CS1)}{head_row}:{get_column_letter(CS2)}{last}"
+        # Under the table, apart from it: how many concerns reached each step
+        # and the average stay there — over every row above, filter or not.
+        row += 1
+        top = Border(left=_side(), right=_side(), top=_side(BRAND, "medium"), bottom=_side())
+        bold = Font(name=FONT, size=9.5, bold=True, color=INK)
+        for label, kind in ((lbl.get("reached") or "", "count"), (lbl.get("average") or "", "avg")):
+            ws.row_dimensions[row].height = 18
+            _block(ws, row, CS1, row, CS1 + 7 - 1, label, fill=_fill(BRAND_SOFT), border=top, font=bold)
+            if kind == "count":
+                _block(ws, row, CS1 + 7, row, CS1 + 7, len(rows), fill=_fill(BRAND_SOFT),
+                       border=top, align=MID, fmt=NUM, font=bold)
+            else:
+                avg_mv = sum(moves_all) / len(moves_all) if moves_all else 0
+                _block(ws, row, CS1 + 7, row, CS1 + 7, round(avg_mv, 1), fill=_fill(BRAND_SOFT),
+                       border=top, align=MID, fmt="0.0", font=bold)
+            for j, (k, _) in enumerate(level_cols):
+                vals = reached[k]
+                col = first_lvl + j
+                if kind == "count":
+                    _block(ws, row, col, row, col, len(vals), fill=_fill(BRAND_SOFT), border=top,
+                           align=RIGHT, fmt=NUM, font=bold)
+                elif vals:
+                    _block(ws, row, col, row, col, sum(vals) / len(vals) / 86400,
+                           fill=_fill(BRAND_SOFT), border=top, align=RIGHT, fmt="[h]:mm", font=bold)
+                else:
+                    _block(ws, row, col, row, col, "—", fill=_fill(BRAND_SOFT), border=top,
+                           align=MID, font=Font(name=FONT, size=9.5, color=INK_FAINT))
+            if kind == "count":
+                _block(ws, row, CS2, row, CS2, len(totals), fill=_fill(BRAND_SOFT), border=top,
+                       align=RIGHT, fmt=NUM, font=bold)
+            elif totals:
+                _block(ws, row, CS2, row, CS2, sum(totals) / len(totals) / 86400,
+                       fill=_fill(BRAND_SOFT), border=top, align=RIGHT, fmt="[h]:mm", font=bold)
+            else:
+                _block(ws, row, CS2, row, CS2, "—", fill=_fill(BRAND_SOFT), border=top, align=MID,
+                       font=Font(name=FONT, size=9.5, color=INK_FAINT))
+            row += 1
+    ws.freeze_panes = f"{get_column_letter(CS1 + 1)}{first}"
+    ws.print_title_rows = f"{head_row}:{head_row}"
+
+
+def _stage_log(wb: Workbook, p: dict) -> None:
+    """Tab 6 — the history modal laid flat: one row per stay on a step, the
+    concern's stays together and in order, each block of one concern on one
+    shade so the eye can follow it down."""
+    st = p.get("stages") or {}
+    rows = st.get("rows") or []
+    if not st or not st.get("ids"):
+        return
+    tabs = st.get("sheets") or {}
+    lbl = st.get("labels") or {}
+    levels = st.get("levels") or {}
+    outcomes = st.get("outcomes") or {}
+    roles = st.get("roles") or {}
+    sec = st.get("log") or {}
+    unit = lbl.get("unit") or ""
+
+    heads = [lbl.get("num") or "№", lbl.get("cell") or "", lbl.get("text") or "",
+             lbl.get("step") or "", lbl.get("level") or "", lbl.get("holder") or "",
+             lbl.get("since") or "", lbl.get("until") or "",
+             f"{lbl.get('held') or ''}" + (f" {unit}" if unit else ""),
+             lbl.get("outcome") or "", lbl.get("note") or "", lbl.get("actor") or ""]
+    widths = [8.0, 10.0, 40.0, 9.0, 19.0, 26.0, 16.5, 16.5, 13.0, 18.0, 52.0, 36.0]
+    CL1 = 2
+    CL2 = CL1 + len(heads) - 1
+    ws = _sheet(wb, _tab(tabs.get("log"), "Stage log"),
+                {CL1 + i: w for i, w in enumerate(widths)}, landscape=True)
+    row = _banner(ws, 2, CL1, CL2, p.get("title") or "", p.get("subtitle") or "")
+    row = _section(ws, row, CL1, CL2, sec.get("title") or "", sec.get("subtitle") or "")
+    _head_row(ws, row, CL1, heads, height=30)
+    head_row = row
+    row += 1
+    first = row
+
+    written = 0
+    for i, r in enumerate(rows):
+        bg = _zebra(i)
+        n = _int(r.get("num"))
+        for step, v in enumerate(r.get("visits") or [], start=1):
+            ws.row_dimensions[row].height = 18
+            edge = step == 1 and written > 0
+            border = BOX
+            _block(ws, row, CL1, row, CL1, n if n is not None else "—", fill=bg, border=border,
+                   align=MID, fmt=NUM if n is not None else None,
+                   font=Font(name=FONT, size=9.5, color=INK_SOFT))
+            code = r.get("cell")
+            _block(ws, row, CL1 + 1, row, CL1 + 1, code or "—", fill=bg, border=border, align=MID,
+                   font=Font(name=FONT, size=9.5, bold=bool(code), color=INK if code else INK_FAINT))
+            _block(ws, row, CL1 + 2, row, CL1 + 2, r.get("text") or "—", fill=bg, border=border,
+                   align=LEFT_IN, font=Font(name=FONT, size=9, color=INK_SOFT))
+            _block(ws, row, CL1 + 3, row, CL1 + 3, step, fill=bg, border=border, align=MID,
+                   fmt=NUM, font=Font(name=FONT, size=9.5, color=INK))
+            lv = levels.get(v.get("level") or "") or {}
+            _chip_cell(ws, row, CL1 + 4, lv.get("label") or v.get("level"), lv.get("color"), bg)
+            _text_cell(ws, row, CL1 + 5, v.get("holder"), bg)
+            for j, key in enumerate(("since", "until")):
+                at = v.get(key)
+                col = CL1 + 6 + j
+                if isinstance(at, datetime):
+                    _block(ws, row, col, row, col, at, fill=bg, border=BOX, align=MID,
+                           fmt="DD.MM.YYYY HH:MM", font=Font(name=FONT, size=9.5, color=INK))
+                else:
+                    _block(ws, row, col, row, col, "—", fill=bg, border=BOX, align=MID,
+                           font=Font(name=FONT, size=9.5, color=INK_FAINT))
+            here = v.get("outcome") == "now"
+            _secs_cell(ws, row, CL1 + 8, _int(v.get("seconds")), bg, bold=True, italic=here)
+            oc = outcomes.get(v.get("outcome") or "") or {}
+            _chip_cell(ws, row, CL1 + 9, oc.get("label") or v.get("outcome"), oc.get("color"), bg)
+            _text_cell(ws, row, CL1 + 10, v.get("note"), bg)
+            actor = v.get("actor")
+            role = roles.get(v.get("actor_role") or "") or v.get("actor_role")
+            _text_cell(ws, row, CL1 + 11, " · ".join(x for x in (actor, role) if x) if actor else None,
+                       bg, muted=True)
+            if edge:
+                # A thicker rule where a new concern's stays begin.
+                for col in range(CL1, CL2 + 1):
+                    b = ws.cell(row, col).border
+                    ws.cell(row, col).border = Border(left=b.left, right=b.right, bottom=b.bottom,
+                                                      top=_side(INK_FAINT, "medium"))
+            row += 1
+            written += 1
+
+    if not written:
+        _block(ws, row, CL1, row, CL2, (p.get("labels") or {}).get("empty") or "—", border=BOX,
+               align=MID, font=Font(name=FONT, size=10, color=INK_FAINT))
+        row += 1
+    else:
+        ws.auto_filter.ref = f"{get_column_letter(CL1)}{head_row}:{get_column_letter(CL2)}{row - 1}"
+    ws.freeze_panes = f"{get_column_letter(CL1 + 2)}{first}"
+    ws.print_title_rows = f"{head_row}:{head_row}"
+
+
 def build_concerns_workbook(p: dict) -> BytesIO:
-    """Assemble the four tabs and hand back the saved workbook. The overview is
+    """Assemble the tabs and hand back the saved workbook. The overview is
     always written, so the file always opens."""
     wb = Workbook()
     wb.remove(wb.active)
@@ -666,6 +975,8 @@ def build_concerns_workbook(p: dict) -> BytesIO:
     _trend(wb, p)
     _analysis(wb, p)
     _register(wb, p)
+    _stages(wb, p)
+    _stage_log(wb, p)
     wb.properties.title = p.get("title") or "Concerns"
     wb.properties.creator = "Safia IMS"
     wb.properties.created = datetime.now()
