@@ -7943,8 +7943,12 @@ computes the four itself (the operator's pick, asked).
       the 8 most-late products.
     - «Mahsulotlar»: every product with ordered, on time, late, % and per
       wave; days below the edge; a day strip.
-    - «Kunlar bo'yicha»: group × day heatmap with an optional per-wave
-      unfold.
+    - «Kunlar bo'yicha»: group × day heatmap drawn by `HeatmapChart`, the
+      /zagruzka grid (2026-10-21, the operator: «just as the design of
+      tables of Efficiency and Zagruzka»): gold header, the AVG/MAX/MIN
+      column, the day's total as the footer row (`pinnedRow`), the ontime
+      bands as its segments. A wave picker (Hammasi · 1-zaxod …) reads one
+      wave instead of the group's mean; a cell opens the group's products.
   - A product opens its working day by day (`GET /api/ontime/product`).
     Production times list only the receipts that count for that day: after
     the previous night's wave-3 window, and through the next night's.
