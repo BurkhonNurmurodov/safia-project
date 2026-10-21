@@ -6521,6 +6521,16 @@ Where this section and the two below disagree, THIS section is current.
   entry, the reader's unread count and a «your turn» mark — and opens the chat.
   A LEADER sees their own appeals without the stage split (it hid their rows
   behind the tab they did not open); a brigadir lands on «Brigadirlarda».
+- **An OPEN appeal is never capped out of a queue** (2026-10-21,
+  `_appeal_rows` in `routers/leaders.py`, both lists). The lists used to hand
+  over the newest 300 objections / 400 late proofs, whatever their state; once
+  more than that were filed after the oldest one still waiting, it fell off —
+  for admins only, since a brigadir's and a leader's scoped reads fit under
+  the cap (an objection of 7 Oct, waiting on an admin, reached its leader and
+  brigadir and no admin; the tab badge came up short by the same rows). Now
+  every open row is served, plus the settled rows of the page's period
+  (`?from=&to=`, which `AppealQueue` sends; ceiling `APPEAL_PERIOD_CAP`) or,
+  with no period, the newest `DISPUTE_CAP` / `LATE_PROOF_CAP` settled ones.
 - **The day report rules nothing now**: its inline refuse/uplift/approve and
   undo are gone; an objection carries «Chatni ochish» (marked when it is the
   reader's turn).

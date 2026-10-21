@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   MessageSquareWarning, Hourglass, ShieldCheck, Ban, UserCheck, CircleSlash,
   Clock, Timer, MessagesSquare, ChevronRight, ChevronDown, Paperclip, Hand, Settings2, ShieldX,
@@ -254,12 +254,20 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   const [introOpen, setIntroOpen] = useState(false);
   const [q, setQ] = useState("");
 
-  const qKey = late ? ["leader-late-proofs"] : ["leader-disputes"];
+  // The server serves EVERY open appeal, and the settled ones of the page's
+  // period — so «Tarix» of a day older than the newest few hundred still
+  // reads whole. Without a period the key is the bare one the tab badge reads,
+  // and the two share one request.
+  const from = scope?.from || "", to = scope?.to || "";
+  const base = late ? "leader-late-proofs" : "leader-disputes";
+  const qKey = from || to ? [base, { from, to }] : [base];
   const { data, isLoading } = useQuery({
     queryKey: qKey,
-    queryFn: () => api.get(late ? "/api/leaders/late-proofs" : "/api/leaders/disputes")
+    queryFn: () => api.get(late ? "/api/leaders/late-proofs" : "/api/leaders/disputes",
+      { params: { ...(from && { from }), ...(to && { to }) } })
       .then((r) => r.data),
     refetchInterval: 60000,
+    placeholderData: keepPreviousData,
   });
   const canApprove = !!(data?.canApprove ?? data?.canDecide);
   const canSupervise = !!data?.canSupervise;

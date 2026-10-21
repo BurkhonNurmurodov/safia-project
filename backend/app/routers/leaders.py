@@ -2389,11 +2389,49 @@ def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
     return leader_reports.resend_if_changed(db, uid) if uid else False
 
 
-# How much of the objection queue one read hands over. Cancelled and decided
-# rows accumulate forever while the work — `pending` — never does, so the cap
-# bounds the HISTORY, not the queue. Newest first, so what it drops is the
-# oldest settled row and never a decision anybody is waiting on.
+# How much SETTLED history of the objection queue one read hands over when the
+# page names no period. Decided and cancelled rows accumulate forever; the
+# open rows — the work — are never capped (`_appeal_rows`).
 DISPUTE_CAP = 300
+# The ceiling on settled rows INSIDE a named period: a period is what the queue
+# filters to anyway, so this only bounds «Barcha vaqt» on a long-lived box.
+APPEAL_PERIOD_CAP = 3000
+
+
+def _appeal_rows(q, model, open_states, cap: int,
+                 date_from: str | None, date_to: str | None) -> list:
+    """The rows an appeal queue serves: EVERY open row, plus the settled
+    history the page's period asks for, newest first.
+
+    The cap used to bound the whole read, newest first, on the theory that
+    what it dropped was always an old settled row. That stopped being true
+    once more appeals were filed after the oldest one still waiting than the
+    cap holds: on 21 Oct the newest 300 objections held 200 open ones, so an
+    objection of 7 Oct waiting on an admin reached its leader and its brigadir
+    (their own scoped reads fit under the cap) and no admin at all — and the
+    tab badge, counted off the same payload, came up short by the same rows.
+
+    Settled rows are history: those inside the page's period when it names one
+    — the queue shows only that period, so a day older than the newest `cap`
+    settled rows still has its «Tarix» — else the newest `cap`."""
+    open_rows = q.filter(model.status.in_(open_states)).all()
+    done_q = q.filter(~model.status.in_(open_states))
+    if date_from:
+        done_q = done_q.filter(model.date >= date_from)
+    if date_to:
+        done_q = done_q.filter(model.date <= date_to)
+    done_rows = (done_q.order_by(model.id.desc())
+                 .limit(APPEAL_PERIOD_CAP if (date_from or date_to) else cap)
+                 .all())
+    return sorted(open_rows + done_rows, key=lambda r: r.id, reverse=True)
+
+
+def _period(v: str | None) -> str | None:
+    """A period edge off the query string — `YYYY-MM-DD` or nothing. The
+    column is a 10-character date string, so anything else is ignored rather
+    than compared as text."""
+    v = str(v or "").strip()[:10]
+    return v if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else None
 
 
 def _dispute_items(db: Session, payload: dict,
@@ -2561,6 +2599,8 @@ def _attach_chat(db: Session, payload: dict, thread: str, items: list[dict]) -> 
 @router.get("/leaders/disputes")
 def list_disputes(
     status: str | None = Query(None),
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
@@ -2604,7 +2644,8 @@ def list_disputes(
             q = q.filter(LeaderAiDispute.leader_id.in_(own))
         else:
             return empty
-    rows = q.order_by(LeaderAiDispute.id.desc()).limit(DISPUTE_CAP).all()
+    rows = _appeal_rows(q, LeaderAiDispute, leader_dispute.OPEN_STATES,
+                        DISPUTE_CAP, _period(date_from), _period(date_to))
     items = _dispute_items(db, payload, rows)
     todo = sum(1 for it in items if it["canAct"])
     return {
@@ -3560,6 +3601,8 @@ def _lp_item(db: Session, row, names: dict, mgr_names: dict,
 @router.get("/leaders/late-proofs")
 def list_late_proofs(
     status: str | None = Query(None),
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
@@ -3598,7 +3641,10 @@ def list_late_proofs(
         # every leader of the unit has closed the day (`leader_late_proof.
         # release`). Its leader sees it; nobody else until then.
         q = q.filter(LeaderLateProof.held.is_(False))
-    rows = q.order_by(LeaderLateProof.id.desc()).limit(LATE_PROOF_CAP).all()
+    # Every open row, plus the settled ones of the page's period — the same
+    # rule, for the same reason, as the objection queue (`_appeal_rows`).
+    rows = _appeal_rows(q, LeaderLateProof, leader_late_proof.OPEN_STATES,
+                        LATE_PROOF_CAP, _period(date_from), _period(date_to))
 
     names = leader_reports.names_for_pairs(
         db, {(r.manager_id, r.leader_id) for r in rows}, {}) if rows else {}
