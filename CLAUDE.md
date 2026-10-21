@@ -7960,6 +7960,38 @@ computes the four itself (the operator's pick, asked).
   85–94 yellow, below red). They are edited from the page's own sliders
   button (`StatusBandsModal figures/scope`), and every cell is judged by the
   whole percent it prints.
+- **HOW LATE the late quantity arrived** (2026-10-21, the operator: «can we
+  also see … how much late products are delivered, not just on time or
+  not»). The platform's own measure — the sheet has none — and its late
+  TOTAL is always the sheet's (ordered − on time), split by WHEN it came.
+  - `services/ontime.lateness` is THE rule, per material, over the period
+    padded 2 days back and 1 forward (`PAD_BEFORE` / `PAD_AFTER`). A wave's
+    deadline = its window's end (d+1 for wave 3 and a window over midnight).
+    Pass 1: every row sets aside the production the sheet credited it on time
+    (its on-time quantity, the latest posts before its deadline, never before
+    the order day's first window), so no post is counted twice. Pass 2: each
+    late row, oldest deadline first, takes the earliest production still free
+    after its deadline. Delay = posted − deadline. This is the sheet's own
+    carry-over read as a queue (wave 1's shortfall is paid by wave 2's
+    production first).
+  - Bands: ≤ 30 min · 30–60 min · 1–2 h · 2–4 h · 4–8 h · 8–24 h
+    (`DELAY_BANDS`); uncovered after `HORIZON_MIN` (24 h) = «yetkazilmadi»;
+    uncovered while those 24 h run past the newest post read = «kutilmoqda»
+    (`data_end`). These are choices, not the operator's rulings — one
+    constant each to move.
+  - Payload: `delay` (late · delivered · none · wait · avg · median · max ·
+    bands) on the totals, each wave, each group (no bands), each product (no
+    bands) and each trend day (bands); `GET /api/ontime/product` gives each
+    day × wave its `late` with the pieces (delay, qty).
+  - Shown: «Umumiy» → «Kechikish dinamikasi» (late quantity per day stacked
+    by band; weeks past 92 days) beside «Kechikkanlar qancha kech
+    yetkazildi» (average, median, max, arrived / not arrived / pending, the
+    bands as bars); the waves card and the groups list name the average;
+    «Mahsulotlar» has an «O'rt. kechikish» column (sortable; never-arrived
+    sorts worst); the product window a «Kech» column per wave and a summary
+    line. The bands are one orange ramp light → dark (`ontimeUtil.delayColors`,
+    its own steps per theme, validated), «not arrived» the status red,
+    «pending» grey.
 - Not built: an export, and per-unit or cell attribution (the sheet carries
   neither).
 - **The ORIGINAL sheet, read once by production** (2026-10-21, the operator):

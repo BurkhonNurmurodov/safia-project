@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Package, ChevronRight } from "lucide-react";
+import { Package, ChevronRight, XCircle } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import SearchInput from "../ui/SearchInput";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -11,9 +11,18 @@ import { FulfilChip, DaysShort } from "../plan/planTable";
 import DayStrip from "../plan/DayStrip";
 import OntimeLegend from "./OntimeLegend";
 import { WaveChip } from "./OntimeOverview";
-import { useOT, fill, ratio, toneOf, okEdge, waveRatio, fmtQty, dayStats, useGroupName } from "./ontimeUtil";
+import { useOT, fill, ratio, toneOf, okEdge, waveRatio, fmtQty, dayStats, useGroupName, fmtDur } from "./ontimeUtil";
 
 const PAGE = 50;
+
+// The sort key of the delay column: the average delay; late pieces that never
+// arrived within 24 h sort past every delay, and no late quantity sinks.
+const delayKey = (p) => {
+  const d = p.delay;
+  if (!d || !(d.late > 1e-6)) return null;
+  if (d.avg_min == null) return d.none > 0 ? 1e6 : null;
+  return d.avg_min + (d.none > 0 ? 0.5 : 0);
+};
 
 // «Mahsulotlar» — every product ordered in the period: how much was ordered,
 // how much was produced in its wave's window, how much was late, on how many
@@ -54,6 +63,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
       if (k === "grp") return gn(p.grp) || "";
       if (k === "r") return p.r;
       if (k === "days") return p.st.counted ? p.st.short / p.st.counted : null;
+      if (k === "delay") return delayKey(p);
       return p[k];
     });
   }, [rows, show, q, sort, lang]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -65,6 +75,31 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
   const slice = shown.slice((page - 1) * PAGE, page * PAGE);
   const stripLabels = { nf: T.stripNone, np: T.stripNone, none: T.stripNone, aria: T.colStrip };
   const open = (p) => onProduct(p.material);
+
+  // A product's delay: the average of its late pieces that did arrive; one
+  // whose late quantity never arrived within 24 h says so in red.
+  const delayCell = (p) => {
+    const d = p.delay;
+    if (!d || !(d.late > 1e-6)) return <span style={{ color: "var(--text-4)" }}>—</span>;
+    const tip = fill(T.dlCellTip, {
+      q: fmtQty(d.delivered), a: fmtDur(d.avg_min, T), x: fmtDur(d.max_min, T), n: fmtQty(d.none),
+    });
+    if (d.avg_min == null) {
+      return d.none > 0
+        ? <span title={tip} style={{ color: "var(--status-bad)" }}>{T.dlNoneShort}</span>
+        : <span title={tip} style={{ color: "var(--text-3)" }}>{T.dlWaitShort}</span>;
+    }
+    return (
+      <span title={tip} className="tabular-nums whitespace-nowrap">
+        {fmtDur(d.avg_min, T)}
+        {d.none > 0 && (
+          <span className="inline-flex items-center gap-0.5 ml-1.5 align-middle" style={{ color: "var(--status-bad)" }}>
+            <XCircle size={11} aria-hidden />{fmtQty(d.none)}
+          </span>
+        )}
+      </span>
+    );
+  };
 
   const waves = (p) => {
     const e = Object.entries(p.waves || {});
@@ -114,7 +149,8 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
             <span className="tabular-nums">{fmtQty(p.ontime)} / {fmtQty(p.demand)} {T.pcs}</span>
           </div>
           <div className="flex items-center justify-between gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-            <span>{T.colLate}: <b style={{ color: p.late > 0 ? "var(--text-1)" : "var(--text-4)" }}>{fmtQty(p.late)} {T.pcs}</b></span>
+            <span className="truncate">{T.colLate}: <b style={{ color: p.late > 0 ? "var(--text-1)" : "var(--text-4)" }}>{fmtQty(p.late)} {T.pcs}</b>
+              {p.delay?.avg_min != null && <> · {fill(T.groupDelay, { a: fmtDur(p.delay.avg_min, T) })}</>}</span>
             <span>{T.colDays}: <DaysShort short={p.st.short} of={p.st.counted} /></span>
           </div>
           <DayStrip daily={p.daily} days={data.days} labels={stripLabels} tone={toneOf} />
@@ -133,7 +169,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.rows, { n: shown.length })}</span>}
         toolbar={toolbar}
         mobile={mobile}
-        minWidth={1280}
+        minWidth={1380}
       >
         <thead>
           <tr>
@@ -143,6 +179,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
             <Th label={T.colOrdered} k="demand" sort={sort} onSort={onSort} align="right" />
             <Th label={T.colOntime} k="ontime" sort={sort} onSort={onSort} align="right" />
             <Th label={T.colLate} k="late" sort={sort} onSort={onSort} align="right" />
+            <Th label={T.colDelay} k="delay" sort={sort} onSort={onSort} align="right" hint={T.colDelayHint} />
             <Th label={T.colPct} k="r" sort={sort} onSort={onSort} align="center" />
             <Th label={T.colWaves} hint={T.colWavesHint} />
             <Th label={T.colDays} k="days" sort={sort} onSort={onSort} align="center" hint={fill(T.colDaysHint, { ok })} />
@@ -160,6 +197,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
               <td className={`${num} font-semibold`} style={{ color: p.late > 1e-6 ? "var(--text-1)" : "var(--text-4)" }}>
                 {p.late > 1e-6 ? fmtQty(p.late) : "—"}
               </td>
+              <td className="px-3 py-2 text-right text-xs">{delayCell(p)}</td>
               <td className="px-3 py-2 text-center"><FulfilChip r={p.r} toneFn={toneOf} /></td>
               <td className="px-3 py-2 whitespace-nowrap">{waves(p)}</td>
               <td className="px-3 py-2 text-center"><DaysShort short={p.st.short} of={p.st.counted} /></td>
@@ -167,7 +205,7 @@ export default function OntimeProducts({ data, onProduct, show, setShow }) {
             </tr>
           ))}
           {!slice.length && (
-            <tr><td colSpan={10} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
+            <tr><td colSpan={11} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
           )}
         </tbody>
       </TableCard>

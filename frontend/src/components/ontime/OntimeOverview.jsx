@@ -13,8 +13,9 @@ import { useTranslit } from "../../utils/transliterate";
 import { useLang } from "../../context/LangContext";
 import {
   useOT, fill, ratio, pctOf, fmtPct, toneOf, toneHex, okEdge, waveRatio, fmtQty, fmtDelta,
-  ddmm, weekdayOf, tipBox, windowText, commonWindow, useGroupName,
+  ddmm, weekdayOf, tipBox, windowText, commonWindow, useGroupName, fmtDur,
 } from "./ontimeUtil";
+import { DelayBands, DelayTrend } from "./OntimeDelay";
 
 const C_LINE = "#C8973F";   // the one metric on the chart (single-metric accent)
 const TOP_N = 8;
@@ -229,12 +230,20 @@ export default function OntimeOverview({ data, chartData, onGroup, onProduct, on
                   label={fill(T.waveN, { n: w.wave })}
                   r={wr}
                   sub={win ? windowText(w.wave, win, T) : T.windowVaries}
-                  right={`${T.tipLate}: ${pcs(w.late)}`} />
+                  right={w.delay?.avg_min != null
+                    ? fill(T.wavesDelay, { q: pcs(w.late), a: fmtDur(w.delay.avg_min, T) })
+                    : `${T.tipLate}: ${pcs(w.late)}`} />
               );
             })}
             {!(data.waves || []).some((w) => w.demand > 0) && <NoChart height={160} text={T.emptyTitle} />}
           </div>
         </ChartCard>
+      </div>
+
+      {/* ── how late the late quantity arrived ──────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <DelayTrend className="lg:col-span-2" trend={tr} ready={ready} />
+        <DelayBands delay={data.delay} />
       </div>
 
       {/* ── groups + the products that cost most ─────────────────────────── */}
@@ -258,6 +267,7 @@ export default function OntimeOverview({ data, chartData, onGroup, onProduct, on
                 <Row key={g.grp}
                   label={gn(g.grp)} r={g.mean} chips={chips}
                   sub={fill(T.groupLate, { q: fmtQty(g.late), n: g.materials })}
+                  right={g.delay?.avg_min != null ? fill(T.groupDelay, { a: fmtDur(g.delay.avg_min, T) }) : null}
                   onClick={() => onGroup(g.grp)}
                   ariaLabel={`${gn(g.grp)} — ${T.groupOpen}`} />
               );
@@ -292,7 +302,7 @@ export default function OntimeOverview({ data, chartData, onGroup, onProduct, on
       {/* How the numbers are made — one paragraph, so nobody has to guess. */}
       <p className="text-[11px] leading-relaxed flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
         <Sigma size={12} className="mt-0.5 flex-shrink-0" />
-        {T.method}
+        <span>{T.method} {T.dlMethod}</span>
       </p>
     </div>
   );

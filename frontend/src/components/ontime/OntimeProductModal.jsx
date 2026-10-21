@@ -7,7 +7,7 @@ import { FulfilChip } from "../plan/planTable";
 import { useTranslit } from "../../utils/transliterate";
 import { useLang } from "../../context/LangContext";
 import api from "../../utils/api";
-import { useOT, fill, ratio, toneOf, fmtQty, ddmm, weekdayOf, hhmm, windowText, useGroupName } from "./ontimeUtil";
+import { useOT, fill, ratio, toneOf, fmtQty, ddmm, weekdayOf, hhmm, windowText, useGroupName, fmtDur } from "./ontimeUtil";
 
 // One product, day by day and wave by wave — the working behind its row: what
 // was ordered, what production posted inside the window, the sheet's on-time
@@ -43,6 +43,29 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
     );
   };
 
+  // When one wave's late pieces arrived: the average delay, «not arrived» in
+  // red when nothing covered them within 24 h; the posts behind it on hover.
+  const lateCell = (v) => {
+    const l = v.late;
+    if (!l || !(l.late > 1e-6)) return <span style={{ color: "var(--text-4)" }}>—</span>;
+    const lines = (l.pieces || []).map(([m, q]) => fill(T.pmPieces, { a: fmtDur(m, T), q: fmtQty(q) }));
+    if (l.none > 0) lines.push(`${T.dlBand.none}: ${fmtQty(l.none)} ${T.pcs}`);
+    if (l.wait > 0) lines.push(`${T.dlBand.wait}: ${fmtQty(l.wait)} ${T.pcs}`);
+    const tip = lines.join("\n");
+    if (l.avg_min == null) {
+      return l.none > 0
+        ? <span title={tip} style={{ color: "var(--status-bad)" }}>{T.dlNoneShort}</span>
+        : <span title={tip} style={{ color: "var(--text-3)" }}>{T.dlWaitShort}</span>;
+    }
+    return (
+      <span title={tip} className="tabular-nums whitespace-nowrap">
+        +{fmtDur(l.avg_min, T)}
+        {l.none > 0 && <span style={{ color: "var(--status-bad)" }}> · {fmtQty(l.none)}</span>}
+      </span>
+    );
+  };
+  const dl = data?.delay;
+
   return (
     <Modal open onClose={onClose} icon={Package}
       title={data?.name ? tx(data.name) : material}
@@ -62,6 +85,15 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
               <FulfilChip r={ratio(C, D)} toneFn={toneOf} />
               {fill(T.pmTotal, { d: fmtQty(D), c: fmtQty(C), l: fmtQty(D - C) })}
             </span>
+            {dl && dl.late > 1e-6 && (
+              <span style={{ color: "var(--text-3)" }}>
+                {[
+                  dl.delivered > 0 && fill(T.pmDelayArrived, { q: fmtQty(dl.delivered), a: fmtDur(dl.avg_min, T) }),
+                  dl.none > 0 && fill(T.pmDelayNone, { n: fmtQty(dl.none) }),
+                  dl.wait > 0 && fill(T.pmDelayWait, { w: fmtQty(dl.wait) }),
+                ].filter(Boolean).join(" · ")}
+              </span>
+            )}
           </div>
           <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
             <span className="font-semibold uppercase tracking-wider mr-2">{T.pmWindows}</span>
@@ -73,12 +105,12 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
             <p className="text-xs text-center py-6" style={{ color: "var(--text-4)" }}>{T.pmEmpty}</p>
           ) : (
             <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid var(--border)" }}>
-              <table className="w-full text-xs" style={{ minWidth: 220 + waves.length * 210 }}>
+              <table className="w-full text-xs" style={{ minWidth: 220 + waves.length * 280 }}>
                 <thead>
                   <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
                     <th rowSpan={2} className="px-3 py-1.5 text-left font-semibold">{T.pmDay}</th>
                     {waves.map((w) => (
-                      <th key={w} colSpan={3} className="px-3 py-1.5 text-center font-semibold" style={{ borderLeft: "1px solid var(--border)" }}>
+                      <th key={w} colSpan={4} className="px-3 py-1.5 text-center font-semibold" style={{ borderLeft: "1px solid var(--border)" }}>
                         {fill(T.waveN, { n: w })}
                       </th>
                     ))}
@@ -89,6 +121,7 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
                       <th key={`${w}o`} className="px-2 py-1 text-right font-medium" style={{ borderLeft: "1px solid var(--border)" }}>{T.pmOrdered}</th>,
                       <th key={`${w}i`} className="px-2 py-1 text-right font-medium">{T.pmInWindow}</th>,
                       <th key={`${w}p`} className="px-2 py-1 text-center font-medium">{T.pmPct}</th>,
+                      <th key={`${w}l`} className="px-2 py-1 text-right font-medium" title={T.pmLateHint}>{T.pmLate}</th>,
                     ])}
                   </tr>
                 </thead>
@@ -105,6 +138,7 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
                             <td key={`${w}o`} className="px-2 py-1.5 text-right" style={{ borderLeft: "1px solid var(--border)", color: "var(--text-4)" }}>—</td>,
                             <td key={`${w}i`} className="px-2 py-1.5" />,
                             <td key={`${w}p`} className="px-2 py-1.5" />,
+                            <td key={`${w}l`} className="px-2 py-1.5" />,
                           ];
                         }
                         return [
@@ -112,6 +146,7 @@ export default function OntimeProductModal({ material, dateFrom, dateTo, onClose
                           <td key={`${w}i`} className="px-2 py-1.5 text-right tabular-nums" style={{ color: "var(--text-2)" }}
                             title={v.H !== v.P ? `${fmtQty(v.P)} → ${fmtQty(v.H)}` : undefined}>{fmtQty(v.P)}</td>,
                           <td key={`${w}p`} className="px-2 py-1.5 text-center">{v.c == null ? <span style={{ color: "var(--text-4)" }}>—</span> : <FulfilChip r={v.c} toneFn={toneOf} />}</td>,
+                          <td key={`${w}l`} className="px-2 py-1.5 text-right">{lateCell(v)}</td>,
                         ];
                       })}
                       <td className="px-3 py-1.5" style={{ borderLeft: "1px solid var(--border)", color: "var(--text-2)" }}>{posts(d)}</td>

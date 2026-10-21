@@ -30,6 +30,21 @@ Aggregation, as the sheet aggregates:
   заходам» on «свод по группам»); a GROUP on a day — the mean of its waves
   («средний on time»); a group over a period — the mean of its days.
 
+HOW LATE (the platform's own measure — the sheet has none; 2026-10-21). The
+late quantity of a row is the sheet's: ordered − on time. WHEN it arrived is
+read off the production timeline of that material, two passes in deadline
+order (a wave's deadline = its window's end, on d+1 for wave 3):
+  1. every row first sets aside the production the sheet credited it on time
+     (its on-time quantity, the latest posts before its deadline, never earlier
+     than the order day's first window) — so a post is never counted twice;
+  2. then each late row takes the earliest production still free after its
+     deadline, oldest row first, up to `HORIZON_MIN` (24 h) later.
+A piece's delay = when it was posted − the deadline. What nothing covers within
+24 h is «not delivered»; when those 24 h reach past the newest post read, it is
+«still waiting» instead. This is the sheet's own carry-over read as a queue
+(wave 1's shortfall is paid by wave 2's production first), so the late total
+always equals the sheet's.
+
 Nothing is stored here: every figure is derived per request from the stored
 read, and kept in memory per read until the next read lands (`forget`).
 """
@@ -41,6 +56,7 @@ from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from typing import Iterable, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import OntimeDemand, OntimeMaterial, OntimeReceipt, OntimeWindow
@@ -48,6 +64,18 @@ from app.services import ontime_sync
 
 WAVE3_FROM = 1               # 00:00:01 — the sheet's own lower bound for wave 3
 MAX_DAYS = 400
+EPS = 1e-6
+
+# How late: the edges of the delay bands (minutes after the deadline, each
+# band including its upper edge) and the horizon past which a late piece reads
+# «not delivered». `NONE` = nothing covered it within the horizon; `WAIT` = the
+# horizon runs past the newest post read, so it may still come.
+HORIZON_MIN = 24 * 60
+DELAY_BANDS = (("m30", 30), ("m60", 60), ("h2", 120), ("h4", 240), ("h8", 480), ("h24", HORIZON_MIN))
+NONE, WAIT = "none", "wait"
+# A late row's lateness is simulated over a span wider than the period, so the
+# rows just before take their production first and the day after keeps its own.
+PAD_BEFORE, PAD_AFTER = 2, 1
 _CACHE_MAX = 24
 
 _cache: "OrderedDict[tuple, dict]" = OrderedDict()
@@ -207,22 +235,26 @@ def _days(d0: date, d1: date) -> list[date]:
 
 
 def _rows(db: Session, d0: date, d1: date, wins_by_grp: dict, mats: dict,
-          sel_mats: Optional[set] = None):
+          sel_mats: Optional[set] = None, pad: tuple = (0, 0)):
     """Every (day, material, wave) row of the period, the sheet's way, plus what
-    could not be evaluated (a wave its group has no window for)."""
-    demand = _demand(db, d0, d1, sel_mats)
-    posts = _posts(db, d0, d1 + timedelta(days=1), sel_mats)
+    could not be evaluated (a wave its group has no window for) and the posts
+    read. `pad` = (days before, days after) also evaluated — the lateness
+    simulation's margin; `no_window` counts the period alone."""
+    lo, hi = d0 - timedelta(days=pad[0]), d1 + timedelta(days=pad[1])
+    demand = _demand(db, lo, hi, sel_mats)
+    posts = _posts(db, lo, hi + timedelta(days=1), sel_mats)
     rows = []
     no_window: dict = defaultdict(lambda: {"qty": 0.0, "materials": set()})
     for (day, mat), e in demand.items():
         grp = e["grp"] or mats.get(mat, ("", ""))[1]
         g = wins_by_grp.get(_fold(grp))
         wins = g["waves"] if g else {}
-        for w, q in e["waves"].items():
-            if w not in wins and q > 0:
-                nw = no_window[grp or "—"]
-                nw["qty"] += q
-                nw["materials"].add(mat)
+        if d0 <= day <= d1:
+            for w, q in e["waves"].items():
+                if w not in wins and q > 0:
+                    nw = no_window[grp or "—"]
+                    nw["qty"] += q
+                    nw["materials"].add(mat)
         if not wins:
             continue
         ev = evaluate(e["waves"], posts.get((day, mat)), posts.get((day + timedelta(days=1), mat)), wins)
@@ -231,7 +263,153 @@ def _rows(db: Session, d0: date, d1: date, wins_by_grp: dict, mats: dict,
             if r["D"] <= 0 and r["P"] <= 0:
                 continue
             rows.append((day, mat, gname, w, r))
-    return rows, no_window
+    return rows, no_window, posts
+
+
+# ── how late ─────────────────────────────────────────────────────────────────
+
+def data_end(db: Session) -> Optional[int]:
+    """The newest post the stored read holds, as an absolute second — what
+    tells «not delivered» from «may still come»."""
+    last = db.query(func.max(OntimeReceipt.day)).scalar()
+    if last is None:
+        return None
+    sec = db.query(func.max(OntimeReceipt.sec)).filter(OntimeReceipt.day == last).scalar() or 0
+    return last.toordinal() * 86_400 + int(sec)
+
+
+def _deadline(day: date, w: int, win: tuple) -> int:
+    """A wave's deadline as an absolute second: its window's end, on the next
+    day for wave 3 and for a window that crosses midnight."""
+    s, e = win
+    base = day.toordinal() * 86_400
+    return base + 86_400 + e if (w == 3 or e < s) else base + e
+
+
+def _first_start(day: date, wins: dict) -> int:
+    """The earliest moment the sheet credits for an order day: the first window
+    that opens on the day itself (wave 3 opens after midnight)."""
+    base = day.toordinal() * 86_400
+    starts = [s for w, (s, _e) in wins.items() if w != 3]
+    return base + min(starts) if starts else base + 86_400 + WAVE3_FROM
+
+
+def lateness(rows: list, posts: dict, wins_by_grp: dict, end: Optional[int]) -> dict:
+    """{(day, material, wave): (pieces [(delay_min, qty)], none_qty, wait_qty)}
+    for every row with a late quantity — see the module doc for the rule."""
+    slots: dict = defaultdict(list)
+    for day, mat, gname, w, r in rows:
+        if r["D"] <= 0:
+            continue
+        wins = wins_by_grp.get(_fold(gname), {}).get("waves") or {}
+        if w not in wins:
+            continue
+        slots[mat].append((_deadline(day, w, wins[w]), w, day, _first_start(day, wins),
+                           r["covered"], r["D"] - r["covered"]))
+    timeline: dict = defaultdict(list)
+    for (day, mat), p in posts.items():
+        if mat not in slots:
+            continue
+        base = day.toordinal() * 86_400
+        for i, sec in enumerate(p.secs):
+            q = p.cum[i + 1] - p.cum[i]
+            if q > 0:
+                timeline[mat].append((base + sec, q))
+    out: dict = {}
+    for mat, ss in slots.items():
+        tl = sorted(timeline.get(mat, ()))
+        ts = [t for t, _ in tl]
+        left = [q for _, q in tl]
+        ss.sort(key=lambda x: (x[0], x[1]))
+        # 1. what the sheet credited on time is set aside, latest posts first
+        for T, _w, _day, start, cov, _L in ss:
+            need = cov
+            j = bisect.bisect_right(ts, T) - 1
+            while need > EPS and j >= 0 and ts[j] >= start:
+                take = min(need, left[j])
+                left[j] -= take
+                need -= take
+                j -= 1
+        # 2. each late row, oldest first, takes the earliest production still free
+        for T, w, day, _start, _cov, L in ss:
+            if L <= EPS:
+                continue
+            need = L
+            pieces = []
+            lim = T + HORIZON_MIN * 60
+            j = bisect.bisect_right(ts, T)
+            while need > EPS and j < len(ts) and ts[j] <= lim:
+                if left[j] > EPS:
+                    take = min(need, left[j])
+                    left[j] -= take
+                    need -= take
+                    pieces.append(((ts[j] - T) / 60.0, take))
+                j += 1
+            none = wait = 0.0
+            if need > EPS:
+                if end is None or lim > end:
+                    wait = need
+                else:
+                    none = need
+            out[(day, mat, w)] = (pieces, none, wait)
+    return out
+
+
+def _band(minutes: float) -> str:
+    for key, edge in DELAY_BANDS:
+        if minutes <= edge:
+            return key
+    return NONE
+
+
+class _Late:
+    """Late pieces gathered over any slice — a total, a wave, a group, a
+    product, a day."""
+    __slots__ = ("pieces", "none", "wait")
+
+    def __init__(self):
+        self.pieces: list = []
+        self.none = 0.0
+        self.wait = 0.0
+
+    def add(self, entry) -> None:
+        if entry is None:
+            return
+        pieces, none, wait = entry
+        self.pieces.extend(pieces)
+        self.none += none
+        self.wait += wait
+
+    def bands(self) -> dict:
+        b = {k: 0.0 for k, _ in DELAY_BANDS}
+        for m, q in self.pieces:
+            b[_band(m)] += q
+        b[NONE] = self.none
+        b[WAIT] = self.wait
+        return {k: round(v, 3) for k, v in b.items()}
+
+    def out(self, full: bool = True) -> dict:
+        q = sum(p[1] for p in self.pieces)
+        avg = (sum(m * p for m, p in self.pieces) / q) if q > EPS else None
+        res = {
+            "late": round(q + self.none + self.wait, 3),
+            "delivered": round(q, 3),
+            "none": round(self.none, 3), "wait": round(self.wait, 3),
+            "avg_min": None if avg is None else round(avg),
+            "max_min": round(max(m for m, _ in self.pieces)) if self.pieces else None,
+        }
+        if full:
+            med = None
+            if q > EPS:
+                acc = 0.0
+                for m, p in sorted(self.pieces):
+                    acc += p
+                    if acc >= q / 2 - EPS:
+                        med = m
+                        break
+            res["median_min"] = None if med is None else round(med)
+            res["bands"] = self.bands()
+        return res
 
 
 def build(db: Session, d0: date, d1: date, groups: Optional[set] = None,
@@ -261,7 +439,9 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
     days = _days(d0, d1)
     di = {d: i for i, d in enumerate(days)}
 
-    rows, no_window = _rows(db, d0, d1, wins, mats, sel_mats)
+    span, no_window, posts = _rows(db, d0, d1, wins, mats, sel_mats, pad=(PAD_BEFORE, PAD_AFTER))
+    late = lateness(span, posts, wins, data_end(db))
+    rows = [r for r in span if d0 <= r[0] <= d1]
     keep = [r for r in rows
             if (gsel is None or _fold(r[2]) in gsel) and (wsel is None or r[3] in wsel)]
 
@@ -274,8 +454,20 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
     grp_acc: dict = defaultdict(lambda: {"demand": 0.0, "ontime": 0.0, "materials": set(),
                                          "late_materials": set()})
     prod: dict = {}
+    late_tot = _Late()
+    late_wave: dict = defaultdict(_Late)
+    late_grp: dict = defaultdict(_Late)
+    late_prod: dict = defaultdict(_Late)
+    late_day: dict = defaultdict(_Late)
     for day, mat, grp, w, r in keep:
         D, C = r["D"], r["covered"]
+        le = late.get((day, mat, w))
+        if le is not None:
+            late_tot.add(le)
+            late_wave[w].add(le)
+            late_grp[grp].add(le)
+            late_prod[mat].add(le)
+            late_day[day].add(le)
         tot["demand"] += D
         tot["ontime"] += C
         tot["posted"] += r["P"]
@@ -342,6 +534,7 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
             "windows": {str(w): list(v) for w, v in gw["waves"].items()},
             "materials": len(ga["materials"]), "late_materials": len(ga["late_materials"]),
             "pos": gw.get("pos", 0),
+            "delay": late_grp[g].out(full=False) if g in late_grp else None,
         })
     groups_out.sort(key=lambda x: (-(x["late"] or 0), x["grp"]))
 
@@ -359,17 +552,21 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
             "late": round(p["demand"] - p["ontime"], 3),
             "waves": {str(w): [round(v[0], 3), round(v[1], 3)] for w, v in sorted(p["waves"].items())},
             "daily": daily,
+            "delay": late_prod[p["material"]].out(full=False) if p["material"] in late_prod else None,
         })
     products_out.sort(key=lambda x: (-x["late"], x["name"] or x["material"]))
 
     waves_out = [{"wave": w, "demand": round(a["demand"], 3), "ontime": round(a["ontime"], 3),
                   "late": round(a["demand"] - a["ontime"], 3), "mean": _mean(a["cs"]),
-                  "rows": len(a["cs"])}
+                  "rows": len(a["cs"]),
+                  "delay": late_wave[w].out() if w in late_wave else None}
                  for w, a in sorted(wave_acc.items())]
 
-    for t in trend:
+    for d, t in zip(days, trend):
         t["demand"] = round(t["demand"], 3)
         t["ontime"] = round(t["ontime"], 3)
+        ld = late_day.get(d)
+        t["delay"] = ld.out(full=False) | {"bands": ld.bands()} if ld is not None else None
         t["waves"] = {str(w): [round(v[0], 3), round(v[1], 3)] for w, v in sorted(t["waves"].items())}
 
     # The same totals over the period just before, for the KPI's change.
@@ -378,7 +575,7 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
     prev = None
     first = rd.first_day if rd else None
     if first is None or p0 >= first:
-        prow, _ = _rows(db, p0, p1, wins, mats, sel_mats)
+        prow, _, _ = _rows(db, p0, p1, wins, mats, sel_mats)
         pd = pc = 0.0
         for _, _, grp, w, r in prow:
             if (gsel is None or _fold(grp) in gsel) and (wsel is None or w in wsel):
@@ -404,6 +601,8 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
                    "late": round(tot["demand"] - tot["ontime"], 3), "posted": round(tot["posted"], 3),
                    "products": sum(1 for p in products_out if p["demand"] > 0),
                    "days": sum(1 for t in trend if t["demand"] > 0)},
+        "delay": late_tot.out(),
+        "delay_rule": {"bands": [[k, e] for k, e in DELAY_BANDS], "horizon_min": HORIZON_MIN},
         "prev": prev,
         "trend": trend,
         "waves": waves_out,
@@ -431,6 +630,20 @@ def product(db: Session, material: str, d0: date, d1: date) -> dict:
             break
     g = wins.get(_fold(grp))
     w_of = g["waves"] if g else {}
+    span, _nw, span_posts = _rows(db, d0, d1, wins, mats, {material}, pad=(PAD_BEFORE, PAD_AFTER))
+    late = lateness(span, span_posts, wins, data_end(db))
+
+    def _late_of(d: date, w: int):
+        e = late.get((d, material, w))
+        if e is None:
+            return None
+        lt = _Late()
+        lt.add(e)
+        o = lt.out(full=False)
+        # When the late pieces came: the posts that covered them, by delay.
+        o["pieces"] = [[round(m), round(q, 3)] for m, q in e[0]]
+        return o
+
     days_out = []
     for d in _days(d0, d1):
         e = demand.get((d, material))
@@ -449,12 +662,18 @@ def product(db: Session, material: str, d0: date, d1: date) -> dict:
             "date": d.isoformat(),
             "waves": {str(w): {"D": round(r["D"], 3), "P": round(r["P"], 3), "H": round(r["H"], 3),
                                "c": None if r["c"] is None else round(r["c"], 4),
-                               "covered": round(r["covered"], 3)}
+                               "covered": round(r["covered"], 3),
+                               "late": _late_of(d, w)}
                       for w, r in ev.items()},
             "no_window": {str(w): round(q, 3) for w, q in (e["waves"] if e else {}).items()
                           if w not in w_of and q > 0},
             "posts": today, "posts_next": night,
         })
+    tot = _Late()
+    for (d, m, _w), e in late.items():
+        if m == material and d0 <= d <= d1:
+            tot.add(e)
     return {"material": material, "name": name, "grp": grp or None,
             "windows": {str(w): list(v) for w, v in w_of.items()},
-            "days": days_out}
+            "days": days_out, "delay": tot.out(),
+            "delay_rule": {"bands": [[k, e] for k, e in DELAY_BANDS], "horizon_min": HORIZON_MIN}}

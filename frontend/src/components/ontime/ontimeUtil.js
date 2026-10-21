@@ -87,3 +87,35 @@ export function dayStats(daily) {
   }
   return { counted, short, zero };
 }
+
+// ── how late ────────────────────────────────────────────────────────────────
+// The delay bands in the server's order (services/ontime.DELAY_BANDS), then the
+// two that are not a delay: nothing covered it within 24 h, or 24 h have not
+// passed yet.
+export const DELAY_KEYS = ["m30", "m60", "h2", "h4", "h8", "h24"];
+export const NONE = "none";
+export const WAIT = "wait";
+
+// One orange, light → dark as the delay grows — a value ramp, never a status
+// (validated by the dataviz checks: monotone lightness, a visible step between
+// neighbours, the light end clearing the surface). Each theme has its own
+// steps. «Not arrived» is the status red; «pending» the platform's grey.
+const RAMP_LIGHT = ["#ff9550", "#ee7e36", "#d56817", "#bc5100", "#a43b00", "#8c2300"];
+const RAMP_DARK = ["#ffaf76", "#e99961", "#d2844c", "#bb6f36", "#a55b1f", "#8f4700"];
+export const delayColors = (dark) => {
+  const ramp = dark ? RAMP_DARK : RAMP_LIGHT;
+  const out = Object.fromEntries(DELAY_KEYS.map((k, i) => [k, ramp[i]]));
+  out[NONE] = TONE_HEX.bad;
+  out[WAIT] = "#94a3b8";
+  return out;
+};
+
+// Minutes → «48 daq», «1 soat 25 daq», «3 soat»; under a minute «<1 daq».
+export function fmtDur(min, T) {
+  if (min == null || Number.isNaN(min)) return "—";
+  const m = Math.round(min);
+  if (min < 1) return T.lessMin;
+  if (m < 60) return `${m} ${T.unitMin}`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} ${T.unitHour} ${r} ${T.unitMin}` : `${h} ${T.unitHour}`;
+}
