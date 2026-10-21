@@ -7828,6 +7828,41 @@ def _live_copy_dedup_job() -> None:
                       live_copy_dedup_oct20.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the ORIGINAL on-time sheet, read by production ─────────────────
+# The operator asked on 2026-10-21 whether the platform can read the logistics
+# team's ORIGINAL «on time report» (the page was built on a copy whose raw tabs
+# were removed). Only production holds the Google service account, so it opens
+# the original, the sheet set on «Ma'lumotlar» and the old copy, runs the
+# page's reader over the raw tabs without storing anything, and sets the page's
+# arithmetic against the sheet's own «свод» / «свод по группам»
+# (`services/ontime_sheet_report.py`). READ-ONLY: it writes nothing but its
+# flag, and does not change which sheet the page reads. Changing what it sends
+# needs a NEW flag key.
+ONTIME_SHEET_FLAG = "ontime_original_sheet_report_2026_10_21_v1"
+_ONTIME_SHEET_DELAY_S = 150
+
+
+def report_ontime_sheet() -> None:
+    """The original on-time sheet, opened and read by production, DMed once.
+    Never raises."""
+    try:
+        if not _report_pending(ONTIME_SHEET_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("ontime-sheet-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_ONTIME_SHEET_DELAY_S),
+                    _ontime_sheet_job)
+    except Exception as exc:
+        print(f"[startup] on-time sheet report could not be scheduled: {exc}")
+
+
+def _ontime_sheet_job() -> None:
+    from app.services import ontime_sheet_report
+    _send_report_once(ONTIME_SHEET_FLAG, "on-time sheet report",
+                      ontime_sheet_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance

@@ -7939,6 +7939,18 @@ computes the four itself (the operator's pick, asked).
   whole percent it prints.
 - Not built: an export, and per-unit or cell attribution (the sheet carries
   neither).
+- **The ORIGINAL sheet, read once by production** (2026-10-21, the operator):
+  TEMPORARY `services/ontime_sheet_report.py`, `startup.report_ontime_sheet`
+  (flag `ontime_original_sheet_report_2026_10_21_v1`, ~150 s after boot, both
+  entrypoints), DMed as text + workbook to `UNPRICED_DM_CHAT`. It opens the
+  original (`ORIGINAL`), the sheet set on «Ma'lumotlar» and the old copy with
+  the service account, prints its address, samples every tab and the formulas
+  atop the summary tabs, runs the reader's own `read_*` over the raw tabs
+  (nothing stored), and sets `ontime.evaluate` on that data against the
+  sheet's «свод» (per material × wave × dated day: D, H, on time; row 3) and
+  «свод по группам» (group × wave means, the group's daily mean). Read-only;
+  it does not switch the page's sheet. Delete the module, the startup pair
+  and both calls once the DM has landed.
 
 ## The call forecast, sent by the clock (`forecast_autocall`)
 

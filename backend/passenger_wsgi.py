@@ -124,6 +124,7 @@ try:
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
+        report_ontime_sheet,
         repair_live_copy_dupes,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
@@ -566,6 +567,11 @@ try:
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     report_closed_day_trace()
+    # ⚠ TEMPORARY one-shot (2026-10-21) — the ORIGINAL on-time sheet, read by
+    # production, DMed once to the operator. Read-only. Remove this line,
+    # `startup.report_ontime_sheet` and `services/ontime_sheet_report.py` once
+    # it has landed.
+    report_ontime_sheet()
     # ⚠ TEMPORARY one-shot (2026-10-20) — the doubled live copies' exact
     # duplicates deleted and DMed once to the operator. WRITES attendance.
     # Remove this line, `startup.repair_live_copy_dupes`,

@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
+        report_ontime_sheet,
         repair_live_copy_dupes,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
@@ -660,6 +661,13 @@ async def lifespan(app: FastAPI):
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     later(report_closed_day_trace)
+    # ⚠ TEMPORARY one-shot (2026-10-21) — opens the ORIGINAL on-time sheet with
+    # production's service account, runs the page's reader over it without
+    # storing anything and sets the page's arithmetic against the sheet's own
+    # «свод», DMed once to the operator. Read-only. Remove this line,
+    # `startup.report_ontime_sheet` and `services/ontime_sheet_report.py` once
+    # it has landed.
+    later(report_ontime_sheet)
     # ⚠ TEMPORARY one-shot (2026-10-20) — the live copies written twice at
     # once (Yog'mirov Feruz's 18.10: 130 rows for 65 people): their exact
     # duplicates deleted, split halves untouched, each fix in the Jurnal, the
