@@ -2,7 +2,7 @@ import { Fragment, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
+  AlertTriangle, ArrowLeftRight, CalendarDays, CheckCircle2,
   ClipboardList, Grid3x3, LayoutGrid, Layers, PieChart, Radio, Repeat, TrendingUp,
   UserCheck, UserMinus, UserRound, Users,
 } from "lucide-react";
@@ -47,10 +47,6 @@ const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-cou
 const ROLE_EXTRA_COLORS = CATEGORY_COLORS.slice(3);
 const PRESENT_COLOR  = "#22c55e";   // явка / actual present (green) — used by the attendance table
 const ABSENT_COLOR   = "#f59e0b";   // did not come — amber, the same "gap" hue the shortfall column uses
-// Traffic-light bands for the явка plan-attainment bar (present ÷ штат): green
-// fully staffed, yellow moderate shortfall, red serious shortfall.
-const ATTAIN_RED = "#ef4444", ATTAIN_YELLOW = "#eab308", ATTAIN_GREEN = "#22c55e";
-const attainColor = (pct) => (pct >= 95 ? ATTAIN_GREEN : pct >= 85 ? ATTAIN_YELLOW : ATTAIN_RED);
 // Folded small-role band in the attendance trend reuses the shared FOLD_COLOR
 // slate: "everything else" is a bucket, so it must not compete for a hue.
 // Request-type categories take the first two shared generic hues.
@@ -386,48 +382,6 @@ export default function Workers() {
     // The number is a per-day average now, not a period headcount — the tooltip
     // says so rather than leaving a decimal to be read as a people count.
     tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmtN(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
-    theme: chartTheme,
-  };
-
-  // Явка % (plan attainment) — one bar per brigadir: actual average daily
-  // attendance as a share of the official (planned) headcount, present ÷ штат.
-  // official_hc is an INDEPENDENT baseline (the штатка), so unlike the old
-  // roster-vs-present pair this genuinely varies. Traffic-light coloured by
-  // attainment (green fully staffed → red serious shortfall); sorted so the
-  // worst attainment sits on top (ApexCharts renders the first category at the
-  // bottom → sort descending). Only brigadirs with official data appear.
-  const rvpRows = headcount
-    .filter((m) => m.official_hc != null && m.official_hc > 0)
-    .map((m) => ({ ...m, attain: Math.round(((m.avg_daily_hc || 0) / m.official_hc) * 100) }))
-    .sort((a, b) => b.attain - a.attain);
-  const rvpH = Math.max(300, rvpRows.length * 32 + 60);
-  const rvpSeries = [{ name: t("workers.attRate"), data: rvpRows.map((m) => m.attain) }];
-  const rvpOptions = {
-    chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "68%", borderRadius: 2, distributed: true } },
-    colors: rvpRows.map((m) => attainColor(m.attain)),
-    dataLabels: {
-      enabled: true,
-      formatter: (v) => `${v}%`,
-      style: { fontSize: "11px", fontWeight: 600, colors: ["#fff"] },
-    },
-    xaxis: {
-      categories: rvpRows.map((m) => tl(m.name)),
-      labels: { ...axisLabels, formatter: (v) => `${v}%` },
-      max: Math.max(100, ...rvpRows.map((m) => m.attain)),
-    },
-    yaxis: { labels: axisLabelsMd },
-    legend: { show: false },   // distributed bars → one legend entry per brigadir is noise
-    grid: gridCfg,
-    tooltip: {
-      theme: tooltipTheme,
-      y: {
-        formatter: (v, { dataPointIndex }) => {
-          const m = rvpRows[dataPointIndex];
-          return `${v}% — ${t("workers.present")} ${fmtN(m.avg_daily_hc)} / ${t("workers.official")} ${fmtN(m.official_hc)}`;
-        },
-      },
-    },
     theme: chartTheme,
   };
 
@@ -900,13 +854,6 @@ export default function Workers() {
             {isLoading ? <SkeletonChart className="h-96" />
               : treePoints.length ? <ReactApexChart key={modeKey} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
-          </ChartCard>
-
-          {/* Явка % — plan attainment (present ÷ штат) per brigadir, traffic-light (full width) */}
-          <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={`${t("workers.info.rosterVsPresent")} ${t("workers.info.original")}`} className="mb-6">
-            {isLoading ? <SkeletonChart className="h-72" />
-              : rvpRows.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={rvpH} />
-              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noOfficialMsg")} showUploadLink={false} />}
           </ChartCard>
 
           {/* Attendance heatmap (full width) — same component as the fleet heatmap */}

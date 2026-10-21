@@ -2197,7 +2197,7 @@ record of other people's paperwork.
 - Both `/api/workers/headcount` and `/api/workers/trend` are on this basis, so
   the whole page reads one way — heatmap, donut, treemap, trend and the
   per-brigadir table. The charts say so (`workers.info.original`, appended to
-  the five info tooltips). `role_change` documents are deliberately NOT rewound:
+  the four info tooltips; the «Явка к штату» bar chart was removed on 2026-10-21, the operator: «we dont need it»). `role_change` documents are deliberately NOT rewound:
   they change a job title, i.e. which role column a present worker lands in,
   never whether they came.
 - **Today is on the page before it is closed** (2026-10-15, the operator:
