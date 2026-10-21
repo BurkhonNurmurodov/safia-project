@@ -906,7 +906,7 @@ export default function Workers() {
           <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={`${t("workers.info.rosterVsPresent")} ${t("workers.info.original")}`} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
               : rvpRows.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={rvpH} />
-              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noOfficialMsg")} />}
+              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noOfficialMsg")} showUploadLink={false} />}
           </ChartCard>
 
           {/* Attendance heatmap (full width) — same component as the fleet heatmap */}

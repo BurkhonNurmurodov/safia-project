@@ -15,6 +15,7 @@ from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.exchange_rewind import original_rows
 from app.services.name_map import sheet_alias_map
+from app.services import zagruzka_source
 
 log = logging.getLogger(__name__)
 
@@ -573,12 +574,20 @@ def get_headcount(
         if mgr_id in meta:
             _entry(mgr_id)
 
-    # Official HC per (manager name, day) — HeadcountData spells brigadirs in
-    # either alphabet, so accept every known spelling and resolve rows back to
-    # the canonical Manager.name (same convention as brigadirs.py).
+    # Official HC per (manager name, day) — the загрузка's own headcount, split
+    # at `zagruzka_source.ZAGRUZKA_FROM` exactly as the загрузка splits it:
+    # before the floor the «Одам сони» sheet (HeadcountData spells brigadirs in
+    # either alphabet, so every known spelling resolves back to the canonical
+    # Manager.name — brigadirs.py's convention), from it the TYPED «Bugungi
+    # fakt» on «Zagruzka fayli». Nobody fills the sheet tab any more, so read
+    # alone it left this figure — and «Явка к штату» — empty for every period
+    # after early September. One source per day: a sheet row on a later day is
+    # not read.
     alias = sheet_alias_map(db, (m["name"] for m in agg.values()))
     sheet_names = set(alias.keys())
-    date_strs = {d.strftime("%d.%m.%Y"): d for days in daily_hc.values() for d in days}
+    all_days = {d for days in daily_hc.values() for d in days}
+    date_strs = {d.strftime("%d.%m.%Y"): d for d in all_days
+                 if not zagruzka_source.uses_production(d)}
     official: dict[str, dict[date, float]] = {}
     if sheet_names and date_strs:
         for r in db.query(HeadcountData).filter(
@@ -589,6 +598,16 @@ def get_headcount(
             if val > 0:
                 canon = alias.get(r.manager_name, r.manager_name)
                 official.setdefault(canon, {})[date_strs[r.date]] = val
+    z_days = [d for d in all_days if zagruzka_source.uses_production(d)]
+    if z_days:
+        names = {m["manager_id"]: m["name"] for m in agg.values()}
+        typed = zagruzka_source.unit_people(zagruzka_source.typed_people(
+            db, list(names), min(z_days), max(z_days)))
+        for (mid, iso), val in typed.items():
+            # A unit-day summing to 0 is skipped like a 0 sheet row: the
+            # comparison below reads «no official figure», never «0 expected».
+            if val > 0 and mid in names:
+                official.setdefault(names[mid], {})[date.fromisoformat(iso)] = val
 
     # Same per-day mismatch rule as kpi_calculator.hc_suspicious: |official − verifix| > 2.
     # Days without official data are skipped rather than treated as official=0.
