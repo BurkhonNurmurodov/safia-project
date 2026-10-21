@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
-from sqlalchemy import Text, cast
+from sqlalchemy import Text, cast, func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -2426,6 +2426,28 @@ def _appeal_rows(q, model, open_states, cap: int,
     return sorted(open_rows + done_rows, key=lambda r: r.id, reverse=True)
 
 
+def _unit_labels(db: Session, managers: list) -> dict[int, str]:
+    """unit id → the supervisor name the REGISTER prints on that unit's bot
+    days: the spelling the leaders sheet uses for it most often
+    (`unit_display_names`, over the whole sheet), else Manager.name — the rule
+    of `leader_bot.dashboard_rows` and `leader_ai._project`. The page's
+    supervisor picker holds exactly these strings, so a queue card labelled
+    any other way is one the picker can never reach."""
+    census = (db.query(LeaderChecklist.supervisor, func.count(LeaderChecklist.id))
+              .group_by(LeaderChecklist.supervisor).all())
+    sup_match = supervisor_match(managers, {_relabel(s) for s, _ in census if s})
+    shown = unit_display_names(sup_match, census)
+    return {m.id: shown.get(m.id) or m.name for m in managers}
+
+
+def _leader_labels(db: Session, ids) -> dict[int, str]:
+    """leader profile id → the name the register prints on a bot day (the
+    profile's own)."""
+    ids = {i for i in ids if i}
+    return dict(db.query(RoleProfile.id, RoleProfile.name)
+                .filter(RoleProfile.id.in_(ids)).all()) if ids else {}
+
+
 def _period(v: str | None) -> str | None:
     """A period edge off the query string — `YYYY-MM-DD` or nothing. The
     column is a 10-character date string, so anything else is ignored rather
@@ -2477,7 +2499,10 @@ def _dispute_items(db: Session, payload: dict,
         db, {(d.manager_id, d.leader_id) for d in rows}, (cfg[0] if cfg else {}))
     mgrs_all = db.query(Manager).all() if rows else []
     mgr_shift = {m.id: m.shift for m in mgrs_all}
-    mgr_name = {m.id: m.name for m in mgrs_all}
+    # The REGISTER's names for a row `_project` cannot name — an objection to an
+    # automatic check has no verdict row — so the page's pickers still reach it.
+    unit_lbl = _unit_labels(db, mgrs_all) if rows else {}
+    lead_lbl = _leader_labels(db, {d.leader_id for d in rows})
 
     # An objection to an AUTOMATIC check (#1, #8, #9) has no review row, so
     # `verdicts` has nothing for it: what it argues with is the check's own
@@ -2535,12 +2560,16 @@ def _dispute_items(db: Session, payload: dict,
             "taskName": (names.get((d.manager_id, d.leader_id)) or {}).get(d.task_id),
             # The register's spelling first; the row's own stamp is the floor
             # for a verdict whose source row has since been deleted.
-            "leader": _named(who.get("leader")) or d.leader_name,
+            "leader": (_named(who.get("leader")) or lead_lbl.get(d.leader_id)
+                       or d.leader_name),
             "leaderId": d.leader_id,
-            # The unit's own name is the floor: an objection to an automatic
-            # check has no verdict row for `_project` to read a name off.
+            # An objection to an automatic check has no verdict row for
+            # `_project` to read a name off, so it takes the label the register
+            # prints for the unit's bot days — never the bare Manager.name,
+            # which the picker does not hold when the sheet spells the unit
+            # otherwise («Artikova Masuda» vs «Артикова Масуда», 21 Oct).
             "supervisor": (_named(who.get("supervisor"))
-                           or mgr_name.get(d.manager_id)),
+                           or unit_lbl.get(d.manager_id)),
             "managerId": d.manager_id,
             "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
             "reason": d.reason,
@@ -3529,7 +3558,8 @@ def _iso(ts) -> str | None:
 
 
 def _lp_item(db: Session, row, names: dict, mgr_names: dict,
-             can_act: bool = False, media: list | None = None) -> dict:
+             can_act: bool = False, media: list | None = None,
+             leaders: dict | None = None) -> dict:
     # A list hands every card's photos in at once (`photos_for`); one card
     # read alone (the appeal chat) asks for its own.
     if media is None:
@@ -3551,7 +3581,7 @@ def _lp_item(db: Session, row, names: dict, mgr_names: dict,
         "shift": row.shift,
         "taskId": row.task_id,
         "taskName": (names.get((row.manager_id, row.leader_id)) or {}).get(row.task_id),
-        "leader": row.leader_name,
+        "leader": (leaders or {}).get(row.leader_id) or row.leader_name,
         "leaderId": row.leader_id,
         "supervisor": mgr_names.get(row.manager_id),
         "managerId": row.manager_id,
@@ -3648,7 +3678,11 @@ def list_late_proofs(
 
     names = leader_reports.names_for_pairs(
         db, {(r.manager_id, r.leader_id) for r in rows}, {}) if rows else {}
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()} if rows else {}
+    # The REGISTER's names (`_unit_labels`), so the page's supervisor and
+    # leader pickers reach these cards — a bare Manager.name is a string the
+    # picker does not hold when the sheet spells the unit otherwise.
+    mgr_names = _unit_labels(db, db.query(Manager).all()) if rows else {}
+    lead_names = _leader_labels(db, {r.leader_id for r in rows})
 
     todo = 0
     acts = {}
@@ -3660,7 +3694,7 @@ def list_late_proofs(
             todo += 1
     media = leader_late_proof.photos_for(db, [r.id for r in rows])
     items = [_lp_item(db, r, names, mgr_names, acts.get(r.id, False),
-                      media=media.get(r.id, []))
+                      media=media.get(r.id, []), leaders=lead_names)
              for r in rows]
     _attach_chat(db, payload, leader_appeal_chat.LATE, items)
     return {

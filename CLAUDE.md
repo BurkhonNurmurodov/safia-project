@@ -6531,6 +6531,13 @@ Where this section and the two below disagree, THIS section is current.
   every open row is served, plus the settled rows of the page's period
   (`?from=&to=`, which `AppealQueue` sends; ceiling `APPEAL_PERIOD_CAP`) or,
   with no period, the newest `DISPUTE_CAP` / `LATE_PROOF_CAP` settled ones.
+  **And a card carries the REGISTER's names** (same day): an objection to an
+  automatic check has no verdict row for `_project`, and a late proof never
+  had one, so both printed the bare `Manager.name` — «Artikova Masuda» where
+  the register (and so the brigadir picker) says «Артикова Масуда»; 19 of 21
+  units differed, and the picker hid those cards. `_unit_labels` (the
+  sheet's most frequent spelling, else Manager.name — `dashboard_rows`' rule)
+  and `_leader_labels` (the profile's name) are the floor now.
 - **The day report rules nothing now**: its inline refuse/uplift/approve and
   undo are gone; an objection carries «Chatni ochish» (marked when it is the
   reader's turn).
