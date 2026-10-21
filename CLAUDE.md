@@ -7926,7 +7926,15 @@ computes the four itself (the operator's pick, asked).
     HEADER text (`ORDER_COLS` / `RECEIPT_COLS`), never by position. Rows are
     read 40,000 at a time.
   - Dates and times are taken as serials or text. Unreadable rows are
-    counted and named.
+    counted and named — per TAB and per reason, with their SHEET row
+    numbers (2026-10-21, the operator asked which rows; `_Skips`, kept in
+    the read's `notes.skipped_rows`: the column's header, the rows folded
+    into ranges — 150 a reason, the rest counted — and up to six of the
+    values that stopped them). A row of «заявки» or «поставка» with no
+    material but something else in it counts as unread too (until then
+    «поставка» dropped such rows silently). The page's notice names each
+    tab's count; «Qaysi qatorlar» opens the list (`OntimeSkipped`). A read
+    from before has counts only and says its rows come with the next read.
   - Stored whole in one transaction: `ontime_demand`, `ontime_receipts`,
     `ontime_materials`, `ontime_windows`, plus `ontime_reads` (the log). A
     failed read keeps the previous data and says why on the page.

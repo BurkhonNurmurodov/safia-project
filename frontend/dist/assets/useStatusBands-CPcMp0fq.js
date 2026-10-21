@@ -1,1 +1,0 @@
-import{t as r}from"./api-EKjN0eAu.js";import{g as e}from"./Toast-CfvSsST7.js";import{c as n,r as o}from"./statusBands-BPgl_tyX.js";function p(){const{data:t}=e({queryKey:["status-bands"],queryFn:()=>r.get("/api/status-bands").then(s=>{var a;return n((a=s.data)===null||a===void 0?void 0:a.bands)}),staleTime:3e5,refetchOnWindowFocus:!1});return t||o}export{p as t};

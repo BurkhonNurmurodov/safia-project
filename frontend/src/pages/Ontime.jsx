@@ -17,7 +17,8 @@ import OntimeOverview from "../components/ontime/OntimeOverview";
 import OntimeProducts from "../components/ontime/OntimeProducts";
 import OntimeDays from "../components/ontime/OntimeDays";
 import OntimeProductModal from "../components/ontime/OntimeProductModal";
-import { useOT, fill, ddmm, useGroupName } from "../components/ontime/ontimeUtil";
+import OntimeSkipped from "../components/ontime/OntimeSkipped";
+import { useOT, fill, ddmm, useGroupName, skippedOf } from "../components/ontime/ontimeUtil";
 import { usePersistentState } from "../hooks/usePersistentState";
 import useStatusBands from "../hooks/useStatusBands";
 import { useTranslit } from "../utils/transliterate";
@@ -54,6 +55,7 @@ export default function Ontime() {
   const [prodShow, setProdShow] = usePersistentState("ontime_prod_show", "all");
   const [product, setProduct] = useState(null);
   const [bandsOpen, setBandsOpen] = useState(false);
+  const [skipOpen, setSkipOpen] = useState(false);
   const bandFigures = useMemo(() => [{ key: "ontime", label: T.bandLabel, dir: "high", unit: "%" }], [T]);
 
   const reqParams = useMemo(() => {
@@ -204,9 +206,17 @@ export default function Ontime() {
     notices.push({ icon: Info, text: fill(T.noWindowNote, {
       g: data.notes.no_window.map((x) => `${gn(x.grp)} (${Math.round(x.qty).toLocaleString("ru-RU")})`).join(", ") }) });
   }
-  const skipped = ok?.notes ? Object.values(ok.notes.orders_skipped || {}).reduce((a, b) => a + b, 0)
-    + Object.values(ok.notes.receipts_skipped || {}).reduce((a, b) => a + b, 0) : 0;
-  if (skipped) notices.push({ icon: Info, text: fill(T.skippedNote, { n: skipped.toLocaleString("ru-RU") }) });
+  // Rows of the sheet the last read left out: which tab and how many here,
+  // which rows and why behind the button.
+  const skipped = skippedOf(ok?.notes);
+  if (skipped.length) {
+    notices.push({ icon: Info,
+      text: fill(T.skippedNote, {
+        n: skipped.reduce((a, x) => a + x.n, 0).toLocaleString("ru-RU"),
+        tabs: skipped.map((x) => fill(T.skTabPart, { tab: x.tab, n: x.n.toLocaleString("ru-RU") })).join(", "),
+      }),
+      action: { label: T.skOpen, onClick: () => setSkipOpen(true) } });
+  }
 
   const tabs = [
     ["overview", T.tabOverview],
@@ -264,6 +274,13 @@ export default function Ontime() {
               style={{ background: "var(--bg-inner)", border: `1px solid ${n.warn ? "var(--status-warn)" : "var(--border)"}`, color: "var(--text-2)" }}>
               <n.icon size={14} className="mt-0.5 flex-shrink-0" style={{ color: n.warn ? "var(--status-warn)" : "var(--text-3)" }} />
               <span className="flex-1">{n.text}</span>
+              {n.action && (
+                <button type="button" onClick={n.action.onClick}
+                  className="flex-shrink-0 font-semibold underline underline-offset-2 -my-2 py-2 px-1 min-h-[36px]"
+                  style={{ color: "var(--brand-text)" }}>
+                  {n.action.label}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -317,6 +334,7 @@ export default function Ontime() {
         <OntimeProductModal material={product} dateFrom={data?.date_from} dateTo={data?.date_to}
           onClose={() => setProduct(null)} />
       )}
+      {skipOpen && skipped.length > 0 && <OntimeSkipped tabs={skipped} onClose={() => setSkipOpen(false)} />}
       {isAdmin && (
         <StatusBandsModal open={bandsOpen} onClose={() => setBandsOpen(false)} bands={bands}
           figures={bandFigures} scope={T.bandScope} />

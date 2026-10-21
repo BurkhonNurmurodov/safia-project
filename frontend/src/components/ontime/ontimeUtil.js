@@ -119,3 +119,26 @@ export function fmtDur(min, T) {
   const h = Math.floor(m / 60), r = m % 60;
   return r ? `${h} ${T.unitHour} ${r} ${T.unitMin}` : `${h} ${T.unitHour}`;
 }
+
+// The rows of the sheet the last read left out (services/ontime_sync._Skips).
+const SKIP_TABS = [["orders", "заявки"], ["receipts", "поставка"]];
+const SKIP_REASONS = ["no_material", "no_day", "no_time", "no_qty", "no_wave"];
+
+// The last read's notes → [{key, tab, n, read, detailed, reasons: [...]}],
+// tabs that left nothing out dropped.
+export function skippedOf(notes) {
+  if (!notes) return [];
+  const out = [];
+  for (const [key, fallback] of SKIP_TABS) {
+    const det = notes.skipped_rows?.[key];
+    const counts = notes[`${key}_skipped`] || {};
+    const reasons = SKIP_REASONS.flatMap((r) => {
+      const d = det?.reasons?.[r];
+      const n = d?.n ?? counts[r] ?? 0;
+      return n > 0 ? [{ key: r, n, column: d?.column || "", rows: d?.rows || [], rest: d?.rest || 0, values: d?.values || [] }] : [];
+    });
+    const n = reasons.reduce((a, r) => a + r.n, 0);
+    if (n > 0) out.push({ key, tab: det?.tab || fallback, n, read: det?.rows_read ?? null, detailed: !!det, reasons });
+  }
+  return out;
+}

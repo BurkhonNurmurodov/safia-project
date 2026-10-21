@@ -266,9 +266,11 @@ def _call(fn, *a, **kw):
             raise
 
 
-def _headers(ws, wanted: dict[str, tuple[str, ...]]) -> dict[str, int]:
+def _headers(ws, wanted: dict[str, tuple[str, ...]],
+             texts: Optional[dict] = None) -> dict[str, int]:
     """Row 1's columns for the fields named, by header text. A header matches
-    when its folded text equals, or starts with, one of the field's names."""
+    when its folded text equals, or starts with, one of the field's names.
+    `texts` gets each found field's header as the sheet spells it."""
     row = _call(ws.row_values, 1) or []
     folded = [_norm(h) for h in row]
     out: dict[str, int] = {}
@@ -276,13 +278,18 @@ def _headers(ws, wanted: dict[str, tuple[str, ...]]) -> dict[str, int]:
         for i, h in enumerate(folded):
             if h and any(h == n or h.startswith(n) for n in names):
                 out[field] = i
+                if texts is not None:
+                    texts[field] = _text(row[i])[:60]
                 break
     return out
 
 
 def _chunks(ws, cols: dict[str, int]):
     """The tab's rows from row 2 on, `CHUNK` at a time, as dicts of the fields
-    asked for. Stops at the first empty chunk or the grid's last row."""
+    asked for, each chunk with the sheet row its first row sits on (the API
+    hands an empty row inside the range back as an empty list, so a row's
+    place in the chunk is its sheet row). Stops at the first empty chunk or
+    the grid's last row."""
     lo, hi = min(cols.values()), max(cols.values())
     last = min(ws.row_count or MAX_ROWS, MAX_ROWS)
     start = 2
@@ -297,11 +304,56 @@ def _chunks(ws, cols: dict[str, int]):
         out = []
         for r in rows:
             out.append({f: (r[i - lo] if i - lo < len(r) else None) for f, i in cols.items()})
-        yield out
+        yield start, out
         if len(rows) < end - start + 1:
             return
         start = end + 1
         time.sleep(PAUSE_S)
+
+
+class _Skips:
+    """The rows one tab's read left out, per reason: how many, WHICH sheet rows
+    (consecutive rows folded into ranges, so a thousand rows read as a few
+    lines) and a few of the values that stopped them — what the page names
+    when it says rows were not read. Ranges past `MAX_RANGES` are counted in
+    `rest`, never dropped silently."""
+    MAX_RANGES = 150
+    MAX_VALUES = 6
+
+    def __init__(self, reasons: tuple[str, ...], field: dict[str, str], texts: dict[str, str]):
+        self.n = {k: 0 for k in reasons}
+        self.ranges: dict[str, list] = {k: [] for k in reasons}
+        self.rest = {k: 0 for k in reasons}
+        self.values: dict[str, list] = {k: [] for k in reasons}
+        self.column = {k: texts.get(field.get(k, ""), "") for k in reasons}
+
+    def add(self, reason: str, row: int, value: Any = None) -> None:
+        self.n[reason] += 1
+        rs = self.ranges[reason]
+        if rs and rs[-1][1] == row - 1:
+            rs[-1][1] = row
+        elif len(rs) < self.MAX_RANGES:
+            rs.append([row, row])
+        else:
+            self.rest[reason] += 1
+        vs = self.values[reason]
+        v = _text(value)[:60]
+        if len(vs) < self.MAX_VALUES and v not in vs:
+            vs.append(v)
+
+    def counts(self) -> dict:
+        return {k: v for k, v in self.n.items() if v}
+
+    def detail(self, tab: str, read: int) -> dict:
+        return {"tab": tab, "rows_read": read, "reasons": {
+            k: {"n": self.n[k], "column": self.column[k], "rows": self.ranges[k],
+                "rest": self.rest[k], "values": self.values[k]}
+            for k in self.n if self.n[k]}}
+
+
+def _other_cells(r: dict, but: str) -> str:
+    """A row whose key cell is empty, as what it does hold — «Итого · 1234»."""
+    return " · ".join(_text(v) for f, v in r.items() if f != but and v not in (None, ""))
 
 
 ORDER_COLS = {
@@ -322,34 +374,37 @@ RECEIPT_COLS = {
 
 
 def read_orders(ws, notes: dict) -> tuple[dict, dict, int, Optional[date], Optional[date]]:
-    cols = _headers(ws, ORDER_COLS)
+    texts: dict = {}
+    cols = _headers(ws, ORDER_COLS, texts)
     missing = [f for f in ("day", "material", "qty", "wave") if f not in cols]
     if missing:
         raise SheetError("no_columns", f"{TAB_ORDERS}: {', '.join(missing)}")
     demand: dict[tuple, list] = {}
     mats: dict[str, tuple[str, str]] = {}
     rows = 0
-    skipped = {"no_day": 0, "no_material": 0, "no_qty": 0, "no_wave": 0}
+    skip = _Skips(("no_material", "no_day", "no_qty", "no_wave"),
+                  {"no_material": "material", "no_day": "day", "no_qty": "qty", "no_wave": "wave"}, texts)
     first = last = None
-    for chunk in _chunks(ws, cols):
-        for r in chunk:
+    for start, chunk in _chunks(ws, cols):
+        for i, r in enumerate(chunk):
+            row = start + i
             mat = _text(r.get("material"))
             if not mat:
                 if any(v not in (None, "") for v in r.values()):
-                    skipped["no_material"] += 1
+                    skip.add("no_material", row, _other_cells(r, "material"))
                 continue
             rows += 1
             d = parse_day(r.get("day"))
             if d is None:
-                skipped["no_day"] += 1
+                skip.add("no_day", row, r.get("day"))
                 continue
             q = parse_qty(r.get("qty"))
             if q is None:
-                skipped["no_qty"] += 1
+                skip.add("no_qty", row, r.get("qty"))
                 continue
             w = parse_wave(r.get("wave"))
             if w is None:
-                skipped["no_wave"] += 1
+                skip.add("no_wave", row, r.get("wave"))
                 continue
             grp = _text(r.get("group"))
             name = _text(r.get("name"))
@@ -367,42 +422,49 @@ def read_orders(ws, notes: dict) -> tuple[dict, dict, int, Optional[date], Optio
                 mats[mat] = (name or (old[0] if old else ""), grp or (old[1] if old else ""))
             first = d if first is None or d < first else first
             last = d if last is None or d > last else last
-    notes["orders_skipped"] = {k: v for k, v in skipped.items() if v}
+    notes["orders_skipped"] = skip.counts()
+    notes.setdefault("skipped_rows", {})["orders"] = skip.detail(ws.title, rows)
     return demand, mats, rows, first, last
 
 
 def read_receipts(ws, notes: dict, mats: dict) -> tuple[dict, int]:
-    cols = _headers(ws, RECEIPT_COLS)
+    texts: dict = {}
+    cols = _headers(ws, RECEIPT_COLS, texts)
     missing = [f for f in ("material", "qty", "day", "time") if f not in cols]
     if missing:
         raise SheetError("no_columns", f"{TAB_RECEIPTS}: {', '.join(missing)}")
     rec: dict[tuple, float] = {}
     rows = 0
-    skipped = {"no_day": 0, "no_time": 0, "no_qty": 0}
-    for chunk in _chunks(ws, cols):
-        for r in chunk:
+    skip = _Skips(("no_material", "no_day", "no_time", "no_qty"),
+                  {"no_material": "material", "no_day": "day", "no_time": "time", "no_qty": "qty"}, texts)
+    for start, chunk in _chunks(ws, cols):
+        for i, r in enumerate(chunk):
+            row = start + i
             mat = _text(r.get("material"))
             if not mat:
+                if any(v not in (None, "") for v in r.values()):
+                    skip.add("no_material", row, _other_cells(r, "material"))
                 continue
             rows += 1
             d = parse_day(r.get("day"))
             if d is None:
-                skipped["no_day"] += 1
+                skip.add("no_day", row, r.get("day"))
                 continue
             s = parse_secs(r.get("time"))
             if s is None:
-                skipped["no_time"] += 1
+                skip.add("no_time", row, r.get("time"))
                 continue
             q = parse_qty(r.get("qty"))
             if q is None:
-                skipped["no_qty"] += 1
+                skip.add("no_qty", row, r.get("qty"))
                 continue
             k = (d, s, mat)
             rec[k] = rec.get(k, 0.0) + q
             name = _text(r.get("name"))
             if name and mat not in mats:
                 mats[mat] = (name, "")
-    notes["receipts_skipped"] = {k: v for k, v in skipped.items() if v}
+    notes["receipts_skipped"] = skip.counts()
+    notes.setdefault("skipped_rows", {})["receipts"] = skip.detail(ws.title, rows)
     return rec, rows
 
 
