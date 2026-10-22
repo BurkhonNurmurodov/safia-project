@@ -131,6 +131,15 @@ jobs:
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
 
+      # ⚠ TEMPORARY (2026-10-22): every «everybody left» notice of the last
+      # 21 days, rebuilt at its send and now, with every worker who was not
+      # gone (pseudonyms only) — the «15 people still at work» retrace.
+      # Read-only, never fails the deploy. Remove with the script.
+      - name: "Report: everybody-left notices (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 170 .venv/bin/python ../deploy/diag_all_left.py || true
+
       # ⚠ TEMPORARY (2026-10-17): how IT's ARC apps serve a ticket's photos —
       # services/arc_files.py's resolver run on a few real tickets, each URL it
       # tried and what answered (URL shapes, status codes, sizes; no names, no
