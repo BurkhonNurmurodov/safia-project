@@ -2217,6 +2217,17 @@ record of other people's paperwork.
   `live: {date: "HH:MM"}`) and the page says «so far» once under the KPI row,
   as a dot on the heatmap's date header (`HeatmapChart dateMarks`), in the
   cell tooltip and day popup, and beside the date in the trend's panel.
+- **The «Movements» tab reads BOTH document tables** (2026-10-22: 9–18 Oct
+  showed all zeros). `/api/workers/requests-analysis` counts every filed
+  exchange and role change by the day it is filed for — no day-close gate,
+  no rewind. A live day (from `live_day.LIVE_FROM`) files them in
+  `live_documents` (`/api/staff-live/documents`) and nothing copies them into
+  `hr_documents`, so from 6 Oct the tab read nothing. `hr_documents` is read
+  over the whole period and `live_documents` from `max(date_from, LIVE_FROM)`
+  — the rows before the floor are the retired lab page's test filings
+  (`day_state.confirmed_pairs`' rule) — in one shape (the live day column is
+  `day`), so a period before 6 Oct answers exactly as before. Any status but
+  approved counts as pending, a rejected filing included, on both tables.
 
 ## What a supervisor's ojidaniya bar is MADE OF (the detail modal)
 

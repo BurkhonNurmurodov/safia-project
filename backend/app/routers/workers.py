@@ -10,9 +10,10 @@ from sqlalchemy import func, or_, and_, case, tuple_
 
 from app.database import get_db
 from app.permissions import require_page
-from app.models import Attendance, HeadcountData, HrDocument, Manager
+from app.models import Attendance, HeadcountData, HrDocument, LiveDocument, Manager
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services.live_day import LIVE_FROM
 from app.services.exchange_rewind import original_rows
 from app.services.name_map import sheet_alias_map
 from app.services import zagruzka_source
@@ -818,10 +819,10 @@ def get_requests_analysis(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("workers")),
 ):
-    """Aggregated view of Verifix-edit requests (HrDocuments): who files them and
-    on which days, where exchanged workers go (units vs tasks), and which roles
-    workers are changed to. No day-close gate — requests exist regardless of
-    whether the unit's day was confirmed."""
+    """Aggregated view of Verifix-edit requests (HrDocuments, and LiveDocuments
+    on a live day): who files them and on which days, where exchanged workers go
+    (units vs tasks), and which roles workers are changed to. No day-close gate
+    — requests exist regardless of whether the unit's day was confirmed."""
     if not date_to:
         date_to = date.today()
     if not date_from:
@@ -829,18 +830,31 @@ def get_requests_analysis(
 
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
 
-    q = (
-        db.query(HrDocument, Manager.name, Manager.shift)
-        .join(Manager, Manager.id == HrDocument.manager_id)
-        .filter(HrDocument.date >= date_from, HrDocument.date <= date_to)
-        .filter(HrDocument.doc_type.in_(["people_exchange", "role_change"]))
-        .filter(Manager.archived.is_(False))
-    )
-    if shift:
-        q = q.filter(Manager.shift == shift)
-    if scoped is not None:
-        q = q.filter(HrDocument.manager_id.in_(scoped))
-    rows = [] if empty_scope(scoped) else q.all()
+    def _docs(model, day_col, lo):
+        q = (
+            db.query(model, Manager.name, Manager.shift, day_col)
+            .join(Manager, Manager.id == model.manager_id)
+            .filter(day_col >= lo, day_col <= date_to)
+            .filter(model.doc_type.in_(["people_exchange", "role_change"]))
+            .filter(Manager.archived.is_(False))
+        )
+        if shift:
+            q = q.filter(Manager.shift == shift)
+        if scoped is not None:
+            q = q.filter(model.manager_id.in_(scoped))
+        return q.all()
+
+    # A LIVE day (from `live_day.LIVE_FROM`) files its requests in
+    # `live_documents`, not `hr_documents` — the same two kinds, the same
+    # payload, the day column named `day`. Before the floor that table holds
+    # only the retired /staff-live page's test filings and is never read here
+    # (`day_state.confirmed_pairs`' rule). Nothing copies a document from one
+    # table into the other, so no request is counted twice.
+    rows = []
+    if not empty_scope(scoped):
+        rows = _docs(HrDocument, HrDocument.date, date_from)
+        if date_to >= LIVE_FROM:
+            rows += _docs(LiveDocument, LiveDocument.day, max(date_from, LIVE_FROM))
 
     kpi = {"total": 0, "posted": 0, "pending": 0,
            "exchanges": 0, "role_changes": 0,
@@ -851,7 +865,7 @@ def get_requests_analysis(
     roles: dict[str, dict] = {}
     transitions: dict[tuple, int] = {}
 
-    for doc, mgr_name, mgr_shift in rows:
+    for doc, mgr_name, mgr_shift, doc_day in rows:
         payload   = doc.payload or {}
         employees = payload.get("employees") or []
         n_emp     = len(employees)
@@ -873,8 +887,8 @@ def get_requests_analysis(
         if posted:
             s["posted"] += 1
 
-        day = days.setdefault(doc.date, {
-            "date": doc.date.strftime("%d.%m.%Y"),
+        day = days.setdefault(doc_day, {
+            "date": doc_day.strftime("%d.%m.%Y"),
             "exchanges": 0, "role_changes": 0, "workers": 0,
         })
         day["workers"] += n_emp
