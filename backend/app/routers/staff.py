@@ -42,7 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
-from app.services import action_log, live_day, shift_scope
+from app.services import action_log, close_window, live_day, shift_scope
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
 
@@ -260,6 +260,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("Келганларнинг ҳаммаси ишдан кетди", "Сана: {date} | Келганлар: {came} | Охирги кетган: {last_out}\nЧиқиш белгиси йўқ: {missing}\nТасдиқ кутаётган ўзгаришлар: {pending}\n«Бугунги факт» киритилмаган ({no_people}) — кун ёпилса ҳам загрузка бўш қолади.\nКунни «Verifix тўғирлаш»да ёпинг — ёпилиши билан загрузка ҳисобланади."),
         "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\n«Bugungi fakt» не заполнен ({no_people}) — загрузка останется пустой и после закрытия.\nЗакройте день в «Verifix to'g'irlash» — загрузка посчитается сразу."),
         "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\n«Bugungi fakt» not typed ({no_people}) — the load stays blank even once the day is closed.\nClose the day on «Verifix to'g'irlash» — the load is counted at once."),
+    },
+    # …the same notice when everybody left BEFORE the brigadir's close clock
+    # (`close_window`, the operator's rule of 2026-10-22): it still goes at
+    # once, and says from when the day can be closed.
+    "live_all_left_staff_early": {
+        "uz": ("Kelganlarning hammasi ishdan ketdi", "Sana: {date} | Kelganlar: {came} | Oxirgi ketgan: {last_out}\nChiqish belgisi yo'q: {missing}\nTasdiq kutayotgan o'zgarishlar: {pending}\n«Bugungi fakt» kiritilmagan ({no_people}) — kun yopilsa ham zagruzka bo'sh qoladi.\nKunni {close_from} dan keyin «Verifix to'g'irlash»da yoping — yopilishi bilan zagruzka hisoblanadi."),
+        "uz_cyrl": ("Келганларнинг ҳаммаси ишдан кетди", "Сана: {date} | Келганлар: {came} | Охирги кетган: {last_out}\nЧиқиш белгиси йўқ: {missing}\nТасдиқ кутаётган ўзгаришлар: {pending}\n«Бугунги факт» киритилмаган ({no_people}) — кун ёпилса ҳам загрузка бўш қолади.\nКунни {close_from} дан кейин «Verifix тўғирлаш»да ёпинг — ёпилиши билан загрузка ҳисобланади."),
+        "ru": ("Все пришедшие ушли с работы", "Дата: {date} | Пришли: {came} | Последний ушёл: {last_out}\nНет отметки ухода: {missing}\nИзменений ждут подтверждения: {pending}\n«Bugungi fakt» не заполнен ({no_people}) — загрузка останется пустой и после закрытия.\nЗакройте день в «Verifix to'g'irlash» после {close_from} — загрузка посчитается сразу."),
+        "en": ("Everybody who came has left", "Date: {date} | Came: {came} | Last left: {last_out}\nNo check-out: {missing}\nChanges awaiting approval: {pending}\n«Bugungi fakt» not typed ({no_people}) — the load stays blank even once the day is closed.\nClose the day on «Verifix to'g'irlash» after {close_from} — the load is counted at once."),
     },
     "live_list_open": {
         "uz": ("Bugungi davomat jonli", "Sana: {date} | Kelganlar: {came}\nAlmashinuv va yacheykalar shu kunning o'zida «Verifix to'g'irlash» sahifasida — ertangi faylni kutish shart emas."),
@@ -5840,6 +5849,9 @@ def approval_day(
         "needs_cell_names": [getattr(r, "worker_name", None) or (r.get("worker_name") if isinstance(r, dict) else None)
                              for r in unplaced[:20]],
         "live":             live_day.is_live(d),
+        # Before the brigadir's clock their close is greyed out (`close_window`;
+        # the live close refuses on the same answer).
+        "close_lock":       None if closure is not None else close_window.lock(db, caller, manager_id, d),
     }
 
 

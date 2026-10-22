@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Clock, Boxes, Timer, AlertTriangle, Pencil, X, UserCog, Users,
-  Eraser, Moon, Layers, CircleSlash, Check,
+  Eraser, Moon, Layers, CircleSlash, Check, Lock,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -45,6 +45,11 @@ import { useToast } from "../../components/ui/Toast";
  *   3. THE REGISTER — one row per cell, showing the EFFECTIVE hours with the
  *      source spelled out, because a number whose origin is invisible is a
  *      number nobody dares change.
+ *
+ * Beside the defaults sits each shift's DAY-CLOSE clock (1b, 2026-10-22): the
+ * time from which a brigadir may close a day (backend `services/close_window`).
+ * That one IS enforced — by the close — and is a setting of its own; the cell
+ * hours below still move nothing.
  *
  * Editing is bulk-first: one row and forty rows go through the same modal and
  * the same endpoint (PUT /api/cell-hours/bulk), because a plant re-times a
@@ -255,6 +260,44 @@ export default function ShiftTimes() {
       setDefConfirmErr(errText(e));
     } finally {
       setDefBusy(false);
+    }
+  };
+
+  // ── day-close clock ───────────────────────────────────────────────────────
+  // Each shift's «from when may a brigadir close the day» (backend
+  // `services/close_window`, 2026-10-22). Same overlay-draft model as the
+  // defaults above; no confirm — it re-times no cell, and a Save is one value.
+  const closeAfter = useMemo(() => data?.close_after || {}, [data]);
+  const [closeDraft, setCloseDraft] = useState({});  // {1|2: "HH:MM"}
+  const [closeErrs, setCloseErrs] = useState({});    // {1|2: "message"}
+  const [closeBusy, setCloseBusy] = useState(null);  // shift being saved
+  const rowClose = (s) => closeDraft[s] ?? (closeAfter[String(s)] || "");
+  const closeDirty = (s) => closeDraft[s] != null && closeDraft[s] !== (closeAfter[String(s)] || "");
+  // The clock lands on the NEXT morning when it is earlier than the shift's
+  // start — the server's rule (`close_window.opens_at`), said beside the field.
+  const closeNextDay = (s) => {
+    const c = toMin(rowClose(s));
+    const st = toMin(srvDef(s).start);
+    return c != null && st != null && c < st;
+  };
+
+  const saveClose = async (s) => {
+    const clock = rowClose(s);
+    if (toMin(clock) == null) {
+      setCloseErrs((prev) => ({ ...prev, [s]: t("admin.shiftTimes.errBoth") }));
+      return;
+    }
+    setCloseBusy(s);
+    setCloseErrs((prev) => ({ ...prev, [s]: null }));
+    try {
+      await api.put("/api/cell-hours/close-after", { shift: s, clock });
+      setCloseDraft((prev) => { const next = { ...prev }; delete next[s]; return next; });
+      refresh();
+      toast.success(t("common.saved"));
+    } catch (e) {
+      setCloseErrs((prev) => ({ ...prev, [s]: errText(e) }));
+    } finally {
+      setCloseBusy(null);
     }
   };
 
@@ -491,7 +534,7 @@ export default function ShiftTimes() {
   const [clearErr, setClearErr] = useState(null);
 
   const bulkDirty = !!bulk && (!!bulk.start || !!bulk.end);
-  const anyDefDirty = rowDirty(1) || rowDirty(2);
+  const anyDefDirty = rowDirty(1) || rowDirty(2) || closeDirty(1) || closeDirty(2);
   // The shell must warn before unmounting a destination holding a draft.
   useAdminDirty(anyDefDirty || bulkDirty);
 
@@ -733,6 +776,58 @@ export default function ShiftTimes() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── 1b. Day-close clock per shift ─────────────────────────────────── */}
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead
+          icon={Lock}
+          title={t("admin.shiftTimes.closeTitle")}
+          subtitle={t("admin.shiftTimes.closeSub")}
+        />
+        <div>
+          {[1, 2].map((s) => (
+            <div key={s} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+              <div className="flex items-end gap-3 flex-wrap">
+                <span
+                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg flex-shrink-0 tracking-wide"
+                  style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}
+                >
+                  {t("admin.shiftTimes.shiftN").replace("{n}", String(s))}
+                </span>
+                <div className="w-32">
+                  <FormField label={t("admin.shiftTimes.closeFrom")} error={closeErrs[s] || undefined} alignTop>
+                    <TimeField
+                      id={`shifttimes-close-${s}`}
+                      value={rowClose(s)}
+                      onChange={(v) => {
+                        setCloseDraft((prev) => ({ ...prev, [s]: v }));
+                        setCloseErrs((prev) => ({ ...prev, [s]: null }));
+                      }}
+                      clearable={false}
+                      disabled={!canEdit}
+                    />
+                  </FormField>
+                </div>
+                {closeNextDay(s) && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-1 mb-2 rounded"
+                        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+                    <Moon size={10} />{t("admin.shiftTimes.closeNextDay")}
+                  </span>
+                )}
+                {canEdit && closeDirty(s) && (
+                  <Button size="lg" onClick={() => saveClose(s)} loading={closeBusy === s}
+                          disabled={closeBusy != null} icon={<Check size={14} />}>
+                    {t("common.save")}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+          <p className="px-4 py-2.5 text-[11px] leading-snug" style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>
+            {t("admin.shiftTimes.closeHint")}
+          </p>
         </div>
       </div>
 

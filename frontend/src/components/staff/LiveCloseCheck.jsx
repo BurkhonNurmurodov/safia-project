@@ -9,6 +9,8 @@
 //
 // Reads `GET /api/staff-live/daily/close-check` — the very gate `POST
 // /daily/close` re-checks — and reports whether the close may go ahead.
+// Before a brigadir's close clock (S1 12:00, S2 23:00 — backend
+// `close_window`, 2026-10-22) it names that time and `closable` stays false.
 //
 // «Verifix'dan yangilash» (2026-10-07, the operator) reads the unit — and who
 // stands in which cell — from Verifix NOW, on any day: a past day's read stops
@@ -24,6 +26,7 @@ import TimeField from "../ui/TimeField";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
+import { closeLockText } from "../../utils/closeLock";
 import { fill } from "./LiveBits";
 
 const BASE = "/api/staff-live";
@@ -179,6 +182,9 @@ export default function LiveCloseCheck({ managerId, date, canFix = true }) {
       </div>
       {pulling && <div style={{ color: "var(--text-3)" }}>{t("staffClose.refreshing")}</div>}
       {pullErr && <div style={{ color: "var(--status-bad)" }}>{pullErr}</div>}
+      {data.close_lock && (
+        <div className="font-medium" style={{ color: "var(--status-warn)" }}>{closeLockText(t, data.close_lock)}</div>
+      )}
       {data.busy_count > 0 && (
         <div style={{ color: "var(--status-bad)" }}>
           {fill(t("staffClose.busy"), { n: data.busy_count })} {names(data.busy)}

@@ -67,7 +67,8 @@ _EXACT = {
     "request_undone": "approvals", "document_rejected": "approvals",
     # Attendance and the day close.
     "day_closed": "day", "day_reopened": "day", "verifix_uploaded": "day",
-    "live_all_left": "day", "live_all_left_staff": "day", "live_list_open": "day",
+    "live_all_left": "day", "live_all_left_staff": "day", "live_all_left_staff_early": "day",
+    "live_list_open": "day",
     "live_day_still_open": "day", "live_shift_summary": "day",
     # A live day's requests and closes (routers/staff_live) — /staff's twins.
     "live_exchange_created": "approvals", "live_exchange_approved": "approvals",

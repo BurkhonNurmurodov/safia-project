@@ -1403,6 +1403,8 @@ columns, edited on the admin «Smena vaqtlari» destination
   per-shift constants. Wiring a consumer is a separate decision — **ask before
   making these hours move a number**, because the moment one does, every cell
   whose clock nobody has confirmed starts scoring against a placeholder.
+  (The tab's card 1b, each shift's DAY-CLOSE clock, is a separate setting and
+  IS enforced — «A brigadir closes a day only from the shift's clock».)
 - **`services/cell_hours.py` is THE definition** — `defaults`, `resolve`,
   `duration_min`, `crosses_midnight`. Duration is always DERIVED; there is no
   minutes column, and a second place computing "how long is this cell's shift"
@@ -9558,6 +9560,39 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   ШТАТКА on /production, /live and the Overview trend read the copy, i.e.
   after the close (ruling 19); the whole-cell per-day routing of the Davomat
   tab is gone with it (ruling 17).
+
+## A brigadir closes a day only from the shift's clock (`close_window`, 2026-10-22)
+
+The operator's rule: a SUPERVISOR may close an **S1 day only from 12:00** and
+an **S2 day only from 23:00**, on the date the shift-day is filed under. Before
+it, the close is refused — on top of every live check (nobody inside / on a
+break / due, every check-out answered, every worker in a cell), never instead
+of one. `services/close_window.py` is THE definition.
+
+- **Who.** Supervisors only. An admin closing for a unit is never held
+  (`close_window.lock` answers None for any other role).
+- **Which moment.** The first time the clock comes round at or after the
+  shift's START (`cell_hours.defaults`, the frame `day_frame` names the day
+  by): S1 08:00 → D 12:00, S2 20:00 → D 23:00. A clock earlier than the start
+  is the next morning (D+1). A past day is long open; a unit with no shift is
+  shift 1.
+- **Where it is set.** «Smena vaqtlari» (`/admin/upload?tab=shifttimes`), card
+  1b — two `AppSetting` rows `day_close_after_shift_1/2` ("HH:MM"), written by
+  `PUT /api/cell-hours/close-after` (`admin.cell_hours.manage`). A missing row
+  reads as the fallback 12:00 / 23:00, so nothing is seeded. Unlike the cell
+  hours on the same tab, this one IS enforced.
+- **Where it bites.** `staff_live.close_day` refuses with 409 «Kunni soat
+  12:00 dan keyin yopish mumkin.» BEFORE any Verifix read (logged as
+  `blocked=close_time`). `close_lock` ({close_from, opens_at, opens_on,
+  opens_in_s}, null when open) rides on `GET /api/staff/approvals/day`,
+  `GET /api/staff-live/approvals/day` and the close check, which also sets
+  `closable=false` — so /daily greys both «Kunni yopish» buttons with the note
+  under the big one (re-asked at `opens_in_s`, the server's count, never the
+  browser clock), and the /staff calendar's dialog names the time and keeps
+  its confirm unarmed. The words: `utils/closeLock.js`.
+- **The «everybody left» DM** still goes the moment the last person leaves;
+  before the clock it is `live_all_left_staff_early`, whose last line says
+  from when the day can be closed (`close_from`).
 
 ## «Verifix (test)» — the API, page by page (`/verifix/*`)
 

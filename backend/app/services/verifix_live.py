@@ -1252,6 +1252,15 @@ def _notify_all_left(db: Session, manager_id: int, day: date, counts: dict, clos
             from app.services import zagruzka_source
             typed = zagruzka_source.typed_people(db, [manager_id], day, day)
             params["no_people"] = "" if typed else day.strftime("%d.%m.%Y")
+            # Everybody left before the brigadir's close clock (`close_window`):
+            # told now all the same, with the time the day can be closed from.
+            from app.services import close_window
+            lk = close_window.lock(db, {"role": "supervisor"}, manager_id, day)
+            if lk:
+                nkey = "live_all_left_staff_early"
+                params["close_from"] = (
+                    f"{date.fromisoformat(lk['opens_on']):%d.%m.%Y} {lk['close_from']}"
+                    if lk["opens_on"] else lk["close_from"])
         _notify_supervisor_all(db, manager_id, nkey, params, "info",
                                subject=("live_day", f"{manager_id}:{day.isoformat()}"))
         db.commit()

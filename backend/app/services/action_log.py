@@ -209,6 +209,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # (the three cell routes live in the identity block above — they have to be
     #  matched BEFORE the generic /api/profiles/admin/{}/{} profile pattern)
     (("PUT",),    "/api/cell-hours/defaults",                  "org", "org.cell_hours_default_set"),
+    (("PUT",),    "/api/cell-hours/close-after",               "org", "org.day_close_after_set"),
     (("PUT",),    "/api/cell-hours/bulk",                      "org", "org.cell_hours_set"),
     (("PUT",),    "/api/admin/idle-source/{}",                 "org", "org.idle_source_set"),
 

@@ -16,6 +16,11 @@ reason to be readable by pages that do not need it.
 Single-cell edits go through ``PUT /bulk`` with one id: one writer means one
 place where "both or neither", the start≠end rule, the audit line and the
 change count are decided.
+
+The tab also holds each shift's DAY-CLOSE clock (``PUT /close-after``,
+`services/close_window`) — the time a brigadir may close a day from. That one
+IS read elsewhere (the close itself), but it is its own setting: these cell
+hours still move nothing.
 """
 import logging
 from typing import Optional
@@ -28,7 +33,7 @@ from app.capabilities import CAP_CELL_HOURS_MANAGE, require_cap
 from app.capability_alerts import alert_grant_use, unit_name
 from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
-from app.services import action_log, cell_archive, cell_hours
+from app.services import action_log, cell_archive, cell_hours, close_window
 from app.services.factory_scope import list_factories, serialize
 
 router = APIRouter(prefix="/api/cell-hours", tags=["cell-hours"])
@@ -42,6 +47,11 @@ class DefaultIn(BaseModel):
     shift: int
     start: str
     end: str
+
+
+class CloseAfterIn(BaseModel):
+    shift: int
+    clock: str
 
 
 class BulkIn(BaseModel):
@@ -63,6 +73,10 @@ def _defaults_payload(db: Session) -> dict:
         }
         for shift, pair in defs.items()
     }
+
+
+def _close_after_payload(db: Session) -> dict:
+    return {str(shift): clock for shift, clock in close_window.defaults(db).items()}
 
 
 @router.get("")
@@ -123,6 +137,7 @@ def get_cell_hours(db: Session = Depends(get_db), _: dict = Depends(_manage)):
 
     return {
         "defaults": _defaults_payload(db),
+        "close_after": _close_after_payload(db),
         "cells": rows,
         "supervisors": [
             {"id": m.id, "name": m.name, "shift": m.shift,
@@ -178,6 +193,35 @@ def put_default(body: DefaultIn, db: Session = Depends(get_db),
                   cell_hours.fmt_pair(start, end))],
     )
     return {"ok": True, "defaults": _defaults_payload(db)}
+
+
+@router.put("/close-after")
+def put_close_after(body: CloseAfterIn, db: Session = Depends(get_db),
+                    caller: dict = Depends(_manage)):
+    """Set one shift's day-close clock: from then on that shift's brigadirs may
+    close a day only from this time (`close_window`). Admins are never held."""
+    if body.shift not in close_window.KEYS:
+        raise HTTPException(status_code=400, detail="shift must be 1 or 2")
+    before = close_window.defaults(db).get(body.shift)
+    try:
+        clock = close_window.set_default(db, body.shift, body.clock)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+
+    log.info("DAY-CLOSE clock | shift=%s %s -> %s | by=%s",
+             body.shift, before, clock, (caller or {}).get("sub"))
+    alert_grant_use(
+        db, caller, CAP_CELL_HOURS_MANAGE, "close_window.default",
+        details=[("shift", body.shift)],
+        changes=[("close_after", before or "—", clock)],
+    )
+    action_log.enrich(
+        target_kind="setting", target_id=close_window.KEYS[body.shift],
+        details=[("shift", body.shift)],
+        changes=[("close_after", before or "—", clock)],
+    )
+    return {"ok": True, "close_after": _close_after_payload(db)}
 
 
 @router.put("/bulk")

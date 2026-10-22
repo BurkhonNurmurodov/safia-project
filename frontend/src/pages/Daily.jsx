@@ -23,6 +23,7 @@ import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import LiveCloseCheck, { useLiveCloseCheck } from "../components/staff/LiveCloseCheck";
+import { closeLockText } from "../utils/closeLock";
 import { StaffApiProvider, TODAY_STAFF_API } from "../context/StaffApiContext";
 import api from "../utils/api";
 import { catColor } from "../components/idle/categories";
@@ -221,6 +222,16 @@ function SupervisorDaily() {
       params: { attend_date: date, ...(ownUnitOnly ? {} : { manager_id: managerId }) },
     }).then(r => r.data),
     enabled,
+    // Before the brigadir's close clock (`close_lock`, S1 12:00 / S2 23:00) the
+    // day is asked again the moment it lifts — the server's count, less the
+    // time since that answer came (a restored answer has spent some of it);
+    // never the browser's clock — so the button arms itself without a reload.
+    refetchInterval: (q) => {
+      const s = q.state.data?.close_lock?.opens_in_s;
+      if (!s) return false;
+      const left = s * 1000 - (Date.now() - q.state.dataUpdatedAt);
+      return Math.min(Math.max(left, 1000), 30 * 60_000);
+    },
   });
 
   const invalidateApproval = () => {
@@ -274,6 +285,9 @@ function SupervisorDaily() {
   const isOpen      = dayState === "open";
   const isWaiting   = dayState === "closed";
   const isConfirmed = dayState === "confirmed";
+  // The brigadir's own close waits for the shift's clock (admins never do).
+  const closeLock = ownDay ? approval?.close_lock : null;
+  const closeLockMsg = closeLockText(t, closeLock);
 
   return (
     <Layout title={t("daily.title")}>
@@ -328,9 +342,11 @@ function SupervisorDaily() {
           ) : ownDay ? (
             <button
               onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
-              disabled={closeMut.isPending}
+              disabled={closeMut.isPending || !!closeLock}
+              title={closeLockMsg || undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ background: "var(--brand)", color: "#fff" }}
+              style={{ background: "var(--brand)", color: "#fff",
+                       opacity: closeLock ? 0.5 : 1, cursor: closeLock ? "not-allowed" : "pointer" }}
             >
               <Lock size={13} /> {t("daily.closeDay")}
             </button>
@@ -396,12 +412,19 @@ function SupervisorDaily() {
           {(ownDay || isAdmin) && (
             <button
               onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
-              disabled={closeMut.isPending}
+              disabled={closeMut.isPending || !!closeLock}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold"
-              style={{ background: "var(--brand)", color: "#fff" }}
+              style={{ background: "var(--brand)", color: "#fff",
+                       opacity: closeLock ? 0.5 : 1, cursor: closeLock ? "not-allowed" : "pointer" }}
             >
               <Lock size={14} /> {t("daily.closeDay")}
             </button>
+          )}
+          {closeLock && (
+            <div className="flex items-center gap-1.5 text-xs font-medium px-4 text-center"
+              style={{ color: "var(--status-warn)" }}>
+              <Clock size={13} className="flex-shrink-0" /> {closeLockMsg}
+            </div>
           )}
         </div>
       )}

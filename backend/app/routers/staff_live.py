@@ -52,7 +52,9 @@ from app.models import (
 )
 from app.notify_ctx import notifications_suppressed
 from app.permissions import get_page_access, require_page
-from app.services import action_log, live_day, live_projection, live_staff, shift_scope, verifix_live
+from app.services import (
+    action_log, close_window, live_day, live_projection, live_staff, shift_scope, verifix_live,
+)
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/staff-live", tags=["staff-live"])
@@ -1808,6 +1810,8 @@ def approval_day(attend_date: Optional[str] = None, manager_id: Optional[int] = 
         "can_reopen": _cap_covers(db, caller, CAP_DAY_REOPEN, mid),
         "needs_cell": len(unplaced),
         "needs_cell_names": [r["worker_name"] for r in unplaced[:20]],
+        # Before the brigadir's clock their close is greyed out (`close_window`).
+        "close_lock": None if closure is not None else close_window.lock(db, caller, mid, d),
     }
 
 
@@ -1965,7 +1969,14 @@ def close_check(attend_date: Optional[str] = None, manager_id: Optional[int] = N
     next shift opens, and a cell corrected in Verifix since must reach it."""
     mid = _read_unit(db, caller, manager_id)
     d = _day_of(attend_date) or _unit_today(db, mid)[0]
-    return _close_check(db, mid, d, force=force, fresh_dir=force)["out"]
+    out = _close_check(db, mid, d, force=force, fresh_dir=force)["out"]
+    # The brigadir's clock (`close_window`) keeps the confirm unarmed too; the
+    # close itself refuses on the same answer.
+    lk = close_window.lock(db, caller, mid, date.fromisoformat(out["date"]))
+    out["close_lock"] = lk
+    if lk:
+        out["closable"] = False
+    return out
 
 
 class ClockFixBody(BaseModel):
@@ -2079,6 +2090,14 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
         raise HTTPException(status_code=400, detail="Cannot close a future date")
     if _closed(db, mid, d):
         raise HTTPException(status_code=409, detail="Day is already closed")
+    # A brigadir closes from the shift's clock on (`close_window`) — said before
+    # any Verifix read, which would only be thrown away.
+    lk = close_window.lock(db, caller, mid, d)
+    if lk:
+        action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid, day=d,
+                          details=[("date", str(d)), ("blocked", "close_time"),
+                                   ("close_after", lk["close_from"])])
+        raise HTTPException(status_code=409, detail=close_window.refusal(lk))
     live = live_day.is_live(d)
     # «Reads Verifix once more» — unless the job is keeping this unit's day
     # (`close_fresh_s`: its pace for the day plus STALE_S), which it re-copies
