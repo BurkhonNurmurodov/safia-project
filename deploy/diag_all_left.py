@@ -102,15 +102,23 @@ def do_notice(db, n: LiveAllLeftNotice, directory: dict, now: datetime) -> None:
     rec("statuses", unit=n.manager_id, day=str(n.day),
         at_send=dict(Counter(r["status"] for _, r in then.values())),
         now=dict(Counter(r["status"] for _, r in later.values())))
-    for eid, (kind, r) in then.items():
-        if r["status"] in ("left", "absent", "off", "not_yet", "moved_out"):
-            continue
+    at_work = Counter()
+    for eid, (rk, r) in then.items():
         rp = report_of(store, eid)
         end = verifix_live._dt(rp.get("end")) if rp.get("end") else None
+        out_dt = verifix_live._dt(rp.get("output")) if rp.get("output") else None
         mk = marks_of(store, eid)
+        after_send = [(t.strftime("%m-%d %H:%M"), ty) for t, ty in mk if t > sent]
+        later_out = bool(out_dt and out_dt > sent)
+        # Still at work when the notice went: clocked in, and Verifix saw them
+        # after it (a mark, or the report's check-out falling later).
+        if not (r.get("clock_in") and (after_send or later_out)):
+            continue
+        at_work[r["status"]] += 1
         after_end = [(t.strftime("%m-%d %H:%M"), ty) for t, ty in mk if end and t > end]
         nk, nr = later.get(eid, (None, {}))
-        rec("worker", unit=n.manager_id, day=str(n.day), w=ps(eid), kind=kind,
+        rec("worker", unit=n.manager_id, day=str(n.day), w=ps(eid), row_kind=rk,
+            report_out_after_send=later_out, marks_after_send=after_send[:8],
             job=r.get("job_title"), cell=r.get("verifix_code"),
             schedule=r.get("schedule"), sched_begin=r.get("begin"), sched_end=r.get("end"),
             status_at_send=r["status"], missing=r.get("missing"),
@@ -120,6 +128,8 @@ def do_notice(db, n: LiveAllLeftNotice, directory: dict, now: datetime) -> None:
             last_mark=(mk[-1][0].strftime("%m-%d %H:%M"), mk[-1][1]) if mk else None,
             status_now=nr.get("status"), clock_out_now=nr.get("clock_out"),
             out_src_now=nr.get("out_src"))
+    rec("at_work_at_send", unit=n.manager_id, day=str(n.day), n=sum(at_work.values()),
+        by_status_now_read=dict(at_work))
     cl = db.query(LiveDayClose).filter(LiveDayClose.manager_id == n.manager_id,
                                        LiveDayClose.day == n.day).first()
     rec("close", unit=n.manager_id, day=str(n.day),
@@ -145,11 +155,6 @@ def main() -> None:
             missing_ge_10=[(n.manager_id, str(n.day), n.missing) for n in notices
                            if (n.missing or 0) >= 10])
         for n in notices:
-            if not (n.missing or 0):
-                # Notices with nobody missing are listed, not rebuilt.
-                rec("notice_brief", unit=n.manager_id, day=str(n.day), came=n.came,
-                    last_out=loc(n.last_out), sent=loc(n.sent_at))
-                continue
             try:
                 do_notice(db, n, directory, now)
             except Exception as exc:  # noqa: BLE001
