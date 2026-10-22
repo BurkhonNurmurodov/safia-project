@@ -64,6 +64,13 @@ def marks_of(store: dict, eid: str):
     return sorted(out)
 
 
+def _ok_before(s, sent) -> bool:
+    try:
+        return datetime.fromisoformat(s) <= sent
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def report_of(store: dict, eid: str) -> dict:
     ts = (store.get(eid) or {}).get("ts") or {}
     days = ts.get("days") or []
@@ -96,6 +103,35 @@ def do_notice(db, n: LiveAllLeftNotice, directory: dict, now: datetime) -> None:
     if not store or sent is None:
         return
     at_send = live_staff.unit_day(live_staff.load(db, n.day, directory, store, sent), n.manager_id)
+    # The read AS IT STOOD at the send: marks up to it, the report's check-out
+    # dropped where it lands after it (Verifix fills check-outs in late).
+    trunc = {}
+    for eid, e in store.items():
+        e2 = dict(e)
+        e2["m"] = [x for x in (e.get("m") or []) if _ok_before(x[0], sent)]
+        ts = e.get("ts")
+        if ts and ts.get("days"):
+            d0 = dict(ts["days"][0])
+            od = verifix_live._dt(d0.get("output_time")) if d0.get("output_time") else None
+            if od and od > sent:
+                d0["output_time"] = None
+                d0["facts"] = []
+            e2["ts"] = {**ts, "days": [d0] + list(ts["days"][1:])}
+        trunc[eid] = e2
+    real = live_staff.unit_day(live_staff.load(db, n.day, directory, trunc, sent), n.manager_id)
+    cl_real = live_staff.close_state(real, n.day, None, None, 0)
+    rr = rows_by_eid(real)
+    stayed = []
+    for eid in rr:
+        o = report_of(store, eid).get("output")
+        od = verifix_live._dt(o) if o else None
+        if od and od > sent:
+            stayed.append(eid)
+    rec("replay", unit=n.manager_id, day=str(n.day), state=cl_real["state"],
+        counts={k: real["counts"][k] for k in ("came", "inside", "left", "no_out", "not_yet", "missing")},
+        stayed_later=len(stayed),
+        stayed_read_as=dict(Counter((rr.get(e, (None, {}))[1].get("status"),
+                                     rr.get(e, (None, {}))[1].get("out_src")) for e in stayed)))
     at_now = live_staff.unit_day(live_staff.load(db, n.day, directory, store, now), n.manager_id)
     rec("counts", unit=n.manager_id, day=str(n.day), at_send=at_send["counts"], now=at_now["counts"])
     then, later = rows_by_eid(at_send), rows_by_eid(at_now)
