@@ -1031,6 +1031,17 @@ def close_state(day_rows: dict, day: date, close_rec: Optional[LiveDayClose],
     return out
 
 
+def unanswered_no_out(day_rows: dict) -> int:
+    """People standing here with no check-out nobody has answered — named rows
+    and people carried here under another unit's name. What holds the
+    «everybody left» notice (they may still be at work)."""
+    n = sum(1 for r in day_rows["workers"]
+            if r.get("split_of") is None and r["status"] == "no_out")
+    n += sum(1 for x in day_rows.get("extras") or []
+             if x.get("here") and x.get("status") == "no_out")
+    return n
+
+
 def last_exit(day_rows: dict, day: date) -> Optional[datetime]:
     """The latest moment one of the unit's people left it — a check-out, or a
     move to another unit — what the «everybody left» notice is measured from."""

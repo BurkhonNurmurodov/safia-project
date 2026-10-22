@@ -1322,6 +1322,13 @@ def _notices(db: Session, day: date, unit_days: dict, directory: dict) -> int:
             continue
         if cl["state"] != "all_left" or not cl.get("last_out"):
             continue
+        # Somebody with no check-out may still be at work — overtime, or a
+        # Verifix schedule that ends before the real shift: past their
+        # schedule's end + MISSING_AFTER_MIN they read «no_out», not «inside».
+        # The notice waits until they check out or the brigadir answers them
+        # in the close dialog (`_fixed`); the day close is unchanged.
+        if live_staff.unanswered_no_out(ud):
+            continue
         last_out = datetime.fromisoformat(cl["last_out"])
         if (now - last_out).total_seconds() > NOTICE_WINDOW_MIN * 60:
             continue

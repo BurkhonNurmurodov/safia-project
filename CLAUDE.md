@@ -9281,7 +9281,12 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   unit's current shift-day `all_left` writes `live_all_left_notices` (unique per
   unit-day, committed before the message) and sends the notice to the unit's
   supervisor profile, with the missing check-outs and pending changes as lines
-  of their own. Only while the last exit is within `NOTICE_WINDOW_MIN` (3 h), so
+  of their own. **The NOTICE (not the close, not the bar) waits while anybody
+  standing here has an unanswered no check-out** (`live_staff.unanswered_no_out`,
+  2026-10-22): «no_out» is read MISSING_AFTER_MIN past the Verifix SCHEDULE's
+  end, so overtime or a schedule ending too early read as gone — 15 people
+  still at work fired «hammasi ketdi». It goes once they check out or the
+  brigadir answers them in the close dialog. Only while the last exit is within `NOTICE_WINDOW_MIN` (3 h), so
   a deploy never tells a finished night; never for a day already closed; once
   per unit-day even if somebody comes back. Only a live day (from `LIVE_FROM`)
   is told, as `live_all_left_staff` — see the next section.
