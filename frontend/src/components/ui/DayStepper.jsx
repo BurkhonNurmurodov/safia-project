@@ -32,6 +32,12 @@ import { useLang } from "../../context/LangContext";
  *              in the next week»). Null = no dot.
  *   marked   – Set of ISO days the calendar flags with a brand dot (days that
  *              hold data) — replaces a second «jump to a date» control.
+ *   month / year – the "‹ [month] ›" and "‹ [year] ›" steppers (the
+ *              «Brigadirlar reytingi» period, 2026-10-23): the chevrons step a
+ *              whole month / year, the label is DateRangePicker's month / year
+ *              picker, and `value` and every `onChange` are that period's
+ *              first day. «next» stays enabled while the next period starts
+ *              on or before `max`.
  *   fillPhone – below sm the stepper takes its row's whole width and the date
  *              button stretches between the chevrons, so the controls after
  *              it start a row of their own instead of being pushed off the
@@ -47,6 +53,18 @@ function addDaysISO(iso, n) {
   return toISO(d);
 }
 
+function firstOf(iso, grain) {
+  const [y, m] = iso.split("-");
+  return grain === "year" ? `${y}-01-01` : `${y}-${m}-01`;
+}
+
+function addPeriodISO(iso, grain, n) {
+  const d = new Date(firstOf(iso, grain) + "T00:00:00");
+  if (grain === "year") d.setFullYear(d.getFullYear() + n);
+  else d.setMonth(d.getMonth() + n);
+  return toISO(d);
+}
+
 function mondayOf(iso) {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
@@ -55,9 +73,11 @@ function mondayOf(iso) {
 
 export default function DayStepper({
   value, onChange, max = toISO(new Date()), week = false, rolling = false, dotPrev = null, dotNext = null,
-  compactUntil = "sm", marked = null, fillPhone = false,
+  compactUntil = "sm", marked = null, fillPhone = false, month = false, year = false,
 }) {
   const { t } = useLang();
+  const grain = year ? "year" : month ? "month" : null;
+  if (grain) return <PeriodStepper {...{ value, onChange, max, grain, fillPhone, t }} />;
   const step = week ? 7 : 1;
   const roll = week && rolling;
   const from = week && !roll ? mondayOf(value) : value;
@@ -115,6 +135,42 @@ export default function DayStepper({
       >
         <ChevronRight size={16} />
         {dotNext && !atMax && dot}
+      </button>
+    </div>
+  );
+}
+
+// The month / year steppers: the same chrome as the day and week ones, the
+// label being DateRangePicker's whole-month / whole-year picker.
+function PeriodStepper({ value, onChange, max, grain, fillPhone, t }) {
+  const from = firstOf(value, grain);
+  const prev = addPeriodISO(from, grain, -1);
+  const next = addPeriodISO(from, grain, 1);
+  const atMax = max != null && next > max;
+  const cap = grain === "year" ? "Year" : "Month";
+  const prevLabel = t(`ui.dayStepper.prev${cap}`);
+  const nextLabel = t(`ui.dayStepper.next${cap}`);
+  const btn = "relative grid place-items-center w-[38px] h-[38px] rounded-xl flex-shrink-0 transition-colors hover:bg-[var(--bg-inner)] disabled:hover:bg-[var(--bg-card)] disabled:cursor-default";
+  const chrome = { background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" };
+  return (
+    <div className={`flex items-center gap-1.5 min-w-0${fillPhone ? " max-sm:w-full" : ""}`}>
+      <button type="button" onClick={() => onChange(prev)} aria-label={prevLabel} title={prevLabel} className={btn} style={chrome}>
+        <ChevronLeft size={16} />
+      </button>
+      <DateRangePicker
+        month={grain === "month"}
+        year={grain === "year"}
+        max={max}
+        dateFrom={from}
+        dateTo={from}
+        setDateFrom={(v) => v && onChange(firstOf(v, grain))}
+        setDateTo={() => {}}
+        triggerClassName="px-3 py-2 text-sm"
+        fillPhone={fillPhone}
+      />
+      <button type="button" onClick={() => onChange(next)} disabled={atMax} aria-label={nextLabel} title={nextLabel}
+        className={btn} style={{ ...chrome, opacity: atMax ? 0.4 : 1 }}>
+        <ChevronRight size={16} />
       </button>
     </div>
   );

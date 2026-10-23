@@ -11,8 +11,8 @@ or copy-paste its markup into a page.
 | Element type | Template | Rules |
 |---|---|---|
 | Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). An option's `short` is what the closed trigger shows for it — a panel label carrying a note, the bare name on the control («AI kalitlari»' model pickers). |
-| Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. |
-| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). |
+| Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. `month` is the whole-month picker (a year + 12 months), `year` the whole-year one (a page of twelve years); a pick sets the whole period, clamped to `max`. |
+| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). `month` / `year` make it THE "‹ month ›" / "‹ year ›" stepper: ±1 month / year, the label is DateRangePicker's `month` / `year` picker, `value` and every `onChange` are the period's first day (/leaderboard). |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. The subtitle is readable text (`--text-2`, 12px) and WRAPS: it often names who a record belongs to (a brigadir, a cell), and a phone has no hover to finish a cut line. **It is a real dialog (2026-10-05)**: `role=dialog` + `aria-modal`, labelled by the title (described by the subtitle); on open focus moves onto the CARD (never into a field — that raises a phone keyboard — unless a child autoFocuses), Tab is trapped, and focus returns to the opener on close. **Escape is an implicit close, like the backdrop**: it obeys `dismissable`, and it NEVER silently discards entered work — with a draft it asks first (`ConfirmDialog`, «Saqlamasdan yopilsinmi?», the safe button focused). The draft is `dirty` when the caller passes it; otherwise «the user changed something in this card since it opened»: any typed / ticked / chosen native field (`SearchInput` and anything under `data-no-draft` excepted) plus a pick in `StyledSelect` / `DateRangePicker` / `CountStepper`, which report through `useMarkDraft()` — a new value template inside dialogs must do the same. The X never asks; the backdrop click is unchanged. Only the TOPMOST dialog answers the keyboard: `dialogLayers.js` is THE stack (Modal, ConfirmDialog and Lightbox register; top = highest z-index, then later in the DOM). A popover inside a dialog that closes on Escape must `e.preventDefault()` so the dialog stays standing, and a page-level Escape (a fullscreen overlay) steps aside while `hasOpenDialog()`. |
 | Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). Carries `role=dialog`, a focus trap, Escape-to-cancel and initial focus on the SAFE button. `error` renders the failure INSIDE the dialog — a mutation that fails must leave the dialog standing with the reason on it, never close and fire `alert()`. `challenge` (+ `challengeLabel`) demands the operator retype a string before confirm enables: use it for anything no undo can reach (full-DB restore → `RESTORE`, whole-day attendance wipe → the date). `cancelLabel` defaults to `common.cancel`. It registers in `dialogLayers.js` like `Modal`, so its Escape never also closes the form under it, and its key handler is an effect event — a parent re-rendering while it is open no longer bounces focus to the opener and back. |
@@ -3226,6 +3226,60 @@ migrate).
   read on a past month, the exact / skip modes, the bands' edges, a bad
   override falling back whole); the first real read lands with the deploy's
   boot catch-up.
+
+## «Brigadirlar reytingi» on real data (`/leaderboard`, 2026-10-23)
+
+The Laboratory's brigadir board was a deterministic mock until 2026-10-23
+(the operator: «make it real now … put Efficiency percentage instead of
+Zagruzka percentage»; then, asked: Kaizen hidden, concerns = closed share of
+the period's, and «pick year, month, or certain week, not certain
+date-to-date»). Page key `leaderboard`, still admin-only by default.
+`services/brigadir_board.py` is THE rule, `routers/leaderboard.py` the door
+(`GET /api/leaderboard?grain&anchor&factory&shift`, `POST
+/api/leaderboard/export.xlsx`), `pages/Leaderboard.jsx` the page.
+
+- **The period is a WEEK (Mon–Sun), a MONTH or a YEAR** — `SegmentedToggle`
+  + `DayStepper week | month | year` (the templates gained `month` / `year`
+  for it). The history is the 8 weeks / 8 months / 4 years of the same grain
+  ending with the picked one (`HISTORY`), never before the first closed day
+  (`data_floor`, min `day_approvals.date`; nothing closed ever → the picked
+  period alone). The period still running ends at today and says so. Places,
+  the trend sparkline, the rank chart and every «vs» are period against the
+  period before.
+- **Nothing is measured here; every figure is another page's own:**
+  - **Samaradorlik** (replaced Zagruzka) = /zagruzka's «Samaradorlik»
+    heatmap: `eff_util`, the Python twin of `effUtil` (utils/formulas.js —
+    keep them in step), over `build_metrics_list`'s closed unit-days; the
+    period figure is that heatmap's AVG (each day rounded first, then the
+    mean). It can pass 100%; it enters the score capped at 100.
+  - **Lider nazorati** = the /leaders brigadir ranking's «Reyting», scored in
+    the BROWSER from the standing pool (`routers/leaderboard.checklist_pool`:
+    windowed, cut to the board's units, every leader an opaque code, a unit
+    its manager id) through `utils/leaderBoard.js` — the /leaders scoring
+    functions, moved out of Leaders.jsx so the Monitoring tab, «Mening
+    o'rnim» and this board compose ONE rule. Each window is cut at
+    `lastFinishedDay`, as /leaders cuts its own.
+  - **Xavotirlar yopilishi** = of the /concerns register's concerns filed with
+    the unit in the period (`entry_date`, never a worker's), the share done;
+    one sitting with a shift- or top-manager now is out of the count. Read as
+    the register stands, so a recent period reads lower than an old one.
+  - **Davomat** = /workers' `att_rate` ((came + on leave) ÷ list, summed per
+    period), its own `get_headcount` called; the live «so far» day is left out.
+  - **Kaizen** is not measured (Notion names Notion people, not profiles): the
+    column and the radar spoke say «hali hisoblanmaydi», its 15% is shared
+    over the other four (35 · 18 · 18 · 29).
+- **The score**: Σ min(figure, 100) × weight over the figures the period HAS,
+  ÷ their weights — a figure with no data drops out (the page's stated rule).
+  Ranked: non-archived units with `zagruzka_on`, in the viewer's scope (plant
+  lock, `useFactorySection`, shift), that have any figure in the period;
+  places are dense 1..n per period among units with a score then.
+- One answer per (grain, period, scope) is kept 120 s, shared by viewers
+  asking together (`SharedBuild`). The Excel is the board as drawn (the
+  browser sends its rows; `build_workbook` lays them out, the page's 80 / 65
+  bands as cell tints), logged as `export.leaderboard`.
+- The podium shows the brigadir's profile photo as a medallion sized off the
+  card's measured width, below the rank column (the mock's cut-out renders
+  are gone).
 
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 

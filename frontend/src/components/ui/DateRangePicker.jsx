@@ -140,6 +140,10 @@ export default function DateRangePicker({
   // never offers columns for days that have not happened). The day-calendar
   // path below is untouched by it.
   month = false,
+  // Whole-year mode: the panel is a page of twelve years, and a pick sets the
+  // range to that whole year (clamped to `max` like a month). `min` mutes the
+  // years that end before it. The «Brigadirlar reytingi» year picker.
+  year = false,
   max = null,          // ISO upper bound — days after it are muted/unpickable
   min = null,          // month mode only: ISO lower bound — months that end
                        // before it are muted/unpickable (a register that
@@ -180,7 +184,7 @@ export default function DateRangePicker({
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const width = Math.min(month ? 320 : single ? 440 : 660, vw - 16);
+    const width = Math.min(month || year ? 320 : single ? 440 : 660, vw - 16);
     let left = rect.right - width;                 // right-align to trigger
     left = Math.min(left, vw - width - 8);
     left = Math.max(8, left);
@@ -316,6 +320,55 @@ export default function DateRangePicker({
     </div>
   );
 
+  // ── Whole-year mode ───────────────────────────────────────────────────────
+  // Twelve years a page, the picked one on it; ‹ › move a page at a time.
+  const [pageY, setPageY] = useState(selY - 8);
+  useEffect(() => { if (open && year) setPageY(selY - 8); }, [open, year, selY]);
+  const yearOff = (y) => (!!max && `${y}-01-01` > max) || (!!min && `${y}-12-31` < min);
+  const pickYear = (y) => {
+    const to = `${y}-12-31`;
+    markDraft();
+    setDateFrom(`${y}-01-01`);
+    setDateTo(max && to > max ? max : to);
+    setOpen(false);
+  };
+  const yearBody = (
+    <div className="p-3">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setPageY((y) => y - 12)} disabled={yearOff(pageY - 1)}
+          aria-label={t("filter.prev")}
+          className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30" style={{ color: "var(--text-3)" }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{pageY} – {pageY + 11}</span>
+        <button onClick={() => setPageY((y) => y + 12)} disabled={yearOff(pageY + 12)}
+          aria-label={t("filter.next")}
+          className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30" style={{ color: "var(--text-3)" }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {Array.from({ length: 12 }, (_, i) => {
+          const y = pageY + i;
+          const off = yearOff(y);
+          const on = y === selY;
+          return (
+            <button key={y} onClick={() => !off && pickYear(y)} disabled={off}
+              aria-pressed={on}
+              className="py-2 rounded-lg text-xs font-medium tabular-nums transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              style={{
+                background: on ? "var(--brand)" : "var(--bg-inner)",
+                color: on ? "var(--on-brand)" : "var(--text-2)",
+                border: `1px solid ${on ? "var(--brand)" : "var(--border)"}`,
+              }}>
+              {y}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   // single-date mode only offers single-day quick picks (no ranges);
   // an upper bound drops presets that reach past it
   const presets = (single ? getPresets(t, max).filter((p) => p.from === p.to) : getPresets(t, max))
@@ -328,7 +381,9 @@ export default function DateRangePicker({
     && dateFrom <= ALL_TIME_FROM && dateTo >= allTimeTo(max);
 
   // Trigger label — single mode can lead with the localized weekday
-  const triggerLabel = month
+  const triggerLabel = year
+    ? (dateFrom ? String(selY) : t("filter.selectDates"))
+    : month
     ? (dateFrom ? `${t(`cal.m${selM}`)} ${selY}` : t("filter.selectDates"))
     : isAllTime
     ? t("filter.allTime")
@@ -389,17 +444,17 @@ export default function DateRangePicker({
           the animated `.page-enter` wrapper (its transform makes it the
           containing block for fixed descendants), so the backdrop covered only
           the content region and the sheet landed in the wrong place. ── */}
-      {open && month && createPortal(
+      {open && (month || year) && createPortal(
         isMobile ? (
           <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end"
             style={{ background: "rgba(0,0,0,0.6)" }}
             onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
             <div className="rounded-t-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
               <div className="flex items-center justify-between px-4 pt-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("filter.selectMonth")}</span>
+                <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t(year ? "filter.selectYear" : "filter.selectMonth")}</span>
                 <button onClick={() => setOpen(false)} style={{ color: "var(--text-3)" }}><X size={18} /></button>
               </div>
-              {monthBody}
+              {year ? yearBody : monthBody}
             </div>
           </div>
         ) : (
@@ -409,11 +464,11 @@ export default function DateRangePicker({
               width: pos?.width ?? 320, visibility: pos ? "visible" : "hidden",
               zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border-md)",
             }}>
-            {monthBody}
+            {year ? yearBody : monthBody}
           </div>
         ), document.body)}
 
-      {open && !month && isMobile && createPortal(
+      {open && !month && !year && isMobile && createPortal(
         <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={e => { if (e.target===e.currentTarget) setOpen(false); }}>
           <div className="rounded-t-2xl flex flex-col max-h-[90dvh]"
@@ -509,7 +564,7 @@ export default function DateRangePicker({
       )}
 
       {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
-      {open && !month && !isMobile && createPortal(
+      {open && !month && !year && !isMobile && createPortal(
         <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl flex overflow-hidden"
           style={{
             position:"fixed",
