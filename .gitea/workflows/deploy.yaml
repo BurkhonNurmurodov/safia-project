@@ -150,3 +150,14 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 100 .venv/bin/python ../deploy/diag_arc_files.py || true
+
+      # ⚠ TEMPORARY (2026-10-23): which personal fields Verifix's employee
+      # list carries (gender, birthday, where people live) and the shape of
+      # pro/region$list — for the Workers page's «who works here» analysis.
+      # Field names, fill counts, coded values and locality words counted over
+      # everybody only; no person is printed. Read-only, never fails the
+      # deploy. Remove with the script.
+      - name: "Probe: Verifix person fields (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 170 .venv/bin/python ../deploy/diag_vfx_person_fields.py || true

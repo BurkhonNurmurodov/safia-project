@@ -1,58 +1,79 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Trophy, Gauge, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
+  Trophy, Gauge, Zap, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
   ListOrdered, TrendingUp, ArrowUp, ArrowDown, Minus, Info, ChevronDown,
-  Download, Layers, CircleCheck, TriangleAlert,
+  Download, Layers, CircleCheck, TriangleAlert, CalendarX2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import KPICard from "../components/ui/KPICard";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import DateRangePicker from "../components/ui/DateRangePicker";
+import DayStepper from "../components/ui/DayStepper";
 import { FilterPanel } from "../components/ui/ColumnFilter";
 import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import ProfileAvatar from "../components/ui/ProfileAvatar";
+import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
+import { useFactorySection } from "../components/ui/FactorySelect";
+import { useFactory, useFactoryParams, factoryName } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import useElementWidth from "../hooks/useElementWidth";
 import { useTranslit } from "../utils/transliterate";
 import { shortPerson } from "../utils/personName";
+import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
+import {
+  lastFinishedDay, inScope, rosterIn, boardScores, buildCutLeaders, buildCutUnits,
+  buildStartLeaders, poolRows, poolRoster,
+} from "../utils/leaderBoard";
 
 /* ══════════════════════════════════════════════════════════════════════
  * Leaderboard — brigadir ranking across the five platform statistics.
  *
- * Read top to bottom it answers four questions, in order: is the team OK
- * (the KPI strip), who leads (the podium), where does everybody stand (the
+ * Read top to bottom it answers four questions, in order: who leads (the
+ * podium), is the team OK (the KPI strip), where does everybody stand (the
  * register, a row opening into its breakdown against the team average), and
  * how did the places move (the trajectory chart). The podium is the one
  * deliberately theatrical element — three big player cards, kept by the
  * operator's call — everything else is the platform's own card grammar.
  *
- * ⚠ DUMMY DATA. Everything below the `── dummy data ──` banner is a
- * deterministic mock so the page is fully interactive in prod without a
- * backend. When real endpoints land, replace `useLeaderboardData()` with a
- * useQuery call that returns the same shape ({ sups, byRank }); the render
- * layer needs no changes.
+ * REAL DATA from 2026-10-23 (`GET /api/leaderboard`, services/brigadir_board.py
+ * holds the rule): one WEEK, MONTH or YEAR (the operator: no date-to-date
+ * range) and the periods of the same grain before it. Every figure is one
+ * another page already prints — Samaradorlik is /zagruzka's «Samaradorlik»
+ * heatmap (it replaced Zagruzka, the operator's call), Davomat is /workers'
+ * attendance rate, Xavotir the share of the period's /concerns resolved, and
+ * «Lider nazorati» is the /leaders brigadir ranking's «Reyting», scored HERE
+ * from the checklist pool with the very functions that board uses
+ * (utils/leaderBoard.js). Kaizen is not measured yet: its column says so and
+ * its weight is shared out over the other four (the operator, same day).
  * ════════════════════════════════════════════════════════════════════ */
 
 /* ── categories (the five ranked statistics) ─────────────────────────── */
 const CATS = [
-  { key: "zag", icon: Gauge,          weight: 0.30 },
+  { key: "eff", icon: Zap,            weight: 0.30 },
   { key: "naz", icon: ClipboardCheck, weight: 0.15 },
-  { key: "kai", icon: Lightbulb,      weight: 0.15 },
+  { key: "kai", icon: Lightbulb,      weight: 0.15, live: false },
   { key: "xav", icon: ShieldCheck,    weight: 0.15 },
   { key: "kir", icon: UserCheck,      weight: 0.25 },
 ];
+const LIVE = CATS.filter((c) => c.live !== false);
+const LIVE_W = LIVE.reduce((a, c) => a + c.weight, 0);
+/* What a category weighs once the ones not measured yet are shared out. */
+const shareOf = (c) => (c.live === false ? 0 : c.weight / LIVE_W);
 
 /* Category identity hues — one per statistic in the shared generic-first
  * order (red, green, blue, yellow, orange), darker in the light theme for
  * contrast. Identity only: they tint the icon chip and the header dot, never
  * a value — a value is always traffic-light. */
 const CAT_HUES = {
-  dark:  { zag: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316" },
-  light: { zag: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c" },
+  dark:  { eff: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316" },
+  light: { eff: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c" },
 };
 
 /* Traffic-light status bands (fill + higher-contrast ink per theme). */
@@ -68,100 +89,112 @@ const MEDAL = {
   light: { 1: "#B8860B", 2: "#7B8794", 3: "#A0522D" },
 };
 
-const WEEKS = ["04.05", "11.05", "18.05", "25.05", "01.06", "08.06", "15.06", "22.06"];
-const LAST = WEEKS.length - 1;
-
-/* ────────────────────────── dummy data ──────────────────────────────── */
-const RAW = [
-  { name: "Malika Qodirova",   unit: "2-uchastka",  image: "/images/supervisors/malika.png", render: "/images/supervisors/malika_cut.png",   s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
-  { name: "Dilshod Karimov",   unit: "5-uchastka",  image: "/images/supervisors/dilshod.png", render: "/images/supervisors/dilshod_cut.png",  s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
-  { name: "Aziza Tosheva",     unit: "1-uchastka",  image: "/images/supervisors/aziza.png", render: "/images/supervisors/aziza_cut.png",    s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
-  { name: "Murodali Ochilov",  unit: "7-uchastka",  image: "/images/supervisors/murodali.png", render: "/images/supervisors/murodali_cut.png", s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
-  { name: "Sherzod Aliyev",    unit: "3-uchastka",  image: "/images/supervisors/sherzod.png", render: "/images/supervisors/sherzod_cut.png",  s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
-  { name: "Nodira Yusupova",   unit: "4-uchastka",  image: "/images/supervisors/nodira.png", render: "/images/supervisors/nodira_cut.png",   s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
-  { name: "Jasur Rahimov",     unit: "9-uchastka",  image: "/images/supervisors/jasur.png", render: "/images/supervisors/jasur_cut.png",    s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
-  { name: "Gulnora Ismoilova", unit: "8-uchastka",  image: "/images/supervisors/gulnora.png", render: "/images/supervisors/gulnora_cut.png",  s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
-  { name: "Bekzod Tursunov",   unit: "6-uchastka",  image: "/images/supervisors/bekzod.png", render: "/images/supervisors/bekzod_cut.png",   s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
-  { name: "Kamola Ergasheva",  unit: "11-uchastka", image: "/images/supervisors/kamola.png", render: "/images/supervisors/kamola_cut.png",   s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
-  { name: "Rustam Nazarov",    unit: "10-uchastka", image: "/images/supervisors/rustam.png", render: "/images/supervisors/rustam_cut.png",   s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
-  { name: "Sardor Xolmatov",   unit: "12-uchastka", image: "/images/supervisors/sardor.png", render: "/images/supervisors/sardor_cut.png",   s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
-];
-
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const GRAINS = ["week", "month", "year"];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/* The 0–100 score: the live figures weighed, a figure the period has none of
+ * left out and its weight shared over the rest. A figure counts at most 100 —
+ * efficiency above 100% (output beyond 90% of the clocked minutes) is printed
+ * as it is and enters the score as 100. Null when no figure exists at all. */
 function composite(s) {
   let num = 0, den = 0;
-  CATS.forEach((c) => { if (s[c.key] != null) { num += s[c.key] * c.weight; den += c.weight; } });
-  return den ? num / den : 0;
+  LIVE.forEach((c) => { const v = s[c.key]; if (v != null) { num += Math.min(v, 100) * c.weight; den += c.weight; } });
+  return den ? num / den : null;
 }
 
-/* Dummy shift assignment — odd unit numbers = S1, even = S2 (6 sups each). */
-const unitShift = (unit) => (parseInt(unit, 10) % 2 === 1 ? 1 : 2);
-
-/* Seed derived from the selected date range so a different period reshuffles
- * scores and ranks — the mock feels live until real endpoints land. */
-function seedOf(from, to) {
-  const s = `${from}|${to}`;
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h) % 100000;
+/* ── periods ─────────────────────────────────────────────────────────── */
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const isoAdd = (iso, n) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n); return isoOf(d); };
+const ddmm = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+function daysOf(from, to) {
+  const out = [];
+  for (let d = from; d <= to; d = isoAdd(d, 1)) out.push(d);
+  return out;
+}
+/* A period's name: the week's span, the month, the year. `short` is the
+ * chart axis's. */
+function periodLabel(p, grain, t, short = false) {
+  if (!p) return "";
+  const y = p.from.slice(0, 4), m = Number(p.from.slice(5, 7)) - 1;
+  if (grain === "year") return y;
+  if (grain === "month") return short ? t(`cal.m${m}`).slice(0, 3) : `${t(`cal.m${m}`)} ${y}`;
+  return short ? ddmm(p.from) : `${ddmm(p.from)} – ${ddmm(p.end)}.${p.end.slice(0, 4)}`;
 }
 
-/* Build the whole dataset for a seed. */
-function buildData(seed) {
-  const sups = RAW.map((r, i) => {
-    const rnd = mulberry32(seed * 1000 + i * 77);
-    const s = {};
-    CATS.forEach((c) => {
-      const base = r.s[c.key];
-      s[c.key] = base == null ? null : clamp(Math.round(base + (rnd() - 0.5) * 8), 20, 99);
-    });
-    const comp = composite(s);
-    const trend = (rnd() - 0.45) * 2.2;
-    const hist = [];
-    for (let w = 0; w <= LAST; w++) hist.push(w === LAST ? comp : comp - trend * (LAST - w) + (rnd() - 0.5) * 6);
-    const sparks = {};
-    CATS.forEach((c) => {
-      const v = s[c.key];
-      if (v == null) { sparks[c.key] = null; return; }
-      const arr = [];
-      for (let w = 0; w <= LAST; w++) arr.push(w === LAST ? v : clamp(Math.round(v - trend * (LAST - w) * 0.8 + (rnd() - 0.5) * 9), 8, 99));
-      sparks[c.key] = arr;
-    });
-    return { id: i, name: r.name, unit: r.unit, shift: unitShift(r.unit), image: r.image, render: r.render, s, comp, hist, sparks, scoreDelta: +(trend * 1.6 + (rnd() - 0.5)).toFixed(1) };
+/* «Lider nazorati» per period: the /leaders brigadir ranking's «Reyting» —
+ * `boardScores("unit", …)` over the pool, each window cut at the last
+ * FINISHED day, as that board cuts its own (`countCap`). unit id → score. */
+function checklistByPeriod(pay) {
+  const pool = pay.checklist || {};
+  const rows = poolRows(pool.rows), roster = rosterIn(poolRoster(pool.roster), {});
+  const cutLeaders = buildCutLeaders(pool.cutoffs,
+    new Set(roster.filter((p) => p.filed).map((p) => p.name)), roster);
+  const cutUnits = buildCutUnits(pool.cutUnits);
+  const startLeaders = buildStartLeaders(roster);
+  const cap = lastFinishedDay();
+  return (pay.periods || []).map((p) => {
+    const m = new Map();
+    const to = p.to < cap ? p.to : cap;
+    if (to < p.from) return m;
+    const dates = daysOf(p.from, to);
+    const rs = rows.filter((r) => inScope(r, { from: p.from, to }));
+    for (const e of boardScores("unit", rs, roster, cutLeaders, cutUnits, dates, dates.length, startLeaders))
+      m.set(e.name, e.rating);
+    return m;
   });
-  return rankPool(sups);
 }
 
-/* Dense places 1..n inside a pool, for every week — re-run after a filter so a
- * shift's own board is ranked among itself. */
-function rankPool(pool) {
-  const rankHist = new Map(pool.map((s) => [s.id, []]));
-  for (let w = 0; w <= LAST; w++) {
-    pool.map((s) => ({ id: s.id, v: s.hist[w] }))
-      .sort((a, b) => b.v - a.v)
-      .forEach((o, pos) => { rankHist.get(o.id)[w] = pos + 1; });
-  }
-  const sups = pool.map((s) => {
+/* The whole board out of one payload: every unit's five figures per period,
+ * the composite per period, and the places — dense 1..n among the units that
+ * HAVE a score in that period (a unit with nothing in the picked period is
+ * not on the board; in an older one it is simply absent from that week). */
+function buildBoard(pay) {
+  const P = pay?.periods || [];
+  const L = P.length - 1;
+  if (L < 0) return { sups: [], byRank: [], periods: P, missing: 0 };
+  const naz = checklistByPeriod(pay);
+  const all = (pay.units || []).map((u) => {
+    const f = pay.figures?.[String(u.id)] || {};
+    const series = {
+      eff: P.map((_, i) => f.eff?.v?.[i] ?? null),
+      naz: P.map((_, i) => naz[i].get(String(u.id)) ?? null),
+      kai: P.map(() => null),
+      xav: P.map((_, i) => f.xav?.v?.[i] ?? null),
+      kir: P.map((_, i) => f.att?.v?.[i] ?? null),
+    };
+    const at = (i) => Object.fromEntries(CATS.map((c) => [c.key, series[c.key][i]]));
+    const hist = P.map((_, i) => composite(at(i)));
+    return {
+      id: u.id, name: u.name, shift: u.shift, factory: u.factory,
+      profileKey: u.profile_key, photoVer: u.photo_ver,
+      s: at(L), comp: hist[L], hist, sparks: series,
+      xav: f.xav ? { n: f.xav.n?.[L] ?? 0, done: f.xav.done?.[L] ?? 0, up: f.xav.up?.[L] ?? 0 } : null,
+      days: { eff: f.eff?.days?.[L] ?? 0, kir: f.att?.days?.[L] ?? 0 },
+    };
+  });
+  const rankHist = new Map(all.map((s) => [s.id, P.map(() => null)]));
+  P.forEach((_, i) => {
+    all.filter((s) => s.hist[i] != null)
+      .sort((a, b) => b.hist[i] - a.hist[i] || a.name.localeCompare(b.name))
+      .forEach((s, pos) => { rankHist.get(s.id)[i] = pos + 1; });
+  });
+  const sups = all.filter((s) => s.comp != null).map((s) => {
     const rh = rankHist.get(s.id);
-    return { ...s, rankHist: rh, rank: rh[LAST], prevRank: rh[LAST - 1] };
+    const prevComp = L > 0 ? s.hist[L - 1] : null;
+    return {
+      ...s, rankHist: rh, rank: rh[L], prevRank: L > 0 ? rh[L - 1] : null,
+      scoreDelta: prevComp == null ? null : s.comp - prevComp,
+    };
   });
   const byRank = [...sups].sort((a, b) => a.rank - b.rank);
-  return { sups, byRank };
+  return { sups, byRank, periods: P, missing: all.length - sups.length };
 }
+
 
 /* ────────────────────────── helpers ─────────────────────────────────── */
 const fmt = (v) => (v == null ? "—" : String(Math.round(v)));
-const fmt1 = (v) => v.toFixed(1).replace(".", ",");
-function initials(name) { return name.trim().split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase(); }
+const fmt1 = (v) => (v == null ? "—" : v.toFixed(1).replace(".", ","));
 function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
 function bandOf(v) { return v == null ? "none" : v >= 80 ? "ok" : v >= 65 ? "warn" : "bad"; }
 function bandFill(st, v) { const b = bandOf(v); return b === "ok" ? st.ok : b === "warn" ? st.warn : b === "bad" ? st.bad : st.none; }
@@ -171,17 +204,10 @@ function deltaInk(st, d) { return d == null || d === 0 ? st.none : d > 0 ? st.ok
 function deltaFill(st, d) { return d == null || d === 0 ? st.none : d > 0 ? st.ok : st.bad; }
 
 /* ────────────────────────── atoms ───────────────────────────────────── */
-function Avatar({ sup, size }) {
-  // Anchored high in the frame: a portrait cropped to a circle must land on
-  // the face, not the chest. Neutral chrome — identity is the name beside it.
-  return (
-    <span className="inline-flex items-center justify-center rounded-full font-bold flex-shrink-0 overflow-hidden"
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.36), background: "var(--bg-accent)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-      {sup.image
-        ? <img src={sup.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 14%" }} />
-        : initials(sup.name)}
-    </span>
-  );
+/* THE profile avatar (ProfileAvatar) — the brigadir's photo, else their
+ * initials on their own hue. */
+function Avatar({ sup, size, style }) {
+  return <ProfileAvatar name={sup.name} colorKey={sup.name} profileKey={sup.profileKey} photoVer={sup.photoVer} size={size} style={style} />;
 }
 
 /* The dashed micro-gauge under a number — six segments lit by the value's
@@ -209,14 +235,24 @@ function PlaceBadge({ place, medal, size = 26 }) {
   );
 }
 
-/* Places won or lost against last week. A place is better the SMALLER it is,
- * so 7 → 4 is +3 and green — movement up the board, not arithmetic. */
-function MoveChip({ prev, now, st, t }) {
+/* Places won or lost against the period before. A place is better the
+ * SMALLER it is, so 7 → 4 is +3 and green — movement up the board, not
+ * arithmetic. Not on the board then: «yangi», neutral. */
+function MoveChip({ prev, now, st, t, vsLabel }) {
+  if (prev == null) {
+    return (
+      <span className="inline-flex items-center rounded-lg px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap leading-none"
+        title={`${t("leaderboard.rank")} · ${vsLabel}: —`}
+        style={{ background: hexA(st.none, 0.14), color: "var(--text-3)" }}>
+        {t("leaderboard.new")}
+      </span>
+    );
+  }
   const mv = prev - now;
   const Icon = mv > 0 ? ArrowUp : mv < 0 ? ArrowDown : Minus;
   return (
     <span className="inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap leading-none"
-      title={`${t("leaderboard.rank")} · ${t("leaderboard.vsPrevWeek")}: ${prev} → ${now}`}
+      title={`${t("leaderboard.rank")} · ${vsLabel}: ${prev} → ${now}`}
       style={{ background: hexA(deltaFill(st, mv), 0.14), color: deltaInk(st, mv) }}>
       <Icon size={11} />{Math.abs(mv)}
     </span>
@@ -237,8 +273,9 @@ function ShiftChip({ shift, t }) {
 /* One smooth Catmull-Rom path plus the same path closed as a flat wash —
  * the Leaders page's sparkline, toned by where the line ended up. */
 const SPARK_W = 84, SPARK_H = 24;
-function Spark({ vals, tone }) {
-  if (!vals || vals.length < 2) return null;
+function Spark({ vals: raw, tone }) {
+  const vals = (raw || []).filter((v) => v != null);
+  if (vals.length < 2) return null;
   const lo = Math.min(...vals) - 3, hi = Math.max(...vals) + 3;
   const pt = (v, i) => [3 + (i / (vals.length - 1)) * (SPARK_W - 6), SPARK_H - 3 - ((v - lo) / (hi - lo || 1)) * (SPARK_H - 6)];
   const p = vals.map(pt), r = (n) => Math.round(n * 10) / 10;
@@ -257,7 +294,12 @@ function Spark({ vals, tone }) {
     </svg>
   );
 }
-const sparkTone = (st, vals) => (!vals ? st.none : deltaFill(st, Math.abs(vals[vals.length - 1] - vals[0]) < 0.5 ? 0 : vals[vals.length - 1] - vals[0]));
+const sparkTone = (st, raw) => {
+  const vals = (raw || []).filter((v) => v != null);
+  if (vals.length < 2) return st.none;
+  const d = vals[vals.length - 1] - vals[0];
+  return deltaFill(st, Math.abs(d) < 0.5 ? 0 : d);
+};
 
 /* Floating hover tip for the SVG chart — the one surface here that Apex does
  * not draw, so it carries the same tokens the Apex tooltips use. */
@@ -277,7 +319,7 @@ function FloatTip({ tip }) {
  * page's hero and stand on their own above the KPI strip.
  * The top three ride metal player cards: the gold / silver / bronze plate,
  * FIDE-style decoration — engraved arcs radiating from behind the brigadir's
- * cut-out render under a top spotlight — the big rank number over a dark
+ * photo medallion under a top spotlight — the big rank number over a dark
  * score flag on the left, the engraved cup top-right, and a frosted-glass
  * foot (progressive backdrop blur) the render's legs melt into, carrying the
  * name band and the five ranked statistics.
@@ -294,10 +336,18 @@ const PLATE = {
 
 function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
   const first = place === 1;
+  // The photo sits BELOW the rank column (so it never covers the place, the
+  // score flag or «Umumiy») and ends above the frosted foot: sized off the
+  // card's measured width (the card is 0.73 wide-to-tall), so the initials
+  // inside it scale with it too.
+  const [cardRef, cardW] = useElementWidth();
+  const photoTop = first ? 98 : 82;
+  const photo = cardW ? clamp(Math.round(Math.min(cardW * 0.5, (cardW / 0.73) * 0.56 - photoTop - 8)), 36, 180) : 0;
   const p = PLATE[place];
-  const up = s.scoreDelta >= 0;
+  const up = (s.scoreDelta ?? 0) >= 0;
   return (
     <button
+      ref={cardRef}
       onClick={onSelect}
       className={`fut-card place-${place}${first ? " fut-champ" : ""} relative flex flex-col overflow-hidden rounded-2xl`}
       style={{
@@ -319,11 +369,16 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
       {/* champion halo — a slow breathing glow behind the render */}
       {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
 
-      {/* the render — contain + bottom-anchored, so any portrait ratio stands
-          on the name band instead of being cropped through the face */}
-      {s.render
-        ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "78%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 16px rgba(0,0,0,0.3))" }} />
-        : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.3 }}>{initials(s.name)}</span>}
+      {/* the brigadir — their profile photo struck as a medallion under the
+          spotlight, the plate's own metal as its rim (initials on their hue
+          where nobody uploaded one) */}
+      {photo > 0 && (
+        <span aria-hidden className="absolute left-0 right-0 flex justify-center pointer-events-none select-none" style={{ top: photoTop }}>
+          <span className="rounded-full" style={{ padding: photo > 90 ? 4 : 2.5, background: `linear-gradient(160deg, ${p.edge} 0%, ${p.mid} 55%, ${p.lo} 100%)`, boxShadow: `0 16px 30px -14px ${hexA(p.deep, 0.85)}` }}>
+            <Avatar sup={s} size={photo} />
+          </span>
+        </span>
+      )}
 
       {/* frosted foot — progressive backdrop blur (the render's legs melt into
           the glass; the mask fades the blur in so there is no hard seam) plus
@@ -363,24 +418,26 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
         }}>
           <Trophy size={first ? 21 : 16} strokeWidth={first ? 2.25 : 2.5} style={{ color: p.ink, filter: `drop-shadow(0 1px 0 ${hexA(p.edge, 0.55)})` }} />
         </span>
-        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1.5px 7px", background: hexA("#FFFFFF", 0.78), border: `1px solid ${hexA(p.ink, 0.1)}`, boxShadow: `0 2px 6px -3px ${hexA(p.deep, 0.6)}`, color: up ? "#15803D" : "#B91C1C" }}>
-          {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
-        </span>
+        {s.scoreDelta != null && (
+          <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1.5px 7px", background: hexA("#FFFFFF", 0.78), border: `1px solid ${hexA(p.ink, 0.1)}`, boxShadow: `0 2px 6px -3px ${hexA(p.deep, 0.6)}`, color: up ? "#15803D" : "#B91C1C" }}>
+            {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
+          </span>
+        )}
       </span>
 
       {/* name band + stat grid — riding the frosted foot in light ink */}
       <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", color: "#FFFFFF", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
         <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", padding: "5px 2px 0" }}>{nm(s.name)}</span>
         <span className="flex items-center justify-center gap-1.5" style={{ fontSize: first ? 10 : 9, fontWeight: 600, color: "rgba(255,255,255,0.82)", padding: "2px 0 6px" }}>
-          {s.unit}
-          <span className="rounded tabular-nums" style={{ fontSize: first ? 9.5 : 9, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>
+          {s.sub && <span className="truncate min-w-0">{s.sub}</span>}
+          {s.shift && <span className="rounded tabular-nums flex-shrink-0" style={{ fontSize: first ? 9.5 : 9, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>}
         </span>
         <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.6)}, transparent)` }} />
         <span className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", paddingTop: 6 }}>
           {CATS.map((c, i) => (
-            <span key={c.key} title={`${catMeta[c.key].name}: ${fmt(s.s[c.key])}%`} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
+            <span key={c.key} title={`${catMeta[c.key].name}: ${c.live === false ? t("leaderboard.notYet") : s.s[c.key] == null ? t("leaderboard.noData") : `${fmt(s.s[c.key])}%`}`} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined, opacity: c.live === false ? 0.55 : 1 }}>
               <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
-              <span className="truncate max-w-full" style={{ fontSize: first ? 9 : 8.5, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase", opacity: 0.88, marginTop: 3 }}>{catMeta[c.key].short}</span>
+              <span className="truncate max-w-full" style={{ fontSize: first ? 9 : 8.5, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase", opacity: 0.88, marginTop: 3 }}>{catMeta[c.key].tiny}</span>
             </span>
           ))}
         </span>
@@ -564,7 +621,7 @@ function LineKey({ tone, dashed }) {
  * ANGLE is the one read. Every value the readout shows is also printed on the
  * chart or in its aria-label, so the readout adds the team's number beside
  * the brigadir's and gates nothing. */
-function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
+function RadarChart({ s, catMeta, teamAvg, st, t, nm, vsLabel }) {
   const [measureRef, width] = useElementWidth();
   const [active, setActive] = useState(null);
   const [tipPos, setTipPos] = useState(null); // { i, left, top } — the readout's measured placement
@@ -574,8 +631,11 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
   const n = CATS.length;
 
   const rows = useMemo(() => CATS.map((c) => {
+    // The change is against the period before — the one MoveChip and the
+    // KPI strip compare with.
     const v = s.s[c.key], arr = s.sparks[c.key];
-    return { key: c.key, meta: catMeta[c.key], v, avg: teamAvg[c.key], d: arr && v != null ? v - arr[0] : null };
+    const prev = arr && arr.length > 1 ? arr[arr.length - 2] : null;
+    return { key: c.key, meta: catMeta[c.key], v, avg: teamAvg[c.key], d: v != null && prev != null ? v - prev : null };
   }), [s, catMeta, teamAvg]);
 
   const L = useMemo(() => {
@@ -583,7 +643,7 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
     const { icon, iconGap, nameFs, valueFs, deltaFs } = RADAR;
     return radarLayout(width, rows.map((row) => {
       const nameW = icon + iconGap + textWidth(row.meta.short, nameFs, 500);
-      const valueW = (row.v == null ? textWidth(t("leaderboard.noData"), nameFs, 500) : textWidth(`${fmt(row.v)}%`, valueFs, 700))
+      const valueW = (row.v == null ? textWidth(t(row.meta.live === false ? "leaderboard.notYet" : "leaderboard.noData"), nameFs, 500) : textWidth(`${fmt(row.v)}%`, valueFs, 700))
         + (row.d == null ? 0 : 4 + textWidth(fmtDelta(row.d), deltaFs, 600));
       return { nameW: nameW * 1.05, w: Math.ceil(Math.max(nameW, valueW) * 1.05) + 2 };
     }));
@@ -654,9 +714,9 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
 
   const mine = radarShape(L, rows.map((row) => row.v));
   const team = radarShape(L, rows.map((row) => row.avg));
-  const noData = t("leaderboard.noData");
+  const noDataOf = (row) => t(row.meta.live === false ? "leaderboard.notYet" : "leaderboard.noData");
   const summary = `${nm(s.name)} — ` + rows.map((row) =>
-    `${row.meta.name}: ${row.v == null ? noData : `${fmt(row.v)}%`} (${t("leaderboard.teamAvg")}: ${row.avg == null ? "—" : `${fmt(row.avg)}%`})`).join("; ");
+    `${row.meta.name}: ${row.v == null ? noDataOf(row) : `${fmt(row.v)}%`} (${t("leaderboard.teamAvg")}: ${row.avg == null ? "—" : `${fmt(row.avg)}%`})`).join("; ");
 
   const cur = active != null ? rows[active] : null;
   const CurIcon = cur?.meta.icon;
@@ -718,7 +778,7 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
                 <text x={px1(nameX + RADAR.icon + RADAR.iconGap)} y={px1(ax.top + RADAR.nameBase)} fontSize={RADAR.nameFs} fontWeight={on ? 600 : 500} fill={on ? "var(--text-1)" : "var(--text-2)"}>{row.meta.short}</text>
                 <text x={px1(valueX)} y={px1(ax.top + RADAR.valueBase)} textAnchor={ax.align} style={{ fontVariantNumeric: "tabular-nums" }}>
                   {row.v == null
-                    ? <tspan fontSize={RADAR.nameFs} fontWeight="500" fill={st.none}>{noData}</tspan>
+                    ? <tspan fontSize={RADAR.nameFs} fontWeight="500" fill={st.none}>{noDataOf(row)}</tspan>
                     : <tspan fontSize={RADAR.valueFs} fontWeight="700" fill={bandInk(st, row.v)}>{fmt(row.v)}%</tspan>}
                   {row.d != null && <tspan dx="4" fontSize={RADAR.deltaFs} fontWeight="600" fill={deltaInk(st, row.d)}>{fmtDelta(row.d)}</tspan>}
                 </text>
@@ -738,14 +798,14 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
           <div className="grid items-center gap-x-2 gap-y-1 mt-1.5 text-[11px] leading-tight" style={{ gridTemplateColumns: "16px auto minmax(0,1fr)" }}>
             <LineKey tone="var(--brand)" />
             <b className="tabular-nums text-right" style={{ color: bandInk(st, cur.v) }}>{cur.v == null ? "" : `${fmt(cur.v)}%`}</b>
-            <span style={{ color: "var(--text-3)" }}>{shortPerson(nm(s.name))}{cur.v == null && <span style={{ color: st.none }}> · {noData}</span>}</span>
+            <span style={{ color: "var(--text-3)" }}>{shortPerson(nm(s.name))}{cur.v == null && <span style={{ color: st.none }}> · {noDataOf(cur)}</span>}</span>
             <LineKey tone="var(--text-3)" dashed />
             <b className="tabular-nums text-right" style={{ color: "var(--text-1)" }}>{cur.avg == null ? "—" : `${fmt(cur.avg)}%`}</b>
             <span style={{ color: "var(--text-3)" }}>{t("leaderboard.teamAvg")}</span>
             {cur.d != null && <>
               <span className="flex justify-center" style={{ color: deltaInk(st, cur.d) }}>{cur.d > 0 ? <ArrowUp size={11} /> : cur.d < 0 ? <ArrowDown size={11} /> : <Minus size={11} />}</span>
               <b className="tabular-nums text-right" style={{ color: deltaInk(st, cur.d) }}>{fmtDelta(cur.d)}</b>
-              <span style={{ color: "var(--text-3)" }}>{t("leaderboard.vsEightWeeks")}</span>
+              <span style={{ color: "var(--text-3)" }}>{vsLabel}</span>
             </>}
           </div>
         </div>
@@ -754,10 +814,10 @@ function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
   );
 }
 
-function BreakdownBody({ s, catMeta, teamAvg, st, t, nm }) {
-  const have = CATS.filter((c) => s.s[c.key] != null);
+function BreakdownBody({ s, catMeta, teamAvg, st, t, nm, vsLabel }) {
+  const have = LIVE.filter((c) => s.s[c.key] != null);
   const sorted = [...have].sort((a, b) => s.s[b.key] - s.s[a.key]);
-  const strong = sorted.slice(0, 2), weak = sorted.slice(-2).reverse();
+  const strong = sorted.slice(0, 2), weak = sorted.slice(Math.max(2, sorted.length - 2)).reverse();
   const chip = (c, good) => (
     <span key={c.key} className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1 tabular-nums"
       style={{ color: good ? st.okInk : st.badInk, background: hexA(good ? st.ok : st.bad, 0.12) }}>
@@ -767,7 +827,7 @@ function BreakdownBody({ s, catMeta, teamAvg, st, t, nm }) {
   return (
     <div data-breakdown className="grid gap-4 lg:grid-cols-[minmax(0,520px)_236px] lg:justify-center lg:items-center lg:gap-x-12">
       <div className="flex flex-col gap-2 min-w-0">
-        <RadarChart s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
+        <RadarChart s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} vsLabel={vsLabel} />
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px]" style={{ color: "var(--text-3)" }}>
           <span className="inline-flex items-center gap-1.5"><LineKey tone="var(--brand)" />{shortPerson(nm(s.name))}</span>
           <span className="inline-flex items-center gap-1.5"><LineKey tone="var(--text-3)" dashed />{t("leaderboard.teamAvg")}</span>
@@ -777,15 +837,17 @@ function BreakdownBody({ s, catMeta, teamAvg, st, t, nm }) {
       <div className="flex flex-col gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("leaderboard.strengths")}</span>
         <span className="flex flex-wrap gap-1.5">{strong.map((c) => chip(c, true))}</span>
-        <span className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{ color: "var(--text-3)" }}>{t("leaderboard.growthZones")}</span>
-        <span className="flex flex-wrap gap-1.5">{weak.map((c) => chip(c, false))}</span>
+        {weak.length > 0 && <>
+          <span className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{ color: "var(--text-3)" }}>{t("leaderboard.growthZones")}</span>
+          <span className="flex flex-wrap gap-1.5">{weak.map((c) => chip(c, false))}</span>
+        </>}
       </div>
     </div>
   );
 }
 
 /* ═══════════════════════ register rows ═══════════════════════════════ */
-function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, medal, t, nm, showShift }) {
+function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, medal, t, nm, showShift, vsLabel }) {
   const onKey = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } };
   return (
     <>
@@ -794,7 +856,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
         <td className="px-3 py-2">
           <span className="flex items-center gap-2">
             <PlaceBadge place={s.rank} medal={medal} />
-            <MoveChip prev={s.prevRank} now={s.rank} st={st} t={t} />
+            <MoveChip prev={s.prevRank} now={s.rank} st={st} t={t} vsLabel={vsLabel} />
           </span>
         </td>
         <td className="px-3 py-2">
@@ -803,7 +865,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
             <span className="min-w-0">
               <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{nm(s.name)}</span>
               <span className="flex items-center gap-1.5 text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
-                {s.unit}{showShift && <ShiftChip shift={s.shift} t={t} />}
+                {s.sub && <span className="truncate">{s.sub}</span>}{showShift && s.shift && <ShiftChip shift={s.shift} t={t} />}
               </span>
             </span>
           </span>
@@ -814,7 +876,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
             <span className="tabular-nums text-[11px]" style={{ color: "var(--text-4)" }}>/100</span>
           </span>
           <span className="block overflow-hidden rounded-full mt-1.5" style={{ height: 4, width: 96, background: "var(--border-md)" }}>
-            <i className="block h-full rounded-full" style={{ width: `${s.comp}%`, background: bandFill(st, s.comp) }} />
+            <i className="block h-full rounded-full" style={{ width: `${clamp(s.comp, 0, 100)}%`, background: bandFill(st, s.comp) }} />
           </span>
         </td>
         {CATS.map((c) => {
@@ -822,7 +884,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
           return (
             <td key={c.key} className="px-3 py-2 text-right hidden md:table-cell" style={sortKey === c.key ? { background: "var(--bg-inner)" } : undefined}>
               {v == null
-                ? <span className="font-semibold" style={{ color: st.none }} title={t("leaderboard.noData")}>—</span>
+                ? <span className="font-semibold" style={{ color: st.none, opacity: c.live === false ? 0.6 : 1 }} title={t(c.live === false ? "leaderboard.notYet" : "leaderboard.noData")}>—</span>
                 : <>
                   <span className="tabular-nums font-bold text-[13px]" style={{ color: bandInk(st, v) }}>{fmt(v)}%</span>
                   <Meter pct={v} color={bandFill(st, v)} align="right" />
@@ -840,7 +902,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
       {isExp && (
         <tr>
           <td colSpan={5 + CATS.length} className="px-4 py-3" style={{ background: "var(--bg-inner)" }}>
-            <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
+            <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} vsLabel={vsLabel} />
           </td>
         </tr>
       )}
@@ -851,7 +913,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
 /* Phone: the same row as a stacked card — place, who, the overall score — and
  * the breakdown opens INSIDE the card, so the five statistics the narrow
  * table has no room for are one tap away from the name. */
-function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, nm, showShift }) {
+function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, nm, showShift, vsLabel }) {
   return (
     <div style={{ borderTop: "1px solid var(--border)", background: isSel ? "var(--brand-bg)" : undefined }}>
       <button type="button" onClick={onClick} aria-expanded={isExp} className="w-full text-left flex items-center gap-2.5 px-3 py-2.5">
@@ -860,7 +922,7 @@ function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, n
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text-1)" }}>{nm(s.name)}</span>
           <span className="flex items-center gap-1.5 text-[11px] mt-0.5 flex-wrap" style={{ color: "var(--text-4)" }}>
-            {s.unit}{showShift && <ShiftChip shift={s.shift} t={t} />}<MoveChip prev={s.prevRank} now={s.rank} st={st} t={t} />
+            {s.sub && <span className="truncate max-w-[50%]">{s.sub}</span>}{showShift && s.shift && <ShiftChip shift={s.shift} t={t} />}<MoveChip prev={s.prevRank} now={s.rank} st={st} t={t} vsLabel={vsLabel} />
           </span>
         </span>
         <span className="text-right flex-shrink-0">
@@ -871,7 +933,7 @@ function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, n
       </button>
       {isExp && (
         <div className="px-3 py-3" style={{ background: "var(--bg-inner)" }}>
-          <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
+          <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} vsLabel={vsLabel} />
         </div>
       )}
     </div>
@@ -879,22 +941,36 @@ function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, n
 }
 
 /* ═══════════════════════ rank-trajectory chart ═══════════════════════
- * A bump chart: every brigadir's place week by week. Measured to its card
+ * A bump chart: every brigadir's place period by period. Measured to its card
  * (never a fixed width that scrolls on a phone), one neutral line per person,
  * the selected one in brand gold, and every line NAMED at its end — final
  * places are unique, so the names can never collide and no legend is needed.
- * The end dots of the top three carry their medal. */
-function BumpChart({ sups, selectedId, onSelect, onTip, nm, medal, t }) {
+ * The end dots of the top three carry their medal. A period a brigadir had no
+ * score in breaks their line rather than drawing a place they never held. */
+function BumpChart({ sups, labels, selectedId, onSelect, onTip, nm, medal, t }) {
   const [ref, width] = useElementWidth();
   const [hoverId, setHoverId] = useState(null);
-  const n = sups.length;
+  const last = labels.length - 1;
+  const n = Math.max(1, ...sups.flatMap((s) => s.rankHist.filter((r) => r != null)));
   const W = Math.max(360, width);
   const H = Math.max(200, 24 * n + 44);
   const padL = 28, padR = clamp(Math.round(W * 0.22), 96, 150), padT = 14, padB = 26;
-  const x = (w) => padL + (w / LAST) * (W - padL - padR);
+  const x = (w) => (last < 1 ? padL + (W - padL - padR) / 2 : padL + (w / last) * (W - padL - padR));
   const y = (rk) => (n < 2 ? padT + (H - padT - padB) / 2 : padT + ((rk - 1) / (n - 1)) * (H - padT - padB));
   const state = (s) => (s.id === selectedId ? 2 : s.id === hoverId ? 1 : 0);
   const order = [...sups].sort((a, b) => state(a) - state(b));
+  // One polyline per unbroken run of places.
+  const runs = (rh) => {
+    const out = [];
+    let cur = [];
+    rh.forEach((rk, w) => {
+      if (rk == null) { if (cur.length) out.push(cur); cur = []; return; }
+      cur.push(`${x(w).toFixed(1)},${y(rk).toFixed(1)}`);
+    });
+    if (cur.length) out.push(cur);
+    return out;
+  };
+  const firstRank = (s) => s.rankHist.find((r) => r != null);
   return (
     <div ref={ref} className="w-full">
       {width > 0 && (
@@ -905,24 +981,28 @@ function BumpChart({ sups, selectedId, onSelect, onTip, nm, medal, t }) {
               <text x={padL - 8} y={y(rk) + 3.5} textAnchor="end" fontSize="10" fill="var(--text-4)" className="tabular-nums">{rk}</text>
             </g>
           ))}
-          {WEEKS.map((wk, i) => (
-            <text key={wk} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--text-4)" className="tabular-nums">{wk}</text>
+          {labels.map((wk, i) => (
+            <text key={`${wk}-${i}`} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--text-4)" className="tabular-nums">{wk}</text>
           ))}
           {order.map((s) => {
             const lv = state(s);
-            const pts = s.rankHist.map((rk, w) => `${x(w).toFixed(1)},${y(rk).toFixed(1)}`).join(" ");
             const stroke = lv === 2 ? "var(--brand)" : lv === 1 ? "var(--text-2)" : "var(--text-4)";
             const dot = lv === 2 ? "var(--brand)" : medal[s.rank] || stroke;
+            const segs = runs(s.rankHist);
             return (
               <g key={s.id} style={{ cursor: "pointer" }}
-                onMouseMove={(e) => { setHoverId(s.id); onTip(e, nm(s.name), `${t("leaderboard.rank")}: ${s.rank} · ${t("leaderboard.eightWeeksAgo")}: ${s.rankHist[0]} · ${fmt1(s.comp)} /100`); }}
+                onMouseMove={(e) => { setHoverId(s.id); onTip(e, nm(s.name), `${t("leaderboard.rank")}: ${s.rank} · ${labels[0]}: ${firstRank(s) ?? "—"} · ${fmt1(s.comp)} /100`); }}
                 onMouseLeave={() => { setHoverId(null); onTip(null); }}
                 onClick={() => onSelect(s.id)}>
-                <polyline points={pts} fill="none" stroke={stroke} strokeWidth={lv === 2 ? 3 : lv === 1 ? 2.2 : 1.4} opacity={lv ? 1 : 0.45} strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx={x(LAST)} cy={y(s.rank)} r={lv === 2 ? 4.5 : 3.2} fill={dot} stroke="var(--bg-card)" strokeWidth="1.5" />
-                <text x={x(LAST) + 10} y={y(s.rank) + 3.5} fontSize="11" fontWeight={lv === 2 ? 700 : 500}
+                {segs.map((pts, k) => (
+                  pts.length > 1
+                    ? <polyline key={k} points={pts.join(" ")} fill="none" stroke={stroke} strokeWidth={lv === 2 ? 3 : lv === 1 ? 2.2 : 1.4} opacity={lv ? 1 : 0.45} strokeLinecap="round" strokeLinejoin="round" />
+                    : null
+                ))}
+                <circle cx={x(last)} cy={y(s.rank)} r={lv === 2 ? 4.5 : 3.2} fill={dot} stroke="var(--bg-card)" strokeWidth="1.5" />
+                <text x={x(last) + 10} y={y(s.rank) + 3.5} fontSize="11" fontWeight={lv === 2 ? 700 : 500}
                   fill={lv === 2 ? "var(--brand-text)" : lv === 1 ? "var(--text-1)" : "var(--text-3)"}>{shortPerson(nm(s.name))}</text>
-                <polyline points={pts} fill="none" stroke="transparent" strokeWidth="14" />
+                {segs.map((pts, k) => <polyline key={`h${k}`} points={pts.join(" ")} fill="none" stroke="transparent" strokeWidth="14" />)}
               </g>
             );
           })}
@@ -933,25 +1013,29 @@ function BumpChart({ sups, selectedId, onSelect, onTip, nm, medal, t }) {
 }
 
 /* ═══════════════════════ page ════════════════════════════════════════ */
-function useLeaderboardData(dateFrom, dateTo, shiftF) {
-  // DUMMY: swap this hook for a useQuery returning { sups, byRank } later —
-  // it already takes the standard filter set (period + shift).
-  return useMemo(() => {
-    const { sups: all } = buildData(seedOf(dateFrom, dateTo));
-    // A shift is ranked among itself, so places stay dense (1..n).
-    return rankPool(shiftF ? all.filter((s) => s.shift === shiftF) : all);
-  }, [dateFrom, dateTo, shiftF]);
-}
-
-/* Local YYYY-MM-DD (no UTC shift). */
-function isoDay(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* Skeletons of the page's final shape while the board loads — the podium's
+ * three cards, the KPI strip and a few register rows. */
+function BoardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-hidden="true">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 items-end">
+        <SkeletonBlock className="rounded-2xl" style={{ aspectRatio: "0.73", maxWidth: 300 }} />
+        <SkeletonBlock className="rounded-2xl col-span-2 md:col-span-1 md:order-none" style={{ aspectRatio: "0.73", maxWidth: 344 }} />
+        <SkeletonBlock className="rounded-2xl hidden md:block" style={{ aspectRatio: "0.73", maxWidth: 300 }} />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-[104px] rounded-2xl" />)}
+      </div>
+      <SkeletonBlock className="h-[320px] rounded-2xl" />
+    </div>
+  );
 }
 
 export default function Leaderboard() {
   const { t } = useLang();
-  const { tl, lang } = useTranslit();
+  const { tl, tx, lang } = useTranslit();
   const { theme } = useTheme();
+  const { factories, factory } = useFactory();
   const st = STATUS[theme] || STATUS.dark;
   const hues = CAT_HUES[theme] || CAT_HUES.dark;
   const medal = MEDAL[theme] || MEDAL.dark;
@@ -959,22 +1043,47 @@ export default function Leaderboard() {
   const nm = (s) => tl(s);
 
   const catMeta = useMemo(() => Object.fromEntries(CATS.map((c) => [c.key, {
-    hue: hues[c.key], name: t(`leaderboard.cat.${c.key}`), short: t(`leaderboard.cat.${c.key}Short`), icon: c.icon, weight: c.weight,
+    hue: hues[c.key], name: t(`leaderboard.cat.${c.key}`), short: t(`leaderboard.cat.${c.key}Short`),
+    // The podium's five-column stat grid has room for ~8 capitals a column.
+    tiny: c.key === "eff" ? t("leaderboard.cat.effTiny") : t(`leaderboard.cat.${c.key}Short`),
+    icon: c.icon, weight: c.weight, live: c.live !== false,
   }])), [hues, t]);
 
-  // Page-local period + shift (the standard top-row set). Local, NOT the
-  // global FilterContext: dummy ids must never leak into the shared filter
-  // state other pages send to real endpoints.
-  const [dateFrom, setDateFrom] = usePersistentState("leaderboard_date_from", () => { const d = new Date(); d.setDate(d.getDate() - 13); return isoDay(d); });
-  const [dateTo, setDateTo] = usePersistentState("leaderboard_date_to", () => isoDay(new Date()));
+  // The period: one week, month or year (the operator's call — never a
+  // date-to-date range). The anchor is any day of it; the server snaps it.
+  const today = isoOf(new Date());
+  const [grainRaw, setGrain] = usePersistentState("leaderboard_grain", "week");
+  const [anchorRaw, setAnchor] = usePersistentState("leaderboard_anchor", null);
   const [shiftF, setShiftF] = usePersistentState("leaderboard_shift", null); // null = all | 1 | 2
-  const { sups, byRank } = useLeaderboardData(dateFrom, dateTo, shiftF);
+  const grain = GRAINS.includes(grainRaw) ? grainRaw : "week";
+  const anchor = anchorRaw && anchorRaw <= today ? anchorRaw : today;
 
-  const [selectedId, setSelectedId] = usePersistentState("leaderboard_selected_id", 3);
-  const [expandedId, setExpandedId] = usePersistentState("leaderboard_expanded_id", 3);
-  const [sortKey, setSortKey] = usePersistentState("leaderboard_sort", "overall");
-  const [query, setQuery] = usePersistentState("leaderboard_search", "");
+  const params = useMemo(() => ({ grain, anchor, ...(shiftF ? { shift: shiftF } : {}) }), [grain, anchor, shiftF]);
+  const fparams = useFactoryParams(params);
+  const query = useQuery({
+    queryKey: ["leaderboard", fparams],
+    queryFn: () => api.get("/api/leaderboard", { params: fparams }).then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const board = useMemo(() => buildBoard(query.data), [query.data]);
+  const L = board.periods.length - 1;
+  const cur = board.periods[L];
+
+  // The plant is named on a row only while the board mixes plants.
+  const multiPlant = new Set((query.data?.units || []).map((u) => u.factory_id ?? 0)).size > 1;
+  const { sups, byRank } = useMemo(() => {
+    const sub = (s) => (multiPlant && s.factory ? tx(factoryName(s.factory, lang)) : null);
+    const list = board.sups.map((s) => ({ ...s, sub: sub(s) }));
+    return { sups: list, byRank: [...list].sort((a, b) => a.rank - b.rank) };
+  }, [board.sups, multiPlant, tx, lang]);
+
+  const [selectedId, setSelectedId] = usePersistentState("leaderboard_sel_unit", null);
+  const [expandedId, setExpandedId] = usePersistentState("leaderboard_open_unit", null);
+  const [sortRaw, setSortKey] = usePersistentState("leaderboard_sort", "overall");
+  const [search, setSearch] = usePersistentState("leaderboard_search", "");
   const [tip, setTip] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const sortKey = sortRaw === "overall" || LIVE.some((c) => c.key === sortRaw) ? sortRaw : "overall";
 
   // Selection survives filtering: if the selected brigadir left the pool,
   // spotlight the current leader instead (the chart always needs a selection).
@@ -987,8 +1096,10 @@ export default function Leaderboard() {
   }
   function selectSup(id, fromTable) {
     setSelectedId(id);
-    setExpandedId((cur) => (fromTable && cur === id ? null : id));
+    setExpandedId((c) => (fromTable && c === id ? null : id));
   }
+
+  const vsLabel = t(`leaderboard.vsPrev.${grain}`);
 
   // Team reference points — every number on the page is read against these.
   const teamAvg = useMemo(() => Object.fromEntries(CATS.map((c) => {
@@ -1000,137 +1111,219 @@ export default function Leaderboard() {
     const n = sups.length;
     if (!n) return null;
     const avg = sups.reduce((a, s) => a + s.comp, 0) / n;
-    const prevAvg = sups.reduce((a, s) => a + s.hist[LAST - 1], 0) / n;
+    // Against the period before, over the brigadirs who were on the board in
+    // both — a unit new this period moves no average it was never in.
+    const both = sups.filter((s) => L > 0 && s.hist[L - 1] != null);
+    const dAvg = both.length
+      ? both.reduce((a, s) => a + s.comp, 0) / both.length - both.reduce((a, s) => a + s.hist[L - 1], 0) / both.length
+      : null;
     const green = sups.filter((s) => s.comp >= 80).length;
     const red = sups.filter((s) => s.comp < 65).length;
-    const best = sups.map((s) => ({ s, mv: s.prevRank - s.rank })).sort((a, b) => b.mv - a.mv)[0];
-    return { n, avg, dAvg: avg - prevAvg, green, red, climber: best && best.mv > 0 ? best : null };
-  }, [sups]);
+    const best = sups.filter((s) => s.prevRank != null)
+      .map((s) => ({ s, mv: s.prevRank - s.rank })).sort((a, b) => b.mv - a.mv)[0];
+    return { n, avg, dAvg, green, red, climber: best && best.mv > 0 ? best : null };
+  }, [sups, L]);
 
   const rows = useMemo(() => {
     let r = [...sups];
-    r.sort(sortKey === "overall" ? (a, b) => a.rank - b.rank : (a, b) => (b.s[sortKey] ?? -1) - (a.s[sortKey] ?? -1));
-    const q = query.trim().toLowerCase();
-    if (q) r = r.filter((s) => `${s.name} ${tl(s.name)} ${s.unit}`.toLowerCase().includes(q));
+    r.sort(sortKey === "overall" ? (a, b) => a.rank - b.rank : (a, b) => (b.s[sortKey] ?? -1) - (a.s[sortKey] ?? -1) || a.rank - b.rank);
+    const q = search.trim().toLowerCase();
+    if (q) r = r.filter((s) => `${s.name} ${tl(s.name)} ${s.sub || ""}`.toLowerCase().includes(q));
     return r;
-  }, [sups, sortKey, query, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sups, sortKey, search, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const factorySection = useFactorySection();
+  const shiftSection = {
+    key: "shift", icon: Layers, label: t("filter.shift"),
+    active: shiftF != null,
+    display: shiftF != null ? `${t("filter.shift")} ${shiftF}` : "",
+    onClear: () => setShiftF(null),
+    render: () => (
+      <SegmentedToggle fill value={shiftF} onChange={setShiftF} options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]} />
+    ),
+  };
+  const plantName = factory != null ? tx(factoryName(factories.find((f) => f.id === factory), lang)) : t("leaderboard.allPlants");
+  const scopeText = `${plantName} · ${shiftF ? `${t("filter.shift")} ${shiftF}` : t("leaderboard.allShifts")}`;
 
   const showShift = shiftF == null;
-  const sortOptions = [["overall", t("leaderboard.overallShort")], ...CATS.map((c) => [c.key, catMeta[c.key].short])];
+  const sortOptions = [["overall", t("leaderboard.overallShort")], ...LIVE.map((c) => [c.key, catMeta[c.key].short])];
   const muted = { color: "var(--text-4)" };
-  const dAvgIcon = kpi && (kpi.dAvg > 0.05 ? <ArrowUp size={11} /> : kpi.dAvg < -0.05 ? <ArrowDown size={11} /> : <Minus size={11} />);
+  const dAvgIcon = kpi && kpi.dAvg != null && (kpi.dAvg > 0.05 ? <ArrowUp size={11} /> : kpi.dAvg < -0.05 ? <ArrowDown size={11} /> : <Minus size={11} />);
+  const chartLabels = board.periods.map((p) => periodLabel(p, grain, t, true));
+  const prevAnchor = cur ? isoAdd(cur.from, -1) : null;
 
   const rowProps = (s) => ({
     s, isSel: s.id === effSelectedId, isExp: s.id === expandedId, onClick: () => selectSup(s.id, true),
-    catMeta, teamAvg, st, medal, t, nm, showShift,
+    catMeta, teamAvg, st, medal, t, nm, showShift, vsLabel,
   });
+
+  async function onExport() {
+    if (!cur || !byRank.length) return;
+    setExporting(true);
+    try {
+      const how = await exportXlsx("/api/leaderboard/export.xlsx", {
+        fallbackName: "brigadirlar-reytingi.xlsx",
+        body: {
+          title: t("leaderboard.subtitle"),
+          period: periodLabel(cur, grain, t),
+          scope: scopeText,
+          filename: `brigadirlar-reytingi-${cur.from}`,
+          caption: `📊 ${t("leaderboard.subtitle")} — ${periodLabel(cur, grain, t)}`,
+          columns: LIVE.map((c) => ({ key: c.key, label: catMeta[c.key].name })),
+          weights: LIVE.map((c) => `${catMeta[c.key].short} ${Math.round(shareOf(c) * 100)}%`).join(" · "),
+          labels: {
+            sheet: t("leaderboard.overallShort"), place: t("leaderboard.rank"), brigadir: t("leaderboard.brigadir"),
+            shift: t("filter.shift"), factory: t("leaderboard.plant"), score: t("leaderboard.score"),
+            periodLabel: t("leaderboard.periodLabel"), scopeLabel: t("leaderboard.scopeLabel"),
+            generated: t("leaderboard.generated"), weightsLabel: t("leaderboard.weightsLabel"),
+            note: t("leaderboard.exportNote"),
+          },
+          rows: byRank.map((s) => ({
+            place: s.rank, name: tl(s.name), shift: s.shift, factory: s.factory ? tx(factoryName(s.factory, lang)) : null,
+            score: Math.round(s.comp * 10) / 10,
+            values: Object.fromEntries(LIVE.map((c) => [c.key, s.s[c.key]])),
+          })),
+        },
+      });
+      toast.success(t(how === "download" ? "leaderboard.exportDone" : "leaderboard.exportSent"));
+    } catch {
+      toast.error(t("leaderboard.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const loading = query.isLoading;
+  const failed = query.isError && !query.data;
 
   return (
     <Layout title={t("leaderboard.subtitle")}>
       <div className="flex flex-col gap-4 max-w-[1200px] mx-auto">
 
-        {/* ── page toolbar: period inline, shift in the FilterPanel (a chip
-            when narrowed), demo caveat + export on the right ── */}
+        {/* ── page toolbar: the grain and its stepper inline, plant + shift in
+            the FilterPanel (chips when narrowed), the export on the right ── */}
         <div className="flex items-center gap-2 flex-wrap">
-          <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo} compactLabel triggerClassName="px-3 py-2 text-sm" />
-          <FilterPanel
-            sections={[{
-              key: "shift", icon: Layers, label: t("filter.shift"),
-              active: shiftF != null,
-              display: shiftF != null ? `${t("filter.shift")} ${shiftF}` : "",
-              onClear: () => setShiftF(null),
-              render: () => (
-                <SegmentedToggle fill value={shiftF} onChange={setShiftF} options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]} />
-              ),
-            }]}
-          />
-          <div className="flex items-center gap-2.5 sm:ml-auto">
-            {/* the demo badge is a caveat, not an accent: amber keeps it from
-                reading as a second gold action and leaves brand gold to mean
-                one thing on this page — the selected brigadir. */}
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ color: st.warnInk, background: hexA(st.warn, 0.12), border: `1px solid ${hexA(st.warn, 0.32)}` }}>
-              {t("leaderboard.demoBadge")}
-            </span>
-            <Button size="lg" variant="secondary" icon={<Download size={14} />} title={t("leaderboard.exportHint")} onClick={() => toast.info(t("leaderboard.demoExport"))}>
-              {t("leaderboard.export")}
+          <SegmentedToggle value={grain} onChange={setGrain} ariaLabel={t("leaderboard.periodLabel")}
+            options={GRAINS.map((g) => [g, t(`leaderboard.period.${g}`)])} />
+          {/* the export: beside the grain on a phone, at the row's end above */}
+          <div className="flex items-center ml-auto sm:order-last">
+            <Button size="lg" variant="secondary" icon={<Download size={14} />} loading={exporting}
+              disabled={!byRank.length || loading} onClick={onExport} aria-label={t("leaderboard.export")}>
+              <span className="max-sm:hidden">{t("leaderboard.export")}</span>
             </Button>
           </div>
+          <DayStepper value={anchor} onChange={setAnchor} max={today}
+            week={grain === "week"} month={grain === "month"} year={grain === "year"} />
+          <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} />
         </div>
 
-        {/* ── podium: the three big cards ── */}
-        <Podium byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} t={t} nm={nm} />
-
-        {/* ── the five-second answer: is the team OK, and who is moving ── */}
-        {kpi && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KPICard label={t("leaderboard.teamAvg")} icon={Gauge} color={bandInk(st, kpi.avg)}
-              value={<>{fmt1(kpi.avg)}<span className="text-sm font-normal" style={muted}> /100</span></>}
-              sub={<span className="inline-flex items-center gap-1 flex-wrap">
-                <span>{kpi.n} {t("leaderboard.brigadirsUnit")} ·</span>
-                <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums" style={{ color: deltaInk(st, Math.abs(kpi.dAvg) < 0.05 ? 0 : kpi.dAvg) }}>{dAvgIcon}{fmt1(Math.abs(kpi.dAvg))}</span>
-                <span>{t("leaderboard.vsPrevWeek")}</span>
-              </span>} />
-            <KPICard label={t("leaderboard.kpi.green")} icon={CircleCheck} color={st.okInk}
-              value={<>{kpi.green}<span className="text-sm font-normal" style={muted}> / {kpi.n}</span></>}
-              sub={t("leaderboard.bandGood")} />
-            <KPICard label={t("leaderboard.kpi.attention")} icon={TriangleAlert} color={kpi.red ? st.badInk : st.none}
-              value={<>{kpi.red}<span className="text-sm font-normal" style={muted}> / {kpi.n}</span></>}
-              sub={t("leaderboard.bandBad")} />
-            <KPICard label={t("leaderboard.kpi.climber")} icon={TrendingUp} color={kpi.climber ? st.okInk : st.none}
-              value={kpi.climber ? <>+{kpi.climber.mv}<span className="text-sm font-normal" style={muted}> {t("leaderboard.rank").toLowerCase()}</span></> : "—"}
-              sub={kpi.climber ? `${nm(kpi.climber.s.name)} · ${kpi.climber.s.prevRank} → ${kpi.climber.s.rank}` : t("leaderboard.kpi.nobodyUp")} />
-          </div>
-        )}
-
-        {/* ── the register: podium on top, every brigadir below ── */}
-        <TableCard
-          icon={ListOrdered}
-          title={t("leaderboard.overallRanking")}
-          subtitle={t("leaderboard.rowHint")}
-          right={<span className="text-xs tabular-nums" style={muted}>{rows.length} {t("leaderboard.brigadirsUnit")}</span>}
-          toolbar={<>
-            <SearchInput value={query} onChange={setQuery} placeholder={t("leaderboard.searchPlaceholder")} className="w-full sm:w-56" />
-            <SegmentedToggle value={sortKey} onChange={setSortKey} options={sortOptions} className="sm:ml-auto" ariaLabel={t("leaderboard.score")} />
+        {/* what the period on screen is — always one line, so the board never
+            moves when it changes */}
+        <div className="text-xs -mt-2 min-h-[16px]" style={{ color: "var(--text-3)" }}>
+          {cur && <>
+            <span className="font-semibold" style={{ color: "var(--text-2)" }}>{periodLabel(cur, grain, t)}</span>
+            {cur.partial && <span> · {t("leaderboard.partialNote")}</span>}
+            {board.missing > 0 && <span> · {t("leaderboard.missingNote").replace("{n}", board.missing)}</span>}
           </>}
-          maxHeight="none"
-          mobile={rows.length
-            ? <div>{rows.map((s) => <MobileRow key={s.id} {...rowProps(s)} />)}</div>
-            : <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>{t("common.noMatch")}</div>}
-        >
-          <thead>
-            <tr>
-              <Th label={t("leaderboard.rank")} cls="w-[84px]" />
-              <Th label={t("leaderboard.brigadir")} />
-              <Th label={t("leaderboard.score")} k="overall" sort={{ key: sortKey, dir: "desc" }} onSort={setSortKey} cls="w-[136px]" />
-              {CATS.map((c) => (
-                <Th key={c.key} k={c.key} sort={{ key: sortKey, dir: "desc" }} onSort={setSortKey} align="right" cls="hidden md:table-cell w-[104px]" hint={catMeta[c.key].name}
-                  label={<span className="inline-flex items-center gap-1.5"><span className="inline-block rounded-full" style={{ width: 7, height: 7, background: catMeta[c.key].hue }} />{catMeta[c.key].short}</span>} />
-              ))}
-              <Th label={t("leaderboard.trend")} align="center" cls="hidden lg:table-cell w-[116px]" hint={t("leaderboard.trendHint")} />
-              <Th label="" cls="w-8" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length
-              ? rows.map((s) => <TableRow key={s.id} {...rowProps(s)} sortKey={sortKey} />)
-              : <tr><td colSpan={5 + CATS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{t("common.noMatch")}</td></tr>}
-          </tbody>
-        </TableCard>
-
-        {/* ── how the places moved ── */}
-        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={TrendingUp} title={t("leaderboard.rankDynamics")} subtitle={t("leaderboard.chartHint")}
-            right={selectedSup && (
-              <span className="inline-flex items-center gap-1.5 text-xs">
-                <Avatar sup={selectedSup} size={20} />
-                <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{nm(selectedSup.name)}</span>
-                <span style={muted}>· {t("leaderboard.selected")}</span>
-              </span>
-            )} />
-          <div className="px-3 pb-3 pt-2">
-            <BumpChart sups={sups} selectedId={effSelectedId} onSelect={selectSup} onTip={onTip} nm={nm} medal={medal} t={t} />
-          </div>
         </div>
+
+        {loading ? <BoardSkeleton /> : failed ? (
+          <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <EmptyState tone="danger" icon={TriangleAlert} showUploadLink={false} title={t("leaderboard.loadError")}
+              message={t("leaderboard.loadErrorBody")} height="h-56"
+              action={<Button variant="secondary" onClick={() => query.refetch()}>{t("common.retry")}</Button>} />
+          </div>
+        ) : !sups.length ? (
+          <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <EmptyState icon={CalendarX2} showUploadLink={false} title={t("leaderboard.emptyTitle")}
+              message={t("leaderboard.emptyBody")} height="h-56"
+              action={prevAnchor && <Button variant="secondary" onClick={() => setAnchor(prevAnchor)}>{t(`leaderboard.prev.${grain}`)}</Button>} />
+          </div>
+        ) : <>
+
+          {/* ── podium: the three big cards ── */}
+          <Podium byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} t={t} nm={nm} />
+
+          {/* ── the five-second answer: is the team OK, and who is moving ── */}
+          {kpi && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <KPICard label={t("leaderboard.teamAvg")} icon={Gauge} color={bandInk(st, kpi.avg)}
+                value={<>{fmt1(kpi.avg)}<span className="text-sm font-normal" style={muted}> /100</span></>}
+                sub={<span className="inline-flex items-center gap-1 flex-wrap">
+                  <span>{kpi.n} {t("leaderboard.brigadirsUnit")}{kpi.dAvg != null && " ·"}</span>
+                  {kpi.dAvg != null && <>
+                    <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums" style={{ color: deltaInk(st, Math.abs(kpi.dAvg) < 0.05 ? 0 : kpi.dAvg) }}>{dAvgIcon}{fmt1(Math.abs(kpi.dAvg))}</span>
+                    <span>{vsLabel}</span>
+                  </>}
+                </span>} />
+              <KPICard label={t("leaderboard.kpi.green")} icon={CircleCheck} color={st.okInk}
+                value={<>{kpi.green}<span className="text-sm font-normal" style={muted}> / {kpi.n}</span></>}
+                sub={t("leaderboard.bandGood")} />
+              <KPICard label={t("leaderboard.kpi.attention")} icon={TriangleAlert} color={kpi.red ? st.badInk : st.none}
+                value={<>{kpi.red}<span className="text-sm font-normal" style={muted}> / {kpi.n}</span></>}
+                sub={t("leaderboard.bandBad")} />
+              <KPICard label={t("leaderboard.kpi.climber")} icon={TrendingUp} color={kpi.climber ? st.okInk : st.none}
+                value={kpi.climber ? <>+{kpi.climber.mv}<span className="text-sm font-normal" style={muted}> {t("leaderboard.rank").toLowerCase()}</span></> : "—"}
+                sub={kpi.climber ? `${nm(kpi.climber.s.name)} · ${kpi.climber.s.prevRank} → ${kpi.climber.s.rank}` : t(L > 0 ? "leaderboard.kpi.nobodyUp" : "leaderboard.kpi.noPrev")} />
+            </div>
+          )}
+
+          {/* ── the register: every brigadir ── */}
+          <TableCard
+            icon={ListOrdered}
+            title={t("leaderboard.overallRanking")}
+            subtitle={t("leaderboard.rowHint")}
+            right={<span className="text-xs tabular-nums" style={muted}>{rows.length} {t("leaderboard.brigadirsUnit")}</span>}
+            toolbar={<>
+              <SearchInput value={search} onChange={setSearch} placeholder={t("leaderboard.searchPlaceholder")} className="w-full sm:w-56" />
+              <SegmentedToggle value={sortKey} onChange={setSortKey} options={sortOptions} className="sm:ml-auto" ariaLabel={t("leaderboard.score")} />
+            </>}
+            maxHeight="none"
+            mobile={rows.length
+              ? <div>{rows.map((s) => <MobileRow key={s.id} {...rowProps(s)} />)}</div>
+              : <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>{t("common.noMatch")}</div>}
+          >
+            <thead>
+              <tr>
+                <Th label={t("leaderboard.rank")} cls="w-[84px]" />
+                <Th label={t("leaderboard.brigadir")} />
+                <Th label={t("leaderboard.score")} k="overall" sort={{ key: sortKey, dir: "desc" }} onSort={setSortKey} cls="w-[136px]" />
+                {CATS.map((c) => {
+                  const live = c.live !== false;
+                  return (
+                    <Th key={c.key} {...(live ? { k: c.key, sort: { key: sortKey, dir: "desc" }, onSort: setSortKey } : {})} align="right" cls="hidden md:table-cell w-[112px]"
+                      hint={live ? catMeta[c.key].name : `${catMeta[c.key].name} — ${t("leaderboard.notYet")}`}
+                      label={<span className="inline-flex items-center gap-1.5" style={live ? undefined : { opacity: 0.6 }}><span className="inline-block rounded-full" style={{ width: 7, height: 7, background: catMeta[c.key].hue }} />{catMeta[c.key].short}</span>} />
+                  );
+                })}
+                <Th label={t("leaderboard.trend")} align="center" cls="hidden lg:table-cell w-[116px]" hint={t(`leaderboard.trendHint.${grain}`)} />
+                <Th label="" cls="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length
+                ? rows.map((s) => <TableRow key={s.id} {...rowProps(s)} sortKey={sortKey} />)
+                : <tr><td colSpan={5 + CATS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{t("common.noMatch")}</td></tr>}
+            </tbody>
+          </TableCard>
+
+          {/* ── how the places moved ── */}
+          {board.periods.length > 1 && (
+            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+              <SectionHead icon={TrendingUp} title={t(`leaderboard.rankDyn.${grain}`)} subtitle={t("leaderboard.chartHint")}
+                right={selectedSup && (
+                  <span className="inline-flex items-center gap-1.5 text-xs">
+                    <Avatar sup={selectedSup} size={20} />
+                    <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{nm(selectedSup.name)}</span>
+                    <span style={muted}>· {t("leaderboard.selected")}</span>
+                  </span>
+                )} />
+              <div className="px-3 pb-3 pt-2">
+                <BumpChart sups={sups} labels={chartLabels} selectedId={effSelectedId} onSelect={selectSup} onTip={onTip} nm={nm} medal={medal} t={t} />
+              </div>
+            </div>
+          )}
+        </>}
 
         {/* ── methodology ── */}
         <details className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
@@ -1139,16 +1332,21 @@ export default function Leaderboard() {
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("leaderboard.methodTitle")}</span>
             <ChevronDown size={15} className="ml-auto" style={muted} />
           </summary>
-          <div className="px-4 pb-4 text-[13px] max-w-[720px]" style={{ color: "var(--text-2)" }}>
-            {t("leaderboard.methodBody")}
-            <div className="flex flex-wrap gap-2 mt-3">
+          <div className="px-4 pb-4 text-[13px] max-w-[760px] flex flex-col gap-2" style={{ color: "var(--text-2)" }}>
+            <p>{t("leaderboard.methodBody")}</p>
+            <ul className="flex flex-col gap-1.5">
               {CATS.map((c) => (
-                <span key={c.key} className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-                  <span className="rounded-full" style={{ width: 8, height: 8, background: catMeta[c.key].hue }} />{catMeta[c.key].name} <b className="tabular-nums">{Math.round(c.weight * 100)}%</b>
-                </span>
+                <li key={c.key} className="flex items-start gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 flex-shrink-0 tabular-nums"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", opacity: c.live === false ? 0.6 : 1 }}>
+                    <span className="rounded-full" style={{ width: 8, height: 8, background: catMeta[c.key].hue }} />
+                    {catMeta[c.key].short} <b>{c.live === false ? "—" : `${Math.round(shareOf(c) * 100)}%`}</b>
+                  </span>
+                  <span className="pt-0.5">{t(`leaderboard.src.${c.key}`)}</span>
+                </li>
               ))}
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2">
+            </ul>
+            <div className="flex flex-wrap gap-2 mt-1">
               {[["ok", "bandGood"], ["warn", "bandMid"], ["bad", "bandBad"]].map(([b, key]) => (
                 <span key={b} className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5" style={{ background: hexA(st[b], 0.12), color: st[`${b}Ink`] }}>
                   <span className="rounded-full" style={{ width: 8, height: 8, background: st[b] }} />{t(`leaderboard.${key}`)}
