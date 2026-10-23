@@ -13060,6 +13060,23 @@ gone with it, in Telegram, the browser and the Android app alike.
   row wait failed the second deploy). When a step gives up, its error names
   the statement and every session in a transaction older than 4 s
   (`boot_ddl.holders`) — the deploy log's journal tail shows who held it.
+  **What actually stalled production that day (12:15–13:10 UTC)**: a worker
+  the supervisor KILLS mid-boot leaves its Postgres backend alive while that
+  backend waits on a lock (the server notices the client is gone only once it
+  gets the lock). Two `ALTER TABLE managers` of the 12:07 / 12:20 boots stayed
+  queued for ~45 minutes behind two ~50-minute «Brigadirlar reytingi» builds
+  (`/workers`' headcount over the board's whole history in one transaction),
+  and every `managers` query of the serving worker queued behind them. The
+  guard bounds a boot statement's wait at 5 s, so such an orphan now lives
+  seconds. Two TEMPORARY deploy steps came with it, both read-only but the
+  second: `deploy/diag_db_sessions.py` (the sessions, open transactions and
+  heavy locks before and after the swap, literals masked) and
+  `deploy/end_orphan_boot_sessions.py` (ends a session waiting on a lock for
+  more than 2 minutes while running DDL or the boot's `managers` attach —
+  serving workers never run DDL). Remove both with their steps once deploys
+  run clean. Known and left: `deploy.sh` waits 180 s for readiness while the
+  supervisor waits 600 s, so a SIGHUP sent during a slow swap is ignored and
+  that deploy «never gets ready» without booting at all.
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports
