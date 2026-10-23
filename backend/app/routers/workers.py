@@ -4,7 +4,7 @@ import time
 from collections import namedtuple
 from datetime import date, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, and_, case
 
@@ -966,6 +966,10 @@ def get_demographics(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("workers")),
 ):
+    # Admins only (the operator, 2026-10-23) — the page hides the tab for
+    # everybody else, and this is the lock: the URL is reachable without it.
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
     from app.services import verifix, verifix_live, workforce
     data, at, err, err_at = workforce.stored(db)
     cfg = verifix.config(db)
@@ -992,7 +996,6 @@ def get_demographics(
 @router.post("/workers/demographics/refresh")
 def refresh_demographics(payload: dict = Depends(require_page("workers"))):
     """An admin's «Verifix'dan yangilash»: the read on a thread of its own."""
-    from fastapi import HTTPException
     from app.services import workforce
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admins only")
