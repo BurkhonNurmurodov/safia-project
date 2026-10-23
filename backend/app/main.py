@@ -1357,6 +1357,20 @@ for d in possible_dirs:
         STATIC_DIR = d
         break
 
+# JavaScript goes out as application/javascript, NOT Python ≥3.12's default
+# text/javascript (2026-10-23). The origin nginx compresses only the types its
+# gzip_types names (deploy/production.safiacorporate.uz: «application/javascript»,
+# no «text/javascript»), so every JS file — the 2.1 MB shared chunk included —
+# left the origin uncompressed: Cloudflare re-fetched each renamed chunk raw over
+# the slow Tashkent↔Warsaw leg, and a client reaching the origin directly got
+# 2.8 MB of boot JS instead of ~0.7 MB. Both types are valid for classic and
+# module scripts and for a service worker. FileResponse (StaticFiles and
+# serve_spa) guesses the type through this table at response time.
+import mimetypes  # noqa: E402
+
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
+
 if STATIC_DIR:
     class ImmutableStaticFiles(StaticFiles):
         """Build assets carry a content hash in their filename, so a given URL

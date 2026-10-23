@@ -152,14 +152,52 @@ function emitFileList() {
   }
 }
 
+// The version and the build stamp travel in index.html, NEVER in a JS chunk
+// (2026-10-23). A chunk's file name hashes its content AND the names of the
+// chunks it imports, so a value that changes every build (the stamp) or every
+// commit (VERSION) inlined into one shared chunk renamed 227 of 231 files on
+// every deploy — a backend-only deploy included — and every phone re-downloaded
+// the whole app (~1.7 MB brotli) through the slow Cloudflare route after each
+// of ~20 deploys a day. index.html is served no-store and is the one file a
+// navigation always re-fetches, so it carries them for free; utils/version.js
+// reads the tag. `guardStampOutOfChunks` fails the build if the stamp ever
+// reaches a chunk again (a `define`, an import of build.json …).
+function injectBuildMeta() {
+  return {
+    name: 'inject-build-meta',
+    transformIndexHtml() {
+      return [{
+        tag: 'meta',
+        attrs: { name: 'safia-build', 'data-version': APP_VERSION, 'data-built': BUILD_TIME },
+        injectTo: 'head',
+      }]
+    },
+  }
+}
+
+function guardStampOutOfChunks() {
+  return {
+    name: 'guard-stamp-out-of-chunks',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const hit = Object.values(bundle).filter(
+        (f) => f.type === 'chunk' && f.code.includes(BUILD_TIME))
+      if (hit.length) {
+        this.error(
+          `The build stamp is inside ${hit.length} JS chunk(s) (${hit.map((f) => f.fileName).slice(0, 5).join(', ')}): ` +
+          'every deploy would rename every asset and every user would re-download the whole app. ' +
+          'Read APP_VERSION / BUILD_TIME from utils/version.js (the index.html meta tag), never from a define.')
+      }
+    },
+  }
+}
+
 export default defineConfig({
-  define: {
-    __APP_VERSION__: JSON.stringify(APP_VERSION),
-    __BUILD_TIME__: JSON.stringify(BUILD_TIME),
-  },
   plugins: [
     react(),
     tailwindcss(),
+    injectBuildMeta(),
+    guardStampOutOfChunks(),
     emitBuildInfo(),
     emitServiceWorker(),
     emitFileList(),

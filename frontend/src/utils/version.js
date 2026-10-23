@@ -1,8 +1,8 @@
 /**
  * The build the user is looking at.
  *
- * `__APP_VERSION__` / `__BUILD_TIME__` are substituted by vite.config.js at
- * build time; the version itself comes from the repo-root VERSION file, which
+ * vite.config.js writes both into index.html at build time (a meta tag, read
+ * below); the version itself comes from the repo-root VERSION file, which
  * backend/app/version.py reads as well, so the two halves of the app can never
  * disagree about which release they belong to.
  *
@@ -11,11 +11,24 @@
  * commit. The deployed commit is reported by the server (/api/version).
  */
 
-// `typeof` survives the define substitution (it becomes `typeof "1.0.0"`), so
-// this also holds in any context where the define never ran (tests, a stray
-// import outside the bundle).
-export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
-export const BUILD_TIME = typeof __BUILD_TIME__ === "string" ? __BUILD_TIME__ : "";
+// Both are read from the `<meta name="safia-build">` vite.config.js writes into
+// index.html — NEVER compiled into a chunk: a value that changes every build
+// inside a shared chunk renamed every asset on every deploy (see
+// injectBuildMeta there). index.html is the build this tab loaded, so the tag
+// names exactly the bundle that is running. No tag (a test, a document that is
+// not the app) reads as "0.0.0" / "", which the update check and the
+// compatibility floor both treat as "unknown — serve, never prompt".
+function fromHtml(attr) {
+  try {
+    const tag = document.querySelector('meta[name="safia-build"]');
+    const value = tag && tag.getAttribute(attr);
+    return typeof value === "string" ? value : "";
+  } catch (e) {
+    return "";
+  }
+}
+export const APP_VERSION = fromHtml("data-version") || "0.0.0";
+export const BUILD_TIME = fromHtml("data-built");
 
 /**
  * "14.08.2026 15:04" — local time, in the day-first order every other date on

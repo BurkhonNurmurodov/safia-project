@@ -15,7 +15,7 @@ export default defineConfig([
     ],
     languageOptions: {
       // Build-time constants injected by vite.config.js `define`.
-      globals: { ...globals.browser, __APP_VERSION__: 'readonly', __BUILD_TIME__: 'readonly' },
+      globals: { ...globals.browser },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
