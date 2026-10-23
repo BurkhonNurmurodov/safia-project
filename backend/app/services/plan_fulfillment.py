@@ -196,7 +196,8 @@ def registry(db: Session, manager_ids: Iterable[int], since: Optional[date] = No
 def build(db: Session, managers: list, date_from: date, date_to: date, *,
           cells: list, leader_names: dict,
           cell_ids: Optional[set] = None,
-          skus: Optional[set] = None) -> dict:
+          skus: Optional[set] = None,
+          compare: bool = True) -> dict:
     """The whole payload for one scope.
 
     `managers` — the units whose lines are read (already narrowed by the
@@ -205,8 +206,12 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
     the unit scope BEFORE any cell pick. `cell_ids` — the picked cells (a
     leader pick arrives here as that leader's cells), None = no narrowing.
     `skus` — the picked products (`pp_daily.sap_code`, i.e. `daily_key`),
-    None = every product."""
+    None = every product. `compare=False` reads no comparison period (the
+    leaders' KPI board, which asks for one month and nothing before it)."""
     win = window(date_from, date_to)
+    if not compare:
+        win["prev_lo"] = win["prev_hi"] = None
+        win["prev_partial"] = False
     base = {
         "floor": FLOOR.isoformat(),
         "date_from": win["lo"].isoformat() if win["lo"] else None,

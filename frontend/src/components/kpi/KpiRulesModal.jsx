@@ -11,7 +11,10 @@ import { KPI_KEYS, LIVE, bandLines, maxPts, scoreTone, toneInk, w100 } from "./k
 export default function KpiRulesModal({ open, onClose, data, T, zIndex, only }) {
   const rules = data?.rules || {};
   const keys = only ? [only] : KPI_KEYS;
-  const notes = only === "concerns" ? [T.cRule, T.rNoConcern] : only ? [] : [T.rMissing, T.rNoConcern, T.rAuditNote];
+  const planW = Math.round((Number(rules.plan?.weight) || 0) * 100);
+  const planNote = fill(T.rPlanNote, { w: planW, w0: planW ? T.rPlanWn : T.rPlanW0 });
+  const notes = only === "concerns" ? [T.cRule, T.rNoConcern] : only === "plan" ? [planNote]
+    : only ? [] : [T.rMissing, T.rNoConcern, T.rAuditNote, planNote];
   return (
     <Modal open={open} onClose={onClose} title={only ? fill(T.ruleOneTitle, { kpi: T.kpi[only] }) : T.rulesTitle}
       maxWidth="max-w-2xl" zIndex={zIndex}

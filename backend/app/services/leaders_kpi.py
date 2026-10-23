@@ -15,6 +15,17 @@ model: five KPIs per cell, each scored 1–5 and weighted, the total = Σ score
     Sootvetstvie kategorii             0.20    live — Verifix's HR journals + HR's ladder (2026-10-19)
     Audit tekhnologov                  0.10    NOT on the platform (HR holds one % per cell)
 
+and a SIXTH, not one of HR's (2026-10-23, the operator: «can you also add Plan
+Fulfillment»):
+
+    Plan bajarish (plan fulfilment)    0.00    live — the /plan page's own per-cell minutes
+
+Its weight is 0 until the operator names one, so HR's total out of 5.0 does not
+move: the KPI is shown (a tab, a board column, a radar spoke, the dialogs) and
+scored, and adds no points. `plan_rule` (app_settings) holds its weight and
+bands; a weight given there joins the total at once — the other weights should
+then be lowered so they still add to 1.0, or a total can pass 5.0.
+
 The operator's rulings (2026-10-19, asked one by one):
 
 * **One row per CELL, its owner named** — the reading all three pages shared
@@ -53,12 +64,12 @@ concerns KPI and ranks. The board is derived per request; nothing is stored.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting
+from app.models import AppSetting, Manager
 from app.services import category_compliance as cc, foreign_objects, turnover
 from app.services.turnover import (
     PAST_FROM, cell_map, last_day, local, month_start, now_aware, options, owned, ym,
@@ -66,10 +77,11 @@ from app.services.turnover import (
 
 MAX_POINTS = 5.0
 
-# The five, in the page's order — the platform's own numbering (concerns 1st,
-# turnover 2nd, foreign objects 3rd, then the two HR still counts by hand).
-KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit")
-LIVE = {"concerns", "turnover", "foreign", "compliance"}
+# The six, in the page's order — the platform's own numbering (concerns 1st,
+# turnover 2nd, foreign objects 3rd, then the two HR still counts by hand), and
+# plan fulfilment last: it is not one of HR's five, so it keeps their numbers.
+KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit", "plan")
+LIVE = {"concerns", "turnover", "foreign", "compliance", "plan"}
 
 # HR's July 2026 rules for the two KPIs the platform cannot compute yet — printed
 # on their tabs so the reader knows what will come; nothing scores by them.
@@ -123,6 +135,84 @@ def concerns_score(pct0: Optional[int], r: dict) -> Optional[int]:
         if pct0 > float(b["over"]):
             return int(b["score"])
     return int(r["worst"])
+
+
+# ── the plan-fulfilment rule ──────────────────────────────────────────────────
+# Fakt minutes ÷ Reja minutes, the WHOLE percent judged as printed: at least
+# 95 → 5, 90 → 4, 80 → 3, 70 → 2, else 1. Weight 0 — see the module docstring.
+PLAN_RULE_KEY = "plan_rule"
+DEFAULT_PLAN_RULE = {
+    "weight": 0.0,
+    "bands": [{"min": 95, "score": 5}, {"min": 90, "score": 4},
+              {"min": 80, "score": 3}, {"min": 70, "score": 2}],
+    "worst": 1,
+}
+
+
+def plan_rule(db: Session) -> dict:
+    """The rule in force: the admin override (`plan_rule` in app_settings) when
+    it is well-formed, else the default. A malformed one never blanks a score."""
+    row = db.query(AppSetting).filter(AppSetting.key == PLAN_RULE_KEY).first()
+    if row and row.value:
+        try:
+            r = json.loads(row.value)
+            bands = sorted(({"min": float(b["min"]), "score": int(b["score"])} for b in r["bands"]),
+                           key=lambda b: -b["min"])
+            w = float(r.get("weight", 0.0))
+            if bands and 0 <= w <= 1 and all(1 <= b["score"] <= 5 and 0 <= b["min"] <= 1000 for b in bands):
+                return {"weight": w, "bands": bands, "worst": int(r.get("worst", 1))}
+        except (ValueError, TypeError, KeyError):
+            pass
+    return json.loads(json.dumps(DEFAULT_PLAN_RULE))
+
+
+def plan_score(pct0: Optional[int], r: dict) -> Optional[int]:
+    if pct0 is None:
+        return None
+    for b in sorted(r["bands"], key=lambda b: -float(b["min"])):
+        if pct0 >= float(b["min"]):
+            return int(b["score"])
+    return int(r["worst"])
+
+
+def _pct_half_up(part: float, whole: float) -> Optional[int]:
+    """The whole percent, half up — `whole_pct`'s rule over minutes."""
+    return int((200 * part + whole) // (2 * whole)) if whole > 0 else None
+
+
+def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today: date) -> dict:
+    """cell id → the month's plan and fact minutes, through the /plan page's
+    own computation (`plan_fulfillment.build` — `pp_calc.line_minutes` line by
+    line, a cell's part by `wc_group.share`, a unit-day counted only once both
+    halves are in). Read over the units the board's in-scope owned cells stand
+    in; nothing before `zagruzka_source.ZAGRUZKA_FROM` (the data starts there)."""
+    from app.services import plan_fulfillment as pf
+
+    lo, hi = max(m, pf.FLOOR), min(d, today)
+    if hi < lo:
+        return {}
+    mids = sorted({c["manager_id"] for c in cmap.values()
+                   if c.get("manager_id") and owned(c) and _scope_ok(c, scope)})
+    if not mids:
+        return {}
+    managers = db.query(Manager).filter(Manager.id.in_(mids)).all()
+    cells, names = pf.registry(db, mids, since=lo, until=hi)
+    out = pf.build(db, managers, lo, hi, cells=cells, leader_names=names, compare=False)
+    return {r["cell_id"]: r for r in out.get("cell_rows") or [] if r.get("cell_id") is not None}
+
+
+def _plan_row(cr: Optional[dict], rule: dict) -> dict:
+    """One cell's plan-fulfilment figure. No plan minutes on a counted day =
+    no % and no score («—», 0 in the total — like a missing KPI)."""
+    daily = (cr or {}).get("daily") or []
+    plan = float((cr or {}).get("plan") or 0)
+    actual = float((cr or {}).get("actual") or 0)
+    pct0 = _pct_half_up(actual, plan)
+    score = plan_score(pct0, rule)
+    return {"plan": round(plan), "actual": round(actual), "short": round(float((cr or {}).get("short") or 0)),
+            "pct0": pct0, "days": sum(1 for v in daily if isinstance(v, list)),
+            "no_fact": sum(1 for v in daily if v == "nf"),
+            "score": score, "points": points_of(score, rule["weight"])}
 
 
 def points_of(score: Optional[int], weight: float) -> Optional[float]:
@@ -213,6 +303,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
         # own half (`compliance.rule`), the board's rule dialog needs the bands.
         "compliance": _slim_cc_rule(cp.get("rule") or cc.rule(db)),
         "audit": json.loads(json.dumps(AUDIT_RULE)),
+        "plan": plan_rule(db),
     }
     kpis = [{"key": k, "live": k in LIVE,
              "weight": float(rules[k]["weight"]),
@@ -234,10 +325,12 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
         "turnover": tv, "foreign": fo, "compliance": cp,
     }
     if state in ("before", "future"):
-        return {**base, "rows": [], "totals": None, "concerns": None, "options": {"shifts": [], "brigadirs": []}}
+        return {**base, "rows": [], "totals": None, "concerns": None, "plan": None,
+                "options": {"shifts": [], "brigadirs": []}}
 
     cmap = cell_map(db, d)
     per_cell = _concerns_by_cell(db, payload, m, d, scope)
+    plan_cells = _plan_by_cell(db, m, d, cmap, scope, now.date())
     trank = {x["key"]: x for x in tv.get("ranking") or []}
     frank = {x["key"]: x for x in fo.get("ranking") or []}
     crank = {x["key"]: x for x in cp.get("ranking") or []}
@@ -266,8 +359,9 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
             compliance = {"all": cm.get("all", 0), "counted": cm.get("counted", 0),
                           "compliant": cm.get("compliant", 0), "rate": cm.get("rate"), "pct0": cm.get("pct0"),
                           "score": cm.get("score"), "points": points_of(cm.get("score"), w_c)}
+        plan = _plan_row(plan_cells.get(c.get("id")), rules["plan"])
         parts = [concerns.get("points"), (turn or {}).get("points"), (foreign or {}).get("points"),
-                 (compliance or {}).get("points")]
+                 (compliance or {}).get("points"), plan.get("points")]
         total = round(sum(p for p in parts if p is not None), 2)
         rows.append({
             "key": k, "id": c.get("id"), "code": c.get("code"),
@@ -277,7 +371,8 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
             "manager_id": c.get("manager_id"), "brigadir": c.get("brigadir"),
             "shift": c.get("shift"), "factory_id": c.get("factory_id"),
             "concerns": concerns, "turnover": turn, "foreign": foreign,
-            "compliance": compliance, "audit": None,
+            "compliance": compliance, "audit": None, "plan": plan,
+            "_plan_daily": (plan_cells.get(c.get("id")) or {}).get("daily") or [],
             "total": total, "pct": int(round(total / MAX_POINTS * 100)),
         })
     _rank(rows)
@@ -303,6 +398,8 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
                         "avg_score": avg([(r["foreign"] or {}).get("score") for r in rows])},
             "compliance": {"scored": sum(1 for r in rows if (r["compliance"] or {}).get("score") is not None),
                            "avg_score": avg([(r["compliance"] or {}).get("score") for r in rows])},
+            "plan": {"scored": sum(1 for r in rows if r["plan"]["score"] is not None),
+                     "avg_score": avg([r["plan"]["score"] for r in rows])},
         },
     }
     # The concerns tab's own headline: the month's filings over the rows.
@@ -313,7 +410,33 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
                 "pct0": cc.whole_pct(c_sum["done"], c_rated),
                 "no_concern_cells": sum(1 for r in rows if r["concerns"]["total"] == 0),
                 "no_pct_cells": sum(1 for r in rows if r["concerns"]["total"] and not r["concerns"]["rated"])}
-    return {**base, "rows": rows, "totals": totals, "concerns": concerns, "options": options(cmap)}
+    return {**base, "rows": rows, "totals": totals, "concerns": concerns,
+            "plan": _plan_half(rows, m, d, now.date()), "options": options(cmap)}
+
+
+def _plan_half(rows: list[dict], m: date, d: date, today: date) -> dict:
+    """The plan tab's own half: the month's figure over the rows, the days the
+    figures run over, and each cell's day strip (taken off the board rows, so
+    the rows the page polls stay small)."""
+    from app.services import plan_fulfillment as pf
+
+    lo, hi = max(m, pf.FLOOR), min(d, today)
+    days = [(lo + timedelta(days=i)).isoformat() for i in range((hi - lo).days + 1)] if hi >= lo else []
+    daily = {}
+    for r in rows:
+        strip = r.pop("_plan_daily", None) or []
+        if any(v is not None for v in strip):
+            daily[r["key"]] = strip
+    plan = sum(r["plan"]["plan"] for r in rows)
+    actual = sum(r["plan"]["actual"] for r in rows)
+    return {
+        "floor": pf.FLOOR.isoformat(), "before_floor": d < pf.FLOOR, "clamped": m < pf.FLOOR <= d,
+        "days": days, "daily": daily,
+        "plan": plan, "actual": actual, "short": sum(r["plan"]["short"] for r in rows),
+        "pct0": _pct_half_up(actual, plan),
+        "no_plan_cells": sum(1 for r in rows if r["plan"]["pct0"] is None),
+        "no_fact_days": sum(r["plan"]["no_fact"] for r in rows),
+    }
 
 
 def concerns_register(db: Session, payload: dict, m: date, scope: Optional[dict] = None,

@@ -14,6 +14,8 @@ file. The house report style is `quality_export`'s.
     Havotirlar      the concerns KPI per cell · Havotirlar ro'yxati (the filings)
     Qo'nimsizlik    the turnover KPI per cell · Ketganlar (who left)
     Yot jismlar     the foreign-objects KPI per cell · Shikoyatlar (the complaints)
+    Muvofiqlik      the category-compliance KPI per cell
+    Plan bajarish   the plan-fulfilment KPI per cell (2026-10-23)
 """
 from __future__ import annotations
 
@@ -36,9 +38,12 @@ LABELS_UZ = {
     "sheetTurnover": "Qo'nimsizlik", "sheetForeign": "Yot jismlar", "sheetLeavers": "Ketganlar",
     "sheetComplaints": "Shikoyatlar", "sheetRegister": "Havotirlar ro'yxati", "sheetCompliance": "Muvofiqlik",
     "kConcerns": "Ishchi havotirlari", "kTurnover": "Xodimlar ishdan bo'shashi", "kForeign": "Yot jismlar",
-    "kCompliance": "Kategoriya muvofiqligi", "kAudit": "Texnologlar auditi",
+    "kCompliance": "Kategoriya muvofiqligi", "kAudit": "Texnologlar auditi", "kPlan": "Plan bajarish",
+    "sheetPlan": "Plan bajarish",
+    "colPlanMin": "Reja, daq", "colFactMin": "Fakt, daq", "colShortMin": "Kamomad, daq",
+    "colPlanPct": "Bajarish, %", "colPlanDays": "Hisoblangan kunlar",
     "cardOwners": "Egalari", "cardCells": "Yacheykalar", "cardAvg": "O'rtacha jami", "cardBest": "Eng yuqori jami",
-    "rules": "Beshta KPI qoidasi", "formula": "Jami = Σ ball × vazn · eng ko'pi 5,0 · platformada yo'q KPI 0 ball",
+    "rules": "KPI qoidalari", "formula": "Jami = Σ ball × vazn · eng ko'pi 5,0 · platformada yo'q KPI 0 ball",
     "colKpi": "KPI", "colWeight": "Vazn", "colMax": "Eng ko'p ball", "colLive": "Platformada", "colBands": "Shkala",
     "yes": "Ha", "no": "Hali yo'q",
     "boardTitle": "Liderlar reytingi", "countLine": "{o} ta egasi · {c} ta yacheyka",
@@ -60,9 +65,11 @@ LABELS_UZ = {
     "faultYes": "Ha", "faultNo": "Yo'q", "faultBlank": "—",
 }
 
-KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit")
+KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit", "plan")
 KPI_LABEL = {"concerns": "kConcerns", "turnover": "kTurnover", "foreign": "kForeign",
-             "compliance": "kCompliance", "audit": "kAudit"}
+             "compliance": "kCompliance", "audit": "kAudit", "plan": "kPlan"}
+# The KPIs a board row carries a score for (the audit has no source yet).
+SCORED = ("concerns", "turnover", "foreign", "compliance", "plan")
 
 
 def _l(p: dict, key: str) -> Any:
@@ -152,6 +159,11 @@ def _bands_text(key: str, rule: dict) -> str:
             prev = int(b["max"])
         parts.append(f"{(prev or 0) + 1}+ → {rule.get('worst', 1)}")
         return " · ".join(parts)
+    if key == "plan":
+        bands = sorted(rule.get("bands") or [], key=lambda b: -float(b["min"]))
+        parts = [f"≥ {float(b['min']):g}% → {b['score']}" for b in bands]
+        parts.append(f"< {float(bands[-1]['min']):g}% → {rule.get('worst', 1)}" if bands else f"→ {rule.get('worst', 1)}")
+        return " · ".join(parts)
     if key == "compliance":
         parts = [f"= 100% → {rule.get('full', 5)}"]
         parts += [f"> {float(b['above']):g}% → {b['score']}"
@@ -208,8 +220,9 @@ def _board(wb: Workbook, p: dict) -> None:
     if order:
         pos = {str(k): i for i, k in enumerate(order)}
         rows.sort(key=lambda x: (pos.get(str(x.get("key")), len(pos)), x.get("rank") or 0))
-    ws = _sheet(wb, _l(p, "sheetBoard"), {2: 7, 3: 12, 4: 34, 5: 28, 6: 13, 7: 13, 8: 13, 9: 13, 10: 13, 11: 10, 12: 9},
-                landscape=True)
+    n = len(KPI_KEYS)
+    widths = {2: 7, 3: 12, 4: 34, 5: 28, **{6 + i: 13 for i in range(n)}, 6 + n: 10, 7 + n: 9}
+    ws = _sheet(wb, _l(p, "sheetBoard"), widths, landscape=True)
     C1 = 2
     labels = [_l(p, "colRank"), _l(p, "colCell"), _l(p, "colOwner"), _l(p, "colBrigadir")] + \
         [_l(p, KPI_LABEL[k]) for k in KPI_KEYS] + [_l(p, "colTotal"), _l(p, "colPct")]
@@ -219,12 +232,13 @@ def _board(wb: Workbook, p: dict) -> None:
     row = _section(ws, row, C1, C2, _l(p, "boardTitle"), count)
     out = []
     for x in rows:
-        scores = [(x.get(k) or {}).get("score") if k in ("concerns", "turnover", "foreign", "compliance") else None for k in KPI_KEYS]
+        scores = [(x.get(k) or {}).get("score") if k in SCORED else None for k in KPI_KEYS]
         tints = {4 + i: _score_color(s) for i, s in enumerate(scores) if s is not None}
         out.append(([x.get("rank"), x.get("code"), _name(p, x.get("owner")),
                      _name(p, x.get("brigadir")) if x.get("brigadir") else None, *scores,
                      x.get("total"), x.get("pct")],
-                    {"fmts": {9: "0.00", 10: '0"%"'}, "tints": tints, "centers": (0, 1, 4, 5, 6, 7, 8)}))
+                    {"fmts": {4 + n: "0.00", 5 + n: '0"%"'}, "tints": tints,
+                     "centers": (0, 1, *range(4, 4 + n))}))
     _table(ws, row, C1, labels, out)
 
 
@@ -315,6 +329,31 @@ def _compliance(wb: Workbook, p: dict) -> None:
     _table(ws, row, C1, labels, out)
 
 
+def _plan(wb: Workbook, p: dict) -> None:
+    pay = p["payload"]
+    rows = [r for r in pay.get("rows") or [] if r.get("plan")]
+    rows.sort(key=lambda r: (r["plan"].get("pct0") is None, r["plan"].get("pct0") or 0,
+                             -(r["plan"].get("plan") or 0), r.get("code") or ""))
+    ws = _sheet(wb, _l(p, "sheetPlan"), {2: 6, 3: 12, 4: 34, 5: 28, 6: 13, 7: 13, 8: 14, 9: 12, 10: 13, 11: 9, 12: 11},
+                landscape=True)
+    C1 = 2
+    labels = [_l(p, k) for k in ("colN", "colCell", "colOwner", "colBrigadir", "colPlanMin", "colFactMin",
+                                 "colShortMin", "colPlanPct", "colPlanDays", "colScore", "colPoints")]
+    row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
+    row = _section(ws, row, C1, C1 + len(labels) - 1, _l(p, "kPlan"),
+                   _bands_text("plan", (pay.get("rules") or {}).get("plan") or {}))
+    out = []
+    for n, x in enumerate(rows, 1):
+        c = x["plan"]
+        tone = _score_color(c.get("score"))
+        out.append(([n, x.get("code"), _name(p, x.get("owner")), _name(p, x.get("brigadir")) if x.get("brigadir") else None,
+                     c.get("plan", 0), c.get("actual", 0), c.get("short", 0), c.get("pct0"), c.get("days", 0),
+                     c.get("score"), c.get("points")],
+                    {"fmts": {4: "#,##0", 5: "#,##0", 6: "#,##0", 7: '0"%"', 10: "0.00"},
+                     "tints": {9: tone} if tone else {}, "centers": (0, 1)}))
+    _table(ws, row, C1, labels, out)
+
+
 def _leavers(wb: Workbook, p: dict) -> None:
     pay = (p["payload"].get("turnover") or {})
     ws = _sheet(wb, _l(p, "sheetLeavers"), {2: 34, 3: 10, 4: 28, 5: 24, 6: 22, 7: 12, 8: 12, 9: 10, 10: 30, 11: 22},
@@ -382,6 +421,7 @@ def build_leaders_kpi_workbook(p: dict) -> BytesIO:
     _turnover(wb, p)
     _foreign(wb, p)
     _compliance(wb, p)
+    _plan(wb, p)
     _leavers(wb, p)
     _complaints(wb, p)
     _register(wb, p)

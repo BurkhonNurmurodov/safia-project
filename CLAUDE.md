@@ -2673,8 +2673,9 @@ tasks 40/41 name it.
   (past · open · closing · closed · saved).
 - **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
-  category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file).
-  **A KPI the platform has no source for counts 0** — the technologists'
+  category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file),
+  plus a sixth, plan fulfilment, at weight 0 from 2026-10-23 (see «Plan
+  bajarish» below). **A KPI the platform has no source for counts 0** — the technologists'
   audit alone since the evening of 2026-10-19 (category compliance went live
   the same day — see its own section and the tab bullet below), so a perfect
   cell today reads 4.7 / 5 (94%). The board's meta line COMPUTES that
@@ -3288,6 +3289,46 @@ migrate).
   read on a past month, the exact / skip modes, the bands' edges, a bad
   override falling back whole); the first real read lands with the deploy's
   boot catch-up.
+
+## «Plan bajarish» — the sixth leaders' KPI (`/leaders-kpi` → «Plan», 2026-10-23)
+
+The operator: «can you also add Plan Fulfillment» (asked on the «Liderlar KPI»
+board). A sixth KPI after HR's five — uz «Plan bajarish», uz_cyrl «План
+бажариш», ru «Выполнение плана», en «Plan fulfillment» (the /plan page's own
+name), tab «Plan» — and **NOT one of HR's five, so its weight is 0**: it is a
+tab, a board column, a radar spoke, a line in the cell dialog, the rules and
+the workbook's «Plan bajarish» sheet, scored 1–5, and it adds NO points. HR's
+total out of 5.0 did not move. Nobody ruled on a weight; one is set through
+`plan_rule` in app_settings (`PUT /admin/settings`, weight 0–1 + bands), and
+it joins the total at once — lower the other weights in the same change, or a
+total can pass 5.0 (`MAX_POINTS` stays 5).
+
+- **The figure is the «Plan Bajarish» page's own, per cell** —
+  `leaders_kpi._plan_by_cell` calls `plan_fulfillment.build` (now with
+  `compare=False`: no comparison period read) over the units the board's
+  in-scope owned cells stand in, for the month from `ZAGRUZKA_FROM` to today,
+  and reads its `cell_rows`: Σ fact ÷ Σ plan minutes of the cell's share
+  (`wc_group.share`), a unit-day counted only once both halves are in. The
+  WHOLE percent, half up, judged as printed (`_pct_half_up`).
+- **The rule** (`DEFAULT_PLAN_RULE`, `plan_rule`, `plan_score`): at least 95 →
+  5, 90 → 4, 80 → 3, 70 → 2, else 1. A cell with no plan minutes on a counted
+  day has no % and no score («—», 0 in the total). A month before 2 Sep 2026
+  (`before_floor`) is an empty state; September is clamped and says so.
+- **Credited like the other KPIs** — one row per owned cell on the month's last
+  day (`turnover.cell_map` + `owned`), the owner named.
+- **Payload**: each board row's `plan` {plan, actual, short, pct0, days,
+  no_fact, score, points}; `totals.by_kpi.plan`; the tab's half `plan`
+  {days, daily (cell key → the /plan day strip), plan, actual, short, pct0,
+  no_plan_cells, no_fact_days, floor, before_floor, clamped}.
+- **The tab** (`components/kpi/PlanTab.jsx`): one summary (the month's % ·
+  fact / plan minutes · shortfall; «jamiga qo'shilmaydi — vazni 0%» while the
+  weight is 0), a ranking worst % first (plan · fact · shortfall minutes · % ·
+  days counted · score · points), notes folded under it. A row opens
+  `PlanExplain.jsx`: the %, the minutes, the band framed, score × weight, and
+  the month day by day — each day coloured by the KPI's own scale
+  (`kpiUtil.planScoreOf`, the client twin of `plan_score`; keep them in step).
+- **Consequence to know**: while the weight is 0 the zones still count it —
+  «Diqqat zonasi» is «a KPI scored 1–2», and plan fulfilment is a KPI.
 
 ## «Brigadirlar reytingi» on real data (`/leaderboard`, 2026-10-23)
 
