@@ -150,3 +150,13 @@ jobs:
         run: |
           cd /var/www/production/backend
           timeout 100 .venv/bin/python ../deploy/diag_arc_files.py || true
+
+      # ⚠ TEMPORARY (2026-10-23): how the «Tarkib» place rule reads the real
+      # Verifix addresses — services/workforce.read run on production, only
+      # counts and locality words over everybody printed (no person). Read-only,
+      # never fails the deploy. Remove with the script once the gazetteer is
+      # confirmed.
+      - name: "Probe: Tarkib places (temporary)"
+        run: |
+          cd /var/www/production/backend
+          timeout 170 .venv/bin/python ../deploy/diag_workforce_places.py || true
