@@ -10102,12 +10102,12 @@ no event; the route is the share sheet).
   `skipWaiting` + `clients.claim` make that immediate. Precaching is bounded to
   eight fetches at a time. An unchanged hashed asset comes out of the HTTP
   cache (immutable) — but chunk hashes CASCADE (a shared chunk's change renames
-  nearly every chunk that imports it), so in practice most deploys re-download
-  most of the graph, ~5 MB per browser client per deploy, the same figure a
-  first visit pays. Accepted for the audience the browser door has (desks on
-  the office network; phones are on Telegram, where no worker exists); the one
-  knob is the precache list `emitServiceWorker` writes — shrink it to the entry
-  graph and let the rest cache on use if that cost ever matters.
+  nearly every chunk that imports it). From v4.324.1 the build stamp is out of
+  the chunks (see «A deploy renames only what changed»), so a deploy with no
+  frontend change renames nothing; a translation or shared-module edit still
+  renames most of the graph. The one knob left here is the precache list
+  `emitServiceWorker` writes — shrink it to the entry graph and let the rest
+  cache on use if that cost ever matters.
 - **What the worker does, and what it must never do.** A navigation to an SPA
   route: NETWORK FIRST with a 5 s timeout, the cached shell as the fallback —
   for offline, a slow origin AND an origin 5xx (nginx answers 502 during the
@@ -10373,11 +10373,12 @@ daily") **the app downloads every build the site deploys by itself** — see
     build is ready, which `useAppUpdate` answers with an immediate refetch
     instead of waiting for its 5-minute poll. It follows the LIVE stamp, not
     "the newest": a rollback is followed too.
-  - **Cost**: every deploy renames ~207 of the 211 asset files today (the
-    build stamp in `utils/version.js` is imported by nearly every chunk), so a
-    new build is ~1.6 MB over the wire — only while the app is open, and only
-    the latest build, never each one in between. Taking the stamp out of the
-    chunk graph would shrink this (and the PWA's precache); not done.
+  - **Cost**: until v4.324.1 every deploy renamed ~227 of 231 asset files
+    (the build stamp sat in a shared chunk), so a new build was ~1.6 MB over
+    the wire. The stamp now lives in index.html (see «A deploy renames only
+    what changed»): a deploy with no frontend change downloads index.html
+    alone; a translation edit still renames most chunks. Only while the app is
+    open, and only the latest build, never each one in between.
   - **Failures**: a file that does not match the list, a list that is not
     one, a missing CSP or a lasting 4xx on `/build.json` is retried after 30 s
     and REPORTED (`/api/boot-report`, «page update failed») after three
