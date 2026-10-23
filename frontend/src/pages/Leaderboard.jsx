@@ -336,13 +336,24 @@ const PLATE = {
 
 function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
   const first = place === 1;
-  // The photo sits BELOW the rank column (so it never covers the place, the
-  // score flag or «Umumiy») and ends above the frosted foot: sized off the
-  // card's measured width (the card is 0.73 wide-to-tall), so the initials
-  // inside it scale with it too.
+  // The photo fills the band BELOW the rank column (so it never covers the
+  // place, the score flag or «Umumiy») and ABOVE the foot's own text block
+  // (name + unit + stat grid), centered in it — sized off the card's measured
+  // width (the card is 0.73 wide-to-tall), so the initials inside it scale
+  // with it too. Sized against the foot's BLUR edge instead it ended well
+  // above the name and left a dead strip of bare plate; reaching into the
+  // glass is the design («the render's legs melt into the frosted foot»).
   const [cardRef, cardW] = useElementWidth();
-  const photoTop = first ? 98 : 82;
-  const photo = cardW ? clamp(Math.round(Math.min(cardW * 0.5, (cardW / 0.73) * 0.56 - photoTop - 8)), 36, 180) : 0;
+  const cardH = cardW ? cardW / 0.73 : 0;
+  const headTop = first ? 96 : 80;
+  const footText = first ? 98 : 82;
+  const band = cardH ? Math.max(0, cardH - headTop - footText) : 0;
+  const photo = band ? clamp(Math.round(Math.min(cardW * 0.58, band - 14)), 36, 200) : 0;
+  const rim = photo > 90 ? 4 : 2.5;
+  const photoTop = Math.round(headTop + Math.max(0, band - photo - rim * 2) / 2);
+  // Where the medallion's center sits, as a share of the card — the engraved
+  // arcs and the champion halo radiate from the head, wherever it landed.
+  const centerPct = cardH ? (((photoTop + rim + photo / 2) / cardH) * 100).toFixed(1) : "24";
   const p = PLATE[place];
   const up = (s.scoreDelta ?? 0) >= 0;
   return (
@@ -365,16 +376,17 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
       {/* engraved arcs — the FIDE-poster decoration translated onto metal:
           thin rings radiating from behind the head, fading out well before
           the frosted foot so the band stays calm */}
-      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `repeating-radial-gradient(circle at 50% 24%, transparent 0 42px, ${hexA(p.edge, 0.45)} 42px 43.5px)`, opacity: 0.55, maskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)" }} />
-      {/* champion halo — a slow breathing glow behind the render */}
-      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
+      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `repeating-radial-gradient(circle at 50% ${centerPct}%, transparent 0 42px, ${hexA(p.edge, 0.45)} 42px 43.5px)`, opacity: 0.55, maskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)" }} />
+      {/* champion halo — a slow breathing glow behind the render, tracking
+          the medallion wherever the measurement seated it */}
+      {first && photo > 0 && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ left: "10%", right: "10%", top: photoTop - photo * 0.32, height: photo * 1.64, background: `radial-gradient(circle at 50% 50%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
 
       {/* the brigadir — their profile photo struck as a medallion under the
           spotlight, the plate's own metal as its rim (initials on their hue
           where nobody uploaded one) */}
       {photo > 0 && (
         <span aria-hidden className="absolute left-0 right-0 flex justify-center pointer-events-none select-none" style={{ top: photoTop }}>
-          <span className="rounded-full" style={{ padding: photo > 90 ? 4 : 2.5, background: `linear-gradient(160deg, ${p.edge} 0%, ${p.mid} 55%, ${p.lo} 100%)`, boxShadow: `0 16px 30px -14px ${hexA(p.deep, 0.85)}` }}>
+          <span className="rounded-full" style={{ padding: rim, background: `linear-gradient(160deg, ${p.edge} 0%, ${p.mid} 55%, ${p.lo} 100%)`, boxShadow: `0 16px 30px -14px ${hexA(p.deep, 0.85)}` }}>
             <Avatar sup={s} size={photo} />
           </span>
         </span>
