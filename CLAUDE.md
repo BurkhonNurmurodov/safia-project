@@ -3368,7 +3368,10 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
     `_heatmap_avg` as Samaradorlik (days rounded half UP, `Math.round`'s rule).
     It can pass 100%; it enters the score capped at 100. It is a column, a
     sort segment, a radar spoke, a podium figure and an Excel column.
-  - **Lider nazorati** = the /leaders brigadir ranking's «Reyting», scored in
+  - **Lider nazorati** (what the operator asked after on 2026-10-23 and what
+    «Control» on the board already IS — the supervisor Rating % of the
+    Leaders Monitoring standings; its Consistency is deliberately NOT a
+    second column here) = the /leaders brigadir ranking's «Reyting», scored in
     the BROWSER from the standing pool (`routers/leaderboard.checklist_pool`:
     windowed, cut to the board's units, every leader an opaque code, a unit
     its manager id) through `utils/leaderBoard.js` — the /leaders scoring
@@ -3379,16 +3382,38 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
     the unit in the period (`entry_date`, never a worker's), the share done;
     one sitting with a shift- or top-manager now is out of the count. Read as
     the register stands, so a recent period reads lower than an old one.
+  - **Sifat nazorati** (added 2026-10-23, the operator: «add also Quality
+    Complaints Resolved percentage (without hair)») = the shift dashboard's
+    «Sifat nazorati %», i.e. the Quality page's own closure rate, per period:
+    of the period's complaints whose status describes WORK
+    (`shift_report.ACTIONABLE`, imported — never re-spelled — so «не требуется
+    мера» stays out of both halves), the share resolved, with the HAIR
+    category left out (`shift_report.SKIP_CATEGORY`, the 2026-09-18 ruling;
+    a row with NO category is KEPT, since «uncategorised» is not «hair»).
+    Attributed as that page attributes it: «Отв. бригадир» through
+    `name_map.supervisor_match` over EVERY live unit (a subset lets the fuzzy
+    matcher hand a row to the wrong unit), so a spelling naming no unit —
+    technologists, IT, the stores — is nobody's row here either. Bucketed by
+    the complaint's own date, and NOT gated on the day close, as the concerns
+    beside it are not: a complaint is filed against a date, not against a
+    shift somebody closed. A period with no actionable record reads «—», never
+    0% — «nothing filed» is not «nothing resolved» — and the cell's hover
+    carries `done / actionable`, because «0% of one» and «0% of forty» are
+    different facts and the row stays one line high.
   - **Davomat** = /workers' `att_rate` ((came + on leave) ÷ list, summed per
     period), its own `get_headcount` called; the live «so far» day is left out.
   - **Kaizen** is not measured (Notion names Notion people, not profiles): the
     column and the radar spoke say «hali hisoblanmaydi» (the podium leaves it
     off), and its weight is set aside until it is measured.
 - **The weights** (`CATS` in Leaderboard.jsx, the live ones adding up to 1):
-  Samaradorlik 28 · Plan bajarish 22 · Lider nazorati 14 · Xavotirlar 14 ·
-  Davomat 22. Plan took 22% when it joined and the four before it kept their
-  proportions (they were 35 · 18 · 18 · 29). Not the operator's ruling — a
-  starting point, one line to change.
+  Samaradorlik 24 · Plan bajarish 19 · Lider nazorati 12 · Xavotirlar 12 ·
+  Sifat nazorati 14 · Davomat 19. Each joiner took a share and the ones before
+  it kept their proportions: Plan 22% on 2026-10-23 (they were 35 · 18 · 18 ·
+  29), then Sifat 14% the same day — the weight the other closure rate beside
+  it carries — the five before it scaling by 0.86. **Not the operator's
+  ruling** — a starting point, one line each to change; asked about the
+  weight, they expressed no preference. Consequence to know: every brigadir's
+  Overall score and place moved on the day Sifat joined.
 - **The score**: Σ min(figure, 100) × weight over the figures the period HAS,
   ÷ their weights — a figure with no data drops out (the page's stated rule).
   Ranked: non-archived units with `zagruzka_on`, in the viewer's scope (plant

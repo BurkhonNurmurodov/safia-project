@@ -4,6 +4,7 @@ import {
   Trophy, Gauge, Zap, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
   ListOrdered, TrendingUp, ArrowUp, ArrowDown, Minus, Info, ChevronDown,
   Download, Layers, CircleCheck, TriangleAlert, CalendarX2, Target,
+  MessageSquareWarning,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
@@ -49,25 +50,34 @@ import {
  * heatmap (it replaced Zagruzka, the operator's call), Plan bajarish is the
  * «Reja bajarilishi» heatmap beside it (added the same day — the operator:
  * «why no plan fulfillment as I said»), Davomat is /workers'
- * attendance rate, Xavotir the share of the period's /concerns resolved, and
+ * attendance rate, Xavotir the share of the period's /concerns resolved,
+ * «Sifat nazorati» the share of its quality complaints resolved — the shift
+ * dashboard's own «Sifat nazorati %», hair left out (the operator,
+ * 2026-10-23: «add also Quality Complaints Resolved percentage (without
+ * hair)») — and
  * «Lider nazorati» is the /leaders brigadir ranking's «Reyting», scored HERE
  * from the checklist pool with the very functions that board uses
  * (utils/leaderBoard.js). Kaizen is not measured yet: its column says so and
- * its weight is shared out over the other five (the operator, same day).
+ * its weight is shared out over the ones that are (the operator, same day).
  * ════════════════════════════════════════════════════════════════════ */
 
 /* ── categories (the ranked statistics) ──────────────────────────────── */
-/* The live weights add up to 1, so each is its share of the score as it is:
- * plan fulfilment took 22% when it joined (2026-10-23) and the four before it
- * kept their proportions (35 · 18 · 18 · 29 → 28 · 14 · 14 · 22). Kaizen's own
- * weight is set aside until it is measured. `tiny` = the podium's short label. */
+/* The live weights add up to 1, so each is its share of the score as it is.
+ * Plan fulfilment took 22% when it joined (2026-10-23) and the four before it
+ * kept their proportions (35 · 18 · 18 · 29 → 28 · 14 · 14 · 22); quality
+ * control took 14% the same day — the weight the other closure rate beside it
+ * carries — and the five before it kept theirs again (× 0.86). Kaizen's own
+ * weight is set aside until it is measured. NONE of these is the operator's
+ * ruling: they are a starting point, one line each to change. `tiny` = the
+ * podium's short label. */
 const CATS = [
-  { key: "eff",  icon: Zap,            weight: 0.28, tiny: true },
-  { key: "plan", icon: Target,         weight: 0.22, tiny: true },
-  { key: "naz",  icon: ClipboardCheck, weight: 0.14 },
-  { key: "kai",  icon: Lightbulb,      weight: 0.15, live: false },
-  { key: "xav",  icon: ShieldCheck,    weight: 0.14 },
-  { key: "kir",  icon: UserCheck,      weight: 0.22 },
+  { key: "eff",  icon: Zap,                  weight: 0.24, tiny: true },
+  { key: "plan", icon: Target,               weight: 0.19, tiny: true },
+  { key: "naz",  icon: ClipboardCheck,       weight: 0.12 },
+  { key: "kai",  icon: Lightbulb,            weight: 0.15, live: false },
+  { key: "xav",  icon: ShieldCheck,          weight: 0.12 },
+  { key: "qual", icon: MessageSquareWarning, weight: 0.14 },
+  { key: "kir",  icon: UserCheck,            weight: 0.19 },
 ];
 const LIVE = CATS.filter((c) => c.live !== false);
 const LIVE_W = LIVE.reduce((a, c) => a + c.weight, 0);
@@ -79,8 +89,8 @@ const shareOf = (c) => (c.live === false ? 0 : c.weight / LIVE_W);
  * contrast. Identity only: they tint the icon chip and the header dot, never
  * a value — a value is always traffic-light. */
 const CAT_HUES = {
-  dark:  { eff: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316", plan: "#a855f7" },
-  light: { eff: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c", plan: "#9333ea" },
+  dark:  { eff: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316", plan: "#a855f7", qual: "#14b8a6" },
+  light: { eff: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c", plan: "#9333ea", qual: "#0d9488" },
 };
 
 /* Traffic-light status bands (fill + higher-contrast ink per theme). */
@@ -169,6 +179,7 @@ function buildBoard(pay) {
       naz: P.map((_, i) => naz[i].get(String(u.id)) ?? null),
       kai: P.map(() => null),
       xav: P.map((_, i) => f.xav?.v?.[i] ?? null),
+      qual: P.map((_, i) => f.qual?.v?.[i] ?? null),
       kir: P.map((_, i) => f.att?.v?.[i] ?? null),
     };
     const at = (i) => Object.fromEntries(CATS.map((c) => [c.key, series[c.key][i]]));
@@ -178,6 +189,9 @@ function buildBoard(pay) {
       profileKey: u.profile_key, photoVer: u.photo_ver,
       s: at(L), comp: hist[L], hist, sparks: series,
       xav: f.xav ? { n: f.xav.n?.[L] ?? 0, done: f.xav.done?.[L] ?? 0, up: f.xav.up?.[L] ?? 0 } : null,
+      // «0% of one» and «0% of forty» are different facts — the cell's title
+      // says which, since the row itself stays one line high.
+      qual: f.qual ? { n: f.qual.n?.[L] ?? 0, done: f.qual.done?.[L] ?? 0 } : null,
       days: { eff: f.eff?.days?.[L] ?? 0, plan: f.plan?.days?.[L] ?? 0, kir: f.att?.days?.[L] ?? 0 },
     };
   });
@@ -207,6 +221,17 @@ function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n 
 function bandOf(v) { return v == null ? "none" : v >= 80 ? "ok" : v >= 65 ? "warn" : "bad"; }
 function bandFill(st, v) { const b = bandOf(v); return b === "ok" ? st.ok : b === "warn" ? st.warn : b === "bad" ? st.bad : st.none; }
 function bandInk(st, v) { const b = bandOf(v); return b === "ok" ? st.okInk : b === "warn" ? st.warnInk : b === "bad" ? st.badInk : st.none; }
+/* The counts behind a closure rate, for the cell's hover: «0% of one» and
+ * «0% of forty» are different facts, and the row itself stays one line high
+ * (the platform's table rule), so this is where the denominator can be said.
+ * Both closure rates carry them; every other category has none and gets the
+ * category's own name, as before. */
+function cellTip(s, key, t) {
+  const c = s[key];
+  const name = t(`leaderboard.cat.${key}`);
+  return c && c.n ? `${name}: ${c.done} / ${c.n}` : name;
+}
+
 /* Sign-aware delta ink: up is good here (a score, a place gained). */
 function deltaInk(st, d) { return d == null || d === 0 ? st.none : d > 0 ? st.okInk : st.badInk; }
 function deltaFill(st, d) { return d == null || d === 0 ? st.none : d > 0 ? st.ok : st.bad; }
@@ -330,8 +355,10 @@ function FloatTip({ tip }) {
  * photo medallion under a top spotlight — the big rank number over a dark
  * score flag on the left, the engraved cup top-right, and a frosted-glass
  * foot (progressive backdrop blur) the render's legs melt into, carrying the
- * name band and the measured statistics (a card has room for five
- * columns, so a statistic not measured yet — Kaizen — is left off it).
+ * name band and the measured statistics (the grid is one column per LIVE
+ * statistic — six since quality control joined — so a statistic not measured
+ * yet, Kaizen, is left off it; each column shrinks as one joins, and a label
+ * too long for its column is cut with the full name on hover).
  *
  * A card is its own surface, so its palette is fixed in both themes (like the
  * chart identity colours): three stops of the medal metal, the dark ink
@@ -903,7 +930,9 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
         {CATS.map((c) => {
           const v = s.s[c.key];
           return (
-            <td key={c.key} className="px-3 py-2 text-right hidden md:table-cell" style={sortKey === c.key ? { background: "var(--bg-inner)" } : undefined}>
+            <td key={c.key} className="px-3 py-2 text-right hidden md:table-cell"
+              title={v == null ? undefined : cellTip(s, c.key, t)}
+              style={sortKey === c.key ? { background: "var(--bg-inner)" } : undefined}>
               {v == null
                 ? <span className="font-semibold" style={{ color: st.none, opacity: c.live === false ? 0.6 : 1 }} title={t(c.live === false ? "leaderboard.notYet" : "leaderboard.noData")}>—</span>
                 : <>
@@ -1065,7 +1094,7 @@ export default function Leaderboard() {
 
   const catMeta = useMemo(() => Object.fromEntries(CATS.map((c) => [c.key, {
     hue: hues[c.key], name: t(`leaderboard.cat.${c.key}`), short: t(`leaderboard.cat.${c.key}Short`),
-    // The podium's five-column stat grid has room for ~8 capitals a column.
+    // The podium's stat grid is tight — ~7 capitals a column at six of them.
     tiny: t(`leaderboard.cat.${c.key}${c.tiny ? "Tiny" : "Short"}`),
     icon: c.icon, weight: c.weight, live: c.live !== false,
   }])), [hues, t]);

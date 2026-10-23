@@ -32,6 +32,21 @@ read through that page's own code:
   of the count — the leaders' concerns KPI rule. Read as the register stands,
   so a recent period reads lower than an old one: its concerns have had less
   time.
+* **Sifat shikoyatlari** (from 2026-10-23, the operator: «add also Quality
+  Complaints Resolved percentage (without hair)») — the shift dashboard's
+  «Bartaraf etilgan %», which is the Quality page's own closure rate: of the
+  period's complaints whose status describes WORK (`shift_report.ACTIONABLE`,
+  the twin of Quality.jsx's — «не требуется мера» is not a failure to fix and
+  never enters it), the share resolved, with the HAIR category left out
+  (`SKIP_CATEGORY`, the operator's call of 2026-09-18 — the Quality page itself
+  opens «Sochsiz»). Attributed as that page attributes it: «Отв. бригадир»
+  resolved against EVERY live unit (`name_map.supervisor_match`; a subset lets
+  the fuzzy matcher hand a row to the wrong unit), so a spelling that names no
+  unit — technologists, IT, the stores — is nobody's row here either. Bucketed
+  by the complaint's own date. Not gated on the day close, as the concerns
+  beside it are not: a complaint is filed against a date, not against a shift
+  somebody closed. Read as the register stands, so a recent period reads lower
+  than an old one — its complaints have had less time to be resolved.
 * **Lider nazorati** — computed in the BROWSER from the checklist pool
   (`routers/leaderboard.checklist_pool`), through the very functions the
   /leaders brigadir ranking is scored with (`utils/leaderBoard.js`), so the
@@ -55,7 +70,17 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import DayApproval, Factory, LeaderConcern, Manager
+from app.services import shift_report
 from app.services.kpi_calculator import VERIFIX_EFFICIENCY
+
+# «Sifat shikoyatlari» reads the shift dashboard's own rule — never a second
+# spelling of it. ACTIONABLE is itself the twin of Quality.jsx's, and
+# SKIP_CATEGORY is the hair category the operator took out on 2026-09-18, which
+# the Quality page also opens without; a board counting them would state a
+# closure rate neither page shows.
+QUALITY_ACTIONABLE = shift_report.ACTIONABLE
+QUALITY_RESOLVED = shift_report.RESOLVED
+SKIP_CATEGORY = shift_report.SKIP_CATEGORY
 
 GRAINS = ("week", "month", "year")
 HISTORY = {"week": 8, "month": 8, "year": 4}
@@ -291,3 +316,55 @@ def concerns(db: Session, unit_ids: set[int], pers: list[dict]) -> dict[int, dic
             "up": [up for _, _, up in per],
         }
     return out
+
+
+# ── Sifat shikoyatlari ──────────────────────────────────────────────────────
+def _iso_date(raw) -> Optional[date]:
+    """A `QualityComplaint.date` — an ISO "YYYY-MM-DD" STRING — as a date.
+
+    Sliced to ten characters so a row that ever carries a time survives, and
+    None for a row with no readable date: one no period can place, which the
+    shift dashboard's own window drops the same way."""
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def quality(rows: Iterable[tuple], unit_ids: set[int], pers: list[dict],
+            match: dict) -> dict[int, dict]:
+    """unit → {"v": [resolved %], "n": [actionable], "done": [resolved]}.
+
+    `rows` is (register brigadir spelling, status, date, count) — the router's
+    query, already cut to the history window and already WITHOUT the hair
+    category (this module never queries); `match` is `supervisor_match` over
+    every live unit. A period a unit filed nothing in — or nothing but records
+    whose status describes no work — gets None, never 0%: «nothing filed» and
+    «nothing resolved» are different facts, and the board prints the first as
+    «—». `n` and `done` ride along because «0% of one» and «0% of forty» are
+    different facts too, and the row's breakdown says which."""
+    if not unit_ids or not pers:
+        return {}
+    acc: dict[int, list[list[int]]] = {}
+    for name, status, raw, n in rows:
+        if status not in QUALITY_ACTIONABLE:
+            continue
+        unit = match.get(name)
+        if not unit or unit["id"] not in unit_ids:
+            continue
+        d = _iso_date(raw)
+        i = _bucket(pers, d) if d else None
+        if i is None:
+            continue
+        slot = acc.setdefault(unit["id"], [[0, 0] for _ in pers])[i]   # actionable, done
+        slot[0] += int(n)
+        if status == QUALITY_RESOLVED:
+            slot[1] += int(n)
+    return {
+        mid: {
+            "v": [_round(dn / n * 100) if n else None for n, dn in per],
+            "n": [n for n, _ in per],
+            "done": [dn for _, dn in per],
+        }
+        for mid, per in acc.items()
+    }
