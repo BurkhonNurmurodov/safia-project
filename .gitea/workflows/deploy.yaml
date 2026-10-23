@@ -78,6 +78,16 @@ jobs:
             echo "ENV_CHANGED=1" >> "$GITHUB_ENV"
           fi
 
+      # ⚠ TEMPORARY (2026-10-23): who holds what in the database, before and
+      # after the swap — the 23 Oct deploys stalled behind locks nobody could
+      # see. Read-only, never fails the deploy. Remove both steps with
+      # deploy/diag_db_sessions.py.
+      - name: "Snapshot: database sessions before (temporary)"
+        run: |
+          cd /var/www/production
+          git show "${{ github.sha }}:deploy/diag_db_sessions.py" > /tmp/safia-diag-db.py || true
+          timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "before the deploy" || true
+
       - name: Deploy
         env:
           # Resolved in bash rather than in a `${{ … && … || … }}` expression so
@@ -111,6 +121,12 @@ jobs:
           git show "${{ github.sha }}:deploy/deploy.sh" > "$SCRIPT"
 
           bash "$SCRIPT"
+
+      - name: "Snapshot: database sessions after (temporary)"
+        if: always()
+        run: |
+          cd /var/www/production
+          timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "after the deploy" || true
 
       # ⚠ TEMPORARY (2026-10-06): read-only status of the cell 9123 / 5 Oct
       # one-shot, printed into this log. Never fails the deploy. Remove with

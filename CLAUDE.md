@@ -13035,7 +13035,12 @@ gone with it, in Telegram, the browser and the Android app alike.
   CREATE INDEX, DROP INDEX / TABLE, CREATE TABLE, all with IF [NOT] EXISTS —
   is read off the catalogue and not sent (`SELECT 1` instead); any other DDL
   waits at most `LOCK_TIMEOUT` (5 s) for its lock, set for that statement and
-  put back after it. A boot step whose DDL timed out is run again (`TRIES` 6,
+  put back after it. In the boot phase EVERY statement's lock wait is bounded
+  the same way (`SET LOCAL` as its transaction begins): a boot UPDATE waiting
+  on a row the serving worker held wedged it — the serving worker's requests
+  queued behind the rows the step had already changed until its pool was
+  full (the «QueuePool limit … reached» tracebacks of those deploys were the
+  SERVING worker's). A boot step whose DDL timed out is run again (`TRIES` 6,
   ~1 minute), even when the step swallowed the error; still busy → the boot
   fails and the old worker keeps serving. A deferred step is not retried (it
   may DM); a timeout there is its recorded failure. The ready line counts it:

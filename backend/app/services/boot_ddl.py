@@ -22,7 +22,9 @@ So, for every SQL statement a startup step runs (`boot_steps`, both phases):
   EXISTS.
 * **Any other DDL waits at most `LOCK_TIMEOUT` for its lock**, set just for
   that statement and put back after it, so the serving worker's queries queue
-  behind it for seconds, never minutes.
+  behind it for seconds, never minutes. In the boot phase every OTHER
+  statement's lock wait is bounded too (`SET LOCAL` as its transaction
+  begins): a boot UPDATE waiting on a row the serving worker holds wedged it.
 * **A boot step whose DDL timed out is run again** (`TRIES`, a short pause
   between), whether the step raised or swallowed the error — a swallowed
   timeout would otherwise leave a column missing. Every step is safe to run
@@ -263,6 +265,22 @@ def _before(conn, cursor, statement, parameters, context, executemany):
     if not _armed() or executemany or not isinstance(statement, str):
         return statement, parameters
     if not _DDL_HEAD.match(statement):
+        # In the boot phase EVERY statement's lock wait is bounded, DML too:
+        # an UPDATE waiting on a row the serving worker holds would keep this
+        # worker from ever getting ready, and anything of the serving worker
+        # that needs the rows this step already changed queues behind it until
+        # its pool is full. Set once per transaction, as it begins.
+        if getattr(_state, "all_dml", False):
+            try:
+                dbapi = cursor.connection
+                if not dbapi.autocommit and dbapi.get_transaction_status() == 0:
+                    cur = dbapi.cursor()
+                    try:
+                        cur.execute("SET LOCAL lock_timeout = %s", (LOCK_TIMEOUT,))
+                    finally:
+                        cur.close()
+            except Exception:  # noqa: BLE001
+                pass
         return statement, parameters
     try:
         dbapi = cursor.connection
@@ -341,8 +359,9 @@ def install(engine) -> None:
     _installed = True
 
 
-def _arm() -> None:
+def _arm(all_dml: bool = False) -> None:
     _state.armed = True
+    _state.all_dml = all_dml
     _state.busy = 0
     _state.restore = None
 
@@ -401,7 +420,7 @@ def guarded(fn: Callable, args: tuple, kwargs: dict, name: str, retry: bool):
         return fn(*args, **kwargs)
     tries = TRIES if retry else 1
     for attempt in range(1, tries + 1):
-        _arm()
+        _arm(all_dml=retry)
         err: Optional[BaseException] = None
         result = None
         try:
