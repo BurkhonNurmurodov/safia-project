@@ -89,7 +89,7 @@ CATS: list[tuple[str, str, str]] = [
     ("logistics",    "Logistika",        "A855F7"),
     ("it",           "IT",               "14B8A6"),
     ("washing",      "Yuvish",           "EC4899"),
-    ("plan",         "Reja",             "6366F1"),
+    ("plan",         "Plan",             "6366F1"),
     ("hr",           "HR",               "84CC16"),
     ("technologist", "Texnolog",         "06B6D4"),
     ("raw_material", "Keles (xomashyo)", "D946EF"),
