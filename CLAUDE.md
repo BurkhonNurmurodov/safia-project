@@ -3384,6 +3384,43 @@ brigadirs), the days of a MONTH across.
   (`_downtime` calls `scoped_manager_ids`), so a supervisor sees their own row
   under each category. The period is capped at `_MATRIX_MAX_DAYS` (62).
 
+## «Kutish xaritasi» — people × minutes (`/downtime` → «Tahlil», 2026-10-23)
+
+The operator's request, with Our World in Data's «GDP 1950 vs 2016» scatter
+and NPR's GDP bubbles as the picture: a bubble chart of the ojidaniya — x =
+how many people waited, y = how long, size = the two multiplied (person-hours),
+colour = the category (`catColor`). A full-width card under the bar chart and
+the doughnut. `services/ojidaniya_bubbles.py` computes, `GET
+/api/downtime/bubbles` scopes (plant / shift / brigadir through
+`scoped_manager_ids`, the category lock through `idle_scope`, the half and the
+doughnut's picks mirrored), `components/idle/IdleBubbleChart.jsx` draws (plain
+SVG).
+
+- **Nothing new is measured.** Minutes are the union per (cell, day, category)
+  (`idle_intervals`), summed over days; people are `idle_source.cell_headcount`
+  with a Tozalash minute at its «Tozalovchilar» (`people_pieces`). x is the
+  minute-weighted mean (person-minutes ÷ minutes), so x × y IS the size. On a
+  seeded copy the cell grain's person-minutes equal «Xarajat»'s category sums
+  to the minute (`ojidaniya_cost.build` with rate 60).
+- **Three grains** (`downtime_bubble_grain`): «Yacheyka» (a cell × cause over
+  the period, default), «Brigadir» (a unit's cells × cause — its y is minutes
+  SUMMED over cells, not the unit's weighted mean the bars show), «Hodisa» (one
+  filed stop, capped at `MAX_EVENTS` 1500, the cut counted).
+- **Log axes both ways, so the dashed diagonals are equal person-hours** (log x
+  + log y = const) — the OWID guide lines, turned the other way. Each guide's
+  label goes where the line crosses the fewest bubbles.
+- **A minute with no headcount is not drawn and is COUNTED** (`unplaced`, under
+  the chart and in the tooltip); days a unit reads from the «Смена отчёт» row
+  have no cells and are counted as `sheet_days`. Categories are summed across
+  each other (a minute with two causes is in both), and the total line says so.
+- Hover previews, a tap pins the card, whose «Batafsil» opens
+  `UnitOjidaniyaModal` on that unit and cause (and day, for a stop). The legend
+  chips are the page's category filter (the doughnut's); hovering one lights
+  only that cause — twelve hues in one scatter need it. ←/→ walk the bubbles
+  biggest first, Enter opens. The ten biggest are labelled (a cell once).
+- Not built: an export of the chart, a table view, the «Toifalar bo'yicha» /
+  «Xarajat» tabs.
+
 ## What waiting COST (`/downtime`, page view tab 3)
 
 From **2026-09-09** `/downtime` carries a third view, «Xarajat», which prices

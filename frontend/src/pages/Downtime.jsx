@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -12,6 +12,7 @@ import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import UnitOjidaniyaModal from "../components/idle/UnitOjidaniyaModal";
 import OjidaniyaMatrix from "../components/idle/OjidaniyaMatrix";
 import CostTab from "../components/idle/CostTab";
+import IdleBubbleChart, { fmtPersonHours } from "../components/idle/IdleBubbleChart";
 import EmptyState from "../components/ui/EmptyState";
 import Button from "../components/ui/Button";
 import { useToast } from "../components/ui/Toast";
@@ -218,6 +219,25 @@ export default function Downtime() {
     queryKey: ["downtime-matrix", matrixParams],
     queryFn: () => api.get("/api/downtime/matrix", { params: matrixParams }).then((r) => r.data),
     enabled: ready && percat,
+  });
+
+  // ── «Kutish xaritasi»: people × minutes per bubble ─────────────────────
+  // Its own request (`/api/downtime/bubbles`, services/ojidaniya_bubbles):
+  // the page's rows are unit-day MEANS and carry no headcount, so a bubble
+  // cannot be built from them. Same scope, same half, same category picks —
+  // server-side — so it never draws a stop the bars beside it did not count.
+  const [bubGrain, setBubGrain] = usePersistentState("downtime_bubble_grain", "cell"); // "cell" | "unit" | "event"
+  const bubbleParams = useMemo(() => ({
+    ...scopedParams,
+    stopped: ns ? 0 : 1,
+    grain: bubGrain,
+    ...(selectedCats.length ? { cats: selectedCats } : {}),
+  }), [scopedParams, ns, bubGrain, selectedCats]);
+  const { data: bubbles, isLoading: bubblesLoading } = useQuery({
+    queryKey: ["downtime-bubbles", bubbleParams],
+    queryFn: () => api.get("/api/downtime/bubbles", { params: bubbleParams }).then((r) => r.data),
+    enabled: ready && !isCost && !percat,
+    placeholderData: keepPreviousData,
   });
 
   // Full (period-independent) supervisor list for the inline picker — shares the
@@ -1279,6 +1299,87 @@ export default function Downtime() {
             <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} />
           )}
         </div>
+      </div>
+
+      {/* «Kutish xaritasi» — who waited and how long, one bubble per answer.
+          Full width: a scatter squeezed into a third of the row cannot carry
+          its diagonals or its labels. */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-1 flex-wrap">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider pt-1.5">
+            {t("downtime.bub.title")}
+          </div>
+          <SegmentedToggle
+            size="sm"
+            value={bubGrain}
+            onChange={setBubGrain}
+            options={[
+              { value: "cell", label: t("downtime.bub.grainCell"), title: t("downtime.bub.whatCell") },
+              { value: "unit", label: t("downtime.bub.grainUnit"), title: t("downtime.bub.whatUnit") },
+              { value: "event", label: t("downtime.bub.grainEvent"), title: t("downtime.bub.whatEvent") },
+            ]}
+          />
+        </div>
+        <p className="text-[11px] mb-3 max-w-[100ch]" style={{ color: "var(--text-3)" }}>
+          {t("downtime.bub.sub").replace("{what}", t(
+            bubGrain === "unit" ? "downtime.bub.whatUnit"
+              : bubGrain === "event" ? "downtime.bub.whatEvent" : "downtime.bub.whatCell"))}
+        </p>
+        {bubblesLoading && !bubbles ? (
+          <SkeletonChart className="h-[440px]" />
+        ) : (bubbles?.points || []).length ? (
+          <>
+            <IdleBubbleChart
+              points={bubbles.points}
+              grain={bubbles.grain}
+              t={t}
+              tl={tl}
+              fmt={fmt}
+              unit={unit}
+              minLabel={minLabel}
+              hrsLabel={hrsLabel}
+              catFull={catFull}
+              selectedCats={selectedCats}
+              onToggleCat={toggleCat}
+              onOpen={(p) => setDetail({
+                managerId: p.manager_id,
+                managerName: p.manager,
+                cat: p.category,
+                date: bubbles.grain === "event" ? p.date : null,
+              })}
+            />
+            {/* What the chart holds, and what it could not draw — said, never
+                dropped: a minute with no headcount has no place on the x axis. */}
+            <div className="mt-3 text-[11px] space-y-0.5" style={{ color: "var(--text-3)" }}>
+              <div>
+                {t("downtime.bub.total")
+                  .replace("{pm}", fmtPersonHours(bubbles.totals?.person_min))
+                  .replace("{n}", String(bubbles.totals?.points ?? bubbles.points.length))}
+              </div>
+              {bubbles.totals?.unplaced > 0 && (
+                <div>{t("downtime.bub.noteUnplaced").replace("{m}", fmt(bubbles.totals.unplaced, 0))}</div>
+              )}
+              {bubbles.capped > 0 && (
+                <div>{t("downtime.bub.noteCapped")
+                  .replace("{n}", String(bubbles.points.length))
+                  .replace("{m}", String(bubbles.capped))}</div>
+              )}
+              {bubbles.sheet_days > 0 && (
+                <div>{t("downtime.bub.noteSheet").replace("{n}", String(bubbles.sheet_days))}</div>
+              )}
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            title={t("downtime.noData")}
+            message={bubbles?.totals?.unplaced > 0
+              ? t("downtime.bub.noteUnplaced").replace("{m}", fmt(bubbles.totals.unplaced, 0))
+              : bubbles?.sheet_days > 0
+                ? t("downtime.bub.noteSheet").replace("{n}", String(bubbles.sheet_days))
+                : t("downtime.noDataMsg")}
+            height="h-32"
+          />
+        )}
       </div>
 
       {/* «Brigadir × kun» — the register as a matrix, exactly as the workbook's

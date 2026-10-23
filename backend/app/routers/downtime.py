@@ -17,7 +17,7 @@ from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Mana
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import (action_log, deck_narrative, idle_intervals, idle_scope,
-                          idle_source, ojidaniya_cost, ojidaniya_deck,
+                          idle_source, ojidaniya_bubbles, ojidaniya_cost, ojidaniya_deck,
                           ojidaniya_matrix, report_week, wage_rate,
                           zagruzka_source)
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
@@ -69,6 +69,56 @@ def get_downtime(
         # What the page PRINTS as «you are seeing only …» — the lock, never the
         # pick, or an admin who clicked one slice would be told they are pinned.
         lock=idle_scope.viewer_categories(db, payload))
+
+
+_BUBBLE_MAX_DAYS = 400
+
+
+@router.get("/downtime/bubbles")
+def get_downtime_bubbles(
+    date_from: date = Query(default=None),
+    date_to: date = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
+    # The page's own narrowings, mirrored — which half is on screen, whether
+    # the загрузка-only set is in force, the doughnut's category picks.
+    stopped: bool = Query(default=True),
+    kpi_only: bool = Query(default=False),
+    cats: List[str] = Query(default=[]),
+    # What one bubble is: "cell" (a cell × cause over the period), "unit"
+    # (a brigadir × cause), "event" (one filed stop).
+    grain: str = Query(default="cell"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """«Kutish xaritasi» — people × minutes per bubble
+    (`services/ojidaniya_bubbles`). Scoped exactly as the page is: the plant,
+    shift and brigadir narrowing through `scoped_manager_ids`, the category
+    lock through `idle_scope` — both server-side, both typeable."""
+    if not date_to:
+        date_to = date.today()
+    if not date_from:
+        date_from = date_to - timedelta(days=13)
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (date_to - date_from).days + 1 > _BUBBLE_MAX_DAYS:
+        date_from = date_to - timedelta(days=_BUBBLE_MAX_DAYS - 1)
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    managers = db.query(Manager.id).filter(Manager.archived.is_(False))
+    if shift:
+        managers = managers.filter(Manager.shift == shift)
+    if scoped is not None:
+        managers = managers.filter(Manager.id.in_(scoped))
+    ids = [] if empty_scope(scoped) else [m.id for m in managers.all()]
+    cat_scope = idle_scope.resolve_cats(db, payload, cats)
+    if idle_scope.empty_scope(cat_scope):
+        ids = []
+    out = ojidaniya_bubbles.build(db, ids, date_from, date_to, stopped, kpi_only,
+                                  cat_scope or [], grain)
+    out["date_from"] = date_from.isoformat()
+    out["date_to"] = date_to.isoformat()
+    return out
 
 
 # A month is what the tab selects, so the cap only ever catches a hand-typed
