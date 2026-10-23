@@ -89,11 +89,12 @@ def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) 
     ids = {m.id for m in managers}
     d_from, d_to = pers[0]["from"], pers[-1]["to"]
 
-    eff = att = xav = {}
+    eff = plan = att = xav = {}
     pool = {"rows": [], "roster": [], "cutoffs": {}, "cutUnits": {}}
     if ids:
         metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
         eff = bb.efficiency(metrics, ids, pers)
+        plan = bb.fulfillment(metrics, ids, pers)
         from app.routers.workers import get_headcount   # the page's own figure
         head = get_headcount(date_from=d_from, date_to=d_to, shift=None, manager_id=sorted(ids),
                              factory=None, db=db, payload=payload)
@@ -115,7 +116,7 @@ def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) 
             "factory": factories.get(m.factory_id) if m.factory_id else None,
             "profile_key": keys[m.id], "photo_ver": photos.get(keys[m.id]),
         } for m in managers],
-        "figures": {str(mid): {"eff": eff.get(mid), "att": att.get(mid), "xav": xav.get(mid)}
+        "figures": {str(mid): {"eff": eff.get(mid), "plan": plan.get(mid), "att": att.get(mid), "xav": xav.get(mid)}
                     for mid in ids},
         "checklist": pool,
         "kaizen": {"live": False},
