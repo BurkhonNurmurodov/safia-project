@@ -7,7 +7,7 @@ export const fill = (s, vars) =>
   String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
 
 const uz = {
-  title: "Kadrlar qo'nimsizligi",
+  title: "Xodimlar ishdan bo'shashi",
   tabLeaders: "Reyting", tabCells: "Yacheykalar", tabLeft: "Ketganlar",
   search: "Yacheyka, egasi yoki ism",
   fShift: "Smena", fBrigadir: "Brigadir", shiftN: "{n}-smena", all: "Hammasi",
@@ -146,7 +146,7 @@ const uz = {
 };
 
 const uz_cyrl = {
-  title: "Кадрлар қўнимсизлиги",
+  title: "Ходимлар ишдан бўшаши",
   tabLeaders: "Рейтинг", tabCells: "Ячейкалар", tabLeft: "Кетганлар",
   search: "Ячейка, эгаси ёки исм",
   fShift: "Смена", fBrigadir: "Бригадир", shiftN: "{n}-смена", all: "Ҳаммаси",

@@ -3016,6 +3016,12 @@ structure changed the same day — see the redesign bullets below).
 
 ## «Kadrlar qo'nimsizligi» — the leaders' turnover KPI (`/turnover` — MERGED into `/leaders-kpi`, 2026-10-19)
 
+**Its name on screen is «Xodimlar ishdan bo'shashi»** (uz_cyrl «Ходимлар ишдан
+бўшаши») from **2026-10-23**, the operator's call — the KPI's full name in the
+board panel, the rules, the workbook's KPI label and the «Jurnal» rows. The
+label only: the short tab / column word («Qo'nimsizlik»), ru / en, the page
+key and every `turnover*` key and table are unchanged.
+
 From **2026-10-04** (the operator: "ignore the past — from October HR
 calculates the KPIs on the IMS; this is the 2nd of 5") HR's «Текучесть» is
 computed month by month from Verifix. Page key `turnover`, **admin-only until

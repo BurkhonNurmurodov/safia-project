@@ -58,7 +58,7 @@ const uz = {
   rulesTitle: "Qanday hisoblanadi",
   rules: [
     ["Nima hisoblanadi", "«Sifat» reyestridagi «инородный предмет» turidagi shikoyatlar: sanasi shu oyda, «yacheyka aybdormi» ustunida «ha», aybdor yacheyka kodi /cells'dagi yacheykaga mos. Ayb belgisi «yo'q» yoki bo'sh bo'lsa, shikoyat ro'yxatda ko'rinadi, lekin hisoblanmaydi."],
-    ["Kimga hisoblanadi", "Ball yacheykaniki va u oy oxiridagi egasiga («Egasi» — Verifix shu yacheykaga o'tqazgan lider) hisoblanadi. Reytingda har bir egali yacheyka alohida qator: uch yacheykasi bor lider — uch qator. Egasi yo'q yacheyka hech kimga hisoblanmaydi va alohida aytiladi. «Kadrlar qo'nimsizligi» va «Ishchi havotirlari» xuddi shu ro'yxatni ko'rsatadi."],
+    ["Kimga hisoblanadi", "Ball yacheykaniki va u oy oxiridagi egasiga («Egasi» — Verifix shu yacheykaga o'tqazgan lider) hisoblanadi. Reytingda har bir egali yacheyka alohida qator: uch yacheykasi bor lider — uch qator. Egasi yo'q yacheyka hech kimga hisoblanmaydi va alohida aytiladi. «Xodimlar ishdan bo'shashi» va «Ishchi havotirlari» xuddi shu ro'yxatni ko'rsatadi."],
     ["Ball", "Aybli shikoyat yo'q — 5 ball, 1 ta — 4, 2–3 ta — 3, 4–5 ta — 2, 6 va undan ko'p — 1. KPI bali = ball × 25% (eng ko'pi 1,25)."],
     ["Oy", "Oy sifat reyestrining hozirgi holatidan o'qiladi — hech narsa muzlatilmaydi. Reyestrda shikoyat o'zgartirilsa (sana, ayb belgisi, yacheyka), o'sha oy keyingi yuklashda o'zgaradi."],
     ["Qayerdan kelgan", "HR'ning 2026-yil iyul fayli: «Инородные предметы» varag'i sifat reyestrining yot jism qatorlarining nusxasi edi, har bir yacheyka uchun qo'lda sanalgan. Bu sahifa o'sha sanashni reyestrning o'zidan oladi."],
@@ -152,7 +152,7 @@ const uz_cyrl = {
   rulesTitle: "Қандай ҳисобланади",
   rules: [
     ["Нима ҳисобланади", "«Сифат» реестридаги «инородный предмет» туридаги шикоятлар: санаси шу ойда, «ячейка айбдорми» устунида «ҳа», айбдор ячейка коди /cells'даги ячейкага мос. Айб белгиси «йўқ» ёки бўш бўлса, шикоят рўйхатда кўринади, лекин ҳисобланмайди."],
-    ["Кимга ҳисобланади", "Балл ячейканики ва у ой охиридаги эгасига («Эгаси» — Verifix шу ячейкага ўтқазган лидер) ҳисобланади. Рейтингда ҳар бир эгали ячейка алоҳида қатор: уч ячейкаси бор лидер — уч қатор. Эгаси йўқ ячейка ҳеч кимга ҳисобланмайди ва алоҳида айтилади. «Кадрлар қўнимсизлиги» ва «Ишчи ҳавотирлари» худди шу рўйхатни кўрсатади."],
+    ["Кимга ҳисобланади", "Балл ячейканики ва у ой охиридаги эгасига («Эгаси» — Verifix шу ячейкага ўтқазган лидер) ҳисобланади. Рейтингда ҳар бир эгали ячейка алоҳида қатор: уч ячейкаси бор лидер — уч қатор. Эгаси йўқ ячейка ҳеч кимга ҳисобланмайди ва алоҳида айтилади. «Ходимлар ишдан бўшаши» ва «Ишчи ҳавотирлари» худди шу рўйхатни кўрсатади."],
     ["Балл", "Айбли шикоят йўқ — 5 балл, 1 та — 4, 2–3 та — 3, 4–5 та — 2, 6 ва ундан кўп — 1. KPI бали = балл × 25% (энг кўпи 1,25)."],
     ["Ой", "Ой сифат реестрининг ҳозирги ҳолатидан ўқилади — ҳеч нарса музлатилмайди. Реестрда шикоят ўзгартирилса (сана, айб белгиси, ячейка), ўша ой кейинги юклашда ўзгаради."],
     ["Қаердан келган", "HR'нинг 2026 йил июль файли: «Инородные предметы» вараги сифат реестрининг ёт жисм қаторларининг нусхаси эди, ҳар бир ячейка учун қўлда саналган. Бу саҳифа ўша санашни реестрнинг ўзидан олади."],

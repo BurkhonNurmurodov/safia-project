@@ -35,7 +35,7 @@ LABELS_UZ = {
     "sheetSummary": "Umumiy", "sheetBoard": "Reyting", "sheetConcerns": "Havotirlar",
     "sheetTurnover": "Qo'nimsizlik", "sheetForeign": "Yot jismlar", "sheetLeavers": "Ketganlar",
     "sheetComplaints": "Shikoyatlar", "sheetRegister": "Havotirlar ro'yxati", "sheetCompliance": "Muvofiqlik",
-    "kConcerns": "Ishchi havotirlari", "kTurnover": "Kadrlar qo'nimsizligi", "kForeign": "Yot jismlar",
+    "kConcerns": "Ishchi havotirlari", "kTurnover": "Xodimlar ishdan bo'shashi", "kForeign": "Yot jismlar",
     "kCompliance": "Kategoriya muvofiqligi", "kAudit": "Texnologlar auditi",
     "cardOwners": "Egalari", "cardCells": "Yacheykalar", "cardAvg": "O'rtacha jami", "cardBest": "Eng yuqori jami",
     "rules": "Beshta KPI qoidasi", "formula": "Jami = Σ ball × vazn · eng ko'pi 5,0 · platformada yo'q KPI 0 ball",
