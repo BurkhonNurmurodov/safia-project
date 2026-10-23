@@ -13022,6 +13022,28 @@ gone with it, in Telegram, the browser and the Android app alike.
   slow first minute, where it used to be no minute at all); and a one-shot's
   DM now lands a few seconds after the deploy rather than before the first
   request. `passenger_wsgi.py` keeps its one-phase mirror — it never runs.
+- **A booting worker never queues the serving one behind its DDL**
+  (`services/boot_ddl.py`, 2026-10-23). Postgres takes a migration's lock
+  BEFORE it checks whether there is anything to do: `ADD COLUMN IF NOT
+  EXISTS` waits for ACCESS EXCLUSIVE, `CREATE INDEX IF NOT EXISTS` for SHARE.
+  At the 17:00 shift change of 23 Oct one slow transaction made those waits
+  long, the serving worker's queries queued behind them until its pool was
+  full, and four deploys in a row ended «the new worker never got ready».
+  Every step of both phases now runs under a guard on its own thread (other
+  threads are never touched): a statement whose target is already as asked —
+  ADD / DROP COLUMN, SET / DROP NOT NULL, SET / DROP DEFAULT, DROP CONSTRAINT,
+  CREATE INDEX, DROP INDEX / TABLE, CREATE TABLE, all with IF [NOT] EXISTS —
+  is read off the catalogue and not sent (`SELECT 1` instead); any other DDL
+  waits at most `LOCK_TIMEOUT` (5 s) for its lock, set for that statement and
+  put back after it. A boot step whose DDL timed out is run again (`TRIES` 6,
+  ~1 minute), even when the step swallowed the error; still busy → the boot
+  fails and the old worker keeps serving. A deferred step is not retried (it
+  may DM); a timeout there is its recorded failure. The ready line counts it:
+  `DDL: N already in place, M ran, K lock timeouts` — an ordinary boot sends
+  NO locking DDL at all (246 statements in place, 0 run, on the day it
+  shipped), and every statement that does run is printed. A new migration
+  written in one of those shapes needs nothing; one in any other shape runs
+  under the timeout on every boot, so give it its own existence check.
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports

@@ -25,6 +25,12 @@ failure is seen without taking the site down over a report that could not be
 sent. Each step is timed; a step over half a second prints its time, and the
 summary line names the slowest, so the journal says where a boot's seconds go.
 
+Every step runs under `boot_ddl`'s guard (2026-10-23): a migration whose
+target already exists is not sent at all, any other DDL waits at most a few
+seconds for its lock, and a boot step whose DDL found its table busy is run
+again — so a worker booting next to a busy serving one can no longer queue the
+whole platform behind its ALTERs.
+
 perf_watch starts only after the deferred work has finished — the walks it
 does hold the GIL and would read as freezes of a server that is, for the
 first time, actually serving meanwhile.
@@ -58,12 +64,19 @@ class Phases:
 
     def begin(self) -> None:
         self.t0 = time.monotonic()
+        try:
+            from app.database import engine
+            from app.services import boot_ddl
+            boot_ddl.install(engine)
+        except Exception:  # noqa: BLE001 — a boot without the guard is the old boot
+            traceback.print_exc()
 
     def run(self, fn: Callable, *args, **kwargs):
         """Run `fn` now, timed. An exception propagates: the boot fails."""
+        from app.services.boot_ddl import guarded
         started = time.monotonic()
         try:
-            return fn(*args, **kwargs)
+            return guarded(fn, args, kwargs, _name(fn), retry=True)
         finally:
             took = time.monotonic() - started
             self.steps.append((_name(fn), took, "boot"))
@@ -77,8 +90,11 @@ class Phases:
     def ready(self) -> None:
         self.ready_s = time.monotonic() - (self.t0 or time.monotonic())
         n = sum(1 for s in self.steps if s[2] == "boot")
+        from app.services.boot_ddl import totals as ddl
         print(f"[startup] ready for requests after {self.ready_s:.1f} s "
-              f"({n} steps run, {len(self._queue)} deferred to a thread)", flush=True)
+              f"({n} steps run, {len(self._queue)} deferred to a thread; DDL: "
+              f"{ddl['skipped']} already in place, {ddl['ran']} ran, "
+              f"{ddl['busy']} lock timeouts)", flush=True)
 
     # -- phase two: on a thread, while serving -----------------------------
 
@@ -88,12 +104,13 @@ class Phases:
         self._thread.start()
 
     def _drain(self, finally_: Optional[Callable]) -> None:
+        from app.services.boot_ddl import guarded
         t0 = time.monotonic()
         for fn, args, kwargs in self._queue:
             name = _name(fn)
             started = time.monotonic()
             try:
-                fn(*args, **kwargs)
+                guarded(fn, args, kwargs, name, retry=False)
             except Exception as exc:  # noqa: BLE001 — recorded, reported, never fatal here
                 self.failed.append((name, f"{type(exc).__name__}: {exc}"[:300]))
                 print(f"[startup] deferred step {name} FAILED: {exc!r}", flush=True)
