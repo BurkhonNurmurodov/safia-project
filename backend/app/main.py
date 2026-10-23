@@ -880,6 +880,25 @@ from app.services import json_offload  # noqa: E402
 json_offload.install()
 
 
+from sqlalchemy.exc import OperationalError  # noqa: E402
+
+
+@app.exception_handler(OperationalError)
+async def statement_timeout_handler(request: Request, exc: OperationalError):
+    """A request statement past database.REQUEST_STATEMENT_TIMEOUT_MS was
+    cancelled by Postgres (57014): a JSON 503 with a sentence the page can show,
+    WITHOUT X-Safia-Restarting — the client must not retry a query that just ran
+    out of time. Any other OperationalError keeps the generic 500 below."""
+    if getattr(getattr(exc, "orig", None), "pgcode", None) == "57014":
+        logging.getLogger("app.db").warning(
+            "[STATEMENT-TIMEOUT] %s %s answered 503", request.method, request.url.path)
+        return JSONResponse(status_code=503, content={
+            "detail": "This took too long and was stopped — try again in a minute.",
+            "code": "query_timeout",
+        })
+    return await unhandled_exception_handler(request, exc)
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Log every unhandled 500 with a full traceback server-side, but return a

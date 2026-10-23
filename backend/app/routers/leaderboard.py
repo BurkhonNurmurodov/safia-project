@@ -24,7 +24,7 @@ from app.database import get_db
 from app.models import Manager, QualityComplaint
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import action_log, brigadir_board as bb
+from app.services import action_log, brigadir_board as bb, gc_pause
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import supervisor_match
 from app.services.ojidaniya_matrix import TZ, today_local
@@ -43,6 +43,14 @@ _TTL = 120.0
 _cache: dict = {}
 _cache_lock = threading.Lock()
 _SHARED = SharedBuild()
+# ONE build at a time across every key (2026-10-23). A build is seconds of
+# Python over the whole history, holding the GIL while it runs (3–10 s at
+# production size); three grains or plants opened together ran three of them
+# side by side and lifted every other request's latency with them. Queued, the
+# server pays one build's worth at a time; the request waiting holds no DB
+# connection (it hands it back first), and gives up with a 503 after BUILD_WAIT_S.
+_ONE_BUILD = threading.Semaphore(1)
+BUILD_WAIT_S = 90.0
 
 
 def _iso(d: date) -> str:
@@ -196,7 +204,15 @@ def get_leaderboard(
             return hit[1]
 
     def build():
-        out = _build(db, payload, grain, anchor, scoped, shift)
+        db.rollback()                     # wait without a pooled connection
+        if not _ONE_BUILD.acquire(timeout=BUILD_WAIT_S):
+            raise HTTPException(status_code=503, headers={"Retry-After": "60"},
+                                detail="The ranking is still being calculated — open it again in a minute.")
+        try:
+            with gc_pause.paused():       # its objects die by refcount; a full GC is pure GIL
+                out = _build(db, payload, grain, anchor, scoped, shift)
+        finally:
+            _ONE_BUILD.release()
         with _cache_lock:
             for k in [k for k, (at, _) in _cache.items() if monotonic() - at >= _TTL]:
                 _cache.pop(k, None)

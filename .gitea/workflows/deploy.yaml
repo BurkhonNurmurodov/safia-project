@@ -97,7 +97,6 @@ jobs:
           cd /var/www/production
           git show "${{ github.sha }}:deploy/end_orphan_boot_sessions.py" > /tmp/safia-orphans.py || true
           timeout 40 backend/.venv/bin/python /tmp/safia-orphans.py || true
-          timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "after the cleanup" || true
 
       - name: Deploy
         env:
@@ -139,51 +138,19 @@ jobs:
           cd /var/www/production
           timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "after the deploy" || true
 
-      # ⚠ TEMPORARY (2026-10-06): read-only status of the cell 9123 / 5 Oct
-      # one-shot, printed into this log. Never fails the deploy. Remove with
-      # backend/diag_cell_9123.py and the one-shot itself.
-      - name: "Status: cell 9123 on 5 Oct (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 120 .venv/bin/python diag_cell_9123.py || true
-
-      # ⚠ TEMPORARY (2026-10-08): the live-day exchange report — every live
-      # unit-day from 6 Oct, every exchange document, the engine's reading of
-      # each moved worker and the close's copy — for the operator's retrace of
-      # «workers given away still count on the sender» (fixed in v4.259.1).
-      # Read-only, never fails the deploy, no worker names (pseudonyms). Lives
-      # under deploy/ so adding it restarts nothing. Remove with the script.
-      - name: "Report: live exchanges from 6 Oct (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 170 .venv/bin/python ../deploy/diag_live_exchange.py || true
-
-      # ⚠ TEMPORARY (2026-10-22): every «everybody left» notice of the last
-      # 21 days, rebuilt at its send and now, with every worker who was not
-      # gone (pseudonyms only) — the «15 people still at work» retrace.
-      # Read-only, never fails the deploy. Remove with the script.
-      - name: "Report: everybody-left notices (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 170 .venv/bin/python ../deploy/diag_all_left.py || true
-
-      # ⚠ TEMPORARY (2026-10-17): how IT's ARC apps serve a ticket's photos —
-      # services/arc_files.py's resolver run on a few real tickets, each URL it
-      # tried and what answered (URL shapes, status codes, sizes; no names, no
-      # descriptions). Read-only, never fails the deploy. Lives under deploy/
-      # so adding it restarts nothing. Remove with the script once the base the
-      # new app serves `misc/…` from is confirmed.
-      - name: "Probe: ARC attachment URLs (temporary)"
-        run: |
-          cd /var/www/production/backend
-          timeout 100 .venv/bin/python ../deploy/diag_arc_files.py || true
-
       # ⚠ TEMPORARY (2026-10-23): how the «Tarkib» place rule reads the real
       # Verifix addresses — services/workforce.read run on production, only
       # counts and locality words over everybody printed (no person). Read-only,
       # never fails the deploy. Remove with the script once the gazetteer is
-      # confirmed.
+      # confirmed. Runs on «Run workflow» only (2026-10-23): a full Verifix read
+      # on every push was heavy work on the production box right after each
+      # swap. The four other temporary reports that ran on every push — cell
+      # 9123, live exchanges, everybody-left notices, ARC attachment URLs —
+      # were removed with their scripts the same day: their questions were
+      # answered, and together they added ~2.5 minutes of production DB and
+      # CPU load and ~30 MB of log to every deploy.
       - name: "Probe: Tarkib places (temporary)"
+        if: github.event_name == 'workflow_dispatch'
         run: |
           cd /var/www/production/backend
           timeout 170 .venv/bin/python ../deploy/diag_workforce_places.py || true

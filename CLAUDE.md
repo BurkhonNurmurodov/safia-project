@@ -423,10 +423,10 @@ reads «done».
 v1 and v2 never landed for a reason no test caught: the report-only lookup of
 the cell's leader compared `leader_task_days.date` (a STRING) with a date and
 raised, rolling the move back each pass (fixed in v4.254.3; report-only reads
-now run in savepoints). Its status is printed into every deploy's job log by a TEMPORARY last step of
-`.gitea/workflows/deploy.yaml` (`backend/diag_cell_9123.py`, a read-only dry
-run, no worker names) — the one window onto production a cloud session can
-read. Delete that step and the script with the one-shot.
+now run in savepoints). Its status was printed into every deploy's job log by
+a TEMPORARY step of `.gitea/workflows/deploy.yaml` (`backend/diag_cell_9123.py`);
+the step and the script were removed on 2026-10-23 once the flag read
+`done:12`. The one-shot itself still waits to be deleted.
 
 ## Supervisors read `/cells` — their own unit, read-only
 
@@ -9323,10 +9323,9 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   timed move is the switch, and the wheel opens at the earliest arrival. The
   live days from 6 Oct were REPORTED once into a deploy job's log for the
   operator's retrace — `deploy/diag_live_exchange.py` (TEMPORARY, read-only,
-  every worker a pseudonym, never a name), the last step of
-  `.gitea/workflows/deploy.yaml`, the `diag_cell_9123` precedent; it sits
-  under deploy/ so adding it restarted nothing. Delete the script and the
-  step together once the retrace is done.
+  every worker a pseudonym, never a name), a step of
+  `.gitea/workflows/deploy.yaml`. Removed with its step on 2026-10-23: the
+  retrace was done, and by then it printed ~29 MB per deploy.
   **The retrace (2026-10-08, the operator's «fix them on your own») found 17
   worker-days still counted on the sending brigadir, in two shapes, and fixed
   both.** (1) A move timed in the minute the worker clocked out (№21 and №23
@@ -10729,10 +10728,8 @@ tickets in the same table but «stop the old app's sync». So:
   IT names files by uuid (old app: a Telegram file id), so a machine name is
   shown as what the file is («Hujjat.pdf», «Fayl 1.pdf»). Photos load through
   `ProxyPhoto`, which gained `zoomLabel` (the photo is a real button) and
-  `failCaption` (a large thumb says what failed). TEMPORARY: the deploy step
-  «Probe: ARC attachment URLs» (`deploy/diag_arc_files.py`, read-only) runs
-  the resolver on real tickets in every deploy log — it confirmed `/base`;
-  delete the step and the script once this has been seen working on /arc.
+  `failCaption` (a large thumb says what failed). The deploy-log probe that
+  confirmed `/base` (`deploy/diag_arc_files.py`) was removed on 2026-10-23.
 - The two sections below describe each app's mirror and are still accurate for
   it; where they talk about «the page», read `/arc`.
 
@@ -13075,6 +13072,95 @@ blocking work on the event loop freezes every request on the server at once.
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
 
+## A slow app: the route first, then the bundle, then the database (2026-10-23)
+
+The operator's report of 23 Oct: «after the last updates the app is too slow
+or does not work at all» — the full-screen loader with «Server javobi
+kutilmoqda». Three different things look exactly like that, and one minute of
+measuring tells them apart:
+
+- **Server**: `X-Server-Ms` (time the app spent) and `X-Server-Stall-Ms`
+  (longest freeze of the last minute) are on every /api answer, even a 401
+  (`curl -D - https://production.safiacorporate.uz/api/version`). On 23 Oct
+  evening they read 4–6 ms and 0: the server was fine.
+- **Route**: the same request straight to the origin, `curl --resolve
+  production.safiacorporate.uz:443:185.74.5.198 …`, answered in 0.12 s; through
+  Cloudflare it took 1.4–16.7 s and downloads ran at 9–30 KB/s. Cloudflare
+  serves Uzbekistan from Warsaw (`/cdn-cgi/trace` → `colo=WAW`) and the zone
+  still advertises ECH, so every request crosses the international gateway
+  twice (memory `cloudflare-ech-connection-resets`, diagnosed 14 Aug). **The
+  cure is not in this repo**: in the Cloudflare dashboard switch the
+  `production` DNS record to «DNS only», or at least turn ECH off. Checked for
+  the switch: the origin's own Let's Encrypt certificate (valid to 1 Jan 2027,
+  chain to ISRG Root X1), ACME over port 80, the Telegram webhook (secret
+  token, no IP rule) and the Android app all keep working; only Cloudflare's
+  DDoS/WAF and edge cache are lost.
+- **Bundle**: what a phone must download after each deploy.
+
+What was fixed, and the rule each one now is:
+
+- **A deploy renames only what changed** (v4.324.1). The version and build
+  time travel in `<meta name="safia-build" data-version data-built>` in
+  index.html (vite.config.js `injectBuildMeta`); `utils/version.js` reads the
+  tag. Compiled into a shared chunk they renamed 227 of 231 files on EVERY
+  deploy, backend-only ones included — a chunk's name hashes the names of the
+  chunks it imports — and every phone re-downloaded ~1.7 MB brotli through the
+  slow route after each of ~20 deploys a day. Two builds of the same sources
+  now rename 0 files. `guardStampOutOfChunks` fails the build if the stamp ever
+  reaches a JS chunk again: **never bring back a `define` (or an import of
+  build.json) for a value that changes every build.** A translation or a shared
+  boot-module edit still cascades through most chunks.
+- **JS leaves the origin compressed** (v4.324.1). main.py registers
+  `application/javascript` for .js/.mjs: Python ≥3.12 says `text/javascript`,
+  which the origin nginx's `gzip_types` does not name, so every JS file —
+  Cloudflare's cache misses included — went out raw (2.1 MB instead of
+  ~0.55 MB).
+- **A request's statements are bounded at 90 s** (`database.py`,
+  `REQUEST_STATEMENT_TIMEOUT_MS`). Every session from `get_db` runs each
+  transaction under `SET LOCAL statement_timeout`; a cancelled statement
+  (57014) is logged `[STATEMENT-TIMEOUT]` at the driver and answered as a JSON
+  503 `query_timeout` (main.py), without X-Safia-Restarting so the client does
+  not retry it. On 23 Oct one «Brigadirlar reytingi» query ran ~50 minutes
+  after Cloudflare had dropped the browser, and the boots queued behind its
+  locks stalled production. Not bounded by construction: scheduler jobs, boot
+  steps, db-dump / restore (raw connections), the bot, and any thread with a
+  `SessionLocal()` of its own. A request path that truly needs longer calls
+  `database.allow_long(db, ms)` — never a bare 0 without a reason.
+- **A dead client's queries end** (`database.py`, a `connect` listener): every
+  pooled connection sets `client_connection_check_interval = '5s'`, so a query
+  or lock wait of a worker the supervisor killed (a retiring worker past its
+  60 s grace, an abandoned boot) ends within seconds instead of running on —
+  the 23 Oct orphan ALTERs waited ~45 minutes.
+- **One build per key, always** (`shared_build.py`). A request that waited
+  WAIT_S, or whose second build in a row failed, answers a 503 «still being
+  calculated» instead of starting an unregistered build; a build that fails
+  once is started again, registered and shared. Before, a waiter that timed
+  out built its own copy nobody could share, and the client's 524 retries fed
+  it.
+- **The brigadir ranking builds one at a time** (`routers/leaderboard.py`
+  `_ONE_BUILD`, `gc_pause`): three grains opened together queued instead of
+  running side by side; a request waits without a DB connection and gives up
+  with a 503 after 90 s.
+- **Deferred startup steps bound their lock waits** — see the boot_ddl bullet
+  under «Zero-downtime on ONE port».
+- **The deploy job runs no heavy report on a push**. Four temporary
+  deploy-log reports (cell 9123, live exchanges, everybody-left notices, ARC
+  attachment URLs) ran on every deploy — ~2.5 minutes of production DB and CPU
+  work right after each swap and ~30 MB of log — and were removed with their
+  scripts once answered; the Tarkib probe runs on «Run workflow» only
+  (`if: github.event_name == 'workflow_dispatch'`). **A new deploy-log report
+  goes behind that same `if`** unless it is cheap (the two session snapshots
+  and the orphan cleanup, <1 s, stay until the deploy.sh gap below is closed).
+
+Known and left (each is a follow-up of its own): deploy.sh's 180 s readiness
+wait against the supervisor's 600 s (a later deploy's HUP is dropped while an
+abandoned boot finishes — a patch and a test rig were drafted in the 23 Oct
+audit, not shipped); /leaders-kpi rebuilds its whole board every 4 s while a
+Verifix read runs; `sync_leader_ai_dates` walks the whole verdict corpus on
+every boot; every backend deploy empties every in-process cache, so the first
+viewer of each heavy page after a deploy pays a full build — fewer deploys
+during the working day is the cheapest fix of all.
+
 ## Zero-downtime on ONE port — the supervisor (`app/supervisor.py`, 2026-10-18)
 
 From **2026-10-18** the unit's main process is a SUPERVISOR that holds
@@ -13200,6 +13286,13 @@ gone with it, in Telegram, the browser and the Android app alike.
   At the 17:00 shift change of 23 Oct one slow transaction made those waits
   long, the serving worker's queries queued behind them until its pool was
   full, and four deploys in a row ended «the new worker never got ready».
+  From 2026-10-23 (evening) the DEFERRED phase bounds every statement's lock
+  wait too (`guarded` arms `all_dml` in both phases): a later() step runs
+  inside the worker that is already serving, and its UPDATE waiting on a row a
+  request holds would keep the rows it already changed — and a pool
+  connection — from everybody behind it. Such a step now fails after 5 s, is
+  recorded as failed and runs again at the next boot, so a one-shot must claim
+  its flag before it DMs.
   Every step of both phases now runs under a guard on its own thread (other
   threads are never touched): a statement whose target is already as asked —
   ADD / DROP COLUMN, SET / DROP NOT NULL, SET / DROP DEFAULT, DROP CONSTRAINT,

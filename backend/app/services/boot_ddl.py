@@ -265,7 +265,8 @@ def _before(conn, cursor, statement, parameters, context, executemany):
     if not _armed() or executemany or not isinstance(statement, str):
         return statement, parameters
     if not _DDL_HEAD.match(statement):
-        # In the boot phase EVERY statement's lock wait is bounded, DML too:
+        # EVERY statement's lock wait is bounded, DML too (the deferred phase
+        # as well from 2026-10-23 — see guarded()):
         # an UPDATE waiting on a row the serving worker holds would keep this
         # worker from ever getting ready, and anything of the serving worker
         # that needs the rows this step already changed queues behind it until
@@ -420,7 +421,14 @@ def guarded(fn: Callable, args: tuple, kwargs: dict, name: str, retry: bool):
         return fn(*args, **kwargs)
     tries = TRIES if retry else 1
     for attempt in range(1, tries + 1):
-        _arm(all_dml=retry)
+        # Every statement's lock wait is bounded in BOTH phases (2026-10-23).
+        # A deferred step runs inside the worker that is already serving: its
+        # UPDATE waiting without limit on a row a request holds keeps the rows
+        # it already changed — and a pool connection — while the requests that
+        # need them queue behind it. Bounded, it fails after LOCK_TIMEOUT, is
+        # recorded as failed, and runs again at the next boot (every step is
+        # idempotent). `retry` now decides only how many tries a step gets.
+        _arm(all_dml=True)
         err: Optional[BaseException] = None
         result = None
         try:
