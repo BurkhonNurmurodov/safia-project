@@ -88,6 +88,17 @@ jobs:
           git show "${{ github.sha }}:deploy/diag_db_sessions.py" > /tmp/safia-diag-db.py || true
           timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "before the deploy" || true
 
+      # ⚠ TEMPORARY (2026-10-23): end the lock-waiting sessions killed boots
+      # left behind (DDL, or the boot's managers attach, waiting > 2 min) —
+      # they stalled production. Never fails the deploy. Remove with
+      # deploy/end_orphan_boot_sessions.py.
+      - name: "Cleanup: orphaned boot sessions (temporary)"
+        run: |
+          cd /var/www/production
+          git show "${{ github.sha }}:deploy/end_orphan_boot_sessions.py" > /tmp/safia-orphans.py || true
+          timeout 40 backend/.venv/bin/python /tmp/safia-orphans.py || true
+          timeout 40 backend/.venv/bin/python /tmp/safia-diag-db.py "after the cleanup" || true
+
       - name: Deploy
         env:
           # Resolved in bash rather than in a `${{ … && … || … }}` expression so
