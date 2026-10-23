@@ -13044,6 +13044,12 @@ gone with it, in Telegram, the browser and the Android app alike.
   shipped), and every statement that does run is printed. A new migration
   written in one of those shapes needs nothing; one in any other shape runs
   under the timeout on every boot, so give it its own existence check.
+  **Never `DROP INDEX IF EXISTS x` followed by `CREATE … INDEX x` on every
+  boot** — the drop is not a no-op while x exists. `_finish_pp_line_key` did
+  exactly that to `pp_line_daily`'s unique key on every boot until this day
+  (an ACCESS EXCLUSIVE lock on the «Zagruzka fayli» table, then a rebuild
+  inside it), and the guard's first deploy named it; it now rebuilds the key
+  only when its columns are wrong.
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports

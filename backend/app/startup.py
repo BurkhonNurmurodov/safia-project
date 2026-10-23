@@ -6096,21 +6096,42 @@ def _finish_pp_line_key(db, _text) -> None:
     """Drop the old rank column and move the unique key onto `line_key`.
 
     Separate from the data pass so a re-boot after the flag is set still repairs
-    a box where the DDL half failed. Every statement is IF EXISTS / IF NOT
-    EXISTS, so running it again costs nothing. The constraint is dropped BEFORE
-    the index is created because a Postgres UNIQUE constraint owns a backing
-    index of the same name — leaving it in place would make the CREATE a silent
-    no-op and the table would keep the old shape.
+    a box where the DDL half failed. The constraint is dropped BEFORE the index
+    is created because a Postgres UNIQUE constraint owns a backing index of the
+    same name — leaving it in place would make the CREATE a silent no-op and
+    the table would keep the old shape.
+
+    **The key is rebuilt only when its shape is wrong** (2026-10-23). Until then
+    every boot ran `DROP INDEX IF EXISTS uq_pp_line_daily_key` — which, the
+    index existing, DROPPED it — and built it again: an ACCESS EXCLUSIVE lock on
+    a table the «Zagruzka fayli» page reads all day, taken on every deploy, and
+    what stalled the boots of 23 Oct behind the serving worker's requests. A
+    unique key on exactly these five columns — the model's constraint or the
+    index this pass builds — is the shape, and is left alone.
     """
-    db.execute(_text("DELETE FROM pp_line_daily WHERE line_key IS NULL"))
-    db.execute(_text(
-        "ALTER TABLE pp_line_daily ALTER COLUMN line_key SET NOT NULL"))
-    db.execute(_text(
-        "ALTER TABLE pp_line_daily DROP CONSTRAINT IF EXISTS uq_pp_line_daily_key"))
-    db.execute(_text("DROP INDEX IF EXISTS uq_pp_line_daily_key"))
-    db.execute(_text(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pp_line_daily_key ON pp_line_daily "
-        "(manager_id, date, qty_key, work_center, line_key)"))
+    nullable = db.execute(_text(
+        "SELECT NOT attnotnull FROM pg_attribute "
+        "WHERE attrelid = to_regclass('pp_line_daily') AND attname = 'line_key'")).scalar()
+    if nullable:
+        db.execute(_text("DELETE FROM pp_line_daily WHERE line_key IS NULL"))
+        db.execute(_text(
+            "ALTER TABLE pp_line_daily ALTER COLUMN line_key SET NOT NULL"))
+    cols = db.execute(_text(
+        "SELECT array_agg(a.attname::text ORDER BY k.ord) FROM pg_index i "
+        "JOIN pg_class c ON c.oid = i.indexrelid "
+        "CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) "
+        "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum "
+        "WHERE i.indrelid = to_regclass('pp_line_daily') "
+        "AND c.relname = 'uq_pp_line_daily_key' AND i.indisunique "
+        "AND i.indpred IS NULL AND i.indexprs IS NULL")).scalar()
+    if list(cols or []) != ["manager_id", "date", "qty_key", "work_center", "line_key"]:
+        db.execute(_text(
+            "ALTER TABLE pp_line_daily DROP CONSTRAINT IF EXISTS uq_pp_line_daily_key"))
+        db.execute(_text("DROP INDEX IF EXISTS uq_pp_line_daily_key"))
+        db.execute(_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_pp_line_daily_key ON pp_line_daily "
+            "(manager_id, date, qty_key, work_center, line_key)"))
+        print("[startup] pp_line_daily: unique key rebuilt on line_key", flush=True)
     db.execute(_text("ALTER TABLE pp_line_daily DROP COLUMN IF EXISTS line_no"))
     db.commit()
 
