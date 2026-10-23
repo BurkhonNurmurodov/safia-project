@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { installDomGuard } from './utils/domGuard'
 import { bootPwa } from './utils/pwa'
+import { loadPack } from './i18n/packs'
 
 // Read by the boot-diagnostics overlay in index.html
 window.__bootStage = 'bundle-start'
@@ -108,9 +109,20 @@ try {
 
 window.__bootStage = 'telegram-init-done'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-window.__bootStage = 'react-render-called'
+// The reader's language arrives as a file of its own (i18n/packs.js) — fetched
+// since index.html was parsed, so it is usually here by now. The first render
+// waits for it: painting the app in keys and repainting it in words is worse
+// than the few milliseconds it can cost. A pack that cannot load recovers like
+// any chunk (utils/importRecovery.js); should it still fail, the app renders
+// anyway and LangContext asks again.
+let startLang = 'uz'
+try { startLang = localStorage.getItem('lang') || 'uz' } catch { /* storage blocked */ }
+window.__bootStage = 'lang-loading'
+loadPack(startLang).catch(() => {}).finally(() => {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+  window.__bootStage = 'react-render-called'
+})

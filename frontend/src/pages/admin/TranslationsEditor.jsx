@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Save, Globe, Check, Loader2 } from "lucide-react";
 import SearchInput from "../../components/ui/SearchInput";
-import dict from "../../i18n/translations";
 import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { transliterate, transliterateText } from "../../utils/transliterate";
@@ -74,6 +73,10 @@ export default function TranslationsEditor() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
+  // All four languages — this editor is the one screen that needs them, so the
+  // whole dictionary is fetched here, on opening the tab, and never at app
+  // start (pages read the reader's one language: i18n/packs.js).
+  const [dict, setDict] = useState({});
 
   const mergeOverrides = (prev, incoming) => {
     const next = { ...prev };
@@ -88,6 +91,7 @@ export default function TranslationsEditor() {
     // arrive separately — merge both into the same overrides map.
     setInitLoading(true);
     Promise.allSettled([
+      import("../../i18n/translations").then((m) => setDict(m.default || {})),
       api.get("/api/translations").then((r) => {
         setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
         if (r.data?.languages?.length) {
@@ -114,7 +118,7 @@ export default function TranslationsEditor() {
     }));
     extraKeys.forEach((k) => set.add(k));
     return [...set];
-  }, [overrides, extraKeys]);
+  }, [dict, overrides, extraKeys]);
 
   const groups = useMemo(() => {
     const counts = {};

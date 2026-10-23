@@ -201,15 +201,58 @@ def get_zagruzka_bands(db: Session = Depends(get_db), _: dict = Depends(require_
     }
 
 
-@router.get("/page-access")
-def get_page_access_matrix(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
-    """Public read of the page-access matrix so every role can render its own
-    navigation. Admin always has full access (not represented in the matrix)."""
+def page_access_payload(db: Session) -> dict:
+    """THE answer of GET /api/page-access — also handed out with every sign-in
+    (`boot_extras`), so the two can never disagree."""
     return {
         "pages":            get_page_access(db),
         "page_keys":        PAGE_KEYS,
         "toggleable_roles": TOGGLEABLE_ROLES,
     }
+
+
+def capabilities_payload(db: Session, caller: dict) -> dict:
+    """THE answer of GET /api/my-capabilities for `caller` (a decoded app JWT)."""
+    return {
+        "caps":         caller_caps(db, caller),
+        "pages":        capability_pages(db, caller),
+        "tabs":         capability_tabs(db, caller),
+        "page_scopes":  page_scopes(db, caller),
+        "denied_pages": caller_denied_pages(db, caller),
+    }
+
+
+def boot_extras(db: Session, caller: dict) -> dict | None:
+    """What every route waits on, answered INSIDE the sign-in (2026-10-23).
+
+    Each page used to wait for the sign-in, then for /api/page-access and
+    /api/my-capabilities, then for its own code and data — one network round
+    trip per step, ~0.2–0.4 s each on a phone through Cloudflare. The sign-in
+    answer now carries both, and the client seeds its query cache with them
+    (AuthContext → utils/bootSeed.js), so a route opens one round trip sooner.
+    The two endpoints stay: they are what a refetch, a role switch and a tab
+    on an older bundle ask. Never fails a sign-in — a None here only means the
+    client asks the two endpoints itself, as it always did."""
+    try:
+        return {
+            "page_access":  page_access_payload(db),
+            "capabilities": capabilities_payload(db, caller),
+        }
+    except Exception:  # noqa: BLE001 — a sign-in must not die on an extra
+        import logging
+        logging.getLogger(__name__).exception("boot_extras failed")
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+@router.get("/page-access")
+def get_page_access_matrix(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+    """Public read of the page-access matrix so every role can render its own
+    navigation. Admin always has full access (not represented in the matrix)."""
+    return page_access_payload(db)
 
 
 @router.get("/my-capabilities")
@@ -233,10 +276,4 @@ def my_capabilities(db: Session = Depends(get_db), caller: dict = Depends(requir
     a link that 403s when tapped is worse than no link — but it is only a
     rendering aid, since `require_page` refuses the data with or without it.
     """
-    return {
-        "caps":         caller_caps(db, caller),
-        "pages":        capability_pages(db, caller),
-        "tabs":         capability_tabs(db, caller),
-        "page_scopes":  page_scopes(db, caller),
-        "denied_pages": caller_denied_pages(db, caller),
-    }
+    return capabilities_payload(db, caller)

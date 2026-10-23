@@ -1,7 +1,7 @@
 import React from "react";
 import { useLocation } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
-import dict from "../../i18n/translations";
+import { anyPack, lookup, packFor } from "../../i18n/packs";
 import ErrorScreen from "./ErrorScreen";
 import api from "../../utils/api";
 import { APP_VERSION } from "../../utils/version";
@@ -31,18 +31,15 @@ import { useAuth } from "../../context/AuthContext";
  *
  * Kept dependency-light (no hooks/context of its own) so it still works when a
  * provider is what threw: it reads the language from localStorage and looks
- * keys up in the static dictionary directly, mirroring the t() fallback chain
+ * keys up in the loaded language pack directly, mirroring the t() fallback chain
  * (lang → uz for uz_cyrl → en → key). The hooks live in the wrapper.
  */
 function tStatic(key) {
   let lang = "uz";
   try { lang = localStorage.getItem("lang") || "uz"; } catch { /* storage blocked */ }
-  return (
-    dict[lang]?.[key] ??
-    (lang === "uz_cyrl" ? dict["uz"]?.[key] : undefined) ??
-    dict["en"]?.[key] ??
-    key
-  );
+  // The pack main.jsx loaded before the first render (i18n/packs.js) — or
+  // whichever one has arrived, should the crash have come mid-switch.
+  return lookup(packFor(lang) || anyPack(), lang, key, {});
 }
 
 export default class ErrorBoundary extends React.Component {

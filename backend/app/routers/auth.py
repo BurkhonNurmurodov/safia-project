@@ -142,8 +142,31 @@ class WebAppLoginRequest(BaseModel):
     init_data: str
 
 
+def with_boot(db: Session, out):
+    """An approved sign-in answer, carrying what every route waits on — the
+    page-access matrix and the caller's capabilities — so the client need not
+    ask for them in a second round trip (routers/settings.boot_extras). The
+    caller is the TOKEN being handed out, decoded exactly as require_auth would
+    decode it on the next request."""
+    if not isinstance(out, dict) or out.get("status") != "approved" or not out.get("token"):
+        return out
+    try:
+        caller = jwt.decode(out["token"], settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        return out
+    from app.routers.settings import boot_extras  # lazy: settings imports nothing of auth
+    extras = boot_extras(db, caller)
+    if extras:
+        out["boot"] = extras
+    return out
+
+
 @router.post("/webapp")
 def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
+    return with_boot(db, _webapp_login(body, db))
+
+
+def _webapp_login(body: WebAppLoginRequest, db: Session):
     import logging; _log = logging.getLogger(__name__)
 
     # Dev bypass: empty init_data when running outside Telegram.

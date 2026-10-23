@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { restartKind, restartDelay, RESTART_WAIT_MS, setServerRestarting, sleep } from "./utils/serverRestart";
+import { importWithRecovery } from "./utils/importRecovery";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isNetworkError, isDown, subscribeConnectivity, OFFLINE_RETRY_MS } from "./utils/connectivity";
@@ -16,59 +16,7 @@ import { LangProvider, useLang } from "./context/LangContext";
 // Pages are lazy-loaded so each ships as its own chunk and downloads only when
 // first visited — this keeps the initial bundle small and speeds up loading.
 // A branded <PageLoader/> is shown (via Suspense) while a page's chunk loads.
-//
-// A page chunk's filename is content-hashed (e.g. Kaizen-<hash>.js). After a
-// redeploy the old hash no longer exists on the server, so a client that still
-// holds the previous index.html/main bundle 404s when it tries to import that
-// page. lazyWithReload catches that failure and hands off to the shared
-// stale-version handler defined in index.html (window.__staleReload): it shows
-// a calm "A new version is available. Reloading…" notice and does a single
-// reload to pull a fresh index.html pointing at the current hashes — so the
-// user recovers instead of hitting the red "App failed to start" screen. That
-// handler is guarded: if a reload can't fix it (a cached index.html still
-// pointing at old hashes) it shows "please reopen the app" instead of looping.
-// But a rejected import means one of two OPPOSITE things and the browser
-// reports both identically ("Failed to fetch dynamically imported module"):
-// the hashed file is genuinely gone, or the request never reached the server
-// at all (offline, a reset connection, a filtering proxy). Their recoveries
-// are opposites too — a reload fixes the first and re-breaks the second — so a
-// dropped connection used to be told "A new version is available", then
-// "Update needed. Please close and reopen the app.": advice that cannot work,
-// for a cause that isn't the real one. Ask the origin before choosing.
-// /build.json is same-origin, served no-store and always present, so a reply
-// of ANY status proves the server is reachable and the chunk really is stale;
-// only a rejection means the connection itself is what broke.
-// A third answer joined those two with the blue-green deploys: the server is
-// reachable but RESTARTING (a 502/503 from nginx or Cloudflare). A reload then
-// lands on an error page, so the import waits for the server and is simply
-// tried again — the chunk usually still exists (old builds' files are only
-// dropped by the deploy that replaces them).
-async function originState() {
-  if (navigator.onLine === false) return "down";
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 6000);
-  try {
-    const r = await fetch(`/build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
-    return restartKind(r) ? "restarting" : "up";
-  } catch {
-    return "down"; // reset, blocked, offline — or too slow to be usable anyway
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function waitWhileRestarting() {
-  const since = Date.now();
-  let state = await originState();
-  for (let i = 0; state === "restarting" && Date.now() - since < RESTART_WAIT_MS; i++) {
-    setServerRestarting(true);
-    await sleep(restartDelay(i));
-    state = await originState();
-  }
-  if (state !== "restarting") setServerRestarting(false);
-  return state;
-}
-
+// A chunk that fails to load recovers through utils/importRecovery.js.
 
 // /staff-live → /staff, carrying the query string (a bare <Navigate> drops it).
 function StaffLiveRedirect() {
@@ -86,35 +34,12 @@ function KpiTabRedirect({ tab }) {
 }
 
 function lazyWithReload(importer) {
-  return lazy(() =>
-    importer().catch(async (err) => {
-      const state = await waitWhileRestarting();
-      if (state === "down") {
-        // A reload would hit the same dead connection. Say what actually broke.
-        if (typeof window.__netFail === "function") {
-          window.__netFail();
-          return new Promise(() => {}); // never resolves — the overlay takes over
-        }
-        throw err;
-      }
-      // The server answers again: the failure may have been the restart itself.
-      try { return await importer(); } catch { /* genuinely stale — reload below */ }
-      if (typeof window.__staleReload === "function") {
-        window.__staleReload();
-        return new Promise(() => {}); // never resolves — the overlay takes over
-      }
-      // Fallback if the boot script is unavailable: one guarded reload.
-      const KEY = "chunkReloadAt";
-      let last = 0;
-      try { last = Number(sessionStorage.getItem(KEY) || 0); } catch { /* storage blocked */ }
-      if (Date.now() - last > 10_000) {
-        try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* storage blocked */ }
-        window.location.reload();
-        return new Promise(() => {}); // never resolves — nothing renders before reload
-      }
-      throw err;
-    })
-  );
+  const Page = lazy(() => importWithRecovery(importer));
+  // Fetch the chunk now without rendering it — see preloadOpenedRoute below.
+  // A failure is swallowed here: the lazy load above meets the same failure
+  // and recovers exactly as it always did.
+  Page.preload = () => { importer().catch(() => {}); };
+  return Page;
 }
 const Overview = lazyWithReload(() => import("./pages/Overview"));
 // The shift dashboard has a route of its own so an admin or a top-manager can
@@ -175,6 +100,49 @@ const Profile = lazyWithReload(() => import("./pages/Profile"));
 const Notifications = lazyWithReload(() => import("./pages/Notifications"));
 const Assistant = lazyWithReload(() => import("./pages/Assistant"));
 const NotFound = lazyWithReload(() => import("./pages/NotFound"));
+
+// The page being OPENED starts downloading at boot, in parallel with the
+// sign-in (2026-10-23). A lazy page used to be fetched only once its route
+// rendered — after the sign-in AND the access check had answered — so its code
+// was one more network round trip in a row on every page load. Path → page,
+// by the path's first segment (deeper paths named where they differ); a path
+// not listed simply loads as before. Only a fetch: nothing renders, nothing is
+// decided, and a page the viewer may not open costs its download and nothing
+// else.
+const ROUTE_PAGES = {
+  "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
+  workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
+  staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
+  trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
+  concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
+  tasks: Tasks, activity: UsersActivity, "setup-times": SetupTimes, "idle-cell": IdleCell,
+  "zagruzka-cell": ZagruzkaCell, live: LiveOverview, kelish: Kelish, arc: Arc,
+  education: Education, exam: Exam, targets: Targets, profile: Profile,
+  notifications: Notifications, assistant: Assistant, proof: ProofCamera,
+  admin: AdminPanel, "broadcast-receivers": BroadcastReceivers, broadcast: BroadcastRecord,
+};
+// «/» is what the Telegram menu button opens, and a role without the overview
+// is redirected from it to its first page (RequirePage) — remembered here, so
+// the page that will actually open is the one fetched early.
+const HOME_ROUTE_KEY = "homeRoute";
+function preloadOpenedRoute() {
+  try {
+    let path = window.location.pathname;
+    if (path === "/") path = localStorage.getItem(HOME_ROUTE_KEY) || "/";
+    const parts = path.split("/").filter(Boolean);
+    const [first = "", second] = parts;
+    let Page = ROUTE_PAGES[first];
+    if (first === "leaders") {
+      Page = second === "report" ? LeaderDayReport
+        : second === "unit-report" ? LeaderUnitReport
+        : second === "appeal" ? LeaderAppeal : Leaders;
+    } else if (first === "cells" && second) Page = CellDetails;
+    else if (first === "education" && second) Page = EducationLesson;
+    else if (first === "targets" && second) Page = TargetGoal;
+    Page?.preload?.();
+  } catch { /* a hint only */ }
+}
+preloadOpenedRoute();
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundary";
 import ErrorScreen from "./components/ui/ErrorScreen";
@@ -484,11 +452,19 @@ function RequirePage({ page, children }) {
   const { access, isLoading } = usePageAccess();
   const { capPages, deniedPages, isLoading: capsLoading } = useCapabilities();
   if (isLoading || capsLoading) return <PageLoader where="access" />;
-  if (canAccessPage(auth?.role, page, access, capPages, deniedPages)) return children;
+  if (canAccessPage(auth?.role, page, access, capPages, deniedPages)) {
+    if (page === "overview" && window.location.pathname === "/") {
+      try { localStorage.removeItem(HOME_ROUTE_KEY); } catch { /* a hint only */ }
+    }
+    return children;
+  }
   // The redirect target has to respect the denies too, or a person blocked from
   // their role's first page is bounced straight back into it and loops.
   const dest = firstAccessibleRoute(auth?.role, access, capPages, deniedPages);
   if (!dest || dest === window.location.pathname) return <NoAccess />;
+  if (window.location.pathname === "/") {
+    try { localStorage.setItem(HOME_ROUTE_KEY, dest); } catch { /* a hint only */ }
+  }
   return <Navigate to={dest} replace />;
 }
 

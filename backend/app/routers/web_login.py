@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app import web_auth
 from app.config import settings
+from app.routers.auth import with_boot
 from app.database import get_db
 from app.identity import photo_versions, profile_display_name, viewer_profile_key
 from app.models import Admin, TelegramUser, WebCredential
@@ -108,7 +109,7 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
     admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
 
-    return {
+    return with_boot(db, {
         "status":      "approved",
         "role":        identity["role"],
         "role_id":     identity["role_id"],
@@ -131,7 +132,7 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
             "profile":       profile_display_name(db, cred.profile_key),
             "last_login_at": cred.last_login_at.isoformat(),
         },
-    }
+    })
 
 
 class ImpersonateBody(BaseModel):
@@ -193,7 +194,7 @@ def web_impersonate(body: ImpersonateBody, request: Request, db: Session = Depen
 
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
     admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
-    return {
+    return with_boot(db, {
         "status":      "approved",
         "role":        identity["role"],
         "role_id":     identity["role_id"],
@@ -213,7 +214,7 @@ def web_impersonate(body: ImpersonateBody, request: Request, db: Session = Depen
             "profile":       profile_display_name(db, cred.profile_key),
             "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
         },
-    }
+    })
 
 
 class ForgotBody(BaseModel):
@@ -463,6 +464,17 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
             "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
         },
     }
+    caller = payload
     if stale:
         out["token"] = web_auth.reissue_web_jwt(identity, cred, payload)
+        try:
+            caller = jwt.decode(out["token"], settings.secret_key, algorithms=[settings.algorithm])
+        except JWTError:
+            caller = None
+    # What every route waits on, in this same answer (routers/settings.boot_extras).
+    if caller:
+        from app.routers.settings import boot_extras
+        extras = boot_extras(db, caller)
+        if extras:
+            out["boot"] = extras
     return out

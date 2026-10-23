@@ -175,6 +175,98 @@ function injectBuildMeta() {
   }
 }
 
+// ONE language per reader (2026-10-23). src/i18n/translations.js holds every
+// UI string in all four languages (~2.4 MB) and stays the ONE file people edit;
+// shipped whole, it was a 2.1 MB chunk every page load downloaded and parsed
+// before the first paint, although a reader only ever reads one of the four.
+// This plugin cuts it into four modules — `virtual:i18n/<lang>` — each holding
+// that language's strings plus whatever an older key still needs from the
+// fallback chain LangContext applies (uz for uz_cyrl, then en), so a pack
+// alone answers exactly what the whole dictionary did. src/i18n/packs.js loads
+// the reader's one; index.html starts fetching it before the app code runs
+// (the inline preload injected below), so it adds no round trip in a row.
+// A pack is emitted as JSON.parse('…'): V8 parses a JSON string far faster
+// than the same object written as a JS literal.
+const I18N_PREFIX = 'virtual:i18n/'
+const I18N_LANGS = ['uz', 'uz_cyrl', 'ru', 'en']
+function i18nPacks() {
+  let root = process.cwd()
+  let cache = null // { mtime, dict }
+  const source = () => resolve(root, 'src', 'i18n', 'translations.js')
+  const readDict = () => {
+    const file = source()
+    const mtime = statSync(file).mtimeMs
+    if (cache && cache.mtime === mtime) return cache.dict
+    const text = readFileSync(file, 'utf8')
+    const body = text.replace(/export\s+default\s+t\s*;?\s*$/, '')
+    if (body === text || !/^\s*(\/\/[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*const t = \{/.test(body)) {
+      throw new Error('src/i18n/translations.js must stay `const t = { … }; export default t;` — the i18n pack plugin reads it as one object literal.')
+    }
+    const dict = new Function(`${body}\nreturn t;`)()
+    cache = { mtime, dict }
+    return dict
+  }
+  const pack = (dict, lang) => {
+    const own = dict[lang] || {}
+    const pick = (from, skip) => Object.fromEntries(
+      Object.entries(from || {}).filter(([k]) => !(k in own) && !(skip && k in skip)))
+    const uz = lang === 'uz_cyrl' ? pick(dict.uz) : {}
+    const en = lang === 'en' ? {} : pick(dict.en, uz)
+    return { own, uz, en }
+  }
+  return {
+    name: 'i18n-packs',
+    configResolved(config) { root = config.root },
+    resolveId(id) {
+      if (id.startsWith(I18N_PREFIX) && I18N_LANGS.includes(id.slice(I18N_PREFIX.length))) return `\0${id}`
+      return null
+    },
+    load(id) {
+      if (!id.startsWith(`\0${I18N_PREFIX}`)) return null
+      this.addWatchFile(source())
+      const json = JSON.stringify(pack(readDict(), id.slice(I18N_PREFIX.length + 1)))
+      return `export default JSON.parse(${JSON.stringify(json)})`
+    },
+    // Dev: an edit to translations.js reloads the page (the packs are virtual,
+    // so HMR has no module of the file's own to swap).
+    handleHotUpdate({ file, server }) {
+      if (file === source()) {
+        cache = null
+        for (const lang of I18N_LANGS) {
+          const mod = server.moduleGraph.getModuleById(`\0${I18N_PREFIX}${lang}`)
+          if (mod) server.moduleGraph.invalidateModule(mod)
+        }
+        server.ws.send({ type: 'full-reload' })
+        return []
+      }
+    },
+    // Build: name each pack's file in index.html and fetch the reader's one
+    // at once — the language is in localStorage, the app code is not needed to
+    // know it. Also puts the pack in the boot watchdog's view (it counts every
+    // modulepreload), so a slow pack reads as «still downloading», not as an
+    // app that never painted.
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        if (!ctx.bundle) return []
+        const files = {}
+        for (const f of Object.values(ctx.bundle)) {
+          if (f.type !== 'chunk' || !f.facadeModuleId) continue
+          const m = f.facadeModuleId.match(/^\0virtual:i18n\/(\w+)$/)
+          if (m) files[m[1]] = `/${f.fileName}`
+        }
+        if (Object.keys(files).length !== I18N_LANGS.length) {
+          throw new Error(`i18n-packs: expected ${I18N_LANGS.length} language chunks, found ${Object.keys(files).join(', ') || 'none'}`)
+        }
+        const code = `(function(){try{var f=${JSON.stringify(files)};var l=null;try{l=localStorage.getItem("lang")}catch(e){}`
+          + `var h=f[l||"uz"]||f.en;var e=document.createElement("link");e.rel="modulepreload";e.setAttribute("crossorigin","");e.href=h;`
+          + `document.head.appendChild(e)}catch(e){}})();`
+        return [{ tag: 'script', children: code, injectTo: 'head' }]
+      },
+    },
+  }
+}
+
 function guardStampOutOfChunks() {
   return {
     name: 'guard-stamp-out-of-chunks',
@@ -196,6 +288,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    i18nPacks(),
     injectBuildMeta(),
     guardStampOutOfChunks(),
     emitBuildInfo(),

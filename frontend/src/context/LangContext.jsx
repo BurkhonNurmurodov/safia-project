@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
-import dict from "../i18n/translations";
+import { anyPack, loadPack, lookup, packFor } from "../i18n/packs";
 import api from "../utils/api";
 import { useAuth } from "./AuthContext";
 import { getToken } from "../utils/session";
@@ -17,6 +17,27 @@ const STATIC_LANGS = [
 export function LangProvider({ children, defaultLang = "uz" }) {
   const { auth } = useAuth() || {};
   const [lang, setLangState] = useState(() => localStorage.getItem("lang") || defaultLang);
+  // The strings for `lang` (i18n/packs.js). main.jsx loads the starting
+  // language's pack before the first render; a switch loads the new one FIRST
+  // and only then moves `lang`, so the words and the language the rest of the
+  // app reads (dates, names) always change together. `packTick` re-renders
+  // once a pack that was still loading arrives.
+  const [, setPackTick] = useState(0);
+  const switchTo = useCallback((code) => {
+    if (!code) return;
+    if (packFor(code)) { setLangState(code); return; }
+    loadPack(code)
+      .then(() => setLangState(code))
+      .catch(() => setLangState(code));
+  }, []);
+  // The starting language's pack, should main.jsx not have had it (it always
+  // asks for it before rendering; this is the belt to that).
+  useEffect(() => {
+    if (packFor(lang)) return undefined;
+    let live = true;
+    loadPack(lang).then(() => { if (live) setPackTick((n) => n + 1); }).catch(() => {});
+    return () => { live = false; };
+  }, [lang]);
   const [overrides, setOverrides] = useState({});      // { lang: { key: value } } from DB
   const [nameOverrides, setNameOverrides] = useState({}); // { lang: { "name.<raw>": value } }
   const [languages, setLanguages] = useState(STATIC_LANGS);
@@ -31,11 +52,11 @@ export function LangProvider({ children, defaultLang = "uz" }) {
   // DMs them in the same language as the dashboard (the bell already renders per
   // request). Fire-and-forget; the api interceptor attaches the bearer token.
   const setLang = useCallback((code) => {
-    setLangState(code);
+    switchTo(code);
     if (getToken()) {
       api.post("/api/auth/language", { language: code }).catch(() => {});
     }
-  }, []);
+  }, [switchTo]);
 
   // On login, keep the profile language (used for bot DMs) in lock-step with the app:
   //  • First run on this device (no prior choice): adopt the profile's saved
@@ -47,7 +68,7 @@ export function LangProvider({ children, defaultLang = "uz" }) {
     if (auth?.status !== "approved") return;
     if (!getToken()) return;
     if (!hadStoredLang.current) {
-      if (auth.language) setLangState(auth.language);
+      if (auth.language) switchTo(auth.language);
       hadStoredLang.current = true;
       return;
     }
@@ -90,15 +111,9 @@ export function LangProvider({ children, defaultLang = "uz" }) {
 
   // t(key) — DB override → static dict → Latin-uz fallback (for uz_cyrl) →
   // English fallbacks → the key itself
+  const pack = packFor(lang) || anyPack();
   function t(key) {
-    return (
-      overrides[lang]?.[key] ??
-      dict[lang]?.[key] ??
-      (lang === "uz_cyrl" ? (overrides["uz"]?.[key] ?? dict["uz"]?.[key]) : undefined) ??
-      overrides["en"]?.[key] ??
-      dict["en"]?.[key] ??
-      key
-    );
+    return lookup(pack, lang, key, overrides);
   }
 
   return (

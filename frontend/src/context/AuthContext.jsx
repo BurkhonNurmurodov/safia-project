@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import {
   clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession,
@@ -83,7 +84,26 @@ function recheckSession(accept) {
   });
 }
 
+/**
+ * What every route waits on, answered INSIDE the sign-in (2026-10-23): the
+ * page-access matrix and this person's capabilities ride on the answer as
+ * `boot` (backend routers/settings.boot_extras), and are put straight into the
+ * query cache under the keys usePageAccess / useCapabilities read — so a route
+ * opens one network round trip sooner instead of asking for them after the
+ * sign-in has answered. Absent (an older backend, a failure server-side), the
+ * two hooks ask for themselves exactly as before.
+ */
+function seedBoot(qc, data) {
+  const boot = data?.boot;
+  if (!boot) return;
+  try {
+    if (boot.page_access) qc.setQueryData(["page-access"], boot.page_access);
+    if (boot.capabilities) qc.setQueryData(["my-capabilities"], boot.capabilities);
+  } catch { /* the hooks fetch for themselves */ }
+}
+
 export function AuthProvider({ children }) {
+  const qc = useQueryClient();
   const [auth, setAuth]               = useState(null);
   const [loading, setLoading]         = useState(true);
   const [botUsername, setBotUsername] = useState("");
@@ -137,6 +157,7 @@ export function AuthProvider({ children }) {
       exchangeImpersonation(IMPERSONATE_CODE)
         .then((r) => {
           setToken(r.data.token, { web: true, tab: true });
+          seedBoot(qc, r.data);
           setWebSession(true);
           setAuth(r.data);
         })
@@ -175,6 +196,7 @@ export function AuthProvider({ children }) {
             adoptCacheScope(data);
             saveBootPayload(getToken(), data);
           }
+          seedBoot(qc, data);
           setAuth(data);
           setWebSession(true);
           rememberActive(data);
@@ -265,6 +287,7 @@ export function AuthProvider({ children }) {
         // The pages' offline cache is kept per profile (utils/offlineCache.js).
         // No boot payload here: a mini app cannot load its shell offline.
         adoptCacheScope(data);
+        seedBoot(qc, data);
         setAuth(data);
       })
       .catch(() => setAuth({ status: "error" }))
@@ -382,6 +405,7 @@ export function AuthProvider({ children }) {
     if (data?.token) setToken(data.token, { remember, web: true });
     adoptCacheScope(data);
     saveBootPayload(getToken(), data);
+    seedBoot(qc, data);
     setWebSession(true);
     setAuth(data);
     rememberActive(data, remember);

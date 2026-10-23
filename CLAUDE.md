@@ -10207,6 +10207,48 @@ no event; the route is the share sheet).
   `vite-plugin-pwa` would have added a peer-dependency risk to a pipeline whose
   `npm ci` is a deploy.
 
+## What a page load waits on — the boot path (2026-10-23)
+
+The operator: «IT companies always find a way to reduce the load times». Every
+page load used to wait through five steps IN A ROW — the app code (with all four
+UI languages inside it) → the sign-in → /api/page-access + /api/my-capabilities
+→ the page's own code → the page's data — each a network round trip through
+Cloudflare. Four changes, all on the path EVERY page shares:
+
+- **One language per reader.** `src/i18n/translations.js` stays THE file people
+  edit (all four languages, one object literal — `const t = { … }; export
+  default t;`, which the build plugin enforces), but it is no longer shipped
+  whole: `i18nPacks()` in `vite.config.js` cuts it into `virtual:i18n/<lang>`
+  modules (`{own, uz, en}` — the language plus whatever LangContext's fallback
+  chain would take from Latin Uzbek and English), emitted as `JSON.parse('…')`.
+  `src/i18n/packs.js` loads the reader's one; `main.jsx` renders after it
+  arrives; an inline script the plugin injects into `index.html` starts its
+  download (a `modulepreload`, which also puts it in the boot watchdog's view)
+  before any app code runs. Boot JS went from ~2.7 MB to ~1.0–1.2 MB (the shared
+  chunk that carried the dictionary, 2.1 MB → 23 KB). **Never import
+  `translations.js` from anything a page load runs** — only the admin
+  translations editor does, by dynamic `import()` when its tab opens. A
+  language switch loads the new pack FIRST, then moves `lang`.
+- **The sign-in answer carries the permissions.** `/api/auth/webapp`,
+  `/api/auth/web/session`, `/web/login` and `/web/impersonate` add `boot:
+  {page_access, capabilities}` (`routers/settings.boot_extras`, through
+  `routers/auth.with_boot`; the two GET endpoints answer from the same
+  `page_access_payload` / `capabilities_payload`, so they cannot disagree), and
+  `AuthContext.seedBoot` puts them in the query cache under the keys
+  `usePageAccess` / `useCapabilities` read. A failure there never fails a
+  sign-in — the hooks then fetch for themselves, as before.
+- **The opened page's code downloads during the sign-in.** `lazyWithReload`
+  gives each page `.preload()`; `ROUTE_PAGES` in `App.jsx` maps a path's first
+  segment to its page and `preloadOpenedRoute()` fetches it at boot. «/»
+  preloads the page a role without the overview is redirected to (remembered in
+  `localStorage.homeRoute` by `RequirePage`). **A new page belongs in
+  `ROUTE_PAGES`** — a page missing there still works, one round trip slower.
+  The chunk-failure recovery both use is `utils/importRecovery.js`.
+- **Inter is served from this site** (`src/assets/fonts/`, four subsets —
+  Latin, Latin-ext, Cyrillic, Cyrillic-ext — under `unicode-range`, `@font-face`
+  in `index.css`, SIL OFL in `OFL.txt`), not Google Fonts: that stylesheet was a
+  render-blocking request to two more hosts before the first paint.
+
 ## The app works OFFLINE on what it loaded last (`offlineCache`, `connectivity`)
 
 From **2026-10-16** (the operator: «save caches like Instagram does — it should
