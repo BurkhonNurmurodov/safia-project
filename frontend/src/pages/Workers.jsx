@@ -18,6 +18,7 @@ import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import HeatmapChart from "../components/charts/HeatmapChart";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
+import { useAuth } from "../context/AuthContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
@@ -138,7 +139,12 @@ export default function Workers() {
   const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
-  const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements" | "composition"
+  const { auth } = useAuth();
+  // «Tarkib» (composition) is for admins only (the operator, 2026-10-23); the
+  // endpoint refuses everybody else. A saved «composition» reads as attendance.
+  const isAdmin = auth?.role === "admin";
+  const [savedView, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements" | "composition"
+  const view = !isAdmin && savedView === "composition" ? "attendance" : savedView;
   const [tgtTab, setTgtTab] = usePersistentState("workers_tgt_tab", "supervisor"); // exchange-targets chart: "supervisor" | "task"
   // The page's two measurement switches, shared by every card they drive (the
   // control is repeated in each card header, the STATE is one — flipping it
@@ -779,7 +785,7 @@ export default function Workers() {
           options={[
             { value: "attendance", label: <span className="inline-flex items-center gap-1.5"><Users size={14} />{t("workers.tab.attendance")}</span> },
             { value: "movements",  label: <span className="inline-flex items-center gap-1.5"><ArrowLeftRight size={14} />{t("workers.tab.movements")}</span> },
-            { value: "composition", label: <span className="inline-flex items-center gap-1.5"><Contact size={14} />{(DEMO_TXT[lang] || DEMO_TXT.uz).tab}</span> },
+            ...(isAdmin ? [{ value: "composition", label: <span className="inline-flex items-center gap-1.5"><Contact size={14} />{(DEMO_TXT[lang] || DEMO_TXT.uz).tab}</span> }] : []),
           ]}
         />
       </div>

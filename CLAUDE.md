@@ -2187,7 +2187,12 @@ bundle `demographicsText.js`.
   today's placement, so it is a SNAPSHOT: the period control is NOT drawn on
   this tab (a control that changes nothing is worse than none). Plant, shift,
   brigadir (`scoped_manager_ids`, the viewer lock) and the page's «Jami /
-  Zagruzka» role switch (`_py_known_title`) narrow it. Page key `workers`.
+  Zagruzka» role switch (`_py_known_title`) narrow it. Page key `workers`,
+  but **ADMINS ONLY** (2026-10-23, the operator: «only visible to admin,
+  nobody else»): the tab is drawn for `role == "admin"` alone (a saved
+  «composition» view reads as «Davomat» for anybody else, an «open as» tab
+  included), and `GET /api/workers/demographics` answers 403 to every other
+  role, as the refresh always did.
 - **What is stored — coded facts only.** `workforce.read` keeps per person the
   org unit, job name, gender letter, birth MONTH («1994-07», age exact but for
   the person's own birth month), hiring date and two places reduced to a region
