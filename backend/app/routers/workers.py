@@ -949,3 +949,52 @@ def get_requests_analysis(
             key=lambda x: (-x["workers"], x["from"], x["to"]),
         )[:20],
     }
+
+
+# ── «Tarkib»: who is on the lists (from 2026-10-23) ──────────────────────────
+# Gender, age, years at Safia and where people live, from Verifix's employee
+# list — services/workforce.py reads, stores and folds it. A SNAPSHOT of
+# today's lists (Verifix keeps only today's placement), so the page's period
+# does not reach it; plant, shift, brigadir and the role switch do.
+
+@router.get("/workers/demographics")
+def get_demographics(
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
+    scope: str = Query(default="all"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("workers")),
+):
+    from app.services import verifix, verifix_live, workforce
+    data, at, err, err_at = workforce.stored(db)
+    cfg = verifix.config(db)
+    read = {
+        "at": at.isoformat() if at else None,
+        "error": err if err and (at is None or (err_at and err_at > at)) else None,
+        "error_at": err_at.isoformat() if err_at else None,
+        "running": workforce.running(),
+        "configured": bool(cfg.get("login") and cfg.get("password_set") and cfg.get("filial_id")),
+        "stats": (data or {}).get("stats") or {},
+        "every_h": workforce.READ_EVERY_H,
+    }
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    today = verifix_live.now_local().date()
+    if empty_scope(scoped):
+        return {"read": read, "today": today.isoformat(),
+                **workforce.build(None, {}, {}, [], shift, lambda j: True, today)}
+    cells, units = verifix_live._registry(db)
+    role_ok = _py_known_title if scope == "zagruzka" else (lambda j: True)
+    return {"read": read, "today": today.isoformat(),
+            **workforce.build(data, cells, units, scoped, shift, role_ok, today)}
+
+
+@router.post("/workers/demographics/refresh")
+def refresh_demographics(payload: dict = Depends(require_page("workers"))):
+    """An admin's «Verifix'dan yangilash»: the read on a thread of its own."""
+    from fastapi import HTTPException
+    from app.services import workforce
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    started = workforce.start_read(f"admin:{payload.get('full_name') or payload.get('sub') or ''}"[:120])
+    return {"started": started, "running": workforce.running()}

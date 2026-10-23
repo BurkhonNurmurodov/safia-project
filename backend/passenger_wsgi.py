@@ -729,6 +729,9 @@ try:
     # «Kadrlar qo'nimsizligi»: the nightly Verifix read + month closing (mirrors main.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
     register_turnover_jobs()
+    # «Tarkib» on /workers: the working-people read every 3 h (mirrors main.py).
+    from app.services.workforce import register_jobs as register_workforce_jobs
+    register_workforce_jobs()
     # «Toifaga muvofiqlik»: the nightly HR-journals read + boot catch-up (mirrors main.py).
     from app.services.category_sync import register_jobs as register_category_jobs
     register_category_jobs()

@@ -411,6 +411,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/verifix-sync/caps",              "config", "config.verifix_sync_caps"),
     (("POST",),   "/api/staff-live/attendance/export",         "sync_export", "export.staff_live"),
     (("POST",),   "/api/turnover/read",                        "sync_export", "sync.turnover_read"),
+    (("POST",),   "/api/workers/demographics/refresh",         "sync_export", "sync.workforce_read"),
     (("POST",),   "/api/turnover/close",                       "leader_review", "turnover.month_closed"),
     (("POST",),   "/api/turnover/compute",                     "leader_review", "turnover.month_computed"),
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),

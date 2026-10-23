@@ -4,7 +4,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   AlertTriangle, ArrowLeftRight, CalendarDays, CheckCircle2,
   ClipboardList, Grid3x3, LayoutGrid, Layers, PieChart, Radio, Repeat, TrendingUp,
-  UserCheck, UserMinus, UserRound, Users,
+  Contact, UserCheck, UserMinus, UserRound, Users,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -29,6 +29,8 @@ import { fmtLongDate } from "./Staff";
 import api from "../utils/api";
 import { CATEGORY_COLORS, FOLD_COLOR } from "../utils/chartPalette";
 import { ATT_SEGMENTS } from "../utils/statusBands";
+import Demographics from "../components/workers/Demographics";
+import { TXT as DEMO_TXT } from "../components/workers/demographicsText";
 
 // ── palette ──────────────────────────────────────────────────────────────────
 // Role identity hues follow the shared generic-first category order (see
@@ -136,7 +138,7 @@ export default function Workers() {
   const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
-  const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements"
+  const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements" | "composition"
   const [tgtTab, setTgtTab] = usePersistentState("workers_tgt_tab", "supervisor"); // exchange-targets chart: "supervisor" | "task"
   // The page's two measurement switches, shared by every card they drive (the
   // control is repeated in each card header, the STATE is one — flipping it
@@ -168,6 +170,12 @@ export default function Workers() {
     enabled: ready,
   });
   const chartParams = useMemo(() => padChartParams(fparams), [fparams]);
+  // «Tarkib» is a snapshot of today: the same scope without the period, so a
+  // period picked on another tab does not refetch it.
+  const demoParams = useMemo(() => {
+    const { date_from, date_to, ...rest } = fparams || {}; // eslint-disable-line no-unused-vars
+    return rest;
+  }, [fparams]);
   const { data: trend } = useQuery({
     queryKey: ["worker-trend", chartParams],
     queryFn: () => api.get("/api/workers/trend", { params: chartParams }).then((r) => r.data),
@@ -715,14 +723,18 @@ export default function Workers() {
       {/* ONE-ROW filter bar: period inline, plant / shift / supervisor inside the
           shared FilterPanel — active narrowings surface as chips. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <DateRangePicker
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          setDateFrom={setDateFrom}
-          setDateTo={setDateTo}
-          compactLabel
-          triggerClassName="px-3 py-2 text-sm"
-        />
+        {/* «Tarkib» is today's lists (Verifix keeps only today's placement),
+            so the period would change nothing there — it is not offered. */}
+        {view !== "composition" && (
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            compactLabel
+            triggerClassName="px-3 py-2 text-sm"
+          />
+        )}
         <FilterPanel
           sections={[
             ...(factorySection ? [factorySection] : []),
@@ -767,11 +779,19 @@ export default function Workers() {
           options={[
             { value: "attendance", label: <span className="inline-flex items-center gap-1.5"><Users size={14} />{t("workers.tab.attendance")}</span> },
             { value: "movements",  label: <span className="inline-flex items-center gap-1.5"><ArrowLeftRight size={14} />{t("workers.tab.movements")}</span> },
+            { value: "composition", label: <span className="inline-flex items-center gap-1.5"><Contact size={14} />{(DEMO_TXT[lang] || DEMO_TXT.uz).tab}</span> },
           ]}
         />
       </div>
 
-      {view === "attendance" ? (
+      {view === "composition" ? (
+        <Demographics
+          params={demoParams}
+          ready={ready}
+          scope={scope}
+          scopeSwitch={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}
+        />
+      ) : view === "attendance" ? (
         <>
           {/* KPI row */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">

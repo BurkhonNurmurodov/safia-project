@@ -2162,6 +2162,68 @@ from that date on**, and nothing turns it back on.
 
 Related memory: `idle-source-switch`.
 
+## «Tarkib» — who is on the lists (`/workers`, third tab, 2026-10-23)
+
+The operator: «In this Workers can we have analysis of woman/man share, workers
+age, experience and living place with the help of Verifix data». A third tab
+beside «Davomat» and «O'zgarishlar» — «Tarkib» (uz_cyrl «Таркиб», ru «Состав»,
+en «Composition») — over `GET /api/workers/demographics`
+(`routers/workers.py`), built by `services/workforce.py` (the read, its
+storage, the fold) and `services/workforce_place.py` (THE address → place
+rule); the page is `components/workers/Demographics.jsx` with its own text
+bundle `demographicsText.js`.
+
+- **What Verifix holds** (a deploy-log probe of `core/employee$list` on
+  production, 23 Oct, 3,015 working people): `gender` 100 % (M 1,652 · F
+  1,363), `birthday` 99.7 %, `hiring_date` 100 %, `address` (where they live)
+  97.5 % and `legal_address` (propiska) 94 % as FREE TEXT in four spellings,
+  `region_name` (a district) 31 %. `person_experiences` (career experience) is
+  filled for 56 people — so **«experience» is tenure at Safia**, from the
+  CURRENT employment's hiring date (a re-hire starts again). The same list
+  also carries passports, PINFL and family members; none of it is read here.
+- **The population is today's lists**: a WORKING employee whose Verifix org
+  unit is a cell counted in the загрузка with a brigadir (`verifix_live._registry`
+  + the `_homes` rule) — the people /staff reads today. Verifix keeps only
+  today's placement, so it is a SNAPSHOT: the period control is NOT drawn on
+  this tab (a control that changes nothing is worse than none). Plant, shift,
+  brigadir (`scoped_manager_ids`, the viewer lock) and the page's «Jami /
+  Zagruzka» role switch (`_py_known_title`) narrow it. Page key `workers`.
+- **What is stored — coded facts only.** `workforce.read` keeps per person the
+  org unit, job name, gender letter, birth MONTH («1994-07», age exact but for
+  the person's own birth month), hiring date and two places reduced to a region
+  + district key; no name, phone, document, PINFL, day of birth or street
+  address. Stored as `live_verifix_reads` key «people», re-read every 3 h at
+  :35 (`READ_EVERY_H`), after boot when older (~240 s in), and by an admin's
+  «Verifix'dan yangilash» (`POST /api/workers/demographics/refresh`, logged as
+  `sync.workforce_read`, background reads too). A read under 1,000 people or
+  10 % smaller than the last is refused and the stored one serves.
+- **Where people live** (`workforce_place.place`): everything transliterated
+  to Latin and squashed (x/kh → h, q → k, no apostrophes), then a GAZETTEER of
+  Tashkent city's 12 districts and Tashkent region's districts and towns (a
+  stem followed by «tumani / район» first, then the earliest — «Bo'ka tumani,
+  Olmazor mahallasi» is Bo'ka), then the region by its word (a bare region
+  name only among the first three words and never before a street word —
+  «Navoiy ko'chasi» is a street), then any other «X tumani / район» as a
+  district of its own, named by its most common Uzbek spelling across the read
+  (`canon` joins a Russian adjective «Пахтачийский» to «Paxtachi»).
+  `region_name` is the hint where the text says nothing. A text it cannot
+  place is «not stated», never guessed. Districts reach uz_cyrl / ru readers
+  through `convertFromUz` (English keeps the Uzbek spelling — a place, not a
+  person).
+- **The tab**: one status line (today's lists · the read time · a privacy note
+  · the role switch · the admin's refresh); five KPIs (on the lists, women %,
+  average age with median and under-25 share, median tenure with the
+  under-a-year share, the top district); a gender donut and an age × gender
+  pyramid; tenure bands (vertical, horizontal on a phone) and the top 8 places
+  (+ «others», + «not placed»), switchable residence / propiska and district /
+  region; a breakdown table by brigadir / job / cell (women share, average
+  age, under 25, median tenure, under a year, top district), sortable.
+- **Colours**: men `#3b82f6` and women `#ec4899` on every card — categorical
+  palette hues taken out of order on purpose (red/green would read as a
+  traffic light), validated for colour-blind separation on both themes; a
+  single measure (tenure, place) is brand gold, a fold the slate.
+- Not built: history (a snapshot only), an export, career experience.
+
 ## Attendance charts read the ORIGINAL brigadir
 
 `/workers` answers ONE question — *of the people on this brigadir's own list,

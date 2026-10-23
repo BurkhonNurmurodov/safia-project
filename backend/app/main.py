@@ -473,6 +473,10 @@ async def lifespan(app: FastAPI):
     # months at 09:05, catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
     run(register_turnover_jobs)
+    # «Tarkib» on /workers: read Verifix's working people (gender, age,
+    # hiring date, coarse place) every 3 h and after boot (mirrored).
+    from app.services.workforce import register_jobs as register_workforce_jobs
+    run(register_workforce_jobs)
     # «Toifaga muvofiqlik»: read Verifix's three HR journals nightly at 23:55
     # (after the directory), catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.category_sync import register_jobs as register_category_jobs
