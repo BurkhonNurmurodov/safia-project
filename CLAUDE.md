@@ -10249,6 +10249,38 @@ Cloudflare. Four changes, all on the path EVERY page shares:
   in `index.css`, SIL OFL in `OFL.txt`), not Google Fonts: that stylesheet was a
   render-blocking request to two more hosts before the first paint.
 
+**The three slowest pages, 2026-10-24** (the operator named /staff, /leaders
+and /zagruzka; measured on a copy of the 11 Sep production data):
+
+- **/leaders fetches only the days it can show** — `GET /api/leaders?from=`.
+  The register went back to 1 April (~20 MB on production, 6 MB on the
+  September copy) and every visit downloaded, parsed and scored all of it to
+  show one week. The kept build now holds its rows grouped by day
+  (`leader_register.encode_days`, newest first — the rows were already sorted
+  so), so a window is the front of that list and costs nothing to cut; without
+  `from` the answer is byte-identical to before (the exclusion and cutoff admin
+  tabs still ask for everything). `data_min` / `data_max` name the whole
+  register's span. The page asks from `weekStartISO(startDate − (period + 6))` —
+  the Δ chip's previous period and the sparkline's trailing window are the
+  deepest it reads — and the window only WIDENS within a visit; an open start
+  date asks for the whole history. **Anything new on the Monitoring tab that
+  reads further back than that must widen `needFrom` in `Leaders.jsx`.**
+- **The /leaders tab badges ask `?status=admin`** — the bare objection /
+  late-proof lists are every open appeal plus the newest few hundred settled
+  ones with verdicts and notes, downloaded on every visit to count a handful.
+- **/staff asks for the unit's day and the live floor side by side**, and
+  fetches no table until the day is known (`waitDay` in `Staff.jsx`; the Workers
+  tab shows its skeleton meanwhile) — before, `/staff-live/today` waited for
+  `/staff-live/live-from`, and the page fetched the date it showed LAST time
+  first and the real day after it.
+- **/api/heatmap answers are KEPT** (`services/kept_answer.py`, the shift
+  report's rule made reusable): as they stand for 60 s, then served at once for
+  up to 5 min while one fresh build runs behind them, never to a viewer who
+  changed something since (`leader_register.last_write`). /zagruzka and
+  Overview both read it. A change made by a background job (the live day's
+  minute re-copy, a SAP upload) therefore reaches /zagruzka within one refetch,
+  not at once.
+
 ## The app works OFFLINE on what it loaded last (`offlineCache`, `connectivity`)
 
 From **2026-10-16** (the operator: «save caches like Instagram does — it should

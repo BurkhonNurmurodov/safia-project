@@ -2237,9 +2237,14 @@ export default function Leaders() {
   // with you». `status` is the stage AND the outcome, one column, so an open
   // admin-stage row is exactly `admin` — and the count can never disagree with
   // the sub-tab it names, because both read that one field off one payload.
+  // Only the rows the badge counts are asked for (`?status=admin`, 2026-10-24):
+  // the bare list is every open appeal PLUS the newest few hundred settled
+  // ones with their verdicts and notes — hundreds of KB on every visit to
+  // count a handful. The tab itself asks with the page's period, under a key
+  // of its own (AppealQueue), so nothing was shared anyway.
   const { data: dispData } = useQuery({
-    queryKey: ["leader-disputes"],
-    queryFn: () => api.get("/api/leaders/disputes").then((r) => r.data),
+    queryKey: ["leader-disputes", "badge"],
+    queryFn: () => api.get("/api/leaders/disputes", { params: { status: "admin" } }).then((r) => r.data),
     enabled: showDisputesTab,
   });
   const dispTodo = useMemo(
@@ -2247,12 +2252,12 @@ export default function Leaders() {
     [dispData]);
 
   // The late-proof queue, on the same pattern and for the same reason: the tab
-  // badge needs the count before the tab is opened, and LateProofs reads the
-  // SAME query key, so the two share one request. The badge is the «Adminlarda»
+  // badge needs the count before the tab is opened — asked as the admin-stage
+  // rows alone, like the objections above. The badge is the «Adminlarda»
   // half here too — the same rule, in the same words, as the objections above.
   const { data: lpData } = useQuery({
-    queryKey: ["leader-late-proofs"],
-    queryFn: () => api.get("/api/leaders/late-proofs").then((r) => r.data),
+    queryKey: ["leader-late-proofs", "badge"],
+    queryFn: () => api.get("/api/leaders/late-proofs", { params: { status: "admin" } }).then((r) => r.data),
     enabled: showLateProofsTab,
   });
   const lpTodo = useMemo(
@@ -2302,9 +2307,28 @@ export default function Leaders() {
   const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
   const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
+  // Only the rows this page can read are fetched (2026-10-24): the register
+  // goes back to April — ~20 MB the phone downloaded, parsed and scored on
+  // every visit to look at one week. Everything on the page is measured inside
+  // a window that starts at most (period + 6) days before the period: the Δ
+  // chip's previous period (the same length again), the rolling sparkline's
+  // trailing window (up to 6 days earlier, minus one) and the trend's widened
+  // week. That floor, rounded down to its Monday so the ask stays one URL for
+  // a week, is `?from=`; an open start date asks for the whole history. The
+  // window only ever WIDENS in a visit — narrowing the period re-reads nothing.
+  const needFrom = useMemo(() => {
+    if (!startDate) return null;
+    const to = endDate && endDate >= startDate ? endDate : todayISO();
+    const cal = to >= startDate ? spanDays(startDate, to) : 1;
+    return weekStartISO(isoShift(startDate, -(cal + 6)));
+  }, [startDate, endDate]);
+  const [regFrom, setRegFrom] = useState(needFrom);
+  if (needFrom !== regFrom && (needFrom == null || (regFrom != null && needFrom < regFrom))) {
+    setRegFrom(needFrom);
+  }
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["leaders"],
-    queryFn: () => api.get("/api/leaders").then((r) => r.data),
+    queryKey: ["leaders", regFrom],
+    queryFn: () => api.get("/api/leaders", { params: regFrom ? { from: regFrom } : {} }).then((r) => r.data),
   });
   // Rows the backend could not resolve to a unit carry a null shift: they show
   // under «All» and drop out when the Smena filter narrows — visible somewhere,
@@ -2649,13 +2673,15 @@ export default function Leaders() {
   // misses into "not synced yet". Everything past it greys out in the grid and
   // is left off the trend line.
   const dataMax = useMemo(() => {
+    // The server names the whole register's newest day (the rows may be a window).
+    if (data?.data_max) return data.data_max;
     let mx = null;
     for (const r of rows) {
       const d = rowDate(r);
       if (mx == null || d > mx) mx = d;
     }
     return mx;
-  }, [rows]);
+  }, [rows, data]);
   // …and the last day that can be SCORED: no later than `dataMax`, and no later
   // than the last FINISHED shift-day. A day counts from 09:00 the morning after
   // it — when shift 2's night closes — so nobody turns red at 10:00 for a

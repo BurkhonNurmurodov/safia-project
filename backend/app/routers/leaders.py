@@ -407,6 +407,7 @@ def _la_hide(obj):
 @router.get("/leaders")
 def get_leaders(
     request: Request,
+    since: str | None = Query(None, alias="from"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("leaders")),
 ):
@@ -427,7 +428,14 @@ def get_leaders(
 
     **Wire shape.** Every task ships `photos` (a count), never the URL string
     the source row holds — see `_wire_task`. The modal that needs the links
-    fetches them for its ONE report from `/api/leaders/report/{uid}`."""
+    fetches them for its ONE report from `/api/leaders/report/{uid}`.
+
+    **`?from=YYYY-MM-DD`** (2026-10-24) sends only the rows of that day and
+    later — the Monitoring page asks for the weeks its period needs, not the
+    history since April (~20 MB). `data_min` / `data_max` always name the
+    whole register's span. Without it the answer is the whole history, as
+    before (the exclusion and cutoff tabs)."""
+    since = _since(since)
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
     # its data — so a granted supervisor keeps their own view, widened.
@@ -441,7 +449,7 @@ def get_leaders(
     scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
     if not scoped and not _la_hides(payload):
         return _assemble(leader_register.get(db, payload, _build_shared,
-                                             scope=request.scope), payload)
+                                             scope=request.scope), payload, since)
     # A scoped build is KEPT too, one per viewer scope, under the same rules
     # (the 13 Oct «Server was slow» DM: /api/leaders ×10, median 5.8 s — every
     # one a supervisor's or a leader's own build). The key is everything in the
@@ -450,7 +458,9 @@ def get_leaders(
     key = ("scoped", sees_all, _la_hides(payload), *view.values())
     b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key,
                             scope=request.scope)
-    return PartsResponse(b.data)
+    if b.days is None:
+        return PartsResponse(b.data)
+    return PartsResponse((b.head, *b.window(since), b.tail))
 
 
 # ── one build for everybody ──────────────────────────────────────────────────
@@ -504,10 +514,34 @@ def _build_shared(db: Session) -> leader_register.Build:
     leader_load.forget()
     feed = _leaders_feed(db, _ADMIN_BUILD, True)
     rows = feed["data"]
+    days = leader_register.encode_days(rows, _ENC.encode, _row_day)
     return leader_register.Build(
-        data=leader_register.encode_list(rows, _ENC.encode),
+        data=leader_register.list_parts(days),
         roster=feed["roster"], cutoffs=feed["cutoffs"], cut_units=feed["cutUnits"],
-        last_synced=feed["last_synced"], rows=len(rows))
+        last_synced=feed["last_synced"], rows=len(rows),
+        days=days, span=_span(rows))
+
+
+def _row_day(r: dict) -> str:
+    """A register row's day as the "YYYY-MM-DD" the rows are sorted by."""
+    return str(r.get("date") or "")[:10]
+
+
+def _span(rows: list) -> tuple:
+    """(oldest, newest) day of rows sorted newest first — the whole register's
+    span, which a windowed answer (`?from=`) would otherwise hide."""
+    days = [d for d in (_row_day(r) for r in (rows[0], rows[-1])) if d] if rows else []
+    return (min(days), max(days)) if days else (None, None)
+
+
+def _since(value: str | None) -> str | None:
+    """`?from=` read as a day ("YYYY-MM-DD"), else no window at all."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value[:10]).date().isoformat()
+    except ValueError:
+        return None
 
 
 # What a SCOPED build reads off the payload: the scoping passes (`role`,
@@ -524,11 +558,14 @@ def _build_scoped(db: Session, view: dict, sees_all: bool) -> leader_register.Bu
     feed = _leaders_feed(db, view, sees_all)
     if _la_hides(view):
         _la_hide(feed)
-    return leader_register.Build.body(
-        leader_register.encode_dict(feed, _ENC.encode, "data"))
+    rows = feed.get("data") or []
+    feed["data_min"], feed["data_max"] = _span(rows)
+    head, tail = leader_register.encode_dict_around(feed, _ENC.encode, "data")
+    return leader_register.Build.around(
+        head, leader_register.encode_days(rows, _ENC.encode, _row_day), tail)
 
 
-def _assemble(b: leader_register.Build, payload: dict) -> Response:
+def _assemble(b: leader_register.Build, payload: dict, since: str | None = None) -> Response:
     """A kept build with THIS viewer's header — the same keys in the same order
     `_leaders_feed` returns them — and, for anybody but an admin, the roster
     without a cutoff's reason and author, exactly as their own build would
@@ -541,7 +578,8 @@ def _assemble(b: leader_register.Build, payload: dict) -> Response:
             if (p.get("cutoff_reason") is not None or p.get("cutoff_by") is not None)
             else p
             for p in roster]
-    head = json.dumps({"role": role, "last_synced": b.last_synced}, **_JSON)
+    head = json.dumps({"role": role, "last_synced": b.last_synced,
+                       "data_min": b.span[0], "data_max": b.span[1]}, **_JSON)
     tail = json.dumps({
         "roster": roster,
         "cutoffs": b.cutoffs,
@@ -549,7 +587,8 @@ def _assemble(b: leader_register.Build, payload: dict) -> Response:
         "can_request_late": role in ("admin", "supervisor"),
         "can_decide_late": _may_decide(payload),
     }, **_JSON)
-    return PartsResponse((head[:-1].encode("utf-8") + b',"data":', *b.data,
+    rows = b.window(since) if b.days is not None else b.data
+    return PartsResponse((head[:-1].encode("utf-8") + b',"data":', *rows,
                           b"," + tail[1:].encode("utf-8")))
 
 

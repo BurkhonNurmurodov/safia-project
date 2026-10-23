@@ -151,20 +151,90 @@ def encode_dict(obj: dict, encode: Callable[[object], str], big: str) -> list[by
     return out
 
 
+def encode_days(rows: Iterable, encode: Callable[[object], str],
+                date_of: Callable[[object], str]) -> list[tuple[str, bytes]]:
+    """Rows already ordered NEWEST DAY FIRST, encoded and grouped by day:
+    `[(day, b",row,row…"), …]`, every group led by its comma. A request for
+    the days on or after a date is then the front of this list
+    (`list_parts`) — no row is re-encoded, and the whole history is the same
+    bytes `encode_list` gives. One day is one short C join, so a build still
+    hands the GIL over between days."""
+    out: list[tuple[str, bytes]] = []
+    cur = None
+    group: list[bytes] = []
+    for it in rows:
+        d = date_of(it)
+        if group and d != cur:
+            out.append((cur, b"," + b",".join(group)))
+            group = []
+        cur = d
+        group.append(encode(it).encode("utf-8"))
+    if group:
+        out.append((cur, b"," + b",".join(group)))
+    return out
+
+
+def list_parts(days: list[tuple[str, bytes]], since: Optional[str] = None) -> tuple[bytes, ...]:
+    """The JSON list of the `encode_days` groups dated `since` or later (all
+    of them when None), as pieces sent one after another."""
+    sel = days if since is None else [g for g in days if g[0] >= since]
+    if not sel:
+        return (b"[]",)
+    return (b"[" + sel[0][1][1:], *(g[1] for g in sel[1:]), b"]")
+
+
+def encode_dict_around(obj: dict, encode: Callable[[object], str], big: str) -> tuple[bytes, bytes]:
+    """`json.dumps(obj)` cut around its `big` value: `(b'{…,"big":', b',…}')`,
+    the same keys in the same order — the value is put between them."""
+    head = ["{"]
+    tail: list[str] = []
+    seen = False
+    for i, (k, v) in enumerate(obj.items()):
+        key = encode(k if isinstance(k, str) else str(k))
+        sep = "," if i else ""
+        if k == big:
+            head.append(f"{sep}{key}:")
+            seen = True
+        else:
+            (tail if seen else head).append(f"{sep}{key}:{encode(v)}")
+    tail.append("}")
+    return "".join(head).encode("utf-8"), "".join(tail).encode("utf-8")
+
+
 class Build:
     """One finished build: the encoded rows plus the small per-viewer parts.
     A SCOPED build keeps its whole answer, already encoded, in `data` and
     nothing else (`body()`). `data` is a tuple of byte PIECES (`encode_list`),
-    sent one after another and never joined."""
+    sent one after another and never joined.
+
+    `days` (2026-10-24) is the same rows grouped by day (`encode_days`), so a
+    request may ask for the days from a date on (`/api/leaders?from=`) — the
+    Monitoring page's period needs a few weeks, not the history since April.
+    A scoped build keeps the answer's `head` and `tail` around them."""
     __slots__ = ("fp", "started", "done_at", "data", "nbytes", "roster", "cutoffs",
-                 "cut_units", "last_synced", "rows")
+                 "cut_units", "last_synced", "rows", "days", "head", "tail", "span")
 
     @classmethod
     def body(cls, data: Iterable[bytes]) -> "Build":
         return cls(data=data, roster=[], cutoffs={}, cut_units={}, last_synced=None, rows=0)
 
+    @classmethod
+    def around(cls, head: bytes, days: list[tuple[str, bytes]], tail: bytes) -> "Build":
+        """A scoped answer whose rows can be cut by day: `head` + rows + `tail`."""
+        b = cls(data=(head, *list_parts(days), tail), roster=[], cutoffs={}, cut_units={},
+                last_synced=None, rows=0)
+        b.days, b.head, b.tail = days, head, tail
+        return b
+
+    def window(self, since: Optional[str]) -> tuple[bytes, ...]:
+        """The rows dated `since` or later as list pieces (all for None)."""
+        if self.days is None:
+            raise ValueError("this build was not kept by day")
+        return list_parts(self.days, since)
+
     def __init__(self, *, data: Iterable[bytes], roster: list, cutoffs: dict,
-                 cut_units: dict, last_synced, rows: int):
+                 cut_units: dict, last_synced, rows: int,
+                 days: Optional[list] = None, span: tuple = (None, None)):
         self.fp: tuple = ()
         self.started: float = 0.0
         self.done_at: float = 0.0
@@ -175,6 +245,9 @@ class Build:
         self.cut_units = cut_units
         self.last_synced = last_synced
         self.rows = rows
+        self.days = days
+        self.head = self.tail = None
+        self.span = span
 
 
 class _Flight:

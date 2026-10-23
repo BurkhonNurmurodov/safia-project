@@ -12,15 +12,20 @@ from app.routers.brigadirs import aggregate_units, build_metrics_list
 from app.services import action_log
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.grid_export import build_grid_workbook, validate as validate_grid
-from app.services.shared_build import SharedBuild
+from app.services.kept_answer import KeptAnswers
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api", tags=["heatmap"])
 
 # Viewers asking for the same scope and period at once share one build
-# (`services/shared_build` — never a stale one). The answer is the same for
+# (`services/shared_build`, inside KeptAnswers). The answer is the same for
 # every viewer of one scope: `scoped` already carries the viewer's lock.
-_SHARED = SharedBuild()
+# An answer is KEPT (2026-10-24, «Zagruzka feels slow»): served as it
+# stands for a minute, then served at once for up to five while one fresh build
+# runs behind it — never to a viewer who changed something since it was built
+# (services/kept_answer.py, the shift report's rule). The figures are the
+# engine's; only how often the whole загрузка is recomputed changes.
+_KEPT = KeptAnswers("heatmap", ttl=60, stale=300)
 
 
 def scope_key(scoped) -> Optional[tuple]:
@@ -55,9 +60,8 @@ def get_heatmap(
 
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
     key = (scope_key(scoped), date_from, date_to, shift, include_pending, units)
-    return _SHARED.run(key, lambda: _heatmap(db, date_from, date_to, shift, scoped,
-                                             include_pending, units),
-                       before_wait=db.rollback)
+    return _KEPT.get(db, payload, key, lambda s: _heatmap(s, date_from, date_to, shift, scoped,
+                                                          include_pending, units))
 
 
 def _heatmap(db: Session, date_from: date, date_to: date, shift: Optional[int], scoped,

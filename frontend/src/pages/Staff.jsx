@@ -906,7 +906,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
     }
   }
 
-  if ((!selectedDate || !managerId) && !(S.live && managerId && (dayPending || dayError))) {
+  if ((!selectedDate || !managerId) && !(managerId && (dayPending || (S.live && dayError)))) {
     return (
       <div className="flex items-center justify-center py-16 text-sm" style={{ color: "var(--text-4)" }}>
         {pickSupervisor ? t("staff.selectSupDateToView") : t("staff.selectDateToView")}
@@ -4934,7 +4934,7 @@ export default function Staff() {
   // From which shift-day the live source answers, and the plant's date —
   // asked once; until it answers (or if it fails) the page is the file page it
   // always was.
-  const { data: liveFloor } = useQuery({
+  const { data: liveFloor, isError: liveFloorErr } = useQuery({
     queryKey: ["staff-live-from"],
     queryFn: () => api.get("/api/staff-live/live-from").then(r => r.data),
     // Short: a page loaded while a deploy swaps the backend copies may get the
@@ -4950,10 +4950,14 @@ export default function Staff() {
   // page has NO day, so nothing that depends on one is asked; it is asked
   // again when the next shift-day opens (`next_in_s`), not polled.
   const liveForce = !!liveFrom && !!liveFloor?.today && liveFloor.today >= liveFrom;
+  // Asked AT ONCE, beside the floor above, not after it (2026-10-24): it reads
+  // no Verifix data and answers for any unit, so waiting for the floor first
+  // only put one more network round trip in a row before the day's table.
+  // Whether its answer is USED still waits on the floor (`liveUI` below).
   const { data: liveToday, error: todayError, refetch: refetchToday } = useQuery({
     queryKey: TODAY_STAFF_API.qk("staff-today", supervisorManagerIdEarly),
     queryFn: () => api.get(`${TODAY_STAFF_API.base}/today`, { params: { manager_id: supervisorManagerIdEarly } }).then(r => r.data),
-    enabled: liveForce && !!supervisorManagerIdEarly,
+    enabled: !!supervisorManagerIdEarly,
     staleTime: 60_000,
     retry: 1,
     refetchInterval: (q) => {
@@ -4965,12 +4969,22 @@ export default function Staff() {
   // The live day control (‹ day › up to the unit's own today, opening on it),
   // once the unit's today is a live day.
   const liveUI = !!liveFrom && !!todayIso && todayIso >= liveFrom;
-  const selectedDate = liveUI && autoDay ? (todayIso || "") : storedDate;
+  // No day at all until the page knows which one it opens on — the floor
+  // (which source), and on «today» the unit's own shift-day. Before, the page
+  // fetched the date it showed LAST time meanwhile and then fetched again for
+  // the real one: a wasted read, of a stored live day or a Verifix one.
+  const floorKnown = liveFloor !== undefined || liveFloorErr;
+  const waitDay = !floorKnown
+    || (liveForce && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError);
+  const selectedDate = waitDay ? "" : liveUI && autoDay ? (todayIso || "") : storedDate;
   useEffect(() => {
     if (liveUI && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todayIso, autoDay, liveUI]);
-  const dayPending = liveForce && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError;
+  // Waiting for the day to be named — the floor, or the unit's today — reads
+  // as loading on the Workers tab, never as «pick a date».
+  const dayPending = !!supervisorManagerIdEarly
+    && (!floorKnown || (liveForce && autoDay && !todayIso && !todayError));
   const dayError = liveForce && autoDay && !todayIso && todayError
     ? (todayError?.response?.data?.detail || todayError?.message || "error") : null;
   // THE data source of the day on screen: a day from `liveFrom` on is read
