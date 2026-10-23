@@ -2431,8 +2431,13 @@ def migrate_factories() -> None:
             return
 
         # Attach every supervisor that has never been assigned. Runs once in
-        # practice; on later boots the UPDATE matches nothing.
-        db.execute(text("UPDATE managers SET factory_id = :fid WHERE factory_id IS NULL"),
+        # practice; on later boots the UPDATE matches nothing. A row another
+        # transaction holds is SKIPPED, never waited for (2026-10-23): a boot
+        # waiting on the serving worker's row lock is a deploy that never gets
+        # ready — it is attached on a later boot.
+        db.execute(text("UPDATE managers SET factory_id = :fid WHERE id IN ("
+                        "SELECT id FROM managers WHERE factory_id IS NULL "
+                        "FOR UPDATE SKIP LOCKED)"),
                    {"fid": first_id})
         db.commit()
 
@@ -8692,7 +8697,7 @@ def add_leader_auto_checks() -> None:
         # EXCLUSIVE lock, so a single long-running reader can block it — and a
         # block that ends in an exception is indistinguishable from a broken
         # statement unless it is isolated like this.
-        "SET lock_timeout = '15s'",
+        "SET LOCAL lock_timeout = '15s'",
         "ALTER TABLE leader_task_defs ADD COLUMN IF NOT EXISTS auto_check VARCHAR(24)",
     ])
     _run_ddl(["""

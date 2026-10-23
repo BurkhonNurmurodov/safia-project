@@ -13049,7 +13049,12 @@ gone with it, in Telegram, the browser and the Android app alike.
   exactly that to `pp_line_daily`'s unique key on every boot until this day
   (an ACCESS EXCLUSIVE lock on the «Zagruzka fayli» table, then a rebuild
   inside it), and the guard's first deploy named it; it now rebuilds the key
-  only when its columns are wrong.
+  only when its columns are wrong. The same goes for a boot step's DML: one
+  that touches rows the serving worker may hold takes `FOR UPDATE SKIP
+  LOCKED` (`migrate_factories`' attach-the-unassigned UPDATE did not, and its
+  row wait failed the second deploy). When a step gives up, its error names
+  the statement and every session in a transaction older than 4 s
+  (`boot_ddl.holders`) — the deploy log's journal tail shows who held it.
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports

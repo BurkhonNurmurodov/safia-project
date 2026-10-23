@@ -48,6 +48,7 @@ TRIES = 6
 
 _state = threading.local()
 _installed = False
+_engine = None
 # Across the whole boot, for the «ready» line: statements not sent because
 # their target was already in place, DDL that ran under the timeout, and lock
 # timeouts met.
@@ -323,14 +324,16 @@ def _on_error(exception_context):
     code = getattr(orig, "pgcode", None)
     if code in _BUSY_CODES:
         _state.busy = (getattr(_state, "busy", 0) or 0) + 1
+        _state.busy_stmt = _norm(str(getattr(exception_context, "statement", "") or ""))[:140]
         _count("busy")
 
 
 def install(engine) -> None:
     """Hook the engine once (Postgres only)."""
-    global _installed
+    global _installed, _engine
     if _installed or engine.dialect.name != "postgresql":
         return
+    _engine = engine
     from sqlalchemy import event
     event.listen(engine, "before_cursor_execute", _before, retval=True)
     event.listen(engine, "after_cursor_execute", _after)
@@ -355,6 +358,34 @@ def _disarm() -> int:
         _state.restore = None
     _put_back()
     return getattr(_state, "busy", 0) or 0
+
+
+def holders() -> list[str]:
+    """Who could be holding the lock: every other session of this database in
+    a transaction older than the lock wait, oldest first — what it is doing
+    now and the last thing it ran. One line each, for the journal."""
+    if _engine is None:
+        return []
+    try:
+        raw = _engine.raw_connection()
+        try:
+            cur = raw.cursor()
+            cur.execute(
+                "SELECT pid, coalesce(application_name, ''), state, "
+                "extract(epoch FROM now() - xact_start)::int, "
+                "coalesce(wait_event_type || ':' || wait_event, ''), "
+                "left(regexp_replace(coalesce(query, ''), '\\s+', ' ', 'g'), 140) "
+                "FROM pg_stat_activity WHERE datname = current_database() "
+                "AND pid <> pg_backend_pid() AND xact_start < now() - interval '4 seconds' "
+                "ORDER BY xact_start LIMIT 8")
+            rows = cur.fetchall()
+            raw.rollback()
+        finally:
+            raw.close()
+    except Exception as exc:  # noqa: BLE001 — a report, never a reason to fail
+        return [f"(could not read pg_stat_activity: {exc})"]
+    return [f"pid {r[0]} {r[2]} {r[3]} s in transaction {r[4]} {r[1]} · {r[5]}".strip()
+            for r in rows] or ["(no other transaction older than 4 s)"]
 
 
 class Busy(RuntimeError):
@@ -383,11 +414,18 @@ def guarded(fn: Callable, args: tuple, kwargs: dict, name: str, retry: bool):
             if err is not None:
                 raise err
             return result
+        stmt = getattr(_state, "busy_stmt", "")
         if attempt < tries:
             wait = min(2 * attempt, 6)
-            print(f"[startup] {name}: a table was busy (lock wait > {LOCK_TIMEOUT}), "
-                  f"try {attempt}/{tries} — again in {wait} s", flush=True)
+            print(f"[startup] {name}: a table was busy (lock wait > {LOCK_TIMEOUT}) on "
+                  f"«{stmt}», try {attempt}/{tries} — again in {wait} s", flush=True)
+            if attempt == 1:
+                for line in holders():
+                    print(f"[startup]   holder: {line}", flush=True)
             time.sleep(wait)
             continue
-        raise Busy(f"{name}: its tables stayed busy (lock wait > {LOCK_TIMEOUT}) "
-                   f"on {tries} tries — the serving worker keeps running") from err
+        who = holders()
+        for line in who:
+            print(f"[startup]   holder: {line}", flush=True)
+        raise Busy(f"{name}: its tables stayed busy on {tries} tries — «{stmt}» — "
+                   f"the serving worker keeps running. Holders: " + " | ".join(who)) from err
