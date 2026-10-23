@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Trophy, Gauge, Zap, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
   ListOrdered, TrendingUp, ArrowUp, ArrowDown, Minus, Info, ChevronDown,
-  Download, Layers, CircleCheck, TriangleAlert, CalendarX2,
+  Download, Layers, CircleCheck, TriangleAlert, CalendarX2, Target,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
@@ -33,7 +33,7 @@ import {
 } from "../utils/leaderBoard";
 
 /* ══════════════════════════════════════════════════════════════════════
- * Leaderboard — brigadir ranking across the five platform statistics.
+ * Leaderboard — brigadir ranking across the platform's statistics.
  *
  * Read top to bottom it answers four questions, in order: who leads (the
  * podium), is the team OK (the KPI strip), where does everybody stand (the
@@ -46,21 +46,28 @@ import {
  * holds the rule): one WEEK, MONTH or YEAR (the operator: no date-to-date
  * range) and the periods of the same grain before it. Every figure is one
  * another page already prints — Samaradorlik is /zagruzka's «Samaradorlik»
- * heatmap (it replaced Zagruzka, the operator's call), Davomat is /workers'
+ * heatmap (it replaced Zagruzka, the operator's call), Plan bajarish is the
+ * «Reja bajarilishi» heatmap beside it (added the same day — the operator:
+ * «why no plan fulfillment as I said»), Davomat is /workers'
  * attendance rate, Xavotir the share of the period's /concerns resolved, and
  * «Lider nazorati» is the /leaders brigadir ranking's «Reyting», scored HERE
  * from the checklist pool with the very functions that board uses
  * (utils/leaderBoard.js). Kaizen is not measured yet: its column says so and
- * its weight is shared out over the other four (the operator, same day).
+ * its weight is shared out over the other five (the operator, same day).
  * ════════════════════════════════════════════════════════════════════ */
 
-/* ── categories (the five ranked statistics) ─────────────────────────── */
+/* ── categories (the ranked statistics) ──────────────────────────────── */
+/* The live weights add up to 1, so each is its share of the score as it is:
+ * plan fulfilment took 22% when it joined (2026-10-23) and the four before it
+ * kept their proportions (35 · 18 · 18 · 29 → 28 · 14 · 14 · 22). Kaizen's own
+ * weight is set aside until it is measured. `tiny` = the podium's short label. */
 const CATS = [
-  { key: "eff", icon: Zap,            weight: 0.30 },
-  { key: "naz", icon: ClipboardCheck, weight: 0.15 },
-  { key: "kai", icon: Lightbulb,      weight: 0.15, live: false },
-  { key: "xav", icon: ShieldCheck,    weight: 0.15 },
-  { key: "kir", icon: UserCheck,      weight: 0.25 },
+  { key: "eff",  icon: Zap,            weight: 0.28, tiny: true },
+  { key: "plan", icon: Target,         weight: 0.22, tiny: true },
+  { key: "naz",  icon: ClipboardCheck, weight: 0.14 },
+  { key: "kai",  icon: Lightbulb,      weight: 0.15, live: false },
+  { key: "xav",  icon: ShieldCheck,    weight: 0.14 },
+  { key: "kir",  icon: UserCheck,      weight: 0.22 },
 ];
 const LIVE = CATS.filter((c) => c.live !== false);
 const LIVE_W = LIVE.reduce((a, c) => a + c.weight, 0);
@@ -68,12 +75,12 @@ const LIVE_W = LIVE.reduce((a, c) => a + c.weight, 0);
 const shareOf = (c) => (c.live === false ? 0 : c.weight / LIVE_W);
 
 /* Category identity hues — one per statistic in the shared generic-first
- * order (red, green, blue, yellow, orange), darker in the light theme for
+ * order (red, green, blue, yellow, orange, purple), darker in the light theme for
  * contrast. Identity only: they tint the icon chip and the header dot, never
  * a value — a value is always traffic-light. */
 const CAT_HUES = {
-  dark:  { eff: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316" },
-  light: { eff: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c" },
+  dark:  { eff: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316", plan: "#a855f7" },
+  light: { eff: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c", plan: "#9333ea" },
 };
 
 /* Traffic-light status bands (fill + higher-contrast ink per theme). */
@@ -145,7 +152,7 @@ function checklistByPeriod(pay) {
   });
 }
 
-/* The whole board out of one payload: every unit's five figures per period,
+/* The whole board out of one payload: every unit's figures per period,
  * the composite per period, and the places — dense 1..n among the units that
  * HAVE a score in that period (a unit with nothing in the picked period is
  * not on the board; in an older one it is simply absent from that week). */
@@ -158,6 +165,7 @@ function buildBoard(pay) {
     const f = pay.figures?.[String(u.id)] || {};
     const series = {
       eff: P.map((_, i) => f.eff?.v?.[i] ?? null),
+      plan: P.map((_, i) => f.plan?.v?.[i] ?? null),
       naz: P.map((_, i) => naz[i].get(String(u.id)) ?? null),
       kai: P.map(() => null),
       xav: P.map((_, i) => f.xav?.v?.[i] ?? null),
@@ -170,7 +178,7 @@ function buildBoard(pay) {
       profileKey: u.profile_key, photoVer: u.photo_ver,
       s: at(L), comp: hist[L], hist, sparks: series,
       xav: f.xav ? { n: f.xav.n?.[L] ?? 0, done: f.xav.done?.[L] ?? 0, up: f.xav.up?.[L] ?? 0 } : null,
-      days: { eff: f.eff?.days?.[L] ?? 0, kir: f.att?.days?.[L] ?? 0 },
+      days: { eff: f.eff?.days?.[L] ?? 0, plan: f.plan?.days?.[L] ?? 0, kir: f.att?.days?.[L] ?? 0 },
     };
   });
   const rankHist = new Map(all.map((s) => [s.id, P.map(() => null)]));
@@ -322,7 +330,8 @@ function FloatTip({ tip }) {
  * photo medallion under a top spotlight — the big rank number over a dark
  * score flag on the left, the engraved cup top-right, and a frosted-glass
  * foot (progressive backdrop blur) the render's legs melt into, carrying the
- * name band and the five ranked statistics.
+ * name band and the measured statistics (a card has room for five
+ * columns, so a statistic not measured yet — Kaizen — is left off it).
  *
  * A card is its own surface, so its palette is fixed in both themes (like the
  * chart identity colours): three stops of the medal metal, the dark ink
@@ -433,8 +442,8 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
           {s.shift && <span className="rounded tabular-nums flex-shrink-0" style={{ fontSize: first ? 9.5 : 9, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>}
         </span>
         <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.6)}, transparent)` }} />
-        <span className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", paddingTop: 6 }}>
-          {CATS.map((c, i) => (
+        <span className="grid" style={{ gridTemplateColumns: `repeat(${LIVE.length}, minmax(0, 1fr))`, paddingTop: 6 }}>
+          {LIVE.map((c, i) => (
             <span key={c.key} title={`${catMeta[c.key].name}: ${c.live === false ? t("leaderboard.notYet") : s.s[c.key] == null ? t("leaderboard.noData") : `${fmt(s.s[c.key])}%`}`} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined, opacity: c.live === false ? 0.55 : 1 }}>
               <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
               <span className="truncate max-w-full" style={{ fontSize: first ? 9 : 8.5, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase", opacity: 0.88, marginTop: 3 }}>{catMeta[c.key].tiny}</span>
@@ -489,7 +498,7 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st, t, nm }) {
 }
 
 /* ═══════════════════════ breakdown (an opened row) ═══════════════════
- * The five statistics against the TEAM, drawn as a spider chart: the
+ * The statistics against the TEAM, drawn as a spider chart: the
  * brigadir's own shape in brand gold (gold means the selected brigadir on
  * this page, and an opened row is always the selected one), the team average
  * as a dashed outline under it, every vertex dot in its value's traffic-light
@@ -911,7 +920,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
 }
 
 /* Phone: the same row as a stacked card — place, who, the overall score — and
- * the breakdown opens INSIDE the card, so the five statistics the narrow
+ * the breakdown opens INSIDE the card, so the statistics the narrow
  * table has no room for are one tap away from the name. */
 function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, nm, showShift, vsLabel }) {
   return (
@@ -1045,7 +1054,7 @@ export default function Leaderboard() {
   const catMeta = useMemo(() => Object.fromEntries(CATS.map((c) => [c.key, {
     hue: hues[c.key], name: t(`leaderboard.cat.${c.key}`), short: t(`leaderboard.cat.${c.key}Short`),
     // The podium's five-column stat grid has room for ~8 capitals a column.
-    tiny: c.key === "eff" ? t("leaderboard.cat.effTiny") : t(`leaderboard.cat.${c.key}Short`),
+    tiny: t(`leaderboard.cat.${c.key}${c.tiny ? "Tiny" : "Short"}`),
     icon: c.icon, weight: c.weight, live: c.live !== false,
   }])), [hues, t]);
 

@@ -3360,6 +3360,14 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
     keep them in step), over `build_metrics_list`'s closed unit-days; the
     period figure is that heatmap's AVG (each day rounded first, then the
     mean). It can pass 100%; it enters the score capped at 100.
+  - **Plan bajarish** (added the same day — the operator: «why no plan
+    fulfillment as I said») = /zagruzka's «Reja bajarilishi» heatmap:
+    `fulfil_util`, the Python twin of `fulfilUtil` (prod_actual ÷ prod_plan),
+    over the same closed unit-days, blank without a ФАКТ, a plan or a typed
+    headcount (that heatmap's 👥 day); the period figure is its AVG, the same
+    `_heatmap_avg` as Samaradorlik (days rounded half UP, `Math.round`'s rule).
+    It can pass 100%; it enters the score capped at 100. It is a column, a
+    sort segment, a radar spoke, a podium figure and an Excel column.
   - **Lider nazorati** = the /leaders brigadir ranking's «Reyting», scored in
     the BROWSER from the standing pool (`routers/leaderboard.checklist_pool`:
     windowed, cut to the board's units, every leader an opaque code, a unit
@@ -3374,8 +3382,13 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
   - **Davomat** = /workers' `att_rate` ((came + on leave) ÷ list, summed per
     period), its own `get_headcount` called; the live «so far» day is left out.
   - **Kaizen** is not measured (Notion names Notion people, not profiles): the
-    column and the radar spoke say «hali hisoblanmaydi», its 15% is shared
-    over the other four (35 · 18 · 18 · 29).
+    column and the radar spoke say «hali hisoblanmaydi» (the podium leaves it
+    off), and its weight is set aside until it is measured.
+- **The weights** (`CATS` in Leaderboard.jsx, the live ones adding up to 1):
+  Samaradorlik 28 · Plan bajarish 22 · Lider nazorati 14 · Xavotirlar 14 ·
+  Davomat 22. Plan took 22% when it joined and the four before it kept their
+  proportions (they were 35 · 18 · 18 · 29). Not the operator's ruling — a
+  starting point, one line to change.
 - **The score**: Σ min(figure, 100) × weight over the figures the period HAS,
   ÷ their weights — a figure with no data drops out (the page's stated rule).
   Ranked: non-archived units with `zagruzka_on`, in the viewer's scope (plant

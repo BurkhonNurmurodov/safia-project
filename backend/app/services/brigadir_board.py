@@ -14,6 +14,13 @@ read through that page's own code:
   reads — and a period's figure is that heatmap's AVG column: each day rounded
   to a whole percent first, then the mean, rounded (`HeatmapChart.rowStat`).
   `eff_util` below is the Python twin of `effUtil`; keep the two in step.
+* **Plan bajarish** (from 2026-10-23, the operator: «why no plan fulfillment
+  as I said») — the «Reja bajarilishi» heatmap on /zagruzka: per closed
+  unit-day `fulfilUtil` (TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI, i.e.
+  prod_actual ÷ prod_plan) off the same metrics, blank without a ФАКТ, a plan
+  or a typed headcount (that heatmap marks such a day 👥 and prints nothing),
+  and a period's figure is its AVG column, exactly as Samaradorlik's.
+  `fulfil_util` below is the Python twin of `fulfilUtil`; keep them in step.
 * **Davomat** — /workers' attendance rate: (came + on leave) ÷ on the list,
   summed over the period's days first (`att_rate` of `/api/workers/headcount`,
   whose own function is called). Closed days only: the live day /workers shows
@@ -40,6 +47,7 @@ reaching before the first closed day the platform holds.
 """
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 from typing import Iterable, Optional
 
@@ -165,9 +173,29 @@ def _bucket(pers: list[dict], day: date) -> Optional[int]:
     return None
 
 
-def efficiency(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
-    """unit → {"v": [period figure | None], "days": [days counted]} — the
-    heatmap's AVG over each period's closed days."""
+def fulfil_util(m) -> Optional[float]:
+    """THE Python twin of `fulfilUtil` (utils/formulas.js), as the «Reja
+    bajarilishi» heatmap prints it: None without a ФАКТ or a plan, and None
+    on a day with no typed headcount — /api/heatmap swaps such a day for its
+    👥 marker, so the heatmap shows (and averages) nothing there."""
+    a = float(m.prod_actual or 0)
+    p = float(m.prod_plan or 0)
+    if not a > 0 or not p > 0 or not float(m.official_hc or 0) > 0:
+        return None
+    return a / p
+
+
+def _round(x: float) -> int:
+    """`Math.round` — half UP, as the heatmap rounds (Python's `round` sends
+    a half to the even neighbour: 97.5 → 98 but 96.5 → 96)."""
+    return math.floor(x + 0.5)
+
+
+def _heatmap_avg(metrics: Iterable, unit_ids: set[int], pers: list[dict], read) -> dict[int, dict]:
+    """unit → {"v": [period figure | None], "days": [days counted]} — a
+    /zagruzka heatmap's AVG column over each period's closed days: each day
+    rounded to a whole percent first, then the mean, rounded
+    (`HeatmapChart.rowStat`). `read` is the heatmap's own cell reader."""
     acc: dict[int, list[list[int]]] = {}
     for m in metrics:
         if m.manager_id not in unit_ids:
@@ -176,17 +204,27 @@ def efficiency(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[
         i = _bucket(pers, d) if d else None
         if i is None:
             continue
-        v = eff_util(m)
+        v = read(m)
         if v is None:
             continue
-        acc.setdefault(m.manager_id, [[] for _ in pers])[i].append(round(v * 100))
+        acc.setdefault(m.manager_id, [[] for _ in pers])[i].append(_round(v * 100))
     out = {}
     for mid, per in acc.items():
         out[mid] = {
-            "v": [round(sum(x) / len(x)) if x else None for x in per],
+            "v": [_round(sum(x) / len(x)) if x else None for x in per],
             "days": [len(x) for x in per],
         }
     return out
+
+
+def efficiency(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
+    """Samaradorlik per period — the «Samaradorlik» heatmap's AVG."""
+    return _heatmap_avg(metrics, unit_ids, pers, eff_util)
+
+
+def fulfillment(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
+    """Plan bajarish per period — the «Reja bajarilishi» heatmap's AVG."""
+    return _heatmap_avg(metrics, unit_ids, pers, fulfil_util)
 
 
 # ── Davomat ─────────────────────────────────────────────────────────────────
