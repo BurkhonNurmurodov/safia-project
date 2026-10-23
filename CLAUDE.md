@@ -3342,6 +3342,18 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
 - The podium shows the brigadir's profile photo as a medallion sized off the
   card's measured width, below the rank column (the mock's cut-out renders
   are gone).
+- **Month and year never loaded on the first build (v4.318.0 → 4.320.8)**: the
+  Davomat half calls `get_headcount` over the whole history, and /workers
+  filtered its rows by the confirmed (brigadir, day) pairs as a literal
+  `tuple_(…).in_(list(pairs))` — planned as one OR per pair and tested on
+  every row. 8 weeks ≈ 1,200 pairs answered in seconds; 8 months ≈ 4,500
+  pairs ran ~50 minutes on production (the builds the 23 Oct stall queued
+  behind). The gate is `day_state.pairs_in` now (two arrays, unnested — one
+  hash semi-join) and the exchanged-name cut `day_state.names_not_in`:
+  benchmarked 2,263 pairs 102 s → 0.11 s, two years / 13,766 pairs 0.6 s,
+  /workers' headcount and trend answer byte for byte as before. **Never
+  filter by a big pair or name list with a literal `IN` again** — use those
+  two.
 
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 

@@ -6,12 +6,12 @@ from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, and_, case, tuple_
+from sqlalchemy import func, or_, and_, case
 
 from app.database import get_db
 from app.permissions import require_page
 from app.models import Attendance, HeadcountData, HrDocument, LiveDocument, Manager
-from app.services.day_state import confirmed_pairs
+from app.services.day_state import confirmed_pairs, names_not_in, pairs_in
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.live_day import LIVE_FROM
 from app.services.exchange_rewind import original_rows
@@ -271,7 +271,7 @@ def get_headcount(
     # itself still shows where each worker actually spent the day.
     ex_names, ex_rows, meta = _original_scoped(
         db, date_from, date_to, shift, scoped, confirmed)
-    ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
+    ex_only = [c for c in (names_not_in(Attendance.worker_name, ex_names),) if c is not None]
 
     # The live day's people are on the same original-brigadir basis already
     # (`live_staff.unit_people` applies no exchange), and on (unit, day) pairs
@@ -290,7 +290,7 @@ def get_headcount(
             .filter(Attendance.date >= date_from, Attendance.date <= date_to)
             .filter(Attendance.manager_id.in_(list(live_mids)))
             .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-            .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+            .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
             .filter(*ex_only)
             .group_by(Attendance.manager_id, Attendance.worker_name, Attendance.job_title)
             .all()
@@ -355,7 +355,7 @@ def get_headcount(
         # Present workers of ANY job title — the extra (non-zagruzka) titles feed
         # the "all roles" view; `total` below stays the zagruzka-counted subset.
         .filter(Attendance.hours_worked > 0)
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     if shift:
@@ -413,7 +413,7 @@ def get_headcount(
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     all_q = all_q.filter(*ex_only)
@@ -439,7 +439,7 @@ def get_headcount(
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
         .filter(CALC_ROWS_FILTER)
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     daily_q = daily_q.filter(*ex_only)
@@ -493,7 +493,7 @@ def get_headcount(
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     roster_q = roster_q.filter(*ex_only)
@@ -542,7 +542,7 @@ def get_headcount(
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     role_q = role_q.filter(*ex_only)
@@ -713,7 +713,7 @@ def get_role_trend(
     # a unit the current filters exclude.
     ex_names, ex_rows, _ = _original_scoped(
         db, date_from, date_to, shift, scoped, confirmed)
-    ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
+    ex_only = [c for c in (names_not_in(Attendance.worker_name, ex_names),) if c is not None]
 
     q = (
         db.query(
@@ -731,7 +731,7 @@ def get_role_trend(
         # filter here on purpose: the «Ro'yxatda» bands are exactly the people
         # who did not come, so presence is counted with a CASE instead and both
         # series come out of one pass.
-        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(pairs_in(Attendance.manager_id, Attendance.date, confirmed))
         .filter(Manager.archived.is_(False))
     )
     if shift:

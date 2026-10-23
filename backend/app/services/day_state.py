@@ -13,6 +13,8 @@ Day-close state for a (manager, date) pair.
 from datetime import date as date_t
 from typing import Iterable, Optional, Set, Tuple
 
+from sqlalchemy import Date, Integer, String, false, func, literal, select, tuple_
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
 from app.models import DayApproval, EditRequest, HrDocument, LiveDeletion, LiveDocument
@@ -27,6 +29,40 @@ from app.services.live_day import LIVE_FROM
 # taking a live (manager, date) pair out of every number on the platform.
 # Add a new attendance-touching type to this tuple by hand.
 _REAL_DOC_TYPES = ("people_exchange", "role_change")
+
+
+def pairs_in(manager_col, date_col, pairs):
+    """`(manager_col, date_col) IN pairs` — the gate clause every reader of
+    `confirmed_pairs` filters by — in a form Postgres answers with ONE hash
+    semi-join: the pairs travel as two arrays and are unnested in a subquery.
+
+    Never `tuple_(…).in_(list(pairs))`. A literal list of row constructors is
+    planned as one OR per pair and tested against every row, rows × pairs
+    comparisons: 2,263 pairs over 370k attendance rows took 102 s for ONE
+    query (0.11 s this way), and /workers' headcount runs six such queries —
+    which is how «Brigadirlar reytingi» over a month or a year ran for
+    ~50 minutes on production (2026-10-23) while eight weeks still answered.
+    The same rows either way."""
+    pairs = list(pairs)
+    if not pairs:
+        return false()
+    mids = [int(m) for m, _d in pairs]
+    days = [d for _m, d in pairs]
+    u = func.unnest(literal(mids, ARRAY(Integer)), literal(days, ARRAY(Date))) \
+        .table_valued("m", "d", name="gate_pairs").render_derived()
+    return tuple_(manager_col, date_col).in_(select(u.c.m, u.c.d))
+
+
+def names_not_in(name_col, names):
+    """`name_col NOT IN names` as a hashed subplan over an unnested array —
+    a literal list is compared one name at a time on every row, which over a
+    long period's exchanged names costs as much as the query itself. Same
+    rows: a NULL name is excluded either way."""
+    names = [n for n in names if n is not None]
+    if not names:
+        return None
+    u = func.unnest(literal(names, ARRAY(String))).table_valued("n", name="gate_names").render_derived()
+    return name_col.notin_(select(u.c.n))
 
 
 def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
