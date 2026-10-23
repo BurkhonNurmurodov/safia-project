@@ -13182,15 +13182,21 @@ What was fixed, and the rule each one now is:
   scripts once answered; the Tarkib probe runs on «Run workflow» only
   (`if: github.event_name == 'workflow_dispatch'`). **A new deploy-log report
   goes behind that same `if`** unless it is cheap (the two session snapshots
-  and the orphan cleanup, <1 s, stay until the deploy.sh gap below is closed).
+  and the orphan cleanup, <1 s, stay until deploys have run clean for a while).
 
-Known and left (each is a follow-up of its own): deploy.sh's 180 s readiness
-wait against the supervisor's 600 s (a later deploy's HUP is dropped while an
-abandoned boot finishes — a patch and a test rig were drafted in the 23 Oct
-audit, not shipped); `sync_leader_ai_dates` walks the whole verdict corpus on
-every boot; every backend deploy empties every in-process cache, so the first
-viewer of each heavy page after a deploy pays a full build — fewer deploys
-during the working day is the cheapest fix of all.
+**Fixed 2026-10-24**: deploy.sh's 180 s readiness wait against the
+supervisor's 600 s. A boot that outlived the deploy's wait was left running
+across the rollback, the next deploy's HUP was dropped (`swap_busy`), and that
+deploy reported success while serving the abandoned worker — built from two
+commits' files. deploy.sh now waits for a boot in flight before the checkout
+moves, follows only the gen its own HUP spawned, and kills an unfinished boot
+before rolling back (the rules: «A deploy is `kill -HUP`» under «Zero-downtime
+on ONE port»).
+
+Known and left (each is a follow-up of its own): `sync_leader_ai_dates` walks
+the whole verdict corpus on every boot; every backend deploy empties every
+in-process cache, so the first viewer of each heavy page after a deploy pays a
+full build — fewer deploys during the working day is the cheapest fix of all.
 
 ## Zero-downtime on ONE port — the supervisor (`app/supervisor.py`, 2026-10-18)
 
@@ -13227,8 +13233,35 @@ gone with it, in Telegram, the browser and the Android app alike.
   is NO gap: measured on the cloud stack, 55 of 55 health checks answered 200
   across a swap. A new worker that exits before it is ready is DROPPED and
   the old one keeps serving; deploy.sh reads
-  `backend/data/supervisor/status.json` (`state`, `worker.gen`, `last_swap`)
-  to know, rolls the checkout back and fails the job. Only a change to
+  `backend/data/supervisor/status.json` to know, rolls the checkout back and
+  fails the job. **It counts only ITS OWN worker** (from 2026-10-24):
+  - **Before the checkout moves it waits** (≤ `HEALTH_TIMEOUT`, 180 s) for a
+    boot already in flight — a crash respawn, or a worker an earlier deploy
+    gave up on. The supervisor drops a HUP while a worker boots
+    (`swap_busy`), and a boot reads its files from the checkout. Still
+    booting → the deploy fails with nothing changed. A full restart skips it.
+  - **After `kill -HUP` it waits up to 15 s** for `last_swap.requested_at` to
+    move and takes `WANT_GEN = last_swap.gen`. A HUP not taken while a crash
+    respawn is booting (or already serving) on the NEW commit adopts that
+    worker; any other boot is a failure.
+  - **Success** = `state == ready`, `worker.gen == WANT_GEN` and
+    `worker.commit == NEW[:12]`. **Failure** = neither `booting.gen` nor
+    `worker.gen` is `WANT_GEN`, the unit down, or the timeout.
+  - **On any failure it SIGKILLs whatever is BOOTING before `git reset --hard
+    PREV`** — never the serving worker: both pids are re-read, and the pid's
+    `/proc/PID/cmdline` must say `app.supervisor --worker`. Then it gets a
+    worker onto PREV (one HUP when none serves on it; a boot started before
+    the reset is ended too) and prints «back on PREV» only when the serving
+    worker's commit IS PREV — else it names what is serving.
+  - deploy.sh has no tests. A change to it is proved first on a local rig: the
+    real `supervisor.py` around a stub app whose boot length and a
+    late-imported module come from the commit, so a worker built from two
+    commits shows itself. Scenarios: an abandoned slow boot then a second
+    deploy (also with the OLD script abandoning it), and the serving worker
+    crashing right at the checkout. All three ended serving the deploy's own
+    commit on 2026-10-24; the unpatched script reproduced the bug.
+
+  Only a change to
   `app/supervisor.py` itself still takes the old `systemctl restart` (a running
   supervisor cannot swap itself), and so did the first deploy, whose main
   process was still plain uvicorn. deploy.sh prefers blue-green if its
@@ -13369,9 +13402,11 @@ gone with it, in Telegram, the browser and the Android app alike.
   `deploy/end_orphan_boot_sessions.py` (ends a session waiting on a lock for
   more than 2 minutes while running DDL or the boot's `managers` attach —
   serving workers never run DDL). Remove both with their steps once deploys
-  run clean. Known and left: `deploy.sh` waits 180 s for readiness while the
-  supervisor waits 600 s, so a SIGHUP sent during a slow swap is ignored and
-  that deploy «never gets ready» without booting at all.
+  run clean. **Fixed 2026-10-24**: `deploy.sh` waited 180 s for readiness
+  while the supervisor waits 600 s, so a SIGHUP sent during a slow swap was
+  ignored and that deploy «never got ready» without booting at all. It now
+  waits for a boot in flight before the checkout moves and kills its own
+  unfinished boot before rolling back (see «A deploy is `kill -HUP`» above).
 - **Why.** 27 backend deploys between 10 and 17 October, each a Cloudflare 502
   for the length of a boot — and a 502 at 13:31 on 14 October with no deploy
   near it: the process dying on its own, on a shared box the stall reports

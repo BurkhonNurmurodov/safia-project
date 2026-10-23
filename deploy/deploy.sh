@@ -167,6 +167,118 @@ fi
 # the SPA directory once, at startup, so an absent dist means a frontend-less app.
 [ -d "$APP_DIR/frontend/dist/assets" ] || { NEED_BUILD=1; NEED_RESTART=1; }
 
+# ------------------------------------------------------------- supervisor
+# The in-process supervisor (see the header): is the unit's main process it,
+# and what does its status file say? Same user as the service, so /proc and
+# the status file are readable and SIGHUP needs no sudo.
+SUP_STATUS="$APP_DIR/backend/data/supervisor/status.json"
+NEW12=${NEW:0:12}    # the supervisor records a worker's commit as 12 characters
+PREV12=${PREV:0:12}
+sup_pid() { systemctl show -p MainPID --value "$SVC" 2>/dev/null || true; }
+sup_live() {  # 0 when the unit's main process is the supervisor
+  local pid; pid=$(sup_pid)
+  [ -n "$pid" ] && [ "$pid" != "0" ] && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'app\.supervisor'
+}
+sup_field() {  # a dotted field of status.json, printed as JSON ("ready", 7, null)
+  "$APP_DIR/backend/.venv/bin/python" - "$SUP_STATUS" "$1" <<'PYEOF' 2>/dev/null || echo null
+import json, sys
+try:
+    cur = json.load(open(sys.argv[1]))
+    for part in sys.argv[2].split("."):
+        cur = cur.get(part) if isinstance(cur, dict) else None
+    print(json.dumps(cur))
+except Exception:
+    print("null")
+PYEOF
+}
+sup_text() {  # a dotted field as plain text, for a message
+  local v; v=$(sup_field "$1"); v=${v#\"}; v=${v%\"}; printf '%s' "$v"
+}
+# ONE read of the status file into S_* (raw values, "null" for none), so the
+# fields compared together come from the same moment.
+sup_snap() {
+  local v
+  v=$("$APP_DIR/backend/.venv/bin/python" - "$SUP_STATUS" <<'PYEOF' 2>/dev/null || true
+import json, sys
+FIELDS = ("state", "worker.gen", "worker.commit", "worker.pid", "booting.gen",
+          "booting.commit", "booting.pid", "booting.reason", "last_swap.requested_at",
+          "last_swap.gen", "last_swap.ok")
+try:
+    doc = json.load(open(sys.argv[1]))
+except Exception:
+    doc = None
+out = []
+for path in FIELDS:
+    cur = doc
+    for part in path.split("."):
+        cur = cur.get(part) if isinstance(cur, dict) else None
+    if cur is None or cur == "":
+        out.append("null")
+    else:
+        out.append((cur if isinstance(cur, str) else json.dumps(cur)).replace(" ", "_"))
+print(" ".join(out))
+PYEOF
+)
+  read -r S_STATE S_WGEN S_WCOMMIT S_WPID S_BGEN S_BCOMMIT S_BPID S_BREASON \
+          S_SWAP_AT S_SWAP_GEN S_SWAP_OK <<<"$v" || true
+  : "${S_STATE:=null}" "${S_WGEN:=null}" "${S_WCOMMIT:=null}" "${S_WPID:=null}" \
+    "${S_BGEN:=null}" "${S_BCOMMIT:=null}" "${S_BPID:=null}" "${S_BREASON:=null}" \
+    "${S_SWAP_AT:=null}" "${S_SWAP_GEN:=null}" "${S_SWAP_OK:=null}"
+}
+is_worker_proc() {  # 0 when PID is a live supervisor WORKER (never the supervisor)
+  [ -n "$1" ] && [ "$1" != "null" ] && tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | grep -q 'app\.supervisor --worker'
+}
+# SIGKILL the worker that is BOOTING — never the one serving. Both pids are
+# re-read right before the kill (a boot that turned ready meanwhile is the
+# serving worker now), and the pid must be a supervisor worker by its
+# cmdline. Waits up to 15 s for the supervisor to reap it. 0 when nothing of
+# that boot is left.
+kill_booting() {  # why
+  local pid i
+  sup_snap
+  [ "$S_BPID" = "null" ] && return 0
+  pid=$S_BPID
+  sup_snap
+  if [ "$S_BPID" != "$pid" ]; then return 0; fi
+  if [ "$S_WPID" = "$pid" ]; then
+    info "WARNING: pid $pid is listed as serving AND booting — left alone"; return 1
+  fi
+  if ! is_worker_proc "$pid"; then
+    info "WARNING: booting pid $pid is not a supervisor worker — left alone"; return 1
+  fi
+  info "ending the unfinished worker gen $S_BGEN (pid $pid, commit ${S_BCOMMIT:0:8}) — $1"
+  kill -KILL "$pid" 2>/dev/null || true
+  for i in $(seq 1 15); do
+    sleep 1
+    sup_snap
+    if [ "$S_BPID" != "$pid" ]; then return 0; fi
+  done
+  info "WARNING: the supervisor still lists pid $pid as booting after 15s"
+  return 1
+}
+
+# A boot already in flight — a crash respawn, or a worker an earlier deploy
+# gave up on — reads its files from the checkout: moving the checkout under it
+# makes a worker built from two commits, and the supervisor drops a HUP while
+# a worker boots (swap_busy), so this deploy's swap would never happen. Let it
+# finish first. A full restart replaces every worker anyway and does not wait.
+if [ "$BG" != "1" ] && [ "$NEED_FULL_RESTART" != "1" ] \
+   && { [ "$NEED_RESTART" = "1" ] || [ "$NEED_PIP" = "1" ]; } && sup_live; then
+  sup_snap
+  if [ "$S_BGEN" != "null" ]; then
+    log "Worker gen $S_BGEN ($S_BREASON, commit ${S_BCOMMIT:0:8}) is still booting — waiting for it before the checkout moves"
+    for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+      sleep 1
+      sup_snap
+      if [ "$S_BGEN" = "null" ]; then
+        info "it settled after ${i}s — state $S_STATE, serving gen $S_WGEN (commit ${S_WCOMMIT:0:8})"
+        break
+      fi
+    done
+    [ "$S_BGEN" = "null" ] || die "worker gen $S_BGEN is still booting after ${HEALTH_TIMEOUT}s — nothing was changed; run the deploy again once it settles"
+  fi
+fi
+
 # -------------------------------------------------------------- apply code
 log "Checking out ${NEW:0:8}"
 git reset --hard --quiet "$NEW"
@@ -199,26 +311,70 @@ else
 fi
 
 # ---------------------------------------------------------------- restart
-# The in-process supervisor (see the header): is the unit's main process it,
-# and what does its status file say? Same user as the service, so /proc and
-# the status file are readable and SIGHUP needs no sudo.
-SUP_STATUS="$APP_DIR/backend/data/supervisor/status.json"
-sup_pid() { systemctl show -p MainPID --value "$SVC" 2>/dev/null || true; }
-sup_live() {  # 0 when the unit's main process is the supervisor
-  local pid; pid=$(sup_pid)
-  [ -n "$pid" ] && [ "$pid" != "0" ] && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'app\.supervisor'
+# (The supervisor's helpers — sup_snap, kill_booting — are defined above the
+# checkout, which waits on them.)
+
+# Is the swap THIS deploy asked for done? Sets SWAP_VERDICT to ok, failed
+# (with swap_error) or wait, from the S_* snapshot. Success is the worker of
+# THAT gen serving, alone, on THIS commit — a gen alone could be a worker that
+# started before the checkout moved.
+swap_verdict() {
+  SWAP_VERDICT=wait
+  if [ "$S_STATE" = "ready" ] && [ "$S_WGEN" = "$WANT_GEN" ]; then
+    if [ "$S_WCOMMIT" = "$NEW12" ]; then
+      SWAP_VERDICT=ok
+    elif [ "$S_WCOMMIT" = "null" ]; then
+      info "WARNING: the supervisor could not read worker gen $WANT_GEN's commit — accepted on its gen"
+      SWAP_VERDICT=ok
+    else
+      SWAP_VERDICT=failed
+      swap_error="worker gen $WANT_GEN reports commit ${S_WCOMMIT:0:8}, not ${NEW:0:8}"
+    fi
+  elif [ "$S_BGEN" != "$WANT_GEN" ] && [ "$S_WGEN" != "$WANT_GEN" ]; then
+    SWAP_VERDICT=failed
+    if [ "$S_SWAP_GEN" = "$WANT_GEN" ] && [ "$S_SWAP_OK" = "false" ]; then
+      swap_error=$(sup_text last_swap.error)
+    else
+      swap_error="worker gen $WANT_GEN is gone"
+    fi
+  elif ! systemctl is-active --quiet "$SVC"; then
+    SWAP_VERDICT=failed
+    swap_error="the unit is not active"
+  fi
 }
-sup_field() {  # a dotted field of status.json, printed as JSON ("ready", 7, null)
-  "$APP_DIR/backend/.venv/bin/python" - "$SUP_STATUS" "$1" <<'PYEOF' 2>/dev/null || echo null
-import json, sys
-try:
-    cur = json.load(open(sys.argv[1]))
-    for part in sys.argv[2].split("."):
-        cur = cur.get(part) if isinstance(cur, dict) else None
-    print(json.dumps(cur))
-except Exception:
-    print("null")
-PYEOF
+
+# After a rollback: get the worker serving onto PREV. A boot started before
+# the checkout moved back is ended (a mix of both commits); with nothing on
+# PREV serving and nothing booting, ONE HUP asks for a worker on PREV.
+# Returns 0 once the worker serving, alone, is on PREV; SETTLE_HOW says how.
+settle_on_prev() {
+  local i asked=0 kills=0
+  SETTLE_HOW=""
+  for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+    sup_snap
+    if [ "$S_STATE" = "ready" ] && [ "$S_WCOMMIT" = "$PREV12" ]; then
+      if [ "$asked" = "0" ] && [ "$i" = "1" ]; then SETTLE_HOW=stayed; else SETTLE_HOW="after ${i}s"; fi
+      return 0
+    fi
+    if [ "$S_BGEN" != "null" ] && [ "$S_BCOMMIT" != "null" ] && [ "$S_BCOMMIT" != "$PREV12" ]; then
+      kills=$((kills + 1))
+      [ "$kills" -le 2 ] || return 1
+      kill_booting "it started before the checkout moved back to ${PREV:0:8}" || return 1
+      continue
+    fi
+    if [ "$S_BGEN" = "null" ] && [ "$asked" = "0" ] \
+       && { [ "$S_WGEN" = "null" ] || { [ "$S_WCOMMIT" != "null" ] && [ "$S_WCOMMIT" != "$PREV12" ]; }; }; then
+      if [ "$S_WGEN" = "null" ]; then
+        info "no worker is serving — asking the supervisor for one on ${PREV:0:8}"
+      else
+        info "worker gen $S_WGEN serving is on ${S_WCOMMIT:0:8}, not ${PREV:0:8} — asking the supervisor for a worker on ${PREV:0:8}"
+      fi
+      kill -HUP "$SUP_PID" 2>/dev/null || true
+      asked=1
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 wait_healthy() {  # url, unit — 0 when /health answers, 1 on timeout or a dead unit
@@ -266,45 +422,96 @@ if [ "$NEED_RESTART" = "1" ] && [ "$BG" = "1" ]; then
   die "deploy of ${NEW:0:8} failed; production is still on ${PREV:0:8}"
 elif [ "$NEED_RESTART" = "1" ] && [ "$NEED_FULL_RESTART" != "1" ] && sup_live; then
   SUP_PID=$(sup_pid)
-  GEN_BEFORE=$(sup_field worker.gen)
-  SWAP_BEFORE=$(sup_field last_swap.requested_at)
-  log "Supervisor (pid $SUP_PID) holds port 8030 — swapping in a worker on ${NEW:0:8}; worker gen $GEN_BEFORE keeps serving meanwhile"
+  sup_snap
+  GEN_BEFORE=$S_WGEN
+  SWAP_BEFORE=$S_SWAP_AT
+  if [ "$GEN_BEFORE" = "null" ]; then
+    log "Supervisor (pid $SUP_PID) holds port 8030 — asking for a worker on ${NEW:0:8}; no worker is serving right now (the supervisor answers meanwhile)"
+  else
+    log "Supervisor (pid $SUP_PID) holds port 8030 — swapping in a worker on ${NEW:0:8}; worker gen $GEN_BEFORE keeps serving meanwhile"
+  fi
   kill -HUP "$SUP_PID"
-  swapped=0
+  # The swap THIS deploy asked for: the supervisor writes a new last_swap,
+  # with the gen it spawns, the moment it takes the HUP. It DROPS the HUP while
+  # a worker boots (swap_busy) — and then the one boot worth waiting for is one
+  # already on this commit: a crash respawn after the checkout moved.
+  WANT_GEN=null
+  ADOPTED=0
   swap_error=""
-  for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+  for i in $(seq 1 15); do
     sleep 1
-    state=$(sup_field state)
-    gen=$(sup_field worker.gen)
-    if [ "$state" = '"ready"' ] && [ "$gen" != "null" ] && [ "$gen" != "$GEN_BEFORE" ]; then
-      swapped=1; info "new worker (gen $gen) ready after ${i}s — the old one is retiring"; break
+    sup_snap
+    if [ "$S_SWAP_AT" != "$SWAP_BEFORE" ] && [ "$S_SWAP_GEN" != "null" ]; then
+      WANT_GEN=$S_SWAP_GEN
+      break
     fi
-    if [ "$(sup_field last_swap.ok)" = "false" ] && [ "$(sup_field last_swap.requested_at)" != "$SWAP_BEFORE" ]; then
-      swap_error=$(sup_field last_swap.error); break
-    fi
-    if ! systemctl is-active --quiet "$SVC"; then swap_error="the unit is not active"; break; fi
   done
+  if [ "$WANT_GEN" = "null" ]; then
+    if [ "$S_BGEN" != "null" ] && [ "$S_BCOMMIT" = "$NEW12" ]; then
+      WANT_GEN=$S_BGEN
+      ADOPTED=1
+      info "the supervisor did not take the HUP — it is already booting worker gen $S_BGEN ($S_BREASON) on ${NEW:0:8}; waiting for that one"
+    elif [ "$S_BGEN" = "null" ] && [ "$S_WGEN" != "null" ] && [ "$S_WGEN" != "$GEN_BEFORE" ] \
+         && [ "$S_WCOMMIT" = "$NEW12" ]; then
+      WANT_GEN=$S_WGEN
+      ADOPTED=1
+      info "the supervisor did not take the HUP — worker gen $S_WGEN on ${NEW:0:8} took over meanwhile (a crash respawn)"
+    elif [ "$S_BGEN" != "null" ]; then
+      swap_error="the supervisor did not take the HUP: worker gen $S_BGEN ($S_BREASON, commit ${S_BCOMMIT:0:8}) is booting, not one on ${NEW:0:8}"
+    else
+      swap_error="the supervisor did not take the HUP"
+    fi
+  fi
+  swapped=0
+  if [ -z "$swap_error" ]; then
+    SWAP_VERDICT=wait
+    for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+      swap_verdict
+      [ "$SWAP_VERDICT" = "wait" ] || break
+      sleep 1
+      sup_snap
+    done
+    # One last look: it may have turned ready in the very last second.
+    if [ "$SWAP_VERDICT" = "wait" ]; then
+      swap_verdict
+      if [ "$SWAP_VERDICT" = "wait" ]; then swap_error="not ready after ${HEALTH_TIMEOUT}s"; fi
+    fi
+    if [ "$SWAP_VERDICT" = "ok" ]; then
+      swapped=1
+      if [ "$ADOPTED" = "1" ]; then
+        info "worker gen $WANT_GEN on ${NEW:0:8} is serving after ${i}s"
+      else
+        info "worker gen $WANT_GEN on ${NEW:0:8} is serving after ${i}s — the old one is retiring"
+      fi
+    fi
+  fi
   if [ "$swapped" != "1" ]; then
     printf '\n\033[1;31m✗ the new worker never got ready%s — rolling the checkout back to %s\033[0m\n' \
            "${swap_error:+ ($swap_error)}" "${PREV:0:8}" >&2
     journalctl -u "$SVC" -n 40 --no-pager 2>/dev/null || true
+    # End whatever is still booting BEFORE the checkout moves back under it.
+    # Left running, it finishes on files from both commits, is swapped in with
+    # nobody watching, and makes the supervisor drop the next deploy's HUP.
+    kill_booting "this deploy gave up on it" || true
     git reset --hard --quiet "$PREV"
     if [ "$NEED_BUILD" = "1" ]; then
       ( cd "$APP_DIR/frontend" && npm run build --silent ) || true
     fi
-    if [ "$(sup_field worker)" = "null" ]; then
-      # Nothing is serving (a stop-then-start swap for want of memory, or the
-      # old worker died meanwhile): ask for a worker on the previous commit.
-      info "no worker is serving — asking the supervisor for one on ${PREV:0:8}"
-      kill -HUP "$SUP_PID" 2>/dev/null || true
-      for i in $(seq 1 "$HEALTH_TIMEOUT"); do
-        [ "$(sup_field state)" = '"ready"' ] && { info "back on ${PREV:0:8} after ${i}s"; break; }
-        sleep 1
-      done
-    else
-      info "the previous worker never stopped serving — production is still on ${PREV:0:8}"
+    if settle_on_prev; then
+      if [ "$SETTLE_HOW" = "stayed" ]; then
+        info "the previous worker never stopped serving — production is still on ${PREV:0:8}"
+      else
+        info "back on ${PREV:0:8} $SETTLE_HOW (worker gen $S_WGEN)"
+      fi
+      die "deploy of ${NEW:0:8} failed; production is on ${PREV:0:8}"
     fi
-    die "deploy of ${NEW:0:8} failed; production is on ${PREV:0:8}"
+    if [ "$S_WGEN" = "null" ]; then
+      ON="no worker yet — the supervisor answers «Server yangilanmoqda»"
+    else
+      ON="worker gen $S_WGEN on ${S_WCOMMIT:0:8}"
+    fi
+    [ "$S_BGEN" = "null" ] || ON="$ON; worker gen $S_BGEN ($S_BREASON) on ${S_BCOMMIT:0:8} is booting"
+    die "deploy of ${NEW:0:8} failed and production is NOT back on ${PREV:0:8}: $ON — check journalctl -u $SVC"
   fi
 elif [ "$NEED_RESTART" = "1" ]; then
   [ "$SUDO_OK" = "1" ] || die "$SUDO_HINT"
