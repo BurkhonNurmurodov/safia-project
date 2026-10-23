@@ -2676,6 +2676,38 @@ tasks 40/41 name it.
   (minus `cells`), `options`. The board's `state` is the calendar month's
   (before · future · open · ended); the turnover half keeps its own
   (past · open · closing · closed · saved).
+- **The board is KEPT between requests** (2026-10-24, after the 23 Oct «too
+  slow» report). One build is every KPI of the month — the plan half alone is
+  `plan_fulfillment.build` over every unit for every day so far (~0.75 s
+  locally, 2–3 s on production) — and the page used to ask for it every 4 s
+  for as long as a Verifix read ran: minutes, 15+ full rebuilds a minute, on
+  the one worker. Now:
+  - **The router keeps the answer** (`routers/leaders_kpi._KEPT`, a
+    `services/kept_answer.KeptAnswers`, the /api/heatmap keep): served as
+    built for 60 s, then up to 5 min while one new build runs behind it.
+    `_board_key` is everything the answer depends on: the month, the plant's
+    date, plant · shift · brigadirs, the viewer's lock (`worker_concerns
+    ._viewer_lock` + `scoped_manager_ids` — the concerns half is counted
+    inside it, nothing else reads the viewer) and the two Verifix reads'
+    STATE (`_read_stamp`: the last `turnover_reads` / `category_reads` row,
+    finished or not, still running or not). So a read that starts or finishes
+    is a new key and is never answered from before it.
+  - **`writer_waits=True`**: a viewer who changed anything since the kept
+    answer was built never gets it, however young (`leader_register
+    .last_write`) — a month closed, a read started or a Quality refresh from
+    this page's own buttons shows at once. Others may read an answer up to
+    5 min old.
+  - **The plan half is kept 3 min per (month, days, units)**
+    (`leaders_kpi._plan_by_cell`, `_PLAN_TTL_S`), never for a viewer who wrote
+    since — a read finishing or another viewer's lock does not recompute it.
+  - **While a read runs the page polls only its STATE**:
+    `GET /api/category-compliance/read` every 4 s (`read` = the journals,
+    `directory` = the turnover read — one request for both), and asks for the
+    board ONCE, the moment neither runs (`LeadersKpi.jsx`, `readsQ`; only an
+    answer newer than the board's counts, and never over a board request
+    already in flight). The read's result is on screen within ~4 s of its end
+    plus one build.
+  - The Excel export builds its own board (uncached), as before.
 - **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
   category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file),
@@ -13155,8 +13187,7 @@ What was fixed, and the rule each one now is:
 Known and left (each is a follow-up of its own): deploy.sh's 180 s readiness
 wait against the supervisor's 600 s (a later deploy's HUP is dropped while an
 abandoned boot finishes — a patch and a test rig were drafted in the 23 Oct
-audit, not shipped); /leaders-kpi rebuilds its whole board every 4 s while a
-Verifix read runs; `sync_leader_ai_dates` walks the whole verdict corpus on
+audit, not shipped); `sync_leader_ai_dates` walks the whole verdict corpus on
 every boot; every backend deploy empties every in-process cache, so the first
 viewer of each heavy page after a deploy pays a full build — fewer deploys
 during the working day is the cheapest fix of all.

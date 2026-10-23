@@ -15,6 +15,11 @@ depends on — an answer is:
 - older than that (or absent), built in the request, sharing one build with
   whoever asks the same at the same time (`shared_build`).
 
+`writer_waits=True` (the «Liderlar KPI» board, 2026-10-24) holds that last
+rule inside `ttl` too: a viewer who changed something after the kept answer
+was built never gets it, however young — a page whose own buttons (close a
+month, start a read) refetch right after must show what they did.
+
 The FIGURES are the build's, untouched; nothing is stored outside this
 process, and a restart starts empty. Bounded by `max_keys`.
 """
@@ -34,11 +39,13 @@ log = logging.getLogger(__name__)
 
 
 class KeptAnswers:
-    def __init__(self, name: str, *, ttl: float = 60, stale: float = 300, max_keys: int = 64):
+    def __init__(self, name: str, *, ttl: float = 60, stale: float = 300, max_keys: int = 64,
+                 writer_waits: bool = False):
         self.name = name
         self.ttl = ttl
         self.stale = stale
         self.max_keys = max_keys
+        self.writer_waits = writer_waits
         self._kept: dict = {}            # key → (monotonic() the build STARTED, answer)
         self._lock = threading.Lock()
         self._flight = shared_build.SharedBuild()
@@ -66,9 +73,10 @@ class KeptAnswers:
         if hit is not None:
             started, value = hit
             age = time.monotonic() - started
-            if age < self.ttl:
+            fresh = started > leader_register.last_write(payload)
+            if age < self.ttl and (fresh or not self.writer_waits):
                 return value
-            if age < self.stale and started > leader_register.last_write(payload):
+            if age < self.stale and fresh:
                 self._refresh_later(key, build)
                 return value
 

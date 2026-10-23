@@ -7,7 +7,17 @@ each KPI's own month payload, the rules); the register of concerns is paged
 from `/api/worker-concerns/list`, the turnover month's actions stay on
 `/api/turnover/*` and the Quality refresh on `/api/foreign-objects/refresh` —
 all three re-gated on this page key. `services/leaders_kpi.py` is THE rule;
-this module only parses, scopes and delivers.
+this module only parses, scopes, keeps and delivers.
+
+The board is KEPT between requests (2026-10-24, `services/kept_answer.py`, the
+/api/heatmap keep): one build is every KPI of the month — the plan half alone
+is `plan_fulfillment.build` over every unit for every day so far — and the
+page used to ask for it every 4 s for as long as a Verifix read ran. Keyed by
+everything the answer depends on: the month, the plant's date, the scope
+(plant · shift · brigadirs), the viewer's lock (the concerns half is counted
+inside it) and the state of the two Verifix reads, so a read that starts or
+finishes is a new key and is never answered from before it. A viewer who
+changed something since the kept answer was built always gets a new one.
 """
 from __future__ import annotations
 
@@ -19,7 +29,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.services import action_log, leaders_kpi, turnover
+from app.services import action_log, category_compliance as cc, leaders_kpi, turnover
+from app.services.factory_scope import scoped_manager_ids
+from app.services.kept_answer import KeptAnswers
 from app.services.leaders_kpi_export import build_leaders_kpi_workbook
 from app.xlsx_delivery import deliver_file
 
@@ -52,6 +64,43 @@ def _scope(factory: Optional[int], shift: Optional[int], managers) -> dict:
     return {"factory": factory, "shift": shift if shift in (1, 2) else None, "managers": ids}
 
 
+# Served as built for 60 s, then up to 5 min while one new build runs behind
+# it; a viewer who wrote since never gets an older answer (`writer_waits`).
+_KEPT = KeptAnswers("leaders-kpi", ttl=60, stale=300, max_keys=32, writer_waits=True)
+
+
+def _ids_key(ids) -> Optional[tuple]:
+    """None (not narrowed) stays None; a list — an EMPTY one is a real
+    answer — becomes a sorted tuple."""
+    return None if ids is None else tuple(sorted(ids))
+
+
+def _read_stamp(row, stale_after, now) -> Optional[tuple]:
+    """The last Verifix read, as the board's `read` half sees it: which read,
+    whether it finished, whether it still counts as running."""
+    if row is None:
+        return None
+    running = bool(row.finished_at is None and row.started_at is not None
+                   and now - row.started_at < stale_after)
+    return (row.id, row.finished_at.isoformat() if row.finished_at else None, running)
+
+
+def _board_key(db: Session, payload: dict, m, scope: dict) -> tuple:
+    # The concerns half applies the viewer lock and the plant lock
+    # (`leaders_kpi._concerns_by_cell`); every other half is the scope alone.
+    from app.routers import worker_concerns as wc
+
+    lock_units, lock_leaders = wc._viewer_lock(db, payload)
+    managers = sorted(scope.get("managers") or [])
+    units = scoped_manager_ids(db, payload, scope.get("factory"), managers)
+    now = turnover.now_aware()
+    return (turnover.ym(m), turnover.local(now).date().isoformat(),
+            scope.get("factory"), scope.get("shift"), tuple(managers),
+            _ids_key(lock_units), _ids_key(lock_leaders), _ids_key(units),
+            _read_stamp(turnover.last_read(db), turnover.READ_STALE, now),
+            _read_stamp(cc.last_read(db), cc.READ_STALE, now))
+
+
 @router.get("")
 def month(
     month: Optional[str] = Query(None),
@@ -62,7 +111,10 @@ def month(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """The leaderboard and every tab's month, within the scope — one request."""
-    return leaders_kpi.board(db, payload, _month(month), _scope(factory, shift, managers))
+    m = _month(month)
+    scope = _scope(factory, shift, managers)
+    key = _board_key(db, payload, m, scope)
+    return _KEPT.get(db, payload, key, lambda s: leaders_kpi.board(s, payload, m, scope))
 
 
 class ExportIn(BaseModel):

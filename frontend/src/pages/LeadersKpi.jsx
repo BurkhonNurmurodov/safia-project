@@ -117,15 +117,30 @@ export default function LeadersKpi() {
     queryKey: ["leaders-kpi", params],
     queryFn: () => api.get("/api/leaders-kpi", { params }).then((r) => r.data),
     placeholderData: keepPreviousData,
-    // A Verifix read the turnover or the compliance tab started finishes in
-    // the background — ask again until it has.
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      return d?.turnover?.read?.running || d?.compliance?.read?.running ? 4000 : false;
-    },
   });
   const data = dataQ.data;
   const refetch = () => dataQ.refetch();
+
+  // A Verifix read the turnover or the compliance tab started runs for
+  // minutes in the background. While it does, only its STATE is asked —
+  // `/api/category-compliance/read` names both reads (`read` = the journals,
+  // `directory` = the turnover read) — and the board is asked again ONCE, the
+  // moment neither runs. Polling the board itself rebuilt every KPI of the
+  // month 15 times a minute. Only an answer newer than the board's counts, so
+  // a state left over from an earlier read never fires the refetch.
+  const reading = !!(data?.turnover?.read?.running || data?.compliance?.read?.running);
+  const readsQ = useQuery({
+    queryKey: ["leaders-kpi-reads"],
+    queryFn: () => api.get("/api/category-compliance/read").then((r) => r.data),
+    enabled: reading,
+    refetchInterval: 4000,
+    staleTime: 0,
+  });
+  useEffect(() => {
+    const r = readsQ.data;
+    if (!reading || !r || dataQ.isFetching || readsQ.dataUpdatedAt <= dataQ.dataUpdatedAt) return;
+    if (!r.read?.running && !r.directory?.running) dataQ.refetch();
+  }, [readsQ.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The board compares with the month before only from the month after the
   // platform began computing every month (START_MONTH): earlier months are not

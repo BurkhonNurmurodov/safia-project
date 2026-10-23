@@ -64,6 +64,8 @@ concerns KPI and ranks. The board is derived per request; nothing is stored.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -180,12 +182,26 @@ def _pct_half_up(part: float, whole: float) -> Optional[int]:
     return int((200 * part + whole) // (2 * whole)) if whole > 0 else None
 
 
-def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today: date) -> dict:
+# The plan half is the heaviest part of a board build (every unit, every day of
+# the month so far), and it reads none of what a board key changes on — a
+# Verifix read finishing, another viewer's lock. So it is kept a few minutes
+# per (month, days, units), never for a viewer who wrote since it was built.
+# Read-only once kept: the board hands its day strips on unchanged.
+_PLAN_TTL_S = 180
+_PLAN_MAX = 32
+_plan_kept: dict = {}            # (m, lo, hi, units) → (monotonic() the build STARTED, answer)
+_plan_lock = threading.Lock()
+
+
+def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today: date,
+                  fresh_after: float = 0.0) -> dict:
     """cell id → the month's plan and fact minutes, through the /plan page's
     own computation (`plan_fulfillment.build` — `pp_calc.line_minutes` line by
     line, a cell's part by `wc_group.share`, a unit-day counted only once both
     halves are in). Read over the units the board's in-scope owned cells stand
-    in; nothing before `zagruzka_source.ZAGRUZKA_FROM` (the data starts there)."""
+    in; nothing before `zagruzka_source.ZAGRUZKA_FROM` (the data starts there).
+    `fresh_after` — `monotonic()` of the viewer's last write; a kept answer
+    built before it is not served."""
     from app.services import plan_fulfillment as pf
 
     lo, hi = max(m, pf.FLOOR), min(d, today)
@@ -195,10 +211,26 @@ def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today:
                    if c.get("manager_id") and owned(c) and _scope_ok(c, scope)})
     if not mids:
         return {}
+    key = (m, lo, hi, tuple(mids))
+    with _plan_lock:
+        hit = _plan_kept.get(key)
+    if hit is not None and time.monotonic() - hit[0] < _PLAN_TTL_S and hit[0] > fresh_after:
+        return hit[1]
+    t0 = time.monotonic()
     managers = db.query(Manager).filter(Manager.id.in_(mids)).all()
     cells, names = pf.registry(db, mids, since=lo, until=hi)
     out = pf.build(db, managers, lo, hi, cells=cells, leader_names=names, compare=False)
-    return {r["cell_id"]: r for r in out.get("cell_rows") or [] if r.get("cell_id") is not None}
+    res = {r["cell_id"]: r for r in out.get("cell_rows") or [] if r.get("cell_id") is not None}
+    with _plan_lock:
+        old = _plan_kept.get(key)
+        if old is None or old[0] < t0:
+            now = time.monotonic()
+            for k in [k for k, (t, _v) in list(_plan_kept.items()) if now - t > _PLAN_TTL_S]:
+                _plan_kept.pop(k, None)
+            while len(_plan_kept) >= _PLAN_MAX:
+                _plan_kept.pop(next(iter(_plan_kept)), None)
+            _plan_kept[key] = (t0, res)
+    return res
 
 
 def _plan_row(cr: Optional[dict], rule: dict) -> dict:
@@ -330,7 +362,9 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
 
     cmap = cell_map(db, d)
     per_cell = _concerns_by_cell(db, payload, m, d, scope)
-    plan_cells = _plan_by_cell(db, m, d, cmap, scope, now.date())
+    from app.services import leader_register
+    plan_cells = _plan_by_cell(db, m, d, cmap, scope, now.date(),
+                               fresh_after=leader_register.last_write(payload))
     trank = {x["key"]: x for x in tv.get("ranking") or []}
     frank = {x["key"]: x for x in fo.get("ranking") or []}
     crank = {x["key"]: x for x in cp.get("ranking") or []}

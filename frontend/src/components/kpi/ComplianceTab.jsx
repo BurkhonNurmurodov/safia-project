@@ -36,8 +36,9 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
   const [sortP, onSortP] = useSort("lkpi.sortCpP", { key: "verdict", dir: "asc" });
   const [rulesOpen, setRulesOpen] = useState(false);
 
-  // An admin starts a read of the three HR journals; the page polls the
-  // board while it runs (`read.running`) and the figures follow.
+  // An admin starts a read of the three HR journals; while it runs
+  // (`read.running`) the page polls the read's state alone and asks for the
+  // board again once it has finished, so the figures follow.
   const readM = useMutation({
     mutationFn: () => api.post("/api/category-compliance/read").then((r) => r.data),
     onSuccess: (r) => {
