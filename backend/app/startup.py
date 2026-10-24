@@ -5962,6 +5962,21 @@ def add_pp_line_container_cap() -> None:
     _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
 
 
+_PP_PRODUCT_ARCHIVE_DDL = (
+    ("pp_products", (("archived_at", "TIMESTAMPTZ"),
+                     ("archived_by", "VARCHAR"),
+                     ("archived_from", "DATE")), None),
+)
+
+
+def add_pp_product_archive_columns() -> None:
+    """2026-10-24: a catalog line on «Zagruzka fayli» can be ARCHIVED and
+    brought back (`models.PPProduct.archived_*`). NULL everywhere = nothing
+    archived. Pure DDL, idempotent, no flag; through `_ensure_columns` and
+    FATAL on failure — every catalog read selects these columns."""
+    _ensure_columns(_PP_PRODUCT_ARCHIVE_DDL, "pp_products.archived_*")
+
+
 _FORECAST_ANSWER_DDL = (
     ("forecast_call_notices", (("answer", "VARCHAR(8)"),
                                ("answer_count", "INTEGER"),

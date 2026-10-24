@@ -7660,6 +7660,47 @@ re-priced the minutes, ЛЮДИ and загрузка of every past day at once �
   «changed» mark on the table (the operator declined it — the Jurnal records
   who changed what, each save logs `from`).
 
+## A catalog line can be ARCHIVED and brought back (2026-10-24)
+
+The operator: «sometimes we will bring it back, and it requires rewriting — we
+need an option to archive them and bring back anytime». A line on «Zagruzka
+fayli» → «Pozitsiyalar» can be set aside instead of deleted, and comes back in
+one press with everything it had: code, name, Трудоемкость, Команда, group
+letter, фаза pin, the SAP switch.
+
+- **An archived line is `pp_products.active` = False**, a flag every reader
+  already skipped (the table, the загрузка, Plan Bajarish, /live,
+  /zagruzka-cell) and the dated catalog already froze. `archived_at` /
+  `archived_by` / `archived_from` (`startup.add_pp_product_archive_columns`,
+  both entrypoints, `run` phase) only say who set it aside, when, and the
+  shift-day it left on. Nothing is deleted.
+- **`POST /admin/production/catalog/archive` {ids, archived}** is the one door
+  for both directions (admin, like every catalog write; ≤ 500 lines of ONE
+  unit; logged as `production.catalog_archived` / `catalog_restored`). It is
+  DATED like any catalog edit (`pp_catalog.freeze`): the line leaves — or comes
+  back — from the shift in progress, and earlier days keep their list. A line
+  already in the asked state is counted, not refused. The PUT edit's `active`
+  keeps the same metadata.
+- **No two lines may share one identity across the archive** —
+  `pp_calc.line_ident` (quantity key, Команда, name + Трудоемкость, the
+  `line_keys` content without its `#n`). A restore whose twin is live is
+  SKIPPED and named (`skipped_duplicate`); a create of a line the archive holds
+  is refused 409 `in_archive` and the page offers «Arxivdan qaytarish».
+- **The SAP file keeps filling an archived line** (its SKU stays in
+  `_sap_scope_of`, which reads every line), so it comes back reading its
+  figures. Its SKU is therefore not an «unknown SKU» (`catalog_keys` read
+  `cat.lines`); the dashboard lists it under `archived` (unit-wide views only)
+  with the day's ПЛАН for its SKU at its Команда.
+- **An ABC import keeps the archive**: archived lines the sheet does not carry
+  stay set aside (sorted after the sheet's lines, so no sheet line's key
+  moves); an archived line the sheet carries again comes back live from the
+  sheet and its archived copy goes (`archived_kept` / `archived_back`).
+- **The page**: «Arxivlash» in the row strip and the bulk bar (a warning
+  confirm, the refusal shown on it); an «Arxiv» card UNDER the table, only
+  while it holds something, collapsed by default, its head naming how many
+  the day's plan asks for; «Qaytarish» per row for admins on a day an edit
+  reaches. The delete confirm now points at «Arxivlash».
+
 ## A ПЛАН belongs to ONE catalog line (`pp_line_daily`)
 
 From **2026-09-03** a hand-typed ПЛАН or ФАКТ on `/production` belongs to the

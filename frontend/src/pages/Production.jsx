@@ -5,6 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
+  Archive, ArchiveRestore,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -1364,6 +1365,11 @@ export default function Production() {
   const [editRow, setEditRow] = useState(null);    // row being edited in the modal, or null
   const [createOpen, setCreateOpen] = useState(false); // "new position" modal open?
   const [confirmDel, setConfirmDel] = useState(null);  // row pending delete-confirm, or null
+  // Lines pending the archive confirm: { ids, label } — label names a single
+  // row, null for a bulk selection.
+  const [confirmArch, setConfirmArch] = useState(null);
+  const [archErr, setArchErr] = useState("");   // a refused archive, shown ON its dialog
+  const [archOpen, setArchOpen] = usePersistentState("production_archive_open", false);
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
   const [wcEdit, setWcEdit] = useState(null);      // staffing card being edited, or null
   const [wcDraft, setWcDraft] = useState({ people: "", shtatka: "" }); // "" = follow the formula
@@ -1705,6 +1711,24 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production-dates"] });
       sapFilled(res);
     },
+    onError: (e) => {
+      // The same line is already set aside: bring THAT one back — it keeps the
+      // фаза pin, the letter and the SAP switch somebody already chose.
+      const raw = e?.response?.data?.detail_raw;
+      if (raw && typeof raw === "object" && raw.code === "in_archive") {
+        toast.warning(t("production.archive.inArchive"), 15000, {
+          icon: Archive,
+          action: {
+            label: t("production.archive.restoreIt"),
+            onClick: () => archiveCatalog.mutate(
+              { ids: [raw.id], archived: false },
+              { onSuccess: () => setCreateOpen(false) }),
+          },
+        });
+        return;
+      }
+      toast.error(writeErr(e));
+    },
   });
   // Remove a catalog line (PPProduct). Admin-only; hard delete — the daily
   // plan/fact rows join on the SAP key, not this row's id, so no daily data goes.
@@ -1717,6 +1741,36 @@ export default function Production() {
       setCatSel(null);
       sapFilled(res);
     },
+  });
+  // Set lines ASIDE, or bring them back (admin_archive_catalog). Nothing is
+  // deleted: an archived line keeps every field and comes back in one press,
+  // from the shift in progress like any catalog edit.
+  const archiveCatalog = useMutation({
+    mutationFn: (body) => api.post("/admin/production/catalog/archive", body),
+    onSuccess: (res, body) => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      setConfirmArch(null);
+      setCatSel(null);
+      const gone = new Set(body.ids);
+      setCatPick((p) => p.filter((id) => !gone.has(id)));
+      const r = res?.data ?? {};
+      let msg = t(body.archived ? "production.archive.done" : "production.archive.restored")
+        .replace("{n}", String(r.changed ?? 0));
+      if (r.already) msg += " · " + t("production.archive.already").replace("{n}", String(r.already));
+      msg += fromText(res);
+      if (r.skipped_duplicate) {
+        toast.warning(msg + " · " + t("production.archive.dup")
+          .replace("{n}", String(r.skipped_duplicate))
+          .replace("{list}", (r.duplicates || []).join(", ")));
+      } else if (r.changed) {
+        toast.success(msg);
+      } else {
+        toast.info(msg);
+      }
+    },
+    // Setting aside goes through its dialog, which shows the refusal itself
+    // (archErr); a restore has no dialog, so it is a toast.
+    onError: (e, body) => { if (!body?.archived) toast.error(writeErr(e)); },
   });
 
   // Change the same field on every picked line at once. ONE call, ONE
@@ -1802,7 +1856,7 @@ export default function Production() {
   useUndoHotkeys({
     undo: doUndo,
     redo: doRedo,
-    enabled: editableView && dayOpen && !editRow && !createOpen && !confirmDel && !wcEdit && !reopen,
+    enabled: editableView && dayOpen && !editRow && !createOpen && !confirmDel && !confirmArch && !wcEdit && !reopen,
   });
 
   // The pair is rendered on the page bar, not only in the Позиции toolbar: the
@@ -1901,6 +1955,10 @@ export default function Production() {
   // true the moment ONE group is typed.
   const peopleUntyped = wcs.filter((w) => !typedCentre(w)).length;
   const unknown = data?.unknown_skus ?? [];
+  // Lines set aside on this day's catalog (`_archived_lines`); only a unit-wide
+  // view carries them, and an older backend none.
+  const archived = data?.archived ?? [];
+  const archWithPlan = archived.filter((r) => r.plan_qty > 0).length;
   const missingLabor = data?.missing_labor_count ?? 0;
   // A leader owns CELLS, not a unit: the backend narrows this whole page —
   // catalog, teams, KPIs, raw SAP rows, export — to the cells they own and says
@@ -3160,6 +3218,8 @@ export default function Production() {
                       <td colSpan={colCount} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
                           <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
+                          <ActionBtn icon={Archive} label={t("production.archiveRow")}
+                            onClick={() => setConfirmArch({ ids: [r.id], label: `${r.sap_code || ""}${r.name ? (r.sap_code ? " — " : "") + r.name : ""}` })} />
                           <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
                         </div>
                       </td>
@@ -3170,6 +3230,91 @@ export default function Production() {
               })}
             </tbody>
       </TableCard>
+
+      {/* The ARCHIVE — catalog lines set aside, kept whole and one press from
+          coming back. UNDER the table, and only while it holds something, so
+          setting a row aside never moves the list above; collapsed by default,
+          the head saying how many and how many the day's plan asks for. */}
+      {!loading && archived.length > 0 && (
+        <TableCard
+          className="mb-4"
+          collapsed={!archOpen}
+          head={
+            <button type="button" className="block w-full text-left" aria-expanded={archOpen}
+                    onClick={() => setArchOpen((o) => !o)}>
+              <SectionHead icon={Archive} title={t("production.archive.card")} right={
+                <span className="flex items-center gap-2 text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+                  {archWithPlan > 0 && (
+                    <span className="font-semibold" style={{ color: "var(--brand-text)" }}>
+                      {t("production.archive.withPlan").replace("{n}", String(archWithPlan))}
+                    </span>
+                  )}
+                  <span>{t("production.archive.count").replace("{n}", String(archived.length))}</span>
+                  {archOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </span>
+              } />
+            </button>
+          }
+          footer={
+            <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {t("production.archive.hint")}
+            </p>
+          }
+        >
+          <thead>
+            <tr>
+              <Th label={t("production.col.sapCode")} />
+              <Th label={t("production.col.name")} />
+              <Th label={t("production.col.labor")} align="center" />
+              <Th label={t("production.col.wc")} align="center" />
+              <Th label={t("production.archive.colPlan")} align="center" hint={t("production.archive.planHint")} />
+              <Th label={t("production.archive.colWhen")} />
+              {canEditCatalog && <Th label="" cls="w-px" />}
+            </tr>
+          </thead>
+          <tbody>
+            {archived.map((r) => {
+              const c = wcColor(r.work_center);
+              const who = r.archived_by ? tl(r.archived_by) : "";
+              return (
+                <tr key={r.id}>
+                  <td className="px-3 py-2 font-mono">{r.sap_code || "—"}</td>
+                  <td className="px-3 py-2 max-w-[320px] truncate" title={r.name || undefined}>{r.name || "—"}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{fmt(r.labor_time, 2)}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded"
+                        style={{ background: hexToRgba(c, 0.14), color: c, border: `1px solid ${hexToRgba(c, 0.28)}` }}>{r.work_center}</span>
+                      {r.wc_group && <GroupBadge group={r.wc_group} />}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center tabular-nums">
+                    {r.plan_qty > 0
+                      ? <b style={{ color: "var(--brand-text)" }}>{fmt(r.plan_qty, 0)}</b>
+                      : <span style={{ color: "var(--text-4)" }}>—</span>}
+                  </td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}
+                      title={r.archived_at ? new Date(r.archived_at).toLocaleString() : undefined}>
+                    {r.archived_from
+                      ? t("production.archive.since").replace("{d}", ddmmyyyy(r.archived_from)) + (who ? ` · ${who}` : "")
+                      : "—"}
+                  </td>
+                  {canEditCatalog && (
+                    <td className="px-3 py-1.5 text-right">
+                      <Button size="sm" variant="success" tint icon={<ArchiveRestore size={13} />}
+                        loading={archiveCatalog.isPending && archiveCatalog.variables?.ids?.includes(r.id)}
+                        disabled={archiveCatalog.isPending}
+                        onClick={() => archiveCatalog.mutate({ ids: [r.id], archived: false })}>
+                        {t("production.archive.restore")}
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </TableCard>
+      )}
 
       {/* Bulk bar — a LAYER over the page, never a row inside the table: it has
           to stay reachable while the operator scrolls the catalog picking rows. */}
@@ -3197,6 +3342,10 @@ export default function Production() {
           <div className="flex items-center gap-2 ml-auto flex-wrap">
             <Button size="lg" icon={<Pencil size={14} />} onClick={openBulk}>
               {t("production.bulk.edit").replace("{n}", String(catPick.length))}
+            </Button>
+            <Button size="lg" variant="secondary" icon={<Archive size={14} />}
+                    onClick={() => setConfirmArch({ ids: [...catPick], label: null })}>
+              {t("production.bulk.archive").replace("{n}", String(catPick.length))}
             </Button>
             <Button size="lg" variant="ghost" onClick={() => setCatPick([])}
                     title={t("filter.clear")} aria-label={t("filter.clear")}
@@ -3450,6 +3599,26 @@ export default function Production() {
       )}
 
       {/* catalog line delete (admin) — «are you sure» before a hard delete */}
+      <ConfirmDialog
+        open={!!confirmArch}
+        onCancel={() => { setConfirmArch(null); setArchErr(""); }}
+        onConfirm={() => {
+          if (!confirmArch) return;
+          setArchErr("");
+          archiveCatalog.mutate({ ids: confirmArch.ids, archived: true },
+                                { onError: (e) => setArchErr(writeErr(e)) });
+        }}
+        title={confirmArch?.label != null
+          ? t("production.archive.title")
+          : t("production.archive.titleN").replace("{n}", String(confirmArch?.ids?.length ?? 0))}
+        message={confirmArch
+          ? `${confirmArch.label ? confirmArch.label + ". " : ""}${t("production.archive.confirm")}${catalogFromHint ? " " + catalogFromHint : ""}`
+          : ""}
+        confirmLabel={t("production.archive.go")}
+        cancelLabel={t("production.cancelEdit")}
+        error={archErr || null}
+        loading={archiveCatalog.isPending}
+      />
       <ConfirmDialog
         open={!!confirmDel}
         onCancel={() => setConfirmDel(null)}

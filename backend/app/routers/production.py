@@ -68,7 +68,7 @@ from app.services import wc_group
 from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
-                                   line_keys, group_sizes, faza_quantities, takes_sap,
+                                   line_keys, line_ident, group_sizes, faza_quantities, takes_sap,
                                    ops_for_day, by_due_day,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
@@ -356,6 +356,47 @@ def _unit_cells_on(db: Session, manager_id: int, day: date, *crit, order=()) -> 
     return cells
 
 
+def _iso(v):
+    return v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+
+
+def _archived_lines(db: Session, cat, quantities: dict,
+                    manager_id: int) -> list[dict]:
+    """The archived lines of the catalog this day reads, newest set aside
+    first — what the «Arxiv» card lists and brings back.
+
+    Who set a line aside and when lives on the CURRENT row only (a frozen
+    catalog keeps `active`, not that), so a past day reads it from there; a
+    line restored or deleted since simply has none. `plan_qty` / `actual_qty`
+    are the day's figures for the line's SKU at its Команда, the file's or
+    somebody's — what tells a reader the plan is asking for it again."""
+    gone = [p for p in cat.lines if not p.active]
+    if not gone:
+        return []
+    meta = {p.id: p for p in db.query(PPProduct).filter(
+        PPProduct.manager_id == manager_id,
+        PPProduct.id.in_([p.id for p in gone if p.id is not None]),
+        PPProduct.active.is_(False)).all()} if cat.frozen else {p.id: p for p in gone}
+    out = []
+    for p in gone:
+        m = meta.get(p.id)
+        q = quantities.get((daily_key(p.sap_code, p.name), p.work_center)) or {}
+        out.append({
+            "id": p.id, "sap_code": p.sap_code or "", "name": p.name or "",
+            "work_center": p.work_center or "", "wc_group": p.wc_group,
+            "op": p.op,
+            "labor_time": float(p.labor_time) if p.labor_time is not None else None,
+            "auto_fill": bool(p.auto_fill),
+            "archived_at": _iso(getattr(m, "archived_at", None)),
+            "archived_by": getattr(m, "archived_by", None),
+            "archived_from": _iso(getattr(m, "archived_from", None)),
+            "plan_qty": q.get("plan_qty") or 0.0,
+            "actual_qty": q.get("actual_qty") or 0.0,
+        })
+    out.sort(key=lambda r: (r["archived_at"] or "", r["id"] or 0), reverse=True)
+    return out
+
+
 def _build_dashboard(db: Session, manager_id: int, day: date,
                      wc_scope: Optional[set[str]] = None,
                      payload: Optional[dict] = None,
@@ -526,9 +567,18 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # line's key is synthetic (see daily_key) and can never come out of the SAP
     # join, so an orphaned one is not an «unknown SKU» — listing it would print a
     # code that exists nowhere but here.
-    catalog_keys = {(daily_key(p.sap_code, p.name), p.work_center) for p in products}
+    # Over EVERY line, archived ones included: an archived line's SKU is still
+    # in the SAP scope (`_sap_scope_of` reads `cat.lines`), so the file keeps
+    # filling its figures — that is what lets it come back whole — and it is
+    # set aside on purpose, not unknown. It is listed in `archived` instead.
+    catalog_keys = {(daily_key(p.sap_code, p.name), p.work_center) for p in cat.lines}
     unknown = sorted({k for k in quantities
                       if k not in catalog_keys and not is_local_key(k[0])})
+    # The lines set aside (`active` False) on this day's catalog, for the
+    # «Arxiv» card under the table. Unit-wide views only: a leader's page is
+    # cut to their cells, and an archived line belongs to no cell's list.
+    archived = (_archived_lines(db, cat, quantities, manager_id)
+                if wc_scope is None else [])
 
     # Operation / phase code («Опер.») per (SKU, work center), surfaced from the
     # day's GLOBAL фаза upload (manager_id NULL) so the Positions table can show
@@ -569,6 +619,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         # that describe other people's cells.
         "reconciliation": {} if wc_scope is not None else (recon.data if recon else {}),
         "unknown_skus": [{"sap_code": s, "work_center": w} for s, w in unknown],
+        "archived": archived,
         "missing_labor_count": sum(1 for r in result["rows"] if not r["has_labor"]),
     })
     # what the «Odamlar soni» tab needs to show and reset the efficiency box
@@ -2884,7 +2935,24 @@ def import_catalog(
     kept_groups = wc_group.line_groups(old_lines)
     new_keys = line_keys([{**p, "id": i, "sort_order": i}
                           for i, p in enumerate(parsed["products"])])
-    replaced = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
+    # The ARCHIVE survives the import (2026-10-24): the sheet is the unit's
+    # live list, and a line somebody set aside stays set aside, ready to come
+    # back. The one exception is a line the sheet itself carries again — it
+    # comes back live from the sheet, so its archived copy goes, or the two
+    # would share one identity (`pp_calc.line_ident`). The kept ones sort after
+    # the sheet's lines, which no sheet line shares an identity with, so the
+    # sheet's own line keys are exactly what they would be without them.
+    sheet_idents = {line_ident(pr) for pr in parsed["products"]}
+    keep_archived = [p for p in old_lines
+                     if not p.active and line_ident(p) not in sheet_idents]
+    archived_back = sum(1 for p in old_lines
+                        if not p.active and line_ident(p) in sheet_idents)
+    q_old = db.query(PPProduct).filter(PPProduct.manager_id == manager_id)
+    if keep_archived:
+        q_old = q_old.filter(PPProduct.id.notin_([p.id for p in keep_archived]))
+    replaced = q_old.delete()
+    for k, p in enumerate(sorted(keep_archived, key=lambda r: ((r.sort_order or 0), r.id))):
+        p.sort_order = len(parsed["products"]) + k
     grouped_lines = 0
     for i, p in enumerate(parsed["products"]):
         ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
@@ -2926,6 +2994,8 @@ def import_catalog(
                  ("work_center", f"+{wc_added} / ~{wc_updated}"),
                  ("group", "sheet" if groups_from_sheet else "carried"),
                  ("grouped_lines", grouped_lines),
+                 ("archived_kept", len(keep_archived) or None),
+                 ("archived_back", archived_back or None),
                  ("from", eff.isoformat() if eff else "all"),
                  ("note", "auto-fill off — not backfilled" if filled["skipped"]
                           else f"backfilled {filled['days']} day(s), "
@@ -2938,6 +3008,8 @@ def import_catalog(
         "backfilled_days": filled["days"], "backfilled_rows": filled["rows"],
         "backfill_skipped": filled["skipped"],
         "groups_from_sheet": groups_from_sheet, "grouped_lines": grouped_lines,
+        # Archived lines kept set aside, and archived ones the sheet brought back.
+        "archived_kept": len(keep_archived), "archived_back": archived_back,
         # The day the catalog counts from; None = every day (a first catalog).
         "applies_from": eff.isoformat() if eff else None,
     }
@@ -3176,6 +3248,18 @@ def admin_create_catalog(body: CatalogCreateBody,
                             detail="auto-fill applies only to a line with a SAP code")
     grp_explicit = (body.wc_group or "").strip() != ""
     grp = _group_or_400(body.wc_group) if grp_explicit else None
+    # The same line already set aside: bring THAT one back instead. Two lines
+    # sharing one identity would leave which of them reads the stored numbers
+    # to their order (`pp_calc.line_ident`), and the archived one carries the
+    # фаза pin, the letter and the SAP switch somebody already chose.
+    ident = line_ident({"sap_code": sap, "name": name, "work_center": wc,
+                        "labor_time": body.labor_time})
+    for q in db.query(PPProduct).filter(PPProduct.manager_id == body.manager_id,
+                                        PPProduct.active.is_(False)).all():
+        if line_ident(q) == ident:
+            raise HTTPException(status_code=409, detail={
+                "code": "in_archive", "id": q.id,
+                "message": "this position is in the archive — restore it instead"})
     # A new line counts from the shift in progress (services/pp_catalog.py):
     # the days before it keep the catalog they had, without it.
     eff = pp_catalog.freeze(db, body.manager_id, "create")
@@ -3561,6 +3645,104 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
             "group_siblings": group_siblings, "from": eff.isoformat()}
 
 
+class CatalogArchiveBody(BaseModel):
+    ids: list[int]
+    archived: bool          # True = set aside, False = bring back
+
+
+@router.post("/admin/production/catalog/archive")
+def admin_archive_catalog(body: CatalogArchiveBody,
+                          payload: dict = Depends(_verify_admin),
+                          db: Session = Depends(get_db)):
+    """Set catalog lines ASIDE, or bring them back (2026-10-24, the operator:
+    «sometimes we will bring it back, and it requires rewriting — we need an
+    option to archive them and bring back anytime»).
+
+    An archived line is `active` False and nothing else: the row stays, with
+    its code, name, Трудоемкость, Команда, letter, фаза pin and SAP switch, so
+    bringing it back is one press and nothing is typed again. `active` is what
+    every reader already skips (the Positions table, the загрузка, Plan
+    Bajarish, /live, /zagruzka-cell), and the line ranking reads every line
+    whatever its state, so no other line's stored numbers move either way.
+    Its SKU stays in the SAP scope, so the file goes on filling its figures and
+    a line brought back reads them at once.
+
+    DATED like every catalog edit (services/pp_catalog.py): it leaves — or
+    returns to — the list from the shift in progress, and the days before keep
+    the list they had.
+
+    Several lines are ONE unit's, ONE transaction, ONE action-log row, like the
+    bulk edit. A line already in the asked state is counted, never refused. A
+    line coming back while a LIVE line of the unit is the same line (same SKU,
+    Команда, name and Трудоемкость — `pp_calc.line_ident`) is SKIPPED and named:
+    two of them would share one identity, and which of the two reads the stored
+    numbers would hang on their order.
+    """
+    ids = list(dict.fromkeys(body.ids or []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="no rows selected")
+    if len(ids) > _CATALOG_BULK_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"too many rows at once (max {_CATALOG_BULK_MAX})")
+    prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
+    found = {p.id for p in prods}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"catalog line(s) not found: {missing[:5]}")
+    units = {p.manager_id for p in prods}
+    if len(units) > 1:
+        raise HTTPException(status_code=400,
+                            detail="every selected line must belong to one brigadir")
+    mid = units.pop()
+
+    want_active = not body.archived
+    todo = [p for p in prods if bool(p.active) != want_active]
+    already = len(prods) - len(todo)
+    duplicates: list[str] = []
+    if want_active and todo:
+        live = {line_ident(q) for q in db.query(PPProduct).filter(
+            PPProduct.manager_id == mid, PPProduct.active.is_(True)).all()}
+        keep = []
+        for p in todo:
+            if line_ident(p) in live:
+                duplicates.append(p.sap_code or p.name or str(p.id))
+            else:
+                keep.append(p)
+        todo = keep
+
+    if todo:
+        # Kept BEFORE a row moves: the session does not autoflush, and a row
+        # already flipped would be frozen with its new state.
+        eff = pp_catalog.freeze(db, mid, "archive" if body.archived else "restore")
+        stamp = datetime.now(timezone.utc)
+        who = payload.get("full_name") or payload.get("sub") or "admin"
+        for p in todo:
+            p.active = want_active
+            if body.archived:
+                p.archived_at, p.archived_by, p.archived_from = stamp, who, eff
+            else:
+                p.archived_at = p.archived_by = p.archived_from = None
+        names = [p.sap_code or p.name or str(p.id) for p in todo]
+        db.commit()
+    else:
+        eff = pp_catalog.unit_effective_day(db, mid)
+        names = []
+    action_log.enrich(
+        action=("production.catalog_archived" if body.archived
+                else "production.catalog_restored"),
+        target_kind="catalog", target_id=f"{mid}:archive:{len(names)}",
+        target_name=", ".join(names[:5]) + (" …" if len(names) > 5 else ""),
+        unit_id=mid,
+        details=[("rows", len(names)), ("from", eff.isoformat()),
+                 ("already", already or None),
+                 ("skipped_duplicate", len(duplicates) or None)],
+    )
+    return {"ok": True, "archived": bool(body.archived), "changed": len(names),
+            "already": already, "skipped_duplicate": len(duplicates),
+            "duplicates": duplicates[:10], "from": eff.isoformat()}
+
+
 @router.put("/admin/production/catalog/{prod_id}")
 def admin_update_catalog(prod_id: int, body: CatalogBody,
                          _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
@@ -3614,8 +3796,15 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # back to whatever the day's фаза upload says.
     if body.op is not None:
         p.op = body.op.strip() or None
-    if body.active is not None:
+    if body.active is not None and bool(body.active) != bool(p.active):
+        # The same switch the «Arxiv» card presses (admin_archive_catalog),
+        # reached through the edit form: keep who/when in step with it.
         p.active = body.active
+        if body.active:
+            p.archived_at = p.archived_by = p.archived_from = None
+        else:
+            p.archived_at, p.archived_by, p.archived_from = (
+                datetime.now(timezone.utc), _.get("full_name") or "admin", eff)
     # Whether the SAP upload fills this line. Judged against the code the line
     # ends the request WITH, so clearing the code and asking for auto-fill in
     # one call is the contradiction it looks like rather than a stored setting

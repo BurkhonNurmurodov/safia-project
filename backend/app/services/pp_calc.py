@@ -316,6 +316,32 @@ def faza_quantities(rows) -> dict:
     return out
 
 
+def _field(p, k):
+    return p.get(k) if isinstance(p, dict) else getattr(p, k, None)
+
+
+def _line_base(p) -> str:
+    """A line's CONTENT — its name and Трудоемкость — the part of
+    :func:`line_keys` before the ``#n`` suffix."""
+    name = " ".join(str(_field(p, "name") or "").split()).lower()[:120]
+    lt = _field(p, "labor_time")
+    if lt is None:
+        labor = ""
+    else:
+        labor = ("%.4f" % _f(lt)).rstrip("0").rstrip(".")
+    return f"{name}|{labor}"
+
+
+def line_ident(p) -> tuple[str, str, str]:
+    """(quantity key, work centre, content) — the line as :func:`line_keys`
+    tells it from every other, without the positional ``#n``. Two lines with
+    one answer here are the SAME line to every stored quantity; an archived
+    line and a live one must never share it (the live one's rank, and so the
+    numbers it reads, would hang on which of the two sorts first)."""
+    return (daily_key(_field(p, "sap_code"), _field(p, "name")),
+            _field(p, "work_center") or "", _line_base(p))
+
+
 def line_keys(products) -> dict:
     """{product id: the DURABLE identity of that catalog line inside its
     (daily_key, work centre) group} — what models.PPLineDaily stores.
@@ -354,17 +380,8 @@ def line_keys(products) -> dict:
         is exactly what the paragraph above rules out. The line falls back to
         the group's shared figure — a visible revert rather than a silent lie.
     """
-    def field(p, k):
-        return p.get(k) if isinstance(p, dict) else getattr(p, k, None)
-
-    def base(p) -> str:
-        name = " ".join(str(field(p, "name") or "").split()).lower()[:120]
-        lt = field(p, "labor_time")
-        if lt is None:
-            labor = ""
-        else:
-            labor = ("%.4f" % _f(lt)).rstrip("0").rstrip(".")
-        return f"{name}|{labor}"
+    field = _field
+    base = _line_base
 
     rows = sorted(
         ((_f(field(p, "sort_order")), field(p, "id") or 0, p) for p in products),

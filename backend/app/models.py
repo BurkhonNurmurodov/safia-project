@@ -1259,6 +1259,15 @@ class PPProduct(Base):
     # the SAP file writes one quantity per (SKU, work centre). NOT part of the
     # line's identity: changing it moves no quantity. services/wc_group.py.
     wc_group    = Column(String(1), nullable=True)
+    # 2026-10-24: an ARCHIVED line is `active` = False — set aside, never
+    # deleted, so it comes back whole (code, name, Трудоемкость, Команда,
+    # letter, фаза pin, the SAP switch) with one press. `active` was already
+    # what every reader skips; these three only say who set it aside, when, and
+    # the shift-day it left the list on (pp_catalog dates it like any edit).
+    # NULL on a line that is not archived, and on one set inactive before this.
+    archived_at   = Column(DateTime(timezone=True), nullable=True)
+    archived_by   = Column(String, nullable=True)
+    archived_from = Column(Date, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 

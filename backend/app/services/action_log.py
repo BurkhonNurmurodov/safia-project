@@ -301,6 +301,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/production/reconciliation",            "shopfloor", "production.reconciliation_set"),
     (("POST",),   "/admin/production/upload",                  "shopfloor", "production.phase_uploaded"),
     (("POST",),   "/admin/production/catalog/import",          "shopfloor", "production.catalog_imported"),
+    (("POST",),   "/admin/production/catalog/archive",         "shopfloor", "production.catalog_archived"),
     (("POST",),   "/admin/production/catalog",                 "shopfloor", "production.catalog_created"),
     (("PUT",),    "/admin/production/catalog/bulk",            "shopfloor", "production.catalog_bulk_edited"),
     (("PUT",),    "/admin/production/catalog/{}",              "shopfloor", "production.catalog_edited"),

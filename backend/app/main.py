@@ -161,6 +161,7 @@ async def lifespan(app: FastAPI):
         report_auto_schema,
         add_pp_product_auto_fill,
         add_pp_line_container_cap,
+        add_pp_product_archive_columns,
         add_forecast_answer_columns,
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -305,6 +306,7 @@ async def lifespan(app: FastAPI):
     later(set_gemini_model_pro)
     run(add_pp_product_auto_fill)
     run(add_pp_line_container_cap)
+    run(add_pp_product_archive_columns)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)
     run(add_education_duration)
