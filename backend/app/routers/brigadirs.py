@@ -248,15 +248,22 @@ def list_all_managers(db: Session = Depends(get_db), _: dict = Depends(require_a
 
     ``factory_id`` rides along so a supervisor picker can narrow itself to the
     factory tab the page is on: offering a supervisor who cannot appear under
-    the current tab is an option that silently produces an empty page."""
+    the current tab is an option that silently produces an empty page.
+
+    ``zagruzka_on`` rides along for the same reason: a загрузка page's picker
+    drops a unit whose загрузка is switched off (`build_metrics_list` skips
+    it, so picking it could only ever show an empty page). Every other page
+    keeps listing it."""
     rows = (
-        db.query(Manager.id, Manager.name, Manager.shift, Manager.factory_id)
+        db.query(Manager.id, Manager.name, Manager.shift, Manager.factory_id,
+                 Manager.zagruzka_on)
         .filter(Manager.archived.is_(False))
         .order_by(Manager.name)
         .all()
     )
     return [{"manager_id": r.id, "name": r.name, "shift": r.shift,
-             "factory_id": r.factory_id} for r in rows]
+             "factory_id": r.factory_id, "zagruzka_on": bool(r.zagruzka_on)}
+            for r in rows]
 
 
 @router.get("/brigadirs")

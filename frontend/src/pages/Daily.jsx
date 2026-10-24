@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import ReactApexChart from "react-apexcharts";
@@ -196,6 +196,18 @@ function SupervisorDaily() {
     staleTime: 120_000,
   });
   const selectedSupName = supervisors.find(s => s.manager_id === managerId)?.full_name || "";
+  // The picker offers only units whose загрузка counts (`managers.zagruzka_on`):
+  // this page is a unit's загрузка day, and an OFF unit has none. Its
+  // attendance day (close / reopen included) stays on /staff.
+  const loadSupervisors = useMemo(
+    () => supervisors.filter(s => s.zagruzka_on !== false), [supervisors]);
+  // A remembered pick the picker no longer offers is dropped rather than left
+  // reading that unit's day under a trigger that names nobody.
+  const pickerShown = !isDrill && !ownUnitOnly;
+  useEffect(() => {
+    if (!pickerShown || selectedManagerId == null || !supervisors.length) return;
+    if (!loadSupervisors.some(s => s.manager_id === selectedManagerId)) setSelectedManagerId(null);
+  }, [pickerShown, selectedManagerId, supervisors, loadSupervisors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: downtime } = useQuery({
     queryKey: ["daily-downtime", managerId, date],
@@ -301,11 +313,11 @@ function SupervisorDaily() {
           >
             <ArrowLeft size={15} /> {t("shiftDaily.back")}
           </button>
-        ) : !ownUnitOnly ? (
+        ) : pickerShown ? (
           <SupervisorSelect
             value={selectedManagerId}
             onChange={setSelectedManagerId}
-            supervisors={supervisors}
+            supervisors={loadSupervisors}
           />
         ) : null}
         <DayStepper value={date} onChange={setDate} />

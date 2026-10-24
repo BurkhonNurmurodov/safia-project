@@ -2436,7 +2436,10 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
         vis = None
     if vis is not None:
         q = q.filter(Manager.id.in_(vis))
-    return [{"manager_id": m.id, "full_name": m.name, "shift": m.shift} for m in q.all()]
+    # `zagruzka_on` lets /daily's picker drop a unit whose загрузка is switched
+    # off; /staff and the Cleanup tab keep listing every unit.
+    return [{"manager_id": m.id, "full_name": m.name, "shift": m.shift,
+             "zagruzka_on": bool(m.zagruzka_on)} for m in q.all()]
 
 
 # ── Attendance fetch ───────────────────────────────────────────────────────────

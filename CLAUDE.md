@@ -323,6 +323,14 @@ drafts like every field there (the page's one Save):
   «Zagruzka hisoblanmaydi» instead of drawing empty charts); the shift report
   and `/api/shift-report/start-load` leave it out; /zagruzka-cell's picker drops
   it. Nothing is deleted — switching it back on restores every figure.
+  **Nor is it OFFERED there (v4.327.0, the operator 2026-10-22)**: the
+  supervisor pickers of /zagruzka, Overview and /daily list only ON units —
+  `/api/managers/all` and `/api/staff/supervisors` carry `zagruzka_on`, and the
+  page filters (`useFactorySupervisors(…, { loadOnly: true })`; /daily inline),
+  because both lists are shared caches that every other page reads whole. A
+  remembered pick of an OFF unit is dropped, on «All factories» too. An OFF
+  unit's attendance day (close / reopen) stays on /staff. The brigadir board
+  (`brigadir_board.board_units`) already listed ON units only.
   Deliberately NOT gated: /production, Plan Bajarish, Plan Prognoz and its call
   DMs, /live, the leader auto-checks, the ojidaniya pages.
 - **Every unit that existed on 2026-10-04 is ON; a unit created later starts

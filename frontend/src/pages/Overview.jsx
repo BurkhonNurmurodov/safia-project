@@ -211,11 +211,11 @@ export default function Overview() {
     queryFn: () => api.get("/api/managers/all").then((r) => r.data),
     staleTime: 300_000,
   });
-  // Only the supervisors of the plant this tab is on — and if the currently
-  // picked one isn't among them, the pick is dropped rather than left standing
-  // over an empty page.
+  // Only the supervisors of the plant this tab is on whose загрузка counts
+  // (`managers.zagruzka_on`) — and if the currently picked one isn't among
+  // them, the pick is dropped rather than left standing over an empty page.
   const scopedSupervisors = useFactorySupervisors(
-    allSupervisors, brigadirIds, setBrigadirIds);
+    allSupervisors, brigadirIds, setBrigadirIds, "manager_id", { loadOnly: true });
   const supOptions = useMemo(
     () => [...scopedSupervisors]
       .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
