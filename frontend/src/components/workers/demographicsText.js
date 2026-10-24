@@ -32,7 +32,8 @@ const uz = {
 
   kPeople: "Ro'yxatdagilar",
   kPeopleSub: "{n} ta brigadir",
-  kPeopleTip: "Bugun brigadirlar ro'yxatida turganlar: Verifix'da ishlayotgan, bo'limi zagruzkada hisoblanadigan yacheyka bo'lgan xodimlar.",
+  kPeopleTipAll: "Bugun brigadirlar ro'yxatida turganlar — barcha yacheyka va barcha lavozim: Verifix'da ishlayotgan, bo'limi reyestrdagi yacheyka bo'lgan xodimlar.",
+  kPeopleTipZag: "Zagruzkada hisoblanadiganlar: bo'limi zagruzkada hisoblanadigan yacheyka bo'lgan va lavozimi zagruzkaga kiradigan xodimlar.",
   kWomen: "Ayollar",
   kWomenSub: "{f} ayol · {m} erkak",
   kWomenTip: "Ayollar ulushi — Verifix'dagi jins bo'yicha.",
@@ -123,7 +124,8 @@ const uz_cyrl = {
 
   kPeople: "Рўйхатдагилар",
   kPeopleSub: "{n} та бригадир",
-  kPeopleTip: "Бугун бригадирлар рўйхатида турганлар: Verifix'да ишлаётган, бўлими загрузкада ҳисобланадиган ячейка бўлган ходимлар.",
+  kPeopleTipAll: "Бугун бригадирлар рўйхатида турганлар — барча ячейка ва барча лавозим: Verifix'да ишлаётган, бўлими реестрдаги ячейка бўлган ходимлар.",
+  kPeopleTipZag: "Загрузкада ҳисобланадиганлар: бўлими загрузкада ҳисобланадиган ячейка бўлган ва лавозими загрузкага кирадиган ходимлар.",
   kWomen: "Аёллар",
   kWomenSub: "{f} аёл · {m} эркак",
   kWomenTip: "Аёллар улуши — Verifix'даги жинс бўйича.",
@@ -214,7 +216,8 @@ const ru = {
 
   kPeople: "В списках",
   kPeopleSub: "{n} бригадиров",
-  kPeopleTip: "Кто сегодня стоит в списках бригадиров: работающие в Verifix сотрудники, чей отдел — ячейка, учитываемая в загрузке.",
+  kPeopleTipAll: "Кто сегодня стоит в списках бригадиров — все ячейки и все должности: работающие в Verifix сотрудники, чей отдел — ячейка из реестра.",
+  kPeopleTipZag: "Те, кто учитывается в загрузке: сотрудники в ячейках, учитываемых в загрузке, с должностью, входящей в загрузку.",
   kWomen: "Женщины",
   kWomenSub: "{f} жен. · {m} муж.",
   kWomenTip: "Доля женщин — по полю «пол» в Verifix.",
@@ -305,7 +308,8 @@ const en = {
 
   kPeople: "On the lists",
   kPeopleSub: "{n} brigadirs",
-  kPeopleTip: "Who is on the brigadirs' lists today: employees working in Verifix whose department is a cell counted in the workload.",
+  kPeopleTipAll: "Who is on the brigadirs' lists today — every cell and every job: employees working in Verifix whose department is a cell of the register.",
+  kPeopleTipZag: "Who counts in the workload: employees in a cell counted in the workload whose job title counts in it.",
   kWomen: "Women",
   kWomenSub: "{f} women · {m} men",
   kWomenTip: "Share of women — by the gender field in Verifix.",

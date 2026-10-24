@@ -320,7 +320,8 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
       {/* KPI row — how many, then the four questions in the order asked. */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
         <KPICard icon={Users} color="#3b82f6" label={T.kPeople} value={String(total)}
-          sub={fill(T.kPeopleSub, { n: d.groups.unit.length })} tooltip={T.kPeopleTip} />
+          sub={fill(T.kPeopleSub, { n: d.groups.unit.length })}
+          tooltip={scope === "zagruzka" ? T.kPeopleTipZag : T.kPeopleTipAll} />
         <KPICard icon={Venus} color={WOMEN} label={T.kWomen}
           value={`${pct(d.gender.F, total) ?? 0}%`}
           sub={fill(T.kWomenSub, { f: d.gender.F, m: d.gender.M })} tooltip={T.kWomenTip} />

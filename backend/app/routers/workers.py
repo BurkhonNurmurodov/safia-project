@@ -987,8 +987,14 @@ def get_demographics(
     if empty_scope(scoped):
         return {"read": read, "today": today.isoformat(),
                 **workforce.build(None, {}, {}, [], shift, lambda j: True, today)}
-    cells, units = verifix_live._registry(db)
-    role_ok = _py_known_title if scope == "zagruzka" else (lambda j: True)
+    # The switch moves BOTH halves of the population (the operator,
+    # 2026-10-24): «Jami» is every cell of the register and every job title,
+    # «Zagruzka» the cells counted in the загрузка and the direct roles that
+    # count in it. Narrowing the titles alone had left «Jami» standing on the
+    # workload's cells, so the whole never answered «all cells, all people».
+    zag = scope == "zagruzka"
+    cells, units = workforce.registry(db, in_load_only=zag)
+    role_ok = _py_known_title if zag else (lambda j: True)
     return {"read": read, "today": today.isoformat(),
             **workforce.build(data, cells, units, scoped, shift, role_ok, today)}
 

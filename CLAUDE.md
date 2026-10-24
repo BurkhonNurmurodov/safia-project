@@ -2181,13 +2181,24 @@ bundle `demographicsText.js`.
   filled for 56 people — so **«experience» is tenure at Safia**, from the
   CURRENT employment's hiring date (a re-hire starts again). The same list
   also carries passports, PINFL and family members; none of it is read here.
-- **The population is today's lists**: a WORKING employee whose Verifix org
-  unit is a cell counted in the загрузка with a brigadir (`verifix_live._registry`
-  + the `_homes` rule) — the people /staff reads today. Verifix keeps only
-  today's placement, so it is a SNAPSHOT: the period control is NOT drawn on
-  this tab (a control that changes nothing is worse than none). Plant, shift,
-  brigadir (`scoped_manager_ids`, the viewer lock) and the page's «Jami /
-  Zagruzka» role switch (`_py_known_title`) narrow it. Page key `workers`,
+- **The population is today's lists**, and the «Jami / Zagruzka» switch moves
+  BOTH of its halves (2026-10-24, the operator: «when Total is selected, just
+  show all cells and all people; when Workload is selected, show all people who
+  get counted in Zagruzka») — `workforce.registry` is the one door:
+  **«Zagruzka»** is the cells counted in the загрузка (`verifix_live._registry`,
+  never re-spelled here) and the job titles that count in it
+  (`_py_known_title`), i.e. the people a загрузка figure is built from;
+  **«Jami»** is the SAME query without the `in_load` clause and every job
+  title — every cell of the register, everybody standing in one. The whole is
+  a SUPERSET of the workload half by construction, so the switch may only ever
+  widen. Until that day «Jami» narrowed the TITLES alone and still stood on the
+  workload's cells, so it answered neither question. A WORKING employee joins
+  through their Verifix org unit (the `_homes` rule) — the people /staff reads
+  today. Verifix keeps only today's placement, so it is a SNAPSHOT: the period
+  control is NOT drawn on this tab (a control that changes nothing is worse
+  than none). Plant, shift and brigadir (`scoped_manager_ids`, the viewer lock)
+  narrow it further. The «Ro'yxatdagilar» tooltip states whichever population
+  is on screen (`kPeopleTipAll` / `kPeopleTipZag`). Page key `workers`,
   but **ADMINS ONLY** (2026-10-23, the operator: «only visible to admin,
   nobody else»): the tab is drawn for `role == "admin"` alone (a saved
   «composition» view reads as «Davomat» for anybody else, an «open as» tab

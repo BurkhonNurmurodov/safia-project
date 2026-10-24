@@ -9,10 +9,11 @@ production by a deploy-log probe the same day: gender 100 % filled, birthday
 `legal_address` 94 % as free text, `region_name` 31 %).
 
 **The population is the live list**: a WORKING employee (status «W») whose
-Verifix org unit is a cell counted in the загрузка with a brigadir —
-`verifix_live._registry` + the `_homes` rule, so a person stands on exactly
-the brigadir's list /staff reads today. Verifix keeps only today's placement,
-so this is a SNAPSHOT of today, not a figure of the page's period.
+Verifix org unit is a cell of the register with a brigadir — `registry` +
+the `_homes` rule, so a person stands on exactly the brigadir's list /staff
+reads today. Verifix keeps only today's placement, so this is a SNAPSHOT of
+today, not a figure of the page's period. Which cells, and which of their
+people, is the page's «Jami / Zagruzka» switch: see `registry`.
 
 **What is kept, and what is not.** A read (`read`) keeps, per person, only
 coded facts: org unit, job name, gender letter, birth MONTH («1994-07»), hiring
@@ -297,6 +298,36 @@ def register_jobs() -> None:
         log.info("workforce: jobs registered (every %d h at :%02d)", READ_EVERY_H, READ_MINUTE)
     except Exception:  # noqa: BLE001
         log.exception("workforce: could not register the jobs")
+
+
+# ── which cells the tab stands on ─────────────────────────────────────────────
+
+def registry(db: Session, *, in_load_only: bool) -> tuple[dict, dict]:
+    """The tab's cells and units, per the «Jami / Zagruzka» switch (the
+    operator, 2026-10-24: «when Total is selected, just show all cells and all
+    people; when Workload is selected, show all people who get counted in
+    Zagruzka»).
+
+    `in_load_only` is «Zagruzka»: the cells counted in the загрузка, through
+    `verifix_live._registry` — the ONE definition of that set, never re-spelled
+    here. Otherwise «Jami»: the SAME query without the `in_load` clause, so
+    every cell of the register with a code joins and the whole is always a
+    SUPERSET of the workload half (the switch may only ever widen, or one
+    brigadir's row would read higher under «Jami» than under «Zagruzka»).
+
+    The units map is `_registry`'s own either way, and so is the shape, so
+    `build` cannot tell the two apart."""
+    from app.models import Cell, Manager
+    from app.services import verifix_live
+    if in_load_only:
+        return verifix_live._registry(db)
+    cells = {}
+    for cid, code, mid in db.query(Cell.id, Cell.verifix_code, Cell.manager_id).all():
+        if code:
+            cells[verifix._code_key(code)] = {"id": cid, "code": code, "manager_id": mid}
+    units = {m.id: {"name": m.name, "shift": m.shift}
+             for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
+    return cells, units
 
 
 # ── the fold ──────────────────────────────────────────────────────────────────
