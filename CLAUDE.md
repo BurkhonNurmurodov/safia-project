@@ -9225,6 +9225,30 @@ once, and followed through the tie from then on; history is never affected.
 - **To switch it on**: run the tie run (dry, then real), read the queue and
   the would-do list in `report` mode for two days, then set `on`.
 
+## Four units change brigadir (`plan-brigadir-change-oct24`, 2026-10-24)
+
+The operator (2026-10-24): unit 9 «Mirmaxmudova Munira» goes to Raximova
+Kamola, unit 6 «Suvonov Elshod» to Erkanboyev Zafarjon, unit 5 «Suvonov Elshod
+OF» to Suvonov Elshod, unit 10 «Raximova Kamola» to Niyozov Izzatilla — the
+ten rulings (rename in place, from 24 Oct, the two men keep their leader
+profiles until Verifix lists them as brigadir, units 6 and 10 held untied with
+the sync's cell-move suggestions blocked, unit 5 named exactly «Suvonov
+Elshod», the holder changes, leaders and the new brigadirs told, shipped as a
+one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
+
+- **Step one is a READ** (this build, TEMPORARY): `startup.report_brigadir_change_state`
+  → `services/brigadir_change_report_oct24.py` DMs the operator, once, the
+  four units' rows, hand ties and Verifix persons, their cells, leaders and
+  Telegram holders (every other role of those accounts), browser logins and
+  translation overrides on the names, the two men's leader profiles and cells
+  4112 / 9412, who Verifix puts over each unit's cells, the open sync items
+  about them and the five people as the stored org lists them — as text and
+  as a .txt file. The production SSH read-only path was not reachable from the
+  session that planned the change, so the change one-shot is written against
+  this report, never against a local copy. Flag `brigadir_change_state_2026_10_24_v1`;
+  delete the function, the module and both entrypoint calls with the change.
+- **Step two is the change one-shot** — not built yet.
+
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
 **From `live_day.LIVE_FROM` (2026-10-06) this tab writes no live day** — the

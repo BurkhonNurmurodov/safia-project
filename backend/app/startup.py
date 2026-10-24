@@ -7658,6 +7658,41 @@ def _dispute_queue_job() -> None:
                       dispute_queue_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the state of four units before their brigadirs change (2026-10-24) ──
+# The operator's ten rulings are in `docs/plan-brigadir-change-oct24.md`: unit 9
+# «Mirmaxmudova Munira» goes to Raximova Kamola, unit 6 «Suvonov Elshod» to
+# Erkanboyev Zafarjon, unit 5 «Suvonov Elshod OF» to Suvonov Elshod, unit 10
+# «Raximova Kamola» to Niyozov Izzatilla. Before any of it is written, this
+# READS production's own record of everything the change touches (the units,
+# their ties, cells, leaders, Telegram holders, browser logins, the two men's
+# leader profiles, who Verifix puts over each unit's cells, the open sync items,
+# the five people as Verifix lists them) and DMs it once as text + a .txt file
+# (`services/brigadir_change_report_oct24.py`). Writes nothing but its flag.
+# Delete this block, the module and both entrypoint calls with the change.
+BRIGADIR_CHANGE_STATE_FLAG = "brigadir_change_state_2026_10_24_v1"
+_BRIGADIR_CHANGE_STATE_DELAY_S = 60
+
+
+def report_brigadir_change_state() -> None:
+    """The four units' state before the brigadir change, DMed once. Never raises."""
+    try:
+        if not _report_pending(BRIGADIR_CHANGE_STATE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("brigadir-change-state",
+                    datetime.now(timezone.utc) + timedelta(seconds=_BRIGADIR_CHANGE_STATE_DELAY_S),
+                    _brigadir_change_state_job)
+    except Exception as exc:
+        print(f"[startup] brigadir change state report could not be scheduled: {exc}")
+
+
+def _brigadir_change_state_job() -> None:
+    from app.services import brigadir_change_report_oct24
+    _send_report_once(BRIGADIR_CHANGE_STATE_FLAG, "Brigadir change state report",
+                      brigadir_change_report_oct24.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: did work centre A1437 ever carry a plan on Suvonov Elshod OF? ──
 # The operator asked on 2026-10-04, looking at the A1437 card on «Zagruzka
 # fayli» (O.soni —, Shtat 0, 0 min). It READS and writes nothing but its flag:

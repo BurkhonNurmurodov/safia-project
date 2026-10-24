@@ -120,6 +120,7 @@ try:
         report_t11_proofs,
         report_dispute_queue,
         report_wc_plan_history,
+        report_brigadir_change_state,
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
@@ -540,6 +541,9 @@ try:
     # `startup.report_dispute_queue` and `services/dispute_queue_report.py`
     # once it has been sent.
     report_dispute_queue()
+    # ⚠ TEMPORARY report (2026-10-24) — the state of units 9, 6, 5 and 10
+    # before their brigadirs change, DMed once. Remove with the change one-shot.
+    report_brigadir_change_state()
     # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
     # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
