@@ -158,12 +158,17 @@ def _norm(name: str) -> str:
 # ─── Manual sheet-name → unit overrides ──────────────────────────────────────
 # Real cases the fuzzy scorer above can't handle:
 #   • the register names someone in a form unrelated to their unit's profile
-#     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit shown as "Suvonov Elshod OF",
-#     which scores 0 against it and would drop every one of that unit's rows;
-#   • two units share the same surname+first name, so every candidate ties on
-#     the two-token score and iteration order alone would decide the winner —
-#     "SUVONOV ELSHOD VALIJON O'G'LI" scores 1.0 for BOTH "Suvonov Elshod" and
-#     "Suvonov Elshod OF" and must be pinned to the former;
+#     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit that was shown as "Suvonov
+#     Elshod OF" (unit 5), which scores 0 against it and would drop every one
+#     of that unit's rows;
+#   • two units shared the same surname+first name until 2026-10-24, so every
+#     candidate tied on the two-token score and iteration order alone would
+#     decide the winner — "SUVONOV ELSHOD VALIJON O'G'LI" scored 1.0 for BOTH
+#     "Suvonov Elshod" and "Suvonov Elshod OF". Since the brigadir change of
+#     2026-10-24 (docs/plan-brigadir-change-oct24.md) unit 5 is «Suvonov
+#     Elshod» and unit 6 is «Erkanboyev Zafarjon»: every row naming Suvonov,
+#     past and future, is unit 5's (the operator's ruling 6), so both Suvonov
+#     pins name that unit;
 #   • the register attributes a whole unit's complaints to an entirely different
 #     person's name — "FAYZULLAYEVA MALIKA ABDUMANNOB QIZI" is the unit shown as
 #     "Murodali Ochilov" (shares no tokens, so the scorer can never reach it).
@@ -173,7 +178,7 @@ _OVERRIDES = {
     _norm(sheet): _norm(unit)
     for sheet, unit in {
         "SUVONOV ELSHOD VALIJON O'G'LI": "Suvonov Elshod",
-        "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod OF",
+        "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod",
         "FAYZULLAYEVA MALIKA ABDUMANNOB QIZI": "Murodali Ochilov",
     }.items()
 }
@@ -190,7 +195,8 @@ _OVERRIDES = {
 # allowed photo-timestamp window. Two copies would silently judge one unit's
 # night photos against the wrong window.
 _SUPERVISOR_RELABEL = {
-    _norm("Abdugamitov Muhammad"): "Suvonov Elshod OF",
+    # The OF unit's rows — unit 5, «Suvonov Elshod» since 2026-10-24.
+    _norm("Abdugamitov Muhammad"): "Suvonov Elshod",
 }
 
 

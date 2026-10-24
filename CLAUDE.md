@@ -9296,7 +9296,55 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   session that planned the change, so the change one-shot is written against
   this report, never against a local copy. Flag `brigadir_change_state_2026_10_24_v1`;
   delete the function, the module and both entrypoint calls with the change.
-- **Step two is the change one-shot** — not built yet.
+- **Step two is the change one-shot** (v4.328.0, TEMPORARY):
+  `startup.apply_brigadir_change_oct24` → `services/brigadir_change_oct24.py`,
+  written against that report. Preconditions first (the four names as they
+  are, the Verifix persons behind units 10 / 5 / 6 / 9 checked BY NAME, the
+  two men still leaders of their units, every new brigadir already holding
+  their unit) — any failure blocks the whole run and DMs the problems. Then
+  ONE transaction with the flag: the four renames with their role rows (the
+  translation re-key of `_rename_profile` deliberately NOT used — a brigadir
+  REPLACEMENT must not hand one person's Cyrillic spelling to another; the
+  spellings nobody carries go into `name_aliases`, their `name.*` rows are
+  deleted, «Raximova Kamola» and «Suvonov Elshod» are kept off units 10 and 6
+  as aliases per ruling 6); three supervisor rows removed (Munira's only
+  role — the account goes with it); three account display names corrected;
+  unit 9 hand-tied to Kamola's Verifix id, units 10 and 6 held UNTIED with
+  the kind «Brigadir o'rnida»; browser logins follow the people (Munira's and
+  Suvonov's unit-6 login deleted, Kamola's re-keyed to unit 9 with its token
+  version bumped; units 6 and 10 have none until an admin creates them);
+  photos follow the people (unit 10's face → unit 9, each man's leader face →
+  his unit); Munira's coming `new_unit` sync item pre-dismissed. After the
+  commit: a Jurnal row per unit (`org.brigadir_changed`), Kamola's photo
+  from Verifix (`fetch_photo_now`), the notifications `brigadir_changed` (the
+  unit's leaders, `unit` = the OLD name) and `brigadir_appointed` (the
+  brigadir's own account, bell row on the unit profile) — once, their own
+  flag — and the admins' DM (its own flag PER RESULT — a «failed» DM never
+  silences the «applied» one a retry produces; a send failure is retried).
+  One copy applies it (a transaction-scoped advisory lock, the flag re-read
+  under it). Telegram app sessions already open keep their old role claims
+  for up to 24 h or until relaunch (pre-existing: the JWT carries
+  `role_id` and nothing revokes it); browser sessions end at once. Flags
+  `brigadir_change_2026_10_24_v1`, `…_notify`, `…_dm`.
+- **A unit held UNTIED by hand keeps its cells against Verifix's brigadir**
+  (`verifix_sync.Ctx.untied_units`, `unit_held_untied`): the pass raises no
+  `brigadir_differs` for a cell whose unit a person untied, and an item
+  already queued is refused (`unit_untied`). **And a Verifix brigadir who
+  stands over a held-untied unit's cells names no unit for a cell with NONE**
+  (`held_over`): a cell the pass creates under Kamola's or Suvonov's workshop
+  would otherwise be suggested into the unit their id is tied to NOW (9 / 5),
+  not the one whose workshop it stands in; a person decides. Any unit a
+  person unties by hand gets this, by design. Tying the unit lifts it — when
+  Verifix lists Erkanboyev / Niyozov as brigadir: FIRST retire or untie the
+  man's leader profile (a Verifix person is tied to a profile OR a unit —
+  `tie_by_hand` refuses a unit tie while a profile holds the id), THEN tie
+  unit 6 / 10 to him on «Verifix sinxron» (ruling 4).
+- **`name_map`**: both Suvonov pins («SUVONOV ELSHOD VALIJON O'G'LI»,
+  «XAYRULLO O'G'LI ХABIBULLO») and the «Abdugamitov Muhammad» relabel name
+  unit 5, «Suvonov Elshod», now — every row naming Suvonov is unit 5's.
+- **Left to the admin, named in the DM**: Erkanboyev's account also holds
+  unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
+  units 6 and 10.
 
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 

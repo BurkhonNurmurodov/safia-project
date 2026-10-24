@@ -138,6 +138,7 @@ async def lifespan(app: FastAPI):
         report_dispute_queue,
         report_wc_plan_history,
         report_brigadir_change_state,
+        apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
@@ -642,6 +643,11 @@ async def lifespan(app: FastAPI):
     # .txt file. Remove this line, `startup.report_brigadir_change_state` and
     # `services/brigadir_change_report_oct24.py` with the change one-shot.
     later(report_brigadir_change_state)
+    # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
+    # ruled (docs/plan-brigadir-change-oct24.md). Remove this line,
+    # `startup.apply_brigadir_change_oct24` and `services/brigadir_change_oct24.py`
+    # once its flags read «done».
+    later(apply_brigadir_change_oct24)
     # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
     # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`

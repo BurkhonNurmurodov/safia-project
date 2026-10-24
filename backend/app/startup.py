@@ -7708,6 +7708,27 @@ def _brigadir_change_state_job() -> None:
                       brigadir_change_report_oct24.send, UNPRICED_DM_CHAT)
 
 
+def apply_brigadir_change_oct24() -> None:
+    """Boot, after readiness, once: the four units change brigadir as ruled
+    (`services/brigadir_change_oct24.py` — preconditions, one transaction with
+    the flag, then the Jurnal, the people's notifications and the admins' DM,
+    each behind its own flag). Never raises."""
+    try:
+        from app.services import brigadir_change_oct24 as fx
+        db = SessionLocal()
+        try:
+            rec = fx.run(db)
+            if rec is not None:
+                print(f"[startup] brigadir change: {rec.get('result')} "
+                      f"({len(rec.get('units') or {})} units, {len(rec.get('holders') or [])} holder rows)")
+            fx.notify(db)
+            fx.dm_admins(db)
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] brigadir change skipped: {exc}")
+
+
 # ── one-shot: did work centre A1437 ever carry a plan on Suvonov Elshod OF? ──
 # The operator asked on 2026-10-04, looking at the A1437 card on «Zagruzka
 # fayli» (O.soni —, Shtat 0, 0 min). It READS and writes nothing but its flag:

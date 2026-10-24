@@ -157,6 +157,37 @@ _MONTHS = {
 }
 
 _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
+    # A unit changed brigadir (2026-10-24, services/brigadir_change_oct24): to
+    # the unit's leaders (`unit` = the unit's OLD name, i.e. the brigadir who
+    # left; `name` = the brigadir now) and to the brigadir themself.
+    "brigadir_changed": {
+        "uz": ("Brigadiringiz o'zgardi",
+               "«{unit}» bo'linmasining brigadiri {date} dan boshlab {name}. Bo'linma endi uning nomi bilan "
+               "yuritiladi; chek-list, isbotlar va murojaatlar unga boradi."),
+        "uz_cyrl": ("Бригадирингиз ўзгарди",
+                    "«{unit}» бўлинмасининг бригадири {date} дан бошлаб {name}. Бўлинма энди унинг номи билан "
+                    "юритилади; чек-лист, исботлар ва мурожаатлар унга боради."),
+        "ru": ("Ваш бригадир изменился",
+               "Бригадиром участка «{unit}» с {date} является {name}. Участок теперь носит это имя; "
+               "чек-лист, подтверждения и обращения идут к нему."),
+        "en": ("Your brigadir has changed",
+               "From {date} the brigadir of «{unit}» is {name}. The unit now carries that name; "
+               "the checklist, proofs and appeals go to them."),
+    },
+    "brigadir_appointed": {
+        "uz": ("Siz brigadir etib belgilandingiz",
+               "{date} dan boshlab siz «{unit}» bo'linmasining brigadirisiz. Platformada bo'linma endi «{name}» "
+               "deb nomlanadi: liderlar, davomat, chek-list va hisobotlar sizga ko'rinadi."),
+        "uz_cyrl": ("Сиз бригадир этиб белгиландингиз",
+                    "{date} дан бошлаб сиз «{unit}» бўлинмасининг бригадирисиз. Платформада бўлинма энди «{name}» "
+                    "деб номланади: лидерлар, давомат, чек-лист ва ҳисоботлар сизга кўринади."),
+        "ru": ("Вы назначены бригадиром",
+               "С {date} вы бригадир участка «{unit}». На платформе участок теперь называется «{name}»: "
+               "лидеры, посещаемость, чек-лист и отчёты видны вам."),
+        "en": ("You are now the brigadir",
+               "From {date} you are the brigadir of «{unit}». On the platform the unit is now called «{name}»: "
+               "its leaders, attendance, checklist and reports are yours."),
+    },
     # The settings dialog's «Sinov xabari» (routers/push.py): a row to the
     # person themself, proving the Android app's phone notifications work.
     "push_test": {

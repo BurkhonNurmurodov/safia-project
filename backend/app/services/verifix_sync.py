@@ -186,6 +186,12 @@ class Ctx:
         self.kept_unit = {c.id: names.get(n.strip().casefold()) for c in self.cells
                           if (n := kept_apart(c.verifix_code))}
         self.hand = _hand_ties(db)
+        # Units held UNTIED by hand (2026-10-24, the brigadir change): a person
+        # said who runs the unit while Verifix still lists somebody else over
+        # its cells, so the pass never suggests moving those cells to Verifix's
+        # brigadir — `brigadir_differs` is not raised for them, and an item
+        # already on the queue is refused (`apply_item`). Tying the unit lifts it.
+        self.untied_units = {uid for uid, v in (self.hand.get("unit") or {}).items() if v == UNTIED}
         # Rows nothing automatic may reach this pass (a doubtful or missing
         # tie): filled by the people / units loops, read by the seats loop.
         self.held: set = set()
@@ -213,6 +219,15 @@ def _load_org(db: Session, force: bool = False):
 
 
 # ── the tie run ───────────────────────────────────────────────────────────────
+
+def unit_held_untied(db: Session, manager_id: Optional[int]) -> bool:
+    """Is this unit held UNTIED from Verifix by hand (`tie_by_hand(None)`)? Such
+    a unit keeps its cells against Verifix's brigadir (the 2026-10-24 rule)."""
+    if not manager_id:
+        return False
+    return db.query(VerifixTie.id).filter_by(kind="unit", our_id=manager_id,
+                                             vfx_id=UNTIED).first() is not None
+
 
 def _hand_ties(db: Session) -> dict:
     out = defaultdict(dict)
@@ -1009,19 +1024,32 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
 
     # ── brigadirs: the one over a tied cell, and Verifix brigadirs with no unit
     by_parent: dict = defaultdict(Counter)
+    # The Verifix brigadirs standing over a HELD-UNTIED unit's cells — the
+    # person who left, whom Verifix still lists there. A cell with NO unit
+    # under them (one the pass just created) is suggested nowhere by their
+    # say-so: it would land in the unit their Verifix id is tied to now (the
+    # one they moved to), not in the unit whose workshop it stands in. A
+    # person decides (the seats loop's `hold`, the /cells form).
+    held_over: set = set()
     for c in ctx.cells:
         if c.vfx_division_id and c.archived_at is None and c.manager_id:
             parent = (ctx.divs.get(c.vfx_division_id) or {}).get("parent")
             by_parent[parent][c.manager_id] += 1
+            if c.manager_id in ctx.untied_units:
+                held_over |= {b["id"] for b in ctx.over(c.vfx_division_id)}
     for c in ctx.cells:
         if not c.vfx_division_id or c.archived_at is not None:
             continue
         if c.id in ctx.kept_unit:
             continue            # kept in its unit against Verifix's brigadir (KEPT_APART)
-        bs = ctx.over(c.vfx_division_id)
-        units = {u for b in bs for u in b["unit"]}
         pc = pend.get(c.id, {})
         cur_unit = pc["manager_id"]["value"] if "manager_id" in pc else c.manager_id
+        if cur_unit in ctx.untied_units:
+            continue            # its unit is held untied by hand — a person named its brigadir
+        bs = ctx.over(c.vfx_division_id)
+        if cur_unit is None and any(b["id"] in held_over for b in bs):
+            continue            # a brigadir who left names no unit for a cell with none
+        units = {u for b in bs for u in b["unit"]}
         if len(units) != 1 or cur_unit in units:
             continue
         want = next(iter(units))
@@ -1686,6 +1714,10 @@ def apply_item(db: Session, item_id: int, *, by: Optional[str], choice: Optional
             raise Refused("kept_apart", f"Cell {c.verifix_code} stays in «{kept_apart(c.verifix_code)}» "
                           "(an exception) — dismiss this", 409,
                           {"code": c.verifix_code, "unit": kept_apart(c.verifix_code)})
+        if unit_held_untied(db, c.manager_id):
+            raise Refused("unit_untied", f"Cell {c.verifix_code} stays in its unit — the unit is held "
+                          "untied from Verifix by hand (a person named its brigadir); dismiss this", 409,
+                          {"code": c.verifix_code, "unit": c.manager_id})
         ev = cell_register.set_unit(db, c, p["to_unit"], src="manual", by=by,
                                     vfx={"brigadir": p.get("brigadir")})
         out["from"] = ev.effective_from.isoformat() if ev is not None else None

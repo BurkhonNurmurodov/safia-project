@@ -65,4 +65,12 @@ the change one-shot is written against that report.
 - 2026-10-24, v4.325.1: the state report (`startup.report_brigadir_change_state`,
   `services/brigadir_change_report_oct24.py`) — see CLAUDE.md «Four units change
   brigadir».
-- The change one-shot: not yet.
+- 2026-10-24, v4.328.0: the change one-shot (`startup.apply_brigadir_change_oct24`,
+  `services/brigadir_change_oct24.py`), the held-untied rule in `verifix_sync`,
+  the `name_map` pins, the two notification keys — see CLAUDE.md «Four units
+  change brigadir». Written against the 16:16 state report, which added facts
+  the September copy did not have: Niyozov's account already held unit 10
+  (since 1 Oct) and Erkanboyev's also holds unit 5 (since 12 Sep, left as it
+  is and named in the DM); every unit had a browser login and Cyrillic /
+  English name overrides, which follow the people; the sync is «on» and units
+  5 and 6 shared Suvonov's Verifix tie.
