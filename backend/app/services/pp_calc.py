@@ -737,6 +737,11 @@ def compute_dashboard(
             # the group of its work centre this line is produced by — None for
             # a line of the whole work centre (services/wc_group.py)
             "wc_group": grp,
+            # «O'lchov birligi» — what this line's quantities are counted in
+            # (services/pp_uom), None = not stated. Passed through untouched:
+            # nothing here converts, sums or compares across units, so the
+            # minutes below are Трудоемкость × quantity ÷ 60 whatever it says.
+            "uom": p.get("uom") or None,
             "labor_time": labor_f if has_labor else None,
             "has_labor": has_labor,
             "plan_qty": plan_qty,

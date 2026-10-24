@@ -107,6 +107,12 @@ const COLS = [
   { key: "op", labelKey: "production.col.op", align: "center", hintKey: "production.col.opHint" },
   { key: "name", labelKey: "production.col.name", align: "left" },
   { key: "labor", labelKey: "production.col.labor", align: "center", hintKey: "production.col.laborHint" },
+  // «O'lchov birligi» (2026-10-24, the operator's request): what this line's
+  // REJA and FAKT are counted in. Directly after «Trud.» because that column is
+  // the seconds ONE of these costs, so the pair reads as one statement; a
+  // property of the position like the two beside it, never a verdict, so it
+  // wears a neutral chip and no colour.
+  { key: "uom", labelKey: "production.col.uom", align: "center", hintKey: "production.col.uomHint" },
   { key: "wc", labelKey: "production.col.wc", align: "center" },
   // The line's GROUP at its Команда (services/wc_group.py) — beside the Команда
   // because it is the second half of that answer: which of the cells standing
@@ -152,6 +158,19 @@ const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill", "wc_gr
 // it would be a column of «—» and a picker row that toggles nothing, and a unit
 // nobody has grouped must read exactly as it did before groups existed.
 const GROUP_COL = "wc_group";
+// «O'lchov birligi» — the stored key («dona») to the word the reader sees. The
+// four keys are served on the payload (services/pp_uom is their one definition,
+// `catalog.uoms`), so this page holds no copy of the LIST — only of how each one
+// is spelled in the reader's language.
+// `t` answers with the KEY itself when a string is missing, so a fifth unit
+// added on the backend before its four translations land would otherwise print
+// «production.uom.tonna» at an operator. Compared explicitly: the stored key is
+// what shows until somebody writes the word, which is readable and true.
+const uomLabel = (t, v) => {
+  if (!v) return "";
+  const s = t(`production.uom.${v}`);
+  return s && s !== `production.uom.${v}` ? s : v;
+};
 // Letters are served sorted, but a letter appended as an `extra` is not.
 const byLetter = (a, b) => GROUP_LETTERS.indexOf(a) - GROUP_LETTERS.indexOf(b);
 // A work centre is grouped when the dashboard lists groups under it (contract:
@@ -211,6 +230,7 @@ const sortVal = (r, key) => {
     case "labor":        return r.has_labor ? r.labor_time : null;
     case "wc":           return r.work_center;
     case "wc_group":     return r.wc_group ?? null;
+    case "uom":          return r.uom ?? null;
     case "people":       return r.people;
     case "vyp":          return r.total_labor ? r.actual_labor / r.total_labor : null;
     case "fact":         return r.actual_qty;
@@ -469,7 +489,7 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 // that is the one fact that tells the reader which cell a letter is). Empty ⇒
 // the field is not drawn at all: a work centre nobody has grouped offers only
 // «—», and a control with one answer is a control that says nothing.
-function CatalogFields({ draft, setDraft, groupOpts = [] }) {
+function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [] }) {
   const { t } = useLang();
   // The auto-fill switch appears only on a CODED line, because only a coded one
   // has a choice to make: the фаза file reaches a position through its SAP code,
@@ -501,6 +521,25 @@ function CatalogFields({ draft, setDraft, groupOpts = [] }) {
           <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
         </Field>
       </div>
+      {/* «O'lchov birligi» — never a free-text box: four options and «not
+          stated», so one position can never be «dona» and another «dоna». The
+          hint is the consequence, not a description: it says what the unit
+          qualifies, since no figure on the page reads it. */}
+      {uomOpts.length > 0 && (
+        <Field label={t("production.uom.label")} hint={t("production.uom.fieldHint")}>
+          <StyledSelect
+            value={draft.uom ?? ""}
+            onChange={setDraft("uom")}
+            options={[
+              { value: "", label: t("production.uom.none") },
+              // The label IS a plain string, so `StyledSelect` already reads
+              // it for the closed trigger — a `title` here would only repeat
+              // the word the reader can already see.
+              ...uomOpts.map((u) => ({ value: u, label: uomLabel(t, u) })),
+            ]}
+          />
+        </Field>
+      )}
       {groupOpts.length > 0 && (
         // The hint is the consequence, not a description: the letter is written
         // on THIS line and on no other (2026-09-18), so the two operations of one
@@ -1515,6 +1554,12 @@ export default function Production() {
   // reads as editable, the behaviour the page always had.
   const catalogInfo = data?.catalog ?? null;
   const catalogEditable = catalogInfo ? catalogInfo.editable !== false : true;
+  // The «O'lchov birligi» options are the SERVER's list (services/pp_uom), so
+  // the picker can never offer a value the endpoint refuses. A payload from
+  // before this shipped carries none and the control simply does not appear,
+  // which is what every other field on these forms does with a value it has
+  // not been handed.
+  const uomOpts = Array.isArray(catalogInfo?.uoms) ? catalogInfo.uoms : [];
   const canEditCatalog = canEditCatalogRole && catalogEditable && !isPlaceholderData;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
@@ -2072,7 +2117,8 @@ export default function Production() {
   // row as it is" — which is what a blank text field means beside it.
   // `wc_group` carries the same "keep" state, and "" for «no group» — a blank
   // cannot mean "leave alone" here, because clearing a group is a real answer.
-  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "", auto_fill: "keep", wc_group: "keep" });
+  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "", auto_fill: "keep",
+                                        wc_group: "keep", uom: "keep" });
   const bulkWc = (bulkDraft?.work_center ?? "").trim();
   const bulkLaborRaw = String(bulkDraft?.labor_time ?? "").trim();
   const bulkLabor = bulkLaborRaw === "" ? null : Number(bulkLaborRaw.replace(",", "."));
@@ -2098,8 +2144,15 @@ export default function Production() {
   const bulkGroupRaw = bulkDraft?.wc_group ?? "keep";
   const bulkGroup = bulkGroupRaw === "keep" || bulkGroupRaw === "" || bulkLetters.includes(bulkGroupRaw)
     ? bulkGroupRaw : "keep";
+  // «keep» is the third state a value cannot carry — "leave every row as it
+  // is" — because "" is a real answer here («not stated»), as it is for the
+  // group beside it. A unit the payload no longer offers reads as unchanged.
+  const bulkUomRaw = bulkDraft?.uom ?? "keep";
+  const bulkUom = bulkUomRaw === "keep" || bulkUomRaw === "" || uomOpts.includes(bulkUomRaw)
+    ? bulkUomRaw : "keep";
   const canSaveBulk = !!bulkDraft && catPick.length > 0 && !bulkLaborBad
-    && (bulkWc !== "" || bulkLabor != null || bulkAuto !== "keep" || bulkGroup !== "keep");
+    && (bulkWc !== "" || bulkLabor != null || bulkAuto !== "keep" || bulkGroup !== "keep"
+        || bulkUom !== "keep");
   const saveBulk = () => {
     if (!canSaveBulk) return;
     const body = { ids: catPick };
@@ -2107,6 +2160,7 @@ export default function Production() {
     if (bulkLabor != null) body.labor_time = bulkLabor;
     if (bulkAuto !== "keep") body.auto_fill = bulkAuto === "sap";
     if (bulkGroup !== "keep") body.wc_group = bulkGroup;   // "" clears
+    if (bulkUom !== "keep") body.uom = bulkUom;           // "" clears
     bulkCatalog.mutate(body);
   };
 
@@ -2262,6 +2316,21 @@ export default function Production() {
           </td>
         );
       }
+      case "uom":
+        // A property of the position, never a status — a neutral chip in the
+        // «Manba» column's own resting skin, so it can read as no traffic
+        // light. Not stated is a dash: the platform has not been told what this
+        // line is counted in, which is not the same as «kg».
+        return (
+          <td key={key} className="px-3 py-2 text-center">
+            {r.uom
+              ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
+                      style={{ color: "var(--text-2)", border: "1px solid var(--border)" }}>
+                  {uomLabel(t, r.uom)}
+                </span>
+              : <span style={{ color: "var(--text-4)" }}>—</span>}
+          </td>
+        );
       case "people":
         // One decimal: a line of an untyped group reads that group's SHARE of
         // the centre, a fraction of a person (integers print unchanged).
@@ -2386,6 +2455,7 @@ export default function Production() {
       // while its switch is untouched, and the switch is what this seeds.
       auto_fill: r.auto_fill !== false,
       wc_group: r.wc_group ?? "",
+      uom: r.uom ?? "",
     });
     setEditRow(r);
   };
@@ -2421,7 +2491,7 @@ export default function Production() {
   // «Qo'shish» opens the create modal with a blank draft (same four fields).
   const openCreate = () => {
     setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "",
-                  auto_fill: true, wc_group: "" });
+                  auto_fill: true, wc_group: "", uom: "" });
     setCreateOpen(true);
   };
   // Команда is always required; the SAP code is not — a line without one is
@@ -2453,6 +2523,9 @@ export default function Production() {
         // a letter a cell carries there: anything else would be an orphan.
         ...(catDraft.wc_group && cellLettersAt(wc).includes(catDraft.wc_group)
           ? { wc_group: catDraft.wc_group } : {}),
+        // Only a picked unit is sent; with none the line is created without
+        // one, which is «not stated» and what every line carried before.
+        ...(catDraft.uom && uomOpts.includes(catDraft.uom) ? { uom: catDraft.uom } : {}),
       },
       { onSuccess: () => setCreateOpen(false) },
     );
@@ -2493,6 +2566,13 @@ export default function Production() {
       }
     } else if (catDraft.group_picked && (grp === "" || cellLettersAt(wc).includes(grp))) {
       body.wc_group = grp;
+    }
+    // "" CLEARS — «not stated» is a real answer here, so a blank cannot also
+    // mean «leave alone» on a form that shows the current value. Sent only when
+    // it actually moved, like every other field above.
+    const uomPick = catDraft.uom ?? "";
+    if (uomPick !== (r.uom ?? "") && (uomPick === "" || uomOpts.includes(uomPick))) {
+      body.uom = uomPick;
     }
     const done = () => { setEditRow(null); setCatSel(null); };
     if (Object.keys(body).length) catalog.mutate({ id: r.id, body }, { onSuccess: done });
@@ -3408,6 +3488,22 @@ export default function Production() {
               ariaLabel={t("production.autofill.label")}
             />
           </Field>
+          {/* Reaches every picked line, coded or not: what a position is
+              counted in has nothing to do with the SAP file. This is the fast
+              way to fill a 99-SKU catalog in — tick the tortes, pick «dona». */}
+          {uomOpts.length > 0 && (
+            <Field label={t("production.uom.label")} hint={t("production.uom.bulkHint")}>
+              <StyledSelect
+                value={bulkUom}
+                onChange={(v) => setBulkDraft((d) => ({ ...d, uom: v }))}
+                options={[
+                  { value: "keep", label: t("production.bulk.unchanged") },
+                  { value: "", label: t("production.uom.clear") },
+                  ...uomOpts.map((u) => ({ value: u, label: uomLabel(t, u) })),
+                ]}
+              />
+            </Field>
+          )}
           {/* Offered only on a unit that has groups — elsewhere it would be a
               control whose every answer is «no group». */}
           {hasGroups && (
@@ -3568,6 +3664,7 @@ export default function Production() {
           {/* The line's own letter is offered only while the draft's Команда is
               still the line's own — elsewhere it names a group nobody there has. */}
           <CatalogFields draft={catDraft} setDraft={setCatField}
+            uomOpts={uomOpts}
             groupOpts={groupOptsFor(catDraft.work_center,
               sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
           {catalogFromHint && (
@@ -3591,6 +3688,7 @@ export default function Production() {
           }
         >
           <CatalogFields draft={catDraft} setDraft={setCatField}
+            uomOpts={uomOpts}
             groupOpts={groupOptsFor(catDraft.work_center)} />
           {catalogFromHint && (
             <p className="text-[11px] leading-relaxed mt-3" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>

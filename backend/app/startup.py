@@ -5977,6 +5977,21 @@ def add_pp_product_archive_columns() -> None:
     _ensure_columns(_PP_PRODUCT_ARCHIVE_DDL, "pp_products.archived_*")
 
 
+_PP_PRODUCT_UOM_DDL = (
+    ("pp_products", (("uom", "VARCHAR(8)"),), None),
+)
+
+
+def add_pp_product_uom() -> None:
+    """2026-10-24 «O'lchov birligi» — what a catalog line's quantities are
+    counted in (`models.PPProduct.uom`, services/pp_uom). NULL on every existing
+    row = not stated, which is the column's whole default: nothing is guessed,
+    and no figure reads it, so the day this lands no number on any page moves.
+    Pure DDL, idempotent, no flag; through `_ensure_columns` and FATAL on
+    failure — every catalog read selects this column."""
+    _ensure_columns(_PP_PRODUCT_UOM_DDL, "pp_products.uom")
+
+
 _FORECAST_ANSWER_DDL = (
     ("forecast_call_notices", (("answer", "VARCHAR(8)"),
                                ("answer_count", "INTEGER"),

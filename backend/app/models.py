@@ -1259,6 +1259,15 @@ class PPProduct(Base):
     # the SAP file writes one quantity per (SKU, work centre). NOT part of the
     # line's identity: changing it moves no quantity. services/wc_group.py.
     wc_group    = Column(String(1), nullable=True)
+    # 2026-10-24 «O'lchov birligi»: what this line's ПЛАН/ФАКТ are counted in —
+    # one of services/pp_uom.UOMS (kg · dona · litr · qozon), NULL = not stated,
+    # which is every row that existed before and is never guessed into a
+    # default. A property of the LINE and not of a day, so an admin sets it once
+    # and `pp_catalog` dates it like Трудоемкость beside it; two operations of
+    # one SKU may legitimately differ (grams of dough, then pieces of cake).
+    # NOT part of the line's identity (pp_calc.line_keys), so changing it moves
+    # no stored quantity, and no figure reads it. startup.add_pp_product_uom.
+    uom         = Column(String(8), nullable=True)
     # 2026-10-24: an ARCHIVED line is `active` = False — set aside, never
     # deleted, so it comes back whole (code, name, Трудоемкость, Команда,
     # letter, фаза pin, the SAP switch) with one press. `active` was already

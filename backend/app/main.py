@@ -163,6 +163,7 @@ async def lifespan(app: FastAPI):
         add_pp_product_auto_fill,
         add_pp_line_container_cap,
         add_pp_product_archive_columns,
+        add_pp_product_uom,
         add_forecast_answer_columns,
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -308,6 +309,7 @@ async def lifespan(app: FastAPI):
     run(add_pp_product_auto_fill)
     run(add_pp_line_container_cap)
     run(add_pp_product_archive_columns)
+    run(add_pp_product_uom)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)
     run(add_education_duration)

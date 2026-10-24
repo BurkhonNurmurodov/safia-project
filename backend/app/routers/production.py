@@ -63,6 +63,7 @@ from app.services import forecast_autocall
 from app.services import idle_lock
 from app.services import idle_source
 from app.services import pp_catalog
+from app.services import pp_uom
 from app.services import shift_scope
 from app.services import wc_group
 from app.services import zagruzka_source
@@ -283,6 +284,14 @@ def _group_or_400(value) -> Optional[str]:
     try:
         return wc_group.norm_group(value)
     except wc_group.InvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _uom_or_400(value) -> Optional[str]:
+    """`pp_uom.norm_uom`, with a refusal the client can print as it is."""
+    try:
+        return pp_uom.norm_uom(value)
+    except pp_uom.InvalidUom as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
@@ -520,6 +529,10 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             # загрузка cannot disagree about which rows the file answers for.
             "auto_fill": p.auto_fill,
             "wc_group": p.wc_group,
+            # «O'lchov birligi» (services/pp_uom) — read off the catalog THIS
+            # DAY has, like every other field here, so a past day prints the
+            # unit it was set with and a later edit never rewrites it.
+            "uom": p.uom,
             "line_key": keys.get(p.id, ""),
             "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
@@ -665,6 +678,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         "from": eff.isoformat(),
         "editable": day >= eff,
         "dated": cat.frozen,
+        # The «O'lchov birligi» options, served rather than held in a second
+        # copy on the client: the list the picker offers and the list the
+        # endpoint accepts can then never be two different lists, and a fifth
+        # unit is one entry in services/pp_uom plus its four strings.
+        "uoms": list(pp_uom.UOMS),
     }
 
     if wc_scope is not None:
@@ -2933,6 +2951,18 @@ def import_catalog(
     # they were before anybody lettered anything, and `startup.report_wc_groups`
     # names it at the next boot.
     kept_groups = wc_group.line_groups(old_lines)
+    # «O'lchov birligi» rides across the wipe on the LINE's own key too, and for
+    # the same reason as the letter: the sheet has no such column, and two
+    # operations of one SKU may legitimately be counted in two different things
+    # (grams of dough at one step, pieces of cake at the next), so folding them
+    # per SKU would hand one line the other's answer. A line whose name or
+    # Трудоемкость the sheet CHANGED cannot be followed — the import may never
+    # guess by position (`pp_calc.line_keys`) — and comes back without a unit,
+    # which is «not stated», exactly what it was before anybody set one.
+    _old_keys = line_keys(old_lines)
+    kept_uoms = {(p.work_center or "", daily_key(p.sap_code, p.name),
+                  _old_keys.get(p.id, "")): p.uom
+                 for p in old_lines if p.uom and p.id in _old_keys}
     new_keys = line_keys([{**p, "id": i, "sort_order": i}
                           for i, p in enumerate(parsed["products"])])
     # The ARCHIVE survives the import (2026-10-24): the sheet is the unit's
@@ -2956,8 +2986,9 @@ def import_catalog(
     grouped_lines = 0
     for i, p in enumerate(parsed["products"]):
         ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
+        line_at = (ident[1], ident[0], new_keys.get(i, ""))
         grp = (p.get("wc_group") if groups_from_sheet
-               else kept_groups.get((ident[1], ident[0], new_keys.get(i, ""))))
+               else kept_groups.get(line_at))
         grouped_lines += 1 if grp else 0
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
@@ -2965,6 +2996,7 @@ def import_catalog(
             op=kept_ops.get(ident),
             auto_fill=ident not in kept_manual,
             wc_group=grp,
+            uom=kept_uoms.get(line_at),
             sort_order=i,
         ))
 
@@ -3148,7 +3180,7 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
              "work_center": p.work_center, "op": p.op,
              "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
              "active": p.active, "auto_fill": p.auto_fill,
-             "wc_group": p.wc_group,
+             "wc_group": p.wc_group, "uom": p.uom,
              "sap_filled": takes_sap(p.sap_code, p.auto_fill)} for p in rows]
 
 
@@ -3218,6 +3250,10 @@ class CatalogCreateBody(BaseModel):
     # letter its SKU's other operations carry, because they may be made
     # elsewhere (2026-09-18).
     wc_group: Optional[str] = None
+    # 2026-10-24 «O'lchov birligi» — one of services/pp_uom.UOMS, "" or omitted
+    # leaves the line without one, which is what every line had before and is
+    # never guessed into a default.
+    uom: Optional[str] = None
 
 
 @router.post("/admin/production/catalog")
@@ -3248,6 +3284,9 @@ def admin_create_catalog(body: CatalogCreateBody,
                             detail="auto-fill applies only to a line with a SAP code")
     grp_explicit = (body.wc_group or "").strip() != ""
     grp = _group_or_400(body.wc_group) if grp_explicit else None
+    # Refused before anything is frozen or written: a unit outside the four is a
+    # 400 naming them, never a value stored for a reader that cannot decode it.
+    uom = _uom_or_400(body.uom)
     # The same line already set aside: bring THAT one back instead. Two lines
     # sharing one identity would leave which of them reads the stored numbers
     # to their order (`pp_calc.line_ident`), and the archived one carries the
@@ -3270,6 +3309,7 @@ def admin_create_catalog(body: CatalogCreateBody,
         work_center=wc, op=((body.op or "").strip() or None),
         labor_time=body.labor_time, sort_order=max_sort + 1,
         auto_fill=(True if body.auto_fill is None else bool(body.auto_fill)),
+        uom=uom,
     )
     db.add(p)
     db.flush()   # the sibling pass reads the unit's lines, this one included
@@ -3282,7 +3322,9 @@ def admin_create_catalog(body: CatalogCreateBody,
     rec = {"id": p.id, "sap_code": p.sap_code or None, "product": p.name or None,
            "work_center": p.work_center, "phase": p.op, "auto_fill": p.auto_fill,
            "minutes": float(p.labor_time) if p.labor_time is not None else None,
-           "unit": p.manager_id, "group": p.wc_group}
+           # «unit» is the BRIGADIR here, as it is everywhere in this register —
+           # the measure is «uom» (services/pp_uom says why the two names).
+           "unit": p.manager_id, "group": p.wc_group, "uom": p.uom}
     # The SAP join runs at UPLOAD time against the catalog as it stood then, so a
     # line added now would read 0 on the dates already uploaded until somebody
     # re-uploaded the file for each of them. Fill its snapshot from the фаза rows
@@ -3296,6 +3338,7 @@ def admin_create_catalog(body: CatalogCreateBody,
                  ("work_center", rec["work_center"]), ("phase", rec["phase"]),
                  ("auto_fill", rec["auto_fill"]), ("minutes", rec["minutes"]),
                  ("group", rec["group"]),
+                 ("uom", rec["uom"]),
                  ("group_siblings", group_siblings or None),
                  ("from", eff.isoformat()),
                  ("filled_days", filled["days"] or None),
@@ -3494,6 +3537,9 @@ class CatalogBody(BaseModel):
     # 2026-09-14: "A" sets the group, "" clears it, null leaves it — on THIS
     # line alone since 2026-09-18 (see _settle_line_groups).
     wc_group: Optional[str] = None
+    # 2026-10-24: «dona» sets the measure, "" clears it, null leaves it alone —
+    # the three states every optional field on this form carries.
+    uom: Optional[str] = None
 
 
 # REGISTERED BEFORE `/catalog/{prod_id}`, and it has to be: FastAPI matches
@@ -3516,6 +3562,11 @@ class CatalogBulkBody(BaseModel):
     # leaves it. The SELECTION is the whole scope since 2026-09-18 — a line
     # outside it is never touched, whatever SKU it shares (_settle_line_groups).
     wc_group: Optional[str] = None
+    # 2026-10-24 «O'lchov birligi»: the one field here that reaches EVERY picked
+    # line unconditionally — «these forty positions are counted in dona» is one
+    # decision, not forty, and it is the fast way to fill a 99-SKU catalog in.
+    # "" clears, null leaves every row alone (services/pp_uom).
+    uom: Optional[str] = None
 
 
 @router.put("/admin/production/catalog/bulk")
@@ -3568,10 +3619,11 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     if body.work_center is not None and not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
     grp = _group_or_400(body.wc_group) if body.wc_group is not None else None
+    uom = _uom_or_400(body.uom) if body.uom is not None else None
     # A group alone IS a change — «these positions are group B» is the whole
-    # request more often than not.
+    # request more often than not — and so is a measure alone.
     if (wc is None and body.labor_time is None and body.auto_fill is None
-            and body.wc_group is None):
+            and body.wc_group is None and body.uom is None):
         raise HTTPException(status_code=400, detail="nothing to change")
 
     prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
@@ -3604,6 +3656,10 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                 skipped_no_code += 1
             else:
                 p.auto_fill = bool(body.auto_fill)
+        # Every picked line, coded or not: what a position is counted in has
+        # nothing to do with whether the SAP file reaches it.
+        if body.uom is not None:
+            p.uom = uom
         edited[p.id] = p
 
     after = [({**d, "work_center": edited[d["id"]].work_center,
@@ -3633,6 +3689,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                  ("minutes", body.labor_time),
                  ("auto_fill", body.auto_fill),
                  ("group", (grp or "—") if body.wc_group is not None else None),
+                 ("uom", (uom or "—") if body.uom is not None else None),
                  ("group_siblings", group_siblings or None),
                  ("skipped_no_code", skipped_no_code or None),
                  ("from", eff.isoformat()),
@@ -3750,10 +3807,11 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
     grp = _group_or_400(body.wc_group) if body.wc_group is not None else None
+    uom = _uom_or_400(body.uom) if body.uom is not None else None
     ident_before = _line_ident(p)
     was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
-           "group": p.wc_group,
+           "group": p.wc_group, "uom": p.uom,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     # The unit's catalog as it stands BEFORE the edit. Four of these fields are
     # what the line's stored plan/fact are keyed by, so the old identity is
@@ -3796,6 +3854,11 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # back to whatever the day's фаза upload says.
     if body.op is not None:
         p.op = body.op.strip() or None
+    # «O'lchov birligi» is no part of any key (pp_calc.line_keys), so it moves
+    # no stored quantity and needs neither the snapshot above nor the carry
+    # below — it is written and that is the whole of it.
+    if body.uom is not None:
+        p.uom = uom
     if body.active is not None and bool(body.active) != bool(p.active):
         # The same switch the «Arxiv» card presses (admin_archive_catalog),
         # reached through the edit form: keep who/when in step with it.
@@ -3833,7 +3896,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     db.commit()
     now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
-           "group": p.wc_group,
+           "group": p.wc_group, "uom": p.uom,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     # Re-pointing either half of the SAP key aims this line at quantities the
     # upload never wrote for it — the join ran against the OLD catalog — so the

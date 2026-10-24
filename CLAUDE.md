@@ -7709,6 +7709,60 @@ letter, фаза pin, the SAP switch.
   the day's plan asks for; «Qaytarish» per row for admins on a day an edit
   reaches. The delete confirm now points at «Arxivlash».
 
+## A catalog line's «O'lchov birligi» (`pp_products.uom`, 2026-10-24)
+
+The operator: «add for me Unit of measurement column in Zagruzka fayl screen.
+It should be selectable. Options are: kg, dona, litr, qozon». A position on
+«Zagruzka fayli» says what its ПЛАН and ФАКТ are counted in, picked from those
+four and nothing else.
+
+- **A property of the CATALOG LINE, not of a day** — `pp_products.uom`, NULL =
+  not stated. A torte is counted in pieces every day of its life, so it is set
+  once and dated by `services/pp_catalog.py` like Трудоемкость or Команда (a
+  past day prints the unit it had, a later edit never rewrites it). That is the
+  rule «Kontiner krishka» states the other way round: a per-day number is the
+  overlay, «a constant would be a catalog field». Two operations of one SKU may
+  legitimately differ — grams of dough at one step, pieces of cake at the next
+  — so it is carried per LINE, never per SKU.
+- **`services/pp_uom.py` is THE definition** — `UOMS` (kg · dona · litr ·
+  qozon, in picker order), `norm_uom`, `InvalidUom`. The list is SERVED on the
+  dashboard (`catalog.uoms`), so the page holds no copy of it and the picker
+  can never offer a value the endpoint refuses; a fifth unit is one entry here
+  plus its four `production.uom.*` strings. Blank / absent answers None — never
+  a guessed default, because «kg» on a cake is worse than a dash that says
+  nothing — and anything else is a 400 naming the four. Spelled `uom` and not
+  `unit` because everywhere else in this codebase a «unit» is a BRIGADIR's
+  unit, the action log's own catalog record included.
+- **No figure reads it, and that is deliberate.** Nothing converts, sums or
+  compares across units: a line's minutes are still Трудоемкость × quantity ÷
+  60 whatever it says, and it is NOT part of the line's identity
+  (`pp_calc.line_keys`), so changing one moves no stored quantity and needs no
+  carry. A REGISTER, like `cells.one_process` — making a загрузка figure read
+  it would move numbers on every page at once and needs the operator's
+  decision first. Measured when it shipped: every total and every row figure
+  byte-identical.
+- **Where it is set** — the row edit modal and the create form (a
+  `StyledSelect` of «— Belgilanmagan» + the four, beside Трудоемкость, which is
+  the seconds ONE of them costs), and **the bulk bar**, which is the fast path:
+  tick forty tortes, pick «dona», one press. Written through the register's own
+  POST/PUT/bulk, so it is **admin-only** like every other field of a catalog
+  line; `""` clears, an absent key leaves it, so a tab from before the column
+  never touches it. Each write is in the Jurnal (`uom`, `logs.f.uom`).
+- **Shown** as a «Birlik» column (uz_cyrl «Бирлик», ru «Ед. изм.», en «Unit»)
+  directly after «Trud.», sortable, in the `ColumnsPicker` like every other —
+  a NEUTRAL chip, never a traffic light, because it is a property and not a
+  verdict; not stated is a dash. Visible to everybody by default (unlike
+  «Manba» / «Guruh»): it qualifies the quantities every reader reads.
+  `uomLabel` compares `t`'s answer against the key, since `t` returns the key
+  itself for a missing string — a unit added before its words would otherwise
+  print «production.uom.tonna» at an operator.
+- **An ABC import carries it across the wipe** on the LINE's own key, like the
+  letter beside it; a line whose name or Трудоемкость the sheet CHANGED cannot
+  be followed (the import may never guess by position) and comes back without
+  one. The sheet has no such column and none is read from it.
+- Deliberately untouched: the «Позиции» export, which is the fixed brigadir
+  «ABC форма» workbook and not a picker mirror (see the UI-template table).
+
 ## A ПЛАН belongs to ONE catalog line (`pp_line_daily`)
 
 From **2026-09-03** a hand-typed ПЛАН or ФАКТ on `/production` belongs to the

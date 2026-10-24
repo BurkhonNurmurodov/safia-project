@@ -152,6 +152,7 @@ try:
         add_pp_product_auto_fill,
         add_pp_line_container_cap,
         add_pp_product_archive_columns,
+        add_pp_product_uom,
         add_forecast_answer_columns,
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -291,6 +292,7 @@ try:
     add_pp_product_auto_fill()
     add_pp_line_container_cap()
     add_pp_product_archive_columns()
+    add_pp_product_uom()
     add_forecast_answer_columns()
     add_assistant_run_lease()
     add_education_duration()

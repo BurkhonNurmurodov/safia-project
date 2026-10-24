@@ -50,11 +50,11 @@ SHIFT_START = time(8, 0)
 SHIFT_END = time(20, 0)
 
 LINE_FIELDS = ("id", "sap_code", "name", "work_center", "op", "labor_time",
-               "sort_order", "active", "auto_fill", "wc_group")
+               "sort_order", "active", "auto_fill", "wc_group", "uom")
 WC_FIELDS = ("id", "code", "shtatka", "capacity", "sort_order", "active")
 _LINE_DEFAULTS = {"sap_code": "", "name": "", "work_center": "", "op": None,
                   "labor_time": None, "sort_order": 0, "active": True,
-                  "auto_fill": True, "wc_group": None}
+                  "auto_fill": True, "wc_group": None, "uom": None}
 _WC_DEFAULTS = {"code": "", "shtatka": 0, "capacity": None, "sort_order": 0,
                 "active": True}
 
