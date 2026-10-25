@@ -7729,7 +7729,10 @@ def _brigadir_change_state_job() -> None:
 # divisions, schedules, 14 days of the attendance report) and writes nothing but
 # its flag; text + a workbook to the operator's chat
 # (`services/verifix_roles_report_oct25.py`). Changing what it sends needs a NEW key.
-VERIFIX_ROLES_FLAG = "verifix_roles_report_2026_10_25_v1"
+# v1 (4.329.1) sent nothing and left no trace off the server: v2 says when it
+# starts and DMs its own failure, and is scheduled in the boot phase so no
+# deferred step ahead of it can hold it back.
+VERIFIX_ROLES_FLAG = "verifix_roles_report_2026_10_25_v2"
 _VERIFIX_ROLES_DELAY_S = 120
 
 
@@ -7748,6 +7751,7 @@ def report_verifix_roles() -> None:
 
 
 def _verifix_roles_job() -> None:
+    print("[startup] Verifix roles report: started")
     from app.services import verifix_roles_report_oct25
     _send_report_once(VERIFIX_ROLES_FLAG, "Verifix roles report",
                       verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)

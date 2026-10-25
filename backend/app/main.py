@@ -453,6 +453,13 @@ async def lifespan(app: FastAPI):
     # Per-task submission: close tasks whose deadline has gone by.
     from app.services.leader_close import register_autoclose_job
     run(register_autoclose_job)
+    # ⚠ TEMPORARY report (2026-10-25) — every shift-manager, brigadir and
+    # leader as Verifix lists them, with their shifts, DMed once to the
+    # operator as text + a workbook. Only SCHEDULES a job (one flag read), so
+    # it sits in the boot phase where no deferred step can hold it back.
+    # Remove this line, `startup.report_verifix_roles` and
+    # `services/verifix_roles_report_oct25.py` once it has been sent.
+    run(report_verifix_roles)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).
@@ -646,12 +653,6 @@ async def lifespan(app: FastAPI):
     # .txt file. Remove this line, `startup.report_brigadir_change_state` and
     # `services/brigadir_change_report_oct24.py` with the change one-shot.
     later(report_brigadir_change_state)
-    # ⚠ TEMPORARY report (2026-10-25) — every shift-manager, brigadir and
-    # leader as Verifix lists them, with their shifts, DMed once to the
-    # operator as text + a workbook. Remove this line,
-    # `startup.report_verifix_roles` and `services/verifix_roles_report_oct25.py`
-    # once it has been sent.
-    later(report_verifix_roles)
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled (docs/plan-brigadir-change-oct24.md). Remove this line,
     # `startup.apply_brigadir_change_oct24` and `services/brigadir_change_oct24.py`

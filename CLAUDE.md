@@ -9404,9 +9404,12 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 
 The operator asked for the names and shifts of all three roles «from the
 verifix (not from our platform)». TEMPORARY `services/verifix_roles_report_oct25.py`,
-`startup.report_verifix_roles` (flag `verifix_roles_report_2026_10_25_v1`,
+`startup.report_verifix_roles` (flag `verifix_roles_report_2026_10_25_v2`,
 ~120 s after boot, both entrypoints) reads Verifix fresh and DMs text plus a
-workbook to `UNPRICED_DM_CHAT`. The role is the person's Verifix job:
+workbook to `UNPRICED_DM_CHAT`. v1 sent nothing and left no trace off the server,
+so v2 is scheduled in the boot phase (`run`, it only schedules a job, so no
+deferred step can hold it back), DMs a «reading now» line first and DMs its own
+failure. The role is the person's Verifix job:
 `verifix_org.is_leader_job`, `is_supervisor_job`, and «смен» with a head word
 for a shift-manager; assistants, deputies and «и.о.» are listed apart. The shift
 comes from when each person came in over the last 14 days (day = arrival

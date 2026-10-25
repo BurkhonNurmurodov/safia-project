@@ -320,7 +320,18 @@ def send(db: Session, chat_id: int, *_window) -> int:
     """The workbook first, then the text in chunks. Returns the messages sent."""
     if not settings.telegram_bot_token:
         raise RuntimeError("telegram bot token not configured")
-    rep = collect(db)
+    _post("sendMessage", {"chat_id": chat_id,
+                          "text": "Verifix roles report: reading Verifix now (employees, jobs, schedules "
+                                  "and 14 days of attendance). The list follows in a few minutes."})
+    try:
+        rep = collect(db)
+    except Exception as exc:
+        db.rollback()
+        msg = f"{type(exc).__name__}: {getattr(exc, 'code', '')} {exc}".strip()
+        _post("sendMessage", {"chat_id": chat_id,
+                              "text": f"Verifix roles report FAILED — {msg}"[:3500]
+                                      + "\nIt tries again at the next deploy (3 tries in all)."})
+        raise
     body = text(rep)
     print("[startup] Verifix roles report:\n" + body)
     stamp = rep["at"].strftime("%Y-%m-%d_%H-%M")
