@@ -186,7 +186,7 @@ def collect(db: Session) -> dict:
                 basis = "—"
         rows.append({
             "role": r, "shift": shift, "basis": basis,
-            "name": e.get("name") or f"#{e['id']}", "latin": transliterate(e.get("name") or ""),
+            "name": e.get("name") or f"#{e['id']}", "latin": transliterate(e.get("name") or "", "uz"),
             "job": jname(e), "status": e.get("status") or "W",
             "unit": u.get("name") or "", "code": u.get("raw_code") or "",
             "workshop": parent.get("name") or "", "dept": dept.get("name") or "",
