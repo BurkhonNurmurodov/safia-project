@@ -9400,6 +9400,20 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
 
+## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
+
+The operator asked for the names and shifts of all three roles «from the
+verifix (not from our platform)». TEMPORARY `services/verifix_roles_report_oct25.py`,
+`startup.report_verifix_roles` (flag `verifix_roles_report_2026_10_25_v1`,
+~120 s after boot, both entrypoints) reads Verifix fresh and DMs text plus a
+workbook to `UNPRICED_DM_CHAT`. The role is the person's Verifix job:
+`verifix_org.is_leader_job`, `is_supervisor_job`, and «смен» with a head word
+for a shift-manager; assistants, deputies and «и.о.» are listed apart. The shift
+comes from when each person came in over the last 14 days (day = arrival
+04:00–15:00, ≥ 75 % one side, else «both»), then the planned start, then the
+schedule's name. It reads only, and nothing on the platform is consulted. Delete
+the module, the startup pair and both calls once it has landed.
+
 ## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
 
 **From `live_day.LIVE_FROM` (2026-10-06) this tab writes no live day** — the

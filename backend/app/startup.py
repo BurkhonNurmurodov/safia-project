@@ -7723,6 +7723,36 @@ def _brigadir_change_state_job() -> None:
                       brigadir_change_report_oct24.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: every shift-manager, brigadir and leader AS VERIFIX LISTS THEM ──
+# The operator asked on 2026-10-25 for the names and shifts of all three roles
+# «from the verifix (not from our platform)». It READS Verifix (employees, jobs,
+# divisions, schedules, 14 days of the attendance report) and writes nothing but
+# its flag; text + a workbook to the operator's chat
+# (`services/verifix_roles_report_oct25.py`). Changing what it sends needs a NEW key.
+VERIFIX_ROLES_FLAG = "verifix_roles_report_2026_10_25_v1"
+_VERIFIX_ROLES_DELAY_S = 120
+
+
+def report_verifix_roles() -> None:
+    """Shift-managers, brigadirs and leaders from Verifix, DMed once. Never raises."""
+    try:
+        if not _report_pending(VERIFIX_ROLES_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("verifix-roles-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_VERIFIX_ROLES_DELAY_S),
+                    _verifix_roles_job)
+    except Exception as exc:
+        print(f"[startup] Verifix roles report could not be scheduled: {exc}")
+
+
+def _verifix_roles_job() -> None:
+    from app.services import verifix_roles_report_oct25
+    _send_report_once(VERIFIX_ROLES_FLAG, "Verifix roles report",
+                      verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)
+
+
 def apply_brigadir_change_oct24() -> None:
     """Boot, after readiness, once: the four units change brigadir as ruled
     (`services/brigadir_change_oct24.py` — preconditions, one transaction with
