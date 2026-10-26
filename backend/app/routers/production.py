@@ -4260,6 +4260,11 @@ def set_catalog_uom(body: CatalogUomBody,
     if {p.manager_id for p in prods} - {mid}:
         raise HTTPException(status_code=403,
                             detail="these positions belong to another brigadir")
+    # Re-read under the unit's catalog lock, as every catalog writer does: a
+    # cell's positions following it to another brigadir flip these rows'
+    # manager_id under that lock, and a row read a moment before must not be
+    # edited — or a boundary drawn — in the unit it has just left.
+    _hold_catalog_rows(db, prods, mid)
 
     # Archived lines are editable here on purpose: the measure travels with the
     # row through the archive (it is kept whole), so a line brought back carries
