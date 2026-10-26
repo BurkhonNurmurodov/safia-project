@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import lru_cache
@@ -468,7 +468,11 @@ def _archived_lines(db: Session, cat, quantities: dict,
     position (`catalog_ownership.join_ident`): the archived copy a cell's move
     JOINED into the twin the unit already had (ruling 5 — one quantity, split
     between the cells). It is not waiting to come back, so the card neither
-    counts it nor offers to restore it."""
+    counts it nor offers to restore it. Only a copy a JOIN archived
+    (`archived_by` is `catalog_follow.ARCHIVED_BY`): two identical lines, or
+    one typed in another case, that a PERSON set aside are ordinary archived
+    lines — counted, and offered back exactly as the restore door accepts."""
+    from app.services.catalog_follow import ARCHIVED_BY
     from app.services.catalog_ownership import join_ident
     gone = [p for p in cat.lines if not p.active]
     if not gone:
@@ -492,7 +496,9 @@ def _archived_lines(db: Session, cat, quantities: dict,
             "archived_from": _iso(getattr(m, "archived_from", None)),
             "plan_qty": q.get("plan_qty") or 0.0,
             "actual_qty": q.get("actual_qty") or 0.0,
-            "twin_live": join_ident(p) in live,
+            "twin_live": (ARCHIVED_BY in (getattr(p, "archived_by", None),
+                                          getattr(m, "archived_by", None))
+                          and join_ident(p) in live),
         })
     out.sort(key=lambda r: (r["archived_at"] or "", r["id"] or 0), reverse=True)
     return out
@@ -3137,15 +3143,21 @@ def get_raw(
             own_wcs = {w.code for w in cat.work_centers} | {p.work_center for p in products}
             if scope is not None:
                 own_wcs = {c for c in own_wcs if _in_scope(scope, c)}
-            # An empty set means "this caller owns nothing" once a scope is in
-            # play, so it must filter to nothing — only an UNSCOPED empty set
-            # (a brigadir with no configured WCs) leaves the file whole.
-            if own_wcs or scope is not None:
+            # An empty set means "this caller owns nothing", so it filters to
+            # nothing — and so does a unit whose catalog that day holds no line
+            # (`_scoped_faza`'s rule): once every cell's positions followed it
+            # to another brigadir, the unit owns none of the file. It used to
+            # fall through to the WHOLE plant file, every unit's orders included.
+            if not cat.lines:
+                rows = []
+            elif own_wcs or scope is not None:
                 rows = [r for r in rows if len(r) > 2 and r[2] in own_wcs]
         else:
             # zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
             catalog_skus = {p.sap_code for p in products if p.sap_code}
-            if products or scope is not None:
+            if not cat.lines:
+                rows = []
+            elif products or scope is not None:
                 rows = [r for r in rows if len(r) > 1 and r[1] in catalog_skus]
     return {
         "present": True, "file_type": file_type, "date": day.isoformat(),
@@ -3227,6 +3239,55 @@ def _drop_moved_out(db, manager_id: int, day: date, parsed: dict,
         skipped.append({"name": pr.get("name") or pr.get("sap_code") or "",
                         "work_center": pr.get("work_center") or "",
                         "to_unit_name": names.get(to)})
+
+    # The LOOSE pass. The brigadir's working sheet is usually an export from
+    # before the move — ruling 2 had the shared lines lettered right before it,
+    # so its «Группа» cells are blank — and the same file is where Трудоемкость
+    # gets re-timed: a departed line then matches no row exactly and would come
+    # back. So a departure still unmatched takes a row at its quantity key and
+    # work centre alone — at most as many as the sheet holds BEYOND what the
+    # unit still keeps there (its own lines are its stayers'), and only a row
+    # whose letter is blank or carried by no cell standing here on `day`: a row
+    # lettered for a stayer is the stayer's. Named «loose» on the card, so a
+    # person sees which rows were read as the departed position.
+    left: dict = defaultdict(list)                  # (qty, wc) → [to_unit]
+    for k, n in want.items():
+        for _ in range(max(0, n)):
+            left[(k[0], k[1])].append(dest[k].pop(0) if dest[k] else None)
+    if left:
+        own_at: dict = defaultdict(int)
+        for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id,
+                                            PPProduct.active.is_(True)).all():
+            ident = catalog_ownership.join_ident(p)
+            own_at[(ident[0], ident[1])] += 1
+        at_key: dict = defaultdict(list)
+        for i, pr in enumerate(kept):
+            ident = catalog_ownership.join_ident(pr)
+            if (ident[0], ident[1]) in left:
+                at_key[(ident[0], ident[1])].append(i)
+        stand: dict = {}
+        drop: dict = {}
+        for lk, tos in left.items():
+            rows = at_key.get(lk) or []
+            room = len(rows) - own_at.get(lk, 0)
+            if room <= 0:
+                continue
+            if lk[1] not in stand:
+                stand[lk[1]] = {g for g in catalog_ownership.cells_standing(
+                    db, manager_id, lk[1], day, day).values() if g}
+            free = [i for i in rows
+                    if not (kept[i].get("wc_group") or None)
+                    or kept[i].get("wc_group") not in stand[lk[1]]]
+            free.sort(key=lambda i: (bool(kept[i].get("wc_group")), i))
+            for i, to in zip(free[:min(room, len(tos))], tos):
+                drop[i] = to
+        if drop:
+            for i, to in sorted(drop.items()):
+                pr = kept[i]
+                skipped.append({"name": pr.get("name") or pr.get("sap_code") or "",
+                                "work_center": pr.get("work_center") or "",
+                                "to_unit_name": names.get(to), "loose": True})
+            kept = [pr for i, pr in enumerate(kept) if i not in drop]
     parsed["products"] = kept
     skipped_wc = [w["code"] for w in parsed["work_centers"] if norm_code(w["code"]) in codes]
     parsed["work_centers"] = [w for w in parsed["work_centers"]
@@ -3235,7 +3296,7 @@ def _drop_moved_out(db, manager_id: int, day: date, parsed: dict,
 
 
 def _moved_in_kept(db, manager_id: int, day: date, old_lines: list,
-                   products: list[dict]) -> list:
+                   products: list[dict], by_group: bool = False) -> list:
     """The unit's ACTIVE lines that came INTO it with a cell
     (`pp_catalog_moves.moved_in_ids`) and that the imported sheet does not
     carry (`catalog_ownership.join_ident`) — kept through the import's wipe,
@@ -3248,9 +3309,46 @@ def _moved_in_kept(db, manager_id: int, day: date, old_lines: list,
     ids = pp_catalog_moves.moved_in_ids(db, manager_id, day)
     if not ids:
         return []
-    sheet = {catalog_ownership.join_ident(pr) for pr in products}
-    return [p for p in old_lines
-            if p.id in ids and p.active and catalog_ownership.join_ident(p) not in sheet]
+    ident = catalog_ownership.join_ident
+    sheet = Counter(ident(pr) for pr in products)
+    arrivals = sorted((p for p in old_lines if p.id in ids and p.active),
+                      key=lambda p: ((p.sort_order or 0), p.id))
+    # The exact pass: a sheet row with the arrival's own content carries it.
+    rest = []
+    for p in arrivals:
+        k = ident(p)
+        if sheet[k] > 0:
+            sheet[k] -= 1
+        else:
+            rest.append(p)
+    # The loose pass: the unit's sheet re-timed or renamed the arrived line —
+    # a row at its quantity key and work centre (and letter, when the sheet
+    # carries «Группа») is that position, so keeping the arrival as well would
+    # count it twice. Only rows BEYOND what the unit's own lines take there,
+    # paired by rank like `pp_calc.line_keys`.
+    loose = Counter()
+    for k, n in sheet.items():
+        if n > 0:
+            loose[(k[0], k[1])] += n
+    for p in old_lines:
+        if p.active and p.id not in ids:
+            k = ident(p)
+            if loose[(k[0], k[1])] > 0:
+                loose[(k[0], k[1])] -= 1
+    letters = Counter((ident(pr)[0], ident(pr)[1], pr.get("wc_group") or None)
+                      for pr in products) if by_group else None
+    kept = []
+    for p in rest:
+        k = ident(p)
+        lk = (k[0], k[1])
+        if loose[lk] > 0 and (letters is None
+                              or letters[(*lk, p.wc_group or None)] > 0):
+            loose[lk] -= 1
+            if letters is not None:
+                letters[(*lk, p.wc_group or None)] -= 1
+            continue
+        kept.append(p)
+    return kept
 
 
 def _moved_in_sources(db, manager_id: int, day: date, ids) -> dict:
@@ -3394,7 +3492,8 @@ def import_catalog(
     # Live arrivals the sheet does not carry stay, with their ids, sorted after
     # the sheet's lines and before the kept archive — so no sheet line's key
     # moves, exactly as for the archive.
-    keep_moved_in = _moved_in_kept(db, manager_id, move_day, old_lines, parsed["products"])
+    keep_moved_in = _moved_in_kept(db, manager_id, move_day, old_lines, parsed["products"],
+                                   groups_from_sheet)
     keep_ids = [p.id for p in keep_archived] + [p.id for p in keep_moved_in]
     q_old = db.query(PPProduct).filter(PPProduct.manager_id == manager_id)
     if keep_ids:

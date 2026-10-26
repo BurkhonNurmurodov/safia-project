@@ -54,10 +54,13 @@ def _fake_follow(waiting=()):
     mod = ModuleType("app.services.catalog_follow")
 
     class CatalogUnsettled(Exception):
-        pass
+        def __init__(self, msg="", since=None):
+            super().__init__(msg)
+            self.since = since
 
     mod.CatalogUnsettled = CatalogUnsettled
     mod.unsettled = mock.Mock(return_value=set(waiting))
+    mod.unsettled_since = mock.Mock(return_value=None)
     return mod
 
 
@@ -274,6 +277,19 @@ class LeaderPageFollowsTheDay(_PG):
         self.assertEqual(bd.call_args.args[3], {CODE})
         self.assertEqual(at.call_args.args[1:], (X, d1))
         self.assertEqual([r[2] for r in raw["rows"]], [CODE])
+
+    def test_raw_file_for_a_unit_left_with_no_line(self):
+        """Once every position of X followed its cell away, X's supervisor reads
+        none of the plant file — never the whole of it."""
+        from app.models import PPUpload
+        X = self.X
+        self._moved_cell()
+        self.db.add(PPUpload(manager_id=None, date=D, file_type="faza", columns=[],
+                             rows=[["1", "", CODE, "F001"], ["2", "", OTHER, "F002"]]))
+        self._commit()
+        raw = production.get_raw(file_type="faza", date=D.isoformat(), manager_id=None,
+                                 payload=self._payload("supervisor", X), db=self.db)
+        self.assertEqual((raw["rows"], raw["total_rows"], raw["scoped"]), ([], 2, True))
 
     def test_leader_write_lands_in_the_unit_of_its_day(self):
         """A leader's ПЛАН typed on D−1 lands on X's line, on D on Y's — the

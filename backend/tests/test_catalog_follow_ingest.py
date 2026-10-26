@@ -530,6 +530,58 @@ class AbcImport(_PG):
         self.assertEqual([r["name"] for r in out["kept_moved_in"]], ["Tort"])
         self.assertEqual([n for n, *_ in self._lines(self.Y)], ["Pishiriq", "Non", "Tort", "Eski"])
 
+    def test_x_working_sheet_with_blank_letters(self):
+        """The brigadir's working sheet carries «Группа» with BLANK cells (an
+        export from before ruling 2's lettering): the departed Tort matches no
+        row exactly, and the loose pass takes one of the two Tort rows — the
+        unit keeps one Tort (the twin), never two."""
+        self._fixture()
+        sheet = [dict(r, wc_group=None) for r in self.OLD_SHEET]
+        out = self._import(self.X, sheet, self.OLD_WCS, groups=True)
+        self.assertEqual([(n, g) for n, _wc, g, *_ in self._lines(self.X)],
+                         [("Keks", None), ("Tort", None)])
+        loose = [r for r in out["skipped_moved_out"] if r.get("loose")]
+        self.assertEqual([(r["name"], r["to_unit_name"]) for r in loose],
+                         [("Tort", f"Unit {self.Y}")])
+
+    def test_x_working_sheet_with_a_retimed_line(self):
+        """The same file re-timed Трудоемкость: no row is the departed line's
+        exact content, and still only the twin comes back."""
+        self._fixture()
+        sheet = [_row("F001", "Tort", C, 12), _row("F002", "Keks", C, 10),
+                 _row("F001", "Tort", C, 12), _row("F003", "Non", E, 7)]
+        out = self._import(self.X, sheet, self.OLD_WCS, groups=False)
+        self.assertEqual([n for n, *_ in self._lines(self.X)], ["Keks", "Tort"])
+        self.assertEqual(sum(1 for r in out["skipped_moved_out"] if r.get("loose")), 1)
+
+    def test_x_new_operation_at_the_departed_key_is_imported(self):
+        """Control: the departure is matched exactly, so a genuinely new line
+        at the same SKU and work centre still comes in."""
+        self._fixture()
+        sheet = list(self.OLD_SHEET) + [_row("F001", "Tort (predzag.)", C, 5, "B")]
+        out = self._import(self.X, sheet, self.OLD_WCS, groups=True)
+        self.assertEqual([n for n, *_ in self._lines(self.X)],
+                         ["Tort", "Keks", "Tort (predzag.)"])
+        self.assertFalse(any(r.get("loose") for r in out["skipped_moved_out"]))
+
+    def test_y_sheet_that_retimed_the_arrival_holds_it_once(self):
+        """Y's sheet re-timed the arrived Tort (10 → 12 s): the arrival is that
+        row's position, so it is not kept beside the sheet's copy."""
+        self._fixture()
+        out = self._import(self.Y, [_row("F005", "Pishiriq", C, 10, "C"),
+                                    _row("F001", "Tort", C, 12, "A"), _row("F003", "Non", E, 7)],
+                           groups=True)
+        self.assertEqual(out["kept_moved_in"], [])
+        self.assertEqual([n for n, *_ in self._lines(self.Y)], ["Pishiriq", "Tort", "Non", "Eski"])
+
+    def test_y_sheet_row_of_another_letter_keeps_the_arrival(self):
+        """Control: the sheet's Tort is lettered B, another cell's operation —
+        the arrived A line is kept."""
+        self._fixture()
+        out = self._import(self.Y, [_row("F005", "Pishiriq", C, 10, "C"),
+                                    _row("F001", "Tort", C, 12, "B")], groups=True)
+        self.assertIn("Tort", [r["name"] for r in out["kept_moved_in"]])
+
     def test_import_waits_for_a_follow_then_skips_what_it_moved(self):
         """The follow holds X's catalog lock while it moves c's «Tort» to Y;
         X's import of an old sheet queues on that lock and, once the follow
@@ -626,6 +678,21 @@ class ArchivedLines(_PG):
         rows = {r["id"]: r for r in prod._archived_lines(db, pp_catalog.at(db, Y, D), {}, Y)}
         self.assertTrue(rows[joined.id]["twin_live"])
         self.assertFalse(rows[alone.id]["twin_live"])
+
+    def test_a_twin_a_person_archived_is_an_ordinary_archived_line(self):
+        """Nothing moved: an identical line (or one typed in another case) set
+        aside by hand is counted and offered back, never read as a join."""
+        Y = self.Y
+        db = self.db
+        self._units(Y)
+        self._line(Y, "F001", "Tort", group="A")
+        same = self._line(Y, "F001", "Tort", sort=5, active=False, archived_by="Admin A")
+        case = self._line(Y, "F001", "Tort", wc="a2894", sort=6, active=False,
+                          archived_by="Admin A")
+        self._settle()
+        rows = {r["id"]: r for r in prod._archived_lines(db, pp_catalog.at(db, Y, D), {}, Y)}
+        self.assertFalse(rows[same.id]["twin_live"])
+        self.assertFalse(rows[case.id]["twin_live"])
 
 
 # ── T15: a writer whose row changed unit ────────────────────────────────────
