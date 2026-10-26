@@ -128,6 +128,7 @@ REASONS = {
     "failed": "xato — avtomatik qayta uriniladi",
     "shared_left": "umumiy pozitsiyalar qoldi",
     "shared_left_split": "umumiy pozitsiyalar qoldi (ikki brigadirga bo'lingan)",
+    "shared_left_archived": "arxivdagi umumiy pozitsiyalar eski brigadirda qoldi",
     "no_free_letter": "bo'sh harf qolmagan",
     "y_register_break": "yangi brigadirda harfsiz yacheyka bor",
     "pin_conflict": "odam soni ikki joyda kiritilgan",
@@ -879,14 +880,19 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first:
                 return
     # shared_lines / y_has_lines, on the old unit's catalog at h and today.
     stay_x = own.cells_standing(db, x, code, before, h, exclude={cell.id})
+    cats_x = (pp_catalog.at(db, x, h), pp_catalog.current(db, x))
+    at_x = [own.lines_at(cat.lines, code) for cat in cats_x]
+    rows_x = any(norm_code(w.code) == code for cat in cats_x for w in cat.work_centers)
+    if not any(at_x) and not rows_x:
+        return                  # X holds nothing at the code: whoever stays there, the
+                                # cell brings nothing (the engine records `nothing`)
     if unproven(x, stay_x):
         return
     A = dict(stay_x)
     A[cell.id] = c.letter_src
     mine: list = []
-    rows_x = False
-    for cat in (pp_catalog.at(db, x, h), pp_catalog.current(db, x)):
-        hd = own.handed(own.lines_at(cat.lines, code), A, cell.id)
+    for lines in at_x:
+        hd = own.handed(lines, A, cell.id)
         # Only an ACTIVE shared line stops the move (§1.9: archived lines
         # never block — the engine leaves them in the old unit and says so).
         shared = [p for p in hd.shared if getattr(p, "active", True) is not False]
@@ -895,7 +901,6 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first:
                    lines=[p.name for p in shared[:10]])
             return
         mine += hd.mine
-        rows_x = rows_x or any(norm_code(w.code) == code for w in cat.work_centers)
     c.owned = len({id(p) for p in mine})
     if not mine and not rows_x:
         return                  # it brings nothing: the engine records `nothing`
@@ -921,6 +926,13 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first:
     carried = {g for g in stay_y.values() if g}
     idents = {own.join_ident(p) for p in mine}
     already = c.event is None and cell_links.value_on(cell, "manager_id", before) == y
+    if already and stay_y:
+        # Beside other cells it keeps its letter only where the engine lets it
+        # (`catalog_follow.build_plan`'s `own_dst`): no other cell row of the
+        # unit at the code and no stayer carries it. Otherwise it is re-lettered
+        # and the lines under its old letter are no longer its own.
+        mine_y = cf._own_letter(cell, y, before)
+        already = bool(mine_y) and mine_y not in (cf._row_letters(db, y, code, {cell.id}) | carried)
     A_y = {**stay_y, cell.id: cell_links.letter_on(cell, before)} if already else None
     for cat in (pp_catalog.at(db, y, h), pp_catalog.current(db, y)):
         at_y = own.lines_at(cat.active_lines, code)
@@ -949,7 +961,7 @@ def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) ->
     named condition ({"kind", …params}) that stops it, or None when it may be
     followed (a cell gone, or a change from or to no unit, are the engine's to
     record). Reads only."""
-    from app.services import cell_archive, cell_links
+    from app.services import cell_archive
     today = today or _today()
     cell = db.get(Cell, row.cell_id)
     if cell is None:
@@ -974,17 +986,29 @@ def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) ->
         _decide_event(c, tls[cell.id], relettered.get(cell.id) or [])
     else:
         x = row.from_unit
-        orphans = _orphans(db, by_code, today, units=[x])
-        if (x, code) not in orphans:
+        # `run`'s snapshot, for this one code: every unit's orphans at it, less
+        # the positions a landed change left behind (that change's to follow);
+        # the cell claims those of every unit but its own. Orphans in a second
+        # unit make the old unit unknowable, as they did for `run`.
+        orphans = _orphans(db, by_code, today)
+        evs = [e for e in db.query(CellLinkEvent).filter(
+            CellLinkEvent.field == "manager_id", CellLinkEvent.applied_at.isnot(None),
+            CellLinkEvent.effective_from >= FLOOR,
+            CellLinkEvent.value.is_distinct_from(CellLinkEvent.prev),
+            CellLinkEvent.cell_id.in_([o.id for o in at_code])).all() if not cf._mark(e.vfx)]
+        evented = {e.cell_id for e in evs}
+        explained = {(e.prev, code) for e in evs}
+        xs = sorted(u for (u, k) in orphans
+                    if k == code and (u, k) not in explained and u != cell.manager_id)
+        if x not in xs:
             c.src, c.dst = x, cell.manager_id
             c.name("from_unknown", why="orphans_gone")
         else:
-            c.orphan_x = [x]
+            c.orphan_x = xs
             _decide_orphan(c, tls[cell.id], orphans)
             if c.named is None:
                 # Another cell the evidence places in the old unit claims the
                 # same orphans: whose is whose? (`run`'s claimers, for one.)
-                evented = set(cell_links.events().get("manager_id", {}))
                 rowed = {cid for (cid,) in db.query(PPCatalogMove.cell_id).filter(
                     PPCatalogMove.event_id.is_(None), PPCatalogMove.kind == "retro").all()}
                 for o in at_code:

@@ -425,6 +425,59 @@ class RetroPass(_Retro):
         [row] = self.move_rows()
         self.assertEqual((row.state, row.event_id), ("nothing", ev.id))
 
+    def test_a_cell_that_brings_nothing_is_settled_beside_an_unproven_stayer(self):
+        """X holds nothing at the code — no line, no work-centre row — and a
+        cell of X stands there with no evidence of it. Whoever really stood
+        there, nothing can move: settled `nothing`, never `stayer_unproven`
+        (a person would be asked about a move that changes nothing)."""
+        self.units(X, Y)
+        c = self.cell("3311", X)
+        self.cell("3312", X, letter="B")                    # no attendance, no event
+        self.line(Y, "F009", "Rulet", labor=30)
+        ev = self.applied(c, Y, H)
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assertEqual([(e["vcode"], e["state"]) for e in rec["skipped"]], [("3311", "nothing")])
+        self.assertEqual(self.catalog_fp(), before)
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.event_id), ("nothing", ev.id))
+
+    def test_a_pre12_letter_another_cell_row_carries_is_not_its_own(self):
+        """c (B) stands in Y beside y1 (A) and y2 (C) — and an ARCHIVED cell
+        row of Y at the code carries B too (archived long ago, so no window
+        move; a box where `uq_cells_wc_group` could not be built). The engine
+        does not let c keep a letter another row carries (`own_dst`): it is
+        re-lettered, and the Y position under B is then nobody's — shared by
+        everyone. The guard reads it the same way: `y_has_lines`, nothing
+        written."""
+        from sqlalchemy import text
+        from app.models import Cell
+        w = self._pre12_world(second=True)
+        with self.pg.engine.begin() as conn:
+            conn.execute(text("DROP INDEX IF EXISTS uq_cells_wc_group"))
+        try:
+            old = Cell(verifix_code="3809", sap_code=C, manager_id=Y, wc_group="B",
+                       archived_at=datetime(2026, 9, 1, 12, tzinfo=timezone.utc), archived_by="t")
+            self.db.add(old)
+            self.db.commit()
+            before = self.catalog_fp()
+            rec = self.run_retro()
+            # No landing event: a named move of it is said, never recorded.
+            self.assert_named("y_has_lines", "3801", before, rec, row=False)
+            [e] = self.skipped(rec, "3801")
+            self.assertEqual(e["params"]["lines"], ["Keks"])
+            self.assertEqual(self.db.get(Cell, w["c"].id).wc_group, "B")
+        finally:
+            self.db.rollback()
+            self.db.query(Cell).filter(Cell.verifix_code == "3809").delete()
+            self.db.commit()
+            with self.pg.engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_cells_wc_group ON cells "
+                    "(manager_id, upper(regexp_replace(sap_code, '\\s', '', 'g')), wc_group) "
+                    "WHERE wc_group IS NOT NULL AND sap_code IS NOT NULL AND manager_id IS NOT NULL"))
+
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
 class RetroGuards(_Retro):
@@ -858,6 +911,44 @@ class RetroFlow(_Retro):
         self.assertEqual((row.state, row.kind), ("named", "retro"))
         self.assertEqual([(n["kind"], n["other"]) for n in row.named], [("stayer_unproven", "4102")])
         self.assertEqual(self.ids_on(X, H), {p.id})
+
+    def test_sweep_recheck_sees_orphans_in_a_second_unit(self):
+        """A retroactive transfer of a cell with no landing event (X → Y,
+        read off X's orphaned position) waits for its retry. Since the pass,
+        the one cell Z kept at the code was archived: Z's position there is an
+        orphan too. Asked now, the pass could not tell which unit the cell came
+        from (`from_unknown`) — the recheck reads every unit's orphans as the
+        pass did, and names it. Nothing written."""
+        from app.models import Cell, PPCatalogMove
+        h = date(2026, 10, 8)
+        self.units(X, Y, Z)
+        c = self.cell("4301", Y)                    # moved before link history
+        p = self.line(X, "F001", "Tort")
+        z = self.cell("4302", Z)
+        self.line(Z, "F002", "Keks")
+        self.daily(X, h, "F001", plan=4, actual=4)
+        self.att(c, X, date(2026, 9, 29), h - timedelta(days=1))
+        self.att(c, Y, h, date(2026, 10, 11))
+        self.att(z, Z, date(2026, 9, 20), date(2026, 10, 11))
+        self.enable()
+        self.db.add(PPCatalogMove(kind="retro", state="busy", event_id=None, cell_id=c.id,
+                                  code=C, from_unit=X, to_unit=Y, home_from=h, tries=1,
+                                  next_try_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+        self.db.commit()
+        [row] = self.move_rows()
+        self.assertIsNone(retro.recheck(self.db, row))              # the control: it would follow
+        # Archived on 20 Oct (gone from the 21st) — Z, not X or Y: no window move.
+        self.db.get(Cell, z.id).archived_at = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+        self.db.commit()
+        self.forget()
+        before = self.catalog_fp()
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind), ("named", "retro"))
+        [n] = row.named
+        self.assertEqual((n["kind"], n.get("why")), ("from_unknown", "orphans_in_several_units"))
+        self.assertEqual(self.catalog_fp(), before)
+        self.assertEqual(self.ids_on(X, h), {p.id})
 
     def test_sweep_recheck_unavailable_once_the_module_is_gone(self):
         """The one-shot module deleted while a retroactive transfer still waits
