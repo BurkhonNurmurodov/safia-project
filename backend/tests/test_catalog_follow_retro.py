@@ -419,8 +419,9 @@ class RetroPass(_Retro):
         self.db.commit()
         before = self.catalog_fp()
         rec = self.run_retro()
-        self.assertEqual(rec["moved"], [])
-        self.assertEqual([(e["vcode"], e["state"]) for e in rec["skipped"]], [("3301", "nothing")])
+        self.assertEqual((rec["moved"], rec["skipped"]), ([], []))
+        self.assertEqual([(e["vcode"], e["state"]) for e in rec["settled"]], [("3301", "nothing")])
+        self.assertEqual(self.flag(), "done:0/0")
         self.assertEqual(self.catalog_fp(), before)
         [row] = self.move_rows()
         self.assertEqual((row.state, row.event_id), ("nothing", ev.id))
@@ -438,7 +439,8 @@ class RetroPass(_Retro):
         self.db.commit()
         before = self.catalog_fp()
         rec = self.run_retro()
-        self.assertEqual([(e["vcode"], e["state"]) for e in rec["skipped"]], [("3311", "nothing")])
+        self.assertEqual(rec["skipped"], [])
+        self.assertEqual([(e["vcode"], e["state"]) for e in rec["settled"]], [("3311", "nothing")])
         self.assertEqual(self.catalog_fp(), before)
         [row] = self.move_rows()
         self.assertEqual((row.state, row.event_id), ("nothing", ev.id))
@@ -613,6 +615,76 @@ class RetroGuards(_Retro):
         self.assert_named("window_cells_moved", "1701", before, rec)
         self.assert_named("window_cells_moved", "1702", before, rec)
 
+    def test_orphans_of_another_cell_are_not_handed_to_a_landed_change(self):
+        """X held a (A) and b (B) at the code. b moved to Y on 3 Oct — before
+        link events, so it has none — and its position «Keks» (B) stayed in X.
+        a then left X for Z with a landed change on H. The change accounts for
+        a's A position only: handed «Keks» too (a lone departer takes every
+        line nobody claims) it would carry b's position to Z. a is named,
+        b is asked about X's orphans and named too, nothing is written."""
+        self.units(X, Y, Z)
+        a = self.cell("4401", X, letter="A")
+        b = self.cell("4402", Y, letter="B")                # moved X → Y on 3 Oct, no event
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B", sort=1)
+        for d in _days(date(2026, 10, 1), H + timedelta(days=2)):
+            self.daily(X, d, "F001", plan=10, actual=9)
+            self.daily(X, d, "F002", plan=20, actual=18)
+        self.att(b, X, date(2026, 9, 29), date(2026, 10, 2))
+        self.att(b, Y, date(2026, 10, 3), date(2026, 10, 11))
+        self.att(a, X, date(2026, 9, 29), H - timedelta(days=1))
+        self.applied(a, Z, H, letter="A")
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("letter_ambiguous", "4401", before, rec)
+        [e] = self.skipped(rec, "4401")
+        self.assertEqual((e["params"]["why"], e["params"]["letters"], e["params"]["letter"]),
+                         ("orphans_of_another_cell", ["B"], "A"))
+        self.assertTrue(self.skipped(rec, "4402"), rec["skipped"])
+        self.assertIn("boshqa yacheykaning pozitsiyalari", retro.text_of(rec))
+
+    def _hop_world(self, *, before_window: bool):
+        """b left X at the code shortly before 6 Oct — within the window
+        (X until 2 Oct, Y from 3 Oct) or before it (X in mid-September, Y from
+        the window's first day) — leaving nothing of its own in X; a (A) then
+        left X for Z with a landed change on H."""
+        self.units(X, Y, Z)
+        a = self.cell("4501", X, letter="A")
+        b = self.cell("4502", Y, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.daily(X, H, "F001", plan=10, actual=9)
+        if before_window:
+            self.att(b, X, date(2026, 9, 10), date(2026, 9, 15))
+            self.att(b, Y, date(2026, 9, 29), date(2026, 10, 11))
+        else:
+            self.att(b, X, date(2026, 9, 29), date(2026, 10, 2))
+            self.att(b, Y, date(2026, 10, 3), date(2026, 10, 11))
+        self.applied(a, Z, H, letter="A")
+        self.db.commit()
+
+    def test_window_cells_moved_counts_a_hop_before_the_floor(self):
+        """The pass itself follows such a hop from 6 Oct (`_decide_orphan`), so
+        it is a move of its window: a, leaving the same unit at the same code,
+        is not followed past it — `window_cells_moved`, nothing written."""
+        self._hop_world(before_window=False)
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("window_cells_moved", "4501", before, rec)
+        [e] = self.skipped(rec, "4501")
+        self.assertEqual((e["params"]["other"], e["params"]["day"], e["params"]["what"]),
+                         ("4502", "2026-10-03", "evidence"))
+
+    def test_window_cells_moved_counts_a_hop_from_the_prior_placement(self):
+        """The same with b's last placement in X before the window and Y from
+        its first day: the hop from `prior` counts."""
+        self._hop_world(before_window=True)
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("window_cells_moved", "4501", before, rec)
+        [e] = self.skipped(rec, "4501")
+        self.assertEqual((e["params"]["other"], e["params"]["day"]), ("4502", "2026-09-29"))
+
     def _stayer_world(self, *, evidence: bool):
         """c (A) X → Y landed on H with its position; a cell 3502 stands in Y
         at the code with no letter — opened on 20 Oct (cells carry no creation
@@ -724,6 +796,10 @@ class RetroGuards(_Retro):
         self.assert_named("archived", "1901", before, rec)
 
     def test_no_code(self):
+        """No SAP code to carry positions by: a final record, and SETTLED — it
+        is no move a person must decide, so neither the hand-resolution list
+        nor the flag's named count holds it."""
+        from app.models import PPCatalogMove
         self.units(X, Y)
         c = self.cell("2001", X, sap=None)
         self.line(X, "F001", "Tort")
@@ -731,7 +807,12 @@ class RetroGuards(_Retro):
         self.db.commit()
         before = self.catalog_fp()
         rec = self.run_retro()
-        self.assert_named("no_code", "2001", before, rec)
+        self.assertEqual((rec["moved"], rec["skipped"]), ([], []))
+        self.assertEqual([(e["vcode"], e["kind"]) for e in rec["settled"]], [("2001", "no_code")])
+        self.assertEqual(self.catalog_fp(), before)
+        [row] = self.db.query(PPCatalogMove).filter(PPCatalogMove.cell_id == c.id).all()
+        self.assertEqual((row.state, [n["kind"] for n in row.named]), ("named", ["no_code"]))
+        self.assertEqual(self.flag(), "done:0/0")
 
     def test_conservation(self):
         """Y's own line read a 0/0 snapshot the arrival's figures would fill:
@@ -750,22 +831,124 @@ class RetroGuards(_Retro):
         self.assert_named("conservation", "2101", before, rec)
 
     def test_volume(self):
-        """Too much at once: nothing is applied. A change that moves nothing
-        (a new cell given its first brigadir) is no part of the volume and is
-        still settled."""
+        """Too much at once: NOTHING is applied and nothing is recorded per
+        cell — not the real move's final `named` row, not the `nothing` of a
+        change that brings nothing (a new cell given its first brigadir). The
+        flag reads `volume:` and not `done`, so the sweep stays off; the pass
+        is due again at the next boot, and with the cap raised it completes."""
         from app.models import Cell, PPCatalogMove
-        self.simple_event_world("2201")
+        _c, p, ev = self.simple_event_world("2201")
         fresh = self.cell("2202", None, sap="B300")
         self.applied(fresh, Y, H)
         self.db.commit()
-        before = self.catalog_fp()
+        before = self.fingerprint()
         with mock.patch.object(retro, "MAX_CELLS", 0):
             rec = self.run_retro()
-        self.assert_named("volume", "2201", before, rec)
+            self.assertEqual(rec["result"], "volume")
+            self.assertEqual((rec["cells"], rec["rows"]), (1, 1))
+            self.assertEqual([m["vcode"] for m in rec["real"]], ["2201"])
+            self.assertEqual(self.flag(), "volume:1/1")
+            self.assertEqual(self.fingerprint(), before)
+            self.assertEqual(self.move_rows(), [])
+            self.assertFalse(cf.enabled(self.db))
+            self.assertTrue(retro.pending(self.db))
+            self.assertEqual(retro.dm_mode(self.db), "volume_1_1")
+            text_ = retro.text_of(self.stored())
+            self.assertIn("HECH NARSA QO'LLANMADI", text_)
+            self.assertIn("MAX_CELLS", text_)
+            self.assertIn("2201", text_)
+            # The next boot trips it again on the same numbers: the same DM.
+            self.run_retro()
+            self.assertEqual(self.flag(), "volume:1/1")
+            self.assertEqual(self.move_rows(), [])
+        # A deploy raising the cap: the pass completes.
+        rec = self.run_retro()
+        self.assertEqual([m["vcode"] for m in rec["moved"]], ["2201"])
+        self.assertEqual(self.flag(), "done:1/0")
+        self.assertTrue(cf.enabled(self.db))
+        self.assertEqual(self.ids_on(Y, H), {p.id})
         [row] = self.db.query(PPCatalogMove).filter(PPCatalogMove.cell_id == fresh.id).all()
         self.assertEqual(row.state, "nothing")
         self.assertIn("from_no_unit", {n["kind"] for n in row.named})
         self.assertIsNotNone(self.db.get(Cell, fresh.id))
+
+    def _volume_world(self):
+        """a (A) X → Y on H with its one position; s (B) stays in X with two
+        of its own; Y keeps y1 (C) with a position of its own. Every SKU has a
+        snapshot every day from H−2 to H+3, every letter a pin, and a's
+        position one per-line value on H."""
+        self.units(X, Y)
+        a = self.cell("4601", X, letter="A")
+        s = self.cell("4602", X, letter="B")
+        y1 = self.cell("4603", Y, letter="C")
+        self.att(s, X, date(2026, 10, 1), TODAY)                  # both really stood there
+        self.att(y1, Y, date(2026, 10, 1), TODAY)
+        la = self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B", sort=1)
+        self.line(X, "F003", "Non", letter="B", sort=2)
+        self.line(Y, "F009", "Rulet", letter="C")
+        for d in _days(H - timedelta(days=2), H + timedelta(days=3)):
+            for sku in ("F001", "F002", "F003"):
+                self.daily(X, d, sku, plan=10, actual=9)
+            self.daily(Y, d, "F009", plan=5, actual=5)
+            self.pin(X, d, group="A", people=2)
+            self.pin(X, d, group="B", people=3)
+            self.pin(Y, d, group="C", people=4)
+        self.db.flush()
+        self.line_daily(la, H, plan=11)
+        self.applied(a, Y, H, letter="A")
+        self.db.commit()
+        return a, la
+
+    def test_volume_counts_what_the_follow_touches(self):
+        """The cap is read against what the follow re-keys: X's rows of a's
+        own position (4 snapshots, 1 per-line value) and X's pins at the code
+        (8), from H — 13. Not the stayer's SKUs, not the new unit's own, not
+        a day before H (the old count read 33)."""
+        a, la = self._volume_world()
+        before = self.fingerprint()
+        with mock.patch.object(retro, "MAX_ROWS", 12):
+            rec = self.run_retro()
+        self.assertEqual((rec["result"], rec["cells"], rec["rows"]), ("volume", 1, 13))
+        self.assertEqual([(m["vcode"], m["rows"], m["lines"]) for m in rec["real"]], [("4601", 13, 1)])
+        self.assertEqual(self.flag(), "volume:1/13")
+        self.assertEqual(self.fingerprint(), before)
+        # Nothing final: the sweep stays off, the pass runs again at the next
+        # boot, and the DM says nothing was applied — once per count.
+        self.assertTrue(retro.pending(self.db))
+        self.assertFalse(cf.enabled(self.db))
+        self.assertEqual(retro.dm_mode(self.db), "volume_1_13")
+        self.assertIn("HECH NARSA QO'LLANMADI", retro.text_of(rec))
+        from app.services import action_log
+        with mock.patch.object(retro, "MAX_ROWS", 13), \
+                mock.patch.object(action_log, "record_system") as journal:
+            rec = self.run_retro()
+        self.assertEqual([m["vcode"] for m in rec["moved"]], ["4601"])
+        self.assertEqual(self.flag(), "done:1/0")
+        # One Jurnal row for the pass that applied, marked retro.
+        [call] = journal.call_args_list
+        self.assertEqual(call.args[:2], ("org", "org.catalog_moved"))
+        details = call.kwargs["details"]
+        self.assertIn(("kind", "retro"), details)
+        self.assertIn(("catalog_moved", 1), details)
+        self.assertIn(la.id, self.ids_on(Y, H))
+
+
+class DmText(unittest.TestCase):
+    def test_settled_outcomes_are_not_to_resolve_by_hand(self):
+        """What brought nothing to move is one line apart; what a person must
+        decide is listed — the strict stops and the retro's guards first."""
+        skipped = [{"vcode": f"9{i:03}", "from": 1, "to": 2, "state": "nothing", "kind": "nothing"}
+                   for i in range(30)]
+        skipped += [{"vcode": "0001", "from": 1, "to": 2, "state": "named", "kind": "no_code"},
+                    {"vcode": "0002", "from": 1, "to": 2, "state": "named", "kind": "stayer_unproven"}]
+        rec = {"result": "done", "moved": [], "skipped": skipped, "busy": [], "units": {}}
+        text = retro.text_of(rec)
+        hand = text.split("⚠️")[1].split("✔️")[0]
+        self.assertIn("0002", hand)
+        self.assertNotIn("9000", hand)
+        self.assertNotIn("0001", hand)
+        self.assertIn("Ko'chadigan narsa yo'q: 31", text)
 
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
