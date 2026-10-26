@@ -7872,7 +7872,11 @@ upload filled them. The whole design, every critique and its verdict, is
   two units is `split`, and a cell an already-recorded change takes out on the
   same landing day counts as leaving — a team moved together and then split by
   a second save is refused too. The Jurnal names the cells that went along
-  (`move_with`, «Birga ko'chirildi»).
+  (`move_with`, «Birga ko'chirildi»), and a grant holder's team move reaches
+  the admins' alert one `unit` row per cell. A refused «Doimiy qilish» offers
+  «Hammasini doimiy qilish» — ONE permanent save of the cell and every staying
+  cell the day routes to the same brigadir — or names the ones routed
+  elsewhere.
 - **The follow is a SWEEP after the landing, never part of `apply_due`.** The
   minute job `catalog-follow` (`run_sweep`, and `kick()` straight after a
   landing in `cell_links.run_apply_due`) follows every applied `manager_id`
@@ -7907,10 +7911,21 @@ upload filled them. The whole design, every critique and its verdict, is
   still carries it (`_moved_out_exclude`); the upload names its `empty_targets`.
   An import into the OLD unit drops the sheet rows of a position that moved out
   — a whole code the unit keeps no cell at, then one row per moved line by join
-  identity (and letter) — `skipped_moved_out` / `skipped_wc`; an import into the
-  NEW unit keeps a live arrival its sheet lacks, with its id (`kept_moved_in`).
-  The «Arxiv» card neither counts nor restores a joined twin (`twin_live`,
-  «birlashtirilgan»).
+  identity (and letter) — `skipped_moved_out` / `skipped_wc` — and then, for a
+  departure no row matches exactly (the working sheet's «Группа» is blank, or
+  its Трудоемкость was re-timed), a LOOSE pass by quantity key and work centre:
+  at most as many rows as the sheet holds beyond the unit's own lines there,
+  only rows whose letter is blank or carried by no cell standing in the unit,
+  each named `loose`; an import into the NEW unit keeps a live arrival its
+  sheet lacks, with its id (`kept_moved_in`) — a sheet row at its quantity key
+  and work centre (and letter) beyond the unit's own lines IS the arrival,
+  re-timed, so it is never kept beside it. The raw «Фаза/Заголовок» tab gives a
+  pinned viewer of a unit with no line that day nothing (`_scoped_faza`'s
+  rule). The «Arxiv» card neither counts nor restores a joined twin
+  (`twin_live`, «birlashtirilgan») — only a copy a join archived
+  (`archived_by` = `catalog_follow.ARCHIVED_BY`); a twin a person set aside is
+  an ordinary archived line. The brigadir's «O'lchov birligi» door (v4.335)
+  re-reads its rows under the lock like every catalog writer.
 - **A leader's days are DATED by the cells they ran then.**
   `cell_lookup.sap_codes_for_leader` / `sap_groups_for_leader` /
   `cells_unit_for_leader(day=)` share one selection, `leader_cells_on`: the
@@ -7928,7 +7943,11 @@ upload filled them. The whole design, every critique and its verdict, is
   already read in the new unit — a night unit's 20:00 opening under a shift-1
   checklist (`leader_shift`); a retro transfer the sweep is retrying)
   `_Ctx.require_settled` raises `catalog_follow.CatalogUnsettled`: a quiet
-  `no_data` (one log line, no stack trace) retried until `GIVE_UP`, and a
+  `no_data` (one log line, no stack trace) retried until `GIVE_UP` past the
+  LATER of its hour and the moment the follow could first run
+  (`catalog_follow.unsettled_since` — a move's landing, facts
+  `unsettled_since`, `leader_auto._give_up_at`), so a night move landing at
+  20:00 never costs a 10:00 check at 16:00, and a
   warning card with no figures. `auto_check_timing` then answers nothing for
   the objection, and `auto_check_restore` reads the pages and saves of the
   cells' unit of the day.
