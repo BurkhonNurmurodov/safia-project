@@ -558,6 +558,10 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         people_typed_only=zagruzka_source.uses_production(day),
         wc_cells=wc_cells,
         group_overrides=group_overrides,
+        # …and the normal form codes are compared in when the engine decides
+        # which work centres have a plan today (`people_locked`), so its lock
+        # and `zagruzka_source.planned_wcs`' filter answer one question one way.
+        norm_wc=norm_code,
     )
     if group_scope is not None:
         # The leader's slice is CUT from the code-scoped computation, never
@@ -1780,6 +1784,49 @@ def _refuse_orphan_pin(letters_at: dict, code: str, grp: Optional[str],
                 f"people on a group a cell carries."))
 
 
+def _planned_at(db: Session, mid: int, day) -> Optional[frozenset]:
+    """The normalised work centres this unit-day gives PLAN MINUTES to, or None
+    when it plans nothing at all — `zagruzka_source.planned_wcs` for one day.
+
+    None is «no plan has landed», and it locks nothing: a brigadir must never be
+    shut out of typing their own day because the SAP file carrying it has not
+    been uploaded. See that function and `pp_calc.compute_dashboard`'s
+    `day_has_plan` — the rule is one rule, read here, by the page's engine and
+    by the загрузка's own filter."""
+    return zagruzka_source.planned_wcs(db, [int(mid)], day, day).get(
+        (int(mid), day.isoformat()))
+
+
+def _refuse_unplanned_pin(planned: Optional[frozenset], code: str, grp: Optional[str],
+                          people: Optional[int], stored: Optional[int]) -> None:
+    """400 for a NEW or CHANGED people pin on a work centre with no plan that
+    day (2026-10-26, the operator: «make it only possible to write Odam soni on
+    the cells with plans»).
+
+    A headcount there divides nothing — the work centre has no minutes — and
+    until this rule it still entered the fleet's ΣN while the page that collects
+    it could not draw the row at all, so the загрузка divided a unit-day by a
+    number nobody could see or correct. Nothing counts such a pin any more
+    (`zagruzka_source.typed_pins`), and nothing may create one.
+
+    Re-sending the stored value and CLEARING (None) stay allowed, the
+    `_refuse_orphan_pin` rule and for the same two reasons: this tab re-sends
+    every row on every Save, so a strict refusal would block a save about
+    another work centre for as long as the stray pin stood — and a pin already
+    stored must always be removable."""
+    if planned is None or people is None or people == stored:
+        return
+    n = norm_code(code)
+    if n in planned:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail={"code": "wc_no_plan", "work_center": n, "group": grp,
+                "message": (f"{wc_group.label(code, grp)}: no plan at {n} today, so no "
+                            f"people are entered here — the headcount is typed on the "
+                            f"work centres the day plans.")})
+
+
 def _echoes_group_sum(pins: dict, people: Optional[int]) -> bool:
     """Is a whole-centre `people` just the Σ of the typed group pins `pins` (the
     ones the caller can see) sent back?
@@ -1831,6 +1878,17 @@ def set_wc_override(
             raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
 
     whole, pins = _pins_at(db, mid, day, code)
+    # No plan at this work centre today ⇒ no headcount is typed on it. An
+    # unchanged re-send and a clear stay allowed (`_refuse_unplanned_pin`), so a
+    # pin stored before the rule can always be removed from here.
+    _planned = _planned_at(db, mid, day)
+    if grp is not None:
+        _row = pins.get(grp)
+        _refuse_unplanned_pin(_planned, code, grp, body.people,
+                              _row.people if _row else None)
+    elif not _echoes_group_sum(pins, body.people):
+        _refuse_unplanned_pin(_planned, code, None, body.people,
+                              whole.people if whole else None)
     cleared_whole: Optional[int] = None
     dropped: list[tuple[str, Optional[int]]] = []
     new_people = body.people
@@ -2045,6 +2103,23 @@ def save_staffing(
             for g, n in slot["groups"].items():
                 _refuse_orphan_pin(letters_at, code, g, n,
                                    pins[g].people if g in pins else None)
+    # …and a headcount on a work centre the day plans nothing at
+    # (`_refuse_unplanned_pin`). Refused BEFORE anything is touched, like the
+    # two checks above, so a 400 leaves the session clean. An echoed Σ is not a
+    # typed figure (it is the group pins sent back), so it is not judged here
+    # either; a clear and an unchanged re-send are always accepted, which is
+    # what keeps a stray pin from blocking every other save until it is gone.
+    planned = _planned_at(db, mid, day)
+    if planned is not None:
+        for code, slot in plan.items():
+            head, pins = slot["header"], pins_of(code)
+            if head is not None and not echoes(code, slot):
+                stored = existing.get((code, None))
+                _refuse_unplanned_pin(planned, code, None, head.people,
+                                      stored.people if stored else None)
+            for g, n in slot["groups"].items():
+                _refuse_unplanned_pin(planned, code, g, n,
+                                      pins[g].people if g in pins else None)
 
     # ONE log line per save, so the register carries the whole «Odamlar soni»
     # press instead of one row per cell: the per-cell old→new rides as changes,

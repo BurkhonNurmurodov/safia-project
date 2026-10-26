@@ -102,10 +102,32 @@ def typed_pins(db: Session, manager_ids: Iterable[int],
     in it) and must not be mistaken for silence. A group pin's `people` is the
     only thing it carries, so a row holding just the day's штатка pin (people
     NULL) is not a pin here.
+
+    **A pin on a work centre with NO PLAN that day is not a pin here either**
+    (2026-10-26, the operator: «ignore the Odam soni where they're written on the
+    cells without plan»). `planned_wcs` is the rule and the reason it has one
+    spelling: a headcount typed on a work centre the day planned nothing at was
+    counted in the загрузка and could be drawn nowhere on the page that collects
+    it, so the fleet divided one unit-day by a number nobody could see, let
+    alone correct — Niyozov Izzatilla's 24.10 read 66 people on /daily against
+    45 on «Zagruzka fayli», the whole gap one 21 typed on a planless B2743.
+    Filtered HERE, at the one door, so every reader of a typed pin follows it:
+    `unit_people` (the загрузка's own ΣN), `typed_people`, `cell_pins` and
+    `cell_people` (the ojidaniya weight and /zagruzka-cell's per-cell
+    headcount), the automatic check #1 and every gap report — a second reading
+    of «which pins exist» is exactly the contradiction this closes.
+
+    **Consequence to know**: such a cell-day loses its ojidaniya WEIGHT with its
+    headcount, so its waiting leaves the unit's headcount-weighted mean. That is
+    not a new state — it is precisely the state of a cell whose work centre
+    nobody typed, which `idle_source.unit_downtime` has always left out of both
+    sides of that mean. Nothing is stored, so every day from
+    `ZAGRUZKA_FROM` on re-reads under the rule at the next restart.
     """
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
         return {}
+    planned = _planned_for(db, ids, date_from, date_to)
     out: dict[tuple[int, str, str, Optional[str]], float] = {}
     for r in db.query(
         PPWorkCenterDaily.manager_id, PPWorkCenterDaily.date,
@@ -120,8 +142,68 @@ def typed_pins(db: Session, manager_ids: Iterable[int],
         wc = (r.work_center or "").strip()
         if not wc:
             continue
-        out[(int(r.manager_id), r.date.isoformat(), wc, r.wc_group or None)] = float(r.people)
+        mid, day = int(r.manager_id), r.date.isoformat()
+        # A unit-day ABSENT from the map planned nothing at all and locks
+        # nothing (see `planned_wcs`); one that planned something keeps only the
+        # pins of the work centres it planned.
+        at = planned.get((mid, day))
+        if at is not None and wc_group.wc_key(mid, wc)[1] not in at:
+            continue
+        out[(mid, day, wc, r.wc_group or None)] = float(r.people)
     return out
+
+
+def planned_wcs(db: Session, manager_ids: Iterable[int],
+                date_from: date, date_to: date) -> dict[tuple[int, str], frozenset]:
+    """``{(manager_id, "YYYY-MM-DD"): {normalised work centre}}`` — the work
+    centres a unit-day gives PLAN MINUTES to, and THE definition of «a work
+    centre with a plan» on the загрузка side (2026-10-26).
+
+    `wc_labor` with a ``plan > 0`` filter and nothing else, so the set holds
+    exactly the codes `pp_calc`'s own `q_by_wc` holds — that dict accumulates
+    `if total_labor:` — which is what keeps the page's lock, the write refusal
+    and this filter ONE rule rather than three readings of the same question.
+    A SQL join cannot answer it: the minutes need each day's OWN catalog
+    (`pp_catalog`), a Трудоемкость edited today never re-prices yesterday, and
+    the per-line overrides sit on top of the shared quantity.
+
+    **A unit-day with no planned work centre at all is ABSENT, and absent means
+    «no plan has landed — every pin counts».** See `pp_calc.compute_dashboard`'s
+    `day_has_plan` for why: a brigadir is never locked out of their own day by a
+    file nobody uploaded, and the ojidaniya weight of a planless day is not
+    silently zeroed. The загрузка of such a day is blank either way.
+
+    Codes are normalised on BOTH sides (`wc_group.wc_key` → `cell_lookup
+    .norm_code`): a pin typed under one spelling of a work centre and a catalog
+    line carrying the other are one work centre to every per-cell reader, and a
+    filter must err toward KEEPING a pin rather than dropping one over a
+    Cyrillic twin.
+    """
+    out: dict[tuple[int, str], set] = defaultdict(set)
+    for (mid, day, wc), (plan, _actual) in wc_labor(db, manager_ids, date_from, date_to).items():
+        if plan and plan > 0:
+            key = wc_group.wc_key(mid, wc)
+            out[(key[0], day)].add(key[1])
+    return {k: frozenset(v) for k, v in out.items() if v}
+
+
+def _planned_for(db: Session, ids: list[int], date_from: date, date_to: date) -> dict:
+    """`planned_wcs`, computed ONCE per (units, range) per Session.
+
+    `typed_pins` is read several times in one request — the загрузка's ΣN, the
+    ojidaniya weight, a gap report — and each call would otherwise re-read every
+    unit's dated catalog and quantities (`_labor_inputs`) to answer the same
+    question. Kept on `db.info`, which is per request (`get_db`) or per
+    scheduler pass: nothing on this platform writes a plan QUANTITY and then
+    reads a typed pin in the same session — the two write doors that move
+    quantities (the SAP upload, /override) answer through
+    `pp_calc.compute_dashboard`, which computes the planned set itself from the
+    rows it is handed."""
+    key = ("zs_planned", tuple(ids), date_from.isoformat(), date_to.isoformat())
+    got = db.info.get(key)
+    if got is None:
+        got = db.info[key] = planned_wcs(db, ids, date_from, date_to)
+    return got
 
 
 def fold_pins(pins: dict) -> dict[tuple[int, str, str], float]:
