@@ -3,7 +3,9 @@ docs/plan-catalog-follows-cells.md): a scratch Postgres database
 (`pg_scratch`, `SAFIA_TEST_PG`) with `app.database.SessionLocal` pointed at it,
 a fixture builder for units, cells, catalogs and per-day data, the platform's
 own DOORS for a brigadir change (`cell_register.set_unit`, the /cells PUT, a
-«Verifix sinxron» tap), the landing (`cell_links.apply_due`), the follow
+«Verifix sinxron» tap — and the register's «Arxivlash», a catalog row edit, a
+SAP upload and an ABC import around one), the landing
+(`cell_links.apply_due`), the follow
 (`catalog_follow.run_sweep`), and a READ of every figure through the
 platform's own readers:
 
@@ -407,6 +409,25 @@ class World(unittest.TestCase):
             out = verifix_sync.apply_item(self.db, it.id, by="test", choice=choice)
         self.settle()
         return it, out
+
+    def archive_cell(self, cell, *, at):
+        """The /cells register's «Arxivlash» (`admin_archive_cell`), as an
+        admin, at `at`: the cell exists on that day and is gone from the next.
+        The archive stamps the wall clock it is pressed at, so `at` stands in
+        for it there."""
+        from app.routers import profiles
+        from app.services import cell_archive
+
+        class _At(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return at.astimezone(tz) if tz else at.replace(tzinfo=None)
+
+        with mock.patch.object(cell_archive, "datetime", _At):
+            out = profiles.admin_archive_cell(cell.id, profiles.CellArchiveBody(archived=True),
+                                              db=self.db, caller=ADMIN)
+        self.settle()
+        return out
 
     def edit_line(self, line, *, at, **fields):
         """The «Pozitsiyalar» row edit (`admin_update_catalog`) — dated by the

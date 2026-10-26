@@ -66,12 +66,13 @@ class _E2E(World):
         for name in before:
             self.assertEqual(dumps(after[name]), dumps(before[name]), f"{name}: days < D moved")
 
-    def assert_span_consistent(self, units, a, mid, b, *, zc_letter=True):
+    def assert_span_consistent(self, units, a, mid, b, *, zc_letter=True, zc=True):
         """A range read ACROSS a move day answers each day exactly what a
         range on its own side answers — the day-keyed readers, «Yacheyka
         zagruzkasi»'s cell inputs and «Plan Bajarish»'s days alike.
         `zc_letter=False` compares «Yacheyka zagruzkasi»'s figures without the
-        letter it prints beside each cell (see `test_t5_letter_printed_across_the_move`)."""
+        letter it prints beside each cell (see `test_t5_letter_printed_across_the_move`);
+        `zc=False` leaves that page out altogether (`test_one_read_over_both_stays`)."""
         whole = self.reads(units, a, b)
         left = self.reads(units, a, mid - timedelta(days=1))
         right = self.reads(units, mid, b)
@@ -79,7 +80,7 @@ class _E2E(World):
                      "typed_people", "cell_pins", "dashboard", "live", "fleet", "idle"):
             joined = {**left[name], **right[name]}
             self.assertEqual(dumps(whole[name]), dumps(joined), f"{name} read across {mid}")
-        for u in units:
+        for u in (units if zc else ()):
             joined = {}
             for part in (left, right):
                 for code, by_day in (part["zagruzka_cell"][u].get("inputs") or {}).items():
@@ -1216,6 +1217,469 @@ class MoreAfterTheMove(_E2E):
         self.assertEqual([(both[k][day]["trud_plan"], both[k][day]["o_soni"]) for k in ("0301", "0302")],
                          [(30.0, 3.0), (4.0, 2.0)])
         self.assert_span_consistent([X, Y], lo, D, hi)
+
+    # DEFECT — the same one, in the page's diagnostics. Expected to fail until
+    # zagruzka_cell reads each day's letter there too.
+    @unittest.expectedFailure
+    def test_one_read_over_both_stays_diagnostics(self):
+        """The same read's DIAGNOSTICS. With c read as «C» over the whole
+        range, the three A pins X typed for c on D−3…D−1 are listed as an
+        ORPHAN letter (`diagnostics.orphan_groups` = [{A2894, A, lines 0,
+        pins 3}]) — a register error to fix that is no error at all: each of
+        those days c carried A. A read of [D−3, D−1] alone lists none."""
+        lo, hi = self.SPAN
+        self._there_and_back(reads=False)
+        alone = self.zagruzka_cell(X, lo, D - timedelta(days=1))["diagnostics"]["orphan_groups"]
+        both = self.zagruzka_cell(X, lo, hi)["diagnostics"]["orphan_groups"]
+        self.assertEqual(alone, [])
+        self.assertEqual(both, [])                      # lists A, 3 pins
+
+    def test_one_read_over_both_stays_other_readers(self):
+        """The same read over both stays, by every OTHER reader — the catalog,
+        `zagruzka_source`, the dashboard, /live, the fleet, the ojidaniya and
+        «Plan Bajarish» each answer every day as a read of its side alone. The
+        defect above is «Yacheyka zagruzkasi»'s and no other page's."""
+        lo, hi = self.SPAN
+        self._there_and_back(reads=False)
+        self.assert_span_consistent([X, Y], lo, D, hi, zc=False)
+        self.assert_span_consistent([X, Y], lo, self.BACK, hi, zc=False)
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class Review(_E2E):
+    """Scenarios added on review: a letter Y's own past still carries (the
+    follow, not the landing, dates the cell's letter), a manual twin (T7), a
+    typed group override that travels while a twin stays, a join that hides a
+    typed value (the admin DM), and the §1.10 edges through the real doors."""
+
+    def test_letter_taken_by_ys_past(self):
+        """c(A) X → Y. No cell of Y carries A — y1 is C — so the landing keeps
+        A and stamps no letter history. But a pin typed weeks ago in Y carried
+        A (§1.6: a letter any Y pin carried, on any date, is TAKEN), so the
+        follow re-letters c to B and must itself date A onto c's past: undated,
+        X's days before the move would read c as B, beside d's B."""
+        from app.models import Cell, CellLinkEvent
+        from app.services import cell_links
+        self.unit(X, Y)
+        c = self.cell("0301", X, letter="A")
+        d_ = self.cell("0302", X, letter="B")
+        y1 = self.cell("0303", Y, letter="C")
+        la1 = self.line(X, "F001", "Tort", labor=60, letter="A", sort=0)
+        la2 = self.line(X, "F002", "Keks", labor=30, letter="A", sort=1)
+        lb = self.line(X, "F003", "Non", labor=12, letter="B", sort=2)
+        ly = self.line(Y, "F005", "Pirog", labor=20, letter="C", sort=0)
+        self.wc_row(X, C, shtatka=4)
+        self.wc_row(Y, C, shtatka=3)
+        self.pin(Y, D - timedelta(days=9), group="A", people=1)      # Y's past
+        for day in days(*self.SPAN):
+            for sap in ("F001", "F002", "F003"):
+                self.daily(X, day, sap, plan=20, actual=18)
+            self.daily(Y, day, "F005", plan=7, actual=7)
+            self.pin(X, day, group="A", people=3)
+            self.pin(X, day, group="B", people=2)
+            self.pin(Y, day, group="C", people=5)
+            self.att(c, day, Y if day >= D else X, n=3)
+            self.att(d_, day, X, n=2)
+            self.att(y1, day, Y, n=5)
+        self.settle()
+        hist0 = self.reads([X, Y], *HIST)
+        post0 = self.reads([X, Y], *POST)
+        ev_id = self.move(c, Y, at=ASK).id
+        self.land(D)
+        self.assertEqual(self.db.get(Cell, c.id).wc_group, "A")       # the landing kept A
+        self.assertNotIn("wc_group_was", self.db.get(CellLinkEvent, ev_id).vfx or {})
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.letter_from, row.letter_to), ("moved", "A", "B"))
+        self.assertEqual(self.db.get(CellLinkEvent, ev_id).vfx["wc_group_was"], "A")
+        self.assertEqual([cell_links.letter_on(self.db.get(Cell, c.id), d)
+                          for d in (D - timedelta(days=1), D)], ["A", "B"])
+        self.assert_history_kept(hist0, [X, Y])
+        self.assert_conserved(post0, self.reads([X, Y], *POST))
+        self.assert_unique([X, Y], *self.SPAN)
+        self.assert_span_consistent([X, Y], HIST[0], D, POST[1])
+        for d in days(*POST):
+            self.assertEqual({p.id: p.wc_group for p in pp_catalog.at(self.db, Y, d).lines},
+                             {la1.id: "B", la2.id: "B", ly.id: "C"})
+            self.assertEqual(self.ids_on(X, d), {lb.id})
+        old = {g["group"]: g["cell"]["id"] for g in next(
+            x for x in self.dash(X, D - timedelta(days=1))["work_centers"]
+            if x["work_center"] == C)["groups"]}
+        self.assertEqual(old, {"A": c.id, "B": d_.id})
+
+    def test_t7_manual_twin(self):
+        """T7 — c brings a «Tort» typed by hand (`auto_fill` off) to Y, where
+        y1 owns an identical file-filled one: NOT joined. The copy moves live
+        as a twin, both typed values go on counting, and Y's group override is
+        exploded onto y1's line before it could reach the arrival."""
+        from app.models import PPDaily, PPLineDaily, PPProduct
+        self.unit(X, Y)
+        c = self.cell("0701", X)
+        y1 = self.cell("0702", Y, letter="A")
+        self.stays_at_b()
+        p = self.line(X, "F001", "Tort", labor=60, sort=3, auto_fill=False)
+        m = self.line(Y, "F001", "Tort", labor=60, letter="A", sort=0)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", po=Decimal("30"), ao=Decimal("25"))
+            self.daily(Y, day, "F001", po=Decimal("50"), ao=Decimal("40"))
+            self.pin(X, day, people=2)
+            self.pin(Y, day, group="A", people=4)
+            self.att(c, day, Y if day >= D else X, n=2)
+            self.att(y1, day, Y, n=4)
+        self.settle()
+        hist0 = self.reads([X, Y], *HIST)
+        post0 = self.reads([X, Y], *POST)
+        self.move(c, Y, at=ASK)
+        self.land(D)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.letter_to, [x["joined_into"] for x in row.lines]),
+                         ("moved", "B", [None]))
+        self.assert_history_kept(hist0, [X, Y])
+        post1 = self.reads([X, Y], *POST)
+        self.assert_conserved(post0, post1)               # nothing joined: nothing lost
+        self.assert_unique([X, Y], *self.SPAN)
+        self.assert_span_consistent([X, Y], HIST[0], D, POST[1])
+        cp = self.db.get(PPProduct, p.id)
+        self.assertEqual((cp.manager_id, cp.active, cp.wc_group, cp.archived_by), (Y, True, "B", None))
+        self.assertEqual(self.db.get(PPProduct, m.id).wc_group, "A")    # m untouched
+        for d in days(*POST):
+            iso = d.isoformat()
+            self.assertEqual(self.active_ids_on(Y, d), {p.id, m.id})
+            yrow = self.db.query(PPDaily).filter_by(manager_id=Y, date=d, sap_code="F001").one()
+            self.assertEqual((yrow.plan_override, yrow.actual_override), (None, None))
+            self.assertIsNone(self.db.query(PPDaily).filter_by(manager_id=X, date=d,
+                                                               sap_code="F001").first())
+            got = sorted((r.line_key, float(r.plan_override), float(r.actual_override)) for r in
+                         self.db.query(PPLineDaily).filter_by(manager_id=Y, date=d).all())
+            self.assertEqual(got, [("tort|60#0", 50.0, 40.0), ("tort|60#1", 30.0, 25.0)])
+            self.assertEqual(post1["wc_labor"][(Y, iso, C)], (80.0, 65.0))
+            self.assertEqual(post1["cell_labor"][(y1.id, iso)], (50.0, 40.0))
+            self.assertEqual(post1["cell_labor"][(c.id, iso)], (30.0, 25.0))
+            self.assertEqual(sorted(r["plan_qty"] for r in post1["dashboard"][(Y, iso)]["rows"]
+                                    if r["sap_code"] == "F001"), [30.0, 50.0])
+
+    def test_group_override_travels_twin_stays(self):
+        """A position of c's and d's identical twin read ONE row of the file
+        in X, and somebody typed that row's ПЛАН/ФАКТ over it on D+1. c's line
+        leaves with the typed value as its own; X keeps the row, its typed
+        value and d's twin reading it — Σ unchanged, the twin's key re-ranked."""
+        from app.models import PPDaily, PPLineDaily
+        w = self.world_lettered(twin=True)
+        d1 = D + timedelta(days=1)
+        r = self.db.query(PPDaily).filter_by(manager_id=X, date=d1, sap_code="F001").one()
+        r.plan_override, r.actual_override = Decimal("33"), Decimal("31")
+        self.settle()
+        hist0 = self.reads([X, Y], *HIST)
+        post0 = self.reads([X, Y], *POST)
+        self.move(w.c, Y, at=ASK)
+        self.land(D)
+        self.sweep()
+        self.assertEqual([x.state for x in self.move_rows()], ["moved"])
+        self.assert_history_kept(hist0, [X, Y])
+        post1 = self.reads([X, Y], *POST)
+        self.assert_conserved(post0, post1)
+        self.assert_unique([X, Y], *self.SPAN)
+        self.assert_span_consistent([X, Y], HIST[0], D, POST[1])
+        xr = self.db.query(PPDaily).filter_by(manager_id=X, date=d1, sap_code="F001").one()
+        self.assertEqual((float(xr.plan_override), float(xr.actual_override)), (33.0, 31.0))
+        yr = self.db.query(PPDaily).filter_by(manager_id=Y, date=d1, sap_code="F001").one()
+        self.assertEqual((float(yr.plan_qty), float(yr.actual_qty), yr.plan_override),
+                         (20.0, 18.0, None))
+        lr = self.db.query(PPLineDaily).filter_by(manager_id=Y, date=d1).one()
+        self.assertEqual((lr.line_key, float(lr.plan_override), float(lr.actual_override)),
+                         ("tort|60#0", 33.0, 31.0))
+        iso = d1.isoformat()
+        self.assertEqual(self.rows_at(post1["dashboard"][(Y, iso)])["F001"]["plan_qty"], 33.0)
+        self.assertEqual(self.rows_at(post1["dashboard"][(X, iso)])["F001"]["plan_qty"], 33.0)
+        self.assertEqual(self.rows_at(post1["dashboard"][(X, iso)])["F001"]["line_key"], "tort|60#0")
+        self.assertEqual(post1["cell_labor"][(w.c.id, iso)], post0["cell_labor"][(w.c.id, iso)])
+        self.assertEqual(post1["cell_labor"][(w.d.id, iso)], post0["cell_labor"][(w.d.id, iso)])
+
+    def test_join_hides_a_typed_value_and_says_so(self):
+        """T6 with a value typed on the arriving copy's own row on D+1: the
+        copy is archived, its typed value with it (Σ falls by it, no more),
+        and the follow names `hidden_typed` — to the admins, in the DM."""
+        from app.models import PPLineDaily
+        self.unit(X, Y)
+        c = self.cell("0601", X)
+        y1 = self.cell("0602", Y, letter="A")
+        self.stays_at_b()
+        p = self.line(X, "F001", "Tort", labor=60, sort=3)
+        self.line(Y, "F001", "Tort", labor=60, letter="A", sort=0)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=100, actual=80)
+            self.daily(Y, day, "F001", plan=100, actual=80)
+            self.pin(X, day, people=2)
+            self.pin(Y, day, group="A", people=4)
+            self.att(c, day, Y if day >= D else X, n=2)
+            self.att(y1, day, Y, n=4)
+        d1 = D + timedelta(days=1)
+        self.line_daily(p, d1, plan=Decimal("5"))
+        self.settle()
+        hist0 = self.reads([X, Y], *HIST)
+        post0 = self.reads([X, Y], *POST)
+        self.move(c, Y, at=ASK)
+        self.land(D)
+        _jurnal, dm = self.sweep()
+        [row] = self.move_rows()
+        kinds = {n["kind"] for n in row.named}
+        self.assertEqual(row.state, "moved")
+        self.assertIn("hidden_typed", kinds)
+        self.assertNotIn("conservation", kinds)                     # explained by the join
+        dm.assert_called_once()
+        self.assertIn("hidden_typed", dm.call_args.args[0])
+        self.assert_history_kept(hist0, [X, Y])
+        post1 = self.reads([X, Y], *POST)
+        self.assert_conserved(post0, post1, lower=("wc_labor", "unit_labor", "dashboard", "live",
+                                                   "plan", "zagruzka_cell", "fleet"))
+        self.assert_unique([X, Y], *self.SPAN)
+        s0, s1 = self.sums(post0)["wc_labor"], self.sums(post1)["wc_labor"]
+        self.assertAlmostEqual(s0[d1.isoformat()][0] - s1[d1.isoformat()][0], 5.0)   # the hidden 5
+        self.assertAlmostEqual(s0[D.isoformat()][0] - s1[D.isoformat()][0], 100.0)  # one copy
+        [lr] = self.db.query(PPLineDaily).filter_by(date=d1).all()
+        self.assertEqual((lr.manager_id, float(lr.plan_override)), (Y, 5.0))
+
+    def test_source_reimported_before_the_landing(self):
+        """X's ABC import (re-creating every line, new ids) counts from D+1
+        and is made before the move lands: the follow moves c's OLD ids on D
+        (the window, versions rewritten) and the NEW ones from D+1 (the
+        current rows), and the move record keeps both."""
+        w = self.world_lone(c_unit=lambda d: Y if d >= D else X)
+        hist0 = self.reads([X, Y], *HIST)
+        on_d0 = self.reads([X, Y], D, D)
+        self.put_cell(w.c, at=ASK, manager_id=Y)
+        self.import_abc(X, [("F001", "Tort", C, 60, None), ("F002", "Keks", C, 30, None),
+                            ("F003", "Non", B, 12, None)], at=at_(D, 21),
+                        work_centers=[{"code": C, "shtatka": 5, "capacity": None, "sort_order": 0},
+                                      {"code": B, "shtatka": 3, "capacity": None, "sort_order": 1}])
+        d1 = D + timedelta(days=1)
+        self.assertEqual(pp_catalog.current_from(self.db, X), d1)
+        new = {p.name: p.id for p in pp_catalog.at(self.db, X, d1).lines}
+        self.assertFalse({new["Tort"], new["Keks"]} & {w.l1.id, w.l2.id})
+        self.land(D, 21, 30)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind, row.storage_from), ("moved", "late", d1))
+        self.assertEqual(set(row.line_ids), {w.l1.id, w.l2.id, new["Tort"], new["Keks"]})
+        self.assert_history_kept(hist0, [X, Y])
+        self.assert_conserved(on_d0, self.reads([X, Y], D, D), D, D)
+        self.assert_unique([X, Y], *self.SPAN)
+        self.assertEqual(self.ids_on(Y, D), {w.l1.id, w.l2.id, w.ly.id})
+        self.assertEqual(self.ids_on(X, D), {w.l3.id})
+        for d in days(d1, POST[1]):
+            self.assertEqual(self.ids_on(Y, d), {new["Tort"], new["Keks"], w.ly.id})
+            self.assertEqual({p.name for p in pp_catalog.at(self.db, X, d).lines}, {"Non"})
+            self.assertEqual({r.code for r in pp_catalog.at(self.db, X, d).work_centers}, {B})
+
+    def test_archived_position_follows(self):
+        """A position of c's set aside before the move (archived, inactive)
+        is c's too: it follows to Y and Y's «Arxiv» card lists it from D,
+        X's no longer does — while X's card of the days before is unchanged."""
+        w = self.world_lone(c_unit=lambda d: Y if d >= D else X)
+        old = self.line(X, "F004", "Eski", labor=10, sort=5, active=False)
+        self.settle()
+        hist0 = self.reads([X, Y], *HIST)
+        post0 = self.reads([X, Y], *POST)
+        self.put_cell(w.c, at=ASK, manager_id=Y)
+        self.land(D)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertIn(old.id, row.line_ids)
+        self.assert_history_kept(hist0, [X, Y])
+        post1 = self.reads([X, Y], *POST)
+        self.assert_conserved(post0, post1)
+        self.assert_unique([X, Y], *self.SPAN)
+        self.assertEqual([a["id"] for a in hist0["dashboard"][(X, HIST[1].isoformat())]["archived"]],
+                         [old.id])
+        for d in days(*POST):
+            iso = d.isoformat()
+            self.assertEqual([a["id"] for a in post1["dashboard"][(Y, iso)]["archived"]], [old.id])
+            self.assertEqual(post1["dashboard"][(X, iso)]["archived"], [])
+            self.assertFalse(next(p for p in pp_catalog.at(self.db, Y, d).lines
+                                  if p.id == old.id).active)
+
+    def test_lettered_team_split_over_two_units(self):
+        """c(A) → Y and d(B) → Z on one opening, nothing shared: refused for
+        nobody, followed as ONE group — each takes its own lines and its own
+        group pin; nobody is left at C in X."""
+        self.unit(X, Y, Z)
+        c = self.cell("0901", X, letter="A")
+        d_ = self.cell("0902", X, letter="B")
+        self.stays_at_b()
+        la = self.line(X, "F001", "Tort", letter="A", sort=0)
+        lb = self.line(X, "F002", "Keks", letter="B", sort=1)
+        self.wc_row(X, C, shtatka=5)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=10, actual=9)
+            self.daily(X, day, "F002", plan=12, actual=11)
+            self.pin(X, day, group="A", people=2)
+            self.pin(X, day, group="B", people=3)
+            self.att(c, day, Y if day >= D else X, n=2)
+            self.att(d_, day, Z if day >= D else X, n=3)
+        self.settle()
+        hist0 = self.reads([X, Y, Z], *HIST)
+        post0 = self.reads([X, Y, Z], *POST)
+        self.put_cell(c, at=ASK, manager_id=Y)
+        self.put_cell(d_, at=ASK, manager_id=Z)
+        self.land(D)
+        self.sweep()
+        rows = self.move_rows()
+        self.assertEqual(sorted((r.state, r.to_unit) for r in rows), [("moved", Y), ("moved", Z)])
+        self.assert_history_kept(hist0, [X, Y, Z])
+        post1 = self.reads([X, Y, Z], *POST)
+        self.assert_conserved(post0, post1)
+        self.assert_unique([X, Y, Z], *self.SPAN)
+        self.assert_span_consistent([X, Y, Z], HIST[0], D, POST[1])
+        for d in days(*POST):
+            iso = d.isoformat()
+            self.assertEqual(self.ids_on(Y, d), {la.id})
+            self.assertEqual(self.ids_on(Z, d), {lb.id})
+            self.assertNotIn((X, iso, C), post1["wc_labor"])
+            self.assertEqual(post1["typed_people"][(Y, iso, C)], 2.0)
+            self.assertEqual(post1["typed_people"][(Z, iso, C)], 3.0)
+            for cid in (c.id, d_.id):
+                self.assertEqual(post1["cell_labor"][(cid, iso)], post0["cell_labor"][(cid, iso)])
+
+    def test_two_hops_before_one_follow(self):
+        """X → Y lands on D; before anything follows, Y → Z is asked and lands
+        on D+1. The sweep follows the hops in order, one per pass (a later
+        change of a cell waits for its earlier one): Y holds c's lines on D
+        alone, Z from D+1, X up to D−1 — every stretch summing as before."""
+        self.unit(Z)
+        w = self.world_lone(c_unit=lambda d: Z if d > D else (Y if d == D else X))
+        hist0 = self.reads([X, Y, Z], *HIST)
+        post0 = self.reads([X, Y, Z], *POST)
+        self.put_cell(w.c, at=ASK, manager_id=Y)
+        self.land(D)
+        out = self.put_cell(w.c, at=at_(D), manager_id=Z)
+        self.assertEqual(out["pending"]["manager_id"]["from"], (D + timedelta(days=1)).isoformat())
+        self.land(D + timedelta(days=1))
+        self.sweep()
+        self.assertEqual([(r.state, r.from_unit, r.to_unit) for r in self.move_rows()],
+                         [("moved", X, Y)])
+        self.sweep()
+        self.assertEqual([(r.state, r.from_unit, r.to_unit, r.home_from) for r in self.move_rows()],
+                         [("moved", X, Y, D), ("moved", Y, Z, D + timedelta(days=1))])
+        self.assert_history_kept(hist0, [X, Y, Z])
+        self.assert_conserved(post0, self.reads([X, Y, Z], *POST))
+        self.assert_unique([X, Y, Z], *self.SPAN)
+        self.assert_span_consistent([X, Y, Z], HIST[0], D, POST[1])
+        mine = {w.l1.id, w.l2.id}
+        self.assertEqual(self.ids_on(Y, D), mine | {w.ly.id})
+        self.assertEqual(self.ids_on(Z, D), set())
+        for d in days(D + timedelta(days=1), POST[1]):
+            self.assertEqual(self.ids_on(Z, d), mine)
+            self.assertEqual(self.ids_on(Y, d), {w.ly.id})
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(X, d), {w.l3.id})
+
+    # ── §1.10 through the real doors ─────────────────────────────────────────
+
+    def _untouched(self):
+        """What a follow that moves nothing must leave as it was: the
+        catalogs, every quantity row and every unit's minutes and people, and
+        the positions and totals of every «Zagruzka fayli» page (the cell a
+        work centre names may change — the cell itself moved)."""
+        lo, hi = self.SPAN
+        r = self.reads([X, Y], lo, hi)
+        pages = {k: {f: v[f] for f in ("rows", "totals")} for k, v in r["dashboard"].items()}
+        return (dumps({**{k: r[k] for k in ("at", "wc_labor", "unit_labor", "typed_pins",
+                                            "typed_people")}, "pages": pages}), self.rows())
+
+    def test_cell_without_a_code(self):
+        w = self.world_lone()
+        n = self.cell("0109", X, sap=None)
+        self.settle()
+        before = self._untouched()
+        self.put_cell(n, at=ASK, manager_id=Y)
+        self.land(D)
+        _jurnal, dm = self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.cell_id, [x["kind"] for x in row.named]),
+                         ("nothing", n.id, ["no_code"]))
+        dm.assert_not_called()
+        self.assertEqual(self._untouched(), before)
+        self.assertEqual(cf.unsettled(self.db, [n.id, w.c.id], D), set())
+
+    def test_cell_with_no_brigadir_gains_one(self):
+        w = self.world_lone()
+        f = self.cell("0110", None)                     # at C, standing in no unit
+        self.settle()
+        before = self._untouched()
+        self.put_cell(f, at=ASK, manager_id=Y)
+        self.land(D)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.from_unit, row.to_unit, [x["kind"] for x in row.named]),
+                         ("nothing", None, Y, ["from_no_unit"]))
+        self.assertEqual(self._untouched(), before)
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(X, d), {w.l1.id, w.l2.id, w.l3.id})
+
+    def test_cleared_cell_that_owns_nothing(self):
+        """An unlettered cell among lettered ones owns nothing, so clearing
+        its brigadir is not refused; the follow names the cleared unit
+        (`to_no_unit`) for the admins and leaves X's positions where they are."""
+        self.unit(X, Y)
+        c = self.cell("0411", X)
+        d_ = self.cell("0412", X, letter="B")
+        l1 = self.line(X, "F001", "Tort", letter="B", sort=0)
+        l2 = self.line(X, "F002", "Keks", letter="B", sort=1)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=10, actual=9)
+            self.daily(X, day, "F002", plan=10, actual=9)
+            self.pin(X, day, group="B", people=2)
+            self.att(d_, day, X, n=2)
+        self.settle()
+        before = self._untouched()
+        out = self.put_cell(c, at=ASK, manager_id=0)
+        self.assertIn("manager_id", out["pending"])
+        self.land(D)
+        _jurnal, dm = self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.to_unit), ("named", None))
+        self.assertIn("to_no_unit", [x["kind"] for x in row.named])
+        dm.assert_called_once()
+        self.assertEqual(self._untouched(), before)
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(X, d), {l1.id, l2.id})
+
+    def test_archived_between_the_ask_and_the_landing(self):
+        """The cell is archived the afternoon its move was asked: it is gone
+        from D, so nothing follows it — the move is final (`nothing`,
+        `archived`), the gap closes, and its positions stay in X."""
+        w = self.world_lone(c_unit=lambda d: Y if d >= D else X)
+        self.put_cell(w.c, at=ASK, manager_id=Y)
+        self.archive_cell(w.c, at=at_(D - timedelta(days=1), 16))
+        before = self._untouched()
+        self.land(D)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, [x["kind"] for x in row.named]), ("nothing", ["archived"]))
+        self.assertEqual(cf.unsettled(self.db, [w.c.id], D), set())
+        self.assertEqual(self._untouched(), before)
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(X, d), {w.l1.id, w.l2.id, w.l3.id})
+            self.assertEqual(self.ids_on(Y, d), {w.ly.id})
+
+    def test_code_changed_before_the_landing(self):
+        """The move is asked at C; before it lands the form gives the cell
+        another work centre, where X holds nothing. The positions are followed
+        at the code AT LANDING: none — the record names `code_changed`, and
+        C's positions stay in X."""
+        w = self.world_lone(c_unit=lambda d: Y if d >= D else X)
+        self.put_cell(w.c, at=ASK, manager_id=Y)
+        self.put_cell(w.c, at=ASK, sap_code="A2899")
+        before = self._untouched()
+        self.land(D)
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual(row.state, "nothing")
+        self.assertIn("code_changed", [x["kind"] for x in row.named])
+        self.assertEqual(self._untouched(), before)
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(X, d), {w.l1.id, w.l2.id, w.l3.id})
 
 
 if __name__ == "__main__":
