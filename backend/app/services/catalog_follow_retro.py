@@ -37,10 +37,16 @@ NAMED and skipped, never guessed — `chain` (more than one hop, a round trip),
 `from_unknown`, `day_unknown`, `letter_ambiguous`, `shared_lines`,
 `y_has_lines`, `window_cells_moved` (another cell at the code moved into or out
 of either unit since `FLOOR` — such moves are followed together or not at
-all), `letters_after`, `archived`, `no_code`, `conservation` (the engine's own
+all), `stayer_unproven` (a cell the dated links stand at the code in either
+unit on h−1 and h with NO evidence of standing there by `h` — cells carry no
+creation date, so a cell opened after the move would otherwise count as having
+stayed and shape whose the positions are and which letters are free),
+`letters_after`, `archived`, `no_code`, `conservation` (the engine's own
 strict check) and `volume` (too much at once: nothing is applied). A skipped
 brigadir change gets a FINAL `named` move record, so the live sweep never takes
-it up: a person decides. A `busy` one is recorded for the sweep to retry.
+it up: a person decides. A `busy` one is recorded for the sweep to retry — and
+the sweep, before it retries it, runs these very guards again (`recheck`): what
+changed in the meantime is named, never followed past.
 
 The flag (`dry:<n>` or `done:<moved>/<named>`) and the RECORD are written in one
 transaction after the cells. A pass stopped half-way (a deploy retires the
@@ -52,8 +58,11 @@ own flag (`<FLAG>_dm_<mode>`, `startup._send_report_once`): a failed DM is
 re-sent at the next boot, the pass is never re-run for it.
 
 Delete this module, `startup.schedule_catalog_follow_retro` /
-`_catalog_follow_retro_job` and both entrypoint calls once the flag reads `done`
-and the DM has landed — `catalog_follow.RETRO_FLAG` (the switch) STAYS.
+`_catalog_follow_retro_job` and both entrypoint calls once the flag reads `done`,
+the DM has landed AND no retroactive move record waits for a retry (`kind`
+retro, `state` busy / failed) — the sweep rechecks those through `recheck`, and
+without this module names them `recheck_unavailable` instead of following them.
+`catalog_follow.RETRO_FLAG` (the switch) STAYS.
 """
 from __future__ import annotations
 
@@ -106,6 +115,9 @@ REASONS = {
     "shared_lines": "boshqa yacheykalar bilan umumiy pozitsiyalar bor (harf qo'yish kerak)",
     "y_has_lines": "yangi brigadirda shu ish markazida egasiz pozitsiyalar bor",
     "window_cells_moved": "shu ish markazida boshqa yacheyka ham ko'chgan yoki arxivlangan",
+    "stayer_unproven": ("shu ish markazida qolgan yacheyka ko'chish kuni u yerda turgani "
+                        "dalil bilan tasdiqlanmagan (keyinroq ochilgan bo'lishi mumkin)"),
+    "recheck_unavailable": "qayta urinishda tekshiruv o'tkazib bo'lmadi",
     "letters_after": "yacheyka harfi keyinroq o'zgargan",
     "archived": "arxivda",
     "no_code": "SAP kodi yo'q",
@@ -116,6 +128,7 @@ REASONS = {
     "failed": "xato — avtomatik qayta uriniladi",
     "shared_left": "umumiy pozitsiyalar qoldi",
     "shared_left_split": "umumiy pozitsiyalar qoldi (ikki brigadirga bo'lingan)",
+    "shared_left_archived": "arxivdagi umumiy pozitsiyalar eski brigadirda qoldi",
     "no_free_letter": "bo'sh harf qolmagan",
     "y_register_break": "yangi brigadirda harfsiz yacheyka bor",
     "pin_conflict": "odam soni ikki joyda kiritilgan",
@@ -378,6 +391,61 @@ def _timeline(cell: Cell, window: list[date], ro: dict, at: dict, prior_days: li
     return ev
 
 
+def _evidence(db: Session, interest: dict, log_ids: set, today: date) -> tuple[dict, dict, dict]:
+    """The evidence of every cell in `interest` ({id: Cell}), read once:
+
+    * {cell id: its `_Ev` — day by day over [FLOOR−7, today], the attendance
+      placement before that window, the days the register logged a brigadir
+      change of it};
+    * {cell id: the moments its letter was changed by hand} for `log_ids`;
+    * {(Verifix key, unit): the FIRST day a closed live-day roster or a named
+      attendance row with hours put the code in the unit} — over
+      [FLOOR−7−PRIOR_DAYS, today], what `_stood` asks."""
+    a = FLOOR - timedelta(days=LOOK_BACK)
+    p = a - timedelta(days=PRIOR_DAYS)
+    window = _days(a, today)
+    prior_days = _days(p, a - timedelta(days=1))
+    keys = {_vkey(o.verifix_code) for o in interest.values() if o.verifix_code}
+    ro = _rosters(db, a, today, keys)
+    at = _attendance(db, p, today, keys)
+    logs, relettered = _log_days(db, log_ids)
+    tls: dict = {}
+    for oid, o in interest.items():
+        tls[oid] = _timeline(o, window, ro, at, prior_days)
+        tls[oid].log = sorted(logs.get(oid) or [])
+    first: dict = {}
+
+    def seen(k, u, d) -> None:
+        if (k, u) not in first or d < first[(k, u)]:
+            first[(k, u)] = d
+
+    for (d, k), us in ro.items():
+        for u in us:
+            seen(k, u, d)
+    for (d, k), ws in at.items():
+        for u, w in ws.items():
+            if w > 0:
+                seen(k, u, d)
+    return tls, relettered, first
+
+
+def _stood(o: Cell, unit: int, h: date, first: dict) -> bool:
+    """Is there EVIDENCE that cell `o` stood in `unit` on or before `h` — a
+    closed live day's roster or a named attendance row at its code filed under
+    the unit (`first`, from `_evidence`), or a brigadir change of its own (a
+    link event) that put it there by `h`?
+
+    The dated links alone prove nothing for a cell no event moved: they answer
+    its CURRENT unit for every day, and a cell carries no creation date — one
+    opened after `h` reads as having stood there all along."""
+    from app.services import cell_links
+    d = first.get((_vkey(o.verifix_code), int(unit)))
+    if d is not None and d <= h:
+        return True
+    return any(e.value != e.prev and e.value == unit and e.eff <= h
+               for e in cell_links.events().get("manager_id", {}).get(o.id) or [])
+
+
 def _runs(days: list) -> list[dict]:
     """The evidence as runs of one unit, oldest first; a day with no answer
     joins no run and breaks none."""
@@ -417,12 +485,15 @@ class _Cand:
             self.named = {"kind": kind, **{k: v for k, v in params.items() if v is not None}}
 
 
-def _orphans(db: Session, by_code: dict, today: date) -> dict:
+def _orphans(db: Session, by_code: dict, today: date, units: Optional[list] = None) -> dict:
     """{(unit, code): orphan info} — every unit's current ACTIVE lines at a
-    code where cells stand, that no living cell of the unit can own."""
+    code where cells stand, that no living cell of the unit can own. `units`
+    narrows it to those units (the sweep's `recheck` asks about one)."""
     from app.services import cell_archive
-    units = [m for (m,) in db.query(PPProduct.manager_id).filter(
-        PPProduct.active.is_(True)).distinct().all()]
+    if units is None:
+        units = [m for (m,) in db.query(PPProduct.manager_id).filter(
+            PPProduct.active.is_(True)).distinct().all()]
+    units = [u for u in units if u is not None]
     out: dict = {}
     for x, cat in pp_catalog._current_many(db, units).items():
         at: dict = defaultdict(list)
@@ -674,20 +745,9 @@ def _run(db: Session, today: date, now: datetime) -> dict:
         cands.append(_Cand(cell=cell, code=norm_code(cell.sap_code), orphan_x=xs))
 
     # ── the evidence, for every cell at a code a candidate stands at ──
-    a = FLOOR - timedelta(days=LOOK_BACK)
-    p = a - timedelta(days=PRIOR_DAYS)
-    window = _days(a, today)
-    prior_days = _days(p, a - timedelta(days=1))
     codes = {c.code for c in cands if c.code}
     interest = {o.id: o for k in codes for o in by_code[k]} | {c.cell.id: c.cell for c in cands}
-    keys = {_vkey(o.verifix_code) for o in interest.values() if o.verifix_code}
-    ro = _rosters(db, a, today, keys)
-    at = _attendance(db, p, today, keys)
-    logs, relettered = _log_days(db, {c.cell.id for c in cands})
-    tls: dict = {}
-    for oid, o in interest.items():
-        tls[oid] = _timeline(o, window, ro, at, prior_days)
-        tls[oid].log = sorted(logs.get(oid) or [])
+    tls, relettered, first = _evidence(db, interest, {c.cell.id for c in cands}, today)
 
     # ── decide, then the guards ──
     for c in cands:
@@ -732,7 +792,7 @@ def _run(db: Session, today: date, now: datetime) -> dict:
     for c in cands:
         if c.named is not None or c.h is None or c.src is None or c.dst is None:
             continue
-        _guards(db, c, by_code, tls, today)
+        _guards(db, c, by_code, tls, today, first)
 
     ready = [c for c in cands if c.named is None and c.h is not None]
     # A change from or to no unit, and one whose cell owns nothing in the old
@@ -781,11 +841,27 @@ def _run(db: Session, today: date, now: datetime) -> dict:
     return rec
 
 
-def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date) -> None:
-    """The guards a decided hop must pass before the engine is handed it."""
+def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first: dict) -> None:
+    """The guards a decided hop must pass before the engine is handed it —
+    `run` asks them of every candidate, `recheck` again of a transfer the
+    sweep is about to retry. `first` is `_evidence`'s third answer."""
     from app.services import cell_links
     cell, code, x, y, h = c.cell, c.code, c.src, c.dst, c.h
     before = h - timedelta(days=1)
+    at_code = {o.id: o for o in by_code.get(code) or []}
+
+    def unproven(unit: int, standing: dict) -> bool:
+        # stayer_unproven: the dated links stand a cell at the code in the unit
+        # on h−1 and h, and nothing shows it was there by h. Counted as a
+        # stayer it would decide whose the positions are and which letters
+        # are free; a cell opened since would be counted all the same.
+        for oid in standing:
+            o = at_code.get(oid) or db.get(Cell, oid)
+            if o is None or not _stood(o, unit, h, first):
+                c.name("stayer_unproven", other=getattr(o, "verifix_code", None) or oid,
+                       unit=unit, day=_iso(h))
+                return True
+        return False
     # letters_after: a later move already dated this cell's letter.
     later = [eff for eff, _w in cell_links.events().get(cell_links.LETTERS, {}).get(cell.id) or []
              if eff > h]
@@ -804,38 +880,161 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date) -> Non
                 return
     # shared_lines / y_has_lines, on the old unit's catalog at h and today.
     stay_x = own.cells_standing(db, x, code, before, h, exclude={cell.id})
+    cats_x = (pp_catalog.at(db, x, h), pp_catalog.current(db, x))
+    at_x = [own.lines_at(cat.lines, code) for cat in cats_x]
+    rows_x = any(norm_code(w.code) == code for cat in cats_x for w in cat.work_centers)
+    if not any(at_x) and not rows_x:
+        return                  # X holds nothing at the code: whoever stays there, the
+                                # cell brings nothing (the engine records `nothing`)
+    if unproven(x, stay_x):
+        return
     A = dict(stay_x)
     A[cell.id] = c.letter_src
     mine: list = []
-    for cat in (pp_catalog.at(db, x, h), pp_catalog.current(db, x)):
-        hd = own.handed(own.lines_at(cat.lines, code), A, cell.id)
-        if hd.shared and stay_x:
-            c.name("shared_lines", count=len(hd.shared),
-                   lines=[p.name for p in hd.shared[:10]])
+    for lines in at_x:
+        hd = own.handed(lines, A, cell.id)
+        # Only an ACTIVE shared line stops the move (§1.9: archived lines
+        # never block — the engine leaves them in the old unit and says so).
+        shared = [p for p in hd.shared if getattr(p, "active", True) is not False]
+        if shared and stay_x:
+            c.name("shared_lines", count=len(shared),
+                   lines=[p.name for p in shared[:10]])
             return
         mine += hd.mine
     c.owned = len({id(p) for p in mine})
-    if not mine:
+    if not mine and not rows_x:
         return                  # it brings nothing: the engine records `nothing`
+    # The new unit's stayers decide the arrival's letter, the sibling rule and
+    # a join: each must be shown to have been there.
+    stay_y = own.cells_standing(db, y, code, before, h, exclude={cell.id})
+    if unproven(y, stay_y):
+        return
+    if not mine:
+        return
     # y_has_lines: the new unit's positions at the code that no cell staying
     # there claims — the arrival would take a share of them from `h` (all of
     # them, arriving alone). Unclaimed is `wc_group.share`'s reading: no
     # letter, or a letter no staying cell carries, while two or more cells stay
     # (a lone stayer takes every such line under its own letter, §1.6's
-    # sibling rule). A line the moved positions JOIN is no stranger.
-    stay_y = own.cells_standing(db, y, code, before, h, exclude={cell.id})
+    # sibling rule). A line the moved positions JOIN is no stranger — nor is
+    # one that is ALREADY the arrival's own: a cell no link event moved (one
+    # moved before 12 Oct) stands in the new unit on h−1 already, and the
+    # lines `wc_group.share` hands it alone there (its own letter, or every
+    # line while nobody else stays) were typed for it since it came.
     if len(stay_y) == 1:
         return
     carried = {g for g in stay_y.values() if g}
     idents = {own.join_ident(p) for p in mine}
+    already = c.event is None and cell_links.value_on(cell, "manager_id", before) == y
+    if already and stay_y:
+        # Beside other cells it keeps its letter only where the engine lets it
+        # (`catalog_follow.build_plan`'s `own_dst`): no other cell row of the
+        # unit at the code and no stayer carries it. Otherwise it is re-lettered
+        # and the lines under its old letter are no longer its own.
+        mine_y = cf._own_letter(cell, y, before)
+        already = bool(mine_y) and mine_y not in (cf._row_letters(db, y, code, {cell.id}) | carried)
+    A_y = {**stay_y, cell.id: cell_links.letter_on(cell, before)} if already else None
     for cat in (pp_catalog.at(db, y, h), pp_catalog.current(db, y)):
-        extra = [p for p in own.lines_at(cat.active_lines, code)
+        at_y = own.lines_at(cat.active_lines, code)
+        its = {id(p) for p in own.handed(at_y, A_y, cell.id).mine} if already else set()
+        extra = [p for p in at_y
                  if not (stay_y and (getattr(p, "wc_group", None) or None) in carried)
-                 and own.join_ident(p) not in idents]
+                 and own.join_ident(p) not in idents and id(p) not in its]
         if extra:
             c.name("y_has_lines", count=len(extra), lines=[p.name for p in extra[:10]],
                    staying=len(stay_y))
             return
+
+
+def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) -> Optional[dict]:
+    """The one-shot's OWN guards, run again for a retroactive transfer the live
+    sweep is about to retry — a record this pass left `busy` (another writer
+    held a unit) or `failed` (`catalog_follow._recheck_retro` calls it). The
+    engine's strict stops alone would not see what changed since: another
+    cell moving at the code, a position added to the new unit, a cell opened
+    beside it, the evidence of the move day…
+
+    The hop is read again exactly as `run` read it — off the landing event, or
+    (a cell no event moved) off the old unit's orphaned positions and the
+    evidence — and must still be the hop the record names: the same day, the
+    same units, the same letter. Then the archive and `_guards`. Returns the
+    named condition ({"kind", …params}) that stops it, or None when it may be
+    followed (a cell gone, or a change from or to no unit, are the engine's to
+    record). Reads only."""
+    from app.services import cell_archive
+    today = today or _today()
+    cell = db.get(Cell, row.cell_id)
+    if cell is None:
+        return None
+    code = norm_code(cell.sap_code)
+    if not code:
+        return {"kind": "no_code"}
+    if row.code and code != row.code:
+        return {"kind": "code_changed", "was": row.code, "now": code}
+    at_code = [o for o in db.query(Cell).order_by(Cell.verifix_code, Cell.id).all()
+               if norm_code(o.sap_code) == code]
+    by_code = {code: at_code}
+    ev = None
+    if row.event_id is not None:
+        ev = db.get(CellLinkEvent, row.event_id)
+        if ev is None:
+            return {"kind": "from_unknown", "why": "event_gone"}
+    c = _Cand(cell=cell, code=code, event=ev)
+    interest = {o.id: o for o in at_code} | {cell.id: cell}
+    tls, relettered, first = _evidence(db, interest, {cell.id}, today)
+    if ev is not None:
+        _decide_event(c, tls[cell.id], relettered.get(cell.id) or [])
+    else:
+        x = row.from_unit
+        # `run`'s snapshot, for this one code: every unit's orphans at it, less
+        # the positions a landed change left behind (that change's to follow);
+        # the cell claims those of every unit but its own. Orphans in a second
+        # unit make the old unit unknowable, as they did for `run`.
+        orphans = _orphans(db, by_code, today)
+        evs = [e for e in db.query(CellLinkEvent).filter(
+            CellLinkEvent.field == "manager_id", CellLinkEvent.applied_at.isnot(None),
+            CellLinkEvent.effective_from >= FLOOR,
+            CellLinkEvent.value.is_distinct_from(CellLinkEvent.prev),
+            CellLinkEvent.cell_id.in_([o.id for o in at_code])).all() if not cf._mark(e.vfx)]
+        evented = {e.cell_id for e in evs}
+        explained = {(e.prev, code) for e in evs}
+        xs = sorted(u for (u, k) in orphans
+                    if k == code and (u, k) not in explained and u != cell.manager_id)
+        if x not in xs:
+            c.src, c.dst = x, cell.manager_id
+            c.name("from_unknown", why="orphans_gone")
+        else:
+            c.orphan_x = xs
+            _decide_orphan(c, tls[cell.id], orphans)
+            if c.named is None:
+                # Another cell the evidence places in the old unit claims the
+                # same orphans: whose is whose? (`run`'s claimers, for one.)
+                rowed = {cid for (cid,) in db.query(PPCatalogMove.cell_id).filter(
+                    PPCatalogMove.event_id.is_(None), PPCatalogMove.kind == "retro").all()}
+                for o in at_code:
+                    if (o.id == cell.id or o.id in evented or o.id in rowed
+                            or o.manager_id in (None, x) or not cell_archive.alive(o, today)):
+                        continue
+                    oc = _Cand(cell=o, code=code, orphan_x=[x])
+                    _decide_orphan(oc, tls[o.id], orphans)
+                    if oc.seen_x:
+                        c.name("letter_ambiguous", why="several_cells_claim_the_old_unit",
+                               cells=sorted([cell.verifix_code or "", o.verifix_code or ""]))
+                        break
+    if c.named is None and (c.h, c.src, c.dst) != (row.home_from, row.from_unit, row.to_unit):
+        c.name("day_unknown", why="evidence_changed",
+               was=[_iso(row.home_from), row.from_unit, row.to_unit],
+               now=[_iso(c.h), c.src, c.dst])
+    if c.named is None and (c.letter_src or None) != (row.letter_from or None):
+        c.name("letter_ambiguous", why="letter_changed_since",
+               was=row.letter_from, now=c.letter_src)
+    if c.named is None and c.h is not None and not cell_archive.alive(cell, c.h):
+        c.name("archived", day=_iso(c.h))
+    elif c.named is None and not cell_archive.alive(cell, today):
+        c.name("archived", day=_iso(today))
+    if c.named is None and c.h is not None and c.src is not None and c.dst is not None:
+        _guards(db, c, by_code, tls, today, first)
+    return c.named
 
 
 def _volume(db: Session, ready: list) -> int:

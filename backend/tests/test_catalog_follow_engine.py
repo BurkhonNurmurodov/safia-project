@@ -91,8 +91,11 @@ class _World(unittest.TestCase):
         from app import models as m
         from app.services import cell_archive, cell_links
         self.db = self.pg.Session()
+        # The evidence tables too: the sweep's retry of a retroactive transfer
+        # reads them again (`catalog_follow_retro.recheck`).
         for t in (m.PPLineDaily, m.PPDaily, m.PPWorkCenterDaily, m.PPCatalogVersion,
                   m.PPProduct, m.PPWorkCenter, m.PPCatalogMove, m.PPManagerSetting,
+                  m.Attendance, m.LiveProjection, m.ActionLog,
                   m.CellArchiveSpan, m.CellLinkEvent, m.Cell, m.AppSetting, m.Manager):
             self.db.query(t).delete()
         self.db.commit()
@@ -162,6 +165,16 @@ class _World(unittest.TestCase):
         from app.models import PPWorkCenterDaily
         self.db.add(PPWorkCenterDaily(manager_id=unit, date=d, work_center=wc, wc_group=group,
                                       people=people, shtatka=shtatka))
+
+    def att(self, cell, unit, a, b, n=3):
+        """`n` named workers with hours at the cell's code, filed under `unit`
+        every day of [a, b] — the evidence the retroactive one-shot (and the
+        sweep's recheck of its transfers) reads a move day off."""
+        from app.models import Attendance
+        for d in _days(a, b):
+            for i in range(n):
+                self.db.add(Attendance(manager_id=unit, date=d, worker_name=f"W{cell.verifix_code}-{i}",
+                                       hours_worked=8, verifix_code=cell.verifix_code))
 
     def event(self, cell, to, eff=D):
         from app.models import CellLinkEvent
@@ -1036,6 +1049,80 @@ class FollowEdges(_World):
         [row] = self.move_rows()
         self.assertIn("shared_left", {n["kind"] for n in row.named})
 
+    def test_strict_archived_shared_line_does_not_stop(self):
+        """§1.9: archived lines never block. The two cells of X share an
+        ARCHIVED unlettered line and only one leaves: strict (the retro) still
+        moves c's own line. The archived one stays in X — owned by nobody —
+        and is said as `shared_left_archived`, never `shared_left`."""
+        self.units(X, Y)
+        c = self.cell("0811", X, letter="A")
+        self.cell("0812", X, letter="B")
+        own = self.line(X, "F001", "Tort", letter="A")
+        gone = self.line(X, "F002", "Keks", active=False, sort=1)
+        self.daily(X, D, "F001", plan=1, actual=1)
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        mins0 = self.minutes([X, Y], D, D)
+        res = self.follow(kind="retro", strict=True)
+        self.assertEqual(res.state, "moved")
+        self.assertEqual(self.ids_on(Y, D), {own.id})
+        self.assertEqual(self.ids_on(X, D), {gone.id})
+        self.assertEqual(self.minutes([X, Y], D, D), mins0)
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.line_ids), ("moved", [own.id]))
+        kinds = {n["kind"] for n in row.named}
+        self.assertIn("shared_left_archived", kinds)
+        self.assertFalse(kinds & {"shared_left", "shared_left_split"})
+        [n] = [n for n in row.named if n["kind"] == "shared_left_archived"]
+        self.assertEqual((n["unit"], n["count"], n["lines"]), (X, 1, ["Keks"]))
+        self.assertNotIn("shared_left_archived", cf.STRICT_STOP)
+
+    def test_strict_active_shared_line_still_stops_beside_an_archived_one(self):
+        """The same with an ACTIVE shared line beside the archived one: the
+        active one is a position somebody still makes, and it stops a strict
+        follow — named, nothing written; each kind counts its own lines."""
+        self.units(X, Y)
+        c = self.cell("0821", X, letter="A")
+        self.cell("0822", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", sort=1)                       # shared, active
+        self.line(X, "F003", "Non", active=False, sort=2)          # shared, archived
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        before = [r for r in self.fingerprint() if not r[0].startswith("pp_catalog_moves")
+                  and not r[0].startswith("cell")]
+        res = self.follow(kind="retro", strict=True)
+        self.assertEqual(res.state, "named")
+        self.assertEqual([r for r in self.fingerprint() if not r[0].startswith("pp_catalog_moves")
+                          and not r[0].startswith("cell")], before)
+        [row] = self.move_rows()
+        got = {n["kind"]: (n["count"], n["lines"]) for n in row.named
+               if n["kind"].startswith("shared_left")}
+        self.assertEqual(got, {"shared_left": (1, ["Keks"]), "shared_left_archived": (1, ["Non"])})
+
+    def test_split_team_leaves_an_archived_shared_line_quietly(self):
+        """Nobody stays and the team goes to two units: the archived line two
+        of them shared stays in X as well, said with `split`; with no ACTIVE
+        shared line there is nothing to stop — strict moves each own line."""
+        self.units(X, Y, Z)
+        c1 = self.cell("0831", X, letter="A")
+        c2 = self.cell("0832", X, letter="B")
+        la = self.line(X, "F001", "Tort", letter="A")
+        lb = self.line(X, "F002", "Keks", letter="B", sort=1)
+        ls = self.line(X, "F003", "Non", active=False, sort=2)
+        self.event(c1, Y)
+        self.event(c2, Z)
+        self.db.commit()
+        self.land()
+        res = self.follow(kind="retro", strict=True)
+        self.assertEqual(res.state, "moved")
+        self.assertEqual((self.ids_on(Y, D), self.ids_on(Z, D), self.ids_on(X, D)),
+                         ({la.id}, {lb.id}, {ls.id}))
+        [n] = [n for n in res.report["named"] if n["kind"].startswith("shared_left")]
+        self.assertEqual((n["kind"], n.get("split")), ("shared_left_archived", True))
+
     def test_owned_nothing(self):
         """An unlettered cell among lettered ones owns nothing: no lock, no
         freeze, a `nothing` row."""
@@ -1220,13 +1307,16 @@ class FollowReview(_World):
     def test_sweep_retries_an_eventless_retro_transfer(self):
         """The retroactive one-shot recorded a transfer of a cell with no
         landing event `busy`: the sweep retries it — strict, as a retro, on the
-        SAME record — although no event points at it."""
+        SAME record — although no event points at it. The evidence that made
+        the one-shot read the hop is still there, so its recheck passes."""
         from app.models import PPCatalogMove
         h = date(2026, 10, 8)
         self.units(X, Y)
         c = self.cell("2401", Y)                    # moved before link history
         p = self.line(X, "F001", "Tort")
         self.daily(X, h, "F001", plan=4, actual=4)
+        self.att(c, X, date(2026, 9, 29), h - timedelta(days=1))
+        self.att(c, Y, h, date(2026, 10, 11))
         self.enable()
         self.db.add(PPCatalogMove(kind="retro", state="busy", event_id=None, cell_id=c.id,
                                   code=C, from_unit=X, to_unit=Y, home_from=h, tries=1,
