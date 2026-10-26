@@ -239,6 +239,80 @@ class Mark(World):
         for code in ("0501", "0502"):
             self.assertEqual(page["inputs"][code], {**left[code], **right[code]}, code)
 
+    def test_plan_and_live_date_a_mark(self):
+        """«Plan Bajarish» and /live — the two readers of `cell_labor` that
+        are not a page of their own here — hand c its own «Somsa» (5 minutes)
+        on EVERY day, under C before D and B from D, and y1 its own «Pirog»
+        (4 minutes). Undated, c read «B» on D−2…D−1 and the C line fell to
+        nobody: 2.5 minutes each side (Plan Bajarish's strip rounds it to 2)."""
+        c, y1 = self._world()
+        plan = self.plan([Y], *self.SPAN)
+        rows = {r["cell_id"]: r["daily"] for r in plan["cell_rows"]}
+        n = len(days(*self.SPAN))
+        self.assertEqual(rows[c.id], [[5, 5]] * n)
+        self.assertEqual(rows[y1.id], [[4, 4]] * n)
+        for d in days(*self.SPAN):
+            cells = self.live([Y], d)["cells"]
+            self.assertEqual((cells[c.id], cells[y1.id]), ((5.0, 5.0), (4.0, 4.0)), d)
+
+    def test_every_reader_read_across_a_mark(self):
+        """Every reader read over a range ACROSS the mark answers each day as
+        a read of its own side alone — the e2e scenarios' own check
+        (`_E2E.assert_span_consistent`: the catalog, `zagruzka_source`, the
+        dashboard, «Yacheyka zagruzkasi», /live, the fleet, the ojidaniya and
+        «Plan Bajarish»), here where no unit changed at all."""
+        try:
+            from tests import test_catalog_follow_e2e as e2e
+        except ImportError:  # run from inside tests/
+            import test_catalog_follow_e2e as e2e
+        self._world()
+        e2e._E2E.assert_span_consistent(self, [X, Y], self.SPAN[0], D, self.SPAN[1])
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class LineReLettered(World):
+    """No CELL changes its letter — a catalog LINE does: «Tort», a's (A) on
+    D−2…D−1, is b's (B) from D (a catalog edit counts from its day). A cell's
+    `wc_split` («group» = a line or a pin names its letter) is judged by the
+    letters the catalog of THAT day hands the work centre, so a read across
+    the edit labels each day as a read of that day alone does. (Judged by every
+    line letter of the RANGE, a's days from D read «group» across the edit and
+    «even» alone — nothing names A any more that day.) The figures were never
+    in question: `labor_split` reads each day's own group minutes."""
+
+    SPAN = (D - timedelta(days=2), D + timedelta(days=1))
+
+    def _world(self):
+        self.unit(X)
+        a = self.cell("0601", X, letter="A")
+        b = self.cell("0602", X, letter="B")
+        tort = self.line(X, "F001", "Tort", labor=60, letter="A", sort=0)
+        self.line(X, "F002", "Keks", labor=30, letter="B", sort=1)
+        self.line(X, "F003", "Non", labor=12, sort=2)  # nobody's: shared evenly
+        self.wc_row(X, C, shtatka=5)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=6, actual=6)
+            self.daily(X, day, "F002", plan=4, actual=4)
+            self.daily(X, day, "F003", plan=10, actual=10)
+            self.pin(X, day, people=5)               # one whole-centre number
+            self.att(a, day, X, n=2)
+            self.att(b, day, X, n=3)
+        self.settle()
+        self.edit_line(tort, at=at_(D, 10), wc_group="B")
+        return a, b
+
+    def test_wc_split_by_the_day_catalog(self):
+        self._world()
+        whole = self.zagruzka_cell(X, *self.SPAN)["inputs"]
+        left = self.zagruzka_cell(X, self.SPAN[0], D - timedelta(days=1))["inputs"]
+        right = self.zagruzka_cell(X, D, self.SPAN[1])["inputs"]
+        self.assertEqual([whole["0601"][d.strftime("%d.%m.%Y")]["wc_split"]
+                          for d in days(*self.SPAN)], ["group", "group", "even", "even"])
+        self.assertEqual([whole["0601"][d.strftime("%d.%m.%Y")]["trud_plan"]
+                          for d in days(*self.SPAN)], [7.0, 7.0, 1.0, 1.0])
+        for code in ("0601", "0602"):
+            self.assertEqual(whole[code], {**left[code], **right[code]}, code)
+
 
 if __name__ == "__main__":
     unittest.main()

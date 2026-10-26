@@ -118,7 +118,8 @@ Decisions taken with the user (2026-07-31), all deliberate:
     cell from its own day, so a range across it splits each day by that day's
     letters — the split, the pins, `wc_split`, each input's `wc_group` and the
     orphan letters alike; `cells[]` prints the letter of the cell's last day
-    here.
+    here. A row's `wc_split` asks the lines of the catalog ITS day had, so a
+    catalog edit that re-letters a line inside the range is judged per day too.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -538,7 +539,12 @@ def cell_zagruzka(
     # Read per LINE, as `group_of` is keyed (wc_group.line_groups): one SKU's
     # operations may name different letters, so asking it per (wc, SKU) would
     # miss every letter but the one the first operation happens to carry.
+    # `letters_on_lines` is every span's (what the diagnostics describe);
+    # `lines_letters_on(wc, d)` the span's of that DAY — a row's `wc_split` is
+    # judged by the catalog its day had, so a range across a catalog edit that
+    # re-lettered a line labels each day as a read of that day alone does.
     letters_on_lines: dict[str, set] = defaultdict(set)
+    _span_letters: list[tuple[date, date, dict]] = []
     for _cat, _lo, _hi in cat_spans:
         lines_by_key, sap_off, _missing = _span_lines(_cat.lines)
         if len(cat_spans) == 1:
@@ -557,11 +563,23 @@ def cell_zagruzka(
                                            sap_off, group_of)
         _pg.update(_spg)
         _ag.update(_sag)
+        _sl: dict[str, set] = defaultdict(set)
         for (_w, _qkey), _lines in lines_by_key.items():
             for _lkey, _labor in _lines:
                 _g = group_of.get((_w, _qkey, _lkey))
                 if _g:
                     letters_on_lines[wc_code(_w)].add(_g)
+                    _sl[wc_code(_w)].add(_g)
+        _span_letters.append((_lo, _hi, _sl))
+
+    def lines_letters_on(wc: str, d: date):
+        """The letters the catalog of `d` hands work centre `wc`."""
+        if len(_span_letters) == 1:
+            return letters_on_lines.get(wc, ())
+        for _lo, _hi, _sl in _span_letters:
+            if _lo <= d <= _hi:
+                return _sl.get(wc, ())
+        return ()
     # Onto the normalised work centre. `line_minutes` joins a line to its
     # quantities under the spelling both were stored with; two spellings of one
     # work centre are then that work centre's minutes, SUMMED. A single spelling
@@ -1064,7 +1082,7 @@ def cell_zagruzka(
                 wc_split, share = "even", 1.0 / n_wc
             else:
                 own = letter(c, d)
-                wc_split = ("group" if own and (own in letters_on_lines.get(wc, ())
+                wc_split = ("group" if own and (own in lines_letters_on(wc, d)
                                                 or own in people_pin.get((wc, d), {}))
                             else "even")
                 # The fraction of the work centre's plan minutes this cell carries;

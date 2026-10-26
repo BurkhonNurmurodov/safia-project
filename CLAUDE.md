@@ -9448,10 +9448,12 @@ once, and followed through the tie from then on; history is never affected.
   `apply_due` stores the lost letter on the event (`vfx.wc_group_was`),
   `cell_links.letter_on` / `with_letters_on` answer it, and `by_wc_on` (the one
   door of the pin, labour and ojidaniya splits) hands each day's cells with that
-  day's letter; /zagruzka-cell reads every cell with the letter of EACH day
-  (2026-10-26 — it read a moved cell with one letter for the whole range, its
-  last day's in the unit shown, so a range across a re-lettering split its
-  early days wrongly), `cells[]` printing the last day's. A letter changed BY HAND on the form is still
+  day's letter — also where only a letter changed (`relettered_since`);
+  /zagruzka-cell reads every cell with the letter of EACH day (2026-10-26 — it
+  read a moved cell with one letter for the whole range, its last day's in the
+  unit shown, so a range across a re-lettering split its early days wrongly),
+  `cells[]` printing the last day's, and judges each row's `wc_split` by the
+  lines of that day's catalog. A letter changed BY HAND on the form is still
   undated, as before. Deliberately present-tense: pickers, labels of history,
   `in_load`, `one_process`, `sap_code`. The «fix it now» reports
   (`zagruzka_gaps`, `cell_input_gaps`, the unpriced report) still pass the
