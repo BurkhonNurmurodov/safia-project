@@ -301,6 +301,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/production/override",                  "shopfloor", "production.override_set"),
     (("POST",),   "/api/production/wc-override",               "shopfloor", "production.wc_override_set"),
     (("POST",),   "/api/production/staffing",                  "shopfloor", "production.staffing_set"),
+    # «O'lchov birligi» — the one catalog field a brigadir sets, so it carries a
+    # key of its own rather than reading as an admin's catalog edit.
+    (("PUT",),    "/api/production/catalog/uom",               "shopfloor", "production.catalog_uom_set"),
     (("POST",),   "/api/production/reconciliation",            "shopfloor", "production.reconciliation_set"),
     (("POST",),   "/admin/production/upload",                  "shopfloor", "production.phase_uploaded"),
     (("POST",),   "/admin/production/catalog/import",          "shopfloor", "production.catalog_imported"),

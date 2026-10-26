@@ -4176,6 +4176,132 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
             "group_siblings": group_siblings, "from": eff.isoformat()}
 
 
+# The ONE catalog field a BRIGADIR may set (2026-10-26, the operator: «unit
+# column should be editable to all supervisors»). Every other field of a line —
+# the SAP code, the name, Трудоемкость, Команда, the group letter, the SAP
+# switch, adding, archiving, deleting — moves a figure or a stored quantity and
+# stays admin-only behind `_verify_admin`.
+UOM_ROLES = ("admin", "supervisor")
+
+
+class CatalogUomBody(BaseModel):
+    ids: list[int]
+    # One of services/pp_uom.UOMS, or "" to clear. There is no «leave it alone»
+    # here, unlike the bulk editor next door: this door carries ONE field, so an
+    # omitted value would be a save that asks for nothing.
+    uom: Optional[str] = ""
+
+
+@router.put("/api/production/catalog/uom")
+def set_catalog_uom(body: CatalogUomBody,
+                    manager_id: Optional[int] = Query(None),
+                    payload: dict = Depends(require_page(PAGE)),
+                    db: Session = Depends(get_db)):
+    """Set «O'lchov birligi» on one or several catalog lines — the door a
+    BRIGADIR writes the measure through (2026-10-26, the operator: «unit column
+    should be editable to all supervisors»).
+
+    A door of its own rather than a role widened on the three admin catalog
+    endpoints, because those carry the fields that move numbers — the SAP code
+    and the name (which key the line's stored ПЛАН/ФАКТ), Трудоемкость and
+    Команда (the загрузка's own inputs), the group letter, the SAP switch,
+    `active`. Opening them to supervisors and then filtering the body per role
+    is a rule every field added later has to remember; one door carrying one
+    decision is the shape the platform already uses for a slot a second
+    audience owns (`PUT /api/profiles/admin/cells/{id}/manager`).
+
+    What makes the measure safe to hand over is what its own section says: no
+    figure reads it. It is no part of a line's identity (`pp_calc.line_keys`),
+    so changing one moves no stored quantity and needs neither the snapshot nor
+    the carry every other catalog write runs; the minutes, ЛЮДИ, Парето and
+    загрузка are what they were. It is a REGISTER — what this position is
+    counted in — and the person who knows that is the brigadir.
+
+    Scope is `_resolve_manager_id`'s: a supervisor is pinned to their own unit
+    whatever `manager_id` they send, and every id must then belong to THAT unit
+    — a line of somebody else's catalog is a 403, not a silent skip. Leaders
+    are deliberately out: they own CELLS and a catalog line belongs to the
+    unit, so a leader's write would reach a line the brigadir keeps. Shift- and
+    top-managers are out for the same reason they do not type «Bugungi fakt» —
+    they read the unit, they do not keep its register.
+
+    DATED like every catalog edit (services/pp_catalog.py): it counts from the
+    shift in progress and the days before it keep the measure they had. The
+    day's closing ladder plays no part — a catalog is configuration for every
+    date, not a fact about one, which is why the admin catalog doors are not
+    guarded by it either.
+
+    A pick equal to what the rows already carry freezes NOTHING and returns 0.
+    The other catalog writers always have something to change (they refuse an
+    empty body), but a cell picker re-sending the value on screen is ordinary
+    here, and a boundary drawn for a change that never happened would split the
+    unit's history into two identical halves.
+    """
+    if payload.get("role") not in UOM_ROLES:
+        raise HTTPException(status_code=403,
+                            detail="Not allowed to set the unit of measure")
+    ids = list(dict.fromkeys(body.ids or []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="no rows selected")
+    if len(ids) > _CATALOG_BULK_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"too many rows at once (max {_CATALOG_BULK_MAX})")
+    # Refused before anything is read: a unit outside the four is a 400 naming
+    # them, never a value stored for a reader that cannot decode it.
+    uom = _uom_or_400(body.uom)
+    mid = _resolve_manager_id(payload, manager_id, db)
+
+    prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
+    found = {p.id for p in prods}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"catalog line(s) not found: {missing[:5]}")
+    if {p.manager_id for p in prods} - {mid}:
+        raise HTTPException(status_code=403,
+                            detail="these positions belong to another brigadir")
+
+    # Archived lines are editable here on purpose: the measure travels with the
+    # row through the archive (it is kept whole), so a line brought back carries
+    # what somebody set on it rather than coming back blank.
+    todo = [p for p in prods if (p.uom or None) != uom]
+    if not todo:
+        eff = pp_catalog.unit_effective_day(db, mid)
+        # Recorded anyway, and recorded as what it was: somebody pressed this,
+        # and a bare middleware row (no unit, no detail) reads like a save whose
+        # details were lost rather than like a save with nothing to do.
+        action_log.enrich(
+            target_kind="catalog", target_id=f"{mid}:uom:0", unit_id=mid,
+            details=[("rows", 0), ("uom", uom or "—"),
+                     ("unchanged", len(prods)), ("from", eff.isoformat())],
+        )
+        return {"ok": True, "updated": 0, "unchanged": len(prods),
+                "from": eff.isoformat()}
+
+    # BEFORE a single attribute moves: the session does not autoflush, so a row
+    # already changed in memory would be frozen with its new value and the past
+    # would read the edit after all.
+    eff = pp_catalog.freeze(db, mid, "uom")
+    for p in todo:
+        p.uom = uom
+    names = [p.sap_code or p.name or str(p.id) for p in todo]
+    db.commit()
+    action_log.enrich(
+        target_kind="catalog", target_id=f"{mid}:uom:{len(todo)}",
+        target_name=", ".join(names[:5]) + (" …" if len(names) > 5 else ""),
+        unit_id=mid,
+        details=[("rows", len(todo)),
+                 # «—» and not a blank: the Jurnal has to tell «cleared» from
+                 # «this save did not name a measure», which is not a request
+                 # this door can make.
+                 ("uom", uom or "—"),
+                 ("unchanged", (len(prods) - len(todo)) or None),
+                 ("from", eff.isoformat())],
+    )
+    return {"ok": True, "updated": len(todo),
+            "unchanged": len(prods) - len(todo), "from": eff.isoformat()}
+
+
 class CatalogArchiveBody(BaseModel):
     ids: list[int]
     archived: bool          # True = set aside, False = bring back

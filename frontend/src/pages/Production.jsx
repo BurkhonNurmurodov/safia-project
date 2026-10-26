@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore,
+  Archive, ArchiveRestore, Scale,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -171,6 +171,13 @@ const uomLabel = (t, v) => {
   const s = t(`production.uom.${v}`);
   return s && s !== `production.uom.${v}` ? s : v;
 };
+// The bulk control has to express BOTH «count these in dona» and «say nothing
+// about them», and «say nothing» is the empty string — the very value a picker
+// uses for «nothing chosen yet». So the clear rides a sentinel the save maps
+// back to "" before it leaves the page. The CELL picker needs none: there the
+// row's own value IS "" when the measure is not stated, so the two meanings
+// never have to share one slot.
+const UOM_CLEAR = "__clear__";
 // Letters are served sorted, but a letter appended as an `extra` is not.
 const byLetter = (a, b) => GROUP_LETTERS.indexOf(a) - GROUP_LETTERS.indexOf(b);
 // A work centre is grouped when the dashboard lists groups under it (contract:
@@ -1526,6 +1533,10 @@ export default function Production() {
   const [editRow, setEditRow] = useState(null);    // row being edited in the modal, or null
   const [createOpen, setCreateOpen] = useState(false); // "new position" modal open?
   const [confirmDel, setConfirmDel] = useState(null);  // row pending delete-confirm, or null
+  // The brigadir's bulk measure: null = closed, else { uom } — "" is «nothing
+  // picked yet» (the Save stays shut) and `UOM_CLEAR` is «say nothing about
+  // them», which is a real answer and must not share a slot with the first.
+  const [uomBulk, setUomBulk] = useState(null);
   // Lines pending the archive confirm: { ids, label } — label names a single
   // row, null for a bulk selection.
   const [confirmArch, setConfirmArch] = useState(null);
@@ -1709,6 +1720,23 @@ export default function Production() {
   // not been handed.
   const uomOpts = Array.isArray(catalogInfo?.uoms) ? catalogInfo.uoms : [];
   const canEditCatalog = canEditCatalogRole && catalogEditable && !isPlaceholderData;
+  // «O'lchov birligi» is the ONE catalog field a BRIGADIR keeps (2026-10-26,
+  // the operator: «unit column should be editable to all supervisors»). It is a
+  // REGISTER — what this position is counted in — and no figure on the platform
+  // reads it, so it is handed to the people who know the answer while every
+  // other field of a line (the code, the name, Трудоемкость, Команда, the
+  // letter, the SAP switch, add / archive / delete) stays admin-only. Same DAY
+  // rule as the rest of the catalog: an edit counts from the shift in progress,
+  // so on an earlier day nothing here is offered — a save would change nothing
+  // on screen. The backend decides it again on its own door
+  // (`routers/production.set_catalog_uom`); this is what draws the control.
+  const canEditUomRole = ["admin", "supervisor"].includes(auth?.role);
+  const canEditUom = canEditUomRole && catalogEditable && !isPlaceholderData
+    && uomOpts.length > 0;
+  // The checkbox column, the row-pick model and the sticky bar below the table
+  // serve BOTH audiences — what each may then do with a selection is the bar's
+  // own question, not this one.
+  const canPickRows = canEditCatalog || canEditUom;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
     ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
@@ -1816,7 +1844,7 @@ export default function Production() {
   }, [colCfg, hasGroups]);
   // Every colSpan on this table counts the pick column too, or the skeleton, the
   // empty row and the action strip each stop one cell short of the header.
-  const colCount = visibleCols.length + (canEditCatalog ? 1 : 0);
+  const colCount = visibleCols.length + (canPickRows ? 1 : 0);
 
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
@@ -2005,6 +2033,43 @@ export default function Production() {
       toast.error(writeErr(e));
     },
   });
+
+  // «O'lchov birligi», the one catalog field a brigadir writes — its own door
+  // (`PUT /api/production/catalog/uom`), because the three admin catalog
+  // endpoints carry the fields that move numbers. Scoped server-side: a
+  // supervisor is pinned to their own unit whatever `manager_id` rides along.
+  //
+  // The pick is held locally until the dashboard has been read again
+  // (`uomPending`), so the control shows what was chosen instead of springing
+  // back to the old value for the length of a refetch. Cleared on the answer
+  // either way — a refusal then snaps the cell back, which is what a refusal
+  // looks like, with the reason on a toast beside it.
+  const [uomPending, setUomPending] = useState({});
+  const uomCatalog = useMutation({
+    mutationFn: (body) => api.put("/api/production/catalog/uom", body, { params: managerParam }),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ["production", date] });
+      const r = res?.data ?? {};
+      // A pick every row already carried: say so rather than report a save.
+      // One row changed needs no toast — the cell itself is the answer.
+      if (!r.updated) toast.info(t("production.uom.same"));
+      else if (r.updated > 1) {
+        toast.success(t("production.uom.saved").replace("{n}", String(r.updated)) + fromText(res));
+      }
+    },
+    onError: (e) => toast.error(writeErr(e)),
+    onSettled: (_res, _err, body) => setUomPending((p) => {
+      const next = { ...p };
+      (body?.ids || []).forEach((id) => { delete next[id]; });
+      return next;
+    }),
+  });
+  // One cell, one pick, one save. "" is «not stated» and is a real answer.
+  const setRowUom = (row, value) => {
+    if (!canEditUom || row.id == null || (row.uom ?? "") === value) return;
+    setUomPending((p) => ({ ...p, [row.id]: value }));
+    uomCatalog.mutate({ ids: [row.id], uom: value });
+  };
 
   // ── undo / redo over the day's writes ─────────────────────────────────────
   // Ctrl+Z takes back the last per-day write on this page; Ctrl+Y (or
@@ -2284,7 +2349,8 @@ export default function Production() {
   // The catalog belongs to ONE brigadir, so a pick cannot outlive a unit switch:
   // the backend refuses a mixed-unit batch, and a selection carried across would
   // otherwise aim at rows that are no longer on screen.
-  useEffect(() => { setCatPick([]); setBulkDraft(null); }, [managerParam.manager_id]);
+  useEffect(() => { setCatPick([]); setBulkDraft(null); setUomBulk(null); },
+            [managerParam.manager_id]);
   // `auto_fill: "keep"` is the third state a boolean cannot carry — "leave every
   // row as it is" — which is what a blank text field means beside it.
   // `wc_group` carries the same "keep" state, and "" for «no group» — a blank
@@ -2493,21 +2559,59 @@ export default function Production() {
           </td>
         );
       }
-      case "uom":
+      case "uom": {
         // A property of the position, never a status — a neutral chip in the
         // «Manba» column's own resting skin, so it can read as no traffic
         // light. Not stated is a dash: the platform has not been told what this
         // line is counted in, which is not the same as «kg».
+        //
+        // EDITABLE IN PLACE for whoever may set it (admins and the unit's own
+        // brigadir, 2026-10-26). A picker in the cell rather than a trip
+        // through the row strip and a modal: it is one value with four answers,
+        // and a brigadir filling a 77-SKU catalog should spend one tap on each.
+        // The trigger wears the chip's own compact skin, so a row the reader
+        // cannot edit and one they can are the SAME height — the platform's
+        // one-line-per-row rule holds either way. `short` keeps «not stated» a
+        // dash on the closed control, where the panel spells it out.
+        if (!canEditUom || r.id == null) {
+          return (
+            <td key={key} className="px-3 py-2 text-center">
+              {r.uom
+                ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
+                        style={{ color: "var(--text-2)", border: "1px solid var(--border)" }}>
+                    {uomLabel(t, r.uom)}
+                  </span>
+                : <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+          );
+        }
         return (
-          <td key={key} className="px-3 py-2 text-center">
-            {r.uom
-              ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
-                      style={{ color: "var(--text-2)", border: "1px solid var(--border)" }}>
-                  {uomLabel(t, r.uom)}
-                </span>
-              : <span style={{ color: "var(--text-4)" }}>—</span>}
+          // The row itself is a selection target for an admin, so the cell
+          // swallows the click — picking a measure must not also open the
+          // row's action strip underneath it.
+          <td key={key} className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+            <StyledSelect
+              className="inline-block min-w-[86px] text-left"
+              triggerClassName="px-2 py-1 text-[11px]"
+              // A pick still in flight, else what the dashboard last said.
+              // "" is «not stated» and is a real answer, so `??` and never `||`.
+              value={uomPending[r.id] ?? r.uom ?? ""}
+              onChange={(v) => setRowUom(r, v)}
+              options={[
+                // The trigger's own ink is `--text-1` for any picked option,
+                // and «not stated» IS one here — so the dash carries the muted
+                // colour the read-only cell gives it, or a row nobody has
+                // answered would read as a row somebody had.
+                { value: "", label: t("production.uom.none"),
+                  short: <span style={{ color: "var(--text-4)" }}>—</span> },
+                ...uomOpts.map((u) => ({ value: u, label: uomLabel(t, u) })),
+              ]}
+              ariaLabel={t("production.uom.setCell")
+                .replace("{name}", r.sap_code || r.name || String(r.id))}
+            />
           </td>
         );
+      }
       case "people":
         // One decimal: a line of an untyped group reads that group's SHARE of
         // the centre, a fraction of a person (integers print unchanged).
@@ -3409,7 +3513,7 @@ export default function Production() {
             {/* A day an edit made now cannot reach: it keeps the catalog it
                 had, so the controls are gone — and the admin is told where
                 they are instead of wondering why. */}
-            {canEditCatalogRole && !catalogEditable && catalogInfo?.from && (
+            {canEditUomRole && !catalogEditable && catalogInfo?.from && (
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
                   <History size={13} className="flex-shrink-0" />
@@ -3441,7 +3545,7 @@ export default function Production() {
                 {/* The pick column is NOT in the ColumnsPicker: it is a control,
                     not one of the day's facts, so it can never be hidden away
                     from the bar that acts on it. */}
-                {canEditCatalog && (
+                {canPickRows && (
                   <Th
                     cls="w-9"
                     label={
@@ -3478,9 +3582,15 @@ export default function Production() {
               {!loading && viewRows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
                 const wc = wcColor(r.work_center);
+                // TWO different rights, and they must not share one flag: a
+                // brigadir may TICK a row (the measure reaches a selection) but
+                // never open the row's action strip, which is Edit / Archive /
+                // Delete. Read off one, their checkbox could never show as
+                // ticked — `picked` was false whatever the selection held.
+                const pickable = canPickRows && r.id != null;
                 const selectable = canEditCatalog && r.id != null;
                 const selected = selectable && catSel === r.id;
-                const picked = selectable && pickSet.has(r.id);
+                const picked = pickable && pickSet.has(r.id);
                 return (
                   <Fragment key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}>
                   <tr
@@ -3491,7 +3601,7 @@ export default function Production() {
                       background: selected ? "var(--bg-inner)" : picked ? "var(--brand-bg)" : undefined,
                       cursor: selectable ? "pointer" : undefined,
                     }}>
-                    {canEditCatalog && (
+                    {canPickRows && (
                       <td className="px-3 py-2">
                         {r.id != null && (
                           <input
@@ -3624,7 +3734,7 @@ export default function Production() {
 
       {/* Bulk bar — a LAYER over the page, never a row inside the table: it has
           to stay reachable while the operator scrolls the catalog picking rows. */}
-      {canEditCatalog && catPick.length > 0 && (
+      {canPickRows && catPick.length > 0 && (
         <div
           className="flex items-center gap-2 flex-wrap px-3 py-2.5 rounded-t-2xl"
           style={{
@@ -3646,18 +3756,90 @@ export default function Production() {
             </span>
           )}
           <div className="flex items-center gap-2 ml-auto flex-wrap">
-            <Button size="lg" icon={<Pencil size={14} />} onClick={openBulk}>
-              {t("production.bulk.edit").replace("{n}", String(catPick.length))}
-            </Button>
-            <Button size="lg" variant="secondary" icon={<Archive size={14} />}
-                    onClick={() => setConfirmArch({ ids: [...catPick], label: null })}>
-              {t("production.bulk.archive").replace("{n}", String(catPick.length))}
-            </Button>
+            {canEditCatalog && (
+              <>
+                <Button size="lg" icon={<Pencil size={14} />} onClick={openBulk}>
+                  {t("production.bulk.edit").replace("{n}", String(catPick.length))}
+                </Button>
+                <Button size="lg" variant="secondary" icon={<Archive size={14} />}
+                        onClick={() => setConfirmArch({ ids: [...catPick], label: null })}>
+                  {t("production.bulk.archive").replace("{n}", String(catPick.length))}
+                </Button>
+              </>
+            )}
+            {/* The brigadir's half of the bar: the ONE field they keep, set on
+                every picked line at once. Not offered beside the full bulk
+                editor — that one already carries the measure, and two controls
+                writing one field in one bar is a choice nobody has to make.
+                A BUTTON and not the picker itself: this bar's job is to name
+                the action, and a select with nothing chosen wears placeholder
+                ink (`--text-4`), which on the one control in a bar reads as
+                disabled. The picker belongs in the form behind it, where an
+                unanswered field is exactly what that ink means. */}
+            {!canEditCatalog && canEditUom && (
+              <Button size="lg" icon={<Scale size={14} />}
+                      onClick={() => setUomBulk({ uom: "" })}>
+                {t("production.uom.setMany")}
+              </Button>
+            )}
             <Button size="lg" variant="ghost" onClick={() => setCatPick([])}
                     title={t("filter.clear")} aria-label={t("filter.clear")}
                     icon={<X size={14} />} />
           </div>
         </div>
+      )}
+
+      {/* The brigadir's bulk measure — one field, every picked line. The
+          admin's own bulk editor already carries it, so this modal exists for
+          the audience that has no other way in. */}
+      {uomBulk && (
+        <Modal
+          onClose={() => setUomBulk(null)}
+          // The TITLE names the act and the field below names the value — a
+          // card headed with the same words as its only label says one thing
+          // twice and the act nowhere.
+          title={t("production.uom.setMany")}
+          subtitle={t("production.bulk.scope").replace("{n}", String(catPick.length))}
+          icon={<Scale size={16} style={{ color: "var(--brand-text)" }} />}
+          dismissable={!uomCatalog.isPending}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setUomBulk(null)}>
+                {t("production.cancelEdit")}
+              </Button>
+              <Button icon={<Save size={14} />} loading={uomCatalog.isPending}
+                      // "" is «nothing picked yet», so the Save stays shut
+                      // until the reader has answered — a bulk that reaches
+                      // 500 lines must not be one mis-tap away.
+                      disabled={!uomBulk.uom || catPick.length === 0}
+                      onClick={() => uomCatalog.mutate(
+                        { ids: [...catPick],
+                          uom: uomBulk.uom === UOM_CLEAR ? "" : uomBulk.uom },
+                        { onSuccess: () => { setUomBulk(null); setCatPick([]); } })}>
+                {t("production.bulk.apply").replace("{n}", String(catPick.length))}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t("production.uom.label")} hint={t("production.uom.bulkHint")}>
+            <StyledSelect
+              value={uomBulk.uom}
+              onChange={(v) => setUomBulk({ uom: v })}
+              placeholder={t("production.uom.setMany")}
+              options={[
+                { value: UOM_CLEAR, label: t("production.uom.clear") },
+                ...uomOpts.map((u) => ({ value: u, label: uomLabel(t, u) })),
+              ]}
+              ariaLabel={t("production.uom.label")}
+            />
+          </Field>
+          {/* A catalog edit counts from the shift in progress, and this is one. */}
+          {catalogFromHint && (
+            <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {catalogFromHint}
+            </p>
+          )}
+        </Modal>
       )}
 
       {/* bulk catalog edit (admin) — one value onto every picked line */}

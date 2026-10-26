@@ -8095,13 +8095,62 @@ four and nothing else.
   it would move numbers on every page at once and needs the operator's
   decision first. Measured when it shipped: every total and every row figure
   byte-identical.
-- **Where it is set** — the row edit modal and the create form (a
+- **Where an ADMIN sets it** — the row edit modal and the create form (a
   `StyledSelect` of «— Belgilanmagan» + the four, beside Трудоемкость, which is
   the seconds ONE of them costs), and **the bulk bar**, which is the fast path:
   tick forty tortes, pick «dona», one press. Written through the register's own
-  POST/PUT/bulk, so it is **admin-only** like every other field of a catalog
-  line; `""` clears, an absent key leaves it, so a tab from before the column
-  never touches it. Each write is in the Jurnal (`uom`, `logs.f.uom`).
+  POST/PUT/bulk, so it carries CAP-admin exactly like every other field of a
+  catalog line; `""` clears, an absent key leaves it, so a tab from before the
+  column never touches it. Each write is in the Jurnal (`uom`, `logs.f.uom`).
+- **…and from 2026-10-26 a BRIGADIR sets it too** (the operator: «unit column
+  should be editable to all supervisors»). It is **the ONE field of a catalog
+  line a supervisor keeps** — the code, the name, Трудоемкость, Команда, the
+  letter, the SAP switch and add / archive / delete all stay admin-only — and
+  what makes it safe to hand over is the bullet above: no figure reads it, it
+  is no part of the line's identity, so a write here moves no stored quantity
+  and needs neither the snapshot nor the carry every other catalog write runs.
+  It is a REGISTER — what this position is counted in — and the person who
+  knows that is the brigadir.
+  - **Its own door, `PUT /api/production/catalog/uom`** (`{ids, uom}`, "" to
+    clear, `routers/production.set_catalog_uom`), never a role widened on the
+    three admin catalog endpoints: those carry the fields that move numbers,
+    and filtering their body per role is a rule every field added later has to
+    remember. One door, one decision — the shape `PUT
+    /api/profiles/admin/cells/{id}/manager` already uses for a slot a second
+    audience owns. Gated `require_page("production")` + **admin or
+    supervisor**, scoped by `_resolve_manager_id` (a supervisor is pinned to
+    their own unit whatever `manager_id` rides along) and then by every id
+    belonging to THAT unit — another unit's line is a 403, not a silent skip.
+    Bounded at `_CATALOG_BULK_MAX` (500). **Leaders are deliberately out**:
+    they own CELLS and a catalog line belongs to the unit. Shift- and
+    top-managers are out for the reason they do not type «Bugungi fakt» — they
+    read the unit, they do not keep its register.
+  - **DATED like every catalog edit** (services/pp_catalog.py): it counts from
+    the shift in progress and the days before keep the measure they had. The
+    day's closing ladder plays no part, as it does not for the admin doors —
+    a catalog is configuration for every date, not a fact about one.
+  - **A pick equal to what the rows already carry freezes NOTHING** and answers
+    `updated: 0`. The other catalog writers always have something to change
+    (they refuse an empty body), but a cell picker re-sending the value on
+    screen is ordinary here, and a boundary drawn for a change that never
+    happened would split the unit's history into two identical halves. It is
+    still recorded — a bare middleware row would read like a save whose
+    details were lost rather than one with nothing to do.
+  - Logged as `production.catalog_uom_set`, so «a brigadir set the measure»
+    and «an admin edited a catalog line» are two acts in the Jurnal.
+  - **On screen the column is EDITABLE IN PLACE** for whoever may set it: the
+    cell is a compact `StyledSelect` in the chip's own skin, so an editable row
+    and a read-only one are the same height and the one-line-per-row rule holds
+    either way; a pick is one tap and one save, held locally (`uomPending`)
+    until the dashboard has been read again so the control never springs back
+    for the length of a refetch. A brigadir also gets the checkbox column and
+    the sticky bar, carrying ONE action — «O'lchov birligi» onto every picked
+    line, behind the house form modal; the admin's bar is untouched, since
+    their bulk editor already carries the measure and two controls writing one
+    field in one bar is a choice nobody has to make. `pickable` (may tick) and
+    `selectable` (may open the row's Edit / Archive / Delete strip) are two
+    flags on purpose. The «this day keeps its own catalog» notice now shows for
+    a brigadir too.
 - **Shown** as a «Birlik» column (uz_cyrl «Бирлик», ru «Ед. изм.», en «Unit»)
   directly after «Trud.», sortable, in the `ColumnsPicker` like every other —
   a NEUTRAL chip, never a traffic light, because it is a property and not a
