@@ -9487,76 +9487,89 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
 
-## «Odam soni»: the page and the загрузка count different pins (2026-10-26)
+## «Odam soni»: a typed headcount is ALWAYS on the page (2026-10-26)
 
 On 25.10.2026 Niyozov Izzatilla's 24.10 showed ЛЮДЕЙ (Σ) **45** on «Файл
-загрузки» (21 + 12 + 12) and ОФИЦ. ЧИСЛ. **66** on «Ежедневно» — and still did
-the next day, on the current bundle, on a day already closed. Both figures
-claim to be the TYPED «Bugungi fakt» pins; they are both read from them and
-they do not read the same set.
+загрузки» and ОФИЦ. ЧИСЛ. **66** on «Ежедневно» — and still did the next day,
+on the current bundle, on a day already closed. Both figures are the TYPED
+«Bugungi fakt» pins; they read different SETS of them.
 
-- **The PAGE** counts a pin only where its `work_center` matches, EXACTLY, a
-  code on the day's PANEL — `pp_calc.wc_codes` = the active work-centre
-  register **plus the codes the day's quantities give PLAN MINUTES to**
-  (`if total_labor:`) — and looks a pin up with `ov_all.get(code)`. ΣN is over
-  that panel. **A code with no minutes that day is not on it at all**, so a
-  pin typed on it is invisible AND uneditable there.
+- **The PAGE** counts a pin only where its code is on the day's PANEL —
+  `pp_calc.wc_codes`. Three sources, and the third is the fix: the active
+  work-centre register · the codes the day's quantities give PLAN MINUTES to
+  (`if total_labor:`) · **and, from 2026-10-26, every code carrying a typed
+  headcount** (the operator: «show it on the page, so it can be deleted»).
+  Before that third source a headcount typed on a work centre with no plan
+  that day was drawn NOWHERE, while the загрузка went on counting it.
 - **The ЗАГРУЗКА** counts EVERY `pp_work_center_daily` row of that (unit, date)
-  with `people IS NOT NULL` — `zagruzka_source.typed_pins`, keyed on the raw
-  string, with no `norm_code` and no join to the register. `unit_people` is what
-  `official_hc` is, so /daily, /zagruzka and every fleet figure divide by it.
-- **The GROUPS are not the gap.** `pp_calc` resolves a grouped work centre's
-  people as `sum(typed_groups.values())` — orphan letters included — which is
-  byte for byte `zagruzka_source.fold_pins`, and `unit_people` folds a
-  group-keyed dict before summing it. So the page's header Σ and the load's
-  per-work-centre figure always agree; only the SET of codes differs.
-
-So a pin survives its work centre losing its plan minutes for a day, being
-deactivated, having its catalog lines archived (2026-10-24), being dropped from
-the register, or being spelled another way (a Cyrillic twin — «A code is LATIN»
-— a stray space, another case), and from then on it counts in the загрузка
-while the page it was typed on cannot show it. `cell_pins` already folds two
-spellings onto one work centre through `wc_group.wc_key` and says so in its
-docstring; `unit_people` never got it.
-
+  with `people IS NOT NULL` — `zagruzka_source.typed_pins`. `unit_people` is
+  what `official_hc` is, so /daily, /zagruzka and every fleet figure divide by
+  it. **It is unchanged, deliberately**: scoping it to the panel was the other
+  way to close the gap and would have silently discarded 21 people a brigadir
+  typed. Nothing a person entered is ever dropped; it is shown so it can be
+  corrected at source.
+- **The GROUPS were never the gap.** `pp_calc` resolves a grouped work centre's
+  people as `sum(typed_groups.values())`, orphan letters included — byte for
+  byte `zagruzka_source.fold_pins` — and `unit_people` folds a group-keyed dict
+  before summing. The header Σ and the load's per-work-centre figure always
+  agreed; only the SET of codes differed.
+- **`pin_only` is published per panel row** and is the one thing a reader
+  cannot work out: the «Bugungi fakt» table has no minutes column, so
+  «B2743 · 21 · —» looks exactly like a work centre that is part of the day.
+  True ⇒ on the panel ONLY because of a typed pin (no active register row, no
+  minutes today). **Never derive it on the client from `total_labor == 0`** —
+  an ordinary registered centre with nothing planned reads that too, and it was
+  always shown. The page draws it as a NEUTRAL «Rejada yo'q» chip beside the
+  code (never a status colour: a fact about the row, not a verdict), whose
+  title says the загрузка counts the number and to clear it if it is wrong.
+  Such a row prints its people against 0 minutes at 0% load, which is the
+  truth. A **штатка-only** pin is deliberately NOT admitted: nothing counts it,
+  so the row would say nothing.
+- **What the page now shows and did not before**: ΣN and СР. ЗАГРУЖЕННОСТЬ move
+  on exactly the affected days, toward the figure /daily already printed —
+  Niyozov's 24.10 goes 45 → 66 and 93.68% → 63.87%, which is /daily's own
+  63.9%. **The two pages stop contradicting each other.** No KPI formula moved
+  and nothing is stored, so the moment the stray pin is cleared every figure
+  re-reads. A typed **0** still shows (a cell that ran empty is a real answer)
+  and still adds nothing to ΣN. A LEADER is unaffected: the router scopes
+  `wc_daily` by their cells before the engine sees it, so a pin outside their
+  scope is neither drawn to them nor sent by them.
+- **Clearing it works because the save only touches codes the body LISTS.**
+  `save_staffing` builds its plan from the request's rows, so an unlisted pin
+  survives every Save — which is exactly why the 21 outlived them. Now the row
+  is drawn, it is sent, and emptying the box deletes the pin.
+- **MEASURED on production, 26.10.2026** (`pin_mismatch_report` v2, the answer
+  kept here so nobody re-derives it): **three** unit-days since
+  `ZAGRUZKA_FROM`, all counted in the загрузка —
+  Niyozov Izzatilla 24.10, page 45 vs 66, a 21 on **B2743** with no plan that
+  day (beside an identical 21 on B2942: it looks typed twice), 63.9% → 93.7%;
+  Sultonova Umida 20.09, 40 vs 43, a 3 on **A2703**, which sits inside her own
+  run A2701 · A2702 · **A2703** · A2704, 84.8% → 91.2%; Ibragimova Sayyora
+  02.09, 22 vs 25, a 3 on **A2898**, a code her unit has no register row for
+  at all, 124.0% → 140.8%. Those three pins are the data to clean; the page
+  now shows all three.
 - **TEMPORARY, READ-ONLY** `services/pin_mismatch_report.py`,
   `startup.report_pin_mismatch` (flag `pin_mismatch_report_2026_10_26_v2`,
-  ~150 s after boot, both entrypoints) DMs `UNPRICED_DM_CHAT` text + a workbook:
-  every unit-day since `ZAGRUZKA_FROM` where the page's Σ and the загрузка's
-  differ, each offending pin with WHY it is off the page (`spelling` ·
-  `cyrillic_twin` · `no_minutes` · `archived_line` · `inactive` ·
-  `unknown_code`, and which code it should have landed on), the загрузка that
-  day reads now against what the page's own Σ would give, and a «Kun to'liq»
-  sheet holding EVERY pin of each affected unit-day beside the panel it was
-  judged against — so «45 + 21 = 66» is checked by eye, not taken on trust.
-  It derives every figure from the functions the two pages read and writes
-  nothing but its flag. Delete the module, the startup pair and both calls once
-  it has landed; changing what it reports needs a NEW key.
+  ~150 s after boot, both entrypoints) is what found them: every unit-day where
+  the panel's Σ and the загрузка's differ, each offending pin with WHY
+  (`spelling` · `cyrillic_twin` · `no_minutes` · `archived_line` · `inactive` ·
+  `unknown_code`), the load now against the page's Σ, and a «Kun to'liq» sheet
+  holding EVERY pin of each affected unit-day beside the panel it was judged
+  against. Delete the module, the startup pair and both calls once the three
+  pins are cleaned; changing what it reports needs a NEW key.
 - **v1 answered «no mismatch» and was WRONG — the lesson, not the bug.** It
   rebuilt the panel as «the active register ∪ every active catalog line's
-  code», which is WIDER than `wc_codes`: a code with lines but no minutes that
-  day read as «on the page», so `page_n` equalled `load_n` and the very
-  unit-day the report was written for did not appear in it. Its «ONE mismatch
-  in seven weeks» (Ibragimova Sayyora, 02.09.2026, page Σ 22 vs загрузка Σ 25,
-  a `people = 3` pin on **A2898** that unit has no register row for) is
-  therefore a FLOOR, not a measurement: it caught only codes absent from the
-  catalog entirely. **A report that compares two numbers must not derive both
-  from one of the two sides** — v1's `page_n` and `load_n` both came off the
-  same `fold_pins` map, differing only by a code filter it had reconstructed by
-  hand instead of mirroring.
-- **The fix is NOT wired and needs the operator's word.** Scoping `typed_pins`
-  to the day's panel codes and matching through `norm_code` is the honest rule
-  — the load must divide by what the page that collects the number shows.
-  Nothing is stored, so it re-reads every unit-day back to 2 September at the
-  next restart. **The blast radius is unknown until v2 has run**, and on
-  Niyozov's 24.10 alone it moves the day from 64 % to 94 %, so it is no longer
-  the one-day change v1 made it look like. Same class as «Making an OFF cell
-  leave the загрузка … ask the operator before wiring it».
-- Consequence to know meanwhile: on such a day «Файл загрузки» prints its own
-  СР. ЗАГРУЖЕННОСТЬ off the panel's Σ (94 % for Niyozov's 24.10) while
-  /zagruzka and /daily print the load off `unit_people` (64 %) — two figures
-  for one unit-day, neither of them stored, each correct about the set of pins
-  it read.
+  code», WIDER than `wc_codes`: a code with lines but no minutes that day read
+  as «on the page», so `page_n` equalled `load_n` and the very unit-day the
+  report was written for did not appear. **A report that compares two numbers
+  must not derive both from one of the two sides** — v1's `page_n` and `load_n`
+  both came off one `fold_pins` map, differing only by a code filter it had
+  reconstructed by hand instead of mirroring.
+- Still open, and a decision of its own: folding two SPELLINGS of one code
+  through `norm_code` in `typed_pins`, so a Cyrillic twin («A code is LATIN»)
+  cannot split one work centre in two. `cell_pins` already does it through
+  `wc_group.wc_key`; `unit_people` never got it. Nothing in eight weeks of
+  production data needed it yet.
 
 ## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
 

@@ -1171,7 +1171,27 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
               return (
                 <Fragment key={w.work_center}>
                 <tr className={PT_ROW}>
-                  <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      {chip(w.work_center, w.cell)}
+                      {/* On the panel ONLY because somebody typed a headcount
+                          here: no plan today and no register row (`pin_only`,
+                          pp_calc). This table has no minutes column, so without
+                          the mark the row reads exactly like a work centre that
+                          is part of the day — and the whole reason it is drawn
+                          is so a wrong number can be seen and cleared. Neutral,
+                          never a status colour: it states a fact about the row,
+                          not a verdict about the unit. */}
+                      {w.pin_only && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap"
+                          title={t("production.pinOnlyHint")}
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)",
+                                   border: "1px solid var(--border)" }}>
+                          {t("production.pinOnly")}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   {/* The placeholder is what an EMPTY box will count as.
                       «Кол-во» falls back to nothing at all, so it shows «—» —
                       previewing the formula there would promise that leaving

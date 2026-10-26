@@ -797,6 +797,43 @@ def compute_dashboard(
         if code and code not in wc_meta:
             wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
             wc_codes.append(code)
+    # …and every work centre carrying a TYPED «Bugungi fakt» headcount, plan or
+    # no plan (2026-10-26, the operator: «show it on the page, so it can be
+    # deleted»). A code reaches the panel above from the register or from the
+    # day's quantities, and the quantities admit one only `if total_labor:` —
+    # so a headcount typed on a work centre with NO plan minutes that day was
+    # drawn NOWHERE, while `zagruzka_source.typed_pins` went on counting it:
+    # the загрузка divided by a number the page that collects it could not
+    # show, and nobody could see the mistake, let alone correct it. Measured
+    # over eight weeks: three unit-days, the worst Niyozov Izzatilla's 24.10 —
+    # page 45 against загрузка 66, the whole gap one 21 typed on B2743 (a work
+    # centre with no plan that Saturday) beside an identical 21 on B2942.
+    # The predicate is `typed_pins`' own (`people IS NOT NULL`, read through
+    # `_opt_int` so a blank is not a pin), which is what keeps the page's ΣN and
+    # `unit_people` ONE number instead of two. Such a row prints its people
+    # against 0 minutes at 0% load — the truth, and the thing a brigadir needs
+    # to see; штатка-only rows are deliberately NOT admitted, since nothing
+    # counts them and they would be a row saying nothing.
+    typed_codes: list[str] = []
+    for tcode, tov in (wc_overrides or {}).items():
+        if tcode and _opt_int((tov or {}).get("people")) is not None:
+            typed_codes.append(tcode)
+    for (tcode, _tletter), tgv in (group_overrides or {}).items():
+        if tcode and _opt_int((tgv or {}).get("people")) is not None:
+            typed_codes.append(tcode)
+    # `pin_only` is published per row, because a row that reached the panel this
+    # way is the one thing a reader cannot work out for themselves: the
+    # «Bugungi fakt» table carries no minutes column, so «B2743 · 21 · —» looks
+    # exactly like a work centre that is part of the day. The SERVER knows why
+    # the row is there and says so; the page must never guess it from
+    # `total_labor == 0`, which an ordinary registered centre with nothing
+    # planned today also reads.
+    pin_only: set[str] = set()
+    for code in typed_codes:
+        if code not in wc_meta:
+            wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
+            wc_codes.append(code)
+            pin_only.add(code)
 
     ov_all = wc_overrides or {}
     cells_all = wc_cells or {}
@@ -956,6 +993,11 @@ def compute_dashboard(
             # how many registry cells of this unit stand at the code, and the
             # per-group rows ([] for a work centre nobody lettered)
             "cells_n": len(cell_groups),
+            # True ⇒ this work centre is on the panel ONLY because somebody
+            # typed a headcount on it: no active register row and no plan
+            # minutes today. The number counts in the загрузка either way, so
+            # the row exists to be read and, if it is wrong, cleared.
+            "pin_only": code in pin_only,
             "groups": groups,
         })
     wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
