@@ -291,23 +291,34 @@ class _Ctx:
         under another brigadir (`cell_lookup.cells_unit_for_leader`), who would
         otherwise be measured against a catalog that has never carried their
         cell. `manager` stays the leader's unit for everything else a check
-        asks — its hour, its shift, whose checklist the verdict lands on."""
+        asks — its hour, its shift, whose checklist the verdict lands on.
+
+        Read ON the checklist day (2026-10-26), the way the leader's page reads
+        that day: a cell that changed brigadir counts in its old unit up to its
+        move day and in its new one from then (`catalog_follow` moves its
+        positions on that day), so a day measured after the move is still
+        measured against the unit it was worked in."""
         if self._unit is None:
-            owner = (getattr(self.cell, "manager_id", None) if self.cell is not None
-                     else cell_lookup.cells_unit_for_leader(self.db, self.prof.id))
+            from app.services import cell_links
+            d = _as_date(self.date)
+            owner = (cell_links.value_on(self.cell, "manager_id", d) if self.cell is not None
+                     else cell_lookup.cells_unit_for_leader(self.db, self.prof.id, d))
             self._unit = int(owner) if owner else self.manager.id
         return self._unit
 
     # The leader's (work centre, group letter) pairs — their cells, and the one
-    # definition of «what is mine» the /production page itself applies.
+    # definition of «what is mine» the /production page itself applies. On the
+    # checklist day: the cells they ran then, each with its letter then.
     @property
     def pairs(self) -> set[tuple[str, str | None]]:
         if self._pairs is None:
-            self._pairs = cell_lookup.sap_groups_for_leader(self.db, self.prof.id)
+            from app.services import cell_links
+            d = _as_date(self.date)
+            self._pairs = cell_lookup.sap_groups_for_leader(self.db, self.prof.id, d)
             if self.cell is not None:
                 # A per-cell checklist asks about THAT cell and no other.
                 code = cell_lookup.norm_code(getattr(self.cell, "sap_code", None))
-                grp = getattr(self.cell, "wc_group", None) or None
+                grp = cell_links.letter_on(self.cell, d) or None
                 self._pairs = {(code, grp)} if code else set()
         return self._pairs
 
@@ -317,12 +328,27 @@ class _Ctx:
         computation of it. Imported lazily and from a ROUTER on purpose: that
         function IS the page, and `services/leader_tasks.py` already reaches for
         `routers.leaders.WINDOW` the same way. Re-deriving the plan here would
-        give the check and the page two answers about one shift."""
+        give the check and the page two answers about one shift.
+
+        Not while one of the leader's cells has changed brigadir and its
+        positions have not followed it yet (`catalog_follow.unsettled`, ≤ a
+        minute after the move lands): the cell then reads in its new unit with
+        its lines still in the old one, an empty page that is nobody's failure.
+        `CatalogUnsettled` makes the check a `no_data` verdict (`evaluate`),
+        retried until `GIVE_UP` like any data error."""
         if self._dash is None:
             from app.routers.production import _build_dashboard
+            from app.services import catalog_follow
+            d = _as_date(self.date)
+            ids = ([self.cell.id] if self.cell is not None
+                   else [c.id for c in cell_lookup.leader_cells_on(self.db, self.prof.id, d)])
+            waiting = catalog_follow.unsettled(self.db, ids, d) if ids else set()
+            if waiting:
+                raise catalog_follow.CatalogUnsettled(
+                    f"cells {sorted(waiting)}: a brigadir move not followed yet on {d}")
             codes = {c for c, _g in self.pairs}
             self._dash = _build_dashboard(
-                self.db, self.unit_id, _as_date(self.date),
+                self.db, self.unit_id, d,
                 wc_scope=codes, payload=None, group_scope=set(self.pairs))
         return self._dash
 
