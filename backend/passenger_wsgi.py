@@ -122,6 +122,7 @@ try:
         report_wc_plan_history,
         report_brigadir_change_state,
         report_verifix_roles,
+        schedule_catalog_follow_retro,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -762,6 +763,10 @@ try:
     register_verifix_sync_jobs()
     from app.services.cell_links import register_jobs as register_cell_link_jobs
     register_cell_link_jobs()
+    # ⚠ TEMPORARY one-shot (2026-10-26) — the catalog follows the cells that
+    # already moved (mirrors main.py). Remove with the module once its flag
+    # reads `done` and the DM has landed.
+    schedule_catalog_follow_retro()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.

@@ -139,6 +139,7 @@ async def lifespan(app: FastAPI):
         report_wc_plan_history,
         report_brigadir_change_state,
         report_verifix_roles,
+        schedule_catalog_follow_retro,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -509,6 +510,14 @@ async def lifespan(app: FastAPI):
     run(register_verifix_sync_jobs)
     from app.services.cell_links import register_jobs as register_cell_link_jobs
     run(register_cell_link_jobs)
+    # ⚠ TEMPORARY one-shot (2026-10-26) — the catalog follows the cells that
+    # moved from 6 October up to this release, strict; its flag reading
+    # `done` switches the live follow on. Only SCHEDULES a job (180 s), so it
+    # fires in the copy holding the jobs lock (mirrored in passenger_wsgi.py).
+    # Remove this line, `startup.schedule_catalog_follow_retro` and
+    # `services/catalog_follow_retro.py` once its flag reads `done` and the DM
+    # has landed.
+    run(schedule_catalog_follow_retro)
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —

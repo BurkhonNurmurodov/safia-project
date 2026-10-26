@@ -7757,6 +7757,64 @@ def _verifix_roles_job() -> None:
                       verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
+# The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
+# cell's positions follow it from its own move day, closed days included. The
+# live follow does that for every brigadir change from this release on; this
+# pass does it once for the cells that moved from 6 October up to it, strict,
+# naming everything it cannot settle (`services/catalog_follow_retro.py`). Its
+# flag reading `done` switches the live sweep on. Only SCHEDULES a job, in the
+# boot phase, so it fires in the copy holding the jobs lock — never `later()`.
+# The DM (text + workbook) is built from the stored record, once per mode; a DM
+# that failed is re-sent at the next boot and the pass is never re-run for it.
+# Delete this block, the module and both entrypoint calls once the flag reads
+# `done` and the DM has landed.
+_CATALOG_FOLLOW_RETRO_DELAY_S = 180
+
+
+def schedule_catalog_follow_retro() -> None:
+    """Arm the retroactive catalog follow (or its owed DM). Never raises."""
+    try:
+        from app.services import catalog_follow_retro as retro
+        db = SessionLocal()
+        try:
+            due = retro.pending(db)
+            mode = retro.dm_mode(db)
+        finally:
+            db.close()
+        if not due and not (mode and _report_pending(retro.dm_flag(mode))):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("catalog-follow-retro",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CATALOG_FOLLOW_RETRO_DELAY_S),
+                    _catalog_follow_retro_job)
+    except Exception as exc:
+        print(f"[startup] catalog follow retro could not be scheduled: {exc}")
+
+
+def _catalog_follow_retro_job() -> None:
+    from app.services import catalog_follow_retro as retro
+    mode = None
+    db = SessionLocal()
+    try:
+        if retro.pending(db):
+            rec = retro.run(db)
+            counts = rec.get("counts") or {}
+            print(f"[startup] catalog follow retro: {rec.get('result') or rec.get('state')} "
+                  f"(moved {counts.get('moved', 0)}, named {counts.get('skipped', 0)}, "
+                  f"busy {counts.get('busy', 0)})")
+        mode = retro.dm_mode(db)
+    except Exception as exc:  # pragma: no cover — never block anything
+        db.rollback()
+        print(f"[startup] catalog follow retro failed: {exc}")
+    finally:
+        db.close()
+    if mode:
+        _send_report_once(retro.dm_flag(mode), f"catalog follow retro DM ({mode})",
+                          retro.sender, UNPRICED_DM_CHAT)
+
+
 def apply_brigadir_change_oct24() -> None:
     """Boot, after readiness, once: the four units change brigadir as ruled
     (`services/brigadir_change_oct24.py` — preconditions, one transaction with
