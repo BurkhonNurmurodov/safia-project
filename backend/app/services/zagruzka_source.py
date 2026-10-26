@@ -51,9 +51,10 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Iterable, Optional
 
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from app.models import PPDaily, PPLineDaily, PPWorkCenterDaily
+from app.models import PPCatalogVersion, PPDaily, PPLineDaily, PPProduct, PPWorkCenterDaily
 from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
 from app.services.pp_calc import line_facts as pp_line_facts
@@ -204,6 +205,37 @@ def _planned_for(db: Session, ids: list[int], date_from: date, date_to: date) ->
     if got is None:
         got = db.info[key] = planned_wcs(db, ids, date_from, date_to)
     return got
+
+
+def forget_planned(db: Session) -> None:
+    """Drop every `_planned_for` answer this session holds."""
+    for k in [k for k in db.info if isinstance(k, tuple) and k and k[0] == "zs_planned"]:
+        db.info.pop(k, None)
+
+
+# …and the answer is dropped the moment it can be wrong (2026-10-26). A session
+# that writes the catalog or a quantity and then reads a typed pin does exist —
+# `catalog_follow` moves a cell's lines and pins and reads the people again to
+# report what moved — and a session outlives its commits (a scheduler pass, the
+# retro one-shot), after which other sessions' writes are visible to it.
+_PLAN_INPUTS = (PPProduct, PPCatalogVersion, PPDaily, PPLineDaily)
+
+
+@event.listens_for(Session, "after_flush")
+def _forget_planned_on_write(session, _ctx) -> None:
+    if any(isinstance(o, _PLAN_INPUTS)
+           for o in (*session.new, *session.dirty, *session.deleted)):
+        forget_planned(session)
+
+
+@event.listens_for(Session, "after_commit")
+def _forget_planned_on_commit(session) -> None:
+    forget_planned(session)
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _forget_planned_on_rollback(session, _previous) -> None:
+    forget_planned(session)
 
 
 def fold_pins(pins: dict) -> dict[tuple[int, str, str], float]:
