@@ -254,8 +254,9 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
 
     The pages are the check's own, read in the unit the leader's cells stood in
     ON the checklist day (`_Ctx.unit_id`, 2026-10-26: a cell's positions follow
-    it from its move day). None, too, while a move of one of those cells has
-    landed and its positions have not followed it yet
+    it from its move day) — in EVERY such unit when they stood in several
+    (`_Ctx.by_unit`, as the check reads them). None, too, while a move of one
+    of those cells has landed and its positions have not followed it yet
     (`_Ctx.require_settled`, ≤ a minute): the pages would read the cell in its
     new unit with its lines still in the old one, and an empty page here would
     read as «never entered»."""
@@ -284,24 +285,40 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
         ctx.require_settled()
     except catalog_follow.CatalogUnsettled:
         return None
-    mid = ctx.unit_id
     out = {"target": target, "due": _iso(due), "date": row.date}
+    # Every unit the leader's cells stood in that day (`_Ctx.by_unit` — the
+    # very context when there is one): a work centre's page and its saves are
+    # that unit's. Keyed (unit, code).
     pages = {}
-    for c in sorted({c for c, _g in ctx.pairs if c}):
-        rows, plan, fact = _code_page(db, mid, row.date, c)
-        if plan > 0:
-            pages[c] = (rows, plan, fact)
+    for sub in ctx.by_unit():
+        mid = sub.unit_id
+        for c in sorted({c for c, _g in sub.pairs if c}):
+            rows, plan, fact = _code_page(db, mid, row.date, c)
+            if plan > 0:
+                pages[(mid, c)] = (rows, plan, fact)
     if not pages:
         return {**out, "check": CHECK, "verdict": "no_plan", "events": []}
-    u = _Unit(db, mid, row.date)
+    units = {m: _Unit(db, m, row.date) for m in dict.fromkeys(m for m, _c in pages)}
 
     def pct_at(t):
-        return max(u.fact_lb(rows, t) / plan * 100 for rows, plan, _f in pages.values())
+        return max(units[m].fact_lb(rows, t) / plan * 100
+                   for (m, _c), (rows, plan, _f) in pages.items())
 
     hour_pct = pct_at(due)
     now_pct = max(f / p * 100 for _r, p, f in pages.values())
-    mine = [x for x in u.facts() if x["wc"] in pages]
-    ups = u.reaching_faza()
+    mine = [x for m, u in units.items() for x in u.facts() if (m, x["wc"]) in pages]
+    if len(units) == 1:
+        ups = next(iter(units.values())).reaching_faza()
+    else:
+        # The SAP file is one upload for the plant: each unit names the same
+        # ones it reached, so a row is listed once.
+        ups, seen = [], set()
+        for u in units.values():
+            for x in u.reaching_faza():
+                k = (x["at"], x["type"], x["note"], x["mode"])
+                if k not in seen:
+                    seen.add(k)
+                    ups.append(x)
     events, reached = [], None
     for kind, at, x in sorted([("fact", x["at"], x) for x in mine]
                               + [("sap", x["at"], x) for x in ups], key=lambda z: z[1]):
@@ -326,8 +343,26 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
             "late_min": (int((reached - due).total_seconds() // 60)
                          if reached is not None and reached > due else None),
             "events": events,
-            "other_days": [] if mine else _other_days(db, mid, row.date, set(pages),
-                                                       f"leader:{prof.id}")}
+            "other_days": [] if mine else _other_days_of(db, pages, row.date,
+                                                          f"leader:{prof.id}")}
+
+
+def _other_days_of(db: Session, pages: dict, date: str, prof_key: str) -> list[dict]:
+    """`_other_days` over every unit the objection's pages are in (keyed
+    (unit, code)); one unit reads exactly what it always did."""
+    by_unit: dict[int, set] = {}
+    for m, c in pages:
+        by_unit.setdefault(m, set()).add(c)
+    if len(by_unit) == 1:
+        (m, codes), = by_unit.items()
+        return _other_days(db, m, date, codes, prof_key)
+    seen, out = set(), []
+    for m, codes in by_unit.items():
+        for x in _other_days(db, m, date, codes, prof_key):
+            if x["day"] not in seen:
+                seen.add(x["day"])
+                out.append(x)
+    return sorted(out, key=lambda x: x["at"] or "")
 
 
 # ── #8: when the concerns were written ──────────────────────────────────────

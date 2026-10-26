@@ -51,6 +51,21 @@ cell checklist — including a cell checklist opened after the hour, which is
 handed the verdict taken AT the hour (below). One verdict DM per task, not one
 per cell (`_already_told`).
 
+**A leader whose cells stand in SEVERAL units is read in every one of them**
+(2026-10-26). A cell's positions follow it to its new brigadir
+(`catalog_follow`), so a leader whose one cell moved and whose other stayed
+has a catalog in both units from the move day — read in one of them alone the
+other cell's plan is lost, and read in the leader's own profile unit (what the
+checks fell back to while `cell_lookup.cells_unit_for_leader` answered None)
+the moved cell's plan is nowhere, and #1 / #9 failed `no_plan`.
+`_Ctx.by_unit` hands each check one context per unit of the checklist day
+(`cell_lookup.cells_units_for_leader`), each reading that unit's page cut to
+the leader's cells standing there; #1 and #9 pass when any one cell of any unit
+does (the rule above), #11 judges every planned cell of every unit against its
+own unit's page. The facts add a `units` list naming what each unit read. A
+leader with one unit gets `[self]` — the very context, and the very facts,
+they always had.
+
 WHAT IS DELIBERATELY NOT DECIDED HERE
 --------------------------------------
 Nothing is re-measured. Every figure comes from the page the leader would have
@@ -275,22 +290,26 @@ class _Ctx:
 
     __slots__ = ("db", "prof", "manager", "shift", "date", "cell", "due",
                  "now", "_dash", "_pins", "_pairs", "_cells", "_by_code", "_unit",
-                 "_settled")
+                 "_settled", "_pin_unit", "_units", "_subs")
 
-    def __init__(self, db, prof, manager, shift, date, cell, due, now):
+    def __init__(self, db, prof, manager, shift, date, cell, due, now, unit=None):
         self.db, self.prof, self.manager = db, prof, manager
         self.shift, self.date, self.cell = shift, date, cell
         self.due, self.now = due, now
         self._dash = self._pins = self._pairs = self._cells = self._unit = None
         self._by_code = {}
         self._settled = False
+        # `unit`: a context PINNED to one of the units the leader's cells stand
+        # in (`by_unit`) — its pairs, cells and page are the ones standing there.
+        self._pin_unit = int(unit) if unit is not None else None
+        self._units = self._subs = None
 
     @property
     def unit_id(self) -> int:
         """The unit whose PRODUCTION the leader's cells stand in — where their
         catalog, plan and typed people are stored. The leader's own unit for
         everybody whose cells sit there; the cells' unit for a leader counted
-        under another brigadir (`cell_lookup.cells_unit_for_leader`), who would
+        under another brigadir (`cell_lookup.cells_units_for_leader`), who would
         otherwise be measured against a catalog that has never carried their
         cell. `manager` stays the leader's unit for everything else a check
         asks — its hour, its shift, whose checklist the verdict lands on.
@@ -299,24 +318,82 @@ class _Ctx:
         that day: a cell that changed brigadir counts in its old unit up to its
         move day and in its new one from then (`catalog_follow` moves its
         positions on that day), so a day measured after the move is still
-        measured against the unit it was worked in."""
+        measured against the unit it was worked in.
+
+        Cells standing in SEVERAL units that day: the one holding most of them
+        — the unit their /production page opens on. The checks themselves read
+        every unit (`by_unit`); this is what a caller asking for ONE unit (the
+        warning card, the objection timing, the restore replay) is given. A
+        context pinned to a unit (`by_unit`) answers that unit."""
         if self._unit is None:
+            if self._pin_unit is not None:
+                self._unit = self._pin_unit
+                return self._unit
             from app.services import cell_links
             d = _as_date(self.date)
-            owner = (cell_links.value_on(self.cell, "manager_id", d) if self.cell is not None
-                     else cell_lookup.cells_unit_for_leader(self.db, self.prof.id, d))
+            if self.cell is not None:
+                owner = cell_links.value_on(self.cell, "manager_id", d)
+            else:
+                units = self._leader_units()
+                owner = units[0] if units else None
             self._unit = int(owner) if owner else self.manager.id
         return self._unit
 
+    def _leader_units(self) -> list[int]:
+        """`cell_lookup.cells_units_for_leader` for the checklist day, asked once."""
+        if self._units is None:
+            self._units = cell_lookup.cells_units_for_leader(
+                self.db, self.prof.id, _as_date(self.date))
+        return self._units
+
+    @property
+    def several(self) -> bool:
+        """Do the leader's cells stand in two or more units this day — and is
+        this the context over all of them (not a per-cell checklist, not one
+        already pinned to a unit)?"""
+        return (self._pin_unit is None and self.cell is None
+                and len(self._leader_units()) > 1)
+
+    def by_unit(self) -> list["_Ctx"]:
+        """One context per unit the leader's cells stand in ON the checklist
+        day, most cells first — each PINNED to its unit: its `pairs` and
+        `cells` are the leader's cells standing there, its `dashboard` that
+        unit's page cut to them, its `pins` that unit's. A check reads every
+        one of them and passes on any one cell of any unit (module doc).
+
+        `[self]` whenever there is one unit (or none), a per-cell checklist, or
+        a context already pinned: the very context — and so the very reads and
+        facts — a leader with one unit always had. With several, the move
+        guard (`require_settled`) is asked first, over every cell of theirs."""
+        if self._subs is None:
+            if not self.several:
+                self._subs = [self]
+            else:
+                self.require_settled()
+                self._subs = []
+                for u in self._leader_units():
+                    sub = _Ctx(self.db, self.prof, self.manager, self.shift, self.date,
+                               None, self.due, self.now, unit=u)
+                    sub._settled = True
+                    self._subs.append(sub)
+        return self._subs
+
+    def unit_name(self) -> str | None:
+        """The unit's name, for a verdict's per-unit facts."""
+        m = self.db.get(Manager, self.unit_id)
+        return m.name if m is not None else None
+
     # The leader's (work centre, group letter) pairs — their cells, and the one
     # definition of «what is mine» the /production page itself applies. On the
-    # checklist day: the cells they ran then, each with its letter then.
+    # checklist day: the cells they ran then, each with its letter then. A
+    # context pinned to a unit: the cells standing in it.
     @property
     def pairs(self) -> set[tuple[str, str | None]]:
         if self._pairs is None:
             from app.services import cell_links
             d = _as_date(self.date)
-            self._pairs = cell_lookup.sap_groups_for_leader(self.db, self.prof.id, d)
+            self._pairs = cell_lookup.sap_groups_for_leader(self.db, self.prof.id, d,
+                                                            unit=self._pin_unit)
             if self.cell is not None:
                 # A per-cell checklist asks about THAT cell and no other.
                 code = cell_lookup.norm_code(getattr(self.cell, "sap_code", None))
@@ -358,8 +435,16 @@ class _Ctx:
         Not while a move of one of the leader's cells is not followed yet
         (`require_settled`): `CatalogUnsettled` makes the check a quiet
         `no_data` verdict (`evaluate`), retried until `GIVE_UP` like any data
-        error."""
+        error.
+
+        Cells in SEVERAL units (`several`): the page of the first of them —
+        the one their /production page opens on, cut to the cells standing
+        there — for a caller that reads one page (the warning card, the
+        restore replay, the reports). The checks read every unit (`by_unit`)."""
         if self._dash is None:
+            if self.several:
+                self._dash = self.by_unit()[0].dashboard
+                return self._dash
             from app.routers.production import _build_dashboard
             self.require_settled()
             codes = {c for c, _g in self.pairs}
@@ -376,7 +461,14 @@ class _Ctx:
         by group, see `_build_dashboard`), which is why this is keyed by the
         CODE: two lettered cells of one work centre read one figure. A leader
         with a single work centre already has it in `dashboard`, so they cost
-        no second computation and read byte for byte what they always did."""
+        no second computation and read byte for byte what they always did.
+
+        Cells in SEVERAL units: the tile in the unit where a cell of theirs
+        stands at that code (the first such unit, `by_unit`)."""
+        if self.several:
+            for sub in self.by_unit():
+                if code in {c for c, _g in sub.pairs}:
+                    return sub.code_totals(code)
         codes = {c for c, _g in self.pairs}
         if codes == {code}:
             return self.dashboard.get("totals") or {}
@@ -392,13 +484,15 @@ class _Ctx:
     def cells(self) -> list:
         """The leader's own cells ON the checklist day (`cells_run_on`) — or
         the ONE cell a per-cell checklist is about — each wearing the letter it
-        carried that day, the letter `pairs` and the day's rows are cut by."""
+        carried that day, the letter `pairs` and the day's rows are cut by. A
+        context pinned to a unit (`by_unit`): the ones standing in it."""
         if self._cells is None:
             if self.cell is not None:
                 from app.services import cell_links
                 self._cells = cell_links.with_letters_on([self.cell], _as_date(self.date))
             else:
-                self._cells = cells_run_on(self.db, self.prof.id, self.date)
+                self._cells = cells_run_on(self.db, self.prof.id, self.date,
+                                           unit=self._pin_unit)
         return self._cells
 
     @property
@@ -438,7 +532,7 @@ class _Ctx:
         return self._pins
 
 
-def cells_run_on(db: Session, leader_id: int, date) -> list:
+def cells_run_on(db: Session, leader_id: int, date, unit: int | None = None) -> list:
     """The cells a leader RAN on `date` («Boshqaruvchi» that day,
     `cell_lookup.leader_cells_on`) that exist on it, each wearing the
     work-centre letter it carried that day (`cell_links.with_letters_on`) —
@@ -451,9 +545,14 @@ def cells_run_on(db: Session, leader_id: int, date) -> list:
     its old letter, on the days before, so `cell_planned` cuts that day's rows
     by the group they were planned under. With no link or letter event after
     `date` it is the query this always was: their cells by the column, a cell
-    archived before the day dropped."""
+    archived before the day dropped.
+
+    `unit` keeps the cells standing in that unit on the day
+    (`cell_lookup.leader_cells_in`) — one unit's share of a leader whose cells
+    stand in several (`_Ctx.by_unit`)."""
     d = _as_date(date)
-    cells = cell_lookup.leader_cells_on(db, leader_id, d)
+    cells = (cell_lookup.leader_cells_on(db, leader_id, d) if unit is None
+             else cell_lookup.leader_cells_in(db, leader_id, unit, d))
     if not cells:
         return []
     # A cell archived before the day is not checked on it.
@@ -486,19 +585,12 @@ def cell_planned(rows: list, c: Cell) -> bool:
                for r in rows)
 
 
-def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
-    """#1 «Kunlik plan» — ONE cell with a plan above 0 AND its people typed."""
-    if not ctx.pairs:
-        # A leader whose cells carry no SAP code cannot be measured against the
-        # production page at all. That is a REGISTER error and not the leader's
-        # failure, so it is recorded as such and the admins are told — but it is
-        # still not-done, because the plan genuinely cannot be shown to exist.
-        return Verdict(FAILED, "no_sap_code", {"cells": 0})
-
-    dash = ctx.dashboard
-    rows = dash.get("rows") or []
+def _staffing_in(ctx: _Ctx) -> tuple[list, list, list[str], list[str]]:
+    """#1's reading of ONE unit's page: (its rows, the rows carrying a plan,
+    the cells with no people typed, the cells with BOTH a plan on their own
+    positions and their people typed)."""
+    rows = ctx.dashboard.get("rows") or []
     planned = [r for r in rows if float(r.get("plan_qty") or 0) > 0]
-
     pins, day = ctx.pins, str(ctx.date)[:10]
     untyped, filled = [], []
     for c in ctx.cells:
@@ -506,12 +598,44 @@ def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
             untyped.append(cell_label(c))
         elif cell_planned(rows, c):
             filled.append(cell_label(c))
+    return rows, planned, untyped, filled
+
+
+def _unit_fact(sub: _Ctx, **figures) -> dict:
+    """One entry of a verdict's `units` list — which unit, and what was read
+    there (only for a leader whose cells stand in several units)."""
+    return {"unit": sub.unit_id, "unit_name": sub.unit_name(), **figures}
+
+
+def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
+    """#1 «Kunlik plan» — ONE cell with a plan above 0 AND its people typed.
+
+    Cells standing in several units: every unit's page is read
+    (`_Ctx.by_unit`), each cell against its own unit's rows and pins, and any
+    one filled cell of any unit is the pass."""
+    if not ctx.pairs:
+        # A leader whose cells carry no SAP code cannot be measured against the
+        # production page at all. That is a REGISTER error and not the leader's
+        # failure, so it is recorded as such and the admins are told — but it is
+        # still not-done, because the plan genuinely cannot be shown to exist.
+        return Verdict(FAILED, "no_sap_code", {"cells": 0})
+
+    subs = ctx.by_unit()
+    reads = [(sub, *_staffing_in(sub)) for sub in subs]
+    planned = [r for _s, _rows, pl, _u, _f in reads for r in pl]
+    untyped = [x for *_r, u, _f in reads for x in u]
+    filled = [x for *_r, f in reads for x in f]
     # `untyped` keeps naming every cell with no people — it is what the warning
     # card lists as the work still to do, and the job is still every cell. What
     # decides is `filled`: one cell with both halves is the pass.
-    facts = {"lines": len(rows), "with_plan": len(planned),
-             "cells": len(ctx.cells), "untyped": sorted(untyped),
+    facts = {"lines": sum(len(rows) for _s, rows, *_ in reads), "with_plan": len(planned),
+             "cells": sum(len(sub.cells) for sub in subs), "untyped": sorted(untyped),
              "filled": sorted(filled)}
+    if len(subs) > 1:
+        facts["units"] = [_unit_fact(sub, lines=len(rows), with_plan=len(pl),
+                                     cells=len(sub.cells), untyped=sorted(u),
+                                     filled=sorted(f))
+                          for sub, rows, pl, u, f in reads]
     if filled:
         return Verdict(PASSED, "ok", facts)
     if not planned:
@@ -519,24 +643,17 @@ def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
     return Verdict(FAILED, "no_staffing", facts)
 
 
-def _check_plan_pct(ctx: _Ctx, target: float | None) -> Verdict:
-    """#9 — the «Bajarish %» of ANY one of the leader's work centres at or
-    above the target."""
-    want = 30.0 if target is None else float(target)
-    if not ctx.pairs:
-        return Verdict(FAILED, "no_sap_code", {"target": want})
+def _pct_in(ctx: _Ctx) -> tuple[float, float, float, list[dict]]:
+    """#9's reading of ONE unit's page: (plan minutes, fact minutes, its
+    «Bajarish %» as a fraction, one entry per work centre of the leader's cells
+    there that carries a plan — the work centre's own tile)."""
     totals = (ctx.dashboard.get("totals") or {})
     plan = float(totals.get("total_plan_labor") or 0)
     if plan <= 0:
-        # `completion` is 0.0 with no plan, which would read as «0% done» — a
-        # verdict about work when the truth is that nothing was asked of them.
-        return Verdict(FAILED, "no_plan", {"target": want, "plan_min": 0})
-    # The combined figure stays in the facts: it is what the warning card shows
-    # as the job, and what every verdict before 2026-09-22 was taken on.
-    facts = {"target": want,
-             "pct": round(float(totals.get("completion") or 0) * 100, 1),
-             "plan_min": round(plan, 1),
-             "fact_min": round(float(totals.get("total_actual_labor") or 0), 1)}
+        # Nothing asked of the leader here: no part of a combined figure either
+        # (a fact with no plan is not progress against anything).
+        return 0.0, 0.0, 0.0, []
+    fact = float(totals.get("total_actual_labor") or 0)
     names: dict[str, list[str]] = {}
     for c in ctx.cells:
         code = cell_lookup.norm_code(c.sap_code)
@@ -552,6 +669,41 @@ def _check_plan_pct(ctx: _Ctx, target: float | None) -> Verdict:
                         "pct": round(float(t.get("completion") or 0) * 100, 1),
                         "plan_min": round(p, 1),
                         "fact_min": round(float(t.get("total_actual_labor") or 0), 1)})
+    return plan, fact, float(totals.get("completion") or 0), by_cell
+
+
+def _check_plan_pct(ctx: _Ctx, target: float | None) -> Verdict:
+    """#9 — the «Bajarish %» of ANY one of the leader's work centres at or
+    above the target.
+
+    Cells standing in several units: every unit's page is read
+    (`_Ctx.by_unit`) and any work centre of any unit at the target is the
+    pass; the combined figure is then Σ fact ÷ Σ plan over the units."""
+    want = 30.0 if target is None else float(target)
+    if not ctx.pairs:
+        return Verdict(FAILED, "no_sap_code", {"target": want})
+    subs = ctx.by_unit()
+    reads = [(sub, *_pct_in(sub)) for sub in subs]
+    plan = sum(p for _s, p, *_ in reads)
+    if plan <= 0:
+        # `completion` is 0.0 with no plan, which would read as «0% done» — a
+        # verdict about work when the truth is that nothing was asked of them.
+        return Verdict(FAILED, "no_plan", {"target": want, "plan_min": 0})
+    fact = sum(f for _s, _p, f, *_ in reads)
+    # One unit: the page's own `completion`, byte for byte; several: the
+    # combined figure over them, on the same arithmetic (`pp_calc`: fact ÷ plan).
+    completion = reads[0][3] if len(reads) == 1 else fact / plan
+    # The combined figure stays in the facts: it is what the warning card shows
+    # as the job, and what every verdict before 2026-09-22 was taken on.
+    facts = {"target": want,
+             "pct": round(completion * 100, 1),
+             "plan_min": round(plan, 1),
+             "fact_min": round(fact, 1)}
+    by_cell = [b for *_r, cells in reads for b in cells]
+    if len(reads) > 1:
+        facts["units"] = [_unit_fact(sub, pct=round(c * 100, 1), plan_min=round(p, 1),
+                                     fact_min=round(f, 1), cells=[b["cell"] for b in cells])
+                          for sub, p, f, c, cells in reads]
     best = max(by_cell, key=lambda b: b["pct"]) if by_cell else None
     if best is None or best["pct"] < want:
         facts.update(by_cell=by_cell)
@@ -614,14 +766,32 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
     from app.services import kelish
     d = _as_date(ctx.date)
     days = (d, d + timedelta(days=1))
-    rows = (ctx.dashboard.get("rows") or []) if ctx.pairs else []
-    cells = sorted(ctx.cells, key=lambda c: (c.verifix_code or "", c.id))
-    planned = [c for c in cells if cell_planned(rows, c)]
+    # Each cell is read against the page of the unit it stands in that day
+    # (`_Ctx.by_unit` — the very context when there is one unit): a cell of
+    # the other unit would find no plan on this one's page and be skipped.
+    subs = ctx.by_unit()
+    unit_of: dict[int, int] = {}
+    planned_ids: set[int] = set()
+    cells = []
+    for sub in subs:
+        rows = (sub.dashboard.get("rows") or []) if sub.pairs else []
+        for c in sub.cells:
+            cells.append(c)
+            unit_of[c.id] = sub.unit_id
+            if cell_planned(rows, c):
+                planned_ids.add(c.id)
+    cells = sorted(cells, key=lambda c: (c.verifix_code or "", c.id))
+    planned = [c for c in cells if c.id in planned_ids]
     facts: dict = {"days": [x.isoformat() for x in days], "lists": [],
                    "checked": ctx.due.astimezone(TASHKENT).isoformat(timespec="minutes"),
                    "no_plan": sorted(cell_label(c) for c in cells
-                                     if c not in planned),
+                                     if c.id not in planned_ids),
                    "empty": []}
+    if len(subs) > 1:
+        facts["units"] = [_unit_fact(
+            sub, cells=sorted(cell_label(c) for c in sub.cells),
+            planned=sorted(cell_label(c) for c in sub.cells if c.id in planned_ids))
+            for sub in subs]
     if not planned:
         return Verdict(PASSED, "ok", facts)
 
@@ -655,6 +825,8 @@ def _check_staff_list(ctx: _Ctx, target: float | None) -> Verdict:
         kind = kr.kind if kr is not None and kr.kind in kelish.KINDS else None
         item = {"cell": label, "cell_id": c.id, "kind": kind,
                 "today": list(got["today"]), "tomorrow": list(got["tomorrow"])}
+        if len(subs) > 1:
+            item["unit"] = unit_of.get(c.id)
         if kind is not None:
             if got[kind][1] == 0:
                 facts["empty"].append(label)

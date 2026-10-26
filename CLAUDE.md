@@ -7925,6 +7925,31 @@ upload filled them. The whole design, every critique and its verdict, is
   warning card with no figures. `auto_check_timing` then answers nothing for
   the objection, and `auto_check_restore` reads the pages and saves of the
   cells' unit of the day.
+- **A leader whose cells end up in TWO units reads both** (fix set 3). One
+  cell moved and took its positions, the other stayed: `cells_unit_for_leader`
+  answers None for them (its contract is unchanged), and their page and checks
+  fell back to the profile unit — where the moved cell's lines no longer are,
+  so #1 / #9 failed `no_plan`. `cell_lookup.cells_units_for_leader(day=)` lists
+  every unit, most cells first, ties by unit id — counting only the cells that
+  EXIST on the day (`cell_archive.alive`; all of them when none does): an
+  archived cell keeps its `leader_id` and brigadir, and counted it opened a
+  leader's page on the unit of a cell closed long ago and passed #9 on
+  somebody else's figure at that work centre. The rule holds whatever put the
+  live cells in two units, a move or not. **The page** opens on the
+  first; `?manager_id=` picks another of that day's units (any other id is
+  ignored), the dashboard carries `leader_units` `[{id, name, cells}]` when
+  there are 2+, and Production.jsx shows it as a pinned FilterPanel section
+  («Brigada», `production.leaderUnit`). Every scope and write door cuts to the
+  leader's cells standing in the chosen unit (`_leader_cut` →
+  `sap_codes_for_leader` / `sap_groups_for_leader(unit=)`,
+  `cell_lookup.leader_cells_in`). **The checks** — #1, #9, #11 — read every
+  unit through `_Ctx.by_unit` (one context per unit, its pairs, cells, pins and
+  page that unit's): #1 / #9 pass on any one cell of any unit, #9's combined
+  figure is Σ fact ÷ Σ plan, #11 judges each planned cell against its own unit's
+  page, and the facts gain a `units` list. `_Ctx.unit_id` / `dashboard` answer
+  the first unit for a caller reading one page (the warning card counts
+  positions over every unit, the objection timing reads every unit). One unit:
+  `by_unit()` is `[self]`, every read and fact byte for byte as before.
 - **The retroactive one-shot** — TEMPORARY `services/catalog_follow_retro.py`,
   `startup.schedule_catalog_follow_retro` (`run` phase; it only schedules
   `catalog-follow-retro` 180 s on, so the job fires in the copy holding the
