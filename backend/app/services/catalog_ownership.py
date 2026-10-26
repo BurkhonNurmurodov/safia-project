@@ -94,8 +94,12 @@ def join_ident(p) -> tuple[str, str, str]:
 
 
 def lines_at(lines, code: str) -> list:
-    """The lines whose work centre IS `code`, compared normalised."""
+    """The lines whose work centre IS `code`, compared normalised. A blank code
+    names no work centre and answers no line — never every line whose Команда
+    was left blank, which a code-less cell would otherwise «own»."""
     c = norm_code(code)
+    if not c:
+        return []
     return [p for p in lines if norm_code(_field(p, "work_center")) == c]
 
 
@@ -112,7 +116,13 @@ def cells_standing(db: Session, unit_id: int, code: str, d_before: date, d_on: d
     every cell that was or will be in the unit from `d_before` on; the letter
     from `cell_links.letter_on` (a letter a later move took away answers for
     the days before it); existence from `cell_archive.alive`. The code is the
-    cell's current SAP code — codes are not dated. Ordered by Verifix code."""
+    cell's current SAP code — codes are not dated. Ordered by Verifix code.
+
+    The cell ROWS come through `db`; the link events, letter history and
+    archive spans through those modules' caches, which read COMMITTED rows
+    (their own session) — an event this transaction has not committed, or one
+    another copy committed under `cell_links.TTL_S` ago, is not seen. A caller
+    that has just written one calls `cell_links.forget()` after its commit."""
     from app.services import cell_archive, cell_links
 
     want = norm_code(code)

@@ -65,25 +65,65 @@ def _gone(db: Session, unit_id: int, day: date, *, whole: bool = False) -> list:
             if _unit_of(cells, r.cell_id, day) != unit]
 
 
+def _ids(r) -> set[int]:
+    """Every PPProduct id one record moved — the union over the spans it
+    rewrote and the lines it listed."""
+    out = {int(i) for i in (r.line_ids or []) if i is not None}
+    out.update(int(e["id"]) for e in (r.lines or []) if e.get("id") is not None)
+    return out
+
+
+def _order(r) -> tuple:
+    return (r.home_from, r.id)
+
+
 def moved_out(db: Session, unit_id: int, day: date) -> list[dict]:
     """Every catalog line that has left the unit by `day` and not come back:
     the move record's `lines` entries ({id, qty_key, wc, wc_n, base,
     group_from, group_to, active_after, joined_into, takes_sap}), each with the
     transfer's `cell_id`, `whole_code`, `code`, `to_unit` and `home_from`
-    added (the import names where a skipped row went)."""
-    out: list[dict] = []
-    for r in _gone(db, unit_id, day):
+    added (the import names where a skipped row went).
+
+    One entry per line, and only a line still away. A cell that went away,
+    came back and went away again leaves two records naming the same ids: one
+    position that left is one position (the import drops one sheet row per
+    entry), so the LATEST departure's entry stands for it. A line a later
+    record brought back INTO the unit — with its cell, or with another one —
+    is back, even when its cell has since left again without it (the line had
+    become shared, or somebody else's)."""
+    unit = int(unit_id)
+    back: dict[int, tuple] = {}                         # id → latest arrival into the unit
+    for r, _cells in _rows(db, day=day, to_unit=unit):
+        for i in _ids(r):
+            back[i] = max(back.get(i, (date.min, -1)), _order(r))
+    by_id: dict = {}
+    loose: list[dict] = []
+    for r in _gone(db, unit, day):                      # oldest first
         for e in r.lines or []:
-            out.append({**e, "cell_id": r.cell_id, "whole_code": bool(r.whole_code),
-                        "code": r.code, "to_unit": r.to_unit, "home_from": r.home_from})
-    return out
+            ent = {**e, "cell_id": r.cell_id, "whole_code": bool(r.whole_code),
+                   "code": r.code, "to_unit": r.to_unit, "home_from": r.home_from}
+            if e.get("id") is None:
+                loose.append(ent)
+                continue
+            i = int(e["id"])
+            if back.get(i, (date.min, -1)) > _order(r):
+                by_id.pop(i, None)                      # came back after this departure
+                continue
+            by_id.pop(i, None)                          # re-inserted in its latest place
+            by_id[i] = ent
+    return [*by_id.values(), *loose]
 
 
 def moved_out_codes(db: Session, unit_id: int, day: date) -> set[str]:
     """The (normalised) codes that left the unit WHOLE by `day` — no cell of
     the unit stayed at them when the move was made, so its work-centre row went
-    too — while the moved cell is still away."""
-    return {r.code for r in _gone(db, unit_id, day, whole=True)}
+    too — while the moved cell is still away. A cell's LATEST departure from
+    the unit decides: one that left whole, came back and left again with cells
+    still standing there did not take the code the second time."""
+    latest: dict[int, object] = {}
+    for r in _gone(db, unit_id, day):                   # oldest first
+        latest[r.cell_id] = r
+    return {r.code for r in latest.values() if r.whole_code}
 
 
 def moved_in_ids(db: Session, unit_id: int, day: date) -> set[int]:
@@ -95,8 +135,7 @@ def moved_in_ids(db: Session, unit_id: int, day: date) -> set[int]:
     for r, cells in _rows(db, day=day, to_unit=unit):
         if _unit_of(cells, r.cell_id, day) != unit:
             continue
-        out.update(int(i) for i in (r.line_ids or []) if i is not None)
-        out.update(int(e["id"]) for e in (r.lines or []) if e.get("id") is not None)
+        out.update(_ids(r))
     return out
 
 

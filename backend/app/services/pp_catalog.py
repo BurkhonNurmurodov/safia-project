@@ -101,14 +101,23 @@ def lock(db: Session, unit_ids: Iterable[int], *, ns: int = NS_CAT,
     """Take each unit's advisory lock in namespace `ns`, held until `db`
     commits or rolls back. Returns False only when `try_` found one busy.
 
-    Ids are taken in sorted order, so two callers locking overlapping sets
-    queue rather than deadlock. Reentrant inside one transaction — Postgres
-    never makes a session wait for a lock it already holds, whatever the mode —
-    which is what lets the follow try every lock up front and then call
-    :func:`freeze` / :func:`align`, which lock again. A False from `try_` may
-    leave the ids before the busy one held: the caller gives up and rolls back,
-    which releases them. Off Postgres there is nobody to race: True, nothing
-    taken."""
+    Ids are taken in sorted order, so two callers locking overlapping sets IN
+    ONE CALL each queue rather than deadlock — a caller that already holds a
+    higher id from an earlier call has lost that guarantee, which is why the
+    follow takes every unit's lock in one call, up front. Reentrant inside one
+    transaction: a session never waits on a mode it already holds, and an
+    exclusive hold covers a later shared request — which is what lets the follow
+    try every lock up front and then call :func:`freeze` / :func:`align`, which
+    lock again. The other way round is NOT free: a shared hold asking for
+    exclusive still waits for (or, with `try_`, is refused by) every other
+    session holding it shared. A False from `try_` may leave the ids before the
+    busy one held: the caller gives up and rolls back, which releases them.
+
+    Held to the end of the TRANSACTION, not of a savepoint — except that a lock
+    first taken INSIDE a savepoint is released when that savepoint rolls back
+    (Postgres ties it to the subtransaction), so take it before any
+    `begin_nested()` that may fail. Off Postgres there is nobody to race: True,
+    nothing taken."""
     ids = sorted({int(u) for u in unit_ids if u is not None})
     if not ids or not _on_postgres(db):
         return True

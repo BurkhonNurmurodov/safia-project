@@ -437,8 +437,8 @@ class Locks(_PG):
         self.assertEqual(len(pp_catalog.versions_between(a, 9, date(2000, 1, 1), D)), 1)
 
 
-@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
-class CellsStanding(_PG):
+class _Cells:
+    """Cells and their dated brigadir moves, for the cells_standing tests."""
     X, Y = 11, 12
 
     def _cell(self, code, unit, sap=CODE, letter=None, archived=None):
@@ -456,6 +456,9 @@ class CellsStanding(_PG):
             effective_at=datetime.combine(eff, time(8), tzinfo=TZ),
             applied_at=datetime.now(timezone.utc), src="manual", vfx=vfx))
 
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class CellsStanding(_Cells, _PG):
     def test_dated_links_and_archive(self):
         from app.models import CellArchiveSpan
         from app.services import cell_archive, cell_links
@@ -567,6 +570,445 @@ class MoveReaders(_PG):
         self.assertEqual(mv.moved_out_pairs(db, X, D),
                          {("F001", "A2894"), ("F002", "A2894"), ("F005", "A2894")})
         self.assertEqual(mv.moved_out_pairs(db, Y, D + timedelta(days=5)), {("F002", "A2894")})
+
+
+# ── review: the edges the first round did not reach ─────────────────────────
+
+def _old_freeze(db, manager_id, reason="", now=None):
+    """`freeze` as it stood before `day=` and the lock (v4.329.4) — the
+    reference a call without `day` must still match."""
+    from sqlalchemy.exc import IntegrityError
+    from app.models import Manager, PPCatalogVersion
+    P = pp_catalog
+    eff = P.effective_day(db.query(Manager.shift).filter(Manager.id == manager_id).scalar(), now)
+    cf = P.current_from(db, manager_id)
+    if cf is not None and eff <= cf:
+        return cf
+    cur = P.current(db, manager_id)
+    row = PPCatalogVersion(
+        manager_id=manager_id, valid_from=cf, valid_to=eff - timedelta(days=1),
+        lines=[P._dump(p, P.LINE_FIELDS) for p in cur.lines],
+        work_centers=[P._dump(w, P.WC_FIELDS) for w in cur.work_centers],
+        reason=(reason or None))
+    try:
+        with db.begin_nested():
+            db.add(row)
+    except IntegrityError:
+        pass
+    return eff
+
+
+class ReviewPure(unittest.TestCase):
+    def test_lines_at_blank_code_answers_nothing(self):
+        lines = [{"work_center": "", "n": 1}, {"work_center": None, "n": 2},
+                 {"work_center": "A2894", "n": 3}]
+        self.assertEqual(own.lines_at(lines, ""), [])
+        self.assertEqual(own.lines_at(lines, None), [])
+        self.assertEqual(own.lines_at(lines, "  "), [])
+
+    def test_handed_no_cells_and_dict_or_row(self):
+        lines = [_ln(None, n="a"), SimpleNamespace(wc_group="A", n="b")]
+        h = own.handed(lines, {}, 1)
+        self.assertEqual((h.mine, h.shared, len(h.others)), ([], [], 2))
+        # Every line lands in exactly one list, in the order given.
+        letters = {1: "A", 2: None, 3: "A"}
+        many = [_ln(g, n=i) for i, g in enumerate((None, "A", "B", "", "Z", "A"))]
+        h = own.handed(many, letters, 1)
+        self.assertEqual(sorted(p["n"] for p in h.mine + h.shared + h.others), list(range(6)))
+        self.assertEqual([p["n"] for p in h.shared], [0, 1, 2, 3, 4, 5])
+
+    def test_mirrors_share_four_cells(self):
+        opts = (None, "A", "B", "C")
+        for cells in itertools.product(opts, repeat=4):
+            letters = {i + 1: g for i, g in enumerate(cells)}
+            for g in (None, "A", "B", "C", "Z"):
+                for cid in letters:
+                    got = own.handed([_ln(g, n="x")], letters, cid)
+                    part = share(list(cells), {g: 1.0})[cid - 1]
+                    want = ("mine" if part == 1.0 else "shared" if part else "others")
+                    have = ("mine" if got.mine else "shared" if got.shared else "others")
+                    self.assertEqual(have, want, (letters, g, cid))
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class ReviewFreeze(_PG):
+    def test_without_day_matches_the_old_freeze(self):
+        """Same return value, same versions, on every shift, clock and boundary."""
+        db = self.db
+        times = [datetime(2026, 10, 20, h, m, tzinfo=TZ)
+                 for h, m in ((0, 0), (7, 59), (8, 0), (12, 0), (19, 59), (20, 0), (23, 30))]
+        uid = 100
+        for shift in (1, 2, None):
+            for t in times:
+                for pre in (None, date(2026, 10, 18), date(2026, 10, 20), date(2026, 10, 22)):
+                    got = {}
+                    for which, fn in (("new", pp_catalog.freeze), ("old", _old_freeze)):
+                        uid += 1
+                        self._units(uid, shift=shift)
+                        self._line(uid, "F001", "Tort")
+                        if pre is not None:
+                            pp_catalog.freeze(db, uid, "pre", day=pre)
+                        eff = fn(db, uid, "edit", t)
+                        got[which] = (eff, [(v.valid_from, v.valid_to, v.reason,
+                                             [{k: x for k, x in ln.items() if k != "id"}
+                                              for ln in v.lines])
+                                            for v in pp_catalog.versions_between(
+                                                db, uid, date(2000, 1, 1), date(2100, 1, 1))])
+                    self.assertEqual(got["new"], got["old"], (shift, t, pre))
+        db.rollback()
+
+    def test_lock_survives_freezes_own_savepoint(self):
+        """`freeze` swallows an IntegrityError by rolling ITS savepoint back —
+        the lock it took before that savepoint must still be held (no unit row
+        31: the version's foreign key fails inside the savepoint)."""
+        db = self.db
+        self.assertEqual(pp_catalog.freeze(db, 31, "t", day=D), D)
+        self.assertIsNone(pp_catalog.current_from(db, 31))
+        b = self.pg.Session()
+        try:
+            self.assertFalse(pp_catalog.lock(b, [31], try_=True))
+        finally:
+            b.rollback()
+            b.close()
+
+    def test_savepoints_and_order(self):
+        """A lock first taken inside a savepoint goes with it; one taken before
+        it does not; overlapping sets given in opposite orders still finish."""
+        a = self.db
+        b = self.pg.Session()
+        try:
+            sp = a.begin_nested()
+            pp_catalog.lock(a, [41])
+            sp.rollback()
+            self.assertTrue(pp_catalog.lock(b, [41], try_=True))
+            b.rollback()
+            pp_catalog.lock(a, [42])
+            sp = a.begin_nested()
+            pp_catalog.lock(a, [42])
+            sp.rollback()
+            self.assertFalse(pp_catalog.lock(b, [42], try_=True))
+            b.rollback()
+            a.rollback()
+        finally:
+            b.close()
+
+        errs, done = [], []
+
+        def worker(ids):
+            s = self.pg.Session()
+            try:
+                for _ in range(20):
+                    pp_catalog.lock(s, ids)
+                    _time.sleep(0.005)
+                    s.rollback()
+                done.append(ids)
+            except Exception as e:  # noqa: BLE001
+                errs.append(e)
+            finally:
+                s.close()
+        ts = [threading.Thread(target=worker, args=(ids,))
+              for ids in ([43, 44, 45], [45, 44, 43], [44, 43], [45, 43])]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(30)
+        self.assertEqual(errs, [])
+        self.assertEqual(len(done), 4)
+
+    def test_reentrant_while_another_waits(self):
+        """The follow re-locks inside `align` / `freeze` while a writer may be
+        queued on the same unit: its own hold must not put it behind them."""
+        a = self.db
+        self._units(81)
+        self._line(81, "F001", "Tort")
+        a.commit()
+        self.assertTrue(pp_catalog.lock(a, [81], try_=True))
+        out = {}
+
+        def writer():
+            s = self.pg.Session()
+            try:
+                pp_catalog.lock(s, [81])          # queues behind a
+                out["got"] = True
+            finally:
+                s.rollback()
+                s.close()
+        t = threading.Thread(target=writer)
+        t.start()
+        _time.sleep(0.4)
+        self.assertNotIn("got", out)
+        t0 = _time.monotonic()
+        self.assertTrue(pp_catalog.lock(a, [81]))
+        self.assertTrue(pp_catalog.lock(a, [81], shared=True))
+        self.assertEqual(pp_catalog.align(a, [81], D, "cell_move"), D)
+        self.assertLess(_time.monotonic() - t0, 2.0)
+        a.commit()
+        t.join(10)
+        self.assertEqual(out, {"got": True})
+
+    def test_concurrent_aligns_agree(self):
+        db = self.db
+        self._units(51, 52)
+        self._line(51, "F001", "Tort")
+        self._line(52, "F002", "Keks")
+        db.commit()
+        out, errs = {}, []
+        first_holds = threading.Event()
+
+        def go(name, ids, day):
+            s = self.pg.Session()
+            try:
+                out[name] = pp_catalog.align(s, ids, day, "cell_move")
+                if name == "a":
+                    first_holds.set()
+                    _time.sleep(0.3)          # b queues on a's locks meanwhile
+                s.commit()
+            except Exception as e:  # noqa: BLE001
+                errs.append(e)
+                first_holds.set()
+            finally:
+                s.close()
+        t1 = threading.Thread(target=go, args=("a", [51, 52], D))
+        t2 = threading.Thread(target=go, args=("b", [52, 51], D + timedelta(days=2)))
+        t1.start()
+        self.assertTrue(first_holds.wait(10))
+        t2.start()
+        t1.join(20)
+        t2.join(20)
+        self.assertEqual(errs, [])
+        db.expire_all()
+        self.assertEqual(out["a"], D)
+        self.assertEqual(out["b"], D + timedelta(days=2))
+        for u in (51, 52):
+            self.assertEqual(pp_catalog.current_from(db, u), D + timedelta(days=2))
+            self.assertEqual([(v.valid_from, v.valid_to)
+                              for v in pp_catalog.versions_between(db, u, date(2000, 1, 1), D + timedelta(days=9))],
+                             [(None, D - timedelta(days=1)), (D, D + timedelta(days=1))])
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class ReviewSplit(_PG):
+    MID = 61
+    LO, HI = D - timedelta(days=4), D + timedelta(days=6)
+
+    def _catalog(self):
+        """Versions [None, D−2], [D−1, D−1] (one day), [D, D] (one day),
+        [D+1, D+3], current from D+4 — each with its own Трудоемкость."""
+        from app.models import PPDaily
+        db = self.db
+        self._units(self.MID)
+        a = self._line(self.MID, "F001", "Tort", labor=10, group="A")
+        self._line(self.MID, "F002", "Keks", labor=4, sort=1)
+        for d in _days(self.LO, self.HI):
+            db.add(PPDaily(manager_id=self.MID, date=d, sap_code="F001", work_center=CODE,
+                           plan_qty=Decimal(60), actual_qty=Decimal(55)))
+            db.add(PPDaily(manager_id=self.MID, date=d, sap_code="F002", work_center=CODE,
+                           plan_qty=Decimal(30), actual_qty=Decimal(31)))
+        db.flush()
+        for i, d in enumerate((D - timedelta(days=1), D, D + timedelta(days=1), D + timedelta(days=4))):
+            pp_catalog.freeze(db, self.MID, "edit", day=d)
+            a.labor_time = Decimal(11 + i)
+            db.flush()
+        db.commit()
+
+    def _per_day(self):
+        from app.services import zagruzka_source
+        db = self.db
+        sp = pp_catalog.spans(db, [self.MID], self.LO, self.HI)[self.MID]
+        return ({d: _content(pp_catalog.at(db, self.MID, d)) for d in _days(self.LO, self.HI)},
+                {d: _content(pp_catalog.catalog_for(sp, d)) for d in _days(self.LO, self.HI)},
+                zagruzka_source.wc_labor(db, [self.MID], self.LO, self.HI),
+                zagruzka_source.wc_group_labor(db, [self.MID], self.LO, self.HI))
+
+    def _bounds(self):
+        return [(v.valid_from, v.valid_to) for v in
+                pp_catalog.versions_between(self.db, self.MID, date(2000, 1, 1), self.HI)]
+
+    def test_every_shape(self):
+        self._catalog()
+        db = self.db
+        before = self._per_day()
+        start = self._bounds()
+        self.assertEqual(start, [(None, D - timedelta(days=2)), (D - timedelta(days=1), D - timedelta(days=1)),
+                                 (D, D), (D + timedelta(days=1), D + timedelta(days=3))])
+        # A single-day version's own day, a version's first day, current_from:
+        # all boundaries already.
+        for day in (D - timedelta(days=1), D, D + timedelta(days=1), D + timedelta(days=4)):
+            pp_catalog.split_at(db, self.MID, day)
+        self.assertEqual(self._bounds(), start)
+        # The LAST day of a version (dated, not the first) — a one-day copy.
+        pp_catalog.split_at(db, self.MID, D + timedelta(days=3))
+        # The last day of the open-ended first version.
+        pp_catalog.split_at(db, self.MID, D - timedelta(days=2))
+        # The middle of a dated version.
+        pp_catalog.split_at(db, self.MID, D + timedelta(days=2))
+        self.assertEqual(self._bounds(), [
+            (None, D - timedelta(days=3)), (D - timedelta(days=2), D - timedelta(days=2)),
+            (D - timedelta(days=1), D - timedelta(days=1)), (D, D),
+            (D + timedelta(days=1), D + timedelta(days=1)), (D + timedelta(days=2), D + timedelta(days=2)),
+            (D + timedelta(days=3), D + timedelta(days=3))])
+        self.assertEqual(pp_catalog.current_from(db, self.MID), D + timedelta(days=4))
+        db.commit()
+        self.assertEqual(self._per_day(), before)
+
+    def test_rewriting_a_copy_leaves_the_original(self):
+        self._catalog()
+        db = self.db
+        pp_catalog.split_at(db, self.MID, D + timedelta(days=2))
+        db.commit()
+        left, right = pp_catalog.versions_between(db, self.MID, D + timedelta(days=1), D + timedelta(days=2))
+        self.assertEqual((left.valid_to, right.valid_from), (D + timedelta(days=1), D + timedelta(days=2)))
+        pp_catalog.rewrite_version(db, right, [dict(x, wc_group="B") for x in right.lines],
+                                   [dict(x, shtatka=Decimal("2.5")) for x in right.work_centers])
+        db.commit()
+        other = self.pg.Session()
+        try:
+            from app.models import PPCatalogVersion
+            l2, r2 = other.get(PPCatalogVersion, left.id), other.get(PPCatalogVersion, right.id)
+            self.assertEqual({x["wc_group"] for x in r2.lines}, {"B"})
+            self.assertEqual({x.get("wc_group") for x in l2.lines}, {"A", None})
+        finally:
+            other.close()
+        self.assertEqual(_content(pp_catalog.at(db, self.MID, D + timedelta(days=1)))[0][0]["wc_group"], "A")
+        self.assertEqual(_content(pp_catalog.at(db, self.MID, D + timedelta(days=2)))[0][0]["wc_group"], "B")
+
+    def test_default_columns_of_a_move(self):
+        from app.models import PPCatalogMove
+        db = self.db
+        r = PPCatalogMove(kind="live", state="nothing", cell_id=1, code=CODE, home_from=D)
+        db.add(r)
+        db.commit()
+        db.expire_all()
+        r = db.get(PPCatalogMove, r.id)
+        self.assertEqual((r.line_ids, r.lines, r.wc_ids, r.wc_dropped, r.versions, r.named),
+                         ([], [], [], [], [], []))
+        self.assertEqual((r.letters, r.rekey, r.impact, r.tries, r.whole_code), ({}, {}, {}, 0, False))
+        from sqlalchemy.exc import IntegrityError
+        db.add(PPCatalogMove(kind="live", state="moved", cell_id=1, code=CODE, home_from=D, event_id=7))
+        db.commit()
+        db.add(PPCatalogMove(kind="live", state="moved", cell_id=1, code=CODE, home_from=D, event_id=7))
+        with self.assertRaises(IntegrityError):
+            db.commit()
+        db.rollback()
+        db.add(PPCatalogMove(kind="retro", state="named", cell_id=1, code=CODE, home_from=D))
+        db.add(PPCatalogMove(kind="retro", state="named", cell_id=1, code=CODE, home_from=D))
+        db.commit()
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class ReviewStanding(_Cells, _PG):
+    def test_the_move_day_itself(self):
+        from app.models import CellArchiveSpan, CellLinkEvent
+        from app.services import cell_archive, cell_links
+        db, X, Y = self.db, self.X, self.Y
+        W = 13
+        self._units(X, Y, W)
+        stay = self._cell("0301", X, letter="A")
+        arrive = self._cell("0302", X, letter="B")            # W→X on D: not a stayer
+        self._moved(arrive, W, X, D)
+        leave = self._cell("0303", Y, letter="C")             # X→Y on D: not a stayer
+        self._moved(leave, X, Y, D)
+        dies = self._cell("0304", X, letter="D",              # archived on D−1: gone on D
+                          archived=datetime.combine(D - timedelta(days=1), time(12), tzinfo=TZ))
+        db.add(CellArchiveSpan(cell_id=dies.id, from_day=D, src="manual"))
+        later = self._cell("0305", X, letter="E",             # archived on D: alive on D
+                           archived=datetime.combine(D, time(12), tzinfo=TZ))
+        db.add(CellArchiveSpan(cell_id=later.id, from_day=D + timedelta(days=1), src="manual"))
+        pend = self._cell("0306", X, letter="F")              # leaves on D, not landed yet
+        db.add(CellLinkEvent(cell_id=pend.id, field="manager_id", value=Y, prev=X,
+                             effective_from=D, effective_at=datetime.combine(D, time(8), tzinfo=TZ),
+                             applied_at=None, src="manual"))
+        db.commit()
+        cell_links.forget()
+        cell_archive.forget()
+        got = own.cells_standing(db, X, CODE, D - timedelta(days=1), D)
+        self.assertEqual(got, {stay.id: "A", later.id: "E"})
+        self.assertEqual(own.cells_standing(db, Y, CODE, D - timedelta(days=1), D), {})
+        self.assertEqual(own.cells_standing(db, Y, CODE, D, D + timedelta(days=1)),
+                         {leave.id: "C", pend.id: "F"})
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class ReviewMoves(_PG):
+    X, Y = 71, 72
+
+    def test_round_trip_counts_each_line_once(self):
+        from app.models import Cell, CellLinkEvent, PPCatalogMove
+        from app.services import cell_links, pp_catalog_moves as mv
+        db, X, Y = self.db, self.X, self.Y
+        self._units(X, Y)
+        c = Cell(verifix_code="0401", sap_code=CODE, manager_id=Y)
+        db.add(c)
+        db.flush()
+        for frm, to, eff in ((X, Y, D), (Y, X, D + timedelta(days=2)), (X, Y, D + timedelta(days=4))):
+            db.add(CellLinkEvent(cell_id=c.id, field="manager_id", value=to, prev=frm,
+                                 effective_from=eff, effective_at=datetime.combine(eff, time(8), tzinfo=TZ),
+                                 applied_at=datetime.now(timezone.utc), src="manual"))
+
+        def e(i, g):
+            return {"id": i, "qty_key": f"F{i}", "wc": CODE, "wc_n": CODE, "base": "x|1",
+                    "group_from": g, "group_to": None, "active_after": True,
+                    "joined_into": None, "takes_sap": True}
+        for frm, to, home, lines in ((X, Y, D, [e(1, "A"), e(2, "A")]),
+                                     (Y, X, D + timedelta(days=2), [e(1, None), e(2, None)]),
+                                     (X, Y, D + timedelta(days=4), [e(2, "B"), e(3, "B")])):
+            db.add(PPCatalogMove(kind="live", state="moved", cell_id=c.id, code=CODE,
+                                 from_unit=frm, to_unit=to, home_from=home,
+                                 lines=lines, line_ids=[x["id"] for x in lines]))
+        db.commit()
+        cell_links.forget()
+        got = lambda d: sorted((x["id"], x["group_from"]) for x in mv.moved_out(db, X, d))
+        self.assertEqual(got(D + timedelta(days=1)), [(1, "A"), (2, "A")])
+        self.assertEqual(got(D + timedelta(days=3)), [])
+        # Line 1 came back on D+2 and did not leave again on D+4: it is back.
+        # Line 2 left twice — once, as it was the second time.
+        self.assertEqual(got(D + timedelta(days=5)), [(2, "B"), (3, "B")])
+        self.assertEqual(mv.moved_in_ids(db, Y, D + timedelta(days=5)), {1, 2, 3})
+        self.assertEqual(mv.moved_in_ids(db, X, D + timedelta(days=3)), {1, 2})
+        self.assertEqual(mv.moved_out_pairs(db, X, D + timedelta(days=5)),
+                         {("F2", CODE), ("F3", CODE)})
+
+    def test_brought_back_by_another_cell_and_whole_superseded(self):
+        from app.models import Cell, CellLinkEvent, PPCatalogMove
+        from app.services import cell_links, pp_catalog_moves as mv
+        db, X, Y = self.db, self.X, self.Y
+        self._units(X, Y)
+        c = Cell(verifix_code="0501", sap_code=CODE, manager_id=Y)
+        d = Cell(verifix_code="0502", sap_code=CODE, manager_id=X)
+        db.add_all([c, d])
+        db.flush()
+
+        def ev(cell, frm, to, eff):
+            db.add(CellLinkEvent(cell_id=cell.id, field="manager_id", value=to, prev=frm,
+                                 effective_from=eff, effective_at=datetime.combine(eff, time(8), tzinfo=TZ),
+                                 applied_at=datetime.now(timezone.utc), src="manual"))
+
+        def mv_row(cell, frm, to, home, ids, whole):
+            db.add(PPCatalogMove(kind="live", state="moved", cell_id=cell.id, code=CODE,
+                                 from_unit=frm, to_unit=to, home_from=home, whole_code=whole,
+                                 lines=[{"id": i, "qty_key": f"F{i}", "wc": CODE} for i in ids],
+                                 line_ids=list(ids)))
+        # c leaves X whole on D with lines 1, 2; d (in Y since before) brings
+        # line 1 into X on D+2; c comes back on D+3 and leaves again — not
+        # whole this time — on D+5 with line 2 only.
+        ev(c, X, Y, D)
+        ev(d, Y, X, D + timedelta(days=2))
+        ev(c, Y, X, D + timedelta(days=3))
+        ev(c, X, Y, D + timedelta(days=5))
+        mv_row(c, X, Y, D, [1, 2], True)
+        mv_row(d, Y, X, D + timedelta(days=2), [1], False)
+        mv_row(c, Y, X, D + timedelta(days=3), [2], False)
+        mv_row(c, X, Y, D + timedelta(days=5), [2], False)
+        db.commit()
+        cell_links.forget()
+        ids = lambda day: sorted(x["id"] for x in mv.moved_out(db, X, day))
+        self.assertEqual(ids(D), [1, 2])
+        self.assertEqual(mv.moved_out_codes(db, X, D), {CODE})
+        self.assertEqual(ids(D + timedelta(days=2)), [2])          # 1 is back, with d
+        self.assertEqual(ids(D + timedelta(days=4)), [])           # c is back
+        self.assertEqual(mv.moved_out_codes(db, X, D + timedelta(days=4)), set())
+        self.assertEqual(ids(D + timedelta(days=6)), [2])
+        self.assertEqual(mv.moved_out_codes(db, X, D + timedelta(days=6)), set())
 
 
 if __name__ == "__main__":
