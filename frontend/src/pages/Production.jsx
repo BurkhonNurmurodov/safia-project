@@ -2826,7 +2826,11 @@ export default function Production() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DayStepper value={date} onChange={setDate} max={null} marked={markedDates} />
         {pageSections.length > 0 && (
-          <FilterPanel sections={pageSections} chipsWrap />
+          // A leader's one section — the unit switch — has nothing to clear
+          // (the page always reads one of their units), so no «clear all»
+          // and no count: a button that clears nothing is worse than none.
+          <FilterPanel sections={pageSections} chipsWrap
+            {...(canPickManager ? {} : { activeCount: 0, anyActive: false })} />
         )}
         {/* Undo / redo for the day's writes. It appears only once there IS a
             history — an always-visible pair of dead buttons says the page can

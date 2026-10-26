@@ -403,6 +403,121 @@ class ThePageSwitchesUnits(_Base):
                for r in self.db.query(PPLineDaily).filter(PPLineDaily.date == D).all()}
         self.assertEqual(got, {(Y, C): 21.0, (X, B): 4.0})
 
+    def test_staffing_follows_the_chosen_unit(self):
+        """The «Bugungi fakt» save is cut like the page: c's people go to Y,
+        c2's to X, and c's work centre is refused on X's page."""
+        from app.models import PPWorkCenterDaily
+        lead, *_ = self.world()
+        pl = self.payload(lead)
+
+        def body(wc, people):
+            return production.StaffingBody(
+                date=D.isoformat(), rows=[production.StaffingRow(work_center=wc, people=people)])
+
+        with self.as_leader(lead):
+            production.save_staffing(body=body(C, 4), manager_id=None, payload=pl, db=self.db)
+            production.save_staffing(body=body(B, 2), manager_id=X, payload=pl, db=self.db)
+            with self.assertRaises(HTTPException) as err:
+                production.save_staffing(body=body(C, 7), manager_id=X, payload=pl, db=self.db)
+        self.assertEqual(err.exception.status_code, 403)
+        got = {(r.manager_id, r.work_center): r.people
+               for r in self.db.query(PPWorkCenterDaily).filter(
+                   PPWorkCenterDaily.date == D, PPWorkCenterDaily.people.isnot(None)).all()}
+        self.assertEqual(got[(Y, C)], 4)
+        self.assertEqual(got[(X, B)], 2)
+        self.assertNotEqual(got.get((X, C)), 7)
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class ArchivedCellsDoNotMakeAUnit(_Base):
+    """An archived cell keeps its `leader_id` and its brigadir. Counted, it
+    made a leader whose OLD cell was archived in another unit a «two-unit»
+    leader: their page opened on that unit — somebody else's positions at the
+    old cell's work centre — and #9 passed on that work centre's 90% while
+    their own cell stood at 10%. Only the cells that exist on the day count
+    (the cells `leader_auto.cells_run_on` checks); the leader reads exactly
+    what they read before this fix set."""
+
+    def world(self, archived=D - timedelta(days=5)):
+        """L runs a (E, in X, 1 of 10 made, people typed) and ran b (B, in Y,
+        archived on `archived`); L4 now runs b4 at B in Y, 9 of 10 made."""
+        self.units(X, Y)
+        self.enable()
+        a = self.cell("0801", X, sap=E)
+        b = self.cell("0802", Y, sap=B)
+        b4 = self.cell("0804", Y, sap=B)
+        lead = self.leader("Lider Bir", X, a, b)
+        self.leader("Lider Tort", Y, b4)
+        if archived is not None:
+            b.archived_at = datetime.combine(archived, time(10), tzinfo=TZ)
+        self.line(X, "F005", "Pirog", wc=E, labor=60, sort=0)
+        self.line(Y, "F003", "Non", wc=B, labor=60, sort=0)
+        self.daily(X, D, "F005", wc=E, plan=10, actual=1)
+        self.daily(Y, D, "F003", wc=B, plan=10, actual=9)
+        self.pin(X, D, wc=E, people=2)
+        self.db.commit()
+        self.forget()
+        return lead, a, b
+
+    def test_an_archived_cell_is_not_a_unit(self):
+        lead, *_ = self.world()
+        self.assertEqual(cell_lookup.cells_units_for_leader(self.db, lead.id, D), [X])
+        self.assertEqual(cell_lookup.cells_units_for_leader(self.db, lead.id), [X])
+        self.assertEqual(cell_lookup.cells_unit_for_leader(self.db, lead.id, D), X)
+        with self.as_leader(lead):
+            page = production.get_dashboard(date=D.isoformat(), manager_id=None,
+                                            payload=self.payload(lead), db=self.db)
+            # Y is not one of theirs to switch to either.
+            other = production.get_dashboard(date=D.isoformat(), manager_id=Y,
+                                             payload=self.payload(lead), db=self.db)
+        self.assertEqual((page["manager_id"], other["manager_id"]), (X, X))
+        self.assertNotIn("leader_units", page)
+        self.assertEqual({r["sap_code"] for r in page["rows"]}, {"F005"})
+        # #9 judges THEIR cell's 10%, never b4's 90% at the old cell's work centre.
+        v = self.check(lead, D, "plan_pct")
+        self.assertEqual((v.outcome, v.code), (leader_auto.FAILED, "under_target"), v)
+        self.assertEqual(v.facts["by_cell"], [{"cell": "0801", "pct": 10.0, "plan_min": 10.0,
+                                               "fact_min": 1.0}])
+        self.assertNotIn("units", v.facts)
+        v = self.check(lead, D, "plan_staffing")
+        self.assertEqual(v.facts, {"lines": 1, "with_plan": 1, "cells": 1,
+                                   "untyped": [], "filled": ["0801"]})
+
+    def test_alive_on_its_archive_day(self):
+        """The archive day itself still counts the cell (`cell_archive.alive`):
+        that day is a two-unit day."""
+        lead, *_ = self.world(archived=D)
+        self.assertEqual(cell_lookup.cells_units_for_leader(self.db, lead.id, D), [Y, X])
+
+    def test_every_cell_archived_counts_them_all(self):
+        """A leader whose every cell is archived is placed by all of them, as
+        before: the unit they last stood in."""
+        lead, a, _b = self.world()
+        a.archived_at = datetime.combine(D - timedelta(days=5), time(10), tzinfo=TZ)
+        a.manager_id = Y
+        self.db.commit()
+        self.forget()
+        self.assertEqual(cell_lookup.cells_units_for_leader(self.db, lead.id, D), [Y])
+        self.assertEqual(cell_lookup.cells_unit_for_leader(self.db, lead.id, D), Y)
+
+    def test_switch_lists_only_cells_that_exist(self):
+        """Two live units plus an archived cell in one of them: the switch names
+        the live cells only."""
+        lead, a, b = self.world()
+        c = self.cell("0803", Y, sap=C)
+        c.leader_id = lead.id
+        self.db.commit()
+        self.forget()
+        # One live cell each: the lower id first.
+        self.assertEqual(cell_lookup.cells_units_for_leader(self.db, lead.id, D), [Y, X])
+        with self.as_leader(lead):
+            page = production.get_dashboard(date=D.isoformat(), manager_id=None,
+                                            payload=self.payload(lead), db=self.db)
+        self.assertEqual(page["leader_units"], [
+            {"id": Y, "name": f"Unit {Y}", "cells": ["0803"]},
+            {"id": X, "name": f"Unit {X}", "cells": ["0801"]},
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

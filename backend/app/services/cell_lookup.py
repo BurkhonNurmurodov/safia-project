@@ -356,7 +356,8 @@ def cells_unit_for_leader(db: Session, leader_id: int | None, day=None) -> int |
     where that day's catalog and plan still carry the cell's lines.
 
     A leader whose cells stand in SEVERAL units is answered by
-    :func:`cells_units_for_leader`; this one still says None for them."""
+    :func:`cells_units_for_leader`; this one still says None for them. Both
+    count the cells that exist on the day (an archived cell is not a unit)."""
     units = cells_units_for_leader(db, leader_id, day)
     return units[0] if len(units) == 1 else None
 
@@ -376,21 +377,33 @@ def cells_units_for_leader(db: Session, leader_id: int | None, day=None) -> list
     and switches between them (`routers.production._resolve_manager_id`); the
     automatic checks #1, #9 and #11 read every one of them
     (`leader_auto._Ctx.by_unit`). With one unit this is
-    ``[cells_unit_for_leader(...)]``, by construction."""
+    ``[cells_unit_for_leader(...)]``, by construction.
+
+    Only cells that EXIST on the day are counted (`cell_archive.alive`; today
+    with no day) — the cells `leader_auto.cells_run_on` checks. An archived
+    cell keeps its `leader_id` and its brigadir, so counted it made a leader
+    whose old cell was archived in another unit a «two-unit» leader: their
+    page opened on that unit, listing somebody else's positions at the old
+    cell's work centre, and #9 passed on that work centre's figure. A leader
+    whose every cell is archived is counted by all of them, as before — the
+    unit they last stood in. With no archived cell this is the count it
+    always was."""
     if not leader_id:
         return []
     from collections import Counter
+    from app.services import cell_archive
     if day is not None:
         from app.services import cell_links
         cells = leader_cells_on(db, leader_id, day)
         on = cell_links.map_on(cells, "manager_id", day)
-        counts = Counter(int(u) for c in cells if (u := on.get(c.id)) is not None)
+        units = {c.id: int(u) for c in cells if (u := on.get(c.id)) is not None}
     else:
-        from sqlalchemy import func
-        counts = Counter({int(m): int(n) for (m, n) in
-                          db.query(Cell.manager_id, func.count(Cell.id))
-                          .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None))
-                          .group_by(Cell.manager_id).all()})
+        cells = (db.query(Cell)
+                 .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None)).all())
+        units = {c.id: int(c.manager_id) for c in cells}
+        day = cell_archive.today()
+    counts = (Counter(units[c.id] for c in cell_archive.alive_on(cells, day) if c.id in units)
+              or Counter(units.values()))
     return [u for u, _n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 

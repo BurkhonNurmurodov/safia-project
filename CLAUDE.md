@@ -7918,7 +7918,12 @@ upload filled them. The whole design, every critique and its verdict, is
   answers None for them (its contract is unchanged), and their page and checks
   fell back to the profile unit — where the moved cell's lines no longer are,
   so #1 / #9 failed `no_plan`. `cell_lookup.cells_units_for_leader(day=)` lists
-  every unit, most cells first, ties by unit id. **The page** opens on the
+  every unit, most cells first, ties by unit id — counting only the cells that
+  EXIST on the day (`cell_archive.alive`; all of them when none does): an
+  archived cell keeps its `leader_id` and brigadir, and counted it opened a
+  leader's page on the unit of a cell closed long ago and passed #9 on
+  somebody else's figure at that work centre. The rule holds whatever put the
+  live cells in two units, a move or not. **The page** opens on the
   first; `?manager_id=` picks another of that day's units (any other id is
   ignored), the dashboard carries `leader_units` `[{id, name, cells}]` when
   there are 2+, and Production.jsx shows it as a pinned FilterPanel section

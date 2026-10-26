@@ -295,10 +295,15 @@ def _leader_units(db: Session, payload: dict,
     units = cells_units_for_leader(db, pid, day) if pid else []
     if len(units) < 2:
         return None
+    from app.services import cell_archive
     from app.services.cell_lookup import leader_cells_in
     names = _unit_names(db, units)
+    # The cells that exist that day — the ones the units were counted by
+    # (an archived cell is not one of the leader's cells to read).
     return [{"id": u, "name": names.get(u),
-             "cells": sorted({c.verifix_code for c in leader_cells_in(db, pid, u, day)
+             "cells": sorted({c.verifix_code
+                              for c in cell_archive.alive_on(leader_cells_in(db, pid, u, day),
+                                                             day or cell_archive.today())
                               if c.verifix_code})}
             for u in units]
 
