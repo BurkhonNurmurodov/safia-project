@@ -284,21 +284,28 @@ def by_wc_on(cells, days: Iterable):
     for the unit each cell stood in ON THAT DAY (`cell_links`, 2026-10-12).
 
     When no cell given changed its brigadir from the range's first day on
-    (`cell_links.changed_since`), every day answers with ONE map built off the
-    current column — exactly what every reader read before, byte for byte.
-    Only a range a cell really moved inside is matched day by day, so a moved
-    cell weighs in its OLD unit on the days it stood there and in its new one
-    after. `cells` is a list (it is walked more than once)."""
+    (`cell_links.changed_since`) AND none of their letters did
+    (`cell_links.relettered_since`), every day answers with ONE map built off
+    the current columns — exactly what every reader read before, byte for
+    byte. Otherwise each day is matched on its own: a moved cell weighs in its
+    OLD unit on the days it stood there and in its new one after, and every
+    cell wears the letter it carried THAT day — also where no unit changed (a
+    retroactive follow's mark event, a staying sibling the follow lettered),
+    so the days before a re-lettering split by the letters they were typed and
+    planned under. `cells` is a list (it is walked more than once)."""
     days = [d for d in days if d]
     base = wc_group.cells_by_wc(cells)
     if not days:
         return lambda _d: base
-    moved = cell_links.changed_since("manager_id", min(str(d)[:10] for d in days))
+    first = min(str(d)[:10] for d in days)
     ids = {wc_group._get(c, "id") for c in cells}
-    if not (moved & ids):
+    moved = cell_links.changed_since("manager_id", first) & ids
+    if not (moved or cell_links.relettered_since(first) & ids):
         return lambda _d: base
-    on_day = cell_links.OnDay([(wc_group._get(c, "id"), wc_group._get(c, "manager_id"))
-                               for c in cells])
+    # The unit each cell stood in that day — the column for every cell when
+    # only a letter changed.
+    on_day = (cell_links.OnDay([(wc_group._get(c, "id"), wc_group._get(c, "manager_id"))
+                                for c in cells]) if moved else None)
     cache: dict = {}
 
     def at(day):
@@ -307,8 +314,9 @@ def by_wc_on(cells, days: Iterable):
         if got is None:
             # …each with the work-centre letter it carried THAT day: a move
             # that cleared a letter does not re-split the old unit's past.
-            got = cache[key] = wc_group.cells_by_wc(cell_links.with_letters_on(cells, key),
-                                                    units=on_day.units(key))
+            got = cache[key] = wc_group.cells_by_wc(
+                cell_links.with_letters_on(cells, key),
+                units=on_day.units(key) if on_day is not None else None)
         return got
     return at
 

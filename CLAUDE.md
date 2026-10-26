@@ -7794,7 +7794,12 @@ upload filled them. The whole design, every critique and its verdict, is
   nothing else — `cell_links` keeps it out of every unit resolution
   (`_load`, and `_resolve` itself), `changed_since` and the /cells/:id history.
   A cell whose letter a later move already dated is not re-lettered
-  (`letters_after`).
+  (`letters_after`). So a reader that splits by group asks
+  `cell_links.relettered_since` beside `changed_since` — a letter can change
+  where no unit did (the mark, the staying sibling): `zagruzka_source.by_wc_on`
+  (the pins, the labour, the ojidaniya weight, «Plan Bajarish», /live) and
+  «Yacheyka zagruzkasi» read each DAY's letters whenever either finds a cell,
+  and the one map of the current columns otherwise, byte for byte as before.
 - **Duplicates JOIN, line by line** (ruling 5). An active, SAP-filled arrival
   identical to an active, SAP-filled line of the new unit at the same work
   centre (`catalog_ownership.join_ident`: daily key, normalised Команда, the
@@ -9571,8 +9576,12 @@ once, and followed through the tie from then on; history is never affected.
   `apply_due` stores the lost letter on the event (`vfx.wc_group_was`),
   `cell_links.letter_on` / `with_letters_on` answer it, and `by_wc_on` (the one
   door of the pin, labour and ojidaniya splits) hands each day's cells with that
-  day's letter; /zagruzka-cell reads a moved cell with the letter it carried on
-  its last day in the unit shown. A letter changed BY HAND on the form is still
+  day's letter — also where only a letter changed (`relettered_since`);
+  /zagruzka-cell reads every cell with the letter of EACH day (2026-10-26 — it
+  read a moved cell with one letter for the whole range, its last day's in the
+  unit shown, so a range across a re-lettering split its early days wrongly),
+  `cells[]` printing the last day's, and judges each row's `wc_split` by the
+  lines of that day's catalog. A letter changed BY HAND on the form is still
   undated, as before. Deliberately present-tense: pickers, labels of history,
   `in_load`, `one_process`, `sap_code`. The «fix it now» reports
   (`zagruzka_gaps`, `cell_input_gaps`, the unpriced report) still pass the
