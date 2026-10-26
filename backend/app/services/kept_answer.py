@@ -22,12 +22,18 @@ month, start a read) refetch right after must show what they did.
 
 The FIGURES are the build's, untouched; nothing is stored outside this
 process, and a restart starts empty. Bounded by `max_keys`.
+
+Every instance registers itself, so a writer that changes what ALL of them
+answer — the catalog follow moving a cell's positions to another brigadir
+(`catalog_follow`), which re-prices days long past — drops them in one call:
+`forget_all()`.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import time
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Hashable
 
@@ -36,6 +42,19 @@ from sqlalchemy.orm import Session
 from app.services import leader_register, shared_build
 
 log = logging.getLogger(__name__)
+
+# Every KeptAnswers built in this process — weakly, so a test's throwaway
+# instance is not kept alive by the registry.
+_REGISTRY: "weakref.WeakSet[KeptAnswers]" = weakref.WeakSet()
+_REGISTRY_LOCK = threading.Lock()
+
+
+def forget_all() -> None:
+    """Drop every kept answer of every instance — the next request builds."""
+    with _REGISTRY_LOCK:
+        kept = list(_REGISTRY)
+    for k in kept:
+        k.forget()
 
 
 class KeptAnswers:
@@ -51,6 +70,8 @@ class KeptAnswers:
         self._flight = shared_build.SharedBuild()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"kept-{name}")
         self._refreshing: set = set()
+        with _REGISTRY_LOCK:
+            _REGISTRY.add(self)
 
     def _put(self, key: Hashable, started: float, value: Any) -> None:
         now = time.monotonic()

@@ -154,11 +154,24 @@ def _load(db: Optional[Session] = None) -> dict:
                           E.applied_at, E.src, E.effective_at, E.vfx)
                   .order_by(E.effective_from, E.id).all()):
             if r.field in out:
-                out[r.field][r.cell_id].append(
-                    _Ev(r.id, r.effective_from, r.value, r.prev, r.applied_at is not None,
-                        r.src, r.effective_at))
-                if r.field == "manager_id" and isinstance(r.vfx, dict) and "wc_group_was" in r.vfx:
-                    out[LETTERS][r.cell_id].append((r.effective_from, r.vfx["wc_group_was"]))
+                vfx = r.vfx if isinstance(r.vfx, dict) else {}
+                # A catalog mark (services/catalog_follow, value = prev) only
+                # carries letter history: it is no link change for any reader.
+                if not vfx.get("catalog_mark"):
+                    out[r.field][r.cell_id].append(
+                        _Ev(r.id, r.effective_from, r.value, r.prev, r.applied_at is not None,
+                            r.src, r.effective_at))
+                if r.field == "manager_id" and "wc_group_was" in vfx:
+                    out[LETTERS][r.cell_id].append((r.effective_from, vfx["wc_group_was"]))
+                # The letters the catalog follow gave the cells a move left
+                # behind (the lone staying sibling, `catalog_follow`): each
+                # sibling's letter before it, dated like the moved cell's own.
+                if r.field == "manager_id" and isinstance(vfx.get("siblings_was"), dict):
+                    for sid, was in vfx["siblings_was"].items():
+                        try:
+                            out[LETTERS][int(sid)].append((r.effective_from, was))
+                        except (TypeError, ValueError):
+                            continue
     try:
         if db is not None:
             read(db)
@@ -521,6 +534,10 @@ def apply_due(db: Session, now: Optional[datetime] = None) -> list:
         if _apply(db, cell, ev, now):
             done.append((cell.verifix_code, ev.field, old, ev.value))
             if ev.field == "manager_id":
+                # The letter the cell carried in its old unit, as the move
+                # found it — the catalog follow reads it to know which of the
+                # old unit's positions were this cell's (`catalog_follow`).
+                ev.vfx = {**(ev.vfx or {}), "letter_before": was_letter or None}
                 if was_letter:
                     letter_was.append((ev, cell, was_letter))
                 if ev.value:
@@ -557,7 +574,11 @@ def apply_due(db: Session, now: Optional[datetime] = None) -> list:
 
 
 def run_apply_due() -> None:
-    """The minute job: apply what is due, one Jurnal row when anything moved."""
+    """The minute job: apply what is due, one Jurnal row when anything moved.
+    The caches are dropped AFTER the commit (`apply_due`'s own `forget` runs
+    before it, so a reader in between could re-cache the old answer), and a
+    brigadir change that landed kicks the catalog follow at once
+    (`catalog_follow`: the cell's positions go with it)."""
     from app.database import SessionLocal
     try:
         with SessionLocal() as db:
@@ -569,15 +590,24 @@ def run_apply_due() -> None:
                     "org", "org.cell_links_applied", db,
                     details=[("count", len(done))] + [
                         ("cell", f"{c} {f}: {a} → {b}") for c, f, a, b in done[:40]])
+        if done:
+            from app.services import cell_register
+            cell_register.after_commit()
+            if any(f == "manager_id" for _c, f, _a, _b in done):
+                from app.services import catalog_follow
+                catalog_follow.kick()
     except Exception:  # noqa: BLE001 — the next minute tries again
         import logging
         logging.getLogger(__name__).exception("cell links: apply_due failed")
 
 
 def register_jobs() -> None:
-    """Every minute (mirrored in passenger_wsgi.py)."""
+    """Every minute (mirrored in passenger_wsgi.py): the links landing, and the
+    catalog follow that moves a landed cell's positions after it."""
     from app.scheduler import schedule_interval
+    from app.services import catalog_follow
     schedule_interval("cell-links-apply", run_apply_due, minutes=1)
+    schedule_interval("catalog-follow", catalog_follow.run_sweep, minutes=1)
 
 
 # ── what a form shows ─────────────────────────────────────────────────────────
@@ -613,11 +643,13 @@ def manager_mode(db: Session, cell_ids: Iterable[int]) -> dict:
 
 
 def history(db: Session, cell_id: int) -> list:
-    """Every event of one cell, newest first — /cells/:id prints it."""
+    """Every event of one cell, newest first — /cells/:id prints it. A catalog
+    mark (`catalog_follow`) is left out: it changed no link."""
     from app.models import CellLinkEvent as E
     return [{"field": r.field, "value": r.value, "prev": r.prev,
              "from": r.effective_from.isoformat(), "src": r.src, "by": r.by_name,
              "applied": r.applied_at is not None,
              "at": r.created_at.isoformat() if r.created_at else None}
             for r in (db.query(E).filter(E.cell_id == cell_id)
-                      .order_by(E.effective_from.desc(), E.id.desc()).all())]
+                      .order_by(E.effective_from.desc(), E.id.desc()).all())
+            if not (isinstance(r.vfx, dict) and r.vfx.get("catalog_mark"))]
