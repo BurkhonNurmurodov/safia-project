@@ -8291,6 +8291,93 @@ views; `PlanLegend`, `DayStrip` and `planUtil.js` are its shared vocabulary.
 - The pre-redesign `GET /api/plan-fulfillment` stays for tabs still open on an
   older bundle; nothing in the current one calls it.
 
+## «Hisobotlar» — the period report (`/reports`, Laboratory, 2026-10-26)
+
+The operator, with TopSim's «Report System» as the picture: one screen that
+reads a PERIOD the way a management report reads it — a list of sections down
+the side, each a table of figures with the period and the ones before it side
+by side — «downloadable as professional document». Page key **`reports`**, in
+the Laboratory nav group, **ADMIN-ONLY until the operator opens it on the
+Access tab** (`DEFAULT_PAGE_ACCESS["reports"] = []`, the /ontime and /live
+rule — every section reads the whole plant). `services/reports.py` folds,
+`routers/reports.py` fetches and delivers, `pages/Reports.jsx` +
+`pages/reportsText.js` + `components/reports/` draw it.
+
+- **Nothing is measured, in either file.** Every figure is one another page
+  already prints, read through that page's own code — the
+  `services/brigadir_board.py` rule, and why `services/reports.py` imports no
+  router and makes no query (the `ojidaniya_deck` split). Section by section:
+  **Ishlab chiqarish** — `plan_fulfillment.build`'s own minute totals (the
+  /plan page's figure), «Samaradorlik» and per-unit «Plan bajarish» the
+  /zagruzka heatmaps' AVG through `brigadir_board.efficiency` /
+  `fulfillment`; **Xodimlar** — /workers' own `att_rate` through
+  `brigadir_board.attendance`, and `turnover.month_payload`; **Kutish** —
+  `routers/downtime._downtime`, which IS the /downtime page's computation;
+  **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
+  **Sifat** — the Quality closure rate through `brigadir_board.quality`
+  (actionable records, hair out, «Отв. бригадир» matched against every live
+  unit); **Xavotirlar** — the /concerns register through
+  `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
+  ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
+  the sections they belong to, so the two can never disagree.
+- **`brigadir_board.attendance` carries its three COMPONENTS now** (`roster`
+  / `came` / `leave`, beside the `v` and `days` /leaderboard reads, which are
+  untouched): a PLANT figure is Σ (came + on leave) ÷ Σ listed — **pooled,
+  never a mean of per-unit percentages** (the comparison tables' 2026-10-19
+  AVG ruling, applied to every plant-level percentage here). `quality` and
+  `concerns` already carried theirs.
+- **The period is a calendar MONTH** — the platform's own KPI month
+  (`leaders_kpi`, `turnover` and `category_compliance` all count by it) — and
+  every table carries the picked month plus `HISTORY - 1` (3 columns, TopSim's
+  Period 0 · 1 · 2), oldest → newest, the picked one last and emphasised. A
+  month that ended before the platform's first closed day
+  (`brigadir_board.data_floor`) is dropped: it could only read «—» in every
+  row. The per-unit tables describe the PICKED month alone.
+- **A month still running compares only its RATES.** A total over 26 days
+  against a whole month says nothing a reader can act on, so the delta on a
+  CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is
+  partial and the cell says why; a rate keeps its delta. The column header
+  names the days it actually covers («Oktyabr 2026 · 1–26»).
+- **A figure the platform has no source for is NOT in this report, and the
+  report SAYS so.** TopSim's financial half — equity, WACC, NOPAT, EVA, the
+  cash-flow statement, the balance sheet, contribution margin, inventory, R&D,
+  market research — has no source here, and a report that invented one would
+  be worse than one that is silent about it. `reports.MISSING` names them, the
+  page prints that list under every section, and the document carries it too.
+  **Never fill one of those rows from anything but a real source.** `None` is
+  «no answer» everywhere and prints «—», never 0 — which is what keeps
+  «nothing filed» apart from «nothing resolved».
+- **TWO block shapes and no third**: a `periods` block (a figure per row, the
+  months across) and a `units` block (a brigadir per row, the picked month).
+  Per-unit tables list EVERY unit in scope — the «Toifalar bo'yicha» rule, so
+  «no data» is never mistaken for «not in scope» — with the carriers sorted to
+  the top and the blanks last.
+- **The document is `assistant_documents.build`** — the house builder, never a
+  second layout engine — as **pdf · docx · xlsx** (`POST
+  /api/reports/export.{fmt}`; a format it does not know is refused, never
+  quietly swapped). The WORDS come from the SCREEN (the page posts the labels
+  it printed, in the reader's language, plus each cell as `fmtCell` spelled
+  it), the structure is rebuilt here: `grid_export`'s own rule, so the file can
+  never name or state something the page does not. Delivered by
+  `xlsx_delivery.deliver_file` — a browser downloads it, inside Telegram it
+  lands in the caller's chat. Logged as `export.reports`.
+- **One kept build serves the screen and the file.** `KeptAnswers("reports")`
+  — as built for 2 min, then up to 10 while a new build runs behind it, never
+  to a viewer who wrote since — and the export reads the SAME build (a deep
+  copy of the sections it wants, because it writes the page's formatting onto
+  the rows). A build is every figure of three months over every unit.
+- **Every block title is DISTINCT across the whole report** (`caps` in
+  `reportsText.js`: «Kutish — brigadalar», not a fifth «Brigadalar bo'yicha»).
+  A workbook names each sheet after the last heading, so five identical titles
+  become «… (2)»…«(6)» and name nothing.
+- **The scope is resolved ONCE**, in `_build`: the viewer's plant lock
+  (`scoped_manager_ids`), the shift, the brigadir pick, then `board_units`'
+  own rule. Every half is handed that set — the turnover half included, which
+  applies the scope it is given and knows nothing of the viewer's lock.
+- Not built: a week or a year grain (the month is the KPI period), a chart
+  (the document is tables), and any figure the platform does not already
+  print.
+
 ## «O'z vaqtida yetkazish» — the logistics on-time report (`/ontime`, 2026-10-20)
 
 The operator's request: «a new screen for the analytics of the last 4 tabs of
