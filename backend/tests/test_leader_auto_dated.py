@@ -514,6 +514,37 @@ class UnsettledInForce(_Base):
         self.assertEqual(catalog_follow.unsettled(self.db, [c.id], D), {c.id})
         self.assertEqual(catalog_follow.unsettled(self.db, [c.id], BEFORE), set())
 
+    def test_give_up_counts_from_the_landing(self):
+        """A night-to-night move recorded for D lands at 20:00: a 10:00 check
+        that waits on it must not be written `not_checked` at 16:00 — its
+        give-up window opens at the landing."""
+        from app.models import CellLinkEvent, Manager
+        from app.services import catalog_follow
+        X, Y = self.X, self.Y
+        self._units(X, Y)
+        lead, c = self._moved_cell()
+        self.db.query(CellLinkEvent).filter_by(cell_id=c.id).update(
+            {"applied_at": None,
+             "effective_at": datetime.combine(D, time(20), tzinfo=TZ)})
+        self._follow_on()
+        self._commit()
+        land = datetime.combine(D, time(20), tzinfo=TZ)
+        self.assertEqual(catalog_follow.unsettled_since(self.db, [c.id], D), land)
+        due = datetime.combine(D, time(10), tzinfo=TZ)
+        v = leader_auto.evaluate(self.db, prof=lead, manager=self.db.get(Manager, X),
+                                 shift=1, date=D.isoformat(), cell=None, check="plan_pct",
+                                 target=30.0, due=due, now=due + timedelta(hours=6, minutes=5))
+        self.assertEqual(v.code, "no_data")
+        self.assertEqual(datetime.fromisoformat(v.facts["unsettled_since"]), land)
+        self.assertEqual(leader_auto._give_up_at(v, due), land + leader_auto.GIVE_UP)
+        # Any other data failure, or a move that could follow before the hour:
+        # the hour's own window, as before.
+        plain = leader_auto.Verdict(leader_auto.SKIPPED, "no_data", {"error": "x"})
+        self.assertEqual(leader_auto._give_up_at(plain, due), due + leader_auto.GIVE_UP)
+        early = leader_auto.Verdict(leader_auto.SKIPPED, "no_data",
+                                    {"unsettled_since": (due - timedelta(hours=1)).isoformat()})
+        self.assertEqual(leader_auto._give_up_at(early, due), due + leader_auto.GIVE_UP)
+
     def test_a_retro_transfer_being_retried(self):
         from app.models import PPCatalogMove
         from app.services import catalog_follow

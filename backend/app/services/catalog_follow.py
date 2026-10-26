@@ -143,7 +143,13 @@ class GroupResult:
 
 class CatalogUnsettled(Exception):
     """A cell's brigadir change has landed and its positions have not followed
-    yet — a reader judging that cell's day (the leader auto-checks) waits."""
+    yet — a reader judging that cell's day (the leader auto-checks) waits.
+    `since` is `unsettled_since`: the moment the follow could first have run,
+    from which a waiting check counts its give-up window."""
+
+    def __init__(self, msg: str = "", since: Optional[datetime] = None):
+        super().__init__(msg)
+        self.since = since
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
@@ -2044,6 +2050,32 @@ def unsettled(db: Session, cell_ids: Iterable[int], day: date) -> set[int]:
         PPCatalogMove.cell_id.in_(ids), PPCatalogMove.event_id.is_(None),
         PPCatalogMove.state.in_(RETRY), PPCatalogMove.home_from <= day).all()}
     return out
+
+
+def unsettled_since(db: Session, cell_ids: Iterable[int], day: date) -> Optional[datetime]:
+    """The LATEST moment from which the follow could have settled the
+    `unsettled` cells among `cell_ids` on `day`: a change not landed yet —
+    its landing instant (`effective_at`); a landed one with no final record —
+    when it landed; a retroactive transfer still being retried — when it was
+    recorded. A check waiting on the follow counts its give-up window from
+    here, not from its own hour: a night unit's move recorded for the day
+    lands at 20:00, ten hours after a 10:00 check, and nothing could follow it
+    before. None when nothing waits."""
+    ids = sorted(unsettled(db, cell_ids, day))
+    if not ids:
+        return None
+    E = CellLinkEvent
+    out: list = []
+    for at, applied, vfx in db.query(E.effective_at, E.applied_at, E.vfx).filter(
+            E.cell_id.in_(ids), E.field == "manager_id",
+            E.effective_from <= day, E.effective_from >= FOLLOW_FROM,
+            E.value.is_distinct_from(E.prev)).all():
+        if not _mark(vfx):
+            out.append(max(x for x in (at, applied) if x is not None))
+    out += [t for (t,) in db.query(PPCatalogMove.created_at).filter(
+        PPCatalogMove.cell_id.in_(ids), PPCatalogMove.event_id.is_(None),
+        PPCatalogMove.state.in_(RETRY), PPCatalogMove.home_from <= day).all() if t]
+    return max(out) if out else None
 
 
 def _forget_caches() -> None:

@@ -421,7 +421,8 @@ class _Ctx:
         waiting = catalog_follow.unsettled(self.db, ids, d) if ids else set()
         if waiting:
             raise catalog_follow.CatalogUnsettled(
-                f"cells {sorted(waiting)}: a brigadir move not followed yet on {d}")
+                f"cells {sorted(waiting)}: a brigadir move not followed yet on {d}",
+                since=catalog_follow.unsettled_since(self.db, waiting, d))
         self._settled = True
 
     @property
@@ -1287,12 +1288,34 @@ def evaluate(db: Session, *, prof: RoleProfile, manager: Manager,
         if isinstance(exc, catalog_follow.CatalogUnsettled):
             logger.info("auto check %s for leader %s on %s waits for the catalog "
                         "follow: %s", check, getattr(prof, "id", None), date, exc)
-            return Verdict(SKIPPED, "no_data", {"error": str(exc)[:200],
-                                                "unsettled": True})
+            facts = {"error": str(exc)[:200], "unsettled": True}
+            since = getattr(exc, "since", None)
+            if since is not None:
+                facts["unsettled_since"] = since.isoformat()
+            return Verdict(SKIPPED, "no_data", facts)
         logger.exception("auto check %s failed for leader %s on %s",
                          check, getattr(prof, "id", None), date)
         return Verdict(SKIPPED, "no_data", {"error": str(exc)[:200]})
 
+
+
+def _give_up_at(v: Verdict, due: datetime) -> datetime:
+    """When a check that could not be read is written as not checked
+    (`not_checked`, `gave_up`): `GIVE_UP` past its hour — or, while it waits
+    for a move of one of the leader's cells to be followed (`unsettled`),
+    `GIVE_UP` past the moment that follow could first run
+    (`catalog_follow.unsettled_since`). A night-to-night move recorded for
+    the day lands at 20:00; giving up at 16:00 on a 10:00 check would fail
+    the leader over a move nothing could have followed yet."""
+    since = (v.facts or {}).get("unsettled_since")
+    if since:
+        try:
+            t = datetime.fromisoformat(since)
+            if t > due:
+                return t + GIVE_UP
+        except (TypeError, ValueError):
+            pass
+    return due + GIVE_UP
 
 # ── the sweep ────────────────────────────────────────────────────────────────
 #
@@ -2268,7 +2291,7 @@ def _measure_without_day(db, row, m, prof, date, check, target, due, now,
                              cell=None, check=check, target=target, due=due,
                              now=now)
     if v.outcome == SKIPPED:
-        if now < due + GIVE_UP:
+        if now < _give_up_at(v, due):
             # The data could not be read — not the leader's failure. Tried
             # again on the next pass, exactly as with a checklist that exists.
             row.checked_at, row.outcome, row.code = now, SKIPPED, "no_day"
@@ -2418,7 +2441,7 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                              date=date, cell=None, check=check, target=target,
                              due=due, now=now)
     if v.outcome == SKIPPED:
-        if now < due + GIVE_UP:
+        if now < _give_up_at(v, due):
             # A data failure is NOT recorded as the leader's. Left unsettled
             # so the next pass tries again; `entry_id` stays None, so nothing
             # here is final and the day is not closed on a number nobody could
@@ -2505,7 +2528,7 @@ def _staff_list_filed(db, row, m, prof, date, day, entry, td, check, target,
         v = fresh = evaluate(db, prof=prof, manager=m, shift=m.shift, date=date,
                              cell=None, check=check, target=target, due=due,
                              now=now)
-    if v.outcome == SKIPPED and now < due + GIVE_UP:
+    if v.outcome == SKIPPED and now < _give_up_at(v, due):
         row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
         row.facts = v.facts
         tally["skipped"] += 1
