@@ -189,9 +189,16 @@ def _autofill_manager_ids(db: Session) -> set[int]:
     """THE set an SAP upload reaches when it names nobody: every CONFIGURED
     brigadir minus the ones switched off.
 
-    Configured is the load-bearing half and must never be dropped: an unconfigured
-    unit has no catalog and no work centers, so _ingest_for_manager's two scope
-    filters both fall through and it would be written the ENTIRE plant file."""
+    Configured keeps the fan-out to the units that keep production at all. It
+    used to be load-bearing as well: an unconfigured unit has no catalog and no
+    work centers, so _ingest_for_manager's two scope filters both fell through
+    and it was written the ENTIRE plant file. From 2026-10-26 `_scoped_faza`
+    hands a unit with no catalog line that day nothing whatever reaches it —
+    configured or not, named or not, work-centre rows or not — and the upload
+    names it in `empty_targets` instead. That matters here because
+    «configured» counts a unit's old pp_daily rows too: a unit whose cells all
+    moved to another brigadir (their positions follow them, `catalog_follow`)
+    stays in this set with no line left, and is now given 0 rows."""
     return _configured_manager_ids(db) - _autofill_off_ids(db)
 
 

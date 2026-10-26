@@ -148,10 +148,14 @@ class _Unit:
     """One unit on one date: every logged save, replayable to any instant."""
 
     def __init__(self, db: Session, m: Manager, date: str):
+        from app.services import cell_links
         self.db, self.m, self.date, self.d = db, m, date, _d(date)
         st = db.query(PPManagerSetting).filter_by(manager_id=m.id).first()
         self.auto_fill = True if st is None else bool(st.auto_fill)
-        self.cells = db.query(Cell).filter(Cell.manager_id == m.id).all()
+        # Every cell of the unit ON the date — one moved away since is still
+        # split here on the days before its move (`cell_pins` places each cell
+        # by its unit and letter that day; the unit's column when none moved).
+        self.cells = cell_links.cells_of_units(db, [m.id], since=self.d)
         self._events = self._uploads = self._sapwc = None
         self._pp = self._pl = self._replay_ok = None
 
@@ -428,6 +432,7 @@ class _Walk:
         self._units: dict = {}
         self._codes: dict = {}
         self._cells: dict = {}
+        self._ctxs: dict = {}
 
     def unit(self, m: Manager, date: str) -> _Unit:
         key = (m.id, date)
@@ -445,15 +450,36 @@ class _Walk:
         return (self.db.query(Cell).filter(Cell.id == cell_id).first()
                 if cell_id else None)
 
-    def cells(self, leader_id: int) -> list[Cell]:
-        if leader_id not in self._cells:
-            self._cells[leader_id] = (self.db.query(Cell)
-                                      .filter(Cell.leader_id == leader_id)
-                                      .order_by(Cell.verifix_code, Cell.id).all())
-        return self._cells[leader_id]
+    def cells(self, leader_id: int, date: str) -> list[Cell]:
+        """The leader's cells as the check read them: the ones they ran on the
+        date that existed on it, each with its letter then
+        (`leader_auto.cells_run_on`)."""
+        key = (leader_id, date)
+        if key not in self._cells:
+            self._cells[key] = leader_auto.cells_run_on(self.db, leader_id, date)
+        return self._cells[key]
+
+    def ctx(self, prof, m, date, due) -> leader_auto._Ctx:
+        key = (prof.id, m.id, date, due)
+        if key not in self._ctxs:
+            self._ctxs[key] = leader_auto._Ctx(self.db, prof, m, m.shift, date, None,
+                                               due, self.now)
+        return self._ctxs[key]
+
+    def prod_unit(self, prof, m, date, due) -> Manager:
+        """The unit whose page, plan and saves the check read for this leader
+        on the date — the one their cells stood in that day (`_Ctx.unit_id`),
+        their own unit unless the cells stand under another brigadir. Refused
+        (`catalog_follow.CatalogUnsettled`) while a move of one of those cells
+        has not been followed yet: the pages would read the cell with its
+        positions still in the old unit."""
+        ctx = self.ctx(prof, m, date, due)
+        ctx.require_settled()
+        uid = ctx.unit_id
+        return m if uid == m.id else (self.db.get(Manager, uid) or m)
 
     def leader_rows(self, prof, m, date, due) -> list:
-        ctx = leader_auto._Ctx(self.db, prof, m, m.shift, date, None, due, self.now)
+        ctx = self.ctx(prof, m, date, due)
         return (ctx.dashboard.get("rows") or []) if ctx.pairs else []
 
 
@@ -471,7 +497,7 @@ def _judge(w: _Walk, prof, m, check: str, date: str, due: datetime,
 
     f = failed[0]
     facts = f.facts or {}
-    cells = w.cells(prof.id)
+    cells = w.cells(prof.id, date)
     if check == "plan_staffing":
         if f.code != "no_staffing" or int(facts.get("cells") or 0) < 2:
             return []
@@ -483,7 +509,7 @@ def _judge(w: _Walk, prof, m, check: str, date: str, due: datetime,
         typed = [c for c in cells if _label(c) not in untyped]
         if not typed:
             return []
-        u = w.unit(m, date)
+        u = w.unit(w.prod_unit(prof, m, date, due), date)
         rows = w.leader_rows(prof, m, date, due)
         unknown = []
         for c in typed:
@@ -510,7 +536,10 @@ def _judge(w: _Walk, prof, m, check: str, date: str, due: datetime,
 def _judge_pct(w: _Walk, prof, m, date, due, hh, cells, codes, f, target,
                plan_then, fact_then) -> list[tuple]:
     want = float(target if target is not None else 30)
-    per = {c: w.code(m.id, date, c) for c in codes}
+    # The pages, and the saves replayed on them, of the unit the cells stood
+    # in that day — never the leader's own unit by default.
+    pu = w.prod_unit(prof, m, date, due)
+    per = {c: w.code(pu.id, date, c) for c in codes}
     names = defaultdict(list)
     for c in cells:
         if _norm(c.sap_code):
@@ -532,7 +561,7 @@ def _judge_pct(w: _Walk, prof, m, date, due, hh, cells, codes, f, target,
             return []
     elif max(p.pct for p in planned.values()) < want:
         return []                       # not even today's figure reaches it
-    u = w.unit(m, date)
+    u = w.unit(pu, date)
     lb = {c: _fact_lb(u, p.rows, due) for c, p in planned.items()}
     if fact_then is not None and sum(lb.values()) > fact_then + max(1.0, 0.005 * fact_then):
         return [(f, REFUSE, f"the saves rebuild more ФАКТ ({sum(lb.values()):.1f} min) than "
@@ -574,11 +603,14 @@ def _judge_per_cell(w: _Walk, prof, m, check, date, due, hh, sibs, failed,
             return [(f, RESTORE, why) for f in failed]
         return []
     unmeasured = [w.cell(s.cell_id) for s in sibs if s.code == "started_late"]
-    unmeasured = [c for c in unmeasured if c is not None]
+    # …each with the letter it carried that day, the one the day's rows are
+    # cut by (`cell_planned`).
+    from app.services import cell_links
+    unmeasured = cell_links.with_letters_on([c for c in unmeasured if c is not None], date)
     if not unmeasured:
         return []                       # every cell measured at the hour; none met it
     if check == "plan_staffing":
-        u = w.unit(m, date)
+        u = w.unit(w.prod_unit(prof, m, date, due), date)
         if not u.replay_ok():
             return [(f, REFUSE, f"{', '.join(_label(c) for c in unmeasured)} was not checked "
                                 f"at {hh} and its headcount saves cannot be replayed") for f in failed]
@@ -663,7 +695,12 @@ def collect(db: Session, now: datetime | None = None) -> dict:
                 (items if kind == RESTORE else refused).append(rec)
         except Exception as exc:        # noqa: BLE001 - one group never sinks the list
             db.rollback()
-            log.exception("auto-check restore: %s %s #%s", lid, date, tid)
+            from app.services import catalog_follow
+            if isinstance(exc, catalog_follow.CatalogUnsettled):
+                # A cell's move not followed yet: listed, no fault to trace.
+                log.info("auto-check restore: %s %s #%s waits: %s", lid, date, tid, exc)
+            else:
+                log.exception("auto-check restore: %s %s #%s", lid, date, tid)
             errors.append(f"leader {lid} {date} #{tid}: {str(exc)[:160]}")
     return {"built_at": now.isoformat(), "items": items, "refused": refused,
             "errors": errors, "groups": len(groups)}

@@ -1888,22 +1888,40 @@ def kick() -> None:
 
 
 def unsettled(db: Session, cell_ids: Iterable[int], day: date) -> set[int]:
-    """The cells among `cell_ids` whose brigadir change has landed by `day`
+    """The cells among `cell_ids` whose brigadir change is in force by `day`
     (from `FOLLOW_FROM` on) and whose positions have not followed it yet —
-    no final record. Empty while the follow is off (`enabled`)."""
+    no final record. Empty while the follow is off (`enabled`).
+
+    «In force by `day`» is what the dated readers answer, not what has
+    landed: a change recorded for `day` whose opening has not come yet (a
+    leader whose checklist runs on the other shift than the unit,
+    `leader_shift`, is checked hours before a night unit's 20:00 landing; an
+    `apply_due` running late) already reads in its new unit
+    (`cell_links._resolve` answers a waiting change's value from its day on),
+    while nothing can follow it before it lands — so it waits too. And so does
+    a retroactive transfer of a cell with no landing event that the sweep is
+    still retrying (`busy` / `failed`): the cell has read in its new unit all
+    along, with its positions still in the old one."""
     ids = sorted({int(c) for c in cell_ids if c})
     if not ids or not enabled(db):
         return set()
     E = CellLinkEvent
-    evs = [(eid, cid) for eid, cid, vfx in db.query(E.id, E.cell_id, E.vfx).filter(
-        E.cell_id.in_(ids), E.field == "manager_id", E.applied_at.isnot(None),
+    evs = [(eid, cid, applied) for eid, cid, vfx, applied in db.query(
+        E.id, E.cell_id, E.vfx, E.applied_at.isnot(None)).filter(
+        E.cell_id.in_(ids), E.field == "manager_id",
         E.effective_from <= day, E.effective_from >= FOLLOW_FROM,
         E.value.is_distinct_from(E.prev)).all() if not _mark(vfx)]
-    if not evs:
-        return set()
-    final = {eid for (eid,) in db.query(PPCatalogMove.event_id).filter(
-        PPCatalogMove.event_id.in_([e for e, _c in evs]), PPCatalogMove.state.in_(FINAL)).all()}
-    return {cid for eid, cid in evs if eid not in final}
+    out = {cid for _eid, cid, applied in evs if not applied}
+    landed = [(eid, cid) for eid, cid, applied in evs if applied]
+    if landed:
+        final = {eid for (eid,) in db.query(PPCatalogMove.event_id).filter(
+            PPCatalogMove.event_id.in_([e for e, _c in landed]),
+            PPCatalogMove.state.in_(FINAL)).all()}
+        out |= {cid for eid, cid in landed if eid not in final}
+    out |= {cid for (cid,) in db.query(PPCatalogMove.cell_id).filter(
+        PPCatalogMove.cell_id.in_(ids), PPCatalogMove.event_id.is_(None),
+        PPCatalogMove.state.in_(RETRY), PPCatalogMove.home_from <= day).all()}
+    return out
 
 
 def _forget_caches() -> None:

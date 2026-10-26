@@ -281,6 +281,14 @@ def events(fresh: bool = False) -> dict:
 
 
 def _resolve(evs: list, current, d: date):
+    # A catalog mark (`catalog_follow._mark_event`: src «catalog_follow»,
+    # value = prev) carries letter history and nothing else. `_load` keeps it
+    # out of `events()`, but `record` resolves over a list read straight off
+    # the table (`_fresh`) — and a mark written beside a column that a LATER
+    # change had already moved would answer every day before that change with
+    # the later unit (`evs[0].prev`, or its own value). So it never resolves.
+    if evs and any(e.src == "catalog_follow" and e.value == e.prev for e in evs):
+        evs = [e for e in evs if not (e.src == "catalog_follow" and e.value == e.prev)]
     if not evs:
         return current
     last = None

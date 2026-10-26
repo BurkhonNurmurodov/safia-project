@@ -570,11 +570,14 @@ class AutoChecksReadTheDay(_PG):
             with self.assertRaises(fake.CatalogUnsettled):
                 ctx.dashboard
             from app.models import Manager
-            with self.assertLogs(leader_auto.logger, "ERROR"):
+            # A wait, not a fault: one INFO line, no stack trace (WP8).
+            with self.assertLogs(leader_auto.logger, "INFO") as logs:
                 v = leader_auto.evaluate(
                     self.db, prof=lead, manager=self.db.get(Manager, self.X), shift=1,
                     date=D.isoformat(), cell=c, check="plan_staffing", target=None,
                     due=None, now=None)
+            self.assertEqual([r.levelname for r in logs.records], ["INFO"])
+            self.assertIsNone(logs.records[0].exc_info)
         self.assertEqual((v.outcome, v.code), (leader_auto.SKIPPED, "no_data"))
         fake.unsettled.assert_called_with(self.db, [c.id], D)
 
