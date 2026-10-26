@@ -13019,6 +13019,49 @@ A merge that carries no rebuilt `frontend/dist` still deploys correctly —
 - **Telegram, Sheets, Gemini, Notion, ARC.** No tokens, and none of those hosts
   is on the allowlist. The scheduled jobs still fire and log their failures
   there; expected, not a regression.
+- **Production itself.** The proxy allows `git.safiabakery.uz` and nothing else,
+  so `production.safiacorporate.uz` answers **403 CONNECT tunnel failed** from a
+  cloud session: no `/api/version`, no `/build.json`, no watching a deploy land.
+  `git ls-remote gitea main` is the whole of what can be confirmed — that the
+  push arrived. Never report a deploy as verified from here.
+
+### When a cloud session needs an answer only production has (standing rule)
+
+The operator's directive, 2026-10-26, and it holds for **every future change**:
+**if you cannot reach production from here but you need its data, send a REPORT
+— and ask, each time, which of the two people it goes to.**
+
+- **Never guess from a laptop copy, a dry run or a screenshot, and never ship a
+  fix on the strength of one.** The DB here is empty and the laptop's holds May
+  data; a cloud session has no third option. A report is the only honest way to
+  learn what production actually holds.
+- **Put everything you need in ONE report.** Each one is a boot job, a flag, a
+  deploy and a person's attention, so a second round for a column you forgot is
+  the expensive mistake. Write down the question first, then the rows that
+  answer it: the figures, the raw rows BEHIND them, and the panel / scope /
+  window each figure was judged against — so the reader can check the
+  arithmetic by eye instead of taking it on trust (the «Kun to'liq» sheet of
+  `pin_mismatch_report` is the shape).
+- **Every report is TEMPORARY, READ-ONLY and flag-guarded**, the convention
+  already written down here: `services/<name>_report.py` with a
+  `send(db, chat_id, date_from, date_to) -> int`, `startup._report_pending(FLAG)`
+  → `schedule_at(...)` → `_send_report_once(FLAG, label, module.send, <chat>)`,
+  armed from BOTH entrypoints, deleted with its startup pair and both calls once
+  it has landed. **Changing what one reports needs a NEW flag key** — an
+  "already ran" mark makes the new version a no-op on every box that has booted.
+- **ASK THE ONE QUESTION, every time, before it ships**: Burkhon
+  (`startup.REPORT_CHAT_BURKHON`, 6302307151) or Abbos
+  (`startup.REPORT_CHAT_ABBOS`, 811884943)? Pass the named constant, never the
+  number. **One recipient, never both** — a report in two chats is two people
+  each assuming the other dealt with it. `UNPRICED_DM_CHAT` is the historical
+  alias for Burkhon's and is what 40 existing call sites mean; a NEW report
+  names a person.
+- **Say what the report cannot tell you.** It is a snapshot taken at one
+  instant, so it can be stale about a row written after it ran — never wrong
+  about the moment it was taken. And a report that compares two numbers must
+  not derive both from one of the two sides: v1 of `pin_mismatch_report` took
+  `page_n` and `load_n` off one folded map and answered «no mismatch» about the
+  very unit-day it was written for.
 
 ## Deployment
 

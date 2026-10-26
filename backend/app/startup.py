@@ -6853,7 +6853,18 @@ def set_gemini_model_pro() -> None:
 # already has, and neither may repeat itself on the next deploy.
 UNPRICED_DM_FLAG = "unpriced_ojidaniya_dm_2026_09_09_v1"
 UNPRICED_XLSX_FLAG = "unpriced_ojidaniya_xlsx_2026_09_09_v1"
-UNPRICED_DM_CHAT = 6302307151          # the operator's own Telegram id
+# ── who a one-shot REPORT is DMed to ────────────────────────────────────────
+# A report exists because this platform has no shell and a cloud session cannot
+# reach production, so its only reader is a person in Telegram. There are two,
+# and WHICH of them is the operator's call, asked once per report — never
+# guessed, never both (a report in two chats is two people assuming the other
+# answered). Pass one of these to `_send_report_once`; a bare number at a call
+# site is how a report ends up in nobody's chat.
+REPORT_CHAT_BURKHON = 6302307151       # Burkhon — the operator's own Telegram id
+REPORT_CHAT_ABBOS = 811884943          # Abbos
+# The historical name, kept because 40 call sites write it and every one of
+# them means Burkhon. A NEW report names a person instead.
+UNPRICED_DM_CHAT = REPORT_CHAT_BURKHON
 UNPRICED_DM_FROM = date(2026, 9, 2)    # = zagruzka_source.ZAGRUZKA_FROM
 UNPRICED_DM_TO = date(2026, 9, 8)
 # A permanently broken send must not DM (or try to) on every restart. Three
