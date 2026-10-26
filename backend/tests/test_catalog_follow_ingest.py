@@ -773,6 +773,20 @@ class WriterRace(_PG):
         p = self._row(PPProduct, self.p.id)
         self.assertEqual((p.manager_id, float(p.labor_time)), (self.Y, 10.0))
 
+    def test_t15_uom_door_waits_then_is_refused(self):
+        """The brigadir's «O'lchov birligi» door (v4.335) is a catalog writer
+        too: a row that followed its cell while the door held it is refused,
+        and X draws no boundary."""
+        from app.models import PPProduct
+        self._fixture()
+        pl = {"role": "supervisor", "role_id": self.X, "sub": "1", "full_name": "T"}
+        out = self._race(lambda s: prod.set_catalog_uom(
+            prod.CatalogUomBody(ids=[self.p.id], uom="kg"), manager_id=None,
+            payload=pl, db=s), [self.p])
+        self.assertEqual(out, self.MOVED)
+        self._no_version()
+        self.assertIsNone(self._row(PPProduct, self.p.id).uom)
+
     def test_t15_edit_waits_then_is_refused(self):
         from app.models import PPProduct
         self._fixture()

@@ -294,6 +294,21 @@ class CellsForm(_PG):
                          sorted([c.id, d.id]))
         self.assertTrue(all(e.value == self.Y for e in self._events()))
 
+    def test_move_with_reaches_the_grant_alert(self):
+        """A grant holder's team move names EVERY cell it moved to the admins'
+        alert and the Jurnal, not only the edited row."""
+        from app.routers import profiles
+        c, d, free = self._team()
+        with mock.patch.object(profiles, "alert_grant_use") as alert, \
+                mock.patch.object(profiles.action_log, "enrich") as enrich:
+            self._put(c, manager_id=self.Y, move_with=[d.id])
+        changes = alert.call_args.kwargs["changes"]
+        units = [ch for ch in changes if ch[0] == "unit"]
+        self.assertEqual(len(units), 2)
+        self.assertTrue(any(str(ch[2]).startswith(f"{d.verifix_code}: ") for ch in units))
+        logged = [kw.get("changes") for _a, kw in enrich.call_args_list if kw.get("changes")]
+        self.assertEqual(logged[-1], changes)
+
     def test_move_with_must_be_the_team(self):
         c, d, free = self._team()
         other = self._cell("0310", sap="B1111", letter="A")

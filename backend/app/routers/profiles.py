@@ -999,7 +999,13 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
                 # The team first, then this cell — every check reads the same
                 # `leaving`, so none of them counts another as staying.
                 for m in mates:
-                    cell_register.set_unit(db, m, new, src="manual", by=by, leaving=leaving)
+                    was = m.manager_id
+                    ev_m = cell_register.set_unit(db, m, new, src="manual", by=by, leaving=leaving)
+                    if ev_m is not None:
+                        # Named to the admins' grant alert and the Jurnal beside
+                        # this cell's own change (`admin_update_cell`).
+                        pend.setdefault("move_with", []).append(
+                            (m.verifix_code, was, new, ev_m.effective_from.isoformat()))
                 if not unchanged("manager_id", new):
                     ev = cell_register.set_unit(db, row, new, src="manual", by=by, leaving=leaving)
                     if ev is not None:
@@ -1652,6 +1658,12 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         to = (waiting.get("manager_id") or {}).get("value")
         diff.append(("unit", unit_name(db, old["manager_id"]),
                      f"{unit_name(db, to) or '—'} ({pend['manager_id']})"))
+    # The team moved with it (`move_with`): one row per cell, so a grant
+    # holder's team move reaches the admins whole — and is named even when
+    # this cell's own move was already waiting and the save re-sent it.
+    for code, was, to, eff in pend.get("move_with") or ():
+        diff.append(("unit", f"{code}: {unit_name(db, was) or '—'}",
+                     f"{code}: {unit_name(db, to) or '—'} ({eff})"))
     if "leader_id" in pend:
         to = (waiting.get("leader_id") or {}).get("value")
         people = [i for i in (old["leader_id"], to) if i]
