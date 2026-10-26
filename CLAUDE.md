@@ -7929,13 +7929,24 @@ upload filled them. The whole design, every critique and its verdict, is
   `y_has_lines`, `window_cells_moved`, `letters_after`, `archived`, `no_code`,
   `conservation`, and `volume` (over 40 cells or 5,000 per-day rows nothing is
   applied at all). Every considered event gets a final record, so a second run
-  is a no-op by the records, not the flag. Flag
-  `catalog_follow_retro_2026_10_26_v1` (`dry:<n>` / `done:<moved>/<named>`),
-  record `catalog_follow_retro_2026_10_26`, a DM to `UNPRICED_DM_CHAT` behind
-  `catalog_follow_retro_2026_10_26_v1_dm_<mode>` with a workbook («Ko'chirildi»,
-  «Qoldirildi», «Dalil», «Ta'sir»). **Delete the module, its startup pair and
-  both calls once the flag reads `done` and the DM has landed — and NEVER the
-  flag row**: `catalog_follow.enabled` reads it, and the sweep stops without it.
+  is a no-op by the records, not the flag. ONE pass at a time across both app
+  copies: a SESSION advisory lock (`RETRO_LOCK`) on a connection of its own —
+  a transaction lock would be gone at the first cell's commit — and the flag
+  re-read under it. The flag `catalog_follow_retro_2026_10_26_v1`
+  (`catalog_follow.RETRO_FLAG`) reads `done:<moved>/<named>` (`done:0/0` when
+  nothing qualified — the sweep switches on all the same), `dry:<n>` for a
+  rehearsal, or `failed:<n>` after a pass that raised: it is run again at the
+  next boot, at most `TRIES` (3) times, and after the third the sweep STAYS OFF
+  and the failure is DMed. A pass stopped half-way (a deploy) re-runs at the
+  next boot and reports what the earlier attempt already settled beside its
+  own. The record `catalog_follow_retro_2026_10_26`; the DM — text + a workbook
+  («Ko'chirildi», «Qoldirildi», «Dalil», «Ta'sir») — goes to `UNPRICED_DM_CHAT`
+  behind `catalog_follow_retro_2026_10_26_v1_dm_<mode>` (done · dry · failed),
+  built from the stored record only, so a failed DM is re-sent and the pass is
+  never re-run for it. **Delete the module, `startup.schedule_catalog_follow_retro`
+  / `_catalog_follow_retro_job` and both entrypoint calls once the flag reads
+  `done` and the DM has landed — and NEVER the flag row**:
+  `catalog_follow.enabled` reads it, and the sweep stops without it.
 - **Consequences to know** (all deliberate; the release notes):
   1. Past загрузка, Plan bajarish and shift-report figures change from each
      moved cell's move day, closed days included (ruling 4) — nothing is
