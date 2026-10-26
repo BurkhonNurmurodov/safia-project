@@ -255,7 +255,14 @@ def fulfillment(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict
 # ── Davomat ─────────────────────────────────────────────────────────────────
 def attendance(headcount: list[dict], unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
     """unit → {"v": [(came + on leave) ÷ list, %], "days": [...]} from the rows
-    `/api/workers/headcount` returns, its own `att_rate` arithmetic per period."""
+    `/api/workers/headcount` returns, its own `att_rate` arithmetic per period.
+
+    The three COMPONENTS ride along (`roster` / `came` / `leave`), for the
+    reason `quality` beside it carries `n` and `done`: «90% of twelve» and
+    «90% of four hundred» are different facts, and a PLANT figure is Σ (came +
+    on leave) ÷ Σ listed — pooled, never a mean of per-unit percentages
+    (/reports reads them for exactly that). `v` and `days` are untouched, so
+    the board reads byte-identically."""
     out: dict[int, dict] = {}
     for m in headcount or []:
         mid = m.get("manager_id")
@@ -277,6 +284,9 @@ def attendance(headcount: list[dict], unit_ids: set[int], pers: list[dict]) -> d
         out[mid] = {
             "v": [round((c + lv) / r * 100) if r else None for r, c, lv in sums],
             "days": days,
+            "roster": [r for r, _c, _lv in sums],
+            "came": [c for _r, c, _lv in sums],
+            "leave": [lv for _r, _c, lv in sums],
         }
     return out
 
