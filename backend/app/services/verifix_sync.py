@@ -1718,8 +1718,64 @@ def apply_item(db: Session, item_id: int, *, by: Optional[str], choice: Optional
             raise Refused("unit_untied", f"Cell {c.verifix_code} stays in its unit — the unit is held "
                           "untied from Verifix by hand (a person named its brigadir); dismiss this", 409,
                           {"code": c.verifix_code, "unit": c.manager_id})
-        ev = cell_register.set_unit(db, c, p["to_unit"], src="manual", by=by,
-                                    vfx={"brigadir": p.get("brigadir")})
+        # The other open suggestions moving a cell of the same unit and work
+        # centre to the same unit. A cell refused because it shares positions
+        # with them may go TOGETHER with them («Hammasini birga ko'chirish»):
+        # one `leaving` for every check, so none counts another as staying.
+        from app.services.cell_lookup import norm_code as _norm_code
+        code = _norm_code(c.sap_code)
+
+        def team_items(lock: bool) -> list:
+            """[(item, cell)] of those suggestions. Locked only to be applied,
+            and then SKIP LOCKED: two taps running at once never wait on each
+            other's items (waiting, each holding its own, they deadlock) — an
+            item another tap holds is left out, and its cell counts as staying."""
+            if not code or c.manager_id is None:
+                return []
+            q = (db.query(VerifixSyncItem)
+                 .filter(VerifixSyncItem.kind == "brigadir_differs",
+                         VerifixSyncItem.status == "open", VerifixSyncItem.id != it.id)
+                 .order_by(VerifixSyncItem.id))
+            found = []
+            for mi in (q.with_for_update(skip_locked=True) if lock else q).all():
+                mp = mi.payload or {}
+                mc = db.query(Cell).filter_by(id=mp.get("cell")).first()
+                if (mc is not None and mp.get("to_unit") == p["to_unit"]
+                        and mc.manager_id == c.manager_id and _norm_code(mc.sap_code) == code
+                        and not kept_apart(mc.verifix_code)):
+                    found.append((mi, mc))
+            return found
+
+        if choice == "together":
+            mates = team_items(lock=True)
+            leaving = {c.id: p["to_unit"], **{mc.id: p["to_unit"] for _mi, mc in mates}}
+            for mi, mc in mates:
+                cell_register.set_unit(db, mc, p["to_unit"], src="manual", by=by,
+                                       vfx={"brigadir": (mi.payload or {}).get("brigadir")},
+                                       leaving=leaving)
+            ev = cell_register.set_unit(db, c, p["to_unit"], src="manual", by=by,
+                                        vfx={"brigadir": p.get("brigadir")}, leaving=leaving)
+            for mi, _mc in mates:
+                mi.status, mi.decided_at, mi.decided_by, mi.note = "applied", _now(), by, "together"
+            out["together"] = [mi.id for mi, _mc in mates]
+            if mates:
+                # The tap's own «Jurnal» row names the cells that went along.
+                from app.services import action_log
+                action_log.enrich(details=[("move_with", ", ".join(mc.verifix_code
+                                                                   for _mi, mc in mates))])
+        else:
+            try:
+                ev = cell_register.set_unit(db, c, p["to_unit"], src="manual", by=by,
+                                            vfx={"brigadir": p.get("brigadir")})
+            except Refused as exc:
+                # Offered only where going together CAN pass: every cell
+                # staying has a suggestion of its own to the same unit.
+                stay = {s["id"] for s in (exc.params.get("staying") or [])}
+                mates = team_items(lock=False) if exc.code == "shared_positions" else []
+                if (exc.code == "shared_positions" and mates and stay
+                        and stay <= {mc.id for _mi, mc in mates}):
+                    exc.params["together_items"] = [mi.id for mi, _mc in mates]
+                raise
         out["from"] = ev.effective_from.isoformat() if ev is not None else None
     elif k == "leader_moved":
         prof = db.query(RoleProfile).filter_by(id=p["profile"], role="leader").first()
