@@ -15,6 +15,7 @@ import {
   Grid3x3, TestTubes, ClipboardList, MonitorDot, MessageSquarePlus,
   GraduationCap, PlaySquare, Goal, Network, IdCard, Briefcase, CalendarRange,
   ScanFace, ArrowRightLeft, BookOpenCheck, CalendarClock, BookMarked, Award, Truck,
+  FileBarChart,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -75,6 +76,10 @@ const ALL_LINKS = [
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
   // Laboratory, admin-only until the operator opens it to shift managers.
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
+  // «Hisobotlar» — the platform's period report, every section folded out of
+  // the page that owns it and downloadable as a document. Laboratory,
+  // admin-only until the operator opens it on the Access tab.
+  { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

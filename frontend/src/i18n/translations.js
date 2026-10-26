@@ -7019,6 +7019,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Jonli monitoring",
     "nav.ontime": "O'z vaqtida yetkazish",
+    "nav.reports": "Hisobotlar",
     "logs.act.sync.ontime_read": "O'z vaqtida yetkazish: jadval o'qildi",
     "admin.ontimeSheet": "O'z vaqtida yetkazish (on time report)",
     "admin.refreshDetail.ontime": "Jadval o'qilmoqda — bir necha daqiqa. Natija «O'z vaqtida yetkazish» sahifasida ko'rinadi.",
@@ -15195,6 +15196,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Жонли мониторинг",
     "nav.ontime": "Ўз вақтида етказиш",
+    "nav.reports": "Ҳисоботлар",
     "logs.act.sync.ontime_read": "Ўз вақтида етказиш: жадвал ўқилди",
     "admin.ontimeSheet": "Ўз вақтида етказиш (on time report)",
     "admin.refreshDetail.ontime": "Жадвал ўқилмоқда — бир неча дақиқа. Натижа «Ўз вақтида етказиш» саҳифасида кўринади.",
@@ -23371,6 +23373,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Живой мониторинг",
     "nav.ontime": "On time поставки",
+    "nav.reports": "Отчёты",
     "logs.act.sync.ontime_read": "On time поставки: таблица прочитана",
     "admin.ontimeSheet": "On time поставки (on time report)",
     "admin.refreshDetail.ontime": "Таблица читается — несколько минут. Результат появится на странице «On time поставки».",
@@ -31547,6 +31550,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Live monitor",
     "nav.ontime": "On-time delivery",
+    "nav.reports": "Reports",
     "logs.act.sync.ontime_read": "On-time delivery: sheet read",
     "admin.ontimeSheet": "On-time delivery (on time report)",
     "admin.refreshDetail.ontime": "Reading the sheet — a few minutes. The result appears on the «On-time delivery» page.",
