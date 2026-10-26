@@ -312,6 +312,83 @@ class SapGuard(_PG):
         other.rollback()
         self.assertEqual(other.query(PPDaily).filter(PPDaily.manager_id == Y).count(), 1)
 
+    def test_rejoin_inside_the_follows_own_locks(self):
+        """The follow calls `_rejoin_lines(commit=False)` while it holds the
+        destination's `NS_QTY` EXCLUSIVELY (tried up front): the shared request
+        the re-join makes is its own transaction's, so it never waits."""
+        from app.models import PPDaily
+        X, Y = self.X, self.Y
+        self._moved_fixture()
+        with mock.patch.object(prod, "validate_spreadsheet"), \
+                mock.patch.object(prod, "read_workbook_slices", return_value=_slices(D)):
+            f = SimpleNamespace(file=io.BytesIO(b"PK"), filename="sap.xlsx")
+            prod.upload_phase(files=[f], manager_id=None, manager_ids=[Y], date=D.isoformat(),
+                              mode="both", file_type=None, _={}, db=self.db)
+        self.db.query(PPDaily).delete()
+        self.db.commit()
+        follow = self._other()
+        self.assertTrue(pp_catalog.lock(follow, [X, Y], try_=True))
+        self.assertTrue(pp_catalog.lock(follow, [X, Y], ns=pp_catalog.NS_QTY, try_=True))
+        out = {}
+
+        def call():
+            out["got"] = prod._rejoin_lines(follow, Y, {("F001", C)}, since=D, commit=False)
+        t = threading.Thread(target=call)
+        t.start()
+        t.join(10)
+        self.assertFalse(t.is_alive(), "the re-join waited on its own follow's lock")
+        self.assertEqual(out["got"]["rows"], 1)
+        # Not committed: another session sees nothing until the follow commits.
+        self.assertEqual(self._other().query(PPDaily).count(), 0)
+        follow.commit()
+        self.assertEqual(self._other().query(PPDaily).filter(PPDaily.manager_id == Y).count(), 1)
+
+    def test_upload_racing_a_follow_names_the_emptied_unit(self):
+        """The follow (its own session, `NS_QTY` held exclusively) takes X's
+        last line away; the upload names X while it waits, and once the follow
+        commits it reads the catalog it is about to write — X is empty, so it is
+        listed as such and handed nothing, never reported as a filled target."""
+        from app.models import PPCatalogMove, PPProduct
+        X, Y = self.X, self.Y
+        self._units(X, Y)
+        c = self._cell("0101", X)
+        p = self._line(X, "F001", "Tort")
+        self._settle()
+        follow = self._other()
+        self.assertTrue(pp_catalog.lock(follow, [X, Y], ns=pp_catalog.NS_QTY, try_=True))
+        follow.get(PPProduct, p.id).manager_id = Y
+        follow.get(type(c), c.id).manager_id = Y
+        follow.add(PPCatalogMove(kind="live", state="moved", cell_id=c.id, code=C,
+                                 from_unit=X, to_unit=Y, home_from=D - timedelta(days=2),
+                                 whole_code=True, line_ids=[p.id], lines=[]))
+        follow.flush()
+        out = {}
+
+        def upload():
+            s = self.pg.Session()
+            try:
+                out["res"] = prod.upload_phase(
+                    files=[SimpleNamespace(file=io.BytesIO(b"PK"), filename="sap.xlsx")],
+                    manager_id=None, manager_ids=[X], date=D.isoformat(), mode="both",
+                    file_type=None, _={}, db=s)
+            except Exception as e:  # noqa: BLE001
+                out["err"] = repr(e)
+            finally:
+                s.close()
+        with mock.patch.object(prod, "validate_spreadsheet"), \
+                mock.patch.object(prod, "read_workbook_slices", return_value=_slices(D)):
+            t = threading.Thread(target=upload)
+            t.start()
+            _time.sleep(0.6)
+            self.assertEqual(out, {})               # waiting on the follow's lock
+            follow.commit()
+            t.join(15)
+        self.assertFalse(t.is_alive())
+        self.assertNotIn("err", out, out.get("err"))
+        self.assertEqual((out["res"]["empty_targets"], out["res"]["written"]), ([X], {str(X): 0}))
+        self.db.expire_all()
+        self.assertEqual(self._daily(X, D), [])
+
     def test_ingest_holds_the_quantity_lock(self):
         self._units(45)
         self._line(45, "F001", "Tort")
@@ -452,6 +529,59 @@ class AbcImport(_PG):
         self.assertNotIn(self.non.id, ids)
         self.assertEqual([r["name"] for r in out["kept_moved_in"]], ["Tort"])
         self.assertEqual([n for n, *_ in self._lines(self.Y)], ["Pishiriq", "Non", "Tort", "Eski"])
+
+    def test_import_waits_for_a_follow_then_skips_what_it_moved(self):
+        """The follow holds X's catalog lock while it moves c's «Tort» to Y;
+        X's import of an old sheet queues on that lock and, once the follow
+        commits, reads its record — the moved row is left out, not re-created
+        beside the copy Y now holds."""
+        from app.models import Cell, PPCatalogMove, PPProduct
+        X, Y = self.X, self.Y
+        self._units(X, Y)
+        c = self._cell("0101", X, letter="A")
+        self._cell("0102", X, letter="B")
+        self._line(X, "F002", "Keks", group="B")
+        tort = self._line(X, "F001", "Tort", group="A", sort=1)
+        self._settle()
+        follow = self._other()
+        self.assertTrue(pp_catalog.lock(follow, [X, Y], try_=True))
+        follow.get(PPProduct, tort.id).manager_id = Y
+        follow.get(Cell, c.id).manager_id = Y
+        follow.add(PPCatalogMove(
+            kind="live", state="moved", cell_id=c.id, code=C, from_unit=X, to_unit=Y,
+            home_from=self.HOME, whole_code=False, line_ids=[tort.id],
+            lines=[{"id": tort.id, "qty_key": "F001", "wc": C, "wc_n": C,
+                    "base": _line_base(tort), "group_from": "A", "group_to": "A",
+                    "active_after": True, "joined_into": None, "takes_sap": True}]))
+        follow.flush()
+        out = {}
+
+        def run():
+            s = self.pg.Session()
+            parsed = {"products": [_row("F002", "Keks", C, 10, "B"), _row("F001", "Tort", C, 10, "A")],
+                      "work_centers": [], "sheet": "Sheet1 Test", "has_group_column": True}
+            try:
+                with mock.patch.object(prod, "validate_spreadsheet"), \
+                        mock.patch.object(prod, "parse_catalog_workbook", return_value=parsed):
+                    out["res"] = prod.import_catalog(
+                        file=SimpleNamespace(file=io.BytesIO(b"PK"), filename="abc.xlsx"),
+                        manager_id=X, sheet_name=None, _={}, db=s)
+            except Exception as e:  # noqa: BLE001
+                out["err"] = repr(e)
+            finally:
+                s.close()
+        t = threading.Thread(target=run)
+        t.start()
+        _time.sleep(0.6)
+        self.assertEqual(out, {})                   # waiting on the follow's lock
+        follow.commit()
+        t.join(15)
+        self.assertFalse(t.is_alive())
+        self.assertNotIn("err", out, out.get("err"))
+        self.assertEqual([r["name"] for r in out["res"]["skipped_moved_out"]], ["Tort"])
+        self.db.expire_all()
+        self.assertEqual([n for n, *_ in self._lines(X)], ["Keks"])
+        self.assertEqual(self.db.get(PPProduct, tort.id).manager_id, Y)
 
     def test_no_moves_reads_as_before(self):
         self._units(51)

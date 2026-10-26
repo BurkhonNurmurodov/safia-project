@@ -2824,7 +2824,12 @@ def upload_phase(
     taken_in = max(0, len(faza_own) - len(_kept_here))
     # A target whose catalog that day holds no line is handed nothing
     # (`_scoped_faza`) — named, so a unit that lost its last position with a cell
-    # reads as «nothing to fill» rather than as a quiet success of 0 rows.
+    # reads as «nothing to fill» rather than as a quiet success of 0 rows. Every
+    # target's quantities are held (shared, `_ingest_for_manager`'s own lock)
+    # BEFORE the catalogs are read, so a cell's move landing now is either
+    # wholly in what this names and writes, or wholly after it — never a unit
+    # listed as filled whose last line left while it waited for the lock.
+    pp_catalog.lock(db, targets, ns=pp_catalog.NS_QTY, shared=True)
     day_cats = pp_catalog.at_many(db, targets, day)
     empty_targets = [m for m in targets if not day_cats[m].lines]
     written: dict[int, int] = {}
