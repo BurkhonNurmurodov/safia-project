@@ -250,7 +250,15 @@ def _position(e: dict) -> str:
 
 
 def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) -> dict | None:
-    """The timing of a #9 objection, or None when it argues with anything else."""
+    """The timing of a #9 objection, or None when it argues with anything else.
+
+    The pages are the check's own, read in the unit the leader's cells stood in
+    ON the checklist day (`_Ctx.unit_id`, 2026-10-26: a cell's positions follow
+    it from its move day). None, too, while a move of one of those cells has
+    landed and its positions have not followed it yet
+    (`_Ctx.require_settled`, ≤ a minute): the pages would read the cell in its
+    new unit with its lines still in the old one, and an empty page here would
+    read as «never entered»."""
     e = leader_dispute.auto_entry(db, d)
     if e is None:
         return None
@@ -271,6 +279,11 @@ def for_dispute(db: Session, d: LeaderAiDispute, now: datetime | None = None) ->
     now = now or datetime.now(timezone.utc)
     cell = db.query(Cell).filter_by(id=row.cell_id).first() if row.cell_id else None
     ctx = leader_auto._Ctx(db, prof, m, m.shift, row.date, cell, due, now)
+    from app.services import catalog_follow
+    try:
+        ctx.require_settled()
+    except catalog_follow.CatalogUnsettled:
+        return None
     mid = ctx.unit_id
     out = {"target": target, "due": _iso(due), "date": row.date}
     pages = {}
@@ -325,7 +338,10 @@ def _concerns(db: Session, row: LeaderAutoCheck) -> dict | None:
     against one of their cells) — from 00:00 of the checklist day to a day after
     the hour, each with WHEN it was created. `created_at` cannot move, so an
     «on time» here is exact, not a floor. The day before is asked too, for the
-    concern written on the wrong day."""
+    concern written on the wrong day.
+
+    The leader's cells are the ones the check read: those they ran on the
+    checklist day that existed on it (`leader_auto.cells_run_on`)."""
     from sqlalchemy import and_, or_
     due = _aware(row.due_at) or _aware(row.checked_at)
     if due is None:
@@ -335,8 +351,8 @@ def _concerns(db: Session, row: LeaderAutoCheck) -> dict | None:
         c = db.query(Cell).filter_by(id=row.cell_id).first()
         codes = [c.verifix_code] if c is not None and c.verifix_code else []
     else:
-        codes = [x for (x,) in db.query(Cell.verifix_code).filter(
-            Cell.leader_id == row.leader_id, Cell.verifix_code.isnot(None)).all()]
+        codes = [c.verifix_code for c in leader_auto.cells_run_on(db, row.leader_id, row.date)
+                 if c.verifix_code]
     mine = and_(LeaderConcern.worker_name.is_(None),
                 LeaderConcern.owner_role == "leader",
                 LeaderConcern.owner_profile_id == row.leader_id)

@@ -274,7 +274,8 @@ class _Ctx:
     """Everything one verdict is taken from, resolved once per leader-day."""
 
     __slots__ = ("db", "prof", "manager", "shift", "date", "cell", "due",
-                 "now", "_dash", "_pins", "_pairs", "_cells", "_by_code", "_unit")
+                 "now", "_dash", "_pins", "_pairs", "_cells", "_by_code", "_unit",
+                 "_settled")
 
     def __init__(self, db, prof, manager, shift, date, cell, due, now):
         self.db, self.prof, self.manager = db, prof, manager
@@ -282,6 +283,7 @@ class _Ctx:
         self.due, self.now = due, now
         self._dash = self._pins = self._pairs = self._cells = self._unit = None
         self._by_code = {}
+        self._settled = False
 
     @property
     def unit_id(self) -> int:
@@ -322,6 +324,27 @@ class _Ctx:
                 self._pairs = {(code, grp)} if code else set()
         return self._pairs
 
+    def require_settled(self) -> None:
+        """Raise `catalog_follow.CatalogUnsettled` while one of the leader's
+        cells has changed brigadir and its positions have not followed it yet
+        (`catalog_follow.unsettled`, ≤ a minute after the move lands): the cell
+        then reads in its new unit with its lines still in the old one, an empty
+        page that is nobody's failure. Asked before EVERY production page a
+        check — or anything replaying one (`auto_check_timing`,
+        `auto_check_restore`) — builds for this day; answered once per context.
+        A day before `catalog_follow.FOLLOW_FROM` is never unsettled."""
+        if self._settled:
+            return
+        from app.services import catalog_follow
+        d = _as_date(self.date)
+        ids = ([self.cell.id] if self.cell is not None
+               else [c.id for c in cell_lookup.leader_cells_on(self.db, self.prof.id, d)])
+        waiting = catalog_follow.unsettled(self.db, ids, d) if ids else set()
+        if waiting:
+            raise catalog_follow.CatalogUnsettled(
+                f"cells {sorted(waiting)}: a brigadir move not followed yet on {d}")
+        self._settled = True
+
     @property
     def dashboard(self) -> dict:
         """The leader's own /production page for this day — never a second
@@ -330,25 +353,16 @@ class _Ctx:
         `routers.leaders.WINDOW` the same way. Re-deriving the plan here would
         give the check and the page two answers about one shift.
 
-        Not while one of the leader's cells has changed brigadir and its
-        positions have not followed it yet (`catalog_follow.unsettled`, ≤ a
-        minute after the move lands): the cell then reads in its new unit with
-        its lines still in the old one, an empty page that is nobody's failure.
-        `CatalogUnsettled` makes the check a `no_data` verdict (`evaluate`),
-        retried until `GIVE_UP` like any data error."""
+        Not while a move of one of the leader's cells is not followed yet
+        (`require_settled`): `CatalogUnsettled` makes the check a quiet
+        `no_data` verdict (`evaluate`), retried until `GIVE_UP` like any data
+        error."""
         if self._dash is None:
             from app.routers.production import _build_dashboard
-            from app.services import catalog_follow
-            d = _as_date(self.date)
-            ids = ([self.cell.id] if self.cell is not None
-                   else [c.id for c in cell_lookup.leader_cells_on(self.db, self.prof.id, d)])
-            waiting = catalog_follow.unsettled(self.db, ids, d) if ids else set()
-            if waiting:
-                raise catalog_follow.CatalogUnsettled(
-                    f"cells {sorted(waiting)}: a brigadir move not followed yet on {d}")
+            self.require_settled()
             codes = {c for c, _g in self.pairs}
             self._dash = _build_dashboard(
-                self.db, self.unit_id, d,
+                self.db, self.unit_id, _as_date(self.date),
                 wc_scope=codes, payload=None, group_scope=set(self.pairs))
         return self._dash
 
@@ -366,6 +380,7 @@ class _Ctx:
             return self.dashboard.get("totals") or {}
         if code not in self._by_code:
             from app.routers.production import _build_dashboard
+            self.require_settled()
             self._by_code[code] = _build_dashboard(
                 self.db, self.unit_id, _as_date(self.date),
                 wc_scope={code}, payload=None).get("totals") or {}
@@ -373,17 +388,15 @@ class _Ctx:
 
     @property
     def cells(self) -> list:
-        """The leader's own cells — or the ONE cell a per-cell checklist is
-        about."""
+        """The leader's own cells ON the checklist day (`cells_run_on`) — or
+        the ONE cell a per-cell checklist is about — each wearing the letter it
+        carried that day, the letter `pairs` and the day's rows are cut by."""
         if self._cells is None:
             if self.cell is not None:
-                self._cells = [self.cell]
+                from app.services import cell_links
+                self._cells = cell_links.with_letters_on([self.cell], _as_date(self.date))
             else:
-                # A cell archived before the day is not checked on it.
-                self._cells = (self.db.query(Cell)
-                               .filter(Cell.leader_id == self.prof.id,
-                                       cell_archive.alive_clause(self.date))
-                               .all())
+                self._cells = cells_run_on(self.db, self.prof.id, self.date)
         return self._cells
 
     @property
@@ -407,14 +420,45 @@ class _Ctx:
         is over the cells passed, so a short list reads every other group's
         people as unclaimed and takes them — the mistake the «Xarajat» entries
         modal made until it was fixed.
+
+        …every cell of the unit ON the checklist day (2026-10-26): a cell that
+        has left the unit since is still split there on the days before its
+        move, one that arrived since is not yet, and each reads the letter it
+        carried that day (`cell_pins` places them by `by_wc_on`). With no cell
+        moved after the day it is the unit's cells by the column, as before.
         """
         if self._pins is None:
+            from app.services import cell_links
             d = _as_date(self.date)
             raw = zagruzka_source.typed_pins(self.db, [self.unit_id], d, d)
-            unit_cells = (self.db.query(Cell)
-                          .filter(Cell.manager_id == self.unit_id).all())
+            unit_cells = cell_links.cells_of_units(self.db, [self.unit_id], since=d)
             self._pins = zagruzka_source.cell_pins(unit_cells, raw)
         return self._pins
+
+
+def cells_run_on(db: Session, leader_id: int, date) -> list:
+    """The cells a leader RAN on `date` («Boshqaruvchi» that day,
+    `cell_lookup.leader_cells_on`) that exist on it, each wearing the
+    work-centre letter it carried that day (`cell_links.with_letters_on`) —
+    THE «leader's cells» of every check (#1, #8, #9, #11) and of the objection
+    timing built on them (`auto_check_timing`).
+
+    Dated (2026-10-26) like the unit and the pairs: a cell handed to another
+    leader since — or moved with its positions to another brigadir, and
+    re-lettered by the move (`catalog_follow`) — is still this leader's, under
+    its old letter, on the days before, so `cell_planned` cuts that day's rows
+    by the group they were planned under. With no link or letter event after
+    `date` it is the query this always was: their cells by the column, a cell
+    archived before the day dropped."""
+    d = _as_date(date)
+    cells = cell_lookup.leader_cells_on(db, leader_id, d)
+    if not cells:
+        return []
+    # A cell archived before the day is not checked on it.
+    alive = {cid for (cid,) in db.query(Cell.id).filter(
+        Cell.id.in_([c.id for c in cells]), cell_archive.alive_clause(date)).all()}
+    from app.services import cell_links
+    return cell_links.with_letters_on([c for c in cells if c.id in alive], d)
 
 
 def _as_date(iso: str) -> _date:
@@ -522,13 +566,9 @@ def _check_concerns(ctx: _Ctx, target: float | None) -> Verdict:
         LeaderConcern.created_at >= _day_start(ctx.date),
         LeaderConcern.created_at < ctx.due,
     )
-    codes = [c for (c,) in ctx.db.query(Cell.verifix_code)
-             .filter(Cell.leader_id == ctx.prof.id,
-                     Cell.verifix_code.isnot(None),
-                     cell_archive.alive_clause(ctx.date)).all()]
-    if ctx.cell is not None:
-        own = getattr(ctx.cell, "verifix_code", None)
-        codes = [own] if own else []
+    # The cells the leader ran that day — or the one a per-cell checklist is
+    # about (`ctx.cells`, the selection every other check reads).
+    codes = [c.verifix_code for c in ctx.cells if c.verifix_code]
 
     from sqlalchemy import and_, or_
     mine = and_(LeaderConcern.worker_name.is_(None),
@@ -1055,7 +1095,13 @@ def evaluate(db: Session, *, prof: RoleProfile, manager: Manager,
              due: datetime, now: datetime) -> Verdict:
     """Run ONE check for one leader-cell-day. Never raises: a data error is a
     verdict (`no_data`) with the exception on the row, because a check that
-    throws leaves the task open forever and the day with it."""
+    throws leaves the task open forever and the day with it.
+
+    A move of one of the leader's cells not followed yet
+    (`catalog_follow.CatalogUnsettled`, `_Ctx.require_settled`) is the same
+    `no_data` — the next pass, a minute later as a rule, reads the page with
+    the positions where they belong — but it is no fault: one log line, no
+    stack trace."""
     runner = _RUNNERS.get(check)
     if runner is None:
         return Verdict(SKIPPED, "unknown_check", {"check": check})
@@ -1063,6 +1109,12 @@ def evaluate(db: Session, *, prof: RoleProfile, manager: Manager,
     try:
         return runner(ctx, target)
     except Exception as exc:                       # noqa: BLE001 - see docstring
+        from app.services import catalog_follow
+        if isinstance(exc, catalog_follow.CatalogUnsettled):
+            logger.info("auto check %s for leader %s on %s waits for the catalog "
+                        "follow: %s", check, getattr(prof, "id", None), date, exc)
+            return Verdict(SKIPPED, "no_data", {"error": str(exc)[:200],
+                                                "unsettled": True})
         logger.exception("auto check %s failed for leader %s on %s",
                          check, getattr(prof, "id", None), date)
         return Verdict(SKIPPED, "no_data", {"error": str(exc)[:200]})
@@ -1984,7 +2036,12 @@ def _from_record(db: Session, *, prof, manager, date: str, check: str,
         if not ctx.pairs:
             return Verdict(FAILED, "no_sap_code", {"cells": 0})
         rows = ctx.dashboard.get("rows") or []
-        u = acr._Unit(db, manager, str(date)[:10])
+        # The record of the unit the page above was read in — the one the
+        # leader's cells stood in that day (`_Ctx.unit_id`), where the saves
+        # being replayed were made.
+        unit = (manager if ctx.unit_id == manager.id
+                else (db.get(Manager, ctx.unit_id) or manager))
+        u = acr._Unit(db, unit, str(date)[:10])
         # A replay that does not end on the pins stored now missed a write, and
         # then nothing it says about the people at the hour can be trusted.
         pins = u.pins_at(due) if u.replay_ok() else None

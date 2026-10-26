@@ -963,6 +963,22 @@ ojidaniya weight, their ojidaniya COST and their per-cell загрузка were 
   `startup.migrate_cell_supervisor_column` now drops the letter of every
   unit-less cell it re-attaches, or one leftover letter would roll that whole
   backfill back on every boot.
+- **A brigadir move letters cells too, from its move day** (2026-10-26 —
+  `catalog_follow`, see «A cell's positions FOLLOW the cell»). `apply_due`
+  still settles a moved cell's letter with `settle_moved` the moment the move
+  lands; the follow then gives the arrival a FREE letter in its new unit — its
+  old one when nothing of that unit at the code carries it (a cell row,
+  archived ones included; a line in any version; a pin on any date), else the
+  first free one of `LETTERS` — and letters a LONE UNLETTERED cell staying
+  there, its unclaimed lines and its whole-centre pin with it (the sibling
+  rule), or `share` would hand half of that cell's minutes and people to the
+  arrival. The positions that moved take their owner's new letter; a line of
+  the new unit an arrival JOINS loses its letter (ruling 5). Every such letter
+  counts from the move day (`cell_links.letter_on`) and no row dated before it
+  carries it, so no past day re-splits. Letters are therefore set by a person
+  (the /cells form, the catalog) AND by a move; the register rule above is
+  unchanged, and a move whose positions could not be handed out by it is
+  refused at the door (`catalog_refusal`, ruling 2).
 - **The catalog rule: a LINE carries its own letter and NOTHING propagates**
   (2026-09-18, the operator's directive — `wc_group.line_groups` is the one
   reader). Two operations of one position may be performed by two cells — the
@@ -7622,7 +7638,10 @@ re-priced the minutes, ЛЮДИ and загрузка of every past day at once �
   catalog from the latest boundary on. A line has no durable identity (an import
   re-creates every row, `pp_calc.line_keys` is content), so «the catalog as it
   stood» is only answerable whole. Versions are never edited: no door reaches a
-  past day.
+  past day — with ONE exception, the cell move (2026-10-26): `catalog_follow`
+  alone rewrites a version, and only to move one cell's entries between two
+  units on days from that cell's move day on, every rewrite audited on the move
+  record (see «A cell's positions FOLLOW the cell»).
 - **Every writer calls `freeze` BEFORE it touches a row.** The session does not
   autoflush, so a row already mutated in memory is copied with its NEW values
   and the past reads the edit after all. A second edit on the same shift-day
@@ -7667,6 +7686,271 @@ re-priced the minutes, ЛЮДИ and загрузка of every past day at once �
   before Save («counts from DD.MM»), and each save's toast names the day. No
   «changed» mark on the table (the operator declined it — the Jurnal records
   who changed what, each save logs `from`).
+
+## A cell's positions FOLLOW the cell (`catalog_follow`, 2026-10-26)
+
+The operator's rulings (asked one by one, 2026-10-26): **cells own the
+catalog.** When a cell changes brigadir its «Zagruzka fayli» positions go with
+it, and a brigadir's catalog on a day is worked out from the cells standing in
+the unit that day. Until then a moved cell arrived in its new unit with its
+lines left behind: the new unit read the cell's people against no plan, the old
+one went on planning positions nobody there makes, and the old unit's next SAP
+upload filled them. The whole design, every critique and its verdict, is
+`docs/plan-catalog-follows-cells.md`.
+
+- **The five rulings, and the three open questions decided the same day.**
+  (1) Cells own the catalog. (2) While positions several cells of one unit
+  SHARE exist — no letter, or a letter no cell carries, at a work centre other
+  cells of the unit keep — the cell's move is REFUSED on every door, naming
+  what to letter. (3) Cells that already moved follow, each from its OWN move
+  day; nothing before **6 October 2026** changes (`catalog_follow.FOLLOW_FROM`).
+  (4) Both brigadirs' figures are recomputed from each cell's move day, closed
+  days included. (5) A moved position identical to one the new unit already
+  keeps at the same work centre is JOINED — one quantity from the file, split
+  between the cells; the moved copy is archived, never deleted. Q1: a join
+  unletters the new unit's line even where a third cell then shares it
+  (`join_spread`, named). Q2: clearing the brigadir of a cell that owns
+  positions is refused (`positions_need_unit`). Q3: the retroactive one-shot is
+  APPLIED in the first release.
+- **The move is WRITTEN into the catalog, never read differently.** No reader
+  of `pp_catalog` changed — `at`, `at_many`, `spans`, `current` read exactly
+  what they always read. `services/catalog_follow.py` does the attribution
+  ONCE, when the move is followed: it freezes the units of the move at ONE
+  shared day `S` (`pp_catalog.align`: `S` = max(the move day `h`, each unit's
+  `current_from`) — `freeze` clamps a boundary, so two units frozen apart could
+  disagree), rewrites both units' VERSION rows for `[h, S)` when `h < S` (a
+  move followed late, or the retro), and moves the current `pp_products` /
+  `pp_work_centers` rows from `S` on. The draft put an attribution layer inside
+  the readers («an entry counts for its home unit») and every critique found it
+  wrong — letters drifting per day, joins shown wrongly per day, ORM rows
+  written through, a move cache blind to the session, the cost on every read.
+  Written once, «a unit with no move reads what it always read» needs no code
+  at all. Afterwards every catalog id stands in at most ONE unit's catalog on
+  any day, and every day before `h` reads field for field what it read before.
+- **This is the ONE exception to «a version is never edited»**, and only
+  `catalog_follow` may make it: one cell's entries moved between two units, on
+  days on or after that cell's move day (rulings 3 and 4). `pp_catalog.split_at`
+  cuts a version at a day without changing what any day reads, and
+  `rewrite_version` writes a version's content back (new list objects, the
+  dates untouched); every rewrite is listed on the move record — entries removed
+  whole, ids added, fields changed — so it can be undone. The `PPCatalogVersion`
+  docstring says so too.
+- **The move record is `pp_catalog_moves`** (`models.PPCatalogMove`, no
+  foreign keys, created by `create_all`): one row per transfer, unique per
+  landing event, `kind` live · late · retro, `state` moved · nothing · named ·
+  failed · busy · gave_up · dry, the move day (`home_from`) and `S`
+  (`storage_from`), the letters before and after, every line id that changed
+  unit (the union over the window — an import inside it re-creates ids), the
+  lines' snapshot, the work-centre rows moved or dropped, the version audit,
+  the per-day re-key counts, every named condition and the per-unit-day impact.
+  `services/pp_catalog_moves.py` (`moved_out`, `moved_out_codes`,
+  `moved_in_ids`, `moved_out_pairs`) is what the SAP and import guards read.
+  The two unit columns are in the profile re-key lists and the test-unit purge.
+- **WHOSE line is THE rule `catalog_ownership.handed` — `wc_group.share` read
+  line by line**, archived lines included: a line is the cell's own when
+  `share` would hand it wholly to that cell (a letter only it carries among the
+  stayers and the departers, or unclaimed while it is the only one), SHARED
+  when it would go to two or more, else somebody else's. A cell's own lines go
+  with it. Shared lines go only when the code leaves the unit WHOLE — nobody
+  stays and every departer goes to one unit — and then without an owner;
+  otherwise they stay and are named (`shared_left`, `shared_left_split`). The
+  stayers are the cells standing in the unit at the code on `h−1` AND on `h`,
+  alive, not leaving (`catalog_ownership.cells_standing`); a cell ARRIVING into
+  the unit in the same group is not a stayer, which is what makes a swap work.
+  Decided separately for every version span of the window and for the current
+  rows. Codes are compared through `cell_lookup.norm_code`, never
+  `cell_register.norm_code` (the two differ).
+- **Letters in the new unit are FREE and history-neutral** (`build_plan`). A
+  lone arrival at a code nobody else holds there keeps its letter, None
+  included. Otherwise an arrival keeps its old letter if nothing `taken`
+  carries it, else takes the first free one of `wc_group.LETTERS`; `taken` is
+  every cell row of the new unit at the code (archived ones included — the
+  partial index `uq_cells_wc_group` has no archive filter), every letter its
+  lines at the code carry in ANY version or the current rows, every letter its
+  pins at the code carry on ANY date, and the staying cells'. Excluding every
+  historic line and pin letter is what keeps the new letter out of the past: no
+  row dated before `h` carries it, so even a reader that does not date letters
+  reads those days unchanged. No free letter → None, `no_free_letter`.
+  **The sibling rule**: a LONE UNLETTERED staying cell of the new unit gets the
+  next free letter too, its unclaimed lines take it from `h` and its
+  whole-centre people pin becomes its group pin — without it `wc_group.share`
+  hands half of that cell's minutes and people to the arrival. A lone LETTERED
+  stayer keeps its unclaimed lines and pins with no new letter; two or more
+  stayers with one unlettered is a register break (`y_register_break`) and
+  nothing is changed.
+- **Every letter change counts from `h`** (`cell_links.letter_on`): the moved
+  cell's old letter rides its landing event (`vfx.letter_before`, stamped by
+  `apply_due`, and `wc_group_was`), the sibling's rides the group's first event
+  (`vfx.siblings_was`, read by `cell_links._load`). A retro move with no event
+  at `h` writes an inert MARK event (`manager_id`, value = prev,
+  `vfx.catalog_mark`, src «catalog_follow»): it carries the letter history and
+  nothing else — `cell_links` keeps it out of every unit resolution
+  (`_load`, and `_resolve` itself), `changed_since` and the /cells/:id history.
+  A cell whose letter a later move already dated is not re-lettered
+  (`letters_after`).
+- **Duplicates JOIN, line by line** (ruling 5). An active, SAP-filled arrival
+  identical to an active, SAP-filled line of the new unit at the same work
+  centre (`catalog_ownership.join_ident`: daily key, normalised Команда, the
+  line base — name + Трудоемкость), paired by rank, is archived (`archived_by`
+  «Yacheyka ko'chishi», `archived_from` = `S`, sorted last) and the new unit's
+  line becomes the cells' shared one. That line's letter is dropped (Q1). A
+  hand-kept line (`takes_sap` False) is never joined: it moves live as a twin
+  (`manual_twin`) and the new unit's group override is exploded onto its lines.
+  An arrival with no partner moves live (`unpaired_twin`); an archived twin of
+  an arriving line is deleted from the current rows (`archived_twin_dropped`).
+  Arrivals sort after the new unit's own lines, so no `pp_calc.line_keys`
+  suffix of the unit's own positions ever changes.
+- **Work-centre rows move only when the code leaves whole**: dropped where the
+  new unit already keeps a row at the code (`wc_dropped`, with its штатка and
+  capacity on the record), else the old unit's first row moves. Removed, never
+  deactivated: `_scoped_faza` reads inactive rows too, and a deactivated row
+  would keep the code in the old unit's SAP scope.
+- **The per-day rows follow from `h` to the last stored date**, closed days
+  included (ruling 4). `pp_line_daily`: every row of a line whose (unit,
+  quantity key, Команда, line key) changed is moved in two phases — every
+  column carried, an orphan already at a destination dropped (`orphans_dropped`),
+  a value left under a joined copy named (`hidden_typed`). `pp_daily`: copied
+  into the new unit where it has no row or only zeros, the new unit's kept
+  otherwise (`y_snapshot_kept`), group overrides exploded onto the lines;
+  the old unit's row deleted where its catalog keeps no line at the pair.
+  Typed pins (`pp_work_center_daily`): a departer takes its OWN letter's pins
+  and a whole-centre or orphan pin stays with the stayers (`x_whole_pin_kept`
+  — handing the departer a share of a pin that also stays counted those people
+  twice); with nobody staying every pin of the code leaves. Written into the
+  new unit as the cell's group pin (`pin_conflict` keeps one already there,
+  `pin_added_to_whole` adds to a whole-centre one), штатка onto its whole row
+  only when that has none (`shtatka_dropped`). A position moved from a unit
+  kept by hand into one the file fills is re-joined (`_rejoin_lines`,
+  `commit=False`). **Conservation**: Σ `zagruzka_source.wc_labor` over the
+  group's units per day, before against after — a live or late follow reports
+  a gap over 0.01 minute, a strict (retro) one is rolled back (`conservation`).
+- **Ruling 2 is enforced at the ONE writer every door goes through** —
+  `cell_register.set_unit` asks `catalog_refusal.shared_positions` whenever the
+  unit asked for is not the one in force: the /cells form, «Doimiy qilish» on
+  the admin «Davomat» tab, a «Verifix sinxron» tap. A WITHDRAWAL (sending the
+  unit in force) is never refused, and nothing is refused when the move LANDS —
+  lines shared after the request stay put and the follow names them. Judged on
+  the old unit's CURRENT catalog, ACTIVE lines only, the letters as THIS save
+  leaves them (the form now applies the letter BEFORE the brigadir, so a letter
+  typed in the same save counts; changing the code or the letter of a cell
+  whose move is waiting re-judges it). The refusal is a structured 409
+  `{code, message, params}` — never a 500 (`Refused` used to escape two doors):
+  `positions_need_unit` (the brigadir cleared while the cell owns positions),
+  `shared_positions` with `kind` `unlettered_cell` (every staying cell is
+  lettered and this one is not), `shared` (cells stay and lines are shared) or
+  `split` (nobody stays and the team goes to two units). `params` names the
+  code, the first ten lines, the staying cells with their letters and the
+  destinations; `message` is a whole English sentence, which the assistant
+  relays word for word. `utils/cellMoveRefusal.js` (`cellMove.*`) words it on
+  the client — an admin gets a link onto the unit's «Pozitsiyalar», anyone else
+  «buni admin qiladi».
+- **A whole team may leave together.** `move_with` on the /cells PUT (the
+  brigadir field's «Birga ko'chirish (…)»), the batch of a «Doimiy qilish»
+  write, and `choice: "together"` on a Verifix tap (every open
+  `brigadir_differs` item of the same unit, code and destination) pass one
+  `leaving` map: a cell leaving is not staying, so a work centre all of whose
+  cells go to one unit takes its shared lines along; the same team split over
+  two units is `split`, and a cell an already-recorded change takes out on the
+  same landing day counts as leaving — a team moved together and then split by
+  a second save is refused too. The Jurnal names the cells that went along
+  (`move_with`, «Birga ko'chirildi»).
+- **The follow is a SWEEP after the landing, never part of `apply_due`.** The
+  minute job `catalog-follow` (`run_sweep`, and `kick()` straight after a
+  landing in `cell_links.run_apply_due`) follows every applied `manager_id`
+  event from `FOLLOW_FROM` on that has no final record — per cell in event
+  order, a move waiting while an earlier move at the same code into or out of
+  one of its units is not final, grouped by (move day, code) so a swap or a
+  team moving together is ONE transaction. Followed inside `apply_due` a deploy
+  swap's old worker would land events, a failure would roll back and never be
+  retried, the letter would be read from a cache blind to the transaction it
+  sits in, and a swap would be processed half at a time. **It never waits**:
+  `pp_catalog.lock` takes `NS_CAT` per unit (exclusive — `freeze` and every
+  catalog writer, which re-reads its row under it and answers 409
+  `lines_moved` when the row changed unit) and `NS_QTY` per unit (SHARED for
+  the quantity writers — the ПЛАН/ФАКТ override, the wc override, staffing,
+  reconciliation, the SAP ingest, the re-join, the backfill), and the follow
+  only TRIES both: busy → `busy`, retried after 1, 5, 15, 60 and 240 minutes,
+  then `gave_up` and DMed. One pass at a time across both app copies
+  (`SWEEP_LOCK`, a connection of its own). One Jurnal row per pass
+  (`org.catalog_moved`), one admin DM (`routers.boot._recipients`) for what was
+  named, gave up or needs a look (`ATTENTION`). After each commit the kept
+  answers (`kept_answer.forget_all`), the shift report cache and the «Liderlar
+  KPI» plan keep are dropped.
+- **The sweep is OFF until the retro flag reads `done`** (`catalog_follow.enabled`)
+  — following live moves earlier would act on catalogs the retro still has to
+  rewrite — and `unsettled` is off with it.
+- **The SAP file and the ABC import respect a move.** `_scoped_faza` hands a
+  unit with NO catalog line that day nothing (both of its filters used to fall
+  through on an empty set: such a unit got every operation at its work centres,
+  or with none the whole plant file — the state a unit whose cells all left
+  reaches, still «configured» by its old `pp_daily` rows), and leaves out a
+  (SKU, work centre) pair that left with a cell unless the unit's own catalog
+  still carries it (`_moved_out_exclude`); the upload names its `empty_targets`.
+  An import into the OLD unit drops the sheet rows of a position that moved out
+  — a whole code the unit keeps no cell at, then one row per moved line by join
+  identity (and letter) — `skipped_moved_out` / `skipped_wc`; an import into the
+  NEW unit keeps a live arrival its sheet lacks, with its id (`kept_moved_in`).
+  The «Arxiv» card neither counts nor restores a joined twin (`twin_live`,
+  «birlashtirilgan»).
+- **A leader's days are DATED by the cells they ran then.**
+  `cell_lookup.sap_codes_for_leader` / `sap_groups_for_leader` /
+  `cells_unit_for_leader(day=)` share one selection, `leader_cells_on`: the
+  cells whose «Boshqaruvchi» that day was the leader, each in the unit and with
+  the letter it had then (`day=None` is today's path, byte for byte). The
+  /production resolvers take the request's day, so a leader's page for a day
+  before their cell's move reads the OLD unit. The dashboard, `_cell_letters`,
+  `by_sap(day=)` and the staffing proof split a past day by THAT day's letters
+  (a defect that predates this). The leader auto-checks read their checklist
+  day the same way — `_Ctx.unit_id`, `pairs`, `cells` (`leader_auto.cells_run_on`,
+  also what #8 and the objection timing read), `pins` (every cell standing in
+  the unit that day) — and while a move of one of the leader's cells has landed
+  and not been followed `_Ctx.require_settled` raises
+  `catalog_follow.CatalogUnsettled`: a quiet `no_data` (one log line, no stack
+  trace) retried until `GIVE_UP`. `auto_check_timing` then answers nothing for
+  the objection, and `auto_check_restore` reads the pages and saves of the
+  cells' unit of the day.
+- **The retroactive one-shot** — TEMPORARY `services/catalog_follow_retro.py`,
+  `startup.schedule_catalog_follow_retro` (`run` phase; it only schedules
+  `catalog-follow-retro` 180 s on, so the job fires in the copy holding the
+  jobs lock after the old worker has gone) + `_catalog_follow_retro_job`,
+  called from BOTH entrypoints. It follows (`RETRO_APPLY = True`, Q3) every
+  move landed before the release from `FOLLOW_FROM` on: the cells with an
+  applied `manager_id` event, plus the cells whose code another unit still
+  carries orphan lines for. The move day comes from evidence per day — link
+  events (authoritative from 12 Oct), the closed live days' rosters, the
+  attendance majority; a cell standing in its unit since before 6 Oct follows
+  from 6 Oct. Only a SINGLE hop is followed, each cell in its own transaction,
+  `strict`: anything doubtful is named and nothing written — `chain`,
+  `from_unknown`, `day_unknown`, `letter_ambiguous`, `shared_lines`,
+  `y_has_lines`, `window_cells_moved`, `letters_after`, `archived`, `no_code`,
+  `conservation`, and `volume` (over 40 cells or 5,000 per-day rows nothing is
+  applied at all). Every considered event gets a final record, so a second run
+  is a no-op by the records, not the flag. Flag
+  `catalog_follow_retro_2026_10_26_v1` (`dry:<n>` / `done:<moved>/<named>`),
+  record `catalog_follow_retro_2026_10_26`, a DM to `UNPRICED_DM_CHAT` behind
+  `catalog_follow_retro_2026_10_26_v1_dm_<mode>` with a workbook («Ko'chirildi»,
+  «Qoldirildi», «Dalil», «Ta'sir»). **Delete the module, its startup pair and
+  both calls once the flag reads `done` and the DM has landed — and NEVER the
+  flag row**: `catalog_follow.enabled` reads it, and the sweep stops without it.
+- **Consequences to know** (all deliberate; the release notes):
+  1. Past загрузка, Plan bajarish and shift-report figures change from each
+     moved cell's move day, closed days included (ruling 4) — nothing is
+     stored, so every reader re-reads the moved catalog at once.
+  2. The old unit's past /production group display changes for cells that lost
+     a letter in a move since 12 Oct (dated letters fix an older defect).
+  3. Units with no catalog line no longer receive the plant file.
+  4. Leaders' past /production days read the unit their cell stood in then.
+  5. A cell move over shared positions is refused until they are lettered.
+  Also: between a landing and its follow (≤ a minute; minutes while a long SAP
+  upload holds `NS_QTY`) the figures show the cell in its new unit with its
+  lines in the old one — `unsettled` keeps the auto-checks from judging that
+  gap. Cells moved before 12 Oct have no link history: their catalog follows
+  from `h`, but per-cell figures before `h` still show them in the new unit,
+  and the retro DM names them. A new unit's own SAP snapshot kept over the old
+  one's (`y_snapshot_kept`) can shift its minutes after a live move — reported,
+  never blocked. Two auto-fill switches that differ are reported
+  (`autofill_differs`), never switched: that switch is a person's. Multi-hop
+  and round-trip histories are named, not followed.
 
 ## A catalog line can be ARCHIVED and brought back (2026-10-24)
 
