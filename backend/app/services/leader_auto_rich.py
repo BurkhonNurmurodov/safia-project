@@ -583,7 +583,9 @@ def snapshot(db: Session, prof: RoleProfile, manager: Manager, check: str,
         v = runner(ctx, target)
         out["facts"], out["code"] = dict(v.facts or {}), v.code
         if check == "plan_pct" and ctx.pairs:
-            rows = ctx.dashboard.get("rows") or []
+            # Every unit the leader's cells stand in (`_Ctx.by_unit` — the very
+            # context when there is one), as the check itself reads them.
+            rows = [r for sub in ctx.by_unit() for r in (sub.dashboard.get("rows") or [])]
             planned = [r for r in rows if float(r.get("plan_qty") or 0) > 0]
             out["positions"] = len(planned)
             out["no_fact"] = sum(1 for r in planned

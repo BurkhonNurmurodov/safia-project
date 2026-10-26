@@ -253,7 +253,28 @@ def leader_cells_on(db: Session, leader_id: int | None, day) -> list:
     return cells
 
 
-def sap_codes_for_leader(db: Session, leader_id: int, day=None) -> set[str]:
+def leader_cells_in(db: Session, leader_id: int | None, unit: int, day=None) -> list:
+    """The cells this leader runs that stand in `unit` — ON `day` when one is
+    given (:func:`leader_cells_on`, each in the unit it stood in that day,
+    `cell_links`), else by the current columns. The selection a leader's scope
+    is cut to when their cells stand in more than one unit
+    (:func:`cells_units_for_leader`, 2026-10-26): their page and their checks
+    read ONE unit at a time, and in that unit only the cells standing there are
+    theirs to read."""
+    if not leader_id or unit is None:
+        return []
+    unit = int(unit)
+    if day is not None:
+        from app.services import cell_links
+        cells = leader_cells_on(db, leader_id, day)
+        on = cell_links.map_on(cells, "manager_id", day)
+        return [c for c in cells if on.get(c.id) is not None and int(on[c.id]) == unit]
+    return (db.query(Cell).filter(Cell.leader_id == leader_id, Cell.manager_id == unit)
+            .order_by(Cell.verifix_code, Cell.id).all())
+
+
+def sap_codes_for_leader(db: Session, leader_id: int, day=None,
+                         unit: int | None = None) -> set[str]:
     """Normalised SAP work-center codes of every cell this leader owns.
 
     THE scope of a leader: they own cells, not a unit, so any page that shows a
@@ -264,7 +285,14 @@ def sap_codes_for_leader(db: Session, leader_id: int, day=None) -> set[str]:
     `day` reads the cells the leader ran ON that day (:func:`leader_cells_on`,
     2026-10-26), so a past day of their /production page is scoped to what was
     theirs then. Omitted, the current column — as before.
+
+    `unit` cuts the set to the cells standing in that unit (that day, or now —
+    :func:`leader_cells_in`): a leader whose cells stand in two units reads
+    each unit's page with that unit's cells only. Omitted, every cell — as
+    before.
     """
+    if unit is not None:
+        return {n for c in leader_cells_in(db, leader_id, unit, day) if (n := _norm(c.sap_code))}
     if day is not None:
         return {n for c in leader_cells_on(db, leader_id, day) if (n := _norm(c.sap_code))}
     rows = (
@@ -275,8 +303,8 @@ def sap_codes_for_leader(db: Session, leader_id: int, day=None) -> set[str]:
     return {n for (code,) in rows if (n := _norm(code))}
 
 
-def sap_groups_for_leader(db: Session, leader_id: int,
-                          day=None) -> set[tuple[str, str | None]]:
+def sap_groups_for_leader(db: Session, leader_id: int, day=None,
+                          unit: int | None = None) -> set[tuple[str, str | None]]:
     """{(normalised SAP code, group|None)} of every cell this leader owns — the
     group-aware twin of :func:`sap_codes_for_leader`, read through
     `wc_group.in_scope`. A cell with no letter answers (code, None), which
@@ -285,7 +313,15 @@ def sap_groups_for_leader(db: Session, leader_id: int,
     `day` takes the cells the leader ran that day and each one's letter ON that
     day (`cell_links.letter_on`): a move that re-lettered a cell — or gave its
     lone sibling a letter — counts from the move, so a day before it is still
-    the old group's."""
+    the old group's. `unit` cuts to the cells standing in that unit, as
+    :func:`sap_codes_for_leader` does."""
+    if unit is not None:
+        cells = leader_cells_in(db, leader_id, unit, day)
+        if day is None:
+            return {(n, c.wc_group or None) for c in cells if (n := _norm(c.sap_code))}
+        from app.services import cell_links
+        return {(n, cell_links.letter_on(c, day) or None)
+                for c in cells if (n := _norm(c.sap_code))}
     if day is not None:
         from app.services import cell_links
         return {(n, cell_links.letter_on(c, day) or None)
@@ -317,19 +353,45 @@ def cells_unit_for_leader(db: Session, leader_id: int | None, day=None) -> int |
     in the unit it stood in then (`cell_links`). A cell moved to another
     brigadir since takes its positions with it from its move day
     (`catalog_follow`), so a day before the move is still read in the OLD unit —
-    where that day's catalog and plan still carry the cell's lines."""
+    where that day's catalog and plan still carry the cell's lines.
+
+    A leader whose cells stand in SEVERAL units is answered by
+    :func:`cells_units_for_leader`; this one still says None for them."""
+    units = cells_units_for_leader(db, leader_id, day)
+    return units[0] if len(units) == 1 else None
+
+
+def cells_units_for_leader(db: Session, leader_id: int | None, day=None) -> list[int]:
+    """EVERY unit a leader's cells stand in — ON `day` when one is given (the
+    cells they ran then, :func:`leader_cells_on`, each in the unit it stood in
+    then), else by the current columns — the unit holding most of their cells
+    first, ties by unit id. Empty for a leader with no cell in any unit.
+
+    Why a list (2026-10-26): a cell's positions follow it to its new brigadir
+    (`catalog_follow`), so a leader whose cells went two ways — one moved, one
+    stayed — has a catalog in BOTH units from the move day. Read in either one
+    alone they lose the other cell's plan, and read in their own profile unit
+    (what :func:`cells_unit_for_leader`'s None sent them to) the moved cell's
+    plan is nowhere. Their /production page opens on the first of these units
+    and switches between them (`routers.production._resolve_manager_id`); the
+    automatic checks #1, #9 and #11 read every one of them
+    (`leader_auto._Ctx.by_unit`). With one unit this is
+    ``[cells_unit_for_leader(...)]``, by construction."""
     if not leader_id:
-        return None
+        return []
+    from collections import Counter
     if day is not None:
         from app.services import cell_links
         cells = leader_cells_on(db, leader_id, day)
         on = cell_links.map_on(cells, "manager_id", day)
-        units = {int(u) for c in cells if (u := on.get(c.id)) is not None}
-        return units.pop() if len(units) == 1 else None
-    units = {m for (m,) in db.query(Cell.manager_id)
-             .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None))
-             .distinct().all()}
-    return units.pop() if len(units) == 1 else None
+        counts = Counter(int(u) for c in cells if (u := on.get(c.id)) is not None)
+    else:
+        from sqlalchemy import func
+        counts = Counter({int(m): int(n) for (m, n) in
+                          db.query(Cell.manager_id, func.count(Cell.id))
+                          .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None))
+                          .group_by(Cell.manager_id).all()})
+    return [u for u, _n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def resolve_verifix(table: dict[str, dict], code) -> dict | None:

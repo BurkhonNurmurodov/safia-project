@@ -1483,7 +1483,16 @@ export default function Production() {
       setSelManager(managers[0].manager_id);
   }, [mgrOpts, managers, canPickManager]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const managerParam = canPickManager && selManager != null ? { manager_id: selManager } : {};
+  // A LEADER whose cells stand in two or more units on the day (one cell moved
+  // to another brigadir and took its positions, the other stayed) reads ONE of
+  // them at a time: the server opens the unit holding most of their cells and
+  // offers the rest as `leader_units`; a pick here is sent as manager_id, and
+  // the server ignores one that is not among that day's units. In memory only —
+  // the server's default is the right one to come back to.
+  const [leaderUnit, setLeaderUnit] = useState(null);
+  const managerParam = canPickManager
+    ? (selManager != null ? { manager_id: selManager } : {})
+    : (leaderUnit != null ? { manager_id: leaderUnit } : {});
   // A picker role hasn't resolved a unit yet (list still loading) → hold the
   // manager-scoped queries so they don't 400 on the missing id.
   const managerReady = !canPickManager || selManager != null;
@@ -2734,7 +2743,33 @@ export default function Production() {
       : null;
   const selManagerName = managers.find((m) => m.manager_id === selManager)?.name || "";
 
-  const pageSections = !canPickManager ? [] : [
+  // The leader's own unit switch (`leader_units`, two or more units that day) —
+  // a scope control like the brigadir picker, so a FilterPanel section, pinned
+  // to the bar: it is the one thing that steers a leader's page.
+  const leaderUnits = !canPickManager ? (data?.leader_units ?? []) : [];
+  const leaderUnitName = leaderUnits.find((u) => u.id === data?.manager_id)?.name || "";
+  const leaderSections = leaderUnits.length > 1 ? [{
+    key: "unit", icon: Users, label: t("production.leaderUnit"),
+    // Always on: the page reads exactly one of the units, and the chip names it.
+    active: true,
+    pinned: true,
+    display: shortName(leaderUnitName),
+    render: ({ close } = {}) => (
+      <PickFilter
+        close={close}
+        note={t("production.leaderUnitNote").replace("{n}", String(leaderUnits.length))}
+        opts={leaderUnits.map((u) => ({
+          value: u.id,
+          label: [shortName(u.name), (u.cells || []).join(", ")].filter(Boolean).join(" · "),
+          title: tl(u.name),
+        }))}
+        value={data?.manager_id}
+        onChange={(v) => setLeaderUnit(v)}
+      />
+    ),
+  }] : [];
+
+  const pageSections = !canPickManager ? leaderSections : [
     ...(factorySection ? [factorySection] : []),
     {
       key: "shift", icon: Layers, label: t("filter.shift"),
