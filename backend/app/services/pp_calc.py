@@ -587,6 +587,7 @@ def compute_dashboard(
     people_typed_only: bool = False,
     wc_cells: Optional[dict[str, list]] = None,
     group_overrides: Optional[dict[tuple[str, str], dict]] = None,
+    norm_wc=None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
@@ -600,6 +601,14 @@ def compute_dashboard(
                  line with no entry here reads exactly what it read before this
                  existed. Each product dict carries its own `line_key`
                  (see line_keys).
+    norm_wc:     a callable putting a work-centre code into the platform's
+                 matching normal form (`cell_lookup.norm_code`: whitespace
+                 stripped, upper-cased). Read ONLY when deciding which work
+                 centres have a plan today — see `people_locked` below — so the
+                 page's lock and `zagruzka_source.planned_wcs`, which normalises
+                 the same way, can never disagree about one work centre over a
+                 spelling. Omitted ⇒ codes are compared stripped, which is what
+                 this engine did before the lock existed.
     work_centers:[{code, shtatka, sort_order}, ...]
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
@@ -778,6 +787,29 @@ def compute_dashboard(
     total_plan_labor = sum(r["total_labor"] or 0.0 for r in rows)
     total_actual_labor = sum(r["actual_labor"] or 0.0 for r in rows)
 
+    # --- which work centres have a PLAN today ------------------------------
+    # THE «a work centre with a plan» test (2026-10-26, the operator: «make it
+    # only possible to write Odam soni on the cells with plans» and «ignore the
+    # Odam soni where they're written on the cells without plan»). It is
+    # `q_by_wc`'s own membership — that dict accumulates `if total_labor:`, so a
+    # code is in it exactly while the day's catalog and quantities give it
+    # nonzero PLAN MINUTES — read through `norm_wc` so the comparison is the one
+    # `zagruzka_source.planned_wcs` makes on the загрузка side. Two spellings of
+    # «has a plan» is how this page and the загрузка came to divide one unit-day
+    # by two different headcounts in the first place.
+    _nz = norm_wc or (lambda c: str(c or "").strip())
+    planned_norm = {_nz(c) for c, v in q_by_wc.items() if v and v > 0}
+    # **A unit-day with NO planned work centre at all locks NOTHING**, and that
+    # escape is load-bearing twice over. A brigadir must never be shut out of
+    # typing their own day because the SAP file carrying it has not been
+    # uploaded yet — the plan usually lands a day or more ahead (`_SLICE_FWD`),
+    # but «usually» is not a rule somebody can work a shift against. And the
+    # same pins are the ojidaniya weight (`zagruzka_source.cell_people`), so
+    # dropping every one of them on a planless day would silently read that
+    # unit's whole waiting as 0 minutes. Nothing is lost by keeping them: a day
+    # with no plan minutes has no загрузка either way (`no_labor`).
+    day_has_plan = bool(planned_norm)
+
     # --- per work center: people (N) + load (Загруженность) ----------------
     # Include every configured work center, plus any that appear in products
     # but lack config (so nothing silently disappears).
@@ -797,6 +829,43 @@ def compute_dashboard(
         if code and code not in wc_meta:
             wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
             wc_codes.append(code)
+    # …and every work centre carrying a TYPED «Bugungi fakt» headcount, plan or
+    # no plan (2026-10-26, the operator: «show it on the page, so it can be
+    # deleted»). A code reaches the panel above from the register or from the
+    # day's quantities, and the quantities admit one only `if total_labor:` —
+    # so a headcount typed on a work centre with NO plan minutes that day was
+    # drawn NOWHERE, while `zagruzka_source.typed_pins` went on counting it:
+    # the загрузка divided by a number the page that collects it could not
+    # show, and nobody could see the mistake, let alone correct it. Measured
+    # over eight weeks: three unit-days, the worst Niyozov Izzatilla's 24.10 —
+    # page 45 against загрузка 66, the whole gap one 21 typed on B2743 (a work
+    # centre with no plan that Saturday) beside an identical 21 on B2942.
+    # The predicate is `typed_pins`' own (`people IS NOT NULL`, read through
+    # `_opt_int` so a blank is not a pin), which is what keeps the page's ΣN and
+    # `unit_people` ONE number instead of two. Such a row prints its people
+    # against 0 minutes at 0% load — the truth, and the thing a brigadir needs
+    # to see; штатка-only rows are deliberately NOT admitted, since nothing
+    # counts them and they would be a row saying nothing.
+    typed_codes: list[str] = []
+    for tcode, tov in (wc_overrides or {}).items():
+        if tcode and _opt_int((tov or {}).get("people")) is not None:
+            typed_codes.append(tcode)
+    for (tcode, _tletter), tgv in (group_overrides or {}).items():
+        if tcode and _opt_int((tgv or {}).get("people")) is not None:
+            typed_codes.append(tcode)
+    # `pin_only` is published per row, because a row that reached the panel this
+    # way is the one thing a reader cannot work out for themselves: the
+    # «Bugungi fakt» table carries no minutes column, so «B2743 · 21 · —» looks
+    # exactly like a work centre that is part of the day. The SERVER knows why
+    # the row is there and says so; the page must never guess it from
+    # `total_labor == 0`, which an ordinary registered centre with nothing
+    # planned today also reads.
+    pin_only: set[str] = set()
+    for code in typed_codes:
+        if code not in wc_meta:
+            wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
+            wc_codes.append(code)
+            pin_only.add(code)
 
     ov_all = wc_overrides or {}
     cells_all = wc_cells or {}
@@ -818,6 +887,14 @@ def compute_dashboard(
         meta = wc_meta[code]
         ov = ov_all.get(code) or {}
         q = q_by_wc.get(code, 0.0)
+        # No plan today ⇒ this work centre takes NO headcount: a pin stored on it
+        # answers nowhere (`people` None, no load, absent from ΣN) and is
+        # published as `people_ignored` instead, so the number a brigadir typed
+        # by mistake is still READABLE on the page that collects it and can be
+        # cleared. Both halves of the rule are one test: what the page refuses
+        # to count here, `zagruzka_source.typed_pins` refuses to count too, and
+        # `routers/production` refuses to let anybody type.
+        people_locked = day_has_plan and _nz(code) not in planned_norm
         # Штатка: configured W unless the day carries a manual pin.
         shtatka_cfg = meta["shtatka"]
         shtatka_ov = _opt_int(ov.get("shtatka"))
@@ -835,13 +912,28 @@ def compute_dashboard(
         # wearing the actuals column. See the parameter's docstring.
         people_calc = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
         people_ov = _opt_int(ov.get("people"))
+        # Set aside BEFORE anything reads it, so every figure below — N, the
+        # load, each group's share, ΣN, the lines' ЛЮДИ — resolves exactly as it
+        # does for a work centre nobody typed. One assignment, no second rule.
+        people_ignored = people_ov if people_locked else None
+        if people_locked:
+            people_ov = None
         people = people_ov if (people_typed_only or people_ov is not None) else people_calc
         people_overridden = people_ov is not None
 
         cell_groups = list(cells_all.get(code) or [])
         cell_letters = {g for g in cell_groups if g}
         typed_groups = typed_by_wc.get(code, {})
-        letters = sorted(cell_letters | line_letters.get(code, set()) | set(typed_groups))
+        # …and the same for the GROUP pins of a locked centre. Their letters
+        # stay in `letters`, so a row that exists only because somebody typed a
+        # group pin on a planless work centre is still drawn and still shows
+        # what is stored — otherwise the one thing the reader has to act on
+        # would be the one thing the page hides.
+        groups_ignored = dict(typed_groups) if people_locked else {}
+        if people_locked:
+            typed_groups = {}
+        letters = sorted(cell_letters | line_letters.get(code, set())
+                         | set(typed_groups) | set(groups_ignored))
         # Once the brigadir types the people per GROUP, those pins ARE the work
         # centre's headcount — the pin rule of `wc_group.share`, folded up the
         # way `zagruzka_source.fold_pins` folds it, so ΣN here and the fleet
@@ -920,6 +1012,9 @@ def compute_dashboard(
                     # group publishes the share it reads (people_overridden False).
                     "people": pin_g if pin_g is not None else counted,
                     "people_overridden": pin_g is not None,
+                    # the group pin a planless work centre still holds and
+                    # nothing counts (see `people_locked` on the centre)
+                    "people_ignored": groups_ignored.get(g),
                     "people_calc": calc_g,
                     # the headcount this group's load and its lines' ЛЮДИ divide by
                     # — differs from `people` only where an orphan pin is shared in
@@ -956,6 +1051,19 @@ def compute_dashboard(
             # how many registry cells of this unit stand at the code, and the
             # per-group rows ([] for a work centre nobody lettered)
             "cells_n": len(cell_groups),
+            # True ⇒ this work centre is on the panel ONLY because somebody
+            # typed a headcount on it: no active register row and no plan
+            # minutes today. Kept on the payload for a tab still open on an
+            # older bundle; the current page marks the row off `people_locked`,
+            # which is the fact that decides what happens to the number.
+            "pin_only": code in pin_only,
+            # True ⇒ no plan minutes here today (and the day HAS a plan
+            # elsewhere), so no headcount may be typed and none is counted.
+            "people_locked": people_locked,
+            # the whole-centre pin such a work centre still holds, as stored —
+            # published precisely so it can be read and cleared. None on every
+            # other row, and never counted anywhere.
+            "people_ignored": people_ignored,
             "groups": groups,
         })
     wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
@@ -980,8 +1088,14 @@ def compute_dashboard(
     # None, so every reader prints «—» rather than a 0 that looks like an idle
     # unit. Off the typed-only rule nothing is ever None, so both figures are
     # byte-identical to what they always were.
-    answered = [w["people"] for w in wc_panel if w["people"] is not None]
-    untyped = len(wc_panel) - len(answered)
+    # A LOCKED work centre is out of both counts: «nobody typed it» and
+    # «nobody may type it» are different facts, and counting the second as the
+    # first left «N of M typed» promising rows no box exists for. `day_has_plan`
+    # guarantees at least one unlocked row whenever anything is locked, so this
+    # can never empty the list.
+    countable = [w for w in wc_panel if not w["people_locked"]]
+    answered = [w["people"] for w in countable if w["people"] is not None]
+    untyped = len(countable) - len(answered)
     total_people = sum(answered) if (answered or not untyped) else None
     completion = (total_actual_labor / total_plan_labor) if total_plan_labor > 0 else 0.0
     if total_people is None:

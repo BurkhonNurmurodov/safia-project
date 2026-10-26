@@ -51,6 +51,8 @@ const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
 const Workers = lazyWithReload(() => import("./pages/Workers"));
 const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Ontime = lazyWithReload(() => import("./pages/Ontime"));
+// «Hisobotlar» — the platform's period report (Laboratory, admin-only).
+const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
 const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
@@ -112,6 +114,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
+  reports: Reports,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
@@ -544,6 +547,9 @@ function AppWithLang() {
             <Route path="/workers" element={<AuthGate><RequirePage page="workers"><Workers /></RequirePage></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
+            {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
+                until the operator opens it on the Access tab. */}
+            <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />

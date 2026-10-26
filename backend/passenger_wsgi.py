@@ -123,6 +123,7 @@ try:
         report_brigadir_change_state,
         report_verifix_roles,
         schedule_catalog_follow_retro,
+        report_pin_mismatch,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -554,6 +555,9 @@ try:
     # ⚠ TEMPORARY report (2026-10-25) — shift-managers, brigadirs and leaders
     # from Verifix, DMed once. Remove once it has been sent.
     report_verifix_roles()
+    # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
+    # DMed once. Remove once it has been sent.
+    report_pin_mismatch()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()
@@ -755,6 +759,11 @@ try:
     # «O'z vaqtida yetkazish»: the on-time sheet read (mirrors main.py).
     from app.services.ontime_sync import register_jobs as register_ontime_jobs
     register_ontime_jobs()
+    # The report door: the expiry sweep and the reader role (mirrors main.py).
+    from app.services.ops_door import register_jobs as register_ops_door_jobs
+    from app.services.ops_door import ensure_reader_role
+    register_ops_door_jobs()
+    ensure_reader_role()
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs

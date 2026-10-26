@@ -186,6 +186,29 @@ const isGrouped = (w) => Array.isArray(w?.groups) && w.groups.length > 0;
 // letters stay on screen as display-only badges. This decides every INPUT shape
 // and every typed/complete rule; `isGrouped` is left deciding only the display.
 const typesPerGroup = (w) => isGrouped(w) && w.groups.some((g) => !g.orphan);
+
+// A work centre the day plans NOTHING at (2026-10-26, the operator: «make it
+// only possible to write Odam soni on the cells with plans» / «ignore the Odam
+// soni where they're written on the cells without plan»). The backend decides
+// it — `people_locked`, pp_calc's `day_has_plan` ∩ `q_by_wc` — and the page
+// never re-derives it from `total_labor == 0`: a day whose plan has not landed
+// at all locks nothing, so «no minutes on this row» and «no headcount may be
+// typed here» are two different facts.
+const isLocked = (w) => w?.people_locked === true;
+// The pin such a row still HOLDS, as stored. pp_calc publishes `people` and
+// `people_overridden` as the uncounted row this now is and hands the number
+// over as `people_ignored` instead — so it stays readable on the page that
+// collects it, and clearable.
+const lockedPin = (w) => (w?.people_ignored ?? null);
+const lockedGroupPin = (g) => (g?.people_ignored ?? null);
+// What a centre's / a group's pin IS, locked or not — the value a body re-sends
+// and an undo restores. Locked rows must go back untouched: the backend accepts
+// an unchanged value and a clear on them and refuses a new or changed one
+// (`_refuse_unplanned_pin`), so a Save about another work centre can never
+// delete a stray and the row's own ✕ stays the one thing that does.
+const storedPin = (w) => (isLocked(w) ? lockedPin(w) : (w?.people_overridden ? w.people : null));
+const storedGroupPin = (w, g) => (isLocked(w) ? lockedGroupPin(g)
+  : (g?.people_overridden ? g.people : null));
 // Is a work centre's «Кол-во» a FACT for the whole centre, off the SAVED pins?
 // Not typed per group (`typesPerGroup`): its pin — pp_calc raises the flag for a
 // stored orphan pin as well, since that pin answers for the centre. Typed per
@@ -770,6 +793,25 @@ function centreStaffRows(w, people, shtatka) {
   return [{ work_center: w.work_center, people, shtatka }];
 }
 
+// The rows a LOCKED centre contributes — its pins exactly as they stand, so an
+// ordinary Save re-sends them and only a ✕ turns one into null. A centre holding
+// GROUP pins sends the grouped shape (the backend answers at one level: a listed
+// group is authoritative and the whole-centre pin is cleared), which is why the
+// two are never mixed; one holding only a whole-centre pin sends that.
+function lockedStaffRows(w, shtatka, people, groupPeople) {
+  if (groupPeople.length) {
+    return [
+      { work_center: w.work_center, people: null, shtatka },
+      ...groupPeople.map(([group, p]) => ({ work_center: w.work_center, group, people: p })),
+    ];
+  }
+  return [{ work_center: w.work_center, people, shtatka }];
+}
+
+// The groups of a locked centre that hold a pin — the ones `lockedStaffRows`
+// carries and the ones whose ✕ has something to clear.
+const lockedGroups = (w) => (w.groups || []).filter((g) => lockedGroupPin(g) != null);
+
 // `canEditEff` gates the EFFICIENCY box separately from the cell rows: it pins
 // the whole brigadir's unit for the day, so a leader — whose page is cut to
 // their own cells — may type their cells' headcount but never re-time cells
@@ -801,15 +843,19 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
   // part of the saved state too — a group pin landing must re-seed like any
   // other. An orphan-only centre's box seeds from `people`, which already moves
   // with a stored orphan pin, so its letters need no draft of their own.
-  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}`
-    + (typesPerGroup(w) ? w.groups.map((g) => `/${g.group}=${g.people_overridden ? g.people : ""}`).join("") : "")).join("|");
+  // A LOCKED centre seeds from `people_ignored` — the pin it still holds —
+  // because its `people` is null by then: seeding from that would send `people:
+  // null` on the next Save and silently delete a stray nobody had asked about.
+  const draftGroups = (w) => (typesPerGroup(w) || isLocked(w) ? (w.groups || []) : []);
+  const seedKey = wcs.map((w) => `${w.work_center}:${storedPin(w) ?? ""}`
+    + draftGroups(w).map((g) => `/${g.group}=${storedGroupPin(w, g) ?? ""}`).join("")).join("|");
   useEffect(() => {
     setDraft(Object.fromEntries(wcs.flatMap((w) => [
-      [w.work_center, { people: w.people_overridden ? String(w.people) : "" }],
+      [w.work_center, { people: storedPin(w) != null ? String(storedPin(w)) : "" }],
       // One draft per group, keyed `${wc}|${group}`.
-      ...(typesPerGroup(w) ? w.groups.map((g) => [gKey(w.work_center, g.group), {
-        people: g.people_overridden ? String(g.people) : "",
-      }]) : []),
+      ...draftGroups(w).map((g) => [gKey(w.work_center, g.group), {
+        people: storedGroupPin(w, g) != null ? String(storedGroupPin(w, g)) : "",
+      }]),
     ])));
   }, [seedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setEffPct(String(pctOf(curPm))); setAppliedPm(curPm); }, [curPm]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -849,6 +895,13 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
     (canEditEff && pctValid && Math.abs(previewPm - curPm) > 0.001) ||
     wcs.some((w) => {
       const d = draft[w.work_center] || { people: "" };
+      // A LOCKED centre has no input at all; its ✕ emptying a draft is the one
+      // thing that can make it dirty, on the centre or on one of its groups.
+      if (isLocked(w)) {
+        return String(storedPin(w) ?? "") !== String(d.people).trim()
+          || lockedGroups(w).some((g) => String(lockedGroupPin(g)) !==
+            String((draft[gKey(w.work_center, g.group)] || { people: "" }).people).trim());
+      }
       // A centre typed per group has no «Кол-во» input of its own — its groups
       // are. An ORPHAN group is read-only, so it can never make the tab dirty.
       if (typesPerGroup(w)) {
@@ -872,6 +925,14 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
         // omitted or null штатка as «clear the pin» — so sending nothing would
         // quietly delete a pin set on the «Команды» card.
         const sht = w.shtatka_overridden ? w.shtatka : null;
+        // A LOCKED centre goes back as it stands (`lockedStaffRows`): a ✕ has
+        // put an empty draft in place of one pin, and that is the only change
+        // the backend will take on it.
+        if (isLocked(w)) {
+          return lockedStaffRows(w, sht, num(d.people),
+            lockedGroups(w).map((g) => [g.group,
+              num((draft[gKey(w.work_center, g.group)] || {}).people)]));
+        }
         if (typesPerGroup(w)) {
           // An ORPHAN group goes back exactly as stored: the backend refuses a
           // new or changed pin for a letter no cell carries, and this tab never
@@ -925,6 +986,9 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
     return { value: null, mode: "sum", complete: false };
   };
   const effPeople = (w) => {
+    // A locked centre counts NOWHERE — its draft holds the stored pin so the
+    // body can re-send it, and ΣN must not read that number back in.
+    if (isLocked(w)) return 0;
     if (typesPerGroup(w)) return groupedPeople(w).value ?? 0;
     if (!canEdit) return Number(w.people) || 0;
     return num((draft[w.work_center] || {}).people) ?? 0;
@@ -967,8 +1031,13 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
   // and the hint would ask for per-group numbers no row lets anybody type.
   const wholeOnly = wcs.filter((w) => typesPerGroup(w) && w.people_whole != null
     && !w.groups.some((g) => g.people_overridden)).map((w) => w.work_center);
-  const allTyped = wcs.every((w) => isTyped(w));
-  const anyUntyped = wcs.length > 0 && !allTyped;
+  // Locked rows are out of both counts, exactly as they are out of the
+  // backend's: «nobody typed it» and «nobody may type it» are different facts,
+  // and counting the second as the first left the «*» promising boxes that do
+  // not exist.
+  const countable = wcs.filter((w) => !isLocked(w));
+  const allTyped = countable.every((w) => isTyped(w));
+  const anyUntyped = countable.length > 0 && !allTyped;
 
   const chip = (code, cell) => {
     const c = wcColor(code);
@@ -1020,6 +1089,32 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
       {!typed && mark && <sup style={{ color: "var(--text-4)" }}>*</sup>}
     </span>
   );
+  // A LOCKED row's «Кол-во»: no input, because no headcount is entered on a work
+  // centre the day plans nothing at. A pin already stored is shown STRUCK
+  // THROUGH — it is on screen so it can be read and removed, and the strike is
+  // what says the number counts nowhere — with a ✕ that empties the draft, which
+  // the next Save turns into a clear. Nothing to show reads «—».
+  const lockedCell = (value, onClear) => {
+    const v = String(value ?? "").trim();
+    if (v === "") return (
+      <span className="tabular-nums" title={t("production.noPlanCell")} style={{ color: "var(--text-4)" }}>
+        {fmt(null, 0)}
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center gap-1 justify-center" title={t("production.pinOnlyHint")}>
+        <span className="tabular-nums line-through" style={{ color: "var(--text-3)" }}>{v}</span>
+        {canEdit && (
+          <button type="button" onClick={onClear}
+            title={t("production.noPlanClear")} aria-label={t("production.noPlanClear")}
+            className="inline-flex items-center justify-center rounded-md min-w-[26px] min-h-[26px]"
+            style={{ color: "var(--text-3)" }}>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </span>
+    );
+  };
   // ШТАТКА on «Bugungi fakt» — Verifix's count, read-only. Muted ink: nobody
   // typed it, so it never wears the typed gold. A blank says WHY on hover — the
   // day not read yet, no cell at this team, or an orphan letter.
@@ -1171,14 +1266,39 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
               return (
                 <Fragment key={w.work_center}>
                 <tr className={PT_ROW}>
-                  <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      {chip(w.work_center, w.cell)}
+                      {/* No plan at this work centre today, so no headcount is
+                          entered here and none is counted (`people_locked`,
+                          pp_calc). This table has no minutes column, so without
+                          the mark the row reads exactly like a work centre that
+                          is part of the day — and the whole reason a row holding
+                          a stray pin is drawn at all is so it can be seen and
+                          cleared. Driven by the LOCK, never by `pin_only`: on a
+                          day whose plan has not landed nothing is locked and
+                          every pin counts, and a chip there would say the
+                          opposite. Neutral, never a status colour — it states a
+                          fact about the row, not a verdict about the unit. */}
+                      {isLocked(w) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap"
+                          title={t("production.pinOnlyHint")}
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)",
+                                   border: "1px solid var(--border)" }}>
+                          {t("production.pinOnly")}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   {/* The placeholder is what an EMPTY box will count as.
                       «Кол-во» falls back to nothing at all, so it shows «—» —
                       previewing the formula there would promise that leaving
                       the box empty adopts that number, which is exactly what
                       this page stopped doing. */}
                   <td className="px-3 py-1 text-center">
-                    {grouped ? (
+                    {isLocked(w) ? (
+                      lockedCell(d.people, () => setCell(w.work_center, "people")(""))
+                    ) : grouped ? (
                       // A grouped centre's «Кол-во» is typed on its groups and
                       // only SUMMED here, so it is never an input and never
                       // gold: nobody typed this number, they typed its parts.
@@ -1223,7 +1343,9 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
                     <tr key={k} className={PT_ROW}>
                       <td className="px-3 py-2">{groupLabel(w, g)}</td>
                       <td className="px-3 py-1 text-center">
-                        {canEdit && !g.orphan
+                        {isLocked(w)
+                          ? lockedCell(gd.people, () => setCell(k, "people")(""))
+                          : canEdit && !g.orphan
                           ? pinInput(gd.people, setCell(k, "people"), fmt(null, 0))
                           : g.orphan
                             ? (
@@ -1544,6 +1666,14 @@ export default function Production() {
       // leaves this list instead of staying under an editor that cannot save.
       qc.invalidateQueries({ queryKey: ["production", date] });
       return t("production.linesMoved");
+    }
+    // A headcount aimed at a work centre the day plans nothing at — an older tab,
+    // or a plan that moved to another date between the page load and the Save.
+    // Refetch, so the row goes read-only under the operator's hands instead of
+    // leaving a live-looking box over a number the API refuses.
+    if (raw && typeof raw === "object" && raw.code === "wc_no_plan") {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      return t("production.wcNoPlanErr").replace("{code}", raw.work_center || "");
     }
     return (typeof d === "string" && d) || t("admin.saveFailed");
   };
@@ -2021,7 +2151,13 @@ export default function Production() {
   // A grouped centre counts as typed by `typedCentre` — every group a cell
   // carries, or the whole-centre pin — never by `people_overridden`, which is
   // true the moment ONE group is typed.
-  const peopleUntyped = wcs.filter((w) => !typedCentre(w)).length;
+  // …over the work centres a headcount CAN be typed on. A locked one (no plan
+  // today) is out of both halves, exactly as it is out of the backend's own
+  // `people_typed` / `people_untyped`: «nobody typed it» and «nobody may type
+  // it» are different facts, and counting the second as the first put a «*» on
+  // ΣN and a «2 of 3» under it for a box that does not exist.
+  const peopleCountable = wcs.filter((w) => !isLocked(w));
+  const peopleUntyped = peopleCountable.filter((w) => !typedCentre(w)).length;
   const unknown = data?.unknown_skus ?? [];
   // Lines set aside on this day's catalog (`_archived_lines`); only a unit-wide
   // view carries them, and an older backend none.
@@ -2235,7 +2371,12 @@ export default function Production() {
     // figure. A stored ORPHAN pin a save removed comes back as that same figure
     // on the whole centre — the backend refuses a new pin under a letter no cell
     // carries, and the centre reads one number either way.
-    rows: wcs.flatMap((w) => (typesPerGroup(w)
+    // A LOCKED centre comes back as it stood, so the inverse of a ✕ really
+    // restores the pin instead of clearing it a second time.
+    rows: wcs.flatMap((w) => (isLocked(w)
+      ? lockedStaffRows(w, w.shtatka_overridden ? w.shtatka : null, lockedPin(w),
+          lockedGroups(w).map((g) => [g.group, lockedGroupPin(g)]))
+      : typesPerGroup(w)
       ? groupedStaffRows(w, w.shtatka_overridden ? w.shtatka : null,
           w.groups.map((g) => [g.group, g.people_overridden ? g.people : null]))
       : centreStaffRows(w, w.people_overridden ? w.people : null,
@@ -2609,11 +2750,16 @@ export default function Production() {
   // Staffing card «tahrirlash»: pre-fill only the values that are already pinned,
   // so a blank input keeps meaning "follow the formula / the configured штатка".
   const startWcEdit = (w) => {
+    // A LOCKED centre seeds from the pin it still holds (`storedPin`): its
+    // «Кол-во» is read-only here, so the save re-sends that value untouched —
+    // seeding from `people_overridden` would send a clear and delete the stray
+    // on a save about the штатка.
     setWcDraft({
-      people: w.people_overridden ? String(w.people) : "",
+      people: storedPin(w) != null ? String(storedPin(w)) : "",
       shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
-      groups: typesPerGroup(w)
-        ? Object.fromEntries(w.groups.map((g) => [g.group, g.people_overridden ? String(g.people) : ""]))
+      groups: typesPerGroup(w) || isLocked(w)
+        ? Object.fromEntries((w.groups || []).map((g) =>
+            [g.group, storedGroupPin(w, g) != null ? String(storedGroupPin(w, g)) : ""]))
         : {},
     });
     setWcEdit(w);
@@ -2639,17 +2785,19 @@ export default function Production() {
       // whole-centre «Кол-во» the centre should end with: none once a group is
       // typed (the backend clears it the moment a group pin lands anyway), and
       // otherwise the figure it already held, so a штатка edit never erases it.
-      const prevG = Object.fromEntries(w.groups.map((g) => [g.group, g.people_overridden ? g.people : null]));
+      const prevG = Object.fromEntries(w.groups.map((g) => [g.group, storedGroupPin(w, g)]));
       // An ORPHAN group is read-only in the dialog, so it ends where it began —
       // the backend refuses a new or changed pin for a letter no cell carries.
+      // So is every group of a LOCKED centre, for the same reason one step up:
+      // no plan here today, so no headcount is typed on it.
       const nextG = Object.fromEntries(w.groups.map((g) => [g.group,
-        g.orphan ? prevG[g.group] : num(wcDraft.groups?.[g.group])]));
+        (g.orphan || isLocked(w)) ? prevG[g.group] : num(wcDraft.groups?.[g.group])]));
       const changed = w.groups.map((g) => g.group).filter((k) => prevG[k] !== nextG[k]);
       const prevSht = w.shtatka_overridden ? w.shtatka : null;
       const nextSht = num(wcDraft.shtatka);
       const shtMoved = prevSht !== nextSht;
       if (!changed.length && !shtMoved) { setWcEdit(null); return; }
-      const whole = w.people_whole ?? null;
+      const whole = isLocked(w) ? lockedPin(w) : (w.people_whole ?? null);
       const anyBefore = Object.values(prevG).some((v) => v != null);
       const anyAfter = Object.values(nextG).some((v) => v != null);
       const chain = async (vals, centre) => {
@@ -2668,7 +2816,7 @@ export default function Production() {
       // `null` where nothing was pinned, which is what puts the card back on the
       // computed N / configured штатка rather than freezing today's figure.
       const prev = {
-        people: w.people_overridden ? w.people : null,
+        people: storedPin(w),
         shtatka: w.shtatka_overridden ? w.shtatka : null,
       };
       const next = { people: num(wcDraft.people), shtatka: num(wcDraft.shtatka) };
@@ -2956,8 +3104,8 @@ export default function Production() {
       {!loading && peopleUntyped > 0 && (
         <p className="text-[11px] leading-relaxed mb-4 -mt-2" style={{ color: "var(--text-3)" }}>
           {t("production.peopleTypedOnly")
-            .replace("{typed}", String(wcs.length - peopleUntyped))
-            .replace("{total}", String(wcs.length))}
+            .replace("{typed}", String(peopleCountable.length - peopleUntyped))
+            .replace("{total}", String(peopleCountable.length))}
         </p>
       )}
 
@@ -3603,12 +3751,13 @@ export default function Production() {
                     {g.cell?.verifix_code && <span className="font-mono normal-case">{g.cell.verifix_code}</span>}
                   </span>
                 }>
-                  {g.orphan ? (
-                    // No cell carries this letter: nothing to count, and the
-                    // backend refuses a new pin — show what is stored, read-only.
+                  {g.orphan || isLocked(wcEdit) ? (
+                    // No cell carries this letter — nothing to count, and the
+                    // backend refuses a new pin — or no plan at this work centre
+                    // today. Either way: show what is stored, read-only.
                     <div
                       className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
-                      title={t("production.group.orphanLocked")}
+                      title={t(g.orphan ? "production.group.orphanLocked" : "production.pinOnlyHint")}
                       style={{
                         background: "var(--bg-inner)", border: "1px solid var(--border)",
                         color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)",
@@ -3648,6 +3797,21 @@ export default function Production() {
           </>) : (<>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("production.oSoni")}>
+              {isLocked(wcEdit) ? (
+                // No plan at this work centre today: nothing is typed here and
+                // nothing is counted. Read-only, the orphan field's own shape —
+                // what is stored, struck through, so an admin can see the number
+                // the загрузка now ignores. It is cleared from the «Bugungi
+                // fakt» tab, where the row carries its own ✕.
+                <div
+                  className="w-full rounded-lg px-3 py-2 text-sm tabular-nums line-through"
+                  title={t("production.pinOnlyHint")}
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
+                           color: "var(--text-3)" }}
+                >
+                  {fmt(lockedPin(wcEdit), 0)}
+                </div>
+              ) : (
               <ModalInput
                 type="number"
                 value={wcDraft.people}
@@ -3657,6 +3821,7 @@ export default function Production() {
                 placeholder={fmt(null, 0)}
                 className="tabular-nums"
               />
+              )}
             </Field>
             <Field label={t("production.shtatka")}>
               <ModalInput

@@ -6853,7 +6853,18 @@ def set_gemini_model_pro() -> None:
 # already has, and neither may repeat itself on the next deploy.
 UNPRICED_DM_FLAG = "unpriced_ojidaniya_dm_2026_09_09_v1"
 UNPRICED_XLSX_FLAG = "unpriced_ojidaniya_xlsx_2026_09_09_v1"
-UNPRICED_DM_CHAT = 6302307151          # the operator's own Telegram id
+# ── who a one-shot REPORT is DMed to ────────────────────────────────────────
+# A report exists because this platform has no shell and a cloud session cannot
+# reach production, so its only reader is a person in Telegram. There are two,
+# and WHICH of them is the operator's call, asked once per report — never
+# guessed, never both (a report in two chats is two people assuming the other
+# answered). Pass one of these to `_send_report_once`; a bare number at a call
+# site is how a report ends up in nobody's chat.
+REPORT_CHAT_BURKHON = 6302307151       # Burkhon — the operator's own Telegram id
+REPORT_CHAT_ABBOS = 811884943          # Abbos
+# The historical name, kept because 40 call sites write it and every one of
+# them means Burkhon. A NEW report names a person instead.
+UNPRICED_DM_CHAT = REPORT_CHAT_BURKHON
 UNPRICED_DM_FROM = date(2026, 9, 2)    # = zagruzka_source.ZAGRUZKA_FROM
 UNPRICED_DM_TO = date(2026, 9, 8)
 # A permanently broken send must not DM (or try to) on every restart. Three
@@ -7721,6 +7732,44 @@ def _brigadir_change_state_job() -> None:
     from app.services import brigadir_change_report_oct24
     _send_report_once(BRIGADIR_CHANGE_STATE_FLAG, "Brigadir change state report",
                       brigadir_change_report_oct24.send, UNPRICED_DM_CHAT)
+
+
+# ── one-shot: where «Odam soni» and the загрузка count different pins ──
+# The operator, 25.10.2026: «Файл загрузки» showed 45 people for Niyozov
+# Izzatilla on 24.10 and «Ежедневно» showed 66 for the same unit-day. The page
+# counts a typed pin only where its code is on the day's PANEL — the active
+# work-centre register plus the codes the day's quantities give plan minutes to;
+# `zagruzka_source.typed_pins` counts EVERY pp_work_center_daily row of that
+# unit-day, unnormalised. READ-ONLY: which rows differ, over how many unit-days
+# since ZAGRUZKA_FROM, and the загрузка each affected day reads now against what
+# the page's own Σ would give (`services/pin_mismatch_report.py`).
+# v2 (26.10): v1 rebuilt the panel as «every active catalog line's code», which
+# is wider than `pp_calc.wc_codes` — a code with no minutes that day read as
+# «on the page» — so it answered «no mismatch» for the very unit-day above.
+# Changing what it reports needs a NEW key.
+PIN_MISMATCH_FLAG = "pin_mismatch_report_2026_10_26_v2"
+_PIN_MISMATCH_DELAY_S = 150
+
+
+def report_pin_mismatch() -> None:
+    """Page-vs-загрузка «Odam soni» differences, DMed once. Never raises."""
+    try:
+        if not _report_pending(PIN_MISMATCH_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("pin-mismatch-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_PIN_MISMATCH_DELAY_S),
+                    _pin_mismatch_job)
+    except Exception as exc:
+        print(f"[startup] pin mismatch report could not be scheduled: {exc}")
+
+
+def _pin_mismatch_job() -> None:
+    print("[startup] pin mismatch report: started")
+    from app.services import pin_mismatch_report
+    _send_report_once(PIN_MISMATCH_FLAG, "pin mismatch report",
+                      pin_mismatch_report.send, UNPRICED_DM_CHAT)
 
 
 # ── one-shot: every shift-manager, brigadir and leader AS VERIFIX LISTS THEM ──

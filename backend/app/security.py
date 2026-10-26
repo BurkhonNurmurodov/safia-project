@@ -37,6 +37,9 @@ Wiring (see ``main.py``):
 """
 from typing import Annotated
 
+import hmac
+import secrets
+
 import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
@@ -79,7 +82,25 @@ _EXEMPT_PATHS = frozenset({
 #   * /api/android/ — the Android app's own updates (routers/android.py): its
 #                     native code has no session, the release is public, and
 #                     the one write (publish) carries its own key.
-_EXEMPT_PREFIXES = ("/api/android/",)
+#   * /api/ops/     — the report door (routers/ops_door.py): asked by a Claude
+#                     session with its own ask key, every answer allowed first
+#                     by a person in Telegram. Each route checks the key itself.
+_EXEMPT_PREFIXES = ("/api/android/", "/api/ops/")
+
+# The report door's GET (services/ops_door.run_get): a request THIS process
+# makes to itself, as the admin who allowed it, after they tapped «Ruxsat
+# berish». The mark is random per process and never leaves it, so nothing
+# outside can present it; it opens the Telegram-origin wall for a GET only,
+# and every endpoint still checks the admin token beside it as it always does.
+INTERNAL_HEADER = "X-Ops-Internal"
+INTERNAL_MARK = secrets.token_urlsafe(32)
+
+
+def _internal_get(request: Request) -> bool:
+    if request.method != "GET":
+        return False
+    v = request.headers.get(INTERNAL_HEADER) or ""
+    return bool(v) and hmac.compare_digest(v, INTERNAL_MARK)
 
 _INIT_DATA_HEADER = "X-Telegram-Init-Data"
 
@@ -155,6 +176,8 @@ def enforce_telegram_origin_global(request: Request) -> None:
         return
     if path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES):
         return
+    if _internal_get(request):
+        return
     _check_init_data(request)
 
 
@@ -163,6 +186,8 @@ def enforce_telegram_origin_admin(request: Request) -> None:
     Only runs for that router's matched routes, so it never sees the SPA
     catch-all. Skips ``/api/*`` paths, already covered by the global dep."""
     if not request.url.path.startswith("/admin/"):
+        return
+    if _internal_get(request):
         return
     _check_init_data(request)
 

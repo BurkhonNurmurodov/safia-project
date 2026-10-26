@@ -1477,8 +1477,9 @@ for byte**; only where three numbers come from changes.
   per request — so "recalculate from 2 September" needs no migration, no day
   reopen and no notification: every consumer re-reads at the next restart.
 - **`services/zagruzka_source.py` is THE definition** — `ZAGRUZKA_FROM`,
-  `uses_production`, `range_start`, `sheet_end`, `typed_people`, `unit_people`,
-  `cell_people`, `unit_labor`. Never re-spell the date comparison at a call
+  `uses_production`, `range_start`, `sheet_end`, `typed_pins`, `planned_wcs`,
+  `typed_people`, `unit_people`, `cell_people`, `unit_labor`. Never re-spell the
+  date comparison at a call
   site, and never split a range by hand: `sheet_end` is the exact inverse of
   `range_start`, which is what stops a day being counted twice or not at all.
 - **The «Plan Prognoz» page reads it too** (from 2026-09-23).
@@ -1493,7 +1494,10 @@ for byte**; only where three numbers come from changes.
   — never `ProductionData`, which keeps syncing and feeds nobody.
 - **Odam soni is the TYPED number and nothing else.**
   `pp_work_center_daily.people` — the «Bugungi fakt» box on the «Odamlar soni»
-  tab — summed over the unit's work centres. `people IS NULL` is what makes the
+  tab — summed over the unit's work centres **the day gave PLAN MINUTES to**
+  (2026-10-26; see «Odam soni» is typed, and counted, only where the day HAS A
+  PLAN» — on a unit-day that plans nothing at all every pin counts, as before).
+  `people IS NULL` is what makes the
   rule expressible: it distinguishes "nobody typed anything" from a deliberate
   0 (a cell that ran empty), which is a real answer. The derived suggestion
   `ROUND(W × Q ÷ S)` is deliberately NOT a fallback and neither is штатка — a
@@ -3791,7 +3795,9 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   saved «cost» view as «Tahlil» for anybody else. Supervisors, leaders,
   top-managers and «Kutish mas'uli» keep the other two tabs. Scoped as the page
   is: a shift manager prices their shift ∩ plant. Only the RATE is admin-only,
-  checked in the endpoint and not merely by hiding the ⚙.
+  checked in the endpoint and not merely by hiding the ⚙. **The /reports
+  «Xarajat» section follows the same list** (2026-10-26, `reports._sees_cost`
+  imports `COST_ROLES`): absent from that payload for anybody else.
 - **The cell code is NOT a `CellLink` here**: the row is a disclosure, and a link
   inside it would navigate away mid-drill-down — the `IdleCell` accordion's own
   reasoning. And cost carries **no traffic-light colour**: no threshold for
@@ -3914,8 +3920,9 @@ new decision; the two locks below are the feature.
   minutes-only rows carry a category as well.
 - Locked endpoints: `/downtime`, `/downtime/matrix`, `/downtime/seasonality`,
   `/downtime/cell-detail`, `/downtime/cost`, `/downtime/cost/entries`,
-  `/idle-cell/cells` and all four workbooks. The PPTX deck is admin-only and an
-  admin is never locked.
+  `/idle-cell/cells`, all four workbooks, and the «Kutish» section of
+  `/api/reports` and its document (from 2026-10-26). The PPTX deck is
+  admin-only and an admin is never locked.
 - **Registration is the roster, not the bot branch.** `registration-options`
   builds the name-first login list from supervisors, leaders and the two manager
   tiers; a role missing from it has profiles nobody can claim, however well the
@@ -8590,6 +8597,116 @@ views; `PlanLegend`, `DayStrip` and `planUtil.js` are its shared vocabulary.
 - The pre-redesign `GET /api/plan-fulfillment` stays for tabs still open on an
   older bundle; nothing in the current one calls it.
 
+## «Hisobotlar» — the period report (`/reports`, Laboratory, 2026-10-26)
+
+The operator, with TopSim's «Report System» as the picture: one screen that
+reads a PERIOD the way a management report reads it — a list of sections down
+the side, each a table of figures with the period and the ones before it side
+by side — «downloadable as professional document». Page key **`reports`**, in
+the Laboratory nav group, **ADMIN-ONLY until the operator opens it on the
+Access tab** (`DEFAULT_PAGE_ACCESS["reports"] = []`, the /ontime and /live
+rule — every section reads the whole plant). `services/reports.py` folds,
+`routers/reports.py` fetches and delivers, `pages/Reports.jsx` +
+`pages/reportsText.js` + `components/reports/` draw it.
+
+- **Nothing is measured, in either file.** Every figure is one another page
+  already prints, read through that page's own code — the
+  `services/brigadir_board.py` rule, and why `services/reports.py` imports no
+  router and makes no query (the `ojidaniya_deck` split). Section by section:
+  **Ishlab chiqarish** — `plan_fulfillment.build`'s own minute totals (the
+  /plan page's figure), «Samaradorlik» and per-unit «Plan bajarish» the
+  /zagruzka heatmaps' AVG through `brigadir_board.efficiency` /
+  `fulfillment`; **Xodimlar** — /workers' own `att_rate` through
+  `brigadir_board.attendance`, and `turnover.month_payload`; **Kutish** —
+  `routers/downtime._downtime`, which IS the /downtime page's computation;
+  **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
+  **Sifat** — the Quality closure rate through `brigadir_board.quality`
+  (actionable records, hair out, «Отв. бригадир» matched against every live
+  unit); **Xavotirlar** — the /concerns register through
+  `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
+  ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
+  the sections they belong to, so the two can never disagree.
+- **`brigadir_board.attendance` carries its three COMPONENTS now** (`roster`
+  / `came` / `leave`, beside the `v` and `days` /leaderboard reads, which are
+  untouched): a PLANT figure is Σ (came + on leave) ÷ Σ listed — **pooled,
+  never a mean of per-unit percentages** (the comparison tables' 2026-10-19
+  AVG ruling, applied to every plant-level percentage here). `quality` and
+  `concerns` already carried theirs.
+- **The period is a calendar MONTH** — the platform's own KPI month
+  (`leaders_kpi`, `turnover` and `category_compliance` all count by it) — and
+  every table carries the picked month plus `HISTORY - 1` (3 columns, TopSim's
+  Period 0 · 1 · 2), oldest → newest, the picked one last and emphasised. A
+  month that ended before the platform's first closed day
+  (`brigadir_board.data_floor`) is dropped: it could only read «—» in every
+  row. The per-unit tables describe the PICKED month alone.
+- **A month still running compares only its RATES.** A total over 26 days
+  against a whole month says nothing a reader can act on, so the delta on a
+  CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is
+  partial and the cell says why; a rate keeps its delta. The column header
+  names the days it actually covers («Oktyabr 2026 · 1–26»).
+- **A figure the platform has no source for is NOT in this report, and the
+  report SAYS so.** TopSim's financial half — equity, WACC, NOPAT, EVA, the
+  cash-flow statement, the balance sheet, contribution margin, inventory, R&D,
+  market research — has no source here, and a report that invented one would
+  be worse than one that is silent about it. `reports.MISSING` names them, the
+  page prints that list under every section, and the document carries it too.
+  **Never fill one of those rows from anything but a real source.** `None` is
+  «no answer» everywhere and prints «—», never 0 — which is what keeps
+  «nothing filed» apart from «nothing resolved».
+- **TWO block shapes and no third**: a `periods` block (a figure per row, the
+  months across) and a `units` block (a brigadir per row, the picked month).
+  Per-unit tables list EVERY unit in scope — the «Toifalar bo'yicha» rule, so
+  «no data» is never mistaken for «not in scope» — with the carriers sorted to
+  the top and the blanks last.
+- **The document is `assistant_documents.build`** — the house builder, never a
+  second layout engine — as **pdf · docx · xlsx** (`POST
+  /api/reports/export.{fmt}`; a format it does not know is refused, never
+  quietly swapped). The WORDS come from the SCREEN (the page posts the labels
+  it printed, in the reader's language, plus each cell as `fmtCell` spelled
+  it), the structure is rebuilt here: `grid_export`'s own rule, so the file can
+  never name or state something the page does not. Delivered by
+  `xlsx_delivery.deliver_file` — a browser downloads it, inside Telegram it
+  lands in the caller's chat. Logged as `export.reports`.
+- **One kept build serves the screen and the file.** `KeptAnswers("reports")`
+  — as built for 2 min, then up to 10 while a new build runs behind it, never
+  to a viewer who wrote since — and the export reads the SAME build (a deep
+  copy of the sections it wants, because it writes the page's formatting onto
+  the rows). A build is every figure of three months over every unit.
+- **Every block title is DISTINCT across the whole report** (`caps` in
+  `reportsText.js`: «Kutish — brigadalar», not a fifth «Brigadalar bo'yicha»).
+  A workbook names each sheet after the last heading, so five identical titles
+  become «… (2)»…«(6)» and name nothing.
+- **The scope is resolved ONCE**, in `_build`: the viewer's plant lock
+  (`scoped_manager_ids`), the shift, the brigadir pick, then `board_units`'
+  own rule. Every half is handed that set — the turnover half included, which
+  applies the scope it is given and knows nothing of the viewer's lock.
+- **The viewer's CATEGORY lock applies here too, and so does the cost
+  audience** (v4.332.0, 2026-10-26 — the security review of this page found
+  the page honoured the plant lock alone). «Kutish» is `_downtime`'s answer
+  passed through `idle_scope.narrow_downtime(…, lock=viewer_categories(…))`,
+  exactly as /downtime applies it: a «Kutish mas'uli» reads their own causes,
+  a narrowed month prints NO flag count (the 50-minute flag is a whole-day
+  fact — «—», never 0), an owner with no category left reads «—» in every row
+  (`empty_scope`), and an admin's answer is byte-identical to before. The
+  payload carries `cat_locked`, which the page draws as `CatLockNotice` over
+  the sections carrying waiting figures (`LOCK_SECS`: idle · summary ·
+  figures) and the document names in its subtitle. «Xarajat» is in the
+  payload for `downtime.COST_ROLES` only (admins and shift managers —
+  `/downtime/cost`'s own rule, imported by `_sees_cost`, never re-spelled)
+  and ABSENT for everybody else, as the tab is absent on /downtime for them;
+  `services/reports._cost` returns no block for a `cost` of None, so `compose`
+  leaves the section out, and the summary's «cells» row (read out of the cost
+  tree) goes with it. **Both facts ride the kept-answer KEY** beside the
+  scoped units (`_key`: the category lock and the cost audience), so one
+  viewer's build is never served to another — `leaders_kpi._board_key`'s
+  rule, and the rule for any narrowing added to `_build` later. Until then
+  the section read the unnarrowed answer and the key held the scope alone;
+  nothing leaked, because only admins, who carry no lock, could reach the
+  page.
+- Not built: a week or a year grain (the month is the KPI period), a chart
+  (the document is tables), and any figure the platform does not already
+  print.
+
 ## «O'z vaqtida yetkazish» — the logistics on-time report (`/ontime`, 2026-10-20)
 
 The operator's request: «a new screen for the analytics of the last 4 tabs of
@@ -9698,6 +9815,143 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 - **Left to the admin, named in the DM**: Erkanboyev's account also holds
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
+
+## «Odam soni» is typed, and counted, only where the day HAS A PLAN (2026-10-26)
+
+The operator, after the 45-vs-66 contradiction below: «1. Make it only possible
+to write "Odam soni" on the cells with plans. 2. Ignore the "Odam Soni" where
+they're written on the cells without plan.» Both halves are ONE test, spelled
+once.
+
+- **THE RULE.** A work centre takes a typed «Bugungi fakt» headcount, and has
+  one counted, only while the day's catalog and quantities give it **nonzero
+  PLAN MINUTES**. That is `pp_calc`'s own `q_by_wc` membership (it accumulates
+  `if total_labor:`) on the page and `zagruzka_source.planned_wcs` — `wc_labor`
+  filtered to `plan > 0` — on the загрузка side, both compared through
+  `cell_lookup.norm_code`, so neither can read «has a plan» the other way. A SQL
+  join cannot answer it: the minutes need each day's OWN catalog (`pp_catalog`)
+  and the per-line overrides on top of the shared quantity.
+- **A unit-day that plans NOTHING locks nothing**, and that escape is
+  load-bearing twice over (`day_has_plan` in the engine, an ABSENT key in
+  `planned_wcs`). A brigadir must never be shut out of typing their own day
+  because the SAP file carrying it has not been uploaded yet — the plan usually
+  lands a day or more ahead (`_SLICE_FWD`), but «usually» is not a rule somebody
+  can work a shift against. And the same pins are the ojidaniya weight, so
+  dropping every one of them on a planless day would silently read that unit's
+  whole waiting as 0 minutes. Nothing is lost: such a day has no загрузка either
+  way (`no_labor`).
+- **Ignored at ONE door — `zagruzka_source.typed_pins`** — so every reader of a
+  typed pin follows it: `unit_people` (the fleet's ΣN, i.e. `official_hc`),
+  `typed_people`, `cell_pins` and `cell_people` (the ojidaniya weight and
+  /zagruzka-cell's per-cell headcount), the automatic check #1 and every gap
+  report. A second reading of «which pins exist» is exactly the contradiction
+  this closes. The planned set is computed once per (units, range) per Session
+  (`_planned_for` on `db.info`): nothing writes a plan QUANTITY and then reads a
+  typed pin in the same session, because the two doors that move quantities (the
+  SAP upload, /override) answer through `compute_dashboard`, which computes the
+  set itself from the rows it is handed.
+- **Refused at BOTH write doors** — `save_staffing` (the «Bugungi fakt» tab) and
+  `wc-override` (the admin's per-centre pencil), through
+  `production._refuse_unplanned_pin`, structured 400 `wc_no_plan`. **A NEW or
+  CHANGED pin only**: an unchanged re-send and a CLEAR are always accepted, the
+  `_refuse_orphan_pin` rule and for the same two reasons — the tab re-sends
+  every row on every Save, so a strict refusal would block a save about another
+  work centre for as long as a stray stood, and a pin already stored must always
+  be removable. An echoed group Σ is not a typed figure and is not judged.
+- **The page shows the stray and lets it go.** `pp_calc` publishes
+  `people_locked` per work centre (and the stored number as `people_ignored`,
+  per centre and per group) while `people` / `people_overridden` / the load read
+  as the uncounted row this now is — so every figure below resolves exactly as
+  for a work centre nobody typed, with no second rule. A locked row wears the
+  neutral «Rejada yo'q» chip, has NO input, prints its pin STRUCK THROUGH with a
+  ✕ that empties the draft (the next Save clears it), and «—» when there is
+  nothing to show. Its draft seeds from `people_ignored` and its body re-sends it
+  (`lockedStaffRows`, `storedPin`, used by the Save AND the undo snapshot):
+  seeding from `people` would make every Save silently delete a stray nobody had
+  asked about. The admin dialog shows the same number read-only beside an
+  editable штатка. The chip is driven by the LOCK and never by `pin_only` — on a
+  day whose plan has not landed nothing is locked and every pin counts, and a
+  chip there would say the opposite.
+- **A locked row is out of BOTH counts** — the backend's `people_typed` /
+  `people_untyped` (`countable` in `compute_dashboard`) and the client's
+  `peopleCountable`. «Nobody typed it» and «nobody may type it» are different
+  facts, and counting the second as the first put a «*» on ΣN and a «2 of 3»
+  under it for a box that does not exist.
+- **Consequence to know, and it is the price of the rule**: such a cell-day
+  loses its ojidaniya WEIGHT with its headcount, so its waiting leaves the unit's
+  headcount-weighted mean. That is not a new state — it is precisely the state of
+  a cell whose work centre nobody typed, which `idle_source.unit_downtime` has
+  always left out of both sides. Nothing is stored, so every day from
+  `ZAGRUZKA_FROM` re-reads under the rule at the next restart, and the three
+  stray pins below need no cleaning: they are inert.
+- **Measured on the real case** (a seeded reproduction of Niyozov Izzatilla's
+  24.10): page ΣN 45 with no «*», `unit_people` 45, the 21 on the planless B2743
+  shown struck through and counted nowhere; a new pin on it refused 400 on both
+  doors, an unchanged re-send and a clear accepted, a new pin on a planned work
+  centre accepted; with the plan quantity dropped, nothing locked and ΣN back to
+  66. Seven engine cases (the register row, the `pin_only` row, the escape, a
+  pin in another CASE of the planned code, group pins on a planless centre, an
+  ordinary planned day, and a caller passing no `norm_wc`) assert the same.
+- **Deliberately NOT exempted**: a work centre with quantities but no
+  Трудоемкость reads zero minutes and IS locked — the figure the load divides by
+  has no numerator either way — and a pin on it is refused; filling the
+  Трудоемкость in is a catalog edit, not an exception here. The штатка pin is
+  untouched on every row.
+
+### What it replaced: a typed headcount that was ALWAYS on the page (same day)
+
+On 25.10.2026 Niyozov Izzatilla's 24.10 showed ЛЮДЕЙ (Σ) **45** on «Файл
+загрузки» and ОФИЦ. ЧИСЛ. **66** on «Ежедневно» — and still did the next day, on
+the current bundle, on a day already closed. Both figures are the TYPED «Bugungi
+fakt» pins; they read different SETS of them. The page counted a pin only where
+its code was on the day's PANEL (`pp_calc.wc_codes`: the active register, the
+codes the day's quantities give PLAN MINUTES to, and — the first fix, v4.331.0 —
+every code carrying a typed headcount), while the загрузка counted EVERY
+`pp_work_center_daily` row with `people IS NOT NULL`. The operator first chose
+«show it on the page, so it can be deleted»; the rule above is the second answer
+and it supersedes the first. What survives from it:
+
+- **`pin_only` is still published per panel row** and is still the one thing a
+  reader cannot work out for themselves (the «Bugungi fakt» table carries no
+  minutes column, so «B2743 · 21 · —» looks exactly like a work centre that is
+  part of the day). The SERVER knows why the row is there; the page must never
+  guess it from `total_labor == 0`, which an ordinary registered centre with
+  nothing planned today also reads. The current page marks rows off
+  `people_locked` instead, and `pin_only` stays on the payload for a tab open on
+  an older bundle.
+- **Clearing works because the save only touches codes the body LISTS.**
+  `save_staffing` builds its plan from the request's rows, so an unlisted pin
+  survives every Save — which is exactly why the 21 outlived them.
+- **MEASURED on production, 26.10.2026** (`pin_mismatch_report` v2, the answer
+  kept here so nobody re-derives it): **three** unit-days since `ZAGRUZKA_FROM`,
+  all counted in the загрузка — Niyozov Izzatilla 24.10, page 45 vs 66, a 21 on
+  **B2743** with no plan that day (beside an identical 21 on B2942: it looks
+  typed twice), 63.9% → 93.7%; Sultonova Umida 20.09, 40 vs 43, a 3 on **A2703**,
+  which sits inside her own run A2701 · A2702 · **A2703** · A2704, 84.8% → 91.2%;
+  Ibragimova Sayyora 02.09, 22 vs 25, a 3 on **A2898**, a code her unit has no
+  register row for at all, 124.0% → 140.8%. Under the rule above all three are
+  ignored, so those unit-days read the higher figure and nothing needs cleaning.
+- **TEMPORARY, READ-ONLY** `services/pin_mismatch_report.py`,
+  `startup.report_pin_mismatch` (flag `pin_mismatch_report_2026_10_26_v2`,
+  ~150 s after boot, both entrypoints) is what found them. Its question is
+  answered and the mismatch it looks for can no longer exist, so the module, the
+  startup pair and both calls may be deleted; changing what it reports needs a
+  NEW key.
+- **v1 answered «no mismatch» and was WRONG — the lesson, not the bug.** It
+  rebuilt the panel as «the active register ∪ every active catalog line's code»,
+  WIDER than `wc_codes`: a code with lines but no minutes that day read as «on
+  the page», so `page_n` equalled `load_n` and the very unit-day the report was
+  written for did not appear. **A report that compares two numbers must not
+  derive both from one of the two sides** — v1's `page_n` and `load_n` both came
+  off one `fold_pins` map, differing only by a code filter it had reconstructed
+  by hand instead of mirroring.
+- Still open, and a decision of its own: folding two SPELLINGS of one code
+  through `norm_code` in `typed_pins` ITSELF, so a Cyrillic twin («A code is
+  LATIN») cannot split one work centre in two. The plan filter above normalises
+  both sides, so it can never drop a pin over a twin — but the pin's own key
+  stays the raw string, so `unit_people` still counts two spellings as two work
+  centres. `cell_pins` folds them through `wc_group.wc_key`; `unit_people` never
+  got it. Nothing in eight weeks of production data needed it yet.
 
 ## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
 
@@ -13160,6 +13414,187 @@ A merge that carries no rebuilt `frontend/dist` still deploys correctly —
 - **Telegram, Sheets, Gemini, Notion, ARC.** No tokens, and none of those hosts
   is on the allowlist. The scheduled jobs still fire and log their failures
   there; expected, not a regression.
+- **Production itself.** The proxy allows `git.safiabakery.uz` and nothing else,
+  so — until `production.safiacorporate.uz` is added to the environment's
+  Allowed domains for the report door — it answers **403 CONNECT tunnel failed** from a
+  cloud session: no `/api/version`, no `/build.json`, no watching a deploy land.
+  `git ls-remote gitea main` is the whole of what can be confirmed — that the
+  push arrived. Never report a deploy as verified from here.
+
+### When a cloud session needs an answer only production has (standing rule)
+
+The operator's directive, 2026-10-26, and it holds for **every future change**:
+**if you cannot reach production from here but you need its data, send a REPORT
+— and ask, each time, which of the two people it goes to.**
+
+**From v4.334.0 the report is, first, a question through the REPORT DOOR**
+(`scripts/ask-prod.py`, see «The report door» below): one SELECT or one GET,
+allowed by that person's tap, answered in under a minute with no deploy. The
+one-shot module below is for what the door cannot carry — a workbook or a
+file, an answer past its bounds (20 s, 5,000 rows, 2 MB), or a door that is
+closed. The ask-who rule, the one-question rule and the honesty rules apply to
+both.
+
+- **Never guess from a laptop copy, a dry run or a screenshot, and never ship a
+  fix on the strength of one.** The DB here is empty and the laptop's holds May
+  data; a cloud session has no third option. A report is the only honest way to
+  learn what production actually holds.
+- **Put everything you need in ONE report.** Each one is a boot job, a flag, a
+  deploy and a person's attention, so a second round for a column you forgot is
+  the expensive mistake. Write down the question first, then the rows that
+  answer it: the figures, the raw rows BEHIND them, and the panel / scope /
+  window each figure was judged against — so the reader can check the
+  arithmetic by eye instead of taking it on trust (the «Kun to'liq» sheet of
+  `pin_mismatch_report` is the shape).
+- **Every report is TEMPORARY, READ-ONLY and flag-guarded**, the convention
+  already written down here: `services/<name>_report.py` with a
+  `send(db, chat_id, date_from, date_to) -> int`, `startup._report_pending(FLAG)`
+  → `schedule_at(...)` → `_send_report_once(FLAG, label, module.send, <chat>)`,
+  armed from BOTH entrypoints, deleted with its startup pair and both calls once
+  it has landed. **Changing what one reports needs a NEW flag key** — an
+  "already ran" mark makes the new version a no-op on every box that has booted.
+- **ASK THE ONE QUESTION, every time, before it ships**: Burkhon
+  (`startup.REPORT_CHAT_BURKHON`, 6302307151) or Abbos
+  (`startup.REPORT_CHAT_ABBOS`, 811884943)? Pass the named constant, never the
+  number. **One recipient, never both** — a report in two chats is two people
+  each assuming the other dealt with it. `UNPRICED_DM_CHAT` is the historical
+  alias for Burkhon's and is what 40 existing call sites mean; a NEW report
+  names a person.
+- **Say what the report cannot tell you.** It is a snapshot taken at one
+  instant, so it can be stale about a row written after it ran — never wrong
+  about the moment it was taken. And a report that compares two numbers must
+  not derive both from one of the two sides: v1 of `pin_mismatch_report` took
+  `page_n` and `load_n` off one folded map and answered «no mismatch» about the
+  very unit-day it was written for.
+
+## The report door (`/api/ops`, 2026-10-26)
+
+The operator's idea (2026-10-26), refined with them: a Claude session asks
+production ONE question and gets the answer only after a person allows it in
+Telegram. It replaces, for every question a query can answer, the flag-guarded
+one-shot report — a module, two deploys and a cache flush per question.
+`services/ops_door.py` is THE definition, `routers/ops_door.py` the HTTP side,
+`scripts/ask-prod.py` the client, the bot's `oq:` callback and `/opsdoor` the
+person's half.
+
+- **The flow.** `ask-prod.py sql --to burkhon --why "…" "SELECT …"` (or
+  `get --to abbos /api/heatmap date_from=… date_to=…`) → `POST /api/ops/asks`
+  → a Telegram card to THAT person with the whole question, who asks and why,
+  the tables named, the role it will run as and the expiry → «✅ Ruxsat
+  berish» / «✖️ Rad etish» / «🔒 Rad etish va eshikni yopish» → the script
+  (polling `GET /api/ops/asks/{token}` every 3 s) takes the answer ONCE with
+  `POST /api/ops/asks/{token}/take` and prints JSON (`--out` writes a file).
+  Past the Bash tool's 10 minutes, `ask-prod.py wait <token>` resumes; a
+  network blip or a deploy-time 5xx is retried, and every exit says how to
+  resume. Exit codes: 0 answered · 1 ran and failed · 2 refused / denied /
+  expired · 3 still waiting · 4 network.
+- **Ask WHO every time, never both** — the standing rule above; `--to` is
+  `burkhon` or `abbos` (`startup.REPORT_CHAT_*`), and only the person the card
+  went to can answer it (checked against the ROW, never the chat).
+- **The ask key asks and nothing else.** `~/.safia/ops.key` on the build Mac
+  (mode 600, never in git), sent as `X-Ops-Key` or `Authorization: Bearer`;
+  production holds only its SHA-256 (`ops_door.KEY_SHA256` — a new key is a
+  new digest there). A wrong key is 401, ten in ten minutes from one address
+  429, the first refusal a Jurnal row. A leak costs cards the approver denies.
+- **Nothing runs before the tap, and nothing is kept after.** An unanswered
+  card dies in 15 minutes (`ASK_TTL`), an allowed answer not taken in 15 more
+  (`TAKE_TTL`); a job (`ops-door-expire`, every minute) expires them, fails a
+  take that never finished (`running` past 5 minutes — a worker killed
+  mid-take: `ops.interrupted`) and redraws the card. A take claims the row
+  (approved → running) in one locked update, so it runs once whatever happens
+  after; the answer is never stored — only rows, bytes and milliseconds, which
+  the card then prints («📥 Natija olindi»). At most 3 cards wait at once and
+  40 asks an hour (counted under an advisory lock, so asks fired together are
+  counted in turn), and ONE answer — SQL or GET — runs at a time per process:
+  a take that finds the slot taken is answered 409 `busy` and its row stays
+  allowed (the client retries).
+- **The approver sees the WHOLE question**: a query longer than 3,000
+  characters is refused (split it), never cut, and an ask whose card would
+  not fit Telegram's 4,096 units in its longest state (with a failure printed
+  under it, in every language) is refused `card_too_long`.
+- **A SELECT is bounded harder than any request.** One statement (no «;»
+  anywhere but at the end — inside a string literal too),
+  starting SELECT / WITH / VALUES / TABLE / EXPLAIN (of a SELECT) / SHOW, in a
+  READ ONLY transaction — Postgres itself refuses writes, data-modifying CTEs,
+  `FOR UPDATE`, sequences and `SELECT INTO` — with `statement_timeout` 20 s and
+  `lock_timeout` 3 s, at most 5,000 rows and 2 MB (`truncated: rows|bytes`
+  says which), on a connection of the door's own (NullPool, closed after) so
+  no setting, temp table or session lock outlives it. Functions that signal or
+  kill backends, sleep, take advisory locks, read server files or large
+  objects, open connections, change settings, notify, manage WAL/replication,
+  reset stats, advance sequences or run SQL held in a string
+  (`query_to_xml`, `table_to_xml` and the rest of `*_to_xml`, `ts_stat`,
+  `ts_rewrite`, `crosstab`) are refused BY NAME (`_DENY`), even inside a
+  literal — and so are the statistics catalogs `pg_stats*` / `pg_statistic*`,
+  which hold SAMPLED COLUMN VALUES of every table the caller may read (as the
+  app's user, the password hashes) while the table they describe is only row
+  data that no name check could see. A `U&"…"` escape, the one way to spell a
+  name without its letters, is refused outright. **The text check is not the
+  boundary**: before the query runs it is planned (`EXPLAIN (VERBOSE, COSTS
+  OFF)`, never executed) in the same read-only transaction and the plan —
+  every function and relation by the name Postgres RESOLVED — is checked
+  against the same lists (`plan_refusal`). The plan is read through
+  `public.ops_door_plan`, a plpgsql function made at boot, which hands back
+  NULL — refused — when a plan line passes 20,000 characters, so a constant
+  folded into a plan (`repeat('x', 300000000)`) is never fetched whole;
+  without the function the door EXPLAINs directly. Each row leaves the server
+  as ONE JSON text cut to 2 MB (`SELECT left(row_to_json(s)::text, …) FROM
+  (<query>) s`, through a named cursor), rows are pulled 10 at a time, the
+  5,000-row / 2 MB bounds apply as they arrive, and the 20 s bound is re-set
+  to what is left of it before every FETCH (each FETCH is its own statement)
+  — so neither a wide cell, nor many rows, nor a slow row costs the worker
+  more than one batch and 20 seconds.
+- **The credential tables give no answer at all** — `web_credentials`,
+  `ai_keys`, `password_hash`, `password_enc`, `key_enc` are refused in the
+  text and in the plan, under any role, and the reader role is never granted
+  them (revoked if it ever was). Masking cannot survive arbitrary SQL
+  (`SELECT w FROM web_credentials w`, `reverse(password_hash)`), so these are
+  refused rather than masked.
+- **It runs as `safia_ops_reader` only where the database allowed it**: a
+  NOLOGIN role that may only SELECT, made by a deferred boot step
+  (`ensure_reader_role`, which grants new tables at every boot and asks
+  Postgres 16+ for the SET right, not mere membership). **The production app
+  user (deploy/01-provision.sh) has no CREATEROLE, so on production the role
+  does not exist and SQL runs as the app's user** in the same read-only
+  transaction — the plan check and the credential refusal are what bound it
+  there. WHICH role a question runs as is decided when the card is sent and
+  stored on the row (`ops_asks.run_as`); the card prints it and the take runs
+  as it and nothing else. `--as-app` asks for the app's user on purpose (the
+  reader cannot read other sessions' query text in `pg_stat_activity`).
+- **A GET runs as the approver** (they must hold an admin role — else the ask
+  is refused), through this process's own ASGI stack: `security.INTERNAL_MARK`,
+  random per process, opens the Telegram-origin wall for that in-process GET
+  only, and every endpoint applies its own rules to a 2-minute admin token.
+  Only real `/api/…` or `/admin/…` GET routes (never the page catch-all, never
+  `/api/ops/`); a file answer is reported by type and size, JSON is cut to
+  2 MB by trimming long lists. The call is bounded at 50 s by the door itself
+  (httpx's timeout never applies to an in-process app), and the answer is
+  parsed, masked and cut on the threadpool, never on the event loop.
+- **Masking is defence in depth, not the guarantee**: a column or JSON key
+  naming a password, token, secret, sealed value, hash or API key, the `value`
+  beside a settings-style `key` that names one (`/admin/settings`' rule), and
+  any string CARRYING the shape of a sealed password, a PBKDF2 hash, a JWT, a
+  bot token or a provider key anywhere inside it (a record literal, a
+  concatenation, a JSON text) become ••• and are named in `masked`. Arbitrary
+  SQL can always transform a value past a pattern — the credential refusal
+  above and the person reading the card are what actually keep secrets in.
+  Workers' names and phones are NOT masked — they reach the chat transcript
+  as a DM report always did; the operator accepted that class of exposure.
+- **Kill switch**: `ops_door_off` in app_settings. «🔒 … eshikni yopish» on any
+  card and `/opsdoor` in the bot (the two approvers only) set it; while it is
+  set every ask is refused 403 `door_closed`, and a take after the close too.
+- **The Jurnal** (category «Yangilash va eksport», source «Hisobot eshigi»):
+  `ops.asked`, `ops.ask_refused`, `ops.key_refused`, `ops.allowed` /
+  `ops.denied` (source bot, the approver), `ops.taken` (rows, bytes, ms, what
+  was masked or cut), `ops.expired`, `ops.interrupted`, `ops.door_closed` /
+  `ops.door_opened`.
+  `/api/ops/` is in the middleware's `_SKIP`; every row is written by hand.
+- **A cloud session reaches it only once `production.safiacorporate.uz` is on
+  its environment's Allowed domains**, with the key as an API credential for
+  that site (header `X-Ops-Key`, no prefix — or type Bearer) or as
+  `SAFIA_OPS_KEY`. Until then the door works from the laptop only.
+- **Never** widen it to writes, never let it store an answer, never give the
+  key a second power. A question it cannot answer is a one-shot report.
 
 ## Deployment
 
@@ -13644,6 +14079,26 @@ What was fixed, and the rule each one now is:
   reaches a JS chunk again: **never bring back a `define` (or an import of
   build.json) for a value that changes every build.** A translation or a shared
   boot-module edit still cascades through most chunks.
+- **…and the Tailwind SOURCE LIST is named, not auto-detected** (v4.330.2).
+  `frontend/src/index.css` opens `@import "tailwindcss" source(none);` followed
+  by one `@source` per root — `tailwind.config.js`'s own `content` list, which
+  Tailwind 4 does not read without `@config`. **A new source root is a line
+  HERE**, or its classes are silently missing. Why: a cloud session symlinks
+  `frontend/node_modules` in from `/opt`, so it resolves outside the project and
+  neither `.gitignore` (root says `node_modules`, no slash, for exactly this;
+  `frontend/.gitignore` still says `node_modules/`, which matches directories
+  only) nor `@source not "../node_modules"` stopped the scanner walking it. It
+  compiled four utilities off dependency FILE NAMES — `.columns-3` from
+  lucide's `dynamicIconImports.d.ts`, `.drop-shadow` from lightningcss,
+  `.hidden\!`, `.filter\!` — so a cloud-built `index.css` differed from a
+  laptop's by ~686 bytes, and since every chunk imports the entry (whose
+  `__vite__mapDeps` lists every chunk's name) that one leaf renamed all 231
+  asset files on every cloud deploy. The one defeat v4.324.1 could not see.
+  **The oracle for any change here is byte equality**: build, and compare
+  `dist/assets/index-*.css` with production's — identical content gives an
+  identical hash, and the whole `dist` diff collapses to the four stamp files
+  (`index.html`, `build.json`, `build-files.json`, `sw.js`), which is what a
+  backend-only deploy must look like.
 - **JS leaves the origin compressed** (v4.324.1). main.py registers
   `application/javascript` for .js/.mjs: Python ≥3.12 says `text/javascript`,
   which the origin nginx's `gzip_types` does not name, so every JS file —

@@ -99,7 +99,10 @@ OUTCOMES = ("done", "refused", "denied", "error")
 # "assistant": a change «Yordamchi» made for the user, through their own
 # session, after they pressed Confirm (services/assistant_api.py). The request
 # carries a SIGNED run mark, so the label is a fact, not a header anybody can send.
-SOURCES = ("telegram", "web", "bot", "system", "assistant")
+# "ops": the report door (services/ops_door.py) — a Claude session asking
+# production a question with its ask key; the person who allowed it is the
+# «bot» row beside it.
+SOURCES = ("telegram", "web", "bot", "system", "assistant", "ops")
 
 
 # ── the route table ───────────────────────────────────────────────────────────
@@ -418,6 +421,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
     (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
+    # «Hisobotlar» — the period report as a document. One route, whichever
+    # format the path names (pdf | docx | xlsx).
+    (("POST",),   "/api/reports/export.{}",                    "sync_export", "export.reports"),
     (("POST",),   "/api/leaderboard/export.xlsx",              "sync_export", "export.leaderboard"),
     (("POST",),   "/api/category-compliance/read",             "sync_export", "sync.category_read"),
     (("POST",),   "/api/ontime/read",                          "sync_export", "sync.ontime_read"),
@@ -529,6 +535,9 @@ _SKIP = (
     # change it makes is its own request, recorded with source "assistant".
     "/api/assistant/messages", "/api/assistant/runs/", "/api/assistant/files",
     "/api/assistant/threads", "/api/assistant/transcribe",
+    # The report door writes its own rows (routers/ops_door.py): the asker,
+    # the approver and what was read, none of which this middleware can see.
+    "/api/ops/",
 )
 
 _PREFIXES = ("/api/", "/admin/")

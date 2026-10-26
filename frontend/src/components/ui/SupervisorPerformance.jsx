@@ -113,8 +113,6 @@ const STAT_TIPS = {
   "Trudoyomkost": "Actual production output — the real work completed by the team.",
   "Verifix Time": "Reported working hours from Verifix × 60 × 0.85 efficiency coefficient.",
   "Difference":   "Verifix Time minus Labor hours. Positive = Verifix reported more time than production used.",
-  "Reported HC":  "Official headcount as recorded in the Verifix attendance file.",
-  "Verifix HC":   "Effective headcount derived from Verifix labor hours. ⚠ if difference > 2 persons.",
 };
 
 // Headcount to one decimal, AT THE SOURCE. Verifix HC is a float: a worker split
@@ -331,13 +329,13 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
             <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2">
               <div className="rounded-lg p-2.5 sm:p-3" style={{ background: "var(--bg-inner)" }}>
                 <div className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
-                  {t("profile.reportedHC")} {STAT_TIPS["Reported HC"] && <Tooltip text={STAT_TIPS["Reported HC"]} />}
+                  {t("profile.reportedHC")} <Tooltip text={t("profile.reportedHCTip")} />
                 </div>
                 <div className="text-sm font-bold font-mono" style={{ color: "var(--text-1)" }}>{latest?.official_hc ?? "—"}</div>
               </div>
               <div className="rounded-lg p-2.5 sm:p-3" style={{ background: "var(--bg-inner)" }}>
                 <div className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-0.5" style={{ color: "var(--text-3)" }}>
-                  {t("profile.verifixHC")} {STAT_TIPS["Verifix HC"] && <Tooltip text={STAT_TIPS["Verifix HC"]} />}
+                  {t("profile.verifixHC")} <Tooltip text={t("profile.verifixHCTip")} />
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-bold font-mono" style={{ color: "var(--text-1)" }}>{fmtNum(latest?.verifix_hc)}</span>

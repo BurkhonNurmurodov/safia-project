@@ -22,7 +22,7 @@ import {
   ClipboardCheck, FileText, IdCard, LogIn, Building2, ListChecks, BadgeCheck,
   Factory, MessagesSquare, Megaphone, RefreshCw, Sliders, Trash2, CircleHelp,
   CheckCircle2, Ban, ShieldX, TriangleAlert,
-  Send, Globe, Bot, Cpu, GraduationCap } from "lucide-react";
+  Send, Globe, Bot, Cpu, GraduationCap, KeyRound } from "lucide-react";
 
 /** Traffic light + the platform's "not started" slate. Never re-spelled inline. */
 export const GREEN = "#22c55e";
@@ -64,7 +64,7 @@ export const OUTCOME = {
   error:   { color: RED,   Icon: TriangleAlert },
 };
 
-export const SRC_ICON = { telegram: Send, web: Globe, bot: Bot, system: Cpu };
+export const SRC_ICON = { telegram: Send, web: Globe, bot: Bot, system: Cpu, ops: KeyRound };
 
 // ── text ─────────────────────────────────────────────────────────────────────
 
