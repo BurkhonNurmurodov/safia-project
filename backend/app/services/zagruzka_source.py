@@ -195,11 +195,9 @@ def _planned_for(db: Session, ids: list[int], date_from: date, date_to: date) ->
     ojidaniya weight, a gap report — and each call would otherwise re-read every
     unit's dated catalog and quantities (`_labor_inputs`) to answer the same
     question. Kept on `db.info`, which is per request (`get_db`) or per
-    scheduler pass: nothing on this platform writes a plan QUANTITY and then
-    reads a typed pin in the same session — the two write doors that move
-    quantities (the SAP upload, /override) answer through
-    `pp_calc.compute_dashboard`, which computes the planned set itself from the
-    rows it is handed."""
+    scheduler pass, and DROPPED whenever that session writes the catalog or a
+    quantity, commits or rolls back (the listeners below) — `catalog_follow`
+    moves lines and pins and reads the people again in one session."""
     key = ("zs_planned", tuple(ids), date_from.isoformat(), date_to.isoformat())
     got = db.info.get(key)
     if got is None:
