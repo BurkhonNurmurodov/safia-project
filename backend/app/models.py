@@ -1290,7 +1290,19 @@ class PPCatalogVersion(Base):
     or after that day. services/pp_catalog.py is the one reader and the one
     writer — never query this table anywhere else. `valid_from` NULL = every day
     before `valid_to` (the catalog as it stood when dating began). Nothing here
-    is ever edited: a past day is not something a catalog edit may reach."""
+    is ever edited: a past day is not something a catalog edit may reach.
+
+    ONE deliberate exception (2026-10-26, «the catalog follows its cells»): when
+    a cell changes brigadir its positions go with it from the cell's own move
+    day `h` (the operator's rulings 3 and 4), and a move followed late — or the
+    retroactive one-shot — finds both units already frozen past `h`. Then
+    `services/catalog_follow` rewrites the two units' versions for the days
+    [h, S) and nothing else: it splits them at `h` (`pp_catalog.split_at`, which
+    changes no day's content) and takes that one cell's entries out of the old
+    unit's versions into the new unit's (`pp_catalog.rewrite_version`). Every
+    rewrite is listed on the move record (`pp_catalog_moves.versions`: the
+    entries removed whole, the ids added, each field changed) so it can be
+    undone. No other writer may touch a version's content."""
     __tablename__ = "pp_catalog_versions"
 
     id           = Column(Integer, primary_key=True, autoincrement=True)
@@ -1304,6 +1316,75 @@ class PPCatalogVersion(Base):
 
     __table_args__ = (UniqueConstraint("manager_id", "valid_to",
                                        name="uq_pp_catalog_version_to"),)
+
+
+class PPCatalogMove(Base):
+    """One cell's positions FOLLOWING it to another brigadir (2026-10-26, the
+    operator's rulings: «cells own the catalog»; docs/plan-catalog-follows-cells.md).
+
+    One row per transfer — a cell from `from_unit` to `to_unit`, counting from
+    `home_from` (its move day `h`) — written by `services/catalog_follow` (the
+    sweep after a brigadir change lands, kind live | late) or by the
+    retroactive one-shot (kind retro). `state` says how it ended: `moved`
+    (positions changed unit), `nothing` (the cell owned none), `named` (left
+    alone for a stated reason, see `named`), `failed` / `busy` (retried at
+    `next_try_at`), `gave_up`, `dry` (a rehearsal that wrote nothing else).
+
+    It is the AUDIT of the one exception to «a catalog version is never edited»
+    (`versions`: every rewrite of [h, S), undoable), and the evidence later
+    readers use: `services/pp_catalog_moves` reads the `moved` rows so an SAP
+    upload or an ABC import into the old unit never re-creates a position that
+    left, and the new unit's import keeps one its sheet lacks.
+
+    Soft integer references only — no foreign keys — so creating this table
+    takes no lock on `managers`, `cells` or `cell_link_events`, which every
+    request reads; a unit re-keyed later is re-pointed by the re-key lists."""
+    __tablename__ = "pp_catalog_moves"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    kind         = Column(String(8), nullable=False)        # live | late | retro
+    state        = Column(String(12), nullable=False)       # moved | nothing | named | failed | busy | gave_up | dry
+    event_id     = Column(Integer, nullable=True)           # cell_link_events.id
+    cell_id      = Column(Integer, nullable=False)
+    code         = Column(String(32), nullable=False)       # the cell's normalised SAP code at landing (C)
+    from_unit    = Column(Integer, nullable=True)
+    to_unit      = Column(Integer, nullable=True)
+    home_from    = Column(Date, nullable=False)             # h — the cell's move day
+    storage_from = Column(Date, nullable=True)              # S — NULL when nothing moved
+    letter_from  = Column(String(1), nullable=True)
+    letter_to    = Column(String(1), nullable=True)
+    # Whole(X): no cell of the old unit stayed at the code, so the code left it entirely.
+    whole_code   = Column(Boolean, nullable=False, server_default="false", default=False)
+    # The union of every PPProduct id that changed unit (an import inside [h, S)
+    # re-creates ids, so one span's ids are not another's).
+    line_ids     = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    # [{id, qty_key, wc, wc_n, base, group_from, group_to, active_after,
+    #   joined_into, takes_sap}] — what moved, as it was.
+    lines        = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    wc_ids       = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    wc_dropped   = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    versions     = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    letters      = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    rekey        = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    named        = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    impact       = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    tries        = Column(Integer, nullable=False, server_default="0", default=0)
+    next_try_at  = Column(DateTime(timezone=True), nullable=True)
+    error        = Column(Text, nullable=True)
+    by_name      = Column(String, nullable=True)
+
+    __table_args__ = (
+        # At most one row per landing event — what makes the sweep idempotent.
+        Index("uq_pp_catalog_moves_event", "event_id", unique=True,
+              postgresql_where=text("event_id IS NOT NULL")),
+        Index("ix_pp_catalog_moves_from", "from_unit"),
+        Index("ix_pp_catalog_moves_to", "to_unit"),
+        Index("ix_pp_catalog_moves_cell", "cell_id", "home_from"),
+        Index("ix_pp_catalog_moves_retry", "state", "next_try_at",
+              postgresql_where=text("state IN ('failed','busy')")),
+    )
 
 
 class PPWorkCenter(Base):

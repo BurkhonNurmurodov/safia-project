@@ -27,9 +27,34 @@ WHEN an edit starts is :func:`effective_day`: the shift running at that moment
 takes it, a shift already over does not (the operator's ruling, fixed 08:00 and
 20:00 — deliberately NOT the «Smena vaqtlari» register). From 08:00 to 20:00
 that is today's date for both shifts; a closed day in progress takes it too.
+
+**The catalog follows its cells (2026-10-26).** When a cell changes brigadir
+its positions go with it from the cell's own move day `h` (the operator's
+rulings; docs/plan-catalog-follows-cells.md). The readers above did not change
+for that — `services/catalog_follow` WRITES the move into the catalog instead,
+with the primitives below:
+
+* :func:`lock` — two-int advisory locks, held to the end of the transaction:
+  `NS_CAT` (one unit's catalog, exclusive; :func:`freeze` takes it, so every
+  catalog writer is serialised with the follow) and `NS_QTY` (one unit's
+  quantities: shared for the quantity writers, exclusive for the follow).
+  Reentrant inside one transaction; nothing at all off Postgres.
+* ``freeze(..., day=)`` — draw the boundary at a GIVEN day rather than the
+  shift running now; :func:`align` draws ONE shared boundary `S` for every unit
+  of a move (two units' `freeze` would otherwise clamp to two different days),
+  after which each unit's current rows answer from `S` and versions cover every
+  day before it.
+* :func:`split_at` / :func:`versions_between` / :func:`rewrite_version` — the
+  ONE deliberate exception to «a version is never edited»: a move followed
+  after `S` > `h` takes the cell's entries out of the old unit's versions for
+  [h, S) and into the new unit's. `split_at` cuts a version in two without
+  changing any day's content; `rewrite_version` replaces a version's content
+  and nothing else. Only `catalog_follow` calls them, and it lists every
+  rewrite on the move record (models.PPCatalogMove.versions).
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -37,9 +62,10 @@ from types import SimpleNamespace
 from typing import Iterable, Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import Manager, PPCatalogVersion, PPProduct, PPWorkCenter
 
@@ -57,6 +83,43 @@ _LINE_DEFAULTS = {"sap_code": "", "name": "", "work_center": "", "op": None,
                   "auto_fill": True, "wc_group": None, "uom": None}
 _WC_DEFAULTS = {"code": "", "shtatka": 0, "capacity": None, "sort_order": 0,
                 "active": True}
+
+# Two-int advisory lock namespaces, keyed by unit (the second int). No other
+# lock on the platform uses them (`live_projection` is 61_006_202).
+NS_CAT = 61_026_101     # one unit's catalog — pp_products / pp_work_centers / versions
+NS_QTY = 61_026_102     # one unit's quantities — pp_daily / pp_line_daily / pins
+
+
+# ── the locks: one writer of a unit's catalog at a time ──────────────────
+
+def _on_postgres(db: Session) -> bool:
+    return db.get_bind().dialect.name == "postgresql"
+
+
+def lock(db: Session, unit_ids: Iterable[int], *, ns: int = NS_CAT,
+         shared: bool = False, try_: bool = False) -> bool:
+    """Take each unit's advisory lock in namespace `ns`, held until `db`
+    commits or rolls back. Returns False only when `try_` found one busy.
+
+    Ids are taken in sorted order, so two callers locking overlapping sets
+    queue rather than deadlock. Reentrant inside one transaction — Postgres
+    never makes a session wait for a lock it already holds, whatever the mode —
+    which is what lets the follow try every lock up front and then call
+    :func:`freeze` / :func:`align`, which lock again. A False from `try_` may
+    leave the ids before the busy one held: the caller gives up and rolls back,
+    which releases them. Off Postgres there is nobody to race: True, nothing
+    taken."""
+    ids = sorted({int(u) for u in unit_ids if u is not None})
+    if not ids or not _on_postgres(db):
+        return True
+    fn = ("pg_try_advisory_xact_lock" if try_ else "pg_advisory_xact_lock") \
+        + ("_shared" if shared else "")
+    q = text(f"SELECT {fn}(:ns, :k)")
+    for k in ids:
+        got = db.execute(q, {"ns": int(ns), "k": k}).scalar()
+        if try_ and not got:
+            return False
+    return True
 
 
 # ── when an edit starts ─────────────────────────────────────────────────────
@@ -253,7 +316,7 @@ def catalog_for(day_spans: list[tuple[Catalog, date, date]], day: date) -> Optio
     return None
 
 
-# ── the one writer ──────────────────────────────────────────────────────────
+# ── the writer every catalog edit calls ─────────────────────────────────────
 
 def has_history(db: Session, manager_id: int) -> bool:
     return db.query(PPCatalogVersion.id).filter(
@@ -271,7 +334,7 @@ def is_empty(db: Session, manager_id: int) -> bool:
 
 
 def freeze(db: Session, manager_id: int, reason: str = "",
-           now: Optional[datetime] = None) -> date:
+           now: Optional[datetime] = None, *, day: Optional[date] = None) -> date:
     """Keep the unit's catalog as it stands for every day before the edit about
     to be made starts, and return the day it starts on.
 
@@ -280,11 +343,17 @@ def freeze(db: Session, manager_id: int, reason: str = "",
     mutated in memory would be copied with its NEW value and the past would
     read the edit after all. A second edit on the same shift-day finds the
     boundary already drawn and freezes nothing — within one day the last edit
-    wins. Two writers racing to draw one boundary meet on
-    `uq_pp_catalog_version_to`; the loser's copy is discarded, and the winner's
-    is the older of the two. The caller commits.
+    wins. The unit's `NS_CAT` lock is taken first, so writers draw boundaries
+    one at a time and the second one reads the first one's; should two still
+    meet on `uq_pp_catalog_version_to`, the loser's copy is discarded and the
+    winner's is the older of the two. The caller commits.
+
+    `day` draws the boundary at that day instead of the shift running `now`
+    (the follow's `align`); it is clamped like any other edit — a day on or
+    before the latest boundary answers that boundary and freezes nothing.
     """
-    eff = effective_day(db.query(Manager.shift).filter(
+    lock(db, [manager_id])
+    eff = day if day is not None else effective_day(db.query(Manager.shift).filter(
         Manager.id == manager_id).scalar(), now)
     cf = current_from(db, manager_id)
     if cf is not None and eff <= cf:
@@ -301,3 +370,96 @@ def freeze(db: Session, manager_id: int, reason: str = "",
     except IntegrityError:
         pass
     return eff
+
+
+# ── the follow's writers: one boundary for several units, and [h, S) ────────
+
+def align(db: Session, unit_ids: Iterable[int], day: date, reason: str) -> date:
+    """Draw ONE boundary `S` for every unit of a move and return it:
+    `S = max(day, every unit's current_from)`, each unit frozen at `S`.
+
+    Two units frozen one by one at `day` would each clamp to their own latest
+    boundary and could end up answering from two different days, so the cell's
+    positions could not change unit on one day. After this every unit's current
+    rows answer from `S` and versions cover every day before it — a unit with
+    no catalog history (an empty destination included) gets its first version.
+    All the units' catalog locks are taken first, in one sorted pass. The
+    caller commits."""
+    ids = sorted({int(u) for u in unit_ids if u is not None})
+    if not ids:
+        return day
+    lock(db, ids)
+    bounds = _current_from_many(db, ids)
+    s = max([day, *bounds.values()])
+    for u in ids:
+        freeze(db, u, reason, day=s)
+    got = _current_from_many(db, ids)
+    off = [u for u in ids if got.get(u) != s]
+    if off:
+        raise RuntimeError(f"pp_catalog.align: units {off} do not answer from {s}")
+    return s
+
+
+def split_at(db: Session, manager_id: int, day: date) -> None:
+    """Make `day` a version boundary of the unit — the first day of a version —
+    without changing what ANY day reads.
+
+    The version V covering `day` from a day before it (`valid_from` < `day` ≤
+    `valid_to`, `valid_from` NULL counting as −∞) becomes [valid_from, day−1]
+    and an identical copy covers [day, valid_to]: same lines, work centres and
+    reason. `day` already a boundary (a version starts there, or it is the
+    unit's `current_from`) is a no-op, and so is a day no version covers. A
+    day inside the CURRENT rows cannot be split here — that is :func:`freeze`'s
+    job — and raises. V is shortened and flushed before the copy is inserted:
+    the copy takes over V's `valid_to`, which `uq_pp_catalog_version_to` lets
+    only one row hold. The caller commits."""
+    cf = current_from(db, manager_id)
+    if cf is None or day > cf:
+        raise ValueError(f"pp_catalog.split_at: {day} is in unit {manager_id}'s current "
+                         f"rows (current from {cf}) — freeze first")
+    if day == cf:
+        return
+    v = (db.query(PPCatalogVersion)
+         .filter(PPCatalogVersion.manager_id == manager_id,
+                 PPCatalogVersion.valid_to >= day)
+         .order_by(PPCatalogVersion.valid_to).first())
+    if v is None or (v.valid_from is not None and v.valid_from >= day):
+        return
+    vt = v.valid_to
+    v.valid_to = day - timedelta(days=1)
+    db.flush()
+    db.add(PPCatalogVersion(
+        manager_id=manager_id, valid_from=day, valid_to=vt,
+        lines=copy.deepcopy(v.lines or []), work_centers=copy.deepcopy(v.work_centers or []),
+        reason=v.reason))
+    db.flush()
+
+
+def versions_between(db: Session, manager_id: int, a: date, b: date) -> list[PPCatalogVersion]:
+    """The unit's version rows that cover any day of [a, b], oldest first (by
+    `valid_to`) — the rows the follow rewrites for a window."""
+    if a > b:
+        return []
+    return (db.query(PPCatalogVersion)
+            .filter(PPCatalogVersion.manager_id == manager_id,
+                    PPCatalogVersion.valid_to >= a,
+                    or_(PPCatalogVersion.valid_from.is_(None),
+                        PPCatalogVersion.valid_from <= b))
+            .order_by(PPCatalogVersion.valid_to).all())
+
+
+def rewrite_version(db: Session, row: PPCatalogVersion, lines: list[dict],
+                    work_centers: list[dict]) -> None:
+    """Replace a version's content — its lines and work centres — and nothing
+    else: `valid_from`, `valid_to` and `reason` stay as they are.
+
+    The ONE door through which a version's content changes, and only
+    `catalog_follow` may use it (models.PPCatalogVersion). New list objects are
+    assigned AND the columns flagged: a JSONB column is not tracked in place,
+    so a caller that edited `row.lines` itself and handed the same list back
+    would otherwise be written as «no change». Decimals become floats, the
+    shape `freeze` stores. The caller flushes and commits."""
+    row.lines = [{k: _num(v) for k, v in dict(d).items()} for d in (lines or [])]
+    row.work_centers = [{k: _num(v) for k, v in dict(d).items()} for d in (work_centers or [])]
+    flag_modified(row, "lines")
+    flag_modified(row, "work_centers")
