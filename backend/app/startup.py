@@ -7723,6 +7723,40 @@ def _brigadir_change_state_job() -> None:
                       brigadir_change_report_oct24.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: where «Odam soni» and the загрузка count different pins ──
+# The operator, 25.10.2026: «Файл загрузки» showed 45 people for Niyozov
+# Izzatilla on 24.10 and «Ежедневно» showed 66 for the same unit-day. The page
+# counts a typed pin only where its code matches, exactly, a work centre the
+# day's catalog puts on the panel; `zagruzka_source.typed_pins` counts EVERY
+# pp_work_center_daily row of that unit-day, unnormalised. READ-ONLY: which
+# rows differ, over how many unit-days since ZAGRUZKA_FROM, and the загрузка
+# each affected day reads now against what the page's own Σ would give
+# (`services/pin_mismatch_report.py`). Changing what it reports needs a NEW key.
+PIN_MISMATCH_FLAG = "pin_mismatch_report_2026_10_26_v1"
+_PIN_MISMATCH_DELAY_S = 150
+
+
+def report_pin_mismatch() -> None:
+    """Page-vs-загрузка «Odam soni» differences, DMed once. Never raises."""
+    try:
+        if not _report_pending(PIN_MISMATCH_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("pin-mismatch-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_PIN_MISMATCH_DELAY_S),
+                    _pin_mismatch_job)
+    except Exception as exc:
+        print(f"[startup] pin mismatch report could not be scheduled: {exc}")
+
+
+def _pin_mismatch_job() -> None:
+    print("[startup] pin mismatch report: started")
+    from app.services import pin_mismatch_report
+    _send_report_once(PIN_MISMATCH_FLAG, "pin mismatch report",
+                      pin_mismatch_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: every shift-manager, brigadir and leader AS VERIFIX LISTS THEM ──
 # The operator asked on 2026-10-25 for the names and shifts of all three roles
 # «from the verifix (not from our platform)». It READS Verifix (employees, jobs,

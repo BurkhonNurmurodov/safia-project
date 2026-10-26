@@ -139,6 +139,7 @@ async def lifespan(app: FastAPI):
         report_wc_plan_history,
         report_brigadir_change_state,
         report_verifix_roles,
+        report_pin_mismatch,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -460,6 +461,14 @@ async def lifespan(app: FastAPI):
     # Remove this line, `startup.report_verifix_roles` and
     # `services/verifix_roles_report_oct25.py` once it has been sent.
     run(report_verifix_roles)
+
+    # ⚠ TEMPORARY report (2026-10-26) — where «Odam soni» on «Zagruzka fayli»
+    # and the загрузка's own headcount count different typed pins, with the
+    # load each affected unit-day reads now against the page's own Σ. READ-ONLY,
+    # DMed once. Only SCHEDULES a job (one flag read), so it sits in the boot
+    # phase. Remove this line, `startup.report_pin_mismatch` and
+    # `services/pin_mismatch_report.py` once it has been sent.
+    run(report_pin_mismatch)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

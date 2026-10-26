@@ -9400,6 +9400,47 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
 
+## «Odam soni»: the page and the загрузка count different pins (2026-10-26)
+
+The operator, 25.10.2026, on Niyozov Izzatilla's 24.10: «Файл загрузки» showed
+ЛЮДЕЙ (Σ) **45** (21 + 12 + 12) and «Ежедневно» ОФИЦ. ЧИСЛ. **66** for the
+same unit-day. Both read the TYPED «Bugungi fakt» pins; they do not read the
+same set of them.
+
+- **The PAGE** counts a pin only where its `work_center` matches, EXACTLY, a
+  code the day's catalog puts on the panel — `pp_calc` builds `wc_codes` from
+  the active work-centre register ∪ the work centres active catalog lines name,
+  and looks a pin up with `ov_all.get(code)`. ΣN is over that panel.
+- **The ЗАГРУЗКА** counts EVERY `pp_work_center_daily` row of that (unit, date)
+  with `people IS NOT NULL` — `zagruzka_source.typed_pins`, keyed on the raw
+  string, with no `norm_code` and no join to the register. `unit_people` is what
+  `official_hc` is, so /daily, /zagruzka and every fleet figure divide by it.
+
+So a pin survives its work centre being deactivated, deleted from the register,
+dropped from the catalog, or spelled another way (a Cyrillic twin — «A code is
+LATIN» — a stray space, another case), and from then on it counts in the
+загрузка while being invisible, and uneditable, on the page it was typed on.
+`cell_pins` already folds two spellings onto one work centre through
+`wc_group.wc_key` and says so in its docstring; `unit_people` never got it.
+
+- **TEMPORARY, READ-ONLY** `services/pin_mismatch_report.py`,
+  `startup.report_pin_mismatch` (flag `pin_mismatch_report_2026_10_26_v1`,
+  ~150 s after boot, both entrypoints) DMs `UNPRICED_DM_CHAT` text + a workbook:
+  every unit-day since `ZAGRUZKA_FROM` where the page's Σ and the загрузка's differ,
+  each offending pin with WHY it is off the page (`spelling` · `cyrillic_twin`
+  · `inactive` · `unknown_code`, and which code it should have landed on), and
+  the загрузка that day reads now against what the page's own Σ would give.
+  It derives every figure from the functions the two pages read and writes
+  nothing but its flag. Delete the module, the startup pair and both calls once
+  it has landed; changing what it reports needs a NEW key.
+- **The fix is NOT wired and needs the operator's word.** Scoping `typed_pins`
+  to the day's panel codes and matching through `norm_code` is the honest rule
+  — the load must divide by what the page that collects the number shows — but
+  nothing is stored, so every unit-day back to 2 September re-reads at the next
+  restart and the загрузка goes UP wherever it bites (Niyozov's 24.10: 64 % → 96 %).
+  Same class as «Making an OFF cell leave the загрузка … ask the operator before
+  wiring it». The report is the blast radius that decision needs.
+
 ## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
 
 The operator asked for the names and shifts of all three roles «from the
