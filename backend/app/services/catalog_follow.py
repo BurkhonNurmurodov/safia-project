@@ -37,7 +37,9 @@ grouped by (move day, code) so a swap or a team moving together is one
 transaction. It never waits on a lock: a unit whose catalog or quantities
 another writer holds makes the group `busy`, retried with back-off
 (`BACKOFF_MIN`), then given up and DMed. It stays off until the retroactive
-one-shot (`catalog_follow_retro`) has finished — its flag reads `done`.
+one-shot (`catalog_follow_retro`) has finished — its flag reads `done` — and a
+retroactive transfer it retries passes the one-shot's OWN guards again first
+(`catalog_follow_retro.recheck`, via `_recheck_retro`).
 """
 from __future__ import annotations
 
@@ -74,7 +76,9 @@ RETRY = ("failed", "busy")
 
 # What stops a STRICT follow (the retroactive one-shot) — nothing is written
 # and the transfer is recorded `named`. Everything else is a report: a join, a
-# twin, a destination with no catalog, two auto-fill switches that differ.
+# twin, a destination with no catalog, two auto-fill switches that differ, an
+# ARCHIVED shared line left behind (`shared_left_archived` — §1.9: archived
+# lines never block; only an active shared line is `shared_left`).
 STRICT_STOP = frozenset({
     "to_no_unit", "code_changed", "shared_left", "shared_left_split", "no_free_letter",
     "y_register_break", "letters_after", "pin_conflict", "conservation"})
@@ -118,6 +122,8 @@ class Plan:
     sibling: dict = field(default_factory=dict)      # dst → (lone staying cell, its letter from h)
     named: list = field(default_factory=list)
     staying_dst: dict = field(default_factory=dict)  # dst → {cell id: letter on h−1}
+    own_dst: dict = field(default_factory=dict)      # dst → {cell id: letter} — arrivals that
+                                                     # already stood there and keep their letter
     storage_from: Optional[date] = None              # S, once aligned (a joined copy's archived_from)
     now: Optional[datetime] = None                   # a joined copy's archived_at
 
@@ -195,6 +201,18 @@ def enabled(db: Session) -> bool:
 
 # ── the plan ────────────────────────────────────────────────────────────────
 
+def _row_letters(db: Session, unit: int, code: str, exclude: set) -> set[str]:
+    """The letters the unit's cell ROWS carry at `code` today — archived ones
+    included (`uq_cells_wc_group` has no archive filter), the cells in
+    `exclude` (the group's own) left out."""
+    out: set[str] = set()
+    for cid, g, sap in db.query(Cell.id, Cell.wc_group, Cell.sap_code).filter(
+            Cell.manager_id == unit, Cell.wc_group.isnot(None)).all():
+        if cid not in exclude and norm_code(sap) == code and g:
+            out.add(g)
+    return out
+
+
 def _taken(db: Session, unit: int, code: str, exclude: set) -> set[str]:
     """Every letter a new arrival in `unit` at `code` must not take (§1.6):
     every cell row of the unit at the code (archived ones included, the
@@ -203,11 +221,7 @@ def _taken(db: Session, unit: int, code: str, exclude: set) -> set[str]:
     date. A letter nothing of the unit's past carries is history-neutral: no
     line or pin dated before `h` names it, so a reader that does not date
     letters reads the same figures for those days."""
-    out: set[str] = set()
-    for cid, g, sap in db.query(Cell.id, Cell.wc_group, Cell.sap_code).filter(
-            Cell.manager_id == unit, Cell.wc_group.isnot(None)).all():
-        if cid not in exclude and norm_code(sap) == code and g:
-            out.add(g)
+    out: set[str] = _row_letters(db, unit, code, exclude)
     for g, wc in db.query(PPProduct.wc_group, PPProduct.work_center).filter(
             PPProduct.manager_id == unit, PPProduct.wc_group.isnot(None)).all():
         if g and norm_code(wc) == code:
@@ -234,6 +248,18 @@ def _letters_after(cell_id: int, h: date) -> bool:
     from app.services import cell_links
     return any(eff > h for eff, _w in
                cell_links.events().get(cell_links.LETTERS, {}).get(cell_id) or [])
+
+
+def _own_letter(cell, unit: int, before: date) -> Optional[str]:
+    """The cell's letter in `unit` on `before` (h−1) when the dated links
+    ALREADY place it there that day — a cell whose move no link event records
+    (the retroactive one-shot's cells moved before 12 October: every reader
+    has read them in their new unit all along). None for a move the links
+    date — a live one, a landed one — whose cell stood in its old unit."""
+    from app.services import cell_links
+    if cell is None or cell_links.value_on(cell, "manager_id", before) != unit:
+        return None
+    return _g(cell_links.letter_on(cell, before))
 
 
 def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
@@ -270,13 +296,30 @@ def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
             t = arrivals[0]
             plan.letter_dst[t.cell_id] = _g(getattr(cells.get(t.cell_id), "wc_group", None))
             continue
-        taken = _taken(db, y, code, moving) | {g for g in st.values() if g}
+        staying = {g for g in st.values() if g}
+        # What ANOTHER cell of the unit carries at the code: its rows today,
+        # the stayers' letters on h−1, and what this pass hands out below.
+        others = _row_letters(db, y, code, moving) | staying
+        taken = _taken(db, y, code, moving) | staying
         for t in arrivals:
             c = cells.get(t.cell_id)
+            # Only a transfer no landing event carries can already stand in its
+            # new unit: a move an event dates stood in its old unit on h−1 —
+            # a live move keeps today's rule whatever the links cache holds.
+            mine = _own_letter(c, y, before) if t.event_id is None else None
             if _letters_after(t.cell_id, h):
                 g = _g(getattr(c, "wc_group", None))
                 plan.named.append(_named("letters_after", cell=t.cell_id,
                                          code=getattr(c, "verifix_code", None)))
+            elif mine and mine not in others:
+                # The cell already stands in the unit with its own letter — a
+                # move no link event records (the retroactive one-shot's cells
+                # moved before 12 Oct), so every reader already reads it there,
+                # under that letter, on every day. The unit's lines and pins
+                # typed under it since the move are the cell's OWN: they count
+                # against nobody, and keeping the letter changes no day at all.
+                g = mine
+                plan.own_dst.setdefault(y, {})[t.cell_id] = g
             else:
                 g = t.letter_src if (t.letter_src and t.letter_src not in taken) else _free(taken)
                 if g is None:
@@ -284,6 +327,7 @@ def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
             plan.letter_dst[t.cell_id] = g
             if g:
                 taken.add(g)
+                others.add(g)
         if len(st) == 1:
             (s_id, s_let), = st.items()
             if s_let:
@@ -308,6 +352,14 @@ def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
 
 
 # ── the transformation of one catalog content (pure) ────────────────────────
+
+def _carried_dst(plan: Plan, unit: int) -> set:
+    """The letters a destination's cells claim at the code before the sibling
+    rule hands it what is left: the stayers' (h−1), and the own letters of
+    arrivals that already stood there (`Plan.own_dst`)."""
+    return ({g for g in (plan.staying_dst.get(unit) or {}).values() if g}
+            | {g for g in (plan.own_dst.get(unit) or {}).values() if g})
+
 
 def _empty_report() -> dict:
     return {"moved": {}, "owner": {}, "src": {}, "dst": {}, "joined": {}, "dropped_lines": [],
@@ -366,10 +418,22 @@ def transform(contents: dict[int, dict], plan: Plan, *, current: bool) -> tuple[
                 else:
                     left.append(p)
         if left:
+            # Only an ACTIVE shared line is a position somebody still makes —
+            # it is what stops a strict follow (§1.9: archived lines never
+            # block). An archived one stays in the old unit just the same,
+            # owned by nobody, and is only said (`shared_left_archived`).
             split = len({t.dst for t in deps}) > 1
-            rep["named"].append(_named("shared_left_split" if split else "shared_left", unit=x,
-                                       count=len(left),
-                                       lines=[p.get("name") for p in left[:10]]))
+            live_left = [p for p in left if _active(p)]
+            archived_left = [p for p in left if not _active(p)]
+            if live_left:
+                rep["named"].append(_named("shared_left_split" if split else "shared_left", unit=x,
+                                           count=len(live_left),
+                                           lines=[p.get("name") for p in live_left[:10]]))
+            if archived_left:
+                rep["named"].append(_named("shared_left_archived", unit=x,
+                                           count=len(archived_left),
+                                           lines=[p.get("name") for p in archived_left[:10]],
+                                           split=True if split else None))
         leaving[x] = moving
 
     # 2. Y_remaining: every unit minus what leaves it.
@@ -379,11 +443,13 @@ def transform(contents: dict[int, dict], plan: Plan, *, current: bool) -> tuple[
 
     # 3. The sibling rule: a lone staying cell keeps every line of the unit at
     #    the code no staying cell claims — they take its letter (a new one when
-    #    it had none), so the arrivals do not share them.
+    #    it had none), so the arrivals do not share them. An arrival that
+    #    already stood in the unit under its own letter (`own_dst`) claims its
+    #    lines there too: they are its, not the sibling's.
     for y, (s_id, ls) in plan.sibling.items():
         if y not in out:
             continue
-        carried = {g for g in (plan.staying_dst.get(y) or {}).values() if g}
+        carried = _carried_dst(plan, y)
         for p in own.lines_at(out[y]["lines"], code):
             g = _g(p.get("wc_group"))
             if (g is None or g not in carried) and g != ls:
@@ -850,7 +916,7 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
         # (added to the one it already has, when it is lettered and has one).
         for y, (s_id, ls) in plan.sibling.items():
             ys = pins.get(y) or []
-            carried = {g for g in (plan.staying_dst.get(y) or {}).values() if g}
+            carried = _carried_dst(plan, y)
             group_pins = [r for r in ys if r.wc_group is not None]
             loose = [r for r in group_pins if r.wc_group not in carried and r.wc_group != ls]
             whole = next((r for r in ys if r.wc_group is None), None)
@@ -1748,6 +1814,55 @@ def _summary(r: PPCatalogMove) -> dict:
             "named": [n.get("kind") for n in r.named or []]}
 
 
+def _recheck_retro(db: Session, transfers: list[Transfer], now: datetime) -> tuple[list, list]:
+    """A retroactive transfer the sweep retries (the one-shot recorded it
+    `busy` or `failed`) passes the one-shot's OWN guards again before the
+    engine is handed it — `catalog_follow_retro.recheck`: the evidence of the
+    move day, another cell moving at the code, the new unit's unclaimed
+    positions, shared positions, a staying cell nothing shows standing there…
+    The engine's strict stops alone would not catch what changed in the
+    minutes or hours since. A transfer that fails a guard is settled `named`
+    (a person decides; the admin DM names it). Returns (the transfers still
+    to follow, the rows settled here — in the session, uncommitted).
+
+    The one-shot module is TEMPORARY: once it is deleted a retroactive retry
+    can no longer be checked and is named `recheck_unavailable`, never
+    followed unchecked."""
+    existing = _transfer_rows(db, transfers)
+    retro_rows = {_tkey(t): existing.get(_tkey(t)) for t in transfers}
+    retro_rows = {k: r for k, r in retro_rows.items() if r is not None and r.kind == "retro"}
+    if not retro_rows:
+        return transfers, []
+    try:
+        from app.services import catalog_follow_retro as retro
+    except ImportError:
+        retro = None
+    # Every verdict first, every write after: a guard reads several tables and
+    # must never see — or roll back — a row this loop half-filled.
+    verdicts = {k: ({"kind": "recheck_unavailable"} if retro is None else retro.recheck(db, r))
+                for k, r in retro_rows.items()}
+    cells = {c.id: c for c in db.query(Cell).filter(
+        Cell.id.in_([t.cell_id for t in transfers])).all()}
+    keep, settled = [], []
+    for t in transfers:
+        nm = verdicts.get(_tkey(t))
+        if nm is None:
+            keep.append(t)
+            continue
+        r = retro_rows[_tkey(t)]
+        ev = db.get(CellLinkEvent, t.event_id) if t.event_id is not None else None
+        _fill_row(r, t, kind="retro", state="named",
+                  code=norm_code(getattr(cells.get(t.cell_id), "sap_code", None)) or r.code,
+                  by_name=getattr(ev, "by_name", None), named=[nm])
+        if ev is not None:
+            ev.vfx = {**(ev.vfx or {}), "catalog_follow": {
+                "state": "named", "storage_from": None, "lines": 0, "letter_to": None,
+                "at": now.isoformat()}}
+        settled.append(r)
+    db.flush()
+    return keep, settled
+
+
 def _run_group(transfers: list[Transfer], now: datetime) -> dict:
     from app.database import SessionLocal
     from app.services import cell_register
@@ -1755,17 +1870,24 @@ def _run_group(transfers: list[Transfer], now: datetime) -> dict:
     try:
         with SessionLocal() as db:
             kind = _group_kind(db, transfers)
-            res = follow_group(db, transfers, kind=kind, strict=(kind == "retro"), now=now)
+            todo, rechecked = (_recheck_retro(db, transfers, now) if kind == "retro"
+                               else (transfers, []))
+            # A failure from here rolls the whole session back — the recheck's
+            # `named` rows with it — and the except below retries the WHOLE
+            # group, so those transfers are asked about again, never lost.
+            res = follow_group(db, todo, kind=kind, strict=(kind == "retro"), now=now) \
+                if todo else GroupResult("named", None, [], {}, {})
+            rows = rechecked + list(res.rows)
             if res.state == "busy":
                 # What was settled without a lock (a cell with no code, one
-                # archived …) stands; only the transfers that met the lock wait.
+                # archived …, or named by the retro's guards) stands; only the
+                # transfers that met the lock wait.
                 waiting = {r.cell_id for r in res.rows if r.state == "busy"}
-                settled = [_summary(r) for r in res.rows if r.state != "busy"]
-                db.commit()
+                settled = [_summary(r) for r in rows if r.state != "busy"]
             else:
                 waiting = None
-                out = {"state": res.state, "rows": [_summary(r) for r in res.rows]}
-                db.commit()
+                out = {"state": res.state, "rows": [_summary(r) for r in rows]}
+            db.commit()
     except Exception as exc:  # noqa: BLE001 — retried with back-off
         log.exception("catalog follow: group failed")
         return {"retry": _record_retry(transfers, "failed", repr(exc), now, kind)}

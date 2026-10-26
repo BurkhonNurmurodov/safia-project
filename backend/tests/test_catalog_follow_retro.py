@@ -45,27 +45,10 @@ H = date(2026, 10, 14)                 # a landed brigadir change's day (links e
 
 
 class _Retro(_World):
-    """The engine's world, plus the evidence tables, emptied between tests."""
+    """The engine's world (which empties the evidence tables between tests
+    too) and the evidence the pass reads."""
 
-    def setUp(self):
-        from app import models as m
-        s = self.pg.Session()
-        for t in (m.Attendance, m.LiveProjection, m.ActionLog):
-            s.query(t).delete()
-        s.commit()
-        s.close()
-        super().setUp()
-
-    # ── the evidence ─────────────────────────────────────────────────────────
-
-    def att(self, cell, unit, a, b, n=3):
-        """`n` named workers with hours at the cell's code, filed under `unit`
-        every day of [a, b]."""
-        from app.models import Attendance
-        for d in _days(a, b):
-            for i in range(n):
-                self.db.add(Attendance(manager_id=unit, date=d, worker_name=f"W{cell.verifix_code}-{i}",
-                                       hours_worked=8, verifix_code=cell.verifix_code))
+    # ── the evidence (`att` is the engine world's) ───────────────────────────
 
     def roster(self, unit, d, *cells):
         from app.models import LiveProjection
@@ -288,6 +271,144 @@ class RetroPass(_Retro):
         self.assertEqual(rec["pre12"], ["3201"])
         self.assertEqual(self.ids_on(Y, date(2026, 10, 12)), {p.id})
 
+    # ── G: a pre-12-Oct mover keeps the letter it already carries in Y ───────
+
+    G_H = date(2026, 10, 8)
+    G_LO, G_HI = date(2026, 10, 5), date(2026, 10, 12)
+
+    def _pre12_world(self, *, second: bool = False):
+        """c moved X → Y on 8 Oct, before link events existed: it stands in Y
+        (the column) lettered B, and Y typed its people under B since the move
+        and added a position for it under B. X still holds c's old position
+        (X keeps no cell at the code: an unlettered orphan). y1 (A) has stood
+        in Y all along — and, with `second`, y2 (C) beside it."""
+        h = self.G_H
+        self.units(X, Y)
+        c = self.cell("3801", Y, letter="B")
+        y1 = self.cell("3802", Y, letter="A")
+        w = {"c": c, "y1": y1}
+        w["lx"] = self.line(X, "F001", "Tort", labor=60)
+        w["l1"] = self.line(Y, "F005", "Pirog", labor=20, letter="A")
+        w["lc"] = self.line(Y, "F006", "Keks", labor=30, letter="B", sort=1)
+        if second:
+            w["y2"] = self.cell("3803", Y, letter="C")
+            w["l2"] = self.line(Y, "F007", "Non", labor=12, letter="C", sort=2)
+        for d in _days(self.G_LO, self.G_HI):
+            self.daily(X, d, "F001", plan=10, actual=9)
+            self.daily(Y, d, "F005", plan=6, actual=6)
+            self.daily(Y, d, "F006", plan=4, actual=4)
+            self.pin(Y, d, group="A", people=5)
+            if d >= h:
+                self.pin(Y, d, group="B", people=3)         # c's people, typed in Y
+            else:
+                self.pin(X, d, people=3)                    # …and in X before it left
+            if second:
+                self.daily(Y, d, "F007", plan=2, actual=2)
+                self.pin(Y, d, group="C", people=2)
+        self.att(c, X, date(2026, 9, 29), h - timedelta(days=1))
+        self.att(c, Y, h, date(2026, 10, 11))
+        for k in ("y1", "y2"):
+            if k in w:
+                self.att(w[k], Y, date(2026, 9, 29), date(2026, 10, 11))
+        self.db.commit()
+        return w
+
+    def _cell_pins(self, unit, a, b):
+        from app.models import Cell
+        from app.services import zagruzka_source as zs
+        cells = self.db.query(Cell).filter(Cell.manager_id == unit).all()
+        return zs.cell_pins(cells, zs.typed_pins(self.db, [unit], a, b))
+
+    def assert_pre12_kept(self, w, rec, hist0, mins0, pins0):
+        from app.models import Cell, PPWorkCenterDaily
+        h, hi = self.G_H, self.G_HI
+        self.assertEqual(rec["skipped"], [], rec["skipped"])
+        [m] = rec["moved"]
+        self.assertEqual((m["vcode"], m["h"], m["letter_from"], m["letter_to"], m["letters"]),
+                         ("3801", h.isoformat(), None, "B", {}))
+        c = self.db.get(Cell, w["c"].id)
+        self.assertEqual(c.wc_group, "B")                  # kept: no letter change, no history
+        self.assertEqual(self.history([X, Y], self.G_LO, h - timedelta(days=1)), hist0)
+        self.assertEqual(self.minutes([X, Y], h, hi), mins0)          # Σ conserved
+        self.assert_unique([X, Y], self.G_LO, hi)
+        want = {w["l1"].id: "A", w["lc"].id: "B", w["lx"].id: "B"}
+        if "l2" in w:
+            want[w["l2"].id] = "C"
+        for d in _days(h, hi):
+            self.assertEqual({p.id: p.wc_group for p in pp_catalog.at(self.db, Y, d).lines}, want)
+            self.assertEqual(self.ids_on(X, d), set())
+        # Its pins stay claimed: Y's B pins untouched, and c reads them.
+        pins = {(r.wc_group, r.people) for r in self.db.query(PPWorkCenterDaily).filter(
+            PPWorkCenterDaily.manager_id == Y, PPWorkCenterDaily.date >= h)}
+        self.assertEqual({g for g, _n in pins}, {"A", "B"} | ({"C"} if "l2" in w else set()))
+        self.assertEqual({n for g, n in pins if g == "B"}, {3})
+        got = self._cell_pins(Y, h, hi)
+        for d in _days(h, hi):
+            iso = d.isoformat()
+            self.assertEqual(got[(c.id, iso)][0], 3.0)
+            self.assertEqual(got[(w["y1"].id, iso)][0], 5.0)
+        self.assertEqual(got, pins0)
+
+    def test_pre12_mover_keeps_its_letter_beside_a_lone_stayer(self):
+        """y1 (A) is the lone stayer — the sibling rule hands it every position
+        and pin of Y nobody claims. c's own B positions and B pins are claimed
+        — by c, which keeps B: they stay its, and X's orphan arrives under B."""
+        w = self._pre12_world()
+        hist0 = self.history([X, Y], self.G_LO, self.G_H - timedelta(days=1))
+        mins0 = self.minutes([X, Y], self.G_H, self.G_HI)
+        pins0 = self._cell_pins(Y, self.G_H, self.G_HI)
+        rec = self.run_retro()
+        self.assert_pre12_kept(w, rec, hist0, mins0, pins0)
+
+    def test_pre12_mover_keeps_its_letter_beside_two_stayers(self):
+        """y1 (A) and y2 (C) stay: c keeps B, and its own B position in Y is
+        no stranger to it (`y_has_lines` names only what nobody claims)."""
+        w = self._pre12_world(second=True)
+        hist0 = self.history([X, Y], self.G_LO, self.G_H - timedelta(days=1))
+        mins0 = self.minutes([X, Y], self.G_H, self.G_HI)
+        pins0 = self._cell_pins(Y, self.G_H, self.G_HI)
+        rec = self.run_retro()
+        self.assert_pre12_kept(w, rec, hist0, mins0, pins0)
+
+    def test_a_kept_letter_another_stayer_carries_is_not_kept(self):
+        """y1 carried B on the move day and was re-lettered A since: B is a
+        STAYER's letter on h−1, so c cannot keep it — it takes a free one, as
+        any arrival does (the live rule)."""
+        from app.models import CellLinkEvent
+        w = self._pre12_world()
+        y1 = w["y1"]
+        # y1's letter on h−1 was B (its own dated letter history).
+        self.db.add(CellLinkEvent(cell_id=y1.id, field="manager_id", value=Y, prev=Y,
+                                  effective_from=self.G_H + timedelta(days=1),
+                                  effective_at=datetime.combine(self.G_H, time(0), tzinfo=TZ),
+                                  applied_at=NOW, src="catalog_follow",
+                                  vfx={"catalog_mark": True, "wc_group_was": "B"}))
+        self.db.commit()
+        self.forget()
+        plan = cf.build_plan(self.db, [cf.Transfer(cell_id=w["c"].id, event_id=None, src=X, dst=Y,
+                                                   home_from=self.G_H, letter_src=None)])
+        self.assertEqual(plan.staying_dst[Y], {y1.id: "B"})
+        self.assertNotIn(Y, plan.own_dst)
+        self.assertNotIn(plan.letter_dst[w["c"].id], {"A", "B", None})
+
+    def test_a_live_move_keeps_todays_rule(self):
+        """The plan for a move the links date (an event): the cell stood in X
+        the day before, so its column letter is NOT its own in Y — a Y pin
+        carrying that letter still makes it take a free one."""
+        self.units(X, Y)
+        c = self.cell("3901", X, letter="B")
+        y1 = self.cell("3902", Y, letter="A")
+        self.line(X, "F001", "Tort", letter="B")
+        self.pin(Y, H, group="B", people=1)                 # Y's past carried B
+        ev = self.applied(c, Y, H, letter="B")
+        self.db.commit()
+        self.forget()
+        plan = cf.build_plan(self.db, [cf.Transfer(cell_id=c.id, event_id=ev.id, src=X, dst=Y,
+                                                   home_from=H, letter_src="B")])
+        self.assertEqual(plan.own_dst, {})
+        self.assertEqual(plan.letter_dst[c.id], "C")
+        self.assertEqual(plan.staying_dst[Y], {y1.id: "A"})
+
     def test_a_cell_that_brings_nothing_is_settled_not_named(self):
         """X held nothing at the code; Y has positions there: nothing moves,
         and the change is settled (`nothing`), not left for a person."""
@@ -363,11 +484,12 @@ class RetroGuards(_Retro):
         """The cell's letter is clear, but X holds an unlettered line it shared
         with the cell that stayed."""
         self.units(X, Y)
-        self.cell("1502", X, letter="A")
+        stay = self.cell("1502", X, letter="A")
         c = self.cell("1501", Y)
         self.line(X, "F001", "Tort", letter="A")
         self.line(X, "F002", "Keks", letter="B", sort=1)
         self.line(X, "F003", "Non", sort=2)
+        self.att(stay, X, date(2026, 9, 29), date(2026, 10, 11))      # it really stayed
         self.att(c, X, date(2026, 9, 29), date(2026, 10, 7))
         self.att(c, Y, date(2026, 10, 8), date(2026, 10, 11))
         self.db.commit()
@@ -388,8 +510,8 @@ class RetroGuards(_Retro):
         split evenly today, the arrival would take a share of it."""
         self.units(X, Y)
         c = self.cell("1611", X)
-        self.cell("1612", Y, letter="A")
-        self.cell("1613", Y, letter="B")
+        for vc, g in (("1612", "A"), ("1613", "B")):
+            self.att(self.cell(vc, Y, letter=g), Y, date(2026, 10, 1), H)    # both really stood there
         self.line(X, "F001", "Tort", labor=60)
         self.line(Y, "F010", "Keks", labor=30, letter="A")
         self.line(Y, "F011", "Non", labor=30, letter="B", sort=1)
@@ -438,6 +560,94 @@ class RetroGuards(_Retro):
         self.assert_named("window_cells_moved", "1701", before, rec)
         self.assert_named("window_cells_moved", "1702", before, rec)
 
+    def _stayer_world(self, *, evidence: bool):
+        """c (A) X → Y landed on H with its position; a cell 3502 stands in Y
+        at the code with no letter — opened on 20 Oct (cells carry no creation
+        date, so the dated links stand it there on every day), or, with
+        `evidence`, really there all along (attendance from 1 Oct)."""
+        self.units(X, Y)
+        c = self.cell("3501", X, letter="A")
+        p = self.line(X, "F001", "Tort", letter="A")
+        q = self.line(Y, "F009", "Rulet", labor=30)                 # Y's, unlettered
+        self.daily(X, H, "F001", plan=10, actual=8)
+        self.applied(c, Y, H)
+        late = self.cell("3502", Y)
+        if evidence:
+            self.att(late, Y, date(2026, 10, 1), H)
+        self.db.commit()
+        return c, p, q, late
+
+    def test_stayer_unproven_in_the_new_unit(self):
+        """Counted as having stayed in Y the unlettered 3502 would be the lone
+        sibling: given a letter from H (with a letter history it never had)
+        and handed Y's unclaimed position. Nothing shows it stood there by H —
+        named, nothing written."""
+        from app.models import Cell, CellLinkEvent
+        c, _p, _q, late = self._stayer_world(evidence=False)
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("stayer_unproven", "3501", before, rec)
+        [e] = self.skipped(rec, "3501")
+        self.assertEqual(e["params"], {"other": "3502", "unit": Y, "day": H.isoformat()})
+        self.assertIsNone(self.db.get(Cell, late.id).wc_group)
+        self.assertFalse(any("siblings_was" in (ev.vfx or {})
+                             for ev in self.db.query(CellLinkEvent).all()))
+
+    def test_a_stayer_shown_there_counts(self):
+        """The same with attendance placing 3502 in Y by H: it is a stayer —
+        the move goes through, the sibling rule letters it from H."""
+        from app.models import Cell
+        from app.services import cell_links
+        c, p, q, late = self._stayer_world(evidence=True)
+        rec = self.run_retro()
+        self.assertEqual(rec["skipped"], [], rec["skipped"])
+        [m] = rec["moved"]
+        self.assertEqual(m["vcode"], "3501")
+        self.assertEqual((self.ids_on(Y, H), self.ids_on(X, H)), ({p.id, q.id}, set()))
+        self.assertEqual(self.db.get(Cell, late.id).wc_group, "B")
+        self.assertIsNone(cell_links.letter_on(self.db.get(Cell, late.id), H - timedelta(days=1)))
+
+    def test_stayer_unproven_in_the_old_unit(self):
+        """X: c (A) left on H; 3602 (B) stands in X at the code — opened later,
+        nothing shows it there by H. Counted, it would keep X's B position from
+        c (c alone owns every line no stayer claims). Named, nothing written."""
+        self.units(X, Y)
+        c = self.cell("3601", X, letter="A")
+        self.cell("3602", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B", sort=1)
+        self.applied(c, Y, H)
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("stayer_unproven", "3601", before, rec)
+        [e] = self.skipped(rec, "3601")
+        self.assertEqual((e["params"]["other"], e["params"]["unit"]), ("3602", X))
+
+    def test_a_stayer_moved_there_by_its_own_event_counts(self):
+        """A link event of the stayer's own that put it in the unit by H is
+        evidence too — no attendance needed."""
+        from app.models import CellLinkEvent
+        self.units(X, Y, Z)
+        c = self.cell("3701", X, letter="A")
+        stay = self.cell("3702", Z, letter="B")
+        la = self.line(X, "F001", "Tort", letter="A")
+        lb = self.line(X, "F002", "Keks", letter="B", sort=1)
+        early = date(2026, 9, 20)                 # before FLOOR: no window move
+        self.db.add(CellLinkEvent(cell_id=stay.id, field="manager_id", value=X, prev=Z,
+                                  effective_from=early,
+                                  effective_at=datetime.combine(early, time(8), tzinfo=TZ),
+                                  applied_at=datetime.combine(early, time(8, 1), tzinfo=TZ),
+                                  src="manual", vfx={}))
+        stay.manager_id = X
+        self.applied(c, Y, H)
+        self.db.commit()
+        rec = self.run_retro()
+        self.assertEqual(rec["skipped"], [], rec["skipped"])
+        [m] = rec["moved"]
+        self.assertEqual(m["vcode"], "3701")
+        self.assertEqual((self.ids_on(Y, H), self.ids_on(X, H)), ({la.id}, {lb.id}))
+
     def test_letters_after(self):
         from app.models import CellLinkEvent
         c, _p, _ev = self.simple_event_world("1801")
@@ -475,7 +685,7 @@ class RetroGuards(_Retro):
         minutes from nowhere — the engine's strict check stops it."""
         self.units(X, Y)
         c = self.cell("2101", X)
-        self.cell("2102", Y, letter="A")
+        self.att(self.cell("2102", Y, letter="A"), Y, date(2026, 10, 1), H)
         self.line(X, "F001", "Tort", labor=60)
         self.line(Y, "F001", "Keks", labor=30, letter="A")
         self.daily(X, H, "F001", plan=100, actual=90)
@@ -590,6 +800,83 @@ class RetroFlow(_Retro):
         [row] = self.move_rows()
         self.assertEqual((row.state, row.kind), ("moved", "retro"))
         self.assertEqual(self.ids_on(Y, H), {p.id})
+
+    def _busy_then(self, vcode):
+        """The simple world's move, recorded `busy` by the pass (an edit held
+        X), the lock released and the retry made due — what the sweep finds."""
+        from app.models import PPCatalogMove
+        c, p, ev = self.simple_event_world(vcode)
+        self.db.commit()
+        other = self.pg.Session()
+        self.others.append(other)
+        self.assertTrue(pp_catalog.lock(other, [X]))
+        rec = self.run_retro()
+        self.assertEqual([b["vcode"] for b in rec["busy"]], [vcode])
+        other.rollback()
+        self.db.query(PPCatalogMove).update(
+            {"next_try_at": datetime.now(timezone.utc) - timedelta(minutes=1)})
+        self.db.commit()
+        return c, p, ev
+
+    def sweep(self):
+        with mock.patch("app.services.action_log.record_system"), \
+                mock.patch.object(cf, "_dm") as dm:
+            cf.run_sweep()
+        self.forget()
+        return dm
+
+    def test_sweep_rechecks_a_retro_retry(self):
+        """A position nobody of Y claims appears at the code before the sweep
+        retries the busy transfer. The engine's strict stops would let the
+        arrival take it (a lone arrival owns every line there); the pass's own
+        `y_has_lines` would not — the sweep runs the pass's guards first, and
+        names it. Nothing is written; the record is final."""
+        from app.models import PPCatalogMove
+        _c, p, ev = self._busy_then("4001")
+        self.line(Y, "F009", "Rulet", labor=30)
+        self.db.commit()
+        before = self.catalog_fp()
+        dm = self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind, row.event_id), ("named", "retro", ev.id))
+        self.assertEqual([n["kind"] for n in row.named], ["y_has_lines"])
+        self.assertEqual(self.catalog_fp(), before)
+        self.assertEqual(self.ids_on(X, H), {p.id})
+        self.assertTrue(dm.called)                                  # a person decides
+        self.sweep()                                                # final: never again
+        self.assertEqual([(r.state, r.tries) for r in self.move_rows()], [("named", 1)])
+        self.assertEqual(self.db.query(PPCatalogMove).count(), 1)
+
+    def test_sweep_recheck_sees_a_cell_opened_since(self):
+        """A cell opened in Y at the code after the pass (no evidence of it by
+        H): `stayer_unproven` on the retry, as the pass itself would say."""
+        _c, p, _ev = self._busy_then("4101")
+        self.cell("4102", Y)
+        self.db.commit()
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind), ("named", "retro"))
+        self.assertEqual([(n["kind"], n["other"]) for n in row.named], [("stayer_unproven", "4102")])
+        self.assertEqual(self.ids_on(X, H), {p.id})
+
+    def test_sweep_recheck_unavailable_once_the_module_is_gone(self):
+        """The one-shot module deleted while a retroactive transfer still waits
+        for its retry: the guards cannot be run, so it is NAMED
+        (`recheck_unavailable`), never followed unchecked."""
+        import sys
+        import app.services as services
+        _c, p, _ev = self._busy_then("4201")
+        saved = services.catalog_follow_retro
+        try:
+            del services.catalog_follow_retro
+            with mock.patch.dict(sys.modules, {"app.services.catalog_follow_retro": None}):
+                self.sweep()
+        finally:
+            services.catalog_follow_retro = saved
+        [row] = self.move_rows()
+        self.assertEqual((row.state, [n["kind"] for n in row.named]),
+                         ("named", ["recheck_unavailable"]))
+        self.assertEqual(self.ids_on(X, H), {p.id})
 
     def test_a_follow_that_raises_is_retried(self):
         from app.models import PPCatalogMove
