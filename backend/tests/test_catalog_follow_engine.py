@@ -902,6 +902,47 @@ class FollowEngine(_World):
         self.assertIn("autofill_differs", {n["kind"] for n in res.report["named"]})
         self.assertEqual(res.report["rekey"].get("rejoined"), 2)
 
+    def test_a_failing_rejoin_costs_only_the_snapshot(self):
+        """A database error inside the re-join aborts its own savepoint: the
+        move commits, `rejoin_failed` is named, nothing is retried."""
+        from sqlalchemy import text
+        from app.models import PPManagerSetting
+        self._t2_world()
+        self.db.add(PPManagerSetting(manager_id=X, auto_fill=False))
+        self.db.commit()
+        self.land()
+
+        def broken(db, mid, pairs, since=None, commit=True):
+            db.execute(text("SELECT 1 / 0"))
+
+        with mock.patch("app.routers.production._rejoin_lines", broken):
+            res = self.follow()
+        self.assertEqual(res.state, "moved")
+        self.assertIn("rejoin_failed", {n["kind"] for n in res.report["named"]})
+
+    def test_whole_people_split_by_largest_remainder(self):
+        """Σ whole people is Σ of the shares, rounded once."""
+        named = []
+        self.assertEqual(cf._int_split({1: 2.5, 2: 2.5}, named), {1: 3, 2: 2})
+        self.assertEqual(cf._int_split({1: 3.5, 2: 3.5}, named), {1: 4, 2: 3})
+        self.assertEqual(sum(cf._int_split({1: 10 / 3, 2: 10 / 3, 3: 10 / 3}, named).values()), 10)
+        self.assertEqual(cf._int_split({1: 4.0, 2: None}, []), {1: 4})
+        self.assertEqual(cf._int_split({}, []), {})
+
+    def test_a_build_started_before_a_forget_is_not_kept(self):
+        from app.routers import shift_report
+        from app.services import leaders_kpi
+        import time as _t
+        t0 = _t.monotonic()
+        shift_report.forget()
+        shift_report._cache_put(("rv-test",), t0, {"old": True})
+        self.assertIsNone(shift_report._cache_get(("rv-test",)))
+        shift_report._cache_put(("rv-test",), _t.monotonic(), {"new": True})
+        self.assertEqual(shift_report._cache_get(("rv-test",))[1], {"new": True})
+        shift_report.forget()
+        leaders_kpi.forget_plan()
+        self.assertGreaterEqual(leaders_kpi._plan_forgot, t0)
+
     def test_edges_from_and_to_no_unit(self):
         """A brigadir-less cell gaining a unit moves nothing; a cell whose
         brigadir was cleared is named and its lines stay."""

@@ -80,9 +80,24 @@ def _cache_get(key):
         return _cache.get(key)
 
 
+_forgot = 0.0                        # monotonic() of the last `forget()`
+
+
+def forget() -> None:
+    """Drop every kept answer — a cell's positions moved (services/catalog_follow).
+    A build that STARTED before this read the old catalog, so `_cache_put`
+    refuses its answer rather than keep it as fresh."""
+    global _forgot
+    with _cache_lock:
+        _forgot = time.monotonic()
+        _cache.clear()
+
+
 def _cache_put(key, started: float, value) -> None:
     now = time.monotonic()
     with _cache_lock:
+        if started < _forgot:
+            return                   # built over a catalog a move has changed since
         old = _cache.get(key)
         if old is not None and old[0] > started:
             return                   # a build that started later is already kept

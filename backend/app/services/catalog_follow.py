@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import math
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -874,6 +875,27 @@ def _int_people(v: float, named: list, **where) -> int:
     return n
 
 
+def _int_split(vals: dict, named: list, **where) -> dict:
+    """Whole people for the departers of ONE source unit on one day, summing to
+    the whole of their shares: Σ of the integers is Σ of the shares rounded
+    half up, handed out by the largest remainder (ties by cell id). Rounded one
+    departer at a time, a whole-centre pin of 5 split between two cells became
+    3 + 3 — the typed people the загрузка divides by changed with the move."""
+    items = sorted((cid, float(v)) for cid, v in vals.items() if v is not None)
+    if not items:
+        return {}
+    total = sum(v for _c, v in items)
+    target = int(total + 0.5)
+    out = {cid: math.floor(v) for cid, v in items}
+    rest = target - sum(out.values())
+    for cid, _v in sorted(items, key=lambda cv: (-(cv[1] - math.floor(cv[1])), cv[0]))[:max(0, rest)]:
+        out[cid] += 1
+    for cid, v in items:
+        if abs(out[cid] - v) > 1e-9:
+            named.append(_named("people_rounded", value=round(v, 4), cell=cid, **where))
+    return out
+
+
 def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
                 counts: Counter, named: list) -> None:
     """The typed «Bugungi fakt» pins at the code, from `h` on (§1.7):
@@ -953,6 +975,11 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
             saved[x] = [{"work_center": r.work_center, "wc_group": _g(r.wc_group),
                          "people": r.people, "shtatka": r.shtatka, "updated_at": r.updated_at}
                         for r in go]
+        ints: dict[int, int] = {}
+        for x in sources:
+            ints.update(_int_split({t.cell_id: values[t.cell_id] for t in plan.transfers
+                                    if t.src == x and t.cell_id in values},
+                                   named, unit=x, day=d.isoformat()))
         for x, go in leaving.items():
             for r in go:
                 db.delete(r)
@@ -1057,7 +1084,8 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
             raw = next((s["work_center"] for s in saved.get(t.src) or []), None) \
                 or next((r.work_center for r in (by_day[d].get(t.src) or [])), None) or code
             whole = next((r for r in ys if r.wc_group is None), None)
-            n = _int_people(v, named, unit=y, day=d.isoformat(), cell=t.cell_id)
+            n = ints[t.cell_id] if t.cell_id in ints else _int_people(
+                v, named, unit=y, day=d.isoformat(), cell=t.cell_id)
             if L is None:
                 if whole is not None and whole.people is not None:
                     named.append(_named("pin_conflict", unit=y, day=d.isoformat(), cell=t.cell_id))
@@ -1681,14 +1709,18 @@ def _apply(db: Session, plan: Plan, units: list[int], cells: dict, events: dict,
 def _rejoin(db: Session, unit: int, pairs: set, h: date, counts: Counter, named: list) -> None:
     """A position moved from a unit kept by hand into one the SAP file fills:
     fill its snapshot from the stored files from `h` on — never committing,
-    the follow is one transaction (`production._rejoin_lines(commit=False)`)."""
+    the follow is one transaction (`production._rejoin_lines(commit=False)`).
+    In a savepoint of its OWN: a database error inside it aborts only that
+    savepoint, so the move commits with `rejoin_failed` named instead of the
+    whole follow failing on the next statement and retrying to `gave_up`."""
     try:
         from app.routers import production
         fn = production._rejoin_lines
         if "commit" not in inspect.signature(fn).parameters:
             named.append(_named("rejoin_skipped", unit=unit))
             return
-        got = fn(db, unit, set(pairs), since=h, commit=False)
+        with db.begin_nested():
+            got = fn(db, unit, set(pairs), since=h, commit=False)
         counts["rejoined"] += int((got or {}).get("rows") or 0)
     except Exception:  # noqa: BLE001 — a snapshot never holds a move back
         log.exception("catalog follow: rejoin failed for unit %s", unit)
@@ -2132,13 +2164,11 @@ def _forget_caches() -> None:
         log.exception("catalog follow: kept answers not forgotten")
     try:
         from app.routers import shift_report
-        with shift_report._cache_lock:
-            shift_report._cache.clear()
+        shift_report.forget()
     except Exception:  # noqa: BLE001
         log.exception("catalog follow: shift report cache not cleared")
     try:
         from app.services import leaders_kpi
-        with leaders_kpi._plan_lock:
-            leaders_kpi._plan_kept.clear()
+        leaders_kpi.forget_plan()
     except Exception:  # noqa: BLE001
         log.exception("catalog follow: leaders KPI plan keep not cleared")
