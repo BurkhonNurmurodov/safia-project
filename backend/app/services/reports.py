@@ -359,6 +359,12 @@ def _idle(inp: dict, n: int) -> list[dict]:
 
 def _cost(inp: dict, n: int) -> list[dict]:
     cost = inp["cost"]                       # ym → {"totals", "cat_rows", "rows"}
+    if cost is None:
+        # Not this viewer's section (`routers/reports._sees_cost` —
+        # `/downtime/cost`'s own COST_ROLES): no block at all, so `compose`
+        # leaves «Xarajat» out of the payload, as the tab is left off
+        # /downtime for them. Never an empty table that reads as «cost 0».
+        return []
     yms = inp["yms"]
     t = [(cost.get(y) or {}).get("totals") or {} for y in yms]
 
@@ -535,11 +541,13 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
     # repeated. «cells» is a PERIOD fact (cells that carried a stoppage) and
     # is read per month: repeating the picked month's count under the two
     # before it would state something about them that was never measured.
-    scope = [
-        prow("units", "int", [inp["scope"]["units"]] * n),
-        prow("cells", "int", [((inp["cost"].get(y) or {}).get("totals") or {}).get("cells")
-                              for y in inp["yms"]]),
-    ]
+    scope = [prow("units", "int", [inp["scope"]["units"]] * n)]
+    if inp["cost"] is not None:
+        # The count comes out of the «Xarajat» tree, so a viewer the cost
+        # section is not for gets no row — not a «—» that reads as unknown.
+        scope.append(prow("cells", "int",
+                          [((inp["cost"].get(y) or {}).get("totals") or {}).get("cells")
+                           for y in inp["yms"]]))
     return [periods_block("headline", rows), periods_block("scope", scope)]
 
 
@@ -549,7 +557,9 @@ def compose(inp: dict) -> dict:
     `inp` carries, all already scoped and already period-bucketed by the
     router: `months` (the `months_for` list), `units`, `unit_ids`, `plan`,
     `plan_units`, `eff`, `ful`, `att`, `turnover`, `idle`, `cost`, `qual`,
-    `xav`, `scope`.
+    `xav`, `scope`. `idle` arrives through the viewer's category lock and
+    `cost` is None for a viewer the «Xarajat» section is not for — both the
+    router's decisions; nothing here knows a role.
     """
     months = inp["months"]
     n = len(months)

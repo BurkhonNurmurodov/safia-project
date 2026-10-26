@@ -17,6 +17,8 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import ReportSection from "../components/reports/ReportSection";
+import CatLockNotice from "../components/idle/CatLockNotice";
+import { CATS } from "../components/idle/categories";
 import {
   useRT, fill, monthLabel, fmtCell, rowLabel, colLabel, PAST_FROM, todayISO,
 } from "../components/reports/reportsUtil";
@@ -35,6 +37,19 @@ const ICON = {
 };
 
 const FORMATS = ["pdf", "docx", "xlsx"];
+
+// The sections whose figures the «Kutish mas'uli» category lock narrows — the
+// waiting itself and the two tables that lift its headline rows. A narrowed
+// register must SAY so (CatLockNotice's own reasoning), and it says so where
+// the narrowed numbers are, not over a quality table the lock never touches.
+const LOCK_SECS = new Set(["idle", "summary", "figures"]);
+
+// `cat_locked` names categories as the server does («Cat D3»); the words the
+// reader knows them by are the Ojidaniya page's own labels.
+const catLabel = (name, t) => {
+  const code = CATS.find((c) => c.name === name)?.code || String(name).replace(/^Cat\s*/i, "");
+  return `${code} · ${t(`downtime.cat.${code}.label`)}`;
+};
 
 const curMonth = () => todayISO().slice(0, 7);
 
@@ -125,6 +140,15 @@ export default function Reports() {
 
   const secs = data?.sections || [];
   const current = secs.find((s) => s.key === open) || secs[0];
+  // The LOCK off the payload, never the viewer's role: the server decided the
+  // scope, and a second derivation here is how the words and the numbers
+  // under them would come to describe two different things.
+  const catLocked = Array.isArray(data?.cat_locked) && data.cat_locked.length ? data.cat_locked : null;
+  // The document says it too — a narrowed report that does not say so reads as
+  // a quiet plant, and a file is read without the notice on screen beside it.
+  const lockLine = catLocked
+    ? `${t("downtime.catLocked")} ${catLocked.map((c) => catLabel(c, t)).join(", ")}`
+    : "";
 
   // ── the download ──────────────────────────────────────────────────────────
   // The server rebuilds every figure; what travels is what this screen PRINTED
@@ -160,7 +184,8 @@ export default function Reports() {
       managers: brig,
       fmt, lang,
       title: `${T.title} — ${monthLabel(ym, t)}`,
-      subtitle: [scopeLabel, fill(T.builtAt, { at: (data?.built_at || "").replace("T", " ") })]
+      subtitle: [scopeLabel, lockLine,
+                 fill(T.builtAt, { at: (data?.built_at || "").replace("T", " ") })]
         .filter(Boolean).join(" · "),
       filename: `${T.title}-${ym}`,
       caption: `📄 ${T.title} — ${monthLabel(ym, t)}`,
@@ -275,6 +300,7 @@ export default function Reports() {
               {T.secSub[current?.key] || ""}
             </p>
           </div>
+          {LOCK_SECS.has(current?.key) && <CatLockNotice cats={catLocked} />}
           {current && <ReportSection section={current} months={data.months || []} />}
 
           {/* What this platform cannot report, said out loud rather than left

@@ -3775,7 +3775,9 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   saved «cost» view as «Tahlil» for anybody else. Supervisors, leaders,
   top-managers and «Kutish mas'uli» keep the other two tabs. Scoped as the page
   is: a shift manager prices their shift ∩ plant. Only the RATE is admin-only,
-  checked in the endpoint and not merely by hiding the ⚙.
+  checked in the endpoint and not merely by hiding the ⚙. **The /reports
+  «Xarajat» section follows the same list** (2026-10-26, `reports._sees_cost`
+  imports `COST_ROLES`): absent from that payload for anybody else.
 - **The cell code is NOT a `CellLink` here**: the row is a disclosure, and a link
   inside it would navigate away mid-drill-down — the `IdleCell` accordion's own
   reasoning. And cost carries **no traffic-light colour**: no threshold for
@@ -3898,8 +3900,9 @@ new decision; the two locks below are the feature.
   minutes-only rows carry a category as well.
 - Locked endpoints: `/downtime`, `/downtime/matrix`, `/downtime/seasonality`,
   `/downtime/cell-detail`, `/downtime/cost`, `/downtime/cost/entries`,
-  `/idle-cell/cells` and all four workbooks. The PPTX deck is admin-only and an
-  admin is never locked.
+  `/idle-cell/cells`, all four workbooks, and the «Kutish» section of
+  `/api/reports` and its document (from 2026-10-26). The PPTX deck is
+  admin-only and an admin is never locked.
 - **Registration is the roster, not the bot branch.** `registration-options`
   builds the name-first login list from supervisors, leaders and the two manager
   tiers; a role missing from it has profiles nobody can claim, however well the
@@ -8374,6 +8377,29 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   (`scoped_manager_ids`), the shift, the brigadir pick, then `board_units`'
   own rule. Every half is handed that set — the turnover half included, which
   applies the scope it is given and knows nothing of the viewer's lock.
+- **The viewer's CATEGORY lock applies here too, and so does the cost
+  audience** (v4.332.0, 2026-10-26 — the security review of this page found
+  the page honoured the plant lock alone). «Kutish» is `_downtime`'s answer
+  passed through `idle_scope.narrow_downtime(…, lock=viewer_categories(…))`,
+  exactly as /downtime applies it: a «Kutish mas'uli» reads their own causes,
+  a narrowed month prints NO flag count (the 50-minute flag is a whole-day
+  fact — «—», never 0), an owner with no category left reads «—» in every row
+  (`empty_scope`), and an admin's answer is byte-identical to before. The
+  payload carries `cat_locked`, which the page draws as `CatLockNotice` over
+  the sections carrying waiting figures (`LOCK_SECS`: idle · summary ·
+  figures) and the document names in its subtitle. «Xarajat» is in the
+  payload for `downtime.COST_ROLES` only (admins and shift managers —
+  `/downtime/cost`'s own rule, imported by `_sees_cost`, never re-spelled)
+  and ABSENT for everybody else, as the tab is absent on /downtime for them;
+  `services/reports._cost` returns no block for a `cost` of None, so `compose`
+  leaves the section out, and the summary's «cells» row (read out of the cost
+  tree) goes with it. **Both facts ride the kept-answer KEY** beside the
+  scoped units (`_key`: the category lock and the cost audience), so one
+  viewer's build is never served to another — `leaders_kpi._board_key`'s
+  rule, and the rule for any narrowing added to `_build` later. Until then
+  the section read the unnarrowed answer and the key held the scope alone;
+  nothing leaked, because only admins, who carry no lock, could reach the
+  page.
 - Not built: a week or a year grain (the month is the KPI period), a chart
   (the document is tables), and any figure the platform does not already
   print.

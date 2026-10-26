@@ -16,6 +16,12 @@ This module does the FETCHING — every figure through the page that owns it,
 never a query of its own for a measure — and `services/reports.py` does the
 folding. The split is `ojidaniya_deck`'s: nothing in `services/` imports a
 router.
+
+Two VIEWER facts narrow a build beside the plant lock, and both ride the kept
+answer's key (`_key`): the «Kutish mas'uli» CATEGORY lock (`services/idle_scope`,
+applied to the «Kutish» section exactly as /downtime applies it) and whether
+the «Xarajat» section is this viewer's at all (`downtime.COST_ROLES`). One
+viewer's build is never served to another — the `leaders_kpi._board_key` rule.
 """
 from __future__ import annotations
 
@@ -105,12 +111,30 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
     `routers/downtime._downtime`, which IS the /downtime page's computation
     (the headcount-weighted mean of a unit's cells, the platform's one
     ojidaniya reading). `kpi_only=True` is what every consumer other than the
-    Ojidaniya page itself must pass."""
+    Ojidaniya page itself must pass.
+
+    The viewer's CATEGORY lock is applied to the finished answer, exactly as
+    /downtime applies it — `idle_scope.narrow_downtime` over `_downtime`'s
+    output, never a filter pushed into the query: a «Kutish mas'uli» reads
+    their own causes here as on every other ojidaniya surface, and an admin's
+    answer is byte-identical to the unnarrowed one. A narrowed month carries NO
+    flag count (the 50-minute flag is a whole-day fact a slice cannot
+    re-derive — `idle_scope`'s rule, so it prints «—», never 0), and an owner
+    whose categories were all re-assigned reads «—» in every row, never the
+    whole plant (`empty_scope`, the `_cost_by_month` convention)."""
     from app.routers.downtime import _downtime
+
+    cats = idle_scope.resolve_cats(db, payload, [])
+    lock = idle_scope.viewer_categories(db, payload)
+    if idle_scope.empty_scope(cats):
+        return {m["ym"]: {} for m in months}
+    locked = lock is not None
 
     out: dict[str, dict] = {}
     for m in months:
-        dt = _downtime(db, payload, m["from"], m["to"], shift, mids, True, factory)
+        dt = idle_scope.narrow_downtime(
+            _downtime(db, payload, m["from"], m["to"], shift, mids, True, factory),
+            cats, lock=lock)
         by_cat: dict[str, float] = {}
         by_unit: dict[int, dict] = {}
         total = 0.0
@@ -129,12 +153,27 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
                 u["flagged"] += 1
             for c, v in (r.get("by_category") or {}).items():
                 by_cat[c] = by_cat.get(c, 0.0) + float(v or 0)
+        if locked:
+            flagged = None
+            for u in by_unit.values():
+                u["flagged"] = None
         out[m["ym"]] = {
             "total": total, "flagged": flagged,
             "unit_days": sum(u["days"] for u in by_unit.values()),
             "by_cat": by_cat, "by_unit": by_unit,
         }
     return out
+
+
+def _sees_cost(payload: dict) -> bool:
+    """Whether the «Xarajat» section is this viewer's — `/downtime/cost`'s own
+    rule (`downtime.COST_ROLES`: admins and shift managers, the operator's
+    ruling of 2026-10-04), imported rather than re-spelled, so the report and
+    the tab can never answer «who may read what waiting cost» two ways. For
+    anybody else the section is not in the payload at all, as the tab is not
+    on /downtime for them."""
+    from app.routers.downtime import COST_ROLES
+    return payload.get("role") in COST_ROLES
 
 
 def _cost_by_month(db: Session, payload: dict, months: list[dict], ids: list[int]) -> dict:
@@ -233,7 +272,9 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     plan_tot: dict = {m0["ym"]: {} for m0 in months}
     plan_units: dict = {}
     idle = {m0["ym"]: {} for m0 in months}
-    cost = {m0["ym"]: {} for m0 in months}
+    # None = not this viewer's section (`_sees_cost`), and `services/reports`
+    # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
+    cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(payload) else None
     turn = {m0["ym"]: None for m0 in months}
     if ids:
         from app.routers.brigadirs import build_metrics_list
@@ -252,7 +293,8 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                           supervisor_match(live, {b for b, _s, _d, _n in qrows if b}))
         plan_tot, plan_units = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
-        cost = _cost_by_month(db, payload, months, sorted(ids))
+        if cost is not None:
+            cost = _cost_by_month(db, payload, months, sorted(ids))
         # The SCOPED units, never the raw pick: turnover applies the scope it
         # is handed and knows nothing of the viewer's lock, so handing it
         # `mids` would let a locked viewer read the whole plant's turnover.
@@ -274,6 +316,10 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     })
     out["today"] = today.isoformat()
     out["built_at"] = turnover.local(turnover.now_aware()).isoformat(timespec="seconds")
+    # The LOCK, never a pick — what the page prints as «you are seeing only …»
+    # (`CatLockNotice`) and the document names in its subtitle; null for every
+    # viewer who can widen. `idle_scope.narrow_downtime`'s own rule.
+    out["cat_locked"] = idle_scope.viewer_categories(db, payload)
     out["options"] = {
         "shifts": sorted({u.shift for u in units if u.shift in (1, 2)}) or [1, 2],
         "brigadirs": [{"id": u.id, "name": u.name, "shift": u.shift,
@@ -283,10 +329,19 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
 
 
 def _key(db: Session, payload: dict, m: date, factory, shift, mids) -> tuple:
+    """Everything a build reads off the VIEWER, beside the scope it asked for:
+    the plant lock (the scoped units), the category lock and whether the cost
+    section is theirs. A fact the build depends on and the key does not carry
+    is a build served to a viewer it was never narrowed for — the
+    `leaders_kpi._board_key` rule. Any narrowing added to `_build` later goes
+    in here too."""
     units = scoped_manager_ids(db, payload, factory, mids)
+    lock = idle_scope.viewer_categories(db, payload)
     return (reports.ym(m), turnover.local(turnover.now_aware()).date().isoformat(),
             factory, shift, tuple(mids),
-            None if units is None else tuple(sorted(units)))
+            None if units is None else tuple(sorted(units)),
+            None if lock is None else tuple(sorted(lock)),
+            _sees_cost(payload))
 
 
 @router.get("")
