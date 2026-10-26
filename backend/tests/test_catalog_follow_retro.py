@@ -9,8 +9,13 @@ What it proves (spec §4): T10 through the retro path (a single hop found from
 the evidence, h = 8 Oct, the old unit importing its catalog inside the window),
 T11 (every named kind from its own fixture writes nothing), a T12-style dry run
 leaving every table as it was, T16 (a second run is a no-op — by the flag, and
-by the move records when the flag is gone), the flag → RECORD → DM flow with
-the Telegram sender mocked, and the pass that finds nothing.
+by the move records when the flag is gone — and the earlier attempt's moves are
+still reported), the flag → RECORD → DM flow with the Telegram sender mocked,
+and the pass that finds nothing. Review regressions: a cell already standing in
+the new unit at the code holds no move back; `y_has_lines` beside two lettered
+stayers; a cell that brings nothing is settled, not named; a letter changed by
+hand after a pre-release landing is unknowable; a move read off the column
+(12 Oct) is named as having no link history.
 
     SAFIA_TEST_PG=postgresql://me@localhost:5432/postgres \\
         ./venv/bin/python -m unittest tests.test_catalog_follow_retro
@@ -246,6 +251,59 @@ class RetroPass(_Retro):
         self.assertEqual((row.state, row.kind, row.event_id), ("moved", "retro", ev.id))
         self.assertEqual(self.flag(), "done:1/0")
 
+    def test_a_cell_already_in_the_new_unit_does_not_hold_the_move_back(self):
+        """Y keeps y1(A) at the code (it never stood in X): it is asked about
+        X's orphans like every cell at the code, named nowhere, and the cell
+        that came from X moves — joining y1's identical position."""
+        self.units(X, Y)
+        c = self.cell("3101", Y)
+        y1 = self.cell("3102", Y, letter="A")
+        p = self.line(X, "F001", "Tort", labor=60)
+        m = self.line(Y, "F001", "Tort", labor=60, letter="A")
+        h = date(2026, 10, 8)
+        for d in _days(date(2026, 10, 5), date(2026, 10, 12)):
+            self.daily(X, d, "F001", plan=10, actual=9)
+            self.daily(Y, d, "F001", plan=10, actual=9)
+        self.att(c, X, date(2026, 9, 29), h - timedelta(days=1))
+        self.att(c, Y, h, date(2026, 10, 11))
+        self.att(y1, Y, date(2026, 9, 29), date(2026, 10, 11))
+        rec = self.run_retro()
+        self.assertEqual(rec["skipped"], [])
+        [mv] = rec["moved"]
+        self.assertEqual((mv["vcode"], mv["h"], mv["joined"]), ("3101", h.isoformat(), 1))
+        self.assertEqual(self.ids_on(X, h), set())
+        self.assertEqual(self.ids_on(Y, h), {p.id, m.id})
+        self.assertNotIn(str(y1.id), rec["evidence"])
+
+    def test_moved_from_the_column_is_named_without_link_history(self):
+        """Seen in X up to 11 Oct, in Y from the column (12 Oct): followed
+        from 12 Oct, and named as a move no link history records."""
+        self.units(X, Y)
+        c = self.cell("3201", Y)
+        p = self.line(X, "F001", "Tort")
+        self.att(c, X, date(2026, 9, 29), date(2026, 10, 11))
+        rec = self.run_retro()
+        [m] = rec["moved"]
+        self.assertEqual((m["h"], m["source"]), ("2026-10-12", "column"))
+        self.assertEqual(rec["pre12"], ["3201"])
+        self.assertEqual(self.ids_on(Y, date(2026, 10, 12)), {p.id})
+
+    def test_a_cell_that_brings_nothing_is_settled_not_named(self):
+        """X held nothing at the code; Y has positions there: nothing moves,
+        and the change is settled (`nothing`), not left for a person."""
+        self.units(X, Y)
+        c = self.cell("3301", X)
+        self.line(Y, "F009", "Rulet", labor=30)
+        ev = self.applied(c, Y, H)
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assertEqual(rec["moved"], [])
+        self.assertEqual([(e["vcode"], e["state"]) for e in rec["skipped"]], [("3301", "nothing")])
+        self.assertEqual(self.catalog_fp(), before)
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.event_id), ("nothing", ev.id))
+
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
 class RetroGuards(_Retro):
@@ -324,6 +382,45 @@ class RetroGuards(_Retro):
         before = self.catalog_fp()
         rec = self.run_retro()
         self.assert_named("y_has_lines", "1601", before, rec)
+
+    def test_y_has_lines_beside_lettered_stayers(self):
+        """Y keeps two lettered cells and a position neither letter claims:
+        split evenly today, the arrival would take a share of it."""
+        self.units(X, Y)
+        c = self.cell("1611", X)
+        self.cell("1612", Y, letter="A")
+        self.cell("1613", Y, letter="B")
+        self.line(X, "F001", "Tort", labor=60)
+        self.line(Y, "F010", "Keks", labor=30, letter="A")
+        self.line(Y, "F011", "Non", labor=30, letter="B", sort=1)
+        self.line(Y, "F012", "Pirog", labor=30, sort=2)
+        self.applied(c, Y, H)
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("y_has_lines", "1611", before, rec)
+
+    def test_letter_changed_by_hand_after_the_landing(self):
+        """A change that landed before the follow existed kept no letter of its
+        own; the cell was re-lettered by hand in Y since — the letter it left X
+        with is unknowable."""
+        from app.models import ActionLog, CellLinkEvent
+        self.units(X, Y)
+        self.cell("1622", X, letter="A")
+        c = self.cell("1621", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B", sort=1)
+        ev = self.applied(c, Y, H)
+        ev.vfx = {}                                    # landed before `letter_before` existed
+        c.wc_group = "D"
+        self.db.add(ActionLog(category="org", action="cell.updated", outcome="done", source="web",
+                              target_kind="cell", target_id=str(c.id),
+                              created_at=datetime.combine(H + timedelta(days=2), time(10), tzinfo=TZ),
+                              changes=[["wc_group", "B", "D"]]))
+        self.db.commit()
+        before = self.catalog_fp()
+        rec = self.run_retro()
+        self.assert_named("letter_ambiguous", "1621", before, rec)
 
     def test_window_cells_moved(self):
         """Two cells left X at one code on one day: followed one at a time
@@ -451,15 +548,20 @@ class RetroFlow(_Retro):
         # By the flag.
         self.assertEqual(retro.run(self.db, today=TODAY, now=NOW), {"state": "skipped"})
         self.assertEqual(self.fingerprint(), fp)
-        # By the move records, with the flag gone.
+        # By the move records, with the flag gone (a pass stopped half-way by a
+        # deploy leaves exactly this): nothing is followed twice, and what the
+        # earlier attempt moved is still REPORTED — a re-run that only said
+        # «nothing to move» would hide every move already made.
         self.db.query(AppSetting).filter_by(key=retro.FLAG).delete()
         self.db.commit()
         rec2 = self.run_retro()
-        self.assertEqual(rec2["moved"], [])
+        self.assertEqual([(m["vcode"], m.get("earlier")) for m in rec2["moved"]],
+                         [("2401", True)])
         self.assertEqual([e["kind"] for e in rec2["skipped"]],
                          [e["kind"] for e in rec1["skipped"]])
         self.assertEqual(self.fingerprint(), fp)
-        self.assertEqual((flag, self.flag()), ("done:1/1", "done:0/1"))
+        self.assertEqual((flag, self.flag()), ("done:1/1", "done:1/1"))
+        self.assertIn("oldingi urinishda", retro.text_of(rec2))
         # …and the sweep finds nothing left either.
         self.assertEqual(self.groups(), [])
 

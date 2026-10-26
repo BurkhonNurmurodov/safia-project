@@ -43,10 +43,13 @@ brigadir change gets a FINAL `named` move record, so the live sweep never takes
 it up: a person decides. A `busy` one is recorded for the sweep to retry.
 
 The flag (`dry:<n>` or `done:<moved>/<named>`) and the RECORD are written in one
-transaction after the cells. The DM — text + a workbook — is built from the
-stored RECORD only, sent once per mode behind its own flag
-(`<FLAG>_dm_<mode>`, `startup._send_report_once`): a failed DM is re-sent at
-the next boot, the pass is never re-run for it.
+transaction after the cells. A pass stopped half-way (a deploy retires the
+worker; a failure at its very end) is run again at the next boot: what it
+already settled is asked about no second time, and is reported — marked as an
+earlier attempt's — beside what the new attempt did. The DM — text + a
+workbook — is built from the stored RECORD only, sent once per mode behind its
+own flag (`<FLAG>_dm_<mode>`, `startup._send_report_once`): a failed DM is
+re-sent at the next boot, the pass is never re-run for it.
 
 Delete this module, `startup.schedule_catalog_follow_retro` /
 `_catalog_follow_retro_job` and both entrypoint calls once the flag reads `done`
@@ -123,7 +126,8 @@ REASONS = {
     "cell_gone": "yacheyka o'chirilgan",
 }
 SOURCES = {"event": "hodisa", "column": "ustun (12.10 dan)", "roster": "jonli kun ro'yxati",
-           "attendance": "davomat", "floor": "6.10 dan (avvalroq ko'chgan)"}
+           "attendance": "davomat", "floor": "6.10 dan (avvalroq ko'chgan)",
+           "earlier": "oldingi urinishda"}
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
@@ -295,30 +299,43 @@ def _majority(weights: dict) -> Optional[tuple[int, float, bool]]:
     return u, round(share, 3), share > MAJORITY
 
 
-def _log_days(db: Session, cell_ids: set) -> dict:
-    """{cell id: [days]} on which the register logged a change of the cell's
+def _log_days(db: Session, cell_ids: set) -> tuple[dict, dict]:
+    """({cell id: [days]} on which the register logged a change of the cell's
     brigadir — shown beside the evidence, never decided by (the register names
-    units by spelling)."""
-    out: dict = defaultdict(list)
+    units by spelling); {cell id: [moments]} at which it logged a change of the
+    cell's LETTER by hand — what makes a move's letter unknowable when its
+    event kept none of its own (`_decide_event`))."""
+    units: dict = defaultdict(list)
+    letters: dict = defaultdict(list)
     if not cell_ids:
-        return out
+        return units, letters
     try:
         rows = db.query(ActionLog.target_id, ActionLog.created_at, ActionLog.changes).filter(
-            ActionLog.target_kind == "cell",
+            ActionLog.target_kind == "cell", ActionLog.outcome == "done",
             ActionLog.target_id.in_([str(i) for i in cell_ids])).all()
     except Exception:  # noqa: BLE001 — the register is a corroboration, never a must
         db.rollback()
-        return out
+        return units, letters
     for tid, at, changes in rows:
         if not at or not isinstance(changes, list):
             continue
-        if any(isinstance(ch, (list, tuple)) and ch and ch[0] in ("unit", "manager_id", "brigadir")
-               for ch in changes):
-            try:
-                out[int(tid)].append(at.astimezone(TZ).date())
-            except (TypeError, ValueError):
-                continue
-    return out
+        keys = {ch[0] for ch in changes if isinstance(ch, (list, tuple)) and ch}
+        try:
+            cid = int(tid)
+        except (TypeError, ValueError):
+            continue
+        at = _aware(at)
+        if keys & {"unit", "manager_id", "brigadir"}:
+            units[cid].append(at.astimezone(TZ).date())
+        if "wc_group" in keys:
+            letters[cid].append(at)
+    return units, letters
+
+
+def _aware(v: datetime) -> datetime:
+    """A timestamp the driver handed back naive is UTC (the columns are
+    timestamptz) — never compared with an aware one as it stands."""
+    return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
 
 
 @dataclass
@@ -391,6 +408,8 @@ class _Cand:
     orphan_x: list = field(default_factory=list)
     named: Optional[dict] = None
     corroborated: bool = False
+    seen_x: bool = False                 # the evidence ever placed it in the old unit
+    quiet: bool = False                  # a bystander at the code: not reported
     owned: int = 0                       # lines of the old unit the cell would take (the guards)
 
     def name(self, kind: str, **params) -> None:
@@ -436,9 +455,16 @@ def _letter_of(ev: CellLinkEvent, cell: Cell) -> Optional[str]:
     return cell.wc_group or None
 
 
-def _decide_event(c: _Cand, tl: _Ev) -> None:
+def _decide_event(c: _Cand, tl: _Ev, relettered: list) -> None:
     """A landed brigadir change: the move day is the event's own; the evidence
-    must show nothing but the old unit before it and the new one from it."""
+    must show nothing but the old unit before it and the new one from it.
+
+    The letter the cell left with is the event's own record of it. An event
+    that landed before the follow existed kept one only when the move CHANGED
+    the letter (`wc_group_was`); otherwise the letter is read off the column —
+    which a person may have re-lettered by hand in the new unit since, and the
+    old unit's positions would then be handed by the wrong letter. A logged
+    hand change after the landing makes it unknowable: named."""
     ev = c.event
     x, y, h = ev.prev, ev.value, ev.effective_from
     c.src, c.dst, c.h, c.source = x, y, h, "event"
@@ -449,6 +475,13 @@ def _decide_event(c: _Cand, tl: _Ev) -> None:
     after = {r["unit"] for r in _runs([e for e in tl.days if e["d"] >= h])}
     if before - {x} or after - {y} or c.cell.manager_id != y:
         c.name("chain", before=sorted(before), after=sorted(after), now=c.cell.manager_id)
+        return
+    vfx = ev.vfx if isinstance(ev.vfx, dict) else {}
+    landed = ev.applied_at or ev.effective_at
+    if ("letter_before" not in vfx and "wc_group_was" not in vfx and landed is not None
+            and any(at >= _aware(landed) for at in relettered)):
+        c.name("letter_ambiguous", why="letter_changed_after_move",
+               letter_now=c.letter_src)
 
 
 def _decide_orphan(c: _Cand, tl: _Ev, orphans: dict) -> None:
@@ -464,6 +497,7 @@ def _decide_orphan(c: _Cand, tl: _Ev, orphans: dict) -> None:
     info = orphans[(x, c.code)]
     runs = _runs(tl.days)
     seq = [r["unit"] for r in runs]
+    c.seen_x = x in seq or (tl.prior is not None and tl.prior[1] == x)
     if not runs or y not in seq:
         c.name("day_unknown", why="no_evidence", seen=seq or None)
         return
@@ -585,6 +619,12 @@ def _run(db: Session, today: date, now: datetime) -> dict:
             by_code[k].append(c)
     units = {m.id: m.name for m in db.query(Manager.id, Manager.name).all()}
 
+    # What an earlier attempt of this pass already settled (one stopped by a
+    # deploy, or failed at its very end): those cells are not asked about again
+    # — their records stand — and the RECORD reports them, or a re-run that
+    # finds nothing left would tell the operator that nothing moved.
+    earlier = [i for (i,) in db.query(PPCatalogMove.id).filter(PPCatalogMove.kind == "retro")]
+
     # ── the snapshot: landed changes with no record, orphaned positions ──
     E = CellLinkEvent
     evs = [e for e in db.query(E).filter(
@@ -611,11 +651,11 @@ def _run(db: Session, today: date, now: datetime) -> dict:
         cands.append(_Cand(cell=cell, code=norm_code(cell.sap_code), event=open_[0]))
     ev_cells = set(by_cell_ev)
 
-    # Event-less: a record already waiting for a retry is the sweep's; one
-    # already moved has moved.
+    # Event-less: a record already waiting for a retry is the sweep's; one an
+    # earlier attempt settled (moved, or named by the engine) stands — asked
+    # again it would only write a second record of the same cell.
     taken = {cid for (cid,) in db.query(PPCatalogMove.cell_id).filter(
-        PPCatalogMove.event_id.is_(None), PPCatalogMove.kind == "retro",
-        PPCatalogMove.state.in_(("moved",) + cf.RETRY)).all()}
+        PPCatalogMove.event_id.is_(None), PPCatalogMove.kind == "retro").all()}
     orphans = _orphans(db, by_code, today)
     # Positions a landed change left behind are that change's to follow (or
     # to name): no other cell at the code is asked about them.
@@ -643,7 +683,7 @@ def _run(db: Session, today: date, now: datetime) -> dict:
     keys = {_vkey(o.verifix_code) for o in interest.values() if o.verifix_code}
     ro = _rosters(db, a, today, keys)
     at = _attendance(db, p, today, keys)
-    logs = _log_days(db, {c.cell.id for c in cands})
+    logs, relettered = _log_days(db, {c.cell.id for c in cands})
     tls: dict = {}
     for oid, o in interest.items():
         tls[oid] = _timeline(o, window, ro, at, prior_days)
@@ -658,7 +698,7 @@ def _run(db: Session, today: date, now: datetime) -> dict:
                 c.src, c.dst, c.h = c.event.prev, c.event.value, c.event.effective_from
             continue
         if c.event is not None:
-            _decide_event(c, tls[cell.id])
+            _decide_event(c, tls[cell.id], relettered.get(cell.id) or [])
         else:
             _decide_orphan(c, tls[cell.id], orphans)
         if c.named is None and c.h is not None and not cell_archive.alive(cell, c.h):
@@ -667,15 +707,27 @@ def _run(db: Session, today: date, now: datetime) -> dict:
             c.name("archived", day=_iso(today))
 
     # Several event-less cells claiming one unit's orphans: whose is whose?
+    # Only a cell the evidence ever placed in that unit is a claimant — every
+    # other cell at the code (a cell that has always stood in the new unit, or
+    # one of another unit or shift sharing the work centre) is asked too, and
+    # named `from_unknown` for itself; counted here it would hold back the one
+    # cell that really came from there.
     claimers: dict = defaultdict(list)
     for c in cands:
-        if c.event is None and c.src is not None:
+        if c.event is None and c.src is not None and c.seen_x:
             claimers[(c.src, c.code)].append(c)
     for _k, cs in claimers.items():
         if len(cs) > 1:
             for c in cs:
                 c.name("letter_ambiguous", cells=sorted(o.cell.verifix_code or "" for o in cs),
                        why="several_cells_claim_the_old_unit")
+    # The others at that code the evidence never placed there are no news once
+    # a cell that did came from there: they are left out of the report (said,
+    # they would read as cells whose move is in doubt — they never moved).
+    for c in cands:
+        if (c.event is None and not c.seen_x and (c.src, c.code) in claimers
+                and (c.named or {}).get("kind") == "from_unknown"):
+            c.quiet = True
 
     for c in cands:
         if c.named is not None or c.h is None or c.src is None or c.dst is None:
@@ -700,7 +752,7 @@ def _run(db: Session, today: date, now: datetime) -> dict:
         out = _follow(db, c, apply, now)
         {"moved": moved, "busy": busy}.get(out["state"], skipped).append(out)
     for c in cands:
-        if c.named is not None:
+        if c.named is not None and not c.quiet:
             skipped.append(_entry(c, state="named", kind=c.named["kind"],
                                   params={k: v for k, v in c.named.items() if k != "kind"}))
     for e, cell, nm in chain_rows:
@@ -710,6 +762,8 @@ def _run(db: Session, today: date, now: datetime) -> dict:
 
     # ── the final rows, the flag and the record, in one transaction ──
     db.expire_all()
+    for out in _earlier(db, earlier, by_id):
+        {"moved": moved, "busy": busy}.get(out["state"], skipped).append(out)
     if apply:
         for c in cands:
             if c.named is not None and c.event is not None:
@@ -761,15 +815,27 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date) -> Non
             return
         mine += hd.mine
     c.owned = len({id(p) for p in mine})
+    if not mine:
+        return                  # it brings nothing: the engine records `nothing`
+    # y_has_lines: the new unit's positions at the code that no cell staying
+    # there claims — the arrival would take a share of them from `h` (all of
+    # them, arriving alone). Unclaimed is `wc_group.share`'s reading: no
+    # letter, or a letter no staying cell carries, while two or more cells stay
+    # (a lone stayer takes every such line under its own letter, §1.6's
+    # sibling rule). A line the moved positions JOIN is no stranger.
     stay_y = own.cells_standing(db, y, code, before, h, exclude={cell.id})
-    if not stay_y:
-        idents = {own.join_ident(p) for p in mine}
-        for cat in (pp_catalog.at(db, y, h), pp_catalog.current(db, y)):
-            extra = [p for p in own.lines_at(cat.active_lines, code)
-                     if own.join_ident(p) not in idents]
-            if extra:
-                c.name("y_has_lines", count=len(extra), lines=[p.name for p in extra[:10]])
-                return
+    if len(stay_y) == 1:
+        return
+    carried = {g for g in stay_y.values() if g}
+    idents = {own.join_ident(p) for p in mine}
+    for cat in (pp_catalog.at(db, y, h), pp_catalog.current(db, y)):
+        extra = [p for p in own.lines_at(cat.active_lines, code)
+                 if not (stay_y and (getattr(p, "wc_group", None) or None) in carried)
+                 and own.join_ident(p) not in idents]
+        if extra:
+            c.name("y_has_lines", count=len(extra), lines=[p.name for p in extra[:10]],
+                   staying=len(stay_y))
+            return
 
 
 def _volume(db: Session, ready: list) -> int:
@@ -827,7 +893,21 @@ def _follow(db: Session, c: _Cand, apply: bool, now: datetime) -> dict:
     named = list((res.report or {}).get("named") or [])
     kinds = sorted({n.get("kind") for n in named if n.get("kind")})
     if apply:
-        db.commit()
+        try:
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 — one cell's commit never stops the pass
+            db.rollback()
+            log.exception("catalog retro: commit of cell %s failed", c.cell.id)
+            cf._record_retry([t], "failed", repr(exc), now, kind="retro")
+            return _entry(c, state="busy", kind="failed", params={"error": repr(exc)[:300]})
+        finally:
+            cell_links.forget()
+            cell_archive.forget()
+        # Readers of the units the cell moved between see the move at once,
+        # not at the end of a pass of many cells.
+        from app.services import cell_register
+        cell_register.after_commit()
+        cf._forget_caches()
     else:
         db.rollback()
     cell_links.forget()
@@ -848,6 +928,39 @@ def _follow(db: Session, c: _Cand, apply: bool, now: datetime) -> dict:
                   letters=dict(getattr(row, "letters", None) or {}),
                   rekey=dict(getattr(row, "rekey", None) or {}), named=kinds,
                   impact=res.impact or {})
+
+
+def _earlier(db: Session, ids: list, by_id: dict) -> list[dict]:
+    """The records an earlier attempt of this pass wrote, as the RECORD's own
+    entries (marked `earlier`) — read as they stand now, a retry the sweep may
+    yet make included."""
+    if not ids:
+        return []
+    out = []
+    for r in db.query(PPCatalogMove).filter(PPCatalogMove.id.in_(ids)).order_by(PPCatalogMove.id):
+        cell = by_id.get(r.cell_id)
+        kinds = sorted({n.get("kind") for n in r.named or [] if isinstance(n, dict) and n.get("kind")})
+        base = {"cell": r.cell_id, "vcode": getattr(cell, "verifix_code", None) or str(r.cell_id),
+                "code": r.code, "from": r.from_unit, "to": r.to_unit, "h": _iso(r.home_from),
+                "event": r.event_id, "source": "earlier", "letter_from": r.letter_from,
+                "corroborated": False, "earlier": True}
+        if r.state == "moved":
+            out.append({**base, "state": "moved", "S": _iso(r.storage_from),
+                        "lines": len(r.line_ids or []),
+                        "joined": sum(1 for e in r.lines or [] if (e or {}).get("joined_into")),
+                        "wc": len(r.wc_ids or []), "wc_dropped": len(r.wc_dropped or []),
+                        "letter_to": r.letter_to, "letters": dict(r.letters or {}),
+                        "rekey": dict(r.rekey or {}), "named": kinds,
+                        "impact": dict(r.impact or {})})
+        elif r.state in cf.RETRY:
+            out.append({**base, "state": "busy", "kind": r.state,
+                        "params": {"error": (r.error or "")[:300]} if r.error else {}})
+        else:
+            stop = next((k for k in kinds if k in cf.STRICT_STOP), kinds[0] if kinds else r.state)
+            out.append({**base, "state": r.state if r.state == "nothing" else "named",
+                        "kind": "nothing" if r.state == "nothing" else stop,
+                        "params": {"named": kinds}})
+    return out
 
 
 def _named_row(db: Session, ev: CellLinkEvent, cell: Cell, named: dict, src, dst, h, letter,
@@ -880,7 +993,7 @@ def _record(db: Session, today: date, now: datetime, apply: bool, cands: list, m
     evidence = {}
     for c in cands:
         tl = tls.get(c.cell.id)
-        if tl is None:
+        if tl is None or c.quiet:
             continue
         evidence[str(c.cell.id)] = {
             "vcode": c.cell.verifix_code,
@@ -888,8 +1001,10 @@ def _record(db: Session, today: date, now: datetime, apply: bool, cands: list, m
                      for e in tl.days if e["ev"] is not None or e["ro"] or e["at"] or e["conflict"]],
             "prior": [_iso(tl.prior[0]), tl.prior[1]] if tl.prior else None,
             "log": [_iso(d) for d in tl.log]}
-    pre12 = sorted(m["vcode"] or str(m["cell"]) for m in moved
-                   if m.get("event") is None and m.get("h") and m["h"] < EVENTS_FROM.isoformat())
+    # Every cell moved with no landing event has no link history — whatever
+    # day it moved on (one read off the column from 12 Oct included): a
+    # per-cell reader still shows it in its new unit before `h`.
+    pre12 = sorted(m["vcode"] or str(m["cell"]) for m in moved if m.get("event") is None)
     return {"result": "done" if apply else "dry", "mode": "apply" if apply else "dry",
             "at": now.isoformat(), "today": _iso(today), "floor": _iso(FLOOR),
             "events_from": _iso(EVENTS_FROM), "moved": moved, "skipped": skipped, "busy": busy,
@@ -959,7 +1074,7 @@ def text_of(rec: dict) -> str:
         L.append(f"⏳ Band edi, avtomatik qayta uriniladi: {', '.join(str(b.get('vcode')) for b in busy[:20])}")
     if rec.get("pre12"):
         L.append("")
-        L.append("ℹ️ 12-oktabrgacha ko'chgan (havola tarixi yo'q): " + ", ".join(rec["pre12"][:30])
+        L.append("ℹ️ Hodisasiz ko'chgan (havola tarixi yo'q): " + ", ".join(rec["pre12"][:30])
                  + " — bu yacheykalarning ko'chish kunidan oldingi o'z ko'rsatkichlari "
                    "yangi brigadirda ko'rinishda qoladi.")
     L.append("")
