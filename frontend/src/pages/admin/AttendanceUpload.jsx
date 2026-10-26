@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 
 import api from "../../utils/api";
+import { cellMoveRefusal, cellMoveRefusalText } from "../../utils/cellMoveRefusal";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -586,10 +587,10 @@ export default function AttendanceUpload() {
   const [pickInit, setPickInit] = useState(null);       // the cell picker: null = closed, else the codes ticked
 
   const toastTimer = useRef(null);
-  const say = useCallback((text, tone = "ok") => {
+  const say = useCallback((text, tone = "ok", ms = 4200) => {
     setToast({ text, tone });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4200);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
@@ -627,14 +628,24 @@ export default function AttendanceUpload() {
   const pendingCells = data?.totals?.pending ?? 0;
 
   // ── mutations ──────────────────────────────────────────────────────────────
+  // A structured refusal lives on `detail_raw`: utils/api.js flattens every
+  // non-string `detail` to text and keeps the object there.
   const onMutError = useCallback((e) => {
-    const d = e?.response?.data?.detail;
+    const d = e?.response?.data?.detail_raw ?? e?.response?.data?.detail;
     if (d && typeof d === "object" && d.code === "day_closed") {
       say(t("attUp.dayClosedErr").replace("{name}", tl(d.manager_name)), "danger");
       return;
     }
+    // «Doimiy qilish» refused as a whole: a cell shares positions with cells
+    // staying at its work centre (utils/cellMoveRefusal). Nothing was written;
+    // the reason names what to letter, so it stays up long enough to be read.
+    const move = cellMoveRefusalText(cellMoveRefusal(e), { t, tx, tl, isAdmin: true });
+    if (move) {
+      say(move.text, "danger", 15000);
+      return;
+    }
     say(errText(e, t("attUp.actionFailed")), "danger");
-  }, [say, t, tl]);
+  }, [say, t, tl, tx]);
 
   const mapMut = useMutation({
     mutationFn: (body) => api.put("/api/attendance-batch/cells", { date, ...body }).then((r) => r.data),

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   RefreshCcwDot, RefreshCw, FlaskConical, Link2, Unlink, SlidersHorizontal, History,
   CheckCircle2, XCircle, AlertTriangle, Loader2, Info, ChevronDown, ChevronRight,
@@ -7,6 +8,7 @@ import {
   Undo2, EyeOff, Ban, Grid3x3, UserX, Link2Off, SquareDashed,
 } from "lucide-react";
 import api from "../../utils/api";
+import { cellMoveRefusal, cellMoveRefusalText } from "../../utils/cellMoveRefusal";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -98,8 +100,12 @@ const tOr = (t, key, fb) => {
 };
 
 /** The server's refusal in the reader's words: its `code` when we know it,
- *  else the server's own sentence. */
-function errText(e, t) {
+ *  else the server's own sentence. A refused cell move (positions its work
+ *  centre shares — utils/cellMoveRefusal) reads as the cell form says it;
+ *  `opts` carries the name transliterators. */
+function errText(e, t, opts = {}) {
+  const move = cellMoveRefusalText(cellMoveRefusal(e), { t, ...opts, isAdmin: true });
+  if (move) return move.text;
   const raw = e?.response?.data?.detail_raw;
   const code = raw?.code;
   if (code) {
@@ -1456,6 +1462,7 @@ export default function VerifixSync() {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const {
     success: okToast, error: errToast, warning: warnToast, info: infoToast, node: toastNode,
   } = useToast({ position: "bottom" });
@@ -1598,13 +1605,18 @@ export default function VerifixSync() {
     }
   };
 
-  const appliedMsg = (res) => {
+  const appliedMsg = (res, mates = []) => {
     const parts = [t("vsync.applied")];
     if (res?.from) parts.push(fill(t("vsync.fromDate"), { d: fmtDM(res.from) }));
     if (res?.moved != null) parts.push(fill(t("vsync.movedRows"), { n: n0(res.moved) }));
     if (res?.unit) parts.push(t("vsync.unitCreated"));
     const photo = res?.photo ? tOr(t, `vsync.photo.${res.photo}`, "") : "";
     if (photo) parts.push(photo);
+    if (mates.length) {
+      parts.push(fill(t("cellMove.togetherSaved"), {
+        cells: mates.map((m) => m.payload?.code || `#${m.id}`).join(", "),
+      }));
+    }
     return parts.join(" · ");
   };
 
@@ -1617,8 +1629,16 @@ export default function VerifixSync() {
       throw e;
     }
     const untie = choice === "untie";
-    setKept((k) => ({ ...k, [it.id]: { ...it, outcome: untie ? "untied" : "applied", res } }));
-    okToast(untie ? t("vsync.untied") : appliedMsg(res));
+    // «Hammasini birga ko'chirish» applied the other suggestions of the team
+    // too: their cards say so where they stand.
+    const mates = (res?.together || [])
+      .map((id) => (data?.items || []).find((x) => x.id === id)).filter(Boolean);
+    setKept((k) => ({
+      ...k,
+      ...Object.fromEntries(mates.map((m) => [m.id, { ...m, outcome: "applied", res }])),
+      [it.id]: { ...it, outcome: untie ? "untied" : "applied", res },
+    }));
+    okToast(untie ? t("vsync.untied") : appliedMsg(res, mates));
     refresh(PROFILE_KINDS.has(it.kind));
   };
   const dismissCore = async (it) => {
@@ -1653,7 +1673,18 @@ export default function VerifixSync() {
     try {
       await applyCore(it, choice);
     } catch (e) {
-      errToast(errText(e, t));
+      // A move refused over shared positions points somewhere: the team's
+      // other suggestions to apply with it, else the positions to letter.
+      const move = cellMoveRefusalText(cellMoveRefusal(e), { t, tx, tl, isAdmin: true });
+      if (move) {
+        const action = move.together?.items?.length
+          ? { label: t("cellMove.togetherAll"), onClick: () => onApply(it, "together") }
+          : move.linkTo ? { label: t("cellMove.openPositions"), onClick: () => navigate(move.linkTo) }
+            : null;
+        errToast(move.text, undefined, action ? { action } : undefined);
+      } else {
+        errToast(errText(e, t, { tx, tl }));
+      }
     } finally {
       setBusy((b) => { const n = { ...b }; delete n[it.id]; return n; });
     }

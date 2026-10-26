@@ -841,6 +841,11 @@ class CellPayload(BaseModel):
     # «Jarayonlar» (cells.one_process): True = specialised for ONE process.
     # None = untouched; a create that names none starts «Ko'p jarayon».
     one_process:           Optional[bool] = None
+    # Cells of the same unit and work centre that change brigadir WITH this one
+    # («Birga ko'chirish», 2026-10-26): a team leaving together takes the
+    # positions it shares along (`services/catalog_refusal.py`). Read only with
+    # a brigadir change of an existing cell; every cell goes to the same unit.
+    move_with:             Optional[list[int]] = None
 
 
 _CELL_TEXT_COLS = ("sap_code", "name_workshop_uz", "name_workshop_uz_cyrl",
@@ -897,6 +902,9 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
     # quietly put Verifix's back. The translations stay a person's to type.
     from app.services import verifix_sync
     ru_locked = dated and verifix_sync.name_locked(row, verifix_sync.mode(db) == "on")
+    # The code and letter a brigadir change already waiting was judged by — a
+    # save that changes either judges it again (below).
+    placed_before = (norm_code(row.sap_code), row.wc_group or None)
     for col in _CELL_TEXT_COLS:
         if ru_locked and col == "name_workshop_ru":
             continue
@@ -923,17 +931,65 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
                     and value == getattr(row, field))
         return value == getattr(row, field)
 
+    def team(ids, new) -> list:
+        """The cells of `move_with`. Each must stand in this cell's unit at its
+        work centre, and the save must change an existing cell's brigadir —
+        anything else is refused (400) rather than half-applied behind a 200."""
+        ids = sorted({int(i) for i in (ids or []) if i and int(i) != row.id})
+        if not ids:
+            return []
+        code = norm_code(row.sap_code)
+        if not row.id or new == row.manager_id or row.manager_id is None or not code:
+            raise HTTPException(status_code=400, detail={
+                "code": "move_with_invalid", "params": {"ids": ids},
+                "message": "Cells move together only with a supervisor change of an existing "
+                           "cell that has a unit and a SAP code."})
+        found = {c.id: c for c in db.query(Cell).filter(Cell.id.in_(ids)).all()}
+        bad = [i for i in ids if i not in found or found[i].manager_id != row.manager_id
+               or norm_code(found[i].sap_code) != code]
+        if bad:
+            raise HTTPException(status_code=400, detail={
+                "code": "move_with_invalid", "params": {"ids": bad},
+                "message": "Cells " + ", ".join(found[i].verifix_code if i in found else f"#{i}"
+                                                for i in bad)
+                           + f" are not in this cell's unit at work centre {code}."})
+        return [found[i] for i in ids]
+
+    # The letter BEFORE the brigadir: a move is judged by the letter this save
+    # leaves on the cell (`catalog_refusal` — lettering the cell and moving it
+    # is one save on the form); applied after, the move read the old one.
+    if payload.wc_group is not None:
+        try:
+            row.wc_group = wc_group.norm_group(payload.wc_group)
+        except wc_group.InvalidGroup:
+            raise HTTPException(status_code=400,
+                                detail="A group is one Latin letter A–Z (or blank for none).")
     # Supervisor unit: 0 clears, a positive id must be a real managers row.
     if payload.manager_id is not None:
         new = payload.manager_id or None
         if new and not db.query(Manager).filter_by(id=new).first():
             raise HTTPException(status_code=400, detail="Supervisor unit not found")
         if not dated:
+            team(payload.move_with, new)     # a new cell has no team
             row.manager_id = new
-        elif not unchanged("manager_id", new):
-            ev = cell_register.set_unit(db, row, new, src="manual", by=by)
-            if ev is not None:
-                pend["manager_id"] = ev.effective_from.isoformat()
+        else:
+            mates = team(payload.move_with, new)
+            leaving = {**{m.id: new for m in mates}, row.id: new} if mates else None
+            try:
+                # The team first, then this cell — every check reads the same
+                # `leaving`, so none of them counts another as staying.
+                for m in mates:
+                    cell_register.set_unit(db, m, new, src="manual", by=by, leaving=leaving)
+                if not unchanged("manager_id", new):
+                    ev = cell_register.set_unit(db, row, new, src="manual", by=by, leaving=leaving)
+                    if ev is not None:
+                        pend["manager_id"] = ev.effective_from.isoformat()
+            except cell_register.Refused as exc:
+                raise HTTPException(status_code=exc.status, detail=exc.detail())
+            if mates:
+                action_log.enrich(details=[("move_with", ", ".join(m.verifix_code for m in mates))])
+    elif payload.move_with:
+        team(payload.move_with, row.manager_id)              # refused: no move
     # «Boshqaruvchi». A pick NEVER moves the cell to the leader's unit (the
     # operator's ruling 3, 2026-10-12) — it carried the unit until then.
     if payload.leader_id is not None:
@@ -949,12 +1005,20 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
     # `owner_id` is IGNORED: «Egasi» is the Verifix seat and nothing else from
     # 2026-10-12 (ruling 3 — the manual owner is retired; the person's choice
     # lives on the «Boshqaruvchi»). A tab from before still sends it.
-    if payload.wc_group is not None:
-        try:
-            row.wc_group = wc_group.norm_group(payload.wc_group)
-        except wc_group.InvalidGroup:
-            raise HTTPException(status_code=400,
-                                detail="A group is one Latin letter A–Z (or blank for none).")
+    # A brigadir change already WAITING was judged by the code and letter the
+    # cell had when it was asked; a save that changes either — and records no
+    # new change — is judged again, or un-lettering the cell behind a recorded
+    # move would leave its positions shared when it lands.
+    if (dated and "manager_id" in pending and "manager_id" not in pend
+            and (norm_code(row.sap_code), row.wc_group or None) != placed_before):
+        still = cell_links.pending(db, [row.id]).get(row.id, {}).get("manager_id")
+        if still is not None:
+            from datetime import date as _date
+            from app.services import catalog_refusal
+            bad = catalog_refusal.shared_positions(db, row, still["value"],
+                                                   day=_date.fromisoformat(still["from"]))
+            if bad is not None:
+                raise HTTPException(status_code=bad.status, detail=bad.detail())
     if payload.in_load is not None:
         row.in_load = bool(payload.in_load)
     if payload.one_process is not None:

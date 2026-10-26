@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, CalendarClock, Info } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Pencil, CalendarClock, Info, Users, ExternalLink } from "lucide-react";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import FormField from "./ui/FormField";
@@ -8,8 +9,10 @@ import StyledSelect from "./ui/StyledSelect";
 import SegmentedToggle from "./ui/SegmentedToggle";
 import LangTextInput from "./ui/LangTextInput";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
+import { cellMoveRefusal, cellMoveRefusalText } from "../utils/cellMoveRefusal";
 import { GROUP_LETTERS } from "../utils/wcGroup";
 import GroupBadge from "./ui/GroupBadge";
 import CellManagerPicker, { PendingChip } from "./CellManagerPicker";
@@ -51,6 +54,13 @@ import CellManagerPicker, { PendingChip } from "./CellManagerPicker";
  * once, and it starts with no «Boshqaruvchi» (`leader_id: 0`) until Verifix
  * seats a leader in it or somebody picks one.
  *
+ * A brigadir change is REFUSED while the cell's work centre holds positions it
+ * shares with the cells staying (2026-10-26, «the catalog follows its cells» —
+ * its positions go with it, and a shared one can follow nobody). The refusal
+ * is the brigadir field's own error, naming what to letter; when other cells
+ * stay at the work centre, «Birga ko'chirish (…)» re-sends the save with them
+ * (`move_with`), so the whole team goes and takes its shared positions along.
+ *
  * «Jarayonlar» (`one_process`, 2026-10-10): «Bitta jarayon» marks a cell
  * specialised for ONE process; a leader whose cells are all such is not asked
  * for 3 different processes on checklist task 3. «Ko'p jarayon» is the default.
@@ -66,7 +76,10 @@ const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--bor
 
 export default function CellFormModal({ mode, item, units, leaders, onClose, onSaved }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
+  const { auth } = useAuth();
+  const isAdmin = auth?.role === "admin";
+  const navigate = useNavigate();
   const isEdit = mode === "edit" && !!item;
 
   const [form, setForm] = useState(() =>
@@ -97,6 +110,9 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
   // seat, else a Verifix employee id from the pool (CellManagerPicker).
   const [mgrPick, setMgrPick] = useState(undefined);
   const [formError, setFormError] = useState("");
+  // A refused brigadir change ({text, linkTo, together} — utils/cellMoveRefusal),
+  // said on the brigadir field itself; cleared when the pick moves.
+  const [unitError, setUnitError] = useState(null);
   // Has the «Zagruzkada hisoblanadi» switch been set by hand in this form?
   const [loadTouched, setLoadTouched] = useState(false);
   // The brigadir in force (the column) …
@@ -149,7 +165,11 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     ? item.owner || leaders.find((l) => String(l.id) === String(item.owner_id))?.name || null
     : null;
 
-  const fail = (e) => setFormError(cellWriteError(e, t));
+  const fail = (e) => {
+    const refusal = cellMoveRefusalText(cellMoveRefusal(e), { t, tx, tl, isAdmin });
+    if (refusal) setUnitError(refusal);
+    else setFormError(cellWriteError(e, t));
+  };
   const ddmm = CellManagerPicker.ddmm;
 
   // What the save did, in one sentence for the caller's toast.
@@ -158,12 +178,15 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     const pu = out?.cell?.pending?.manager_id;
     if (withdrawing) parts.push(t("cellMgr.unitWithdrawn"));
     else if (unitChanged && pu?.from) parts.push(fillVars(t("cellMgr.unitSaved"), { date: ddmm(pu.from) }));
+    if (out?.movedWith) parts.push(fillVars(t("cellMove.togetherSaved"), { cells: out.movedWith }));
     if (out?.manager) parts.push(CellManagerPicker.savedText(out.manager, t));
     return parts.length ? parts.join(" · ") : t("cellPage.saved");
   };
 
   const saveMut = useMutation({
-    mutationFn: async (body) => {
+    // `movedWith` = the codes of the cells sent along («Birga ko'chirish»),
+    // for the toast — never sent itself.
+    mutationFn: async ({ body, movedWith }) => {
       if (mode === "add") {
         await api.post("/api/profiles/admin/cells", body);
         return {};
@@ -182,7 +205,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           throw e;
         }
       }
-      return { cell, manager };
+      return { cell, manager, movedWith };
     },
     onSuccess: (out) => { onSaved?.(savedText(out)); onClose(); },
     onError: (e) => {
@@ -209,8 +232,11 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
   // languages are translations, still typed here.
   const ruLocked = isEdit && !!item.name_from_verifix;
 
-  function submit() {
+  // `together` = the refusal's {ids, cells}: the same save, with the cells
+  // staying at the work centre moving along.
+  function submit(together = null) {
     setFormError("");
+    setUnitError(null);
     const code = (form.verifix_code || "").trim();
     if (!code) { setFormError(t("admin.profiles.verifixCodeRequired")); return; }
     const body = {
@@ -234,8 +260,9 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       body.leader_id = 0;
     } else if (unitChanged) {
       body.manager_id = form.manager_id ? Number(form.manager_id) : 0;
+      if (together?.ids?.length) body.move_with = together.ids;
     }
-    saveMut.mutate(body);
+    saveMut.mutate({ body, movedWith: body.move_with ? together.cells : "" });
   }
 
   return (
@@ -253,7 +280,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
             size="sm"
             icon={mode === "add" ? <Plus size={12} /> : <Pencil size={12} />}
             loading={busy}
-            onClick={submit}
+            onClick={() => submit()}
           >
             {t(mode === "add" ? "admin.profiles.create" : "admin.profiles.save")}
           </Button>
@@ -311,10 +338,31 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           readOnlyLangs={ruLocked ? ["ru"] : []}
         />
       </FormField>
-      <FormField label={t("admin.profiles.colSupervisor")}>
+      <FormField label={t("admin.profiles.colSupervisor")}
+        error={unitError ? (
+          <>
+            {unitError.text}
+            {(unitError.together?.ids?.length > 0 || unitError.linkTo) && (
+              <span className="mt-2 flex flex-wrap gap-2">
+                {unitError.together?.ids?.length > 0 && (
+                  <Button variant="secondary" size="sm" icon={<Users size={12} />} disabled={busy}
+                    title={t("cellMove.togetherTip")} onClick={() => submit(unitError.together)}>
+                    {fillVars(t("cellMove.together"), { cells: unitError.together.cells })}
+                  </Button>
+                )}
+                {unitError.linkTo && (
+                  <Button variant="ghost" size="sm" icon={<ExternalLink size={12} />} disabled={busy}
+                    onClick={() => { onClose(); navigate(unitError.linkTo); }}>
+                    {t("cellMove.openPositions")}
+                  </Button>
+                )}
+              </span>
+            )}
+          </>
+        ) : undefined}>
         <StyledSelect
           value={form.manager_id || ""}
-          onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
+          onChange={(v) => { setUnitError(null); setForm((f) => ({ ...f, manager_id: v })); }}
           searchable
           options={[
             { value: "", label: t("admin.profiles.cellNoSupervisor") },
@@ -421,10 +469,14 @@ const joinCodes = (v) => (Array.isArray(v) ? v.join(", ") : v);
 // (wc_group.check_cell_detail: code + params, the English sentence as
 // `message`). utils/api.js flattens it to that sentence and keeps the object as
 // `detail_raw`; the kinds a cell form can meet are said here in the admin's
-// language, anything else falls back to the sentence the server sent.
-function cellWriteError(e, t) {
+// language, anything else falls back to the sentence the server sent. A
+// refused brigadir change (utils/cellMoveRefusal) reads as its own sentence;
+// the form above says it on the brigadir field instead, with its actions.
+function cellWriteError(e, t, opts = {}) {
   const res = e?.response?.data;
   const raw = res?.detail_raw;
+  const move = cellMoveRefusalText(cellMoveRefusal(e), { t, ...opts });
+  if (move) return move.text;
   const p = raw?.params || {};
   const vars = { code: p.code, group: p.group, free: p.free, unlettered: joinCodes(p.unlettered) };
   switch (raw?.code) {

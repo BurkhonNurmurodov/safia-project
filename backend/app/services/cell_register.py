@@ -110,12 +110,29 @@ def rename_cell(db: Session, cell: Cell, v: str) -> Optional[tuple[dict, dict]]:
 
 
 def set_unit(db: Session, cell: Cell, manager_id: Optional[int], *, src: str,
-             by: Optional[str] = None, vfx: Optional[dict] = None, apply_now: bool = False):
-    """The cell's brigadir, from the unit's next shift opening."""
+             by: Optional[str] = None, vfx: Optional[dict] = None, apply_now: bool = False,
+             leaving: Optional[dict] = None):
+    """The cell's brigadir, from the unit's next shift opening.
+
+    A move to another unit is REFUSED while the cell's work centre holds
+    positions it shares with cells staying behind (`catalog_refusal`, the
+    operator's ruling 2 of 2026-10-26: its positions follow it, and a shared
+    one can follow nobody). `leaving` = {cell id: destination} of the other
+    cells the same request moves — a team leaving together to one unit takes
+    its shared positions along. A withdrawal (the unit in force) is never
+    refused. The event keeps the SAP code the move was asked at, so the
+    follow can name a code changed before it landed."""
     if manager_id and not db.query(Manager.id).filter(Manager.id == manager_id).first():
         raise Refused("unit_not_found", "Supervisor unit not found")
-    eff, eff_at = cell_links.opening_for_move(db, cell.manager_id, manager_id or None)
-    ev = cell_links.record(db, cell, "manager_id", manager_id or None, src=src, by=by, vfx=vfx,
+    new = manager_id or None
+    eff, eff_at = cell_links.opening_for_move(db, cell.manager_id, new)
+    if new != cell.manager_id:
+        from app.services import catalog_refusal
+        bad = catalog_refusal.shared_positions(db, cell, new, day=eff, leaving=leaving)
+        if bad is not None:
+            raise bad
+    vfx = {**(vfx or {}), "sap_code_at_request": cell.sap_code}
+    ev = cell_links.record(db, cell, "manager_id", new, src=src, by=by, vfx=vfx,
                            effective_from=eff, effective_at=eff_at)
     if ev is not None and apply_now and ev.applied_at is None:
         cell_links._apply(db, cell, ev, datetime.now(timezone.utc))

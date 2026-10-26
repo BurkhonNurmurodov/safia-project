@@ -1153,6 +1153,26 @@ def update_cells(
     before = {bc.verifix_code: (bc.manager_id, bool(bc.included)) for bc in batch.cells}
     moved: dict[int, tuple[Cell, Optional[int]]] = {}   # cell id → (cell, its unit before this call)
     group_cleared: list[str] = []
+    from app.services import cell_register
+
+    # Every cell this PUT moves for good, and where to: a cell's move is refused
+    # while its work centre holds positions it shares with cells STAYING
+    # (`services/catalog_refusal.py`), and the cells of one work centre dragged
+    # to one brigadir in the same PUT are leaving together, not staying.
+    leaving: dict[int, Optional[int]] = {}
+    if body.permanent:
+        target: dict[str, Optional[int]] = {}
+        for ch in body.changes:
+            bc = by_code.get(ch.verifix_code)
+            if bc is None or not bc.cell_id:
+                continue
+            was = target.get(bc.verifix_code, bc.manager_id)
+            target[bc.verifix_code] = (None if ch.clear_manager
+                                       else ch.manager_id if ch.manager_id is not None else was)
+        ids = {by_code[k].cell_id: v for k, v in target.items()}
+        for c in db.query(Cell).filter(Cell.id.in_(list(ids))).all() if ids else []:
+            if c.manager_id != ids[c.id]:
+                leaving[c.id] = ids[c.id]
 
     for ch in body.changes:
         bc = by_code.get(ch.verifix_code)
@@ -1189,10 +1209,16 @@ def update_cells(
                     # settling the letter (and clearing it with no unit) as
                     # this write used to. The day being edited keeps its own
                     # this-day routing on the batch, as before.
+                    # A refused move refuses the whole PUT: nothing of it is
+                    # written, and the admin reads which positions to letter.
                     if cell.manager_id != bc.manager_id:
-                        from app.services import cell_register
-                        cell_register.set_unit(db, cell, bc.manager_id, src="manual",
-                                               by=admin.get("full_name") or "admin")
+                        try:
+                            cell_register.set_unit(db, cell, bc.manager_id, src="manual",
+                                                   by=admin.get("full_name") or "admin",
+                                                   leaving=leaving)
+                        except cell_register.Refused as exc:
+                            db.rollback()
+                            raise HTTPException(status_code=exc.status, detail=exc.detail())
 
     # «Doimiy qilish» moves a cell into a unit nobody chose its letter for. Like
     # a leader's unit move it must never refuse, so a colliding letter yields
@@ -1237,7 +1263,6 @@ def update_cells(
 
     db.commit()
     if body.permanent:
-        from app.services import cell_register
         cell_register.after_commit()
     action_log.enrich(
         target_kind="batch", target_id=batch.id, day=d,
