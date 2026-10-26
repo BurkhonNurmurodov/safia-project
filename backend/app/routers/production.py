@@ -376,16 +376,27 @@ def _archived_lines(db: Session, cat, quantities: dict,
 
     Who set a line aside and when lives on the CURRENT row only (a frozen
     catalog keeps `active`, not that), so a past day reads it from there; a
-    line restored or deleted since simply has none. `plan_qty` / `actual_qty`
-    are the day's figures for the line's SKU at its Команда, the file's or
-    somebody's — what tells a reader the plan is asking for it again."""
+    line restored or deleted since simply has none. Looked up by ID alone,
+    never by unit: a line that has since followed its cell to another brigadir
+    (services/catalog_follow) is still this day's line, and its row now names
+    the other unit. `manager_id` is kept for the caller's signature.
+    `plan_qty` / `actual_qty` are the day's figures for the line's SKU at its
+    Команда, the file's or somebody's — what tells a reader the plan is asking
+    for it again.
+
+    `twin_live` — the day's catalog has an ACTIVE line that is the same
+    position (`catalog_ownership.join_ident`): the archived copy a cell's move
+    JOINED into the twin the unit already had (ruling 5 — one quantity, split
+    between the cells). It is not waiting to come back, so the card neither
+    counts it nor offers to restore it."""
+    from app.services.catalog_ownership import join_ident
     gone = [p for p in cat.lines if not p.active]
     if not gone:
         return []
     meta = {p.id: p for p in db.query(PPProduct).filter(
-        PPProduct.manager_id == manager_id,
         PPProduct.id.in_([p.id for p in gone if p.id is not None]),
         PPProduct.active.is_(False)).all()} if cat.frozen else {p.id: p for p in gone}
+    live = {join_ident(p) for p in cat.lines if p.active}
     out = []
     for p in gone:
         m = meta.get(p.id)
@@ -401,6 +412,7 @@ def _archived_lines(db: Session, cat, quantities: dict,
             "archived_from": _iso(getattr(m, "archived_from", None)),
             "plan_qty": q.get("plan_qty") or 0.0,
             "actual_qty": q.get("actual_qty") or 0.0,
+            "twin_live": join_ident(p) in live,
         })
     out.sort(key=lambda r: (r["archived_at"] or "", r["id"] or 0), reverse=True)
     return out
@@ -2211,23 +2223,55 @@ def _sap_scope_of(cat) -> tuple:
 
 
 def _scoped_faza(faza_ops: list[dict], order_sku: dict, order_deliv: dict,
-                 products, own_wcs: set, catalog_skus: set) -> list[tuple]:
+                 products, own_wcs: set, catalog_skus: set,
+                 exclude: set = frozenset()) -> list[tuple]:
     """Фаза operations cut to one unit and joined to their SKU, ready for
     `pp_calc.faza_quantities`.
 
-    BOTH filters fall through on an empty set, so an unconfigured unit would be
-    handed the entire plant file — which is why `_autofill_manager_ids` keeps
-    its "configured" half and why every caller of this resolves the unit first.
-    """
+    A unit with NO catalog line that day is handed nothing, whatever
+    work-centre rows it keeps (2026-10-26). Both filters below used to fall
+    through on an empty set, so such a unit was handed every operation at its
+    work centres — or, with none, the entire plant file. A unit whose cells all
+    moved to another brigadir reached that state the day it lost its last
+    line: it is still «configured» (`_configured_manager_ids` counts its old
+    pp_daily rows), so the very next upload would have written it the plan of
+    positions that now belong to somebody else.
+
+    `exclude` = (SKU, work centre) pairs the unit must not be handed although
+    both halves pass the filters (`_moved_out_exclude`): the two filters are a
+    cross product — SKU in the catalog AND work centre in the catalog — so a
+    position that left with its cell stays reachable through the unit's other
+    lines of that SKU or at that work centre."""
+    if not products:
+        return []
     out = []
     for op in faza_ops:
         if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
             continue
         sku = order_sku.get(op["order"])
-        if sku and (not products or sku in catalog_skus):
-            out.append((sku, op["wc"], op["order"], op["plan"],
-                        order_deliv.get(op["order"], 0.0)))
+        if not sku or sku not in catalog_skus:
+            continue
+        if (sku, op["wc"]) in exclude:            # left with its cell
+            continue
+        out.append((sku, op["wc"], op["order"], op["plan"],
+                    order_deliv.get(op["order"], 0.0)))
     return out
+
+
+def _moved_out_exclude(db, manager_id: int, day: date, products) -> set:
+    """The фаза pairs this unit must no longer be handed on `day`: every
+    position that left it with a cell by then and has not come back
+    (`pp_catalog_moves.moved_out_pairs`), minus any pair the unit's own catalog
+    still carries that day — a twin of the moved line that stayed with another
+    cell reads the same (SKU, work centre) record and must go on being filled.
+    ONE spelling for the upload fan-out and the targeted re-join, like
+    `_unit_sap_scope` beside it."""
+    from app.services import pp_catalog_moves
+    gone = pp_catalog_moves.moved_out_pairs(db, manager_id, day)
+    if not gone:
+        return set()
+    here = {(daily_key(p.sap_code, p.name), p.work_center or "") for p in products}
+    return gone - here
 
 
 def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
@@ -2242,9 +2286,18 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     (`pp_calc.takes_sap`) — keeps whatever was typed for it: its per-line values
     are neither dropped nor cleared here, and a hand-typed value on the group row
     is written down onto it before that row is replaced. Its group's snapshot is
-    still written, because the siblings that DO read it share that record."""
+    still written, because the siblings that DO read it share that record.
+
+    The unit's quantities are held SHARED (`pp_catalog.NS_QTY`) to the end of
+    the caller's transaction: a cell's positions following it to another
+    brigadir (services/catalog_follow) moves these very rows and takes that
+    lock exclusively, so the two never interleave — the follow waits for the
+    upload's commit, or the upload for the follow's. A position that has left
+    with its cell is not handed to this unit again (`_moved_out_exclude`)."""
+    pp_catalog.lock(db, [manager_id], ns=pp_catalog.NS_QTY, shared=True)
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
     products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id, day)
+    exclude = _moved_out_exclude(db, manager_id, day, products)
 
     # The lines this upload must not reach — auto-fill switched off, or no SAP
     # code at all (pp_calc.takes_sap). The pp_daily record is still written for
@@ -2266,7 +2319,7 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     # a second spelling of it, and the startup migration that corrects already
     # stored days reads the same function.
     faza_agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
-                                           products, own_wcs, catalog_skus))
+                                           products, own_wcs, catalog_skus, exclude))
 
     updated = 0
     if faza_agg:
@@ -2490,9 +2543,14 @@ def _backfill_manager(db, manager_id: int, since: Optional[date] = None) -> dict
     this writes exactly what the fan-out writes (mode 'both' — every stored date
     replaced, every manual override cleared), so honouring the flag on the upload
     and ignoring it here would wipe a manual unit's figures the next time somebody
-    re-imported its catalog. `skipped` says so; nothing is written."""
+    re-imported its catalog. `skipped` says so; nothing is written.
+
+    The unit's quantities are held SHARED for the whole walk, before the first
+    date is read — `_ingest_for_manager` would take the lock day by day, and a
+    follow landing between two of them would see half the history rebuilt."""
     if manager_id in _autofill_off_ids(db):
         return {"days": 0, "rows": 0, "skipped": True}
+    pp_catalog.lock(db, [manager_id], ns=pp_catalog.NS_QTY, shared=True)
     days = [d for (d,) in db.query(PPUpload.date).filter(
         PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()
             if since is None or d >= since]
@@ -2510,7 +2568,8 @@ def _backfill_manager(db, manager_id: int, since: Optional[date] = None) -> dict
     return {"days": filled_days, "rows": filled_rows, "skipped": False}
 
 
-def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None) -> dict:
+def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None,
+                  commit: bool = True) -> dict:
     """Fill the SAP snapshot for exactly these (SAP code, work centre) pairs on
     every stored date from `since` on, for a unit whose catalog has just gained
     or moved a line. A day before `since` read the catalog it had then
@@ -2542,11 +2601,18 @@ def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None)
 
     A unit with auto-fill switched off is skipped, the rule `_backfill_manager`
     already applies: the file does not reach it, so neither does this.
+
+    It holds the unit's quantities SHARED (`pp_catalog.NS_QTY`), like every
+    quantity writer, and hands it no position that left with a cell
+    (`_moved_out_exclude`) — the upload's own rules. `commit` False leaves the
+    transaction to the caller: the cell-move follow calls this INSIDE its own
+    transaction, which must land whole or not at all (services/catalog_follow).
     """
     if not pairs:
         return {"days": 0, "rows": 0, "skipped": False}
     if manager_id in _autofill_off_ids(db):
         return {"days": 0, "rows": 0, "skipped": True}
+    pp_catalog.lock(db, [manager_id], ns=pp_catalog.NS_QTY, shared=True)
     days = [d for (d,) in db.query(PPUpload.date).filter(
         PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()
             if since is None or d >= since]
@@ -2563,8 +2629,9 @@ def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None)
         if cat is None:
             continue
         products, own_wcs, catalog_skus = _sap_scope_of(cat)
-        agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
-                                           products, own_wcs, catalog_skus))
+        agg = faza_quantities(_scoped_faza(
+            faza_ops, order_sku, order_deliv, products, own_wcs, catalog_skus,
+            _moved_out_exclude(db, manager_id, day, products)))
         n = 0
         for (sap, wc), a in agg.items():
             if (sap, wc) not in pairs:
@@ -2582,7 +2649,7 @@ def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None)
         if n:
             filled_days += 1
             filled_rows += n
-    if filled_rows:
+    if filled_rows and commit:
         db.commit()
     return {"days": filled_days, "rows": filled_rows, "skipped": False}
 
@@ -2710,8 +2777,9 @@ def upload_phase(
             raise HTTPException(
                 status_code=404,
                 detail=f"Manager {', '.join(str(m) for m in missing)} not found")
-        # A unit with neither catalog nor work centers has no scope to filter by,
-        # so it would be written the whole plant file. Refuse, loudly.
+        # A unit with neither catalog nor work centers has no scope to filter by.
+        # `_scoped_faza` hands it nothing now (it was the whole plant file), but
+        # a file sent to such a unit is still a mistake to name, loudly.
         configured = _configured_manager_ids(db)
         unconfigured = [m for m in targets if m not in configured]
         if unconfigured:
@@ -2754,11 +2822,17 @@ def upload_phase(
         db.flush()
         faza_own, order_sku, order_deliv = _stored_slices(db, day)
     taken_in = max(0, len(faza_own) - len(_kept_here))
-    total_rows = 0
+    # A target whose catalog that day holds no line is handed nothing
+    # (`_scoped_faza`) — named, so a unit that lost its last position with a cell
+    # reads as «nothing to fill» rather than as a quiet success of 0 rows.
+    day_cats = pp_catalog.at_many(db, targets, day)
+    empty_targets = [m for m in targets if not day_cats[m].lines]
+    written: dict[int, int] = {}
     for mid in targets:
-        total_rows += _ingest_for_manager(
+        written[mid] = _ingest_for_manager(
             db, mid, day, mode, faza_ops=faza_own, order_sku=order_sku,
             order_deliv=order_deliv)
+    total_rows = sum(written.values())
     db.commit()
     action_log.enrich(
         target_kind="batch", target_id=f"pp:{day}",
@@ -2770,12 +2844,17 @@ def upload_phase(
                  ("rows", total_rows), ("count", len(targets)),
                  ("note", "picked" if named else "auto-fill"),
                  ("total", len(faza_ops) if faza_present else 0),
-                 ("moved", moved_rows), ("taken", taken_in)],
+                 ("moved", moved_rows), ("taken", taken_in),
+                 ("skipped", len(empty_targets) or None)],
     )
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
         "brigadirs": len(targets), "rows_written": total_rows,
         "targets": targets, "picked": bool(named),
+        # Per target: the rows its day received, and the targets whose catalog
+        # that day held no line — handed nothing at all.
+        "written": {str(m): n for m, n in written.items()},
+        "empty_targets": empty_targets,
         "faza_operations": len(faza_ops) if faza_present else 0,
         "zaga_orders": len(order_sku),
         # What moved, both ways. A position is keyed by its order's
@@ -2873,6 +2952,120 @@ def get_raw(
     }
 
 
+def _unit_names(db, ids) -> dict:
+    ids = {int(i) for i in ids if i is not None}
+    return {m.id: m.name for m in db.query(Manager).filter(Manager.id.in_(ids)).all()} if ids else {}
+
+
+def _drop_moved_out(db, manager_id: int, day: date, parsed: dict,
+                    by_group: bool) -> tuple[list[dict], list[str]]:
+    """Take out of an imported sheet the rows of positions that have LEFT this
+    unit with a cell (2026-10-26, «the catalog follows its cells»): an old
+    sheet still lists them, and re-creating them here would put back the very
+    lines the move took away — the unit would be handed their plan again and
+    the position would stand in two catalogs at once.
+
+    Two rules, in this order:
+
+    * a CODE that left whole (no cell of the unit stayed at it —
+      `pp_catalog_moves.moved_out_codes`) drops every sheet row at that work
+      centre, and its staffing row too, unless a cell of the unit stands at it
+      again on `day` (one arrived since, and the work is the unit's again);
+    * every other moved-out line drops ONE sheet row with its content
+      (`catalog_ownership.join_ident`), and its letter when the sheet has a
+      «Группа» column — a Counter, so a twin that stayed with another cell keeps
+      its row: two identical rows and one departure leave one.
+
+    `parsed` is narrowed in place. Returns ([{name, work_center, to_unit_name}],
+    [work-centre code]) — what was left out, for the import card."""
+    from app.services import catalog_ownership, pp_catalog_moves
+    gone = pp_catalog_moves.moved_out(db, manager_id, day)
+    if not gone:
+        return [], []
+    codes = {norm_code(c) for c in pp_catalog_moves.moved_out_codes(db, manager_id, day)
+             if not catalog_ownership.cells_standing(db, manager_id, c, day, day)}
+    names = _unit_names(db, [e.get("to_unit") for e in gone])
+    to_code = {}
+    for e in gone:                                  # a later departure overwrites
+        to_code[norm_code(e.get("code"))] = e.get("to_unit")
+
+    def key(ident, letter):
+        return (*ident, (letter or None)) if by_group else ident
+
+    want: dict = defaultdict(int)                   # a Counter over the moved lines
+    dest: dict = defaultdict(list)
+    for e in gone:
+        wc = norm_code(e.get("wc_n") or e.get("wc"))
+        if wc in codes:
+            continue                                # the code rule takes the row
+        k = key((e.get("qty_key") or "", wc, e.get("base") or ""), e.get("group_from"))
+        want[k] += 1
+        dest[k].append(e.get("to_unit"))
+
+    skipped: list[dict] = []
+    kept: list[dict] = []
+    for pr in parsed["products"]:
+        ident = catalog_ownership.join_ident(pr)
+        to = None
+        if ident[1] in codes:
+            to = to_code.get(ident[1])
+        else:
+            k = key(ident, pr.get("wc_group"))
+            if want.get(k, 0) <= 0:
+                kept.append(pr)
+                continue
+            want[k] -= 1
+            to = dest[k].pop(0)
+        skipped.append({"name": pr.get("name") or pr.get("sap_code") or "",
+                        "work_center": pr.get("work_center") or "",
+                        "to_unit_name": names.get(to)})
+    parsed["products"] = kept
+    skipped_wc = [w["code"] for w in parsed["work_centers"] if norm_code(w["code"]) in codes]
+    parsed["work_centers"] = [w for w in parsed["work_centers"]
+                              if norm_code(w["code"]) not in codes]
+    return skipped, skipped_wc
+
+
+def _moved_in_kept(db, manager_id: int, day: date, old_lines: list,
+                   products: list[dict]) -> list:
+    """The unit's ACTIVE lines that came INTO it with a cell
+    (`pp_catalog_moves.moved_in_ids`) and that the imported sheet does not
+    carry (`catalog_ownership.join_ident`) — kept through the import's wipe,
+    with their ids. The new unit's sheet is often older than the move; without
+    this its first import would delete every position the cell brought, and
+    the cell's minutes with them. A sheet that DOES carry the position
+    re-creates it like any other row, and an archived arrival follows the
+    archive's own rule."""
+    from app.services import catalog_ownership, pp_catalog_moves
+    ids = pp_catalog_moves.moved_in_ids(db, manager_id, day)
+    if not ids:
+        return []
+    sheet = {catalog_ownership.join_ident(pr) for pr in products}
+    return [p for p in old_lines
+            if p.id in ids and p.active and catalog_ownership.join_ident(p) not in sheet]
+
+
+def _moved_in_sources(db, manager_id: int, day: date, ids) -> dict:
+    """{line id: the unit it came from} over the unit's `moved` records by
+    `day` — the latest arrival naming the id."""
+    from app.models import PPCatalogMove
+    from app.services import pp_catalog_moves
+    want = set(ids)
+    out: dict = {}
+    if not want:
+        return out
+    for r in (db.query(PPCatalogMove)
+              .filter(PPCatalogMove.to_unit == manager_id,
+                      PPCatalogMove.state == pp_catalog_moves.MOVED,
+                      PPCatalogMove.home_from <= day)
+              .order_by(PPCatalogMove.home_from, PPCatalogMove.id).all()):
+        got = {int(i) for i in (r.line_ids or []) if i is not None}
+        got.update(int(e["id"]) for e in (r.lines or []) if e.get("id") is not None)
+        for i in got & want:
+            out[i] = r.from_unit
+    return out
+
+
 # A plain `def` (threadpool) — see upload_phase: a workbook parse plus a
 # backfill of every stored date must not hold the event loop.
 @router.post("/admin/production/catalog/import")
@@ -2926,8 +3119,21 @@ def import_catalog(
     # AND every number on them — the backfill below only rebuilds the days from
     # the start on. A unit importing its FIRST catalog has nothing to keep, so
     # that one import reaches every stored date, as the import always did.
+    # The unit's catalog lock is taken FIRST (`freeze` would take it too, but
+    # only after `is_empty` read the catalog): a cell's positions following it
+    # here or away (services/catalog_follow) must land wholly before this reads
+    # the catalog, or wholly after it is replaced — never in between.
+    pp_catalog.lock(db, [manager_id])
     first_catalog = pp_catalog.is_empty(db, manager_id)
     eff = None if first_catalog else pp_catalog.freeze(db, manager_id, "import")
+    # Positions that moved with a cell (2026-10-26): an old sheet of the unit
+    # they LEFT must not bring them back, and a sheet of the unit they JOINED
+    # that has not caught up must not delete them. Read on the day the import
+    # counts from — a first catalog has none of either, and the shift's own day
+    # stands in for it.
+    move_day = eff or pp_catalog.unit_effective_day(db, manager_id)
+    skipped_moved_out, skipped_wc = _drop_moved_out(db, manager_id, move_day, parsed,
+                                                    groups_from_sheet)
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by the line's own key (daily_key + work centre),
     # which is the SAP code unless the line has none.
@@ -2977,12 +3183,24 @@ def import_catalog(
                      if not p.active and line_ident(p) not in sheet_idents]
     archived_back = sum(1 for p in old_lines
                         if not p.active and line_ident(p) in sheet_idents)
+    # Live arrivals the sheet does not carry stay, with their ids, sorted after
+    # the sheet's lines and before the kept archive — so no sheet line's key
+    # moves, exactly as for the archive.
+    keep_moved_in = _moved_in_kept(db, manager_id, move_day, old_lines, parsed["products"])
+    keep_ids = [p.id for p in keep_archived] + [p.id for p in keep_moved_in]
     q_old = db.query(PPProduct).filter(PPProduct.manager_id == manager_id)
-    if keep_archived:
-        q_old = q_old.filter(PPProduct.id.notin_([p.id for p in keep_archived]))
+    if keep_ids:
+        q_old = q_old.filter(PPProduct.id.notin_(keep_ids))
     replaced = q_old.delete()
-    for k, p in enumerate(sorted(keep_archived, key=lambda r: ((r.sort_order or 0), r.id))):
+    tail = (sorted(keep_moved_in, key=lambda r: ((r.sort_order or 0), r.id))
+            + sorted(keep_archived, key=lambda r: ((r.sort_order or 0), r.id)))
+    for k, p in enumerate(tail):
         p.sort_order = len(parsed["products"]) + k
+    came_from = _moved_in_sources(db, manager_id, move_day, [p.id for p in keep_moved_in])
+    from_names = _unit_names(db, came_from.values())
+    kept_moved_in = [{"name": p.name or p.sap_code or "", "work_center": p.work_center or "",
+                      "from_unit_name": from_names.get(came_from.get(p.id))}
+                     for p in keep_moved_in]
     grouped_lines = 0
     for i, p in enumerate(parsed["products"]):
         ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
@@ -3028,6 +3246,9 @@ def import_catalog(
                  ("grouped_lines", grouped_lines),
                  ("archived_kept", len(keep_archived) or None),
                  ("archived_back", archived_back or None),
+                 ("skipped_moved_out", len(skipped_moved_out) or None),
+                 ("skipped_wc", ", ".join(skipped_wc) or None),
+                 ("kept_moved_in", len(kept_moved_in) or None),
                  ("from", eff.isoformat() if eff else "all"),
                  ("note", "auto-fill off — not backfilled" if filled["skipped"]
                           else f"backfilled {filled['days']} day(s), "
@@ -3042,6 +3263,11 @@ def import_catalog(
         "groups_from_sheet": groups_from_sheet, "grouped_lines": grouped_lines,
         # Archived lines kept set aside, and archived ones the sheet brought back.
         "archived_kept": len(keep_archived), "archived_back": archived_back,
+        # Positions that moved with a cell: sheet rows left out because they
+        # now belong to another unit (and the work centres that left whole),
+        # and arrivals this sheet does not list yet, kept.
+        "skipped_moved_out": skipped_moved_out, "skipped_wc": skipped_wc,
+        "kept_moved_in": kept_moved_in,
         # The day the catalog counts from; None = every day (a first catalog).
         "applies_from": eff.isoformat() if eff else None,
     }
@@ -3149,6 +3375,10 @@ def admin_update_work_center(wc_id: int, body: WorkCenterBody,
     w = db.query(PPWorkCenter).filter(PPWorkCenter.id == wc_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="work center not found")
+    # A work-centre row goes with its code when a cell's move empties the code
+    # here (services/catalog_follow) — read it again under the unit's catalog
+    # lock (`_hold_catalog_rows`), a 409 if it moved or went.
+    _hold_catalog_rows(db, [w], w.manager_id)
     was = (w.shtatka, float(w.capacity) if w.capacity is not None else None)
     # Counts from the shift in progress (services/pp_catalog.py): the days
     # before it keep the штатка and capacity they had. Kept BEFORE the row is
@@ -3234,6 +3464,37 @@ def _settle_line_groups(db, mid: int, edited: list, before: dict, *,
     return 0
 
 
+def _lines_moved() -> HTTPException:
+    return HTTPException(status_code=409, detail={
+        "code": "lines_moved",
+        "message": "this position has moved to another brigadir with its cell "
+                   "— reload the page and edit it there"})
+
+
+def _hold_catalog_rows(db, rows: list, mid: int) -> None:
+    """Take the unit's catalog lock (`pp_catalog.NS_CAT`) for a writer that has
+    already READ the rows it is about to change, then read them again.
+
+    A cell's positions following it to another brigadir
+    (services/catalog_follow) take the same lock and flip these rows'
+    `manager_id`. A writer that read a row a moment before the follow committed
+    would otherwise freeze and edit the OLD unit's catalog over a row that now
+    belongs to the new one. Once the lock is held nothing can move them, so the
+    second read is the truth: a row that changed unit — or that the move
+    deleted (a dropped twin, a work-centre row that went with its code) — is
+    refused with 409 `lines_moved`, and the page reloads. One query, whatever
+    the number of rows (`populate_existing` overwrites what the session held)."""
+    pp_catalog.lock(db, [mid])
+    if not rows:
+        return
+    model = type(rows[0])
+    ids = [r.id for r in rows]
+    fresh = {r.id: r for r in db.query(model).filter(model.id.in_(ids))
+             .populate_existing().all()}
+    if any(i not in fresh or fresh[i].manager_id != mid for i in ids):
+        raise _lines_moved()
+
+
 class CatalogCreateBody(BaseModel):
     manager_id: int
     sap_code: Optional[str] = ""     # blank = a code-less line (then `name` carries it)
@@ -3287,6 +3548,10 @@ def admin_create_catalog(body: CatalogCreateBody,
     # Refused before anything is frozen or written: a unit outside the four is a
     # 400 naming them, never a value stored for a reader that cannot decode it.
     uom = _uom_or_400(body.uom)
+    # The unit's catalog lock before anything of it is read (`_hold_catalog_rows`
+    # says why): a cell's positions arriving or leaving now land before the
+    # archive check below reads the unit's lines, never under it.
+    pp_catalog.lock(db, [body.manager_id])
     # The same line already set aside: bring THAT one back instead. Two lines
     # sharing one identity would leave which of them reads the stored numbers
     # to their order (`pp_calc.line_ident`), and the archived one carries the
@@ -3637,6 +3902,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
         raise HTTPException(status_code=400,
                             detail="every selected line must belong to one brigadir")
     mid = units.pop()
+    _hold_catalog_rows(db, prods, mid)
 
     # The batch counts from the shift in progress (services/pp_catalog.py): the
     # days before it keep the catalog they had. Kept before a row is touched.
@@ -3752,6 +4018,7 @@ def admin_archive_catalog(body: CatalogArchiveBody,
         raise HTTPException(status_code=400,
                             detail="every selected line must belong to one brigadir")
     mid = units.pop()
+    _hold_catalog_rows(db, prods, mid)
 
     want_active = not body.archived
     todo = [p for p in prods if bool(p.active) != want_active]
@@ -3808,6 +4075,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         raise HTTPException(status_code=404, detail="product not found")
     grp = _group_or_400(body.wc_group) if body.wc_group is not None else None
     uom = _uom_or_400(body.uom) if body.uom is not None else None
+    _hold_catalog_rows(db, [p], p.manager_id)
     ident_before = _line_ident(p)
     was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
@@ -3936,6 +4204,7 @@ def admin_delete_catalog(prod_id: int,
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
+    _hold_catalog_rows(db, [p], p.manager_id)
     eff = pp_catalog.freeze(db, p.manager_id, "delete")
     # Snapshot before the delete — the row is unreadable after commit.
     gone = {"id": p.id, "unit": p.manager_id, "sap_code": p.sap_code,

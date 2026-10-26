@@ -100,6 +100,10 @@ _MANAGER_ID_REFS = [
     ("pp_line_daily", "manager_id"),
     ("pp_reconciliation", "manager_id"),
     ("pp_uploads", "manager_id"),
+    # The unit's dated catalog — what every past day of its «Zagruzka fayli»
+    # read (services/pp_catalog.py). History: a unit with versions is a unit
+    # whose past figures depend on them.
+    ("pp_catalog_versions", "manager_id"),
     ("leader_concerns", "brigadir_manager_id"),
     ("leader_tasks", "supervisor_manager_id"),
     # Filed leader checklists are the unit's history too. Without this line a
@@ -148,6 +152,12 @@ _MANAGER_REKEY_EXTRA_REFS = [
     ("leader_late_requests", "manager_id"),
     ("leader_late_proofs", "manager_id"),
     ("leader_task_config_audit", "manager_id"),
+    # The cell-move records (services/catalog_follow) — soft references, no FK:
+    # left under the old number, the SAP upload and the ABC import would stop
+    # knowing which positions left this unit and which arrived in it, and hand
+    # them back (services/pp_catalog_moves).
+    ("pp_catalog_moves", "from_unit"),
+    ("pp_catalog_moves", "to_unit"),
     # The action register is append-only, and this is not an exception to that:
     # nothing is deleted and no row's SNAPSHOT is rewritten. `unit_name` still
     # says what the unit was called when it happened; `unit_id` is a pointer to

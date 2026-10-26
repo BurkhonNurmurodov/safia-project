@@ -1408,6 +1408,7 @@ export default function Production() {
   // row, null for a bulk selection.
   const [confirmArch, setConfirmArch] = useState(null);
   const [archErr, setArchErr] = useState("");   // a refused archive, shown ON its dialog
+  const [delErr, setDelErr] = useState("");     // a refused delete, shown ON its dialog
   const [archOpen, setArchOpen] = usePersistentState("production_archive_open", false);
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
   const [wcEdit, setWcEdit] = useState(null);      // staffing card being edited, or null
@@ -1537,8 +1538,16 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       return t("production.dayClosedErr");
     }
+    if (raw && typeof raw === "object" && raw.code === "lines_moved") {
+      // A catalog writer whose row followed its cell to another brigadir while
+      // the page was open (production._hold_catalog_rows): reload, so the row
+      // leaves this list instead of staying under an editor that cannot save.
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      return t("production.linesMoved");
+    }
     return (typeof d === "string" && d) || t("admin.saveFailed");
   };
+  const isLinesMoved = (e) => e?.response?.data?.detail_raw?.code === "lines_moved";
 
   const dayLock = data?.day ?? null;
   const dayOpen = dayLock ? dayLock.can_write !== false : true;
@@ -1746,6 +1755,12 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production-dates"] });
       sapFilled(res);
     },
+    // The modal stays open over a refusal it can fix; a row that moved to
+    // another brigadir has nothing left to edit here, so the modal goes with it.
+    onError: (e) => {
+      if (isLinesMoved(e)) { setEditRow(null); setCatSel(null); }
+      toast.error(writeErr(e));
+    },
   });
   // Add a new catalog line (PPProduct). Admin-only; scoped to the manager the
   // admin is previewing (managerParam.manager_id).
@@ -1783,9 +1798,12 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
       setConfirmDel(null);
+      setDelErr("");
       setCatSel(null);
       sapFilled(res);
     },
+    // Shown ON the dialog, which stays standing (ConfirmDialog's rule).
+    onError: (e) => setDelErr(writeErr(e)),
   });
   // Set lines ASIDE, or bring them back (admin_archive_catalog). Nothing is
   // deleted: an archived line keeps every field and comes back in one press,
@@ -1841,7 +1859,12 @@ export default function Production() {
         toast.success(t("production.bulk.done").replace("{n}", String(n)) + fill);
       }
     },
-    onError: (e) => toast.error(writeErr(e)),
+    onError: (e) => {
+      // Some of the picked rows followed their cell to another brigadir: the
+      // selection names rows this list no longer holds, so it goes.
+      if (isLinesMoved(e)) { setBulkDraft(null); setCatPick([]); }
+      toast.error(writeErr(e));
+    },
   });
 
   // ── undo / redo over the day's writes ─────────────────────────────────────
@@ -2003,7 +2026,11 @@ export default function Production() {
   // Lines set aside on this day's catalog (`_archived_lines`); only a unit-wide
   // view carries them, and an older backend none.
   const archived = data?.archived ?? [];
-  const archWithPlan = archived.filter((r) => r.plan_qty > 0).length;
+  // A copy a cell's move JOINED into the unit's own twin (`twin_live`) is not
+  // waiting to come back — one quantity now serves both cells — so it is listed
+  // and marked, but never counted in the head or offered for restoring.
+  const archWaiting = archived.filter((r) => !r.twin_live);
+  const archWithPlan = archWaiting.filter((r) => r.plan_qty > 0).length;
   const missingLabor = data?.missing_labor_count ?? 0;
   // A leader owns CELLS, not a unit: the backend narrows this whole page —
   // catalog, teams, KPIs, raw SAP rows, export — to the cells they own and says
@@ -3329,7 +3356,9 @@ export default function Production() {
                       {t("production.archive.withPlan").replace("{n}", String(archWithPlan))}
                     </span>
                   )}
-                  <span>{t("production.archive.count").replace("{n}", String(archived.length))}</span>
+                  {archWaiting.length > 0 && (
+                    <span>{t("production.archive.count").replace("{n}", String(archWaiting.length))}</span>
+                  )}
                   {archOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </span>
               } />
@@ -3359,7 +3388,17 @@ export default function Production() {
               return (
                 <tr key={r.id}>
                   <td className="px-3 py-2 font-mono">{r.sap_code || "—"}</td>
-                  <td className="px-3 py-2 max-w-[320px] truncate" title={r.name || undefined}>{r.name || "—"}</td>
+                  <td className="px-3 py-2 max-w-[320px]" title={r.name || undefined}>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="truncate">{r.name || "—"}</span>
+                      {r.twin_live && (
+                        <span className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded whitespace-nowrap"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+                          {t("production.archive.joined")}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-center tabular-nums">{fmt(r.labor_time, 2)}</td>
                   <td className="px-3 py-2 text-center">
                     <span className="inline-flex items-center gap-1">
@@ -3381,12 +3420,12 @@ export default function Production() {
                   </td>
                   {canEditCatalog && (
                     <td className="px-3 py-1.5 text-right">
-                      <Button size="sm" variant="success" tint icon={<ArchiveRestore size={13} />}
+                      {!r.twin_live && <Button size="sm" variant="success" tint icon={<ArchiveRestore size={13} />}
                         loading={archiveCatalog.isPending && archiveCatalog.variables?.ids?.includes(r.id)}
                         disabled={archiveCatalog.isPending}
                         onClick={() => archiveCatalog.mutate({ ids: [r.id], archived: false })}>
                         {t("production.archive.restore")}
-                      </Button>
+                      </Button>}
                     </td>
                   )}
                 </tr>
@@ -3719,13 +3758,14 @@ export default function Production() {
       />
       <ConfirmDialog
         open={!!confirmDel}
-        onCancel={() => setConfirmDel(null)}
-        onConfirm={() => confirmDel && deleteCatalog.mutate(confirmDel.id)}
+        onCancel={() => { setConfirmDel(null); setDelErr(""); }}
+        onConfirm={() => { if (confirmDel) { setDelErr(""); deleteCatalog.mutate(confirmDel.id); } }}
         title={t("production.deleteTitle")}
         message={confirmDel ? `${confirmDel.sap_code}${confirmDel.name ? " — " + confirmDel.name : ""}. ${t("production.deleteConfirm")}${catalogFromHint ? " " + catalogFromHint : ""}` : ""}
         confirmLabel={t("production.deleteRow")}
         cancelLabel={t("production.cancelEdit")}
         tone="danger"
+        error={delErr || null}
         loading={deleteCatalog.isPending}
       />
 
