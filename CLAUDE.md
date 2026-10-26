@@ -7883,7 +7883,18 @@ upload filled them. The whole design, every critique and its verdict, is
   event from `FOLLOW_FROM` on that has no final record — per cell in event
   order, a move waiting while an earlier move at the same code into or out of
   one of its units is not final, grouped by (move day, code) so a swap or a
-  team moving together is ONE transaction. Followed inside `apply_due` a deploy
+  team moving together is ONE transaction — and a group WAITS while another
+  change at its code, in force by its day and into or out of one of its units,
+  is recorded and not landed yet (`_pending_hold`, `pending_move`): two cells
+  leaving one work centre on one shift-day may land hours apart
+  (`opening_for_move` takes the earlier opening), and followed alone the first
+  would take the other's positions. A caller asking anyway (the retro, a
+  retry) gets `busy`, strict or live; a withdrawn or voided change releases the
+  wait. Typed people split between departers are whole numbers by the LARGEST
+  REMAINDER (`_int_split`: Σ is the shares' Σ rounded once — rounded one cell at
+  a time, a pin of 5 split in two became 3 + 3). The SAP re-join runs in a
+  savepoint of its own (a failure there names `rejoin_failed`, the move still
+  commits). Followed inside `apply_due` a deploy
   swap's old worker would land events, a failure would roll back and never be
   retried, the letter would be read from a cache blind to the transaction it
   sits in, and a swap would be processed half at a time. **It never waits**:
@@ -7995,9 +8006,22 @@ upload filled them. The whole design, every critique and its verdict, is
   checked only when something would move — so a cell OUTSIDE the загрузка,
   which since 4 Oct appears in neither attendance nor the rosters, names every
   move at its code until a person decides), `window_cells_moved`,
-  `letters_after`, `archived`, `no_code`, `conservation`, and `volume` (over 40
-  cells or 5,000 per-day rows nothing is applied at all). Every considered event
-  gets a final record, so a second run is a no-op by the records, not the flag.
+  `letters_after`, `archived`, `no_code`, `conservation` — and a LANDED change
+  whose old unit keeps, at the code, orphaned positions of a letter it never
+  carried is `letter_ambiguous` (`orphans_of_another_cell`): they are another
+  cell's, one that left before 12 Oct, and the cells at the code are asked
+  about them too; `window_cells_moved` reads evidence hops from `FLOOR−7` and
+  the placement before it. `volume` (over 40 cells or 5,000 per-day rows of what
+  the follows actually re-key — each cell's OLD unit's rows at its own
+  positions' pairs and the unit's pins at the code) applies NOTHING and records
+  nothing per cell: the flag reads `volume:<cells>/<rows>`, the sweep stays off
+  (production as before), the pass runs again at every boot so a deploy raising
+  the cap completes it, and one DM per distinct count says so. Every considered
+  event of an applying pass gets a final record, so a second run is a no-op by
+  the records, not the flag. The DM counts what brought nothing to move
+  (`nothing`, `no_code`, `from_no_unit`…) on a line of its own, never in the
+  «qo'lda hal qiling» list, which lists the strict stops and the guards first;
+  the pass writes one Jurnal row (`org.catalog_moved`, `kind` retro).
   A retro record the sweep later RETRIES (`busy`, `failed`) is re-checked first
   by `catalog_follow_retro.recheck` — the move read again exactly as the pass
   read it (same day, units and letter), the archive and every guard — and is
