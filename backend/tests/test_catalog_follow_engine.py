@@ -844,14 +844,16 @@ class FollowEngine(_World):
         self.assert_unique([X, Y], D - timedelta(days=1), D + timedelta(days=1))
 
     def test_pins_with_stayers(self):
-        """X: c(A), d(B), a whole-centre pin beside c's group pin; Y: y1(A)
-        with a whole-centre people pin. c (→ B in Y) takes its share; Y has no
-        group pin, so it is added to Y's whole pin; X keeps its whole pin."""
+        """X: c(A), d(B), a whole-centre pin beside c's group pin; Y: y1(A) and
+        y2(C) under a whole-centre people pin. c (→ B in Y) takes its own pin;
+        Y has no group pin, so it is added to Y's whole pin; X keeps its whole
+        pin."""
         from app.models import PPWorkCenterDaily
         self.units(X, Y)
         c = self.cell("1601", X, letter="A")
         self.cell("1602", X, letter="B")
         self.cell("1603", Y, letter="A")
+        self.cell("1604", Y, letter="C")
         self.line(X, "F001", "Tort", letter="A")
         self.line(X, "F002", "Keks", letter="B")
         self.pin(X, D, group="A", people=2)
@@ -1050,6 +1052,370 @@ class FollowEdges(_World):
         [row] = self.move_rows()
         self.assertEqual(row.state, "nothing")
         self.assertIn("owned_nothing", {n["kind"] for n in row.named})
+
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class FollowReview(_World):
+    """The independent review's scenarios: strict mode stopping INSIDE the
+    writes, typed people conserved while cells stay, an earlier move at the
+    code followed first, the sweep retrying what it does not own (event-less
+    retro transfers), a busy group keeping its settled rows, windows with
+    several boundaries, two spellings of one work centre."""
+
+    def catalog_fingerprint(self):
+        """`fingerprint` without the move records and the events' summary —
+        what a strict stop must leave exactly as it was."""
+        return [r for r in self.fingerprint()
+                if not r[0].startswith(("pp_catalog_moves", "cell_link_events"))]
+
+    def people(self, units, a, b):
+        from app.services import zagruzka_source as zs
+        return {k: v for k, v in zs.unit_people(zs.typed_pins(self.db, units, a, b)).items() if v}
+
+    def test_strict_stop_inside_the_writes_rolls_back(self):
+        """A pin conflict is found only while the per-day rows are written:
+        strict mode rolls the whole follow back — the boundary `align` drew
+        included — and records the transfer `named`."""
+        self.units(X, Y)
+        c = self.cell("2001", X)
+        l1 = self.line(X, "F001", "Tort")
+        self.daily(X, D, "F001", plan=10, actual=10)
+        self.pin(X, D, people=3)
+        self.pin(Y, D, people=5)                    # an orphan whole pin, no cell of Y there
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        before = self.catalog_fingerprint()
+        res = self.follow(kind="retro", strict=True)
+        self.assertEqual(res.state, "named")
+        self.assertIn("pin_conflict", {n["kind"] for n in res.report["named"]})
+        self.assertEqual(self.catalog_fingerprint(), before)
+        self.assertIsNone(pp_catalog.current_from(self.db, X))
+        self.assertIsNone(pp_catalog.current_from(self.db, Y))
+        self.assertEqual(self.ids_on(X, D), {l1.id})
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind), ("named", "retro"))
+
+    def test_strict_conservation_rolls_back(self):
+        """Y's own line at the pair read a 0/0 snapshot that the arrival's
+        figures overwrite — minutes appear from nowhere: strict stops."""
+        self.units(X, Y)
+        c = self.cell("2101", X)
+        self.line(X, "F001", "Tort", labor=60)
+        self.line(Y, "F001", "Keks", labor=30)
+        self.daily(X, D, "F001", plan=100, actual=90)
+        self.daily(Y, D, "F001", plan=0, actual=0)
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        before = self.catalog_fingerprint()
+        res = self.follow(kind="retro", strict=True)
+        self.assertEqual(res.state, "named")
+        self.assertIn("conservation", {n["kind"] for n in res.report["named"]})
+        self.assertEqual(self.catalog_fingerprint(), before)
+
+    def test_people_conserved_when_cells_stay(self):
+        """X: c(A), d(B) under ONE whole-centre pin of 10 (the common state of
+        a lettered work centre). c leaves, d stays: the whole pin is shared, so
+        it stays with d like a shared line — c takes none of it into Y, or the
+        same people would count in both units."""
+        self.units(X, Y)
+        c = self.cell("2201", X, letter="A")
+        self.cell("2202", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B")
+        self.pin(X, D, people=10)
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        p0 = self.people([X, Y], D, D)
+        res = self.follow()
+        self.assertEqual(res.state, "moved")
+        self.assertEqual(sum(self.people([X, Y], D, D).values()), sum(p0.values()))
+        self.assertIn("x_whole_pin_kept", {n["kind"] for n in res.report["named"]})
+
+    def test_people_conserved_with_an_orphan_pin(self):
+        """c takes its own group pin; an orphan-letter pin stays with d."""
+        from app.models import PPWorkCenterDaily
+        self.units(X, Y)
+        c = self.cell("2211", X, letter="A")
+        self.cell("2212", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B")
+        self.pin(X, D, group="A", people=3)
+        self.pin(X, D, group="B", people=2)
+        self.pin(X, D, group="Q", people=4)          # nobody carries Q
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        p0 = self.people([X, Y], D, D)
+        self.follow()
+        pins = {(r.manager_id, r.wc_group): r.people
+                for r in self.db.query(PPWorkCenterDaily).filter(PPWorkCenterDaily.date == D)}
+        self.assertEqual(pins, {(Y, "A"): 3, (X, "B"): 2, (X, "Q"): 4})
+        self.assertEqual(sum(self.people([X, Y], D, D).values()), sum(p0.values()))
+
+    def test_earlier_move_at_the_code_goes_first(self):
+        """e(A) leaves X on D, c(B) leaves X on D+3. While e's follow waits
+        (busy), c's must wait too: otherwise c — alone in X at the code —
+        would own e's orphaned line and take it away."""
+        from app.models import PPCatalogMove
+        self.units(X, Y, Z)
+        e = self.cell("2301", X, letter="A")
+        c = self.cell("2302", X, letter="B")
+        le = self.line(X, "F001", "Tort", letter="A")
+        lc = self.line(X, "F002", "Keks", letter="B", sort=1)
+        ev_e = self.event(e, Y, eff=D)
+        self.event(c, Z, eff=D + timedelta(days=3))
+        self.db.commit()
+        self.land(D + timedelta(days=3))
+        later = datetime.combine(D + timedelta(days=30), time(9), tzinfo=TZ)
+        self.assertEqual([[t.cell_id for t in g] for g in cf._candidates(self.db, later)],
+                         [[e.id]])                              # c waits for e
+        self.db.add(PPCatalogMove(kind="live", state="busy", event_id=ev_e.id, cell_id=e.id,
+                                  code=C, from_unit=X, to_unit=Y, home_from=D, tries=1,
+                                  next_try_at=later + timedelta(hours=1)))
+        self.db.commit()
+        self.assertEqual(cf._candidates(self.db, later), [])     # e not due, c still waits
+        self.db.query(PPCatalogMove).update({"next_try_at": later - timedelta(minutes=1)})
+        self.db.commit()
+        [g] = cf._candidates(self.db, later)
+        cf.follow_group(self.db, g, kind="live")
+        self.db.commit()
+        self.forget()
+        [g] = cf._candidates(self.db, later)
+        self.assertEqual([t.cell_id for t in g], [c.id])
+        cf.follow_group(self.db, g, kind="live")
+        self.db.commit()
+        self.forget()
+        self.assertEqual(self.ids_on(Y, D + timedelta(days=3)), {le.id})
+        self.assertEqual(self.ids_on(Z, D + timedelta(days=3)), {lc.id})
+        self.assert_unique([X, Y, Z], D - timedelta(days=1), D + timedelta(days=4))
+
+    def test_a_group_waits_whole(self):
+        """Two cells move to one unit on one day at one code — one group, its
+        letters settled together. While one member waits for its retry the
+        other is not followed alone."""
+        from app.models import PPCatalogMove
+        self.units(X, Y)
+        c1 = self.cell("2601", X, letter="A")
+        c2 = self.cell("2602", X, letter="B")
+        self.line(X, "F001", "Tort", letter="A")
+        self.line(X, "F002", "Keks", letter="B")
+        ev1 = self.event(c1, Y)
+        self.event(c2, Y)
+        self.db.commit()
+        self.land()
+        later = datetime.combine(D + timedelta(days=30), time(9), tzinfo=TZ)
+        self.db.add(PPCatalogMove(kind="live", state="busy", event_id=ev1.id, cell_id=c1.id,
+                                  code=C, from_unit=X, to_unit=Y, home_from=D, tries=1,
+                                  next_try_at=later + timedelta(minutes=5)))
+        self.db.commit()
+        self.assertEqual(cf._candidates(self.db, later), [])
+        self.assertEqual([sorted(t.cell_id for t in g)
+                          for g in cf._candidates(self.db, later + timedelta(minutes=6))],
+                         [sorted([c1.id, c2.id])])
+
+    def test_sweep_retries_an_eventless_retro_transfer(self):
+        """The retroactive one-shot recorded a transfer of a cell with no
+        landing event `busy`: the sweep retries it — strict, as a retro, on the
+        SAME record — although no event points at it."""
+        from app.models import PPCatalogMove
+        h = date(2026, 10, 8)
+        self.units(X, Y)
+        c = self.cell("2401", Y)                    # moved before link history
+        p = self.line(X, "F001", "Tort")
+        self.daily(X, h, "F001", plan=4, actual=4)
+        self.enable()
+        self.db.add(PPCatalogMove(kind="retro", state="busy", event_id=None, cell_id=c.id,
+                                  code=C, from_unit=X, to_unit=Y, home_from=h, tries=1,
+                                  next_try_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+        self.db.commit()
+        with mock.patch("app.services.action_log.record_system"), mock.patch.object(cf, "_dm"):
+            cf.run_sweep()
+        self.forget()
+        [row] = self.move_rows()
+        self.assertEqual((row.state, row.kind, row.event_id), ("moved", "retro", None))
+        self.assertEqual(self.ids_on(Y, h), {p.id})
+        with mock.patch("app.services.action_log.record_system"), mock.patch.object(cf, "_dm"):
+            cf.run_sweep()                              # final now: never again
+        self.forget()
+        self.assertEqual(len(self.move_rows()), 1)
+
+    def test_busy_group_keeps_its_settled_rows(self):
+        """One cell of the group is archived (settled `nothing` without a lock),
+        the other meets a held lock: the first is final at once, only the
+        second waits."""
+        self.units(X, Y)
+        gone = self.cell("2501", X)
+        gone.archived_at = datetime.combine(D - timedelta(days=2), time(12), tzinfo=TZ)
+        c = self.cell("2502", X)
+        self.line(X, "F001", "Tort")
+        self.event(gone, Y)
+        self.event(c, Y)
+        self.enable()
+        self.db.commit()
+        self.land()
+        other = self.pg.Session()
+        self.others.append(other)
+        self.assertTrue(pp_catalog.lock(other, [X]))
+        with mock.patch("app.services.action_log.record_system"), mock.patch.object(cf, "_dm"):
+            cf.run_sweep()
+        self.forget()
+        rows = {r.cell_id: r for r in self.move_rows()}
+        self.assertEqual(rows[gone.id].state, "nothing")
+        self.assertIn("archived", {n["kind"] for n in rows[gone.id].named})
+        self.assertEqual((rows[c.id].state, rows[c.id].tries), ("busy", 1))
+
+    def test_window_boundaries_and_join_per_span(self):
+        """h = D; Y gains an identical twin m from D+1, X is edited from D+2
+        (S = D+2). On D the arrival is live in Y; from D+1 it is joined to m."""
+        from app.models import PPProduct
+        self.units(X, Y)
+        c = self.cell("3001", X)
+        self.cell("3002", Y, letter="A")
+        p = self.line(X, "F001", "Tort", labor=60)
+        q = self.line(X, "F009", "Other", wc="B100", labor=10)
+        self.cell("3003", X, sap="B100")
+        yl = self.line(Y, "F005", "Pirog", labor=30, letter="A")
+        for day in _days(D - timedelta(days=1), D + timedelta(days=3)):
+            self.daily(X, day, "F001", plan=60, actual=60)
+            self.daily(X, day, "F009", wc="B100", plan=6, actual=6)
+            self.daily(Y, day, "F005", plan=2, actual=2)
+        self.db.flush()
+        pp_catalog.freeze(self.db, Y, "edit", day=D + timedelta(days=1))
+        m = self.line(Y, "F001", "Tort", labor=60, letter="A", sort=5)
+        for day in _days(D + timedelta(days=1), D + timedelta(days=3)):
+            self.daily(Y, day, "F001", plan=60, actual=60)
+        pp_catalog.freeze(self.db, X, "edit", day=D + timedelta(days=2))
+        self.db.query(PPProduct).filter_by(id=q.id).update({"labor_time": Decimal("11")})
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        lo, hi = D - timedelta(days=1), D + timedelta(days=3)
+        hist0 = self.history([X, Y], lo, D - timedelta(days=1))
+        mins0 = self.minutes([X, Y], D, hi)
+        res = self.follow()
+        self.assertEqual((res.state, res.S), ("moved", D + timedelta(days=2)))
+        self.assertEqual(self.history([X, Y], lo, D - timedelta(days=1)), hist0)
+        self.assert_unique([X, Y], lo, hi)
+        self.assertEqual(self.ids_on(Y, D), {p.id, yl.id})
+        self.assertEqual(self.minutes([X, Y], D, D), {D.isoformat(): mins0[D.isoformat()]})
+        for day in _days(D + timedelta(days=1), hi):
+            act = {r.id: r.active for r in pp_catalog.at(self.db, Y, day).lines}
+            self.assertEqual((act.get(p.id), act.get(m.id)), (False, True), day)
+            # The join only lowers: X no longer counts p, Y counts m once.
+            self.assertLess(self.minutes([X, Y], day, day)[day.isoformat()][0],
+                            mins0[day.isoformat()][0])
+
+    def test_two_spellings_of_one_work_centre(self):
+        """X stores the work centre as «A2894» and «a2894»: one row and one
+        pin arrive in Y (the other spelling's row dropped and recorded)."""
+        from app.models import PPWorkCenterDaily
+        self.units(X, Y)
+        c = self.cell("3101", X)
+        l1 = self.line(X, "F001", "Tort", wc="A2894")
+        l2 = self.line(X, "F002", "Keks", wc="a2894")
+        w1 = self.wc(X, "A2894", shtatka=3)
+        w2 = self.wc(X, "a2894", shtatka=4)
+        self.daily(X, D, "F001", wc="A2894", plan=10, actual=10)
+        self.daily(X, D, "F002", wc="a2894", plan=10, actual=10)
+        self.pin(X, D, wc="A2894", people=2)
+        self.pin(X, D, wc="a2894", people=3)
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        mins0 = self.minutes([X, Y], D, D)
+        self.follow()
+        self.assertEqual(self.minutes([X, Y], D, D), mins0)
+        self.assertEqual(self.ids_on(Y, D), {l1.id, l2.id})
+        self.assertEqual([w.id for w in pp_catalog.at(self.db, Y, D).work_centers], [w1.id])
+        self.assertEqual(pp_catalog.at(self.db, X, D).work_centers, [])
+        [row] = self.move_rows()
+        self.assertEqual([w["id"] for w in row.wc_dropped], [w2.id])
+        pins = [(r.manager_id, r.people) for r in self.db.query(PPWorkCenterDaily).all()]
+        self.assertEqual(pins, [(Y, 5)])
+
+    def test_sibling_in_a_late_window(self):
+        """The lone unlettered sibling's letter reaches every span of [h, S)."""
+        self.units(X, Y)
+        c = self.cell("3301", X)
+        self.cell("3302", Y)
+        lc = self.line(X, "F001", "Tort", labor=60)
+        ly = self.line(Y, "F005", "Pirog", labor=30)
+        for day in _days(D - timedelta(days=1), D + timedelta(days=2)):
+            self.daily(X, day, "F001", plan=50, actual=40)
+            self.daily(Y, day, "F005", plan=20, actual=20)
+            self.pin(Y, day, people=6)
+        self.db.flush()
+        pp_catalog.freeze(self.db, X, "edit", day=D + timedelta(days=1))
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        lo, hi = D - timedelta(days=1), D + timedelta(days=2)
+        hist0 = self.history([X, Y], lo, D - timedelta(days=1))
+        mins0 = self.minutes([X, Y], D, hi)
+        res = self.follow()
+        self.assertEqual((res.state, res.S), ("moved", D + timedelta(days=1)))
+        self.assertEqual(self.history([X, Y], lo, D - timedelta(days=1)), hist0)
+        self.assertEqual(self.minutes([X, Y], D, hi), mins0)
+        self.assert_unique([X, Y], lo, hi)
+        for day in _days(D, hi):
+            self.assertEqual({p.id: p.wc_group for p in pp_catalog.at(self.db, Y, day).lines},
+                             {lc.id: "A", ly.id: "B"}, day)
+
+    def test_lone_lettered_stayer_keeps_its_own(self):
+        """Y: y1(A) alone at the code with an UNLETTERED line and a whole-centre
+        pin — both its alone. c arrives (→ B): they take y1's letter from `h`,
+        so y1 keeps its minutes and people instead of halving them with c."""
+        from app.models import Cell, PPWorkCenterDaily
+        from app.services import zagruzka_source as zs
+        self.units(X, Y)
+        c = self.cell("4001", X)
+        y1 = self.cell("4002", Y, letter="A")
+        lc = self.line(X, "F001", "Tort", labor=60)
+        ly = self.line(Y, "F005", "Pirog", labor=30)
+        for day in _days(D - timedelta(days=1), D):
+            self.daily(X, day, "F001", plan=50, actual=40)
+            self.daily(Y, day, "F005", plan=20, actual=20)
+            self.pin(Y, day, people=6, shtatka=8)
+        self.pin(X, D, people=3)
+        self.event(c, Y)
+        self.db.commit()
+        self.land()
+        lo = D - timedelta(days=1)
+        hist0 = self.history([X, Y], lo, lo)
+        mins0 = self.minutes([X, Y], D, D)
+        self.follow()
+        self.assertEqual(self.history([X, Y], lo, lo), hist0)
+        self.assertEqual(self.minutes([X, Y], D, D), mins0)
+        self.assertEqual({p.id: p.wc_group for p in pp_catalog.at(self.db, Y, D).lines},
+                         {lc.id: "B", ly.id: "A"})
+        self.assertEqual({p.id: p.wc_group for p in pp_catalog.at(self.db, Y, lo).lines},
+                         {ly.id: None})
+        cells = self.db.query(Cell).all()
+        lab = zs.cell_labor(cells, zs.wc_group_labor(self.db, [X, Y], D, D))
+        self.assertAlmostEqual(lab[(y1.id, D.isoformat())][0], 30 * 20 / 60)
+        self.assertAlmostEqual(lab[(c.id, D.isoformat())][0], 60 * 50 / 60)
+        pins = {r.wc_group: (r.people, r.shtatka) for r in self.db.query(PPWorkCenterDaily).filter(
+            PPWorkCenterDaily.manager_id == Y, PPWorkCenterDaily.date == D)}
+        self.assertEqual(pins, {"A": (6, None), "B": (3, None), None: (None, 8)})
+        self.db.refresh(y1)
+        self.assertEqual(y1.wc_group, "A")
+
+    def test_kept_answer_built_before_a_forget_is_not_kept(self):
+        """A build that started before `forget_all` read the old catalog: its
+        answer goes to its caller and is not kept for the next one."""
+        import time as _t
+        from app.services import kept_answer
+        k = kept_answer.KeptAnswers("t-forget")
+        started = _t.monotonic()
+        kept_answer.forget_all()
+        k._put("a", started, 1)
+        self.assertEqual(k._kept, {})
+        k._put("a", _t.monotonic(), 2)
+        self.assertEqual(k._kept["a"][1], 2)
 
 
 if __name__ == "__main__":

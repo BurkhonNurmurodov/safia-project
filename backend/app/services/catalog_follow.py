@@ -115,7 +115,7 @@ class Plan:
     stayers: dict = field(default_factory=dict)      # src → {cell id: letter on h−1}
     whole: dict = field(default_factory=dict)        # src → dst | None (§1.3 Whole)
     letter_dst: dict = field(default_factory=dict)   # cell id → its letter in dst
-    sibling: dict = field(default_factory=dict)      # dst → (lone staying cell, its new letter)
+    sibling: dict = field(default_factory=dict)      # dst → (lone staying cell, its letter from h)
     named: list = field(default_factory=list)
     staying_dst: dict = field(default_factory=dict)  # dst → {cell id: letter on h−1}
     storage_from: Optional[date] = None              # S, once aligned (a joined copy's archived_from)
@@ -286,16 +286,21 @@ def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
                 taken.add(g)
         if len(st) == 1:
             (s_id, s_let), = st.items()
-            if not s_let:
-                if _letters_after(s_id, h):
-                    plan.named.append(_named("letters_after", cell=s_id, unit=y))
+            if s_let:
+                # A lone LETTERED stayer: everything of the unit at the code no
+                # letter of it claims (no letter, an orphan one) was its alone
+                # and would now be split with the arrivals — it takes its own
+                # letter from `h`, the rule below with no new letter to find.
+                plan.sibling[y] = (s_id, s_let)
+            elif _letters_after(s_id, h):
+                plan.named.append(_named("letters_after", cell=s_id, unit=y))
+            else:
+                ls = _free(taken)
+                if ls is None:
+                    plan.named.append(_named("no_free_letter", cell=s_id, unit=y))
                 else:
-                    ls = _free(taken)
-                    if ls is None:
-                        plan.named.append(_named("no_free_letter", cell=s_id, unit=y))
-                    else:
-                        plan.sibling[y] = (s_id, ls)
-                        taken.add(ls)
+                    plan.sibling[y] = (s_id, ls)
+                    taken.add(ls)
         elif len(st) >= 2 and any(not g for g in st.values()):
             plan.named.append(_named("y_register_break", unit=y,
                                      cells=sorted(st), code=code))
@@ -372,8 +377,9 @@ def transform(contents: dict[int, dict], plan: Plan, *, current: bool) -> tuple[
         gone = {id(p) for p, _y, _o in mv}
         out[x]["lines"] = [p for p in out[x]["lines"] if id(p) not in gone]
 
-    # 3. The sibling rule: a lone unlettered staying cell takes its letter, and
-    #    with it every line of the unit at the code no staying cell claims.
+    # 3. The sibling rule: a lone staying cell keeps every line of the unit at
+    #    the code no staying cell claims — they take its letter (a new one when
+    #    it had none), so the arrivals do not share them.
     for y, (s_id, ls) in plan.sibling.items():
         if y not in out:
             continue
@@ -456,8 +462,11 @@ def transform(contents: dict[int, dict], plan: Plan, *, current: bool) -> tuple[
                     if id(q) not in dropped:
                         dropped.add(id(q))
                         rep["dropped_lines"].append({**q, "unit": y})
+                        # The whole row is kept on the record: it is deleted, and
+                        # a person may want the archived line back.
                         rep["named"].append(_named("archived_twin_dropped", unit=y,
-                                                   id=q.get("id"), name=q.get("name")))
+                                                   id=q.get("id"), name=q.get("name"),
+                                                   line=_jsonable(q)))
             live.append((p, x))
         if dropped:
             out[y]["lines"] = [q for q in out[y]["lines"] if id(q) not in dropped]
@@ -754,13 +763,20 @@ def _int_people(v: float, named: list, **where) -> int:
 def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
                 counts: Counter, named: list) -> None:
     """The typed «Bugungi fakt» pins at the code, from `h` on (§1.7):
-    each departing cell's people — what `wc_group.share` handed it in the old
-    unit — written into the new unit under its new letter, the old unit's pins
-    leaving with it (all of them when nobody stays, else the cell's own group
-    pin), the lone staying sibling's whole-centre pin turned into its group
-    pin. A code that left its unit WHOLE into a unit holding nothing there
-    that day moves its pin rows as they are (re-lettered), which keeps a
-    whole-centre pin whole rather than splitting it into fractions."""
+    each departing cell's people written into the new unit under its new
+    letter, the old unit's pins leaving with it, the lone staying sibling's
+    whole-centre pin turned into its group pin.
+
+    When nobody stays, every pin of the code leaves and each departer takes
+    what `wc_group.share` hands it. When cells stay, a departer takes only its
+    own letter's pins: a whole-centre or orphan-letter pin stays with the
+    stayers (`x_whole_pin_kept`), exactly as a shared line does — the spec
+    handed the departer a `share` of it while the pin stayed, which counted
+    those people in both units. Typed people are conserved either way.
+
+    A code that left its unit WHOLE into a unit holding nothing there that day
+    moves its pin rows as they are (re-lettered), which keeps a whole-centre
+    pin whole rather than splitting it into fractions."""
     code = plan.code
     rows = [r for r in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id.in_(units), PPWorkCenterDaily.date >= h,
@@ -781,25 +797,43 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
         for x in sources:
             deps = [t for t in plan.transfers if t.src == x]
             stay = plan.stayers.get(x) or {}
-            A = list(stay.items()) + [(t.cell_id, _g(t.letter_src)) for t in deps]
             xs = pins.get(x) or []
-            vals: dict = {}
-            for r in xs:
-                if r.people is not None:
-                    vals[_g(r.wc_group)] = vals.get(_g(r.wc_group), 0.0) + float(r.people)
-            shares = share([g for _c, g in A], vals, pins=True) if A else []
-            for (cid, _g2), v in zip(A, shares):
-                if cid in {t.cell_id for t in deps}:
-                    values[cid] = v
             whole_all = not stay and all(t.dst is not None for t in deps)
             if whole_all:
+                # Nobody stays: every pin of the code leaves, handed to the
+                # departers by the rule that splits it already (`share`).
+                A = [(t.cell_id, _g(t.letter_src)) for t in deps]
+                vals: dict = {}
+                for r in xs:
+                    if r.people is not None:
+                        vals[_g(r.wc_group)] = vals.get(_g(r.wc_group), 0.0) + float(r.people)
+                for (cid, _l), v in zip(A, share([g for _c, g in A], vals, pins=True)):
+                    values[cid] = v
                 go = list(xs)
             else:
-                own_letters = {_g(t.letter_src) for t in deps
-                               if t.dst is not None and t.letter_src
-                               and t.letter_src not in {g for g in stay.values() if g}}
+                # Cells stay: a departer takes the pins ITS letter claims and
+                # nothing else. A whole-centre or orphan-letter pin is shared,
+                # and like a shared line it stays with the stayers — on these
+                # days the dated readers already hand it to them alone (the
+                # departer is in the new unit from `h`), so handing the departer
+                # a share as well would count those people twice.
+                carried = {g for g in stay.values() if g}
+                movers = [t for t in deps if t.dst is not None and t.letter_src
+                          and t.letter_src not in carried]
+                own_letters = {_g(t.letter_src) for t in movers}
                 go = [r for r in xs if _g(r.wc_group) in own_letters]
-                if stay and any(r.wc_group is None and r.people is not None for r in xs):
+                own_vals: dict = {}
+                for r in go:
+                    if r.people is not None:
+                        own_vals[_g(r.wc_group)] = own_vals.get(_g(r.wc_group), 0.0) + float(r.people)
+                per = Counter(_g(t.letter_src) for t in movers)
+                for t in movers:
+                    g = _g(t.letter_src)
+                    if g in own_vals:
+                        values[t.cell_id] = own_vals[g] / per[g]
+                if stay and any(r.people is not None and _g(r.wc_group) not in own_letters
+                                and (r.wc_group is None or _g(r.wc_group) not in carried)
+                                for r in xs):
                     kept_whole[x] += 1
             leaving[x] = go
             saved[x] = [{"work_center": r.work_center, "wc_group": _g(r.wc_group),
@@ -812,7 +846,8 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
                 counts["pins_left"] += 1
         db.flush()
 
-        # The lone staying sibling: its unclaimed pins become its group pin.
+        # The lone staying sibling: its unclaimed pins become its group pin
+        # (added to the one it already has, when it is lettered and has one).
         for y, (s_id, ls) in plan.sibling.items():
             ys = pins.get(y) or []
             carried = {g for g in (plan.staying_dst.get(y) or {}).values() if g}
@@ -827,10 +862,15 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
                         db.delete(r)
                         ys.remove(r)
                     db.flush()
-                    nr = PPWorkCenterDaily(manager_id=y, date=d, work_center=moved[0].work_center,
-                                           wc_group=ls, people=total)
-                    db.add(nr)
-                    ys.append(nr)
+                    own_pin = next((r for r in ys if r.wc_group == ls), None)
+                    if own_pin is not None:
+                        own_pin.people = int(own_pin.people or 0) + total
+                    else:
+                        nr = PPWorkCenterDaily(manager_id=y, date=d,
+                                               work_center=moved[0].work_center,
+                                               wc_group=ls, people=total)
+                        db.add(nr)
+                        ys.append(nr)
                     counts["pins_sibling"] += 1
             elif whole is not None and whole.people is not None:
                 nr = PPWorkCenterDaily(manager_id=y, date=d, work_center=whole.work_center,
@@ -1009,16 +1049,33 @@ def _mark_event(db: Session, cell: Cell, h: date, now: datetime, vfx: dict) -> C
     return ev
 
 
-def _transfer_rows(db: Session, transfers: list[Transfer]) -> dict[int, PPCatalogMove]:
+def _tkey(t: Transfer):
+    """A transfer's record key: its landing event — or, for a retroactive
+    transfer of a cell that moved before link events existed (no event), the
+    cell and its move day."""
+    return t.event_id if t.event_id is not None else ("cell", t.cell_id, t.home_from)
+
+
+def _transfer_rows(db: Session, transfers: list[Transfer]) -> dict:
+    """{`_tkey`: the transfer's existing record}. An event-less transfer is
+    matched only to a record still waiting for a retry — a final one is an
+    audit, never written over."""
+    out: dict = {}
     eids = [t.event_id for t in transfers if t.event_id is not None]
-    if not eids:
-        return {}
-    return {r.event_id: r for r in db.query(PPCatalogMove).filter(
-        PPCatalogMove.event_id.in_(eids)).all()}
+    if eids:
+        out.update({r.event_id: r for r in db.query(PPCatalogMove).filter(
+            PPCatalogMove.event_id.in_(eids)).all()})
+    loose = {t.cell_id for t in transfers if t.event_id is None}
+    if loose:
+        for r in (db.query(PPCatalogMove).filter(
+                PPCatalogMove.event_id.is_(None), PPCatalogMove.cell_id.in_(loose),
+                PPCatalogMove.state.in_(RETRY)).order_by(PPCatalogMove.id).all()):
+            out.setdefault(("cell", r.cell_id, r.home_from), r)
+    return out
 
 
 def _row_for(existing: dict, t: Transfer) -> PPCatalogMove:
-    r = existing.get(t.event_id) if t.event_id is not None else None
+    r = existing.get(_tkey(t))
     return r if r is not None else PPCatalogMove(event_id=t.event_id, cell_id=t.cell_id)
 
 
@@ -1087,11 +1144,13 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
 
     Order: validate → plan → a group owning nothing takes no lock and writes
     `nothing` → every unit's `NS_CAT` and `NS_QTY` lock, TRIED (busy → state
-    `busy`, nothing written, no row added: the caller rolls back and records
-    the retry) → the per-day identities and minutes before → `align` at `h`
-    (→ S) → the window [h, S) rewritten version by version → the current rows →
-    the cells' letters, their history dated from `h` → the per-day rows → the
-    conservation check → the rows.
+    `busy`: nothing written, the waiting transfers' rows handed back unsaved —
+    the caller keeps the rows of what was settled without a lock, a cell with
+    no code or archived, and records the retry of the rest) → the per-day
+    identities and minutes before → `align` at `h` (→ S) → the window [h, S)
+    rewritten version by version → the current rows → the cells' letters,
+    their history dated from `h` → the per-day rows → the conservation check →
+    the rows.
 
     `strict` (the retroactive one-shot): any condition of `STRICT_STOP`, the
     conservation check included, leaves the catalog untouched (a savepoint is
@@ -1159,6 +1218,11 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
                       by_name=by_name(t), named=nm or [])
             if not dry:
                 db.add(r)
+                ev = events.get(t.event_id)
+                if ev is not None:
+                    ev.vfx = {**(ev.vfx or {}), "catalog_follow": {
+                        "state": r.state, "storage_from": None, "lines": 0, "letter_to": None,
+                        "at": now.isoformat()}}
             out.append(r)
         return out
 
@@ -1209,7 +1273,7 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
     # ── the locks — tried, never waited on ──
     if not (pp_catalog.lock(db, units, try_=True)
             and pp_catalog.lock(db, units, ns=pp_catalog.NS_QTY, try_=True)):
-        # Transient: the caller rolls back and records the retry itself.
+        # Transient: the caller records the retry itself (these rows are unsaved).
         rows = [_fill_row(PPCatalogMove(event_id=t.event_id, cell_id=t.cell_id), t, kind=kind,
                           state="busy", code=norm_code(cells[t.cell_id].sap_code),
                           by_name=by_name(t))
@@ -1560,35 +1624,69 @@ def _mark(vfx) -> bool:
 
 
 def _candidates(db: Session, now: datetime) -> list[list[Transfer]]:
-    """The groups to follow now: per cell, its EARLIEST applied brigadir change
-    from `FOLLOW_FROM` on that is not final — and only when it has no record
-    yet or its retry is due (a later change of the same cell waits for it) —
-    grouped by (move day, code)."""
+    """The groups to follow now, grouped by (move day, code).
+
+    Per cell, its EARLIEST transfer that is not final — an applied brigadir
+    change from `FOLLOW_FROM` on, or a retroactive transfer of a cell with no
+    landing event that is waiting for a retry — and only when it has no record
+    yet or its retry is due: a later change of the same cell waits for it. A
+    group goes whole or not at all.
+
+    And across cells: a move waits while an EARLIER move at the same code, out
+    of or into one of its units, is not final. Until that one is followed its
+    positions still stand in the old unit with nobody there to own them, and
+    the later move would take them as its own (an orphan letter is unclaimed,
+    a lone departer owns everything unclaimed)."""
     E = CellLinkEvent
     evs = (db.query(E).filter(E.field == "manager_id", E.applied_at.isnot(None),
                               E.effective_from >= FOLLOW_FROM,
                               E.value.is_distinct_from(E.prev))
            .order_by(E.cell_id, E.effective_from, E.id).all())
     evs = [e for e in evs if not _mark(e.vfx)]
-    if not evs:
-        return []
     rows = {r.event_id: r for r in db.query(PPCatalogMove).filter(
-        PPCatalogMove.event_id.in_([e.id for e in evs])).all()}
-    first: dict[int, CellLinkEvent] = {}
+        PPCatalogMove.event_id.in_([e.id for e in evs])).all()} if evs else {}
+    items: dict[int, list] = defaultdict(list)       # cell → [(h, rank, id, event, row)]
     for e in evs:
-        if e.cell_id in first:
-            continue
         r = rows.get(e.id)
         if r is not None and r.state in FINAL:
             continue
-        first[e.cell_id] = e if (r is None or r.state == "dry" or
-                                 (r.state in RETRY and (r.next_try_at is None
-                                                        or r.next_try_at <= now))) else None
-    cells = {c.id: c for c in db.query(Cell).filter(
-        Cell.id.in_([c for c, e in first.items() if e is not None])).all()}
+        items[e.cell_id].append((e.effective_from, 1, e.id, e, r))
+    for r in db.query(PPCatalogMove).filter(PPCatalogMove.event_id.is_(None),
+                                            PPCatalogMove.state.in_(RETRY)).all():
+        items[r.cell_id].append((r.home_from, 0, r.id, None, r))
+    if not items:
+        return []
+    heads = {cid: min(its, key=lambda i: i[:3]) for cid, its in items.items()}
+    cells = {c.id: c for c in db.query(Cell).filter(Cell.id.in_(list(heads))).all()}
+
+    def code_of(cid):
+        return norm_code(getattr(cells.get(cid), "sap_code", None))
+
+    def units_of(head) -> set:
+        _h, _k, _i, e, r = head
+        pair = (e.prev, e.value) if e is not None else (r.from_unit, r.to_unit)
+        return {u for u in pair if u is not None}
+
+    def due(r) -> bool:
+        return r is None or r.state == "dry" or (
+            r.state in RETRY and (r.next_try_at is None or r.next_try_at <= now))
+
     groups: dict = defaultdict(list)
-    for cid, e in first.items():
+    waits: set = set()
+    for cid, head in heads.items():
+        h, _k, _i, e, r = head
+        code = code_of(cid)
+        units = units_of(head)
+        # A group is followed WHOLE — its letters are settled together — so one
+        # member that has to wait holds the whole group back.
+        if not due(r) or (code and any(
+                o != cid and oh[0] < h and code_of(o) == code and units & units_of(oh)
+                for o, oh in heads.items())):
+            waits.add((h, code))
         if e is None:
+            groups[(h, code)].append(Transfer(
+                cell_id=cid, event_id=None, src=r.from_unit, dst=r.to_unit, home_from=h,
+                letter_src=_g(r.letter_from)))
             continue
         c = cells.get(cid)
         vfx = e.vfx if isinstance(e.vfx, dict) else {}
@@ -1598,32 +1696,42 @@ def _candidates(db: Session, now: datetime) -> list[list[Transfer]]:
             letter = vfx["wc_group_was"]
         else:
             letter = getattr(c, "wc_group", None)
-        code = norm_code(getattr(c, "sap_code", None))
-        groups[(e.effective_from, code)].append(Transfer(
-            cell_id=cid, event_id=e.id, src=e.prev, dst=e.value, home_from=e.effective_from,
+        groups[(h, code)].append(Transfer(
+            cell_id=cid, event_id=e.id, src=e.prev, dst=e.value, home_from=h,
             letter_src=_g(letter)))
-    return [sorted(v, key=lambda t: t.cell_id) for _k, v in sorted(groups.items())]
+    return [sorted(v, key=lambda t: t.cell_id) for k, v in sorted(groups.items())
+            if k not in waits]
+
+
+def _group_kind(db: Session, transfers: list[Transfer]) -> str:
+    """A group retried by the sweep keeps the kind it was first followed as: a
+    retroactive transfer (the one-shot recorded it `busy`) is followed STRICT
+    again, never as a live one."""
+    return "retro" if any(r.kind == "retro" for r in _transfer_rows(db, transfers).values()) \
+        else "live"
 
 
 def _record_retry(transfers: list[Transfer], state: str, error: Optional[str],
-                  now: datetime) -> list[dict]:
+                  now: datetime, kind: str = "live") -> list[dict]:
     """A `busy` / `failed` group, in its own transaction: tries counted, the
     next try at `now` + `BACKOFF_MIN`; past the last one, `gave_up`."""
     from app.database import SessionLocal
     out = []
+    if not transfers:
+        return out
     with SessionLocal() as db:
         existing = _transfer_rows(db, transfers)
         cells = {c.id: c for c in db.query(Cell).filter(
             Cell.id.in_([t.cell_id for t in transfers])).all()}
         for t in transfers:
-            r = existing.get(t.event_id) if t.event_id is not None else None
+            r = existing.get(_tkey(t))
             tries = (r.tries or 0) + 1 if r is not None else 1
             c = cells.get(t.cell_id)
             if r is None:
                 r = PPCatalogMove(event_id=t.event_id, cell_id=t.cell_id)
                 db.add(r)
             final = tries > len(BACKOFF_MIN)
-            _fill_row(r, t, kind="live", state="gave_up" if final else state,
+            _fill_row(r, t, kind=kind, state="gave_up" if final else state,
                       code=norm_code(getattr(c, "sap_code", None)))
             r.tries = tries
             r.error = (error or None) and str(error)[:2000]
@@ -1634,23 +1742,37 @@ def _record_retry(transfers: list[Transfer], state: str, error: Optional[str],
     return out
 
 
+def _summary(r: PPCatalogMove) -> dict:
+    return {"cell": r.cell_id, "state": r.state, "from": r.from_unit, "to": r.to_unit,
+            "h": _iso(r.home_from), "lines": len(r.line_ids or []),
+            "named": [n.get("kind") for n in r.named or []]}
+
+
 def _run_group(transfers: list[Transfer], now: datetime) -> dict:
     from app.database import SessionLocal
     from app.services import cell_register
+    kind = "live"
     try:
         with SessionLocal() as db:
-            res = follow_group(db, transfers, kind="live", now=now)
+            kind = _group_kind(db, transfers)
+            res = follow_group(db, transfers, kind=kind, strict=(kind == "retro"), now=now)
             if res.state == "busy":
-                db.rollback()
-                return {"retry": _record_retry(transfers, "busy", None, now)}
-            out = {"state": res.state, "rows": [
-                {"cell": r.cell_id, "state": r.state, "from": r.from_unit, "to": r.to_unit,
-                 "h": _iso(r.home_from), "lines": len(r.line_ids or []),
-                 "named": [n.get("kind") for n in r.named or []]} for r in res.rows]}
-            db.commit()
+                # What was settled without a lock (a cell with no code, one
+                # archived …) stands; only the transfers that met the lock wait.
+                waiting = {r.cell_id for r in res.rows if r.state == "busy"}
+                settled = [_summary(r) for r in res.rows if r.state != "busy"]
+                db.commit()
+            else:
+                waiting = None
+                out = {"state": res.state, "rows": [_summary(r) for r in res.rows]}
+                db.commit()
     except Exception as exc:  # noqa: BLE001 — retried with back-off
         log.exception("catalog follow: group failed")
-        return {"retry": _record_retry(transfers, "failed", repr(exc), now)}
+        return {"retry": _record_retry(transfers, "failed", repr(exc), now, kind)}
+    if waiting is not None:
+        return {"rows": settled,
+                "retry": _record_retry([t for t in transfers if t.cell_id in waiting],
+                                       "busy", None, now, kind)}
     cell_register.after_commit()
     _forget_caches()
     return out
@@ -1683,7 +1805,8 @@ def _report(results: list) -> None:
                      + (f" · {', '.join(r['named'])}" if r["named"] else ""))
     for r in retries:
         lines.append(f"{r['cell']}: {r['state']} ({r['tries']})")
-    details += [("catalog_cell", x) for x in lines[:40]]
+    # One Jurnal row, at most 40 detail rows in all — the tally first.
+    details += [("catalog_cell", x) for x in lines[:max(0, 40 - len(details))]]
     try:
         from app.services import action_log
         action_log.record_system("org", "org.catalog_moved", details=details)

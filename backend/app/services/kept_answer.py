@@ -70,12 +70,15 @@ class KeptAnswers:
         self._flight = shared_build.SharedBuild()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"kept-{name}")
         self._refreshing: set = set()
+        self._forgot = 0.0               # monotonic() of the last `forget`
         with _REGISTRY_LOCK:
             _REGISTRY.add(self)
 
     def _put(self, key: Hashable, started: float, value: Any) -> None:
         now = time.monotonic()
         with self._lock:
+            if started < self._forgot:
+                return                   # it read what a `forget` since has declared stale
             old = self._kept.get(key)
             if old is not None and old[0] > started:
                 return                   # a build that started later is already kept
@@ -134,5 +137,8 @@ class KeptAnswers:
                 self._refreshing.discard(key)
 
     def forget(self) -> None:
+        """Drop every kept answer. A build already running when this is called
+        read the old data: its answer goes to its own caller and is not kept."""
         with self._lock:
+            self._forgot = time.monotonic()
             self._kept.clear()
