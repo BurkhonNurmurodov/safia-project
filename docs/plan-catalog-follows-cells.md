@@ -22,7 +22,7 @@
   skipped is named in the DM. The sweep turns on once the retro flag reads `done`.
 
 
-This spec replaces `docs/plan-catalog-follows-cells.md`. The operator's five rulings are not repeated here; every rule below implements them.
+Every rule below implements the operator's five rulings and the three decisions above.
 
 ## 0. What changed from the draft, and why
 
@@ -635,7 +635,7 @@ Delete this module, its startup pair and both calls once the flag reads `done` a
 
 - **Q1 — join with a third cell.** When Y has y1(A, owns m) and y2(B), and c joins m, unlettering m hands y2 a share of m too. The default follows the draft's reading of ruling 5 (unletter) and names it `join_spread`. The alternative is keeping m's letter, in which case c shares nothing. The operator should confirm.
 - **Q2 — clearing a brigadir.** Clearing the brigadir of a cell that owns positions is refused (`positions_need_unit`); no ruling covers this. The alternative is archiving the positions in X with a `to_unit NULL` record and restoring them at the next move.
-- **Q3 — release 1 is dry for the retro** (`RETRO_APPLY = False`). While it is dry, live follows are off and moves land as they do today. The door refusal is active from release 1. Flipping one constant in release 2 applies the retro and turns the sweep on. If the operator wants the retro applied at once, set `RETRO_APPLY = True` in release 1.
+- **Q3 — decided: the retro is APPLIED in the first release** (`RETRO_APPLY = True`, strict guards, everything skipped named in the DM). The sweep turns on once the retro flag reads `done`. The door refusal is active from the same release.
 - **Cells moved before 12 Oct.** They have no link history, so per-cell readers show them in their new unit for every day before `h`. Their catalog follows from `h`, but per-cell figures before `h` stay as they are today (ruling 3). The DM names them.
 - **Multi-hop and round-trip histories** are not followed by the retro; they are named.
 - **Version rewrite** is a deliberate exception to "a version is never edited". It is audited on the move record. CLAUDE.md, the `PPCatalogVersion` docstring and the «A catalog edit counts FROM NOW ON» section must say so.
