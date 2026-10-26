@@ -195,7 +195,8 @@ def _autofill_manager_ids(db: Session) -> set[int]:
     return _configured_manager_ids(db) - _autofill_off_ids(db)
 
 
-def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) -> int:
+def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session,
+                        day: Optional[date] = None) -> int:
     """Resolve the single brigadir unit a request targets, enforcing role scope:
 
         supervisor    → pinned to their own unit (JWT role_id); ?manager_id= ignored.
@@ -216,6 +217,12 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     those pins: it makes the caller reach every configured unit, whatever their
     role — with their own unit still the default when no manager_id is sent, so
     a granted supervisor's dashboard opens exactly where it used to.
+
+    `day` is the day the request reads or writes: a leader is pinned to the unit
+    their cells stood in ON that day (2026-10-26) — a cell's positions follow it
+    from its move day (`catalog_follow`), so a day before the move is still the
+    old unit's, and a day after it the new one's. Omitted (a request with no
+    day), the unit the cells stand in now.
     """
     role = payload.get("role")
     sees_all = page_scope_is_all(db, payload, "production")
@@ -224,7 +231,7 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
         if role == "leader":
             # Their cells' unit is the only place a leader's page has anything
             # to show: the cells are all it is narrowed to.
-            mid = cells_unit_for_leader(db, viewer_leader_profile_id(db, payload)) or mid
+            mid = cells_unit_for_leader(db, viewer_leader_profile_id(db, payload), day) or mid
         if not mid:
             raise HTTPException(status_code=403, detail="No unit assigned to this profile")
         return int(mid)
@@ -242,7 +249,8 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
 
 
-def _leader_wc_scope(db: Session, payload: dict) -> Optional[set[str]]:
+def _leader_wc_scope(db: Session, payload: dict,
+                     day: Optional[date] = None) -> Optional[set[str]]:
     """The work centers a LEADER may see: the normalised SAP codes of the cells
     they own (``cells.sap_code`` = ``pp_daily.work_center`` — the join the cells
     registry was seeded for).
@@ -254,29 +262,37 @@ def _leader_wc_scope(db: Session, payload: dict) -> Optional[set[str]]:
     An EMPTY set is a real answer, NOT "no filter": a leader with no cells (or
     whose cells carry no SAP code yet) owns no work center, so their page shows
     nothing rather than the whole brigadir's unit.
+
+    `day` = the cells they ran ON that day (`cell_lookup.sap_codes_for_leader`),
+    the same day `_resolve_manager_id` pins the unit by.
     """
     if payload.get("role") != "leader" or page_scope_is_all(db, payload, PAGE):
         return None
     pid = viewer_leader_profile_id(db, payload)
     if not pid:
         raise HTTPException(status_code=403, detail="No leader profile resolved for this account")
-    return sap_codes_for_leader(db, pid)
+    return sap_codes_for_leader(db, pid, day)
 
 
-def _leader_group_scope(db: Session, payload: Optional[dict]) -> Optional[set]:
+def _leader_group_scope(db: Session, payload: Optional[dict],
+                        day: Optional[date] = None) -> Optional[set]:
     """The (work centre, GROUP) pairs a LEADER may see — `_leader_wc_scope` one
     level down (services/wc_group.py), read through `wc_group.in_scope`.
 
     A leader of cell 7421 (A2894 · A) sees group A and the ungrouped part of
     A2894, never group B: once a work centre is split into groups, owning one of
     its cells is no longer owning all of it. Same None / empty-set rule as the
-    code scope, and the code scope still guards every code-level check."""
+    code scope, and the code scope still guards every code-level check.
+
+    `day` = the cells they ran that day, each with its letter ON that day
+    (`cell_lookup.sap_groups_for_leader`): the letter the day's catalog lines
+    were cut by."""
     if not payload or payload.get("role") != "leader" or page_scope_is_all(db, payload, PAGE):
         return None
     pid = viewer_leader_profile_id(db, payload)
     if not pid:
         raise HTTPException(status_code=403, detail="No leader profile resolved for this account")
-    return sap_groups_for_leader(db, pid)
+    return sap_groups_for_leader(db, pid, day)
 
 
 def _group_or_400(value) -> Optional[str]:
@@ -445,7 +461,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     forgetting it.
     """
     if group_scope is None and wc_scope is not None and payload is not None:
-        group_scope = _leader_group_scope(db, payload)
+        group_scope = _leader_group_scope(db, payload, day)
     # The catalog AS IT STOOD ON THIS DAY (services/pp_catalog.py): an edit
     # counts from the shift it is made in, so a past day keeps its own lines,
     # labor times and work centres.
@@ -489,10 +505,15 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # A cell archived before the day is not one of them (`cell_archive`): its
     # letter claims nothing, so its share falls to the cells still standing.
     # The unit's cells ON the day (`cell_links`) — the current ones when no
-    # cell moved after it.
-    for c in _unit_cells_on(db, manager_id, day, Cell.sap_code.isnot(None),
-                            cell_archive.alive_clause(day),
-                            order=(Cell.verifix_code, Cell.id)):
+    # cell moved after it — each with the letter it carried ON the day
+    # (`with_letters_on`, 2026-10-26): a move that re-lettered a cell, or gave
+    # its lone sibling a letter, counts from the move, and the day's catalog
+    # lines still carry the old letters, so a past day must split by them too.
+    from app.services import cell_links
+    for c in cell_links.with_letters_on(
+            _unit_cells_on(db, manager_id, day, Cell.sap_code.isnot(None),
+                           cell_archive.alive_clause(day),
+                           order=(Cell.verifix_code, Cell.id)), day):
         n = norm_code(c.sap_code)
         if n:
             cells_at[n].append(c.wc_group or None)
@@ -924,17 +945,22 @@ def staffing_proof(
     row (off the batch row of the same worker). The counted ones add up to the
     figure on the card by construction: one filter, `idle_source._counted_hc`.
     Scoped like the dashboard — a leader only for their own cells."""
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(date)
-    scope = _leader_wc_scope(db, payload)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    scope = _leader_wc_scope(db, payload, day)
     grp = (group or "").strip().upper() or None
     if scope is not None:
-        gscope = _leader_group_scope(db, payload)
+        gscope = _leader_group_scope(db, payload, day)
         if not _in_scope(scope, work_center) or (grp and not wc_group.in_scope(gscope, work_center, grp)):
             raise HTTPException(status_code=403, detail="This team is not one of your cells")
     want = norm_code(work_center)
-    cells = [c for c in _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
-                                       cell_archive.alive_clause(day))
+    # Each cell with its letter ON the day (`with_letters_on`) — the letter the
+    # dashboard's `wc_of_code` placed its people by, so the rows listed here
+    # still add up to the number on the card after a move re-lettered a cell.
+    from app.services import cell_links
+    cells = [c for c in cell_links.with_letters_on(
+                 _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
+                                cell_archive.alive_clause(day)), day)
              if norm_code(c.sap_code) == want and c.verifix_code
              and (grp is None or (c.wc_group or None) == grp)]
     codes = sorted({c.verifix_code for c in cells})
@@ -1013,9 +1039,10 @@ def get_dashboard(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    mid = _resolve_manager_id(payload, manager_id, db)
-    return _build_dashboard(db, mid, _parse_date(date), _leader_wc_scope(db, payload),
-                            payload)
+    # The day first: a leader's unit and cells are the ones of THAT day.
+    day = _parse_date(date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    return _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day), payload)
 
 
 class PositionsExportBody(BaseModel):
@@ -1068,11 +1095,11 @@ def export_positions(
     wrapped in IFERROR, so a position with no people or no plan prints 0 instead
     of #DIV/0!. Rows render in the exact order the client sends (`body.order`)."""
     lang = body.lang
-    mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, body.manager_id, db, day)
     # A leader exports exactly what their page shows — their own cells.
-    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload),
-                            group_scope=_leader_group_scope(db, payload))
+    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day),
+                            group_scope=_leader_group_scope(db, payload, day))
     rows = dash["rows"]
     if body.order:
         by_id = {r.get("id"): r for r in rows}
@@ -1395,6 +1422,9 @@ def get_dates(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
+    # No day here: the list is asked before any day is picked, so a leader is
+    # pinned to the unit their cells stand in NOW (each day's own unit is
+    # resolved when that day is opened).
     mid = _resolve_manager_id(payload, manager_id, db)
     own = db.query(PPDaily.date).filter(PPDaily.manager_id == mid).distinct().all()
     # Dates with a stored GLOBAL SAP file count for every brigadir — the raw
@@ -1481,11 +1511,19 @@ def set_override(
     # that silently does nothing; fail loudly instead.
     if not (body.sap_code or "").strip():
         raise HTTPException(status_code=400, detail="sap_code is required")
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    # The unit's quantities, shared with every other quantity writer and
+    # exclusive to the catalog follow (`catalog_follow`), which moves a cell's
+    # lines and per-day rows to its new unit. Taken before the day's catalog is
+    # first read, so the line checks below and the write all see one side of a
+    # follow, never both (a version row read before it would stay in the
+    # session as it was). Taken again in the loop: the retry's rollback
+    # releases it.
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
     # A leader edits Факт/ПЛАН on their own cells only — the read scope pins the
     # write scope, so a cell they cannot see is a cell they cannot touch.
-    scope = _leader_wc_scope(db, payload)
+    scope = _leader_wc_scope(db, payload, day)
     if not _in_scope(scope, body.work_center):
         raise HTTPException(status_code=403, detail="This team is not one of your cells")
     # WHICH catalog line this write is aimed at — resolved before the group
@@ -1500,7 +1538,7 @@ def set_override(
         # per SKU would hand a leader a line their own page does not list, which
         # filters on the line's own letter. A line with no letter is the whole
         # work centre's and stays theirs.
-        gscope = _leader_group_scope(db, payload)
+        gscope = _leader_group_scope(db, payload, day)
         groups = wc_group.line_groups(pp_catalog.at(db, mid, day).lines)
         at_key = {k: g for k, g in groups.items()
                   if k[0] == (body.work_center or "") and k[1] == body.sap_code}
@@ -1537,6 +1575,9 @@ def set_override(
     # same race on the checklist settings key.
     for attempt in (0, 1):
         try:
+            # The NS_QTY lock again (above): already held on the first pass,
+            # taken anew after the retry's rollback released it.
+            pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
             was = (_set_whole_group(db, mid, day, body.sap_code, body.work_center,
                                     col, body.value)
                    if line is None else
@@ -1765,9 +1806,14 @@ def _cell_letters(db, mid: int, day: date) -> dict[str, set]:
     day, matched through `wc_group.cells_by_wc` — the letters a group pin may be
     typed under. A cell archived before the day carries none (`cell_archive`)."""
     # The unit's cells ON the day (`cell_links`), keyed by that unit — a cell
-    # moved away since keeps its letter on the days before the move.
-    cells = _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
-                           cell_archive.alive_clause(day))
+    # moved away since keeps its letter on the days before the move — each with
+    # its letter ON the day (`with_letters_on`): the letters the dashboard of
+    # that day lists its groups under, so the pins it offers are the pins
+    # accepted here.
+    from app.services import cell_links
+    cells = cell_links.with_letters_on(
+        _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
+                       cell_archive.alive_clause(day)), day)
     by = wc_group.cells_by_wc(cells, units={c.id: mid for c in cells})
     return {code: {c.wc_group for c in cs if c.wc_group} for (_m, code), cs in by.items()}
 
@@ -1827,8 +1873,8 @@ def set_wc_override(
     other way round, deletes the day's group pins — one level answers — unless
     it only echoes their Σ (`_echoes_group_sum`), and a new group pin under a
     letter no cell carries is refused (`_refuse_orphan_pin`)."""
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
     code = (body.work_center or "").strip()
     if not code:
         raise HTTPException(status_code=400, detail="work_center is required")
@@ -1838,6 +1884,9 @@ def set_wc_override(
                             detail="A group pin carries people only — the штатка "
                                    "pin belongs to the whole work centre")
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
+    # The unit's quantities, shared with the other quantity writers and
+    # exclusive to the catalog follow, which moves a cell's pins (set_override).
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
     for name, val in (("people", body.people), ("shtatka", body.shtatka)):
         if val is not None and not (0 <= val <= 9999):
             raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
@@ -1970,10 +2019,10 @@ def save_staffing(
     number another cell's leader typed."""
     if payload.get("role") not in ("admin", "supervisor", "leader"):
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
-    scope = _leader_wc_scope(db, payload)
-    gscope = _leader_group_scope(db, payload) if scope is not None else None
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    scope = _leader_wc_scope(db, payload, day)
+    gscope = _leader_group_scope(db, payload, day) if scope is not None else None
     # (work centre, group, row) in body order; a blank work centre is skipped,
     # as it always was.
     parsed: list[tuple[str, Optional[str], StaffingRow]] = []
@@ -1990,6 +2039,11 @@ def save_staffing(
                 raise HTTPException(status_code=403,
                                     detail="This team is not one of your cells")
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
+    # The unit's quantities, shared with the other quantity writers and
+    # exclusive to the catalog follow, which moves a cell's pins (set_override).
+    # Before the pins are read, so the save never works off a set the follow
+    # is rewriting.
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
     shift_min, _ = _constants(db)
 
     # An explicit save always pins — the box opens at the unit's OWN rate, not at
@@ -2161,11 +2215,14 @@ def save_reconciliation(
 ):
     # The block describes the whole unit's headcount, so a cell-scoped caller (a
     # leader) neither reads nor writes it — see _build_dashboard.
-    if _leader_wc_scope(db, payload) is not None:
-        raise HTTPException(status_code=403, detail="Reconciliation belongs to the whole unit")
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    if _leader_wc_scope(db, payload, day) is not None:
+        raise HTTPException(status_code=403, detail="Reconciliation belongs to the whole unit")
+    mid = _resolve_manager_id(payload, manager_id, db, day)
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
+    # The unit's quantities, shared with the other quantity writers and
+    # exclusive to the catalog follow (set_override).
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
     row = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == mid, PPReconciliation.date == day).first()
     was = dict(row.data or {}) if row else {}
@@ -2884,8 +2941,8 @@ def get_raw(
 ):
     if file_type not in ("faza", "zaga"):
         raise HTTPException(status_code=400, detail="file_type must be faza|zaga")
-    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
     # Global row first (manager_id NULL = the plant-wide file), else the
     # brigadir's own legacy slice from before global storage.
     up = db.query(PPUpload).filter(
@@ -2919,7 +2976,7 @@ def get_raw(
     # A leader's cells narrow the raw file the same way they narrow the computed
     # dashboard — and unlike the brigadir scoping below, this one applies to the
     # legacy per-manager slices too, since those are baked to the WHOLE unit.
-    scope = _leader_wc_scope(db, payload)
+    scope = _leader_wc_scope(db, payload, day)
     if not unpinned and (is_global or scope is not None):
         # Scope the plant-wide file to this brigadir at read time — the same
         # filters legacy slices had baked in at upload time.

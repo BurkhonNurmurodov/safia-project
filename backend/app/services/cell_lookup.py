@@ -148,6 +148,12 @@ def by_sap(db: Session, with_leader: bool = False,
     «Boshqaruvchi» on that day (`cell_links`, 2026-10-12): a cell moved to
     another brigadir since still answers for its old unit's past days. With no
     cell's link changed after `day` it is the current columns, as before.
+
+    …and its LETTER on that day (`cell_links.letter_on`, 2026-10-26): a cell
+    whose letter a move took away (or a sibling's letter a move gave) still
+    names its old group on the days before, so a past day's group chip links to
+    the cell that carried that letter then. No letter event after `day` = the
+    column, as before.
     """
     moved_m: set = set()
     moved_l: set = set()
@@ -194,6 +200,11 @@ def by_sap(db: Session, with_leader: bool = False,
     if moved_l:
         from app.services import cell_links
         leaders_on = cell_links.map_on([c for c in cells if c.id in moved_l], "leader_id", day)
+    if day is not None:
+        # The letter each cell carried ON `day` — the cells whose letter did not
+        # change since come back as themselves.
+        from app.services import cell_links
+        cells = cell_links.with_letters_on(cells, day)
     leaders = _leader_names(db) if with_leader else {}
     out: dict[tuple[int, str], dict] = {}
     for c in cells:
@@ -218,14 +229,44 @@ def norm_code(code) -> str:
     return _norm(code)
 
 
-def sap_codes_for_leader(db: Session, leader_id: int) -> set[str]:
+def leader_cells_on(db: Session, leader_id: int | None, day) -> list:
+    """The cells this leader runs ON `day` — their «Boshqaruvchi» that day
+    (`cell_links`, 2026-10-12) — the one selection the three dated leader
+    readers below share, so a leader's codes, groups and unit on a past day are
+    read off one list. A cell handed to another leader since is still this
+    one's on the days before; one handed to them since is not yet. With no
+    `leader_id` event after `day` it is exactly `Cell.leader_id == leader_id`."""
+    if not leader_id:
+        return []
+    from app.services import cell_links
+    moved = cell_links.changed_since("leader_id", day)
+    cond = Cell.leader_id == leader_id
+    if moved:
+        from sqlalchemy import or_
+        cond = or_(cond, Cell.id.in_(moved))
+    cells = db.query(Cell).filter(cond).order_by(Cell.verifix_code, Cell.id).all()
+    if moved:
+        # Only a cell whose leader changed after `day` is resolved; every other
+        # cell answers by its column — the fast path's own answer.
+        on = cell_links.map_on([c for c in cells if c.id in moved], "leader_id", day)
+        cells = [c for c in cells if on.get(c.id, c.leader_id) == leader_id]
+    return cells
+
+
+def sap_codes_for_leader(db: Session, leader_id: int, day=None) -> set[str]:
     """Normalised SAP work-center codes of every cell this leader owns.
 
     THE scope of a leader: they own cells, not a unit, so any page that shows a
     brigadir's production narrows to this set. An EMPTY set is a real answer —
     a leader with no cells (or whose cells have no SAP code filled in yet) owns
     no work centers, which is not the same as "no filter".
+
+    `day` reads the cells the leader ran ON that day (:func:`leader_cells_on`,
+    2026-10-26), so a past day of their /production page is scoped to what was
+    theirs then. Omitted, the current column — as before.
     """
+    if day is not None:
+        return {n for c in leader_cells_on(db, leader_id, day) if (n := _norm(c.sap_code))}
     rows = (
         db.query(Cell.sap_code)
         .filter(Cell.leader_id == leader_id, Cell.sap_code.isnot(None))
@@ -234,11 +275,21 @@ def sap_codes_for_leader(db: Session, leader_id: int) -> set[str]:
     return {n for (code,) in rows if (n := _norm(code))}
 
 
-def sap_groups_for_leader(db: Session, leader_id: int) -> set[tuple[str, str | None]]:
+def sap_groups_for_leader(db: Session, leader_id: int,
+                          day=None) -> set[tuple[str, str | None]]:
     """{(normalised SAP code, group|None)} of every cell this leader owns — the
     group-aware twin of :func:`sap_codes_for_leader`, read through
     `wc_group.in_scope`. A cell with no letter answers (code, None), which
-    `in_scope` reads as the whole work centre. Same empty-set rule."""
+    `in_scope` reads as the whole work centre. Same empty-set rule.
+
+    `day` takes the cells the leader ran that day and each one's letter ON that
+    day (`cell_links.letter_on`): a move that re-lettered a cell — or gave its
+    lone sibling a letter — counts from the move, so a day before it is still
+    the old group's."""
+    if day is not None:
+        from app.services import cell_links
+        return {(n, cell_links.letter_on(c, day) or None)
+                for c in leader_cells_on(db, leader_id, day) if (n := _norm(c.sap_code))}
     rows = (
         db.query(Cell.sap_code, Cell.wc_group)
         .filter(Cell.leader_id == leader_id, Cell.sap_code.isnot(None))
@@ -247,7 +298,7 @@ def sap_groups_for_leader(db: Session, leader_id: int) -> set[tuple[str, str | N
     return {(n, g or None) for (code, g) in rows if (n := _norm(code))}
 
 
-def cells_unit_for_leader(db: Session, leader_id: int | None) -> int | None:
+def cells_unit_for_leader(db: Session, leader_id: int | None, day=None) -> int | None:
     """The ONE unit a leader's cells stand in — None when they own no cell, or
     own cells in more than one unit.
 
@@ -260,9 +311,21 @@ def cells_unit_for_leader(db: Session, leader_id: int | None) -> int | None:
     plan and typed people are stored there and nowhere else; read in the
     leader's own unit they find nothing and fail every day. The Verifix sync
     leaves such a cell where it is (`verifix_sync.KEPT_APART`) — a move to
-    Verifix's brigadir applied on 13 Oct 2026 emptied his page for a day."""
+    Verifix's brigadir applied on 13 Oct 2026 emptied his page for a day.
+
+    `day` answers for that day (2026-10-26): the cells the leader ran then, each
+    in the unit it stood in then (`cell_links`). A cell moved to another
+    brigadir since takes its positions with it from its move day
+    (`catalog_follow`), so a day before the move is still read in the OLD unit —
+    where that day's catalog and plan still carry the cell's lines."""
     if not leader_id:
         return None
+    if day is not None:
+        from app.services import cell_links
+        cells = leader_cells_on(db, leader_id, day)
+        on = cell_links.map_on(cells, "manager_id", day)
+        units = {int(u) for c in cells if (u := on.get(c.id)) is not None}
+        return units.pop() if len(units) == 1 else None
     units = {m for (m,) in db.query(Cell.manager_id)
              .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None))
              .distinct().all()}
