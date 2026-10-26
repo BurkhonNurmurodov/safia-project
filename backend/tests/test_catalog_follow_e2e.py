@@ -22,7 +22,9 @@ What every move scenario proves, beside its own assertions:
 * no catalog id sits in two units' catalogs on one day (§1.2).
 
 A failing assertion that exposes a defect in the merged code is NOT fixed
-here: it is left failing, marked «DEFECT», and reported.
+here: it is left failing, marked «DEFECT», and reported. (None is left: the
+one this found — «Yacheyka zagruzkasi» reading a cell with one letter for a
+whole range — was fixed on 2026-10-26.)
 
     SAFIA_TEST_PG=postgresql://me@localhost:5432/postgres \\
         ./venv/bin/python -m unittest tests.test_catalog_follow_e2e
@@ -66,13 +68,11 @@ class _E2E(World):
         for name in before:
             self.assertEqual(dumps(after[name]), dumps(before[name]), f"{name}: days < D moved")
 
-    def assert_span_consistent(self, units, a, mid, b, *, zc_letter=True, zc=True):
+    def assert_span_consistent(self, units, a, mid, b):
         """A range read ACROSS a move day answers each day exactly what a
         range on its own side answers — the day-keyed readers, «Yacheyka
-        zagruzkasi»'s cell inputs and «Plan Bajarish»'s days alike.
-        `zc_letter=False` compares «Yacheyka zagruzkasi»'s figures without the
-        letter it prints beside each cell (see `test_t5_letter_printed_across_the_move`);
-        `zc=False` leaves that page out altogether (`test_one_read_over_both_stays`)."""
+        zagruzkasi»'s cell inputs (the letter it prints beside each cell
+        included) and «Plan Bajarish»'s days alike."""
         whole = self.reads(units, a, b)
         left = self.reads(units, a, mid - timedelta(days=1))
         right = self.reads(units, mid, b)
@@ -80,7 +80,7 @@ class _E2E(World):
                      "typed_people", "cell_pins", "dashboard", "live", "fleet", "idle"):
             joined = {**left[name], **right[name]}
             self.assertEqual(dumps(whole[name]), dumps(joined), f"{name} read across {mid}")
-        for u in (units if zc else ()):
+        for u in units:
             joined = {}
             for part in (left, right):
                 for code, by_day in (part["zagruzka_cell"][u].get("inputs") or {}).items():
@@ -88,10 +88,6 @@ class _E2E(World):
             got = {code: by_day for code, by_day in
                    (whole["zagruzka_cell"][u].get("inputs") or {}).items() if by_day}
             joined = {code: by_day for code, by_day in joined.items() if by_day}
-            if not zc_letter:
-                got, joined = ({code: {k: {f: v for f, v in inp.items() if f != "wc_group"}
-                                       for k, inp in by_day.items()}
-                                for code, by_day in r.items()} for r in (got, joined))
             self.assertEqual(dumps(got), dumps(joined), f"zagruzka_cell {u} read across {mid}")
 
         def plan_days(r):
@@ -538,9 +534,7 @@ class Sibling(_E2E):
         post1 = self.reads([X, Y], *POST)
         self.assert_conserved(post0, post1)
         self.assert_unique([X, Y], *self.SPAN)
-        # The figures only: the letter the page prints for y1 across the move
-        # is `test_t5_letter_printed_across_the_move`'s (a DEFECT).
-        self.assert_span_consistent([X, Y], HIST[0], D, POST[1], zc_letter=False)
+        self.assert_span_consistent([X, Y], HIST[0], D, POST[1])
         self.db.refresh(c)
         self.db.refresh(y1)
         self.assertEqual((c.wc_group, y1.wc_group), ("A", "B"))
@@ -569,26 +563,15 @@ class Sibling(_E2E):
         self.assertEqual(pins, {"B": (6, None), "A": (3, None), None: (None, 8)})
 
 
-    # DEFECT — see the docstring. Expected to fail until zagruzka_cell reads
-    # each day's letter; an unexpected success then fails the run.
-    @unittest.expectedFailure
     def test_t5_letter_printed_across_the_move(self):
         """«Yacheyka zagruzkasi» read over a range across the move prints
-        each cell with the letter of THAT day.
-
-        DEFECT (pre-existing in routers/zagruzka_cell.py `cell_zagruzka`, the
-        `_on_day` branch): once any cell of the page moved inside the range,
-        EVERY cell is read with ONE letter for the whole range —
-        `cell_links.with_letters_on([c], max(d for d in dates if member(c.id,
-        d)))`, the letter of its last day in the unit. Y's page over
-        [D−3, D+2] therefore prints the lone sibling y1 (0502) as «B» on
-        D−3…D−1 (`inputs["0502"][day]["wc_group"]`, and `cells[].wc_group`)
-        where a read of those days alone prints None — y1 had no letter
-        before the follow gave it one. The figures agree here only because
-        y1 is alone at the work centre on those days; with a cell coming back
-        under another letter they do not (`test_one_read_over_both_stays`).
-        Expected: `cell_links.letter_on(c, day)` per day, the rule
-        `zagruzka_source.by_wc_on` and the dashboard already follow."""
+        each cell with the letter of THAT day (`cell_links.letter_on`, the
+        rule `zagruzka_source.by_wc_on` and the dashboard follow): Y's page
+        over [D−3, D+2] prints the lone sibling y1 (0502) with no letter on
+        D−3…D−1, as a read of those days alone does — y1 had none before the
+        follow gave it «B». (Until 2026-10-26 the page read every cell with
+        ONE letter for the whole range, its last day's, and printed «B».)
+        `cells[]` keeps one letter per cell: the latest."""
         c, _y1, _lc, _ly = self._world()
         self.verifix_tap(c, Y, at=ASK)
         self.land(D)
@@ -597,7 +580,12 @@ class Sibling(_E2E):
         alone = self.zagruzka_cell(Y, HIST[0], HIST[1])["inputs"]["0502"][day]["wc_group"]
         across = self.zagruzka_cell(Y, HIST[0], POST[1])["inputs"]["0502"][day]["wc_group"]
         self.assertIsNone(alone)
-        self.assertIsNone(across)                       # reads «B»
+        self.assertIsNone(across)
+        self.assertEqual(self.zagruzka_cell(Y, HIST[0], POST[1])["inputs"]["0502"]
+                         [D.strftime("%d.%m.%Y")]["wc_group"], "B")
+        self.assertEqual({c["verifix_code"]: c["wc_group"] for c in
+                          self.zagruzka_cell(Y, HIST[0], POST[1])["cells"]},
+                         {"0501": "A", "0502": "B"})
         self.assert_span_consistent([X, Y], HIST[0], D, POST[1])
 
 
@@ -1185,25 +1173,15 @@ class MoreAfterTheMove(_E2E):
             self.assertEqual(groups, {"B": w.d.id, "C": w.c.id})
 
 
-    # DEFECT — see the docstring. Expected to fail until zagruzka_cell reads
-    # each day's letter; an unexpected success then fails the run, which is
-    # the cue to drop this decorator.
-    @unittest.expectedFailure
     def test_one_read_over_both_stays(self):
         """One read of X over BOTH of c's stays in X — before D (as A) and
-        from `BACK` (as C) — must answer each day as a read of that day alone.
-
-        DEFECT (pre-existing in routers/zagruzka_cell.py `cell_zagruzka`, the
-        `_on_day` branch; reached by any cell that leaves a unit and comes
-        back under another letter, which this release makes routine): a moved
-        cell is read with ONE letter for the whole range —
-        `cell_links.with_letters_on([c], max(d for d in dates if member(c.id,
-        d)))` — the letter of its LAST day in the unit. Over [D−3, D+9] that
-        is C, so on D−3…D−1 X's «Tort»/«Keks» lines (lettered A that day) are
-        an orphan letter, shared evenly between c and d, and c's trud_plan
-        reads half of what the page read over [D−3, D−1] alone. Expected: the
-        letter of EACH day (`cell_links.letter_on(c, d)`), as `zagruzka_source`
-        and «Plan Bajarish» already split."""
+        from `BACK` (as C) — answers each day as a read of that day alone:
+        every cell is read with the letter of EACH day
+        (`cell_links.letter_on`), as `zagruzka_source` and «Plan Bajarish»
+        split. (Until 2026-10-26 a moved cell wore ONE letter for the whole
+        range, its last day's: over [D−3, D+9] c read «C» on D−3…D−1 too,
+        X's «Tort»/«Keks» lines — lettered A that day — fell to nobody and
+        were halved with d.)"""
         lo, hi = self.SPAN
         self._there_and_back(reads=False)
         day = (D - timedelta(days=1)).strftime("%d.%m.%Y")
@@ -1212,37 +1190,34 @@ class MoreAfterTheMove(_E2E):
         # Read over [D−3, D−1] alone: c (A) 30 min / 3 people, d (B) 4 / 2.
         self.assertEqual([(alone[k][day]["trud_plan"], alone[k][day]["o_soni"]) for k in ("0301", "0302")],
                          [(30.0, 3.0), (4.0, 2.0)])
-        # Read over [D−3, D+9]: c is read as «C» on D−1 too, its A lines and
-        # A pin fall to nobody and are halved with d — (15.0, 1.5), (19.0, 3.5).
+        # …and over [D−3, D+9] — c is read as «A» on D−1 (undated: «C», its A
+        # lines and A pin halved with d — (15.0, 1.5), (19.0, 3.5)).
         self.assertEqual([(both[k][day]["trud_plan"], both[k][day]["o_soni"]) for k in ("0301", "0302")],
                          [(30.0, 3.0), (4.0, 2.0)])
         self.assert_span_consistent([X, Y], lo, D, hi)
 
-    # DEFECT — the same one, in the page's diagnostics. Expected to fail until
-    # zagruzka_cell reads each day's letter there too.
-    @unittest.expectedFailure
     def test_one_read_over_both_stays_diagnostics(self):
-        """The same read's DIAGNOSTICS. With c read as «C» over the whole
-        range, the three A pins X typed for c on D−3…D−1 are listed as an
-        ORPHAN letter (`diagnostics.orphan_groups` = [{A2894, A, lines 0,
-        pins 3}]) — a register error to fix that is no error at all: each of
-        those days c carried A. A read of [D−3, D−1] alone lists none."""
+        """The same read's DIAGNOSTICS: a typed pin is judged by the letters
+        of its own day, so the three A pins X typed for c on D−3…D−1 are no
+        orphan letter — each of those days c carried A — over the whole range
+        as over [D−3, D−1] alone. (Read with c as «C» throughout they were
+        listed: `orphan_groups` = [{A2894, A, lines 0, pins 3}].)"""
         lo, hi = self.SPAN
         self._there_and_back(reads=False)
         alone = self.zagruzka_cell(X, lo, D - timedelta(days=1))["diagnostics"]["orphan_groups"]
         both = self.zagruzka_cell(X, lo, hi)["diagnostics"]["orphan_groups"]
         self.assertEqual(alone, [])
-        self.assertEqual(both, [])                      # lists A, 3 pins
+        self.assertEqual(both, [])
 
     def test_one_read_over_both_stays_other_readers(self):
-        """The same read over both stays, by every OTHER reader — the catalog,
-        `zagruzka_source`, the dashboard, /live, the fleet, the ojidaniya and
-        «Plan Bajarish» each answer every day as a read of its side alone. The
-        defect above is «Yacheyka zagruzkasi»'s and no other page's."""
+        """The same read over both stays, by EVERY reader — the catalog,
+        `zagruzka_source`, the dashboard, «Yacheyka zagruzkasi», /live, the
+        fleet, the ojidaniya and «Plan Bajarish» each answer every day as a
+        read of its side alone, cut at the return as at the departure."""
         lo, hi = self.SPAN
         self._there_and_back(reads=False)
-        self.assert_span_consistent([X, Y], lo, D, hi, zc=False)
-        self.assert_span_consistent([X, Y], lo, self.BACK, hi, zc=False)
+        self.assert_span_consistent([X, Y], lo, D, hi)
+        self.assert_span_consistent([X, Y], lo, self.BACK, hi)
 
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")

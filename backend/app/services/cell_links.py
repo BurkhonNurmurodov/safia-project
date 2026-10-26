@@ -346,6 +346,21 @@ def changed_since(field: str, day) -> set:
     return out
 
 
+def relettered_since(day) -> set:
+    """Cell ids whose work-centre LETTER history has an entry effective AFTER
+    `day` — the cells `letter_on` may answer for a day from `day` on with a
+    letter other than the column. The letter twin of `changed_since`, and NOT
+    the same set: a catalog follow's mark event (`catalog_mark`, value = prev)
+    and its stamp on a staying sibling (`siblings_was`) re-letter a cell whose
+    unit never changed, and `changed_since` rightly does not see either. A
+    reader that splits by group asks both."""
+    d = _as_date(day)
+    if d is None:
+        return set()
+    return {cid for cid, lets in events().get(LETTERS, {}).items()
+            if any(eff > d for eff, _was in lets)}
+
+
 def cells_of_units(db: Session, unit_ids: Iterable[int], since=None, extra=None) -> list:
     """Every cell that is, or on any day from `since` on was (or will be), in
     one of these units — the selection a past-day reader starts from. A cell

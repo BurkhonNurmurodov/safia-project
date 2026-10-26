@@ -112,7 +112,13 @@ Decisions taken with the user (2026-07-31), all deliberate:
     cell's letter is named by a line or a typed pin), the ones really handed out
     by group (`grouped_work_centers`), their ungrouped lines and orphan letters.
     Cells meet work centres through `wc_group.cells_by_wc` (unit + normalised
-    code), the match every other per-cell reader uses.
+    code), the match every other per-cell reader uses. A cell's letter is read
+    per DAY (`cell_links.letter_on`, 2026-10-26): a move, the letter the catalog
+    follow gave a staying sibling or a retroactive follow's mark re-letters a
+    cell from its own day, so a range across it splits each day by that day's
+    letters — the split, the pins, `wc_split`, each input's `wc_group` and the
+    orphan letters alike; `cells[]` prints the letter of the cell's last day
+    here.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -307,11 +313,26 @@ def cell_zagruzka(
         # A cell that stood in this unit on NONE of the days shown (it moved in
         # after the period) has no row here — the rule an archived cell follows.
         cells = [c for c in cells if any(member(c.id, d) for d in dates)]
-        # …and a moved cell is read with the work-centre letter it carried
-        # while it stood HERE (the last such day): a move that cleared the
-        # letter must not re-split this unit's past (`cell_links.letter_on`).
-        cells = [cell_links.with_letters_on([c], max(d for d in dates if member(c.id, d)))[0]
-                 for c in cells]
+
+    # …and every cell is read with the work-centre LETTER it carried on EACH day
+    # (`cell_links.letter_on`, 2026-10-26): a move that took a letter away, the
+    # letter the catalog follow gave a staying sibling, a retroactive follow's
+    # mark (no unit change at all) — each counts from its own day, so the days
+    # before it split by the letters they were typed and planned under, and a
+    # range read across it answers each day as a read of that day alone. Until
+    # then a cell wore ONE letter for the whole range (its last day's here).
+    # Only a cell whose letter history has an entry after the first day shown
+    # is looked up; every other cell — every cell of a range nobody re-lettered
+    # — reads its column, so such a range answers byte for byte as before.
+    _relettered = cell_links.relettered_since(date_from) & {c.id for c in cells}
+
+    def letter(c, d) -> Optional[str]:
+        """The cell's letter on `d` (None without one)."""
+        return (cell_links.letter_on(c, d) if c.id in _relettered else c.wc_group) or None
+
+    # The letter each cell's ROW prints (`cells[]`, one per cell for the range):
+    # the one it carried on its last day here.
+    latest_letter = {c.id: letter(c, max(d for d in dates if member(c.id, d))) for c in cells}
     if not cells:
         return {
             "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
@@ -392,13 +413,41 @@ def cell_zagruzka(
     pos_in_wc: dict[int, int] = {
         c.id: i for cs in cells_at_wc.values() for i, c in enumerate(cs)
     }
+    # Each cell's letter ON a day, in `cells_at_wc[wc]` order — one list for
+    # every day while no cell's letter changed in the range.
     letters_at_wc: dict[str, list] = {
         wc: [c.wc_group or None for c in cs] for wc, cs in cells_at_wc.items()
     }
-    # A work centre is split by group the moment ONE of its cells carries a
-    # letter. Every other work centre keeps the even split, spelled the way it
-    # always was (below), so a unit nobody has grouped reads the same floats.
-    lettered_wcs = {wc for wc, ls in letters_at_wc.items() if any(ls)}
+    _letters_cache: dict[tuple[str, date], list] = {}
+
+    def letters_on(wc: str, d: date) -> list:
+        if not _relettered:
+            return letters_at_wc[wc]
+        k = (wc, d)
+        hit = _letters_cache.get(k)
+        if hit is None:
+            hit = _letters_cache[k] = [letter(c, d) for c in cells_at_wc[wc]]
+        return hit
+
+    # A work centre is split by group on a day the moment ONE of the cells
+    # standing at it that day carries a letter. Every other work-centre-day
+    # keeps the even split, spelled the way it always was (below), so a unit
+    # nobody has grouped reads the same floats. With nothing moved and nothing
+    # re-lettered in the range, every cell stands at it every day under one
+    # letter: the answer is the work centre's, as before.
+    _lettered_cache: dict[tuple[str, date], bool] = {}
+
+    def lettered(wc: str, d: date) -> bool:
+        k = (wc, d)
+        hit = _lettered_cache.get(k)
+        if hit is None:
+            hit = _lettered_cache[k] = any(
+                g for c, g in zip(cells_at_wc[wc], letters_on(wc, d)) if member(c.id, d))
+        return hit
+
+    # The work centres split by group on ANY day shown — what the diagnostics
+    # describe.
+    lettered_wcs = {wc for wc in cells_at_wc if any(lettered(wc, d) for d in dates)}
 
     # ── Trudoyomkost: Σ labor_time × qty ÷ 60, per (work centre, date) ─────────
     # labor_time lives on the catalog line (per SAP code + WC + operation); the
@@ -567,7 +616,7 @@ def cell_zagruzka(
         n = len(idx)
         if not n:
             hit = ([0.0] * n_all, [0.0] * n_all)
-        elif wc not in lettered_wcs:
+        elif not lettered(wc, d):
             # No cell carries a letter, so every line is unclaimed and the answer
             # is the even split — spelled `total × 1/N` exactly as it was before
             # groups existed, so an ungrouped unit reads the same FLOATS and not
@@ -576,7 +625,7 @@ def cell_zagruzka(
             hit = (_scatter(n_all, idx, [plan_min.get(k, 0.0) * sh] * n, 0.0),
                    _scatter(n_all, idx, [actual_min.get(k, 0.0) * sh] * n, 0.0))
         else:
-            letters = [letters_at_wc[wc][i] for i in idx]
+            letters = [letters_on(wc, d)[i] for i in idx]
             hit = (_scatter(n_all, idx, [v or 0.0 for v in wc_group.share(letters, plan_grp.get(k, {}))], 0.0),
                    _scatter(n_all, idx, [v or 0.0 for v in wc_group.share(letters, actual_grp.get(k, {}))], 0.0))
         _labor_cache[k] = hit
@@ -615,8 +664,11 @@ def cell_zagruzka(
     # {(work centre, day): {group|None: people}} — a group pin under its letter,
     # the whole-centre pin under None (services/wc_group.py).
     people_pin: dict[tuple[str, date], dict] = defaultdict(dict)
-    # Typed group pins per (work centre, letter) — counted for `orphan_groups`.
+    # Typed group pins per (work centre, letter) — counted for `orphan_groups`,
+    # each row with its day: a letter is an orphan on a day no cell standing at
+    # the work centre carried it THAT day.
     pins_by_letter: dict[tuple[str, str], int] = defaultdict(int)
+    pin_days_by_letter: dict[tuple[str, str], list] = defaultdict(list)
     for o in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mgr.id,
         PPWorkCenterDaily.date >= date_from,
@@ -635,6 +687,7 @@ def cell_zagruzka(
             _slot[_g] = _slot[_g] + float(o.people) if _g in _slot else float(o.people)
             if o.wc_group:
                 pins_by_letter[(o_wc, o.wc_group)] += 1
+                pin_days_by_letter[(o_wc, o.wc_group)].append(o.date)
 
     day_pm_pin: dict[date, float] = {}
     for s in db.query(PPDaySetting).filter(
@@ -692,11 +745,11 @@ def cell_zagruzka(
             vals = people_pin.get(k)
             if not vals:
                 split = [None] * n_all
-            elif wc not in lettered_wcs and set(vals) == {None}:
+            elif not lettered(wc, d) and set(vals) == {None}:
                 split = _scatter(n_all, idx, [vals[None] * (1.0 / n)] * n, None)
             else:
                 split = _scatter(n_all, idx, wc_group.share(
-                    [letters_at_wc[wc][i] for i in idx], vals, pins=True), None)
+                    [letters_on(wc, d)[i] for i in idx], vals, pins=True), None)
             _hc_cache[k] = split
         v = split[pos_in_wc[c.id]]
         if v is not None:
@@ -1007,10 +1060,10 @@ def cell_zagruzka(
             n_wc = len(alive_pos(wc, d)) if wc else 1
             if n_wc <= 1:
                 wc_split, share = "none", 1.0
-            elif wc not in lettered_wcs:
+            elif not lettered(wc, d):
                 wc_split, share = "even", 1.0 / n_wc
             else:
-                own = c.wc_group
+                own = letter(c, d)
                 wc_split = ("group" if own and (own in letters_on_lines.get(wc, ())
                                                 or own in people_pin.get((wc, d), {}))
                             else "even")
@@ -1108,8 +1161,8 @@ def cell_zagruzka(
                 # the same one «Bugungi fakt» draws between a typed pin and a
                 # derived suggestion. `wc_share` is the cell's fraction of the
                 # work centre's plan minutes that day, `wc_cells` how many cells
-                # stand at it.
-                "wc_group": c.wc_group or None,
+                # stand at it. The letter is THAT day's (`letter`).
+                "wc_group": letter(c, d),
                 "wc_split": wc_split,
                 "wc_share": round(share, 4),
                 "wc_cells": n_wc,
@@ -1317,7 +1370,21 @@ def cell_zagruzka(
     # pin in the range) that no cell of THIS unit at that work centre carries.
     # Named because an even share and a group's own figure look identical in a
     # grid; only these lists say which one a row is standing on.
-    carried = {wc: {g for g in ls if g} for wc, ls in letters_at_wc.items()}
+    #
+    # The letters a work centre's cells carried while standing at it: on each
+    # DAY (`carried_on` — a typed pin is judged by its own day's, so a pin a
+    # cell typed under the letter it carried then is never an orphan because
+    # the cell carries another one later in the range) and on ANY day shown
+    # (`carried` — what the catalog at the end of the range is described by).
+    # With no cell moved or re-lettered in the range both are the cells'
+    # letters, as before.
+    def carried_on(wc: str, d: date) -> set:
+        cs = cells_at_wc.get(wc)
+        if not cs:
+            return set()
+        return {g for c, g in zip(cs, letters_on(wc, d)) if g and member(c.id, d)}
+
+    carried = {wc: set().union(*(carried_on(wc, d) for d in dates)) for wc in cells_at_wc}
     ungrouped_lines: dict[str, int] = defaultdict(int)
     orphan: dict[tuple[str, str], dict] = {}
     for p in all_products:
@@ -1329,8 +1396,9 @@ def cell_zagruzka(
                 ungrouped_lines[p_wc] += 1
         elif p.wc_group not in carried.get(p_wc, ()):
             orphan.setdefault((p_wc, p.wc_group), {"lines": 0, "pins": 0})["lines"] += 1
-    for (p_wc, g), n_pins in pins_by_letter.items():
-        if g not in carried.get(p_wc, ()):
+    for (p_wc, g), on_days in pin_days_by_letter.items():
+        n_pins = sum(1 for d in on_days if g not in carried_on(p_wc, d))
+        if n_pins:
             orphan.setdefault((p_wc, g), {"lines": 0, "pins": 0})["pins"] += n_pins
 
     # Which lettered work centres are REALLY handed out by group: some cell's
@@ -1340,16 +1408,16 @@ def cell_zagruzka(
     # evenly — so a lettered work centre nothing names stays in the «shared» list
     # beside its 1/N rows instead of reading green as though each cell measured
     # its own group. A lone cell is in neither list: nothing is split there.
-    named = {wc: {c.wc_group for c in cells_at_wc[wc]
-                  if c.wc_group and (c.wc_group in letters_on_lines.get(wc, ())
-                                     or pins_by_letter.get((wc, c.wc_group)))}
+    named = {wc: {g for g in carried[wc]
+                  if g in letters_on_lines.get(wc, ()) or pins_by_letter.get((wc, g))}
              for wc in lettered_wcs}
     shared_wcs = {
         wc: sorted(c.verifix_code or f"#{c.id}" for c in cs)
         for wc, cs in cells_at_wc.items() if len(cs) > 1 and not named.get(wc)
     }
+    # Each cell as «7421 · A» under the letter its row prints (`latest_letter`).
     grouped_wcs = {
-        wc: sorted(wc_group.label(c.verifix_code or f"#{c.id}", c.wc_group)
+        wc: sorted(wc_group.label(c.verifix_code or f"#{c.id}", latest_letter[c.id])
                    for c in cells_at_wc[wc])
         for wc in lettered_wcs if len(cells_at_wc[wc]) > 1 and named[wc]
     }
@@ -1371,8 +1439,9 @@ def cell_zagruzka(
                 "leader": leader_names.get(c.leader_id),
                 "sap_code": c.sap_code,
                 # The cell's group of its work centre — the letter printed
-                # beside the code, never instead of it.
-                "wc_group": c.wc_group or None,
+                # beside the code, never instead of it: the one it carried on
+                # its last day here (each day's own is in `inputs`).
+                "wc_group": latest_letter[c.id],
                 "name_uz": c.name_workshop_uz,
                 "name_uz_cyrl": c.name_workshop_uz_cyrl,
                 "name_ru": c.name_workshop_ru,
