@@ -367,5 +367,186 @@ class MarksInTheTable(_Base):
         self.assertEqual(cell_links.changed_since("manager_id", D), set())
 
 
+# ── over the REAL follow (the engine's own world) ───────────────────────────
+
+try:
+    from tests.test_catalog_follow_engine import _World, _days, C as ENG_C, D as ENG_D, \
+        X as EX, Y as EY
+except ImportError:  # run from inside tests/
+    from test_catalog_follow_engine import _World, _days, C as ENG_C, D as ENG_D, \
+        X as EX, Y as EY
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class OverARealFollow(_World):
+    """The checks read a day the way the follow left it — `catalog_follow`
+    itself moved the positions, letters and pins, nothing hand-faked."""
+
+    def setUp(self):
+        from app import models as m
+        db = self.pg.Session()
+        for t in (m.LeaderAutoCheck, m.CellArchiveSpan, m.CellLinkEvent, m.Cell,
+                  m.RoleProfile):
+            db.query(t).delete()
+        db.commit()
+        db.close()
+        super().setUp()
+
+    def leader(self, name, unit, *cells):
+        from app.models import RoleProfile
+        p = RoleProfile(role="leader", name=name, manager_id=unit)
+        self.db.add(p)
+        self.db.flush()
+        for c in cells:
+            c.leader_id = p.id
+        self.db.flush()
+        return p
+
+    def check(self, lead, day, check):
+        from app.models import Manager
+        due = datetime.combine(day, time(14), tzinfo=TZ)
+        return leader_auto.evaluate(
+            self.db, prof=lead, manager=self.db.get(Manager, lead.manager_id), shift=1,
+            date=day.isoformat(), cell=None, check=check, target=30.0, due=due, now=due)
+
+    def test_lettered_move(self):
+        """T3: c(A) leaves X for Y, where y1 holds A — c becomes B. Its leader
+        is judged on X's «A» positions and pins the day before and on Y's «B»
+        ones from the move day; the cells it left and found are untouched."""
+        D_ = ENG_D
+        self.units(EX, EY)
+        self.enable()
+        c = self.cell("0201", EX, letter="A")
+        d_ = self.cell("0202", EX, letter="B")
+        y1 = self.cell("0203", EY, letter="A")
+        lc = self.leader("Lider Bir", EX, c)
+        ld = self.leader("Lider Ikki", EX, d_)
+        ly = self.leader("Lider Uch", EY, y1)
+        self.line(EX, "F001", "Tort", letter="A", sort=0)
+        self.line(EX, "F002", "Keks", letter="A", sort=1)
+        self.line(EX, "F003", "Non", letter="B", sort=2)
+        self.line(EY, "F005", "Pirog", letter="A", sort=0)
+        self.wc(EX, ENG_C, shtatka=4)
+        for day in _days(D_ - timedelta(days=1), D_):
+            for sap in ("F001", "F002", "F003"):
+                self.daily(EX, day, sap, plan=20, actual=18)
+            self.daily(EY, day, "F005", plan=7, actual=7)
+            self.pin(EX, day, group="A", people=3)
+            self.pin(EX, day, group="B", people=2)
+            self.pin(EY, day, group="A", people=1)
+        self.event(c, EY)
+        self.db.commit()
+        self.land()
+        v = self.check(lc, D_, "plan_staffing")
+        self.assertEqual((v.code, v.facts.get("unsettled")), ("no_data", True))
+        self.assertEqual(self.follow().state, "moved")
+        before = self.check(lc, D_ - timedelta(days=1), "plan_staffing")
+        self.assertEqual((before.outcome, before.facts["filled"], before.facts["with_plan"]),
+                         (leader_auto.PASSED, ["0201"], 2))           # X's two «A» lines
+        on = self.check(lc, D_, "plan_staffing")
+        self.assertEqual((on.outcome, on.facts["filled"], on.facts["with_plan"]),
+                         (leader_auto.PASSED, ["0201"], 2))           # the same two, now «B» in Y
+        from app.models import Manager
+        ctx = leader_auto._Ctx(self.db, lc, self.db.get(Manager, EX), 1,
+                               (D_ - timedelta(days=1)).isoformat(), None, None, None)
+        self.assertEqual([x.wc_group for x in ctx.cells], ["A"])
+        self.assertEqual(ctx.pins[(c.id, (D_ - timedelta(days=1)).isoformat())][0], 3.0)
+        for lead in (lc, ld, ly):
+            for day in (D_ - timedelta(days=1), D_):
+                for chk in ("plan_staffing", "plan_pct"):
+                    v = self.check(lead, day, chk)
+                    self.assertEqual(v.outcome, leader_auto.PASSED, (lead.name, day, chk, v))
+
+    def test_lone_sibling(self):
+        """T5: the lone unlettered y1 in Y is lettered by the move; its leader
+        reads the whole-centre pin the day before and its group pin from D."""
+        from app.models import Manager
+        D_ = ENG_D
+        self.units(EX, EY)
+        self.enable()
+        c = self.cell("0301", EX)
+        y1 = self.cell("0302", EY)
+        lc = self.leader("Lider Bir", EX, c)
+        ly = self.leader("Lider Ikki", EY, y1)
+        self.line(EX, "F001", "Tort", labor=60)
+        self.line(EY, "F005", "Pirog", labor=30)
+        self.wc(EY, ENG_C, shtatka=2)
+        for day in _days(D_ - timedelta(days=1), D_):
+            self.daily(EX, day, "F001", plan=50, actual=40)
+            self.daily(EY, day, "F005", plan=20, actual=20)
+            self.pin(EY, day, people=6)
+            self.pin(EX, day, people=3)
+        self.event(c, EY)
+        self.db.commit()
+        self.land()
+        self.follow()
+        for day, letter, people in ((D_ - timedelta(days=1), None, 6.0), (D_, "B", 6.0)):
+            ctx = leader_auto._Ctx(self.db, ly, self.db.get(Manager, EY), 1, day.isoformat(),
+                                   None, None, None)
+            self.assertEqual([x.wc_group for x in ctx.cells], [letter])
+            self.assertEqual(ctx.pins[(y1.id, day.isoformat())][0], people)
+            for lead in (lc, ly):
+                for chk in ("plan_staffing", "plan_pct"):
+                    v = self.check(lead, day, chk)
+                    self.assertEqual(v.outcome, leader_auto.PASSED, (lead.name, day, chk, v))
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class UnsettledInForce(_Base):
+    """`catalog_follow.unsettled` answers for a move IN FORCE by the day, not
+    only one that has landed."""
+
+    def test_a_move_waiting_for_its_opening(self):
+        """Recorded for D, landing at 20:00 (a night unit): the dated readers
+        already read it in Y, and nothing can follow it yet."""
+        from app.models import CellLinkEvent
+        from app.services import catalog_follow
+        X, Y = self.X, self.Y
+        self._units(X, Y)
+        c = self._cell("0101", X)
+        self.db.add(CellLinkEvent(cell_id=c.id, field="manager_id", value=Y, prev=X,
+                                  effective_from=D,
+                                  effective_at=datetime.combine(D, time(20), tzinfo=TZ),
+                                  src="manual"))
+        self._follow_on()
+        self._commit()
+        self.assertEqual(cell_links.value_on(c, "manager_id", D), Y)
+        self.assertEqual(catalog_follow.unsettled(self.db, [c.id], D), {c.id})
+        self.assertEqual(catalog_follow.unsettled(self.db, [c.id], BEFORE), set())
+
+    def test_a_retro_transfer_being_retried(self):
+        from app.models import PPCatalogMove
+        from app.services import catalog_follow
+        X, Y = self.X, self.Y
+        self._units(X, Y)
+        c = self._cell("0101", Y)                   # moved before link history
+        self.db.add(PPCatalogMove(kind="retro", state="busy", event_id=None, cell_id=c.id,
+                                  code=CODE, from_unit=X, to_unit=Y, home_from=D, tries=1))
+        self._follow_on()
+        self._commit()
+        self.assertEqual(catalog_follow.unsettled(self.db, [c.id], D), {c.id})
+        self.assertEqual(catalog_follow.unsettled(self.db, [c.id], BEFORE), set())
+        self.db.query(PPCatalogMove).update({"state": "moved"})
+        self._commit()
+        self.assertEqual(catalog_follow.unsettled(self.db, [c.id], D), set())
+
+    def test_the_warning_card_waits_quietly(self):
+        """The 30-minute warning reads the check's own runner: a move not
+        followed yet gives a card with no figures, one INFO line, no rollback."""
+        from app.models import Manager
+        from app.services import leader_auto_rich
+        lead, c = self._moved_cell()
+        self._follow_on()
+        self._commit()
+        due = datetime.combine(D, time(14), tzinfo=TZ)
+        with mock.patch.object(self.db, "rollback") as rb, \
+                self.assertLogs(leader_auto_rich.logger, "INFO") as logs:
+            snap = leader_auto_rich.snapshot(self.db, lead, self.db.get(Manager, self.X),
+                                             "plan_pct", 30.0, due, due, date=D.isoformat())
+        rb.assert_not_called()
+        self.assertIn("error", snap)
+        self.assertEqual([r.levelname for r in logs.records], ["INFO"])
+
+
 if __name__ == "__main__":
     unittest.main()

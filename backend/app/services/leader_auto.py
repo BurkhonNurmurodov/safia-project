@@ -326,10 +326,12 @@ class _Ctx:
 
     def require_settled(self) -> None:
         """Raise `catalog_follow.CatalogUnsettled` while one of the leader's
-        cells has changed brigadir and its positions have not followed it yet
-        (`catalog_follow.unsettled`, ≤ a minute after the move lands): the cell
-        then reads in its new unit with its lines still in the old one, an empty
-        page that is nobody's failure. Asked before EVERY production page a
+        cells has changed brigadir by this day and its positions have not
+        followed it yet (`catalog_follow.unsettled`: ≤ a minute after the move
+        lands as a rule — longer for a move recorded for the day that lands
+        later in it, or a follow kept busy): the cell then reads in its new unit
+        with its lines still in the old one, an empty page that is nobody's
+        failure. Asked before EVERY production page a
         check — or anything replaying one (`auto_check_timing`,
         `auto_check_restore`) — builds for this day; answered once per context.
         A day before `catalog_follow.FOLLOW_FROM` is never unsettled."""

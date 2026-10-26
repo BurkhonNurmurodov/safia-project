@@ -589,6 +589,15 @@ def snapshot(db: Session, prof: RoleProfile, manager: Manager, check: str,
             out["no_fact"] = sum(1 for r in planned
                                  if float(r.get("actual_qty") or 0) <= 0)
     except Exception as exc:                        # noqa: BLE001 - see doc
+        from app.services import catalog_follow
+        if isinstance(exc, catalog_follow.CatalogUnsettled):
+            # A move of one of the leader's cells not followed yet: no fault,
+            # one line (`leader_auto.evaluate` says the same), and nothing was
+            # read, so the transaction is whole — the card just has no figures.
+            logger.info("auto-soon snapshot %s for leader %s waits for the catalog "
+                        "follow: %s", check, getattr(prof, "id", None), exc)
+            out["error"] = str(exc)[:200]
+            return out
         logger.exception("auto-soon snapshot %s failed for leader %s",
                          check, getattr(prof, "id", None))
         # A failed read may leave the transaction aborted; the warning's own

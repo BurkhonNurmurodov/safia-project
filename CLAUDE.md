@@ -7903,10 +7903,14 @@ upload filled them. The whole design, every critique and its verdict, is
   (a defect that predates this). The leader auto-checks read their checklist
   day the same way — `_Ctx.unit_id`, `pairs`, `cells` (`leader_auto.cells_run_on`,
   also what #8 and the objection timing read), `pins` (every cell standing in
-  the unit that day) — and while a move of one of the leader's cells has landed
-  and not been followed `_Ctx.require_settled` raises
-  `catalog_follow.CatalogUnsettled`: a quiet `no_data` (one log line, no stack
-  trace) retried until `GIVE_UP`. `auto_check_timing` then answers nothing for
+  the unit that day) — and while a move of one of the leader's cells is in force
+  by the day and not followed (`catalog_follow.unsettled`: landed with no final
+  record; recorded for the day and not landed yet, which the dated readers
+  already read in the new unit — a night unit's 20:00 opening under a shift-1
+  checklist (`leader_shift`); a retro transfer the sweep is retrying)
+  `_Ctx.require_settled` raises `catalog_follow.CatalogUnsettled`: a quiet
+  `no_data` (one log line, no stack trace) retried until `GIVE_UP`, and a
+  warning card with no figures. `auto_check_timing` then answers nothing for
   the objection, and `auto_check_restore` reads the pages and saves of the
   cells' unit of the day.
 - **The retroactive one-shot** — TEMPORARY `services/catalog_follow_retro.py`,
