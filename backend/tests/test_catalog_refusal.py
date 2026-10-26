@@ -17,7 +17,7 @@ cache reads `app.database.SessionLocal`, pointed here at the scratch database.
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -423,6 +423,163 @@ class VerifixTap(_PG):
         self.db.rollback()
         self.assertEqual(self._events(), [])
         self.assertIsNotNone(e.id)
+
+
+class Review(_PG):
+    """Holes found in review: a change ALREADY recorded is part of the same
+    landing (the follow groups a day's moves at one work centre), a cleared
+    brigadir is judged by the letter the cell carries in the unit it leaves,
+    and a team leaving to no unit owns what it shares."""
+
+    def _put(self, cell, **kw):
+        from app.routers import profiles
+        return profiles.admin_update_cell(cell.id, profiles.CellPayload(**kw), db=self.db,
+                                          caller=ADMIN)
+
+    def _commit(self):
+        self.db.commit()
+        self._forget()
+
+    def test_split_across_two_saves(self):
+        """Moved together, then one of them sent elsewhere by a second save:
+        the shared position could follow neither."""
+        c, d, free = self._team()
+        self._put(c, manager_id=self.Y, move_with=[d.id])
+        self._commit()
+        with self.assertRaises(HTTPException) as cm:
+            self._put(c, manager_id=self.Z)
+        self.assertEqual(cm.exception.detail["params"]["kind"], "split")
+        self.assertEqual(cm.exception.detail["params"]["dests"], [self.Y, self.Z])
+        self.assertEqual(cm.exception.detail["params"]["staying"], [])
+        self.db.rollback()
+        # Back to the team's unit, or home (a withdrawal): both pass.
+        self.assertEqual(self._put(c, manager_id=self.Y)["pending"]["manager_id"]["value"], self.Y)
+        self.db.rollback()
+        self.assertNotIn("manager_id", self._put(c, manager_id=self.X)["pending"])
+
+    def test_recorded_mate_to_the_same_unit_passes(self):
+        """d left first while the line was lettered; un-lettered later, c
+        follows d to the same unit — the whole work centre leaves together."""
+        from app.services import catalog_refusal, cell_links, cell_register
+        c, d, free = self._team()
+        free.wc_group = "B"
+        ev = cell_register.set_unit(self.db, d, self.Y, src="manual", by="t")
+        self._commit()
+        free.wc_group = None
+        self._commit()
+        day = ev.effective_from                     # the landing both moves share
+        self.assertEqual(day, cell_links.opening_for_move(self.db, self.X, self.Y)[0])
+
+        def judge(to, leaving=None):
+            return catalog_refusal.shared_positions(self.db, c, to, day=day, leaving=leaving)
+        self.assertIsNone(judge(self.Y))
+        self.assertEqual(judge(self.Z).params["kind"], "split")
+        # This request taking d back home makes d a cell staying.
+        self.assertEqual(judge(self.Y, leaving={d.id: self.X}).params["kind"], "shared")
+        # A day on which d has not left yet: d still stands there.
+        self.assertEqual(catalog_refusal.shared_positions(
+            self.db, c, self.Y, day=day - timedelta(days=1)).params["kind"], "shared")
+
+    def test_form_clear_reads_the_letter_in_the_unit(self):
+        """The form sends no letter with a cleared brigadir: c's own lettered
+        positions are still its own — `positions_need_unit`, not «shared»."""
+        c, d, free = self._team(shared=False)
+        with self.assertRaises(HTTPException) as cm:
+            self._put(c, manager_id=0, wc_group="")
+        det = cm.exception.detail
+        self.assertEqual((det["code"], det["params"]["kind"]), ("positions_need_unit", "need_unit"))
+        self.assertEqual([ln["name"] for ln in det["params"]["lines"]], ["Tort"])
+        self.assertEqual(det["params"]["cell_letter"], "A")
+        self.db.rollback()
+        # A cell owning nothing is cleared, and loses its letter with it.
+        e = self._cell("0401", sap="B4444", letter="C")
+        self._line("Non", wc="B4444", active=False)          # archived: owns nothing live
+        self._commit()
+        out = self._put(e, manager_id=0, wc_group="")
+        self.assertIsNone(out["wc_group"])
+        self.assertIsNone(out["pending"]["manager_id"]["value"])
+
+    def test_team_cleared_together_needs_unit(self):
+        c = self._cell("0301")
+        d = self._cell("0302")
+        self._line("Pirog")
+        self._commit()
+        bad = self._refusal(c, None, leaving={d.id: None})
+        self.assertEqual((bad.code, bad.params["count"]), ("positions_need_unit", 1))
+        # With a cell staying it keeps the position: the refusal is «shared».
+        self.assertEqual(self._refusal(c, None).params["kind"], "shared")
+
+    def test_team_cleared_on_doimiy_qilish(self):
+        from app.models import AttendanceBatch, AttendanceBatchCell
+        from app.routers import attendance_batch as ab
+        c = self._cell("0301")
+        d = self._cell("0302")
+        self._line("Pirog")
+        b = AttendanceBatch(date=OLD_DAY, status="draft")
+        self.db.add(b)
+        self.db.flush()
+        for x in (c, d):
+            self.db.add(AttendanceBatchCell(batch_id=b.id, verifix_code=x.verifix_code,
+                                            cell_id=x.id, manager_id=x.manager_id, included=True,
+                                            pending=False))
+        self._commit()
+        body = ab.MappingBody(date=OLD_DAY.isoformat(), permanent=True, changes=[
+            ab.CellChange(verifix_code="0301", clear_manager=True),
+            ab.CellChange(verifix_code="0302", clear_manager=True)])
+        with self.assertRaises(HTTPException) as cm, \
+                mock.patch.object(ab, "_batch_payload", return_value={"ok": True}):
+            ab.update_cells(body, db=self.db, admin=ADMIN)
+        self.assertEqual(cm.exception.detail["code"], "positions_need_unit")
+        self.assertEqual(self._events(), [])
+
+    def test_waiting_move_judged_again_with_the_team(self):
+        """A waiting move refused again over a letter change («Birga
+        ko'chirish» re-sends the waiting brigadir with the team): the team
+        leaves with it, so the check passes."""
+        c, d, free = self._team(shared=False)
+        self._line("Pirog", group="A", sort=4)
+        self._commit()
+        self._put(c, manager_id=self.Y)
+        self._commit()
+        with self.assertRaises(HTTPException) as cm:
+            self._put(c, wc_group="C")                          # A lines orphaned
+        self.assertEqual([s["id"] for s in cm.exception.detail["params"]["staying"]], [d.id])
+        self.db.rollback()
+        out = self._put(c, manager_id=self.Y, wc_group="C", move_with=[d.id])
+        self.assertEqual((out["wc_group"], out["pending"]["manager_id"]["value"]), ("C", self.Y))
+        self.assertEqual(sorted((e.cell_id, e.value) for e in self._events()
+                                if e.applied_at is None),
+                         sorted([(c.id, self.Y), (d.id, self.Y)]))
+
+    def test_concurrent_taps_never_wait(self):
+        """Two «Verifix sinxron» taps at once: neither waits on the other's
+        item (each holding its own and waiting for the other's deadlocks). A
+        teammate's item another tap holds is left out of «together»."""
+        from sqlalchemy import text
+        from app.models import VerifixSyncItem
+        from app.services import cell_register, verifix_sync
+        c, d, free = self._team()
+        free.wc_group = "A"
+        mk = VerifixTap._item
+        ic, idd = mk(self, c, self.Y), mk(self, d, self.Y)
+        self._commit()
+        other = self.pg.Session()
+        try:
+            other.query(VerifixSyncItem).filter_by(id=idd.id).with_for_update().one()
+            self.db.execute(text("SET LOCAL lock_timeout = '2s'"))
+            self.assertIsNotNone(verifix_sync.apply_item(self.db, ic.id, by="t")["from"])
+            self.db.rollback()
+            free = self.db.merge(free)
+            free.wc_group = None
+            self._commit()
+            self.db.execute(text("SET LOCAL lock_timeout = '2s'"))
+            with self.assertRaises(cell_register.Refused) as cm:
+                verifix_sync.apply_item(self.db, ic.id, by="t", choice="together")
+            self.assertEqual([s["id"] for s in cm.exception.params["staying"]], [d.id])
+            self.db.rollback()
+        finally:
+            other.rollback()
+            other.close()
 
 
 if __name__ == "__main__":

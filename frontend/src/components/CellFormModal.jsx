@@ -261,6 +261,12 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     } else if (unitChanged) {
       body.manager_id = form.manager_id ? Number(form.manager_id) : 0;
       if (together?.ids?.length) body.move_with = together.ids;
+    } else if (together?.ids?.length && pendUnit?.value != null) {
+      // The refusal came from a change already WAITING, judged again because
+      // this save moves the code or the letter: the waiting brigadir is sent
+      // back unchanged, with the team along.
+      body.manager_id = Number(pendUnit.value);
+      body.move_with = together.ids;
     }
     saveMut.mutate({ body, movedWith: body.move_with ? together.cells : "" });
   }

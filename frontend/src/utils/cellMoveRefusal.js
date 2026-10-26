@@ -64,8 +64,9 @@ export function cellMoveRefusalText(raw, { t, tx = (s) => s, tl, isAdmin = false
     unit: (tl || tx)(p.unit_name || ""),
   });
   const items = p.together_items || [];
+  // Never towards no brigadir: «together» there would clear the cells staying.
   const canTogether = raw.code === "shared_positions" && p.kind !== "split"
-    && (staying.length > 0 || items.length > 0);
+    && p.to_unit != null && (staying.length > 0 || items.length > 0);
   return {
     text: isAdmin ? body : `${body} ${t("cellMove.askAdmin")}`,
     linkTo: isAdmin && p.unit ? productionLink({ unit: p.unit, tab: "positions" }) : null,

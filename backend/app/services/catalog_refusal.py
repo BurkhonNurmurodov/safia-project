@@ -70,13 +70,17 @@ def shared_positions(db: Session, cell, to_unit: Optional[int], *, day: date,
     the day before the landing and on it (`catalog_ownership.cells_standing`),
     minus every cell leaving; their letters, and the cell's own, are the
     columns as THIS save leaves them (a letter typed in the same save counts —
-    the form applies the letter before the brigadir). Only ACTIVE lines block:
-    an archived position follows nobody's figure.
+    the form applies the letter before the brigadir). The cells leaving are
+    this request's and every cell a change ALREADY recorded takes out of X on
+    that same day — the follow moves them as one group, so a team moved
+    together and then split by a second save is a split. Only ACTIVE lines
+    block: an archived position follows nobody's figure.
 
     Refused (409, `params` below), in this order:
 
     * `positions_need_unit` — the brigadir is cleared while the cell owns
-      positions: a position must stand in some unit's catalog;
+      positions, or shares them with a team that all leaves to no unit: a
+      position must stand in some unit's catalog;
     * `shared_positions`, kind `unlettered_cell` — the cell has no letter
       while every cell staying has one, so each unlettered line is shared;
     * `shared_positions`, kind `shared` — cells stay and lines are shared
@@ -101,15 +105,35 @@ def shared_positions(db: Session, cell, to_unit: Optional[int], *, day: date,
     if not lines:
         return None
 
+    from app.services import cell_archive, cell_links
+
     going = {int(k): (v or None) for k, v in (leaving or {}).items()}
     going[cell.id] = to
-    standing = catalog_ownership.cells_standing(db, x, code, day - timedelta(days=1), day)
-    rows = {c.id: c for c in db.query(Cell).filter(Cell.id.in_(set(standing) | {cell.id})).all()}
+    eve = day - timedelta(days=1)
+    standing = catalog_ownership.cells_standing(db, x, code, eve, day)
+    # The cells standing here the day before and gone ON the landing day by a
+    # change already recorded: they leave in the same breath (the follow takes
+    # every move of one day and work centre as one group, §1.3), so they are
+    # neither staying nor out of the count — a team moved together and then
+    # split by a second save must meet the `split` refusal.
+    was_here = catalog_ownership.cells_standing(db, x, code, eve, eve)
+    rows = {c.id: c for c in db.query(Cell).filter(
+        Cell.id.in_(set(standing) | set(was_here) | {cell.id})).all()}
     rows[cell.id] = cell
+    on_day: dict[int, Optional[int]] = {}           # the other cells → their unit on `day`
+    for cid in dict.fromkeys([*standing, *was_here]):
+        if cid == cell.id:
+            continue
+        if cid in going:                            # this request decides it
+            on_day[cid] = going[cid]
+        elif cid in standing:
+            on_day[cid] = x
+        elif cell_archive.alive(rows[cid], day):
+            on_day[cid] = cell_links.value_on(rows[cid], "manager_id", day)
+    going.update(on_day)
     # A member of the request whose destination IS this unit is not leaving.
-    departers = [cell.id] + [cid for cid in standing
-                             if cid != cell.id and cid in going and going[cid] != x]
-    stay_ids = [cid for cid in standing if cid not in departers]
+    stay_ids = [cid for cid, u in on_day.items() if u == x]
+    departers = [cell.id] + [cid for cid, u in on_day.items() if u != x]
     letters = {cid: (rows[cid].wc_group or None) for cid in stay_ids + departers}
     own = letters[cell.id]
     handed = catalog_ownership.handed(lines, letters, cell.id)
@@ -127,11 +151,15 @@ def shared_positions(db: Session, cell, to_unit: Optional[int], *, day: date,
             "staying": staying, "dests": dests})
 
     c = cell.verifix_code
-    if to is None and handed.mine:
-        return refuse("positions_need_unit", "need_unit", handed.mine,
+    # Left with no brigadir, the cell takes nothing anywhere: what is its own
+    # needs a unit — and so does what it shares with a team that leaves to no
+    # unit at all (nobody staying keeps it, Whole(X) has no destination).
+    homeless = handed.mine + (handed.shared if not staying and dests == [None] else [])
+    if to is None and homeless:
+        return refuse("positions_need_unit", "need_unit", homeless,
                       f"Cell {c} cannot be left without a supervisor: it has "
-                      f"{len(handed.mine)} position(s) at work centre {code} — "
-                      f"{_names(handed.mine)}. Move it to another supervisor or archive "
+                      f"{len(homeless)} position(s) at work centre {code} — "
+                      f"{_names(homeless)}. Move it to another supervisor or archive "
                       "those positions first.")
     if not handed.shared:
         return None
