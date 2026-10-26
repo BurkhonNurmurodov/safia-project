@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload, CheckCircle2, XCircle, Factory, Save, BookOpen, AlertTriangle, Users,
-  Wand2, PencilLine, Layers, History,
+  Wand2, PencilLine, Layers, History, ArrowRightLeft,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
+import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import StyledSelect from "../../components/ui/StyledSelect";
 import DateRangePicker from "../../components/ui/DateRangePicker";
@@ -48,6 +49,30 @@ const fmtDay = (iso) => {
 // Workshop name of a resolved cell — falls back across the four languages.
 const wsName = (cell) => (cell ? cell.ru || cell.uz || cell.uz_cyrl || cell.en || "" : "");
 
+// A catalog writer refused because its row followed a cell to another brigadir
+// while the page was open (production._hold_catalog_rows). The structure lives
+// on `detail_raw` — api.js flattens a non-string `detail` to text.
+const linesMoved = (e) => e?.response?.data?.detail_raw?.code === "lines_moved";
+
+// A list of positions the catalog import left out or kept because they moved
+// with a cell — the first few by name, the rest as a count, one line each.
+const MOVED_SHOWN = 8;
+function MovedList({ rows, arrow }) {
+  const { tl, tx } = useTranslit();
+  const shown = rows.slice(0, MOVED_SHOWN);
+  return (
+    <ul className="mt-1 space-y-0.5">
+      {shown.map((r, i) => (
+        <li key={i} className="truncate" title={`${r.name} · ${r.work_center}`}>
+          {tx(r.name) || "—"} · <span className="font-mono">{r.work_center}</span>
+          {r.unit ? ` ${arrow} ${tl(r.unit)}` : ""}
+        </li>
+      ))}
+      {rows.length > shown.length && <li>+{rows.length - shown.length}</li>}
+    </ul>
+  );
+}
+
 // ── штатка / capacity editor ─────────────────────────────────────────────────
 function WorkCenters({ managerId, managerName }) {
   const { t } = useLang();
@@ -78,7 +103,17 @@ function WorkCenters({ managerId, managerName }) {
     },
     // A failed PUT used to leave the draft on screen looking exactly like a
     // saved value — the only confirmation the admin had was faith.
-    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.saveFailed")),
+    onError: (e, { id }) => {
+      if (linesMoved(e)) {
+        // The row went with its code to another brigadir: reload the list, and
+        // drop the draft that was typed over it.
+        qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
+        setDraft((p) => { const n = { ...p }; delete n[id]; return n; });
+        toast.error(t("production.linesMoved"));
+        return;
+      }
+      toast.error(e?.response?.data?.detail || t("admin.saveFailed"));
+    },
     onSettled: () => setSavingId(null),
   });
 
@@ -468,6 +503,38 @@ function CatalogImport({ managerId, managerName }) {
             <span className="leading-snug">{t("admin.prod.catalogNoBackfill")}</span>
           </div>
         )}
+        {/* Positions that moved with a cell (2026-10-26). An old sheet of the
+            brigadir they LEFT still lists them — those rows (and a work centre
+            that left whole) were not put back; a sheet of the brigadir they
+            JOINED may not list them yet — those were kept. Both named, so the
+            sheet can be brought up to date. */}
+        {state.status === "ok" && ((state.data.skipped_moved_out?.length ?? 0) > 0
+          || (state.data.skipped_wc?.length ?? 0) > 0) && (
+          <div className="mt-2 flex items-start gap-2 text-xs" style={{ color: "#a16207" }}>
+            <ArrowRightLeft size={13} className="flex-shrink-0 mt-0.5" />
+            <div className="min-w-0 leading-snug">
+              {t("admin.prod.skippedMovedOut")
+                .replace("{n}", String(state.data.skipped_moved_out?.length ?? 0))}
+              <MovedList arrow="→"
+                rows={(state.data.skipped_moved_out || []).map((r) => ({ ...r, unit: r.to_unit_name }))} />
+              {(state.data.skipped_wc?.length ?? 0) > 0 && (
+                <div className="mt-0.5">
+                  {t("admin.prod.wcTeam")}: <span className="font-mono">{state.data.skipped_wc.join(", ")}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {state.status === "ok" && (state.data.kept_moved_in?.length ?? 0) > 0 && (
+          <div className="mt-2 flex items-start gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+            <ArrowRightLeft size={13} className="flex-shrink-0 mt-0.5" />
+            <div className="min-w-0 leading-snug">
+              {t("admin.prod.keptMovedIn").replace("{n}", String(state.data.kept_moved_in.length))}
+              <MovedList arrow="←"
+                rows={state.data.kept_moved_in.map((r) => ({ ...r, unit: r.from_unit_name }))} />
+            </div>
+          </div>
+        )}
         {state.status === "error" && (
           <div className="mt-3 flex items-start gap-2 text-sm" style={{ color: "#ef4444" }}>
             <XCircle size={14} className="flex-shrink-0 mt-0.5" />
@@ -494,6 +561,7 @@ function CatalogImport({ managerId, managerName }) {
 // ── фаза upload ───────────────────────────────────────────────────────────────
 export default function ProductionUpload() {
   const { t } = useLang();
+  const { tl } = useTranslit();
   // All active brigadir units — an admin can configure/upload for any of them
   // (was hardcoded to the manager-5 pilot, so nobody else could be set up).
   const { data: brigadirs = [] } = useQuery({
@@ -758,6 +826,19 @@ export default function ProductionUpload() {
               {ok.rows_taken_in > 0 && (
                 <div className="text-xs mt-1 leading-snug" style={{ color: "var(--text-3)" }}>
                   {t("admin.prod.rowsTakenIn").replace("{n}", ok.rows_taken_in)}
+                </div>
+              )}
+              {/* A target whose catalog that day held no line is handed nothing
+                  from the file (production._scoped_faza) — named, or its 0 rows
+                  read as a day the file simply had nothing for. */}
+              {(ok.empty_targets?.length ?? 0) > 0 && (
+                <div className="text-xs mt-1 leading-snug" style={{ color: "#a16207" }}>
+                  {t("admin.prod.emptyTargets")
+                    .replace("{n}", ok.empty_targets.length)
+                    .replace("{list}", ok.empty_targets
+                      .map((id) => tl(brigadirs.find((b) => b.manager_id === id)?.name
+                        || afRows.find((r) => r.manager_id === id)?.name) || `#${id}`)
+                      .join(", "))}
                 </div>
               )}
               {incomplete && (
