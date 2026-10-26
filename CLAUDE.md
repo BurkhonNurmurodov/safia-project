@@ -9402,10 +9402,19 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 
 ## «Odam soni»: the page and the загрузка count different pins (2026-10-26)
 
-The operator, 25.10.2026, on Niyozov Izzatilla's 24.10: «Файл загрузки» showed
-ЛЮДЕЙ (Σ) **45** (21 + 12 + 12) and «Ежедневно» ОФИЦ. ЧИСЛ. **66** for the
-same unit-day. Both read the TYPED «Bugungi fakt» pins; they do not read the
-same set of them.
+**The case that prompted this was NOT this bug — read the measurement below
+before acting on the mechanism.** On 25.10.2026 Niyozov Izzatilla's 24.10 showed
+ЛЮДЕЙ (Σ) **45** on «Файл загрузки» and ОФИЦ. ЧИСЛ. **66** on «Ежедневно».
+The two screenshots were ~40 h apart (bundle 4.329.0, deployed 24.10 12:43,
+against 4.329.3, 26.10 04:58): the 45 is a tab left open during the shift
+itself, and the pins were filled in afterwards. By 26.10 BOTH pages read 66,
+the report below confirms they agree, and 66 is simply what the brigadir typed
+— against 44 counted by attendance and 61 people in load roles on the whole
+list. That is a data-entry problem, not a platform one.
+
+The mechanism below is nonetheless real and proven in code; it is simply rare.
+Both pages read the TYPED «Bugungi fakt» pins, and they do not read the same
+set of them.
 
 - **The PAGE** counts a pin only where its `work_center` matches, EXACTLY, a
   code the day's catalog puts on the panel — `pp_calc` builds `wc_codes` from
@@ -9433,13 +9442,21 @@ LATIN» — a stray space, another case), and from then on it counts in the
   It derives every figure from the functions the two pages read and writes
   nothing but its flag. Delete the module, the startup pair and both calls once
   it has landed; changing what it reports needs a NEW key.
+- **MEASURED on production, 26.10.2026** (the report's own answer, kept here so
+  nobody re-derives it): across every unit-day from `ZAGRUZKA_FROM` to 26.10,
+  **ONE** mismatch — Ibragimova Sayyora, 02.09.2026, page Σ 22 against загрузка
+  Σ 25, a `people = 3` pin on code **A2898**, which that unit has no work-centre
+  row for at all (`unknown_code`). That day's загрузка reads 124 % and would read
+  141 % off the page's own Σ. Nothing else in seven weeks: no Cyrillic twin, no
+  spelling duplicate, no pin on a switched-off work centre.
 - **The fix is NOT wired and needs the operator's word.** Scoping `typed_pins`
   to the day's panel codes and matching through `norm_code` is the honest rule
-  — the load must divide by what the page that collects the number shows — but
-  nothing is stored, so every unit-day back to 2 September re-reads at the next
-  restart and the загрузка goes UP wherever it bites (Niyozov's 24.10: 64 % → 96 %).
-  Same class as «Making an OFF cell leave the загрузка … ask the operator before
-  wiring it». The report is the blast radius that decision needs.
+  — the load must divide by what the page that collects the number shows. Nothing
+  is stored, so it re-reads every unit-day back to 2 September at the next
+  restart; on the measurement above that moves exactly one day. Same class as
+  «Making an OFF cell leave the загрузка … ask the operator before wiring it» —
+  cheap to do now precisely because the blast radius is one day, and it closes
+  the Cyrillic-twin class «A code is LATIN» warns about before it bites.
 
 ## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
 
