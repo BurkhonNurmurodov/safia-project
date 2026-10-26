@@ -942,8 +942,13 @@ def staffing_proof(
         if not _in_scope(scope, work_center) or (grp and not wc_group.in_scope(gscope, work_center, grp)):
             raise HTTPException(status_code=403, detail="This team is not one of your cells")
     want = norm_code(work_center)
-    cells = [c for c in _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
-                                       cell_archive.alive_clause(day))
+    # Each cell with its letter ON the day (`with_letters_on`) — the letter the
+    # dashboard's `wc_of_code` placed its people by, so the rows listed here
+    # still add up to the number on the card after a move re-lettered a cell.
+    from app.services import cell_links
+    cells = [c for c in cell_links.with_letters_on(
+                 _unit_cells_on(db, mid, day, Cell.sap_code.isnot(None),
+                                cell_archive.alive_clause(day)), day)
              if norm_code(c.sap_code) == want and c.verifix_code
              and (grp is None or (c.wc_group or None) == grp)]
     codes = sorted({c.verifix_code for c in cells})
@@ -1496,6 +1501,14 @@ def set_override(
         raise HTTPException(status_code=400, detail="sap_code is required")
     day = _parse_date(body.date)
     mid = _resolve_manager_id(payload, manager_id, db, day)
+    # The unit's quantities, shared with every other quantity writer and
+    # exclusive to the catalog follow (`catalog_follow`), which moves a cell's
+    # lines and per-day rows to its new unit. Taken before the day's catalog is
+    # first read, so the line checks below and the write all see one side of a
+    # follow, never both (a version row read before it would stay in the
+    # session as it was). Taken again in the loop: the retry's rollback
+    # releases it.
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
     # A leader edits Факт/ПЛАН on their own cells only — the read scope pins the
     # write scope, so a cell they cannot see is a cell they cannot touch.
     scope = _leader_wc_scope(db, payload, day)
@@ -1550,11 +1563,8 @@ def set_override(
     # same race on the checklist settings key.
     for attempt in (0, 1):
         try:
-            # The unit's quantities, shared with every other quantity writer and
-            # exclusive to the catalog follow (`catalog_follow`), which moves a
-            # cell's per-day rows to its new unit: a write either lands before
-            # the follow reads them or after it has moved them, never between.
-            # Inside the loop because the retry's rollback releases it.
+            # The NS_QTY lock again (above): already held on the first pass,
+            # taken anew after the retry's rollback released it.
             pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
             was = (_set_whole_group(db, mid, day, body.sap_code, body.work_center,
                                     col, body.value)

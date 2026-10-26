@@ -100,7 +100,7 @@ class _PG(unittest.TestCase):
     def setUp(self):
         from app import models as m
         self.db = self.pg.Session()
-        for t in (m.PPLineDaily, m.PPDaily, m.PPWorkCenterDaily, m.PPReconciliation,
+        for t in (m.Attendance, m.PPLineDaily, m.PPDaily, m.PPWorkCenterDaily, m.PPReconciliation,
                   m.PPDaySetting, m.PPCatalogVersion, m.PPProduct, m.PPWorkCenter,
                   m.CellArchiveSpan, m.CellLinkEvent, m.Cell, m.RoleProfile, m.Manager):
             self.db.query(t).delete()
@@ -275,6 +275,45 @@ class LeaderPageFollowsTheDay(_PG):
         self.assertEqual(at.call_args.args[1:], (X, d1))
         self.assertEqual([r[2] for r in raw["rows"]], [CODE])
 
+    def test_leader_write_lands_in_the_unit_of_its_day(self):
+        """A leader's ПЛАН typed on D−1 lands on X's line, on D on Y's — the
+        unit and the line each day's catalog holds."""
+        from app.models import PPLineDaily
+        X, Y = self.X, self.Y
+        lead, _c = self._moved_cell()
+        pl = self._payload("leader", X)
+        d1 = D - timedelta(days=1)
+        p_id = next(p.id for p in pp_catalog.at(self.db, X, d1).lines if p.sap_code == "F001")
+        keys = {d1: production.line_keys(pp_catalog.at(self.db, X, d1).lines)[p_id],
+                D: production.line_keys(pp_catalog.at(self.db, Y, D).lines)[p_id]}
+        with self._as_leader(lead):
+            for day, val in ((d1, 7), (D, 9)):
+                production.set_override(
+                    body=production.OverrideBody(date=day.isoformat(), sap_code="F001",
+                                                 work_center=CODE, field="plan", value=val,
+                                                 line_key=keys[day]),
+                    manager_id=None, payload=pl, db=self.db)
+        got = {(r.manager_id, r.date): float(r.plan_override)
+               for r in self.db.query(PPLineDaily).all()}
+        self.assertEqual(got, {(X, d1): 7.0, (Y, D): 9.0})
+
+    def test_scope_without_a_unit_on_the_day(self):
+        """A cell the leader ran on a day it stood in no unit names no unit;
+        a cell released since is still theirs on the days before."""
+        X = self.X
+        self._units(X)
+        lead = self._leader("Lider Bir", X)
+        c = self._cell("0501", X, sap="E5000", leader=None)
+        self._event(c, "manager_id", None, X, D)
+        self._event(c, "leader_id", lead.id, None, D)
+        self._commit()
+        before = D - timedelta(days=1)
+        self.assertEqual(cell_lookup.sap_codes_for_leader(self.db, lead.id, before), {"E5000"})
+        self.assertIsNone(cell_lookup.cells_unit_for_leader(self.db, lead.id, before))
+        self.assertEqual(cell_lookup.sap_codes_for_leader(self.db, lead.id, D), set())
+        self.assertEqual(cell_lookup.sap_codes_for_leader(self.db, lead.id), set())
+        self.assertEqual(cell_lookup.sap_codes_for_leader(self.db, None, D), set())
+
     def test_scope_follows_the_leader_of_its_day(self):
         X = self.X
         self._units(X)
@@ -356,6 +395,53 @@ class PastDayLetters(_PG):
         groups = {g["group"]: g for g in _wc(before)["groups"]}
         self.assertTrue(groups["A"]["orphan"])
         self.assertIn("C", groups)
+
+    def test_staffing_proof_counts_by_the_days_letters(self):
+        """The people behind group A's «ШТАТКА» on D−1 are the ones the card
+        counted: `a`'s, under the letter it carried that day."""
+        from app.models import Attendance
+        X = self.X
+        a, s, _y1 = self._relettered()
+        d1 = D - timedelta(days=1)
+        for cell, name in ((a, "Ali"), (s, "Vali")):
+            self.db.add(Attendance(manager_id=X, date=d1, worker_name=name,
+                                   hours_worked=Decimal("8"), verifix_code=cell.verifix_code))
+        self._commit()
+        dash = production._build_dashboard(self.db, X, d1)
+        card = {g["group"]: g["verifix_hc"] for g in _wc(dash)["groups"]}
+        admin = self._payload("admin", None)
+        with mock.patch.object(production, "page_scope_is_all", lambda db, p, page: False):
+            proof = {g: production.staffing_proof(work_center=CODE, group=g,
+                                                  date=d1.isoformat(), manager_id=X,
+                                                  payload=admin, db=self.db)
+                     for g in ("A", "B", "C")}
+        self.assertEqual(card, {"A": 1.0, "B": 1.0})
+        self.assertEqual(proof["A"]["cells"], [a.verifix_code])
+        self.assertEqual(proof["A"]["counted"], card["A"])
+        self.assertEqual(proof["B"]["cells"], [s.verifix_code])
+        self.assertEqual(proof["C"]["cells"], [])           # no C in X on D−1
+
+    def test_leader_page_cut_by_the_days_group(self):
+        """The leader of `a` reads X's group-A line on D−1 and Y's group-C line
+        on D — never Y's own A line, which is y1's."""
+        X, Y = self.X, self.Y
+        a, _s, _y1 = self._relettered()
+        lead = self._leader("Lider Bir", Y)
+        a.leader_id = lead.id
+        self._commit()
+        pl = self._payload("leader", Y)
+        with self._as_leader(lead):
+            before = production.get_dashboard(date=(D - timedelta(days=1)).isoformat(),
+                                              manager_id=None, payload=pl, db=self.db)
+            on = production.get_dashboard(date=D.isoformat(), manager_id=None,
+                                          payload=pl, db=self.db)
+        self.assertEqual(before["manager_id"], X)
+        self.assertEqual({(r["sap_code"], r["wc_group"]) for r in before["rows"]},
+                         {("F001", "A")})
+        self.assertEqual([g["group"] for g in _wc(before)["groups"]], ["A"])
+        self.assertEqual(on["manager_id"], Y)
+        self.assertEqual({(r["sap_code"], r["wc_group"]) for r in on["rows"]},
+                         {("F001", "C")})
 
     def test_leader_groups_on_the_day(self):
         X = self.X
@@ -511,33 +597,69 @@ class QuantityWritersShareTheLock(_PG):
         key = production.line_keys(pp_catalog.at(self.db, X, D).lines)[p.id]
         sup = self._payload("supervisor", X)
         admin = self._payload("admin", None)
-        with mock.patch.object(production, "page_scope_is_all", lambda db, pl, page: False), \
-                mock.patch.object(pp_catalog, "lock", wraps=pp_catalog.lock) as spy:
-            production.set_override(
+        writers = [
+            lambda: production.set_override(
                 body=production.OverrideBody(date=D.isoformat(), sap_code="F001",
                                              work_center=CODE, field="plan", value=5,
                                              line_key=key),
-                manager_id=None, payload=sup, db=self.db)
-            production.set_wc_override(
+                manager_id=None, payload=sup, db=self.db),
+            lambda: production.set_wc_override(
                 body=production.WcOverrideBody(date=D.isoformat(), work_center=CODE, people=3),
-                manager_id=X, payload=admin, db=self.db)
-            production.save_staffing(
+                manager_id=X, payload=admin, db=self.db),
+            lambda: production.save_staffing(
                 body=production.StaffingBody(date=D.isoformat(), rows=[
                     production.StaffingRow(work_center=CODE, people=4)]),
-                manager_id=None, payload=sup, db=self.db)
-            production.save_reconciliation(
+                manager_id=None, payload=sup, db=self.db),
+            lambda: production.save_reconciliation(
                 body=production.ReconciliationBody(date=D.isoformat(), data={"a": 1}),
-                manager_id=None, payload=sup, db=self.db)
-        calls = self._calls(spy)
-        self.assertEqual(len(calls), 4)
-        for c in calls:
-            self.assertEqual(list(c.args[1]), [X])
-            self.assertTrue(c.kwargs.get("shared"))
-            self.assertFalse(c.kwargs.get("try_"))
+                manager_id=None, payload=sup, db=self.db),
+        ]
+        with mock.patch.object(production, "page_scope_is_all", lambda db, pl, page: False):
+            for write in writers:
+                with mock.patch.object(pp_catalog, "lock", wraps=pp_catalog.lock) as spy:
+                    write()
+                calls = self._calls(spy)
+                self.assertTrue(calls)
+                for c in calls:
+                    self.assertEqual(list(c.args[1]), [X])
+                    self.assertTrue(c.kwargs.get("shared"))
+                    self.assertFalse(c.kwargs.get("try_"))
         from app.models import PPLineDaily, PPReconciliation, PPWorkCenterDaily
         self.assertEqual(float(self.db.query(PPLineDaily.plan_override).scalar()), 5.0)
         self.assertEqual(self.db.query(PPWorkCenterDaily.people).scalar(), 4)
         self.assertEqual(self.db.query(PPReconciliation.data).scalar(), {"a": 1})
+
+    def test_override_locks_before_reading_the_catalog(self):
+        """A leader's write reads the day's catalog for its group check: the
+        lock comes first, so that read and the write sit on one side of a
+        follow."""
+        X = self.X
+        lead, _c = self._moved_cell()
+        d1 = D - timedelta(days=1)
+        p_id = next(p.id for p in pp_catalog.at(self.db, X, d1).lines if p.sap_code == "F001")
+        key = production.line_keys(pp_catalog.at(self.db, X, d1).lines)[p_id]
+        seen: list = []
+        real_lock, real_at = pp_catalog.lock, pp_catalog.at
+
+        def lock(db, ids, **kw):
+            if kw.get("ns") == pp_catalog.NS_QTY:
+                seen.append("lock")
+            return real_lock(db, ids, **kw)
+
+        def at(db, mid, day):
+            seen.append("at")
+            return real_at(db, mid, day)
+
+        with self._as_leader(lead), \
+                mock.patch.object(pp_catalog, "lock", lock), \
+                mock.patch.object(pp_catalog, "at", at):
+            production.set_override(
+                body=production.OverrideBody(date=d1.isoformat(), sap_code="F001",
+                                             work_center=CODE, field="actual", value=3,
+                                             line_key=key),
+                manager_id=None, payload=self._payload("leader", X), db=self.db)
+        self.assertIn("at", seen)
+        self.assertEqual(seen[0], "lock")
 
 
 if __name__ == "__main__":
