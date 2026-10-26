@@ -758,6 +758,11 @@ try:
     # «O'z vaqtida yetkazish»: the on-time sheet read (mirrors main.py).
     from app.services.ontime_sync import register_jobs as register_ontime_jobs
     register_ontime_jobs()
+    # The report door: the expiry sweep and the reader role (mirrors main.py).
+    from app.services.ops_door import register_jobs as register_ops_door_jobs
+    from app.services.ops_door import ensure_reader_role
+    register_ops_door_jobs()
+    ensure_reader_role()
     # /staff's live days: read Verifix every minute,
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs

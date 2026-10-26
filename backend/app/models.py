@@ -5281,3 +5281,43 @@ class OntimeRead(Base):
     first_day     = Column(Date, nullable=True)
     last_day      = Column(Date, nullable=True)
     notes         = Column(JSONB, nullable=True)     # rows left out and why, duplicate windows
+
+
+class OpsAsk(Base):
+    """One question asked of production through the report door
+    (services/ops_door.py, CLAUDE.md «The report door»): a read-only SQL query
+    or a GET of an existing endpoint, put to ONE person (Burkhon or Abbos) as a
+    Telegram card. Nothing runs until that person taps «Ruxsat berish»; the
+    answer is handed over ONCE and is never stored — only its size."""
+    __tablename__ = "ops_asks"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    token         = Column(String(32), nullable=False, unique=True, index=True)  # the public id; random
+    verb          = Column(String(8), nullable=False)          # sql · get
+    query         = Column(Text, nullable=False)               # the SQL text, or the GET path
+    params        = Column(JSONB, nullable=True)               # a GET's query string
+    why           = Column(Text, nullable=True)
+    asker         = Column(String(80), nullable=True)          # «laptop» · «cloud» · a session note
+    as_app        = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Which database role the CARD promised: «reader» (safia_ops_reader) or
+    # «app» (the app's own user — asked for, or no reader role exists). Decided
+    # once, at the ask; the take runs as it and as nothing else.
+    run_as        = Column(String(8), nullable=True)
+    approver_tg   = Column(BigInteger, nullable=False)
+    approver_name = Column(String, nullable=True)
+    # pending → approved | denied | expired;  approved → running → done | failed;
+    # approved → expired when nobody took it in time.
+    status        = Column(String(12), nullable=False, default="pending", server_default="pending", index=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at    = Column(DateTime(timezone=True), nullable=False)
+    decided_at    = Column(DateTime(timezone=True), nullable=True)
+    taken_at      = Column(DateTime(timezone=True), nullable=True)
+    done_at       = Column(DateTime(timezone=True), nullable=True)
+    chat_id       = Column(BigInteger, nullable=True)          # the card
+    message_id    = Column(BigInteger, nullable=True)
+    result_rows   = Column(Integer, nullable=True)
+    result_bytes  = Column(Integer, nullable=True)
+    result_ms     = Column(Integer, nullable=True)
+    truncated     = Column(String(16), nullable=True)          # rows · bytes · None
+    error         = Column(Text, nullable=True)
+    ip            = Column(String(64), nullable=True)

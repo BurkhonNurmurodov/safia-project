@@ -911,6 +911,59 @@ def _android_cmd(message: types.Message):
     tg_later.run(_apk_send, message.chat.id, lang)
 
 
+# ── The report door (services/ops_door.py) ───────────────────────────────────
+# A Claude session's question to production arrives as a card to Burkhon or
+# Abbos; «oq:a/d/x:<token>» answers it. /opsdoor shows the kill switch.
+# Registered here, beside /android, ahead of every stateful capture, so it
+# answers mid-flow.
+
+@bot.message_handler(commands=["opsdoor"])
+def _opsdoor_cmd(message: types.Message):
+    from app.services import ops_door
+    tid = message.from_user.id
+    with SessionLocal() as db:
+        if tid not in ops_door.approver_ids():
+            bot.send_message(message.chat.id, ops_door.tr(ops_door.lang_of(db, tid), "door_only"))
+            return
+        text, kb = ops_door.door_view(db, tid)
+    bot.send_message(message.chat.id, text, reply_markup=kb)
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("oq:"))
+def _oq_callback(call: types.CallbackQuery):
+    from app.services import ops_door
+    tid = call.from_user.id
+    parts = (call.data or "").split(":")
+    if len(parts) >= 3 and parts[1] == "door":
+        if tid not in ops_door.approver_ids():
+            with SessionLocal() as db:
+                bot.answer_callback_query(call.id, ops_door.tr(ops_door.lang_of(db, tid), "door_only"),
+                                          show_alert=True)
+            return
+        ops_door.switch_door(tid, parts[2] == "on")
+        with SessionLocal() as db:
+            text, kb = ops_door.door_view(db, tid)
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_text(text, chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id, reply_markup=kb)
+        except Exception:
+            logger.debug("opsdoor: could not redraw the switch", exc_info=True)
+        return
+    if len(parts) < 3 or parts[1] not in ("a", "d", "x"):
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        alert, ask_id = ops_door.decide(parts[2], tid, parts[1])
+    except Exception:
+        logger.exception("ops door: the tap failed for %s", tid)
+        bot.answer_callback_query(call.id, "Failed — nothing changed. Tap again.", show_alert=True)
+        return
+    bot.answer_callback_query(call.id, alert[:190], show_alert=False)
+    if ask_id:
+        ops_door.refresh_card(ask_id)
+
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("lang:"))
 def _language(call: types.CallbackQuery):
     tid  = call.from_user.id
