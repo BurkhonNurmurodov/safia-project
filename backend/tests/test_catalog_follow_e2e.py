@@ -1657,5 +1657,197 @@ class Review(_E2E):
             self.assertEqual(self.ids_on(X, d), {w.l1.id, w.l2.id, w.l3.id})
 
 
+W = 4                                   # a fourth unit (variants b, c)
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG is not set")
+class HalfLanded(_E2E):
+    """Two cells leave one work centre on ONE shift-day and land at two
+    different instants (`cell_links.opening_for_move` takes the earlier of two
+    openings on one shift-day). The first one to land must not be followed
+    alone — the other is then neither a stayer nor a departer, and the first
+    takes its positions: the group waits until the last change has landed and
+    follows whole, and a change withdrawn or voided meanwhile releases it."""
+
+    def _split_world(self, *, x_shift=2, y_shift=2, z_shift=1):
+        """X: c1 (A) makes «Tort» (A), c2 (B) makes «Keks» (B) — every line
+        lettered, so the door lets the team split — with the work centre's
+        row and a group pin per letter; a cell of X at another work centre
+        goes on working. c1 goes to Y, c2 to Z."""
+        self.unit(X, shift=x_shift)
+        self.unit(Y, shift=y_shift)
+        self.unit(Z, shift=z_shift)
+        c1 = self.cell("0301", X, letter="A")
+        c2 = self.cell("0302", X, letter="B")
+        self.stays_at_b()
+        la = self.line(X, "F001", "Tort", letter="A", sort=0)
+        lb = self.line(X, "F002", "Keks", letter="B", sort=1)
+        self.wc_row(X, C, shtatka=5)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=10, actual=9)
+            self.daily(X, day, "F002", plan=12, actual=11)
+            self.pin(X, day, group="A", people=2)
+            self.pin(X, day, group="B", people=3)
+            self.att(c1, day, Y if day >= D else X, n=2)
+            self.att(c2, day, Z if day >= D else X, n=3)
+        self.settle()
+        return c1, c2, la, lb
+
+    def _assert_split(self, c1, c2, la, lb, hist0, post0):
+        rows = self.move_rows()
+        self.assertEqual(sorted((r.cell_id, r.state, r.to_unit) for r in rows),
+                         sorted([(c1.id, "moved", Y), (c2.id, "moved", Z)]))
+        self.assert_history_kept(hist0, [X, Y, Z])
+        post1 = self.reads([X, Y, Z], *POST)
+        self.assert_conserved(post0, post1)
+        self.assert_unique([X, Y, Z], *self.SPAN)
+        for d in days(*POST):
+            iso = d.isoformat()
+            self.assertEqual(self.ids_on(Y, d), {la.id}, f"c1's own line follows c1 to Y ({iso})")
+            self.assertEqual(self.ids_on(Z, d), {lb.id}, f"c2's own line follows c2 to Z ({iso})")
+            self.assertNotIn((X, iso, C), post1["wc_labor"])
+            self.assertEqual(post1["typed_people"][(Y, iso, C)], 2.0)
+            self.assertEqual(post1["typed_people"][(Z, iso, C)], 3.0)
+            for cid in (c1.id, c2.id):
+                self.assertEqual(post1["cell_labor"][(cid, iso)], post0["cell_labor"][(cid, iso)])
+
+    def _held(self, *cells):
+        """The first change has landed and the sweep has run: nothing is
+        followed, nothing moved, and the landed cell's figures wait
+        (`unsettled`)."""
+        self.assertEqual(self.move_rows(), [])
+        self.assertEqual(cf.unsettled(self.db, [c.id for c in cells], D), {c.id for c in cells})
+
+    def test_night_unit_split_into_a_day_and_a_night_unit(self):
+        """Variant (a): X and Y on the night shift, Z on the day shift; both
+        moves asked at 21:00 on D−1. c2 → Z lands at D 08:00, c1 → Y at D
+        20:00. Until 20:00 c2's follow waits; then both follow as one group,
+        each with its own line."""
+        c1, c2, la, lb = self._split_world()
+        hist0 = self.reads([X, Y, Z], *HIST)
+        post0 = self.reads([X, Y, Z], *POST)
+        ask = at_(D - timedelta(days=1), 21)
+        self.put_cell(c2, at=ask, manager_id=Z)
+        self.put_cell(c1, at=ask, manager_id=Y)
+        self.assertEqual(self.land(D, 8, 1), [("0302", "manager_id", X, Z)])
+        self.sweep()
+        self._held(c2)
+        self.assertTrue({la.id, lb.id} <= self.ids_on(X, D))         # nothing followed yet
+        self.assertFalse(self.ids_on(Z, D))
+        self.assertEqual(self.land(D, 20, 1), [("0301", "manager_id", X, Y)])
+        self.sweep()
+        self._assert_split(c1, c2, la, lb, hist0, post0)
+
+    def test_arrival_at_eight_departure_at_twenty(self):
+        """Variant (b): c moves X (day) → Y (night) and lands at D 08:00; y1
+        moves Y → W (night) and lands at D 20:00, the same shift-day, the same
+        code. c's lines must stand in Y with c; y1's go to W — followed as one
+        group (a swap's shape), never y1 carrying c's freshly arrived lines."""
+        self.unit(X, shift=1)
+        self.unit(Y, shift=2)
+        self.unit(W, shift=2)
+        c = self.cell("0501", X)
+        y1 = self.cell("0502", Y)
+        self.stays_at_b()
+        lc = self.line(X, "F001", "Tort", sort=0)
+        ly = self.line(Y, "F005", "Pirog", sort=0)
+        for day in days(*self.SPAN):
+            self.daily(X, day, "F001", plan=10, actual=9)
+            self.daily(Y, day, "F005", plan=8, actual=8)
+            self.pin(X, day, people=2)
+            self.pin(Y, day, people=3)
+            self.att(c, day, Y if day >= D else X, n=2)
+            self.att(y1, day, W if day >= D else Y, n=3)
+        self.settle()
+        hist0 = self.reads([X, Y, W], *HIST)
+        post0 = self.reads([X, Y, W], *POST)
+        self.put_cell(c, at=ASK, manager_id=Y)
+        self.put_cell(y1, at=at_(D - timedelta(days=1), 21), manager_id=W)
+        self.assertEqual(self.land(D, 8, 1), [("0501", "manager_id", X, Y)])
+        self.sweep()
+        self._held(c)
+        self.assertEqual(self.land(D, 20, 1), [("0502", "manager_id", Y, W)])
+        self.sweep()
+        rows = self.move_rows()
+        self.assertEqual(sorted((r.cell_id, r.state, r.from_unit, r.to_unit) for r in rows),
+                         sorted([(c.id, "moved", X, Y), (y1.id, "moved", Y, W)]))
+        self.assert_history_kept(hist0, [X, Y, W])
+        post1 = self.reads([X, Y, W], *POST)
+        self.assert_conserved(post0, post1)
+        self.assert_unique([X, Y, W], *self.SPAN)
+        for d in days(*POST):
+            iso = d.isoformat()
+            self.assertEqual(self.ids_on(Y, d), {lc.id}, f"c's line stands in Y with c ({iso})")
+            self.assertEqual(self.ids_on(W, d), {ly.id}, iso)
+            self.assertNotIn(lc.id, self.ids_on(X, d))
+            self.assertEqual(post1["typed_people"][(Y, iso, C)], 2.0)
+            self.assertEqual(post1["typed_people"][(W, iso, C)], 3.0)
+            for cid in (c.id, y1.id):
+                self.assertEqual(post1["cell_labor"][(cid, iso)], post0["cell_labor"][(cid, iso)])
+
+    def test_shift_less_destination_lands_at_midnight(self):
+        """Variant (c): X and Y on the day shift, W with no shift. c2 → W
+        lands at D 00:00, c1 → Y at D 08:00, both asked at 14:00 on D−1."""
+        c1, c2, la, lb = self._split_world(x_shift=1, y_shift=1, z_shift=None)
+        hist0 = self.reads([X, Y, Z], *HIST)
+        post0 = self.reads([X, Y, Z], *POST)
+        self.put_cell(c2, at=ASK, manager_id=Z)
+        self.put_cell(c1, at=ASK, manager_id=Y)
+        self.assertEqual(self.land(D, 0, 1), [("0302", "manager_id", X, Z)])
+        self.sweep()
+        self._held(c2)
+        self.assertEqual(self.land(D, 8, 1), [("0301", "manager_id", X, Y)])
+        self.sweep()
+        self._assert_split(c1, c2, la, lb, hist0, post0)
+
+    def test_a_withdrawn_change_releases_the_wait(self):
+        """c2 has landed and waits for c1; at noon c1's move is withdrawn
+        (sent back to the unit in force). The wait is released: c2 follows
+        alone, with c1 now a stayer — c2 takes «Keks» and nothing of c1's."""
+        c1, c2, la, lb = self._split_world()
+        ask = at_(D - timedelta(days=1), 21)
+        self.put_cell(c2, at=ask, manager_id=Z)
+        self.put_cell(c1, at=ask, manager_id=Y)
+        self.land(D, 8, 1)
+        self.sweep()
+        self._held(c2)
+        self.assertIsNone(self.move(c1, X, at=at_(D, 12)))
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.cell_id, row.state, row.to_unit), (c2.id, "moved", Z))
+        self.assertEqual(self.land(D, 20, 1), [])
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(Z, d), {lb.id})
+            self.assertIn(la.id, self.ids_on(X, d))
+            self.assertFalse(self.ids_on(Y, d))
+        self.assertEqual(cf.unsettled(self.db, [c1.id, c2.id], D), set())
+
+    def test_a_voided_change_releases_the_wait(self):
+        """c1's destination is deleted before its change lands: the landing
+        VOIDS it (value = prev). The wait is released at that landing, and c2
+        follows with c1 a stayer."""
+        from app.models import Manager
+        c1, c2, la, lb = self._split_world()
+        self.unit(W, shift=2)
+        self.settle()
+        ask = at_(D - timedelta(days=1), 21)
+        self.put_cell(c2, at=ask, manager_id=Z)
+        self.put_cell(c1, at=ask, manager_id=W)
+        self.land(D, 8, 1)
+        self.sweep()
+        self._held(c2)
+        self.db.delete(self.db.get(Manager, W))
+        self.settle()
+        self.sweep()
+        self._held(c2)                                   # still waiting to land
+        self.assertEqual(self.land(D, 20, 1), [])         # voided, nothing moved
+        self.sweep()
+        [row] = self.move_rows()
+        self.assertEqual((row.cell_id, row.state, row.to_unit), (c2.id, "moved", Z))
+        for d in days(*POST):
+            self.assertEqual(self.ids_on(Z, d), {lb.id})
+            self.assertIn(la.id, self.ids_on(X, d))
+
+
 if __name__ == "__main__":
     unittest.main()

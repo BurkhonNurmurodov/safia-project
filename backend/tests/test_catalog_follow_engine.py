@@ -1304,6 +1304,55 @@ class FollowReview(_World):
                           for g in cf._candidates(self.db, later + timedelta(minutes=6))],
                          [sorted([c1.id, c2.id])])
 
+    def test_a_change_still_to_land_at_the_code_holds_the_group(self):
+        """c2 → Z has landed (08:00) and c1 → Y — the same day, the same code —
+        lands at 20:00. The sweep hands the group over only once both have
+        landed; a caller that asks for c2 alone meanwhile is TOLD, never
+        guessed for: a live follow and a strict one both wait (`busy`, named
+        `pending_move`), and nothing is written. Once c1 lands the two are one
+        group and each takes its own line."""
+        from app.models import CellLinkEvent
+        from app.services import cell_links
+        self.units(X, Y, Z)
+        c1 = self.cell("2701", X, letter="A")
+        c2 = self.cell("2702", X, letter="B")
+        la = self.line(X, "F001", "Tort", letter="A")
+        lb = self.line(X, "F002", "Keks", letter="B", sort=1)
+        self.daily(X, D, "F001", plan=6, actual=6)
+        self.daily(X, D, "F002", plan=6, actual=6)
+        self.pin(X, D, group="A", people=3)
+        self.pin(X, D, group="B", people=4)
+        ev2 = self.event(c2, Z)
+        ev1 = self.event(c1, Y)
+        ev1.effective_at = datetime.combine(D, time(20), tzinfo=TZ)
+        self.db.commit()
+        self.land()                                            # D 09:00: c2 alone
+        self.assertIsNone(self.db.get(CellLinkEvent, ev1.id).applied_at)
+        self.assertEqual(self.groups(), [])
+        self.assertNotIn("pending_move", cf.STRICT_STOP)
+        t2 = cf.Transfer(cell_id=c2.id, event_id=ev2.id, src=X, dst=Z, home_from=D,
+                         letter_src="B")
+        before = self.catalog_fingerprint()
+        res = cf.follow_group(self.db, [t2], kind="live")
+        self.assertEqual(res.state, "busy")
+        [n] = res.report["named"]
+        self.assertEqual((n["kind"], n["cells"], n["events"]), ("pending_move", [c1.id], [ev1.id]))
+        res = cf.follow_group(self.db, [t2], kind="retro", strict=True, dry=True)
+        self.assertEqual(res.state, "busy")
+        self.assertIn("pending_move", {n["kind"] for n in res.report["named"]})
+        self.db.rollback()
+        self.forget()
+        self.assertEqual(self.catalog_fingerprint(), before)
+        self.assertEqual(self.move_rows(), [])
+        cell_links.apply_due(self.db, now=datetime.combine(D, time(20, 1), tzinfo=TZ))
+        self.db.commit()
+        self.forget()
+        res = self.follow()
+        self.assertEqual(res.state, "moved")
+        self.assertEqual(self.ids_on(Y, D), {la.id})
+        self.assertEqual(self.ids_on(Z, D), {lb.id})
+        self.assert_unique([X, Y, Z], D - timedelta(days=1), D + timedelta(days=1))
+
     def test_sweep_retries_an_eventless_retro_transfer(self):
         """The retroactive one-shot recorded a transfer of a cell with no
         landing event `busy`: the sweep retries it — strict, as a retro, on the
