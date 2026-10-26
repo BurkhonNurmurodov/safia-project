@@ -7726,13 +7726,17 @@ def _brigadir_change_state_job() -> None:
 # ── one-shot: where «Odam soni» and the загрузка count different pins ──
 # The operator, 25.10.2026: «Файл загрузки» showed 45 people for Niyozov
 # Izzatilla on 24.10 and «Ежедневно» showed 66 for the same unit-day. The page
-# counts a typed pin only where its code matches, exactly, a work centre the
-# day's catalog puts on the panel; `zagruzka_source.typed_pins` counts EVERY
-# pp_work_center_daily row of that unit-day, unnormalised. READ-ONLY: which
-# rows differ, over how many unit-days since ZAGRUZKA_FROM, and the загрузка
-# each affected day reads now against what the page's own Σ would give
-# (`services/pin_mismatch_report.py`). Changing what it reports needs a NEW key.
-PIN_MISMATCH_FLAG = "pin_mismatch_report_2026_10_26_v1"
+# counts a typed pin only where its code is on the day's PANEL — the active
+# work-centre register plus the codes the day's quantities give plan minutes to;
+# `zagruzka_source.typed_pins` counts EVERY pp_work_center_daily row of that
+# unit-day, unnormalised. READ-ONLY: which rows differ, over how many unit-days
+# since ZAGRUZKA_FROM, and the загрузка each affected day reads now against what
+# the page's own Σ would give (`services/pin_mismatch_report.py`).
+# v2 (26.10): v1 rebuilt the panel as «every active catalog line's code», which
+# is wider than `pp_calc.wc_codes` — a code with no minutes that day read as
+# «on the page» — so it answered «no mismatch» for the very unit-day above.
+# Changing what it reports needs a NEW key.
+PIN_MISMATCH_FLAG = "pin_mismatch_report_2026_10_26_v2"
 _PIN_MISMATCH_DELAY_S = 150
 
 

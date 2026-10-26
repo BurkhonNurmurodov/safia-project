@@ -7,9 +7,13 @@ for the same unit-day. Both claim to read the TYPED «Bugungi fakt» pins. They 
 not read the same set of them:
 
   • the PAGE counts a pin only where its `work_center` string matches, EXACTLY,
-    a code the day's catalog puts on the panel — the active work-centre register
-    ∪ the work centres active catalog lines name (`pp_calc` builds `wc_codes`
-    from those two, and looks a pin up with `ov_all.get(code)`);
+    a code the day's PANEL carries — `pp_calc`'s `wc_codes`: the active
+    work-centre register ∪ the codes the day's quantities give PLAN MINUTES to
+    (`if total_labor:`, pp_calc line 718), looked up with `ov_all.get(code)`.
+    The second half is not «every active catalog line's code»: a code whose
+    lines carry no minutes that day is off the panel entirely. v1 of this report
+    got that wrong, called such a pin «shown», and so reported no mismatch for
+    the very unit-day it was written for — read `min_codes` in `collect`;
   • the LOAD counts EVERY `pp_work_center_daily` row of that (unit, date) with
     `people IS NOT NULL` — `zagruzka_source.typed_pins`, keyed on the raw string
     with no `norm_code` and no join to the register at all.
@@ -73,20 +77,33 @@ TOP_N = 20           # unit-days named in the DM text
 # Narrowest first, so the reason names the FIX rather than the symptom.
 R_SPELLING = "spelling"       # same code, another case/whitespace
 R_TWIN     = "cyrillic_twin"  # Cyrillic lookalike of a code the page shows
-R_INACTIVE = "inactive"       # the register has the row, switched off / not in the day's catalog
-R_UNKNOWN  = "unknown_code"   # no register row at all on this unit
+R_NO_MIN   = "no_minutes"     # a real catalog code with NO plan minutes that day
+R_ARCHIVED = "archived_line"  # its catalog lines are archived (2026-10-24)
+R_INACTIVE = "inactive"       # the register has the row, switched off
+R_UNKNOWN  = "unknown_code"   # no register row and no catalog line at all
 
 REASON_RU = {
     R_SPELLING: "другое написание того же кода",
     R_TWIN:     "кириллический двойник кода",
-    R_INACTIVE: "участок есть в реестре, но не на странице этого дня",
+    R_NO_MIN:   "участок в каталоге есть, но в этот день у него нет плановых минут",
+    R_ARCHIVED: "позиции этого участка в архиве",
+    R_INACTIVE: "участок есть в реестре, но выключен",
     R_UNKNOWN:  "такого участка у бригадира нет",
 }
 
 
-def _classify(raw: str, page_codes: set[str], register: dict[str, bool]) -> tuple[str, Optional[str]]:
-    """(reason, the page code it should have landed on) for a pin the page
-    does not show. `register` is {code: active} over ALL of the unit's rows."""
+def _classify(raw: str, page_codes: set[str], register: dict[str, bool],
+              line_codes: set[str],
+              all_line_codes: set[str]) -> tuple[str, Optional[str]]:
+    """(reason, the page code it should have landed on) for a pin the page does
+    not show.
+
+    `page_codes` is the day's PANEL, i.e. `pp_calc`'s own `wc_codes`: the active
+    work-centre register plus the codes carrying plan minutes THAT DAY.
+    `register` is {code: active} over all of the unit's rows, `line_codes` the
+    ACTIVE catalog lines' codes and `all_line_codes` every line's, archived
+    included — the three facts that tell «this code is real and the panel simply
+    has nothing to show for it today» from «this code does not exist here»."""
     n = norm_code(raw)
     by_norm = {norm_code(c): c for c in page_codes}
     if n in by_norm:
@@ -94,6 +111,10 @@ def _classify(raw: str, page_codes: set[str], register: dict[str, bool]) -> tupl
     lat = norm_code(latin_code(raw))
     if lat and lat != n and lat in by_norm:
         return R_TWIN, by_norm[lat]
+    if raw in line_codes or n in {norm_code(c) for c in line_codes}:
+        return R_NO_MIN, None
+    if raw in all_line_codes or n in {norm_code(c) for c in all_line_codes}:
+        return R_ARCHIVED, None
     if raw in register or n in {norm_code(c) for c in register}:
         return R_INACTIVE, None
     return R_UNKNOWN, None
@@ -134,6 +155,22 @@ def collect(db: Session) -> dict:
     # the page's own code set is rebuilt per day without one read per day.
     spans = pp_catalog.spans(db, ids, lo, hi)
 
+    # …and the day's PLAN MINUTES per work centre, because the panel is not the
+    # catalog: `pp_calc` appends a code to `wc_codes` from the quantities only
+    # `if total_labor:` (line 718), so a code whose lines carry NO minutes that
+    # day is not on the page at all — while its typed pin is still counted by
+    # `unit_people`. v1 of this report rebuilt the panel as «every active line's
+    # code» and therefore called such a pin «on the page», which is exactly the
+    # shape it was written to find: Niyozov Izzatilla's 24.10 (page 45, загрузка
+    # 66) did not appear in it. `wc_labor` is `pp_calc.line_minutes` folded per
+    # work centre — the page's own numerator — so the two cannot disagree. Over
+    # every unit and the whole window it is the work the fleet загрузка does on
+    # any /zagruzka request; it runs on the deferred boot thread.
+    min_codes: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for (mid, day, wc), (plan, _actual) in zagruzka_source.wc_labor(db, ids, lo, hi).items():
+        if wc and (plan or 0) > 0:
+            min_codes[(int(mid), day)].add(wc)
+
     per_day: dict[tuple[int, str], dict] = defaultdict(dict)
     for (mid, day, wc, grp), n in pins.items():
         per_day[(mid, day)][(wc, grp)] = n
@@ -150,9 +187,9 @@ def collect(db: Session) -> dict:
     bad: list[dict] = []
     for mid in ids:
         for cat, d1, d2 in (spans.get(mid) or []):
-            # Exactly the two sources `pp_calc` builds its panel from.
-            page_codes = ({w.code for w in cat.active_work_centers if w.code}
-                          | {p.work_center for p in cat.active_lines if p.work_center})
+            reg_codes = {w.code for w in cat.active_work_centers if w.code}
+            line_codes = {p.work_center for p in cat.active_lines if p.work_center}
+            all_line_codes = {p.work_center for p in cat.lines if p.work_center}
             d = max(d1, lo)
             while d <= min(d2, hi):
                 iso = d.isoformat()
@@ -160,20 +197,32 @@ def collect(db: Session) -> dict:
                 d += timedelta(days=1)
                 if key not in day_total:
                     continue
+                # `pp_calc.wc_codes`, to the letter: the active register, plus
+                # the codes the day's quantities give minutes to.
+                page_codes = reg_codes | min_codes.get(key, set())
                 load_n = day_total[key]
                 page_n = sum(n for wc, n in fold_by_day[key].items()
                              if wc in page_codes)
                 if abs(load_n - page_n) < 1e-9:
                     continue
                 off = []
+                # Every pin of the day, on the panel or not — so one row of the
+                # file reads as the whole unit-day and «45 + 21 = 66» can be
+                # checked by eye instead of taken on trust.
+                allp = []
                 for (wc, grp), n in sorted(per_day[key].items()):
-                    if wc in page_codes:
-                        continue
-                    reason, onto = _classify(wc, page_codes, register.get(mid, {}))
-                    off.append({"wc": wc, "group": grp, "people": n,
-                                "reason": reason, "onto": onto})
+                    shown = wc in page_codes
+                    reason, onto = (("", None) if shown else _classify(
+                        wc, page_codes, register.get(mid, {}),
+                        line_codes, all_line_codes))
+                    allp.append({"wc": wc, "group": grp, "people": n,
+                                 "shown": shown, "reason": reason, "onto": onto})
+                    if not shown:
+                        off.append({"wc": wc, "group": grp, "people": n,
+                                    "reason": reason, "onto": onto})
                 bad.append({"unit_id": mid, "day": iso, "page_n": page_n,
-                            "load_n": load_n, "diff": load_n - page_n, "off": off})
+                            "load_n": load_n, "diff": load_n - page_n, "off": off,
+                            "all_pins": allp, "panel": sorted(page_codes)})
 
     if not bad:
         rep["days"] = []
@@ -219,6 +268,17 @@ def collect(db: Session) -> dict:
     return rep
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian agreement — the DM is read by the operator, and «1 пар» is not a
+    phrase. 1/21/31 → one, 2–4/22–24 → few, the rest → many."""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
 def text(rep: dict) -> str:
     L: list[str] = []
     A = L.append
@@ -227,22 +287,27 @@ def text(rep: dict) -> str:
       f"(с ZAGRUZKA_FROM), бригадиров: {rep['units']}")
     A("")
     if not rep.get("days"):
-        A("Расхождений НЕТ: на каждом бригадиро-дне «Файл загрузки» и «Ежедневно»")
+        A("Расхождений НЕТ: на каждом бригадиро-дне панель «Файл загрузки»")
+        A("(реестр участков + коды с плановыми минутами в этот день) и загрузка")
         A("считают один и тот же набор пинов. Ничего чинить не нужно.")
         A(f"Проверено пар (бригадир × день) с введёнными людьми: {rep['unit_days_with_pins']}.")
         return "\n".join(L)
 
     n_days = rep.get("all_days", len(rep["days"]))
     on_days = [b for b in rep["days"] if b["on"]]
-    A(f"РАСХОЖДЕНИЯ: {n_days} пар (бригадир × день) из {rep['unit_days_with_pins']} "
-      f"с введёнными людьми; бригадиров затронуто: {len(rep['per_unit'])}.")
+    A(f"РАСХОЖДЕНИЯ: {n_days} "
+      f"{_plural(n_days, 'пара', 'пары', 'пар')} (бригадир × день) из "
+      f"{rep['unit_days_with_pins']} с введёнными людьми; "
+      f"бригадиров затронуто: {len(rep['per_unit'])}.")
     A(f"Из них в загрузке учитываются: {len(on_days)} "
       f"(остальные — «Zagruzka hisoblanmaydi», на цифры не влияют).")
     A("")
     A("Что это значит: загрузка делит на число, которого нет на странице,")
     A("где это число вводят — значит бригадир не может его ни увидеть, ни исправить.")
     A("")
-    A(f"Худшие {min(TOP_N, len(rep['days']))} по разнице людей:")
+    shown = min(TOP_N, len(rep["days"]))
+    A("Наибольшая разница по людям:" if shown == 1
+      else f"Худшие {shown} по разнице людей:")
     for b in rep["days"][:TOP_N]:
         d = date.fromisoformat(b["day"]).strftime("%d.%m")
         now = f"{b['load_now']*100:.0f}%" if b["load_now"] is not None else "—"
@@ -309,6 +374,14 @@ def build_workbook(rep: dict) -> BytesIO:
         [[p["unit"], date.fromisoformat(p["day"]), p["wc"], norm_code(p["wc"]),
           p["group"], p["people"], REASON_RU[p["reason"]], p["onto"]]
          for p in rep.get("pins", [])[:MAX_ROWS]])
+    _sheet(wb, "Kun to'liq", [
+        "Brigadir", "Sana", "Ish markazi", "Guruh", "Odam", "Sahifada",
+        "Sabab", "Qaysi kodga tegishli", "Sahifadagi kodlar"],
+        [[b["unit"], date.fromisoformat(b["day"]), a["wc"], a["group"],
+          a["people"], "ha" if a["shown"] else "yo'q",
+          (REASON_RU.get(a["reason"]) or ""), a["onto"],
+          ", ".join(b.get("panel") or [])]
+         for b in rep.get("days", []) for a in b.get("all_pins", [])][:MAX_ROWS])
     _sheet(wb, "Brigadirlar", [
         "Brigadir", "Smena", "Zagruzkada", "Kunlar", "Maks. farq",
         "Birinchi", "Oxirgi", "Kodlar", "Sabablar"],

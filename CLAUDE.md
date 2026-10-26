@@ -9489,61 +9489,74 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 
 ## «Odam soni»: the page and the загрузка count different pins (2026-10-26)
 
-**The case that prompted this was NOT this bug — read the measurement below
-before acting on the mechanism.** On 25.10.2026 Niyozov Izzatilla's 24.10 showed
-ЛЮДЕЙ (Σ) **45** on «Файл загрузки» and ОФИЦ. ЧИСЛ. **66** on «Ежедневно».
-The two screenshots were ~40 h apart (bundle 4.329.0, deployed 24.10 12:43,
-against 4.329.3, 26.10 04:58): the 45 is a tab left open during the shift
-itself, and the pins were filled in afterwards. By 26.10 BOTH pages read 66,
-the report below confirms they agree, and 66 is simply what the brigadir typed
-— against 44 counted by attendance and 61 people in load roles on the whole
-list. That is a data-entry problem, not a platform one.
-
-The mechanism below is nonetheless real and proven in code; it is simply rare.
-Both pages read the TYPED «Bugungi fakt» pins, and they do not read the same
-set of them.
+On 25.10.2026 Niyozov Izzatilla's 24.10 showed ЛЮДЕЙ (Σ) **45** on «Файл
+загрузки» (21 + 12 + 12) and ОФИЦ. ЧИСЛ. **66** on «Ежедневно» — and still did
+the next day, on the current bundle, on a day already closed. Both figures
+claim to be the TYPED «Bugungi fakt» pins; they are both read from them and
+they do not read the same set.
 
 - **The PAGE** counts a pin only where its `work_center` matches, EXACTLY, a
-  code the day's catalog puts on the panel — `pp_calc` builds `wc_codes` from
-  the active work-centre register ∪ the work centres active catalog lines name,
-  and looks a pin up with `ov_all.get(code)`. ΣN is over that panel.
+  code on the day's PANEL — `pp_calc.wc_codes` = the active work-centre
+  register **plus the codes the day's quantities give PLAN MINUTES to**
+  (`if total_labor:`) — and looks a pin up with `ov_all.get(code)`. ΣN is over
+  that panel. **A code with no minutes that day is not on it at all**, so a
+  pin typed on it is invisible AND uneditable there.
 - **The ЗАГРУЗКА** counts EVERY `pp_work_center_daily` row of that (unit, date)
   with `people IS NOT NULL` — `zagruzka_source.typed_pins`, keyed on the raw
   string, with no `norm_code` and no join to the register. `unit_people` is what
   `official_hc` is, so /daily, /zagruzka and every fleet figure divide by it.
+- **The GROUPS are not the gap.** `pp_calc` resolves a grouped work centre's
+  people as `sum(typed_groups.values())` — orphan letters included — which is
+  byte for byte `zagruzka_source.fold_pins`, and `unit_people` folds a
+  group-keyed dict before summing it. So the page's header Σ and the load's
+  per-work-centre figure always agree; only the SET of codes differs.
 
-So a pin survives its work centre being deactivated, deleted from the register,
-dropped from the catalog, or spelled another way (a Cyrillic twin — «A code is
-LATIN» — a stray space, another case), and from then on it counts in the
-загрузка while being invisible, and uneditable, on the page it was typed on.
-`cell_pins` already folds two spellings onto one work centre through
-`wc_group.wc_key` and says so in its docstring; `unit_people` never got it.
+So a pin survives its work centre losing its plan minutes for a day, being
+deactivated, having its catalog lines archived (2026-10-24), being dropped from
+the register, or being spelled another way (a Cyrillic twin — «A code is LATIN»
+— a stray space, another case), and from then on it counts in the загрузка
+while the page it was typed on cannot show it. `cell_pins` already folds two
+spellings onto one work centre through `wc_group.wc_key` and says so in its
+docstring; `unit_people` never got it.
 
 - **TEMPORARY, READ-ONLY** `services/pin_mismatch_report.py`,
-  `startup.report_pin_mismatch` (flag `pin_mismatch_report_2026_10_26_v1`,
+  `startup.report_pin_mismatch` (flag `pin_mismatch_report_2026_10_26_v2`,
   ~150 s after boot, both entrypoints) DMs `UNPRICED_DM_CHAT` text + a workbook:
-  every unit-day since `ZAGRUZKA_FROM` where the page's Σ and the загрузка's differ,
-  each offending pin with WHY it is off the page (`spelling` · `cyrillic_twin`
-  · `inactive` · `unknown_code`, and which code it should have landed on), and
-  the загрузка that day reads now against what the page's own Σ would give.
+  every unit-day since `ZAGRUZKA_FROM` where the page's Σ and the загрузка's
+  differ, each offending pin with WHY it is off the page (`spelling` ·
+  `cyrillic_twin` · `no_minutes` · `archived_line` · `inactive` ·
+  `unknown_code`, and which code it should have landed on), the загрузка that
+  day reads now against what the page's own Σ would give, and a «Kun to'liq»
+  sheet holding EVERY pin of each affected unit-day beside the panel it was
+  judged against — so «45 + 21 = 66» is checked by eye, not taken on trust.
   It derives every figure from the functions the two pages read and writes
   nothing but its flag. Delete the module, the startup pair and both calls once
   it has landed; changing what it reports needs a NEW key.
-- **MEASURED on production, 26.10.2026** (the report's own answer, kept here so
-  nobody re-derives it): across every unit-day from `ZAGRUZKA_FROM` to 26.10,
-  **ONE** mismatch — Ibragimova Sayyora, 02.09.2026, page Σ 22 against загрузка
-  Σ 25, a `people = 3` pin on code **A2898**, which that unit has no work-centre
-  row for at all (`unknown_code`). That day's загрузка reads 124 % and would read
-  141 % off the page's own Σ. Nothing else in seven weeks: no Cyrillic twin, no
-  spelling duplicate, no pin on a switched-off work centre.
+- **v1 answered «no mismatch» and was WRONG — the lesson, not the bug.** It
+  rebuilt the panel as «the active register ∪ every active catalog line's
+  code», which is WIDER than `wc_codes`: a code with lines but no minutes that
+  day read as «on the page», so `page_n` equalled `load_n` and the very
+  unit-day the report was written for did not appear in it. Its «ONE mismatch
+  in seven weeks» (Ibragimova Sayyora, 02.09.2026, page Σ 22 vs загрузка Σ 25,
+  a `people = 3` pin on **A2898** that unit has no register row for) is
+  therefore a FLOOR, not a measurement: it caught only codes absent from the
+  catalog entirely. **A report that compares two numbers must not derive both
+  from one of the two sides** — v1's `page_n` and `load_n` both came off the
+  same `fold_pins` map, differing only by a code filter it had reconstructed by
+  hand instead of mirroring.
 - **The fix is NOT wired and needs the operator's word.** Scoping `typed_pins`
   to the day's panel codes and matching through `norm_code` is the honest rule
-  — the load must divide by what the page that collects the number shows. Nothing
-  is stored, so it re-reads every unit-day back to 2 September at the next
-  restart; on the measurement above that moves exactly one day. Same class as
-  «Making an OFF cell leave the загрузка … ask the operator before wiring it» —
-  cheap to do now precisely because the blast radius is one day, and it closes
-  the Cyrillic-twin class «A code is LATIN» warns about before it bites.
+  — the load must divide by what the page that collects the number shows.
+  Nothing is stored, so it re-reads every unit-day back to 2 September at the
+  next restart. **The blast radius is unknown until v2 has run**, and on
+  Niyozov's 24.10 alone it moves the day from 64 % to 94 %, so it is no longer
+  the one-day change v1 made it look like. Same class as «Making an OFF cell
+  leave the загрузка … ask the operator before wiring it».
+- Consequence to know meanwhile: on such a day «Файл загрузки» prints its own
+  СР. ЗАГРУЖЕННОСТЬ off the panel's Σ (94 % for Niyozov's 24.10) while
+  /zagruzka and /daily print the load off `unit_people` (64 %) — two figures
+  for one unit-day, neither of them stored, each correct about the set of pins
+  it read.
 
 ## Shift-managers, brigadirs and leaders as Verifix lists them (2026-10-25)
 
@@ -13490,6 +13503,26 @@ What was fixed, and the rule each one now is:
   reaches a JS chunk again: **never bring back a `define` (or an import of
   build.json) for a value that changes every build.** A translation or a shared
   boot-module edit still cascades through most chunks.
+- **…and the Tailwind SOURCE LIST is named, not auto-detected** (v4.330.2).
+  `frontend/src/index.css` opens `@import "tailwindcss" source(none);` followed
+  by one `@source` per root — `tailwind.config.js`'s own `content` list, which
+  Tailwind 4 does not read without `@config`. **A new source root is a line
+  HERE**, or its classes are silently missing. Why: a cloud session symlinks
+  `frontend/node_modules` in from `/opt`, so it resolves outside the project and
+  neither `.gitignore` (root says `node_modules`, no slash, for exactly this;
+  `frontend/.gitignore` still says `node_modules/`, which matches directories
+  only) nor `@source not "../node_modules"` stopped the scanner walking it. It
+  compiled four utilities off dependency FILE NAMES — `.columns-3` from
+  lucide's `dynamicIconImports.d.ts`, `.drop-shadow` from lightningcss,
+  `.hidden\!`, `.filter\!` — so a cloud-built `index.css` differed from a
+  laptop's by ~686 bytes, and since every chunk imports the entry (whose
+  `__vite__mapDeps` lists every chunk's name) that one leaf renamed all 231
+  asset files on every cloud deploy. The one defeat v4.324.1 could not see.
+  **The oracle for any change here is byte equality**: build, and compare
+  `dist/assets/index-*.css` with production's — identical content gives an
+  identical hash, and the whole `dist` diff collapses to the four stamp files
+  (`index.html`, `build.json`, `build-files.json`, `sw.js`), which is what a
+  backend-only deploy must look like.
 - **JS leaves the origin compressed** (v4.324.1). main.py registers
   `application/javascript` for .js/.mjs: Python ≥3.12 says `text/javascript`,
   which the origin nginx's `gzip_types` does not name, so every JS file —

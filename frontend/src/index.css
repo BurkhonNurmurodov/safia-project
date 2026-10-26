@@ -1,5 +1,15 @@
-@import "tailwindcss";
-@source not "../node_modules";
+/* Automatic source detection OFF, sources named: `tailwind.config.js`'s own
+   `content` list, which Tailwind 4 does not read without `@config`. A cloud
+   session SYMLINKS frontend/node_modules in from /opt, so it resolves outside
+   the project and neither .gitignore nor `@source not "../node_modules"`
+   stopped the scanner walking it — it compiled utilities off dependency FILE
+   NAMES (`columns-3` from lucide's icon list, `drop-shadow` from lightningcss),
+   so a cloud-built index.css differed from a laptop's and renamed all ~231
+   asset files on every deploy. Naming the sources cannot be fooled by a
+   symlink. Adding a source root means adding it HERE. */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "../src/**/*.{js,jsx,ts,tsx}";
 
 /* ── Typography — Inter everywhere ────────────────── */
 /* Served from this site, not Google Fonts (2026-10-23): the Google stylesheet
