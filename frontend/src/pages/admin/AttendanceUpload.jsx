@@ -587,8 +587,8 @@ export default function AttendanceUpload() {
   const [pickInit, setPickInit] = useState(null);       // the cell picker: null = closed, else the codes ticked
 
   const toastTimer = useRef(null);
-  const say = useCallback((text, tone = "ok", ms = 4200) => {
-    setToast({ text, tone });
+  const say = useCallback((text, tone = "ok", ms = 4200, action = null) => {
+    setToast({ text, tone, action });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), ms);
   }, []);
@@ -630,7 +630,16 @@ export default function AttendanceUpload() {
   // ── mutations ──────────────────────────────────────────────────────────────
   // A structured refusal lives on `detail_raw`: utils/api.js flattens every
   // non-string `detail` to text and keeps the object there.
-  const onMutError = useCallback((e) => {
+  // Every batch cell by its Verifix code — where the day routes each one.
+  const cellsByCode = useMemo(() => {
+    const m = new Map();
+    for (const s of data?.sections || []) for (const c of s.cells || []) m.set(c.verifix_code, c);
+    for (const c of data?.unassigned || []) m.set(c.verifix_code, c);
+    return m;
+  }, [data]);
+  const teamRef = useRef(null);       // the team action, filled in below `mapMut`
+
+  const onMutError = useCallback((e, vars) => {
     const d = e?.response?.data?.detail_raw ?? e?.response?.data?.detail;
     if (d && typeof d === "object" && d.code === "day_closed") {
       say(t("attUp.dayClosedErr").replace("{name}", tl(d.manager_name)), "danger");
@@ -641,11 +650,31 @@ export default function AttendanceUpload() {
     // the reason names what to letter, so it stays up long enough to be read.
     const move = cellMoveRefusalText(cellMoveRefusal(e), { t, tx, tl, isAdmin: true });
     if (move) {
+      // A team that makes a position together moves together: ONE permanent
+      // save carrying every staying cell the day routes to the same brigadir
+      // (update_cells then reads them as one leaving team). A staying cell
+      // routed elsewhere, or not at all, is named instead — moving it is the
+      // admin's call.
+      const to = cellMoveRefusal(e)?.params?.to_unit;
+      if (move.together && vars?.permanent && to != null) {
+        const mates = move.together.cells.split(", ").filter(Boolean);
+        const off = mates.filter((code) => cellsByCode.get(code)?.manager_id !== to);
+        if (!off.length) {
+          say(move.text, "danger", 20000, {
+            label: t("attUp.teamPermanent"),
+            onClick: () => teamRef.current?.(vars, mates),
+          });
+        } else {
+          say(`${move.text} ${t("attUp.teamNotRouted").replace("{cells}", off.join(", "))}`,
+            "danger", 20000);
+        }
+        return;
+      }
       say(move.text, "danger", 15000);
       return;
     }
     say(errText(e, t("attUp.actionFailed")), "danger");
-  }, [say, t, tl, tx]);
+  }, [say, t, tl, tx, cellsByCode]);
 
   const mapMut = useMutation({
     mutationFn: (body) => api.put("/api/attendance-batch/cells", { date, ...body }).then((r) => r.data),
@@ -653,8 +682,19 @@ export default function AttendanceUpload() {
       applyData(payload);
       if (payload.skipped_managers?.length) say(t("attUp.someSkipped"), "warn");
     },
-    onError: onMutError,
+    onError: (e, vars) => onMutError(e, vars),
   });
+  teamRef.current = (vars, mates) => {
+    setToast(null);
+    const have = new Set((vars.changes || []).map((ch) => ch.verifix_code));
+    const extra = mates.filter((code) => !have.has(code)).map((code) => {
+      const c = cellsByCode.get(code);
+      return { verifix_code: code, manager_id: c.manager_id, included: c.included };
+    });
+    mapMut.mutate({ ...vars, changes: [...(vars.changes || []), ...extra] }, {
+      onSuccess: (payload) => { if (!payload?.skipped_managers?.length) say(t("attUp.madePermanent")); },
+    });
+  };
 
   const rowMut = useMutation({
     mutationFn: async ({ action, row, body }) => {
@@ -1261,6 +1301,7 @@ export default function AttendanceUpload() {
       <Toast
         open={!!toast}
         message={toast?.text}
+        action={toast?.action || undefined}
         tone={toast?.tone === "danger" ? "error" : toast?.tone === "warn" ? "warning"
           : toast?.tone === "info" ? "info" : "success"}
         position="bottom"
