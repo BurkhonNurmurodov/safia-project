@@ -133,6 +133,7 @@ REASONS = {
     "y_register_break": "yangi brigadirda harfsiz yacheyka bor",
     "pin_conflict": "odam soni ikki joyda kiritilgan",
     "code_changed": "SAP kodi o'zgargan",
+    "pending_move": "shu ish markazida boshqa yacheykaning brigadir o'zgarishi hali qo'llanmagan",
     "to_no_unit": "brigadirsiz qoldi",
     "from_no_unit": "avval brigadirsiz edi",
     "owned_nothing": "yacheykaga tegishli pozitsiya yo'q",

@@ -191,6 +191,16 @@ _PLAN_TTL_S = 180
 _PLAN_MAX = 32
 _plan_kept: dict = {}            # (m, lo, hi, units) → (monotonic() the build STARTED, answer)
 _plan_lock = threading.Lock()
+_plan_forgot = 0.0               # monotonic() of the last `forget_plan()`
+
+
+def forget_plan() -> None:
+    """Drop the kept plan halves — a cell's positions moved
+    (services/catalog_follow). A build that started before this is not kept."""
+    global _plan_forgot
+    with _plan_lock:
+        _plan_forgot = time.monotonic()
+        _plan_kept.clear()
 
 
 def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today: date,
@@ -223,7 +233,7 @@ def _plan_by_cell(db: Session, m: date, d: date, cmap: dict, scope: dict, today:
     res = {r["cell_id"]: r for r in out.get("cell_rows") or [] if r.get("cell_id") is not None}
     with _plan_lock:
         old = _plan_kept.get(key)
-        if old is None or old[0] < t0:
+        if t0 >= _plan_forgot and (old is None or old[0] < t0):
             now = time.monotonic()
             for k in [k for k, (t, _v) in list(_plan_kept.items()) if now - t > _PLAN_TTL_S]:
                 _plan_kept.pop(k, None)

@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import math
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -248,6 +249,41 @@ def _free(taken: set) -> Optional[str]:
     return next((l for l in LETTERS if l not in taken), None)
 
 
+def _pending_moves(db: Session) -> list[tuple]:
+    """Every brigadir change RECORDED and not landed yet — (event id, cell id,
+    the cell's code, prev, value, effective_from). A change withdrawn is
+    deleted (`cell_links.record` / `withdraw`) and a voided one lands with
+    value = prev (`apply_due`): neither is here, so either releases what it
+    held."""
+    E = CellLinkEvent
+    rows = (db.query(E.id, E.cell_id, E.prev, E.value, E.effective_from, E.vfx, Cell.sap_code)
+            .join(Cell, Cell.id == E.cell_id)
+            .filter(E.field == "manager_id", E.applied_at.is_(None),
+                    E.value.is_distinct_from(E.prev)).all())
+    return [(eid, cid, norm_code(sap), prev, value, eff)
+            for eid, cid, prev, value, eff, vfx, sap in rows if not _mark(vfx)]
+
+
+def _pending_hold(pending: list, h: date, code: str, units: set) -> list:
+    """The changes among `pending` that hold a group (h, code) over `units`:
+    one at the same code, in force by `h`, into or out of one of the units.
+
+    Two cells leaving one work centre on the same shift-day can LAND at
+    different instants (`cell_links.opening_for_move` takes the earlier of two
+    openings on one shift-day — a night unit split in the evening, a shift-less
+    destination), and the dated links already read the one still waiting in
+    its new unit from `h` (`cell_links._resolve`). Followed before it lands,
+    the first cell is a lone departer: the other cell is no stayer, so the
+    first one owns everything unclaimed — the other's positions included. So
+    the group waits, and follows WHOLE once the last of them has landed; a
+    waiting change can still be withdrawn, which is why it is waited for and
+    never taken as a departure."""
+    if not code:
+        return []
+    return [p for p in pending
+            if p[2] == code and p[5] <= h and units & {u for u in (p[3], p[4]) if u is not None}]
+
+
 def _letters_after(cell_id: int, h: date) -> bool:
     """Has a later move already dated a letter of this cell (§1.8)? Re-lettering
     it from `h` would put two histories on one cell."""
@@ -281,6 +317,19 @@ def build_plan(db: Session, transfers: list[Transfer]) -> Plan:
     code = norm_code(cells[transfers[0].cell_id].sap_code) if transfers[0].cell_id in cells else ""
     moving = set(ids)
     plan = Plan(code=code, transfers=list(transfers))
+
+    # Another brigadir change at the code, in force by `h` and not landed yet
+    # (`_pending_hold`): the sweep holds such a group (`_candidates`), and a
+    # caller that asks anyway is told — the stayers and the owners below would
+    # be read off a team half moved. Strict or live, the follow then waits
+    # (`busy`, retried — `follow_group`): the change lands within a shift, and a
+    # strict follow naming it would give up on a move that was only early.
+    held = _pending_hold(_pending_moves(db), h, code,
+                         {u for t in transfers for u in (t.src, t.dst) if u is not None})
+    if held:
+        plan.named.append(_named("pending_move", code=code,
+                                 cells=sorted({p[1] for p in held}),
+                                 events=sorted(p[0] for p in held)))
 
     for x in sorted({t.src for t in transfers if t.src is not None}):
         st = own.cells_standing(db, x, code, before, h, exclude=moving)
@@ -832,6 +881,27 @@ def _int_people(v: float, named: list, **where) -> int:
     return n
 
 
+def _int_split(vals: dict, named: list, **where) -> dict:
+    """Whole people for the departers of ONE source unit on one day, summing to
+    the whole of their shares: Σ of the integers is Σ of the shares rounded
+    half up, handed out by the largest remainder (ties by cell id). Rounded one
+    departer at a time, a whole-centre pin of 5 split between two cells became
+    3 + 3 — the typed people the загрузка divides by changed with the move."""
+    items = sorted((cid, float(v)) for cid, v in vals.items() if v is not None)
+    if not items:
+        return {}
+    total = sum(v for _c, v in items)
+    target = int(total + 0.5)
+    out = {cid: math.floor(v) for cid, v in items}
+    rest = target - sum(out.values())
+    for cid, _v in sorted(items, key=lambda cv: (-(cv[1] - math.floor(cv[1])), cv[0]))[:max(0, rest)]:
+        out[cid] += 1
+    for cid, v in items:
+        if abs(out[cid] - v) > 1e-9:
+            named.append(_named("people_rounded", value=round(v, 4), cell=cid, **where))
+    return out
+
+
 def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
                 counts: Counter, named: list) -> None:
     """The typed «Bugungi fakt» pins at the code, from `h` on (§1.7):
@@ -911,6 +981,11 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
             saved[x] = [{"work_center": r.work_center, "wc_group": _g(r.wc_group),
                          "people": r.people, "shtatka": r.shtatka, "updated_at": r.updated_at}
                         for r in go]
+        ints: dict[int, int] = {}
+        for x in sources:
+            ints.update(_int_split({t.cell_id: values[t.cell_id] for t in plan.transfers
+                                    if t.src == x and t.cell_id in values},
+                                   named, unit=x, day=d.isoformat()))
         for x, go in leaving.items():
             for r in go:
                 db.delete(r)
@@ -1015,7 +1090,8 @@ def _rekey_pins(db: Session, plan: Plan, units: list[int], h: date, last: date,
             raw = next((s["work_center"] for s in saved.get(t.src) or []), None) \
                 or next((r.work_center for r in (by_day[d].get(t.src) or [])), None) or code
             whole = next((r for r in ys if r.wc_group is None), None)
-            n = _int_people(v, named, unit=y, day=d.isoformat(), cell=t.cell_id)
+            n = ints[t.cell_id] if t.cell_id in ints else _int_people(
+                v, named, unit=y, day=d.isoformat(), cell=t.cell_id)
             if L is None:
                 if whole is not None and whole.people is not None:
                     named.append(_named("pin_conflict", unit=y, day=d.isoformat(), cell=t.cell_id))
@@ -1214,11 +1290,14 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
     event). The caller commits; with `dry` the caller rolls back (the rows
     come back unsaved, state `dry`).
 
-    Order: validate → plan → a group owning nothing takes no lock and writes
-    `nothing` → every unit's `NS_CAT` and `NS_QTY` lock, TRIED (busy → state
-    `busy`: nothing written, the waiting transfers' rows handed back unsaved —
-    the caller keeps the rows of what was settled without a lock, a cell with
-    no code or archived, and records the retry of the rest) → the per-day
+    Order: validate → plan → another change at the code still waiting to land
+    (`pending_move` → `busy`, retried, strict or live — the sweep never hands
+    such a group over, `_candidates`) → a group owning nothing
+    takes no lock and writes `nothing` → every unit's `NS_CAT` and `NS_QTY`
+    lock, TRIED (busy → state `busy`: nothing written, the waiting transfers'
+    rows handed back unsaved — the caller keeps the rows of what was settled
+    without a lock, a cell with no code or archived, and records the retry of
+    the rest) → the per-day
     identities and minutes before → `align` at `h` (→ S) → the window [h, S)
     rewritten version by version → the current rows → the cells' letters,
     their history dated from `h` → the per-day rows → the conservation check →
@@ -1330,9 +1409,23 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
         return GroupResult("nothing" if state == "nothing" else state, None,
                            settled_rows + rows, {"named": named}, {})
 
+    def busy(named: list) -> GroupResult:
+        """Transient: the caller records the retry itself (these rows are unsaved)."""
+        rows = [_fill_row(PPCatalogMove(event_id=t.event_id, cell_id=t.cell_id), t, kind=kind,
+                          state="busy", code=norm_code(cells[t.cell_id].sap_code),
+                          by_name=by_name(t))
+                for t in valid]
+        return GroupResult("busy", None, settled_rows + rows, {"named": named}, {})
+
     stop_now = [n for n in plan.named if n["kind"] in STRICT_STOP]
     if strict and stop_now:
         return nothing_rows(group_named(), state="named")
+    # A change at the code still waiting to land: a live follow never guesses
+    # around it — it waits, like a held lock, and the sweep holds it until the
+    # change has landed or been withdrawn.
+    waiting = [n for n in plan.named if n["kind"] == "pending_move"]
+    if waiting:
+        return busy(waiting)
 
     moves, probe_named = _probe(db, plan, units)
     if not moves:
@@ -1345,12 +1438,7 @@ def follow_group(db: Session, transfers: list[Transfer], *, kind: str, strict: b
     # ── the locks — tried, never waited on ──
     if not (pp_catalog.lock(db, units, try_=True)
             and pp_catalog.lock(db, units, ns=pp_catalog.NS_QTY, try_=True)):
-        # Transient: the caller records the retry itself (these rows are unsaved).
-        rows = [_fill_row(PPCatalogMove(event_id=t.event_id, cell_id=t.cell_id), t, kind=kind,
-                          state="busy", code=norm_code(cells[t.cell_id].sap_code),
-                          by_name=by_name(t))
-                for t in valid]
-        return GroupResult("busy", None, settled_rows + rows, {"named": []}, {})
+        return busy([])
     moves, probe_named = _probe(db, plan, units)
     if not moves:
         named = group_named()
@@ -1627,14 +1715,18 @@ def _apply(db: Session, plan: Plan, units: list[int], cells: dict, events: dict,
 def _rejoin(db: Session, unit: int, pairs: set, h: date, counts: Counter, named: list) -> None:
     """A position moved from a unit kept by hand into one the SAP file fills:
     fill its snapshot from the stored files from `h` on — never committing,
-    the follow is one transaction (`production._rejoin_lines(commit=False)`)."""
+    the follow is one transaction (`production._rejoin_lines(commit=False)`).
+    In a savepoint of its OWN: a database error inside it aborts only that
+    savepoint, so the move commits with `rejoin_failed` named instead of the
+    whole follow failing on the next statement and retrying to `gave_up`."""
     try:
         from app.routers import production
         fn = production._rejoin_lines
         if "commit" not in inspect.signature(fn).parameters:
             named.append(_named("rejoin_skipped", unit=unit))
             return
-        got = fn(db, unit, set(pairs), since=h, commit=False)
+        with db.begin_nested():
+            got = fn(db, unit, set(pairs), since=h, commit=False)
         counts["rejoined"] += int((got or {}).get("rows") or 0)
     except Exception:  # noqa: BLE001 — a snapshot never holds a move back
         log.exception("catalog follow: rejoin failed for unit %s", unit)
@@ -1708,7 +1800,14 @@ def _candidates(db: Session, now: datetime) -> list[list[Transfer]]:
     of or into one of its units, is not final. Until that one is followed its
     positions still stand in the old unit with nobody there to own them, and
     the later move would take them as its own (an orphan letter is unclaimed,
-    a lone departer owns everything unclaimed)."""
+    a lone departer owns everything unclaimed).
+
+    And a group waits while a change at its code, in force by its day and into
+    or out of one of its units, is recorded and NOT LANDED yet
+    (`_pending_hold`): two cells leaving one work centre on one shift-day may
+    land hours apart, and followed alone the first would take the other's
+    positions. The group then follows whole once the last of them has landed;
+    a withdrawn or voided change releases it."""
     E = CellLinkEvent
     evs = (db.query(E).filter(E.field == "manager_id", E.applied_at.isnot(None),
                               E.effective_from >= FOLLOW_FROM,
@@ -1771,6 +1870,11 @@ def _candidates(db: Session, now: datetime) -> list[list[Transfer]]:
         groups[(h, code)].append(Transfer(
             cell_id=cid, event_id=e.id, src=e.prev, dst=e.value, home_from=h,
             letter_src=_g(letter)))
+    pending = _pending_moves(db) if len(waits) < len(groups) else []
+    for (h, code), ts in groups.items():
+        if pending and (h, code) not in waits and _pending_hold(
+                pending, h, code, {u for t in ts for u in (t.src, t.dst) if u is not None}):
+            waits.add((h, code))
     return [sorted(v, key=lambda t: t.cell_id) for k, v in sorted(groups.items())
             if k not in waits]
 
@@ -1890,6 +1994,10 @@ def _run_group(transfers: list[Transfer], now: datetime) -> dict:
                 # transfers that met the lock wait.
                 waiting = {r.cell_id for r in res.rows if r.state == "busy"}
                 settled = [_summary(r) for r in rows if r.state != "busy"]
+                # Why it waits, on the record: a held lock says nothing; a
+                # change at the code still to land names its cells.
+                why = "; ".join(f"{n['kind']} {n.get('cells') or ''}".strip()
+                                for n in res.report.get("named") or []) or None
             else:
                 waiting = None
                 out = {"state": res.state, "rows": [_summary(r) for r in rows]}
@@ -1900,7 +2008,7 @@ def _run_group(transfers: list[Transfer], now: datetime) -> dict:
     if waiting is not None:
         return {"rows": settled,
                 "retry": _record_retry([t for t in transfers if t.cell_id in waiting],
-                                       "busy", None, now, kind)}
+                                       "busy", why, now, kind)}
     cell_register.after_commit()
     _forget_caches()
     return out
@@ -2088,13 +2196,11 @@ def _forget_caches() -> None:
         log.exception("catalog follow: kept answers not forgotten")
     try:
         from app.routers import shift_report
-        with shift_report._cache_lock:
-            shift_report._cache.clear()
+        shift_report.forget()
     except Exception:  # noqa: BLE001
         log.exception("catalog follow: shift report cache not cleared")
     try:
         from app.services import leaders_kpi
-        with leaders_kpi._plan_lock:
-            leaders_kpi._plan_kept.clear()
+        leaders_kpi.forget_plan()
     except Exception:  # noqa: BLE001
         log.exception("catalog follow: leaders KPI plan keep not cleared")
