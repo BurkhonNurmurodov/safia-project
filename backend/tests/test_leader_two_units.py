@@ -405,9 +405,10 @@ class ThePageSwitchesUnits(_Base):
 
     def test_staffing_follows_the_chosen_unit(self):
         """The «Bugungi fakt» save is cut like the page: c's people go to Y,
-        c2's to X, and c's work centre is refused on X's page."""
+        c2's to X, and c's work centre is refused on X's page. c2 is given a
+        plan: a headcount is typed only where the day plans (v4.332)."""
         from app.models import PPWorkCenterDaily
-        lead, *_ = self.world()
+        lead, *_ = self.world(c2_plan=(5, 1))
         pl = self.payload(lead)
 
         def body(wc, people):

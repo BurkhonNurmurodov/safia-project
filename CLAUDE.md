@@ -7760,7 +7760,9 @@ upload filled them. The whole design, every critique and its verdict, is
   when it would go to two or more, else somebody else's. A cell's own lines go
   with it. Shared lines go only when the code leaves the unit WHOLE — nobody
   stays and every departer goes to one unit — and then without an owner;
-  otherwise they stay and are named (`shared_left`, `shared_left_split`). The
+  otherwise they stay and are named (`shared_left`, `shared_left_split`) — an
+  ARCHIVED shared line that stays is named `shared_left_archived` instead,
+  which stops no strict follow (it is in no unit's catalog). The
   stayers are the cells standing in the unit at the code on `h−1` AND on `h`,
   alive, not leaving (`catalog_ownership.cells_standing`); a cell ARRIVING into
   the unit in the same group is not a stayer, which is what makes a swap work.
@@ -7777,7 +7779,12 @@ upload filled them. The whole design, every critique and its verdict, is
   pins at the code carry on ANY date, and the staying cells'. Excluding every
   historic line and pin letter is what keeps the new letter out of the past: no
   row dated before `h` carries it, so even a reader that does not date letters
-  reads those days unchanged. No free letter → None, `no_free_letter`.
+  reads those days unchanged. No free letter → None, `no_free_letter`. One
+  exception, retro only (a transfer with no landing event): a cell that already
+  stood in the new unit on `h−1` keeps the letter it carries there when no
+  other cell row or stayer of that unit carries it (`Plan.own_dst`) — its own
+  lines and pins there must not count as «taken» against itself — and the
+  sibling rule treats that letter as claimed.
   **The sibling rule**: a LONE UNLETTERED staying cell of the new unit gets the
   next free letter too, its unclaimed lines take it from `h` and its
   whole-centre people pin becomes its group pin — without it `wc_group.share`
@@ -7962,11 +7969,20 @@ upload filled them. The whole design, every critique and its verdict, is
   attendance majority; a cell standing in its unit since before 6 Oct follows
   from 6 Oct. Only a SINGLE hop is followed, each cell in its own transaction,
   `strict`: anything doubtful is named and nothing written — `chain`,
-  `from_unknown`, `day_unknown`, `letter_ambiguous`, `shared_lines`,
-  `y_has_lines`, `window_cells_moved`, `letters_after`, `archived`, `no_code`,
-  `conservation`, and `volume` (over 40 cells or 5,000 per-day rows nothing is
-  applied at all). Every considered event gets a final record, so a second run
-  is a no-op by the records, not the flag. ONE pass at a time across both app
+  `from_unknown`, `day_unknown`, `letter_ambiguous`, `shared_lines` (ACTIVE
+  shared lines only), `y_has_lines`, `stayer_unproven` (a cell the follow would
+  count as staying at the code in either unit that no evidence — attendance, a
+  closed live day's roster, its own link event — shows standing there by `h`;
+  checked only when something would move — so a cell OUTSIDE the загрузка,
+  which since 4 Oct appears in neither attendance nor the rosters, names every
+  move at its code until a person decides), `window_cells_moved`,
+  `letters_after`, `archived`, `no_code`, `conservation`, and `volume` (over 40
+  cells or 5,000 per-day rows nothing is applied at all). Every considered event
+  gets a final record, so a second run is a no-op by the records, not the flag.
+  A retro record the sweep later RETRIES (`busy`, `failed`) is re-checked first
+  by `catalog_follow_retro.recheck` — the move read again exactly as the pass
+  read it (same day, units and letter), the archive and every guard — and is
+  settled `named` when anything changed since. ONE pass at a time across both app
   copies: a SESSION advisory lock (`RETRO_LOCK`) on a connection of its own —
   a transaction lock would be gone at the first cell's commit — and the flag
   re-read under it. The flag `catalog_follow_retro_2026_10_26_v1`
@@ -7982,7 +7998,9 @@ upload filled them. The whole design, every critique and its verdict, is
   built from the stored record only, so a failed DM is re-sent and the pass is
   never re-run for it. **Delete the module, `startup.schedule_catalog_follow_retro`
   / `_catalog_follow_retro_job` and both entrypoint calls once the flag reads
-  `done` and the DM has landed — and NEVER the flag row**:
+  `done`, the DM has landed and no `kind="retro"` record is `busy` or `failed`
+  (the sweep re-checks those through the module; with it gone they are named
+  `recheck_unavailable` instead of followed) — and NEVER the flag row**:
   `catalog_follow.enabled` reads it, and the sweep stops without it.
 - **Consequences to know** (all deliberate; the release notes):
   1. Past загрузка, Plan bajarish and shift-report figures change from each
