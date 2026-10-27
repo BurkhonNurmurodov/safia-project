@@ -10622,6 +10622,17 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   tab's badge already counts them, and the chip made its row taller). Once a unit's own shift-day
   (`/api/staff-live/today`) is live, /staff opens on it and steps with
   `DayStepper` (max = that day); until then the page is exactly what it was.
+  **With NO unit picked** — an admin or a shift-manager before they choose a
+  brigadir — that endpoint cannot answer (it is 400 without a unit), so the day
+  is the PLANT's own, which `/live-from` already named (`dayIso` in
+  `Staff.jsx`, 2026-10-26): the page then reads the LIVE register, the
+  stepper's ceiling and its «back to today» are that day, and picking a unit
+  hands the day back to that unit's own. Before it the page fell back to the
+  date it REMEMBERED, a file day for anybody who had not opened /staff since
+  the switch, so the whole page — the Requests tab included — read the file
+  register, whose newest rows predate the floor: a shift-manager with seven
+  live drafts waiting was shown 05.10's approved ones under a badge counting
+  seven, the drafts only as the notice line below.
   A worker nobody clocked prints Verifix's own day-cell mark in the clock column,
   exactly as the file did (`live_staff.day_mark` = `verifix_attendance._mark`:
   «X», a leave letter «О» / «Б» / «В» / «ОТ» …, «—» for a day off; a plain «X»
@@ -10715,7 +10726,7 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   (days before the floor) with the live one; the requests tab follows the day's
   source and names the OTHER register's still-pending requests with a way there
   (`OlderRequestsLine`, both directions: a live day names the file register's
-  and opens a FILE day, a file day — no unit picked yet — names the live
+  and opens a FILE day, a file day — one stepped back to — names the live
   register's and opens a live day); the sidebar badge counts both registers.
   /staff never lists a live draft or deletion dated before the floor, and the
   bell queue offers one to admins only (those are the retired lab page's test

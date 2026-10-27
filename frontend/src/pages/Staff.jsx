@@ -4966,9 +4966,22 @@ export default function Staff() {
     },
   });
   const todayIso = liveToday?.manager_id === supervisorManagerIdEarly ? liveToday.date : null;
-  // The live day control (‹ day › up to the unit's own today, opening on it),
-  // once the unit's today is a live day.
-  const liveUI = !!liveFrom && !!todayIso && todayIso >= liveFrom;
+  // THE day the page opens on. With no unit picked — an admin or a
+  // shift-manager before they choose a brigadir — the unit's own shift-day
+  // cannot be asked (`/today` answers 400 without one), so it is the PLANT's
+  // own date, which the floor already named (2026-10-26). Without it the page
+  // fell back to the date it remembered, which is a FILE day for everybody who
+  // has not opened /staff since the switch, and then read the whole page — the
+  // Requests tab included — off the file register: its newest rows predate
+  // `LIVE_FROM`, so a shift-manager with 7 live drafts waiting saw 05.10's
+  // approved ones under a badge counting 7, and the drafts only as the notice
+  // line. The night-shift caveat that makes the page WAIT for a unit's own day
+  // cannot apply where there is no unit to be on a night shift.
+  const dayIso = todayIso
+    || (liveForce && !supervisorManagerIdEarly ? liveFloor.today : null);
+  // The live day control (‹ day › up to the day above, opening on it), once
+  // that day is a live day.
+  const liveUI = !!liveFrom && !!dayIso && dayIso >= liveFrom;
   // No day at all until the page knows which one it opens on — the floor
   // (which source), and on «today» the unit's own shift-day. Before, the page
   // fetched the date it showed LAST time meanwhile and then fetched again for
@@ -4976,11 +4989,11 @@ export default function Staff() {
   const floorKnown = liveFloor !== undefined || liveFloorErr;
   const waitDay = !floorKnown
     || (liveForce && autoDay && !!supervisorManagerIdEarly && !todayIso && !todayError);
-  const selectedDate = waitDay ? "" : liveUI && autoDay ? (todayIso || "") : storedDate;
+  const selectedDate = waitDay ? "" : liveUI && autoDay ? (dayIso || "") : storedDate;
   useEffect(() => {
-    if (liveUI && autoDay && todayIso && todayIso !== storedDate) setSelectedDate(todayIso);
+    if (liveUI && autoDay && dayIso && dayIso !== storedDate) setSelectedDate(dayIso);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIso, autoDay, liveUI]);
+  }, [dayIso, autoDay, liveUI]);
   // Waiting for the day to be named — the floor, or the unit's today — reads
   // as loading on the Workers tab, never as «pick a date».
   const dayPending = !!supervisorManagerIdEarly
@@ -5082,7 +5095,7 @@ export default function Staff() {
     d._source === "deletion" ? d.status === "pending" : d.status === "draft") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fileDocs, S.live]);
-  // …and the other way round: on a FILE day (no unit picked yet, or a day
+  // …and the other way round: on a FILE day (one stepped back to, or a day
   // before the switch) once the live source is in force, what the LIVE
   // register has waiting — the badge counts it, so the tab must show the way.
   const { data: liveDocs = [] } = useQuery({
@@ -5110,15 +5123,16 @@ export default function Staff() {
     setAutoDay(false);
     setSelectedDate(d);
   }
-  // The live stepper: ‹ day › up to the unit's own today, plus a way back to
-  // it. While the server has not named the day it holds the stepper's place.
-  const liveMax = todayIso || storedDate || null;
+  // The live stepper: ‹ day › up to the day the page opens on — the unit's own
+  // today, or the plant's with no unit picked — plus a way back to it. While
+  // the server has not named the day it holds the stepper's place.
+  const liveMax = dayIso || storedDate || null;
   const dayControl = liveUI ? (
     <>
       {selectedDate
         ? <DayStepper value={selectedDate} onChange={pickDate} max={liveMax} fillPhone />
         : dayPending ? <SkeletonBlock className="h-[38px] w-[268px] max-sm:w-full rounded-xl" /> : null}
-      {!autoDay && todayIso && selectedDate !== todayIso && (
+      {!autoDay && dayIso && selectedDate !== dayIso && (
         <Button size="lg" variant="secondary" onClick={() => setAutoDay(true)}>{t("staffLive.backToday")}</Button>
       )}
     </>
