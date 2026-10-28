@@ -8021,16 +8021,14 @@ upload filled them. The whole design, every critique and its verdict, is
   members sharing a unit with one that is stopped). Until then the pass took
   cells one at a time and named every member of a team that moved together,
   FINAL: the cells stood in the new unit with their positions in the old one
-  (reported for Maksumov Sanjar ↔ Xakimov Ruslan). TEMPORARY
-  `services/catalog_team_repair_oct28.py` (`startup.repair_catalog_teams`,
-  flag `catalog_team_repair_maksumov_xakimov_2026_10_28_v1`, 330 s after boot,
-  both entrypoints) re-arms those two units' stuck teams (`busy`, due now) for
-  the sweep and DMs Burkhon the outcome from its record; other units' stuck
-  teams are only LISTED. Read-only `services/catalog_swap_report_oct28.py`
-  (`startup.report_catalog_swap`, flag
-  `catalog_swap_report_maksumov_xakimov_2026_10_28_v1`, 150 s) DMs the state
-  before it. Delete both modules, their startup pairs and the four entrypoint
-  calls once both DMs have landed. `volume` (over 40 cells or 5,000 per-day rows of what
+  (reported for Maksumov Sanjar ↔ Xakimov Ruslan: 7213 · A and 7214 · B moved
+  together on 25 Oct, A2723's 61 positions stayed behind). On 28 Oct a
+  one-shot re-armed that team (`busy`, due now) and the sweep followed it as
+  one group — production confirmed all 61 in Xakimov's unit; it was the only
+  stuck team on the platform. The one-shot and its read-only report are
+  deleted (their flags `catalog_team_repair_maksumov_xakimov_2026_10_28_v1` /
+  `catalog_swap_report_maksumov_xakimov_2026_10_28_v1` read `sent`). `volume`
+  (over 40 cells or 5,000 per-day rows of what
   the follows actually re-key — each cell's OLD unit's rows at its own
   positions' pairs and the unit's pins at the code) applies NOTHING and records
   nothing per cell: the flag reads `volume:<cells>/<rows>`, the sweep stays off

@@ -140,8 +140,6 @@ async def lifespan(app: FastAPI):
         report_brigadir_change_state,
         report_verifix_roles,
         schedule_catalog_follow_retro,
-        report_catalog_swap,
-        repair_catalog_teams,
         report_pin_mismatch,
         apply_brigadir_change_oct24,
         report_dept_attendance,
@@ -535,18 +533,6 @@ async def lifespan(app: FastAPI):
     # `services/catalog_follow_retro.py` once its flag reads `done` and the DM
     # has landed.
     run(schedule_catalog_follow_retro)
-    # ⚠ TEMPORARY report (2026-10-28) — why the cells Maksumov Sanjar and
-    # Xakimov Ruslan swapped did not take all their positions along. READ-ONLY,
-    # DMed once to Burkhon. Only SCHEDULES a job (one flag read). Remove this
-    # line, `startup.report_catalog_swap` and
-    # `services/catalog_swap_report_oct28.py` once it has been sent.
-    run(report_catalog_swap)
-    # ⚠ TEMPORARY one-shot (2026-10-28) — the two units' catalog teams the
-    # retro named one at a time are re-armed and followed as one group (after
-    # the report). Only SCHEDULES a job. Remove this line,
-    # `startup.repair_catalog_teams` and
-    # `services/catalog_team_repair_oct28.py` once its DM has landed.
-    run(repair_catalog_teams)
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —

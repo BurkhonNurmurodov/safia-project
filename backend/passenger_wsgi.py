@@ -123,8 +123,6 @@ try:
         report_brigadir_change_state,
         report_verifix_roles,
         schedule_catalog_follow_retro,
-        report_catalog_swap,
-        repair_catalog_teams,
         report_pin_mismatch,
         apply_brigadir_change_oct24,
         report_dept_attendance,
@@ -778,10 +776,6 @@ try:
     # already moved (mirrors main.py). Remove with the module once its flag
     # reads `done` and the DM has landed.
     schedule_catalog_follow_retro()
-    # ⚠ TEMPORARY report (2026-10-28, mirrors main.py) — the Maksumov ↔
-    # Xakimov catalog swap. Remove with its module once it has been sent.
-    report_catalog_swap()
-    repair_catalog_teams()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
