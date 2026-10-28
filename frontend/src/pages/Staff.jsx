@@ -3389,13 +3389,26 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     onSuccess: invalidate,
   });
 
+  // A refusal must be SAID. Every approval guard on a live day answers 409 with
+  // its own sentence (`not_here` — another document has already moved this
+  // worker; `breaks`; `late_arrival`; `doc_too_old`), and the interceptor has
+  // already flattened it to text on `detail`. Swallowed, the spinner stops, the
+  // row stays «Kutilmoqda» and a refused press looks exactly like a successful
+  // one — which is how an operator comes to press Post again and again on a
+  // document the server will never accept (reported 28.10.2026).
+  const toast = useToast({ position: "bottom" });
+  const failText = (e) =>
+    e?.response?.data?.detail || e?.message || t("staff.bulkFailed");
+
   // Per-button in-flight tracking so an action button shows a spinner while its
   // request runs (and blocks the row's other actions until it settles).
   const [busyKey, setBusyKey] = useState(null);
   const runAction = (key, fn) => {
     if (busyKey) return;
     setBusyKey(key);
-    Promise.resolve(fn()).catch(() => {}).finally(() => setBusyKey(null));
+    Promise.resolve(fn())
+      .catch(e => toast.error(failText(e)))
+      .finally(() => setBusyKey(null));
   };
 
   function rowKey(d) {
@@ -3575,9 +3588,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   // A bulk press that fails must say so. Errors persist until dismissed —
   // Telegram's WebView swallows window.alert, so a silent catch would make a
   // failed refusal look exactly like a successful one.
-  const toast = useToast({ position: "bottom" });
-  const runBulk = (action) => handleBulk(action).catch(e =>
-    toast.error(e?.response?.data?.detail || e?.message || t("staff.bulkFailed")));
+  const runBulk = (action) => handleBulk(action).catch(e => toast.error(failText(e)));
 
   const [confirmDel, setConfirmDel] = useState(false);
   const [delBusy,    setDelBusy]    = useState(false);
