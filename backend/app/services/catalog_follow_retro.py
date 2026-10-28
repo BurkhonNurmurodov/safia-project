@@ -880,10 +880,14 @@ def _run(db: Session, today: date, now: datetime) -> dict:
                 and (c.named or {}).get("kind") == "from_unknown"):
             c.quiet = True
 
+    teams = {id(c): _team_of(c, cands) for c in cands}
     for c in cands:
         if c.named is not None or c.h is None or c.src is None or c.dst is None:
             continue
-        _guards(db, c, by_code, tls, today, first)
+        _guards(db, c, by_code, tls, today, first, team=teams[id(c)])
+    # A team goes whole or not at all: one member left alone would take the
+    # others' positions as its own (a lone departer owns everything unclaimed).
+    _hold_broken_teams(cands, teams)
 
     ready = [c for c in cands if c.named is None and c.h is not None]
     # A change from or to no unit, and one whose cell owns nothing in the old
@@ -904,11 +908,11 @@ def _run(db: Session, today: date, now: datetime) -> dict:
             c.name("volume", cells=len(real), rows=volume, max_cells=MAX_CELLS, max_rows=MAX_ROWS)
         ready = [c for c in ready if c.named is None]
 
-    # ── apply, one cell at a time ──
+    # ── apply, one cell — or one team moving together — at a time ──
     moved, skipped, busy = [], [], []
-    for c in sorted(ready, key=lambda c: (c.h, c.cell.verifix_code or "", c.cell.id)):
-        out = _follow(db, c, apply, now)
-        {"moved": moved, "busy": busy}.get(out["state"], skipped).append(out)
+    for cs in _batches(ready, teams):
+        for out in _follow(db, cs, apply, now):
+            {"moved": moved, "busy": busy}.get(out["state"], skipped).append(out)
     for c in cands:
         if c.named is not None and not c.quiet:
             skipped.append(_entry(c, state="named", kind=c.named["kind"],
@@ -1015,10 +1019,64 @@ def _journal(rec: dict) -> None:
         log.exception("catalog retro: action log failed")
 
 
-def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first: dict) -> None:
+def _team_of(c: _Cand, cands: list) -> dict:
+    """{cell id: (h, from, to)} of the OTHER landed changes that move a cell at
+    `c`'s code on `c`'s own day — the team the engine follows as ONE group
+    (`catalog_follow._candidates` groups by move day and code). Its members'
+    own hops are no «other cell moved in the window»: followed together they
+    take no one's positions (2026-10-28 — a swap of whole teams was named
+    `window_cells_moved` member by member and never followed)."""
+    if c.event is None or c.h is None or not c.code:
+        return {}
+    return {o.cell.id: (o.h, o.src, o.dst) for o in cands
+            if o is not c and o.event is not None and o.code == c.code and o.h == c.h
+            and o.src is not None}
+
+
+def _hold_broken_teams(cands: list, teams: dict) -> None:
+    """A team goes whole or not at all: while one member is named, every other
+    member is named too (followed alone it would take the team's positions)."""
+    by_cell = {c.cell.id: c for c in cands}
+    changed = True
+    while changed:
+        changed = False
+        for c in cands:
+            if c.named is not None:
+                continue
+            for oid in sorted(teams.get(id(c)) or {}):
+                o = by_cell.get(oid)
+                if o is not None and o.named is not None:
+                    c.name("window_cells_moved", other=o.cell.verifix_code, day=_iso(c.h),
+                           what="team", why="team_member_named")
+                    changed = True
+                    break
+
+
+def _batches(ready: list, teams: dict) -> list[list]:
+    """The follows, in move-day order: a team (`_team_of` — every member ready,
+    `_hold_broken_teams`) as ONE batch, every other cell alone."""
+    order = sorted(ready, key=lambda c: (c.h, c.cell.verifix_code or "", c.cell.id))
+    by_cell = {c.cell.id: c for c in order}
+    seen: set = set()
+    out: list = []
+    for c in order:
+        if c.cell.id in seen:
+            continue
+        group = [c] + [by_cell[o] for o in (teams.get(id(c)) or {})
+                       if o in by_cell and o not in seen and o != c.cell.id]
+        group.sort(key=lambda o: (o.cell.verifix_code or "", o.cell.id))
+        seen |= {o.cell.id for o in group}
+        out.append(group)
+    return out
+
+
+def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first: dict,
+            team: Optional[dict] = None) -> None:
     """The guards a decided hop must pass before the engine is handed it —
     `run` asks them of every candidate, `recheck` again of a transfer the
-    sweep is about to retry. `first` is `_evidence`'s third answer."""
+    sweep is about to retry. `first` is `_evidence`'s third answer. `team`
+    (`_team_of`) = the cells moving with this one on its day: their own hop on
+    that day is not a reason to stop — they are followed in the same group."""
     from app.services import cell_links
     cell, code, x, y, h = c.cell, c.code, c.src, c.dst, c.h
     before = h - timedelta(days=1)
@@ -1044,11 +1102,16 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first:
         return
     # window_cells_moved: another cell at the code moved into or out of either
     # unit (or was archived or restored there) from FLOOR on. Followed one at a
-    # time such moves take each other's positions, so neither is followed.
+    # time such moves take each other's positions, so neither is followed —
+    # unless it is the team moving with this cell on this very day, which the
+    # engine follows as one group (`team`).
+    team = team or {}
     for o in by_code.get(code) or []:
         if o.id == cell.id:
             continue
         for d, frm, to, what in _changes(o, tls.get(o.id), today):
+            if team.get(o.id) == (d, frm, to):
+                continue
             if frm in (x, y) or to in (x, y):
                 c.name("window_cells_moved", other=o.verifix_code, day=_iso(d), what=what)
                 return
@@ -1122,7 +1185,8 @@ def _guards(db: Session, c: _Cand, by_code: dict, tls: dict, today: date, first:
             return
 
 
-def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) -> Optional[dict]:
+def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None,
+            team: Optional[dict] = None) -> Optional[dict]:
     """The one-shot's OWN guards, run again for a retroactive transfer the live
     sweep is about to retry — a record this pass left `busy` (another writer
     held a unit) or `failed` (`catalog_follow._recheck_retro` calls it). The
@@ -1136,7 +1200,9 @@ def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) ->
     same units, the same letter. Then the archive and `_guards`. Returns the
     named condition ({"kind", …params}) that stops it, or None when it may be
     followed (a cell gone, or a change from or to no unit, are the engine's to
-    record). Reads only."""
+    record). Reads only. `team` = {cell id: (h, from, to)} of the other
+    transfers the sweep follows in the SAME group (`_team_of`'s shape): their
+    own hop on that day does not stop this one."""
     from app.services import cell_archive
     today = today or _today()
     cell = db.get(Cell, row.cell_id)
@@ -1214,7 +1280,7 @@ def recheck(db: Session, row: PPCatalogMove, *, today: Optional[date] = None) ->
     elif c.named is None and not cell_archive.alive(cell, today):
         c.name("archived", day=_iso(today))
     if c.named is None and c.h is not None and c.src is not None and c.dst is not None:
-        _guards(db, c, by_code, tls, today, first)
+        _guards(db, c, by_code, tls, today, first, team=team)
     return c.named
 
 
@@ -1261,28 +1327,31 @@ def _entry(c: _Cand, **kw) -> dict:
     return out
 
 
-def _follow(db: Session, c: _Cand, apply: bool, now: datetime) -> dict:
-    """One cell through the engine, in its own transaction."""
+def _follow(db: Session, cs: list, apply: bool, now: datetime) -> list[dict]:
+    """One cell — or one team moving together (`_batches`) — through the engine
+    as ONE group, in its own transaction. One entry per cell."""
     from app.services import cell_archive, cell_links
-    t = cf.Transfer(cell_id=c.cell.id, event_id=c.event.id if c.event is not None else None,
-                    src=c.src, dst=c.dst, home_from=c.h, letter_src=c.letter_src)
+    ts = [cf.Transfer(cell_id=c.cell.id, event_id=c.event.id if c.event is not None else None,
+                      src=c.src, dst=c.dst, home_from=c.h, letter_src=c.letter_src) for c in cs]
+    who = ", ".join(str(c.cell.id) for c in cs)
     try:
-        res = cf.follow_group(db, [t], kind="retro", strict=True, dry=not apply, now=now)
+        res = cf.follow_group(db, ts, kind="retro", strict=True, dry=not apply, now=now)
     except Exception as exc:  # noqa: BLE001 — the sweep retries it
         db.rollback()
-        log.exception("catalog retro: follow of cell %s failed", c.cell.id)
+        log.exception("catalog retro: follow of cell(s) %s failed", who)
         if apply:
-            cf._record_retry([t], "failed", repr(exc), now, kind="retro")
-        return _entry(c, state="busy", kind="failed", params={"error": repr(exc)[:300]})
+            cf._record_retry(ts, "failed", repr(exc), now, kind="retro")
+        return [_entry(c, state="busy", kind="failed", params={"error": repr(exc)[:300]})
+                for c in cs]
     finally:
         cell_links.forget()
         cell_archive.forget()
     if res.state == "busy":
         db.rollback()
         if apply:
-            cf._record_retry([t], "busy", None, now, kind="retro")
-        return _entry(c, state="busy", kind="busy")
-    row = next((r for r in res.rows if r.cell_id == c.cell.id), None)
+            cf._record_retry(ts, "busy", None, now, kind="retro")
+        return [_entry(c, state="busy", kind="busy") for c in cs]
+    rows = {r.cell_id: r for r in res.rows}
     named = list((res.report or {}).get("named") or [])
     kinds = sorted({n.get("kind") for n in named if n.get("kind")})
     if apply:
@@ -1290,9 +1359,10 @@ def _follow(db: Session, c: _Cand, apply: bool, now: datetime) -> dict:
             db.commit()
         except Exception as exc:  # noqa: BLE001 — one cell's commit never stops the pass
             db.rollback()
-            log.exception("catalog retro: commit of cell %s failed", c.cell.id)
-            cf._record_retry([t], "failed", repr(exc), now, kind="retro")
-            return _entry(c, state="busy", kind="failed", params={"error": repr(exc)[:300]})
+            log.exception("catalog retro: commit of cell(s) %s failed", who)
+            cf._record_retry(ts, "failed", repr(exc), now, kind="retro")
+            return [_entry(c, state="busy", kind="failed", params={"error": repr(exc)[:300]})
+                    for c in cs]
         finally:
             cell_links.forget()
             cell_archive.forget()
@@ -1306,21 +1376,27 @@ def _follow(db: Session, c: _Cand, apply: bool, now: datetime) -> dict:
     cell_links.forget()
     cell_archive.forget()
     db.expire_all()
-    lines = list(getattr(row, "line_ids", None) or []) if row is not None else []
-    wcs = list(getattr(row, "wc_ids", None) or []) if row is not None else []
-    if res.state == "named":
-        stop = next((k for k in kinds if k in cf.STRICT_STOP), kinds[0] if kinds else "named")
-        return _entry(c, state="named", kind=stop, params={"named": kinds})
-    if not (lines or wcs):
-        return _entry(c, state="nothing", kind="nothing", params={"named": kinds})
-    entries = list(getattr(row, "lines", None) or [])
-    return _entry(c, state="moved", S=_iso(res.S), lines=len(lines),
-                  joined=sum(1 for e in entries if e.get("joined_into")),
-                  wc=len(wcs), wc_dropped=len(getattr(row, "wc_dropped", None) or []),
-                  letter_to=getattr(row, "letter_to", None),
-                  letters=dict(getattr(row, "letters", None) or {}),
-                  rekey=dict(getattr(row, "rekey", None) or {}), named=kinds,
-                  impact=res.impact or {})
+    out = []
+    for c in cs:
+        row = rows.get(c.cell.id)
+        lines = list(getattr(row, "line_ids", None) or []) if row is not None else []
+        wcs = list(getattr(row, "wc_ids", None) or []) if row is not None else []
+        team = {"team": sorted(o.cell.verifix_code or "" for o in cs)} if len(cs) > 1 else {}
+        if res.state == "named" or getattr(row, "state", None) == "named":
+            stop = next((k for k in kinds if k in cf.STRICT_STOP), kinds[0] if kinds else "named")
+            out.append(_entry(c, state="named", kind=stop, params={"named": kinds, **team}))
+        elif not (lines or wcs):
+            out.append(_entry(c, state="nothing", kind="nothing", params={"named": kinds, **team}))
+        else:
+            entries = list(getattr(row, "lines", None) or [])
+            out.append(_entry(c, state="moved", S=_iso(res.S), lines=len(lines),
+                              joined=sum(1 for e in entries if e.get("joined_into")),
+                              wc=len(wcs), wc_dropped=len(getattr(row, "wc_dropped", None) or []),
+                              letter_to=getattr(row, "letter_to", None),
+                              letters=dict(getattr(row, "letters", None) or {}),
+                              rekey=dict(getattr(row, "rekey", None) or {}), named=kinds,
+                              impact=res.impact or {}, **team))
+    return out
 
 
 def _earlier(db: Session, ids: list, by_id: dict) -> list[dict]:

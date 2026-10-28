@@ -1924,6 +1924,12 @@ def _summary(r: PPCatalogMove) -> dict:
             "named": [n.get("kind") for n in r.named or []]}
 
 
+def _recheck_one(retro, db: Session, row: PPCatalogMove, team: dict):
+    if team and "team" in inspect.signature(retro.recheck).parameters:
+        return retro.recheck(db, row, team=team)
+    return retro.recheck(db, row)
+
+
 def _recheck_retro(db: Session, transfers: list[Transfer], now: datetime) -> tuple[list, list]:
     """A retroactive transfer the sweep retries (the one-shot recorded it
     `busy` or `failed`) passes the one-shot's OWN guards again before the
@@ -1948,9 +1954,37 @@ def _recheck_retro(db: Session, transfers: list[Transfer], now: datetime) -> tup
     except ImportError:
         retro = None
     # Every verdict first, every write after: a guard reads several tables and
-    # must never see — or roll back — a row this loop half-filled.
-    verdicts = {k: ({"kind": "recheck_unavailable"} if retro is None else retro.recheck(db, r))
+    # must never see — or roll back — a row this loop half-filled. The other
+    # landed changes of the group are the team moving with each transfer
+    # (`catalog_follow_retro._team_of`): followed together, their own hop on
+    # the group's day is no reason to stop.
+    def team(t: Transfer) -> dict:
+        return {o.cell_id: (o.home_from, o.src, o.dst) for o in transfers
+                if o.cell_id != t.cell_id and o.event_id is not None and o.src is not None} \
+            if t.event_id is not None else {}
+
+    by_key = {_tkey(t): t for t in transfers}
+    verdicts = {k: ({"kind": "recheck_unavailable"} if retro is None
+                    else _recheck_one(retro, db, r, team(by_key[k])))
                 for k, r in retro_rows.items()}
+    # A team goes whole or not at all: one member stopped stops the others
+    # moving into or out of the same units — followed alone they would take
+    # its positions.
+    def units(t: Transfer) -> set:
+        return {u for u in (t.src, t.dst) if u is not None}
+
+    changed = True
+    while changed:
+        changed = False
+        stopped = [by_key[k] for k, v in verdicts.items() if v is not None]
+        for k in retro_rows:
+            if verdicts[k] is not None:
+                continue
+            hit = next((s for s in stopped if units(s) & units(by_key[k])), None)
+            if hit is not None:
+                verdicts[k] = {"kind": "window_cells_moved", "what": "team",
+                               "why": "team_member_named", "other": hit.cell_id}
+                changed = True
     cells = {c.id: c for c in db.query(Cell).filter(
         Cell.id.in_([t.cell_id for t in transfers])).all()}
     keep, settled = [], []

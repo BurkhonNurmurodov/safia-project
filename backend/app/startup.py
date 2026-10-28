@@ -7864,6 +7864,72 @@ def _catalog_follow_retro_job() -> None:
                           retro.sender, UNPRICED_DM_CHAT)
 
 
+# ── report: the catalog of the cells Maksumov Sanjar ↔ Xakimov Ruslan swapped ──
+# The floor reported on 2026-10-28 that the two units exchanged cells (Verifix
+# and /cells agree) but «Zagruzka fayli» did not take all their positions
+# along. READ-ONLY (`services/catalog_swap_report_oct28.py`): the follow's
+# switch and records, both units' catalogs at the cells' codes by day, every
+# link event, and what the engine decides now — DMed once to Burkhon as a
+# summary + a .txt file. Changing what it sends needs a NEW key. Delete this
+# block, the module and both entrypoint calls once it has landed.
+CATALOG_SWAP_REPORT_FLAG = "catalog_swap_report_maksumov_xakimov_2026_10_28_v1"
+_CATALOG_SWAP_REPORT_DELAY_S = 150
+
+
+def report_catalog_swap() -> None:
+    """The catalog swap report, DMed once. Never raises."""
+    try:
+        if not _report_pending(CATALOG_SWAP_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("catalog-swap-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CATALOG_SWAP_REPORT_DELAY_S),
+                    _catalog_swap_job)
+    except Exception as exc:
+        print(f"[startup] catalog swap report could not be scheduled: {exc}")
+
+
+def _catalog_swap_job() -> None:
+    print("[startup] catalog swap report: started")
+    from app.services import catalog_swap_report_oct28
+    _send_report_once(CATALOG_SWAP_REPORT_FLAG, "catalog swap report",
+                      catalog_swap_report_oct28.send, REPORT_CHAT_BURKHON)
+
+
+# ── one-shot: follow as ONE team the cells Maksumov ↔ Xakimov moved together ──
+# The retroactive follow took cells one at a time and named every member of a
+# team that moved together `window_cells_moved` — final, never followed
+# (`services/catalog_team_repair_oct28.py`). This re-arms those records for the
+# two reported units only and lets the live sweep follow each team as one
+# group, every guard applied; DMed to Burkhon. Runs AFTER the swap report, so
+# the report shows the state before it. Delete this block, the module and both
+# entrypoint calls once the DM has landed.
+CATALOG_TEAM_REPAIR_FLAG = "catalog_team_repair_maksumov_xakimov_2026_10_28_v1"
+_CATALOG_TEAM_REPAIR_DELAY_S = 330
+
+
+def repair_catalog_teams() -> None:
+    """Re-arm the two units' stuck catalog teams, once. Never raises."""
+    try:
+        if not _report_pending(CATALOG_TEAM_REPAIR_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("catalog-team-repair",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CATALOG_TEAM_REPAIR_DELAY_S),
+                    _catalog_team_repair_job)
+    except Exception as exc:
+        print(f"[startup] catalog team repair could not be scheduled: {exc}")
+
+
+def _catalog_team_repair_job() -> None:
+    print("[startup] catalog team repair: started")
+    from app.services import catalog_team_repair_oct28
+    _send_report_once(CATALOG_TEAM_REPAIR_FLAG, "catalog team repair",
+                      catalog_team_repair_oct28.send, REPORT_CHAT_BURKHON)
+
+
 def apply_brigadir_change_oct24() -> None:
     """Boot, after readiness, once: the four units change brigadir as ruled
     (`services/brigadir_change_oct24.py` — preconditions, one transaction with
