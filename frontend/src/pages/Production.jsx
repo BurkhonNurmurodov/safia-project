@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore, Scale, FileSpreadsheet,
+  Archive, ArchiveRestore, Scale,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -110,12 +110,14 @@ const cellTitle = (cell, tl, group = cell?.wc_group) => (cell?.verifix_code
 // comes before Факт (the operator's call, 2026-09-01). A row reads as "what was
 // asked for, then what came of it", and the form's own order put the answer
 // first.
-// The «Excel» button exports THIS table as displayed (the operator, 2026-10-29:
-// «the excel download always the same as the table») — the visible columns in
-// the picker's order, the rows on screen, each cell as `posExport` prints it.
-// A new column needs a case in BOTH `posCell` and `posExport`; one missing from
-// `posExport` still reaches the file through its raw field, never dropped.
-// The fixed brigadir «ABC форма» formula workbook is its own button.
+// The «Excel» button is the brigadirs' «ABC форма» workbook (live formulas),
+// and every column of THIS table the form lacks is inserted into it after ПЛАН
+// (the operator, 2026-10-29: «keep that style, but when new columns are added
+// add them also») — the visible ones, in the picker's order, each cell as
+// `posExport` prints it. A new column needs a case in BOTH `posCell` and
+// `posExport`; one missing from `posExport` still reaches the file through its
+// raw field, never dropped. `edit` marks a column a person types on the table —
+// the form paints it green, as it paints its own inputs.
 const COLS = [
   { key: "seq", labelKey: "production.col.seq", align: "center", hintKey: "production.col.seqHint" },
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
@@ -127,7 +129,7 @@ const COLS = [
   // the seconds ONE of these costs, so the pair reads as one statement; a
   // property of the position like the two beside it, never a verdict, so it
   // wears a neutral chip and no colour.
-  { key: "uom", labelKey: "production.col.uom", align: "center", hintKey: "production.col.uomHint" },
+  { key: "uom", labelKey: "production.col.uom", align: "center", edit: true, hintKey: "production.col.uomHint" },
   { key: "wc", labelKey: "production.col.wc", align: "center" },
   // The line's GROUP at its Команда (services/wc_group.py) — beside the Команда
   // because it is the second half of that answer: which of the cells standing
@@ -1536,7 +1538,6 @@ export default function Production() {
   const [wcSel, setWcSel] = usePersistentState("production_wc_filter", []); // [] = all teams
   const [sort, setSort] = usePersistentState("production_sort", { key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
   const [exporting, setExporting] = useState(false);
-  const [exportingAbc, setExportingAbc] = useState(false);
   const [staffingSaved, setStaffingSaved] = useState(false); // «Saqlandi» flash on the people tab
   const toggleSort = (key) =>
     setSort((s) => (s.key !== key ? { key, dir: "asc" }
@@ -2704,9 +2705,9 @@ export default function Production() {
 
   // ONE cell of the table as the export prints it — the twin of `posCell`,
   // which draws it. Numbers stay numbers (the decimals of NUM_DEC), words are
-  // the screen's words, «—» is a placeholder. A column with no case here still
-  // reaches the file through its raw field, so a column added to the table is
-  // never silently missing from the Excel.
+  // the screen's words, «—» is a placeholder (a blank cell in the form). A
+  // column with no case here still reaches the file through its raw field, so
+  // a column added to the table is never silently missing from the Excel.
   const posExport = (key, r, vyp) => {
     const num = (v, d) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v))
       ? XL_DASH : { v: Number(v), d });
@@ -2748,74 +2749,31 @@ export default function Production() {
     toast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"));
   const exportFail = (e) => toast.error(e?.response?.data?.detail || t("production.exportFailed"));
 
-  // «Excel» — the table AS DISPLAYED: the columns the picker shows in its
-  // order (`visibleCols`), the rows the search / Команда filter / sort leave in
-  // theirs (`viewRows`, unknown SKUs included), every cell through `posExport`.
-  // Built off the very arrays the table renders from, so the two cannot differ.
-  // The server only lays it out (services/table_mirror.py).
+  // «Excel» — the brigadirs' «ABC форма» workbook, live formulas and all
+  // (totals row 1, headers row 2, the team and indicator blocks — see
+  // /api/production/export.xlsx), with every column this table SHOWS that the
+  // form does not carry inserted after ПЛАН, in the table's order (the
+  // operator, 2026-10-29: «keep that style, but when new columns are added add
+  // them also»). The server decides which columns the form already has; this
+  // sends the visible ones with each row's cells as `posExport` prints them, so
+  // a column added to the table reaches the file with no other change. `order`
+  // is the rows on screen (search, Команда filter, sort) in their order.
   async function exportExcel() {
     setExporting(true);
     try {
-      const unit = data?.manager_name || "";
-      const day = ddmmyyyy(date);
-      const scope = [];
-      if (search.trim()) scope.push(t("production.export.search").replace("{q}", search.trim()));
-      if (wcSel.length) scope.push(`${t("production.col.wc")}: ${wcSel.join(", ")}`);
-      const sortCol = sort.key ? COLS.find((c) => c.key === sort.key) : null;
-      if (sortCol) {
-        scope.push(t("production.export.sort").replace("{col}", t(sortCol.labelKey))
-          .replace("{dir}", sort.dir === "desc" ? "↓" : "↑"));
-      }
-      const now = new Date();
-      const stamp = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()} `
-        + `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const count = t("production.export.rows").replace("{n}", String(viewRows.length))
-        + (viewRows.length !== rows.length ? ` / ${rows.length}` : "");
-      const title = t("production.positions");
-      const via = await exportXlsx("/api/production/table.xlsx", {
-        body: {
-          title,
-          sheet: title,
-          date,
-          lines: [
-            [unit, day].filter(Boolean).join(" · "),
-            scope.join(" · "),
-            `${count} · ${t("production.export.generated").replace("{t}", stamp)}`,
-          ].filter(Boolean),
-          filename: `${day} ${title}${unit ? ` ${unit}` : ""}.xlsx`,
-          caption: `📊 ${title}${unit ? ` — ${unit}` : ""}  •  ${day}`,
-          cols: visibleCols.map((c) => ({ key: c.key, label: t(c.labelKey), align: c.align })),
-          rows: viewRows.map((r) => {
-            const vyp = rowVyp(r);
-            return visibleCols.map((c) => posExport(c.key, r, vyp));
-          }),
-        },
-        fallbackName: `${day} ${title}.xlsx`,
-      });
-      deliverToast(via);
-    } catch (e) {
-      console.error("export failed", e);
-      exportFail(e);
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  // «ABC forma» — the brigadirs' fixed «ABC форма» workbook with live formulas
-  // (totals row 1, headers row 2, the team and indicator blocks — see
-  // /api/production/export.xlsx). Its columns are set by that form, not by the
-  // table, which is why it is a button of its own beside «Excel». `order` keeps
-  // the on-screen row order.
-  async function exportAbc() {
-    setExportingAbc(true);
-    try {
+      const lines = viewRows.filter((r) => r.id != null);
       const via = await exportXlsx("/api/production/export.xlsx", {
         body: {
           date,
           ...managerParam,
           lang,
-          order: viewRows.map((r) => r.id),
+          order: lines.map((r) => r.id),
           columns: visibleCols.map((c) => c.key),
+          cols: visibleCols.map((c) => ({ key: c.key, label: t(c.labelKey), input: Boolean(c.edit) })),
+          cells: lines.map((r) => {
+            const vyp = rowVyp(r);
+            return visibleCols.map((c) => posExport(c.key, r, vyp));
+          }),
         },
         fallbackName: `ABC ${date}.xlsx`,
       });
@@ -2824,7 +2782,7 @@ export default function Production() {
       console.error("export failed", e);
       exportFail(e);
     } finally {
-      setExportingAbc(false);
+      setExporting(false);
     }
   }
 
@@ -3574,19 +3532,6 @@ export default function Production() {
             <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
               {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
             </span>
-            <Button
-              size="lg"
-              variant="secondary"
-              icon={<FileSpreadsheet size={16} />}
-              loading={exportingAbc}
-              disabled={loading || viewRows.length === 0}
-              onClick={exportAbc}
-              className="whitespace-nowrap"
-              title={t("production.exportAbcHint")}
-              aria-label={t("production.exportAbc")}
-            >
-              <span className="hidden sm:inline">{t("production.exportAbc")}</span>
-            </Button>
             <Button
               size="lg"
               variant="success"

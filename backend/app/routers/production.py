@@ -41,6 +41,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import column_index_from_string, get_column_letter
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -116,6 +117,19 @@ ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 12.5, "G": 
 # the operator's call (2026-08-31): 15 of them printed a block of 0.0 / 0% rows
 # under every catalog, which reads as data. Raising it again is this one number.
 ABC_SPARE_ROWS = 0
+# The «Pozitsiyalar» table columns the form already carries (2026-10-29, the
+# operator: «keep that style, but when new columns are added add them also»).
+# Every OTHER column the table shows — «Birlik», «Bajarish %», «Kontiner
+# krishka», «Manba», and whatever the table gains later — is INSERTED after
+# ПЛАН (H), in the table's order, exactly where the brigadirs insert their own
+# columns by hand; everything from «Общ.трудаёмкост» on moves right with it.
+# `seq` is the table's own row counter, which Excel's row numbers already are.
+# `actual_labor` is the form's F (C*G/60 — the form heads it «вып %»).
+ABC_FORM_KEYS = frozenset({"seq", "sap_code", "name", "labor", "wc", "wc_group",
+                           "people", "actual_labor", "fact", "plan", "labor_total",
+                           "minutes", "pareto"})
+ABC_EXTRA_AT = 9      # the first inserted column — straight after ПЛАН (H)
+ABC_EXTRA_MAX = 30    # a column count no table reaches; bounds the body
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
 ABC_TEAM_START = 3    # first row of the M:O per-team block — level with the
                       # positions and the indicators. The manual form started it
@@ -1134,9 +1148,17 @@ class PositionsExportBody(BaseModel):
     # PPProduct ids in the EXACT on-screen order (post search/team-filter/sort)
     # at the moment the button was pressed. Empty → full default SAP order.
     order: list[int] = []
-    # Kept for wire compatibility — the export is the fixed «загрузка» template
-    # now, so the on-screen column picker no longer shapes the file.
+    # Kept for wire compatibility (a tab from before 4.339 sends the visible keys
+    # alone, and gets the form with no inserted columns).
     columns: list[str] = []
+    # The table's VISIBLE columns in its order — {key, label, input} — and, for
+    # every id in `order`, one cell per column as the table prints it (the page's
+    # `posExport`: {t} text · {v, d} number · {v, k: "pct"} percent · {m} «—»).
+    # The columns the form already carries (ABC_FORM_KEYS) are ignored here; the
+    # rest are inserted after ПЛАН. A column added to the table later reaches
+    # the file through this with no change on the server.
+    cols: list[dict] = []
+    cells: list[list] = []
 
 
 @router.post("/api/production/export.xlsx")
@@ -1175,7 +1197,17 @@ def export_positions(
     Two deliberate departures from the manual form: the indicator block carries
     five rows and not nine (see the P:Q section), and division-prone cells are
     wrapped in IFERROR, so a position with no people or no plan prints 0 instead
-    of #DIV/0!. Rows render in the exact order the client sends (`body.order`)."""
+    of #DIV/0!. Rows render in the exact order the client sends (`body.order`).
+
+    The table's own columns the form lacks (2026-10-29) are INSERTED after ПЛАН,
+    k of them (ABC_FORM_KEYS, `body.cols`), and every column from
+    «Общ.трудаёмкост» on moves right by k — the very shift a brigadir's own
+    inserted columns make, formulas following. The letters named above (I, M:O,
+    P:Q, X:Y, L) are those of k = 0, which is also every tab older than this
+    and every table with nothing extra on screen: byte for byte the old file.
+    An inserted column is the table's cell as printed — a value, green when a
+    person types it on the table (`input`) — except «Bajarish %», a live
+    =F/Общ.трудаёмкост like every derived cell here."""
     lang = body.lang
     day = _parse_date(body.date)
     mid = _resolve_manager_id(payload, body.manager_id, db, day)
@@ -1186,6 +1218,30 @@ def export_positions(
     if body.order:
         by_id = {r.get("id"): r for r in rows}
         rows = [by_id[i] for i in body.order if i in by_id]
+
+    # The inserted columns: what the table shows that the form does not carry,
+    # in the table's order, and each row's cells for them (keyed by id, so a row
+    # the dashboard no longer has simply leaves its cells behind).
+    extras: list[tuple[int, dict]] = [
+        (i, c) for i, c in enumerate(body.cols[:ABC_EXTRA_MAX])
+        if isinstance(c, dict) and str(c.get("key") or "") and c.get("key") not in ABC_FORM_KEYS]
+    extra_cells: dict = {}
+    if extras and len(body.cells) == len(body.order):
+        extra_cells = {rid: cl for rid, cl in zip(body.order, body.cells)
+                       if isinstance(cl, list)}
+    k = len(extras)
+
+    def at(n: int) -> int:
+        """The column a form column (its k = 0 index) lands on."""
+        return n if n < ABC_EXTRA_AT else n + k
+
+    def L(n: int) -> str:
+        return get_column_letter(at(n))
+
+    cI, cJ, cK, cL = L(9), L(10), L(11), L(12)          # Общ · Минут · Парето · Группа
+    cM, cN, cO = L(13), L(14), L(15)                    # the team block
+    cP, cQ = L(16), L(17)                               # the indicator block
+    cX, cY = L(24), L(25)                               # the group block
     wcs = dash.get("work_centers") or []
     consts = dash.get("constants") or {}
     sm = int(consts.get("shift_min") or DEFAULT_SHIFT_MIN)
@@ -1218,7 +1274,7 @@ def export_positions(
             cut_act[code] = ca
 
     def _team_minutes(code: str, rn: int) -> str:
-        base = f"SUMIFS($I:$I,$D:$D,$M{rn})"
+        base = f"SUMIFS(${cI}:${cI},$D:$D,${cM}{rn})"
         return f"({base}+{cut_plan[code]:.4f})" if code in cut_plan else base
 
     # The GROUP block (X:Y): one row per letter a CELL carries, in the order the
@@ -1282,32 +1338,67 @@ def export_positions(
     ttot = t1 + 1                                         # SUM row under the block
 
     # --- row 1: shift totals (вып % = actual/plan minutes, and the two sums) --
-    ws["E1"] = "=IFERROR(F1/I1,0)"
+    ws["E1"] = f"=IFERROR(F1/{cI}1,0)"
     ws["F1"] = f"=+SUM(F{ds}:F{data_end})" + (f"+{sum(cut_act.values()):.4f}" if cut_act else "")
     ws["H1"] = day                                        # the form's date cell
-    ws["I1"] = f"=SUM(I{ds}:I{data_end})" + (f"+{sum(cut_plan.values()):.4f}" if cut_plan else "")
+    ws[f"{cI}1"] = f"=SUM({cI}{ds}:{cI}{data_end})" + (f"+{sum(cut_plan.values()):.4f}" if cut_plan else "")
     # F1 and I1 are two sums of minutes standing side by side, so they wear ONE
     # format — the form's own space-grouped «78 000.00». F1's bare "0.00" spelled
     # a five-figure total with no separator at all.
     for coord, nf in (("E1", "0%"), ("F1", "#\\ ##0.00"), ("H1", "DD.MMM"),
-                      ("I1", "#\\ ##0.00")):
+                      (f"{cI}1", "#\\ ##0.00")):
         c = ws[coord]
         c.border, c.alignment, c.font, c.number_format = border, center, bold, nf
     ws["E1"].fill, ws["H1"].fill = green_cell, yellow
 
     # --- row 2: headers -------------------------------------------------------
     for i, h in enumerate(ABC_HEADERS, start=1):
-        c = ws.cell(row=2, column=i, value=h)
+        c = ws.cell(row=2, column=at(i), value=h)
+        c.font, c.alignment, c.border = bold, head_al, border
+    # The inserted columns carry the TABLE's header, in the reader's language —
+    # the word they read on screen (the form's own headers stay as the form has
+    # them, which was mixed ru/uz already).
+    for j, (_i, col) in enumerate(extras):
+        c = ws.cell(row=2, column=ABC_EXTRA_AT + j, value=str(col.get("label") or col["key"])[:60])
         c.font, c.alignment, c.border = bold, head_al, border
     for col, h in ((13, "Команда"), (14, "O. SONI"), (15, "Загруженность"),
                    (16, "Показатель"), (17, "Кол-во")):
-        c = ws.cell(row=2, column=col, value=h)
+        c = ws.cell(row=2, column=at(col), value=h)
         c.font, c.alignment, c.border = bold, head_al, border
     # The headers wrap (head_al), and the form's 25.35 fits only ~1.7 lines, so
     # the second line of «Общ.трудаёмкост» was cut off. Two
     # lines of 11pt need 30; 32 leaves margin. An explicit height is what
     # stops Excel auto-fitting, so it has to be tall enough on its own.
     ws.row_dimensions[2].height = 32
+
+    # --- the inserted columns (I … , k of them) -------------------------------
+    # A cell is what the table prints: a number keeps its decimals as the number
+    # format, a percent reads 0%, a word stays a word, and the table's «—» is a
+    # BLANK here — the form's way of saying «nothing yet», which is also where a
+    # brigadir types the value in. «Bajarish %» is the form's own arithmetic, so
+    # it is a formula off F and «Общ.трудаёмкост», as the table derives it.
+    def _extra_cells(rn: int, r: dict) -> None:
+        mine = extra_cells.get(r.get("id")) or []
+        for j, (i, col) in enumerate(extras):
+            c = ws.cell(row=rn, column=ABC_EXTRA_AT + j)
+            c.border, c.alignment = border, center
+            if col.get("key") == "vyp":
+                c.value, c.number_format = f"=IFERROR(F{rn}/{cI}{rn},0)", "0%"
+                continue
+            spec = mine[i] if i < len(mine) and isinstance(mine[i], dict) else {}
+            if col.get("input"):
+                c.fill = green_cell
+            v = spec.get("v")
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                c.value = v
+                if spec.get("k") == "pct":
+                    c.number_format = "0%"
+                else:
+                    d = spec.get("d")
+                    d = int(d) if isinstance(d, (int, float)) and 0 < d <= 4 else 0
+                    c.number_format = "0." + "0" * d if d else "0"
+            elif spec.get("t") is not None and not spec.get("m"):
+                c.value = str(spec["t"])[:500]
 
     # --- position rows (row 3+) ----------------------------------------------
     for idx, r in enumerate(rows):
@@ -1319,20 +1410,21 @@ def export_positions(
         act, plan = r.get("actual_qty"), r.get("plan_qty")
         ws.cell(row=rn, column=7, value=act if act else None)
         ws.cell(row=rn, column=8, value=plan if plan else None)
-        ws.cell(row=rn, column=12, value=r.get("wc_group") or None)   # L Группа
+        ws.cell(row=rn, column=at(12), value=r.get("wc_group") or None)   # L Группа
     for rn in range(ds, data_end + 1):
         r = rows[rn - ds] if rn - ds < len(rows) else {}
         if r.get("wc_group") and wc_group.label(r.get("work_center"), r["wc_group"]) in block_labels:
             # a line of a group some cell carries reads that GROUP's people
             ws.cell(row=rn, column=5,
-                    value=f'=+IFERROR(VLOOKUP(D{rn}&" · "&L{rn},$X:$Y,2,0),0)')        # ЛЮДИ
+                    value=f'=+IFERROR(VLOOKUP(D{rn}&" · "&{cL}{rn},${cX}:${cY},2,0),0)')   # ЛЮДИ
         else:
-            ws.cell(row=rn, column=5, value=f"=+IFERROR(VLOOKUP(D{rn},$M:$N,2,0),0)")   # ЛЮДИ
+            ws.cell(row=rn, column=5, value=f"=+IFERROR(VLOOKUP(D{rn},${cM}:${cN},2,0),0)")  # ЛЮДИ
         ws.cell(row=rn, column=6, value=f"=C{rn}*G{rn}/60")                          # вып %
-        ws.cell(row=rn, column=9, value=f"=C{rn}*H{rn}/60")                          # Общ.трудаёмкост
-        ws.cell(row=rn, column=10, value=f"=IFERROR(I{rn}/E{rn},0)")                 # Минут
-        ws.cell(row=rn, column=11, value=f"=+IFERROR(I{rn}/$I$1,0)")                 # Парето
-        for cn in range(1, 13):
+        ws.cell(row=rn, column=at(9), value=f"=C{rn}*H{rn}/60")                      # Общ.трудаёмкост
+        ws.cell(row=rn, column=at(10), value=f"=IFERROR({cI}{rn}/E{rn},0)")          # Минут
+        ws.cell(row=rn, column=at(11), value=f"=+IFERROR({cI}{rn}/${cI}$1,0)")       # Парето
+        _extra_cells(rn, r)
+        for cn in [*range(1, ABC_EXTRA_AT), *range(at(9), at(12) + 1)]:
             c = ws.cell(row=rn, column=cn)
             c.border = border
             c.alignment = left if cn in (1, 2) else center
@@ -1346,7 +1438,7 @@ def export_positions(
             dc = ws.cell(row=rn, column=4)
             dc.fill, dc.font = fill, Font(color=colour, bold=True)
         for cn, nf in ((3, "0.0"), (5, "0.0"), (6, "0.0"), (7, "0.0"), (8, "0"),
-                       (9, "0.0"), (10, "0.0"), (11, "0%")):
+                       (at(9), "0.0"), (at(10), "0.0"), (at(11), "0%")):
             ws.cell(row=rn, column=cn).number_format = nf
 
     # --- M:O — per-team block (feeds the ЛЮДИ VLOOKUP) ------------------------
@@ -1360,7 +1452,7 @@ def export_positions(
         rn = t0 + idx
         w = wcs[idx] if idx < len(wcs) else {}
         code = w.get("work_center") or ""
-        ws.cell(row=rn, column=13, value=code)                                        # M Команда
+        ws.cell(row=rn, column=at(13), value=code)                                    # M Команда
         # 0 people is a real answer for a cell that ran, and stays a written 0.
         # NOTHING typed is not: the cell is left BLANK for the brigadir to fill
         # in, because writing the formula's suggestion into the one hand-edited
@@ -1372,28 +1464,28 @@ def export_positions(
         _n = w.get("people")
         if code in summed_wcs:
             # the team's people ARE its groups' — one edit in Y reaches N
-            ws.cell(row=rn, column=14, value=f'=SUMIFS($Y:$Y,$X:$X,M{rn}&" · *")')
+            ws.cell(row=rn, column=at(14), value=f'=SUMIFS(${cY}:${cY},${cX}:${cX},{cM}{rn}&" · *")')
         else:
-            ws.cell(row=rn, column=14, value=(float(_n) if (code and _n is not None) else None))
+            ws.cell(row=rn, column=at(14), value=(float(_n) if (code and _n is not None) else None))
         if code in grouped_wcs:
             # The first row's ЛЮДИ is ONE group's people on a grouped team, so the
             # team's load divides by its own N, as the page's does.
-            ws.cell(row=rn, column=15,                                                # O Загруженность
-                    value=f"=+IFERROR({_team_minutes(code, rn)}/({sm}*N{rn}),0)")
+            ws.cell(row=rn, column=at(15),                                            # O Загруженность
+                    value=f"=+IFERROR({_team_minutes(code, rn)}/({sm}*{cN}{rn}),0)")
         else:
-            ws.cell(row=rn, column=15, value=(                                        # O Загруженность
-                f"=+IFERROR({_team_minutes(code, rn)}/({sm}*VLOOKUP($M{rn},$D:$E,2,0)),0)"))
-        for cn in (13, 14, 15):
+            ws.cell(row=rn, column=at(15), value=(                                    # O Загруженность
+                f"=+IFERROR({_team_minutes(code, rn)}/({sm}*VLOOKUP(${cM}{rn},$D:$E,2,0)),0)"))
+        for cn in (at(13), at(14), at(15)):
             c = ws.cell(row=rn, column=cn)
             c.border, c.alignment = border, center
         if code:                                    # M Команда — same chip colour
-            mc = ws.cell(row=rn, column=13)
+            mc = ws.cell(row=rn, column=at(13))
             fill, colour = _wc_style(code)
             mc.fill, mc.font = fill, Font(color=colour, bold=True)
-        ws.cell(row=rn, column=14).fill = yellow    # the block's one hand-editable cell
-        for cn, nf in ((14, "0.0"), (15, "0%")):
+        ws.cell(row=rn, column=at(14)).fill = yellow    # the block's one hand-editable cell
+        for cn, nf in ((at(14), "0.0"), (at(15), "0%")):
             ws.cell(row=rn, column=cn).number_format = nf
-    tot = ws.cell(row=ttot, column=14, value=f"=SUM(N{t0}:N{t1})")
+    tot = ws.cell(row=ttot, column=at(14), value=f"=SUM({cN}{t0}:{cN}{t1})")
     tot.border, tot.alignment, tot.font, tot.number_format = border, center, bold, "0.0"
 
     # --- X:Y — per-group block (feeds a grouped line's ЛЮДИ) ------------------
@@ -1402,20 +1494,20 @@ def export_positions(
     # like N: the headcount the page counts the group with (its typed pin, or its
     # share of a whole-team figure), blank when nothing reaches the group.
     if gblock:
-        for col, h in ((24, "Команда · буква"), (25, "O. SONI")):
+        for col, h in ((at(24), "Команда · буква"), (at(25), "O. SONI")):
             c = ws.cell(row=2, column=col, value=h)
             c.font, c.alignment, c.border = bold, head_al, border
         for idx, (lbl, code, n) in enumerate(gblock):
             rn = t0 + idx
-            xc = ws.cell(row=rn, column=24, value=lbl)
-            yc = ws.cell(row=rn, column=25, value=(float(n) if n is not None else None))
+            xc = ws.cell(row=rn, column=at(24), value=lbl)
+            yc = ws.cell(row=rn, column=at(25), value=(float(n) if n is not None else None))
             xc.border = yc.border = border
             xc.alignment = yc.alignment = center
             fill, colour = _wc_style(code)
             xc.fill, xc.font = fill, Font(color=colour, bold=True)
             yc.fill, yc.number_format = yellow, "0.0"
-        ws.column_dimensions["X"].width = 15
-        ws.column_dimensions["Y"].width = 8.5
+        ws.column_dimensions[cX].width = 15
+        ws.column_dimensions[cY].width = 8.5
 
     # --- P:Q — indicator block ------------------------------------------------
     # FIVE figures. The 2026-08-31 trim cut the manual form's nine down to three,
@@ -1453,28 +1545,31 @@ def export_positions(
     # not asked for — both are computable now that kerak is back, so wanting either
     # later is one more entry in this list, not new arithmetic.
     indicators = [
-        ("Nechta odam keldi",                                   f"=SUM(N{t0}:N{t1})",
+        ("Nechta odam keldi",                                   f"=SUM({cN}{t0}:{cN}{t1})",
          "0"),
-        ("Nechta odam kerak",                                   f"=ROUND(I1/{pm:g},0)",
+        ("Nechta odam kerak",                                   f"=ROUND({cI}1/{pm:g},0)",
          "0"),
-        ("Bo`sh odam/kerakli odam",                             f"=+Q{ds}-Q{ds + 1}",
+        ("Bo`sh odam/kerakli odam",                             f"=+{cQ}{ds}-{cQ}{ds + 1}",
          "0;[Red]-0"),
-        ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)",  f"=IFERROR(I1/(Q{ds}*{sm}),0)",
+        ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)",  f"=IFERROR({cI}1/({cQ}{ds}*{sm}),0)",
          "0%"),
-        ("Общ.трудаёмкост",                                     "=I1",
+        ("Общ.трудаёмкост",                                     f"={cI}1",
          "#\\ ##0.00"),
     ]
     for idx, (label, formula, nf) in enumerate(indicators):
         rn = ds + idx
-        xc = ws.cell(row=rn, column=16, value=label)
-        yc = ws.cell(row=rn, column=17, value=formula)
+        xc = ws.cell(row=rn, column=at(16), value=label)
+        yc = ws.cell(row=rn, column=at(17), value=formula)
         xc.font, xc.alignment, xc.border = bold, left, border
         yc.alignment, yc.border, yc.number_format = center, border, nf
         xc.fill = yc.fill = green_head
 
     ws.freeze_panes = "A3"
     for col, w in ABC_WIDTHS.items():
-        ws.column_dimensions[col].width = w
+        ws.column_dimensions[L(column_index_from_string(col))].width = w
+    for j, (_i, col) in enumerate(extras):
+        ws.column_dimensions[get_column_letter(ABC_EXTRA_AT + j)].width = (
+            14 if len(str(col.get("label") or "")) > 18 else 11)
 
     bio = BytesIO()
     wb.save(bio)
@@ -1518,14 +1613,14 @@ def export_positions_table(
     body: TableExportBody,
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """The «Excel» button of «Pozitsiyalar»: the table AS DISPLAYED — the columns
-    the picker shows in its order, the rows the search / Команда filter / sort
-    leave in theirs, every cell printed as the screen prints it. Nothing is read
-    or computed here: the page describes the table it is drawing and this lays
-    it out, so a column added to the table reaches the file by itself. The fixed
-    brigadir «ABC форма» formula workbook stays on /api/production/export.xlsx.
-    Delivered by app/xlsx_delivery.py (a download in a browser, a DM in
-    Telegram)."""
+    """The «Excel» button of «Pozitsiyalar» on 4.338.x ONLY: the table as a plain
+    house-look sheet. The next day the operator asked for the «ABC форма» look
+    back («keep that style, but when new columns are added add them also»), so
+    the current page calls /api/production/export.xlsx, which inserts the
+    table's extra columns into the form. Nothing in the current bundle calls
+    this; it stays so a tab still open on 4.338 keeps a working button, and goes
+    with services/table_mirror.py once that is no longer a concern. Delivered by
+    app/xlsx_delivery.py (a download in a browser, a DM in Telegram)."""
     from app.services import table_mirror
     spec = body.model_dump()
     why = table_mirror.validate(spec)

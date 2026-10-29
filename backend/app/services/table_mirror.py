@@ -1,5 +1,9 @@
 """A table as it stands on the screen, laid out as a workbook.
 
+(Since 4.339 nothing in the current bundle calls this: the «Pozitsiyalar»
+«Excel» is the «ABC форма» again, with the table's extra columns inserted —
+routers/production.export_positions. Kept for a tab still open on 4.338.)
+
 The «Zagruzka fayli» positions table (and any other picker-equipped table that
 wants it) is exported as EXACTLY what the reader sees: the columns the
 ColumnsPicker shows, in the order it shows them; the rows the search, the
