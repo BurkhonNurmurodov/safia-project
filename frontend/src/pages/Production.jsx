@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore, Scale,
+  Archive, ArchiveRestore, Scale, FileSpreadsheet,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -59,6 +59,16 @@ const todayISO = () => {
 const fmt = (v, d = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d });
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(0)}%`);
+// A row's «Вып %» — one spelling for the table cell and its Excel twin.
+const rowVyp = (r) => (r.total_labor ? r.actual_labor / r.total_labor : null);
+// The decimals each numeric column prints with — read by the cell AND the
+// export, so the file shows the very digits the table does.
+const NUM_DEC = { labor: 2, people: 1, plan: 0, fact: 0, container_cap: 0,
+  actual_labor: 1, labor_total: 1, minutes: 1 };
+// Excel inks for the screen's muted / warning text (light theme values).
+const XL_SOFT = "#6b7280";
+const XL_WARN = "#a16207";
+const XL_DASH = { t: "—", m: true };
 const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 // The page scope's shift filter — the platform runs two shifts and
 // `Manager.shift` holds nothing else, so the control offers the same three
@@ -99,8 +109,13 @@ const cellTitle = (cell, tl, group = cell?.wc_group) => (cell?.verifix_code
 // Order follows the ABC Excel ("Sheet1 ...") with ONE deliberate departure: ПЛАН
 // comes before Факт (the operator's call, 2026-09-01). A row reads as "what was
 // asked for, then what came of it", and the form's own order put the answer
-// first. The export is unaffected — it emits the fixed ABC template, whose
-// columns are set by that form and never by this catalog.
+// first.
+// The «Excel» button exports THIS table as displayed (the operator, 2026-10-29:
+// «the excel download always the same as the table») — the visible columns in
+// the picker's order, the rows on screen, each cell as `posExport` prints it.
+// A new column needs a case in BOTH `posCell` and `posExport`; one missing from
+// `posExport` still reaches the file through its raw field, never dropped.
+// The fixed brigadir «ABC форма» formula workbook is its own button.
 const COLS = [
   { key: "seq", labelKey: "production.col.seq", align: "center", hintKey: "production.col.seqHint" },
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
@@ -1521,7 +1536,7 @@ export default function Production() {
   const [wcSel, setWcSel] = usePersistentState("production_wc_filter", []); // [] = all teams
   const [sort, setSort] = usePersistentState("production_sort", { key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
   const [exporting, setExporting] = useState(false);
-  const [exportDone, setExportDone] = useState(false);
+  const [exportingAbc, setExportingAbc] = useState(false);
   const [staffingSaved, setStaffingSaved] = useState(false); // «Saqlandi» flash on the people tab
   const toggleSort = (key) =>
     setSort((s) => (s.key !== key ? { key, dir: "asc" }
@@ -2518,7 +2533,7 @@ export default function Production() {
       case "labor":
         return (
           <td key={key} className="px-3 py-2 text-center tabular-nums">
-            {r.has_labor ? fmt(r.labor_time, 2)
+            {r.has_labor ? fmt(r.labor_time, NUM_DEC.labor)
               : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
           </td>
         );
@@ -2615,7 +2630,7 @@ export default function Production() {
       case "people":
         // One decimal: a line of an untyped group reads that group's SHARE of
         // the centre, a fraction of a person (integers print unchanged).
-        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 1)}</td>;
+        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, NUM_DEC.people)}</td>;
       case "vyp":
         return <td key={key} className="px-3 py-2 text-center"><VypCell value={vyp} /></td>;
       // QtyCell IS the <td> — the spreadsheet editor fills the cell, so the cell
@@ -2668,11 +2683,11 @@ export default function Production() {
         );
       }
       case "actual_labor":
-        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>;
+        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, NUM_DEC.actual_labor)}</td>;
       case "labor_total":
-        return <td key={key} className="px-3 py-2 text-center tabular-nums font-medium">{fmt(r.total_labor, 1)}</td>;
+        return <td key={key} className="px-3 py-2 text-center tabular-nums font-medium">{fmt(r.total_labor, NUM_DEC.labor_total)}</td>;
       case "minutes":
-        return <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{fmt(r.minutes, 1)}</td>;
+        return <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{fmt(r.minutes, NUM_DEC.minutes)}</td>;
       case "pareto":
         return (
           <td key={key} className="px-3 py-2 text-center">
@@ -2687,17 +2702,114 @@ export default function Production() {
     }
   };
 
-  // Excel export of the Positions table → user's private Telegram chat (never a
-  // browser download).
-  // `order` = the ids of the rows exactly as displayed (current search / team
-  // filter / sort), so the exported rows follow the on-screen order. The file
-  // itself is the fixed «ABC форма» template with live formulas — its columns
-  // are set by that form, not by the column picker, so `columns` is sent for
-  // wire compatibility only.
+  // ONE cell of the table as the export prints it — the twin of `posCell`,
+  // which draws it. Numbers stay numbers (the decimals of NUM_DEC), words are
+  // the screen's words, «—» is a placeholder. A column with no case here still
+  // reaches the file through its raw field, so a column added to the table is
+  // never silently missing from the Excel.
+  const posExport = (key, r, vyp) => {
+    const num = (v, d) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v))
+      ? XL_DASH : { v: Number(v), d });
+    switch (key) {
+      case "seq": return r.seq == null ? XL_DASH : { v: r.seq, d: 0, fg: XL_SOFT };
+      case "sap_code": return r.sap_code ? { t: String(r.sap_code), fg: XL_SOFT } : XL_DASH;
+      case "op": return r.op != null && r.op !== "" ? { t: String(r.op), fg: XL_SOFT } : XL_DASH;
+      case "name": return { t: r.name ?? "" };
+      case "labor": return r.has_labor ? num(r.labor_time, NUM_DEC.labor) : { t: "—", fg: XL_WARN };
+      case "uom": return r.uom ? { t: uomLabel(t, r.uom) } : XL_DASH;
+      case "wc": return r.work_center
+        ? { t: wcGroupLabel(r.work_center, r.wc_group), fg: wcColor(r.work_center) } : XL_DASH;
+      case "wc_group": return r.wc_group ? { t: r.wc_group } : XL_DASH;
+      case "people": return num(r.people, NUM_DEC.people);
+      case "vyp": return vyp == null || Number.isNaN(vyp) ? XL_DASH
+        : { v: vyp, k: "pct", fg: vypColor(vyp), b: true };
+      case "plan": return num(r.plan_qty, NUM_DEC.plan);
+      case "fact": return num(r.actual_qty, NUM_DEC.fact);
+      case "container_cap": return num(r.container_cap, NUM_DEC.container_cap);
+      case "autofill": return r.sap_filled !== false
+        ? { t: t("production.autofill.sap"), fg: XL_SOFT }
+        : { t: t("production.autofill.manual"), fg: "#b07828" };
+      case "actual_labor": return num(r.actual_labor, NUM_DEC.actual_labor);
+      case "labor_total": return num(r.total_labor, NUM_DEC.labor_total);
+      case "minutes": { const c = num(r.minutes, NUM_DEC.minutes); return c.m ? c : { ...c, fg: XL_SOFT }; }
+      case "pareto": return r.pareto == null || Number.isNaN(r.pareto) ? XL_DASH
+        : { v: r.pareto, k: "pct", fg: XL_SOFT };
+      default: {
+        const v = r[key];
+        if (v === null || v === undefined || v === "") return XL_DASH;
+        return typeof v === "number" ? { v, d: 2 } : { t: String(v) };
+      }
+    }
+  };
+
+  // Delivered where this session can use it: a download in a browser, the
+  // caller's own Telegram chat inside Telegram (utils/exportXlsx.js).
+  const deliverToast = (via) =>
+    toast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"));
+  const exportFail = (e) => toast.error(e?.response?.data?.detail || t("production.exportFailed"));
+
+  // «Excel» — the table AS DISPLAYED: the columns the picker shows in its
+  // order (`visibleCols`), the rows the search / Команда filter / sort leave in
+  // theirs (`viewRows`, unknown SKUs included), every cell through `posExport`.
+  // Built off the very arrays the table renders from, so the two cannot differ.
+  // The server only lays it out (services/table_mirror.py).
   async function exportExcel() {
     setExporting(true);
     try {
-      await exportXlsx("/api/production/export.xlsx", {
+      const unit = data?.manager_name || "";
+      const day = ddmmyyyy(date);
+      const scope = [];
+      if (search.trim()) scope.push(t("production.export.search").replace("{q}", search.trim()));
+      if (wcSel.length) scope.push(`${t("production.col.wc")}: ${wcSel.join(", ")}`);
+      const sortCol = sort.key ? COLS.find((c) => c.key === sort.key) : null;
+      if (sortCol) {
+        scope.push(t("production.export.sort").replace("{col}", t(sortCol.labelKey))
+          .replace("{dir}", sort.dir === "desc" ? "↓" : "↑"));
+      }
+      const now = new Date();
+      const stamp = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()} `
+        + `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const count = t("production.export.rows").replace("{n}", String(viewRows.length))
+        + (viewRows.length !== rows.length ? ` / ${rows.length}` : "");
+      const title = t("production.positions");
+      const via = await exportXlsx("/api/production/table.xlsx", {
+        body: {
+          title,
+          sheet: title,
+          date,
+          lines: [
+            [unit, day].filter(Boolean).join(" · "),
+            scope.join(" · "),
+            `${count} · ${t("production.export.generated").replace("{t}", stamp)}`,
+          ].filter(Boolean),
+          filename: `${day} ${title}${unit ? ` ${unit}` : ""}.xlsx`,
+          caption: `📊 ${title}${unit ? ` — ${unit}` : ""}  •  ${day}`,
+          cols: visibleCols.map((c) => ({ key: c.key, label: t(c.labelKey), align: c.align })),
+          rows: viewRows.map((r) => {
+            const vyp = rowVyp(r);
+            return visibleCols.map((c) => posExport(c.key, r, vyp));
+          }),
+        },
+        fallbackName: `${day} ${title}.xlsx`,
+      });
+      deliverToast(via);
+    } catch (e) {
+      console.error("export failed", e);
+      exportFail(e);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // «ABC forma» — the brigadirs' fixed «ABC форма» workbook with live formulas
+  // (totals row 1, headers row 2, the team and indicator blocks — see
+  // /api/production/export.xlsx). Its columns are set by that form, not by the
+  // table, which is why it is a button of its own beside «Excel». `order` keeps
+  // the on-screen row order.
+  async function exportAbc() {
+    setExportingAbc(true);
+    try {
+      const via = await exportXlsx("/api/production/export.xlsx", {
         body: {
           date,
           ...managerParam,
@@ -2707,13 +2819,12 @@ export default function Production() {
         },
         fallbackName: `ABC ${date}.xlsx`,
       });
-      setExportDone(true);
-      setTimeout(() => setExportDone(false), 4000);
+      deliverToast(via);
     } catch (e) {
       console.error("export failed", e);
-      alert(e?.response?.data?.detail || "Export failed");
+      exportFail(e);
     } finally {
-      setExporting(false);
+      setExportingAbc(false);
     }
   }
 
@@ -3060,16 +3171,6 @@ export default function Production() {
   return (
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
       {toast.node}
-      {/* Export success toast — fixed top-right, outside normal flow */}
-      {exportDone && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: "#22c55e", color: "#fff", maxWidth: 320, boxShadow: "0 8px 24px rgba(34,197,94,0.35)" }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t("staff.exportToast")}</span>
-        </div>
-      )}
       {/* ONE page bar: the day stepper (its calendar dots the days that hold
           an upload, and offers «Bugun» itself), then the consolidated filter
           zone (plant → shift → brigadir) whose chips wrap under it on a phone,
@@ -3475,12 +3576,26 @@ export default function Production() {
             </span>
             <Button
               size="lg"
+              variant="secondary"
+              icon={<FileSpreadsheet size={16} />}
+              loading={exportingAbc}
+              disabled={loading || viewRows.length === 0}
+              onClick={exportAbc}
+              className="whitespace-nowrap"
+              title={t("production.exportAbcHint")}
+              aria-label={t("production.exportAbc")}
+            >
+              <span className="hidden sm:inline">{t("production.exportAbc")}</span>
+            </Button>
+            <Button
+              size="lg"
               variant="success"
               icon={<Download size={16} />}
               loading={exporting}
               disabled={loading || viewRows.length === 0}
               onClick={exportExcel}
               className="whitespace-nowrap"
+              title={t("production.exportExcelHint")}
             >
               {t("production.exportExcel")}
             </Button>
@@ -3580,7 +3695,7 @@ export default function Production() {
                 </td></tr>
               )}
               {!loading && viewRows.map((r, i) => {
-                const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
+                const vyp = rowVyp(r);
                 const wc = wcColor(r.work_center);
                 // TWO different rights, and they must not share one flag: a
                 // brigadir may TICK a row (the measure reaches a selection) but
