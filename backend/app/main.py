@@ -141,7 +141,6 @@ async def lifespan(app: FastAPI):
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        report_weblogin,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -471,13 +470,6 @@ async def lifespan(app: FastAPI):
     # phase. Remove this line, `startup.report_pin_mismatch` and
     # `services/pin_mismatch_report.py` once it has been sent.
     run(report_pin_mismatch)
-
-    # ⚠ TEMPORARY report (2026-10-29) — why «abbos.m» cannot sign in on the
-    # website: the login row, every browser sign-in request of 72 h, the log
-    # lines. READ-ONLY, DMed once to Burkhon. Only SCHEDULES a job. Remove this
-    # line, `startup.report_weblogin` and `services/weblogin_report_oct29.py`
-    # once it has been sent.
-    run(report_weblogin)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).
