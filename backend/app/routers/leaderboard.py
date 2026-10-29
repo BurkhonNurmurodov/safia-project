@@ -26,7 +26,7 @@ from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
 from app.services import action_log, brigadir_board as bb, gc_pause
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services.name_map import supervisor_match
+from app.services.name_map import register_rows, supervisor_match
 from app.services.ojidaniya_matrix import TZ, today_local
 from app.services.shared_build import SharedBuild
 from app.xlsx_delivery import deliver_xlsx
@@ -104,15 +104,16 @@ def _quality_rows(db: Session, d_from: date, d_to: date) -> list[tuple]:
     The upper bound is EXCLUSIVE on the day after `d_to`: `date` is an ISO
     string, so a row that ever carries a time («2026-10-23T10:00») survives a
     `< "2026-10-24"` that a `<= "2026-10-23"` would silently drop."""
-    return (
-        db.query(QualityComplaint.brigadir, QualityComplaint.status,
+    return register_rows(
+        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
                  QualityComplaint.date, func.count(QualityComplaint.id))
         .filter(QualityComplaint.brigadir.isnot(None),
                 QualityComplaint.date >= _iso(d_from),
                 QualityComplaint.date < _iso(d_to + timedelta(days=1)),
                 or_(QualityComplaint.category.is_(None),
                     QualityComplaint.category != bb.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.status, QualityComplaint.date)
+        .group_by(QualityComplaint.brigadir, QualityComplaint.place,
+                  QualityComplaint.status, QualityComplaint.date)
         .all()
     )
 

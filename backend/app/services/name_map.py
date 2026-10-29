@@ -184,6 +184,47 @@ _OVERRIDES = {
 }
 
 
+# ─── Register rows a brigadir pin must NOT reach ─────────────────────────────
+# A pin above names a SPELLING, and a spelling cannot tell two sites apart.
+# «XAYRULLO O'G'LI ХABIBULLO» is pinned to «Suvonov Elshod» for the workshop
+# rows the register files under that name — but the same person is also named
+# on the «Келес B2B» rows, which are not Suvonov's (the operator, 2026-10-29).
+# Such a row is matched to NO unit: it stays in the register under the sheet's
+# own spelling and counts for no brigadir — the Quality page, the shift
+# report's «Sifat nazorati %», the brigadir ranking and «Hisobotlar» alike.
+# Keyed on (place, brigadir), both folded, so an alphabet or spacing drift on
+# either column still matches («Келес В2В» typed on the Russian layout too).
+def _place_key(place: str | None) -> str:
+    from app.services.latin_code import latin_code
+    toks = [latin_code(t) for t in str(place or "").split()]
+    s = transliterate(" ".join(toks), "uz").upper()
+    return " ".join(re.sub(r"[^A-Z0-9]", " ", s).split())
+
+
+_PLACE_EXCLUSIONS = {
+    (_place_key(place), _norm(brigadir))
+    for place, brigadir in (
+        ("Келес B2B", "XAYRULLO O'G'LI ХABIBULLO"),
+    )
+}
+
+
+def register_brigadir(place: str | None, brigadir: str | None) -> str | None:
+    """The quality-register «Отв. бригадир» to resolve to a unit for ONE row —
+    None when that row must count for no brigadir (see _PLACE_EXCLUSIONS)."""
+    if brigadir and (_place_key(place), _norm(brigadir)) in _PLACE_EXCLUSIONS:
+        return None
+    return brigadir
+
+
+def register_rows(rows: Iterable[tuple]) -> list[tuple]:
+    """Grouped register rows ``(brigadir, place, *rest)`` → ``(brigadir, *rest)``
+    with the brigadir blanked where `register_brigadir` says so. For the
+    per-unit counts that group in SQL: they group by place as well, then drop it
+    here, and every reader already skips a row with no brigadir."""
+    return [(register_brigadir(place, b), *rest) for b, place, *rest in rows]
+
+
 # ─── Leaders-form supervisor relabels ────────────────────────────────────────
 # A different problem from _OVERRIDES above: these rows name a person who is
 # not the supervisor of the unit the rows belong to, so the NAME itself is

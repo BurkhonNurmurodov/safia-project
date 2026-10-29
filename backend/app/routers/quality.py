@@ -22,7 +22,7 @@ from app.permissions import require_page
 from app.services import action_log
 from app.services.cell_lookup import by_verifix, resolve_verifix
 from app.services.factory_scope import factory_of_managers, viewer_factory_id
-from app.services.name_map import supervisor_match
+from app.services.name_map import register_brigadir, supervisor_match
 from app.services.quality_export import build_quality_workbook
 from app.services.sheets_sync import sync_quality_sheet
 from app.xlsx_delivery import deliver_xlsx
@@ -126,7 +126,9 @@ def get_quality(
     out_rows = []
     for r in rows:
         cell = resolve_verifix(cells_tbl, r.fault_code)
-        sup_row = sup.get(r.brigadir) or {}
+        # A row `register_brigadir` blanks (a pinned spelling at a site that is
+        # not that unit's) keeps its sheet name in «b» and matches no unit.
+        sup_row = sup.get(register_brigadir(r.place, r.brigadir)) or {}
         fi = fac_of_manager.get(sup_row.get("id"))
         if fi is None and cell:
             fi = fac_of_manager.get(cell_owner.get(cell["id"]))

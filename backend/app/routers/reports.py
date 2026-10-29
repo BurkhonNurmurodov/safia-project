@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Manager, QualityComplaint
-from app.services.name_map import supervisor_match
+from app.services.name_map import register_rows, supervisor_match
 from app.permissions import require_page
 from app.services import (
     action_log, assistant_documents, brigadir_board as bb, idle_scope,
@@ -92,15 +92,16 @@ def _quality_rows(db: Session, d_from: date, d_to: date):
     `category != 'hair'` is NULL there, i.e. false, and «uncategorised» is not
     «hair». The upper bound is exclusive on the day after `d_to`, because
     `date` is an ISO string a row may carry a time on."""
-    return (
-        db.query(QualityComplaint.brigadir, QualityComplaint.status,
+    return register_rows(
+        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
                  QualityComplaint.date, func.count(QualityComplaint.id))
         .filter(QualityComplaint.brigadir.isnot(None),
                 QualityComplaint.date >= d_from.isoformat(),
                 QualityComplaint.date < (d_to + timedelta(days=1)).isoformat(),
                 or_(QualityComplaint.category.is_(None),
                     QualityComplaint.category != bb.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.status, QualityComplaint.date)
+        .group_by(QualityComplaint.brigadir, QualityComplaint.place,
+                  QualityComplaint.status, QualityComplaint.date)
         .all()
     )
 

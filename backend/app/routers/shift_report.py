@@ -44,7 +44,7 @@ from app.services import (cell_hours, leader_register, live_overview, live_staff
                           shared_build, shift_report, shift_scope, verifix_live,
                           zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services.name_map import supervisor_match
+from app.services.name_map import register_rows, supervisor_match
 
 router = APIRouter(prefix="/api/shift-report", tags=["shift-report"])
 log = logging.getLogger(__name__)
@@ -260,14 +260,14 @@ def _compute(db: Session, units: list, note, now, windows) -> dict:
     # The category test keeps a row whose category is NULL: in SQL `category !=
     # 'hair'` is NULL there, i.e. false, so an uncategorised record would be
     # dropped as though it were hair.
-    counts = (
-        db.query(QualityComplaint.brigadir, QualityComplaint.status,
+    counts = register_rows(
+        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
                  func.count(QualityComplaint.id))
         .filter(QualityComplaint.brigadir.isnot(None),
                 QualityComplaint.date >= m_from, QualityComplaint.date < m_to,
                 or_(QualityComplaint.category.is_(None),
                     QualityComplaint.category != shift_report.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.status)
+        .group_by(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status)
         .all()
     )
     live = db.query(Manager).filter(Manager.archived.is_(False)).all()
