@@ -124,6 +124,7 @@ try:
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
+        report_weblogin,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -558,6 +559,9 @@ try:
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
+    # ⚠ TEMPORARY report (2026-10-29) — «abbos.m» web login, DMed once.
+    # Remove once it has been sent.
+    report_weblogin()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()

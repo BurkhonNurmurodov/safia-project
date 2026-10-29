@@ -7772,6 +7772,39 @@ def _pin_mismatch_job() -> None:
                       pin_mismatch_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: why «abbos.m» cannot sign in on the website (2026-10-29) ───────
+# The login form says «Could not reach the server» — printed only when its
+# request got NO answer — while the site answers a sign-in from anywhere else.
+# READ-ONLY: the login row (never a password column), every browser sign-in
+# request the action register holds for 72 h, the profile's own activity, and
+# the WEB-LOGIN / nginx log lines; DMed once to Burkhon
+# (`services/weblogin_report_oct29.py`). Changing what it reports needs a NEW
+# key. Delete this block, the module and both entrypoint calls once it is sent.
+WEBLOGIN_REPORT_FLAG = "weblogin_report_abbos_2026_10_29_v1"
+_WEBLOGIN_REPORT_DELAY_S = 60
+
+
+def report_weblogin() -> None:
+    """The «abbos.m» browser-login report, DMed once. Never raises."""
+    try:
+        if not _report_pending(WEBLOGIN_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("weblogin-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_WEBLOGIN_REPORT_DELAY_S),
+                    _weblogin_job)
+    except Exception as exc:
+        print(f"[startup] web login report could not be scheduled: {exc}")
+
+
+def _weblogin_job() -> None:
+    print("[startup] web login report: started")
+    from app.services import weblogin_report_oct29
+    _send_report_once(WEBLOGIN_REPORT_FLAG, "web login report",
+                      weblogin_report_oct29.send, REPORT_CHAT_BURKHON)
+
+
 # ── one-shot: every shift-manager, brigadir and leader AS VERIFIX LISTS THEM ──
 # The operator asked on 2026-10-25 for the names and shifts of all three roles
 # «from the verifix (not from our platform)». It READS Verifix (employees, jobs,
