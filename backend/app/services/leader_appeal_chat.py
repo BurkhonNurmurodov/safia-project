@@ -587,6 +587,15 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
         admins = []
     admin_profiles = sorted({a.profile_id for a in admins if a.profile_id})
     targets += [profile_key("admin", pid) for pid in admin_profiles]
+    # «Lider nazorati — admin» holders are told everything an admin is
+    # (2026-10-29): a position's grant on its profile, a login's on the account.
+    grant_ids: set[int] = set()
+    try:
+        from app.capabilities import CAP_LEADERS_ADMIN, cap_holder_targets
+        grant_keys, grant_ids = cap_holder_targets(db, CAP_LEADERS_ADMIN)
+        targets += [k for k in sorted(grant_keys) if k not in targets]
+    except Exception:
+        logger.warning("leaders-admin holders unreadable", exc_info=True)
     try:
         targets += [k for k in sorted(member_keys(db, thread, row.id)) if k not in targets]
     except Exception:
@@ -605,18 +614,19 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
         except Exception:
             logger.warning("appeal notice to %s failed", key, exc_info=True)
 
-    # An admin whose account carries no profile has no profile to address.
-    for a in admins:
-        if a.profile_id or not a.telegram_id or a.telegram_id in dmed:
+    # An admin whose account carries no profile has no profile to address —
+    # and neither has a login granted «Lider nazorati — admin» on its own.
+    lone = [int(a.telegram_id) for a in admins if not a.profile_id and a.telegram_id]
+    lone += sorted(grant_ids)
+    for tid in lone:
+        if tid in dmed:
             continue
         try:
-            _notify_account(db, int(a.telegram_id), nkey, params, tone, markup,
-                            subject=subject)
-            dmed.add(int(a.telegram_id))
-            told.add(int(a.telegram_id))
+            _notify_account(db, tid, nkey, params, tone, markup, subject=subject)
+            dmed.add(tid)
+            told.add(tid)
         except Exception:
-            logger.warning("appeal notice to admin %s failed", a.telegram_id,
-                           exc_info=True)
+            logger.warning("appeal notice to admin %s failed", tid, exc_info=True)
     try:
         db.commit()
     except Exception:

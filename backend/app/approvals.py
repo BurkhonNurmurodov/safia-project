@@ -794,7 +794,7 @@ def _render_leader_dispute(data, lang) -> str:
     return "\n".join(lines)
 
 
-def send_leader_dispute_to_admins(db, d) -> None:
+def send_leader_dispute_to_admins(db, d) -> set[int]:
     """A brigadir's objection to an automatic rejection. Admins only, by the
     same rule as opening a late day: the person who wants the deduction undone
     is not the person who undoes it. The panel button lands on the day report
@@ -803,16 +803,21 @@ def send_leader_dispute_to_admins(db, d) -> None:
     data = _leader_dispute_data(db, d)
     # ONE button, onto the objection's chat — the ruling and its reason are
     # made there (2026-09-26); the day report is one tap away inside it.
-    _broadcast(db, "leader_dispute", d.id, data, _render_leader_dispute,
-               kb_fn=lambda lang: open_chat_markup(DISPUTE, d.id, lang))
+    # «Lider nazorati — admin» holders get the admins' card (2026-10-29).
+    from app.capabilities import leaders_admin_ids
+    return _broadcast(db, "leader_dispute", d.id, data, _render_leader_dispute,
+                      extra_recipients=leaders_admin_ids(db),
+                      kb_fn=lambda lang: open_chat_markup(DISPUTE, d.id, lang))
 
 
 def send_leader_late_to_admins(db, req) -> None:
     """A supervisor's request to open a voided leader-day. Admins only — the flow
     exists so that the person who wants the day open is not the person who opens
     it, which a capability grant would quietly undo."""
+    from app.capabilities import leaders_admin_ids
     _broadcast(db, "leader_late", req.id, _leader_late_data(db, req),
-               _render_leader_late, panel="/leaders?tab=late")
+               _render_leader_late, panel="/leaders?tab=late",
+               extra_recipients=leaders_admin_ids(db))
 
 
 # ── Cross-edit primitive — the single source of "decision happened" ───────────
@@ -1285,13 +1290,15 @@ def _decide_leader_late(req_id: int, status: str, call) -> None:
     check is cheap and the alternative is a day opened by whoever holds a
     forwarded message. Runs the SAME core as the web app, so an approval from a
     DM notifies the leader exactly like one from the panel."""
+    from app.capabilities import leaders_admin_account
     from app.models import LeaderLateRequest
     from app.routers.leaders import decide_late_request
     from app.telegram_bot import _admin_ids
 
-    if call.from_user.id not in _admin_ids():
-        raise AlreadyHandled()
     with SessionLocal() as db:
+        if (call.from_user.id not in _admin_ids()
+                and not leaders_admin_account(db, call.from_user.id)):
+            raise AlreadyHandled()
         req = db.query(LeaderLateRequest).filter_by(id=req_id).first()
         if req is None or req.status != "pending":
             raise AlreadyHandled()   # withdrawn, or another admin got there first

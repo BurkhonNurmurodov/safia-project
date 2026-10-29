@@ -45,6 +45,7 @@ from app.models import (
     Cell, LeaderAutoCheck, LeaderChecklist, LeaderLateProof, LeaderTaskDay,
     LeaderTaskEntry, LeaderTaskPhoto, Manager, RoleProfile,
 )
+from app.capabilities import leaders_admin
 from app.permissions import require_page
 from app.routers.leader_proof import _own_cell, _own_leader, _relay
 from app.routers.leaders import (
@@ -543,7 +544,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                          and not (per_cell and cell_id is None) and not no_load
                          and not not_owed),
             "object": may_object and appealable,
-            "admin": payload.get("role") == "admin",
+            "admin": leaders_admin(db, payload),
         },
         "closeDay": ({"ready": not missing, "missing": missing}
                      if (is_today and not per_task and files and not no_load

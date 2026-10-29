@@ -9,7 +9,8 @@ exactly as an admin does: the amber flag chip, the checked / flagged cells and
 the verdict strip inside each task card. This started as an admin-only pilot;
 once a flag began costing points automatically, hiding the verdict from the
 two people it costs was the wrong default. Everything that queues, re-checks,
-resolves, configures or purges stays behind `verify_admin`.
+resolves or configures is an admin's — or «Lider nazorati — admin»'s
+(`_LEADERS_ADMIN`); purging the history stays behind `verify_admin`.
 
 Verdicts are read in three shapes:
 
@@ -52,6 +53,7 @@ from app.models import (
     Manager, RoleProfile,
 )
 from app.permissions import require_page
+from app.capabilities import CAP_LEADERS_ADMIN, leaders_admin, require_cap
 from app.routers.admin import verify_admin
 from app.services import (action_log, ai_review, gemini, leader_ai, leader_rule_eras, leader_shift,
                           leader_tasks, one_process)
@@ -60,6 +62,10 @@ from app.services.name_map import (
 )
 
 router = APIRouter(prefix="/api/leader-ai", tags=["leader-ai"])
+# Acting on the reviewer: an admin, or «Lider nazorati — admin»
+# (`capabilities.leaders_admin`, 2026-10-29). `history/clear` alone stays
+# `verify_admin` — it deletes verdicts and is never grantable.
+_LEADERS_ADMIN = require_cap(CAP_LEADERS_ADMIN)
 log = logging.getLogger(__name__)
 
 # How far the queue's own scan reaches. It no longer walks flags alone: a clean
@@ -97,7 +103,7 @@ def overview(db: Session = Depends(get_db),
     """
     if not ai_review.available():
         return {"enabled": False, "counts": {}}
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         return {"enabled": True}
 
     # No date re-derive here (`leader_ai.sync_date_flags`). Every input of the
@@ -182,7 +188,7 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     if not ai_review.available():
         return {"enabled": False, "tasks": {}}
 
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         # Lazy, like leader_reports: routers/leaders imports the leader_ai
         # SERVICE at module load, and this router is loaded beside it.
         from app.routers.leaders import build_report_row, report_scope_ok
@@ -260,7 +266,7 @@ def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
           flag: str | None = Query(None),
           bucket: str | None = Query(None),
           state: str | None = Query(None),
-          db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+          db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """The review feed — every judged proof in the period, with enough context
     inlined to rule on it.
 
@@ -849,7 +855,7 @@ class ResolveIn(BaseModel):
 
 @router.post("/resolve")
 def resolve(body: ResolveIn, db: Session = Depends(get_db),
-            admin: dict = Depends(verify_admin)):
+            admin: dict = Depends(_LEADERS_ADMIN)):
     """Record the human decision that takes a flag out of the queue.
 
     Three rulings, and only one of them costs anybody anything:
@@ -999,7 +1005,7 @@ class ReviewNowIn(BaseModel):
 
 @router.post("/review-now")
 def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
-               _: dict = Depends(verify_admin)):
+               _: dict = Depends(_LEADERS_ADMIN)):
     """Review ONE task's photos right now and return the verdict.
 
     Deliberately synchronous and deliberately per-task. A whole report is up to
@@ -1168,7 +1174,7 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
 
 
 @router.post("/run")
-def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def run(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Drain what is already queued. Queues NOTHING.
 
     This was the last bulk submitter on the platform. It ran a full
@@ -1330,7 +1336,7 @@ def _scope_lines(db: Session, body: "RecheckIn") -> list[tuple]:
 
 @router.post("/recheck")
 def recheck(body: RecheckIn, db: Session = Depends(get_db),
-            admin: dict = Depends(verify_admin)):
+            admin: dict = Depends(_LEADERS_ADMIN)):
     """Re-queue verdicts that have already been judged, so a changed prompt or
     model runs against them again.
 
@@ -1624,7 +1630,7 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
                   manager_id: int | None = Query(None, ge=1),
                   leader_id: int | None = Query(None, ge=1),
                   tasks: str | None = Query(None, pattern=r"^(none|\d+(,\d+)*)$"),
-                  db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+                  db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """What the chosen SLICE actually holds, and how much of it is already
     checked — plus the option lists for narrowing it further.
 
@@ -2040,7 +2046,7 @@ def _pace(db: Session, started: datetime, slice_kw: dict, left: int) -> dict | N
 
 
 @router.get("/progress")
-def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def progress(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """How far the current run has got. Polled by the page while a run is live.
 
     `done` counts rows JUDGED SINCE the run started rather than "total minus
@@ -2222,7 +2228,7 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 
 @router.post("/progress/kick")
-def kick(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def kick(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Start draining NOW instead of waiting for the timer.
 
     Every path that queues work already kicks a drain, so this is not the normal
@@ -2249,7 +2255,7 @@ def kick(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 
 @router.post("/progress/cancel")
-def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(_LEADERS_ADMIN)):
     """Stop whatever is queued and CLEAR it — leaving nothing behind.
 
     A progress bar with no stop is a bill you cannot decline: the operator who
@@ -2435,7 +2441,7 @@ ACTIVITY_CAP = 200
 @router.get("/activity")
 def activity(limit: int = Query(60, ge=1, le=ACTIVITY_CAP),
              since: str | None = Query(None),
-             db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+             db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """WHOSE data has been reviewed, and what came of it.
 
     The progress strip could only ever report arithmetic: a percentage, a
@@ -2579,7 +2585,7 @@ QUEUE_SCAN_CAP = 8000
 
 
 @router.get("/activity/queue")
-def activity_queue(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def activity_queue(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """WHOSE work is queued for review but not yet judged — and when it was sent.
 
     `/activity` answers what the reviewer has DECIDED. It reads `reviewed_at`,
@@ -2741,7 +2747,7 @@ def activity_queue(db: Session = Depends(get_db), _: dict = Depends(verify_admin
 
 
 @router.post("/retry")
-def retry(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def retry(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Give exhausted rows their attempts back. The usual cause of a stuck row
     is a fixable server-side condition (photo permissions, a missing bot token),
     so there has to be a way to re-run them without touching the database."""

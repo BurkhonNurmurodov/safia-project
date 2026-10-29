@@ -5055,7 +5055,9 @@ def _lp_send_to_supervisor(db, row) -> set[int]:
 
 
 def _lp_send_to_admins(db, row) -> set[int]:
-    return _lp_deliver(db, row, set(_admin_ids()), "adm")
+    # «Lider nazorati — admin» holders get the admins' card (2026-10-29).
+    from app.capabilities import leaders_admin_ids
+    return _lp_deliver(db, row, set(_admin_ids()) | leaders_admin_ids(db), "adm")
 
 
 def _lp_can_supervise(db, tid: int, row) -> bool:
@@ -5575,10 +5577,10 @@ def _ad_send_to_supervisor(db, d) -> set[int]:
     return got
 
 
-def _ad_send_to_admins(db, d) -> None:
+def _ad_send_to_admins(db, d) -> set[int]:
     """Stage 2 is the card that already existed. One admin card, not two."""
     from app.approvals import send_leader_dispute_to_admins
-    send_leader_dispute_to_admins(db, d)
+    return send_leader_dispute_to_admins(db, d) or set()
 
 
 def _ad_retire(db, d, outcome_key: str) -> None:

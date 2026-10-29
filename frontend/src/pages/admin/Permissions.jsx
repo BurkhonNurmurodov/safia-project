@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
-  LayoutGrid, Ban, Briefcase, Copy,
+  LayoutGrid, Ban, Briefcase, Copy, UserCheck,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -86,6 +86,7 @@ import CopyPermsModal from "./CopyPermsModal";
 const GROUP_ICONS = {
   requests:   ClipboardCheck,
   attendance: CalendarClock,
+  leaders:    UserCheck,
   identity:   UserCog,
   pages:      LayoutGrid,
 };
@@ -94,6 +95,7 @@ const GROUP_ICONS = {
 const GROUP_TINTS = {
   requests:   "#3b82f6",
   attendance: "#22c55e",
+  leaders:    "#14b8a6",
   identity:   "#a855f7",
   pages:      "#f97316",
 };

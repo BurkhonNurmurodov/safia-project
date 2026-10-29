@@ -4010,6 +4010,47 @@ new decision; the two locks below are the feature.
 
 Related memory: `idle-category-owner-role`.
 
+## «Lider nazorati — admin» — an admin's reach over /leaders, for one person (`leaders.admin`, 2026-10-29)
+
+The operator: «give admin like permissions to a guest. Only for leaders
+monitoring.» Asked: every admin action on the page, the notices admins get, and
+the four checklist admin destinations. ONE capability, `leaders.admin`
+(`capabilities.CAP_LEADERS_ADMIN`), group «Lider nazorati» on the Permissions
+tab, unscoped (an admin's reach is the whole plant). Switched on per PROFILE or
+per ACCOUNT like any grant; it supersedes, for its holder, the «admin-only, not
+grantable» notes in the sections on objections, late proofs, the AI review,
+ltdaily, ltexclude and ltcutoff.
+
+- **`capabilities.leaders_admin(db, payload)` is THE test** — admin, or the
+  grant. Every leaders admin check asks it; never re-spell `role == "admin"` at
+  a leaders call site. Endpoints that were `verify_admin` take
+  `require_cap(CAP_LEADERS_ADMIN)` (`_LEADERS_ADMIN` in `leader_ai.py` and
+  `leader_tasks.py`). `leaders_admin_account` is the bot-tap twin,
+  `leaders_admin_ids` / `cap_holder_targets` who is told.
+- **What it reaches**: the admin stage of objections and late proofs, their
+  undo, writing and @mentioning in every appeal chat; filing an objection or a
+  late-day as an admin does (filing IS the approval); the shift-1 late-day
+  decision; the AI review tab and every reviewer control (queue, resolve,
+  check-now, run, re-check, progress, cancel, retry, activity); the hand
+  done/not-done override; reopen/empty on the Chek-list tab; the ranking tiers;
+  a cutoff's reason and author on the roster; the whole register
+  (`page_view_scope("leaders")` answers «all» — `_READS_PAGE_WHOLE`); and the
+  admin destinations ltasks · ltdaily · ltexclude · ltcutoff (a capability's
+  `tab` may now be a LIST; `capability_tabs` flattens it).
+- **Told like an admin**: the admins' Telegram cards for objections, late proofs
+  and late days (`extra_recipients`), every appeal-chat notice
+  (`leader_appeal_chat.fanout` — a profile grant on the profile, an account
+  grant on the account), and the bell's «Sizdan kutilmoqda» (admin-stage
+  appeals, late days).
+- **Deliberately NOT**: «Tarixni tozalash» (`/api/leader-ai/history/clear`,
+  deletes verdicts — stays `verify_admin`, the button is drawn for real admins
+  only); the bot's own admin screens (locked-task reopen in Telegram); every
+  other admin page; and rule 5 holds — no authority over admin identities, no
+  Permissions tab.
+- Frontend: `CAP.LEADERS_ADMIN`; `Leaders.jsx`'s `isAdmin` is
+  `role === "admin" || can(CAP.LEADERS_ADMIN)`; every other right on the
+  report, the queues, the appeal chat and the Chek-list tab is the server's.
+
 ## The checklist config page (`/admin/upload?tab=ltasks`)
 
 From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO

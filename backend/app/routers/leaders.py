@@ -21,7 +21,7 @@ from app.models import (
     LeaderLateProof, LeaderLateProofMedia, LeaderLateRequest, LeaderSyncMeta,
     LeaderTaskDay, LeaderTaskOverride, Manager,
 )
-from app.capabilities import page_scope_is_all
+from app.capabilities import leaders_admin, page_scope_is_all
 from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app import identity
@@ -288,18 +288,19 @@ def _late_map(db: Session) -> dict[str, LeaderLateRequest]:
     return out
 
 
-def _may_decide(payload: dict) -> bool:
-    """Only an admin opens a day. Deliberately NOT a page grant or a capability:
-    the whole point of the flow is that the brigadir who wants the day open is
-    not the one who opens it."""
-    return payload.get("role") == "admin"
+def _may_decide(db: Session, payload: dict) -> bool:
+    """Only an admin opens a day — or a holder of «Lider nazorati — admin»
+    (`capabilities.leaders_admin`, 2026-10-29). Never a page grant: the whole
+    point of the flow is that the brigadir who wants the day open is not the
+    one who opens it."""
+    return leaders_admin(db, payload)
 
 
-def _may_request_for(payload: dict, manager_id: int | None) -> bool:
+def _may_request_for(db: Session, payload: dict, manager_id: int | None) -> bool:
     """Who may ask for a day to be opened: the unit's own supervisor, or an admin
     (who then does not need to ask at all — see _open_day). A "see all" page grant
     deliberately does NOT widen this; it widens reading, never authority."""
-    if payload.get("role") == "admin":
+    if leaders_admin(db, payload):
         return True
     return (
         payload.get("role") == "supervisor"
@@ -347,8 +348,9 @@ def get_leader_tiers(
     payload: dict = Depends(require_page("leaders")),
 ):
     """The active cutoffs. Readable by anyone who can open the page — everyone
-    has to render the same chips — while writing stays admin-only."""
-    return {**_read_tiers(db), "can_edit": payload.get("role") == "admin"}
+    has to render the same chips — while writing stays admin-only (or
+    «Lider nazorati — admin»)."""
+    return {**_read_tiers(db), "can_edit": leaders_admin(db, payload)}
 
 
 @router.put("/leader-tiers")
@@ -357,7 +359,7 @@ def put_leader_tiers(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("leaders")),
 ):
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admins only")
 
     cuts = {}
@@ -449,8 +451,8 @@ def get_leaders(
     # another viewer shares.
     scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
     if not scoped and not _la_hides(payload):
-        return _assemble(leader_register.get(db, payload, _build_shared,
-                                             scope=request.scope), payload, since)
+        return _assemble(db, leader_register.get(db, payload, _build_shared,
+                                                 scope=request.scope), payload, since)
     # A scoped build is KEPT too, one per viewer scope, under the same rules
     # (the 13 Oct «Server was slow» DM: /api/leaders ×10, median 5.8 s — every
     # one a supervisor's or a leader's own build). The key is everything in the
@@ -566,14 +568,15 @@ def _build_scoped(db: Session, view: dict, sees_all: bool) -> leader_register.Bu
         head, leader_register.encode_days(rows, _ENC.encode, _row_day), tail)
 
 
-def _assemble(b: leader_register.Build, payload: dict, since: str | None = None) -> Response:
+def _assemble(db: Session, b: leader_register.Build, payload: dict,
+              since: str | None = None) -> Response:
     """A kept build with THIS viewer's header — the same keys in the same order
     `_leaders_feed` returns them — and, for anybody but an admin, the roster
     without a cutoff's reason and author, exactly as their own build would
     have left it. The rows are shared and read-only."""
     role = payload.get("role")
     roster = b.roster
-    if role != "admin":
+    if not leaders_admin(db, payload):
         roster = [
             {**p, "cutoff_reason": None, "cutoff_by": None}
             if (p.get("cutoff_reason") is not None or p.get("cutoff_by") is not None)
@@ -585,8 +588,8 @@ def _assemble(b: leader_register.Build, payload: dict, since: str | None = None)
         "roster": roster,
         "cutoffs": b.cutoffs,
         "cutUnits": b.cut_units,
-        "can_request_late": role in ("admin", "supervisor"),
-        "can_decide_late": _may_decide(payload),
+        "can_request_late": role == "supervisor" or _may_decide(db, payload),
+        "can_decide_late": _may_decide(db, payload),
     }, **_JSON)
     rows = b.window(since) if b.days is not None else b.data
     return PartsResponse((head[:-1].encode("utf-8") + b',"data":', *rows,
@@ -1028,7 +1031,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     elif role == "leader" and not sees_all:
         scoped_profiles = [p for p in leader_profiles if p.id in my_pids]
 
-    is_admin = role == "admin"
+    is_admin = leaders_admin(db, payload)
 
     roster = []
     for p in scoped_profiles:
@@ -1315,8 +1318,8 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
         # Whether this viewer can act in the open-a-day flow at all. The client
         # shows the «Late reports» tab off these, so authority is never a guess
         # made from the role string on the client.
-        "can_request_late": role in ("admin", "supervisor"),
-        "can_decide_late": _may_decide(payload),
+        "can_request_late": role == "supervisor" or _may_decide(db, payload),
+        "can_decide_late": _may_decide(db, payload),
     }
 
 
@@ -1943,10 +1946,10 @@ def _stamp_report_rights(db: Session, payload: dict, row: dict) -> dict:
     # 409 is worse than none.
     row["canDispute"] = (_may_dispute_for(db, payload, row)
                          and leader_dispute.appealable(row.get("date")))
-    sup_ok = (role == "admin") or (
+    sup_ok = leaders_admin(db, payload) or (
         role == "supervisor" and row.get("managerId") is not None
         and payload.get("role_id") == row["managerId"])
-    adm_ok = _may_decide(payload)
+    adm_ok = _may_decide(db, payload)
     row["canSupervise"] = sup_ok
     row["canDecide"] = adm_ok
     row["viewerRole"] = role
@@ -1987,7 +1990,7 @@ def _may_dispute_for(db: Session, payload: dict, report: dict) -> bool:
     opening a voided DAY. Two flows that happen to agree today are two flows.
     """
     role = payload.get("role")
-    if role == "admin":
+    if leaders_admin(db, payload):
         return True
     if role == "supervisor":
         return (report.get("managerId") is not None
@@ -1999,7 +2002,7 @@ def _may_dispute_for(db: Session, payload: dict, report: dict) -> bool:
     return False
 
 
-def _dispute_stage_rights(payload: dict, d: LeaderAiDispute) -> tuple[bool, bool]:
+def _dispute_stage_rights(db: Session, payload: dict, d: LeaderAiDispute) -> tuple[bool, bool]:
     """(may rule at stage 1, may rule at stage 2) for this caller on this row.
 
     Authority is per ROW, not per page: a brigadir owns their own unit's
@@ -2007,8 +2010,9 @@ def _dispute_stage_rights(payload: dict, d: LeaderAiDispute) -> tuple[bool, bool
     same shape — and the same reason — as `_lp_stage_rights` next door: a
     supervisor holding the leaders page at scope «all» is served every unit's
     rows, and "you are a brigadir" is not "you are THIS unit's brigadir".
+    «Lider nazorati — admin» rules both stages, as an admin does.
     """
-    if payload.get("role") == "admin":
+    if leaders_admin(db, payload):
         return True, True
     is_sup = (payload.get("role") == "supervisor"
               and d.manager_id is not None
@@ -2177,12 +2181,13 @@ def file_dispute(
                 if judge == leader_dispute.KIND_ADMIN else None))
     db.commit()
 
-    if role == "admin":
+    if leaders_admin(db, payload):
         # An admin asking themselves for permission is not a flow. Filing IS
-        # the decision — the same rule as opening a late day.
+        # the decision — the same rule as opening a late day. «Lider nazorati
+        # — admin» files the same way, and the thread names their own role.
         leader_dispute.decide_admin(db, d, action="approved", note=None,
                                     actor_name=who, actor_telegram=tid,
-                                    actor_profile=prof_key, actor_role="admin")
+                                    actor_profile=prof_key, actor_role=role or "admin")
         db.commit()
         leader_dispute.notify_decided(db, d, stage="admin",
                                       actor_profile=prof_key, actor_telegram=tid)
@@ -2220,8 +2225,7 @@ def _dispute_announce(db: Session, d: LeaderAiDispute) -> None:
         else:
             from app.approvals import send_leader_dispute_to_admins
             from app.telegram_bot import _admin_ids
-            send_leader_dispute_to_admins(db, d)
-            carded = set(_admin_ids())
+            carded = set(_admin_ids()) | (send_leader_dispute_to_admins(db, d) or set())
     except Exception:
         logger.exception("leader-dispute: card failed for %s", d.id)
     # Everybody else in the chat hears about it too — the leader when their
@@ -2272,7 +2276,7 @@ def decide_dispute(
         raise HTTPException(status_code=404, detail="No such dispute")
     action = str(body.get("action") or body.get("status") or "").strip()
     note = str(body.get("note") or "").strip()
-    sup_ok, adm_ok = _dispute_stage_rights(payload, d)
+    sup_ok, adm_ok = _dispute_stage_rights(db, payload, d)
     who = payload.get("full_name") or "—"
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
     prof_key = identity.viewer_profile_key(db, payload)
@@ -2383,8 +2387,7 @@ def _dispute_after(db: Session, d: LeaderAiDispute, *, stage: str,
         if stage == "supervisor":
             _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
             if uplifted:
-                _ad_send_to_admins(db, d)
-                carded = set(_admin_ids())
+                carded = set(_admin_ids()) | _ad_send_to_admins(db, d)
         else:
             edit_admin_notices("leader_dispute", d.id, d.status, d.decided_by_name)
     except Exception:
@@ -2412,7 +2415,7 @@ def undo_dispute(
     the day re-scores and re-DMs itself through `resend_if_changed`, and all
     three parties are told the ruling no longer stands.
     """
-    if not _may_decide(payload):
+    if not _may_decide(db, payload):
         raise HTTPException(status_code=403, detail="Admins only")
     d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
     if d is None:
@@ -2617,7 +2620,7 @@ def _dispute_items(db: Session, payload: dict,
     items = []
     for d in rows:
         who = proj.get(d.ref) or {}
-        sup_ok, adm_ok = _dispute_stage_rights(payload, d)
+        sup_ok, adm_ok = _dispute_stage_rights(db, payload, d)
         # Whether THIS caller may rule on THIS row, by the same predicate the
         # write re-checks. Deriving it from page-level flags is a different
         # question: a supervisor holding the page at scope «all» is served
@@ -2725,7 +2728,7 @@ def list_disputes(
     alone and every write re-checks it.
     """
     role = payload.get("role")
-    can_decide = _may_decide(payload)
+    can_decide = _may_decide(db, payload)
     empty = {"items": [], "canDecide": False, "canSupervise": False,
              "canApprove": False, "todo": 0}
     q = db.query(LeaderAiDispute)
@@ -2778,7 +2781,7 @@ def set_task_override(
     Idempotent per (uid, task): re-ruling overwrites the previous row and
     re-stamps the actor, so a correction is a normal action, not a DB edit.
     """
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admins only")
     uid = str(body.get("uid") or "").strip()
     date = str(body.get("date") or "")[:10]
@@ -2847,7 +2850,7 @@ def _late_queue_items(db: Session, payload: dict) -> list[dict]:
     decide gets nothing — the queue is a work surface, not a second dashboard.
     """
     role = payload.get("role")
-    if role not in ("admin", "supervisor"):
+    if role != "supervisor" and not leaders_admin(db, payload):
         return []
 
     rows = db.query(LeaderChecklist).order_by(LeaderChecklist.date.desc()).all()
@@ -2901,8 +2904,8 @@ def _late_queue_items(db: Session, payload: dict) -> list[dict]:
                 "rows": 0,
                 "state": req.status if req else "void",
                 "request": None,
-                "can_request": _may_request_for(payload, mid),
-                "can_decide": _may_decide(payload),
+                "can_request": _may_request_for(db, payload, mid),
+                "can_decide": _may_decide(db, payload),
             }
             if req:
                 it["request"] = {
@@ -2935,7 +2938,7 @@ def get_late_queue(
     items = _late_queue_items(db, payload)
     return {
         "items": items,
-        "can_decide": _may_decide(payload),
+        "can_decide": _may_decide(db, payload),
         # What the tab badge counts: whose TURN it is, not what they are allowed
         # to touch. An admin owes decisions on pending requests; a brigadir owes
         # a request on days nobody has raised yet. An admin may open any of those
@@ -3060,7 +3063,7 @@ def request_late_open(
         db.delete(old)
         db.flush()
 
-    is_admin = payload.get("role") == "admin"
+    is_admin = leaders_admin(db, payload)
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
     req = LeaderLateRequest(
@@ -3112,7 +3115,7 @@ def decide_late_open(
     """Approve or reject a request — admins only. Approving an already-approved
     day (or rejecting a rejected one) is a no-op, not an error, so two admins
     tapping at once never produces a contradiction."""
-    if not _may_decide(payload):
+    if not _may_decide(db, payload):
         raise HTTPException(status_code=403, detail="Admins only")
     status = str(body.get("status") or "")
     if status not in ("approved", "rejected"):
@@ -3160,7 +3163,7 @@ def cancel_late_open(
     if req.status != "pending":
         raise HTTPException(status_code=409, detail="Already decided")
     mine = req.requested_by_profile and req.requested_by_profile == identity.viewer_profile_key(db, payload)
-    if not (_may_decide(payload) or mine):
+    if not (_may_decide(db, payload) or mine):
         raise HTTPException(status_code=403, detail="Not your request")
 
     # Read off the row before it goes: after the delete these attributes have
@@ -3377,7 +3380,7 @@ def set_exclusions(
     lift, because the reason answers "why does this day not count" and a day
     that counts needs no answer.
     """
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(403, "Faqat administrator")
 
     items = body.get("items") or []
@@ -3498,7 +3501,7 @@ def set_cutoffs(
     mandatory to cut and pointless to lift, because the reason answers "why do
     these days not count" and days that count need no answer.
     """
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(403, "Faqat administrator")
 
     items = body.get("items") or []
@@ -3615,9 +3618,9 @@ def _lp_stage_rights(db: Session, payload: dict, row) -> tuple[bool, bool]:
     Authority is per ROW, not per page: a brigadir owns their own unit's late
     proofs and nobody else's, and only an admin can put a point back. A "see
     all" page grant widens READING and never this — the same rule the late-day
-    flow already states.
+    flow already states. «Lider nazorati — admin» rules both stages.
     """
-    if payload.get("role") == "admin":
+    if leaders_admin(db, payload):
         return True, True
     is_sup = (payload.get("role") == "supervisor"
               and row.manager_id is not None
@@ -3719,7 +3722,7 @@ def list_late_proofs(
     an admin never carries one for a row still sitting with a brigadir.
     """
     role = payload.get("role")
-    is_admin = role == "admin"
+    is_admin = leaders_admin(db, payload)
     q = db.query(LeaderLateProof)
     if status:
         q = q.filter(LeaderLateProof.status == status)
@@ -3884,8 +3887,7 @@ def _lp_after(db: Session, row, *, stage: str, uplifted: bool,
                else f"lp_done_{row.status}")
         _lp_retire(db, row, "sup" if stage == "supervisor" else "adm", key)
         if uplifted:
-            _lp_send_to_admins(db, row)
-            carded = set(_admin_ids())
+            carded = set(_admin_ids()) | (_lp_send_to_admins(db, row) or set())
     except Exception:
         logger.warning("late-proof card retire/forward failed", exc_info=True)
     leader_late_proof.notify_decided(db, row, stage=stage,
@@ -3906,7 +3908,7 @@ def undo_late_proof(
     made at (2026-09-26 — the twin of `undo_dispute`). The same chat opens
     again with that stage's buttons; an approval's point is taken back until
     somebody rules again, and the day re-scores."""
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admins only")
     row = db.query(LeaderLateProof).filter_by(id=late_id).first()
     if row is None:
@@ -3952,7 +3954,7 @@ def late_proof_photo(
     if row is None:
         raise HTTPException(status_code=404, detail="Not found")
     role = payload.get("role")
-    if role != "admin":
+    if not leaders_admin(db, payload):
         allowed = (role in ("shift-manager", "top-manager")
                    or page_scope_is_all(db, payload, "leaders")
                    or (role == "supervisor" and row.manager_id is not None

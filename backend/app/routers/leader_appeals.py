@@ -37,7 +37,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.capabilities import page_scope_is_all
+from app.capabilities import leaders_admin, page_scope_is_all
 from app.database import get_db
 from app.models import (
     LeaderAiDispute, LeaderAppealFile, LeaderAppealMessage, LeaderLateProof,
@@ -92,7 +92,7 @@ def _is_member(db: Session, payload: dict, thread: str, row) -> bool:
 
 def _reads_by_scope(db: Session, payload: dict, row) -> bool:
     role = payload.get("role")
-    if role == "admin" or role in ("shift-manager", "top-manager"):
+    if role in ("shift-manager", "top-manager") or leaders_admin(db, payload):
         return True
     if page_scope_is_all(db, payload, "leaders"):
         return True
@@ -106,7 +106,7 @@ def _can_read(db: Session, payload: dict, thread: str, row) -> bool:
 def _party(db: Session, payload: dict, thread: str, row) -> bool:
     """One of the three people the chat belongs to — or somebody an admin
     brought in, who writes like them."""
-    return (payload.get("role") == "admin" or _is_unit_sup(payload, row)
+    return (leaders_admin(db, payload) or _is_unit_sup(payload, row)
             or _is_leader(db, payload, row) or _is_member(db, payload, thread, row))
 
 
@@ -122,15 +122,16 @@ def _rights(db: Session, payload: dict, thread: str, row) -> dict:
     """What THIS caller may do on THIS row — the buttons the page draws, off
     the very predicates every write re-checks."""
     if thread == chat.DISPUTE:
-        sup_ok, adm_ok = _dispute_stage_rights(payload, row)
+        sup_ok, adm_ok = _dispute_stage_rights(db, payload, row)
         back = leader_dispute.reopen_stage(row)
     else:
         sup_ok, adm_ok = _lp_stage_rights(db, payload, row)
         back = leader_late_proof.reopen_stage(row)
+    admin = leaders_admin(db, payload)
     return {
         "canWrite": _open(thread, row) and _party(db, payload, thread, row),
         # Only an admin brings a new person in, and only while it is open.
-        "canMention": payload.get("role") == "admin" and _open(thread, row),
+        "canMention": admin and _open(thread, row),
         # Read ONLY because an admin brought them in: the day report behind
         # the appeal is not theirs to open, so the page offers no link to it.
         "invited": (not _reads_by_scope(db, payload, row)
@@ -140,7 +141,7 @@ def _rights(db: Session, payload: dict, thread: str, row) -> dict:
         "canSupervise": row.status == "supervisor" and sup_ok,
         # stage 2: Refuse (required comment) / Approve (optional comment)
         "canDecide": row.status == "admin" and adm_ok,
-        "canUndo": payload.get("role") == "admin" and back is not None,
+        "canUndo": admin and back is not None,
         "open": _open(thread, row),
     }
 
@@ -319,7 +320,7 @@ def _post(db: Session, payload: dict, thread: str, rid: int, parsed: dict) -> di
     # (the leader and the brigadir are offered no list, by the operator's
     # ruling, and a typed key from them brings nobody).
     invited: list[str] = []
-    if role == "admin":
+    if leaders_admin(db, payload):
         invited = chat.invite(db, thread, row, _mention_keys(fields.get("mentions")),
                               by_profile=viewer, by_name=name, by_role=role,
                               by_telegram=tid, message_id=m.id)
@@ -362,7 +363,7 @@ def _people(db: Session, payload: dict, thread: str, rid: int) -> list[dict]:
     """Everybody an admin may @mention in this chat. Admins only — the leader
     and the brigadir get no list (the operator's ruling, 2026-09-26)."""
     row = _readable(db, payload, thread, rid)
-    if payload.get("role") != "admin":
+    if not leaders_admin(db, payload):
         raise HTTPException(status_code=403, detail="Only an admin can add people to this chat")
     return chat.people(db, row, exclude=identity.viewer_profile_key(db, payload))
 

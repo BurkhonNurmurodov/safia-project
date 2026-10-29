@@ -39,7 +39,7 @@ import { expectedLabel, reportState } from "../components/leaders/verifyState";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useExam } from "../context/ExamContext";
-import { useCapabilities } from "../hooks/useCapabilities";
+import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
@@ -2062,7 +2062,7 @@ function DayGrid({ rows, dates, dataMax, rawMax, T, nm, nameHead }) {
 export default function Leaders() {
   const { auth } = useAuth();
   const { on: examOn } = useExam();
-  const { seesAllOn } = useCapabilities();
+  const { seesAllOn, can } = useCapabilities();
   const { lang } = useLang();
   const { tl } = useTranslit();
   // Person names everywhere on the page: transliterate, then soften SHOUTED
@@ -2082,7 +2082,10 @@ export default function Leaders() {
   // so they get no shift / supervisor / leader pickers and no standings toggle —
   // the page shows only their own monitoring.
   const isLeader = auth?.role === "leader" && !seesAllLeaders;
-  const isAdmin = auth?.role === "admin";
+  // An admin — or a holder of «Lider nazorati — admin», who does everything an
+  // admin does on this page (the AI tab and its controls, the task overrides).
+  // The server draws the same line (`capabilities.leaders_admin`).
+  const isAdmin = auth?.role === "admin" || can(CAP.LEADERS_ADMIN);
   const pageTitle = T.title;
 
   // Filters persist across visits under the pre-split "leaders" prefix; the
@@ -3844,9 +3847,13 @@ export default function Leaders() {
               {/* Destructive, so it lives ONLY here — the AI tab is where an
                   admin comes to work on the reviewer itself. Deliberately not
                   in the register toolbar beside «Tekshirish»: a wipe has no
-                  business one tap away from the button people press daily. */}
-              <AiClearHistory floor={aiData?.floor}
-                defaultFloor={aiData?.defaultFloor} />
+                  business one tap away from the button people press daily.
+                  A real admin's alone: «Lider nazorati — admin» does not reach
+                  it (the endpoint stays `verify_admin`). */}
+              {auth?.role === "admin" && (
+                <AiClearHistory floor={aiData?.floor}
+                  defaultFloor={aiData?.defaultFloor} />
+              )}
             </>
           } />
       </Layout>

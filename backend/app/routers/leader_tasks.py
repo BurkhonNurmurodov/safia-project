@@ -23,7 +23,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.capabilities import page_scope_is_all
+from app.capabilities import CAP_LEADERS_ADMIN, page_scope_is_all, require_cap
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -58,6 +58,10 @@ from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match)
 
 router = APIRouter(tags=["leader-tasks"])
+# Every admin door of the checklist config («Chek-list sozlamalari») and of
+# «Liderlar kunlik vazifalari»: an admin, or «Lider nazorati — admin»
+# (`capabilities.leaders_admin`, 2026-10-29).
+_LEADERS_ADMIN = require_cap(CAP_LEADERS_ADMIN)
 log = logging.getLogger(__name__)
 
 _LANGS = ("uz", "uz_cyrl", "ru", "en")
@@ -126,7 +130,7 @@ def _applied(out: dict) -> list[tuple]:
 
 
 @router.get("/admin/leader-tasks/config")
-def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_config(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     promote_all_shifts(db)  # apply anything now due before showing live state
     defs = ensure_task_defs(db)
     managers = (
@@ -364,7 +368,7 @@ def _upsert(db: Session, manager_id: int, task_id: int,
 
 
 @router.put("/admin/leader-tasks/cell")
-def put_cell(cell: CellIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def put_cell(cell: CellIn, db: Session = Depends(get_db), admin: dict = Depends(_LEADERS_ADMIN)):
     mgr = db.query(Manager).filter_by(id=cell.manager_id).first()
     if not mgr:
         raise HTTPException(status_code=404, detail="Unknown supervisor")
@@ -399,7 +403,7 @@ class LeaderCellIn(BaseModel):
 
 @router.put("/admin/leader-tasks/leader-cell")
 def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
-                    admin: dict = Depends(verify_admin)):
+                    admin: dict = Depends(_LEADERS_ADMIN)):
     lead = db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first()
     if not lead:
         raise HTTPException(status_code=404, detail="Unknown leader")
@@ -442,7 +446,7 @@ class SupervisorBatchIn(BaseModel):
 
 @router.put("/admin/leader-tasks/supervisor-batch")
 def put_supervisor_batch(body: SupervisorBatchIn, db: Session = Depends(get_db),
-                         admin: dict = Depends(verify_admin)):
+                         admin: dict = Depends(_LEADERS_ADMIN)):
     mgr = db.query(Manager).filter_by(id=body.manager_id).first()
     if not mgr:
         raise HTTPException(status_code=404, detail="Unknown supervisor")
@@ -526,7 +530,7 @@ def _scoped_rename(db: Session, body: "TaskIn", actor: str) -> dict:
 
 
 @router.put("/admin/leader-tasks/task")
-def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(_LEADERS_ADMIN)):
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
@@ -559,7 +563,7 @@ def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(
 # ── the catalog: add / archive / reorder ──────────────────────────────────────
 # Until 2026-09-07 the thirteen tasks were a fixed list an admin could rename
 # and nothing else. These three endpoints are what make it a register. All
-# admin-only (`verify_admin`), like every other write in this file, and none of
+# admin-only (`_LEADERS_ADMIN`), like every other write in this file, and none of
 # them is stageable through the "apply from next day" machinery: a task's
 # EXISTENCE is not a config value, it is a row, and the floors below are how it
 # is scheduled instead.
@@ -590,7 +594,7 @@ class NewTaskIn(BaseModel):
 
 @router.post("/admin/leader-tasks/task")
 def post_task(body: NewTaskIn, db: Session = Depends(get_db),
-              admin: dict = Depends(verify_admin)):
+              admin: dict = Depends(_LEADERS_ADMIN)):
     mgr_ids = sorted({int(i) for i in (body.manager_ids or []) if i})
     lead_ids = sorted({int(i) for i in (body.leader_ids or []) if i})
     # An id that names nothing is refused rather than skipped: a row written
@@ -654,7 +658,7 @@ class ArchiveTaskIn(BaseModel):
 
 @router.post("/admin/leader-tasks/task/archive")
 def post_task_archive(body: ArchiveTaskIn, db: Session = Depends(get_db),
-                      admin: dict = Depends(verify_admin)):
+                      admin: dict = Depends(_LEADERS_ADMIN)):
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
@@ -693,7 +697,7 @@ class TaskOrderIn(BaseModel):
 
 @router.put("/admin/leader-tasks/task/order")
 def put_task_order(body: TaskOrderIn, db: Session = Depends(get_db),
-                   admin: dict = Depends(verify_admin)):
+                   admin: dict = Depends(_LEADERS_ADMIN)):
     try:
         n = reorder_tasks(db, body.ids)
     except KeyError:
@@ -757,7 +761,7 @@ class ApplyAllIn(BaseModel):
 
 @router.put("/admin/leader-tasks/apply-all")
 def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
-                  admin: dict = Depends(verify_admin)):
+                  admin: dict = Depends(_LEADERS_ADMIN)):
     """Push one task's enabled/photos/weight to the targeted rows. Decomposed
     into one change per row (shift-tagged) so a staged push flips at each
     unit's own boundary.
@@ -823,7 +827,7 @@ class ColumnIn(BaseModel):
 
 
 @router.put("/admin/leader-tasks/column")
-def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     td = db.query(LeaderTaskDef).filter_by(id=col.task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
@@ -860,7 +864,7 @@ class CriteriaIn(BaseModel):
 
 @router.put("/admin/leader-tasks/criteria")
 def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
-                 _: dict = Depends(verify_admin)):
+                 _: dict = Depends(_LEADERS_ADMIN)):
     """Set what the AI must see before it calls this task done. Applies at once
     (see services.leader_tasks.set_criteria for why it never stages), and the
     next drain re-reads it — verdicts already written are NOT recomputed."""
@@ -922,7 +926,7 @@ class DescriptionIn(BaseModel):
 
 @router.put("/admin/leader-tasks/description")
 def put_description(body: DescriptionIn, db: Session = Depends(get_db),
-                    _: dict = Depends(verify_admin)):
+                    _: dict = Depends(_LEADERS_ADMIN)):
     """Set what the LEADER is told to do — the half of the old `criteria` that
     a person reads, split off on 2026-09-06 so a grader's test and an
     instruction stop being one string.
@@ -988,7 +992,7 @@ class WindowIn(BaseModel):
 
 @router.put("/admin/leader-tasks/window")
 def put_window(body: WindowIn, db: Session = Depends(get_db),
-               _: dict = Depends(verify_admin)):
+               _: dict = Depends(_LEADERS_ADMIN)):
     """Set when a proof photo for this task may have been taken.
 
     Applies at once and — unlike criteria — verdicts ALREADY written are
@@ -1077,7 +1081,7 @@ class DeadlineIn(BaseModel):
 
 @router.put("/admin/leader-tasks/deadline")
 def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
-                 _: dict = Depends(verify_admin)):
+                 _: dict = Depends(_LEADERS_ADMIN)):
     if body.deadline.strip() and leader_ai.hhmm(body.deadline) is None:
         raise HTTPException(status_code=400, detail="bad_time")
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
@@ -1138,7 +1142,7 @@ class DateCheckIn(BaseModel):
 
 @router.put("/admin/leader-tasks/date-check")
 def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
-                   _: dict = Depends(verify_admin)):
+                   _: dict = Depends(_LEADERS_ADMIN)):
     """Exempt a task from the date question, or put it back under it.
 
     Applies at once and — exactly like the window — re-derives the verdicts
@@ -1173,7 +1177,7 @@ class TimeCheckIn(BaseModel):
 
 @router.put("/admin/leader-tasks/time-check")
 def put_time_check(body: TimeCheckIn, db: Session = Depends(get_db),
-                   _: dict = Depends(verify_admin)):
+                   _: dict = Depends(_LEADERS_ADMIN)):
     """Judge a task by the DAY alone, or put its hours back under the window.
 
     The middle setting of the date rule, and the answer to the proof that has a
@@ -1219,7 +1223,7 @@ class DayCheckIn(BaseModel):
 
 @router.put("/admin/leader-tasks/day-check")
 def put_day_check(body: DayCheckIn, db: Session = Depends(get_db),
-                  _: dict = Depends(verify_admin)):
+                  _: dict = Depends(_LEADERS_ADMIN)):
     """Judge a task by the HOUR alone, or put its day back under comparison.
 
     The answer to the proof whose only readable clock is a phone status bar:
@@ -1264,7 +1268,7 @@ class DatePlusIn(BaseModel):
 
 @router.put("/admin/leader-tasks/date-plus")
 def put_date_plus(body: DatePlusIn, db: Session = Depends(get_db),
-                  _: dict = Depends(verify_admin)):
+                  _: dict = Depends(_LEADERS_ADMIN)):
     """Let a task's proof also be dated the days AFTER the report's day.
 
     Applies at once and re-derives the verdicts ALREADY written from their
@@ -1350,7 +1354,7 @@ class ProofKindIn(BaseModel):
 
 @router.put("/admin/leader-tasks/proof-kind")
 def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
-                   _: dict = Depends(verify_admin)):
+                   _: dict = Depends(_LEADERS_ADMIN)):
     """Switch a task between chat uploads and the in-app camera.
 
     Applies AT ONCE and stages nothing, unlike enabled/min_media/weight: this is
@@ -1449,7 +1453,7 @@ class CellFromIn(BaseModel):
 
 @router.put("/admin/leader-tasks/cell-from")
 def put_cell_from(body: CellFromIn, db: Session = Depends(get_db),
-                  _: dict = Depends(verify_admin)):
+                  _: dict = Depends(_LEADERS_ADMIN)):
     """Switch units to filing ONE CHECKLIST PER CELL, from a date.
 
     A LIST, always — one row toggled and a bulk press over a selection are the
@@ -1526,7 +1530,7 @@ def put_cell_from(body: CellFromIn, db: Session = Depends(get_db),
 
 @router.put("/admin/leader-tasks/unit")
 def put_unit(body: UnitIn, db: Session = Depends(get_db),
-             _: dict = Depends(verify_admin)):
+             _: dict = Depends(_LEADERS_ADMIN)):
     """Write a unit's own settings: day-vs-task submission, and the day its bot
     filings start counting.
 
@@ -1607,7 +1611,7 @@ _EXAMPLE_EDGE = 1280
 
 @router.get("/admin/leader-tasks/examples/{example_id}")
 def get_example(example_id: int, db: Session = Depends(get_db),
-                _: dict = Depends(verify_admin)):
+                _: dict = Depends(_LEADERS_ADMIN)):
     row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="No example")
@@ -1624,7 +1628,7 @@ def post_example(task_id: int = Form(...), file: UploadFile = File(...),
                  manager_ids: list[int] = Form([]),
                  leader_ids: list[int] = Form([]),
                  level: str = Form(""),
-                 db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+                 db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Store one example photo at ONE level of the chain, or fan it out across
     the rows a filtered matrix is showing.
 
@@ -1739,7 +1743,7 @@ def post_example(task_id: int = Form(...), file: UploadFile = File(...),
 
 @router.delete("/admin/leader-tasks/examples/{example_id}")
 def delete_example(example_id: int, db: Session = Depends(get_db),
-                   _: dict = Depends(verify_admin)):
+                   _: dict = Depends(_LEADERS_ADMIN)):
     row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="No example")
@@ -1760,7 +1764,7 @@ def delete_example(example_id: int, db: Session = Depends(get_db),
 # ── Admin: staged changes + config audit ─────────────────────────────────────
 
 @router.get("/admin/leader-tasks/pending")
-def get_pending(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_pending(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     promote_all_shifts(db)
     return {"pending": pending_list(db)}
 
@@ -1771,7 +1775,7 @@ class CancelIn(BaseModel):
 
 @router.post("/admin/leader-tasks/pending/cancel")
 def post_cancel(body: CancelIn, db: Session = Depends(get_db),
-                admin: dict = Depends(verify_admin)):
+                admin: dict = Depends(_LEADERS_ADMIN)):
     if not cancel_pending(db, body.pending_id, _actor(admin)):
         raise HTTPException(status_code=404, detail="Unknown pending change")
     action_log.enrich(target_kind="setting", target_id=body.pending_id,
@@ -1781,7 +1785,7 @@ def post_cancel(body: CancelIn, db: Session = Depends(get_db),
 
 @router.get("/admin/leader-tasks/audit")
 def get_audit(limit: int = 200, db: Session = Depends(get_db),
-              _: dict = Depends(verify_admin)):
+              _: dict = Depends(_LEADERS_ADMIN)):
     return {"audit": audit_list(db, min(500, max(1, limit)))}
 
 
@@ -1791,7 +1795,7 @@ class RevertIn(BaseModel):
 
 @router.post("/admin/leader-tasks/revert")
 def post_revert(body: RevertIn, db: Session = Depends(get_db),
-                admin: dict = Depends(verify_admin)):
+                admin: dict = Depends(_LEADERS_ADMIN)):
     if not revert_audit(db, body.audit_id, _actor(admin)):
         raise HTTPException(status_code=400, detail="Nothing to revert")
     action_log.enrich(target_kind="setting", target_id=body.audit_id,
@@ -1806,7 +1810,7 @@ class ChannelIn(BaseModel):
 
 
 @router.put("/admin/leader-tasks/channel")
-def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     chat_id = body.chat_id.strip()
     row = db.query(AppSetting).filter_by(key=CHANNEL_SETTING_KEY).first()
     # The one setting in this file whose previous value is already in hand, so
@@ -1865,7 +1869,7 @@ def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depend
 # next /tasks (`_lt_autoclose`) and becomes deletable then.
 
 @router.get("/admin/leader-tasks/submissions")
-def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def list_submissions(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Every bot day plus what deleting it would take away (task answers, proof
     photos), and the units/leaders that actually filed — so the tab's pickers
     only ever offer values that match something.
@@ -2025,7 +2029,7 @@ class DeleteSubmissions(BaseModel):
 def delete_submissions(
     body: DeleteSubmissions,
     db: Session = Depends(get_db),
-    admin: dict = Depends(verify_admin),
+    admin: dict = Depends(_LEADERS_ADMIN),
 ):
     """Permanently drop the picked bot days — the day rows, their task answers
     and the media ROWS. The photos themselves stay in the archive channel: that
@@ -2209,7 +2213,7 @@ def _pair_state(db: Session, *, want_sheet: bool = True):
 
 
 @router.get("/admin/leader-tasks/fillout")
-def list_fillout(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def list_fillout(db: Session = Depends(get_db), _: dict = Depends(_LEADERS_ADMIN)):
     """Every Google-Form checklist row the platform holds, resolved to the same
     people and units the dashboard resolves them to.
 
@@ -2288,7 +2292,7 @@ class DaySource(BaseModel):
 def set_day_source(
     body: DaySource,
     db: Session = Depends(get_db),
-    admin: dict = Depends(verify_admin),
+    admin: dict = Depends(_LEADERS_ADMIN),
 ):
     """Pick the submission that COUNTS for one leader-day, or hand the day back
     to the rule.
@@ -2393,7 +2397,7 @@ def _roll_wire(p: LeaderTaskPhoto) -> dict:
 
 @router.get("/admin/leader-tasks/day/{day_id}")
 def admin_day_detail(day_id: int, db: Session = Depends(get_db),
-                     _: dict = Depends(verify_admin)):
+                     _: dict = Depends(_LEADERS_ADMIN)):
     day = db.query(LeaderTaskDay).filter_by(id=day_id).first()
     if day is None:
         raise HTTPException(status_code=404, detail="No such day")
@@ -2529,7 +2533,7 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
 
 @router.get("/admin/leader-tasks/roll-photo/{photo_id}")
 def admin_roll_photo(photo_id: int, db: Session = Depends(get_db),
-                     _: dict = Depends(verify_admin)):
+                     _: dict = Depends(_LEADERS_ADMIN)):
     """One camera-roll shot, for the admin day detail.
 
     A door of its own rather than a widening of `/api/leader-proof/photo/{id}`,
@@ -2547,8 +2551,8 @@ def admin_roll_photo(photo_id: int, db: Session = Depends(get_db),
 # ── Admin: taking ONE submitted task back ────────────────────────────────────
 # The bot already offers this on its locked-task screen; this is the same core
 # reached from the panel, for an admin at a desk rather than in the chat. It is
-# admin-only in `verify_admin` AND in `reopen_task`'s own contract — «closing is
-# final» is a rule, not a layout.
+# admin-only (`_LEADERS_ADMIN`: an admin or «Lider nazorati — admin») AND in
+# `reopen_task`'s own contract — «closing is final» is a rule, not a layout.
 
 class ReopenTask(BaseModel):
     day_id: int
@@ -2560,7 +2564,7 @@ class ReopenTask(BaseModel):
 def reopen_submitted_task(
     body: ReopenTask,
     db: Session = Depends(get_db),
-    admin: dict = Depends(verify_admin),
+    admin: dict = Depends(_LEADERS_ADMIN),
 ):
     """Unlock one submitted task, optionally emptying it.
 

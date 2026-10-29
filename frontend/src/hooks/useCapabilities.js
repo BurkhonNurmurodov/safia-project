@@ -77,6 +77,9 @@ export const CAP = {
   PROFILES_MANAGE:   "admin.profiles.manage",
   CELLS_MANAGE:      "admin.cells.manage",
   CELL_HOURS_MANAGE: "admin.cell_hours.manage",
+  // «Lider nazorati — admin»: everything an admin does on /leaders and its four
+  // admin destinations (backend capabilities.leaders_admin).
+  LEADERS_ADMIN:     "leaders.admin",
 };
 
 // Page-view grants are generated per page rather than listed, exactly as on the

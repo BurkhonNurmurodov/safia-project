@@ -18,7 +18,7 @@ live documents (draft)    ``staff_live._scope_docs`` ∩ ``_can_approve`` — a 
 deletion requests         admin + shift-manager, ``_scope_deletion_requests``
 live deletion batches     admin + shift-manager, ``staff_live._scope_deletions``
 edit requests             admin + shift-manager covering the unit
-late checklist days       admin (``leaders._may_decide``)
+late checklist days       admin / «Lider nazorati — admin» (``leaders._may_decide``)
 objections, late proofs   the brigadir at stage 1 (own unit), admins at stage 2
 concerns                  status «todo» at the viewer's own level and holder
 tasks                     status «todo», assigned to the viewer
@@ -365,7 +365,8 @@ def _edit_requests(db: Session, payload: dict) -> list[dict]:
 
 
 def _late_days(db: Session, payload: dict) -> list[dict]:
-    if payload.get("role") != "admin":
+    from app.capabilities import leaders_admin
+    if not leaders_admin(db, payload):
         return []
     reqs = db.query(LeaderLateRequest).filter(LeaderLateRequest.status == "pending") \
         .order_by(LeaderLateRequest.requested_at.desc()).limit(_CAP).all()
@@ -391,8 +392,9 @@ def _late_days(db: Session, payload: dict) -> list[dict]:
 
 
 def _appeal_rows(db: Session, payload: dict, model):
+    from app.capabilities import leaders_admin
     role = payload.get("role")
-    if role == "admin":
+    if leaders_admin(db, payload):    # admins, and «Lider nazorati — admin»
         return db.query(model).filter(model.status == "admin")
     if role == "supervisor" and payload.get("role_id"):
         return db.query(model).filter(model.status == "supervisor",

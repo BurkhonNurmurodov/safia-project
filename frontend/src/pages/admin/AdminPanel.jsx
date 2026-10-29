@@ -102,20 +102,22 @@ export const ADMIN_NAV = [
   // Form rows and the bot days — with the proofs behind them, the per-task
   // reopen, and the choice of which submission counts on a day that holds
   // both. Sits directly under the matrix that CONFIGURES those tasks: one
-  // configures the checklist, the other reads what came back. No `capKey`, so
-  // like "permissions" and "logs" a grantee can never be admitted — it can
-  // delete a scored day and move a leader's score.
+  // configures the checklist, the other reads what came back. It can delete a
+  // scored day and move a leader's score, so the one grant that admits it is
+  // «Lider nazorati — admin» (`leaders.admin`, whose tab list names all four
+  // leader destinations — the tab id IS the key, so no `capKey`).
   { id: "ltdaily",      group: "tools",  Icon: ClipboardList,  labelKey: "admin.tabLtDaily",      descKey: "admin.desc.ltdaily" },
   // Leader-days taken OUT of the results — the one control that makes a day
   // count NEITHER way, for the leader and their brigadir at once. Sits with the
   // other two leader surfaces: one configures the checklist, one reads what came
-  // back, this one says which of it counts. No `capKey`, for the same reason as
-  // "ltdaily" — it moves a leader's score and a brigadir's.
+  // back, this one says which of it counts. Admitted only by «Lider nazorati —
+  // admin», like "ltdaily" — it moves a leader's score and a brigadir's.
   { id: "ltexclude",    group: "tools",  Icon: CircleSlash,    labelKey: "admin.tabLtExclude",    descKey: "admin.desc.ltexclude" },
   // The same "does not count" about a PERSON instead of a night: a leader whose
   // results stop from a date on, open-ended. Sits immediately after the day
   // exclusions because the two are read together and are constantly mistaken
-  // for one another. No `capKey`, for the same reason as its neighbour.
+  // for one another. Admitted only by «Lider nazorati — admin», like its
+  // neighbour.
   { id: "ltcutoff",     group: "tools",  Icon: UserMinus,      labelKey: "admin.tabLtCutoff",     descKey: "admin.desc.ltcutoff" },
   // «Imtihon» — the dashboard exam: assign it, read the results, edit the
   // bank. Grantable through `admin.exam.manage` (tab id = capability tab).

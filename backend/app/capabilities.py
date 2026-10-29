@@ -131,6 +131,11 @@ CAP_CELL_HOURS_MANAGE = "admin.cell_hours.manage"
 CAP_IDLE_SOURCE_MANAGE = "admin.idle_source.manage"
 CAP_FACTORIES_MANAGE  = "admin.factories.manage"
 CAP_EXAM_MANAGE       = "admin.exam.manage"
+# «Lider nazorati — admin»: everything an admin does on /leaders and its four
+# admin destinations, for one person (the operator, 2026-10-29: a guest given
+# admin-like reach over leaders monitoring and nothing else). See
+# :func:`leaders_admin` — THE test every leaders admin check asks.
+CAP_LEADERS_ADMIN     = "leaders.admin"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
 # never drifts from permissions.PAGE_KEYS.
@@ -203,6 +208,13 @@ CAPABILITIES = [
     # The dashboard exam («Imtihon»): assign it, read every result, switch
     # bank tasks on/off, set the pass mark. Plant-wide, no unit dimension.
     {"key": CAP_EXAM_MANAGE,       "group": "identity",   "pages": [],                 "tab": "exam",      "scoped": False, "page": None},
+    # Admin over leaders monitoring: the appeal rulings (both chains' admin
+    # stage, undo, every chat), the AI review tab, hand rulings on tasks, the
+    # whole roster, the ranking tiers — and the checklist's four admin-panel
+    # destinations. Plant-wide by construction (an admin's reach), so
+    # unscoped. It moves leaders' scores, so it is handed out deliberately.
+    {"key": CAP_LEADERS_ADMIN,     "group": "leaders",    "pages": ["leaders"],
+     "tab": ["ltasks", "ltdaily", "ltexclude", "ltcutoff"], "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first
     # accessible page" fallback use, so the Permissions tab reads like the menu.
@@ -218,7 +230,7 @@ UNSCOPED_CAPABILITIES = frozenset(c["key"] for c in CAPABILITIES if not c["scope
 CAPABILITY_KEYS = [c["key"] for c in CAPABILITIES]
 # Pages first: opening a page is the coarse decision an admin makes before
 # handing out the actions inside it.
-CAPABILITY_GROUPS = ["pages", "requests", "attendance", "identity"]
+CAPABILITY_GROUPS = ["pages", "requests", "attendance", "leaders", "identity"]
 
 SCOPES = ("own", "all")
 DEFAULT_SCOPE = "own"
@@ -410,10 +422,20 @@ def scope_is_all(db: Session, payload: dict, capability: str) -> bool:
     return cap_scope(db, payload, capability) == "all"
 
 
+# Action capabilities whose holder reads a page WHOLE, as an admin does: an
+# admin's reach over a page's actions is meaningless over a narrowed view of
+# its rows. ``page_view_scope`` / ``page_scopes`` answer "all" for them.
+_READS_PAGE_WHOLE = {CAP_LEADERS_ADMIN: "leaders"}
+
+
 def page_view_scope(db: Session, payload: dict, page: str) -> Optional[str]:
     """``"own"`` / ``"all"`` if the caller holds a page-view grant for ``page``,
-    else None (their role × page access, if any, is untouched)."""
-    return cap_scope(db, payload, page_cap(page))
+    else None (their role × page access, if any, is untouched). A capability in
+    :data:`_READS_PAGE_WHOLE` for this page reads as ``"all"``."""
+    held = caller_caps(db, payload)
+    if any(p == page and c in held for c, p in _READS_PAGE_WHOLE.items()):
+        return "all"
+    return held.get(page_cap(page))
 
 
 def page_scope_is_all(db: Session, payload: dict, page: str) -> bool:
@@ -435,8 +457,12 @@ def page_scopes(db: Session, payload: dict) -> dict[str, str]:
     what the UI reads to decide whether to keep a supervisor pinned to their
     own unit or offer them the whole factory's picker."""
     held = caller_caps(db, payload)
-    return {c["page"]: held[c["key"]]
-            for c in CAPABILITIES if c["page"] and c["key"] in held}
+    out = {c["page"]: held[c["key"]]
+           for c in CAPABILITIES if c["page"] and c["key"] in held}
+    for cap, page in _READS_PAGE_WHOLE.items():
+        if cap in held:
+            out[page] = "all"
+    return out
 
 
 def capability_pages(db: Session, payload: dict) -> list[str]:
@@ -458,7 +484,29 @@ def capability_tabs(db: Session, payload: dict) -> list[str]:
     """Admin-panel tab ids the caller may open. Admins get every tab from the
     normal admin check; this is what a NON-admin grantee sees instead."""
     held = caller_caps(db, payload)
-    return [c["tab"] for c in CAPABILITIES if c["tab"] and c["key"] in held]
+    tabs: list[str] = []
+    for c in CAPABILITIES:
+        if c["tab"] and c["key"] in held:
+            # ``tab`` is one id, or a list for a capability that opens several.
+            tabs += [t for t in ([c["tab"]] if isinstance(c["tab"], str) else c["tab"])
+                     if t not in tabs]
+    return tabs
+
+
+def leaders_admin(db: Session, payload: Optional[dict]) -> bool:
+    """True for an admin or a holder of «Lider nazorati — admin».
+
+    THE one test behind every admin-only action on /leaders (appeal rulings,
+    the AI review tab, hand rulings on tasks, the roster, the tiers) and its
+    four admin destinations. Never re-spell it as ``role == "admin"`` at a
+    leaders call site — that is how a grant silently stops reaching one door.
+    It carries no authority over ADMIN identities and does not open the
+    Permissions tab (rule 5)."""
+    if not payload:
+        return False
+    if payload.get("role") == "admin":
+        return True
+    return CAP_LEADERS_ADMIN in caller_caps(db, payload)
 
 
 def profile_holder_ids(db: Session, keys) -> set[int]:
@@ -501,6 +549,39 @@ def users_with_cap(db: Session, capability: str) -> list[int]:
         ProfilePermission.mode != MODE_DENY,
     ).all() if r.profile_key}
     return sorted(ids | profile_holder_ids(db, keys))
+
+
+def leaders_admin_ids(db: Session) -> set[int]:
+    """Telegram ids holding «Lider nazorati — admin» on either axis — the extra
+    recipients of every notice admins get about leaders monitoring (objection
+    and late-proof cards, the appeal chats). Admins are not in it: every caller
+    unions it with the admins it already tells."""
+    return set(users_with_cap(db, CAP_LEADERS_ADMIN))
+
+
+def cap_holder_targets(db: Session, capability: str) -> tuple[set[str], set[int]]:
+    """``(profile keys, telegram ids)`` a capability is GRANTED to, kept apart —
+    the two addresses a notice to its holders goes to: a position's grant is
+    told on the PROFILE (its bell row follows the job), a login's own grant on
+    the account."""
+    keys = {r.profile_key for r in db.query(ProfilePermission).filter(
+        ProfilePermission.capability == capability,
+        ProfilePermission.mode != MODE_DENY,
+    ).all() if r.profile_key}
+    ids = {r.telegram_id for r in db.query(UserCapability).filter(
+        UserCapability.capability == capability,
+        UserCapability.mode != MODE_DENY,
+    ).all() if r.telegram_id}
+    return keys, ids
+
+
+def leaders_admin_account(db: Session, telegram_id: int | None) -> bool:
+    """True when a STORED account holds «Lider nazorati — admin» through its own
+    entry or any profile it holds — the bot-tap twin of :func:`leaders_admin`,
+    for a callback that knows an account and no active profile."""
+    if not telegram_id:
+        return False
+    return account_cap_scope(db, int(telegram_id), CAP_LEADERS_ADMIN) is not None
 
 
 def account_profile_keys(db: Session, telegram_id: int) -> set[str]:
