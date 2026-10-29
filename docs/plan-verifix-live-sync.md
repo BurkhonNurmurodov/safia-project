@@ -543,7 +543,9 @@ step 5.
 - The загрузка formula, the ojidaniya weight rule, the checklist rules: a day's
   figure is computed exactly as now, from the links of THAT day.
 - Filing follows the profile's unit (a bot day takes `prof.manager_id`); a
-  leader's unit move is still a person's decision (now a tap).
+  leader's unit move is still a person's decision (now a tap). (Superseded
+  2026-10-29: a leader whose every cell changes brigadir together moves with
+  them — CLAUDE.md «A leader follows the cells they run».)
 - Names are never taken from Verifix without a tap; the register's spelling is
   the platform's.
 - A unit's shift, plant, `zagruzka_on`; a cell's `in_load`, `wc_group`,

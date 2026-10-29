@@ -1888,16 +1888,14 @@ def _cell(db: Session, cid: int) -> Cell:
 
 def _move_leader_unit(db: Session, prof: RoleProfile, new_mid: Optional[int]) -> None:
     """A leader's unit, moved the way the profile editor moves it (role rows
-    re-pointed) — and NO cell dragged with it (ruling 3)."""
-    from app.models import TelegramUserRole
-    from app.routers import profiles as _p
+    re-pointed) — and NO cell dragged with it (ruling 3) — DATED from the new
+    unit's first fileable checklist day (`leader_follow.move`)."""
     if not new_mid or prof.manager_id == new_mid:
         prof.manager_id = new_mid or prof.manager_id
         return
-    for r in _p._bound_role_rows(db, "leader", prof.id):
-        if isinstance(r, TelegramUserRole):
-            r.role_id = new_mid
-    prof.manager_id = new_mid
+    from app.services import leader_follow, leader_owes
+    leader_follow.move(db, prof, new_mid, leader_owes.unit_day(db, new_mid), src="verifix",
+                       by="Verifix")
 
 
 def _create_unit(db: Session, p: dict, by: Optional[str]) -> int:

@@ -4082,6 +4082,42 @@ class LeaderCutoff(Base):
     set_at = Column(DateTime, nullable=True)
 
 
+class LeaderUnitMove(Base):
+    """A leader moved to another brigadir's unit, DATED (2026-10-29).
+
+    A leader's unit is one column (`role_profiles.manager_id`) and a checklist
+    day is stamped with it when the day is created («the supervisor unit at save
+    time»), so a move used to say nothing about WHEN: the days already stamped
+    stayed with the old brigadir and every reader of the roster put the leader
+    in the new unit for every day of history. This is the move's date.
+
+    Written by `services/leader_follow.py` only — the automatic follow (every
+    cell the leader runs changed brigadir together: «cell_follow»), the profile
+    editor and the Verifix «leader_moved» tap. Append-only: a move is history,
+    and a later move back is a second row. `restamped` keeps what the move
+    re-pointed (counts per table) so it can be explained, and undone by hand.
+    """
+    __tablename__ = "leader_unit_moves"
+    __table_args__ = (
+        UniqueConstraint("leader_id", "effective_from", "to_unit", name="uq_leader_unit_move"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id = Column(Integer, nullable=False, index=True)       # role_profiles.id
+    leader_name = Column(String(160), nullable=True)              # snapshot
+    from_unit = Column(Integer, nullable=True)
+    to_unit = Column(Integer, nullable=False)
+    # The first checklist day (a shift-day, "YYYY-MM-DD") the leader counts in
+    # `to_unit`; every day before it stays with `from_unit`.
+    effective_from = Column(String(10), nullable=False, index=True)
+    src = Column(String(20), nullable=False)                      # cell_follow · manual · verifix
+    cells = Column(JSONB, nullable=True)                          # the codes that took them along
+    restamped = Column(JSONB, nullable=True)                      # table → rows re-pointed
+    note = Column(Text, nullable=True)
+    by = Column(String(160), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 # ── «Ta'lim» — video lessons (/education) ────────────────────────────────────
 # An admin publishes a lesson (a video link, a title, an optional formatted
 # description) and names WHO it is for. The audience is a set of PROFILES, not

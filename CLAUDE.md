@@ -182,7 +182,10 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   Mapura was in on the 11 Sep copy (profile in Raximova Kamola's unit, cell
   8611 in Mirmaxmudova Munira's), so her #1/#9 move with this too.
 - **What a leader FILES follows the PROFILE** — a bot day still takes
-  `prof.manager_id`, unchanged.
+  `prof.manager_id`, unchanged. (From 2026-10-29 the PROFILE follows the cells
+  when every cell a leader runs changes brigadir together — see «A leader
+  follows the cells they run». A leader counted where none of their cells
+  stands, like this one, is never moved.)
 - **A save that does not move the leader moves no cell.** `_set_leader_cells`
   drags kept cells only when the profile edit changes the unit
   (`follow_unit`), and the /cells form applies the leader's unit only to a NEW
@@ -214,6 +217,67 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   days since, counted what Aripova's unit filed about 0811's people since, and
   DMed it to `UNPRICED_DM_CHAT`. Delete it with its startup function and both
   calls once its flag and DM flag read «done» — `KEPT_APART` STAYS.
+
+## A leader follows the cells they run (`leader_follow`, 2026-10-29)
+
+The floor: after Maksumov Sanjar's and Xakimov Ruslan's units exchanged cells
+(25 Oct — 7213 · A, 7214 · B), «Lider nazorati» kept the leaders who run those
+cells under their OLD brigadir on every day since. A checklist day is stamped
+with the leader PROFILE's unit when it is created (`leader_task_days.manager_id`)
+and the register, the brigadir's digest, the objection chain and the AI queue
+read that stamp — while since 12 Oct a cell changes brigadir by a dated link
+event and nothing moved the leader. The operator's ruling: «Yes,
+automatically».
+
+- **`services/leader_follow.py` is THE writer of a leader's unit.** `move` —
+  the profile and its registrations re-pointed (`profiles._bound_role_rows`),
+  the leader's days from the move day re-stamped (`restamp`: the days and, for
+  those days, their AI verdicts, objections, late proofs, automatic checks and
+  report ledger — only rows naming the old unit) and the move RECORDED in
+  `leader_unit_moves` (append-only; `effective_from` = the first shift-day in
+  the new unit). The profile editor (from the new unit's first fileable day,
+  `leader_owes.unit_day`) and the Verifix «leader_moved» / «hold» taps go
+  through it too, so every leader unit change is dated.
+- **The rule (`plan`/`follow`)**: an APPLIED brigadir change of a cell whose
+  «Boshqaruvchi» ran it on both sides of the move, after which every live cell
+  that leader runs stands in ONE unit B, while their days just before were
+  counted in a unit A one of their cells stood in (`_counted_unit`: their last
+  day before the move, else their first after it, else the profile). The
+  profile moves when it is still in A; when a person already moved it to B
+  only the days are re-stamped. Named and left: cells split over two units
+  (`split` — `cells_units_for_leader` already reads both), a leader counted
+  where none of their cells stood (`counted_elsewhere` — the 26 Sep reading,
+  Turdimurodov), a kept-apart cell (`verifix_sync.KEPT_APART`), a profile a
+  person put in a third unit, a new unit archived. A recorded move is never
+  re-planned, so a person moving the leader back afterwards stands.
+- **When**: `leader_follow.kick()` right after a brigadir change lands
+  (`cell_links.run_apply_due`), and the 5-minute `leader-follow` job over the
+  changes landed in the last 3 days. Floor 12 Oct (`FLOOR`, the dated links).
+- **The roster is DATED for a moved leader**: `/api/leaders`' roster entry
+  carries `units` — `[{supervisor, shift, from, to}]` (`from` inclusive, `to`
+  exclusive) — and so do the «Mening o'rnim» pool (11th tuple element) and the
+  «Brigadirlar reytingi» pool. A brigadir is handed only their own unit's span,
+  and their roster keeps a leader who moved away. On the client
+  (`utils/leaderBoard.js`): `rosterIn` takes an entry while any span is in
+  scope, `rosterByUnit` attaches `windows` / `moved` for `unitSlots` (a moved
+  leader owes each unit only their span there, «unless it arrived»), and
+  `scopeBounds` folds the span into the `cuts` / `starts` every leader ranking
+  reads (the Monitoring page and `placesOf`). So neither brigadir reads the
+  other side's days as missed. A leader who never moved carries nothing and
+  every reader keeps its old rule.
+- **The digest owes by the dated history** (`leader_unit_report._frame` →
+  `leader_follow.unit_members_on`).
+- **The repair**: TEMPORARY `services/leader_follow_repair_oct29.py`
+  (`startup.repair_leader_units`, deferred, both entrypoints, flag
+  `leader_follow_repair_2026_10_29_v1`, record in app setting
+  `leader_follow_repair_2026_10_29`) ran the rule once over every change since
+  12 Oct in one transaction with its flag, and DMed Burkhon from the record:
+  who moved (and what was re-stamped), what was named, every cell whose
+  brigadir changed with its leader staying, and every leader-day still stamped
+  in a brigadir none of the leader's cells stood in. Delete the module, the
+  startup function and both calls once `…_v1_dm` reads «done».
+- Not changed: a past digest already sent is not re-sent; the census behind
+  `cutUnits` still reads the current unit; a move before 12 Oct cannot be read.
 
 ## A leader's CHECKLIST may run on the other shift (`leader_shift`, 2026-10-05)
 

@@ -146,6 +146,7 @@ try:
         repair_live_exchanges_oct08,
         put_cell_0811_back,
         land_waiting_leader_links,
+        repair_leader_units,
         seed_one_process_cells,
         add_leader_auto_checks,
         register_leader_auto_sep20,
@@ -702,6 +703,12 @@ try:
     # made. Remove this line, `startup.land_waiting_leader_links` and its flag
     # constant once the flag reads «done».
     land_waiting_leader_links()
+    # ⚠ TEMPORARY one-shot (2026-10-29) — the leaders whose cells changed
+    # brigadir move with them from the move day (services/leader_follow), once
+    # over history, DMed to Burkhon. Remove this line,
+    # `startup.repair_leader_units` and `services/leader_follow_repair_oct29.py`
+    # once its DM flag reads «done».
+    repair_leader_units()
     # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
     # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
     # goes (the flag hands them the same text). Remove this line,

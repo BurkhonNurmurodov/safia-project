@@ -293,6 +293,14 @@ export const unitSlots = (rows, roster, cutLeaders, cutUnits, dates, startLeader
     const start = startLeaders?.get(name);
     return !!start && d < start;
   };
+  // A leader who MOVED owes this unit only the days of their span here
+  // (`rosterByUnit`'s windows) — the same «unless it arrived» as `notYet`.
+  const windows = roster?.windows, moved = roster?.moved;
+  const outside = (unit, name, d) => {
+    if (!moved?.has(name)) return false;
+    const w = windows?.get(unit)?.get(name);
+    return !w || !w.some(([f, t]) => (!f || d >= f) && (!t || d < t));
+  };
   for (const [unit, e] of map) {
     // Every day the unit could be asked about. The window when there is one;
     // otherwise whatever the rows themselves span, which is the same fallback
@@ -309,7 +317,7 @@ export const unitSlots = (rows, roster, cutLeaders, cutUnits, dates, startLeader
         // somebody really filed is a day they were measured on (`slotsBy`'s
         // last pass, in this function's currency).
         if (skip?.has(who) || cutAt(who, d)
-            || (notYet(who, d) && !arrived?.has(who))) continue;
+            || ((notYet(who, d) || outside(unit, who, d)) && !arrived?.has(who))) continue;
         owed++;
         const a = arrived?.get(who);
         if (a) sum += a.sum / a.n; else missing++;
@@ -374,21 +382,96 @@ export const inScope = (r, { from, to, shift = null, sup = "All", leader = "All"
 
 // Who OWED the rows of a scope — the roster, narrowed by exactly the filters
 // that narrow the rows (see `rosterLeaders` in the component for why).
+//
+// A leader who MOVED to another brigadir (`units`, the backend's
+// `leader_follow` spans — `from` inclusive, `to` exclusive, null = open) is in
+// a scope while ANY of their spans is: a brigadir's roster names everybody who
+// owed it a checklist on some day of history, and `scopeBounds` /
+// `rosterByUnit`'s windows say WHICH days.
+const spanIn = (s, shift, sup) => !!s.supervisor
+  && (shift == null || s.shift === shift) && (sup === "All" || s.supervisor === sup);
+
 export const rosterIn = (roster, { shift = null, sup = "All", leader = "All" }) =>
-  (roster ?? []).filter((p) => p.supervisor && p.name
-    && (shift == null || p.shift === shift)
-    && (sup === "All" || p.supervisor === sup)
+  (roster ?? []).filter((p) => p.name
+    && (p.units?.length
+      ? p.units.some((s) => spanIn(s, shift, sup))
+      : p.supervisor && (shift == null || p.shift === shift)
+        && (sup === "All" || p.supervisor === sup))
     && (leader === "All" || p.name === leader));
 
 // unit label → the names of the leaders who owe it a checklist.
+//
+// The Map also carries `windows` (unit → name → [[from, to]…]) and `moved`
+// (the names that have any) for `unitSlots`: a leader who moved owes each unit
+// only the days of their span there, so neither brigadir reads the other
+// side's days as missed. A namesake who never moved owes their unit throughout
+// ([null, null]).
 export const rosterByUnit = (roster) => {
   const m = new Map();
-  for (const p of roster) {
-    let set = m.get(p.supervisor);
-    if (!set) m.set(p.supervisor, (set = new Set()));
-    set.add(p.name);
+  const windows = new Map();
+  const moved = new Set((roster ?? []).filter((p) => p.units?.length).map((p) => p.name));
+  const add = (unit, name, from, to) => {
+    if (!unit) return;
+    let set = m.get(unit);
+    if (!set) m.set(unit, (set = new Set()));
+    set.add(name);
+    if (!moved.has(name)) return;
+    let w = windows.get(unit);
+    if (!w) windows.set(unit, (w = new Map()));
+    let list = w.get(name);
+    if (!list) w.set(name, (list = []));
+    list.push([from || null, to || null]);
+  };
+  for (const p of roster ?? []) {
+    if (p.units?.length) for (const s of p.units) add(s.supervisor, p.name, s.from, s.to);
+    else add(p.supervisor, p.name, null, null);
   }
+  m.windows = windows;
+  m.moved = moved;
   return m;
+};
+
+// A moved leader's days in ONE scope (a brigadir, a shift): the days before
+// their first span there become not-yet-owed and the days after their last
+// become cut — folded into the two maps every leader ranking already reads, so
+// the board, the calendar, the trend and the sparks of a scoped view all owe a
+// moved leader exactly the days they belonged to it. Applied unscoped too: a
+// brigadir's feed carries only their own unit's span (the server cuts it), so
+// their «All» is one unit. For a name nobody moved the maps come back as they
+// went in.
+export const scopeBounds = (roster, { shift = null, sup = "All" } = {}, cuts, starts) => {
+  if (!(roster ?? []).some((p) => p.units?.length)) return [cuts, starts];
+  const hull = new Map();                 // name → {from, to}, or null = owes throughout
+  for (const p of roster ?? []) {
+    if (!p.name) continue;
+    if (!p.units?.length) {
+      if (p.supervisor && (shift == null || p.shift === shift)
+          && (sup === "All" || p.supervisor === sup)) hull.set(p.name, null);
+      continue;
+    }
+    for (const s of p.units) {
+      if (!spanIn(s, shift, sup)) continue;
+      if (hull.has(p.name) && hull.get(p.name) === null) continue;
+      const cur = hull.get(p.name);
+      hull.set(p.name, !cur ? { from: s.from || null, to: s.to || null } : {
+        from: !cur.from || !s.from ? null : (s.from < cur.from ? s.from : cur.from),
+        to: !cur.to || !s.to ? null : (s.to > cur.to ? s.to : cur.to),
+      });
+    }
+  }
+  let c2 = null, s2 = null;
+  for (const [name, w] of hull) {
+    if (!w) continue;
+    if (w.to) {
+      const cur = cuts?.get(name);
+      if (!cur || w.to < cur) { c2 ??= new Map(cuts ?? []); c2.set(name, w.to); }
+    }
+    if (w.from) {
+      const cur = starts?.get(name);
+      if (!cur || w.from > cur) { s2 ??= new Map(starts ?? []); s2.set(name, w.from); }
+    }
+  }
+  return [c2 ?? cuts, s2 ?? starts];
 };
 
 // Every name the feed holds a real filing under — an excluded day nobody filed
@@ -491,8 +574,11 @@ export const poolRows = (raw) => (raw ?? []).map(
   }));
 // The tenth element is `owes_from` (appended last, so an older pool without it
 // reads as "no floor").
+// The eleventh is a moved leader's units over time, [[unit, shift, from, to]…]
+// (`leader_follow`) — null for everybody who never moved.
 export const poolRoster = (raw) => (raw ?? []).map(
-  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad, cellsGone, owesFrom]) => ({
+  ([name, supervisor, shift, cutoff, cellFrom, cells, filed, noLoad, cellsGone, owesFrom,
+    units]) => ({
     name, supervisor, shift, cutoff,
     cell_from: cellFrom,
     no_load_from: noLoad || null,
@@ -500,4 +586,7 @@ export const poolRoster = (raw) => (raw ?? []).map(
     owes_from: owesFrom || null,
     cells: Array.from({ length: cells || 0 }),
     filed: !!filed,
+    ...(units?.length ? {
+      units: units.map(([sup, sh, from, to]) => ({ supervisor: sup, shift: sh, from, to })),
+    } : {}),
   }));

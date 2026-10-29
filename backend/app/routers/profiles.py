@@ -2140,10 +2140,13 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
         if not mgr:
             raise HTTPException(status_code=400, detail="Supervisor unit not found")
-        # Bound leaders move with their profile — their role rows point at the unit.
-        for r in _bound_role_rows(db, "leader", pid):
-            r.role_id = payload.manager_id
-        p.manager_id = payload.manager_id
+        # Bound leaders move with their profile — their role rows point at the
+        # unit — DATED from the new unit's first checklist day still fileable
+        # (`leader_follow.move`): the days before stay with the old brigadir.
+        from app.services import leader_follow, leader_owes
+        leader_follow.move(db, p, payload.manager_id,
+                           leader_owes.unit_day(db, payload.manager_id),
+                           src="manual", by=caller.get("full_name"))
     if ptype == "leader" and payload.cells is not None:
         # No cell follows the leader's unit any more (2026-10-12, ruling 3):
         # the list only picks and releases cells, dated.
