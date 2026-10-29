@@ -10434,6 +10434,33 @@ def land_waiting_leader_links() -> None:
         print(f"[startup] leader cell links re-date skipped: {exc}")
 
 
+# ── leaders follow the cells they run (2026-10-29) ──────────────────────────
+#
+# The floor: after the Maksumov ↔ Xakimov cell exchange (25 Oct) the leaders who
+# run those cells stayed under their OLD brigadir on «Lider nazorati». From this
+# build `services/leader_follow.py` moves a leader with their cells; this pass
+# runs that rule once over every brigadir change since 12 Oct and DMs Burkhon
+# what it did (services/leader_follow_repair_oct29 — the record and the flag in
+# one transaction, the DM from the record). TEMPORARY: delete with the module
+# once its DM flag reads «done».
+
+def repair_leader_units() -> None:
+    """Deferred, once. Never raises."""
+    try:
+        from app.services import leader_follow_repair_oct29 as fx
+        db = SessionLocal()
+        try:
+            rec = fx.run(db)
+            if rec is not None:
+                print(f"[startup] leader follow repair: {len(rec['moves'])} leader(s) moved, "
+                      f"{len(rec['named'])} named")
+            fx.send_dm(db, REPORT_CHAT_BURKHON)
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover — never block startup
+        print(f"[startup] leader follow repair skipped: {exc}")
+
+
 def seed_one_process_cells() -> None:
     """Boot, inline: the five leaders the operator named on 25 Sep get their
     cells marked «Bitta jarayon» and lose the leader-level task-3 text the flag

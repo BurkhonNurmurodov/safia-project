@@ -617,8 +617,11 @@ def run_apply_due() -> None:
             from app.services import cell_register
             cell_register.after_commit()
             if any(f == "manager_id" for _c, f, _a, _b in done):
-                from app.services import catalog_follow
+                from app.services import catalog_follow, leader_follow
                 catalog_follow.kick()
+                # …and the leader who runs every one of the moved cells goes
+                # with them (`leader_follow`, 2026-10-29).
+                leader_follow.kick()
     except Exception:  # noqa: BLE001 — the next minute tries again
         import logging
         logging.getLogger(__name__).exception("cell links: apply_due failed")
@@ -626,11 +629,13 @@ def run_apply_due() -> None:
 
 def register_jobs() -> None:
     """Every minute (mirrored in passenger_wsgi.py): the links landing, and the
-    catalog follow that moves a landed cell's positions after it."""
+    catalog follow that moves a landed cell's positions after it; every five
+    the leader follow (its kick after a landing is the fast path)."""
     from app.scheduler import schedule_interval
-    from app.services import catalog_follow
+    from app.services import catalog_follow, leader_follow
     schedule_interval("cell-links-apply", run_apply_due, minutes=1)
     schedule_interval("catalog-follow", catalog_follow.run_sweep, minutes=1)
+    schedule_interval("leader-follow", leader_follow.run_sweep, minutes=5)
 
 
 # ── what a form shows ─────────────────────────────────────────────────────────

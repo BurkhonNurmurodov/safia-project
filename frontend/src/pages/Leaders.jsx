@@ -50,7 +50,7 @@ import StaffListAtCheckButton, { hasStaffList } from "../components/leaders/Staf
 import { surnameInitial } from "../utils/personName";
 import {
   rowDate, lastFinishedDay, slotsBy, rosterFold, scoreSlots, filedOn, unitSlots, rankPlaces,
-  inScope, rosterIn, rosterByUnit, filedUnderOf, buildCutLeaders, buildCutUnits,
+  inScope, rosterIn, rosterByUnit, filedUnderOf, buildCutLeaders, buildCutUnits, scopeBounds,
   buildStartLeaders, boardScores, poolRows, poolRoster,
 } from "../utils/leaderBoard";
 
@@ -1632,8 +1632,10 @@ const placesOf = (pool, scopes, win, metric) => {
       shift: key === "shift" ? me.shift : null,
       sup: key === "unit" ? me.unit : "All",
     };
+    // A leader who moved owes this scope only their span in it (`scopeBounds`).
+    const [scCuts, scStarts] = scopeBounds(roster, sc, cutLeaders, startLeaders);
     const list = rankPlaces(boardScores(mode, rows.filter((r) => inScope(r, sc)),
-      rosterIn(roster, sc), cutLeaders, cutUnits, win.dates, win.days, startLeaders), metric);
+      rosterIn(roster, sc), scCuts, cutUnits, win.dates, win.days, scStarts), metric);
     const i = me.key ? list.findIndex((e) => e.name === me.key) : -1;
     // Off the board for this window — every day excluded or cut, or (a unit)
     // nothing filed in it at all. Said as such, never printed as a last place.
@@ -2344,13 +2346,19 @@ export default function Leaders() {
   // of them and the only reason the denominator moves at all. Expanded over
   // whichever window each ranking happens to be scored over — see `slotsBy`,
   // and `buildCutLeaders` for the roster's half of the answer.
-  const cutLeaders = useMemo(
+  const cutLeadersAll = useMemo(
     () => buildCutLeaders(data?.cutoffs, filedUnderOf(data?.data), data?.roster), [data]);
   const cutUnits = useMemo(() => buildCutUnits(data?.cutUnits), [data]);
   // …and the other edge: the first day each name owes at all (`owes_from`).
   // Threaded beside `cutLeaders` into every ranking, the task bars, the trend
   // and the sparks, so a leader is never asked for days before they owed.
-  const startLeaders = useMemo(() => buildStartLeaders(data?.roster), [data]);
+  const startLeadersAll = useMemo(() => buildStartLeaders(data?.roster), [data]);
+  // A leader who MOVED to another brigadir owes a scoped view (a brigadir, a
+  // shift) only the days they belonged to it (`scopeBounds`).
+  const [cutLeaders, startLeaders] = useMemo(
+    () => scopeBounds(data?.roster, { shift: effShift, sup: effSup },
+      cutLeadersAll, startLeadersAll),
+    [data, effShift, effSup, cutLeadersAll, startLeadersAll]);
   // Name → shift, for the S1/S2 chips the combined view prints beside people:
   // a unit lives in one shift, so any of a person's rows answers for them.
   const shiftOf = useMemo(() => {

@@ -215,10 +215,10 @@ def _frame(db: Session, manager_id: int, date: str,
     # register's unit day skips the whole leader for it, so a narrower test here
     # would list as «not filed» a cell the page shows as not counted. An
     # archived unit owes nothing, exactly as on the register's roster.
-    profs = [] if unit.archived else (
-        db.query(RoleProfile)
-        .filter(RoleProfile.role == "leader", RoleProfile.manager_id == unit.id)
-        .order_by(RoleProfile.name).all())
+    # The leaders this unit counted ON THIS DAY (`leader_follow`): one who moved
+    # here later is not owed yet, one who moved away since still is.
+    from app.services import leader_follow
+    profs = [] if unit.archived else leader_follow.unit_members_on(db, unit.id, d)
     skipped: set[int] = set()
     # Skipped only because the day is before their first owed one — a leader
     # who filed anyway still counts (`unitSlots`' «not yet, unless it arrived»).

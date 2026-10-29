@@ -76,16 +76,26 @@ def checklist_pool(db: Session, units: dict[int, str], d_from: date, d_to: date)
             by_label[label] = mid
     lo, hi = _iso(d_from), _iso(d_to)
     rows = [r for r in pool["rows"] if lo <= r[0] <= hi and r[3] in by_label]
-    roster = [p for p in pool["roster"] if p[2] in by_label]
+    # A leader who MOVED is on the board while any of their spans is
+    # (`leader_follow`) — the span on another unit leaves with that unit.
+    spans = lambda p: (p[10] or []) if len(p) > 10 else []  # noqa: E731
+    roster = [p for p in pool["roster"]
+              if p[2] in by_label or any(u[0] in by_label for u in spans(p))]
     names = {r[1] for r in rows} | {p[1] for p in roster} | set(pool["cutoffs"])
     name_of, _ = lr._pool_codes(names, set())
     unit_key = lambda label: str(by_label[label])  # noqa: E731
+
+    def unit_of(label):
+        # A moved leader's current unit may be off the board: no key at all.
+        return unit_key(label) if label in by_label else ""
     return {
         "rows": [[r[0], name_of.get(r[1], r[1]), r[2], unit_key(r[3]), r[4], r[5], r[6], r[7], r[8]]
                  for r in rows],
-        "roster": [[name_of.get(p[1], p[1]), unit_key(p[2]), p[3], p[4], p[5], p[6],
+        "roster": [[name_of.get(p[1], p[1]), unit_of(p[2]), p[3], p[4], p[5], p[6],
                     1 if p[1] in pool["filed"] else 0, p[7],
-                    p[8] if len(p) > 8 else None, p[9] if len(p) > 9 else None]
+                    p[8] if len(p) > 8 else None, p[9] if len(p) > 9 else None,
+                    [[unit_key(u[0]), u[1], u[2], u[3]] for u in spans(p) if u[0] in by_label]
+                    or None if spans(p) else None]
                    for p in roster],
         "cutoffs": {name_of[k]: {"from": v} for k, v in pool["cutoffs"].items() if k in name_of},
         "cutUnits": {unit_key(k): {"from": v} for k, v in pool["cutUnits"].items() if k in by_label},

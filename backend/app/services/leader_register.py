@@ -335,6 +335,8 @@ _ARMS = [
     ("leader_late_requests", "select count(*), max(xmin::text::bigint) from leader_late_requests"),
     ("leader_day_exclusions", "select count(*), max(xmin::text::bigint) from leader_day_exclusions"),
     ("leader_cutoffs", "select count(*), max(xmin::text::bigint) from leader_cutoffs"),
+    # A leader's units over time (`leader_follow`) — the roster's dated spans.
+    ("leader_unit_moves", "select count(*), max(xmin::text::bigint) from leader_unit_moves"),
     ("leader_task_defs", "select count(*), max(xmin::text::bigint) from leader_task_defs"),
     ("leader_task_settings", "select count(*), max(xmin::text::bigint) from leader_task_settings"),
     ("leader_task_leader_settings", "select count(*), max(xmin::text::bigint) from leader_task_leader_settings"),

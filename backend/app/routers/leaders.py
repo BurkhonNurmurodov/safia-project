@@ -29,7 +29,8 @@ from app.models import RoleProfile
 from app.services import (
     leader_owes, gc_pause,
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
-    leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof, leader_load,
+    leader_cutoffs, leader_dispute, leader_exclusions, leader_follow, leader_late_proof,
+    leader_load,
     leader_register, leader_reports, leader_unit_report)
 from app.services.name_map import (
     _name_tokens,
@@ -1008,10 +1009,22 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
                                RoleProfile.manager_id.isnot(None))
                        .order_by(RoleProfile.name).all())
 
+    # Every leader's units over time (`leader_follow`): a leader who moved
+    # carries the spans, so neither brigadir owes their days from the other
+    # side of the move. Empty for everybody who never moved.
+    unit_moves = leader_follow.moves_by_leader(db)
+
+    def _segments(p) -> list:
+        return leader_follow.segments(p.manager_id, unit_moves.get(p.id))
+
     scoped_profiles = leader_profiles
     if role == "supervisor" and not sees_all:
+        # …and a brigadir's roster keeps a leader who moved AWAY, so the span
+        # they owed this unit travels with the rows they filed here.
         scoped_profiles = [p for p in leader_profiles
-                           if p.manager_id == payload.get("role_id")]
+                           if p.manager_id == payload.get("role_id")
+                           or any(sg["unit"] == payload.get("role_id")
+                                  for sg in _segments(p))]
     elif role == "leader" and not sees_all:
         scoped_profiles = [p for p in leader_profiles if p.id in my_pids]
 
@@ -1031,12 +1044,24 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
         # ranking reads it to know which days a cut leader no longer owed.
         cut = (cuts.get(leader_cutoffs.person_key(p.id, None))
                or cuts.get(leader_cutoffs.person_key(None, p.name)))
+        segs = [sg for sg in _segments(p) if sg["unit"] in by_unit]
+        if role == "supervisor" and not sees_all:
+            # A brigadir is handed only THEIR unit's span: their rows are their
+            # unit's alone, so the other side of the move is no day of theirs.
+            segs = [sg for sg in segs if sg["unit"] == payload.get("role_id")]
         roster.append({
             "id": p.id,
             "name": p.name,
             "manager_id": p.manager_id,
             "supervisor": sup_display.get(p.manager_id) or unit.name,
             "shift": unit.shift,
+            # Only for a leader who MOVED: the unit they counted in over time
+            # (`from` inclusive, `to` exclusive, null = open), in the spelling
+            # the rows carry — the client owes each unit only its own span.
+            **({"units": [{"supervisor": sup_display.get(sg["unit"]) or by_unit[sg["unit"]].name,
+                           "shift": by_unit[sg["unit"]].shift,
+                           "from": sg["from"], "to": sg["to"]} for sg in segs]}
+               if segs else {}),
             # What this leader OWES on a day their unit files per cell:
             # one checklist per cell, so «Topshirilmagan» counts the cells
             # they did not file rather than a single missing day. The floor
@@ -1449,7 +1474,11 @@ def _standing_from(feed: dict) -> dict:
         "filed": filed,
         "roster": [(p["id"], p["name"], p["supervisor"], p["shift"],
                     p["cutoff"], p["cell_from"], len(p["cells"]),
-                    p.get("no_load_from"), p.get("cells_gone_from"), p.get("owes_from"))
+                    p.get("no_load_from"), p.get("cells_gone_from"), p.get("owes_from"),
+                    # A moved leader's units over time — [unit, shift, from, to]
+                    # (`leader_follow`); None for everybody who never moved.
+                    [(u["supervisor"], u["shift"], u["from"], u["to"]) for u in p["units"]]
+                    if p.get("units") else None)
                    for p in feed["roster"]],
         "cutoffs": {k: v["from"] for k, v in feed["cutoffs"].items()},
         "cutUnits": {k: v["from"] for k, v in feed["cutUnits"].items()},
@@ -1535,6 +1564,7 @@ def get_standing(
     names = ({r[1] for r in rows} | {p[1] for p in roster}
              | set(pool["cutoffs"]) | ({me_name} if me_name else set()))
     units = ({r[3] for r in rows} | {p[2] for p in roster}
+             | {u[0] for p in roster if len(p) > 10 and p[10] for u in p[10]}
              | set(pool["cutUnits"]) | ({me_unit} if me_unit else set()))
     name_of, unit_of = _pool_codes(names, units)
     # The register's order is by date and, within the roster, by NAME — an
@@ -1557,11 +1587,14 @@ def get_standing(
                   r[4], r[5], r[6], r[7], r[8]] for r in rows],
         # [name, unit, shift, cutoff, cell_from, cells owned, filed anything,
         #  owes nothing from (no cell in the загрузка — `leader_load`),
-        #  every cell archived from (`cell_archive`)]
+        #  every cell archived from (`cell_archive`), owes from,
+        #  a moved leader's units over time [[unit, shift, from, to]…]]
         "roster": [[name_of.get(p[1], p[1]), unit_of.get(p[2], p[2]), p[3],
                     p[4], p[5], p[6], 1 if p[1] in pool["filed"] else 0, p[7],
                     p[8] if len(p) > 8 else None,
-                    p[9] if len(p) > 9 else None]
+                    p[9] if len(p) > 9 else None,
+                    [[unit_of.get(u[0], u[0]), u[1], u[2], u[3]] for u in p[10]]
+                    if len(p) > 10 and p[10] else None]
                    for p in roster],
         "cutoffs": {name_of.get(k, k): {"from": v} for k, v in pool["cutoffs"].items()},
         "cutUnits": {unit_of.get(k, k): {"from": v} for k, v in pool["cutUnits"].items()},
