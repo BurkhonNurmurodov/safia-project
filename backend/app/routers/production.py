@@ -24,6 +24,7 @@ Admin-only:
 """
 from __future__ import annotations
 import logging
+import re
 
 import statistics
 from collections import Counter, defaultdict
@@ -1495,6 +1496,53 @@ def export_positions(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+
+
+class TableExportBody(BaseModel):
+    """The «Pozitsiyalar» table exactly as it stands on screen — built by the
+    page off the very columns and rows it renders (services/table_mirror.py
+    documents the shape). `date` names the day in the file name only."""
+    title: str = ""
+    sheet: str = ""
+    lines: list[str] = []
+    filename: str = ""
+    caption: str = ""
+    date: Optional[str] = None
+    cols: list[dict] = []
+    rows: list[list] = []
+
+
+@router.post("/api/production/table.xlsx")
+def export_positions_table(
+    request: Request,
+    body: TableExportBody,
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """The «Excel» button of «Pozitsiyalar»: the table AS DISPLAYED — the columns
+    the picker shows in its order, the rows the search / Команда filter / sort
+    leave in theirs, every cell printed as the screen prints it. Nothing is read
+    or computed here: the page describes the table it is drawing and this lays
+    it out, so a column added to the table reaches the file by itself. The fixed
+    brigadir «ABC форма» formula workbook stays on /api/production/export.xlsx.
+    Delivered by app/xlsx_delivery.py (a download in a browser, a DM in
+    Telegram)."""
+    from app.services import table_mirror
+    spec = body.model_dump()
+    why = table_mirror.validate(spec)
+    if why:
+        raise HTTPException(status_code=400, detail=why)
+    data = table_mirror.build(spec).getvalue()
+    fname = re.sub(r'[\\/:*?"<>|]+', " ", (body.filename or "").strip()).strip() or "positions"
+    if not fname.lower().endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 {body.title}"
+    resp = deliver_xlsx(request, payload, fname, data, caption)
+    action_log.enrich(
+        target_kind="report", target_id=fname, target_name=(body.title or "")[:200] or None,
+        details=[("file", fname), ("rows", len(body.rows)), ("columns", len(body.cols)),
+                 ("date", body.date or ""), ("size", len(data))],
+    )
+    return resp
 
 
 @router.get("/api/production/dates")
