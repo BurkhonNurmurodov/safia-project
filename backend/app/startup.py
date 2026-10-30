@@ -5993,7 +5993,8 @@ def add_pp_product_uom() -> None:
 
 
 _PP_PRODUCT_CONTAINERS_DDL = (
-    ("pp_products", (("cap_yellow", "NUMERIC(14, 4)"), ("cap_grey", "NUMERIC(14, 4)"),
+    ("pp_products", (("cap_yellow", "NUMERIC(14, 4)"), ("cap_round", "NUMERIC(14, 4)"),
+                     ("cap_grey", "NUMERIC(14, 4)"),
                      ("cap_bucket", "NUMERIC(14, 4)"), ("cap_box", "NUMERIC(14, 4)")), None),
 )
 

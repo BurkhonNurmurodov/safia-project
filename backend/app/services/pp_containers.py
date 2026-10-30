@@ -21,8 +21,9 @@ keys and nothing else. The client twin is `CONTAINERS` in Production.jsx.
 from __future__ import annotations
 
 # (column on pp_products, the form's header) — in the form's own order:
-# сарик контенер · серий контенер · челак · сарик яшик.
-CONTAINERS = ("cap_yellow", "cap_grey", "cap_bucket", "cap_box")
+# сарик контенер (rectangle) · сарик контенер (round, 2026-10-30) · серий
+# контенер · челак · сарик яшик.
+CONTAINERS = ("cap_yellow", "cap_round", "cap_grey", "cap_bucket", "cap_box")
 
 
 class InvalidCapacity(ValueError):

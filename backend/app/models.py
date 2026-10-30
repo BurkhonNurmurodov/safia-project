@@ -1272,7 +1272,8 @@ class PPProduct(Base):
     # pp_containers) — grams when `uom` is kg, the line's own unit otherwise.
     # NULL = not stated. Dated by pp_catalog like `uom`; no figure reads it.
     # startup.add_pp_product_containers.
-    cap_yellow  = Column(Numeric(14, 4), nullable=True)
+    cap_yellow  = Column(Numeric(14, 4), nullable=True)   # rectangle
+    cap_round   = Column(Numeric(14, 4), nullable=True)   # circular yellow
     cap_grey    = Column(Numeric(14, 4), nullable=True)
     cap_bucket  = Column(Numeric(14, 4), nullable=True)
     cap_box     = Column(Numeric(14, 4), nullable=True)

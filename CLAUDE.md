@@ -8847,14 +8847,15 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
 ### …and a line's four CONTAINERS (`pp_products.cap_*`, 2026-10-30)
 
 The operator, from the brigadirs' «Umar oka» form: the «Pozitsiyalar» table
-carries EIGHT columns for the four containers a position is packed into —
-сарик контенер · серий контенер · челак · сарик яшик (keys `yellow` · `grey`
-· `bucket` · `box`) — each a «sig'im» (capacity) and a «soni» (count), the
+carries TEN columns for the five containers a position is packed into —
+rectangle сарик контенер · circular сарик контенер (added the same day) ·
+серий контенер · челак · сарик яшик (keys `yellow` · `round` · `grey` ·
+`bucket` · `box`) — each a «sig'im» (capacity) and a «soni» (count), the
 last columns, after «Pareto» (the operator's call, same day), and
 **«Kontiner krishka» is gone from the table** (below).
 
-- **The capacity is a CATALOG field** — `pp_products.cap_yellow / cap_grey /
-  cap_bucket / cap_box` (NUMERIC, NULL = not stated,
+- **The capacity is a CATALOG field** — `pp_products.cap_yellow / cap_round /
+  cap_grey / cap_bucket / cap_box` (NUMERIC, NULL = not stated,
   `startup.add_pp_product_containers`, both entrypoints), in grams when the
   line's «O'lchov birligi» is kg, in the line's own unit otherwise. A
   product's container does not change from shift to shift, so it is not a

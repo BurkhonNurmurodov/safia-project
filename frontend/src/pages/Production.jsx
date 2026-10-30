@@ -71,7 +71,8 @@ const NUM_DEC = { labor: 2, people: 1, plan: 0, fact: 0, cap: 2, cnt: 0,
 // count the day's plan needs, ROUNDUP(ПЛАН × (1000 if kg) ÷ capacity), the
 // form's own formula (rounded to six places first, as the form does).
 const CONTAINERS = [
-  { id: "yellow", field: "cap_yellow" },
+  { id: "yellow", field: "cap_yellow" },   // rectangle
+  { id: "round", field: "cap_round" },     // circular yellow
   { id: "grey", field: "cap_grey" },
   { id: "bucket", field: "cap_bucket" },
   { id: "box", field: "cap_box" },

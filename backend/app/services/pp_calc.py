@@ -753,7 +753,7 @@ def compute_dashboard(
             "uom": p.get("uom") or None,
             # the four container capacities (services/pp_containers) — the
             # page computes each count; nothing here reads them.
-            **{c: p.get(c) for c in ("cap_yellow", "cap_grey", "cap_bucket", "cap_box")},
+            **{c: p.get(c) for c in ("cap_yellow", "cap_round", "cap_grey", "cap_bucket", "cap_box")},
             "labor_time": labor_f if has_labor else None,
             "has_labor": has_labor,
             "plan_qty": plan_qty,
