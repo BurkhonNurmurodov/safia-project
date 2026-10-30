@@ -751,6 +751,9 @@ def compute_dashboard(
             # nothing here converts, sums or compares across units, so the
             # minutes below are Трудоемкость × quantity ÷ 60 whatever it says.
             "uom": p.get("uom") or None,
+            # the four container capacities (services/pp_containers) — the
+            # page computes each count; nothing here reads them.
+            **{c: p.get(c) for c in ("cap_yellow", "cap_grey", "cap_bucket", "cap_box")},
             "labor_time": labor_f if has_labor else None,
             "has_labor": has_labor,
             "plan_qty": plan_qty,

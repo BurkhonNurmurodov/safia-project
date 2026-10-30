@@ -66,6 +66,7 @@ from app.services import idle_lock
 from app.services import idle_source
 from app.services import pp_catalog
 from app.services import pp_uom
+from app.services import pp_containers
 from app.services import shift_scope
 from app.services import wc_group
 from app.services import zagruzka_source
@@ -651,6 +652,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             # DAY has, like every other field here, so a past day prints the
             # unit it was set with and a later edit never rewrites it.
             "uom": p.uom,
+            **{c: (float(getattr(p, c)) if getattr(p, c) is not None else None)
+               for c in pp_containers.CONTAINERS},
             "line_key": keys.get(p.id, ""),
             "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
@@ -3618,6 +3621,11 @@ def import_catalog(
     kept_uoms = {(p.work_center or "", daily_key(p.sap_code, p.name),
                   _old_keys.get(p.id, "")): p.uom
                  for p in old_lines if p.uom and p.id in _old_keys}
+    # The container capacities travel the same way, on the same key.
+    kept_caps = {(p.work_center or "", daily_key(p.sap_code, p.name),
+                  _old_keys.get(p.id, "")): {c: getattr(p, c) for c in pp_containers.CONTAINERS}
+                 for p in old_lines if p.id in _old_keys
+                 and any(getattr(p, c) is not None for c in pp_containers.CONTAINERS)}
     new_keys = line_keys([{**p, "id": i, "sort_order": i}
                           for i, p in enumerate(parsed["products"])])
     # The ARCHIVE survives the import (2026-10-24): the sheet is the unit's
@@ -3665,6 +3673,7 @@ def import_catalog(
             auto_fill=ident not in kept_manual,
             wc_group=grp,
             uom=kept_uoms.get(line_at),
+            **kept_caps.get(line_at, {}),
             sort_order=i,
         ))
 
@@ -4552,6 +4561,84 @@ def set_catalog_uom(body: CatalogUomBody,
                  # «this save did not name a measure», which is not a request
                  # this door can make.
                  ("uom", uom or "—"),
+                 ("unchanged", (len(prods) - len(todo)) or None),
+                 ("from", eff.isoformat())],
+    )
+    return {"ok": True, "updated": len(todo),
+            "unchanged": len(prods) - len(todo), "from": eff.isoformat()}
+
+
+class CatalogContainerBody(BaseModel):
+    ids: list[int]
+    field: str                         # one of services/pp_containers.CONTAINERS
+    value: Optional[float | str] = None  # null / "" clears
+
+
+@router.put("/api/production/catalog/containers")
+def set_catalog_container(body: CatalogContainerBody,
+                          manager_id: Optional[int] = Query(None),
+                          payload: dict = Depends(require_page(PAGE)),
+                          db: Session = Depends(get_db)):
+    """Set one container capacity (services/pp_containers) on one or several
+    catalog lines — the measure's twin (2026-10-30): the same audience
+    (UOM_ROLES), the same scope, the same dating, the same «nothing changed
+    freezes nothing». Like the measure, no figure reads a capacity — the page
+    computes the container counts from it — so it moves no stored quantity."""
+    if payload.get("role") not in UOM_ROLES:
+        raise HTTPException(status_code=403,
+                            detail="Not allowed to set container capacities")
+    if body.field not in pp_containers.CONTAINERS:
+        raise HTTPException(status_code=400,
+                            detail="field must be one of " + ", ".join(pp_containers.CONTAINERS))
+    ids = list(dict.fromkeys(body.ids or []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="no rows selected")
+    if len(ids) > _CATALOG_BULK_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"too many rows at once (max {_CATALOG_BULK_MAX})")
+    try:
+        value = pp_containers.norm_capacity(body.value)
+    except pp_containers.InvalidCapacity as exc:
+        raise HTTPException(status_code=400,
+                            detail={"code": "bad_capacity", "message": str(exc)})
+    mid = _resolve_manager_id(payload, manager_id, db)
+
+    prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
+    found = {p.id for p in prods}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"catalog line(s) not found: {missing[:5]}")
+    if {p.manager_id for p in prods} - {mid}:
+        raise HTTPException(status_code=403,
+                            detail="these positions belong to another brigadir")
+    _hold_catalog_rows(db, prods, mid)
+
+    def _cur(p):
+        v = getattr(p, body.field)
+        return None if v is None else round(float(v), 4)
+    todo = [p for p in prods if _cur(p) != value]
+    if not todo:
+        eff = pp_catalog.unit_effective_day(db, mid)
+        action_log.enrich(
+            target_kind="catalog", target_id=f"{mid}:{body.field}:0", unit_id=mid,
+            details=[("rows", 0), (body.field, "—" if value is None else value),
+                     ("unchanged", len(prods)), ("from", eff.isoformat())],
+        )
+        return {"ok": True, "updated": 0, "unchanged": len(prods),
+                "from": eff.isoformat()}
+
+    # BEFORE an attribute moves (see set_catalog_uom).
+    eff = pp_catalog.freeze(db, mid, body.field)
+    for p in todo:
+        setattr(p, body.field, value)
+    names = [p.sap_code or p.name or str(p.id) for p in todo]
+    db.commit()
+    action_log.enrich(
+        target_kind="catalog", target_id=f"{mid}:{body.field}:{len(todo)}",
+        target_name=", ".join(names[:5]) + (" …" if len(names) > 5 else ""),
+        unit_id=mid,
+        details=[("rows", len(todo)), (body.field, "—" if value is None else value),
                  ("unchanged", (len(prods) - len(todo)) or None),
                  ("from", eff.isoformat())],
     )

@@ -5992,6 +5992,20 @@ def add_pp_product_uom() -> None:
     _ensure_columns(_PP_PRODUCT_UOM_DDL, "pp_products.uom")
 
 
+_PP_PRODUCT_CONTAINERS_DDL = (
+    ("pp_products", (("cap_yellow", "NUMERIC(14, 4)"), ("cap_grey", "NUMERIC(14, 4)"),
+                     ("cap_bucket", "NUMERIC(14, 4)"), ("cap_box", "NUMERIC(14, 4)")), None),
+)
+
+
+def add_pp_product_containers() -> None:
+    """2026-10-30 — the four container capacities of a catalog line
+    (services/pp_containers). NULL on every existing row = not stated; no
+    figure reads them. Pure DDL, idempotent, no flag; FATAL on failure — every
+    catalog read selects these columns."""
+    _ensure_columns(_PP_PRODUCT_CONTAINERS_DDL, "pp_products.cap_*")
+
+
 _FORECAST_ANSWER_DDL = (
     ("forecast_call_notices", (("answer", "VARCHAR(8)"),
                                ("answer_count", "INTEGER"),

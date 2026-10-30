@@ -8811,7 +8811,39 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
   closed-day lock; and the SAP snapshot itself, which is still written for every
   group the file names.
 
-### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19)
+### …and a line's four CONTAINERS (`pp_products.cap_*`, 2026-10-30)
+
+The operator, from the brigadirs' «Umar oka» form: the «Pozitsiyalar» table
+carries EIGHT columns for the four containers a position is packed into —
+сарик контенер · серий контенер · челак · сарик яшик (keys `yellow` · `grey`
+· `bucket` · `box`) — each a «sig'im» (capacity) and a «soni» (count), and
+**«Kontiner krishka» is gone from the table** (below).
+
+- **The capacity is a CATALOG field** — `pp_products.cap_yellow / cap_grey /
+  cap_bucket / cap_box` (NUMERIC, NULL = not stated,
+  `startup.add_pp_product_containers`, both entrypoints), in grams when the
+  line's «O'lchov birligi» is kg, in the line's own unit otherwise. A
+  product's container does not change from shift to shift, so it is not a
+  per-day number. Dated by `pp_catalog` (in `LINE_FIELDS`), carried across an
+  ABC import on the line's key like the measure, read by no figure.
+- **Written through `PUT /api/production/catalog/containers`**
+  (`{ids, field, value}`, `services/pp_containers.py` names the four fields
+  and refuses a capacity that is not a positive number) — the measure's twin
+  door: the same audience (`UOM_ROLES` — admin, supervisor, shift-manager),
+  scope, dating and «unchanged freezes nothing». Logged as
+  `production.catalog_containers_set`. On the table the capacity is a
+  `QtyCell`, undoable like ПЛАН.
+- **The count is computed by the page** (`containerCount` in
+  Production.jsx, the form's formula): `ROUNDUP(ПЛАН × (1000 if kg else 1) ÷
+  capacity)`, rounded to six places first; «—» without a capacity or a plan.
+  The «Excel» button inserts the eight as values (capacities green, as typed
+  inputs).
+
+### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19 — REMOVED from the table 2026-10-30)
+
+The column is gone from «Pozitsiyalar»; the stored values, the column and the
+`/override` field stay (additive rule, older tabs), and nothing on screen
+reads them any more.
 
 From **2026-10-19** (the operator's request: «one column … empty by default,
 and if supervisors want they can type any number on it») the «Pozitsiyalar»

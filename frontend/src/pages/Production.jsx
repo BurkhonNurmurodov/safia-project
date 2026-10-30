@@ -63,8 +63,28 @@ const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `
 const rowVyp = (r) => (r.total_labor ? r.actual_labor / r.total_labor : null);
 // The decimals each numeric column prints with — read by the cell AND the
 // export, so the file shows the very digits the table does.
-const NUM_DEC = { labor: 2, people: 1, plan: 0, fact: 0, container_cap: 0,
+const NUM_DEC = { labor: 2, people: 1, plan: 0, fact: 0, cap: 2, cnt: 0,
   actual_labor: 1, labor_total: 1, minutes: 1 };
+// The four containers a position is packed into (services/pp_containers, the
+// brigadirs' «Umar oka» form): a CAPACITY per container on the catalog line —
+// grams when the line's ПЛАН is in kg, the line's own unit otherwise — and the
+// count the day's plan needs, ROUNDUP(ПЛАН × (1000 if kg) ÷ capacity), the
+// form's own formula (rounded to six places first, as the form does).
+const CONTAINERS = [
+  { id: "yellow", field: "cap_yellow" },
+  { id: "grey", field: "cap_grey" },
+  { id: "bucket", field: "cap_bucket" },
+  { id: "box", field: "cap_box" },
+];
+const CONTAINER_BY_KEY = Object.fromEntries(CONTAINERS.flatMap((c) =>
+  [[`cap_${c.id}`, { ...c, kind: "cap" }], [`cnt_${c.id}`, { ...c, kind: "cnt" }]]));
+const containerCount = (r, field) => {
+  const cap = Number(r[field]);
+  const plan = r.plan_qty;
+  if (!cap || plan == null || Number.isNaN(Number(plan))) return null;
+  const q = Number(plan) * (r.uom === "kg" ? 1000 : 1) / cap;
+  return Math.ceil(Math.round(q * 1e6) / 1e6);
+};
 // Excel inks for the screen's muted / warning text (light theme values).
 const XL_SOFT = "#6b7280";
 const XL_WARN = "#a16207";
@@ -142,10 +162,13 @@ const COLS = [
   // Where the two columns above come from — the file, or a person. It sits
   // directly after them because that is the question it answers.
   { key: "autofill", labelKey: "production.col.source", align: "center", hintKey: "production.col.sourceHint" },
-  // «Kontiner krishka» (2026-10-19, the operator's request): a number the
-  // brigadir types per line per day — empty until somebody does, read by
-  // nothing. AFTER «Manba», so that chip keeps answering for ПЛАН/ФАКТ alone.
-  { key: "container_cap", labelKey: "production.col.containerCap", align: "center", edit: true, hintKey: "production.col.containerCapHint" },
+  // The four containers (CONTAINERS above), each a capacity typed on the line
+  // and the count the plan needs — AFTER «Manba», so that chip keeps answering
+  // for ПЛАН/ФАКТ alone. Replaced «Kontiner krishka» on 2026-10-30.
+  ...CONTAINERS.flatMap((c) => [
+    { key: `cap_${c.id}`, labelKey: `production.col.cap.${c.id}`, align: "center", edit: true, hintKey: "production.col.capHint" },
+    { key: `cnt_${c.id}`, labelKey: `production.col.cnt.${c.id}`, align: "center", hintKey: "production.col.cntHint" },
+  ]),
   { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
   { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
   { key: "minutes", labelKey: "production.col.minutes", align: "center" },
@@ -284,12 +307,15 @@ const sortVal = (r, key) => {
     // Groups the manual rows together; the chip below says which is which.
     case "autofill":     return r.sap_filled === false ? 0 : 1;
     case "plan":         return r.plan_qty;
-    case "container_cap": return r.container_cap ?? null;
     case "actual_labor": return r.actual_labor;
     case "labor_total":  return r.total_labor;
     case "minutes":      return r.minutes;
     case "pareto":       return r.pareto;
-    default:             return null;
+    default: {
+      const c = CONTAINER_BY_KEY[key];
+      if (!c) return null;
+      return c.kind === "cap" ? (r[c.field] ?? null) : containerCount(r, c.field);
+    }
   }
 };
 
@@ -1798,6 +1824,7 @@ export default function Production() {
   // serve BOTH audiences — what each may then do with a selection is the bar's
   // own question, not this one.
   const canPickRows = canEditCatalog || canEditUom;
+  const canEditCaps = canEditUomRole && catalogEditable && !isPlaceholderData;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
     ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
@@ -2136,6 +2163,22 @@ export default function Production() {
       return next;
     }),
   });
+  // A container capacity (services/pp_containers) — the measure's twin door,
+  // with the measure's audience. Undoable like a ПЛАН cell: the inverse is the
+  // same call with the capacity that stood before (null clears).
+  const capCatalog = useMutation({
+    mutationFn: (body) => api.put("/api/production/catalog/containers", body, { params: managerParam }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
+    onError: (e) => toast.error(writeErr(e)),
+  });
+  const saveCapacity = (row, field, key) => (value) => {
+    const prev = row[field] ?? null;
+    tracked({
+      label: `${row.name} · ${t(`production.col.cap.${key.slice(4)}`)}`,
+      forward: () => capCatalog.mutateAsync({ ids: [row.id], field, value }),
+      back: () => capCatalog.mutateAsync({ ids: [row.id], field, value: prev }),
+    });
+  };
   // One cell, one pick, one save. "" is «not stated» and is a real answer.
   const setRowUom = (row, value) => {
     if (!canEditUom || row.id == null || (row.uom ?? "") === value) return;
@@ -2550,11 +2593,9 @@ export default function Production() {
   const saveOverride = (row, field) => (value) => {
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
                  field, line_key: row.line_key };
-    const prev = (field === "actual" ? row.actual_qty
-      : field === "container_cap" ? row.container_cap : row.plan_qty) ?? null;
+    const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
     tracked({
-      label: `${row.name} · ${t(field === "actual" ? "production.col.fact"
-        : field === "container_cap" ? "production.col.containerCap" : "production.col.plan")}`,
+      label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,
       forward: () => override.mutateAsync({ ...at, value }),
       back: () => override.mutateAsync({ ...at, value: prev }),
     });
@@ -2710,14 +2751,6 @@ export default function Production() {
               : r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.plan_qty} onSave={saveOverride(r, "plan")} />
         );
-      case "container_cap":
-        // Typed like ПЛАН/ФАКТ — the same spreadsheet cell, the same closed-day
-        // lock — and blank until somebody types: a lid count nobody entered is
-        // not 0, and the file never fills it.
-        return (
-          <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
-            value={r.container_cap} onSave={saveOverride(r, "container_cap")} />
-        );
       case "autofill": {
         // Two states, never three: a row is filled by the file or it is typed.
         // WHY it is typed — the operator switched it off, or the line carries no
@@ -2754,8 +2787,26 @@ export default function Production() {
             </div>
           </td>
         );
-      default:
-        return null;
+      default: {
+        const c = CONTAINER_BY_KEY[key];
+        if (!c) return null;
+        if (c.kind === "cap") {
+          // Typed like ПЛАН/ФАКТ — the same spreadsheet cell — but a catalog
+          // field: the measure's audience writes it, dated like the measure.
+          return (
+            <QtyCell key={key} col={key} row={i} readOnly={!canEditCaps || r.id == null}
+              title={t(r.uom === "kg" ? "production.cap.inGrams" : "production.cap.inUnits")}
+              value={r[c.field] ?? null} onSave={saveCapacity(r, c.field, key)} />
+          );
+        }
+        const n = containerCount(r, c.field);
+        return (
+          <td key={key} className="px-3 py-2 text-center tabular-nums font-medium"
+              style={{ color: n == null ? "var(--text-4)" : "var(--text-1)" }}>
+            {n == null ? "—" : fmt(n, 0)}
+          </td>
+        );
+      }
     }
   };
 
@@ -2782,7 +2833,6 @@ export default function Production() {
         : { v: vyp, k: "pct", fg: vypColor(vyp), b: true };
       case "plan": return num(r.plan_qty, NUM_DEC.plan);
       case "fact": return num(r.actual_qty, NUM_DEC.fact);
-      case "container_cap": return num(r.container_cap, NUM_DEC.container_cap);
       case "autofill": return r.sap_filled !== false
         ? { t: t("production.autofill.sap"), fg: XL_SOFT }
         : { t: t("production.autofill.manual"), fg: "#b07828" };
@@ -2792,6 +2842,9 @@ export default function Production() {
       case "pareto": return r.pareto == null || Number.isNaN(r.pareto) ? XL_DASH
         : { v: r.pareto, k: "pct", fg: XL_SOFT };
       default: {
+        const c = CONTAINER_BY_KEY[key];
+        if (c) return c.kind === "cap" ? num(r[c.field], NUM_DEC.cap)
+          : num(containerCount(r, c.field), NUM_DEC.cnt);
         const v = r[key];
         if (v === null || v === undefined || v === "") return XL_DASH;
         return typeof v === "number" ? { v, d: 2 } : { t: String(v) };

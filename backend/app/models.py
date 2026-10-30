@@ -1268,6 +1268,14 @@ class PPProduct(Base):
     # NOT part of the line's identity (pp_calc.line_keys), so changing it moves
     # no stored quantity, and no figure reads it. startup.add_pp_product_uom.
     uom         = Column(String(8), nullable=True)
+    # 2026-10-30: how much ONE container of each kind holds (services/
+    # pp_containers) — grams when `uom` is kg, the line's own unit otherwise.
+    # NULL = not stated. Dated by pp_catalog like `uom`; no figure reads it.
+    # startup.add_pp_product_containers.
+    cap_yellow  = Column(Numeric(14, 4), nullable=True)
+    cap_grey    = Column(Numeric(14, 4), nullable=True)
+    cap_bucket  = Column(Numeric(14, 4), nullable=True)
+    cap_box     = Column(Numeric(14, 4), nullable=True)
     # 2026-10-24: an ARCHIVED line is `active` = False — set aside, never
     # deleted, so it comes back whole (code, name, Трудоемкость, Команда,
     # letter, фаза pin, the SAP switch) with one press. `active` was already
