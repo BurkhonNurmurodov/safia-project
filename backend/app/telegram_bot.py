@@ -2454,6 +2454,12 @@ _LT_MESSAGES = {
                               "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
                               "yuboring — ikkalasi ham izoh talab qiladi."),
         "ad_ruling_line": "Bajarilmagan deb belgilandi — {by}, {at}",
+        "ad_card_sup_deadline": ("⚖️ MUDDAT O'TGANI UCHUN YOPILGAN VAZIFAGA NOROZILIK\n\n"
+                                 "👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                                 "⏱ Tizim qarori:\nSoat {verdict} gacha topshirilmadi — vazifa avtomatik yopildi."
+                                 "\n\n📝 Lider izohi:\n{reason}\n\n"
+                                 "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
+                                 "yuboring — ikkalasi ham izoh talab qiladi."),
         "ad_card_sup": ("⚖️ AI QARORIGA NOROZILIK\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI xulosasi:\n{verdict}\n\n📝 Lider izohi:\n{reason}\n\n"
                         "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
@@ -2636,6 +2642,12 @@ _LT_MESSAGES = {
                               "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
                               "юборинг — иккаласи ҳам изоҳ талаб қилади."),
         "ad_ruling_line": "Бажарилмаган деб белгиланди — {by}, {at}",
+        "ad_card_sup_deadline": ("⚖️ МУДДАТ ЎТГАНИ УЧУН ЁПИЛГАН ВАЗИФАГА НОРОЗИЛИК\n\n"
+                                 "👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                                 "⏱ Тизим қарори:\nСоат {verdict} гача топширилмади — вазифа автоматик ёпилди."
+                                 "\n\n📝 Лидер изоҳи:\n{reason}\n\n"
+                                 "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
+                                 "юборинг — иккаласи ҳам изоҳ талаб қилади."),
         "ad_card_sup": ("⚖️ AI ҚАРОРИГА НОРОЗИЛИК\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI хулосаси:\n{verdict}\n\n📝 Лидер изоҳи:\n{reason}\n\n"
                         "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
@@ -2818,6 +2830,12 @@ _LT_MESSAGES = {
                               "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
                               "администраторам — в обоих случаях нужен комментарий."),
         "ad_ruling_line": "Отмечено как не выполненное — {by}, {at}",
+        "ad_card_sup_deadline": ("⚖️ ВОЗРАЖЕНИЕ: ЗАДАЧА ЗАКРЫТА ПО ИСТЕЧЕНИИ СРОКА\n\n"
+                                 "👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                                 "⏱ Решение системы:\nНе сдано до {verdict} — задача закрыта автоматически."
+                                 "\n\n📝 Комментарий лидера:\n{reason}\n\n"
+                                 "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
+                                 "администраторам — в обоих случаях нужен комментарий."),
         "ad_card_sup": ("⚖️ ВОЗРАЖЕНИЕ НА РЕШЕНИЕ ИИ\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 Заключение ИИ:\n{verdict}\n\n📝 Комментарий лидера:\n{reason}\n\n"
                         "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
@@ -3000,6 +3018,12 @@ _LT_MESSAGES = {
                               "Review it in the chat: ask what you need, then refuse it or pass it to "
                               "the admins — both need your comment."),
         "ad_ruling_line": "Marked not done — {by}, {at}",
+        "ad_card_sup_deadline": ("⚖️ OBJECTION: TASK CLOSED WHEN ITS DEADLINE PASSED\n\n"
+                                 "👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                                 "⏱ The system's ruling:\nNot submitted by {verdict} — the task was closed automatically."
+                                 "\n\n📝 The leader's note:\n{reason}\n\n"
+                                 "Review it in the chat: ask what you need, then refuse it or pass it to "
+                                 "the admins — both need your comment."),
         "ad_card_sup": ("⚖️ OBJECTION TO AN AI RULING\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI verdict:\n{verdict}\n\n📝 The leader's note:\n{reason}\n\n"
                         "Review it in the chat: ask what you need, then refuse it or pass it to "
@@ -5516,6 +5540,13 @@ def _ad_card(db, d, lang: str) -> str:
             if lines:
                 verdict += "\n" + "\n".join(f"• {x}" for x in lines)
     key = "ad_card_sup"
+    if rev is None and verdict == "—":
+        # A task the platform closed unsubmitted when its hour ran out
+        # (2026-10-30): the hour IS the verdict, worded by the card.
+        m = leader_dispute.missed_entry(db, d)
+        if m is not None:
+            key = "ad_card_sup_deadline"
+            verdict = str(m.reason)[len(leader_tasks.MISSED_PREFIX):] or "—"
     if leader_dispute.ruling_of(d) is not None:
         # An objection to an ADMIN's own «not done» ruling: that ruling is what
         # is argued with, so it leads — and whatever the AI or the automatic

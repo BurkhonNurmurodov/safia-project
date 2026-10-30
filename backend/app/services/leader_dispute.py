@@ -75,8 +75,10 @@ ways a stage-1 write breaks that, both of which this module shipped with.
 THREE JUDGES, one chain (`KIND_*`): the AI refusing a proof, an automatic check
 failing (2026-09-28), and — from 2026-10-14, the operator: «to every single one
 of the 13 tasks, it should be possible to send an objection if it's rejected» —
-an ADMIN ruling a task «not done» by hand. Which one a row argues with decides
-only what an approval writes (`_write_verdict`) and the words of its notices.
+an ADMIN ruling a task «not done» by hand — and, from 2026-10-30, the PLATFORM
+closing a task unsubmitted when its hour ran out («Muddat o'tib ketdi»). Which
+one a row argues with decides only what an approval writes (`_write_verdict`)
+and the words of its notices.
 """
 from __future__ import annotations
 
@@ -106,11 +108,12 @@ ADM_ACTIONS = (APPROVED, REJECTED)
 
 REASON_MAX = 1000
 
-# WHICH judge an objection argues with — the three values of
-# `leader_reports.rejected_by`. Read off the row by `kind_of`.
+# WHICH judge an objection argues with — the values of
+# `leader_reports.objection_kind`. Read off the row by `kind_of`.
 KIND_AI = "ai"          # the AI refused the proof
 KIND_AUTO = "auto"      # an automatic check (#1 #8 #9 #11) failed
 KIND_ADMIN = "admin"    # an admin ruled the task «not done» by hand
+KIND_DEADLINE = "deadline"  # the platform closed it unsubmitted at its hour
 
 # Nothing about a day BEFORE this can be argued any more — neither an objection
 # to an AI rejection nor a late proof (the operator, 2026-09-21: «anything
@@ -202,9 +205,10 @@ def _write_verdict(db: Session, d: LeaderAiDispute, resolution: str | None,
     rev = _review(db, d)
     if rev is None:
         # An objection to an AUTOMATIC check has no review row to write on —
-        # no photo was ever taken, so nothing ever queued one. Its weight moves
-        # through the admin override instead (`_write_auto`).
-        e = auto_entry(db, d)
+        # no photo was ever taken, so nothing ever queued one. Neither has a
+        # task the platform closed unsubmitted at its hour. Both move their
+        # weight through the admin override instead (`_write_auto`).
+        e = auto_entry(db, d) or missed_entry(db, d)
         if e is not None:
             _write_auto(db, d, e, resolution, by_name)
         return
@@ -232,13 +236,9 @@ def _write_verdict(db: Session, d: LeaderAiDispute, resolution: str | None,
 # report and the report DM alike. Nothing downstream learns a new rule.
 
 
-def auto_entry(db: Session, d: LeaderAiDispute):
-    """The AUTOMATIC-check entry this objection argues with, or None when it is
-    an ordinary AI rejection. Read off the entry's own reason sentinel rather
-    than the config: an objection is read months later, and the config may
-    have moved since."""
+def _entry_with(db: Session, d: LeaderAiDispute, prefix: str):
+    """The bot entry behind this objection when its reason carries `prefix`."""
     from app.models import LeaderTaskEntry
-    from app.services import leader_tasks
     ref = str(d.ref or "")
     if not ref.startswith("bot:"):
         return None
@@ -247,9 +247,29 @@ def auto_entry(db: Session, d: LeaderAiDispute):
     except ValueError:
         return None
     e = db.query(LeaderTaskEntry).filter_by(id=eid).first()
-    if e is None or not str(e.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+    if e is None or not str(e.reason or "").startswith(prefix):
         return None
     return e
+
+
+def auto_entry(db: Session, d: LeaderAiDispute):
+    """The AUTOMATIC-check entry this objection argues with, or None when it is
+    an ordinary AI rejection. Read off the entry's own reason sentinel rather
+    than the config: an objection is read months later, and the config may
+    have moved since."""
+    from app.services import leader_tasks
+    return _entry_with(db, d, leader_tasks.AUTO_PREFIX)
+
+
+def missed_entry(db: Session, d: LeaderAiDispute):
+    """The entry of a task the PLATFORM closed unsubmitted when its hour ran out
+    (`__missed__|HH:MM`), or None. From 2026-10-30 (the operator: «anytime the
+    leader must be able to write an objection for rejected tasks, whether it's
+    rejected by AI or by system») that closing is a judgement the leader may
+    argue too — a fourth judge on the same chain, approved through the same
+    override an automatic check uses (`_write_auto`)."""
+    from app.services import leader_tasks
+    return _entry_with(db, d, leader_tasks.MISSED_PREFIX)
 
 
 def _write_auto(db: Session, d: LeaderAiDispute, entry, resolution: str | None,
@@ -296,7 +316,9 @@ def kind_of(db: Session, d: LeaderAiDispute) -> str:
     """WHICH judge this objection argues with — one of `KIND_*`."""
     if d.admin_ruling:
         return KIND_ADMIN
-    return KIND_AUTO if auto_entry(db, d) is not None else KIND_AI
+    if auto_entry(db, d) is not None:
+        return KIND_AUTO
+    return KIND_DEADLINE if missed_entry(db, d) is not None else KIND_AI
 
 
 def ruling_of(d: LeaderAiDispute) -> dict | None:
@@ -693,7 +715,8 @@ def notify_filed(db: Session, d: LeaderAiDispute, *,
     # not be announced as one to the AI: the reader decides differently about
     # the three.
     nkey = {KIND_AUTO: "leader_dispute_filed_auto",
-            KIND_ADMIN: "leader_dispute_filed_admin"}.get(
+            KIND_ADMIN: "leader_dispute_filed_admin",
+            KIND_DEADLINE: "leader_dispute_filed_deadline"}.get(
         kind_of(db, d), "leader_dispute_filed")
     try:
         chat.fanout(db, chat.DISPUTE, d, nkey, params,
@@ -721,7 +744,8 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str,
         ADMIN: "leader_dispute_uplifted",
         APPROVED: "leader_dispute_approved",
         REJECTED: ({KIND_AUTO: "leader_dispute_sup_rejected_auto",
-                    KIND_ADMIN: "leader_dispute_sup_rejected_admin"}.get(
+                    KIND_ADMIN: "leader_dispute_sup_rejected_admin",
+                    KIND_DEADLINE: "leader_dispute_sup_rejected_deadline"}.get(
                         kind_of(db, d), "leader_dispute_sup_rejected")
                    if stage == "supervisor" else "leader_dispute_rejected"),
     }.get(d.status)

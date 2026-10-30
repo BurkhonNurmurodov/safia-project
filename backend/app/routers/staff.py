@@ -728,6 +728,14 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{leader} возражает против решения администратора", "Дата: {date} | Задача: {task}\n«{reason}»"),
         "en": ("{leader} objects to an admin's ruling", "Date: {date} | Task: {task}\n«{reason}»"),
     },
+    # …and when what was argued with is the PLATFORM closing the task
+    # unsubmitted when its hour ran out (leader_dispute.KIND_DEADLINE, 2026-10-30).
+    "leader_dispute_filed_deadline": {
+        "uz": ("{leader} muddat o'tgani uchun yopilgan vazifaga norozilik bildirdi", "Sana: {date} | Vazifa: {task}\n«{reason}»"),
+        "uz_cyrl": ("{leader} муддат ўтгани учун ёпилган вазифага норозилик билдирди", "Сана: {date} | Вазифа: {task}\n«{reason}»"),
+        "ru": ("{leader} возражает: задача закрыта по истечении срока", "Дата: {date} | Задача: {task}\n«{reason}»"),
+        "en": ("{leader} objects to a task closed when its deadline passed", "Date: {date} | Task: {task}\n«{reason}»"),
+    },
     # One free message in an appeal's chat, to the other two parties.
     "leader_dispute_message": {
         "uz": ("{author}: norozilik chatida yangi xabar", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\n\U0001F4CE Fayllar: {files}"),
@@ -766,6 +774,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Админ қарори кучида қолади.\nИзоҳ: {note}"),
         "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Решение администратора остаётся в силе.\nКомментарий: {note}"),
         "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The admin's ruling stands.\nComment: {note}"),
+    },
+    "leader_dispute_sup_rejected_deadline": {
+        "uz": ("Norozilikni brigadir rad etdi", "Sana: {date} | Vazifa: {task} | Rad etdi: {by} | Vazifa bajarilmagan bo'lib qoladi.\nIzoh: {note}"),
+        "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Вазифа бажарилмаган бўлиб қолади.\nИзоҳ: {note}"),
+        "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Задача остаётся невыполненной.\nКомментарий: {note}"),
+        "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The task stays not done.\nComment: {note}"),
     },
     # ── automatic checklist tasks (services/leader_auto.py) ──────────────────
     # Three messages, and the two result ones go out on a PASS as well as a

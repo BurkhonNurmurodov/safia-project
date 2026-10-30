@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   MessageSquareWarning, Hourglass, ShieldCheck, Ban, UserCheck, CircleSlash,
   Clock, Timer, MessagesSquare, ChevronRight, ChevronDown, Paperclip, Hand, Settings2, ShieldX,
+  TimerOff,
 } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
@@ -86,7 +87,7 @@ const TXT = {
     noMatchT: "Mos yozuv yo'q", noMatchM: "Filtr yoki qidiruvni o'zgartiring.",
     f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
     f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
-    f_unreadable: "Rasm o'qilmadi", autoCheck: "Avtomatik tekshiruv", adminRuling: "Admin qarori",
+    f_unreadable: "Rasm o'qilmadi", autoCheck: "Avtomatik tekshiruv", deadline: "Muddat o'tdi", adminRuling: "Admin qarori",
   },
   uz_cyrl: {
     titleDispute: "Норозликлар", titleLate: "Кечиккан исботлар",
@@ -114,7 +115,7 @@ const TXT = {
     noMatchT: "Мос ёзув йўқ", noMatchM: "Филтр ёки қидирувни ўзгартиринг.",
     f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
     f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
-    f_unreadable: "Расм ўқилмади", autoCheck: "Автоматик текширув", adminRuling: "Админ қарори",
+    f_unreadable: "Расм ўқилмади", autoCheck: "Автоматик текширув", deadline: "Муддат ўтди", adminRuling: "Админ қарори",
   },
   ru: {
     titleDispute: "Возражения", titleLate: "Поздние подтверждения",
@@ -142,7 +143,7 @@ const TXT = {
     noMatchT: "Ничего не найдено", noMatchM: "Измените фильтр или поиск.",
     f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
     f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
-    f_unreadable: "Фото не прочиталось", autoCheck: "Автоматическая проверка", adminRuling: "Решение администратора",
+    f_unreadable: "Фото не прочиталось", autoCheck: "Автоматическая проверка", deadline: "Срок истёк", adminRuling: "Решение администратора",
   },
   en: {
     titleDispute: "Objections", titleLate: "Late proofs",
@@ -170,7 +171,7 @@ const TXT = {
     noMatchT: "Nothing matches", noMatchM: "Change the filter or the search.",
     f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
     f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
-    f_unreadable: "Photo unreadable", autoCheck: "Automatic check", adminRuling: "Admin's ruling",
+    f_unreadable: "Photo unreadable", autoCheck: "Automatic check", deadline: "Deadline passed", adminRuling: "Admin's ruling",
   },
 };
 
@@ -498,6 +499,17 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
                           style={{ background: "var(--bg-inner)", color: "var(--text-2)",
                                    border: "1px solid var(--border)" }}>
                           <Settings2 size={11} />{T.autoCheck} · {it.auto.time}
+                        </span>
+                      </div>
+                    )}
+                    {/* …and one to the platform closing the task unsubmitted
+                        at its hour (2026-10-30). */}
+                    {!late && !flags.length && !it.ruling && !it.auto && it.missed && (
+                      <div className="mt-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-2)",
+                                   border: "1px solid var(--border)" }}>
+                          <TimerOff size={11} />{T.deadline}{it.missed.time ? ` · ${it.missed.time}` : ""}
                         </span>
                       </div>
                     )}

@@ -373,6 +373,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                 "dispute": t.get("dispute"),
                 # Which judge refused it — "ai" · "auto" · "admin" — or None.
                 "rejectedBy": t.get("rejected_by"),
+                "objectionKind": t.get("objection_kind"),
                 "objectable": bool(
                     may_object and appealable and t.get("objectable")
                     and (t.get("dispute") or {}).get("status")
@@ -437,6 +438,9 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
             roll = rolls.get(tid) or []
             dispute = rt.get("dispute") if rt else None
             open_dispute = bool(dispute and dispute.get("status") in leader_dispute.OPEN_STATES)
+            # A late proof still being ruled on is already this task's appeal.
+            open_late = bool(late_row is not None
+                             and getattr(late_row, "status", None) in ("supervisor", "admin"))
             tasks.append({
                 "id": tid,
                 "name": (rt or {}).get("name") or c.get("names"),
@@ -478,12 +482,17 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                 "dispute": dispute,
                 # Which judge refused it — "ai" · "auto" · "admin" — or None.
                 "rejectedBy": (rt or {}).get("rejected_by"),
+                # WHAT an objection would argue with — the judge above, or
+                # "deadline" for a task the platform closed unsubmitted.
+                "objectionKind": (rt or {}).get("objection_kind"),
                 # A verdict exists only once the task was submitted (the AI's)
-                # or decided (the automatic check's), so `objectable` from the
-                # report already implies that; what is added here is WHO may
-                # argue it and that nothing is being argued yet.
+                # or decided (the automatic check's, the deadline's), so
+                # `objectable` from the report already implies that; what is
+                # added here is WHO may argue it and that nothing is being
+                # argued yet.
                 "objectable": bool(may_object and appealable and rt
-                                   and rt.get("objectable") and not open_dispute),
+                                   and rt.get("objectable") and not open_dispute
+                                   and not open_late),
                 "late": dict(_late_wire(late_row, drafts) or {}, eligible=late_ok)
                 if (late_ok or late_row is not None or drafts) else None,
                 "auto": (_auto_wire(db, prof, date, tid, c, cell_id, shift)

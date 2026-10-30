@@ -2154,18 +2154,38 @@ def file_dispute(
     # ADMIN's «not done» ruling made by hand (2026-10-14). The chain, the chat
     # and the rulings are the same; only what an approval writes differs
     # (`leader_dispute`).
+    # …and, from 2026-10-30, a task the PLATFORM closed unsubmitted when its
+    # hour ran out («Muddat o'tib ketdi») — at any time, long after its late
+    # door has shut (`leader_reports.objection_kind`).
     if not task.get("objectable"):
         raise HTTPException(status_code=409, detail="This task was not rejected")
     live = task.get("dispute")
     if live and live["status"] in leader_dispute.OPEN_STATES:
         raise HTTPException(status_code=409, detail="Already awaiting a decision")
 
-    judge = task.get("rejected_by")
+    judge = task.get("objection_kind") or task.get("rejected_by")
     ref = leader_reports.ref_of_task(db, uid, task_id)
     rev = db.query(LeaderAiReview).filter_by(ref=ref).first() if ref else None
     if rev is None and not (ref and judge in (leader_dispute.KIND_AUTO,
-                                              leader_dispute.KIND_ADMIN)):
+                                              leader_dispute.KIND_ADMIN,
+                                              leader_dispute.KIND_DEADLINE)):
         raise HTTPException(status_code=404, detail="No verdict to dispute")
+    # One appeal at a time per task: a late proof still being ruled on is
+    # already the leader's case for this very task, and two chains granting
+    # the same weight would undo each other's grants.
+    if judge == leader_dispute.KIND_DEADLINE and uid.startswith("bot-"):
+        from app.models import LeaderLateProof
+        try:
+            day_id = int(uid[4:])
+        except ValueError:
+            day_id = None
+        if day_id and db.query(LeaderLateProof.id).filter(
+                LeaderLateProof.day_id == day_id,
+                LeaderLateProof.task_id == task_id,
+                LeaderLateProof.status.in_(("supervisor", "admin"))).first():
+            raise HTTPException(
+                status_code=409,
+                detail="A late proof for this task is already awaiting a decision")
 
     role = payload.get("role")
     who = payload.get("full_name") or ""
@@ -2588,6 +2608,7 @@ def _dispute_items(db: Session, payload: dict,
     bot_ids = {int(d.ref[4:]) for d in rows
                if str(d.ref).startswith("bot:") and str(d.ref)[4:].isdigit()}
     autos: dict[str, dict] = {}
+    missed: dict[str, dict] = {}
     # Whether the DAY behind each objection is still being filed. An objection
     # may be raised the moment a submitted task is judged (the «Chek-list» tab),
     # hours before its day closes and becomes a report — so the chat must send
@@ -2604,6 +2625,11 @@ def _dispute_items(db: Session, payload: dict,
             if got:
                 autos[ref] = {"reason": e.reason, "time": got[0], "code": got[1],
                               "eid": e.id}
+            elif ref not in verdicts and str(e.reason or "").startswith(_lt.MISSED_PREFIX):
+                # A task the platform closed unsubmitted at its hour — what the
+                # objection argues with is that closing (2026-10-30).
+                missed[ref] = {"reason": e.reason,
+                               "time": str(e.reason)[len(_lt.MISSED_PREFIX):] or None}
         # …and what the check was taken on at its hour, printed under it.
         from app.services import leader_auto as _la
         res = _la.results_for(db, [a.pop("eid") for a in autos.values()])
@@ -2671,10 +2697,15 @@ def _dispute_items(db: Session, payload: dict,
             # of `verdict`: the raw sentinel (every page expands it with
             # `showReason`) plus its two halves.
             "auto": autos.get(d.ref),
+            # …and for an objection to the platform closing a task unsubmitted
+            # at its hour: the sentinel (`showReason` expands it) + the hour.
+            "missed": missed.get(d.ref),
             # Which judge this objection argues with — "ai" · "auto" · "admin"
-            # — and, for an ADMIN's «not done» ruling, who made it and when.
+            # · "deadline" — and, for an ADMIN's «not done» ruling, who made it
+            # and when.
             "kind": (leader_dispute.KIND_ADMIN if d.admin_ruling
                      else leader_dispute.KIND_AUTO if d.ref in autos
+                     else leader_dispute.KIND_DEADLINE if d.ref in missed
                      else leader_dispute.KIND_AI),
             "ruling": leader_dispute.ruling_of(d),
             "dayOpen": d.ref in open_ref,

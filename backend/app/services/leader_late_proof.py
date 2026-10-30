@@ -63,7 +63,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
-    LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
+    LeaderAiDispute, LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
     LeaderTaskEntry, LeaderTaskOverride, Manager, RoleProfile,
 )
 from app.services import (
@@ -202,6 +202,14 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     # empty-handed endings qualify — the deadline caught it, or they answered
     # «Yo'q» — and both are recorded the same way: an entry that is not done.
     if entry is not None and entry.done:
+        return False
+    # An objection to the closing itself (2026-10-30) already argues this task:
+    # while it waits, or once it gave the weight back, a late proof would be a
+    # second chain granting the same weight.
+    if entry is not None and db.query(LeaderAiDispute.id).filter(
+            LeaderAiDispute.ref == f"bot:{entry.id}",
+            LeaderAiDispute.status.in_(
+                (*leader_dispute.OPEN_STATES, leader_dispute.APPROVED))).first():
         return False
     if lates is not None:
         return task_id not in lates

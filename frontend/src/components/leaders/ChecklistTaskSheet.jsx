@@ -448,7 +448,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                  message: task.objectable ? T.bAutoFailM : "" };
       case "expired":
         return { color: C_BAD, Icon: TimerOff, title: T.bExpiredT,
-                 message: showReason(task.reason, T.missedLine) || put(T.bExpiredM, { time: task.closesAt }) };
+                 message: [showReason(task.reason, T.missedLine) || put(T.bExpiredM, { time: task.closesAt }),
+                   task.objectable ? T.bExpiredObj : ""].filter(Boolean).join(" ") };
       case "notdone":
         return { color: C_BAD, Icon: XCircle, title: T.bNotdoneT,
                  message: task.reason ? `${T.reasonShown}: ${task.reason}` : "" };
@@ -487,7 +488,11 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   const sheetPhotos = task.photos || [];
   // An admin's «not done» ruling refused it — the third judge, and the one an
   // objection then argues with (VerdictBlock leads with it).
-  const ruled = task.rejectedBy === "admin";
+  const against = task.objectionKind || task.rejectedBy;
+  const ruled = against === "admin";
+  // The platform closed it unsubmitted at its hour — the fourth judge
+  // (2026-10-30); the banner above already says when.
+  const deadline = against === "deadline";
   const showVerdict = ruled || !!task.review
     || (task.kind === "auto" && ["autofail", "autopass"].includes(task.state));
   const dc = disputeChip(task.dispute, T);
@@ -532,7 +537,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {task.objectable && view.uid && (
           <Section title={T.objT} icon={ShieldQuestion} innerRef={objRef}>
             <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-              {ruled ? T.objIntroAdmin : task.kind === "auto" ? T.objIntroAuto : T.objIntro}
+              {ruled ? T.objIntroAdmin : deadline ? T.objIntroDeadline
+                : task.kind === "auto" ? T.objIntroAuto : T.objIntro}
             </p>
             <div className="rounded-xl overflow-hidden flex flex-col"
               style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
@@ -545,7 +551,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 requireText
                 minText={3}
                 attachments
-                placeholder={ruled ? T.objPhAdmin : task.kind === "auto" ? T.objPhAuto : T.objPh}
+                placeholder={ruled ? T.objPhAdmin : deadline ? T.objPhDeadline
+                  : task.kind === "auto" ? T.objPhAuto : T.objPh}
                 emptyText={T.objEmpty}
                 refreshKeys={[["leader-disputes"], ["leaderDayReport", view.uid]]}
                 onPosted={() => { toast.success(T.objSent); onRefetch(); }}

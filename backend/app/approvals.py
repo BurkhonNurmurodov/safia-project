@@ -83,11 +83,14 @@ _LABELS = {
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "hdr_dispute_auto": "⚖️ Avtomatik tekshiruv natijasiga norozilik",
+        "hdr_dispute_deadline": "⚖️ Muddat o'tgani uchun yopilgan vazifaga norozilik",
         "hdr_dispute_admin": "⚖️ Admin qaroriga norozilik",
         "admin_ruling":  "Admin qarori",
         "ruled_not_done": "bajarilmagan deb belgilandi",
         "live_mark":     "Verifix",
         "auto_verdict":  "Avtomatik tekshiruv",
+        "deadline_verdict": "Muddat o'tib ketdi",
+        "deadline_line": "soat {t} gacha topshirilmadi — tizim yopdi",
         "task":          "Vazifa",
         "ai_verdict":    "AI xulosasi",
         "dispute_note":  "Chatda hal qiling: tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi; rad etish uchun sabab yozish shart \u2014 u liderga yuboriladi. Avval lider va brigadirdan so'rashingiz mumkin.",
@@ -134,11 +137,14 @@ _LABELS = {
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "hdr_dispute_auto": "⚖️ Возражение на результат автоматической проверки",
+        "hdr_dispute_deadline": "⚖️ Возражение: задача закрыта по истечении срока",
         "hdr_dispute_admin": "⚖️ Возражение на решение администратора",
         "admin_ruling":  "Решение администратора",
         "ruled_not_done": "отмечено как не выполненное",
         "live_mark":     "Verifix",
         "auto_verdict":  "Автоматическая проверка",
+        "deadline_verdict": "Срок истёк",
+        "deadline_line": "не сдано до {t} — закрыто системой",
         "task":          "Задача",
         "ai_verdict":    "Заключение ИИ",
         "dispute_note":  "Решите в чате: при одобрении задача снова засчитывается и оценка дня пересчитывается; для отказа нужна причина \u2014 её отправят лидеру. Сначала можно задать вопросы лидеру и бригадиру.",
@@ -185,11 +191,14 @@ _LABELS = {
         "hdr_late":      "⏰ Request to open a late report",
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "hdr_dispute_auto": "⚖️ Objection to an automatic check",
+        "hdr_dispute_deadline": "⚖️ Objection: task closed when its deadline passed",
         "hdr_dispute_admin": "⚖️ Objection to an admin's ruling",
         "admin_ruling":  "Admin's ruling",
         "ruled_not_done": "marked not done",
         "live_mark":     "Verifix",
         "auto_verdict":  "Automatic check",
+        "deadline_verdict": "Deadline passed",
+        "deadline_line": "not submitted by {t} — closed by the system",
         "task":          "Task",
         "ai_verdict":    "AI verdict",
         "dispute_note":  "Decide in the chat: approving counts the task as done again and re-scores the day; refusing needs a reason \u2014 the leader is told it. You can ask the leader and the brigadir first.",
@@ -704,6 +713,7 @@ def _leader_dispute_data(db, d) -> dict:
            or db.query(LeaderAiReview).filter_by(ref=d.ref).first())
     verdict = ""
     auto = False
+    deadline = False
     if rev is not None:
         flags = ", ".join(rev.flags or []) or "—"
         prose = (rev.reason_ru or rev.reason_uz or rev.reason_en or "").strip()
@@ -722,6 +732,14 @@ def _leader_dispute_data(db, d) -> dict:
             res = leader_auto.results_for(db, [e.id]).get(e.id)
             for line in leader_auto.result_lines(res, "uz"):
                 verdict += f"\n• {line}"
+        else:
+            # A task the platform closed unsubmitted when its hour ran out
+            # (2026-10-30): the closing is the verdict — at what hour.
+            m = leader_dispute.missed_entry(db, d)
+            if m is not None:
+                deadline = True
+                hh = str(m.reason)[len(leader_tasks.MISSED_PREFIX):] or "—"
+                verdict = hh                  # the hour; the card words it per reader
     # An objection to an ADMIN's own «not done» ruling (2026-10-14): that
     # ruling is what the admin is asked to reconsider — who made it, and when.
     ruling = None
@@ -730,6 +748,7 @@ def _leader_dispute_data(db, d) -> dict:
         ruling = {"by": by, "at": at}
     return {
         "auto":       auto,
+        "deadline":   deadline,
         "ruling":     ruling,
         "unit":       mgr.name if mgr else "—",
         "date":       d.date,
@@ -767,8 +786,10 @@ def _render_leader_dispute(data, lang) -> str:
     """
     auto = bool(data.get("auto"))
     ruling = data.get("ruling")
+    deadline = bool(data.get("deadline"))
     lines = [_L(lang, "hdr_dispute_admin" if ruling
-                else "hdr_dispute_auto" if auto else "hdr_dispute"), ""]
+                else "hdr_dispute_auto" if auto
+                else "hdr_dispute_deadline" if deadline else "hdr_dispute"), ""]
     lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
     lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
     lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
@@ -781,6 +802,9 @@ def _render_leader_dispute(data, lang) -> str:
     # printed only where there is one.
     if auto:
         lines.append(f"⚙️ {_L(lang, 'auto_verdict')}: {_v(data['verdict'])}")
+    elif deadline:
+        lines.append(f"⏱ {_L(lang, 'deadline_verdict')}: "
+                     + _L(lang, "deadline_line").format(t=_v(data["verdict"])))
     elif not ruling or data.get("verdict"):
         lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
     lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data.get('author'))}")

@@ -126,6 +126,7 @@ const TXT = {
     newIntro: "Nega bu vazifa noto'g'ri rad etilgan? Birinchi xabaringiz — norozilik: uni brigadiringiz o'qiydi, savol berishi, rad etishi yoki adminlarga yuborishi mumkin. Fayl ham biriktirishingiz mumkin.",
     newPh: "Masalan: rasmda soat ko'rinib turibdi, lekin AI o'qiy olmagan",
     newPhAuto: "Masalan: reja soat 9:40 da kiritilgan edi",
+    newPhDeadline: "Masalan: ish 19:30 da bajarilgan, lekin internet yo'q edi",
     newPhAdmin: "Masalan: vazifa bajarilgan, rasmda hammasi ko'rinib turibdi",
     newNot: "Bu vazifa bo'yicha norozilik bildirib bo'lmaydi.",
     f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
@@ -176,6 +177,7 @@ const TXT = {
     newIntro: "Нега бу вазифа нотўғри рад этилган? Биринчи хабарингиз — норозилик: уни бригадирингиз ўқийди, савол бериши, рад этиши ёки админларга юбориши мумкин. Файл ҳам бириктиришингиз мумкин.",
     newPh: "Масалан: расмда соат кўриниб турибди, лекин AI ўқий олмаган",
     newPhAuto: "Масалан: режа соат 9:40 да киритилган эди",
+    newPhDeadline: "Масалан: иш 19:30 да бажарилган, лекин интернет йўқ эди",
     newPhAdmin: "Масалан: вазифа бажарилган, расмда ҳаммаси кўриниб турибди",
     newNot: "Бу вазифа бўйича норозилик билдириб бўлмайди.",
     f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
@@ -226,6 +228,7 @@ const TXT = {
     newIntro: "Почему эта задача отклонена неверно? Ваше первое сообщение — это возражение: его прочитает бригадир, он может задать вопросы, отклонить его или передать администраторам. Можно прикрепить файлы.",
     newPh: "Например: часы на фото видны, но ИИ их не прочитал",
     newPhAuto: "Например: план был внесён в 9:40",
+    newPhDeadline: "Например: работа сделана в 19:30, но не было интернета",
     newPhAdmin: "Например: задача выполнена, на фото всё видно",
     newNot: "По этой задаче возразить нельзя.",
     f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
@@ -276,6 +279,7 @@ const TXT = {
     newIntro: "Why was this task rejected wrongly? Your first message IS the objection: your brigadir reads it and may ask questions, refuse it or pass it to the admins. You can attach files.",
     newPh: "e.g. the clock is visible on the photo but the AI misread it",
     newPhAuto: "e.g. the plan was entered at 9:40",
+    newPhDeadline: "e.g. the work was done at 19:30, but there was no internet",
     newPhAdmin: "e.g. the task was done, the photo shows everything",
     newNot: "This task cannot be objected to.",
     f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
@@ -741,6 +745,7 @@ function AppealView({ thread, path, id, onCompact }) {
                   what it argues with is the check's own sentinel. */}
               <VerdictBlock rev={item.verdict} autoReason={item.auto?.reason}
                 autoFacts={item.auto?.facts} autoTiming={timing} title={T.aiTitle}
+                missedReason={item.missed?.reason}
                 ruling={item.ruling} />
             </>
           )}
@@ -891,6 +896,10 @@ function NewObjection({ uid, taskId, onCompact }) {
   // which tasks may be; an older backend that does not say is read as «only an
   // AI rejection», exactly as before.
   const allowed = rep.canDispute && (task.objectable ?? task.ai_rejected);
+  // WHAT the objection argues with — the judge, or "deadline" for a task the
+  // platform closed unsubmitted at its hour (2026-10-30).
+  const against = task.objection_kind || task.rejected_by;
+  const missed = !task.auto && String(task.reason || "").startsWith("__missed__|");
   const photos = task.media?.length
     ? task.media.map((mid, i) => ({ kind: "bot", id: mid, cam: task.cam?.[i] || null }))
     : String(task.photo || "").split(",").map((u) => u.trim()).filter((u) => u.includes("http"))
@@ -910,7 +919,8 @@ function NewObjection({ uid, taskId, onCompact }) {
           <DisputePhotos photos={photos} uid={rep.uid} T={T} onZoom={setZoom} />
           <VerdictBlock rev={task.review} autoReason={task.auto ? task.reason : null}
             autoFacts={task.autoFacts} title={T.aiTitle}
-            ruling={task.rejected_by === "admin" ? { by: task.admin_by, at: task.admin_at } : null} />
+            missedReason={missed ? task.reason : null}
+            ruling={against === "admin" ? { by: task.admin_by, at: task.admin_at } : null} />
         </div>
       </Card>
       <Card>
@@ -927,8 +937,9 @@ function NewObjection({ uid, taskId, onCompact }) {
             minText={3}
             attachments
             kinds={kinds}
-            placeholder={task.rejected_by === "admin" ? T.newPhAdmin
-              : task.auto ? T.newPhAuto : T.newPh}
+            placeholder={against === "admin" ? T.newPhAdmin
+              : against === "deadline" ? T.newPhDeadline
+                : task.auto ? T.newPhAuto : T.newPh}
             emptyText={T.empty}
             refreshKeys={[["leaderDayReport", uid], ["leader-disputes"], ["leaderUnitReport"]]}
             onPosted={(res) => {

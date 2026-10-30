@@ -1,4 +1,4 @@
-import { Sparkles, Clock, CalendarCheck, Settings2, XCircle, ShieldX } from "lucide-react";
+import { Sparkles, Clock, CalendarCheck, Settings2, XCircle, ShieldX, TimerOff } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
@@ -25,6 +25,8 @@ import AutoTiming from "./AutoTiming";
  *   autoReason — the `__auto__|HH:MM|code` sentinel of an automatic task
  *   autoFacts  — the check's stored facts at the hour (`utils/autoResult.js`)
  *   autoTiming — WHEN the ФАКТ behind a failed #9 was typed (`AutoTiming.jsx`)
+ *   missedReason — the `__missed__|HH:MM` sentinel of a task the platform
+ *                closed unsubmitted at its hour (objectable from 2026-10-30)
  *   ruling     — an admin's «not done» ruling, {by, at}
  *   title      — overrides the AI heading (the chat says "why it was rejected")
  */
@@ -38,6 +40,7 @@ const T_ALL = {
     window: "Ruxsat etilgan vaqt", needDate: "Kerakli sana",
     needTime: "Ruxsat etilgan soat", onPhoto: "Rasmda",
     autoLine: "Tizim soat {time} da tekshirdi — {why}.",
+    deadline: "Muddat o'tib ketdi", missedLine: "Soat {time} gacha topshirilmadi — tizim vazifani yopdi.",
     why: {
       ok: "hammasi joyida", no_plan: "bugunga reja kiritilmagan",
       no_staffing: "odamlar soni kiritilmagan", no_concern: "xavotir yozilmagan",
@@ -56,6 +59,7 @@ const T_ALL = {
     window: "Рухсат этилган вақт", needDate: "Керакли сана",
     needTime: "Рухсат этилган соат", onPhoto: "Расмда",
     autoLine: "Тизим соат {time} да текширди — {why}.",
+    deadline: "Муддат ўтиб кетди", missedLine: "Соат {time} гача топширилмади — тизим вазифани ёпди.",
     why: {
       ok: "ҳаммаси жойида", no_plan: "бугунга режа киритилмаган",
       no_staffing: "одамлар сони киритилмаган", no_concern: "хавотир ёзилмаган",
@@ -74,6 +78,7 @@ const T_ALL = {
     window: "Допустимое время", needDate: "Нужная дата",
     needTime: "Допустимый час съёмки", onPhoto: "На фото",
     autoLine: "Система проверила в {time} — {why}.",
+    deadline: "Срок истёк", missedLine: "Не сдано до {time} — система закрыла задачу.",
     why: {
       ok: "всё на месте", no_plan: "план на сегодня не внесён",
       no_staffing: "количество людей не внесено", no_concern: "обеспокоенность не записана",
@@ -92,6 +97,7 @@ const T_ALL = {
     window: "Allowed window", needDate: "Required date",
     needTime: "Allowed clock time", onPhoto: "On the photo",
     autoLine: "The platform checked at {time} — {why}.",
+    deadline: "The deadline passed", missedLine: "Not submitted by {time} — the system closed the task.",
     why: {
       ok: "everything in place", no_plan: "no plan entered for today",
       no_staffing: "headcount not entered", no_concern: "no concern written",
@@ -143,9 +149,25 @@ export default function VerdictBlock({ ruling: given, title, ...rest }) {
   );
 }
 
-function Verdict({ rev, autoReason, autoFacts, autoTiming, title }) {
+function Verdict({ rev, autoReason, autoFacts, autoTiming, missedReason, title }) {
   const { lang } = useLang();
   const T = T_ALL[lang] || T_ALL.ru;
+
+  // The platform closed the task unsubmitted when its hour ran out — the
+  // closing IS the verdict an objection argues with.
+  if (!rev && !autoReason && missedReason) {
+    return (
+      <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+          style={{ color: "var(--text-3)" }}>
+          <TimerOff size={12} />{T.deadline}
+        </div>
+        <p className="text-[15px] leading-[1.55]" style={{ color: "var(--text-1)" }}>
+          {showReason(missedReason, T.missedLine)}
+        </p>
+      </div>
+    );
+  }
 
   // Body text is the verdict's WHOLE argument — the one paragraph a person
   // reads before ruling on somebody's score — so it is set as reading text

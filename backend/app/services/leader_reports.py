@@ -186,6 +186,7 @@ def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | Non
         d = disputes.get(tid)
         is_auto = str(tk.get("reason") or "").startswith(leader_tasks.AUTO_PREFIX)
         judge = rejected_by(tk, is_auto)
+        against = objection_kind(tk, is_auto, judge)
         tasks.append({
             "id": tid,
             "name": names.get(tid) or {l: f"#{tid}" for l in leader_ai.LANGS},
@@ -220,11 +221,15 @@ def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | Non
             # nothing did (`rejected_by`). The page groups, colours and counts
             # a task as rejected off this one field.
             "rejected_by": judge,
-            # May this verdict be ARGUED? Every rejection may, whichever of the
-            # three judges made it (the operator, 2026-10-14: «to every single
-            # one of the 13 tasks») — it was the AI's and the automatic checks'
-            # alone, so a task an admin ruled «not done» had no way back.
-            "objectable": judge is not None,
+            # WHAT an objection would argue with (`objection_kind`) — the judge
+            # above, or "deadline" for a task the platform closed unsubmitted
+            # at its hour (2026-10-30).
+            "objection_kind": against,
+            # May this verdict be ARGUED? Every rejection may, whichever judge
+            # made it (the operator, 2026-10-14: «to every single one of the 13
+            # tasks»; 2026-10-30: «whether it's rejected by AI or by system,
+            # anytime») — an expired task included.
+            "objectable": against is not None,
         })
 
     total, checked, rejected, errored, pending = _tally(tasks)
@@ -407,8 +412,9 @@ def rejected_by(task: dict, is_auto: bool) -> str | None:
       "auto"   an automatic check failed and no admin has ruled on it.
 
     None for everything that is not somebody else's judgement: the leader's own
-    «Yo'q», a task whose time ran out (the late proof is that door), a question
-    never asked, and anything that counts as done.
+    «Yo'q», a task whose time ran out, a question never asked, and anything
+    that counts as done. (A task whose time ran out may still be ARGUED — see
+    `objection_kind`; it is not counted or grouped as a rejection here.)
     """
     adm = task.get("admin_done")
     if adm is False and (task.get("done") or is_auto):
@@ -420,6 +426,38 @@ def rejected_by(task: dict, is_auto: bool) -> str | None:
     if is_auto and not task.get("done"):
         return "auto"
     return None
+
+
+def objection_kind(task: dict, is_auto: bool,
+                   judge: str | None = None) -> str | None:
+    """WHAT an objection to this task would argue with, or None when there is
+    nothing to argue — THE rule for «may it be objected to».
+
+    Every `rejected_by` judge, plus one more (the operator, 2026-10-30:
+    «anytime the leader must be able to write an objection for rejected tasks,
+    whether it's rejected by AI or by system»):
+
+      "deadline"  the PLATFORM closed the task unsubmitted when its hour ran
+                  out (`__missed__|HH:MM`, «Muddat o'tib ketdi»), and nobody
+                  has ruled on it since. Its late door shuts at the cut-off;
+                  this one never does.
+      "admin"     …or an admin confirmed that closing by hand («not done»).
+
+    Kept apart from `rejected_by` on purpose: an expired task is still grouped,
+    counted and messaged as «not done», exactly as before — only the door back
+    is new. `judge` is `rejected_by`'s answer when the caller already has it.
+    """
+    if judge is None:
+        judge = rejected_by(task, is_auto)
+    if judge is not None:
+        return judge
+    if task.get("done") or not str(task.get("reason") or "").startswith(
+            leader_tasks.MISSED_PREFIX):
+        return None
+    adm = task.get("admin_done")
+    if adm is None:
+        return "deadline"
+    return "admin" if adm is False else None
 
 
 def _tally(tasks: list[dict]) -> tuple[int, int, int, int, int]:

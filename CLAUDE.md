@@ -7150,7 +7150,7 @@ So:
   own filings) and `/leaders/report/:uid`, where the objection is filed and
   where both stage rulings can also be made inline.
 
-## Every rejected task can be objected to — three judges (`rejected_by`, 2026-10-14)
+## Every rejected task can be objected to — four judges (`rejected_by`, 2026-10-14)
 
 The operator (2026-10-14): «To every single one of the 13 tasks of the leaders,
 it should be possible to send an objection if it's rejected.» Until then two
@@ -7170,9 +7170,9 @@ even drew as a green «Tasdiqlandi».
   - None: anything else.
   `day_report` ships it on every task, with `objectable = rejected_by is not
   None`. **Not rejections, so not objectable**: the leader's own «Yo'q» (an
-  admin's «not done» confirming it included), a task whose time ran out (the
-  late proof is that door), a question never asked, and anything that counts
-  as done.
+  admin's «not done» confirming it included), a question never asked, and
+  anything that counts as done. (A task whose time ran out was on this list
+  until 2026-10-30 — see «…and a task the deadline closed» below.)
 - **One field, every surface.**
   - `_tally` counts `rejected` from it, and an admin-ruled task counts as
     checked.
@@ -7223,6 +7223,39 @@ even drew as a green «Tasdiqlandi».
 - **Unchanged**: `APPEALS_FROM`, who may file (`canDispute`), the stages, the
   required comments, and the bot. Its task screens still carry no objection
   door; the DM's button and the «Chek-list» tab are the ways in.
+
+### …and a task the deadline closed («Muddat o'tib ketdi», 2026-10-30)
+
+The operator: «anytime the leader must be able to write an objection for
+rejected tasks — whether it's rejected by AI or by system, anytime». A task the
+PLATFORM closed unsubmitted when its hour ran out (`__missed__|HH:MM`, state
+`expired`) is now arguable at any time — long after its late door (24:00 /
+12:00) has shut — by the same chain, chat and rulings.
+
+- **`leader_reports.objection_kind` is THE «may it be argued» rule** — every
+  `rejected_by` judge, plus `"deadline"` (a missed task nobody ruled on) and
+  `"admin"` (an admin who confirmed that closing as «not done»). Served on
+  every report task as `objection_kind`, and `objectable` is now
+  `objection_kind is not None`. **`rejected_by` is UNCHANGED**: an expired task
+  is still grouped, counted and messaged as «not done» (the day DM, the digest,
+  the «Rad etildi» group and `_tally` do not move) — only the door is new.
+- **`leader_dispute.KIND_DEADLINE`**, read off the row by `kind_of` through
+  `missed_entry` (the entry's own sentinel — the twin of `auto_entry`). An
+  admin's approval grants the weight through `LeaderTaskOverride`
+  (`_write_auto`, as for an automatic check); the undo takes it back.
+- **One appeal per task at a time**: `file_dispute` refuses (409) while a late
+  proof of that task is still being ruled on, and `leader_late_proof.eligible`
+  refuses while an objection to it is open or approved. A REJECTED late proof
+  leaves the task expired, so it can then be objected to.
+- Words: notices `leader_dispute_filed_deadline` /
+  `leader_dispute_sup_rejected_deadline`; the brigadir's card
+  `ad_card_sup_deadline`; the admins' `hdr_dispute_deadline` + «Muddat o'tib
+  ketdi: soat HH:MM gacha topshirilmadi — tizim yopdi»; the queue's «Muddat
+  o'tdi · HH:MM» chip (`missed` on the item); `VerdictBlock missedReason`; the
+  task sheet's `objIntroDeadline` and the expired banner's «quyida norozilik
+  yozishingiz mumkin».
+- Still out: the leader's own «Yo'q» (not a rejection) and a day with no
+  entry at all («missing» — nothing to argue with). `APPEALS_FROM` stands.
 
 ## Nothing before 1 September 2026 can be argued (`APPEALS_FROM`)
 
