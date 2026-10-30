@@ -4280,7 +4280,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
 # the SAP code, the name, Трудоемкость, Команда, the group letter, the SAP
 # switch, adding, archiving, deleting — moves a figure or a stored quantity and
 # stays admin-only behind `_verify_admin`.
-UOM_ROLES = ("admin", "supervisor")
+UOM_ROLES = ("admin", "supervisor", "shift-manager")
 
 
 class CatalogUomBody(BaseModel):
@@ -4317,12 +4317,13 @@ def set_catalog_uom(body: CatalogUomBody,
     counted in — and the person who knows that is the brigadir.
 
     Scope is `_resolve_manager_id`'s: a supervisor is pinned to their own unit
-    whatever `manager_id` they send, and every id must then belong to THAT unit
-    — a line of somebody else's catalog is a 403, not a silent skip. Leaders
+    whatever `manager_id` they send, a shift-manager reaches only the units of
+    their shift ∩ plant (2026-10-30, the operator: shift managers set it too),
+    and every id must then belong to THAT unit — a line of somebody else's
+    catalog is a 403, not a silent skip. Leaders
     are deliberately out: they own CELLS and a catalog line belongs to the
-    unit, so a leader's write would reach a line the brigadir keeps. Shift- and
-    top-managers are out for the same reason they do not type «Bugungi fakt» —
-    they read the unit, they do not keep its register.
+    unit, so a leader's write would reach a line the brigadir keeps.
+    Top-managers are out: they read the unit, they do not keep its register.
 
     DATED like every catalog edit (services/pp_catalog.py): it counts from the
     shift in progress and the days before it keep the measure they had. The

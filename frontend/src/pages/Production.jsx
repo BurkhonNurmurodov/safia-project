@@ -1730,7 +1730,9 @@ export default function Production() {
   // so on an earlier day nothing here is offered — a save would change nothing
   // on screen. The backend decides it again on its own door
   // (`routers/production.set_catalog_uom`); this is what draws the control.
-  const canEditUomRole = ["admin", "supervisor"].includes(auth?.role);
+  // Shift managers set it too (2026-10-30, the operator) — over the units of
+  // their shift ∩ plant, the reach `_resolve_manager_id` already gives them.
+  const canEditUomRole = ["admin", "supervisor", "shift-manager"].includes(auth?.role);
   const canEditUom = canEditUomRole && catalogEditable && !isPlaceholderData
     && uomOpts.length > 0;
   // The checkbox column, the row-pick model and the sticky bar below the table
