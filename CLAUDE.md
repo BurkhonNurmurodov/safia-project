@@ -8816,7 +8816,8 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
 The operator, from the brigadirs' «Umar oka» form: the «Pozitsiyalar» table
 carries EIGHT columns for the four containers a position is packed into —
 сарик контенер · серий контенер · челак · сарик яшик (keys `yellow` · `grey`
-· `bucket` · `box`) — each a «sig'im» (capacity) and a «soni» (count), and
+· `bucket` · `box`) — each a «sig'im» (capacity) and a «soni» (count), the
+last columns, after «Pareto» (the operator's call, same day), and
 **«Kontiner krishka» is gone from the table** (below).
 
 - **The capacity is a CATALOG field** — `pp_products.cap_yellow / cap_grey /

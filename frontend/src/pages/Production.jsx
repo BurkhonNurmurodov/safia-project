@@ -162,17 +162,17 @@ const COLS = [
   // Where the two columns above come from — the file, or a person. It sits
   // directly after them because that is the question it answers.
   { key: "autofill", labelKey: "production.col.source", align: "center", hintKey: "production.col.sourceHint" },
-  // The four containers (CONTAINERS above), each a capacity typed on the line
-  // and the count the plan needs — AFTER «Manba», so that chip keeps answering
-  // for ПЛАН/ФАКТ alone. Replaced «Kontiner krishka» on 2026-10-30.
-  ...CONTAINERS.flatMap((c) => [
-    { key: `cap_${c.id}`, labelKey: `production.col.cap.${c.id}`, align: "center", edit: true, hintKey: "production.col.capHint" },
-    { key: `cnt_${c.id}`, labelKey: `production.col.cnt.${c.id}`, align: "center", hintKey: "production.col.cntHint" },
-  ]),
   { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
   { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
   { key: "minutes", labelKey: "production.col.minutes", align: "center" },
   { key: "pareto", labelKey: "production.col.pareto", align: "center", hintKey: "production.col.paretoHint" },
+  // The four containers (CONTAINERS above), each a capacity typed on the line
+  // and the count the plan needs — last, after «Pareto» (the operator's
+  // call). Replaced «Kontiner krishka» on 2026-10-30.
+  ...CONTAINERS.flatMap((c) => [
+    { key: `cap_${c.id}`, labelKey: `production.col.cap.${c.id}`, align: "center", edit: true, hintKey: "production.col.capHint" },
+    { key: `cnt_${c.id}`, labelKey: `production.col.cnt.${c.id}`, align: "center", hintKey: "production.col.cntHint" },
+  ]),
 ];
 
 // Notion-style column picker for the Positions table: per-profile pref key and
