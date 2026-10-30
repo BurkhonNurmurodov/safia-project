@@ -2295,6 +2295,47 @@ export default function Production() {
   const teamCards = wcs.flatMap((w) => (typesPerGroup(w)
     ? w.groups.map((g) => ({ w, g }))
     : [{ w, g: null }]));
+  // The «Jamoalar» card's second view (2026-10-30, the operator): per team, the
+  // total of each container the day's plan needs — Σ over the team's positions
+  // of the row's own count (`containerCount`, the table's «soni» columns). A
+  // whole-centre card sums every line at its Команда; a group card the lines
+  // carrying its letter. «—» where no line of the team states a capacity.
+  const [teamsView, setTeamsView] = usePersistentState("production_teams_view", "load");
+  const teamContainers = useMemo(() => {
+    const norm = (v) => String(v ?? "").trim().toUpperCase();
+    const out = new Map();
+    for (const r of rows) {
+      const wcKey = norm(r.work_center);
+      for (const key of [wcKey, `${wcKey}|${r.wc_group ?? ""}`]) {
+        let e = out.get(key);
+        if (!e) { e = {}; out.set(key, e); }
+        for (const c of CONTAINERS) {
+          const n = containerCount(r, c.field);
+          if (n != null) e[c.id] = (e[c.id] ?? 0) + n;
+        }
+      }
+    }
+    return out;
+  }, [rows]);
+  const containersOf = (w, g) => teamContainers.get(g
+    ? `${String(w.work_center ?? "").trim().toUpperCase()}|${g.group}`
+    : String(w.work_center ?? "").trim().toUpperCase()) ?? {};
+  const ContainerTotals = ({ w, g }) => {
+    const tot = containersOf(w, g);
+    return (
+      <dl className="grid grid-cols-1 gap-y-1 text-[12px]">
+        {CONTAINERS.map((c) => (
+          <div key={c.id} className="flex items-center justify-between gap-2">
+            <dt className="truncate" style={{ color: "var(--text-3)" }}>{t(`production.cont.${c.id}`)}</dt>
+            <dd className="tabular-nums font-semibold shrink-0"
+                style={{ color: tot[c.id] == null ? "var(--text-4)" : "var(--text-1)" }}>
+              {tot[c.id] == null ? "—" : fmt(tot[c.id], 0)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  };
   // work-center code → canonical cell (workshop name / owner), from the staffing
   // list; every positions row's WC also appears here, so one map covers both.
   const wcCell = useMemo(
@@ -3492,7 +3533,11 @@ export default function Production() {
       {/* staffing panel — work-center cards with load bars */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Users} title={t("production.teams")} right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
+          <span className="flex items-center gap-3">
+            <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
+            <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
+              options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")]]} />
+          </span>
         } />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {loading && Array.from({ length: 6 }).map((_, i) => (
@@ -3505,7 +3550,22 @@ export default function Production() {
               <SkeletonBlock className="h-3 w-3/4 mt-2.5" />
             </div>
           ))}
-          {!loading && teamCards.map(({ w, g }) => {
+          {!loading && teamsView === "containers" && teamCards.filter(({ g }) => !g?.orphan).map(({ w, g }) => {
+            const wcg = wcColor(w.work_center);
+            return (
+              <div key={g ? gKey(w.work_center, g.group) : w.work_center} className="rounded-xl p-3"
+                   style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wcg}` }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md"
+                    title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
+                    style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                  {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
+                </div>
+                <ContainerTotals w={w} g={g} />
+              </div>
+            );
+          })}
+          {!loading && teamsView !== "containers" && teamCards.map(({ w, g }) => {
             if (g) {
               // One group of a work centre typed per group: its own load, its own
               // people (a typed pin gold, an untyped share muted and starred) and

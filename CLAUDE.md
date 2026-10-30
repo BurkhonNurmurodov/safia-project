@@ -8868,6 +8868,11 @@ last columns, after «Pareto» (the operator's call, same day), and
   scope, dating and «unchanged freezes nothing». Logged as
   `production.catalog_containers_set`. On the table the capacity is a
   `QtyCell`, undoable like ПЛАН.
+- **The «Jamoalar» card switches** «Yuklama / Konteynerlar»
+  (`production_teams_view`): in containers mode each team card prints, per
+  container, Σ of its positions' counts — a whole-centre card every line at its
+  Команда, a group card the lines carrying its letter (unlettered lines of a
+  grouped centre are on no group card); «—» where no line states a capacity.
 - **The count is computed by the page** (`containerCount` in
   Production.jsx, the form's formula): `ROUNDUP(ПЛАН × (1000 if kg else 1) ÷
   capacity)`, rounded to six places first; «—» without a capacity or a plan.
