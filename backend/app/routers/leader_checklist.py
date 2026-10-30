@@ -438,9 +438,6 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
             roll = rolls.get(tid) or []
             dispute = rt.get("dispute") if rt else None
             open_dispute = bool(dispute and dispute.get("status") in leader_dispute.OPEN_STATES)
-            # A late proof still being ruled on is already this task's appeal.
-            open_late = bool(late_row is not None
-                             and getattr(late_row, "status", None) in ("supervisor", "admin"))
             tasks.append({
                 "id": tid,
                 "name": (rt or {}).get("name") or c.get("names"),
@@ -491,8 +488,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                 # added here is WHO may argue it and that nothing is being
                 # argued yet.
                 "objectable": bool(may_object and appealable and rt
-                                   and rt.get("objectable") and not open_dispute
-                                   and not open_late),
+                                   and rt.get("objectable") and not open_dispute),
                 "late": dict(_late_wire(late_row, drafts) or {}, eligible=late_ok)
                 if (late_ok or late_row is not None or drafts) else None,
                 "auto": (_auto_wire(db, prof, date, tid, c, cell_id, shift)

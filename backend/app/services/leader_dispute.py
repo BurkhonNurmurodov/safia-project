@@ -296,7 +296,11 @@ def _write_auto(db: Session, d: LeaderAiDispute, entry, resolution: str | None,
         ov.set_by = (by_name or "")[:160] or None
         ov.set_at = datetime.now(timezone.utc)
     elif resolution is None and d.status == APPROVED and ov is not None:
-        db.delete(ov)
+        # A late proof approved on the same task (the two may run side by
+        # side, 2026-10-30) granted the same weight — its grant stands.
+        from app.services.leader_late_proof import late_granted
+        if not late_granted(db, entry.day_id, d.task_id):
+            db.delete(ov)
     db.flush()
 
 

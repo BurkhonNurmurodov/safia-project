@@ -7243,10 +7243,16 @@ PLATFORM closed unsubmitted when its hour ran out (`__missed__|HH:MM`, state
   `missed_entry` (the entry's own sentinel — the twin of `auto_entry`). An
   admin's approval grants the weight through `LeaderTaskOverride`
   (`_write_auto`, as for an automatic check); the undo takes it back.
-- **One appeal per task at a time**: `file_dispute` refuses (409) while a late
-  proof of that task is still being ruled on, and `leader_late_proof.eligible`
-  refuses while an objection to it is open or approved. A REJECTED late proof
-  leaves the task expired, so it can then be objected to.
+- **An objection and a late proof may run SIDE BY SIDE** (the operator, the
+  same day: «allow both» — it shipped as «one at a time» and blocked 261 tasks
+  whose late proof waited). `file_dispute` no longer looks at late proofs;
+  `leader_late_proof.eligible` refuses only once an APPROVED objection already
+  gave the weight back. Both grant through the same `LeaderTaskOverride`, so
+  an undo of one never takes the other's grant: `_write_auto` keeps the
+  override while an approved late proof stands (`late_proof.late_granted`),
+  and `leader_late_proof.revoke` keeps it while an approved objection stands
+  (`objection_granted`). Approving one does not settle the other — an admin
+  rules on each.
 - Words: notices `leader_dispute_filed_deadline` /
   `leader_dispute_sup_rejected_deadline`; the brigadir's card
   `ad_card_sup_deadline`; the admins' `hdr_dispute_deadline` + «Muddat o'tib

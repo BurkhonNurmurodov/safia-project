@@ -203,13 +203,12 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     # «Yo'q» — and both are recorded the same way: an entry that is not done.
     if entry is not None and entry.done:
         return False
-    # An objection to the closing itself (2026-10-30) already argues this task:
-    # while it waits, or once it gave the weight back, a late proof would be a
-    # second chain granting the same weight.
+    # An objection to the closing itself (2026-10-30) may run beside a late
+    # proof (the operator: «allow both»), but once an APPROVED objection gave
+    # the weight back the task counts as done and has nothing to file late.
     if entry is not None and db.query(LeaderAiDispute.id).filter(
             LeaderAiDispute.ref == f"bot:{entry.id}",
-            LeaderAiDispute.status.in_(
-                (*leader_dispute.OPEN_STATES, leader_dispute.APPROVED))).first():
+            LeaderAiDispute.status == leader_dispute.APPROVED).first():
         return False
     if lates is not None:
         return task_id not in lates
@@ -686,9 +685,30 @@ def revoke(db: Session, row: LeaderLateProof) -> None:
     """
     if not row.uid:
         return
+    # An objection approved on the same task (2026-10-30, the two may run side
+    # by side) granted the same weight — its grant stands.
+    if objection_granted(db, row.day_id, row.task_id):
+        return
     (db.query(LeaderTaskOverride)
      .filter_by(uid=row.uid, task_id=row.task_id).delete())
     db.flush()
+
+
+def objection_granted(db: Session, day_id: int | None, task_id: int) -> bool:
+    """Has an APPROVED objection given this task its weight back?"""
+    if not day_id:
+        return False
+    e = (db.query(LeaderTaskEntry.id)
+         .filter_by(day_id=day_id, task_id=task_id).first())
+    return bool(e and db.query(LeaderAiDispute.id).filter(
+        LeaderAiDispute.ref == f"bot:{e[0]}",
+        LeaderAiDispute.status == leader_dispute.APPROVED).first())
+
+
+def late_granted(db: Session, day_id: int | None, task_id: int) -> bool:
+    """Has an APPROVED late proof given this task its weight back?"""
+    return bool(day_id and db.query(LeaderLateProof.id).filter_by(
+        day_id=day_id, task_id=task_id, status=APPROVED).first())
 
 
 # ── who is answerable for one ────────────────────────────────────────────────

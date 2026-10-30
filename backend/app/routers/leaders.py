@@ -2170,22 +2170,10 @@ def file_dispute(
                                               leader_dispute.KIND_ADMIN,
                                               leader_dispute.KIND_DEADLINE)):
         raise HTTPException(status_code=404, detail="No verdict to dispute")
-    # One appeal at a time per task: a late proof still being ruled on is
-    # already the leader's case for this very task, and two chains granting
-    # the same weight would undo each other's grants.
-    if judge == leader_dispute.KIND_DEADLINE and uid.startswith("bot-"):
-        from app.models import LeaderLateProof
-        try:
-            day_id = int(uid[4:])
-        except ValueError:
-            day_id = None
-        if day_id and db.query(LeaderLateProof.id).filter(
-                LeaderLateProof.day_id == day_id,
-                LeaderLateProof.task_id == task_id,
-                LeaderLateProof.status.in_(("supervisor", "admin"))).first():
-            raise HTTPException(
-                status_code=409,
-                detail="A late proof for this task is already awaiting a decision")
+    # A late proof still being ruled on does NOT shut this door (the operator,
+    # 2026-10-30: «allow both») — the two appeals run side by side, and an
+    # undo of one never takes back the weight the other granted
+    # (`leader_dispute._write_auto`, `leader_late_proof.revoke`).
 
     role = payload.get("role")
     who = payload.get("full_name") or ""
