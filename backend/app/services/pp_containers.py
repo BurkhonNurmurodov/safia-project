@@ -42,3 +42,24 @@ def norm_capacity(value):
     if not (v > 0) or v >= 1e10:
         raise InvalidCapacity("capacity must be a positive number")
     return round(v, 4)
+
+
+def count(plan, uom, capacity):
+    """How many containers a plan needs — the form's formula, the twin of
+    `containerCount` in Production.jsx (keep them in step): ROUNDUP(plan ×
+    (1000 if kg else 1) ÷ capacity), rounded to six places first. None
+    without a capacity or a plan."""
+    import math
+    try:
+        cap = float(capacity) if capacity is not None else 0.0
+        q = float(plan) if plan is not None else None
+    except (TypeError, ValueError):
+        return None
+    if not cap or q is None:
+        return None
+    return math.ceil(round(q * (1000 if uom == "kg" else 1) / cap, 6))
+
+
+def keys():
+    """The short keys the client uses (`cap_yellow` → `yellow`)."""
+    return [c[4:] for c in CONTAINERS]

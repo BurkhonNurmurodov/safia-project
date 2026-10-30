@@ -14,6 +14,7 @@ import { DEFAULT_DIFF_SEGMENTS } from "../components/charts/ComparisonTable";
 import BarRankingChart from "../components/charts/BarChart";
 import BrigadirTable from "../components/ui/BrigadirTable";
 import ShiftReportTable from "../components/overview/ShiftReportTable";
+import ContainerTotalsCard from "../components/overview/ContainerTotalsCard";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -353,6 +354,8 @@ export default function ShiftDaily() {
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
       <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
+
+      <ContainerTotalsCard day={date} params={dayParams} enabled={scopeKnown} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

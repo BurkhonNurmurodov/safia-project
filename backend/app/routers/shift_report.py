@@ -410,3 +410,56 @@ def get_start_load(
                 row[iso] = v
         out["data"][str(m.id)] = row
     return out
+
+
+@router.get("/containers")
+def get_containers(
+    day: date = Query(...),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("overview")),
+):
+    """The whole plant's (scope's) container totals for one day — the «Smena
+    kunligi» card (2026-10-30, the operator: «total number of each container
+    type as a whole, not by supervisor or cells»). Σ over every catalog line
+    of every unit in scope of `pp_containers.count(plan, uom, capacity)` — the
+    very count the «Pozitsiyalar» table's «soni» columns print, the plan read
+    through `zagruzka_source.line_facts` (the Positions table's own resolution,
+    the catalog the day had). Every non-archived unit, its загрузка switch
+    regardless: a unit outside the загрузка still fills containers. Scoped as
+    the board is (`_scope`); `shift` narrows to that shift's units."""
+    from app.services import pp_containers, zagruzka_source
+    keys = pp_containers.keys()
+    empty = {"day": day.isoformat(), "totals": {k: None for k in keys},
+             "lines": {k: 0 for k in keys}, "units": 0}
+    ids, _note = _scope(db, payload, factory, manager_id)
+    if empty_scope(ids):
+        return empty
+    q = db.query(Manager.id).filter(Manager.archived.is_(False))
+    if ids is not None:
+        q = q.filter(Manager.id.in_(ids))
+    if shift in (1, 2):
+        q = q.filter(Manager.shift == shift)
+    unit_ids = [r[0] for r in q.all()]
+    if not unit_ids:
+        return empty
+    totals = {k: None for k in keys}
+    lines = {k: 0 for k in keys}
+    units: set = set()
+
+    def emit(mid, line, wc, qkey, lk, d, qp, qa, pv, av):
+        if line is None or not qp:
+            return
+        for col, k in zip(pp_containers.CONTAINERS, keys):
+            n = pp_containers.count(qp, getattr(line, "uom", None), getattr(line, col, None))
+            if n is None:
+                continue
+            totals[k] = (totals[k] or 0) + n
+            lines[k] += 1
+            units.add(mid)
+
+    zagruzka_source.line_facts(db, unit_ids, day, day, emit)
+    return {"day": day.isoformat(), "totals": totals, "lines": lines,
+            "units": len(units)}

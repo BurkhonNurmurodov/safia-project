@@ -8879,6 +8879,13 @@ last columns, after «Pareto» (the operator's call, same day), and
   container, Σ of its positions' counts — a whole-centre card every line at its
   Команда, a group card the lines carrying its letter (unlettered lines of a
   grouped centre are on no group card); «—» where no line states a capacity.
+- **«Smena kunligi» carries the day's PLANT totals** — «Konteynerlar — jami»
+  under the shift report board (`components/overview/ContainerTotalsCard.jsx`
+  over `GET /api/shift-report/containers?day=` — `_scope` + the page's plant
+  and shift, every non-archived unit whatever its загрузка switch): one tile
+  per container, Σ over every line of `pp_containers.count` (the Python twin
+  of `containerCount` — keep them in step), the plan read through
+  `zagruzka_source.line_facts`, so only lines with a Трудоемкость count.
 - **The count is computed by the page** (`containerCount` in
   Production.jsx, the form's formula): `ROUNDUP(ПЛАН × (1000 if kg else 1) ÷
   capacity)`, rounded to six places first; «—» without a capacity or a plan.
