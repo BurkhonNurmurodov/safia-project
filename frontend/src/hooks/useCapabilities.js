@@ -80,6 +80,9 @@ export const CAP = {
   // «Lider nazorati — admin»: everything an admin does on /leaders and its four
   // admin destinations (backend capabilities.leaders_admin).
   LEADERS_ADMIN:     "leaders.admin",
+  // «Zagruzka fayli — SAP kodlari»: add positions to any unit's catalog and
+  // change an existing line's SAP code (backend CAP_CATALOG_SAP).
+  CATALOG_SAP:       "production.catalog.sap",
 };
 
 // Page-view grants are generated per page rather than listed, exactly as on the

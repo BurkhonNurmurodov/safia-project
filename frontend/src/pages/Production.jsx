@@ -26,7 +26,7 @@ import GroupBadge from "../components/ui/GroupBadge";
 import { useToast } from "../components/ui/Toast";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
-import { useCapabilities } from "../hooks/useCapabilities";
+import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useUrlScope } from "../hooks/useUrlScope";
 import { dayParam } from "../utils/scopeLinks";
@@ -536,8 +536,37 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 // that is the one fact that tells the reader which cell a letter is). Empty ⇒
 // the field is not drawn at all: a work centre nobody has grouped offers only
 // «—», and a control with one answer is a control that says nothing.
-function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [] }) {
+//
+// `mode` narrows the form for a holder of «Zagruzka fayli — SAP kodlari»
+// (`CAP.CATALOG_SAP`, never an admin): "create" draws the four fields its door
+// takes (code, Команда, name, Трудоемкость); "sap" draws the code alone and
+// names the line it belongs to, read-only. "full" is the admin's form.
+function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "full", line = null }) {
   const { t } = useLang();
+  if (mode === "sap") {
+    return (
+      <>
+        <Field label={t("production.col.sapCode")} hint={t("production.cat.codeOptional")}>
+          <ModalInput value={draft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
+        </Field>
+        {/* Which line this is, as the table names it — read-only: the grant
+            reaches the code and nothing else, and a disabled input would read
+            as a field that is merely waiting to be unlocked. */}
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs mt-1">
+          <dt style={{ color: "var(--text-3)" }}>{t("production.col.name")}</dt>
+          <dd className="min-w-0 truncate" style={{ color: "var(--text-1)" }} title={line?.name || undefined}>
+            {line?.name || "—"}
+          </dd>
+          <dt style={{ color: "var(--text-3)" }}>{t("production.col.wc")}</dt>
+          <dd className="font-mono" style={{ color: "var(--text-1)" }}>{line?.work_center || "—"}</dd>
+        </dl>
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+          {t("production.sapGrant.onlyCode")}
+        </p>
+      </>
+    );
+  }
+  const full = mode !== "create";
   // The auto-fill switch appears only on a CODED line, because only a coded one
   // has a choice to make: the фаза file reaches a position through its SAP code,
   // so a code-less line is entered by hand whatever the flag says (the backend
@@ -564,15 +593,17 @@ function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [] }) {
         <Field label={`${t("production.col.labor")} — ${t("production.col.laborHint")}`}>
           <ModalInput value={draft.labor_time} onChange={setDraft("labor_time")} type="number" />
         </Field>
-        <Field label={t("production.col.op")}>
-          <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
-        </Field>
+        {full && (
+          <Field label={t("production.col.op")}>
+            <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
+          </Field>
+        )}
       </div>
       {/* «O'lchov birligi» — never a free-text box: four options and «not
           stated», so one position can never be «dona» and another «dоna». The
           hint is the consequence, not a description: it says what the unit
           qualifies, since no figure on the page reads it. */}
-      {uomOpts.length > 0 && (
+      {full && uomOpts.length > 0 && (
         <Field label={t("production.uom.label")} hint={t("production.uom.fieldHint")}>
           <StyledSelect
             value={draft.uom ?? ""}
@@ -587,7 +618,7 @@ function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [] }) {
           />
         </Field>
       )}
-      {groupOpts.length > 0 && (
+      {full && groupOpts.length > 0 && (
         // The hint is the consequence, not a description: the letter is written
         // on THIS line and on no other (2026-09-18), so the two operations of one
         // position may name two cells — which is what the hint has to say, since
@@ -614,7 +645,7 @@ function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [] }) {
           />
         </Field>
       )}
-      {hasCode && (
+      {full && hasCode && (
         <Field label={t("production.autofill.label")} hint={t("production.autofill.hint")}>
           <SegmentedToggle
             fill
@@ -1503,7 +1534,7 @@ const readLinkScope = (q) => {
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
-  const { seesAllOn } = useCapabilities();
+  const { seesAllOn, can } = useCapabilities();
   // Subscribes this page to the admin's bands (see the import's note).
   useStatusBands();
   const { t, lang } = useLang();
@@ -1736,6 +1767,18 @@ export default function Production() {
   // not been handed.
   const uomOpts = Array.isArray(catalogInfo?.uoms) ? catalogInfo.uoms : [];
   const canEditCatalog = canEditCatalogRole && catalogEditable && !isPlaceholderData;
+  // «Zagruzka fayli — SAP kodlari» (`CAP.CATALOG_SAP`, 2026-10-30): a holder
+  // who is not an admin adds positions (code, name, Трудоемкость, Команда) and
+  // changes an existing line's SAP code, in any unit — through two doors of
+  // their own (`routers/production.add_catalog_line` / `set_catalog_sap_code`)
+  // that the server decides again. Everything else about a line stays the
+  // admin's. An admin keeps the full form; `sapGrant` is only ever the narrowed one.
+  const sapGrant = auth?.role !== "admin" && can(CAP.CATALOG_SAP);
+  const canAddLine = (canEditCatalogRole || sapGrant) && catalogEditable && !isPlaceholderData;
+  const canEditSap = sapGrant && catalogEditable && !isPlaceholderData;
+  // Who may open a row's action strip: the admin (edit / archive / delete) or
+  // the grant holder (the SAP code alone).
+  const canSelectRows = canEditCatalog || canEditSap;
   // «O'lchov birligi» is the ONE catalog field a BRIGADIR keeps (2026-10-26,
   // the operator: «unit column should be editable to all supervisors»). It is a
   // REGISTER — what this position is counted in — and no figure on the platform
@@ -1932,7 +1975,11 @@ export default function Production() {
   // date until somebody re-uploads each file. `filled` says how much that
   // reached: it writes into PAST days, so it is reported rather than silent.
   const catalog = useMutation({
-    mutationFn: ({ id, body }) => api.put(`/admin/production/catalog/${id}`, body),
+    // The grant holder's edit is the SAP code and nothing else, on a door of
+    // its own; an admin edits the whole line.
+    mutationFn: ({ id, body }) => (sapGrant
+      ? api.put(`/api/production/catalog/${id}/sap-code`, { sap_code: body.sap_code ?? "" })
+      : api.put(`/admin/production/catalog/${id}`, body)),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
@@ -1948,7 +1995,8 @@ export default function Production() {
   // Add a new catalog line (PPProduct). Admin-only; scoped to the manager the
   // admin is previewing (managerParam.manager_id).
   const createCatalog = useMutation({
-    mutationFn: (body) => api.post("/admin/production/catalog", body),
+    mutationFn: (body) => api.post(
+      sapGrant ? "/api/production/catalog/line" : "/admin/production/catalog", body),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
@@ -1959,6 +2007,12 @@ export default function Production() {
       // фаза pin, the letter and the SAP switch somebody already chose.
       const raw = e?.response?.data?.detail_raw;
       if (raw && typeof raw === "object" && raw.code === "in_archive") {
+        // Bringing a line back is the admin's: the grant holder is told where
+        // it is and who can return it, with no button that would 403.
+        if (sapGrant) {
+          toast.warning(t("production.sapGrant.inArchive"), 15000, { icon: Archive });
+          return;
+        }
         toast.warning(t("production.archive.inArchive"), 15000, {
           icon: Archive,
           action: {
@@ -2790,7 +2844,7 @@ export default function Production() {
   // action strip. A second click on the same row collapses it (like the other
   // reveal-action tables).
   const selectRow = (r) => {
-    if (!canEditCatalog || r.id == null) return;
+    if (!canSelectRows || r.id == null) return;
     setCatSel((id) => (id === r.id ? null : r.id));
   };
   // «Tahrirlash» seeds the draft from the row and opens the edit modal.
@@ -2855,6 +2909,20 @@ export default function Production() {
     if (!wc || (!sap && !catDraft.name.trim())) return;
     const laborRaw = String(catDraft.labor_time).trim();
     const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
+    // The grant's door takes the four fields its form draws, and only those.
+    if (sapGrant) {
+      createCatalog.mutate(
+        {
+          manager_id: managerParam.manager_id,
+          sap_code: sap,
+          name: catDraft.name.trim(),
+          work_center: wc,
+          labor_time: labor != null && !Number.isNaN(labor) ? labor : null,
+        },
+        { onSuccess: () => setCreateOpen(false) },
+      );
+      return;
+    }
     createCatalog.mutate(
       {
         manager_id: managerParam.manager_id,
@@ -2894,6 +2962,15 @@ export default function Production() {
     const op = (catDraft.op ?? "").trim();
     const laborRaw = String(catDraft.labor_time).trim();
     const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
+    if (sapGrant) {
+      // The code is all this form carries. A blank is sent only while the line
+      // has a name to be kept by — the server answers the same.
+      const done = () => { setEditRow(null); setCatSel(null); };
+      if (sap !== (r.sap_code ?? "") && (sap || (r.name ?? "").trim())) {
+        catalog.mutate({ id: r.id, body: { sap_code: sap } }, { onSuccess: done });
+      } else done();
+      return;
+    }
     if (sap !== (r.sap_code ?? "") && (sap || name)) body.sap_code = sap;
     if (name && name !== (r.name ?? "")) body.name = name;
     if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
@@ -3560,7 +3637,7 @@ export default function Production() {
               anyActive={wcSel.length > 0}
               onClearAll={() => setWcSel([])}
             />
-            {canEditCatalog && (
+            {canAddLine && (
               <Button
                 size="lg"
                 className="flex-1 sm:flex-none whitespace-nowrap"
@@ -3573,7 +3650,7 @@ export default function Production() {
             {/* A day an edit made now cannot reach: it keeps the catalog it
                 had, so the controls are gone — and the admin is told where
                 they are instead of wondering why. */}
-            {canEditUomRole && !catalogEditable && catalogInfo?.from && (
+            {(canEditUomRole || sapGrant) && !catalogEditable && catalogInfo?.from && (
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
                   <History size={13} className="flex-shrink-0" />
@@ -3648,7 +3725,7 @@ export default function Production() {
                 // Delete. Read off one, their checkbox could never show as
                 // ticked — `picked` was false whatever the selection held.
                 const pickable = canPickRows && r.id != null;
-                const selectable = canEditCatalog && r.id != null;
+                const selectable = canSelectRows && r.id != null;
                 const selected = selectable && catSel === r.id;
                 const picked = pickable && pickSet.has(r.id);
                 return (
@@ -3681,10 +3758,16 @@ export default function Production() {
                     <tr ref={stripRef} style={{ background: "var(--bg-inner)" }}>
                       <td colSpan={colCount} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
-                          <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
-                          <ActionBtn icon={Archive} label={t("production.archiveRow")}
-                            onClick={() => setConfirmArch({ ids: [r.id], label: `${r.sap_code || ""}${r.name ? (r.sap_code ? " — " : "") + r.name : ""}` })} />
-                          <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
+                          {canEditCatalog ? (
+                            <>
+                              <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
+                              <ActionBtn icon={Archive} label={t("production.archiveRow")}
+                                onClick={() => setConfirmArch({ ids: [r.id], label: `${r.sap_code || ""}${r.name ? (r.sap_code ? " — " : "") + r.name : ""}` })} />
+                              <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
+                            </>
+                          ) : (
+                            <ActionBtn icon={Pencil} label={t("production.sapGrant.editCode")} onClick={() => startCatEdit(r)} />
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -4135,7 +4218,7 @@ export default function Production() {
       {editRow && (
         <Modal
           onClose={() => setEditRow(null)}
-          title={t("production.editTitle")}
+          title={t(sapGrant ? "production.sapGrant.editTitle" : "production.editTitle")}
           subtitle={editRow.name}
           icon={<Pencil size={16} style={{ color: "var(--brand-text)" }} />}
           dismissable={!catalog.isPending}
@@ -4149,6 +4232,7 @@ export default function Production() {
           {/* The line's own letter is offered only while the draft's Команда is
               still the line's own — elsewhere it names a group nobody there has. */}
           <CatalogFields draft={catDraft} setDraft={setCatField}
+            mode={sapGrant ? "sap" : "full"} line={editRow}
             uomOpts={uomOpts}
             groupOpts={groupOptsFor(catDraft.work_center,
               sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
@@ -4173,6 +4257,7 @@ export default function Production() {
           }
         >
           <CatalogFields draft={catDraft} setDraft={setCatField}
+            mode={sapGrant ? "create" : "full"}
             uomOpts={uomOpts}
             groupOpts={groupOptsFor(catDraft.work_center)} />
           {catalogFromHint && (

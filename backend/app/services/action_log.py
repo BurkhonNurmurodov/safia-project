@@ -304,6 +304,10 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # «O'lchov birligi» — the one catalog field a brigadir sets, so it carries a
     # key of its own rather than reading as an admin's catalog edit.
     (("PUT",),    "/api/production/catalog/uom",               "shopfloor", "production.catalog_uom_set"),
+    # «Zagruzka fayli — SAP kodlari»: the grant's two doors. A line added there
+    # IS a catalog line created; a code changed there is an act of its own.
+    (("POST",),   "/api/production/catalog/line",              "shopfloor", "production.catalog_created"),
+    (("PUT",),    "/api/production/catalog/{}/sap-code",       "shopfloor", "production.catalog_sap_set"),
     (("POST",),   "/api/production/reconciliation",            "shopfloor", "production.reconciliation_set"),
     (("POST",),   "/admin/production/upload",                  "shopfloor", "production.phase_uploaded"),
     (("POST",),   "/admin/production/catalog/import",          "shopfloor", "production.catalog_imported"),

@@ -136,6 +136,11 @@ CAP_EXAM_MANAGE       = "admin.exam.manage"
 # admin-like reach over leaders monitoring and nothing else). See
 # :func:`leaders_admin` — THE test every leaders admin check asks.
 CAP_LEADERS_ADMIN     = "leaders.admin"
+# «Zagruzka fayli — SAP kodlari»: add positions to any unit's catalog and change
+# the SAP code of the ones there (the operator, 2026-10-30: a guest who adds SAP
+# codes on the workload file page). Every other catalog field, the archive, the
+# delete, the bulk editor and the import stay a real admin's.
+CAP_CATALOG_SAP       = "production.catalog.sap"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
 # never drifts from permissions.PAGE_KEYS.
@@ -215,6 +220,13 @@ CAPABILITIES = [
     # unscoped. It moves leaders' scores, so it is handed out deliberately.
     {"key": CAP_LEADERS_ADMIN,     "group": "leaders",    "pages": ["leaders"],
      "tab": ["ltasks", "ltdaily", "ltexclude", "ltcutoff"], "scoped": False, "page": None},
+    # SAP codes on «Zagruzka fayli»: new positions (code, name, Трудоемкость,
+    # Команда) and the code of an existing one, in EVERY unit — the holder picks
+    # any brigadir, as an admin does, so the grant reads the page whole and is
+    # unscoped. Two doors of its own in routers/production.py, never a role
+    # widened on the admin catalog endpoints.
+    {"key": CAP_CATALOG_SAP,       "group": "production", "pages": ["production"],
+     "tab": None, "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first
     # accessible page" fallback use, so the Permissions tab reads like the menu.
@@ -230,7 +242,7 @@ UNSCOPED_CAPABILITIES = frozenset(c["key"] for c in CAPABILITIES if not c["scope
 CAPABILITY_KEYS = [c["key"] for c in CAPABILITIES]
 # Pages first: opening a page is the coarse decision an admin makes before
 # handing out the actions inside it.
-CAPABILITY_GROUPS = ["pages", "requests", "attendance", "leaders", "identity"]
+CAPABILITY_GROUPS = ["pages", "requests", "attendance", "leaders", "production", "identity"]
 
 SCOPES = ("own", "all")
 DEFAULT_SCOPE = "own"
@@ -425,7 +437,7 @@ def scope_is_all(db: Session, payload: dict, capability: str) -> bool:
 # Action capabilities whose holder reads a page WHOLE, as an admin does: an
 # admin's reach over a page's actions is meaningless over a narrowed view of
 # its rows. ``page_view_scope`` / ``page_scopes`` answer "all" for them.
-_READS_PAGE_WHOLE = {CAP_LEADERS_ADMIN: "leaders"}
+_READS_PAGE_WHOLE = {CAP_LEADERS_ADMIN: "leaders", CAP_CATALOG_SAP: "production"}
 
 
 def page_view_scope(db: Session, payload: dict, page: str) -> Optional[str]:

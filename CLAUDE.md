@@ -4051,6 +4051,40 @@ ltdaily, ltexclude and ltcutoff.
   `role === "admin" || can(CAP.LEADERS_ADMIN)`; every other right on the
   report, the queues, the appeal chat and the Chek-list tab is the server's.
 
+## «Zagruzka fayli — SAP kodlari» — adding positions, for one person (`production.catalog.sap`, 2026-10-30)
+
+The operator: «On workload file page I want to give an access for a guest to add
+SAP codes» — asked: both adding new positions and changing an existing line's
+code, as a grant handed out per person, in every unit. ONE capability,
+`production.catalog.sap` (`capabilities.CAP_CATALOG_SAP`), group «Ishlab
+chiqarish» on the Permissions tab, unscoped, switched on per PROFILE or per
+ACCOUNT like any grant.
+
+- **What it opens**: /production (a capability implies its page), read WHOLE
+  (`_READS_PAGE_WHOLE` → `page_scope_is_all`), so the holder picks any
+  configured brigadir as an admin does (`_resolve_manager_id`, the picker).
+- **Two doors of its own** (`routers/production.py`), never a role widened on
+  the admin catalog endpoints: `POST /api/production/catalog/line` (SAP code,
+  name, Трудоемкость, Команда — the фаза pin, the letter, the measure and the
+  SAP switch take the defaults) and `PUT /api/production/catalog/{id}/sap-code`
+  (the code alone; refused 409 `line_archived` on an archived line; an
+  unchanged code freezes nothing). Both run the admin's own cores —
+  `_create_catalog_line` / `_update_catalog_line` — so the line is dated
+  (`pp_catalog.freeze`), Latin-coded, archive-checked, its typed ПЛАН/ФАКТ
+  carried and its new key re-joined exactly as an admin's. `require_cap`, so
+  an admin passes too. Jurnal: `production.catalog_created` and
+  `production.catalog_sap_set`.
+- **On the page** (`sapGrant` in `Production.jsx`, a non-admin holder only):
+  «Qo'shish» opens the create form with four fields (`CatalogFields
+  mode="create"`); a row opens a strip with one action, «SAP kodini
+  o'zgartirish», whose form is the code alone with the line's name and Команда
+  read-only (`mode="sap"`). Same DAY rule as the admin's: on a day an edit
+  cannot reach, nothing is offered. A create that meets the same line in the
+  archive says an admin brings it back (no restore button).
+- **Deliberately NOT**: the name, Трудоемкость or Команда of an existing line,
+  archive / restore / delete, the bulk bar, the ABC import, the SAP upload,
+  «Bugungi fakt» and the staffing pins — all still a real admin's.
+
 ## The checklist config page (`/admin/upload?tab=ltasks`)
 
 From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO

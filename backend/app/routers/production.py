@@ -55,7 +55,7 @@ from app.models import (
     PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
-from app.capabilities import page_scope_is_all
+from app.capabilities import CAP_CATALOG_SAP, page_scope_is_all, require_cap
 from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
@@ -3975,6 +3975,15 @@ def admin_create_catalog(body: CatalogCreateBody,
     catalog, but one of code / name must be there or the line identifies nothing.
     The daily plan/fact rows join at read time on (daily_key, work_center), which
     falls back to the name when there is no code (no migration needed)."""
+    return _create_catalog_line(db, body)
+
+
+def _create_catalog_line(db: Session, body: CatalogCreateBody) -> dict:
+    """THE create core — the admin's door above and the «SAP kodlari» grant's
+    (`add_catalog_line`) both run it, so a line added through either is dated,
+    Latin-coded, archive-checked and re-joined by one spelling. The caller has
+    decided who may and which fields reach it; the action-log row is enriched
+    here, inside the request that called it."""
     if not db.query(Manager).filter(Manager.id == body.manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {body.manager_id} not found")
     # Codes are stored in Latin letters (services/latin_code.py): a Cyrillic А
@@ -4549,6 +4558,89 @@ def set_catalog_uom(body: CatalogUomBody,
             "unchanged": len(prods) - len(todo), "from": eff.isoformat()}
 
 
+# «Zagruzka fayli — SAP kodlari» (`capabilities.CAP_CATALOG_SAP`, 2026-10-30,
+# the operator: a guest who adds SAP codes on the workload file page). Two
+# doors of their own, the shape the measure's door above already uses: the
+# admin catalog endpoints carry every field that moves a number, and opening
+# them to a second audience and filtering the body per role is a rule every
+# field added later would have to remember. Each door names exactly the fields
+# the grant reaches and hands them to the admin's own core, so a line added or
+# re-coded here is dated, Latin-coded and re-joined exactly as an admin's is.
+# An admin passes both (`require_cap`), which is what lets the page call one
+# door whoever is holding it.
+
+
+class CatalogLineBody(BaseModel):
+    manager_id: int
+    sap_code: Optional[str] = ""     # blank = a code-less line (then `name` carries it)
+    name: Optional[str] = ""
+    work_center: str
+    labor_time: Optional[float] = None
+
+
+@router.post("/api/production/catalog/line")
+def add_catalog_line(body: CatalogLineBody,
+                     payload: dict = Depends(require_cap(CAP_CATALOG_SAP)),
+                     db: Session = Depends(get_db)):
+    """Add a position — SAP code, name, Трудоемкость, Команда — to ANY unit's
+    catalog: the holder picks the brigadir as an admin does (the grant reads
+    /production whole, `capabilities._READS_PAGE_WHOLE`). The фаза pin, the
+    group letter, the measure and the SAP switch are not in the body: a new
+    line takes the platform's defaults for them (no pin, ungrouped, «not
+    stated», filled by the SAP file), and setting them stays the admin's."""
+    if not db.query(Manager).filter(Manager.id == body.manager_id,
+                                    Manager.archived.is_(False)).first():
+        raise HTTPException(status_code=404, detail=f"Manager {body.manager_id} not found")
+    return _create_catalog_line(db, CatalogCreateBody(
+        manager_id=body.manager_id, sap_code=body.sap_code, name=body.name,
+        work_center=body.work_center, labor_time=body.labor_time))
+
+
+class CatalogSapBody(BaseModel):
+    # The new code; "" clears it — legal only while the line has a name to be
+    # identified by, which the core decides (a code-less line is keyed by name).
+    sap_code: str
+
+
+@router.put("/api/production/catalog/{prod_id}/sap-code")
+def set_catalog_sap_code(prod_id: int, body: CatalogSapBody,
+                         payload: dict = Depends(require_cap(CAP_CATALOG_SAP)),
+                         db: Session = Depends(get_db)):
+    """Change the SAP code of ONE position, in any unit — and nothing else
+    about it. Through the admin's edit core with a body carrying the code
+    alone, so the edit is dated (it counts from the shift in progress), the
+    code is stored in Latin letters, every typed ПЛАН/ФАКТ follows the line
+    onto its new key and the new key reads the SAP figures already stored.
+
+    An ARCHIVED line is refused: setting a line aside and bringing it back is
+    the admin's, and a code changed on a line nobody can see on the page is a
+    change nobody can check. A code equal to the one stored (after the Latin
+    fold) changes nothing and freezes nothing — the measure door's rule."""
+    p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="product not found")
+    mgr = db.query(Manager).filter(Manager.id == p.manager_id).first()
+    if not mgr or mgr.archived:
+        raise HTTPException(status_code=404, detail="product not found")
+    if not p.active:
+        raise HTTPException(status_code=409, detail={
+            "code": "line_archived",
+            "message": "this position is in the archive — only an admin can change it"})
+    if latin_code((body.sap_code or "").strip()) == (p.sap_code or ""):
+        eff = pp_catalog.unit_effective_day(db, p.manager_id)
+        action_log.enrich(
+            target_kind="catalog", target_id=p.id,
+            target_name=p.sap_code or p.name, unit_id=p.manager_id,
+            details=[("sap_code", p.sap_code or None), ("unchanged", 1),
+                     ("from", eff.isoformat())],
+        )
+        return {"ok": True, "updated": 0, "carried": 0,
+                "filled": {"days": 0, "rows": 0, "skipped": False}, "group_siblings": 0,
+                "from": eff.isoformat()}
+    out = _update_catalog_line(db, prod_id, CatalogBody(sap_code=body.sap_code), payload)
+    return {**out, "updated": 1}
+
+
 class CatalogArchiveBody(BaseModel):
     ids: list[int]
     archived: bool          # True = set aside, False = bring back
@@ -4651,6 +4743,15 @@ def admin_archive_catalog(body: CatalogArchiveBody,
 @router.put("/admin/production/catalog/{prod_id}")
 def admin_update_catalog(prod_id: int, body: CatalogBody,
                          _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+    return _update_catalog_line(db, prod_id, body, _)
+
+
+def _update_catalog_line(db: Session, prod_id: int, body: CatalogBody, _: dict) -> dict:
+    """THE single-line edit core — the admin's door above and the «SAP kodlari»
+    grant's (`set_catalog_sap_code`, which hands it a body carrying the code and
+    nothing else) both run it: the freeze, the Latin code, the carry of typed
+    quantities and the re-join are one spelling. ``_`` is the caller's payload
+    (who archived a line, when the edit archives one)."""
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
