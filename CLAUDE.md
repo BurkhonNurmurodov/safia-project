@@ -8335,6 +8335,9 @@ four and nothing else.
     happened would split the unit's history into two identical halves. It is
     still recorded — a bare middleware row would read like a save whose
     details were lost rather than one with nothing to do.
+  - **Shift-managers set it too** (2026-10-30, the operator), over the units
+    of their shift ∩ plant (`_resolve_manager_id`); `UOM_ROLES` and the page's
+    `canEditUomRole` name the three roles. Top-managers still only read.
   - Logged as `production.catalog_uom_set`, so «a brigadir set the measure»
     and «an admin edited a catalog line» are two acts in the Jurnal.
   - **On screen the column is EDITABLE IN PLACE** for whoever may set it: the
