@@ -35,7 +35,8 @@ const isoMinus = (iso, days) => {
 const signed = (v, digits = 0) => {
   if (v == null || Number.isNaN(v)) return null;
   const r = Number(v.toFixed(digits));
-  return `${r > 0 ? "+" : r < 0 ? "−" : "±"}${Math.abs(r).toLocaleString("ru-RU", { maximumFractionDigits: digits })}`;
+  // Zero is «0»: the card's own flat chip already draws the dash.
+  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toLocaleString("ru-RU", { maximumFractionDigits: digits })}`;
 };
 
 /** The four period tiles — the figures and their 7-week lines. */
@@ -130,8 +131,8 @@ function Hero({ hero, P }) {
             {cat && (
               <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs" title={P.categoryTip}>
                 <span className="whitespace-nowrap" style={{ color: "var(--text-3)" }}>{P.category}:</span>
-                <b className="whitespace-nowrap" style={{ color: "var(--text-1)" }}>{cat.actual || P.categoryNone}</b>
-                {cat.expected && <span className="whitespace-nowrap" style={{ color: "var(--text-3)" }}>({fill(P.expected, { e: cat.expected })})</span>}
+                <b className="whitespace-nowrap" style={{ color: "var(--text-1)" }}>{cat.actual ? tx(cat.actual) : P.categoryNone}</b>
+                {cat.expected && <span className="whitespace-nowrap" style={{ color: "var(--text-3)" }}>({fill(P.expected, { e: tx(cat.expected) })})</span>}
                 <VerdictChip counted={cat.counted} compliant={cat.compliant}>{P.verdict[cat.verdict] || cat.verdict}</VerdictChip>
               </span>
             )}
@@ -139,7 +140,9 @@ function Hero({ hero, P }) {
               <span className="inline-flex items-center gap-1.5 text-xs rounded-md px-2 py-0.5"
                 style={{ background: "rgba(var(--brand-rgb),0.10)", color: "var(--brand-text)", border: "1px solid rgba(var(--brand-rgb),0.30)" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} aria-hidden="true" />
-                {P.today}: {today.in ? fill(P.liveSince, { s: P.live[today.status] || today.status, t: today.in }) : (P.live[today.status] || today.status)}
+                {P.today}: {today.in && today.out ? `${P.live[today.status] || today.status} · ${today.in}–${today.out}`
+                  : today.in ? fill(P.liveSince, { s: P.live[today.status] || today.status, t: today.in })
+                  : (P.live[today.status] || today.status)}
               </span>
             )}
           </div>

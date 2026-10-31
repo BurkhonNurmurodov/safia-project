@@ -45,7 +45,7 @@ function describe(e, P, tl, tx) {
       return { text: fill(ev.role_change, { r: tx(e.new_role || "—") }), sub: [e.unit ? tl(e.unit) : null, P.evSrc[e.source]].filter(Boolean).join(" · ") };
     case "career_hire": return { text: ev.career_hire, sub: [tx(e.job || ""), e.code || tx(e.unit || "")].filter(Boolean).join(" · ") };
     case "career_transfer": return { text: ev.career_transfer, sub: [tx(e.job || ""), e.code || tx(e.unit || "")].filter(Boolean).join(" · ") };
-    case "career_rank": return { text: fill(ev.career_rank, { r: e.rank || "—" }) };
+    case "career_rank": return { text: fill(ev.career_rank, { r: e.rank ? tx(e.rank) : "—" }) };
     case "career_dismissed":
       return { text: ev.career_dismissed + (e.cancelled ? ` (${P.evCancelled})` : ""), sub: e.reason ? fill(P.reason, { r: tx(e.reason) }) : "" };
     case "concern": return { text: fill(ev.concern, { n: e.seq ?? e.id }), sub: [e.code, P.bucket[e.bucket]].filter(Boolean).join(" · ") };

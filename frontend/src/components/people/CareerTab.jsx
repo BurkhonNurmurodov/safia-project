@@ -42,10 +42,10 @@ export default function CareerTab({ data, P, ready }) {
                     </div>
                     {e.kind === "rank" ? (
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--text-2)" }}>
-                        <b style={{ color: "var(--text-1)" }}>{e.rank}</b>
+                        <b style={{ color: "var(--text-1)" }}>{tx(e.rank)}</b>
                         {e.expected && (
                           <>
-                            <span style={{ color: "var(--text-3)" }}>{fill(P.expectedAt, { t: e.tenure, e: e.expected })}</span>
+                            <span style={{ color: "var(--text-3)" }}>{fill(P.expectedAt, { t: e.tenure, e: tx(e.expected) })}</span>
                             <VerdictChip counted={e.verdict !== "no_ladder"} compliant={e.verdict === "ok" || e.verdict === "above"}>
                               {P.verdict[e.verdict] || e.verdict}
                             </VerdictChip>
@@ -53,9 +53,18 @@ export default function CareerTab({ data, P, ready }) {
                         )}
                       </div>
                     ) : (
-                      <div className="mt-0.5 text-xs truncate" style={{ color: "var(--text-3)" }}>
-                        {[e.job ? tx(e.job) : null, place || null].filter(Boolean).join(" · ") || "—"}
-                      </div>
+                      <>
+                        <div className="mt-0.5 text-xs truncate" style={{ color: "var(--text-3)" }}>
+                          {[e.job ? tx(e.job) : null, place || null].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                        {/* A hiring or transfer line names the category it put
+                            the person in — often the change the hero reads. */}
+                        {e.rank && (
+                          <div className="mt-0.5 text-xs" style={{ color: "var(--text-2)" }}>
+                            {P.category}: <b style={{ color: "var(--text-1)" }}>{tx(e.rank)}</b>
+                          </div>
+                        )}
+                      </>
                     )}
                     {e.until && <div className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>{fill(P.until, { d: fmtDate(e.until) })}</div>}
                     {e.reason && <div className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>{fill(P.reason, { r: tx(e.reason) })}</div>}
