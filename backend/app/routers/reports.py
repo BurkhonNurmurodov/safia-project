@@ -40,7 +40,7 @@ from app.models import Manager, QualityComplaint
 from app.services.name_map import register_rows, supervisor_match
 from app.permissions import require_page
 from app.services import (
-    action_log, assistant_documents, brigadir_board as bb, idle_scope,
+    action_log, assistant_documents, brigadir_board as bb, idle_scope, idle_share,
     ojidaniya_cost, plan_fulfillment, reports, turnover, wage_rate,
 )
 from app.services.factory_scope import empty_scope, scoped_manager_ids
@@ -166,6 +166,40 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
     return out
 
 
+def _idle_share_by_month(db: Session, payload: dict, months: list[dict],
+                         ids: list[int]) -> dict:
+    """Per month: idle time as a share of worked time — `idle_share.build`,
+    Σ(N·T) person-minutes over the Verifix worked minutes of the same cells,
+    Tozalash left out (the operator's rulings of 2026-10-31).
+
+    Read ONCE over the whole window and bucketed by month. The viewer's
+    category lock narrows the numerator as it narrows the rest of the «Kutish»
+    section; a lock that matches nothing reads «—», never the whole plant. A
+    month with no worked minutes is None, so its cells print «—», never 0%. A
+    fault costs these rows, never the report."""
+    out: dict[str, Optional[dict]] = {m["ym"]: None for m in months}
+    cats = idle_scope.resolve_cats(db, payload, [])
+    if not ids or idle_scope.empty_scope(cats):
+        return out
+    try:
+        per = idle_share.build(db, ids, months[0]["from"], months[-1]["to"], cats)
+    except Exception:
+        log.exception("reports: idle share failed")
+        return out
+    for m in months:
+        lo, hi = m["from"].isoformat(), m["to"].isoformat()
+        idle = worked = 0.0
+        cells = 0
+        for (_u, day), (pm, w, c) in per.items():
+            if lo <= day <= hi:
+                idle += pm
+                worked += w
+                cells += c
+        if worked > 0:
+            out[m["ym"]] = {"idle": idle, "worked": worked, "cell_days": cells}
+    return out
+
+
 def _sees_cost(payload: dict) -> bool:
     """Whether the «Xarajat» section is this viewer's — `/downtime/cost`'s own
     rule (`downtime.COST_ROLES`: admins and shift managers, the operator's
@@ -245,7 +279,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     Every figure comes from the page that owns it, through that page's own
     code — `build_metrics_list` (the загрузка engine) read by
     `brigadir_board`'s heatmap twins, `/api/workers/headcount` itself,
-    `plan_fulfillment.build`, `routers/downtime._downtime`,
+    `plan_fulfillment.build`, `routers/downtime._downtime`, `idle_share.build`,
     `ojidaniya_cost.build`, the Quality register as the shift dashboard reads
     it, the /concerns register as the leaders' KPI counts it, and
     `turnover.month_payload`. Nothing is measured in this file or in
@@ -273,6 +307,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     plan_tot: dict = {m0["ym"]: {} for m0 in months}
     plan_units: dict = {}
     idle = {m0["ym"]: {} for m0 in months}
+    idle_pct = {m0["ym"]: None for m0 in months}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
     # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
     cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(payload) else None
@@ -294,6 +329,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                           supervisor_match(live, {b for b, _s, _d, _n in qrows if b}))
         plan_tot, plan_units = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
+        idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))
         if cost is not None:
             cost = _cost_by_month(db, payload, months, sorted(ids))
         # The SCOPED units, never the raw pick: turnover applies the scope it
@@ -308,7 +344,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "unit_ids": ids,
         "plan": plan_tot, "plan_units": plan_units,
         "eff": eff, "ful": ful, "att": att,
-        "turnover": turn, "idle": idle, "cost": cost,
+        "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside
         # `compose`, out of each month's «Xarajat» totals.

@@ -71,7 +71,7 @@ export function fmtDelta(d, fmt) {
  *  verdict, and colouring one would be the platform stating an opinion it has
  *  not been given. */
 const LOWER_IS_BETTER = new Set([
-  "idle.idleMin", "idle.idlePerDay", "cost.costSum",
+  "idle.idleMin", "idle.idlePct", "idle.idlePerDay", "cost.costSum",
   "production.shortMin", "personnel.turnRate",
 ]);
 const HIGHER_IS_BETTER = new Set([

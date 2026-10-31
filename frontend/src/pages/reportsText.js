@@ -68,6 +68,7 @@ const uz = {
     // Named by their whole key: in the mixed summary table the section
     // would otherwise qualify them into «Kutish (ojidaniya) · Kutish».
     "idle.idleMin": "Kutish (ojidaniya)",
+    "idle.idlePct": "Kutish, ishlangan vaqtdan %",
     "cost.costSum": "Kutish xarajati",
     planMin: "Ishlab chiqarish plani",
     actualMin: "Trudoyomkost (fakt)",
@@ -91,6 +92,9 @@ const uz = {
     idlePerDay: "Kuniga o'rtacha",
     unitDays: "Brigada-kunlar",
     flaggedDays: "50 daqiqadan oshgan kunlar",
+    idlePct: "Kutish, ishlangan vaqtdan %",
+    idlePersonMin: "Kutish (odam-daqiqa)",
+    workedMin: "Ishlangan vaqt (odam-daqiqa)",
 
     costSum: "Xarajat",
     pricedMin: "Narxlangan daqiqalar",
@@ -215,6 +219,7 @@ const uz_cyrl = {
   },
   row: {
     "idle.idleMin": "Кутиш (ожиданиё)",
+    "idle.idlePct": "Кутиш, ишланган вақтдан %",
     "cost.costSum": "Кутиш харажати",
     planMin: "Ишлаб чиқариш плани", actualMin: "Трудоёмкост (факт)", shortMin: "Етишмаган",
     fulfil: "План бажарилиши", eff: "Самарадорлик", countedDays: "Ҳисобга олинган кунлар",
@@ -224,6 +229,8 @@ const uz_cyrl = {
     turnRate: "Қўнимсизлик (йиллик)",
     idleMin: "Кутиш", idlePerDay: "Кунига ўртача", unitDays: "Бригада-кунлар",
     flaggedDays: "50 дақиқадан ошган кунлар",
+    idlePct: "Кутиш, ишланган вақтдан %", idlePersonMin: "Кутиш (одам-дақиқа)",
+    workedMin: "Ишланган вақт (одам-дақиқа)",
     costSum: "Харажат", pricedMin: "Нархланган дақиқалар",
     unpricedMin: "Нархланмаган дақиқалар", costPerDay: "Кунига ўртача",
     hc: "Ўртача одам сони",
@@ -301,6 +308,7 @@ const ru = {
   },
   row: {
     "idle.idleMin": "Ожидание",
+    "idle.idlePct": "Простой, % от отработанного времени",
     "cost.costSum": "Стоимость простоя",
     planMin: "План производства", actualMin: "Трудоёмкость (факт)", shortMin: "Недовыполнено",
     fulfil: "Выполнение плана", eff: "Эффективность", countedDays: "Учтённых дней",
@@ -310,6 +318,8 @@ const ru = {
     turnRate: "Текучесть (годовая)",
     idleMin: "Ожидание", idlePerDay: "В среднем за день", unitDays: "Бригадо-дней",
     flaggedDays: "Дней свыше 50 минут",
+    idlePct: "Простой, % от отработанного времени", idlePersonMin: "Простой (чел.-мин)",
+    workedMin: "Отработано (чел.-мин)",
     costSum: "Затраты", pricedMin: "Оценённые минуты", unpricedMin: "Неоценённые минуты",
     costPerDay: "В среднем за день", hc: "Среднее число людей",
     actionable: "Требуют меры", resolved: "Устранено", closure: "Устранено %",
@@ -384,6 +394,7 @@ const en = {
   },
   row: {
     "idle.idleMin": "Idle time",
+    "idle.idlePct": "Idle time, % of worked time",
     "cost.costSum": "Cost of waiting",
     planMin: "Production plan", actualMin: "Trudoyomkost (actual)", shortMin: "Shortfall",
     fulfil: "Plan fulfilment", eff: "Efficiency", countedDays: "Days counted",
@@ -392,6 +403,8 @@ const en = {
     attDays: "Closed days", working: "Working", left: "Left", turnRate: "Turnover (annualised)",
     idleMin: "Waiting", idlePerDay: "Average per day", unitDays: "Unit-days",
     flaggedDays: "Days over 50 minutes",
+    idlePct: "Idle time, % of worked time", idlePersonMin: "Idle person-minutes",
+    workedMin: "Worked person-minutes",
     costSum: "Cost", pricedMin: "Priced minutes", unpricedMin: "Unpriced minutes",
     costPerDay: "Average per day", hc: "Average headcount",
     actionable: "Needing action", resolved: "Resolved", closure: "Resolved %",

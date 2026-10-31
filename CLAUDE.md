@@ -9194,6 +9194,22 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
   ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
   the sections they belong to, so the two can never disagree.
+- **«Kutish, ishlangan vaqtdan %» — idle as a share of WORKED time**
+  (2026-10-31, the operator's rulings, asked one by one;
+  `services/idle_share.py` is THE rule): Σ(N·T) ÷ Σ worked minutes × 100.
+  Numerator per (cell, day): T = the union of the cell's stopped, approved
+  ranges, N = the typed «Bugungi fakt» share (`idle_source.cell_headcount`),
+  i.e. the person-minutes /downtime and «Xarajat» read — the operator chose
+  matching those over Verifix people, knowing a mistyped headcount moves the
+  %. **Tozalash (Cat H) is out of the numerator** (its hours stay worked time).
+  Denominator: Σ `effective_hours` («Отработано» − early arrival) of the
+  attendance rows the загрузка counts (`_counted_hc`), matched by the cell's
+  Verifix code. A cell-day counts only with BOTH halves (a typed N and worked
+  minutes); from `ZAGRUZKA_FROM` only (August reads «—»). Follows the viewer's
+  category lock like the rest of «Kutish». Shown in the «Kutish» total block
+  with its two sums under it (odam-daqiqa), in the Executive summary and in
+  «Asosiy ko'rsatkichlar»; one decimal, a rise is red. Not built: a per-unit
+  column, a cap on a cell where N·T passes its people's worked time.
 - **`brigadir_board.attendance` carries its three COMPONENTS now** (`roster`
   / `came` / `leave`, beside the `v` and `days` /leaderboard reads, which are
   untouched): a PLANT figure is Σ (came + on leave) ÷ Σ listed — **pooled,

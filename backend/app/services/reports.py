@@ -23,7 +23,9 @@ section:
   `turnover.month_payload` — the «Liderlar KPI» page's own.
 * **Kutish** — `routers/downtime._downtime`'s rows, which ARE the /downtime
   page's computation (the headcount-weighted mean of a unit's cells, the
-  platform's one ojidaniya reading).
+  platform's one ojidaniya reading). «Kutish %» is `idle_share.build`: Σ(N·T)
+  person-minutes over the Verifix worked minutes of the same cells, Tozalash
+  left out.
 * **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree: the union
   of stopped minutes priced at the wage rate in force on each day.
 * **Sifat** — the Quality page's closure rate through `brigadir_board.quality`
@@ -82,7 +84,8 @@ SECTIONS = ("summary", "production", "personnel", "idle", "cost",
 CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
-    "idle.idleMin", "cost.costSum", "quality.actionable", "quality.resolved",
+    "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
+    "cost.costSum", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
 }
 
@@ -318,13 +321,23 @@ def _idle(inp: dict, n: int) -> list[dict]:
     yms = inp["yms"]
     tot = [(idle.get(y) or {}).get("total") for y in yms]
     ud = [(idle.get(y) or {}).get("unit_days") for y in yms]
+    # Idle as a share of worked time (`services/idle_share.py`): its person-
+    # minutes and worked minutes are printed under it so the % can be checked
+    # by eye. One decimal — idle is a few percent, where a whole percent hides
+    # the move. None (no worked minutes) stays «—».
+    share = inp.get("idle_share") or {}
+    sh = [share.get(y) or {} for y in yms]
 
     blocks = [periods_block("total", [
         prow("idleMin", "min", [_r(v) for v in tot], bold=True),
+        prow("idlePct", "pct", [_r(x["idle"] / x["worked"] * 100, 1)
+                                if x.get("worked") else None for x in sh], bold=True),
         prow("idlePerDay", "num1", [_r(t / d, 1) if t is not None and d else None
                                     for t, d in zip(tot, ud)]),
         prow("unitDays", "int", [_r(v) for v in ud]),
         prow("flaggedDays", "int", [_r((idle.get(y) or {}).get("flagged")) for y in yms]),
+        prow("idlePersonMin", "min", [_r(x.get("idle")) for x in sh]),
+        prow("workedMin", "min", [_r(x.get("worked")) for x in sh]),
     ])]
 
     # Categories, worst first in the PICKED month — a cause that only appeared
@@ -503,6 +516,7 @@ def _figures(inp: dict, n: int, built: dict) -> list[dict]:
         ("personnel", "attendance", "attRate"),
         ("personnel", "turnover", "turnRate"),
         ("idle", "total", "idleMin"),
+        ("idle", "total", "idlePct"),
         ("idle", "total", "idlePerDay"),
         ("cost", "total", "costSum"),
         ("quality", "total", "closure"),
@@ -531,6 +545,7 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
                                 ("production", "volume", "eff"),
                                 ("personnel", "attendance", "attRate"),
                                 ("idle", "total", "idleMin"),
+                                ("idle", "total", "idlePct"),
                                 ("cost", "total", "costSum"),
                                 ("quality", "total", "closure"),
                                 ("concerns", "total", "closure")):
@@ -556,8 +571,8 @@ def compose(inp: dict) -> dict:
 
     `inp` carries, all already scoped and already period-bucketed by the
     router: `months` (the `months_for` list), `units`, `unit_ids`, `plan`,
-    `plan_units`, `eff`, `ful`, `att`, `turnover`, `idle`, `cost`, `qual`,
-    `xav`, `scope`. `idle` arrives through the viewer's category lock and
+    `plan_units`, `eff`, `ful`, `att`, `turnover`, `idle`, `idle_share`, `cost`,
+    `qual`, `xav`, `scope`. `idle` arrives through the viewer's category lock and
     `cost` is None for a viewer the «Xarajat» section is not for — both the
     router's decisions; nothing here knows a role.
     """
