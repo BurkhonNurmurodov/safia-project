@@ -9108,7 +9108,10 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   `startup.add_assessment_answer_columns`, run phase, both entrypoints): set in
   the bank's question form (only when ONE question is added — a multi-line add
   refuses one, 400 `answer_one`), copied onto the sitting at the draw like the
-  text, and opened by a judge under the question («Kutilgan javob»). Never
+  text, and opened by a judge under the question («Kutilgan javob»). In the
+  bank a row (or its «Javob» button; on a phone «Javobni ko'rish») opens the
+  question read whole with its answer and an Edit button (`QuestionView`) —
+  the table cuts a question to one line and has no room for the answer. Never
   shown to a candidate (no candidate view exists).
 - **Questions, answers, notes and feedback are printed AS WRITTEN** — never
   through `tx`: they are authored prose, often Russian, and `tx` turns Cyrillic

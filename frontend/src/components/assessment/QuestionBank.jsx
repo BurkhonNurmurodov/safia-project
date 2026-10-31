@@ -124,6 +124,37 @@ function QuestionModal({ initial, onClose, onSaved, T }) {
   );
 }
 
+/** A question read whole — its text and its expected answer — with the way on
+ *  to editing it. The table cuts a question to one line, and an answer has no
+ *  room there at all, so this is where both are read. */
+function QuestionView({ q, onClose, onEdit, T }) {
+  return (
+    <Modal open onClose={onClose} title={T.viewTitle} maxWidth="max-w-2xl"
+      subtitle={`${T.dept[q.department] || q.department} · ${T.type[q.qtype] || q.qtype}`}
+      icon={<Library size={18} />}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>{T.close}</Button>
+          <Button icon={Pencil} onClick={onEdit}>{T.edit}</Button>
+        </>
+      )}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <DeptChip dept={q.department} T={T} /><TypeChip type={q.qtype} T={T} />
+        {q.archived_at && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
+      </div>
+      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{q.text}</p>
+      <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)", borderLeft: `3px solid ${q.answer ? "var(--brand)" : "var(--border)"}` }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>
+          <BookCheck size={13} aria-hidden="true" />{T.answer}
+        </div>
+        {q.answer
+          ? <p className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>{q.answer}</p>
+          : <p className="text-xs" style={{ color: "var(--text-3)" }}>{T.noAnswer}</p>}
+      </div>
+    </Modal>
+  );
+}
+
 export default function QuestionBank() {
   const T = useAT();
   const { tx } = useTranslit();
@@ -135,6 +166,7 @@ export default function QuestionBank() {
   const [fState, setFState] = usePersistentState("assessment_bank_state", "active");
   const [sort, setSort] = useState({ k: "dept", d: "asc" });
   const [editing, setEditing] = useState(null);   // {} = add, a row = edit
+  const [viewing, setViewing] = useState(null);   // a row read whole, its answer included
 
   const bank = useQuery({
     queryKey: ["assessment-bank"],
@@ -216,8 +248,12 @@ export default function QuestionBank() {
 
   // Icon buttons in the table (a word each would not fit beside a question);
   // the phone card, with room to spare, spells them out.
+  // The table row itself opens the question, so its buttons keep their click.
   const actions = (r, words = false) => (
-    <span className="inline-flex items-center gap-1.5">
+    <span className={`inline-flex items-center gap-1.5 ${words ? "flex-wrap" : ""}`} onClick={(e) => e.stopPropagation()}>
+      {words && r.answer && (
+        <Button size="sm" variant="secondary" tint icon={BookCheck} onClick={() => setViewing(r)}>{T.showAnswer}</Button>
+      )}
       <Button size="sm" variant="secondary" tint icon={Pencil} onClick={() => setEditing(r)}
         title={T.edit} aria-label={T.edit}>
         {words ? T.edit : null}
@@ -284,17 +320,23 @@ export default function QuestionBank() {
           ) : empty ? (
             <tr><td colSpan={7}>{emptyNode}</td></tr>
           ) : rows.map((r) => (
-            <tr key={r.id} style={{ opacity: r.archived_at ? 0.6 : 1 }}>
+            <tr key={r.id} onClick={() => setViewing(r)} className="cursor-pointer" title={T.openTip}
+              style={{ opacity: r.archived_at ? 0.6 : 1 }}>
               <td className="px-3 py-2"><DeptChip dept={r.department} T={T} /></td>
               <td className="px-3 py-2"><TypeChip type={r.qtype} T={T} /></td>
-              <td className="px-3 py-2 truncate" title={r.text}>
+              <td className="px-3 py-2 truncate">
                 {r.archived_at && <span className="mr-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
                 {r.text}
               </td>
-              <td className="px-3 py-2 text-center" title={r.answer || T.noAnswer}>
-                {r.answer
-                  ? <BookCheck size={15} className="mx-auto" style={{ color: "var(--text-2)" }} aria-label={T.hasAnswer} />
-                  : <span style={{ color: "var(--text-4)" }}>—</span>}
+              <td className="px-2 py-1.5 text-center">
+                {r.answer ? (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setViewing(r); }}
+                    title={T.showAnswer} aria-label={T.showAnswer}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                    <BookCheck size={15} aria-hidden="true" />
+                  </button>
+                ) : <span title={T.noAnswer} style={{ color: "var(--text-4)" }}>—</span>}
               </td>
               <td className="px-3 py-2 text-right tabular-nums" title={fill(T.usedTip, { n: r.used })}>{r.used || "—"}</td>
               <td className="px-3 py-2 tabular-nums" title={r.created_by || ""}>{fmtDate(r.created_at)}</td>
@@ -303,6 +345,10 @@ export default function QuestionBank() {
           ))}
         </tbody>
       </TableCard>
+      {viewing && (
+        <QuestionView q={viewing} T={T} onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(viewing); setViewing(null); }} />
+      )}
       {editing && <QuestionModal initial={editing} onClose={() => setEditing(null)} onSaved={onSaved} T={T} />}
       {toast.node}
     </div>
