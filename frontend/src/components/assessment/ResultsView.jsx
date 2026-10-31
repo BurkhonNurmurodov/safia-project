@@ -36,7 +36,7 @@ function Share({ label, node, s }) {
 
 export default function ResultsView({ data }) {
   const T = useAT();
-  const { tl, tx } = useTranslit();
+  const { tl } = useTranslit();
 
   if (data.results_hidden) {
     return <EmptyState icon={Lock} title={T.hiddenTitle} message={T.hiddenMsg} showUploadLink={false} height="h-56" />;
@@ -132,13 +132,13 @@ export default function ResultsView({ data }) {
               <li key={r.item_id} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
                 <div className="flex items-start gap-2">
                   <span className="text-xs font-bold tabular-nums w-5 shrink-0" style={{ color: "var(--text-3)" }}>{r.position}</span>
-                  <p className="text-sm flex-1 min-w-0 break-words" style={{ color: "var(--text-1)" }}>{tx(r.text)}</p>
+                  <p className="text-sm flex-1 min-w-0 break-words" style={{ color: "var(--text-1)" }}>{r.text}</p>
                   <span className="shrink-0">{verdictCell(r)}</span>
                 </div>
                 <div className="mt-1.5 ml-7 flex flex-wrap items-center gap-1.5">
                   <DeptChip dept={r.department} T={T} /><TypeChip type={r.qtype} T={T} />
                 </div>
-                {r.note && <p className="mt-1 ml-7 text-xs break-words" style={{ color: "var(--text-2)" }}>{tx(r.note)}</p>}
+                {r.note && <p className="mt-1 ml-7 text-xs break-words" style={{ color: "var(--text-2)" }}>{r.note}</p>}
               </li>
             ))}
           </ul>
@@ -161,12 +161,12 @@ export default function ResultsView({ data }) {
           {res.rows.map((r) => (
             <tr key={r.item_id}>
               <td className="px-2 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{r.position}</td>
-              <td className="px-3 py-2 truncate" title={tx(r.text)}>{tx(r.text)}</td>
+              <td className="px-3 py-2 truncate" title={r.text}>{r.text}</td>
               <td className="px-3 py-2"><DeptChip dept={r.department} T={T} /></td>
               <td className="px-3 py-2"><TypeChip type={r.qtype} T={T} /></td>
               <td className="px-3 py-2 text-center"><span className="inline-flex justify-center">{verdictCell(r)}</span></td>
-              <td className="px-3 py-2 truncate" title={r.note ? tx(r.note) : undefined}
-                style={{ color: r.note ? "var(--text-2)" : "var(--text-4)" }}>{r.note ? tx(r.note) : "—"}</td>
+              <td className="px-3 py-2 truncate" title={r.note ? r.note : undefined}
+                style={{ color: r.note ? "var(--text-2)" : "var(--text-4)" }}>{r.note ? r.note : "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -184,7 +184,7 @@ export default function ResultsView({ data }) {
               <span className="font-medium" style={{ color: "var(--text-1)" }}>{j.judge_name ? tl(j.judge_name) : "—"}</span>
               <span className="ml-auto tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDateTime(j.submitted_at)}</span>
             </div>
-            <p className="mt-1.5 text-sm whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{tx(j.overall_feedback || "")}</p>
+            <p className="mt-1.5 text-sm whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{j.overall_feedback || ""}</p>
           </div>
         ))}
       </section>
@@ -197,11 +197,11 @@ export default function ResultsView({ data }) {
         ) : notes.map((r) => (
           <div key={r.item_id} className="text-sm">
             <div className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
-              {r.position}. <span className="font-normal">{tx(r.text)}</span>
+              {r.position}. <span className="font-normal">{r.text}</span>
             </div>
             <p className="mt-0.5 ml-4 text-xs break-words" style={{ color: "var(--text-1)" }}>
               <span className="font-medium" style={{ color: "var(--text-2)" }}>{T.dept[r.department]}</span>
-              {r.judge_name ? ` · ${tl(r.judge_name)}` : ""}: {tx(r.note)}
+              {r.judge_name ? ` · ${tl(r.judge_name)}` : ""}: {r.note}
             </p>
           </div>
         ))}

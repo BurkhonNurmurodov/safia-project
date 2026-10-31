@@ -157,6 +157,8 @@ try:
         add_pp_line_container_cap,
         add_pp_product_archive_columns,
         add_pp_product_uom,
+        add_assessment_answer_columns,
+        seed_tb_food_safety_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -298,6 +300,8 @@ try:
     add_pp_line_container_cap()
     add_pp_product_archive_columns()
     add_pp_product_uom()
+    add_assessment_answer_columns()
+    seed_tb_food_safety_questions()
     add_pp_product_containers()
     add_forecast_answer_columns()
     add_assistant_run_lease()

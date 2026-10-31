@@ -5476,6 +5476,9 @@ class AssessmentQuestion(Base):
     department  = Column(String(16), nullable=False, index=True)   # okk · hr · production · tb · kaizen
     qtype       = Column(String(16), nullable=False)               # theory · practical
     text        = Column(Text, nullable=False)
+    # The model answer the judges grade against (optional; never shown to a
+    # candidate — no candidate-facing view exists).
+    answer      = Column(Text, nullable=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)   # NULL = in the draw
     archived_by = Column(String, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
@@ -5514,6 +5517,7 @@ class AssessmentItem(Base):
     department    = Column(String(16), nullable=False)
     qtype         = Column(String(16), nullable=False)
     text          = Column(Text, nullable=False)
+    answer        = Column(Text, nullable=True)     # the expected answer, copied at the draw too
 
 
 class JudgeEvaluation(Base):

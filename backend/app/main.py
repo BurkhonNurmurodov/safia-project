@@ -167,6 +167,8 @@ async def lifespan(app: FastAPI):
         add_pp_line_container_cap,
         add_pp_product_archive_columns,
         add_pp_product_uom,
+        add_assessment_answer_columns,
+        seed_tb_food_safety_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -315,6 +317,11 @@ async def lifespan(app: FastAPI):
     run(add_pp_line_container_cap)
     run(add_pp_product_archive_columns)
     run(add_pp_product_uom)
+    run(add_assessment_answer_columns)
+    # ⚠ TEMPORARY one-shot (2026-10-31): the TB food-safety questions into the
+    # «Nomzodlarni baholash» bank. Remove with startup.seed_tb_food_safety_questions
+    # and services/assessment_seed_tb_oct31.py once its flag reads «done».
+    later(seed_tb_food_safety_questions)
     run(add_pp_product_containers)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)

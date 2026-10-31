@@ -68,7 +68,7 @@ function Result({ row, T }) {
 
 export default function AssessmentList({ isAdmin }) {
   const T = useAT();
-  const { tl, tx } = useTranslit();
+  const { tl } = useTranslit();
   const nav = useNavigate();
   const [status, setStatus] = usePersistentState("assessment_status", "open");
   const [q, setQ] = useState("");
@@ -173,7 +173,7 @@ export default function AssessmentList({ isAdmin }) {
               <td className="px-3 py-2 max-w-[360px]">
                 <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
                 {r.candidate?.note && (
-                  <span className="ml-2 truncate" style={{ color: "var(--text-3)" }} title={tx(r.candidate.note)}>{tx(r.candidate.note)}</span>
+                  <span className="ml-2 truncate" style={{ color: "var(--text-3)" }} title={r.candidate.note}>{r.candidate.note}</span>
                 )}
               </td>
               <td className="px-3 py-2 tabular-nums">{fmtDate(r.held_on)}</td>

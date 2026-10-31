@@ -109,7 +109,7 @@ def _items(db: Session, aid: int) -> list[AssessmentItem]:
 
 def _item_dict(it: AssessmentItem) -> dict:
     return {"id": it.id, "position": it.position, "department": it.department,
-            "qtype": it.qtype, "text": it.text}
+            "qtype": it.qtype, "text": it.text, "answer": it.answer}
 
 
 def _grades_of(db: Session, eval_ids: list[int]) -> dict[int, dict[int, dict]]:
@@ -134,7 +134,8 @@ def _own_ids(item_dept: dict[int, str], department: str) -> set:
 
 def _active_pool(db: Session) -> list[dict]:
     rows = db.query(AssessmentQuestion).filter(AssessmentQuestion.archived_at.is_(None)).all()
-    return [{"id": q.id, "department": q.department, "qtype": q.qtype, "text": q.text} for q in rows]
+    return [{"id": q.id, "department": q.department, "qtype": q.qtype, "text": q.text,
+             "answer": q.answer} for q in rows]
 
 
 def _seen_by(db: Session, candidate_id: int, but: Optional[int] = None) -> set[int]:
@@ -155,7 +156,8 @@ def _draw_into(db: Session, a: Assessment) -> int:
                 shorts=[s.as_dict() for s in e.shorts])
     for i, q in enumerate(picked, start=1):
         db.add(AssessmentItem(assessment_id=a.id, position=i, question_id=q["id"],
-                              department=q["department"], qtype=q["qtype"], text=q["text"]))
+                              department=q["department"], qtype=q["qtype"], text=q["text"],
+                              answer=q.get("answer")))
     return len(picked)
 
 
@@ -185,7 +187,7 @@ def get_meta(payload: dict = Depends(PAGE)):
 
 def _q_dict(q: AssessmentQuestion, used: dict[int, int]) -> dict:
     return {"id": q.id, "department": q.department, "qtype": q.qtype, "text": q.text,
-            "archived_at": _iso(q.archived_at), "archived_by": q.archived_by,
+            "answer": q.answer, "archived_at": _iso(q.archived_at), "archived_by": q.archived_by,
             "created_at": _iso(q.created_at), "created_by": q.created_by,
             "updated_at": _iso(q.updated_at), "updated_by": q.updated_by,
             "used": used.get(q.id, 0)}
@@ -215,7 +217,9 @@ def _valid_dept_type(department, qtype) -> tuple[str, str]:
 @router.post("/questions")
 def add_questions(body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Add questions — every non-empty line of `text` is one question. A line
-    identical to an active question of the same department is skipped."""
+    identical to an active question of the same department is skipped. An
+    `answer` (the expected answer) is taken only when exactly ONE question is
+    added — it could belong to no line in particular otherwise."""
     _require_admin(payload)
     dept, qtype = _valid_dept_type(body.get("department"), body.get("qtype"))
     lines = [ln.strip() for ln in str(body.get("text") or "").replace("\r\n", "\n").split("\n")]
@@ -224,6 +228,9 @@ def add_questions(body: dict = Body(...), db: Session = Depends(get_db), payload
         _refuse(400, "text_required", "Write at least one question.")
     if len(lines) > 200:
         _refuse(400, "too_many", "At most 200 questions at once.")
+    answer = _clean(body.get("answer"), rules.MAX_ANSWER) or None
+    if answer and len(lines) > 1:
+        _refuse(400, "answer_one", "An expected answer goes with one question at a time.")
     have = {_fold(q.text) for q in db.query(AssessmentQuestion).filter(
         AssessmentQuestion.department == dept, AssessmentQuestion.archived_at.is_(None)).all()}
     added, skipped = 0, 0
@@ -233,7 +240,8 @@ def add_questions(body: dict = Body(...), db: Session = Depends(get_db), payload
             skipped += 1
             continue
         have.add(k)
-        db.add(AssessmentQuestion(department=dept, qtype=qtype, text=ln, created_by=_who(payload)))
+        db.add(AssessmentQuestion(department=dept, qtype=qtype, text=ln, answer=answer,
+                                  created_by=_who(payload)))
         added += 1
     db.commit()
     action_log.enrich(target_kind="assessment_question",
@@ -251,9 +259,10 @@ def edit_question(qid: int, body: dict = Body(...), db: Session = Depends(get_db
     text = _clean(body.get("text", q.text), rules.MAX_TEXT)
     if not text:
         _refuse(400, "text_required", "The question cannot be empty.")
+    answer = (_clean(body["answer"], rules.MAX_ANSWER) or None) if "answer" in body else q.answer
     changes = [(f, o, n) for f, o, n in (("department", q.department, dept), ("type", q.qtype, qtype),
-                                         ("text", q.text, text)) if o != n]
-    q.department, q.qtype, q.text = dept, qtype, text
+                                         ("text", q.text, text), ("answer", q.answer, answer)) if o != n]
+    q.department, q.qtype, q.text, q.answer = dept, qtype, text, answer
     if changes:
         q.updated_at, q.updated_by = _now(), _who(payload)
     db.commit()

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Library, Pencil, Archive, ArchiveRestore, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Plus, Library, Pencil, Archive, ArchiveRestore, CheckCircle2, AlertTriangle, BookCheck } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -65,13 +65,17 @@ function QuestionModal({ initial, onClose, onSaved, T }) {
   const [dept, setDept] = useState(initial?.department || "kaizen");
   const [qtype, setQtype] = useState(initial?.qtype || "theory");
   const [text, setText] = useState(initial?.text || "");
+  const [answer, setAnswer] = useState(initial?.answer || "");
   const [err, setErr] = useState(null);
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean).length;
+  // An expected answer belongs to ONE question: with several lines it could
+  // belong to none of them in particular, and the server refuses it.
+  const answerOff = !editing && lines > 1;
 
   const save = useMutation({
     mutationFn: () => editing
-      ? api.put(`/api/assessment/questions/${initial.id}`, { department: dept, qtype, text }).then((r) => r.data)
-      : api.post("/api/assessment/questions", { department: dept, qtype, text }).then((r) => r.data),
+      ? api.put(`/api/assessment/questions/${initial.id}`, { department: dept, qtype, text, answer }).then((r) => r.data)
+      : api.post("/api/assessment/questions", { department: dept, qtype, text, answer: answerOff ? "" : answer }).then((r) => r.data),
     onSuccess: (d) => { onSaved(d, editing); onClose(); },
     onError: (e) => setErr(e),
   });
@@ -108,6 +112,12 @@ function QuestionModal({ initial, onClose, onSaved, T }) {
         {!editing && lines > 1 && (
           <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>{fill(T.linesN, { n: lines })}</div>
         )}
+      </FormField>
+      <FormField label={T.answer} hint={answerOff ? T.answerMany : T.answerHint}>
+        <textarea value={answerOff ? "" : answer} onChange={(e) => setAnswer(e.target.value)} disabled={answerOff}
+          placeholder={T.answerPh} rows={4} maxLength={4000}
+          className="w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none resize-y disabled:opacity-50"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
       </FormField>
       {err && <div role="alert" className="text-xs" style={{ color: "var(--status-bad)" }}>{errText(err, T)}</div>}
     </Modal>
@@ -229,8 +239,9 @@ export default function QuestionBank() {
             <DeptChip dept={r.department} T={T} /><TypeChip type={r.qtype} T={T} />
             {r.archived_at && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
             {r.used > 0 && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{fill(T.usedTip, { n: r.used })}</span>}
+            {r.answer && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.hasAnswer}</span>}
           </div>
-          <p className="mt-1.5 text-sm whitespace-pre-wrap" style={{ color: "var(--text-1)" }}>{tx(r.text)}</p>
+          <p className="mt-1.5 text-sm whitespace-pre-wrap" style={{ color: "var(--text-1)" }}>{r.text}</p>
           <div className="mt-2">{actions(r, true)}</div>
         </li>
       ))}
@@ -251,7 +262,7 @@ export default function QuestionBank() {
         )}
         mobile={mobile} fixed minWidth={760}>
         <colgroup>
-          <col style={{ width: 150 }} /><col style={{ width: 110 }} /><col />
+          <col style={{ width: 150 }} /><col style={{ width: 110 }} /><col /><col style={{ width: 72 }} />
           <col style={{ width: 84 }} /><col style={{ width: 104 }} /><col style={{ width: 112 }} />
         </colgroup>
         <thead>
@@ -259,6 +270,7 @@ export default function QuestionBank() {
             <Th label={T.colDept} k="dept" sort={sort} onSort={onSort} />
             <Th label={T.colType} k="type" sort={sort} onSort={onSort} />
             <Th label={T.colText} k="text" sort={sort} onSort={onSort} />
+            <Th label={T.colAnswer} align="center" />
             <Th label={T.colUsed} k="used" sort={sort} onSort={onSort} align="right" />
             <Th label={T.colAdded} k="added" sort={sort} onSort={onSort} />
             <Th label="" />
@@ -267,17 +279,22 @@ export default function QuestionBank() {
         <tbody>
           {bank.isLoading ? (
             [...Array(5)].map((_, i) => (
-              <tr key={i}><td colSpan={6} className="px-3 py-3"><div className="h-4 rounded animate-pulse" style={{ background: "var(--bg-inner)" }} /></td></tr>
+              <tr key={i}><td colSpan={7} className="px-3 py-3"><div className="h-4 rounded animate-pulse" style={{ background: "var(--bg-inner)" }} /></td></tr>
             ))
           ) : empty ? (
-            <tr><td colSpan={6}>{emptyNode}</td></tr>
+            <tr><td colSpan={7}>{emptyNode}</td></tr>
           ) : rows.map((r) => (
             <tr key={r.id} style={{ opacity: r.archived_at ? 0.6 : 1 }}>
               <td className="px-3 py-2"><DeptChip dept={r.department} T={T} /></td>
               <td className="px-3 py-2"><TypeChip type={r.qtype} T={T} /></td>
-              <td className="px-3 py-2 truncate" title={tx(r.text)}>
+              <td className="px-3 py-2 truncate" title={r.text}>
                 {r.archived_at && <span className="mr-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
-                {tx(r.text)}
+                {r.text}
+              </td>
+              <td className="px-3 py-2 text-center" title={r.answer || T.noAnswer}>
+                {r.answer
+                  ? <BookCheck size={15} className="mx-auto" style={{ color: "var(--text-2)" }} aria-label={T.hasAnswer} />
+                  : <span style={{ color: "var(--text-4)" }}>—</span>}
               </td>
               <td className="px-3 py-2 text-right tabular-nums" title={fill(T.usedTip, { n: r.used })}>{r.used || "—"}</td>
               <td className="px-3 py-2 tabular-nums" title={r.created_by || ""}>{fmtDate(r.created_at)}</td>

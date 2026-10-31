@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock, Info } from "lucide-react";
+import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock, Info, BookCheck } from "lucide-react";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import useIsMobile from "../../hooks/useIsMobile";
-import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   useAT, fill, errText, TypeChip, VERDICT, DEPT_ICON, fmtDateTime,
@@ -29,7 +28,6 @@ const taStyle = { background: "var(--bg-inner)", border: "1px solid var(--border
  */
 export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) {
   const T = useAT();
-  const { tx } = useTranslit();
   const phone = useIsMobile();
   const mine = data.mine;
   const items = useMemo(() => data.items.filter((it) => it.department === mine.department),
@@ -39,6 +37,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
   const [verdicts, setVerdicts] = useState({});
   const [notes, setNotes] = useState({});
   const [noteOpen, setNoteOpen] = useState(() => new Set());
+  const [ansOpen, setAnsOpen] = useState(() => new Set());   // expected answers shown
   const [feedback, setFeedback] = useState("");
   const [state, setState] = useState({});          // item id → "saving" | "failed"
   const [fbState, setFbState] = useState(null);    // "saving" | "failed" | null
@@ -228,7 +227,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                       <TypeChip type={it.qtype} T={T} />
                     </div>
                     <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
-                      {tx(it.text)}
+                      {it.text}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <div className="w-full sm:w-64">
@@ -242,6 +241,13 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                               label: <><X size={14} strokeWidth={3} aria-hidden="true" />{T.fail}</> },
                           ]} />
                       </div>
+                      {it.answer && (
+                        <Button variant="ghost" size={phone ? "lg" : "md"} icon={BookCheck}
+                          aria-expanded={ansOpen.has(it.id)}
+                          onClick={() => setAnsOpen((s) => { const c = new Set(s); c.has(it.id) ? c.delete(it.id) : c.add(it.id); return c; })}>
+                          {T.answerShow}
+                        </Button>
+                      )}
                       {(!readOnly || notes[it.id]) && (
                         <Button variant="ghost" size={phone ? "lg" : "md"} icon={MessageSquareText}
                           aria-expanded={open} disabled={readOnly}
@@ -257,6 +263,13 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                         </button>
                       )}
                     </div>
+                    {it.answer && ansOpen.has(it.id) && (
+                      <div className="mt-2 rounded-xl px-3 py-2 text-sm whitespace-pre-wrap break-words"
+                        style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-2)" }}>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>{T.answer}</div>
+                        {it.answer}
+                      </div>
+                    )}
                     {(open || (readOnly && notes[it.id])) && (
                       <textarea value={notes[it.id] || ""} readOnly={readOnly} rows={2} maxLength={2000}
                         aria-label={`${T.noteLabel} · ${it.position}`}

@@ -45,6 +45,7 @@ TOTAL = sum(sum(b["types"].values()) if "types" in b else b["count"] for b in BL
 SEAT_ORDER = ("kaizen", "production", "tb", "hr", "okk")
 
 MAX_TEXT = 2000        # one question
+MAX_ANSWER = 4000      # its expected answer
 MAX_NOTE = 2000        # a judge's note on one answer
 MAX_FEEDBACK = 8000    # a judge's overall feedback
 
@@ -172,7 +173,7 @@ def meta() -> dict:
                     "types": b.get("types"), "min_each": b.get("min_each"), "count": b.get("count"),
                     "parts": _parts(b)} for b in BLOCKS],
         "total": TOTAL,
-        "limits": {"text": MAX_TEXT, "note": MAX_NOTE, "feedback": MAX_FEEDBACK},
+        "limits": {"text": MAX_TEXT, "answer": MAX_ANSWER, "note": MAX_NOTE, "feedback": MAX_FEEDBACK},
     }
 
 
@@ -219,7 +220,7 @@ def results(items: list[dict], evaluations: list[dict]) -> dict:
         note = (g.get("note") or "").strip() or None
         rows.append({
             "item_id": it["id"], "position": it["position"], "department": it["department"],
-            "qtype": it["qtype"], "text": it["text"],
+            "qtype": it["qtype"], "text": it["text"], "answer": it.get("answer"),
             "verdict": verdict, "note": note, "submitted": e is not None,
             "judge_name": e.get("judge_name") if e else None,
             # the older shape (a verdict / note per judging department), kept

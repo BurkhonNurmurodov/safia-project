@@ -10732,3 +10732,67 @@ def seed_ai_features() -> None:
         raise
     finally:
         db.close()
+
+
+# ── «Nomzodlarni baholash» ───────────────────────────────────────────────────
+
+_ASSESSMENT_ANSWER_DDL = (
+    ("assessment_questions", (("answer", "TEXT"),), None),
+    ("assessment_items", (("answer", "TEXT"),), None),
+)
+
+
+def add_assessment_answer_columns() -> None:
+    """2026-10-31: a bank question may carry its EXPECTED ANSWER, which a
+    sitting copies with the question (`AssessmentQuestion.answer`,
+    `AssessmentItem.answer`). NULL = none written. Pure DDL, idempotent, no
+    flag; through `_ensure_columns` and FATAL on failure — every read of the
+    bank and of a sitting selects these columns."""
+    _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer")
+
+
+def seed_tb_food_safety_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-10-31): the TB department's 20 food-safety
+    questions (all theory, each with its expected answer) from the operator's
+    document — `services/assessment_seed_tb_oct31.py`. Skips a question the TB
+    bank already holds (folded text) and fills in its answer if it has none.
+    The flag rides the same transaction as the rows. Delete this function, the
+    module and both calls once the flag reads «done»."""
+    import re as _re
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services import assessment_seed_tb_oct31 as seed
+    fold = lambda t: _re.sub(r"\s+", " ", (t or "").strip().lower())
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.FLAG).first():
+            return
+        have = {fold(q.text): q for q in db.query(AssessmentQuestion).filter(
+            AssessmentQuestion.department == seed.DEPARTMENT).all()}
+        added = answered = skipped = 0
+        for text, answer in seed.QUESTIONS:
+            q = have.get(fold(text))
+            if q is not None:
+                if not (q.answer or "").strip():
+                    q.answer = answer
+                    answered += 1
+                else:
+                    skipped += 1
+                continue
+            db.add(AssessmentQuestion(department=seed.DEPARTMENT, qtype=seed.QTYPE, text=text,
+                                      answer=answer, created_by=seed.SOURCE))
+            added += 1
+        db.add(AppSetting(key=seed.FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] TB food-safety questions import skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] TB food-safety questions: {added} added, {answered} answers filled, {skipped} already there")
+    action_log.record_system("training", "assessment.questions_imported",
+                             target_kind="assessment_question",
+                             details=[("department", seed.DEPARTMENT), ("type", seed.QTYPE),
+                                      ("added", added), ("answered", answered), ("skipped", skipped),
+                                      ("source", seed.SOURCE)])

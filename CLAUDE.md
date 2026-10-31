@@ -9104,6 +9104,24 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   printed as sent.
 - The Jurnal files every act under «training» (`assessment.*`), so the
   assistant classes them as the exam's and never runs one.
+- **A question may carry its EXPECTED ANSWER** (`answer`, both tables,
+  `startup.add_assessment_answer_columns`, run phase, both entrypoints): set in
+  the bank's question form (only when ONE question is added — a multi-line add
+  refuses one, 400 `answer_one`), copied onto the sitting at the draw like the
+  text, and opened by a judge under the question («Kutilgan javob»). Never
+  shown to a candidate (no candidate view exists).
+- **Questions, answers, notes and feedback are printed AS WRITTEN** — never
+  through `tx`: they are authored prose, often Russian, and `tx` turns Cyrillic
+  into Latin letters for an Uzbek reader («S priznakami kakix…»). Names still
+  go through `tl`.
+- **The TB bank was seeded once** from the operator's document «Вопросы по
+  пищевой безопасности для аттестации производственного персонала» — 20
+  theory questions with their model answers, verbatim — by TEMPORARY
+  `startup.seed_tb_food_safety_questions` (`later`, both entrypoints, flag
+  `assessment_tb_food_safety_seed_2026_10_31_v1` written with the rows, Jurnal
+  `assessment.questions_imported`) over `services/assessment_seed_tb_oct31.py`.
+  A question already in the TB bank is skipped (its missing answer filled in).
+  Delete the module, the function and both calls once the flag reads «done».
 - Not built: notifications to judges, an export, a candidate-facing view (by
   the request), a pass mark.
 
