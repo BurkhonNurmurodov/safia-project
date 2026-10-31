@@ -8,6 +8,7 @@ import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Load
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationBell from "../notifications/NotificationBell";
+import GlobalSearch from "./GlobalSearch";
 import { AssistantButton } from "../assistant/AssistantPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
@@ -681,6 +682,13 @@ export default function Layout({ children, title, subtitle }) {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* «Qidiruv» — pages, admin tabs, cells, brigadirs, leaders in one
+                box (md and up; a phone's header is the title, the bell and the
+                avatar). It takes the room between the title and the icons. */}
+            <div className="hidden md:flex flex-1 min-w-0 justify-center px-2">
+              <GlobalSearch />
             </div>
 
             {/* Right: bell · language · theme · ghost(admin) · account */}

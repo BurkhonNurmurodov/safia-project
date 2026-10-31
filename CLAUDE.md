@@ -27,7 +27,7 @@ or copy-paste its markup into a page.
 | Text field that exists in all 4 languages | `LangTextInput.jsx` | Never stack one input per language. A `SegmentedToggle` of language tabs (uz · uz_cyrl · ru · en, **ru open by default**) over ONE input for the selected tab. Every language is optional; a blank tab shows the Russian text as its PLACEHOLDER (previewed, never saved) plus the `ui.langInput.ruFallback` hint, because Russian is what the UI falls back to. Tabs stay plain — no filled/empty markers. `placeholderFn(lang)` previews something computed (e.g. a transliteration) instead of the Russian text; `action` puts a per-tab button beside the input — use these to ADOPT the template rather than forking it into stacked inputs. |
 | Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
 | Whole-number count (how many people / pieces) | `CountStepper.jsx` | THE count field: − · number · + in the house control skin at the 38px baseline, 16px text below md so iOS never zooms. `value`/`onChange` are a whole number or `null` (the handler gets the NUMBER) — blank means «not answered yet», never 0. The ± buttons stop AT `min`/`max` (a − from a number typed above `max` lands on it); a TYPED number above `max` is kept as typed and left to the caller's `FormField` `error` + `invalid` — silently clamping somebody's number is a guess. First callers: the «Tozalovchilar» count on the /idle-cell form and in the «Jonli» recorder. Never hand-roll another numeric input for a count. |
-| Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
+| Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. Forwards a `ref` and every other prop to the `<input>` (the header search is a combobox: `role`, `aria-*`, `onKeyDown`); `hint` is a node shown at the right edge while the box is empty (the header's «Ctrl K»); the clear-X refocuses the box and names itself through `clearLabel`. |
 | Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. `pageScroll` drops the card's own scroller (no `maxHeight` cap, the card clips with `overflow: clip`) so a phone scrolls ONE thing — sticky header/footer cells then stick to Layout's `<main>` and offset by `calc(var(--main-pad) * -1)` (a `Th` inside a `pageScroll` card does this itself, through the card's context); only for a table that fits its card's width (/kelish, /worker-concerns). `mobileMaxHeight="none"` lets the phone list grow with the page instead of scrolling inside its own 70vh box (the /leaders-kpi board, whose rows open in place). `head` draws a node in place of the SectionHead and `collapsed` shows the card with its head alone — an accordion card whose body is the table (one per cell on /kelish); the head stays the same node either way, so its toggle keeps focus. `scrollRef` hands the caller the table's own scroller — its clientWidth is the part on screen (the /leaders-kpi ranking fits its columns to it and pins an opened row inside it). Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Cell row identity (the head of a cell's accordion card) | `CellIdent.jsx` | The verifix CODE in a NEUTRAL chip (a hashed colour read as a traffic light), under it the cell's leader behind a flag — `noLeader` words, dimmer, when nobody leads. `leader` arrives transliterated. /idle-cell and /kelish head their cell cards with it, so a cell reads the same on both. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. `size="lg"` titles a whole card rather than labelling a table — a sentence-case 15px title with its `subtitle` under it and a 22px icon (the appeal chat card). The icon sits on the TITLE's line (`items-start`) whatever a wrapping subtitle under it does — centred on the whole block it ended up beside the subtitle. |
@@ -81,6 +81,33 @@ Other UI conventions:
 - **On a phone the app header is the title, the bell and the avatar** (below md). Language, theme and ghost mode live in the profile popover there (`PhonePrefs` in `Layout.jsx`, three `SegmentedToggle`s); from md up they stay on the bar. Three utility icons had left a page title ~100px and cut it («AI qaroriga nor…») on every page. Ghost mode stays on the phone bar while it is ON — a state that silences the team must be visible without opening anything. The one other icon on a phone bar is «Yordamchi»'s, and only for those who may use it (admins today) — it opens the assistant, which is a primary action, not a preference. `Layout`'s optional `subtitle` puts a second line under the title; a page uses it to name WHAT is on screen once its own heading has scrolled away (the appeal chat), keyed so the change fades in.
 - **A dead Telegram bridge is never a crash.** Android drops the Java object behind `window.TelegramWebviewProxy` when it tears a mini app down, and every `Telegram.WebApp` call after that throws «Java object is gone» synchronously from its caller — on a slow link that can happen before React mounts (AuthProvider's `ready()` crashed `/proof/camera` that way, 2026-09-21). The inline script above the SDK tag in `index.html` wraps the proxy once, and the SDK looks it up at call time, so all ~40 call sites are covered. Never call the proxy raw, never move that script below the SDK tag, and never add per-call try/catch for this instead.
 
+## «Qidiruv» — the header search (2026-10-31)
+
+The operator: a search in the empty header space between the page title and
+the icons. `components/layout/GlobalSearch.jsx`, md and up only (a phone's
+header stays the title, the bell and the avatar). One box finds five kinds of
+thing, each opening where it lives: **pages** (the sidebar's `ALL_LINKS`, by
+the viewer's page access) → the page; **admin tabs** (`config/adminNav.js`, by
+capability) → `/admin/upload?tab=…`; **cells** → `/cells/:id`, printed as CODE
++ letter + leader · brigadir, never the workshop (typing a workshop name still
+finds the cell, the /cells search rule); **brigadirs** → `/brigadir/:id`, for
+a viewer who may open «overview»; **leaders** → `/profile/leader/:id` for
+whoever manages profiles, else the cell they run.
+
+- Cells, units and leaders come from ONE read, `GET /api/search/index`
+  (`routers/search.py`, any approved session), asked the first time the box is
+  used and cached like any query (offline too). Scope is the PLANT lock
+  (`scoped_manager_ids`); archived units and cells are left out; a row with no
+  unit is shown only to a viewer the plant does not narrow.
+- `utils/searchFold.js` is THE match rule, applied to both sides: a word with a
+  digit is a code (`latinFold` — «В2942» finds B2942), any other word is
+  transliterated to Latin with kh/x→h, q→k, ye→e, yo→o merged. `matchScore`
+  ranks; the kinds are ordered by their best match, so a name's own row comes
+  before the cells that only mention it.
+- Ctrl/⌘ K or «/» focuses it (never over a dialog; «/» not while typing), ↑↓
+  walk, Enter opens, Esc clears then closes. At most 6/5/6/5/6 results a kind.
+- Not built: a phone entry point, workers, concerns or tasks by text.
+
 ## Admin panel structure
 
 `/admin/upload` is a first-class page inside the standard `Layout` (so admins keep
@@ -90,8 +117,10 @@ renders its own content and **no frame of its own** — no `max-w-*`, no `mx-aut
 no outer padding. The shell owns one content column, so switching destinations
 never moves the frame.
 
-- **`ADMIN_NAV` in `AdminPanel.jsx` is the single source of truth** for order,
-  grouping, landing destination and capability filtering. Never introduce a
+- **`ADMIN_NAV` in `config/adminNav.js` is the single source of truth** for order,
+  grouping, landing destination and capability filtering (moved out of
+  `AdminPanel.jsx` on 2026-10-31 so the header search can list the tabs without
+  pulling the panel, which imports every destination). Never introduce a
   second parallel list — the old code kept two, they drifted, and a grantee's
   computed landing tab stopped matching the one displayed first.
 - Four groups, ordered by how often they are used and how much they can destroy:

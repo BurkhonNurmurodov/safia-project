@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, ontime, reports, ops_door
+from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, ontime, reports, ops_door
 from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -1213,6 +1213,9 @@ app.include_router(web_login_router.router)
 app.include_router(webhook_router.router)
 app.include_router(admin.router, dependencies=_admin_guard)
 app.include_router(brigadirs.router)
+# The header search's index (cells · units · leaders) — any approved session,
+# narrowed to the viewer's plant inside the endpoint.
+app.include_router(search.router)
 app.include_router(attendance.router)
 app.include_router(heatmap.router)
 app.include_router(workers.router)

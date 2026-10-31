@@ -26,7 +26,7 @@ import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 
-const ALL_LINKS = [
+export const ALL_LINKS = [
   { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
   // «Yordamchi» — the AI assistant's full page (the panel opens from the header).
   { to: "/assistant", page: "assistant", key: "nav.assistant", icon: BotMessageSquare, group: "top" },
@@ -113,7 +113,7 @@ const ALL_LINKS = [
 // Each labeled section carries its own icon — deliberately distinct from every
 // page icon inside it — and that icon is all that remains of the header on the
 // collapsed icon rail, where it still toggles its section.
-const NAV_GROUPS = [
+export const NAV_GROUPS = [
   { id: "top" },                                   // Обзор — headerless
   { id: "prod",    labelKey: "navgrp.production", icon: Cog },
   { id: "people",  labelKey: "navgrp.people",     icon: UsersRound },
