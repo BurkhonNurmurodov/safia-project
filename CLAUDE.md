@@ -8913,10 +8913,14 @@ last columns, after «Pareto» (the operator's call, same day), and
   `production.catalog_containers_set`. On the table the capacity is a
   `QtyCell`, undoable like ПЛАН.
 - **The «Jamoalar» card switches** «Yuklama / Konteynerlar»
-  (`production_teams_view`): in containers mode each team card prints, per
-  container, Σ of its positions' counts — a whole-centre card every line at its
-  Команда, a group card the lines carrying its letter (unlettered lines of a
-  grouped centre are on no group card); «—» where no line states a capacity.
+  (`production_teams_view`): in containers mode there is ONE CARD PER CONTAINER
+  (2026-10-31, the operator — it was one card per team), listing each team that
+  needs it with Σ of its positions' counts, in the load view's team order, and
+  «Jami» (Σ of the rows) in the card's head — a whole-centre row counts every
+  line at its Команда, a group row the lines carrying its letter (unlettered
+  lines of a grouped centre are on no group row). A team none of whose lines
+  states that capacity is not listed; a container no team needs reads «Jami —»
+  and «Sig'imi kiritilgan pozitsiya yo'q».
 - **«Smena kunligi» carries the day's PLANT totals** — «Konteynerlar — jami»
   under the shift report board (`components/overview/ContainerTotalsCard.jsx`
   over `GET /api/shift-report/containers?day=` — `_scope` + the page's plant

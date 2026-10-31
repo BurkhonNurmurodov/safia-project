@@ -2320,22 +2320,18 @@ export default function Production() {
   const containersOf = (w, g) => teamContainers.get(g
     ? `${String(w.work_center ?? "").trim().toUpperCase()}|${g.group}`
     : String(w.work_center ?? "").trim().toUpperCase()) ?? {};
-  const ContainerTotals = ({ w, g }) => {
-    const tot = containersOf(w, g);
-    return (
-      <dl className="grid grid-cols-1 gap-y-1 text-[12px]">
-        {CONTAINERS.map((c) => (
-          <div key={c.id} className="flex items-center justify-between gap-2">
-            <dt className="truncate" style={{ color: "var(--text-3)" }}>{t(`production.cont.${c.id}`)}</dt>
-            <dd className="tabular-nums font-semibold shrink-0"
-                style={{ color: tot[c.id] == null ? "var(--text-4)" : "var(--text-1)" }}>
-              {tot[c.id] == null ? "—" : fmt(tot[c.id], 0)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    );
-  };
+  // Read the other way round (2026-10-31, the operator): ONE card per container,
+  // listing the teams that need it and how many each, in the load view's team
+  // order so a cell sits on the same line of every card. A team none of whose
+  // positions states this container's capacity is not listed; the card's total
+  // is the sum of the rows it lists.
+  const containerCards = teamsView !== "containers" ? [] : CONTAINERS.map((c) => {
+    const list = teamCards
+      .filter(({ g }) => !g?.orphan)
+      .map(({ w, g }) => ({ w, g, n: containersOf(w, g)[c.id] }))
+      .filter((x) => x.n != null);
+    return { c, list, total: list.length ? list.reduce((s, x) => s + x.n, 0) : null };
+  });
   // work-center code → canonical cell (workshop name / owner), from the staffing
   // list; every positions row's WC also appears here, so one map covers both.
   const wcCell = useMemo(
@@ -3550,21 +3546,39 @@ export default function Production() {
               <SkeletonBlock className="h-3 w-3/4 mt-2.5" />
             </div>
           ))}
-          {!loading && teamsView === "containers" && teamCards.filter(({ g }) => !g?.orphan).map(({ w, g }) => {
-            const wcg = wcColor(w.work_center);
-            return (
-              <div key={g ? gKey(w.work_center, g.group) : w.work_center} className="rounded-xl p-3"
-                   style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wcg}` }}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md"
-                    title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
-                    style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
-                  {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
-                </div>
-                <ContainerTotals w={w} g={g} />
+          {!loading && teamsView === "containers" && containerCards.map(({ c, list, total }) => (
+            <div key={c.id} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <div className="flex items-baseline justify-between gap-2 pb-2 mb-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+                <span className="text-sm font-semibold min-w-0" style={{ color: "var(--text-1)" }}>{t(`production.cont.${c.id}`)}</span>
+                <span className="flex items-baseline gap-1.5 shrink-0">
+                  <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("production.cont.total")}</span>
+                  <span className="text-base font-bold tabular-nums"
+                    style={{ color: total == null ? "var(--text-4)" : "var(--text-1)" }}>{total == null ? "—" : fmt(total, 0)}</span>
+                </span>
               </div>
-            );
-          })}
+              {list.length === 0 ? (
+                <p className="text-[11px] py-1" style={{ color: "var(--text-3)" }}>{t("production.cont.none")}</p>
+              ) : (
+                <ul className="flex flex-col">
+                  {list.map(({ w, g, n }) => {
+                    const wcg = wcColor(w.work_center);
+                    return (
+                      <li key={g ? gKey(w.work_center, g.group) : w.work_center}
+                        className="flex items-center justify-between gap-2 min-h-[30px]">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-xs font-bold px-1.5 py-0.5 rounded-md"
+                            title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
+                            style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                          {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-1)" }}>{fmt(n, 0)}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ))}
           {!loading && teamsView !== "containers" && teamCards.map(({ w, g }) => {
             if (g) {
               // One group of a work centre typed per group: its own load, its own
