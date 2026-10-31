@@ -9120,7 +9120,12 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   of the add form become one question each, an identical active question of
   the same department is skipped), opening a sitting, closing / reopening it,
   redrawing its questions and deleting it — the last two only while nobody
-  has entered anything (409 `has_grades`).
+  has entered anything (409 `has_grades`), except that a TEST sitting may be
+  deleted at any time (below). A delete takes the sitting's scorecards, grades
+  and drawn questions with it, and the candidate too when they are left with
+  no other sitting (`candidate_removed`); the Jurnal records how many
+  scorecards and grades went. There is no candidate-level delete: a candidate
+  goes with their last sitting.
 - **The scorecard on a phone** (2026-10-31, the operator's screenshot): a
   question card is number + type on one line and the text full width under it
   (a number column of its own took a fifth of the width), the verdicts read
@@ -9184,7 +9189,12 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   seats with «Shu o'rinda baholash» / «Varaqni ko'rish», and a free seat says
   «Shu o'rinni olish» rather than offering a move. A non-admin, and everybody
   on a REAL sitting, keeps one seat (a second claim moves it, `from`). The mode
-  ends with the samples: removing them deletes every test sitting.
+  ends with the samples: removing them deletes every test sitting. **A test
+  sitting may be deleted ONE at a time, graded or not** (the operator,
+  2026-10-31, asked: «Test ones only»): its grades are test grades, so
+  `rights.delete` is `admin and (test or not work)` and the confirm says the
+  scorecards and grades go with it (`deleteMsgTest`). A real graded sitting
+  stays undeletable.
 - Not built: notifications to judges, an export, a candidate-facing view (by
   the request), a pass mark.
 

@@ -649,7 +649,8 @@ def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
             "close": admin and is_open,
             "reopen": admin and not is_open,
             "redraw": admin and is_open and not work,
-            "delete": admin and not work,
+            # a test sitting's grades are test grades: it may go at any time
+            "delete": admin and (test or not work),
         },
     }
 
@@ -878,14 +879,29 @@ def redraw(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE
 
 @router.delete("/assessments/{aid}")
 def delete_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """Delete a sitting opened by mistake — only while nothing was graded."""
+    """Delete a sitting opened by mistake — only while nothing was graded,
+    except a TEST sitting (drawn from sample questions), whose grades are test
+    grades: it goes at any time, scorecards and grades with it (the operator,
+    2026-10-31). A candidate left with no sitting goes too."""
     _require_admin(payload)
     a = _get(db, aid, lock=True)
-    if _has_work(db, aid):
+    test = _is_test(db, aid)
+    if not test and _has_work(db, aid):
         _refuse(409, "has_grades", "Judges have already graded this assessment.")
-    db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id == aid).delete(synchronize_session=False)
+    cand_id = a.candidate_id
+    eids = [i for (i,) in db.query(JudgeEvaluation.id).filter(JudgeEvaluation.assessment_id == aid).all()]
+    grades = 0
+    if eids:
+        grades = db.query(AssessmentGrade).filter(AssessmentGrade.evaluation_id.in_(eids)).delete(synchronize_session=False)
+        db.query(JudgeEvaluation).filter(JudgeEvaluation.id.in_(eids)).delete(synchronize_session=False)
     db.query(AssessmentItem).filter(AssessmentItem.assessment_id == aid).delete(synchronize_session=False)
     db.delete(a)
+    db.flush()
+    cand_gone = False
+    if cand_id and not db.query(Assessment.id).filter(Assessment.candidate_id == cand_id).first():
+        cand_gone = db.query(AssessmentCandidate).filter(AssessmentCandidate.id == cand_id).delete(synchronize_session=False) > 0
     db.commit()
-    action_log.enrich(target_kind="assessment", target_id=str(aid))
-    return {"ok": True}
+    action_log.enrich(target_kind="assessment", target_id=str(aid),
+                      details=[("test", test), ("scorecards", len(eids)), ("grades", grades),
+                               ("candidate_removed", cand_gone)])
+    return {"ok": True, "candidate_removed": cand_gone}

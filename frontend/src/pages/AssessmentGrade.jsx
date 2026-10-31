@@ -127,6 +127,8 @@ export default function AssessmentGrade() {
   const pendingJudges = d.seats.filter((s) => s.judge_name && !s.submitted).length;
   // Verdicts or notes this judge has on their own questions (a move drops them).
   const myEntered = mine ? Object.values(mine.grades || {}).filter((g) => g.verdict || g.note).length : 0;
+  // A test sitting may be deleted after grading; its confirm then says the grades go too.
+  const anyGraded = d.seats.some((s) => s.graded > 0 || s.submitted);
 
   const dialogs = {
     move: ask?.seat && mine && {
@@ -161,7 +163,8 @@ export default function AssessmentGrade() {
       run: { method: "post", url: `/api/assessment/assessments/${id}/redraw`, toast: T.done },
     },
     delete: {
-      title: T.deleteTitle, tone: "danger", confirm: T.del, message: T.deleteMsg,
+      title: T.deleteTitle, tone: "danger", confirm: T.del,
+      message: d.test_mode && anyGraded ? T.deleteMsgTest : T.deleteMsg,
       run: { method: "delete", url: `/api/assessment/assessments/${id}`, after: "list" },
     },
   };

@@ -217,6 +217,7 @@ const uz = {
   deleteA: "O'chirish",
   deleteTitle: "Baholash o'chirilsinmi?",
   deleteMsg: "Baholash va uning savollari o'chadi. Hali hech kim baholamagan.",
+  deleteMsgTest: "Bu sinov baholashi: u bilan birga barcha baholash varaqlari va baholar ham o'chadi. Ularni qaytarib bo'lmaydi.",
   del: "O'chirish",
   done: "Bajarildi",
 
@@ -450,6 +451,7 @@ const uz_cyrl = {
   deleteA: "Ўчириш",
   deleteTitle: "Баҳолаш ўчирилсинми?",
   deleteMsg: "Баҳолаш ва унинг саволлари ўчади. Ҳали ҳеч ким баҳоламаган.",
+  deleteMsgTest: "Бу синов баҳолаши: у билан бирга барча баҳолаш варақлари ва баҳолар ҳам ўчади. Уларни қайтариб бўлмайди.",
   del: "Ўчириш",
   done: "Бажарилди",
 
@@ -683,6 +685,7 @@ const ru = {
   deleteA: "Удалить",
   deleteTitle: "Удалить оценку?",
   deleteMsg: "Оценка и её вопросы будут удалены. Пока никто не оценивал.",
+  deleteMsgTest: "Это тестовая оценка: вместе с ней удаляются все листы оценки и все оценки. Вернуть их нельзя.",
   del: "Удалить",
   done: "Готово",
 
@@ -916,6 +919,7 @@ const en = {
   deleteA: "Delete",
   deleteTitle: "Delete the assessment?",
   deleteMsg: "The assessment and its questions are deleted. Nobody has graded yet.",
+  deleteMsgTest: "This is a test assessment: every scorecard and every grade goes with it. They cannot be brought back.",
   del: "Delete",
   done: "Done",
 
