@@ -9,6 +9,7 @@ import SegmentedToggle from "../ui/SegmentedToggle";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationBell from "../notifications/NotificationBell";
 import GlobalSearch from "./GlobalSearch";
+import useIsMobile from "../../hooks/useIsMobile";
 import { AssistantButton } from "../assistant/AssistantPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
@@ -579,6 +580,7 @@ export default function Layout({ children, title, subtitle }) {
   const { pathname } = useLocation();
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const phone = useIsMobile(768);
 
   // Restore the remembered position. Page data arrives async (skeletons are
   // shorter than the real content), so retry each frame until the container
@@ -686,10 +688,13 @@ export default function Layout({ children, title, subtitle }) {
 
             {/* «Qidiruv» — pages, admin tabs, cells, brigadirs, leaders in one
                 box (md and up; a phone's header is the title, the bell and the
-                avatar). It takes the room between the title and the icons. */}
-            <div className="hidden md:flex flex-1 min-w-0 justify-center px-2">
-              <GlobalSearch />
-            </div>
+                avatar, so there it sits at the top of the ☰ drawer). It takes
+                the room between the title and the icons. */}
+            {!phone && (
+              <div className="flex flex-1 min-w-0 justify-center px-2">
+                <GlobalSearch />
+              </div>
+            )}
 
             {/* Right: bell · language · theme · ghost(admin) · account */}
             <div className="flex items-center gap-2 flex-shrink-0">

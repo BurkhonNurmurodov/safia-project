@@ -84,8 +84,10 @@ Other UI conventions:
 ## «Qidiruv» — the header search (2026-10-31)
 
 The operator: a search in the empty header space between the page title and
-the icons. `components/layout/GlobalSearch.jsx`, md and up only (a phone's
-header stays the title, the bell and the avatar). One box finds five kinds of
+the icons. `components/layout/GlobalSearch.jsx` — in the header from md up
+(Layout mounts it only there), and on a phone at the top of the ☰ drawer
+(`drawer`, mounted by Sidebar.jsx only while the drawer is open), because a
+phone's header stays the title, the bell and the avatar. One box finds five kinds of
 thing, each opening where it lives: **pages** (the sidebar's `ALL_LINKS`, by
 the viewer's page access) → the page; **admin tabs** (`config/adminNav.js`, by
 capability) → `/admin/upload?tab=…`; **cells** → `/cells/:id`, printed as CODE
@@ -106,7 +108,14 @@ whoever manages profiles, else the cell they run.
   before the cells that only mention it.
 - Ctrl/⌘ K or «/» focuses it (never over a dialog; «/» not while typing), ↑↓
   walk, Enter opens, Esc clears then closes. At most 6/5/6/5/6 results a kind.
-- Not built: a phone entry point, workers, concerns or tasks by text.
+- The drawer variant: 16px text (iOS zooms into anything smaller), rows at
+  least 44px, results overlaying the menu at the drawer's width, no shortcut;
+  a pick also closes the drawer (`onPick`). A result opens on its CLICK — the
+  list's mousedown is prevented so the box keeps focus; opening on mousedown
+  let the release land on whatever the closing list uncovered.
+- The sidebar's `ALL_LINKS` / `NAV_GROUPS` live in `config/navLinks.js` (the
+  sidebar renders the search, the search reads the list — no import loop).
+- Not built: workers, concerns or tasks by text.
 
 ## Admin panel structure
 

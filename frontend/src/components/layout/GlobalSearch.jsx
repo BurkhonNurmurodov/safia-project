@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Grid3x3, UsersRound, UserRound, Settings2, AlertTriangle } from "lucide-react";
@@ -16,10 +16,12 @@ import { ADMIN_NAV, ADMIN_GROUPS } from "../../config/adminNav";
 import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
-import { ALL_LINKS, NAV_GROUPS } from "./Sidebar";
+import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
 
 /**
- * «Qidiruv» — the header's search across the platform (md and up).
+ * «Qidiruv» — the search across the platform: in the header from md up, and
+ * at the top of the ☰ drawer on a phone (`drawer`, mounted by Sidebar.jsx),
+ * whose header stays the title, the bell and the avatar.
  *
  * One box finds FIVE kinds of thing, each opening where it lives:
  *   pages          → the page (the sidebar's own list, by the viewer's access)
@@ -38,9 +40,14 @@ import { ALL_LINKS, NAV_GROUPS } from "./Sidebar";
  * Matching is `utils/searchFold.js` — Cyrillic, Latin and a code typed on the
  * Russian layout all find the same thing.
  *
- * Keyboard: Ctrl/⌘ K or «/» focuses it from anywhere (not while a dialog is
- * up, and «/» not while somebody is typing), ↑↓ walk the results, Enter opens,
- * Esc closes.
+ * Keyboard: Ctrl/⌘ K or «/» focuses the header's box from anywhere (not while
+ * a dialog is up, and «/» not while somebody is typing), ↑↓ walk the results,
+ * Enter opens, Esc closes.
+ *
+ * `drawer`: 16px text (iOS zooms into anything smaller), no shortcut, and the
+ * results overlay the drawer's menu at its full width. `onPick` runs before a
+ * result opens — the drawer closes itself with it, since a move between two
+ * cells keeps the same page mounted.
  */
 
 const CAP = { pages: 6, admin: 5, cells: 6, units: 5, leaders: 6 };
@@ -58,7 +65,7 @@ function rank(items, q, cap) {
   return { items: hits.map((x) => x.it), top: hits[0]?.s ?? 0 };
 }
 
-export default function GlobalSearch() {
+export default function GlobalSearch({ drawer = false, onPick }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
@@ -172,8 +179,10 @@ export default function GlobalSearch() {
     listRef.current?.querySelector(`[data-idx="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  // Ctrl/⌘ K anywhere, «/» when nobody is typing — never over a dialog.
+  // Ctrl/⌘ K anywhere, «/» when nobody is typing — never over a dialog. The
+  // header's box only: the drawer's is not on screen until somebody opens it.
   useEffect(() => {
+    if (drawer) return undefined;
     const onKey = (e) => {
       if (hasOpenDialog()) return;
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "") || e.target?.isContentEditable;
@@ -186,13 +195,14 @@ export default function GlobalSearch() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [drawer]);
 
   const go = (item) => {
     if (!item) return;
     setOpen(false);
     setQ("");
     inputRef.current?.blur();
+    onPick?.();
     navigate(item.to);
   };
 
@@ -217,7 +227,8 @@ export default function GlobalSearch() {
     }
   };
 
-  const listId = "global-search-list";
+  const uid = useId();
+  const listId = `gs-list-${uid}`;
   const kbd = (
     <kbd className="hidden xl:inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium leading-none"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
@@ -227,7 +238,7 @@ export default function GlobalSearch() {
 
   let n = -1; // running index across groups, for ↑↓ and aria-activedescendant
   return (
-    <div ref={boxRef} className="relative w-full max-w-[440px] min-w-0">
+    <div ref={boxRef} className={`relative w-full min-w-0 ${drawer ? "" : "max-w-[440px]"}`}>
       <SearchInput
         ref={inputRef}
         value={q}
@@ -238,16 +249,16 @@ export default function GlobalSearch() {
         // never blurs (its mousedown is prevented below).
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
-        placeholder={wide ? t("search.placeholder") : t("search.short")}
+        placeholder={wide && !drawer ? t("search.placeholder") : t("search.short")}
         clearLabel={t("search.clear")}
-        hint={kbd}
-        inputClassName="text-sm pl-8 pr-14 py-1.5"
+        hint={drawer ? null : kbd}
+        inputClassName={drawer ? "text-base pl-8 pr-8 py-2" : "text-sm pl-8 pr-14 py-1.5"}
         role="combobox"
         aria-label={t("search.aria")}
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        aria-activedescendant={open && flat[active] ? `gs-${flat[active].id}` : undefined}
+        aria-activedescendant={open && flat[active] ? `${listId}-${flat[active].id}` : undefined}
         autoComplete="off"
         spellCheck={false}
         enterKeyHint="go"
@@ -258,12 +269,13 @@ export default function GlobalSearch() {
           // Keeps the input focused through a press anywhere in the list —
           // its scrollbar included — so a press there never closes it.
           onMouseDown={(e) => e.preventDefault()}
-          className="absolute left-0 top-full mt-1.5 z-[45] w-full min-w-[380px] rounded-xl overflow-hidden"
+          className={`absolute left-0 top-full mt-1.5 z-[45] w-full rounded-xl overflow-hidden ${drawer ? "" : "min-w-[380px]"}`}
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)",
                    boxShadow: "0 12px 32px rgba(0,0,0,0.28)" }}
         >
           <div ref={listRef} id={listId} role="listbox" aria-label={t("search.aria")}
-            className="overflow-y-auto py-1" style={{ maxHeight: "min(70vh, 520px)" }}>
+            className="overflow-y-auto overscroll-contain py-1"
+            style={{ maxHeight: drawer ? "calc(100dvh - 9rem - var(--tg-safe-top, 0px) - var(--tg-safe-bottom, 0px))" : "min(70vh, 520px)" }}>
             {!folded && (
               <p className="px-3 py-3 text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
                 {t("search.hint")}
@@ -284,15 +296,17 @@ export default function GlobalSearch() {
                   return (
                     <div
                       key={it.id}
-                      id={`gs-${it.id}`}
+                      id={`${listId}-${it.id}`}
                       data-idx={i}
                       role="option"
                       aria-selected={on}
-                      // mousedown, not click: the input's blur would close the
-                      // list before a click could land.
-                      onMouseDown={(e) => { e.preventDefault(); go(it); }}
+                      // Opens on the CLICK: the list's mousedown is prevented,
+                      // so the input keeps focus and the list stays up until
+                      // the click lands here. Opening on mousedown let the
+                      // release land on whatever the closing list uncovered.
+                      onClick={() => go(it)}
                       onMouseMove={() => { if (!on) setActive(i); }}
-                      className="mx-1 flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer"
+                      className={`mx-1 flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer ${drawer ? "min-h-[44px]" : ""}`}
                       style={{ background: on ? "var(--bg-inner)" : "transparent" }}
                     >
                       <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
