@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Gavel, Lock, LockOpen, Shuffle, Trash2, CalendarDays, Info, FlaskConical } from "lucide-react";
+import { ArrowLeft, Gavel, Lock, LockOpen, Shuffle, Trash2, CalendarDays, Info, FlaskConical, ChevronDown } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -13,6 +13,8 @@ import { useToast } from "../components/ui/Toast";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 import SeatStrip from "../components/assessment/SeatStrip";
+import { SeatDot } from "../components/assessment/AssessmentList";
+import useIsMobile from "../hooks/useIsMobile";
 import ScoreCard from "../components/assessment/ScoreCard";
 import ResultsView from "../components/assessment/ResultsView";
 import { useAT, fill, errText, fmtDate } from "../components/assessment/assessmentUtil";
@@ -62,6 +64,13 @@ export default function AssessmentGrade() {
     setTab(mineId && !mine?.submitted_at ? "card" : "results");
   }, [mineId, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = mine ? tab || "card" : "results";
+
+  // On a phone, once the judge sits on a seat the panel folds to one line
+  // (the five seats as badges): their questions are what they came for, and
+  // five stacked tiles stood between them and the first one.
+  const phone = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
+  useEffect(() => { setPanelOpen(false); }, [mineId]);   // a seat taken / switched → back to the questions
 
   const [ask, setAsk] = useState(null);   // {kind, seat}
   const [askErr, setAskErr] = useState(null);
@@ -208,7 +217,7 @@ export default function AssessmentGrade() {
         </div>
 
         {d.test_mode && (
-          <div className="flex items-start gap-2 rounded-2xl px-4 py-3 text-sm"
+          <div className="flex items-start gap-2 rounded-2xl px-4 py-2.5 sm:py-3 text-xs sm:text-sm leading-relaxed"
             style={{ background: "rgba(var(--brand-rgb),0.08)", border: "1px dashed rgba(var(--brand-rgb),0.45)", color: "var(--text-1)" }}>
             <FlaskConical size={16} className="mt-[2px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
             <span>{r.multi_seat ? T.testBanner : T.testBannerJudge}</span>
@@ -217,8 +226,19 @@ export default function AssessmentGrade() {
 
         {/* The panel, live */}
         <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={Gavel} title={T.panel} />
-          <div className="p-4 pt-3 space-y-3">
+          {phone && mine ? (
+            <button type="button" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}
+              className="w-full flex items-center gap-2 px-4 py-3 min-h-[52px] text-left">
+              <Gavel size={15} style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.panel}</span>
+              <span className="ml-auto inline-flex items-center gap-1">
+                {d.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
+              </span>
+              <ChevronDown size={16} className={`transition-transform ${panelOpen ? "rotate-180" : ""}`}
+                style={{ color: "var(--text-3)" }} aria-hidden="true" />
+            </button>
+          ) : <SectionHead icon={Gavel} title={T.panel} />}
+          {(!phone || !mine || panelOpen) && <div className={`p-4 ${phone && mine ? "pt-1" : "pt-3"} space-y-3`}>
             {!mine && r.claim && (
               <div>
                 <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.pickSeatTitle}</div>
@@ -236,7 +256,7 @@ export default function AssessmentGrade() {
               onClaim={claim}
               onLeave={(seat) => { setAskErr(null); setAsk({ kind: "leave", seat }); }}
               onRelease={(seat) => { setAskErr(null); setAsk({ kind: "release", seat }); }} />
-          </div>
+          </div>}
         </div>
 
         {mine && (

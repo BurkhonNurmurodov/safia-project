@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock, Info, BookCheck } from "lucide-react";
+import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock, Info, BookCheck, ArrowDown } from "lucide-react";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -138,6 +138,13 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
   const pending = Object.values(state).includes("saving") || fbState === "saving";
   const canSubmit = !readOnly && !missing.length && !fbMissing;
 
+  const fbRef = useRef(null);
+  // Scroll to the feedback and put the cursor in it — the judge asked for it.
+  const toFeedback = () => {
+    document.getElementById("assess-feedback")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => fbRef.current?.focus({ preventScroll: true }), 350);
+  };
+
   const jump = (pos) => {
     const el = document.getElementById(`aq-${pos}`);
     if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.focus?.({ preventScroll: true }); }
@@ -164,8 +171,10 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
 
   return (
     <div className="space-y-4">
-      {/* Progress — sticks to the top of the scroll area while the judge works down the list. */}
-      <div className="sticky z-10 rounded-2xl px-4 py-2.5"
+      {/* Progress — sticks to the top of the scroll area while the judge works
+          down the list. On a phone the bottom bar carries it (with the next
+          step), so it shows there only for a read-only scorecard. */}
+      <div className={`sticky z-10 rounded-2xl px-4 py-2.5 ${readOnly ? "" : "hidden sm:block"}`}
         style={{ top: "calc(var(--main-pad) * -1)", background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <span className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
@@ -215,72 +224,83 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
             const open = noteOpen.has(String(it.id)) || noteOpen.has(it.id);
             return (
               <article key={it.id} id={`aq-${it.position}`} tabIndex={-1}
-                className="rounded-2xl p-3 sm:p-4 outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                className="rounded-2xl p-4 outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] scroll-mt-4"
                 style={{
                   background: "var(--bg-card)", border: "1px solid var(--border)",
                   borderLeft: `4px solid ${v ? VERDICT[v].hex : "var(--border)"}`,
                 }}>
-                <div className="flex items-start gap-3">
-                  <span className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs font-bold tabular-nums"
+                {/* Number and type on one line, the text full width under them —
+                    a number column of its own took a fifth of a phone's width. */}
+                <div className="flex items-center gap-2 min-h-[24px]">
+                  <span className="inline-flex items-center justify-center min-w-[26px] h-[22px] px-1.5 rounded-md text-xs font-bold tabular-nums"
                     style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{it.position}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <TypeChip type={it.qtype} T={T} />
-                    </div>
-                    <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
-                      {it.text}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <div className="w-full sm:w-64">
-                        <SegmentedToggle fill size={phone ? "lg" : "md"} value={v ?? null}
-                          onChange={(nv) => setVerdict(it.id, nv)}
-                          ariaLabel={fill(T.verdictAria, { n: it.position })}
-                          options={[
-                            { value: "pass", activeBg: VERDICT.pass.bg, activeFg: VERDICT.pass.fg, disabled: readOnly && v !== "pass",
-                              label: <><Check size={14} strokeWidth={3} aria-hidden="true" />{T.pass}</> },
-                            { value: "fail", activeBg: VERDICT.fail.bg, activeFg: VERDICT.fail.fg, disabled: readOnly && v !== "fail",
-                              label: <><X size={14} strokeWidth={3} aria-hidden="true" />{T.fail}</> },
-                          ]} />
-                      </div>
-                      {it.answer && (
-                        <Button variant="ghost" size={phone ? "lg" : "md"} icon={BookCheck}
-                          aria-expanded={ansOpen.has(it.id)}
-                          onClick={() => setAnsOpen((s) => { const c = new Set(s); c.has(it.id) ? c.delete(it.id) : c.add(it.id); return c; })}>
-                          {T.answerShow}
-                        </Button>
-                      )}
-                      {(!readOnly || notes[it.id]) && (
-                        <Button variant="ghost" size={phone ? "lg" : "md"} icon={MessageSquareText}
-                          aria-expanded={open} disabled={readOnly}
-                          onClick={() => setNoteOpen((s) => { const c = new Set(s); c.has(String(it.id)) ? c.delete(String(it.id)) : c.add(String(it.id)); return c; })}>
-                          {T.addNote}{notes[it.id] && !open ? " •" : ""}
-                        </Button>
-                      )}
-                      {st === "saving" && <Loader2 size={14} className="animate-spin" style={{ color: "var(--text-3)" }} aria-label={T.saving} />}
-                      {st === "failed" && (
-                        <button type="button" onClick={() => (v ? put(it.id, { verdict: v, note: (notes[it.id] || "").trim() }) : flushNote(it.id))}
-                          className="inline-flex items-center gap-1 text-xs font-medium min-h-[32px]" style={{ color: "var(--status-bad)" }}>
-                          <AlertTriangle size={13} aria-hidden="true" />{T.saveFailed} · {T.retrySave}
-                        </button>
-                      )}
-                    </div>
-                    {it.answer && ansOpen.has(it.id) && (
-                      <div className="mt-2 rounded-xl px-3 py-2 text-sm whitespace-pre-wrap break-words"
-                        style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-2)" }}>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>{T.answer}</div>
-                        {it.answer}
-                      </div>
+                  <TypeChip type={it.qtype} T={T} />
+                  <span className="ml-auto inline-flex items-center">
+                    {st === "saving" && <Loader2 size={14} className="animate-spin" style={{ color: "var(--text-3)" }} aria-label={T.saving} />}
+                    {st === "failed" && (
+                      <button type="button" onClick={() => (v ? put(it.id, { verdict: v, note: (notes[it.id] || "").trim() }) : flushNote(it.id))}
+                        className="inline-flex items-center gap-1 text-xs font-medium min-h-[32px]" style={{ color: "var(--status-bad)" }}>
+                        <AlertTriangle size={13} aria-hidden="true" />{T.saveFailed} · {T.retrySave}
+                      </button>
                     )}
-                    {(open || (readOnly && notes[it.id])) && (
-                      <textarea value={notes[it.id] || ""} readOnly={readOnly} rows={2} maxLength={2000}
-                        aria-label={`${T.noteLabel} · ${it.position}`}
-                        onChange={(e) => typeNote(it.id, e.target.value)} onBlur={() => flushNote(it.id)}
-                        placeholder={T.notePhQ}
-                        className="mt-2 w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none resize-y"
-                        style={taStyle} />
+                  </span>
+                </div>
+                <p className="mt-2 text-[15px] sm:text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                  {it.text}
+                </p>
+                <div className="mt-3 sm:max-w-sm">
+                  <SegmentedToggle fill size={phone ? "lg" : "md"} value={v ?? null}
+                    onChange={(nv) => setVerdict(it.id, nv)}
+                    ariaLabel={fill(T.verdictAria, { n: it.position })}
+                    options={[
+                      { value: "pass", activeBg: VERDICT.pass.bg, activeFg: VERDICT.pass.fg, idleFg: VERDICT.pass.ink,
+                        disabled: readOnly && v !== "pass",
+                        label: <><Check size={15} strokeWidth={3} aria-hidden="true" />{T.pass}</> },
+                      { value: "fail", activeBg: VERDICT.fail.bg, activeFg: VERDICT.fail.fg, idleFg: VERDICT.fail.ink,
+                        disabled: readOnly && v !== "fail",
+                        label: <><X size={15} strokeWidth={3} aria-hidden="true" />{T.fail}</> },
+                    ]} />
+                </div>
+                {/* The two extras side by side on one quiet row — stacked, each
+                    took a full line under every question. */}
+                {(it.answer || !readOnly || notes[it.id]) && (
+                  <div className="mt-2 -ml-2 flex flex-wrap items-center gap-1">
+                    {it.answer && (
+                      <Button variant="ghost" icon={BookCheck} aria-expanded={ansOpen.has(it.id)}
+                        className="min-h-[40px] sm:min-h-0"
+                        style={ansOpen.has(it.id) ? { background: "var(--bg-inner)", color: "var(--text-1)" } : undefined}
+                        onClick={() => setAnsOpen((s) => { const c = new Set(s); c.has(it.id) ? c.delete(it.id) : c.add(it.id); return c; })}>
+                        {T.answerShow}
+                      </Button>
+                    )}
+                    {(!readOnly || notes[it.id]) && (
+                      <Button variant="ghost" icon={MessageSquareText} aria-expanded={open} disabled={readOnly}
+                        className="min-h-[40px] sm:min-h-0"
+                        style={open ? { background: "var(--bg-inner)", color: "var(--text-1)" } : undefined}
+                        onClick={() => setNoteOpen((s) => { const c = new Set(s); c.has(String(it.id)) ? c.delete(String(it.id)) : c.add(String(it.id)); return c; })}>
+                        {T.addNote}
+                        {notes[it.id] && !open && (
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} aria-label={T.noteIn} />
+                        )}
+                      </Button>
                     )}
                   </div>
-                </div>
+                )}
+                {it.answer && ansOpen.has(it.id) && (
+                  <div className="mt-2 rounded-xl px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words"
+                    style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-2)" }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>{T.answer}</div>
+                    {it.answer}
+                  </div>
+                )}
+                {(open || (readOnly && notes[it.id])) && (
+                  <textarea value={notes[it.id] || ""} readOnly={readOnly} rows={2} maxLength={2000}
+                    aria-label={`${T.noteLabel} · ${it.position}`}
+                    onChange={(e) => typeNote(it.id, e.target.value)} onBlur={() => flushNote(it.id)}
+                    placeholder={T.notePhQ}
+                    className="mt-2 w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none resize-y"
+                    style={taStyle} />
+                )}
               </article>
             );
           })}
@@ -288,15 +308,17 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
       )}
 
       {/* Overall feedback + submit */}
-      <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div id="assess-feedback" className="rounded-2xl p-4 space-y-3 scroll-mt-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <FormField label={T.overall} required={!readOnly} hint={readOnly ? null : T.overallHint}>
-          <textarea value={feedback} readOnly={readOnly} rows={phone ? 5 : 4} maxLength={8000}
+          <textarea ref={fbRef} value={feedback} readOnly={readOnly} rows={phone ? 5 : 4} maxLength={8000}
             onChange={(e) => typeFeedback(e.target.value)}
             onBlur={() => { clearTimeout(fbTimer.current); if (!readOnly) saveFeedback(feedback); }}
             placeholder={T.overallPh} aria-required={!readOnly}
             className="w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none resize-y" style={taStyle} />
         </FormField>
-        {!readOnly && (
+        {/* On a phone the bottom bar carries the submit (and the way to what
+            is missing), so the card holds the feedback alone. */}
+        {!readOnly && !phone && (
           <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3">
             <div className="text-xs space-y-1 flex-1 min-w-0" aria-live="polite">
               {missing.length > 0 && (
@@ -321,6 +343,51 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
           </div>
         )}
       </div>
+
+      {/* Phone: one bar docked to the bottom edge — how far the scorecard is and
+          the ONE next step (the next ungraded question → the feedback →
+          submit), so a judge never scrolls to find what is left. */}
+      {!readOnly && phone && (
+        <div className="sticky z-20 mx-[calc(var(--main-pad)*-1)] px-4 pt-2.5"
+          style={{
+            bottom: "calc(var(--main-pad) * -1)",
+            paddingBottom: "calc(0.625rem + var(--tg-safe-bottom, 0px))",
+            background: "var(--bg-card)", borderTop: "1px solid var(--border)",
+            boxShadow: "0 -6px 16px rgba(0,0,0,0.08)",
+          }}>
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+                  {fill(T.progress, { g: graded, t: items.length })}
+                </span>
+                <span className="inline-flex items-center gap-0.5 tabular-nums" style={{ color: VERDICT.pass.ink }}>
+                  <Check size={12} strokeWidth={3} aria-hidden="true" />{passed}
+                </span>
+                <span className="inline-flex items-center gap-0.5 tabular-nums" style={{ color: VERDICT.fail.ink }}>
+                  <X size={12} strokeWidth={3} aria-hidden="true" />{failed}
+                </span>
+                {pending && <Loader2 size={12} className="animate-spin" style={{ color: "var(--text-3)" }} aria-label={T.saving} />}
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}
+                role="progressbar" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={graded}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+              </div>
+            </div>
+            {missing.length > 0 ? (
+              <Button size="lg" variant="secondary" icon={ArrowDown} onClick={() => jump(missing[0].position)}>
+                {T.nextQ}
+              </Button>
+            ) : fbMissing ? (
+              <Button size="lg" variant="secondary" icon={MessageSquareText} onClick={toFeedback}>
+                {T.toFeedback}
+              </Button>
+            ) : (
+              <Button size="lg" icon={Send} onClick={() => { setSubmitErr(null); setConfirm(true); }}>{T.submitShort}</Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {confirm && (
         <ConfirmDialog title={T.submitTitle} onCancel={() => setConfirm(false)} onConfirm={doSubmit}

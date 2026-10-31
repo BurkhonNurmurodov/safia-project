@@ -50,7 +50,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *               its pill takes WHEN SELECTED instead of brand gold — for a
  *               set whose options are verdicts (Pass / No pass), where the
  *               chosen one must read as a status at a glance. Unselected
- *               segments look the same as everywhere else.
+ *               segments look the same as everywhere else. `idleFg` tints an
+ *               UNSELECTED segment's label (the verdicts read green / red
+ *               before either is picked, rather than as a greyed-out pair).
  *   size      – "md" (default) | "sm" | "lg"
  *   fill      – when true, the track spans its container full-width and every
  *               segment grows to an equal share (flex-1). Use for form-panel
@@ -216,7 +218,7 @@ export default function SegmentedToggle({
               style={
                 active
                   ? { background: o.activeBg || "var(--brand)", color: o.activeFg || "var(--on-brand)", fontWeight: 600 }
-                  : { background: "transparent", color: "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
+                  : { background: "transparent", color: o.idleFg || "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
               }
             >
               {o.label}
