@@ -72,7 +72,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
   const put = useCallback(async (itemId, body) => {
     setState((s) => ({ ...s, [itemId]: "saving" }));
     try {
-      await api.put(`/api/assessment/draft/${aid}/grades/${itemId}`, body);
+      await api.put(`/api/assessment/draft/${aid}/grades/${itemId}`, body, { params: { seat: mine.department } });
       setState((s) => { const c = { ...s }; delete c[itemId]; return c; });
       if ("note" in body) saved.current.notes[itemId] = body.note;
       onChanged();
@@ -82,7 +82,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
       toast.error(`${T.saveFailed}: ${errText(e, T)}`);
       return false;
     }
-  }, [aid, onChanged, toast, T]);
+  }, [aid, mine.department, onChanged, toast, T]);
 
   const setVerdict = (itemId, v) => {
     if (readOnly) return;
@@ -116,14 +116,14 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
     if (val.trim() === saved.current.feedback.trim()) return;
     setFbState("saving");
     try {
-      await api.put(`/api/assessment/draft/${aid}/feedback`, { overall_feedback: val });
+      await api.put(`/api/assessment/draft/${aid}/feedback`, { overall_feedback: val }, { params: { seat: mine.department } });
       saved.current.feedback = val;
       setFbState(null);
     } catch (e) {
       setFbState("failed");
       toast.error(`${T.saveFailed}: ${errText(e, T)}`);
     }
-  }, [aid, toast, T]);
+  }, [aid, mine.department, toast, T]);
   const typeFeedback = (val) => {
     setFeedback(val);
     clearTimeout(fbTimer.current);
@@ -148,7 +148,8 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
     setSubmitErr(null);
     try {
       clearTimeout(fbTimer.current);
-      const r = await api.post(`/api/assessment/assessments/${aid}/submit`, { overall_feedback: feedback });
+      const r = await api.post(`/api/assessment/assessments/${aid}/submit`, { overall_feedback: feedback },
+        { params: { seat: mine.department } });
       setConfirm(false);
       toast.success(T.submitted);
       onSubmitted?.(r.data);

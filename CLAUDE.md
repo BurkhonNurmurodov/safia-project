@@ -9141,6 +9141,18 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   first. The flag outlives the removal, so a later boot never brings them
   back. The endpoints and `SAMPLE_SOURCE` stay; delete the seed module, its
   function and both calls once the flag reads «done».
+- **TEST MODE** (the operator, 2026-10-31: «add test mode»): a sitting drawn
+  from at least one sample question (`_is_test`) lets an ADMIN hold every seat
+  and grade them in turn — the first seat under their own key, each further one
+  under «<key>#<department>» (so `uq_assessment_eval_judge` still holds). The
+  seat on screen is a `seat` query parameter on the detail, the grade and
+  feedback autosaves and the submit (`_pick_mine`: that seat, else the first
+  open one); the results rule is that seat's (`_hidden(current=…)`), the list's
+  is «any of my seats open». The page shows a banner, dashes the admin's other
+  seats with «Shu o'rinda baholash» / «Varaqni ko'rish», and a free seat says
+  «Shu o'rinni olish» rather than offering a move. A non-admin, and everybody
+  on a REAL sitting, keeps one seat (a second claim moves it, `from`). The mode
+  ends with the samples: removing them deletes every test sitting.
 - Not built: notifications to judges, an export, a candidate-facing view (by
   the request), a pass mark.
 

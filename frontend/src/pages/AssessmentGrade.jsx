@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Gavel, Lock, LockOpen, Shuffle, Trash2, CalendarDays, Info } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Gavel, Lock, LockOpen, Shuffle, Trash2, CalendarDays, Info, FlaskConical } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -34,14 +34,23 @@ export default function AssessmentGrade() {
   const qc = useQueryClient();
   const toast = useToast();
   const key = ["assessment", id];
+  // The seat on screen. One person holds one seat — except in TEST MODE (a
+  // sitting drawn from the sample questions), where an admin holds several and
+  // switches between them; null = the server's pick (their open one first).
+  const [seat, setSeat] = useState(null);
 
   const det = useQuery({
-    queryKey: key,
-    queryFn: () => api.get(`/api/assessment/assessments/${id}`).then((r) => r.data),
+    queryKey: [...key, seat],
+    queryFn: () => api.get(`/api/assessment/assessments/${id}`, { params: seat ? { seat } : {} }).then((r) => r.data),
     refetchInterval: (q) => (q.state.data?.status === "open" ? 5000 : false),
+    placeholderData: keepPreviousData,
   });
   const d = det.data;
   const mine = d?.mine;
+  // A seat asked for that the viewer no longer holds (freed) → back to the default.
+  useEffect(() => {
+    if (seat && d && !det.isPlaceholderData && !(d.my_seats || []).includes(seat)) setSeat(null);
+  }, [seat, d, det.isPlaceholderData]);
 
   const [tab, setTab] = useState(null);
   // A judge with an open scorecard lands on it — also the moment they take a
@@ -64,6 +73,7 @@ export default function AssessmentGrade() {
       setAsk(null);
       qc.invalidateQueries({ queryKey: ["assessment-list"] });
       if (v.after === "list") { nav("/assessment"); return; }
+      if (v.seat !== undefined) setSeat(v.seat);
       refresh();
       if (v.toast) toast.success(v.toast);
     },
@@ -73,9 +83,12 @@ export default function AssessmentGrade() {
     },
   });
 
-  const claim = (seat) => {
-    if (mine) { setAskErr(null); setAsk({ kind: "move", seat }); return; }
-    act.mutate({ method: "post", url: `/api/assessment/assessments/${id}/seat`, body: { department: seat.department } });
+  const claim = (s) => {
+    // Holding a seat already means MOVING it — except in test mode, where an
+    // admin takes the new seat as one more scorecard.
+    if (mine && !d?.rights?.multi_seat) { setAskErr(null); setAsk({ kind: "move", seat: s }); return; }
+    act.mutate({ method: "post", url: `/api/assessment/assessments/${id}/seat`,
+      body: { department: s.department }, seat: s.department });
   };
 
   if (det.isLoading) {
@@ -113,12 +126,13 @@ export default function AssessmentGrade() {
       title: T.moveSeatTitle, tone: myEntered ? "danger" : "warning", confirm: T.move,
       message: fill(T.moveSeatMsg, { from: T.dept[mine.department], to: T.dept[ask.seat.department] })
         + (myEntered ? ` ${fill(T.moveLoss, { n: myEntered, from: T.dept[mine.department] })}` : ""),
-      run: { method: "post", url: `/api/assessment/assessments/${id}/seat`, body: { department: ask.seat.department } },
+      run: { method: "post", url: `/api/assessment/assessments/${id}/seat`,
+        body: { department: ask.seat.department, from: mine.department }, seat: ask.seat.department },
     },
     leave: ask?.seat && {
       title: T.leaveTitle, tone: "danger", confirm: T.leave,
       message: myEntered ? fill(T.leaveMsg, { n: myEntered }) : T.leaveMsgEmpty,
-      run: { method: "delete", url: `/api/assessment/assessments/${id}/seats/${ask.seat.department}` },
+      run: { method: "delete", url: `/api/assessment/assessments/${id}/seats/${ask.seat.department}`, seat: null },
     },
     release: ask?.seat && {
       title: T.releaseTitle, tone: "danger", confirm: T.release,
@@ -193,6 +207,14 @@ export default function AssessmentGrade() {
           )}
         </div>
 
+        {d.test_mode && (
+          <div className="flex items-start gap-2 rounded-2xl px-4 py-3 text-sm"
+            style={{ background: "rgba(var(--brand-rgb),0.08)", border: "1px dashed rgba(var(--brand-rgb),0.45)", color: "var(--text-1)" }}>
+            <FlaskConical size={16} className="mt-[2px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+            <span>{r.multi_seat ? T.testBanner : T.testBannerJudge}</span>
+          </div>
+        )}
+
         {/* The panel, live */}
         <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Gavel} title={T.panel} />
@@ -208,7 +230,8 @@ export default function AssessmentGrade() {
                 <Info size={13} aria-hidden="true" />{T.notJudge}
               </div>
             )}
-            <SeatStrip seats={d.seats} rights={r} mine={mine}
+            <SeatStrip seats={d.seats} rights={r} mine={mine} current={mine?.department}
+              onSwitch={(s) => setSeat(s.department)}
               busyDept={act.isPending && act.variables?.body?.department && !ask ? act.variables.body.department : null}
               onClaim={claim}
               onLeave={(seat) => { setAskErr(null); setAsk({ kind: "leave", seat }); }}
@@ -221,7 +244,7 @@ export default function AssessmentGrade() {
             options={[["card", T.tabCard], ["results", T.tabResults]]} />
         )}
         {view === "card" && mine ? (
-          <ScoreCard aid={id} data={d} toast={toast} onChanged={refresh}
+          <ScoreCard key={mine.id} aid={id} data={d} toast={toast} onChanged={refresh}
             onSubmitted={() => { refresh(); qc.invalidateQueries({ queryKey: ["assessment-list"] }); setTab("results"); }} />
         ) : (
           <ResultsView data={d} />

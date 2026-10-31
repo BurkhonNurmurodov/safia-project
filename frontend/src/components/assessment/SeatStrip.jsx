@@ -1,4 +1,4 @@
-import { Check, X, LogOut, UserRound } from "lucide-react";
+import { Check, X, LogOut, UserRound, PencilLine } from "lucide-react";
 import Button from "../ui/Button";
 import { useTranslit } from "../../utils/transliterate";
 import { useAT, fill, DEPT_ICON, VERDICT } from "./assessmentUtil";
@@ -9,7 +9,7 @@ import { useAT, fill, DEPT_ICON, VERDICT } from "./assessmentUtil";
  * free seat is claimable; the viewer's own unsubmitted seat can be left; an
  * admin can free anybody's unsubmitted seat.
  */
-export default function SeatStrip({ seats, rights, mine, onClaim, onLeave, onRelease, busyDept }) {
+export default function SeatStrip({ seats, rights, mine, current, onClaim, onLeave, onRelease, onSwitch, busyDept }) {
   const T = useAT();
   const { tl } = useTranslit();
   return (
@@ -21,8 +21,12 @@ export default function SeatStrip({ seats, rights, mine, onClaim, onLeave, onRel
         // Each seat grades its own department's questions — its own total.
         const total = s.total ?? 0;
         const pct = total ? Math.round((s.graded / total) * 100) : s.submitted ? 100 : 0;
-        const ring = s.mine
+        // The seat on screen; in test mode the admin's other seats are dashed.
+        const onScreen = s.mine && s.department === current;
+        const ring = onScreen
           ? { border: "1.5px solid var(--brand)", background: "rgba(var(--brand-rgb),0.06)" }
+          : s.mine
+            ? { border: "1.5px dashed var(--brand)", background: "var(--bg-card)" }
           : free
             ? { border: "1px dashed var(--border)", background: "transparent" }
             : { border: "1px solid var(--border)", background: "var(--bg-card)" };
@@ -65,10 +69,15 @@ export default function SeatStrip({ seats, rights, mine, onClaim, onLeave, onRel
             {free && rights.claim && (
               <Button size="sm" variant={mine ? "secondary" : "primary"} loading={busyDept === s.department}
                 onClick={() => onClaim(s)} className="mt-auto">
-                {mine ? T.moveHere : T.takeSeat}
+                {mine && !rights.multi_seat ? T.moveHere : T.takeSeat}
               </Button>
             )}
-            {s.mine && !s.submitted && rights.grade && (
+            {s.mine && !onScreen && (
+              <Button size="sm" variant="secondary" icon={PencilLine} onClick={() => onSwitch?.(s)} className="mt-auto">
+                {s.submitted ? T.viewSeat : T.gradeAs}
+              </Button>
+            )}
+            {onScreen && !s.submitted && rights.grade && (
               <Button size="sm" variant="ghost" icon={LogOut} onClick={() => onLeave(s)} className="mt-auto"
                 title={T.leaveSeat} aria-label={T.leaveSeat}>
                 {T.leave}

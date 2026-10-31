@@ -380,14 +380,50 @@ def _seats(evs: list[JudgeEvaluation], grades: dict[int, dict[int, dict]], me: s
             "graded": _graded(grades.get(e.id, {}), own) if e else 0,
             "submitted": bool(e and e.submitted_at),
             "submitted_at": _iso(e.submitted_at) if e else None,
-            "mine": bool(e and e.judge_key == me),
+            "mine": bool(e and _is_mine(e, me)),
         })
     return out
 
 
-def _hidden(evs: list[JudgeEvaluation], me: str) -> Optional[str]:
-    mine = next((e for e in evs if e.judge_key == me), None)
-    return "own_pending" if mine and not mine.submitted_at else None
+def _is_mine(e: JudgeEvaluation, me: str) -> bool:
+    """Is this scorecard the viewer's? Their own key, or — in TEST MODE — one of
+    the per-seat keys an admin takes («<key>#<department>»)."""
+    return e.judge_key == me or e.judge_key.startswith(me + "#")
+
+
+def _mine_all(evs: list[JudgeEvaluation], me: str) -> list[JudgeEvaluation]:
+    order = {d: i for i, d in enumerate(rules.SEAT_ORDER)}
+    return sorted((e for e in evs if _is_mine(e, me)), key=lambda e: order.get(e.department, 99))
+
+
+def _pick_mine(evs: list[JudgeEvaluation], me: str, seat: Optional[str]) -> Optional[JudgeEvaluation]:
+    """The scorecard the viewer is looking at: the one on `seat` when they hold
+    it, else their first unsubmitted one, else their first. One person holds one
+    seat everywhere but in test mode, where this is the seat being graded."""
+    mine = _mine_all(evs, me)
+    if seat:
+        return next((e for e in mine if e.department == seat), None)
+    return next((e for e in mine if not e.submitted_at), None) or (mine[0] if mine else None)
+
+
+def _is_test(db: Session, aid: int) -> bool:
+    """TEST MODE: a sitting drawn from at least one SAMPLE question
+    (`rules.SAMPLE_SOURCE`). There an admin may hold every seat, to try the
+    whole panel alone; such sittings are removed with the samples, so the mode
+    disappears with them. Everywhere else one person holds one seat."""
+    return db.query(AssessmentItem.id).join(
+        AssessmentQuestion, AssessmentQuestion.id == AssessmentItem.question_id).filter(
+        AssessmentItem.assessment_id == aid,
+        AssessmentQuestion.created_by == rules.SAMPLE_SOURCE).first() is not None
+
+
+def _hidden(evs: list[JudgeEvaluation], me: str, current: Optional[JudgeEvaluation] = None) -> Optional[str]:
+    """Results stay closed to a judge whose scorecard is still open. With
+    `current` (the seat on screen) the rule is that seat's — what its judge
+    would see; without it (the list), any open seat of the viewer's closes it."""
+    if current is not None:
+        return "own_pending" if not current.submitted_at else None
+    return "own_pending" if any(not e.submitted_at for e in _mine_all(evs, me)) else None
 
 
 @router.get("/assessments")
@@ -472,7 +508,8 @@ def create_assessment(body: dict = Body(...), db: Session = Depends(get_db), pay
 
 
 @router.get("/assessments/{aid}")
-def get_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
+                   db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """The grading dashboard, whole: the candidate, the 20 questions, every
     seat's progress, the viewer's own scorecard, and — unless the viewer still
     holds an unsubmitted seat — the submitted results."""
@@ -483,8 +520,11 @@ def get_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depe
     items = _items(db, aid)
     evs = db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id == aid).all()
     grades = _grades_of(db, [e.id for e in evs])
-    mine = next((e for e in evs if e.judge_key == me), None)
-    hidden = _hidden(evs, me)
+    mine = _pick_mine(evs, me, seat)
+    mine_all = _mine_all(evs, me)
+    test = _is_test(db, aid)
+    multi = test and admin           # an admin tries every seat of a test sitting
+    hidden = _hidden(evs, me, mine)
     res = None
     if not hidden:
         res = rules.results([_item_dict(i) for i in items], [
@@ -510,9 +550,15 @@ def get_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depe
         },
         "results": res,
         "results_hidden": hidden,
+        "test_mode": test,
+        "my_seats": [e.department for e in mine_all],
         "rights": {
             "admin": admin,
-            "claim": is_open and (mine is None or not mine.submitted_at) and len(taken) < len(rules.DEPARTMENTS),
+            "multi_seat": multi,
+            # a free seat may be taken: by anybody without one, by a judge
+            # moving an open scorecard, and in test mode by an admin always
+            "claim": is_open and len(taken) < len(rules.DEPARTMENTS)
+                     and (multi or mine is None or not mine.submitted_at),
             "grade": is_open and mine is not None and not mine.submitted_at,
             "release_any": admin and is_open,
             "close": admin and is_open,
@@ -536,14 +582,18 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
         _refuse(400, "bad_department", "Unknown department.")
     me = _judge_key(db, payload)
     evs = db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id == aid).all()
-    mine = next((e for e in evs if e.judge_key == me), None)
     holder = next((e for e in evs if e.department == dept), None)
-    if mine and mine.department == dept:
+    if holder and _is_mine(holder, me):
         return {"ok": True}
     if holder:
         _refuse(409, "seat_taken", "Another judge already holds this seat.", judge=holder.judge_name)
+    # TEST MODE: an admin takes the seat as ONE MORE scorecard of theirs
+    # (a per-seat key), never moving the ones already held.
+    multi = _is_admin(payload) and _is_test(db, aid)
+    mine = None if multi else _pick_mine(evs, me, body.get("from"))
     if mine and mine.submitted_at:
         _refuse(409, "submitted", "Your scorecard is already submitted.")
+    key = f"{me}#{dept}" if multi and _mine_all(evs, me) else me
     dropped = 0
     try:
         if mine:
@@ -559,7 +609,7 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
             mine.department, mine.updated_at = dept, _now()
         else:
             old = None
-            db.add(JudgeEvaluation(assessment_id=aid, department=dept, judge_key=me,
+            db.add(JudgeEvaluation(assessment_id=aid, department=dept, judge_key=key,
                                    judge_name=payload.get("full_name"), judge_tg=_tg(payload)))
         db.commit()
     except IntegrityError:
@@ -567,8 +617,8 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
         _refuse(409, "seat_taken", "Another judge took this seat a moment ago.")
     action_log.enrich(target_kind="assessment", target_id=str(aid),
                       changes=[("seat", old, dept)] if old else None,
-                      details=[("seat", dept), ("dropped", dropped)])
-    return {"ok": True, "dropped": dropped}
+                      details=[("seat", dept), ("dropped", dropped), ("test_mode", multi)])
+    return {"ok": True, "dropped": dropped, "seat": dept}
 
 
 def _tg(payload: dict) -> Optional[int]:
@@ -589,7 +639,7 @@ def release_seat(aid: int, department: str, db: Session = Depends(get_db), paylo
                                           JudgeEvaluation.department == department).first()
     if not ev:
         return {"ok": True}
-    if ev.judge_key != _judge_key(db, payload) and not _is_admin(payload):
+    if not _is_mine(ev, _judge_key(db, payload)) and not _is_admin(payload):
         _refuse(403, "not_yours", "Only the seat's own judge or an admin can free it.")
     if ev.submitted_at:
         _refuse(409, "submitted", "A submitted scorecard cannot be released.")
@@ -602,13 +652,17 @@ def release_seat(aid: int, department: str, db: Session = Depends(get_db), paylo
     return {"ok": True}
 
 
-def _my_open_eval(db: Session, aid: int, payload: dict) -> JudgeEvaluation:
+def _my_open_eval(db: Session, aid: int, payload: dict, seat: Optional[str] = None) -> JudgeEvaluation:
+    """The viewer's scorecard to write to — on `seat` when given (test mode,
+    where an admin holds several), else the one they hold."""
     a = _get(db, aid)
     if a.status != "open":
         _refuse(409, "closed", "This assessment is closed.")
-    ev = (db.query(JudgeEvaluation)
-          .filter(JudgeEvaluation.assessment_id == aid, JudgeEvaluation.judge_key == _judge_key(db, payload))
-          .with_for_update().first())
+    me = _judge_key(db, payload)
+    evs = db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id == aid).all()
+    pick = _pick_mine(evs, me, seat)
+    ev = (db.query(JudgeEvaluation).filter(JudgeEvaluation.id == pick.id).with_for_update().first()
+          if pick else None)
     if not ev:
         _refuse(409, "no_seat", "Take a department seat first.")
     if ev.submitted_at:
@@ -617,11 +671,11 @@ def _my_open_eval(db: Session, aid: int, payload: dict) -> JudgeEvaluation:
 
 
 @router.put("/draft/{aid}/grades/{item_id}")
-def save_grade(aid: int, item_id: int, body: dict = Body(...),
+def save_grade(aid: int, item_id: int, body: dict = Body(...), seat: Optional[str] = Query(default=None),
                db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """One question of the viewer's own scorecard: `verdict` (pass · fail ·
     null) and/or `note` — a key left out is left alone. Saved per tap."""
-    ev = _my_open_eval(db, aid, payload)
+    ev = _my_open_eval(db, aid, payload, seat)
     it = db.query(AssessmentItem).filter(AssessmentItem.id == item_id,
                                          AssessmentItem.assessment_id == aid).first()
     if not it:
@@ -659,9 +713,10 @@ def save_grade(aid: int, item_id: int, body: dict = Body(...),
 
 
 @router.put("/draft/{aid}/feedback")
-def save_feedback(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+def save_feedback(aid: int, body: dict = Body(...), seat: Optional[str] = Query(default=None),
+                  db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """The overall feedback, saved as a draft while it is typed."""
-    ev = _my_open_eval(db, aid, payload)
+    ev = _my_open_eval(db, aid, payload, seat)
     ev.overall_feedback = _clean(body.get("overall_feedback"), rules.MAX_FEEDBACK) or None
     ev.updated_at = _now()
     db.commit()
@@ -669,7 +724,8 @@ def save_feedback(aid: int, body: dict = Body(...), db: Session = Depends(get_db
 
 
 @router.post("/assessments/{aid}/submit")
-def submit(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+def submit(aid: int, body: dict = Body(...), seat: Optional[str] = Query(default=None),
+           db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Submit the viewer's scorecard — final. Every question of THEIR
     department graded (a seat whose department drew none needs only the
     feedback) and the overall feedback written, or it is refused naming what
@@ -677,7 +733,7 @@ def submit(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payl
     # Lock order everywhere: the sitting, then a scorecard (claim, release and
     # submit agree; a grade save takes the scorecard alone).
     a = _get(db, aid, lock=True)
-    ev = _my_open_eval(db, aid, payload)
+    ev = _my_open_eval(db, aid, payload, seat)
     fb = _clean(body.get("overall_feedback", ev.overall_feedback), rules.MAX_FEEDBACK)
     items = [it for it in _items(db, aid) if it.department == ev.department]   # own questions only
     grades = _grades_of(db, [ev.id]).get(ev.id, {})
