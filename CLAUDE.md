@@ -9125,6 +9125,22 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   `assessment.questions_imported`) over `services/assessment_seed_tb_oct31.py`.
   A question already in the TB bank is skipped (its missing answer filled in).
   Delete the module, the function and both calls once the flag reads «done».
+- **SAMPLE questions for trying the page out** (the operator, 2026-10-31: «for
+  now, later we delete and put actual questions»): 40 written by the
+  assistant, in Russian, with expected answers — Kaizen 5 theory + 7
+  practical, Production 5 + 7, HR 4 + 4, OKK 4 + 4 — seeded once by TEMPORARY
+  `startup.seed_sample_questions` (`later`, both entrypoints, flag
+  `assessment_sample_questions_2026_10_31_v1`) over
+  `services/assessment_seed_samples_oct31.py`. Every sample row is stamped
+  `created_by = assessment.SAMPLE_SOURCE` («Namuna (sinov uchun)»), wears a
+  «Namuna» chip, and the bank's bar «Namunalarni o'chirish» (admin, danger
+  confirm naming the sittings, retype «NAMUNA») removes them all —
+  `DELETE /api/assessment/samples`: every sample question, every sitting that
+  drew one (with its scorecards and grades) and a candidate left with no
+  sitting; real questions stay. `GET /api/assessment/samples` says what goes
+  first. The flag outlives the removal, so a later boot never brings them
+  back. The endpoints and `SAMPLE_SOURCE` stay; delete the seed module, its
+  function and both calls once the flag reads «done».
 - Not built: notifications to judges, an export, a candidate-facing view (by
   the request), a pass mark.
 

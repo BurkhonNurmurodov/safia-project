@@ -10796,3 +10796,36 @@ def seed_tb_food_safety_questions() -> None:
                              details=[("department", seed.DEPARTMENT), ("type", seed.QTYPE),
                                       ("added", added), ("answered", answered), ("skipped", skipped),
                                       ("source", seed.SOURCE)])
+
+
+def seed_sample_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-10-31): SAMPLE questions (Kaizen, Production,
+    HR, OKK — with expected answers) so a whole assessment can be tried before
+    the departments hand in their real ones — `services/assessment_seed_samples_oct31.py`.
+    Stamped `assessment.SAMPLE_SOURCE`, which the bank marks and removes in one
+    go. The flag rides the same transaction as the rows, so a removal is never
+    undone by a later boot. Delete this function, the module and both calls
+    once the flag reads «done»."""
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services import assessment as rules
+    from app.services import assessment_seed_samples_oct31 as seed
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.FLAG).first():
+            return
+        for dept, qtype, text, answer in seed.QUESTIONS:
+            db.add(AssessmentQuestion(department=dept, qtype=qtype, text=text, answer=answer,
+                                      created_by=rules.SAMPLE_SOURCE))
+        db.add(AppSetting(key=seed.FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] sample assessment questions skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] sample assessment questions: {len(seed.QUESTIONS)} added")
+    action_log.record_system("training", "assessment.questions_imported",
+                             target_kind="assessment_question",
+                             details=[("added", len(seed.QUESTIONS)), ("source", rules.SAMPLE_SOURCE)])

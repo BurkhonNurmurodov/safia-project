@@ -190,7 +190,7 @@ def _q_dict(q: AssessmentQuestion, used: dict[int, int]) -> dict:
             "answer": q.answer, "archived_at": _iso(q.archived_at), "archived_by": q.archived_by,
             "created_at": _iso(q.created_at), "created_by": q.created_by,
             "updated_at": _iso(q.updated_at), "updated_by": q.updated_by,
-            "used": used.get(q.id, 0)}
+            "used": used.get(q.id, 0), "sample": q.created_by == rules.SAMPLE_SOURCE}
 
 
 @router.get("/questions")
@@ -292,6 +292,67 @@ def archive_question(qid: int, body: dict = Body(...), db: Session = Depends(get
     action_log.enrich(target_kind="assessment_question", target_id=str(q.id),
                       details=[("archived", archived)])
     return {"ok": True, "pool": rules.pool_status(_active_pool(db))}
+
+
+# ── sample questions (for trying the page out) ───────────────────────────────
+
+def _sample_scope(db: Session) -> tuple[list[int], list[Assessment]]:
+    """The sample questions, and every sitting that drew one of them."""
+    qids = [i for (i,) in db.query(AssessmentQuestion.id).filter(
+        AssessmentQuestion.created_by == rules.SAMPLE_SOURCE).all()]
+    if not qids:
+        return [], []
+    aids = {a for (a,) in db.query(AssessmentItem.assessment_id).filter(
+        AssessmentItem.question_id.in_(qids)).distinct().all()}
+    sittings = db.query(Assessment).filter(Assessment.id.in_(aids)).order_by(Assessment.id).all() if aids else []
+    return qids, sittings
+
+
+@router.get("/samples")
+def sample_state(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """What «Namunalarni o'chirish» would remove — said before it does."""
+    _require_admin(payload)
+    qids, sittings = _sample_scope(db)
+    cands = {c.id: c.full_name for c in db.query(AssessmentCandidate).filter(
+        AssessmentCandidate.id.in_({a.candidate_id for a in sittings})).all()} if sittings else {}
+    return {"questions": len(qids),
+            "assessments": [{"id": a.id, "candidate": cands.get(a.candidate_id), "held_on": _iso(a.held_on),
+                             "status": a.status} for a in sittings]}
+
+
+@router.delete("/samples")
+def delete_samples(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Remove every SAMPLE question and every sitting drawn from one (its
+    scorecards and grades with it), plus a candidate left with no sitting.
+    Real questions are untouched. Admins only; no undo — the page asks first."""
+    _require_admin(payload)
+    qids, sittings = _sample_scope(db)
+    aids = [a.id for a in sittings]
+    cand_ids = {a.candidate_id for a in sittings}
+    grades = evals = items = 0
+    if aids:
+        eids = [i for (i,) in db.query(JudgeEvaluation.id).filter(JudgeEvaluation.assessment_id.in_(aids)).all()]
+        if eids:
+            grades = db.query(AssessmentGrade).filter(AssessmentGrade.evaluation_id.in_(eids)).delete(synchronize_session=False)
+            evals = db.query(JudgeEvaluation).filter(JudgeEvaluation.id.in_(eids)).delete(synchronize_session=False)
+        items = db.query(AssessmentItem).filter(AssessmentItem.assessment_id.in_(aids)).delete(synchronize_session=False)
+        db.query(Assessment).filter(Assessment.id.in_(aids)).delete(synchronize_session=False)
+    # A sitting drawn before the samples went may still name one by id.
+    if qids:
+        db.query(AssessmentItem).filter(AssessmentItem.question_id.in_(qids)).update(
+            {AssessmentItem.question_id: None}, synchronize_session=False)
+    questions = db.query(AssessmentQuestion).filter(AssessmentQuestion.id.in_(qids)).delete(synchronize_session=False) if qids else 0
+    candidates = 0
+    if cand_ids:
+        still = {c for (c,) in db.query(Assessment.candidate_id).filter(Assessment.candidate_id.in_(cand_ids)).all()}
+        gone = [c for c in cand_ids if c not in still]
+        if gone:
+            candidates = db.query(AssessmentCandidate).filter(AssessmentCandidate.id.in_(gone)).delete(synchronize_session=False)
+    db.commit()
+    out = {"questions": questions, "assessments": len(aids), "evaluations": evals, "grades": grades,
+           "items": items, "candidates": candidates}
+    action_log.enrich(target_kind="assessment_question", details=list(out.items()))
+    return out
 
 
 # ── candidates & sittings ─────────────────────────────────────────────────────

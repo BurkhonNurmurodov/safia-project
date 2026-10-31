@@ -169,6 +169,7 @@ async def lifespan(app: FastAPI):
         add_pp_product_uom,
         add_assessment_answer_columns,
         seed_tb_food_safety_questions,
+        seed_sample_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -322,6 +323,10 @@ async def lifespan(app: FastAPI):
     # «Nomzodlarni baholash» bank. Remove with startup.seed_tb_food_safety_questions
     # and services/assessment_seed_tb_oct31.py once its flag reads «done».
     later(seed_tb_food_safety_questions)
+    # ⚠ TEMPORARY one-shot (2026-10-31): SAMPLE questions for trying the page
+    # (removable from the bank in one click). Remove with
+    # startup.seed_sample_questions and services/assessment_seed_samples_oct31.py.
+    later(seed_sample_questions)
     run(add_pp_product_containers)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)

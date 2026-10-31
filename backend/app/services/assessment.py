@@ -44,6 +44,11 @@ TOTAL = sum(sum(b["types"].values()) if "types" in b else b["count"] for b in BL
 # The order seats are listed in — the panel's own order, the draw's blocks first.
 SEAT_ORDER = ("kaizen", "production", "tb", "hr", "okk")
 
+# The `created_by` stamp of a SAMPLE question — written for trying the page
+# out, not by a department. The bank marks such rows and removes them (and the
+# sittings drawn from them) in one go: `DELETE /api/assessment/samples`.
+SAMPLE_SOURCE = "Namuna (sinov uchun)"
+
 MAX_TEXT = 2000        # one question
 MAX_ANSWER = 4000      # its expected answer
 MAX_NOTE = 2000        # a judge's note on one answer

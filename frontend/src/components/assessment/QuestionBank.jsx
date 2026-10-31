@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Library, Pencil, Archive, ArchiveRestore, CheckCircle2, AlertTriangle, BookCheck } from "lucide-react";
+import { Plus, Library, Pencil, Archive, ArchiveRestore, CheckCircle2, AlertTriangle, BookCheck, FlaskConical, Trash2 } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -9,6 +9,7 @@ import StyledSelect from "../ui/StyledSelect";
 import SearchInput from "../ui/SearchInput";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import EmptyState from "../ui/EmptyState";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import { SkeletonTable } from "../ui/Skeleton";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { useToast } from "../ui/Toast";
@@ -155,6 +156,65 @@ function QuestionView({ q, onClose, onEdit, T }) {
   );
 }
 
+/** A row written for trying the page out, not by a department. */
+function SampleChip({ T }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-[1px] text-[10px] font-semibold whitespace-nowrap"
+      title={T.sampleTip}
+      style={{ background: "rgba(var(--brand-rgb),0.12)", color: "var(--brand-text)", border: "1px dashed rgba(var(--brand-rgb),0.5)" }}>
+      <FlaskConical size={10} aria-hidden="true" />{T.sampleChip}
+    </span>
+  );
+}
+
+/** The bar that says the bank holds samples, with the one way to remove
+ *  them all — and every test sitting drawn from them — after saying what goes. */
+function SampleBar({ count, T, onRemoved, toast }) {
+  const [asking, setAsking] = useState(false);
+  const [err, setErr] = useState(null);
+  const state = useQuery({
+    queryKey: ["assessment-samples"],
+    queryFn: () => api.get("/api/assessment/samples").then((r) => r.data),
+    enabled: asking,
+    staleTime: 0,          // counted afresh every time the dialog opens
+  });
+  const remove = useMutation({
+    mutationFn: () => api.delete("/api/assessment/samples").then((r) => r.data),
+    onSuccess: (d) => {
+      setAsking(false);
+      onRemoved();
+      toast.success(fill(T.samplesRemoved, { q: d.questions, a: d.assessments }));
+    },
+    onError: (e) => setErr(errText(e, T)),
+  });
+  const sittings = state.data?.assessments || [];
+  const names = sittings.slice(0, 5).map((a) => `${a.candidate || "—"} (${fmtDate(a.held_on)})`).join(", ")
+    + (sittings.length > 5 ? ` … +${sittings.length - 5}` : "");
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-2xl px-4 py-3"
+        style={{ background: "rgba(var(--brand-rgb),0.08)", border: "1px dashed rgba(var(--brand-rgb),0.45)" }}>
+        <div className="flex items-start gap-2 flex-1 min-w-0 text-sm" style={{ color: "var(--text-1)" }}>
+          <FlaskConical size={16} className="mt-[2px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+          <span>{fill(T.samplesBar, { n: count })}</span>
+        </div>
+        <Button variant="danger" tint icon={Trash2} onClick={() => { setErr(null); setAsking(true); }}>{T.samplesRemove}</Button>
+      </div>
+      {asking && (
+        <ConfirmDialog tone="danger" title={T.samplesRemoveTitle}
+          message={state.isLoading ? T.samplesCounting : (
+            fill(T.samplesRemoveMsg, { q: state.data?.questions ?? count, a: sittings.length })
+            + (sittings.length ? ` ${fill(T.samplesRemoveWho, { list: names })}` : "")
+          )}
+          challenge={T.samplesWord} challengeLabel={fill(T.samplesChallenge, { word: T.samplesWord })}
+          confirmLabel={T.samplesRemove} cancelLabel={T.cancel} loading={remove.isPending} error={err}
+          confirmDisabled={state.isLoading}
+          onCancel={() => setAsking(false)} onConfirm={() => { setErr(null); remove.mutate(); }} />
+      )}
+    </>
+  );
+}
+
 export default function QuestionBank() {
   const T = useAT();
   const { tx } = useTranslit();
@@ -198,6 +258,8 @@ export default function QuestionBank() {
     const dir = sort.d === "asc" ? 1 : -1;
     return f.map((r) => [key(r), r]).sort((a, b) => (a[0] > b[0] ? dir : a[0] < b[0] ? -dir : 0)).map((x) => x[1]);
   }, [bank.data, q, fDept, fType, fState, sort, tx]);
+
+  const sampleCount = (bank.data?.rows || []).filter((r) => r.sample).length;
 
   const onSort = (k) => setSort((s) => (s.k === k ? { k, d: s.d === "asc" ? "desc" : "asc" } : { k, d: k === "used" || k === "added" ? "desc" : "asc" }));
 
@@ -274,6 +336,7 @@ export default function QuestionBank() {
           <div className="flex flex-wrap items-center gap-1.5">
             <DeptChip dept={r.department} T={T} /><TypeChip type={r.qtype} T={T} />
             {r.archived_at && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
+            {r.sample && <SampleChip T={T} />}
             {r.used > 0 && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{fill(T.usedTip, { n: r.used })}</span>}
             {r.answer && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.hasAnswer}</span>}
           </div>
@@ -287,6 +350,13 @@ export default function QuestionBank() {
   return (
     <div className="space-y-4">
       <PoolCard pool={bank.data?.pool} T={T} />
+      {sampleCount > 0 && (
+        <SampleBar count={sampleCount} T={T} toast={toast} onRemoved={() => {
+          qc.invalidateQueries({ queryKey: ["assessment-bank"] });
+          qc.invalidateQueries({ queryKey: ["assessment-list"] });
+          qc.invalidateQueries({ queryKey: ["assessment-candidates"] });
+        }} />
+      )}
       <TableCard icon={Library} title={T.tabBank}
         right={bank.data ? <span className="text-xs" style={{ color: "var(--text-3)" }}>{fill(T.rowsN, { n: rows.length })}</span> : null}
         toolbar={(
@@ -325,6 +395,7 @@ export default function QuestionBank() {
               <td className="px-3 py-2"><DeptChip dept={r.department} T={T} /></td>
               <td className="px-3 py-2"><TypeChip type={r.qtype} T={T} /></td>
               <td className="px-3 py-2 truncate">
+                {r.sample && <span className="mr-2"><SampleChip T={T} /></span>}
                 {r.archived_at && <span className="mr-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.archivedChip}</span>}
                 {r.text}
               </td>
