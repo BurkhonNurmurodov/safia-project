@@ -3,7 +3,8 @@
 Five judging departments, two question types, one draw of 20 questions:
 
     Kaizen + Production   11 questions — 4 theory, 7 practical, drawn from the
-                          two departments' questions together
+                          two departments' questions together, EACH of the two
+                          getting at least 2 theory and 3 practical (`min_each`)
     TB · HR · OKK          3 questions each, any type
 
 `draw` is the only place that distribution lives; the router, the bank's
@@ -24,8 +25,16 @@ VERDICTS = ("pass", "fail")
 
 # The draw, block by block, in the order the panel reads them. A block either
 # fixes how many of each type (`types`) or takes `count` of any type.
+#
+# `min_each` (2026-10-31, the operator: «set a minimum»): a judge grades only
+# their own department's questions, so a block shared by two departments must
+# not leave one judge with almost nothing. Each department of the block first
+# gets its minimum of every type; the rest of the type is drawn from both at
+# random. Kaizen + Production: 2 + 2 theory (all four), 3 + 3 practical and the
+# seventh to either — 5 or 6 questions each.
 BLOCKS = (
-    {"key": "kp", "departments": ("kaizen", "production"), "types": {"theory": 4, "practical": 7}},
+    {"key": "kp", "departments": ("kaizen", "production"), "types": {"theory": 4, "practical": 7},
+     "min_each": {"theory": 2, "practical": 3}},
     {"key": "tb", "departments": ("tb",), "count": 3},
     {"key": "hr", "departments": ("hr",), "count": 3},
     {"key": "okk", "departments": ("okk",), "count": 3},
@@ -47,9 +56,11 @@ class Short:
     qtype: Optional[str]     # None = any type
     need: int
     have: int
+    department: Optional[str] = None   # a block's per-department minimum; None = the block as a whole
 
     def as_dict(self) -> dict:
-        return {"block": self.block, "qtype": self.qtype, "need": self.need, "have": self.have}
+        return {"block": self.block, "qtype": self.qtype, "need": self.need, "have": self.have,
+                "department": self.department}
 
 
 class PoolShort(Exception):
@@ -58,14 +69,26 @@ class PoolShort(Exception):
         self.shorts = shorts
 
 
-def _need(block: dict) -> list[tuple[Optional[str], int]]:
+def _parts(block: dict) -> list[dict]:
+    """What the bank must hold for one block: its per-department minimums (if
+    any), then the block's own totals — a total only where it asks for more
+    than the minimums already guarantee."""
+    out = []
     if "types" in block:
-        return [(t, n) for t, n in block["types"].items()]
-    return [(None, block["count"])]
+        mins = block.get("min_each") or {}
+        for t, n in block["types"].items():
+            m = mins.get(t, 0)
+            if m:
+                out.extend({"qtype": t, "department": d, "need": m} for d in block["departments"])
+            if n > m * len(block["departments"]):
+                out.append({"qtype": t, "department": None, "need": n})
+        return out
+    return [{"qtype": None, "department": None, "need": block["count"]}]
 
 
-def _fits(q: dict, block: dict, qtype: Optional[str]) -> bool:
-    return q["department"] in block["departments"] and (qtype is None or q["qtype"] == qtype)
+def _fits(q: dict, block: dict, qtype: Optional[str], department: Optional[str] = None) -> bool:
+    return (q["department"] in block["departments"] and (qtype is None or q["qtype"] == qtype)
+            and (department is None or q["department"] == department))
 
 
 def shortfalls(pool: Iterable[dict]) -> list[Short]:
@@ -73,10 +96,10 @@ def shortfalls(pool: Iterable[dict]) -> list[Short]:
     pool = list(pool)
     out = []
     for b in BLOCKS:
-        for qtype, n in _need(b):
-            have = sum(1 for q in pool if _fits(q, b, qtype))
-            if have < n:
-                out.append(Short(b["key"], qtype, n, have))
+        for p in _parts(b):
+            have = sum(1 for q in pool if _fits(q, b, p["qtype"], p["department"]))
+            if have < p["need"]:
+                out.append(Short(b["key"], p["qtype"], p["need"], have, p["department"]))
     return out
 
 
@@ -84,25 +107,40 @@ def draw(pool: Iterable[dict], seen: Iterable[int] = (), rng: Optional[random.Ra
     """Pick the 20 questions. `pool` = the active bank as dicts with `id`,
     `department`, `qtype`, `text`. Questions in `seen` (asked of this candidate
     before) are taken only when the unseen ones run out, so a retake gets fresh
-    questions wherever the bank allows. Order: block by block, theory before
-    practical inside a block, random within that. Raises PoolShort naming every
-    part the bank cannot fill — never a short sitting."""
+    questions wherever the bank allows. A block's per-department minimums are
+    taken first, the rest of each type from the whole block. Order: block by
+    block, theory before practical inside a block, random within that. Raises
+    PoolShort naming every part the bank cannot fill — never a short sitting."""
     pool = list(pool)
     shorts = shortfalls(pool)
     if shorts:
         raise PoolShort(shorts)
     rng = rng or random.SystemRandom()
     seen = set(seen)
+
+    def order(cands: list[dict]) -> list[dict]:
+        fresh = [q for q in cands if q["id"] not in seen]
+        old = [q for q in cands if q["id"] in seen]
+        rng.shuffle(fresh)
+        rng.shuffle(old)
+        return fresh + old
+
     picked: list[dict] = []
     for b in BLOCKS:
         part: list[dict] = []
-        for qtype, n in _need(b):
-            cands = [q for q in pool if _fits(q, b, qtype)]
-            fresh = [q for q in cands if q["id"] not in seen]
-            old = [q for q in cands if q["id"] in seen]
-            rng.shuffle(fresh)
-            rng.shuffle(old)
-            part.extend((fresh + old)[:n])
+        if "types" in b:
+            mins = b.get("min_each") or {}
+            for qtype, n in b["types"].items():
+                taken: list[dict] = []
+                for d in b["departments"]:
+                    taken.extend(order([q for q in pool if _fits(q, b, qtype, d)])[:mins.get(qtype, 0)])
+                ids = {q["id"] for q in taken}
+                rest = order([q for q in pool if _fits(q, b, qtype) and q["id"] not in ids])
+                taken.extend(rest[:n - len(taken)])
+                rng.shuffle(taken)
+                part.extend(taken)
+        else:
+            part.extend(order([q for q in pool if _fits(q, b, None)])[:b["count"]])
         part.sort(key=lambda q: TYPES.index(q["qtype"]))   # stable: random within a type
         picked.extend(part)
     return picked
@@ -118,8 +156,8 @@ def pool_status(pool: Iterable[dict]) -> dict:
             counts[q["department"]][q["qtype"]] += 1
     blocks = []
     for b in BLOCKS:
-        parts = [{"qtype": t, "need": n, "have": sum(1 for q in pool if _fits(q, b, t))}
-                 for t, n in _need(b)]
+        parts = [{**p, "have": sum(1 for q in pool if _fits(q, b, p["qtype"], p["department"]))}
+                 for p in _parts(b)]
         blocks.append({"key": b["key"], "departments": list(b["departments"]), "parts": parts,
                        "ok": all(p["have"] >= p["need"] for p in parts)})
     return {"counts": counts, "blocks": blocks, "ready": all(b["ok"] for b in blocks)}
@@ -131,7 +169,8 @@ def meta() -> dict:
         "seat_order": list(SEAT_ORDER),
         "types": list(TYPES),
         "blocks": [{"key": b["key"], "departments": list(b["departments"]),
-                    "parts": [{"qtype": t, "need": n} for t, n in _need(b)]} for b in BLOCKS],
+                    "types": b.get("types"), "min_each": b.get("min_each"), "count": b.get("count"),
+                    "parts": _parts(b)} for b in BLOCKS],
         "total": TOTAL,
         "limits": {"text": MAX_TEXT, "note": MAX_NOTE, "feedback": MAX_FEEDBACK},
     }

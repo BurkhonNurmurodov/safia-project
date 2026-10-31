@@ -9037,12 +9037,16 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   (`DEPARTMENTS`, shown in `SEAT_ORDER` kaizen → production → tb → hr → okk).
   Two question types: theory · practical.
 - **The draw is 20 questions** (`BLOCKS`, `draw`): Kaizen + Production 11 —
-  4 theory, 7 practical — drawn from the two departments' questions TOGETHER;
-  TB, HR, OKK 3 each, any type. Order: block by block, theory before practical
+  4 theory, 7 practical — drawn from the two departments' questions TOGETHER,
+  with a per-department MINIMUM (`min_each`, the operator 2026-10-31: «set a
+  minimum»): each of the two gets 2 theory and at least 3 practical, the
+  seventh practical goes to either at random — so the two judges grade 5 or 6
+  each. TB, HR, OKK 3 each, any type. Order: block by block, theory before practical
   inside a block, random within. `random.SystemRandom`. A retake prefers the
   questions this candidate was NOT asked before (`seen`), falling back to them
-  only where the bank runs out. A bank that cannot fill every part refuses the
-  sitting whole (409 `pool_short` naming each part, need vs have) — never a
+  only where the bank runs out. A bank that cannot fill every part — a
+  department's minimum included — refuses the sitting whole (409 `pool_short`
+  naming each part, need vs have, with its `department` where it is one) — never a
   short sitting. The draw COPIES each question's text, department and type onto
   `assessment_items`, so editing or archiving the bank changes no sitting.
 - **Six tables** (created by `create_all`, nothing to migrate):
@@ -9061,11 +9065,10 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   question (409 `not_your_question`), the scorecard lists only the judge's own
   questions (keeping the sitting's numbers, so the panel can still say «the
   7th»), and each seat's progress is out of its own count (`seats[].total`).
-  **Consequence to know**: the block's split is random, so the Kaizen and
-  Production judges may get uneven shares — 0 for one of them is possible on a
-  lopsided bank; such a judge sees a note and submits the overall feedback
-  alone. Guaranteeing a minimum per department is a change to `draw` and has
-  not been asked for.
+  The block's split is held near even by `min_each` (5 / 6); the bank must hold
+  at least 2 theory and 3 practical of EACH of Kaizen and Production. A seat
+  whose department drew nothing (impossible for the five departments today)
+  would see a note and submit the overall feedback alone.
 - **A seat belongs to the PROFILE** (`identity.viewer_profile_key`, else
   `tg:<account>`): one person never holds two seats of one sitting. Anybody who
   may open the page claims a free seat; a judge may MOVE an unsubmitted

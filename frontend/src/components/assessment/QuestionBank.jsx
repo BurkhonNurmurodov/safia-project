@@ -40,8 +40,12 @@ function PoolCard({ pool, T }) {
               {b.parts.map((p) => {
                 const ok = p.have >= p.need;
                 return (
-                  <li key={p.qtype || "any"} className="flex items-center justify-between gap-2 text-[11px]">
-                    <span style={{ color: "var(--text-2)" }}>{p.qtype ? T.type[p.qtype] : T.partAny}</span>
+                  <li key={`${p.department || "all"}-${p.qtype || "any"}`} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span style={{ color: "var(--text-2)" }}>
+                      {/* a department's own minimum, the block's total, or a single-department block's «any type» */}
+                      {p.department ? `${T.dept[p.department]} · ${T.type[p.qtype]}`
+                        : p.qtype ? `${T.partTotal} · ${T.type[p.qtype]}` : T.partAny}
+                    </span>
                     <span className="tabular-nums font-semibold" style={{ color: ok ? VERDICT.pass.ink : VERDICT.fail.ink }}>
                       {fill(T.haveNeed, { have: p.have, need: p.need })}
                     </span>

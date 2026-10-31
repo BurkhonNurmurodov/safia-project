@@ -104,9 +104,10 @@ export default function NewAssessmentModal({ onClose, onCreated }) {
           {shorts && (
             <ul className="mt-1 space-y-0.5">
               {shorts.map((s) => (
-                <li key={`${s.block}-${s.qtype}`}>
+                <li key={`${s.block}-${s.department || ""}-${s.qtype}`}>
                   {fill(T.poolShortLine, {
-                    block: T.block[s.block], type: s.qtype ? ` · ${T.type[s.qtype]}` : "",
+                    block: s.department ? T.dept[s.department] : T.block[s.block],
+                    type: s.qtype ? ` · ${T.type[s.qtype]}` : "",
                     need: s.need, have: s.have,
                   })}
                 </li>
