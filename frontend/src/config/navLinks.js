@@ -25,7 +25,6 @@ export const ALL_LINKS = [
   // key (the same adminOnly pilot pattern as /gamification).
   { to: "/targets", adminOnly: true, key: "nav.targets", icon: Goal, group: "lab" },
   { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users, group: "people" },
-  { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "lab" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.
@@ -34,6 +33,8 @@ export const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
+  // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
+  { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
   // «O'z vaqtida yetkazish» — the on-time delivery report (the logistics
   // team's «on time report» sheet, read by the server). Admin-only by default.
