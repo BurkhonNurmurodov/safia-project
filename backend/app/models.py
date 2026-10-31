@@ -5447,3 +5447,106 @@ class OpsAsk(Base):
     truncated     = Column(String(16), nullable=True)          # rows · bytes · None
     error         = Column(Text, nullable=True)
     ip            = Column(String(64), nullable=True)
+
+
+# ── «Nomzodlarni baholash» — supervisor-candidate assessments (/assessment) ──
+# A panel of five judges (OKK · HR · Production · TB · Kaizen) grades one
+# candidate against 20 questions drawn at random from the bank
+# (services/assessment.py is THE draw rule). Nothing here scores a KPI.
+
+class AssessmentCandidate(Base):
+    """A person being assessed for the Supervisor role. Free text on purpose:
+    a candidate is often somebody the platform holds no profile for yet."""
+    __tablename__ = "assessment_candidates"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    full_name   = Column(String, nullable=False)
+    note        = Column(Text, nullable=True)          # current job, unit — whatever helps the panel
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    created_by  = Column(String, nullable=True)        # a name snapshot
+
+
+class AssessmentQuestion(Base):
+    """One question of the bank. Never deleted — an assessment keeps its own
+    copy of the text (`AssessmentItem.text`), so editing or archiving a
+    question here changes no assessment already drawn."""
+    __tablename__ = "assessment_questions"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    department  = Column(String(16), nullable=False, index=True)   # okk · hr · production · tb · kaizen
+    qtype       = Column(String(16), nullable=False)               # theory · practical
+    text        = Column(Text, nullable=False)
+    archived_at = Column(DateTime(timezone=True), nullable=True)   # NULL = in the draw
+    archived_by = Column(String, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    created_by  = Column(String, nullable=True)
+    updated_at  = Column(DateTime(timezone=True), nullable=True)
+    updated_by  = Column(String, nullable=True)
+
+
+class Assessment(Base):
+    """One sitting of one candidate: its 20 drawn questions are its items, its
+    judges' scorecards are its evaluations. open → closed (by an admin, or by
+    itself once all five scorecards are submitted)."""
+    __tablename__ = "assessments"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    candidate_id = Column(Integer, ForeignKey("assessment_candidates.id"), nullable=False, index=True)
+    held_on      = Column(Date, nullable=True)
+    status       = Column(String(12), nullable=False, default="open", server_default="open", index=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+    created_by   = Column(String, nullable=True)
+    closed_at    = Column(DateTime(timezone=True), nullable=True)
+    closed_by    = Column(String, nullable=True)                 # a name, or «auto» (all five submitted)
+
+
+class AssessmentItem(Base):
+    """One of an assessment's 20 questions, in the order the panel reads them.
+    The text, department and type are COPIED at the draw: the bank may change
+    afterwards, the sitting may not."""
+    __tablename__ = "assessment_items"
+    __table_args__ = (UniqueConstraint("assessment_id", "position", name="uq_assessment_item_pos"),)
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    assessment_id = Column(Integer, ForeignKey("assessments.id", ondelete="CASCADE"), nullable=False, index=True)
+    position      = Column(Integer, nullable=False)
+    question_id   = Column(Integer, ForeignKey("assessment_questions.id", ondelete="SET NULL"), nullable=True)
+    department    = Column(String(16), nullable=False)
+    qtype         = Column(String(16), nullable=False)
+    text          = Column(Text, nullable=False)
+
+
+class JudgeEvaluation(Base):
+    """One judge's scorecard: one department seat of one assessment. The seat
+    belongs to a PROFILE (`judge_key`), so one person never holds two seats of
+    one sitting. Submitted = final; drafts are visible to their judge only."""
+    __tablename__ = "assessment_evaluations"
+    __table_args__ = (
+        UniqueConstraint("assessment_id", "department", name="uq_assessment_eval_seat"),
+        UniqueConstraint("assessment_id", "judge_key", name="uq_assessment_eval_judge"),
+    )
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    assessment_id    = Column(Integer, ForeignKey("assessments.id", ondelete="CASCADE"), nullable=False, index=True)
+    department       = Column(String(16), nullable=False)
+    judge_key        = Column(String, nullable=False)       # identity.viewer_profile_key, else «tg:<id>»
+    judge_name       = Column(String, nullable=True)
+    judge_tg         = Column(BigInteger, nullable=True)
+    overall_feedback = Column(Text, nullable=True)          # mandatory to submit
+    submitted_at     = Column(DateTime(timezone=True), nullable=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), nullable=True)
+
+
+class AssessmentGrade(Base):
+    """A judge's verdict on one question: pass · fail (NULL = not graded yet)
+    plus an optional note."""
+    __tablename__ = "assessment_grades"
+    __table_args__ = (UniqueConstraint("evaluation_id", "item_id", name="uq_assessment_grade"),)
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id = Column(Integer, ForeignKey("assessment_evaluations.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id       = Column(Integer, ForeignKey("assessment_items.id", ondelete="CASCADE"), nullable=False)
+    verdict       = Column(String(8), nullable=True)        # pass · fail
+    note          = Column(Text, nullable=True)
+    updated_at    = Column(DateTime(timezone=True), nullable=True)

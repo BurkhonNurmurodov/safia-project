@@ -53,6 +53,8 @@ const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 // «Hisobotlar» — the platform's period report (Laboratory, admin-only).
 const Reports = lazyWithReload(() => import("./pages/Reports"));
+const Assessment = lazyWithReload(() => import("./pages/Assessment"));
+const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
 const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
@@ -114,7 +116,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
-  reports: Reports,
+  reports: Reports, assessment: Assessment,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
@@ -142,6 +144,7 @@ function preloadOpenedRoute() {
     } else if (first === "cells" && second) Page = CellDetails;
     else if (first === "education" && second) Page = EducationLesson;
     else if (first === "targets" && second) Page = TargetGoal;
+    else if (first === "assessment" && second) Page = AssessmentGrade;
     Page?.preload?.();
   } catch { /* a hint only */ }
 }
@@ -550,6 +553,10 @@ function AppWithLang() {
             {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
+            {/* «Nomzodlarni baholash» — the supervisor-candidate panel. Page key
+                `assessment`: admin-only until the operator opens it to judges. */}
+            <Route path="/assessment" element={<AuthGate><RequirePage page="assessment"><Assessment /></RequirePage></AuthGate>} />
+            <Route path="/assessment/:id" element={<AuthGate><RequirePage page="assessment"><AssessmentGrade /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />

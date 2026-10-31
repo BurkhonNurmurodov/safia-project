@@ -380,6 +380,19 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/admin/exam/attempts/{}/cancel",            "training", "exam.cancelled"),
     (("PUT",),    "/admin/exam/tasks",                         "training", "exam.bank_changed"),
     (("POST",),   "/admin/exam/results.xlsx",                  "sync_export", "export.exam"),
+    # «Nomzodlarni baholash» — the supervisor-candidate panel
+    # (routers/assessment.py). The per-question and feedback autosaves live
+    # under /api/assessment/draft/ and are skipped: the submit is the act.
+    (("POST",),   "/api/assessment/questions",                 "training", "assessment.questions_added"),
+    (("PUT",),    "/api/assessment/questions/{}",              "training", "assessment.question_edited"),
+    (("POST",),   "/api/assessment/questions/{}/archive",      "training", "assessment.question_archived"),
+    (("POST",),   "/api/assessment/assessments",               "training", "assessment.created"),
+    (("POST",),   "/api/assessment/assessments/{}/seat",       "training", "assessment.seat_taken"),
+    (("DELETE",), "/api/assessment/assessments/{}/seats/{}",   "training", "assessment.seat_released"),
+    (("POST",),   "/api/assessment/assessments/{}/submit",     "training", "assessment.submitted"),
+    (("POST",),   "/api/assessment/assessments/{}/close",      "training", "assessment.closed"),
+    (("POST",),   "/api/assessment/assessments/{}/redraw",     "training", "assessment.redrawn"),
+    (("DELETE",), "/api/assessment/assessments/{}",            "training", "assessment.deleted"),
     (("POST",),   "/api/education/lessons",                    "comms", "education.lesson_created"),
     (("PUT",),    "/api/education/lessons/{}",                 "comms", "education.lesson_edited"),
     (("DELETE",), "/api/education/lessons/{}",                 "comms", "education.lesson_archived"),
@@ -533,6 +546,9 @@ _SKIP = (
     # /live carries the strip's route visits, ui snapshots and checks.
     "/api/exam/sandbox/",
     "/api/exam/live/",
+    # «Nomzodlarni baholash»: a judge's per-tap verdict / note and feedback
+    # drafts. The submitted scorecard is the recorded act.
+    "/api/assessment/draft/",
     # The bell's read marks: a viewer opened their notifications or tapped
     # one. Telemetry about attention, never a change to anybody's records.
     "/api/notifications/read",

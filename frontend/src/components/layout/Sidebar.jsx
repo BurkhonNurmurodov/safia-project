@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
-  Factory, Gauge, ClipboardCheck, Sparkles, BotMessageSquare, Activity, ShieldAlert, ListTodo,
+  Factory, Gauge, ClipboardCheck, Gavel, Sparkles, BotMessageSquare, Activity, ShieldAlert, ListTodo,
  
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
@@ -80,6 +80,9 @@ export const ALL_LINKS = [
   // the page that owns it and downloadable as a document. Laboratory,
   // admin-only until the operator opens it on the Access tab.
   { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab" },
+  // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
+  // candidate. Laboratory, admin-only until the operator opens it to judges.
+  { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

@@ -46,6 +46,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *   options   – array of either [value, label] tuples or
  *               { value, label, title, disabled } objects. `label` may be a
  *               string or a node (e.g. an icon for icon-only segments).
+ *               An object may also carry `activeBg` / `activeFg`: the colours
+ *               its pill takes WHEN SELECTED instead of brand gold — for a
+ *               set whose options are verdicts (Pass / No pass), where the
+ *               chosen one must read as a status at a glance. Unselected
+ *               segments look the same as everywhere else.
  *   size      – "md" (default) | "sm" | "lg"
  *   fill      – when true, the track spans its container full-width and every
  *               segment grows to an equal share (flex-1). Use for form-panel
@@ -210,7 +215,7 @@ export default function SegmentedToggle({
               className={`${fill ? "flex-1" : "flex-shrink-0"} inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
               style={
                 active
-                  ? { background: "var(--brand)", color: "var(--on-brand)", fontWeight: 600 }
+                  ? { background: o.activeBg || "var(--brand)", color: o.activeFg || "var(--on-brand)", fontWeight: 600 }
                   : { background: "transparent", color: "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
               }
             >

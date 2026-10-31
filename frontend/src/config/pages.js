@@ -43,6 +43,7 @@ export const PAGES = [
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "ontime", route: "/ontime", labelKey: "nav.ontime" },
   { tier: "test", key: "reports", route: "/reports", labelKey: "nav.reports" },
+  { tier: "test", key: "assessment", route: "/assessment", labelKey: "nav.assessment" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -84,6 +85,8 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Hisobotlar» — the period report (Laboratory). Admin-only until the
   // operator opens it on the Access tab: every section reads the whole plant.
   reports: [],
+  // «Nomzodlarni baholash» — the supervisor-candidate panel (Laboratory).
+  assessment: [],
   leaders: [], // pilot: admin-only until enabled from the Access tab
   cells: ["supervisor"], // Cell registry — supervisors read their OWN unit's
   //            cells, read-only (narrowed server-side); admins and per-person

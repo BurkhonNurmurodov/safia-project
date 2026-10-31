@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -154,6 +154,11 @@ DEFAULT_PAGE_ACCESS = {
     # a document. In the Laboratory and ADMIN-ONLY until the operator opens it
     # on the Access tab — every section reads the whole plant.
     "reports": [],
+    # «Nomzodlarni baholash» (/assessment, routers/assessment.py) — the panel
+    # grading a supervisor candidate: five department seats, 20 questions drawn
+    # from a bank. Laboratory, ADMIN-ONLY until the operator opens it (to the
+    # judges) on the Access / Permissions tab; the bank stays admin-only even then.
+    "assessment": [],
     # «Kelish ro'yxati» — the T11 staff list (routers/kelish.py): per cell, who is
     # coming today and tomorrow. Opened 2026-10-05 with checklist task #11's
     # automatic check (`startup.open_kelish_page` added the same roles to a
