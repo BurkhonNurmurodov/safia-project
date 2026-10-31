@@ -10739,6 +10739,9 @@ def seed_ai_features() -> None:
 _ASSESSMENT_ANSWER_DDL = (
     ("assessment_questions", (("answer", "TEXT"),), None),
     ("assessment_items", (("answer", "TEXT"),), None),
+    # 2026-10-31: a candidate is a current worker from the Verifix directory.
+    ("assessment_candidates", (("employee_id", "VARCHAR"), ("job", "VARCHAR"),
+                               ("unit_name", "VARCHAR"), ("cell_code", "VARCHAR")), None),
 )
 
 
@@ -10748,7 +10751,7 @@ def add_assessment_answer_columns() -> None:
     `AssessmentItem.answer`). NULL = none written. Pure DDL, idempotent, no
     flag; through `_ensure_columns` and FATAL on failure — every read of the
     bank and of a sitting selects these columns."""
-    _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer")
+    _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer + candidates.employee_id")
 
 
 def seed_tb_food_safety_questions() -> None:

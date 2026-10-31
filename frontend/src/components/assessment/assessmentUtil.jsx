@@ -82,3 +82,7 @@ export const detailOf = (err) => {
   const raw = err?.response?.data?.detail_raw ?? err?.response?.data?.detail;
   return raw && typeof raw === "object" ? raw : null;
 };
+
+/** «Job · cell» of a worker or candidate — what tells two namesakes apart. The
+ *  cell is its code (a cell is its CODE); the workshop name only where none. */
+export const workPlace = (w) => [w?.job, w?.code || w?.unit].filter(Boolean).join(" · ");

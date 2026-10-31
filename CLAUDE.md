@@ -10,7 +10,7 @@ or copy-paste its markup into a page.
 
 | Element type | Template | Rules |
 |---|---|---|
-| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). An option's `short` is what the closed trigger shows for it — a panel label carrying a note, the bare name on the control («AI kalitlari»' model pickers). |
+| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. An option may carry `disabled: true` — listed, dimmed, not pickable, its reason in `title`; «select all» skips it (the «Boshqaruvchi» picker's people who cannot run a cell). An option's `short` is what the closed trigger shows for it — a panel label carrying a note, the bare name on the control («AI kalitlari»' model pickers). `onQuery` makes the search SERVER-SIDE — the box's text goes to the caller on every keystroke ("" on open) and `options` are shown as given, unfiltered; keep the picked option among them. `searchEmpty` is what the list says when nothing matches («type 2 letters», «searching…», «not found») — the assessment's worker picker. |
 | Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. The quick-select list ends with «Barcha vaqt» — `ALL_TIME_FROM` (2015-01-01, a floor below any record, since the data model has none) → today, clamped to `max`; the trigger prints «Barcha vaqt» instead of the spelled-out span while that range is in force, and range-only, so `single` never offers it. `month` is the whole-month picker (a year + 12 months), `year` the whole-year one (a page of twelve years); a pick sets the whole period, clamped to `max`. |
 | "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. Chevrons are 38px squares (the toolbar baseline) with aria-labels. `week` makes it THE "‹ week ›" stepper: ±7 days, the Monday → Sunday span as the label (numeric below sm), any picked day lands on its Monday. `week rolling` drops the Monday — the span is `value` → +6, a picked day becomes the first day, and › stops AT `max` (/kelish: the first column is always today). `dotPrev` / `dotNext` put a brand dot on a chevron with a reason to look that way. `compactUntil="xl"` keeps the week's numeric label up to xl (default: below sm) for a toolbar too narrow on a laptop for the spelled-out span (/kelish). `month` / `year` make it THE "‹ month ›" / "‹ year ›" stepper: ±1 month / year, the label is DateRangePicker's `month` / `year` picker, `value` and every `onChange` are the period's first day (/leaderboard). |
 | Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. The subtitle is readable text (`--text-2`, 12px) and WRAPS: it often names who a record belongs to (a brigadir, a cell), and a phone has no hover to finish a cut line. **It is a real dialog (2026-10-05)**: `role=dialog` + `aria-modal`, labelled by the title (described by the subtitle); on open focus moves onto the CARD (never into a field — that raises a phone keyboard — unless a child autoFocuses), Tab is trapped, and focus returns to the opener on close. **Escape is an implicit close, like the backdrop**: it obeys `dismissable`, and it NEVER silently discards entered work — with a draft it asks first (`ConfirmDialog`, «Saqlamasdan yopilsinmi?», the safe button focused). The draft is `dirty` when the caller passes it; otherwise «the user changed something in this card since it opened»: any typed / ticked / chosen native field (`SearchInput` and anything under `data-no-draft` excepted) plus a pick in `StyledSelect` / `DateRangePicker` / `CountStepper`, which report through `useMarkDraft()` — a new value template inside dialogs must do the same. The X never asks; the backdrop click is unchanged. Only the TOPMOST dialog answers the keyboard: `dialogLayers.js` is THE stack (Modal, ConfirmDialog and Lightbox register; top = highest z-index, then later in the DOM). A popover inside a dialog that closes on Escape must `e.preventDefault()` so the dialog stays standing, and a page-level Escape (a fullscreen overlay) steps aside while `hasOpenDialog()`. |
@@ -9050,13 +9050,32 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   short sitting. The draw COPIES each question's text, department and type onto
   `assessment_items`, so editing or archiving the bank changes no sitting.
 - **Six tables** (created by `create_all`, nothing to migrate):
-  `assessment_candidates` (free-text name + note — a candidate is often nobody
-  the platform has a profile for), `assessment_questions` (the bank; never
+  `assessment_candidates` (a worker of the plant + an optional note — see the
+  next bullet), `assessment_questions` (the bank; never
   deleted, `archived_at` takes one out of the draw), `assessments` (one sitting:
   open → closed), `assessment_items` (its 20), `assessment_evaluations` (=
   JudgeEvaluation: one per seat, unique per (sitting, department) AND per
   (sitting, judge_key)), `assessment_grades` (pass · fail · NULL + an optional
   note, per scorecard × item).
+- **A candidate is one of the plant's CURRENT WORKERS, picked — never typed**
+  (the operator, 2026-10-31: «we should not be creating anyone, we should
+  select from the database of our current workers»). The «Yangi baholash»
+  form searches the Verifix directory the turnover KPI keeps
+  (`turnover_people`, status W, the 23:40 read): `GET /api/assessment/workers
+  ?q=` (admin-only, ≥ 2 letters, Latin and Cyrillic folded alike through
+  `transliterate` — «карим» finds «Karimov», «qochqorov» finds «Qo'chqorov» —
+  matches starting with the first word first, 30 rows + `more`, the directory
+  kept 300 s in memory, `directory` = its count and read time, printed under
+  the field). `POST /api/assessment/assessments` takes `employee_id` (or an
+  existing `candidate_id`); a typed name is refused 400 `pick_worker`, a
+  person not working now 404 `worker_not_found`. One candidate row per
+  `employee_id`, reused on a retake; its job, unit and cell code
+  (`assessment_candidates.employee_id` / `job` / `unit_name` / `cell_code`,
+  `startup.add_assessment_answer_columns`) are re-copied from the directory at
+  every new sitting, and shown on the list, the phone card and the scorecard
+  header («Кондитер · 8920»). A worker assessed before says so in the picker
+  card («N marta baholangan» — and its earlier questions are avoided). Rows from before keep their
+  typed name and carry no `employee_id`.
 - **A judge grades ONLY their own department's questions** (the operator,
   2026-10-31, asked; `rules.own_items`). The Kaizen + Production block is split
   between those two judges by each question's own department; TB, HR and OKK

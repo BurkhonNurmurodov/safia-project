@@ -36,6 +36,14 @@ import { useMarkDraft } from "./dialogLayers";
  *                  dropdown and narrows the list by label as you type. Use for
  *                  long option lists (optional)
  *   searchPlaceholder – placeholder text for the search box (optional)
+ *   onQuery      – (query: string) => void; SERVER-SIDE search for a list too
+ *                  long to hold (thousands of workers): the box's text goes to
+ *                  the caller on every keystroke (and "" on open), and the
+ *                  dropdown shows `options` exactly as given, unfiltered. Keep
+ *                  the picked option among `options`, or the trigger cannot name
+ *                  it. Pair with `searchable` (optional)
+ *   searchEmpty  – node shown when the search matches nothing (default «—»),
+ *                  e.g. a hint to type more (optional)
  *   multiple     – boolean; Google-Sheets-style multi-select. `value` becomes a
  *                  string[] and `onChange` receives the next array. Rows carry
  *                  square checkboxes, the panel stays open while you tick, and a
@@ -73,6 +81,8 @@ export default function StyledSelect({
   removeTitle,
   searchable = false,
   searchPlaceholder,
+  onQuery,
+  searchEmpty,
   multiple = false,
   allLabel,
   countLabel,
@@ -100,7 +110,7 @@ export default function StyledSelect({
   // label when it is a string, else the `title` a node label should carry.
   const q = query.trim().toLowerCase();
   const plain = (o) => String((typeof o.label === "string" ? o.label : o.title) ?? "");
-  const shown = searchable && q
+  const shown = searchable && q && !onQuery
     ? opts.filter((o) => plain(o).toLowerCase().includes(q))
     : opts;
 
@@ -151,6 +161,7 @@ export default function StyledSelect({
 
   function openDropdown() {
     setQuery("");
+    onQuery?.("");
     setDropStyle(computeDropStyle());
     setOpen(true);
   }
@@ -254,7 +265,7 @@ export default function StyledSelect({
               <input
                 ref={searchRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); onQuery?.(e.target.value); }}
                 placeholder={searchPlaceholder}
                 className="w-full bg-transparent text-sm outline-none"
                 style={{ color: "var(--text-1)" }}
@@ -328,8 +339,8 @@ export default function StyledSelect({
           )}
 
           {searchable && shown.length === 0 && (
-            <div className="px-4 py-4 text-sm text-center" style={{ color: "var(--text-4)" }}>
-              —
+            <div className="px-4 py-4 text-sm text-center" style={{ color: searchEmpty ? "var(--text-3)" : "var(--text-4)" }}>
+              {searchEmpty ?? "—"}
             </div>
           )}
 

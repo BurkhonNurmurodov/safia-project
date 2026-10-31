@@ -5455,13 +5455,21 @@ class OpsAsk(Base):
 # (services/assessment.py is THE draw rule). Nothing here scores a KPI.
 
 class AssessmentCandidate(Base):
-    """A person being assessed for the Supervisor role. Free text on purpose:
-    a candidate is often somebody the platform holds no profile for yet."""
+    """A person being assessed for the Supervisor role — one of the plant's
+    CURRENT WORKERS, picked from the Verifix directory (`turnover_people`),
+    never typed in (the operator, 2026-10-31). `employee_id` is the Verifix id
+    and makes the candidate one row however often they are assessed; the name,
+    job and unit are a snapshot of the directory at the last pick. Rows from
+    before that rule carry no `employee_id`."""
     __tablename__ = "assessment_candidates"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
     full_name   = Column(String, nullable=False)
-    note        = Column(Text, nullable=True)          # current job, unit — whatever helps the panel
+    employee_id = Column(String, nullable=True, index=True)   # Verifix employee id
+    job         = Column(String, nullable=True)
+    unit_name   = Column(String, nullable=True)   # Verifix org unit
+    cell_code   = Column(String, nullable=True)   # its cell code, when it is a cell
+    note        = Column(Text, nullable=True)          # anything else that helps the panel
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     created_by  = Column(String, nullable=True)        # a name snapshot
 

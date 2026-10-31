@@ -12,7 +12,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import NewAssessmentModal from "./NewAssessmentModal";
-import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT } from "./assessmentUtil";
+import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace } from "./assessmentUtil";
 
 /** One seat of the panel as a small square: free (dashed), being graded
  *  (icon), submitted (green tint + check). The tooltip names who and how far. */
@@ -86,7 +86,7 @@ export default function AssessmentList({ isAdmin }) {
     const all = list.data?.rows || [];
     const needle = q.trim().toLowerCase();
     const f = needle
-      ? all.filter((r) => `${r.candidate?.full_name || ""} ${r.candidate?.note || ""} ${tl(r.candidate?.full_name || "")}`
+      ? all.filter((r) => `${r.candidate?.full_name || ""} ${r.candidate?.note || ""} ${tl(r.candidate?.full_name || "")} ${workPlace(r.candidate)}`
         .toLowerCase().includes(needle))
       : all;
     const key = (r) => sort.k === "candidate" ? (r.candidate?.full_name || "").toLowerCase()
@@ -134,6 +134,9 @@ export default function AssessmentList({ isAdmin }) {
                 <span className="font-semibold text-sm truncate" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
                 <StatusChip status={r.status} T={T} />
               </div>
+              {workPlace(r.candidate) && (
+                <div className="mt-0.5 text-xs truncate" style={{ color: "var(--text-3)" }}>{workPlace(r.candidate)}</div>
+              )}
               <div className="mt-1 flex items-center gap-1.5">
                 {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
                 <span className="ml-1 text-[11px]" style={{ color: "var(--text-3)" }}>{fmtDate(r.held_on)}</span>
@@ -171,10 +174,15 @@ export default function AssessmentList({ isAdmin }) {
           ) : rows.map((r) => (
             <tr key={r.id} onClick={() => open(r)} className="cursor-pointer">
               <td className="px-3 py-2 max-w-[360px]">
-                <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
-                {r.candidate?.note && (
-                  <span className="ml-2 truncate" style={{ color: "var(--text-3)" }} title={r.candidate.note}>{r.candidate.note}</span>
-                )}
+                <div className="flex items-baseline gap-2 min-w-0 whitespace-nowrap">
+                  <span className="font-medium shrink-0" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
+                  {(workPlace(r.candidate) || r.candidate?.note) && (
+                    <span className="min-w-0 truncate text-xs" style={{ color: "var(--text-3)" }}
+                      title={[workPlace(r.candidate), r.candidate?.note].filter(Boolean).join(" · ")}>
+                      {workPlace(r.candidate) || r.candidate.note}
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-2 tabular-nums">{fmtDate(r.held_on)}</td>
               <td className="px-3 py-2">

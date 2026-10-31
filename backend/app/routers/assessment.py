@@ -30,8 +30,9 @@ from app.database import get_db
 from app.identity import viewer_profile_key
 from app.models import (
     Assessment, AssessmentCandidate, AssessmentGrade, AssessmentItem,
-    AssessmentQuestion, JudgeEvaluation,
+    AssessmentQuestion, JudgeEvaluation, TurnoverPerson, TurnoverRead,
 )
+from app.translit import transliterate
 from app.permissions import require_page
 from app.services import action_log
 from app.services import assessment as rules
@@ -357,6 +358,77 @@ def delete_samples(db: Session = Depends(get_db), payload: dict = Depends(PAGE))
 
 # ── candidates & sittings ─────────────────────────────────────────────────────
 
+# A candidate is one of the plant's CURRENT WORKERS (the operator, 2026-10-31):
+# picked from the Verifix directory the turnover KPI reads every night
+# (`turnover_people`, status W), never typed in. The directory is ~3,000
+# people, so it is searched here, folded once and kept in memory a few minutes.
+_WORKERS: dict = {"at": 0.0, "rows": []}
+_WORKERS_TTL_S = 300
+
+
+def _fold_name(s: str) -> str:
+    s = transliterate(s or "", "uz") or ""
+    s = re.sub(r"[ʻʼ’'`‘]", "", s.lower())
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _workers(db: Session) -> list[tuple]:
+    import time
+    now = time.monotonic()
+    if _WORKERS["rows"] and now - _WORKERS["at"] < _WORKERS_TTL_S:
+        return _WORKERS["rows"]
+    rows = []
+    for p in db.query(TurnoverPerson).filter(TurnoverPerson.status == "W").all():
+        rows.append((p.employee_id, p.name, _fold_name(p.name), p.job, p.unit_name, p.code))
+    rows.sort(key=lambda r: r[2])
+    _WORKERS.update(at=now, rows=rows)
+    return rows
+
+
+def _directory_state(db: Session) -> dict:
+    last = (db.query(TurnoverRead).filter(TurnoverRead.ok.is_(True))
+            .order_by(TurnoverRead.id.desc()).first())
+    return {"count": db.query(func.count(TurnoverPerson.employee_id)).filter(TurnoverPerson.status == "W").scalar() or 0,
+            "read_at": _iso(last.finished_at) if last else None}
+
+
+@router.get("/workers")
+def search_workers(q: str = Query(default=""), limit: int = Query(default=30, ge=1, le=60),
+                   db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Current workers matching `q` (every word of it, in Latin or Cyrillic,
+    apostrophes ignored), for the new-assessment form. Admins only — it is the
+    door to a sitting. With fewer than 2 letters it answers nothing but the
+    directory's size, so the dropdown never paints thousands of rows."""
+    _require_admin(payload)
+    words = [w for w in _fold_name(q).split(" ") if w]
+    out = []
+    if sum(len(w) for w in words) >= 2:
+        for eid, name, folded, job, unit, code in _workers(db):
+            if all(w in folded for w in words):
+                out.append((0 if folded.startswith(words[0]) else 1, eid, name, job, unit, code))
+        out.sort(key=lambda r: r[0])
+    hits = out[:limit]
+    counts = {}
+    if hits:
+        counts = dict(db.query(AssessmentCandidate.employee_id, func.count(Assessment.id))
+                      .join(Assessment, Assessment.candidate_id == AssessmentCandidate.id)
+                      .filter(AssessmentCandidate.employee_id.in_([h[1] for h in hits]))
+                      .group_by(AssessmentCandidate.employee_id).all())
+    return {
+        "rows": [{"employee_id": eid, "name": name, "job": job, "unit": unit, "code": code,
+                  "assessments": counts.get(eid, 0)} for _, eid, name, job, unit, code in hits],
+        "more": len(out) > limit,
+        "directory": _directory_state(db),
+    }
+
+
+def _cand_dict(c: Optional[AssessmentCandidate]) -> Optional[dict]:
+    if not c:
+        return None
+    return {"id": c.id, "full_name": c.full_name, "note": c.note, "employee_id": c.employee_id,
+            "job": c.job, "unit": c.unit_name, "code": c.cell_code}
+
+
 @router.get("/candidates")
 def list_candidates(db: Session = Depends(get_db), _: dict = Depends(PAGE)):
     counts = dict(db.query(Assessment.candidate_id, func.count(Assessment.id))
@@ -464,7 +536,7 @@ def list_assessments(
             "id": a.id, "status": a.status, "held_on": _iso(a.held_on),
             "created_at": _iso(a.created_at), "created_by": a.created_by,
             "closed_at": _iso(a.closed_at),
-            "candidate": {"id": c.id, "full_name": c.full_name, "note": c.note} if c else None,
+            "candidate": _cand_dict(c),
             "seats": _seats(evs, grades, me, idep),
             "submitted": len(sub),
             "results_hidden": hidden,
@@ -475,23 +547,36 @@ def list_assessments(
 
 @router.post("/assessments")
 def create_assessment(body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """Open a sitting: an existing candidate (`candidate_id`) or a new one
-    (`candidate_name` + `candidate_note`), and its 20 questions drawn at once.
-    A bank that cannot fill the draw refuses the whole thing (409 pool_short)."""
+    """Open a sitting for a CURRENT WORKER (`employee_id`, from
+    `GET /workers`) — or a candidate assessed before (`candidate_id`) — and draw
+    its 20 questions at once. Nobody is typed in: a name that is not a working
+    employee in the Verifix directory is refused (400 `pick_worker`), and one
+    person is one candidate row however often they are assessed. A bank that
+    cannot fill the draw refuses the whole thing (409 pool_short)."""
     _require_admin(payload)
     cid = body.get("candidate_id")
-    if cid:
+    eid = str(body.get("employee_id") or "").strip()
+    if eid:
+        person = db.query(TurnoverPerson).filter(TurnoverPerson.employee_id == eid,
+                                                 TurnoverPerson.status == "W").first()
+        if not person:
+            _refuse(404, "worker_not_found", "This person is not a current worker.")
+        cand = db.query(AssessmentCandidate).filter(AssessmentCandidate.employee_id == eid).first()
+        if not cand:
+            cand = AssessmentCandidate(employee_id=eid, full_name=person.name, created_by=_who(payload))
+            db.add(cand)
+        # the directory's latest word on who they are and where they work
+        cand.full_name, cand.job, cand.unit_name, cand.cell_code = person.name, person.job, person.unit_name, person.code
+        note = _clean(body.get("candidate_note"), 500)
+        if note:
+            cand.note = note
+        db.flush()
+    elif cid:
         cand = db.query(AssessmentCandidate).filter(AssessmentCandidate.id == int(cid)).first()
         if not cand:
             _refuse(404, "candidate_not_found", "Candidate not found.")
     else:
-        name = _clean(body.get("candidate_name"), 200)
-        if not name:
-            _refuse(400, "candidate_required", "Name the candidate.")
-        cand = AssessmentCandidate(full_name=name, note=_clean(body.get("candidate_note"), 500) or None,
-                                   created_by=_who(payload))
-        db.add(cand)
-        db.flush()
+        _refuse(400, "pick_worker", "Pick the candidate from the current workers.")
     held = body.get("held_on")
     try:
         held_on = date.fromisoformat(held) if held else datetime.now(TZ).date()
@@ -538,7 +623,7 @@ def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
         "id": a.id, "status": a.status, "held_on": _iso(a.held_on),
         "created_at": _iso(a.created_at), "created_by": a.created_by,
         "closed_at": _iso(a.closed_at), "closed_by": a.closed_by,
-        "candidate": {"id": c.id, "full_name": c.full_name, "note": c.note} if c else None,
+        "candidate": _cand_dict(c),
         "items": [_item_dict(i) for i in items],
         "total": len(items),
         "seats": _seats(evs, grades, me, {i.id: i.department for i in items}),

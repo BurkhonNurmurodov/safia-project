@@ -189,7 +189,12 @@ export default function AssessmentGrade() {
                   {d.status === "open" ? T.chipOpen : T.chipClosed}
                 </span>
               </div>
-              {d.candidate?.note && <p className="mt-0.5 text-sm" style={{ color: "var(--text-2)" }}>{d.candidate.note}</p>}
+              {(d.candidate?.job || d.candidate?.code || d.candidate?.unit) && (
+                <p className="mt-0.5 text-sm break-words" style={{ color: "var(--text-2)" }}>
+                  {[d.candidate.job, d.candidate.code && `${T.cell} ${d.candidate.code}`, d.candidate.unit].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {d.candidate?.note && <p className="mt-0.5 text-sm break-words" style={{ color: "var(--text-3)" }}>{d.candidate.note}</p>}
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
                 <span className="inline-flex items-center gap-1"><CalendarDays size={12} aria-hidden="true" />{fmtDate(d.held_on)}</span>
                 {d.created_by && <span>{fill(T.createdBy, { name: tl(d.created_by) })}</span>}
