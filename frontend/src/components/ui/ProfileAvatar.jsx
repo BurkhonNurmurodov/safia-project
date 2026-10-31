@@ -53,18 +53,24 @@ export default function ProfileAvatar({
   colorKey,         // hue source — raw canonical name, stable across languages
   profileKey,       // "role:id" — enables the photo fetch
   photoVer,         // photo version from the API; falsy = no photo, no request
+  // An API path to fetch the photo from instead of a profile's — a person
+  // with no platform profile (the «Xodim kartasi» Verifix photo,
+  // /api/people/:id/photo). Same blob fetch, same initials fallback.
+  photoUrl,
   size = 32,
   className = "",
   style,
 }) {
   const { data: blob } = useQuery({
-    queryKey: ["avatar", profileKey, photoVer],
+    queryKey: photoUrl ? ["avatar-url", photoUrl] : ["avatar", profileKey, photoVer],
     queryFn: () =>
-      api.get(`/api/profiles/photo/${encodeURIComponent(profileKey)}`, {
-        responseType: "blob",
-        params: { v: photoVer },
-      }).then((r) => r.data),
-    enabled: Boolean(profileKey && photoVer),
+      (photoUrl
+        ? api.get(photoUrl, { responseType: "blob" })
+        : api.get(`/api/profiles/photo/${encodeURIComponent(profileKey)}`, {
+          responseType: "blob",
+          params: { v: photoVer },
+        })).then((r) => r.data),
+    enabled: Boolean(photoUrl || (profileKey && photoVer)),
     staleTime: Infinity,
     retry: 0,
   });

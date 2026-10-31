@@ -48,8 +48,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, ChevronDown, Clock, ListChecks, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users,
+  Check, ChevronDown, Clock, Contact, ListChecks, Lock, Minus, Plus, Undo2, UserCheck, UserMinus, UserPlus, Users,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import TableCard from "../components/ui/DataTable";
 import Button from "../components/ui/Button";
@@ -73,6 +74,7 @@ import { shortPerson } from "../utils/personName";
 import { TONE_HEX } from "../utils/statusBands";
 import { transliterate, useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
+import { useCanOpenPeople, useP } from "../components/people/peopleUtil";
 
 const NONE = "none";          // the «cells with no brigadir» bucket
 const WINDOW_DAYS = 30;       // services/kelish.WINDOW_DAYS
@@ -1323,6 +1325,11 @@ function FragmentRow({ divider, children }) {
 // last came in, and for each day who set the answer and when — the corner
 // marker's explanation on a phone, which has no hover.
 function WorkerSheet({ row, data, onClose, t, tl, tx }) {
+  // «Kartani ochish» — the person's «Xodim kartasi», for a viewer who may open
+  // it; the list carries a name, so the card resolves it (namesakes listed).
+  const P = useP();
+  const canCard = useCanOpenPeople();
+  const navigate = useNavigate();
   const source = row.source === "manual" ? t("kelish.manual")
     : row.source === "kept" ? t("kelish.kept") : t("kelish.sheetFile");
   const warn = row.never ? fill(t("kelish.never"), { n: WINDOW_DAYS })
@@ -1345,7 +1352,17 @@ function WorkerSheet({ row, data, onClose, t, tl, tx }) {
       subtitle={row.job ? tx(row.job) : null}
       icon={<UserCheck size={18} />}
       maxWidth="max-w-md"
-      footer={<Button variant="secondary" onClick={onClose}>{t("kelish.close")}</Button>}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>{t("kelish.close")}</Button>
+          {canCard && (
+            <Button icon={Contact} onClick={() => navigate(`/people?${new URLSearchParams({
+              find: row.full, ...(data?.cell?.code ? { code: data.cell.code } : {}) }).toString()}`)}>
+              {P.openCard}
+            </Button>
+          )}
+        </>
+      )}
     >
       <div className="flex flex-wrap gap-1.5">
         {fact(source)}

@@ -5562,3 +5562,25 @@ class AssessmentGrade(Base):
     verdict       = Column(String(8), nullable=True)        # pass · fail
     note          = Column(Text, nullable=True)
     updated_at    = Column(DateTime(timezone=True), nullable=True)
+
+
+# ── «Xodim kartasi» — one person's card (/people/:employee_id) ──────────────
+# Everything on the card is read from tables that already exist; this is the
+# ONE register the page adds (services/people.py, routers/people.py).
+
+class EmployeeHonour(Base):
+    """An honour given to one person of the plant, keyed by their Verifix
+    employee id (never a name — names collide). Added by an admin or the
+    person's own brigadir, read by everyone who may open the card; a property
+    of the person, never a status. `kind` is one of `people.HONOUR_KINDS`."""
+    __tablename__ = "employee_honours"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    employee_id = Column(String(32), nullable=False, index=True)
+    title       = Column(String, nullable=False)
+    kind        = Column(String(24), nullable=False)
+    given_on    = Column(Date, nullable=False)
+    given_by    = Column(String, nullable=True)        # identity.viewer_profile_key of the giver
+    given_by_name = Column(String, nullable=True)      # a name snapshot
+    note        = Column(Text, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())

@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -159,6 +159,11 @@ DEFAULT_PAGE_ACCESS = {
     # from a bank. Laboratory, ADMIN-ONLY until the operator opens it (to the
     # judges) on the Access / Permissions tab; the bank stays admin-only even then.
     "assessment": [],
+    # «Xodim kartasi» (/people/:employee_id, routers/people.py) — everything the
+    # platform knows about ONE person of the plant. Laboratory, ADMIN-ONLY
+    # until the operator opens it on the Access tab; when opened the reach
+    # follows the platform's locks (own unit · shift ∩ plant · own cells).
+    "people": [],
     # «Kelish ro'yxati» — the T11 staff list (routers/kelish.py): per cell, who is
     # coming today and tomorrow. Opened 2026-10-05 with checklist task #11's
     # automatic check (`startup.open_kelish_page` added the same roles to a

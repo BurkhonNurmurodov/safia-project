@@ -5,7 +5,7 @@
 // each section and link stay beside the sidebar code that reads them.
 import {
   Activity, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
-  Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog,
+  Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, ShieldAlert, Sparkles, Target,
@@ -70,6 +70,9 @@ export const ALL_LINKS = [
   // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
   // candidate. Laboratory, admin-only until the operator opens it to judges.
   { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
+  // «Xodim kartasi» — everything the platform knows about ONE person of the
+  // plant (/people/:employee_id). Laboratory, admin-only until opened.
+  { to: "/people", page: "people", key: "nav.people", icon: Contact, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

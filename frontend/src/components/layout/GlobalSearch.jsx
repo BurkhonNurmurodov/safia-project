@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Grid3x3, UsersRound, UserRound, Settings2, AlertTriangle } from "lucide-react";
+import { Grid3x3, UsersRound, UserRound, Settings2, AlertTriangle, Contact } from "lucide-react";
 import api from "../../utils/api";
 import SearchInput from "../ui/SearchInput";
 import GroupBadge from "../ui/GroupBadge";
@@ -17,6 +17,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
 import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
+import { nameCase } from "../people/peopleUtil";
 
 /**
  * «Qidiruv» — the search across the platform: in the header from md up, and
@@ -32,6 +33,10 @@ import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
  *   brigadirs      → /brigadir/:id, for a viewer who may open that page
  *   leaders        → the leader's profile for whoever manages profiles, else
  *                    the cell they run
+ *   workers        → /people/:employee_id, the «Xodim kartasi», for a viewer
+ *                    who may open that page — asked of `/api/people/search`
+ *                    (the Verifix directory, folded on the server, within the
+ *                    viewer's reach) from 2 letters on, debounced
  *
  * Pages and tabs are matched here; cells and people come from ONE request,
  * `GET /api/search/index` (backend/app/routers/search.py — the viewer's plant),
@@ -50,7 +55,7 @@ import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
  * cells keeps the same page mounted.
  */
 
-const CAP = { pages: 6, admin: 5, cells: 6, units: 5, leaders: 6 };
+const CAP = { pages: 6, admin: 5, cells: 6, units: 5, leaders: 6, workers: 6 };
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
 
 // The best `cap` items of one kind, best first; `top` is the best score, which
@@ -87,6 +92,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const can = (page) => canAccessPage(auth?.role, page, access, capPages, deniedPages);
   const manageProfiles = isAdmin || capTabs.includes("profiles");
   const seeUnits = can("overview");
+  const seeWorkers = can("people");
 
   const idx = useQuery({
     queryKey: ["search-index"],
@@ -157,6 +163,26 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   }, [idx.data, tl, t, seeUnits, manageProfiles]);
 
   const folded = useMemo(() => searchFold(q), [q]);
+  // Workers are matched on the SERVER (the directory is thousands of people):
+  // asked from 2 letters on, a beat after typing stops.
+  const [wq, setWq] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setWq(q.trim()), 250);
+    return () => clearTimeout(id);
+  }, [q]);
+  const wantWorkers = seeWorkers && wq.replace(/\s+/g, "").length >= 2;
+  const workersQ = useQuery({
+    queryKey: ["people-search", wq],
+    queryFn: () => api.get("/api/people/search", { params: { q: wq, limit: CAP.workers } }).then((r) => r.data),
+    enabled: wantWorkers,
+    staleTime: 60_000,
+  });
+  const workerItems = useMemo(() => (wantWorkers ? workersQ.data?.rows || [] : []).map((w) => ({
+    id: `w:${w.employee_id}`, kind: "worker", to: `/people/${encodeURIComponent(w.employee_id)}`, Icon: Contact,
+    label: nameCase(tl(w.name)), sort: w.name,
+    sub: [w.job || null, w.code || null].filter(Boolean).join(" · "),
+    terms: [searchFold(w.name)],
+  })), [wantWorkers, workersQ.data, tl]);
   const groups = useMemo(() => {
     if (!folded) return [];
     // Kinds in their own order unless one matched better (a stable sort).
@@ -166,10 +192,14 @@ export default function GlobalSearch({ drawer = false, onPick }) {
       { key: "cells", label: t("search.grp.cells"), ...rank(entity.cells, folded, CAP.cells) },
       { key: "units", label: t("search.grp.units"), ...rank(entity.units, folded, CAP.units) },
       { key: "leaders", label: t("search.grp.leaders"), ...rank(entity.leaders, folded, CAP.leaders) },
+      // Already matched and ordered by the server; the score only places the
+      // kind among the others.
+      { key: "workers", label: t("search.grp.workers"), items: workerItems,
+        top: workerItems.reduce((m, it) => Math.max(m, matchScore(folded, it.terms)), 0) },
     ].filter((g) => g.items.length).sort((a, b) => b.top - a.top);
-  }, [folded, pageItems, adminItems, entity, t]);
+  }, [folded, pageItems, adminItems, entity, workerItems, t]);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
-  const loadingIndex = Boolean(folded) && used && idx.isPending;
+  const loadingIndex = Boolean(folded) && ((used && idx.isPending) || (wantWorkers && workersQ.isFetching && !workersQ.data));
   const failedIndex = Boolean(folded) && idx.isError && !idx.data;
 
   // A new query starts at the top result.

@@ -394,6 +394,10 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/assessment/assessments/{}/redraw",     "training", "assessment.redrawn"),
     (("DELETE",), "/api/assessment/assessments/{}",            "training", "assessment.deleted"),
     (("DELETE",), "/api/assessment/samples",                   "training", "assessment.samples_deleted"),
+    # «Xodim kartasi» (routers/people.py) — the honours register is the page's
+    # one write; everything else on the card is a read.
+    (("POST",),   "/api/people/{}/honours",                    "collab", "people.honour_added"),
+    (("DELETE",), "/api/people/{}/honours/{}",                 "collab", "people.honour_removed"),
     (("POST",),   "/api/education/lessons",                    "comms", "education.lesson_created"),
     (("PUT",),    "/api/education/lessons/{}",                 "comms", "education.lesson_edited"),
     (("DELETE",), "/api/education/lessons/{}",                 "comms", "education.lesson_archived"),

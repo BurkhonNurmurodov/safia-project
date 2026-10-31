@@ -55,6 +55,7 @@ const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
+const People = lazyWithReload(() => import("./pages/People"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
 const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
@@ -116,7 +117,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
-  reports: Reports, assessment: Assessment,
+  reports: Reports, assessment: Assessment, people: People,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
@@ -557,6 +558,10 @@ function AppWithLang() {
                 `assessment`: admin-only until the operator opens it to judges. */}
             <Route path="/assessment" element={<AuthGate><RequirePage page="assessment"><Assessment /></RequirePage></AuthGate>} />
             <Route path="/assessment/:id" element={<AuthGate><RequirePage page="assessment"><AssessmentGrade /></RequirePage></AuthGate>} />
+            {/* «Xodim kartasi» — one person of the plant (/people/:employeeId).
+                `people`: admin-only until the operator opens it on the Access tab. */}
+            <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
+            <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />

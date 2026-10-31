@@ -13,6 +13,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import NewAssessmentModal from "./NewAssessmentModal";
 import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace } from "./assessmentUtil";
+import { PersonLink } from "../people/peopleUtil";
 
 /** One seat of the panel as a small square: free (dashed), being graded
  *  (icon), submitted (green tint + check). The tooltip names who and how far. */
@@ -175,7 +176,9 @@ export default function AssessmentList({ isAdmin }) {
             <tr key={r.id} onClick={() => open(r)} className="cursor-pointer">
               <td className="px-3 py-2 max-w-[360px]">
                 <div className="flex items-baseline gap-2 min-w-0 whitespace-nowrap">
-                  <span className="font-medium shrink-0" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
+                  <span className="font-medium shrink-0" style={{ color: "var(--text-1)" }}>
+                    <PersonLink employeeId={r.candidate?.employee_id}>{tl(r.candidate?.full_name || "—")}</PersonLink>
+                  </span>
                   {(workPlace(r.candidate) || r.candidate?.note) && (
                     <span className="min-w-0 truncate text-xs" style={{ color: "var(--text-3)" }}
                       title={[workPlace(r.candidate), r.candidate?.note].filter(Boolean).join(" · ")}>

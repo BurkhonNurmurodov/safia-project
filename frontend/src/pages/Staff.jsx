@@ -43,6 +43,7 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter, PickFilter, FilterPanel } 
 import { useStaffApi, StaffApiProvider, STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
 import { LiveRowNotes, LiveStatusChip, LiveDayState, n2 as liveN2 } from "../components/staff/LiveBits";
 import DayStepper from "../components/ui/DayStepper";
+import { PersonLink } from "../components/people/peopleUtil";
 import StaffPhoneList, { Dotted } from "../components/staff/StaffPhoneList";
 import useIsMobile from "../hooks/useIsMobile";
 
@@ -867,7 +868,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
   // formatted exactly as the table's cell formats it.
   const phoneItems = useMemo(() => (isPhone ? sortedWorkers.map(w => ({
     key: w.id ?? w.worker_name,
-    name: tl(w.worker_name),
+    name: <PersonLink employeeId={w.employee_id} name={w.worker_name} code={w._cell?.code || w.verifix_code}>{tl(w.worker_name)}</PersonLink>,
     task: w.on_task || null,
     status: S.live ? <LiveStatusChip status={w.status} /> : null,
     note: S.live && (w.moved || w.planned) ? <LiveRowNotes w={w} /> : null,
@@ -1222,7 +1223,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
                       sideways instead. */}
                   <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                     <div className="flex items-center gap-2">
-                      <span>{tl(w.worker_name)}</span>
+                      <PersonLink employeeId={w.employee_id} name={w.worker_name} code={w._cell?.code || w.verifix_code}>{tl(w.worker_name)}</PersonLink>
                       {w.on_task && (
                         <span className="text-[10px] leading-4 font-medium px-2 rounded-full whitespace-nowrap"
                           title={t("staff.onTask")}

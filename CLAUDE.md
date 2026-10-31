@@ -36,6 +36,7 @@ or copy-paste its markup into a page.
 | Factory (plant) switcher | `useFactorySection()` from `FactorySelect.jsx` | THE plant switcher — a `FilterPanel` SECTION, first in every factory-aware page's section list (plant → shift → supervisor → …), never a standalone control on the bar. (The standalone `FactorySelect` dropdown and the `FactoryTabs` strip before it are both retired from page toolbars: each cost a permanent toolbar cell on a phone-first platform for a value most users never change.) «All factories» is the FIRST option. Returns `null` when fewer than two factories exist; a locked viewer (supervisor/leader) gets a `static` section — an inert chip naming their plant, never a one-option control. The `FactorySelect` component itself survives only for non-toolbar surfaces (admin forms). |
 | Ojidaniya category owner ("who answers for this cause") | `components/idle/OwnerChip.jsx` | THE way a «Kutish mas'uli» is named beside a category — the «Xarajat» tree, the «Toifalar bo'yicha» matrix, `/idle-owner`. Fed the payload's `owners` map (category → person, from `services/idle_scope.owner_labels`), never a name copied onto every row. A NAME, not a status: no traffic light — it borrows the category's own hue where it sits on a coloured row. A category with NOBODY assigned renders **nothing at all**, never «—» and never an empty chip: twelve categories with two owners between them would grow ten placeholders saying only that the register is unfinished. (Workbooks DO print «—» — a blank spreadsheet cell reads as «this column did not apply here».) |
 | Cell label (how a cell is NAMED) | `utils/cellName.js` → `cellLabel(code, leader)` | A cell is its **verifix CODE**. The workshop name is NEVER printed — see the section below (the one exception: the `/cells` register's «Sex nomi» column, 2026-10-19). |
+| Pressable person reference | `PersonLink` in `components/people/peopleUtil.jsx` | THE way a person's name rendered as CONTENT opens their «Xodim kartasi». `employeeId` (the Verifix id) where the row carries one — a live day, the compliance list, an assessment candidate; otherwise `name` (+ the row's cell `code`) → `/people?find=…`, which opens the card when the name folds to ONE person and lists the namesakes when it does not (never a guess). Inert text for a viewer who may not open `people`; clicks stop propagation; CellLink's `.cell-link` look; never inside another `<button>` (the assessment list's phone rows stay unlinked for that reason). |
 | Pressable cell reference | `CellLink.jsx` | THE way a production cell rendered as CONTENT (table cell, card, chip) opens its page `/cells/:id` — dotted-underline affordance via the `.cell-link` rule in `index.css`. `id` = cells.id; without one it renders inert text (never a dead link). Clicks stop propagation, so it nests in clickable rows. FILTER controls listing cells never navigate. Don't put it inside another `<button>` (IdleCell accordion / AttendanceUpload expander stay unlinked on purpose — nested-interactive + they hold unsaved drafts). `/cells/:id` (`CellDetails.jsx`) is auth-only like `/profile`; its edit modal is the shared `CellFormModal.jsx` (ONE form with the `/cells` register). |
 | Work-centre GROUP letter | `GroupBadge.jsx` + `utils/wcGroup.js` | THE letter a cell, a catalog line or a typed pin carries when several cells of one unit share a SAP work centre (backend `services/wc_group.py`). Sits right AFTER the code chip or the cell's code — never instead of it, never a second hand-rolled pill. Renders nothing without a group (a cell alone at its code has none, and ten placeholders would only say so). Every letter wears ONE fixed colour on every page (`groupColor`, the operator's order 2026-09-14: A red · B blue · C yellow · D green · E orange · F purple, then the rest of `CATEGORY_COLORS`), tinted like a work-centre chip; a letter picker renders its options as badges. `tone="warn"` marks an ORPHAN letter (lines or pins naming a group no cell carries) with the letter's own colour behind a DASHED outline — never amber, which would read as C. Plain text — a workbook cell, a toast, a tooltip — uses `wcGroupLabel(code, group)` → «A2894 · A»; a form normalises input with `normGroup` (Cyrillic twins → Latin, `undefined` = refuse). A group picker is a `StyledSelect` of «—» + the letters, never a free-text box. |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. `tone="danger"` is a section that FAILED to load — its glyph in a red tint chip, so a failure never reads as «nothing here». Table "no match" rows stay plain muted text. |
@@ -87,7 +88,7 @@ The operator: a search in the empty header space between the page title and
 the icons. `components/layout/GlobalSearch.jsx` — in the header from md up
 (Layout mounts it only there), and on a phone at the top of the ☰ drawer
 (`drawer`, mounted by Sidebar.jsx only while the drawer is open), because a
-phone's header stays the title, the bell and the avatar. One box finds five kinds of
+phone's header stays the title, the bell and the avatar. One box finds six kinds of
 thing, each opening where it lives: **pages** (the sidebar's `ALL_LINKS`, by
 the viewer's page access) → the page; **admin tabs** (`config/adminNav.js`, by
 capability) → `/admin/upload?tab=…`; **cells** → `/cells/:id`, printed as CODE
@@ -115,7 +116,11 @@ whoever manages profiles, else the cell they run.
   let the release land on whatever the closing list uncovered.
 - The sidebar's `ALL_LINKS` / `NAV_GROUPS` live in `config/navLinks.js` (the
   sidebar renders the search, the search reads the list — no import loop).
-- Not built: workers, concerns or tasks by text.
+- **Workers** (from 2026-10-31, «Xodim kartasi»): the sixth kind, for a
+  viewer who may open `people` — asked of `GET /api/people/search` (the Verifix
+  directory, folded on the SERVER, within the viewer's reach) from 2 letters
+  on, 250 ms after typing stops; up to 6, opening `/people/:employee_id`.
+- Not built: concerns or tasks by text.
 
 ## Admin panel structure
 
@@ -9197,6 +9202,128 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   stays undeletable.
 - Not built: notifications to judges, an export, a candidate-facing view (by
   the request), a pass mark.
+
+## «Xodim kartasi» — one person of the plant (`/people`, Laboratory, 2026-10-31)
+
+The operator's request: one page that shows everything Safia IMS knows about
+ONE person — a worker, a leader or a brigadir — in the freelancer-profile
+shape: a hero card, a tab strip, the rest below. Page key **`people`**,
+Laboratory, **ADMIN-ONLY until the operator opens it on the Access tab**
+(`DEFAULT_PAGE_ACCESS["people"] = []`). `services/people.py` folds,
+`routers/people.py` (`/api/people`) scopes, `pages/People.jsx` +
+`components/people/` + `pages/peopleText.js` (four languages) draw it.
+
+- **Identity is the Verifix EMPLOYEE ID** (`turnover_people.employee_id`, the
+  23:40 directory read), never a name. `/people` is the search (the directory,
+  every status, working people first); `/people/:employee_id` is the card;
+  `/people?find=<name>&code=<cell>` is the door every NAME-only row elsewhere
+  opens through — one person opens the card, namesakes are listed (narrowed by
+  the row's cell), never guessed. `GET /api/people/resolve` answers it.
+- **Reach** (`_scope`, applied to the card, the photo, the search and the
+  resolver): admin / top-manager / a page grant at "all" → everybody; a
+  supervisor → the people whose CURRENT cell (the directory's org unit →
+  `turnover.cell_map`) is in their unit; a shift-manager → shift ∩ plant
+  (`shift_scope.unit_ids`); a leader → the cells they run or own; anybody else
+  403. **A person outside the reach is a 404**, never a blank card. A
+  dismissed person with no cell is visible to the unscoped only.
+- **Nothing is measured here; every figure is read through its owner.**
+  Attendance under /workers' predicates (`routers.workers._py_came` /
+  `_py_on_leave`, imported), the day-close gate (`day_state.confirmed_pairs`);
+  the category today vs the step the tenure expects (`category_compliance
+  .person_rows`, the KPI's own per-person computation); exchanges and role
+  changes from BOTH registers (`hr_documents` by name, `live_documents` by
+  employee id — /workers' Movements union); the HR journals
+  (`category_compliance.events_by_person`) and `turnover_leavers` for the
+  career; «Ish grafigi» marks (`kelish_marks` by `kelish.worker_key`); the
+  worker's own concerns (`leader_concerns.worker_name`, /leaders-kpi's bucket);
+  the assessments as `/assessment` shows them to THIS viewer (its own
+  `list_assessments`, `results_hidden` included — absent when the viewer may
+  not open that page); the photo through `verifix_explore.photo` (the org
+  read's main identification photo, page-gated `GET /api/people/{id}/photo`).
+- **ATTENDANCE IS NAME-KEYED, AND THE CARD SAYS SO.** An `attendance` row has
+  no Verifix id (the Excel never had one, and the live close's copy keeps the
+  shape), so closed days are matched by the folded name (`kelish.worker_key`,
+  the «Ish grafigi» identity; every spelling the table holds is kept in an
+  incrementally-read map, `_att_names`). Where the directory holds a NAMESAKE
+  (another id folding to the same key) a row is attributed only when its cell
+  is this person's own placement that day — the live read's cell
+  (`live_verifix_reads` `emps[eid].c`, id-keyed) from `live_day.LIVE_FROM`, the
+  HR journals' placement before it — and no namesake stood there; everything
+  else is WITHHELD and counted (an amber notice names how many). Before
+  2026-08-01 rows carry no cell, so a namesake's days then cannot be
+  attributed at all. The day still being worked is read BY ID off the stored
+  live read (`live_staff.person`, every approved document laid over it — never
+  a Verifix call). The spec asked for id-keyed live closed days; the copy
+  carries no id, so the cell match above is the id-keyed part.
+- **The hero** (every tab): photo (initials when none) · name (Verifix's
+  capitals in title case, `nameCase`) · job · status (dismissed on …) · tenure
+  from the CURRENT employment's hiring date · cell as CODE + letter + its
+  «Boshqaruvchi» + brigadir + shift (never the workshop) · category vs
+  expected (`VerdictChip`) · today's live state. Under it the page period
+  (`DateRangePicker compactLabel`, default the last 30 days) and four
+  `KpiDeltaCard` tiles — **Davomat %** ((came + leave) ÷ listed closed days,
+  the /workers rule, today «so far» included), **Kelgan kunlar**, **Ishlagan
+  soat**, **Ko'chishlar** (approved exchanges) — each against the previous
+  period of the same length, with a **7-WEEK** sparkline (a person's day is
+  0 or 100%, so a 7-day line of it is noise; the spec's «7-day sparklines» were
+  read as weekly points, and they live on the tiles rather than repeated on
+  «Umumiy»).
+- **Tabs** (`SegmentedToggle asTabs`, `size="lg"` on a phone, `?tab=` IS the
+  state): **Umumiy** (facts + «Oxirgi voqealar», one dated feed of the last 365
+  days, 20 at a time: an absence a live day's copy names «X», a missing
+  check-out, exchanges, role changes, hires / transfers / categories /
+  dismissals, concerns filed, assessments sat, honours; each row opens where it
+  lives — /staff on that unit-day, `/concerns?open=`, `/assessment/:id`) ·
+  **Davomat** (a Monday-first month grid on `DayStepper month`, painted with
+  /workers' `ATT_SEGMENTS` read for one person — came 100% darkest green, leave
+  the next green, absent 0% red, no check-out amber, off and no-row neutral, a
+  move arrow, the «Ish grafigi» plan as a dot, today outlined; under it the
+  PAGE PERIOD's days as one table, plan beside fact on one line, `Pagination`
+  past 50) · **Karyera** (the journals' timeline, a category step judged
+  against the tenure's expected step; «Yacheyka tarixi» = runs of one cell over
+  days CAME, ≥ 3 days, newest first) · **Mukofot va baholash** · **Havotirlar**
+  (№ · date · cell · text · `StChip` status · level · resolved on; counts in
+  the head) · **Rahbarlik** — only for a person the live sync tied to a leader
+  profile or a brigadir unit (`vfx_employee_id`).
+- **Rahbarlik never rebuilds another page's figure.** It names the profile(s)
+  and unit(s), the cells run and owned, and links to `/profile/leader/:id`,
+  `/brigadir/:id`, /leaders, /leaders-kpi. The «Liderlar KPI» total and place
+  show only when a board of this month is ALREADY kept (another viewer opened
+  that page in the last five minutes) — read through `KeptAnswers.peek()`, a new
+  read-only method that never builds; otherwise the card says to open the
+  page. Monitoring % and the brigadir board place are computed in the browser
+  on their own pages, so they are links here, not figures (the server cannot
+  read them without a second spelling).
+- **The ONE new register: `employee_honours`** (employee_id, title, kind ∈
+  `people.HONOUR_KINDS` — monthly_best · kaizen · safety · thanks · other —
+  given_on, given_by profile key + name snapshot, note; created by
+  `create_all`). An admin or the person's own brigadir adds (`Modal` +
+  `FormField`, no future date) and removes (`ConfirmDialog` danger); everybody
+  who may open the card reads. Neutral chips — a property, never a status.
+  Jurnal: `people.honour_added` / `people.honour_removed` (category collab, so
+  the assistant needs a Confirm and can never remove one — every DELETE is
+  off-limits to it).
+- **Privacy**: name, job, unit, cell, dates, category and attendance only.
+  Gender, birth month, address, phone, passport, PINFL, family and wages are
+  read NOWHERE in this code, whoever the viewer is («Tarkib» keeps coded facts
+  for aggregates; this page is about one person).
+- **Kept**: the per-person fold (every row, document, concern, journal line)
+  in `KeptAnswers("people")` keyed by the employee id — 60 s, served up to 5
+  min while one rebuild runs, never to a viewer who wrote since; the period,
+  the tab, the honours, the scope, the rights and the assessment rule are
+  computed per request around it. The directory fold (`people.directory`,
+  every status, 300 s or a newer read) is the ONE fold the assessment picker
+  searches too.
+- **Entry points** (`PersonLink`, see the template table): /staff's and
+  /daily's workers table and phone list (one `AttendanceTable`), the
+  `StaffingProofModal` rows, /kelish's worker card («Kartani ochish»), the
+  assessment list (desktop rows) and the picker's chosen worker, the
+  /leaders-kpi compliance «Xodimlar» view and its explain dialog, and
+  «Qidiruv» (workers, the sixth kind). Not linked: «Tarkib» — its breakdown is
+  by brigadir / job / cell and lists no person.
+- Not built: an export, editing anything but honours, a candidate-facing view,
+  id-keyed attendance before the copy carries an id, and a Monitoring % /
+  brigadir-board figure on «Rahbarlik».
 
 ## «Hisobotlar» — the period report (`/reports`, Laboratory, 2026-10-26)
 

@@ -9,6 +9,7 @@ import DateRangePicker, { localISO } from "../ui/DateRangePicker";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { useAT, fill, errText, detailOf, fmtDateTime, workPlace } from "./assessmentUtil";
+import { PersonLink } from "../people/peopleUtil";
 
 const MORE = "__more__";
 const inputCls = "w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none";
@@ -109,7 +110,9 @@ export default function NewAssessmentModal({ onClose, onCreated }) {
         <div className="flex items-start gap-3 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
           <UserRound size={18} className="mt-[2px] shrink-0" style={{ color: "var(--text-3)" }} aria-hidden="true" />
           <div className="min-w-0 text-sm">
-            <div className="font-semibold break-words" style={{ color: "var(--text-1)" }}>{tl(picked.name)}</div>
+            <div className="font-semibold break-words" style={{ color: "var(--text-1)" }}>
+              <PersonLink employeeId={picked.employee_id}>{tl(picked.name)}</PersonLink>
+            </div>
             {picked.job && <div className="text-xs break-words" style={{ color: "var(--text-2)" }}>{picked.job}</div>}
             {(picked.code || picked.unit) && (
               <div className="text-xs break-words" style={{ color: "var(--text-3)" }}>

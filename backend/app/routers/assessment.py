@@ -36,6 +36,7 @@ from app.translit import transliterate
 from app.permissions import require_page
 from app.services import action_log
 from app.services import assessment as rules
+from app.services import people
 
 router = APIRouter(prefix="/api/assessment", tags=["assessment"])
 PAGE = require_page("assessment")
@@ -361,28 +362,14 @@ def delete_samples(db: Session = Depends(get_db), payload: dict = Depends(PAGE))
 # A candidate is one of the plant's CURRENT WORKERS (the operator, 2026-10-31):
 # picked from the Verifix directory the turnover KPI reads every night
 # (`turnover_people`, status W), never typed in. The directory is ~3,000
-# people, so it is searched here, folded once and kept in memory a few minutes.
-_WORKERS: dict = {"at": 0.0, "rows": []}
-_WORKERS_TTL_S = 300
-
-
-def _fold_name(s: str) -> str:
-    s = transliterate(s or "", "uz") or ""
-    s = re.sub(r"[ʻʼ’'`‘]", "", s.lower())
-    return re.sub(r"\s+", " ", s).strip()
+# people, folded once and kept in memory by `services/people.directory` — the
+# one fold «Xodim kartasi» searches too.
+_fold_name = people.fold_name
 
 
 def _workers(db: Session) -> list[tuple]:
-    import time
-    now = time.monotonic()
-    if _WORKERS["rows"] and now - _WORKERS["at"] < _WORKERS_TTL_S:
-        return _WORKERS["rows"]
-    rows = []
-    for p in db.query(TurnoverPerson).filter(TurnoverPerson.status == "W").all():
-        rows.append((p.employee_id, p.name, _fold_name(p.name), p.job, p.unit_name, p.code))
-    rows.sort(key=lambda r: r[2])
-    _WORKERS.update(at=now, rows=rows)
-    return rows
+    return [(r["employee_id"], r["name"], r["folded"], r["job"], r["unit"], r["code"])
+            for r in people.directory(db)["rows"] if r["status"] == "W"]
 
 
 def _directory_state(db: Session) -> dict:

@@ -10,6 +10,7 @@ import Button from "../ui/Button";
 import { fill } from "../../pages/leadersKpiText";
 import { ScoreChip, VerdictChip } from "./KpiBits";
 import { bandLines, dmy, fetchPeople, n0, pct1, pts, scoreTone, toneInk, w100 } from "./kpiUtil";
+import { PersonLink } from "../people/peopleUtil";
 
 function Section({ icon: Icon, title, count, caption, children }) {
   return (
@@ -55,7 +56,7 @@ function PersonList({ rows, T, tl, tx }) {
         <li key={p.employee_id} className="px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-start justify-between gap-3">
             <span className="font-medium" style={{ color: "var(--text-1)" }}>
-              {tl(p.name)}<span className="font-normal" style={{ color: "var(--text-2)" }}> · {p.job ? tx(p.job) : "—"}</span>
+              <PersonLink employeeId={p.employee_id}>{tl(p.name)}</PersonLink><span className="font-normal" style={{ color: "var(--text-2)" }}> · {p.job ? tx(p.job) : "—"}</span>
             </span>
             <VerdictChip counted={p.counted} compliant={p.compliant}>{T.cpV[p.verdict] || p.verdict}</VerdictChip>
           </div>

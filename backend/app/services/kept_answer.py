@@ -136,6 +136,20 @@ class KeptAnswers:
             with self._lock:
                 self._refreshing.discard(key)
 
+    def peek(self) -> list[tuple[float, Hashable, Any]]:
+        """Every answer kept and younger than `stale`, as (age seconds, key,
+        answer) — newest first. A READ of what is already kept: it never
+        builds, never refreshes. For a page that may show another page's
+        figure only when that page has already computed it («Xodim kartasi»
+        reading the «Liderlar KPI» board). The answers are shared: read them,
+        never change them."""
+        now = time.monotonic()
+        with self._lock:
+            items = [(now - t, k, v) for k, (t, v) in self._kept.items()
+                     if t >= self._forgot and now - t < self.stale]
+        items.sort(key=lambda x: x[0])
+        return items
+
     def forget(self) -> None:
         """Drop every kept answer. A build already running when this is called
         read the old data: its answer goes to its own caller and is not kept."""

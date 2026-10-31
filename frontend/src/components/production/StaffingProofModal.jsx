@@ -10,6 +10,7 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ddmm, hhmm } from "./staffingClock";
+import { PersonLink } from "../people/peopleUtil";
 
 // The people behind ONE «Bugungi fakt» → ШТАТКА number, read off
 // `GET /api/production/staffing-proof`. The counted rows add up to the number
@@ -64,7 +65,9 @@ function PeopleTable({ rows, showWhy }) {
           {rows.map((r, i) => (
             <tr key={`${r.cell}-${r.name}-${i}`} style={{ borderTop: i ? "1px solid var(--border)" : undefined }}>
               <td className="px-3 py-2 align-top">
-                <div className="font-medium" style={{ color: "var(--text-1)" }}>{r.name ? tl(r.name) : "—"}</div>
+                <div className="font-medium" style={{ color: "var(--text-1)" }}>
+                  {r.name ? <PersonLink employeeId={r.employee_id} name={r.name} code={r.cell}>{tl(r.name)}</PersonLink> : "—"}
+                </div>
                 <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{r.job ? tx(r.job) : t("production.vfxProof.noJob")}</div>
               </td>
               <td className="px-3 py-2 align-top font-mono text-xs" style={{ color: "var(--text-2)" }}>{r.cell || "—"}</td>

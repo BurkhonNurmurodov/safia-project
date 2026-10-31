@@ -19,6 +19,7 @@ import { fill } from "../../pages/leadersKpiText";
 import ComplianceRules from "./ComplianceRules";
 import { Count, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead, Warn, EmptyRow, VerdictChip } from "./KpiBits";
 import { VERDICT_RANK, dmHm, dmy, errText, fetchPeople, n0, pct1, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
+import { PersonLink } from "../people/peopleUtil";
 
 const LINKS_FROM = "12.10.2026";   // the dated cell links begin here (cell_links)
 
@@ -207,7 +208,7 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
       mobile={people.length ? people.map((p) => (
         <div key={`${p.key}-${p.employee_id}`} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex items-start justify-between gap-3">
-            <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{tl(p.name)}</span>
+            <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}><PersonLink employeeId={p.employee_id}>{tl(p.name)}</PersonLink></span>
             <VerdictChip counted={p.counted} compliant={p.compliant}>{verdictWord(p.verdict)}</VerdictChip>
           </div>
           <div className="text-xs mt-0.5 flex flex-wrap gap-x-2" style={{ color: "var(--text-3)" }}>
@@ -236,7 +237,7 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
       <tbody>
         {people.length === 0 ? <EmptyRow cols={9} text={peopleEmpty} /> : people.map((p) => (
           <tr key={`${p.key}-${p.employee_id}`}>
-            <td className="px-3 py-2 whitespace-nowrap font-medium" style={{ color: "var(--text-1)" }}>{tl(p.name)}</td>
+            <td className="px-3 py-2 whitespace-nowrap font-medium" style={{ color: "var(--text-1)" }}><PersonLink employeeId={p.employee_id}>{tl(p.name)}</PersonLink></td>
             <td className="px-3 py-2 tabular-nums whitespace-nowrap"><CellLink id={p.cell_id}>{p.code}</CellLink></td>
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{p.owner ? tl(p.owner) : "—"}</td>
             <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
