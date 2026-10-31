@@ -103,18 +103,21 @@ export default function AssessmentGrade() {
 
   const r = d.rights;
   const pendingJudges = d.seats.filter((s) => s.judge_name && !s.submitted).length;
-  const mySeat = d.seats.find((s) => s.mine);
-  const myGraded = mySeat?.graded ?? 0;
+  // Verdicts or notes this judge has on their own questions (a move drops them).
+  const myEntered = mine ? Object.values(mine.grades || {}).filter((g) => g.verdict || g.note).length : 0;
 
   const dialogs = {
     move: ask?.seat && mine && {
-      title: T.moveSeatTitle, tone: "warning", confirm: T.move,
-      message: fill(T.moveSeatMsg, { from: T.dept[mine.department], to: T.dept[ask.seat.department] }),
+      // A judge grades their own department's questions only, so whatever was
+      // given as the old department is deleted by the move — said before it.
+      title: T.moveSeatTitle, tone: myEntered ? "danger" : "warning", confirm: T.move,
+      message: fill(T.moveSeatMsg, { from: T.dept[mine.department], to: T.dept[ask.seat.department] })
+        + (myEntered ? ` ${fill(T.moveLoss, { n: myEntered, from: T.dept[mine.department] })}` : ""),
       run: { method: "post", url: `/api/assessment/assessments/${id}/seat`, body: { department: ask.seat.department } },
     },
     leave: ask?.seat && {
       title: T.leaveTitle, tone: "danger", confirm: T.leave,
-      message: myGraded ? fill(T.leaveMsg, { n: myGraded }) : T.leaveMsgEmpty,
+      message: myEntered ? fill(T.leaveMsg, { n: myEntered }) : T.leaveMsgEmpty,
       run: { method: "delete", url: `/api/assessment/assessments/${id}/seats/${ask.seat.department}` },
     },
     release: ask?.seat && {
@@ -205,7 +208,7 @@ export default function AssessmentGrade() {
                 <Info size={13} aria-hidden="true" />{T.notJudge}
               </div>
             )}
-            <SeatStrip seats={d.seats} total={d.total} rights={r} mine={mine}
+            <SeatStrip seats={d.seats} rights={r} mine={mine}
               busyDept={act.isPending && act.variables?.body?.department && !ask ? act.variables.body.department : null}
               onClaim={claim}
               onLeave={(seat) => { setAskErr(null); setAsk({ kind: "leave", seat }); }}

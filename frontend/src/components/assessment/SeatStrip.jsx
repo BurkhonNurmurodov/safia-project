@@ -9,7 +9,7 @@ import { useAT, fill, DEPT_ICON, VERDICT } from "./assessmentUtil";
  * free seat is claimable; the viewer's own unsubmitted seat can be left; an
  * admin can free anybody's unsubmitted seat.
  */
-export default function SeatStrip({ seats, total, rights, mine, onClaim, onLeave, onRelease, busyDept }) {
+export default function SeatStrip({ seats, rights, mine, onClaim, onLeave, onRelease, busyDept }) {
   const T = useAT();
   const { tl } = useTranslit();
   return (
@@ -18,7 +18,9 @@ export default function SeatStrip({ seats, total, rights, mine, onClaim, onLeave
         const Icon = DEPT_ICON[s.department];
         const dept = T.dept[s.department];
         const free = !s.judge_name;
-        const pct = total ? Math.round((s.graded / total) * 100) : 0;
+        // Each seat grades its own department's questions — its own total.
+        const total = s.total ?? 0;
+        const pct = total ? Math.round((s.graded / total) * 100) : s.submitted ? 100 : 0;
         const ring = s.mine
           ? { border: "1.5px solid var(--brand)", background: "rgba(var(--brand-rgb),0.06)" }
           : free
@@ -40,6 +42,9 @@ export default function SeatStrip({ seats, total, rights, mine, onClaim, onLeave
                 {s.judge_name ? tl(s.judge_name) : T.seatFree}
               </span>
             </div>
+            {free && (
+              <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.seatQs, { n: total })}</div>
+            )}
             {!free && (
               <div>
                 <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>

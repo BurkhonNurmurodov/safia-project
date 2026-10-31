@@ -2,7 +2,7 @@ import { Lock, Inbox, Check, X, ListChecks, Users, MessageSquareText } from "luc
 import TableCard, { Th } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
 import { useTranslit } from "../../utils/transliterate";
-import { useAT, fill, pct0, DeptChip, TypeChip, DEPT_ICON, VERDICT, fmtDateTime } from "./assessmentUtil";
+import { useAT, fill, pct0, DeptChip, TypeChip, VERDICT, fmtDateTime } from "./assessmentUtil";
 
 function Mark({ v }) {
   if (v === "pass") return <Check size={15} strokeWidth={3} style={{ color: VERDICT.pass.ink }} aria-label="pass" />;
@@ -47,8 +47,12 @@ export default function ResultsView({ data }) {
   }
   const seats = data.seats;
   const judged = new Map(res.judges.map((j) => [j.department, j]));
-  const cols = seats.map((s) => s.department);
-  const notes = res.rows.filter((r) => r.notes.length);
+  const notes = res.rows.filter((r) => r.note);
+  // A question's verdict is its own department's judge's; until that judge
+  // submits, the cell says so instead of a dash that reads as «ungraded».
+  const verdictCell = (r) => (r.submitted ? <Mark v={r.verdict} /> : (
+    <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.notSubmitted}</span>
+  ));
 
   return (
     <div className="space-y-4">
@@ -66,14 +70,6 @@ export default function ResultsView({ data }) {
             )}
           </div>
           <div className="space-y-3 min-w-0">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-3)" }}>{T.byQDept}</div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {["kaizen", "production", "tb", "hr", "okk"].filter((d) => res.by_department[d]).map((d) => (
-                  <Share key={d} node={<DeptChip dept={d} T={T} />} s={res.by_department[d]} />
-                ))}
-              </div>
-            </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-3)" }}>{T.byType}</div>
               <div className="grid grid-cols-2 gap-2">
@@ -97,7 +93,7 @@ export default function ResultsView({ data }) {
                   <DeptChip dept={s.department} T={T} />
                   <span className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--text-1)" }}>{s.judge_name ? tl(s.judge_name) : "—"}</span>
                   <span className="text-xs tabular-nums" style={{ color: j ? "var(--text-1)" : "var(--text-3)" }}>
-                    {j ? `${pct0(j.pct)} · ${j.passed}/${j.graded}` : T.notSubmitted}
+                    {j ? `${pct0(j.pct)} · ${j.passed}/${j.total ?? j.graded}` : T.notSubmitted}
                   </span>
                 </li>
               );
@@ -117,7 +113,7 @@ export default function ResultsView({ data }) {
               <tr key={s.department} style={{ opacity: j ? 1 : 0.6 }}>
                 <td className="px-3 py-2"><DeptChip dept={s.department} T={T} /></td>
                 <td className="px-3 py-2">{s.judge_name ? tl(s.judge_name) : "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{j ? `${j.passed}/${j.graded}` : "—"}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{j ? `${j.passed}/${j.total ?? j.graded}` : "—"}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">{j ? pct0(j.pct) : "—"}</td>
                 <td className="px-3 py-2 tabular-nums" style={{ color: j ? "var(--text-1)" : "var(--text-3)" }}>
                   {j ? fmtDateTime(j.submitted_at) : T.notSubmitted}
@@ -128,7 +124,7 @@ export default function ResultsView({ data }) {
         </tbody>
       </TableCard>
 
-      {/* Question × judge matrix */}
+      {/* Every question with its own department's verdict */}
       <TableCard icon={ListChecks} title={T.matrix} maxHeight="none" fixed minWidth={720}
         mobile={(
           <ul>
@@ -137,63 +133,40 @@ export default function ResultsView({ data }) {
                 <div className="flex items-start gap-2">
                   <span className="text-xs font-bold tabular-nums w-5 shrink-0" style={{ color: "var(--text-3)" }}>{r.position}</span>
                   <p className="text-sm flex-1 min-w-0 break-words" style={{ color: "var(--text-1)" }}>{tx(r.text)}</p>
+                  <span className="shrink-0">{verdictCell(r)}</span>
                 </div>
-                <div className="mt-2 ml-7 flex flex-wrap items-center gap-3">
-                  {cols.map((d) => {
-                    const Icon = DEPT_ICON[d];
-                    return (
-                      <span key={d} className="inline-flex items-center gap-1" title={T.dept[d]}>
-                        <Icon size={12} style={{ color: "var(--text-3)" }} aria-hidden="true" />
-                        <Mark v={judged.has(d) ? r.verdicts[d] : null} />
-                      </span>
-                    );
-                  })}
-                  <span className="ml-auto text-xs tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{r.passed}/{r.judged}</span>
+                <div className="mt-1.5 ml-7 flex flex-wrap items-center gap-1.5">
+                  <DeptChip dept={r.department} T={T} /><TypeChip type={r.qtype} T={T} />
                 </div>
+                {r.note && <p className="mt-1 ml-7 text-xs break-words" style={{ color: "var(--text-2)" }}>{tx(r.note)}</p>}
               </li>
             ))}
           </ul>
         )}>
         <colgroup>
-          <col style={{ width: 44 }} /><col /><col style={{ width: 130 }} />
-          {cols.map((d) => <col key={d} style={{ width: 56 }} />)}
-          <col style={{ width: 70 }} />
+          <col style={{ width: 44 }} /><col /><col style={{ width: 150 }} /><col style={{ width: 110 }} />
+          <col style={{ width: 110 }} /><col style={{ width: 240 }} />
         </colgroup>
         <thead>
           <tr>
             <Th label={T.colN} align="center" />
             <Th label={T.colQ} />
+            <Th label={T.colDept} />
             <Th label={T.colType} />
-            {cols.map((d) => (
-              <th key={d} scope="col" title={T.dept[d]} className="px-1 py-2 text-center sticky top-0 z-[1]"
-                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                {(() => { const Icon = DEPT_ICON[d]; return <Icon size={14} className="mx-auto" aria-label={T.dept[d]} />; })()}
-              </th>
-            ))}
-            <Th label={T.colPassed} align="right" />
+            <Th label={T.colVerdict} align="center" />
+            <Th label={T.colNote} />
           </tr>
         </thead>
         <tbody>
           {res.rows.map((r) => (
             <tr key={r.item_id}>
               <td className="px-2 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{r.position}</td>
-              <td className="px-3 py-2 truncate" title={tx(r.text)}>
-                <span className="mr-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>{T.dept[r.department]}</span>
-                {tx(r.text)}
-              </td>
+              <td className="px-3 py-2 truncate" title={tx(r.text)}>{tx(r.text)}</td>
+              <td className="px-3 py-2"><DeptChip dept={r.department} T={T} /></td>
               <td className="px-3 py-2"><TypeChip type={r.qtype} T={T} /></td>
-              {cols.map((d) => {
-                const note = r.notes.find((n) => n.department === d);
-                return (
-                  <td key={d} className="px-1 py-2 text-center" title={note ? `${T.noteIn}: ${tx(note.note)}` : T.dept[d]}>
-                    <span className="relative inline-flex items-center justify-center">
-                      <Mark v={judged.has(d) ? r.verdicts[d] : null} />
-                      {note && <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} />}
-                    </span>
-                  </td>
-                );
-              })}
-              <td className="px-3 py-2 text-right tabular-nums font-semibold">{r.passed}/{r.judged}</td>
+              <td className="px-3 py-2 text-center"><span className="inline-flex justify-center">{verdictCell(r)}</span></td>
+              <td className="px-3 py-2 truncate" title={r.note ? tx(r.note) : undefined}
+                style={{ color: r.note ? "var(--text-2)" : "var(--text-4)" }}>{r.note ? tx(r.note) : "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -226,14 +199,10 @@ export default function ResultsView({ data }) {
             <div className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
               {r.position}. <span className="font-normal">{tx(r.text)}</span>
             </div>
-            <ul className="mt-1 ml-4 space-y-0.5">
-              {r.notes.map((n) => (
-                <li key={n.department} className="text-xs" style={{ color: "var(--text-1)" }}>
-                  <span className="font-medium" style={{ color: "var(--text-2)" }}>{T.dept[n.department]}</span>
-                  {n.judge_name ? ` · ${tl(n.judge_name)}` : ""}: {tx(n.note)}
-                </li>
-              ))}
-            </ul>
+            <p className="mt-0.5 ml-4 text-xs break-words" style={{ color: "var(--text-1)" }}>
+              <span className="font-medium" style={{ color: "var(--text-2)" }}>{T.dept[r.department]}</span>
+              {r.judge_name ? ` · ${tl(r.judge_name)}` : ""}: {tx(r.note)}
+            </p>
           </div>
         ))}
       </section>

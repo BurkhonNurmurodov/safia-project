@@ -16,7 +16,8 @@ import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT } from "./assessmentUtil
 
 /** One seat of the panel as a small square: free (dashed), being graded
  *  (icon), submitted (green tint + check). The tooltip names who and how far. */
-export function SeatDot({ seat, total, T, tl }) {
+export function SeatDot({ seat, T, tl }) {
+  const total = seat.total ?? 0;
   const Icon = DEPT_ICON[seat.department];
   const dept = T.dept[seat.department];
   const title = seat.judge_name
@@ -80,7 +81,6 @@ export default function AssessmentList({ isAdmin }) {
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
-  const total = list.data?.total ?? 20;
 
   const rows = useMemo(() => {
     const all = list.data?.rows || [];
@@ -135,7 +135,7 @@ export default function AssessmentList({ isAdmin }) {
                 <StatusChip status={r.status} T={T} />
               </div>
               <div className="mt-1 flex items-center gap-1.5">
-                {r.seats.map((s) => <SeatDot key={s.department} seat={s} total={total} T={T} tl={tl} />)}
+                {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
                 <span className="ml-1 text-[11px]" style={{ color: "var(--text-3)" }}>{fmtDate(r.held_on)}</span>
               </div>
             </div>
@@ -179,7 +179,7 @@ export default function AssessmentList({ isAdmin }) {
               <td className="px-3 py-2 tabular-nums">{fmtDate(r.held_on)}</td>
               <td className="px-3 py-2">
                 <span className="inline-flex items-center gap-1.5">
-                  {r.seats.map((s) => <SeatDot key={s.department} seat={s} total={total} T={T} tl={tl} />)}
+                  {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
                   <span className="ml-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.submittedN, { n: r.submitted })}</span>
                 </span>
               </td>

@@ -6,7 +6,8 @@ the Access tab. Two kinds of right live here, and the server decides both:
   * the BANK, creating / closing / redrawing / deleting a sitting — admins only;
   * a SEAT (one of five departments) — anybody who may open the page claims one
     and grades on it. A seat belongs to the claiming PROFILE; only its judge
-    grades on it, and a submitted scorecard is final.
+    grades on it, ONLY the questions of its own department (the operator,
+    2026-10-31), and a submitted scorecard is final.
 
 The panel stays independent: whoever holds an UNSUBMITTED seat sees no other
 judge's verdicts (`results_hidden: "own_pending"`), only how far each seat is.
@@ -120,8 +121,15 @@ def _grades_of(db: Session, eval_ids: list[int]) -> dict[int, dict[int, dict]]:
     return out
 
 
-def _graded(grades: dict[int, dict]) -> int:
-    return sum(1 for v in grades.values() if v.get("verdict") in rules.VERDICTS)
+def _graded(grades: dict[int, dict], own: Optional[set] = None) -> int:
+    """Verdicts given — on the scorecard's own questions only when `own` (item
+    ids) is passed: a grade on another department's question never counts."""
+    return sum(1 for k, v in grades.items()
+               if v.get("verdict") in rules.VERDICTS and (own is None or k in own))
+
+
+def _own_ids(item_dept: dict[int, str], department: str) -> set:
+    return {i for i, d in item_dept.items() if d == department}
 
 
 def _active_pool(db: Session) -> list[dict]:
@@ -288,15 +296,18 @@ def list_candidates(db: Session = Depends(get_db), _: dict = Depends(PAGE)):
             for c in rows]
 
 
-def _seats(evs: list[JudgeEvaluation], grades: dict[int, dict[int, dict]], me: str) -> list[dict]:
+def _seats(evs: list[JudgeEvaluation], grades: dict[int, dict[int, dict]], me: str,
+           item_dept: dict[int, str]) -> list[dict]:
     by = {e.department: e for e in evs}
     out = []
     for d in rules.SEAT_ORDER:
         e = by.get(d)
+        own = _own_ids(item_dept, d)
         out.append({
             "department": d,
             "judge_name": e.judge_name if e else None,
-            "graded": _graded(grades.get(e.id, {})) if e else 0,
+            "total": len(own),     # how many of the sitting's questions this seat grades
+            "graded": _graded(grades.get(e.id, {}), own) if e else 0,
             "submitted": bool(e and e.submitted_at),
             "submitted_at": _iso(e.submitted_at) if e else None,
             "mine": bool(e and e.judge_key == me),
@@ -326,6 +337,10 @@ def list_assessments(
         AssessmentCandidate.id.in_({a.candidate_id for a in rows})).all()}
     evs_all = db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id.in_(ids)).all()
     grades = _grades_of(db, [e.id for e in evs_all])
+    depts: dict[int, dict[int, str]] = {}
+    for aid_, iid, dep in db.query(AssessmentItem.assessment_id, AssessmentItem.id, AssessmentItem.department).filter(
+            AssessmentItem.assessment_id.in_(ids)).all():
+        depts.setdefault(aid_, {})[iid] = dep
     by_a: dict[int, list[JudgeEvaluation]] = {}
     for e in evs_all:
         by_a.setdefault(e.assessment_id, []).append(e)
@@ -335,14 +350,16 @@ def list_assessments(
         c = cands.get(a.candidate_id)
         hidden = _hidden(evs, me)
         sub = [e for e in evs if e.submitted_at]
-        p = sum(1 for e in sub for v in grades.get(e.id, {}).values() if v.get("verdict") == "pass")
-        j = sum(_graded(grades.get(e.id, {})) for e in sub)
+        idep = depts.get(a.id, {})
+        p = sum(1 for e in sub for k, v in grades.get(e.id, {}).items()
+                if v.get("verdict") == "pass" and idep.get(k) == e.department)
+        j = sum(_graded(grades.get(e.id, {}), _own_ids(idep, e.department)) for e in sub)
         out.append({
             "id": a.id, "status": a.status, "held_on": _iso(a.held_on),
             "created_at": _iso(a.created_at), "created_by": a.created_by,
             "closed_at": _iso(a.closed_at),
             "candidate": {"id": c.id, "full_name": c.full_name, "note": c.note} if c else None,
-            "seats": _seats(evs, grades, me),
+            "seats": _seats(evs, grades, me, idep),
             "submitted": len(sub),
             "results_hidden": hidden,
             "overall": None if hidden or not j else {"passed": p, "judged": j, "pct": round(p * 100.0 / j, 1)},
@@ -414,7 +431,7 @@ def get_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depe
         "candidate": {"id": c.id, "full_name": c.full_name, "note": c.note} if c else None,
         "items": [_item_dict(i) for i in items],
         "total": len(items),
-        "seats": _seats(evs, grades, me),
+        "seats": _seats(evs, grades, me, {i.id: i.department for i in items}),
         "mine": None if not mine else {
             "id": mine.id, "department": mine.department,
             "grades": {str(k): v for k, v in grades.get(mine.id, {}).items()},
@@ -439,7 +456,8 @@ def get_assessment(aid: int, db: Session = Depends(get_db), payload: dict = Depe
 @router.post("/assessments/{aid}/seat")
 def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Sit on a department's seat — or move an unsubmitted scorecard to
-    another free one (its verdicts stay: they are per question, not per seat)."""
+    another free one. A judge grades only their department's questions, so a
+    move deletes what was given on the old department's (`dropped`)."""
     a = _get(db, aid, lock=True)
     if a.status != "open":
         _refuse(409, "closed", "This assessment is closed.")
@@ -456,9 +474,18 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
         _refuse(409, "seat_taken", "Another judge already holds this seat.", judge=holder.judge_name)
     if mine and mine.submitted_at:
         _refuse(409, "submitted", "Your scorecard is already submitted.")
+    dropped = 0
     try:
         if mine:
             old = mine.department
+            # A judge grades their own department's questions only, so the
+            # verdicts and notes given as the old department go with it.
+            other = [i for (i,) in db.query(AssessmentItem.id).filter(
+                AssessmentItem.assessment_id == aid, AssessmentItem.department != dept).all()]
+            if other:
+                dropped = db.query(AssessmentGrade).filter(
+                    AssessmentGrade.evaluation_id == mine.id,
+                    AssessmentGrade.item_id.in_(other)).delete(synchronize_session=False)
             mine.department, mine.updated_at = dept, _now()
         else:
             old = None
@@ -469,8 +496,9 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
         db.rollback()
         _refuse(409, "seat_taken", "Another judge took this seat a moment ago.")
     action_log.enrich(target_kind="assessment", target_id=str(aid),
-                      changes=[("seat", old, dept)] if old else None, details=[("seat", dept)])
-    return {"ok": True}
+                      changes=[("seat", old, dept)] if old else None,
+                      details=[("seat", dept), ("dropped", dropped)])
+    return {"ok": True, "dropped": dropped}
 
 
 def _tg(payload: dict) -> Optional[int]:
@@ -528,6 +556,8 @@ def save_grade(aid: int, item_id: int, body: dict = Body(...),
                                          AssessmentItem.assessment_id == aid).first()
     if not it:
         _refuse(404, "no_item", "This question is not part of the assessment.")
+    if it.department != ev.department:
+        _refuse(409, "not_your_question", "You grade only your own department's questions.")
     if "verdict" in body and body["verdict"] not in (None, *rules.VERDICTS):
         _refuse(400, "bad_verdict", "A verdict is pass or fail.")
     g = db.query(AssessmentGrade).filter(AssessmentGrade.evaluation_id == ev.id,
@@ -552,7 +582,9 @@ def save_grade(aid: int, item_id: int, body: dict = Body(...),
             g.note = _clean(body["note"], rules.MAX_NOTE) or None
         g.updated_at = _now()
         db.commit()
-    graded = _graded(_grades_of(db, [ev.id]).get(ev.id, {}))
+    own = {i for (i,) in db.query(AssessmentItem.id).filter(
+        AssessmentItem.assessment_id == aid, AssessmentItem.department == ev.department).all()}
+    graded = _graded(_grades_of(db, [ev.id]).get(ev.id, {}), own)
     return {"item_id": item_id, "verdict": g.verdict, "note": g.note, "graded": graded}
 
 
@@ -568,19 +600,20 @@ def save_feedback(aid: int, body: dict = Body(...), db: Session = Depends(get_db
 
 @router.post("/assessments/{aid}/submit")
 def submit(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """Submit the viewer's scorecard — final. Every question graded and the
-    overall feedback written, or it is refused naming what is missing. The
-    fifth submission closes the sitting."""
+    """Submit the viewer's scorecard — final. Every question of THEIR
+    department graded (a seat whose department drew none needs only the
+    feedback) and the overall feedback written, or it is refused naming what
+    is missing. The fifth submission closes the sitting."""
     # Lock order everywhere: the sitting, then a scorecard (claim, release and
     # submit agree; a grade save takes the scorecard alone).
     a = _get(db, aid, lock=True)
     ev = _my_open_eval(db, aid, payload)
     fb = _clean(body.get("overall_feedback", ev.overall_feedback), rules.MAX_FEEDBACK)
-    items = _items(db, aid)
+    items = [it for it in _items(db, aid) if it.department == ev.department]   # own questions only
     grades = _grades_of(db, [ev.id]).get(ev.id, {})
     missing = [it.position for it in items if (grades.get(it.id) or {}).get("verdict") not in rules.VERDICTS]
     if missing:
-        _refuse(400, "ungraded", "Grade every question first.", positions=missing, count=len(missing))
+        _refuse(400, "ungraded", "Grade every one of your questions first.", positions=missing, count=len(missing))
     if not fb:
         _refuse(400, "feedback_required", "Write the overall feedback first.")
     ev.overall_feedback, ev.submitted_at, ev.updated_at = fb, _now(), _now()
@@ -591,7 +624,7 @@ def submit(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payl
     if done >= len(rules.DEPARTMENTS) and a.status == "open":
         a.status, a.closed_at, a.closed_by, closed = "closed", _now(), "auto", True
     db.commit()
-    passed = sum(1 for v in grades.values() if v.get("verdict") == "pass")
+    passed = sum(1 for it in items if (grades.get(it.id) or {}).get("verdict") == "pass")
     action_log.enrich(target_kind="assessment", target_id=str(aid),
                       details=[("seat", ev.department), ("passed", f"{passed}/{len(items)}"),
                                ("closed", closed)])

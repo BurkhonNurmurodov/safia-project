@@ -8,6 +8,7 @@ Five judging departments, two question types, one draw of 20 questions:
 
 `draw` is the only place that distribution lives; the router, the bank's
 «enough questions?» card and the client all read `BLOCKS` through `meta()`.
+Each judge grades only the questions of their OWN department (`own_items`);
 `results` folds the SUBMITTED scorecards only — a draft is its judge's own.
 Nothing here touches the database.
 """
@@ -140,38 +141,55 @@ def _pct(a: int, b: int) -> Optional[float]:
     return round(a * 100.0 / b, 1) if b else None
 
 
+def own_items(items: list[dict], department: str) -> list[dict]:
+    """The questions ONE judge grades: those of their own department. A judge
+    answers for their department and nothing else (the operator, 2026-10-31);
+    the Kaizen + Production block is split between those two judges by each
+    question's own department."""
+    return [it for it in items if it["department"] == department]
+
+
 def results(items: list[dict], evaluations: list[dict]) -> dict:
     """Fold the SUBMITTED scorecards. `items` = [{id, position, department,
     qtype, text}]; `evaluations` = [{department, judge_name, submitted_at,
     overall_feedback, grades: {item_id: {verdict, note}}}] — submitted ones
-    only. Percentages are pass ÷ graded, never a mean of means."""
+    only. Each question is judged by the judge of ITS department alone; a grade
+    a scorecard holds on another department's question is never counted.
+    Percentages are pass ÷ graded, never a mean of means."""
+    def grade(e: Optional[dict], it: dict) -> dict:
+        return ((e.get("grades") or {}).get(it["id"]) or {}) if e else {}
+
     judges = []
     for e in sorted(evaluations, key=lambda e: SEAT_ORDER.index(e["department"])
                     if e["department"] in SEAT_ORDER else 99):
-        g = e.get("grades") or {}
-        passed = sum(1 for v in g.values() if v.get("verdict") == "pass")
-        graded = sum(1 for v in g.values() if v.get("verdict") in VERDICTS)
+        own = own_items(items, e["department"])
+        passed = sum(1 for it in own if grade(e, it).get("verdict") == "pass")
+        graded = sum(1 for it in own if grade(e, it).get("verdict") in VERDICTS)
         judges.append({
             "department": e["department"], "judge_name": e.get("judge_name"),
             "submitted_at": e.get("submitted_at"), "overall_feedback": e.get("overall_feedback"),
-            "passed": passed, "graded": graded, "pct": _pct(passed, graded),
+            "passed": passed, "graded": graded, "total": len(own), "pct": _pct(passed, graded),
         })
 
+    by_dept = {e["department"]: e for e in evaluations}
     rows = []
     for it in items:
-        verdicts = {}
-        notes = []
-        for e in evaluations:
-            v = (e.get("grades") or {}).get(it["id"]) or {}
-            if v.get("verdict") in VERDICTS:
-                verdicts[e["department"]] = v["verdict"]
-            if (v.get("note") or "").strip():
-                notes.append({"department": e["department"], "judge_name": e.get("judge_name"),
-                              "note": v["note"].strip()})
-        p = sum(1 for x in verdicts.values() if x == "pass")
-        rows.append({"item_id": it["id"], "position": it["position"], "department": it["department"],
-                     "qtype": it["qtype"], "text": it["text"], "verdicts": verdicts, "notes": notes,
-                     "passed": p, "judged": len(verdicts), "pct": _pct(p, len(verdicts))})
+        e = by_dept.get(it["department"])
+        g = grade(e, it)
+        verdict = g.get("verdict") if g.get("verdict") in VERDICTS else None
+        note = (g.get("note") or "").strip() or None
+        rows.append({
+            "item_id": it["id"], "position": it["position"], "department": it["department"],
+            "qtype": it["qtype"], "text": it["text"],
+            "verdict": verdict, "note": note, "submitted": e is not None,
+            "judge_name": e.get("judge_name") if e else None,
+            # the older shape (a verdict / note per judging department), kept
+            # so a tab still open on the first bundle renders the same facts
+            "verdicts": {it["department"]: verdict} if verdict else {},
+            "notes": [{"department": it["department"], "judge_name": e.get("judge_name"), "note": note}] if note else [],
+            "passed": 1 if verdict == "pass" else 0, "judged": 1 if verdict else 0,
+            "pct": _pct(1 if verdict == "pass" else 0, 1 if verdict else 0),
+        })
 
     def fold(keyfn) -> dict:
         acc: dict = {}
@@ -187,7 +205,7 @@ def results(items: list[dict], evaluations: list[dict]) -> dict:
     return {
         "judges": judges,
         "rows": rows,
-        "by_department": fold(lambda r: r["department"]),   # the QUESTION's department
+        "by_department": fold(lambda r: r["department"]),
         "by_type": fold(lambda r: r["qtype"]),
         "overall": {"passed": total_p, "judged": total_j, "pct": _pct(total_p, total_j)},
     }

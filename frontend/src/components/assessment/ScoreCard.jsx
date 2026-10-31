@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock } from "lucide-react";
+import { Check, X, MessageSquareText, Loader2, AlertTriangle, Send, Lock, Info } from "lucide-react";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -8,7 +8,7 @@ import useIsMobile from "../../hooks/useIsMobile";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
-  useAT, fill, errText, DeptChip, TypeChip, VERDICT, BLOCK_OF, BLOCK_ORDER, fmtDateTime,
+  useAT, fill, errText, TypeChip, VERDICT, DEPT_ICON, fmtDateTime,
 } from "./assessmentUtil";
 
 const NOTE_DEBOUNCE = 900;
@@ -17,7 +17,10 @@ const FEEDBACK_DEBOUNCE = 1200;
 const taStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
 /**
- * One judge's scorecard. Every tap is saved at once (a verdict), every note and
+ * One judge's scorecard — the questions of THEIR department only (a judge
+ * answers for their department; the server refuses a grade on any other).
+ * Positions keep the sitting's own numbers, so the panel can still say «the
+ * 7th question». Every tap is saved at once (a verdict), every note and
  * the overall feedback as they are typed (debounced, flushed on blur) — the
  * candidate is answering in front of the panel, and nothing a judge enters may
  * wait for a Save button. The local copy is seeded ONCE per scorecard, so the
@@ -29,7 +32,8 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
   const { tx } = useTranslit();
   const phone = useIsMobile();
   const mine = data.mine;
-  const items = data.items;
+  const items = useMemo(() => data.items.filter((it) => it.department === mine.department),
+    [data.items, mine.department]);
   const readOnly = !data.rights.grade;
 
   const [verdicts, setVerdicts] = useState({});
@@ -127,12 +131,6 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
     fbTimer.current = setTimeout(() => saveFeedback(val), FEEDBACK_DEBOUNCE);
   };
 
-  const groups = useMemo(() => {
-    const by = {};
-    items.forEach((it) => { (by[BLOCK_OF[it.department] || it.department] ||= []).push(it); });
-    return BLOCK_ORDER.filter((b) => by[b]).map((b) => ({ key: b, items: by[b] }));
-  }, [items]);
-
   const graded = items.filter((it) => verdicts[it.id]).length;
   const passed = items.filter((it) => verdicts[it.id] === "pass").length;
   const failed = graded - passed;
@@ -198,13 +196,20 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
         </div>
       )}
 
-      {groups.map((g) => (
-        <section key={g.key} aria-label={T.block[g.key]} className="space-y-2">
+      {items.length === 0 ? (
+        <div className="flex items-start gap-2 rounded-2xl px-4 py-3 text-sm"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+          <Info size={16} className="mt-[2px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+          {fill(T.ownNone, { dept: T.dept[mine.department] })}
+        </div>
+      ) : (
+        <section aria-label={fill(T.ownHead, { dept: T.dept[mine.department] })} className="space-y-2">
           <h3 className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
-            {T.block[g.key]}
-            <span className="tabular-nums font-normal normal-case">· {g.items.length}</span>
+            {(() => { const Icon = DEPT_ICON[mine.department]; return <Icon size={13} aria-hidden="true" />; })()}
+            {fill(T.ownHead, { dept: T.dept[mine.department] })}
+            <span className="tabular-nums font-normal normal-case">· {items.length}</span>
           </h3>
-          {g.items.map((it) => {
+          {items.map((it) => {
             const v = verdicts[it.id];
             const st = state[it.id];
             const open = noteOpen.has(String(it.id)) || noteOpen.has(it.id);
@@ -220,7 +225,6 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                     style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{it.position}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <DeptChip dept={it.department} T={T} />
                       <TypeChip type={it.qtype} T={T} />
                     </div>
                     <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
@@ -267,7 +271,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
             );
           })}
         </section>
-      ))}
+      )}
 
       {/* Overall feedback + submit */}
       <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

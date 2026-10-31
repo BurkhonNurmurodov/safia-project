@@ -9053,31 +9053,41 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   JudgeEvaluation: one per seat, unique per (sitting, department) AND per
   (sitting, judge_key)), `assessment_grades` (pass · fail · NULL + an optional
   note, per scorecard × item).
-- **Every judge grades every question** — the reading of «Judges must select
-  Pass or No Pass for each question», and the only one consistent with the
-  Kaizen + Production block being drawn from both departments together. If the
-  operator wants each judge to grade only their own department's questions,
-  that is a change to `submit`'s completeness check and the scorecard's list.
+- **A judge grades ONLY their own department's questions** (the operator,
+  2026-10-31, asked; `rules.own_items`). The Kaizen + Production block is split
+  between those two judges by each question's own department; TB, HR and OKK
+  each grade their 3. Every question therefore has ONE verdict, its
+  department's judge's. The server refuses a grade on another department's
+  question (409 `not_your_question`), the scorecard lists only the judge's own
+  questions (keeping the sitting's numbers, so the panel can still say «the
+  7th»), and each seat's progress is out of its own count (`seats[].total`).
+  **Consequence to know**: the block's split is random, so the Kaizen and
+  Production judges may get uneven shares — 0 for one of them is possible on a
+  lopsided bank; such a judge sees a note and submits the overall feedback
+  alone. Guaranteeing a minimum per department is a change to `draw` and has
+  not been asked for.
 - **A seat belongs to the PROFILE** (`identity.viewer_profile_key`, else
   `tg:<account>`): one person never holds two seats of one sitting. Anybody who
   may open the page claims a free seat; a judge may MOVE an unsubmitted
-  scorecard to another free seat (grades are per item, they come along); the
-  seat's judge or an admin may free an unsubmitted seat (its grades go).
+  scorecard to another free seat — the grades given as the old department are
+  deleted by the move (`dropped`, said in the confirm first); the seat's judge
+  or an admin may free an unsubmitted seat (its grades go).
 - **Grading is saved per tap**: `PUT /api/assessment/draft/{id}/grades/{item}`
   (`verdict` and/or `note`, a key left out is left alone) and
   `PUT …/draft/{id}/feedback` (debounced, flushed on blur). `/api/assessment/draft/`
   is in the action register's `_SKIP` — the submit is the recorded act.
-- **Submit is FINAL** and refused until every question is graded
-  (400 `ungraded` + `positions`) and the overall feedback is non-blank
+- **Submit is FINAL** and refused until every one of the judge's OWN questions
+  is graded (400 `ungraded` + `positions`) and the overall feedback is non-blank
   (400 `feedback_required`). The client greys the button and lists the
   ungraded numbers (each scrolls to its question). The fifth submission closes
   the sitting by itself (`closed_by: auto`).
 - **The panel stays independent**: a viewer holding an UNSUBMITTED seat gets
   no results (`results_hidden: "own_pending"`) — on the page and in the list —
-  only every seat's progress (x/20, submitted). Results fold SUBMITTED
-  scorecards only: pass ÷ graded overall, per judge, per question department,
-  per type; the question × judge matrix; every judge's overall feedback and
-  notes. **No pass mark exists**, so percentages wear no traffic light — colour
+  only every seat's progress (x/own count, submitted). Results fold SUBMITTED
+  scorecards only, each grade on its own department's questions alone: pass ÷
+  graded overall, per judge, per type; every question with its one verdict and
+  note («Topshirmagan» while its judge has not submitted); every judge's
+  overall feedback. **No pass mark exists**, so percentages wear no traffic light — colour
   on this page means a verdict (green Pass / red No pass) and nothing else;
   departments and types are icon + word chips.
 - **Admins only**: the bank (read and write — a judge never browses it; lines
