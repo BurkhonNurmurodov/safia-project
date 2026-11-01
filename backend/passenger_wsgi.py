@@ -774,6 +774,9 @@ try:
     # «O'z vaqtida yetkazish»: the on-time sheet read (mirrors main.py).
     from app.services.ontime_sync import register_jobs as register_ontime_jobs
     register_ontime_jobs()
+    # «Trello»: every board every 15 minutes (mirrors main.py).
+    from app.services.trello import register_jobs as register_trello_jobs
+    register_trello_jobs()
     # The report door: the expiry sweep and the reader role (mirrors main.py).
     from app.services.ops_door import register_jobs as register_ops_door_jobs
     from app.services.ops_door import ensure_reader_role

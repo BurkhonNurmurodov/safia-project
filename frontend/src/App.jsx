@@ -89,6 +89,8 @@ const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Targets = lazyWithReload(() => import("./pages/Targets"));
 const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
+// «Trello tahlili» — a Trello board's analytics (Laboratory, admin-only).
+const TrelloAnalytics = lazyWithReload(() => import("./pages/TrelloAnalytics"));
 // «Verifix (test)» — the attendance system's API, page by page (admin-only).
 const VfxApiMap = lazyWithReload(() => import("./pages/verifix/VfxApiMap"));
 const VfxEmployees = lazyWithReload(() => import("./pages/verifix/VfxEmployees"));
@@ -117,7 +119,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
-  reports: Reports, assessment: Assessment, people: People,
+  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
@@ -551,6 +553,7 @@ function AppWithLang() {
             <Route path="/workers" element={<AuthGate><RequirePage page="workers"><Workers /></RequirePage></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
+            <Route path="/trello" element={<AuthGate><RequirePage page="trello"><TrelloAnalytics /></RequirePage></AuthGate>} />
             {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />

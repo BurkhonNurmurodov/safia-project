@@ -4,7 +4,7 @@
 // pulling the whole panel — which imports every destination statically — into
 // every page's bundle. AdminPanel imports it from here; never keep a second copy.
 import {
-  Building2, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, Trash2, UserMinus, UserX, Users,
+  Building2, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users,
 } from "lucide-react";
 
 export const ADMIN_GROUPS = [
@@ -100,6 +100,10 @@ export const ADMIN_NAV = [
   // reports). No capKey: these are the platform's paid accounts — admin-only
   // and never grantable (the `verifix` model). Keys are set nowhere else.
   { id: "aikeys",       group: "tools",  Icon: Sparkles,       labelKey: "admin.tabAiKeys",       descKey: "admin.desc.aikeys" },
+  // «Trello» — the API key and the (sealed) token /trello reads boards with,
+  // the boards it reads and what «done» means on each. No capKey: the token
+  // reads every board its Trello member can open — admin-only, never grantable.
+  { id: "trello",       group: "tools",  Icon: SquareKanban,   labelKey: "admin.tabTrello",       descKey: "admin.desc.trello" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
   // on /zagruzka now carries its own colour bands and its own admin button.

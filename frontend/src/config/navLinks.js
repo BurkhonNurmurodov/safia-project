@@ -9,7 +9,7 @@ import {
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, ShieldAlert, Sparkles, Target,
-  TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
+  SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 export const ALL_LINKS = [
@@ -73,6 +73,9 @@ export const ALL_LINKS = [
   // «Xodim kartasi» — everything the platform knows about ONE person of the
   // plant (/people/:employee_id). Laboratory, admin-only until opened.
   { to: "/people", page: "people", key: "nav.people", icon: Contact, group: "lab" },
+  // «Trello tahlili» — a Trello board's analytics, read through Trello's API
+  // (services/trello.py). Admin-only by default.
+  { to: "/trello", page: "trello", key: "nav.trello", icon: SquareKanban, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

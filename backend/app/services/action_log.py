@@ -453,6 +453,12 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leaderboard/export.xlsx",              "sync_export", "export.leaderboard"),
     (("POST",),   "/api/category-compliance/read",             "sync_export", "sync.category_read"),
     (("POST",),   "/api/ontime/read",                          "sync_export", "sync.ontime_read"),
+    (("POST",),   "/api/trello/read",                          "sync_export", "sync.trello_read"),
+    (("POST",),   "/api/admin/trello/test",                    "sync_export", "sync.trello_tested"),
+    (("POST",),   "/api/admin/trello/boards",                  "config", "config.trello_board_added"),
+    (("PUT",),    "/api/admin/trello/boards/{}",               "config", "config.trello_board_set"),
+    (("DELETE",), "/api/admin/trello/boards/{}",               "config", "config.trello_board_removed"),
+    (("PUT",),    "/api/admin/trello",                         "config", "config.trello_saved"),
     (("PUT",),    "/api/category-compliance/rule",             "config", "config.category_rule_saved"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never

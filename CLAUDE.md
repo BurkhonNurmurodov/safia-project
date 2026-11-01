@@ -9589,6 +9589,63 @@ computes the four itself (the operator's pick, asked).
   it does not switch the page's sheet. Delete the module, the startup pair
   and both calls once the DM has landed.
 
+## «Trello tahlili» — a Trello board's analytics (`/trello`, Laboratory, 2026-11-01)
+
+The operator: «can we have the analytics in Safia program as one page for
+Trello analytics», for the «Safia» board (trello.com/b/9Uk8Fq15). Asked, they
+picked three of the offered views — the workflow snapshot, the cards open the
+longest, the flow over time — and «build generic now» (the page works for any
+board). Page key **`trello`**, in the Laboratory, **admin-only until the
+operator opens it on the Access tab**. `services/trello.py` (credential,
+client, stored read, jobs), `services/trello_analytics.py` (the figures, pure),
+`routers/trello.py` (two routers), `pages/TrelloAnalytics.jsx` +
+`components/trello/` + `pages/trelloText.js` (four languages, page AND admin
+card), `pages/admin/TrelloSettings.jsx`.
+
+- **The connection is the admin tab «Trello»** (`/admin/upload?tab=trello`,
+  tools group, no `capKey` — admin-only, never grantable; the assistant may not
+  reach `/api/admin/trello`, `blocked:credentials`). A Trello **API key** (a
+  Power-Up's, trello.com/power-ups/admin) and a **token** that key issues —
+  the card builds the authorize link (`scope=read`, `expiration=never`). The
+  token acts as its Trello member: only boards that member can open are read.
+  Key in `app_settings` `trello_api_key` (plain), token `trello_token` SEALED
+  (`web_auth.seal_password`), never returned, never logged; the Jurnal records
+  that it changed and its length. Both travel in an `Authorization: OAuth …`
+  header, never the URL. «Tekshirish» (`POST /api/admin/trello/test`) asks
+  `members/me` and stores the verdict (`trello_last_test`).
+- **Boards** are added by link or invite link (`board_ref`: `/b/<short>`,
+  `/invite/b/<id>`, a bare short link or id), at most `MAX_BOARDS` (12), read
+  at once, then every 15 minutes (`trello-read`, `*/15`) plus a catch-up 120 s
+  after boot when a read is older than 15 min. One table, **`trello_boards`**
+  (created by `create_all`): one row per board with the last GOOD read as
+  `data` (lists, labels, members, every card — archived included — and each
+  card's list moves from the action history, ≤ 20 pages of 1,000), replaced
+  whole; a failed read keeps it and names the failure in `error`. Removing a
+  board deletes only the stored copy.
+- **What a card is**: open (not archived, not in a «done» list) · done (in a
+  «done» list) · archived (archived itself or in an archived list). «Done»
+  lists are picked per board on the admin card, else recognised by NAME
+  (`DONE_RE`, four languages). `archived_done` (per board, default on): an
+  archived card counts as finished, else it leaves every figure but the
+  archived count. Created = the card id's timestamp (exact); finished = the
+  last move into a «done» list, else (archived and counted) the last archive;
+  with no history, the last activity, counted as `approx` and said.
+- **The page** (`GET /api/trello/analysis?board&date_from&date_to&list&label`,
+  ONE request): KPIs (open · done + archived · stale = open with no activity
+  `STALE_DAYS` 14 · average / median / oldest age of an open card); cards per
+  list (active / stale / done stack) beside cards per label (open cards, top 8
+  + «Others» fold + «No label», the label's own Trello colour on its swatch
+  only); created vs finished per day (≤ 45 days) or per Monday-week, with the
+  median / average days to finish over cards finished in the period; the age
+  spread of open cards as five tiles that narrow the table below; the oldest
+  open cards (`MAX_OLDEST` 1,000, sortable, searchable, 50 a page, a card
+  opens in Trello). The period (default 12 weeks, min 7 days, max 731) moves
+  only the flow; board · list · label narrow everything. A notice names the
+  «done» lists in force and whether archived cards count. The admin's ↻ reads
+  every board now (`POST /api/trello/read`).
+- Not built: people / deadline views (offered, not picked), webhooks (the
+  15-minute read stands in), checklists, writing to Trello.
+
 ## The call forecast, sent by the clock (`forecast_autocall`)
 
 From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:

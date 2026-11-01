@@ -36,6 +36,7 @@ import ExamAdmin from "./ExamAdmin";
 import VerifixSettings from "./VerifixSettings";
 import VerifixSync from "./VerifixSync";
 import AiKeys from "./AiKeys";
+import TrelloSettings from "./TrelloSettings";
 
 /**
  * The admin panel shell.
@@ -89,6 +90,7 @@ const VIEWS = {
   verifix:      VerifixSettings,
   verifixsync:  VerifixSync,
   aikeys:       AiKeys,
+  trello:       TrelloSettings,
   translations: TranslationsEditor,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,

@@ -5584,3 +5584,34 @@ class EmployeeHonour(Base):
     given_by_name = Column(String, nullable=True)      # a name snapshot
     note        = Column(Text, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── «Trello» — a Trello board's analytics (/trello) ─────────────────────────
+# services/trello.py reads each board through Trello's REST API and keeps ONE
+# compact snapshot per board; services/trello_analytics.py computes the page
+# from it per request. The API key and the (sealed) token live in app_settings.
+
+class TrelloBoard(Base):
+    """A Trello board the platform reads. `data` is the last good read —
+    lists, labels, members, every card (archived ones included) and each
+    card's list moves from the board's action history — replaced whole by
+    each read; a failed read keeps it and names the failure in `error`."""
+    __tablename__ = "trello_boards"
+
+    id            = Column(String(32), primary_key=True)       # Trello's board id
+    short_link    = Column(String(16), nullable=True)
+    name          = Column(String, nullable=True)
+    url           = Column(String, nullable=True)
+    position      = Column(Integer, nullable=False, server_default=text("0"))
+    # The lists that mean «done». NULL = recognised by their names
+    # (trello_analytics.DONE_RE); a list an admin picked wins.
+    done_lists    = Column(JSONB, nullable=True)
+    # Whether an archived card counts as finished (teams that archive their
+    # «Done» column) or simply leaves the figures.
+    archived_done = Column(Boolean, nullable=False, server_default=text("true"))
+    data          = Column(JSONB, nullable=True)
+    read_at       = Column(DateTime(timezone=True), nullable=True)   # the last GOOD read
+    tried_at      = Column(DateTime(timezone=True), nullable=True)   # the last attempt
+    error         = Column(Text, nullable=True)                      # the last attempt's failure
+    added_by      = Column(String, nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
