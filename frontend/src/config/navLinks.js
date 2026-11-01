@@ -74,8 +74,8 @@ export const ALL_LINKS = [
   // plant (/people/:employee_id). Laboratory, admin-only until opened.
   { to: "/people", page: "people", key: "nav.people", icon: Contact, group: "lab" },
   // «Trello tahlili» — a Trello board's analytics, read through Trello's API
-  // (services/trello.py). Admin-only by default.
-  { to: "/trello", page: "trello", key: "nav.trello", icon: SquareKanban, group: "lab" },
+  // (services/trello.py). ADMINS ONLY, and not grantable: no page key.
+  { to: "/trello", adminOnly: true, key: "nav.trello", icon: SquareKanban, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

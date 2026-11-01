@@ -8,9 +8,9 @@ Two routers over ``services/trello.py`` (the client, the stored snapshot, the
   sealed token (they read every board their Trello member may open), the
   boards the platform reads and each board's two settings. The token goes in
   and never comes out; the register records only that it changed.
-- ``/api/trello`` — the page: gated on the ``trello`` page key (admin-only
-  until the operator opens it on the Access tab). Starting a read is the
-  admin's.
+- ``/api/trello`` — the page: ADMINS ONLY, like the card (the operator,
+  2026-11-01: «only visible to admin»). There is no ``trello`` page key, so
+  no Access-tab tick or personal grant can open it to anybody else.
 """
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session, defer
 
 from app.database import get_db
 from app.models import TrelloBoard
-from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.services import action_log, trello, trello_analytics
 
@@ -215,7 +214,7 @@ def get_analysis(
     label: List[str] = Query(default=[]),
     lst: List[str] = Query(default=[], alias="list"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("trello")),
+    payload: dict = Depends(verify_admin),
 ):
     """One board, whole: the workflow snapshot, the oldest open cards and the
     flow over the period. With no board named, the first one."""
@@ -232,15 +231,13 @@ def get_analysis(
 
 
 @router.get("/read")
-def get_read(db: Session = Depends(get_db), _: dict = Depends(require_page("trello"))):
+def get_read(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     return _read_state(db, _boards(db, light=True))
 
 
 @router.post("/read")
-def start_read(db: Session = Depends(get_db), payload: dict = Depends(require_page("trello"))):
-    """Read every board now (admin). Answers at once; the page polls `GET /read`."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="admin only")
+def start_read(db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+    """Read every board now. Answers at once; the page polls `GET /read`."""
     if not trello.configured(db):
         raise HTTPException(status_code=409, detail={"code": "not_configured"})
     started = trello.start_sync(f"admin:{_who(payload)}")

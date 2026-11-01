@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "trello"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -148,10 +148,6 @@ DEFAULT_PAGE_ACCESS = {
     # delivery report read out of the logistics team's Google sheet.
     # Admin-only until the operator opens it on the Access tab.
     "ontime": [],
-    # «Trello» (/trello, routers/trello.py) — a Trello board's analytics,
-    # read through Trello's API. In the Laboratory and admin-only until the
-    # operator opens it on the Access tab.
-    "trello": [],
     # «Hisobotlar» (/reports, routers/reports.py) — the platform's period
     # report: one month's sections (production, personnel, waiting and its
     # cost, quality, concerns) with the two months before them, handed over as

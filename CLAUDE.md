@@ -9595,8 +9595,12 @@ The operator: «can we have the analytics in Safia program as one page for
 Trello analytics», for the «Safia» board (trello.com/b/9Uk8Fq15). Asked, they
 picked three of the offered views — the workflow snapshot, the cards open the
 longest, the flow over time — and «build generic now» (the page works for any
-board). Page key **`trello`**, in the Laboratory, **admin-only until the
-operator opens it on the Access tab**. `services/trello.py` (credential,
+board). In the Laboratory, **ADMINS ONLY and not grantable** (the operator,
+the same day: «make Trello tahlili screen only visible to admin»): there is no
+page key, so no Access-tab tick or personal grant can open it — an
+`adminOnly` nav row, `RequireAdmin` on the route (an «open as» tab is the
+other person and is turned away) and `verify_admin` on every `/api/trello`
+endpoint, the «Verifix (test)» model. `services/trello.py` (credential,
 client, stored read, jobs), `services/trello_analytics.py` (the figures, pure),
 `routers/trello.py` (two routers), `pages/TrelloAnalytics.jsx` +
 `components/trello/` + `pages/trelloText.js` (four languages, page AND admin
@@ -9641,8 +9645,8 @@ card), `pages/admin/TrelloSettings.jsx`.
   open cards (`MAX_OLDEST` 1,000, sortable, searchable, 50 a page, a card
   opens in Trello). The period (default 12 weeks, min 7 days, max 731) moves
   only the flow; board · list · label narrow everything. A notice names the
-  «done» lists in force and whether archived cards count. The admin's ↻ reads
-  every board now (`POST /api/trello/read`).
+  «done» lists in force and whether archived cards count. ↻ reads every board
+  now (`POST /api/trello/read`).
 - Not built: people / deadline views (offered, not picked), webhooks (the
   15-minute read stands in), checklists, writing to Trello.
 
