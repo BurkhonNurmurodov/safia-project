@@ -87,7 +87,8 @@ SECTIONS = ("summary", "production", "personnel", "idle", "cost",
 CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
-    "personnel.overtimeH", "personnel.overtimeDays",
+    "personnel.overtimeH", "personnel.vkPresence", "personnel.vkAbsence",
+    "personnel.vkFree", "personnel.vkDayOff", "personnel.vkEarlyLeave", "personnel.vkLate",
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
     "production.countedDays", "production.noFact", "production.noPlan",
@@ -260,7 +261,7 @@ def _personnel(inp: dict, n: int) -> list[dict]:
     leave = _sums(att, ids, "leave", n)
     turn = inp["turnover"]                   # ym → turnover totals | None
     yms = inp["yms"]
-    ot = inp.get("overtime") or {}           # ym → {"hours", "days"}
+    vk = inp.get("vkinds") or {}             # ym → {Verifix time_kind_id: minutes}
 
     blocks = [periods_block("attendance", [
         prow("listed", "int", [_r(v) for v in roster]),
@@ -268,13 +269,22 @@ def _personnel(inp: dict, n: int) -> list[dict]:
         prow("onLeave", "int", [_r(v) for v in leave]),
         prow("attRate", "pct", _pooled([(c + lv, r) for r, c, lv in zip(roster, came, leave)]),
              bold=True),
-        # Overtime — hours worked beyond the schedule, early arrival not
-        # counted (`routers/reports._overtime_by_month`), whole hours (the
-        # operator, 2026-11-02: «we need the hours of Overtime»).
-        prow("overtimeH", "int", [_r((ot.get(y) or {}).get("hours")) for y in yms]),
-        prow("overtimeDays", "int", [_r((ot.get(y) or {}).get("days")) for y in yms]),
         prow("attDays", "int", [_r(v) for v in _sums(att, ids, "days", n)]),
     ])]
+
+    # Verifix's own time kinds, in hours (the operator, 2026-11-02 — overtime
+    # is «Сверхурочные», and these kinds belong here): stored by
+    # `verifix_month_kinds`, by each person's current placement. A month no
+    # read has landed for is «—», never 0.
+    def _vk(y: str, kid: str):
+        m = vk.get(y)
+        return None if m is None else _r((m.get(kid) or 0.0) / 60)
+
+    from app.services.verifix_month_kinds import TRACKED
+    blocks.append(periods_block("verifix", [
+        prow(key, "int", [_vk(y, kid) for y in yms], bold=(key == "overtimeH"))
+        for kid, key in TRACKED
+    ]))
 
     have_turn = any(turn.get(y) for y in yms)
     if have_turn:

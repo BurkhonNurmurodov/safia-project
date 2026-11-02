@@ -124,7 +124,6 @@ try:
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        report_overtime_compare,
         report_leader_merge,
         apply_brigadir_change_oct24,
         report_dept_attendance,
@@ -568,7 +567,6 @@ try:
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
-    report_overtime_compare()
     # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov before the
     # merge, DMed once. Remove once it has been sent.
     report_leader_merge()
@@ -774,6 +772,8 @@ try:
     # «O'z vaqtida yetkazish»: the on-time sheet read (mirrors main.py).
     from app.services.ontime_sync import register_jobs as register_ontime_jobs
     register_ontime_jobs()
+    from app.services.verifix_month_kinds import register_jobs as register_vfx_month_jobs
+    register_vfx_month_jobs()
     # «Trello»: every board every 15 minutes (mirrors main.py).
     from app.services.trello import register_jobs as register_trello_jobs
     register_trello_jobs()

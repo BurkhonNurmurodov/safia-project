@@ -9597,12 +9597,21 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   headcount over the closed unit-days that half has a figure for
   (`brigadir_board.shift_load`, the twin of `simplePlanUtil` /
   `simpleActualUtil`), no delta colour; **Xodimlar** — /workers' own `att_rate` through
-  `brigadir_board.attendance`, and `turnover.month_payload`; «Qo'shimcha ish
-  soatlari» (overtime, 2026-11-02 — the operator: «we need the hours of
-  Overtime») = Σ over the scope's closed unit-days of `effective_hours` (early
-  arrival not counted) minus «Явка», the hours in the clock's brackets, never
-  below 0 per row (`routers/reports._overtime_by_month`; a clock with no
-  bracket adds nothing), with the person-days that had any; **Kutish** —
+  `brigadir_board.attendance`, and `turnover.month_payload`; a «Verifix — vaqt turlari» table
+  (2026-11-02, the operator: «Overtime should be taken from Сверхурочно»):
+  Verifix's own time kinds in hours — Явка (23), Отсутствие (26), Свободное
+  время (27), Сверхурочные (34, the «Qo'shimcha ish» overtime row), Отгул
+  (31), Ранний уход (25), Опоздание (24) (`verifix_month_kinds.TRACKED`).
+  They are READ from `core/timesheet$export` for the whole month and STORED
+  (`services/verifix_month_kinds.py`, table `verifix_month_kinds`, meta in app
+  setting `vfx_month_kinds:<ym>`): the current month every 3 hours (an hourly
+  job at :50 decides), the month before until the 7th, a catch-up 240 s after
+  boot, and any month the report asks for that was never read (`want`, a
+  background read — «—» until it lands). A person is placed by their CURRENT
+  Verifix org unit → cell → brigadir (Verifix keeps no history); every day of
+  the month counts, closed or not. A read cut short keeps the last complete
+  one. The attendance-based overtime (effective hours − «Явка») shipped an
+  hour earlier is gone; **Kutish** —
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
   **Sifat** — the Quality closure rate through `brigadir_board.quality`

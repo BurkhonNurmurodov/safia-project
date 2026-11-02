@@ -141,7 +141,6 @@ async def lifespan(app: FastAPI):
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        report_overtime_compare,
         report_leader_merge,
         apply_brigadir_change_oct24,
         report_dept_attendance,
@@ -487,13 +486,6 @@ async def lifespan(app: FastAPI):
     # `services/pin_mismatch_report.py` once it has been sent.
     run(report_pin_mismatch)
 
-    # ⚠ TEMPORARY report (2026-11-02) — overtime two ways: «Hisobotlar»' figure
-    # beside Verifix's «Сверхурочно», Sep and Oct, DMed once to Abbos.
-    # READ-ONLY; only SCHEDULES a job. Remove this line,
-    # `startup.report_overtime_compare` and `services/overtime_compare_report.py`
-    # once it has been sent.
-    run(report_overtime_compare)
-
     # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov, production's
     # record before their profiles are merged, DMed once to Burkhon. READ-ONLY.
     # Only SCHEDULES a job (one flag read). Remove this line,
@@ -539,6 +531,11 @@ async def lifespan(app: FastAPI):
     # 07:20, and catch up after boot (mirrored in passenger_wsgi.py).
     from app.services.ontime_sync import register_jobs as register_ontime_jobs
     run(register_ontime_jobs)
+    # «Hisobotlar» Personnel → Verifix time kinds: read the current month every
+    # three hours (the month before until the 7th), catch up after boot
+    # (mirrored in passenger_wsgi.py).
+    from app.services.verifix_month_kinds import register_jobs as register_vfx_month_jobs
+    run(register_vfx_month_jobs)
     # «Trello»: read every board every 15 minutes, catch up after boot
     # (mirrored in passenger_wsgi.py).
     from app.services.trello import register_jobs as register_trello_jobs

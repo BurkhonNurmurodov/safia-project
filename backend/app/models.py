@@ -5627,3 +5627,24 @@ class NotionTrackerSent(Base):
     key = Column(String, primary_key=True)
     day = Column(String(10), nullable=False, index=True)
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class VerifixMonthKind(Base):
+    """Verifix's time kinds per month and brigade — `core/timesheet$export`
+    summed by `services/verifix_month_kinds.py` for «Hisobotlar»' Personnel
+    section (Явка, Отсутствие, Свободное время, Сверхурочные…). One row per
+    (month, unit, kind), the month replaced whole on every read. A person is
+    placed by their CURRENT Verifix org unit → its cell → that cell's brigadir:
+    Verifix keeps only today's placement."""
+    __tablename__ = "verifix_month_kinds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ym = Column(String(7), nullable=False, index=True)
+    manager_id = Column(Integer, nullable=False, index=True)
+    kind_id = Column(String(16), nullable=False)
+    kind_name = Column(String(160))
+    minutes = Column(Float, nullable=False, default=0)
+    person_days = Column(Integer, nullable=False, default=0)
+    read_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (UniqueConstraint("ym", "manager_id", "kind_id", name="uq_vfx_month_kind"),)
