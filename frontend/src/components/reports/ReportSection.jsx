@@ -9,6 +9,12 @@
 //
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
+//
+// Number columns are NARROW and fixed (TopSim's layout, the operator
+// 2026-11-02): the figure's name takes whatever the card has left, so a
+// figure sits beside its neighbours instead of across a wide gap. Fixed, not
+// shrink-to-fit, so the months line up from one card to the next; a value
+// wider than its column still widens it.
 import TableCard, { Th } from "../ui/DataTable";
 import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, uomOf, monthLabel, fill, useRT }
   from "./reportsUtil";
@@ -42,13 +48,25 @@ function DeltaCell({ row, T }) {
   );
 }
 
-/** A month's column label — its name, plus the days it actually covers while
- *  it is still running, so a shorter column is never read as a fall. */
-function colMonth(m, T, t) {
-  const name = monthLabel(m.ym, t);
-  if (!m.partial) return name;
+const NUM_W = "w-[100px]";  // a month or the change
+const UOM_W = "w-[88px]";   // the unit of measurement
+const UNIT_NUM_W = "w-[88px] whitespace-normal!";  // a brigadir table's figure
+
+/** A month's column label on two lines — the month, then its year — so the
+ *  column stays as narrow as its figures. While the month is still running the
+ *  second line also names the days it covers, so a shorter column is never
+ *  read as a fall. */
+function MonthHead({ m, T, t }) {
+  const [y, mo] = String(m.ym).split("-").map(Number);
+  const name = mo ? t(`cal.m${mo - 1}`) : monthLabel(m.ym, t);
   const day = (iso) => Number(String(iso).slice(8, 10));
-  return `${name} · ${fill(T.partialDays, { a: day(m.from), b: day(m.to) })}`;
+  const days = m.partial ? ` · ${fill(T.partialDays, { a: day(m.from), b: day(m.to) })}` : "";
+  return (
+    <span className="flex flex-col items-end leading-tight">
+      <span>{name}</span>
+      {mo ? <span className="font-normal">{y}{days}</span> : null}
+    </span>
+  );
 }
 
 function PeriodsBlock({ block, months, T, t, caption }) {
@@ -61,13 +79,13 @@ function PeriodsBlock({ block, months, T, t, caption }) {
       <thead>
         <tr>
           <Th label={T.caps.figure} cls="min-w-[180px]" />
-          <Th label={T.colUnit} />
+          <Th label={T.colUnit} cls={UOM_W} />
           {months.map((m) => (
-            <Th key={m.ym} align="right"
-              label={colMonth(m, T, t)}
+            <Th key={m.ym} align="right" cls={NUM_W}
+              label={<MonthHead m={m} T={T} t={t} />}
               hint={m.partial ? T.partial : undefined} />
           ))}
-          {hasDelta && <Th label={T.colDelta} align="right" hint={T.prevLabel} />}
+          {hasDelta && <Th label={T.colDelta} align="right" cls={NUM_W} hint={T.prevLabel} />}
         </tr>
       </thead>
       <tbody>
@@ -112,7 +130,7 @@ function UnitsBlock({ block, T, caption, tl }) {
         <tr>
           {cols.map((c, i) => (
             <Th key={c.key} label={colLabel(c, T)} align={i === 0 ? "left" : "right"}
-              cls={i === 0 ? "min-w-[160px]" : ""} />
+              cls={i === 0 ? "min-w-[160px]" : UNIT_NUM_W} />
           ))}
         </tr>
       </thead>
