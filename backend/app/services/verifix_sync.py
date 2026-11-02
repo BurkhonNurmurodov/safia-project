@@ -87,12 +87,12 @@ REARM_AFTER = timedelta(hours=3)   # an armed «two reads» older than this star
 # Verifix puts over them: cell code → the unit's NAME (ids differ between
 # copies). The sync never suggests moving such a cell (`brigadir_differs`),
 # refuses a suggestion already on the queue, and reads the seat holding that
-# very unit as expected. 0811 (2026-10-14, the operator: «keep him as an
-# exception»): Turdimurodov Nodirjon is counted under Aripova Manzura while
-# his cell's загрузка is read in a unit made for it (the 26 Sep ruling,
-# `cell_lookup.cells_unit_for_leader`); a `brigadir_differs` applied on
-# 13 Oct moved 0811 to Aripova and his /production went blank.
-KEPT_APART = {"0811": "Turdimurodov Nodirjon"}
+# very unit as expected. EMPTY from 2026-11-02: its one entry, 0811 (kept in
+# «Turdimurodov Nodirjon» from 14 Oct, the operator: «keep him as an
+# exception»), went when that unit joined Aripova Manzura's — the cell now
+# stands where Verifix puts it (`services/unit_merge_nov02.py`). The mechanism
+# stays: a new exception is one more entry.
+KEPT_APART: dict[str, str] = {}
 
 
 def kept_apart(code) -> Optional[str]:

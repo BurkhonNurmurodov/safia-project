@@ -210,11 +210,14 @@ modal title, a tooltip, a notification or an export column.
 ## A leader's cell may stand in ANOTHER unit (`cells_unit_for_leader`)
 
 From **2026-09-26** (the operator's ruling) a leader can be COUNTED under one
-brigadir while their cell's загрузка is read in a unit of its own. The case:
-Turdimurodov Nodirjon is Aripova Manzura's leader; the unit «Turdimurodov
-Nodirjon» exists only to measure his cell 0811's load. His leader profile sits
-in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
-0811 stays in his unit (catalog, plan, typed people, attendance, ojidaniya).
+brigadir while their cell's загрузка is read in a unit of its own. The case
+was Turdimurodov Nodirjon, Aripova Manzura's leader, whose cell 0811 stood in
+a unit «Turdimurodov Nodirjon» made only to measure its load. **That case is
+CLOSED from 2026-11-02** (the operator: «remove him from brigadirs, add his
+unit to Aripova Manzura where it belongs, keep him as her leader»): see «Unit
+«Turdimurodov Nodirjon» joins Aripova Manzura's» below. The RULE stays — any
+leader whose cells stand in another unit is read this way (Umarova Mapura on
+the 11 Sep copy).
 
 - **What a leader is MEASURED by follows the CELL.**
   `cell_lookup.cells_unit_for_leader` (the one unit all their cells stand in,
@@ -237,29 +240,66 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   cell any more — a leader's cells never follow the leader's unit, and every
   pick is a dated «Boshqaruvchi» change; see «Cells, leaders and brigadirs
   follow Verifix».)
-- Moving an existing leader's days is a data fix, not a feature:
-  `services/leader_unit_fix_sep26.py` (TEMPORARY one-shot) moved his profile,
-  role rows and every checklist day to Aripova without touching the cell, and
+- Moving an existing leader's days is a data fix, not a feature: a one-shot
+  (26 Sep, deleted 2 Nov once its flag read «done») moved his profile, role
+  rows and every checklist day to Aripova without touching the cell, and
   marked her already-sent digests as including them so nothing was re-sent.
-- **The Verifix sync keeps such a cell where it is** —
-  `verifix_sync.KEPT_APART` (cell code → the unit's NAME; today
-  `{"0811": "Turdimurodov Nodirjon"}`, the operator 2026-10-14: «keep him as
-  an exception»). Verifix puts 0811 under Aripova's workshop, so the live sync
-  raised `brigadir_differs` for it, and applying that on 13 Oct moved the
-  cell to Aripova from 14 Oct 08:00: its people went onto her /staff list and
-  his /production read her unit, which has no A0081 line — an empty page. For
-  a kept-apart cell the sync now raises no `brigadir_differs` (and refuses one
-  already on the queue, 409 `kept_apart`), never suggests `leader_moved` (the
-  leader is counted elsewhere on purpose), and reads the seat heading that very
-  unit as expected (no `seat_other_role`). A person can still move it on
-  /cells. A new exception is one more entry. TEMPORARY
-  `services/cell_unit_fix_oct14.py` (`startup.put_cell_0811_back`, flag
-  `cell_0811_own_unit_2026_10_14_v1`, inline at boot, both entrypoints) put
-  0811 back by a dated link event from the day the wrong one landed (that day
-  and after read his unit; the wrong event stays), re-copied the closed live
-  days since, counted what Aripova's unit filed about 0811's people since, and
-  DMed it to `UNPRICED_DM_CHAT`. Delete it with its startup function and both
-  calls once its flag and DM flag read «done» — `KEPT_APART` STAYS.
+- **The Verifix sync can keep such a cell where it is** —
+  `verifix_sync.KEPT_APART` (cell code → the unit's NAME). **EMPTY from
+  2026-11-02**: its one entry, `{"0811": "Turdimurodov Nodirjon"}` (the
+  operator 2026-10-14: «keep him as an exception» — a `brigadir_differs`
+  applied on 13 Oct had moved 0811 to Aripova and his /production went
+  blank; a one-shot, deleted 2 Nov, put it back), went when the unit joined
+  Aripova's. For a kept-apart cell the sync raises no `brigadir_differs` (and
+  refuses one already on the queue, 409 `kept_apart`), never suggests
+  `leader_moved`, and reads the seat heading that very unit as expected (no
+  `seat_other_role`). A person can still move it on /cells. The mechanism
+  STAYS: a new exception is one more entry.
+
+## Unit «Turdimurodov Nodirjon» joins Aripova Manzura's (`unit_merge_nov02`, 2026-11-02)
+
+The operator: «Remove the Nodirjon Turdimurodov from brigadirs, add his unit to
+Aripova Manzura where it belongs. Keep him as a Leader of her.» Asked one by
+one: MERGE (0811 joins her unit 1, unit 21 is archived), from TODAY (2 Nov —
+she closes that day with 0811's people), A0081 stays typed by hand, the 47
+positions with no Команда go with it, his open brigadir-level concern goes to
+her, both are told, the report goes to Burkhon. TEMPORARY
+`services/unit_merge_nov02.py` (`startup.merge_nodirjon_unit_nov02`, deferred,
+both entrypoints, flag `unit_merge_nodirjon_0811_2026_11_02_v1`, record in app
+setting `unit_merge_nodirjon_0811_2026_11_02`), ONE transaction with the flag:
+
+- unit 21's catalog, dated from 2 Nov (`pp_catalog.freeze`): every coded line
+  «Qo'lda» (per-line `auto_fill` off — Aripova's unit takes the SAP file), the
+  lines with no Команда given A0081, typed values carried
+  (`production._carry_manual_quantities`);
+- 0811's brigadir: a DATED link event 21 → 1 effective 2 Nov 08:00, applied at
+  once — 2 Nov on reads her unit, every earlier day his; the catalog follow
+  (kicked) moves its positions, today's typed values and people pin;
+- unit 21's open concerns → unit 1 (deadline kept); its live documents,
+  deletions, clock fixes and placements from 2 Nov → unit 1 (one draft role
+  change), an exchange INTO unit 21 → into unit 1;
+- his `supervisor:21` registrations removed (`profiles._remove_role_row` — an
+  account's active role falls back to his leader one); a `supervisor:21`
+  browser login, if any, DISABLED and kept;
+- unit 21 held untied from Verifix (`tie_by_hand` — his person 2137 stays on
+  leader profile #211 alone) and ARCHIVED (history kept, hidden; un-archive on
+  the Profiles tab).
+
+Preconditions block the whole run (nothing written, DMed): the 2 Nov shift-1
+window (08:00–20:00 Tashkent) — a boot after it never moves a finished day —,
+both units as named, 0811 in unit 21 run by #211, no other cell or leader in
+unit 21, the catalog follow on, no refusal from `catalog_refusal`. Every row it
+changes or removes is snapshotted into the record. After the commit: the
+Jurnal (`production.catalog_bulk_edited`, `org.cell_links_applied`,
+`identity.profile_deleted`), a closed 2 Nov live copy of either unit
+re-copied, the follows kicked, Aripova and Nodirjon told
+(`cell_unit_merged`, `cell_unit_merged_leader`), the report to
+`REPORT_CHAT_BURKHON` ~2½ min later (`fx.dm_flag(result)`) with the follow's
+outcome. Delete the module, both startup functions and both calls once the flag
+reads «done» (or «blocked») and the report has gone. Known and left: his open
+Telegram app keeps the brigadir session until relaunched (his DM asks him to);
+`supervisor:21` keeps a personal `page.view.production` grant, inert while
+nobody holds it.
 
 ## A leader follows the cells they run (`leader_follow`, 2026-10-29)
 
