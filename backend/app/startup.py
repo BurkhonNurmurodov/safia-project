@@ -7787,6 +7787,38 @@ def _pin_mismatch_job() -> None:
                       pin_mismatch_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: overtime two ways (2026-11-02) ────────────────────────────────
+# The operator asked what «Hisobotlar»' «Overtime hours» would be with Verifix's
+# own «Сверхурочно» column instead. READ-ONLY: September and October, the
+# report's figure beside the Verifix time kind, per production brigade, DMed
+# once to Abbos (`services/overtime_compare_report.py`). Changing what it sends
+# needs a NEW key.
+OVERTIME_COMPARE_FLAG = "overtime_compare_report_2026_11_02_v1"
+_OVERTIME_COMPARE_DELAY_S = 180
+
+
+def report_overtime_compare() -> None:
+    """Overtime, the report's way and Verifix's «Сверхурочно», DMed once.
+    Never raises."""
+    try:
+        if not _report_pending(OVERTIME_COMPARE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("overtime-compare-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_OVERTIME_COMPARE_DELAY_S),
+                    _overtime_compare_job)
+    except Exception as exc:
+        print(f"[startup] overtime compare report could not be scheduled: {exc}")
+
+
+def _overtime_compare_job() -> None:
+    print("[startup] overtime compare report: started")
+    from app.services import overtime_compare_report
+    _send_report_once(OVERTIME_COMPARE_FLAG, "overtime compare report",
+                      overtime_compare_report.send, REPORT_CHAT_ABBOS)
+
+
 # ── one-shot: every shift-manager, brigadir and leader AS VERIFIX LISTS THEM ──
 # The operator asked on 2026-10-25 for the names and shifts of all three roles
 # «from the verifix (not from our platform)». It READS Verifix (employees, jobs,
