@@ -145,6 +145,27 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
     return out
 
 
+def _ontime_by_month(db: Session, months: list[dict]) -> dict:
+    """Per month: the /ontime page's headline — Σ delivered on time ÷ Σ
+    ordered, every group with a window, one decimal — through `ontime.build`,
+    the page's own computation (its cache shared). The logistics sheet names
+    no brigade, so this is the whole plant's; None where nothing was ordered
+    (the sheet not connected, a month before its data). A read that fails
+    costs this figure, never the report."""
+    from app.services import ontime
+    out: dict = {}
+    for m0 in months:
+        try:
+            tot = (ontime.build(db, m0["from"], m0["to"]).get("totals") or {})
+            dem = float(tot.get("demand") or 0)
+            out[m0["ym"]] = round(float(tot.get("ontime") or 0) / dem * 100, 1) if dem > 0 else None
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("reports: on-time %% for %s failed", m0["ym"])
+            out[m0["ym"]] = None
+    return out
+
+
 def _idle_share_by_month(db: Session, payload: dict, months: list[dict],
                          ids: list[int]) -> dict:
     """Per month: idle time as a share of worked time — `idle_share.build`,
@@ -283,6 +304,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     idle = {m0["ym"]: {} for m0 in months}
     idle_pct = {m0["ym"]: None for m0 in months}
     vkinds: dict = {}
+    ontime_pct: dict = {}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
     # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
     cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(payload) else None
@@ -301,6 +323,11 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         # background read (`services/verifix_month_kinds.py`); a month never
         # read is asked for in the background and prints «—» until it lands.
         vkinds = verifix_month_kinds.totals(db, [m0["ym"] for m0 in months], ids)
+        # On-time delivery (the operator, 2026-11-02) — the logistics sheet
+        # names no brigade, so it is printed only while the report reads the
+        # whole plant (no plant, shift or brigadir narrowing), «—» otherwise.
+        if factory is None and shift is None and not mids:
+            ontime_pct = _ontime_by_month(db, months)
         verifix_month_kinds.want([m0["ym"] for m0 in months])
         xav = bb.concerns(db, ids, months)
         qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
@@ -323,7 +350,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "months": months,
         "unit_ids": ids,
         "plan": plan_tot,
-        "eff": eff, "sload": sload, "att": att, "vkinds": vkinds,
+        "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "qual_n": qual_n, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside

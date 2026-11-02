@@ -472,6 +472,13 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
         r = val(section, block, key)
         if r:
             rows.append(_headline_row(section, key, r, inp["partial"]))
+        if key == "loadEnd":
+            # On-time delivery — the /ontime page's headline, the whole
+            # plant's (`routers/reports._ontime_by_month`); a rate, so its
+            # change is never withheld.
+            ot = inp.get("ontime") or {}
+            rows.append(_headline_row("ontime", "pct", prow(
+                "pct", "pct", [ot.get(y) for y in inp["yms"]]), inp["partial"]))
     # «units» is a FILTER fact — the same scope answers every month, so it is
     # repeated. «cells» is a PERIOD fact (cells that carried a stoppage) and
     # is read per month: repeating the picked month's count under the two

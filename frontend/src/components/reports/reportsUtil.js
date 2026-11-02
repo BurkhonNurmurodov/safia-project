@@ -92,7 +92,7 @@ const LOWER_IS_BETTER = new Set([
 ]);
 const HIGHER_IS_BETTER = new Set([
   "production.fulfil", "production.eff", "personnel.attRate",
-  "quality.closure", "concerns.closure",
+  "quality.closure", "concerns.closure", "ontime.pct",
 ]);
 
 export function deltaTone(rowKey, delta) {

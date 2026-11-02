@@ -9617,6 +9617,12 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   hour earlier is gone; **Kutish** —
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
+  «O'z vaqtida yetkazish» (the Executive summary only, after the two loads,
+  the operator 2026-11-02) — the /ontime page's headline through
+  `ontime.build`, Σ delivered on time ÷ Σ ordered, one decimal
+  (`routers/reports._ontime_by_month`); the logistics sheet names no brigade,
+  so it is printed only while the report reads the whole plant (no plant,
+  shift or brigadir filter) and is «—» otherwise;
   **Sifat** — the Quality closure rate through `brigadir_board.quality`
   (actionable records, hair out, attributed by `quality_attribution` — the
   record's cell on its date, else «Отв. бригадир»), plus «Shikoyatlar soni»,
