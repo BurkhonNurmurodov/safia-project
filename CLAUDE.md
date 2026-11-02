@@ -9597,7 +9597,12 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   headcount over the closed unit-days that half has a figure for
   (`brigadir_board.shift_load`, the twin of `simplePlanUtil` /
   `simpleActualUtil`), no delta colour; **Xodimlar** — /workers' own `att_rate` through
-  `brigadir_board.attendance`, and `turnover.month_payload`; **Kutish** —
+  `brigadir_board.attendance`, and `turnover.month_payload`; «Qo'shimcha ish
+  soatlari» (overtime, 2026-11-02 — the operator: «we need the hours of
+  Overtime») = Σ over the scope's closed unit-days of `effective_hours` (early
+  arrival not counted) minus «Явка», the hours in the clock's brackets, never
+  below 0 per row (`routers/reports._overtime_by_month`; a clock with no
+  bracket adds nothing), with the person-days that had any; **Kutish** —
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
   **Sifat** — the Quality closure rate through `brigadir_board.quality`

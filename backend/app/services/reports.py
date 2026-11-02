@@ -87,6 +87,7 @@ SECTIONS = ("summary", "production", "personnel", "idle", "cost",
 CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
+    "personnel.overtimeH", "personnel.overtimeDays",
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
     "cost.costSum", "quality.complaints", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
@@ -253,6 +254,7 @@ def _personnel(inp: dict, n: int) -> list[dict]:
     leave = _sums(att, ids, "leave", n)
     turn = inp["turnover"]                   # ym → turnover totals | None
     yms = inp["yms"]
+    ot = inp.get("overtime") or {}           # ym → {"hours", "days"}
 
     blocks = [periods_block("attendance", [
         prow("listed", "int", [_r(v) for v in roster]),
@@ -260,6 +262,11 @@ def _personnel(inp: dict, n: int) -> list[dict]:
         prow("onLeave", "int", [_r(v) for v in leave]),
         prow("attRate", "pct", _pooled([(c + lv, r) for r, c, lv in zip(roster, came, leave)]),
              bold=True),
+        # Overtime — hours worked beyond the schedule, early arrival not
+        # counted (`routers/reports._overtime_by_month`), whole hours (the
+        # operator, 2026-11-02: «we need the hours of Overtime»).
+        prow("overtimeH", "int", [_r((ot.get(y) or {}).get("hours")) for y in yms]),
+        prow("overtimeDays", "int", [_r((ot.get(y) or {}).get("days")) for y in yms]),
         prow("attDays", "int", [_r(v) for v in _sums(att, ids, "days", n)]),
     ])]
 

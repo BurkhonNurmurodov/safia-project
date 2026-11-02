@@ -26,6 +26,7 @@ viewer's build is never served to another — the `leaders_kpi._board_key` rule.
 from __future__ import annotations
 
 import logging
+import re
 from copy import deepcopy
 from datetime import date, timedelta
 from typing import Optional
@@ -141,6 +142,61 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
             "total": total, "flagged": None if locked else flagged,
             "unit_days": unit_days, "by_cat": by_cat,
         }
+    return out
+
+
+_BRACKET = re.compile(r"\(\s*([\d.,]+)\s*\)")
+
+
+def _overtime_by_month(db: Session, months: list[dict], ids: set[int]) -> dict:
+    """Per month: the OVERTIME hours of the scope's people — the hours worked
+    beyond the schedule, arriving early not counted: `effective_hours` (the
+    platform's counted hours, «Отработано» less early arrival) minus «Явка»
+    (the time inside the schedule), per row, never below 0. Every attendance
+    row stores both: the clock's brackets («08:01 - 17:13 (8.14)») carry
+    «Явка», on a file day and on a live day's copy alike
+    (`verifix_attendance._row`, `live_projection`); `hours_worked` stands in
+    where `effective_hours` is blank. Verifix's own «Сверхурочно» kind is not
+    read: «Отработано» = «Явка» + «Свободное время» matched the export on
+    1,470 of 1,475 people, so the work past the schedule lives in the latter.
+    Closed unit-days only, as every figure here. A row whose clock carries no
+    bracket (a day nobody clocked, a split's half) adds nothing.
+    → {ym: {"hours": float, "days": person-days with any}}."""
+    from app.models import Attendance
+    from app.services import day_state
+
+    out = {m0["ym"]: {"hours": 0.0, "days": 0} for m0 in months}
+    if not ids:
+        return out
+    d_from, d_to = months[0]["from"], months[-1]["to"]
+    pairs = day_state.confirmed_pairs(db, d_from, d_to, sorted(ids))
+    if not pairs:
+        return out
+    rows = (db.query(Attendance.date, Attendance.hours_worked, Attendance.effective_hours,
+                     Attendance.clock_in_out)
+            .filter(Attendance.manager_id.in_(sorted(ids)),
+                    Attendance.date >= d_from, Attendance.date <= d_to,
+                    Attendance.hours_worked > 0,
+                    Attendance.clock_in_out.like("%(%"),
+                    day_state.pairs_in(Attendance.manager_id, Attendance.date, pairs))
+            .all())
+    for day, hours, eff, clock in rows:
+        m = _BRACKET.search(clock or "")
+        if not m:
+            continue
+        try:
+            on_time = float(m.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        extra = float(eff if eff is not None else (hours or 0)) - on_time
+        if extra <= 0.005:
+            continue
+        for m0 in months:
+            if m0["from"] <= day <= m0["to"]:
+                slot = out[m0["ym"]]
+                slot["hours"] += extra
+                slot["days"] += 1
+                break
     return out
 
 
@@ -281,6 +337,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     plan_tot: dict = {m0["ym"]: {} for m0 in months}
     idle = {m0["ym"]: {} for m0 in months}
     idle_pct = {m0["ym"]: None for m0 in months}
+    overtime = {m0["ym"]: {} for m0 in months}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
     # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
     cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(payload) else None
@@ -295,6 +352,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
+        overtime = _overtime_by_month(db, months, ids)
         xav = bb.concerns(db, ids, months)
         qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
         # The complaint COUNT includes hair (the operator, 2026-11-02: «the
@@ -316,7 +374,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "months": months,
         "unit_ids": ids,
         "plan": plan_tot,
-        "eff": eff, "sload": sload, "att": att,
+        "eff": eff, "sload": sload, "att": att, "overtime": overtime,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "qual_n": qual_n, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside

@@ -82,6 +82,8 @@ const uz = {
     came: "Kelganlar",
     onLeave: "Ta'tilda",
     attRate: "Davomat",
+    overtimeH: "Qo'shimcha ish soatlari",
+    overtimeDays: "Qo'shimcha ishlagan odam-kunlar",
     attDays: "Yopilgan kunlar",
     working: "Ishlayotganlar",
     left: "Ishdan bo'shaganlar",
@@ -136,7 +138,7 @@ const uz = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "O'lchov",
-  uom: { pct: "%", min: "daq", money: "mln so'm", count: "ta", day: "kun", personDay: "odam-kun", person: "kishi", personMin: "odam-daq" },
+  uom: { pct: "%", min: "daq", money: "mln so'm", count: "ta", day: "kun", personDay: "odam-kun", person: "kishi", personMin: "odam-daq", hour: "soat" },
   noUnits: "Tanlangan qamrovda brigada yo'q",
   noUnitsMsg: "Filtrlarni kengaytiring yoki boshqa zavodni tanlang.",
   loadFailed: "Hisobot yuklanmadi",
@@ -209,6 +211,7 @@ const uz_cyrl = {
     fulfil: "План бажарилиши", eff: "Самарадорлик", countedDays: "Ҳисобга олинган кунлар",
     noFact: "Факт киритилмаган кунлар", noPlan: "Плансиз кунлар",
     listed: "Рўйхатдагилар", came: "Келганлар", onLeave: "Таътилда", attRate: "Давомат",
+    overtimeH: "Қўшимча иш соатлари", overtimeDays: "Қўшимча ишлаган одам-кунлар",
     attDays: "Ёпилган кунлар", working: "Ишлаётганлар", left: "Ишдан бўшаганлар",
     turnRate: "Қўнимсизлик (йиллик)",
     idleMin: "Кутиш", idlePerDay: "Кунига ўртача", unitDays: "Бригада-кунлар",
@@ -240,7 +243,7 @@ const uz_cyrl = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Ўлчов",
-  uom: { pct: "%", min: "дақ", money: "млн сўм", count: "та", day: "кун", personDay: "одам-кун", person: "киши", personMin: "одам-дақ" },
+  uom: { pct: "%", min: "дақ", money: "млн сўм", count: "та", day: "кун", personDay: "одам-кун", person: "киши", personMin: "одам-дақ", hour: "соат" },
   noUnits: "Танланган қамровда бригада йўқ",
   noUnitsMsg: "Филтрларни кенгайтиринг ёки бошқа заводни танланг.",
   loadFailed: "Ҳисобот юкланмади",
@@ -300,6 +303,7 @@ const ru = {
     fulfil: "Выполнение плана", eff: "Эффективность", countedDays: "Учтённых дней",
     noFact: "Дней без факта", noPlan: "Дней без плана",
     listed: "В списке", came: "Пришли", onLeave: "В отпуске", attRate: "Посещаемость",
+    overtimeH: "Сверхурочные часы", overtimeDays: "Чел.-дней со сверхурочными",
     attDays: "Закрытых дней", working: "Работающих", left: "Уволились",
     turnRate: "Текучесть (годовая)",
     idleMin: "Ожидание", idlePerDay: "В среднем за день", unitDays: "Бригадо-дней",
@@ -330,7 +334,7 @@ const ru = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Ед. изм.",
-  uom: { pct: "%", min: "мин", money: "млн сум", count: "шт.", day: "дн.", personDay: "чел.-дн.", person: "чел.", personMin: "чел.-мин" },
+  uom: { pct: "%", min: "мин", money: "млн сум", count: "шт.", day: "дн.", personDay: "чел.-дн.", person: "чел.", personMin: "чел.-мин", hour: "ч" },
   noUnits: "В выбранном охвате нет бригад",
   noUnitsMsg: "Расширьте фильтры или выберите другой завод.",
   loadFailed: "Отчёт не загрузился",
@@ -390,6 +394,7 @@ const en = {
     fulfil: "Plan fulfilment", eff: "Efficiency", countedDays: "Days counted",
     noFact: "Days with no actual", noPlan: "Days with no plan",
     listed: "On the list", came: "Came in", onLeave: "On leave", attRate: "Attendance",
+    overtimeH: "Overtime hours", overtimeDays: "Person-days with overtime",
     attDays: "Closed days", working: "Working", left: "Left", turnRate: "Turnover (annualised)",
     idleMin: "Waiting", idlePerDay: "Average per day", unitDays: "Unit-days",
     flaggedDays: "Days over 50 minutes",
@@ -419,7 +424,7 @@ const en = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Unit",
-  uom: { pct: "%", min: "min", money: "MUZS", count: "qty", day: "days", personDay: "person-days", person: "people", personMin: "person-min" },
+  uom: { pct: "%", min: "min", money: "MUZS", count: "qty", day: "days", personDay: "person-days", person: "people", personMin: "person-min", hour: "h" },
   noUnits: "No units in the selected scope",
   noUnitsMsg: "Widen the filters or pick another plant.",
   loadFailed: "The report did not load",

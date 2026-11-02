@@ -140,6 +140,7 @@ const UOM_BY_KEY = {
   idlePersonMin: "personMin", workedMin: "personMin",
   costSum: "money", costPerDay: "money",
   countedDays: "day", noFact: "day", noPlan: "day", attDays: "day",
+  overtimeH: "hour", overtimeDays: "personDay",
   unitDays: "day", flaggedDays: "day",
   listed: "personDay", came: "personDay", onLeave: "personDay",
   working: "person", left: "person", hc: "person",
