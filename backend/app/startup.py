@@ -7853,6 +7853,39 @@ def _leader_merge_report_job() -> None:
                       leader_merge_report_nov02.send, REPORT_CHAT_BURKHON)
 
 
+# ── one-shot: the Quality register's brigadirs and their IMS units ──────────
+# The operator (2026-11-02): «On the Quality & complaints sheets report me all
+# brigadirs and to whom they're connected on our IMS». READ-ONLY: every
+# «Отв. бригадир» spelling with its rows and dates, the unit the Quality page's
+# own `name_map.supervisor_match` connects it to and how
+# (`services/quality_brigadir_report_nov02.py`), DMed once to Burkhon as text +
+# a workbook. Changing what it sends needs a NEW key. Delete this block, the
+# module and both entrypoint calls once it has landed.
+QUALITY_BRIGADIR_REPORT_FLAG = "quality_brigadir_report_2026_11_02_v1"
+_QUALITY_BRIGADIR_REPORT_DELAY_S = 150
+
+
+def report_quality_brigadirs() -> None:
+    """Quality-register brigadir spellings × IMS units, DMed once. Never raises."""
+    try:
+        if not _report_pending(QUALITY_BRIGADIR_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("quality-brigadir-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_QUALITY_BRIGADIR_REPORT_DELAY_S),
+                    _quality_brigadirs_job)
+    except Exception as exc:
+        print(f"[startup] quality brigadir report could not be scheduled: {exc}")
+
+
+def _quality_brigadirs_job() -> None:
+    print("[startup] quality brigadir report: started")
+    from app.services import quality_brigadir_report_nov02
+    _send_report_once(QUALITY_BRIGADIR_REPORT_FLAG, "quality brigadir report",
+                      quality_brigadir_report_nov02.send, REPORT_CHAT_BURKHON)
+
+
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
 # The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
 # cell's positions follow it from its own move day, closed days included. The
