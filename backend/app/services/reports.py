@@ -91,7 +91,8 @@ BUILT_ONLY = ("cost", "quality", "concerns")
 CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
-    "personnel.overtimeH", "personnel.vkPresence", "personnel.vkAbsence",
+    "personnel.overtimeDirect", "personnel.overtimeIndirect",
+    "personnel.vkPresence", "personnel.vkAbsence",
     "personnel.vkFree", "personnel.vkDayOff", "personnel.vkEarlyLeave", "personnel.vkLate",
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
@@ -285,7 +286,7 @@ def _personnel(inp: dict, n: int) -> list[dict]:
 
     from app.services.verifix_month_kinds import TRACKED
     blocks.append(periods_block("verifix", [
-        prow(key, "int", [_vk(y, kid) for y in yms], bold=(key == "overtimeH"))
+        prow(key, "int", [_vk(y, kid) for y in yms], bold=key.startswith("overtime"))
         for kid, key in TRACKED
     ]))
 

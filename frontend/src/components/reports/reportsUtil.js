@@ -151,7 +151,7 @@ const UOM_BY_KEY = {
   idlePersonMin: "personMin", workedMin: "personMin",
   costSum: "money", costPerDay: "money",
   countedDays: "day", noFact: "day", noPlan: "day", attDays: "day",
-  overtimeH: "hour", vkPresence: "hour", vkAbsence: "hour", vkFree: "hour",
+  overtimeDirect: "hour", overtimeIndirect: "hour", vkPresence: "hour", vkAbsence: "hour", vkFree: "hour",
   vkDayOff: "hour", vkEarlyLeave: "hour", vkLate: "hour",
   unitDays: "day", flaggedDays: "day",
   listed: "personDay", came: "personDay", onLeave: "personDay",

@@ -9600,11 +9600,14 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `brigadir_board.attendance`, and `turnover.month_payload`; a «Verifix — vaqt turlari» table
   (2026-11-02, the operator: «Overtime should be taken from Сверхурочно»):
   Verifix's own time kinds in hours — Явка (23), Отсутствие (26), Свободное
-  время (27), Сверхурочные (34, the «Qo'shimcha ish» overtime row), Отгул
+  время (27), Сверхурочные (34 — TWO rows, the operator the same day: direct
+  workers, counted in the загрузка, and indirect ones, by the worker's
+  Verifix job through `kpi_calculator.is_direct_role`), Отгул
   (31), Ранний уход (25), Опоздание (24) (`verifix_month_kinds.TRACKED`).
   They are READ from `core/timesheet$export` for the whole month and STORED
   (`services/verifix_month_kinds.py`, table `verifix_month_kinds`, meta in app
-  setting `vfx_month_kinds:<ym>`): the current month every 3 hours (an hourly
+  setting `vfx_month_kinds2:<ym>`; every kind stored as «<id>:d» / «<id>:i»,
+  the job off the stored `verifix_org` read): the current month every 3 hours (an hourly
   job at :50 decides), the month before until the 7th, a catch-up 240 s after
   boot, and any month the report asks for that was never read (`want`, a
   background read — «—» until it lands). A person is placed by their CURRENT

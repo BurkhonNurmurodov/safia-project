@@ -19,8 +19,17 @@ request can wait for.
         was never read (`want`, a background read — the page shows «—» until
         it lands). A read cut short keeps the last complete one.
 
+  SPLIT every kind by the worker's JOB (2026-11-02, the operator: «Overtime
+        should be two — direct workers, counted in Zagruzka, and indirect»):
+        `kpi_calculator.is_direct_role` on the Verifix job (Кондитер…,
+        Фасовщик, Заготовитель, a blank job → direct; anything else →
+        indirect), the job read off the stored org (`verifix_org`). A row's
+        `kind_id` is «<kind>:d» or «<kind>:i»; `totals` also hands out the
+        plain «<kind>» sum.
+
 Rows: `models.VerifixMonthKind`; per-month meta in app setting
-`vfx_month_kinds:<ym>` (read time, people, partial, error).
+`vfx_month_kinds2:<ym>` (read time, people, partial, error) — «2» since the
+split, so every month stored before it is read again.
 """
 from __future__ import annotations
 
@@ -37,10 +46,12 @@ from app.models import AppSetting, Cell, VerifixMonthKind
 
 log = logging.getLogger(__name__)
 
-# The kinds the report prints, in its order: (Verifix time_kind_id, row key).
+# The kinds the report prints, in its order: (kind key, row key) — a kind key
+# is a Verifix time_kind_id, or «<id>:d» / «<id>:i» for its direct / indirect
+# workers' share. Overtime (34) is printed as those two halves.
 TRACKED = [("23", "vkPresence"), ("26", "vkAbsence"), ("27", "vkFree"),
-           ("34", "overtimeH"), ("31", "vkDayOff"), ("25", "vkEarlyLeave"),
-           ("24", "vkLate")]
+           ("34:d", "overtimeDirect"), ("34:i", "overtimeIndirect"),
+           ("31", "vkDayOff"), ("25", "vkEarlyLeave"), ("24", "vkLate")]
 
 BUDGET_S = 900.0
 FRESH_CURRENT = timedelta(hours=3)
@@ -54,7 +65,7 @@ _tried: dict[str, float] = {}      # ym → monotonic time of the last on-demand
 
 
 def _meta_key(ym: str) -> str:
-    return f"vfx_month_kinds:{ym}"
+    return f"vfx_month_kinds2:{ym}"
 
 
 def _bounds(ym: str) -> tuple[date, date]:
@@ -99,9 +110,9 @@ def stored(db, yms: Iterable[str]) -> set[str]:
 
 
 def totals(db, yms: list[str], ids: Iterable[int]) -> dict[str, dict[str, float]]:
-    """{ym: {kind_id: minutes}} over the units `ids` — only for the months a
-    read has landed for, so a month never read is ABSENT (the report prints
-    «—»), never a row of zeros."""
+    """{ym: {kind key: minutes}} over the units `ids` — «<id>:d», «<id>:i»
+    and their sum «<id>» — only for the months a read has landed for, so a
+    month never read is ABSENT (the report prints «—»), never a row of zeros."""
     ids = list(ids)
     have = stored(db, yms)
     out: dict[str, dict[str, float]] = {ym: {} for ym in yms if ym in have}
@@ -112,7 +123,11 @@ def totals(db, yms: list[str], ids: Iterable[int]) -> dict[str, dict[str, float]
                     VerifixMonthKind.manager_id.in_(ids))
             .all())
     for ym, kid, minutes in rows:
-        out[ym][kid] = out[ym].get(kid, 0.0) + float(minutes or 0)
+        v = float(minutes or 0)
+        out[ym][kid] = out[ym].get(kid, 0.0) + v
+        base = kid.split(":")[0]
+        if base != kid:
+            out[ym][base] = out[ym].get(base, 0.0) + v
     return out
 
 
@@ -135,7 +150,8 @@ def read_month(ym: str, trigger: str) -> dict:
 
 
 def _read_month(ym: str, trigger: str) -> dict:
-    from app.services import action_log, verifix
+    from app.services import action_log, verifix, verifix_org
+    from app.services.kpi_calculator import is_direct_role
     from app.services.verifix_attendance import ID_CHUNK, _day, _directory
 
     first, last = _bounds(ym)
@@ -149,6 +165,16 @@ def _read_month(ym: str, trigger: str) -> dict:
         code_unit = {verifix._code_key(code): mid
                      for code, mid in db.query(Cell.verifix_code, Cell.manager_id).all()
                      if mid is not None}
+        # The job decides direct / indirect — off the stored org, read again
+        # only when it is older than a day.
+        org, _at, _fresh = verifix_org.refresh(db, max_age=24 * 3600)
+        if not org or not org.get("jobs"):
+            return {"ok": False, "error": "no_org"}
+        org_emps = org.get("emps") or {}
+
+        def group(eid: str) -> str:
+            job = verifix_org.job_name(org, (org_emps.get(eid) or {}).get("job"))
+            return "d" if is_direct_role(job, 1) else "i"
         db.rollback()   # hold no transaction across the Verifix read
 
         kinds: dict[str, str] = {}
@@ -163,6 +189,7 @@ def _read_month(ym: str, trigger: str) -> dict:
         directory = _directory(cfg, deadline)
         org_code, emps = directory["units"], directory["emps"]
         who: dict[int, int] = {}
+        grp: dict[int, str] = {}
         for eid, (unit, hired, dismissed, *_r) in emps.items():
             mid = code_unit.get(org_code.get(unit, ""))
             if mid is None or not eid.isdigit():
@@ -170,6 +197,7 @@ def _read_month(ym: str, trigger: str) -> dict:
             if (hired and hired > last) or (dismissed and dismissed < first):
                 continue
             who[int(eid)] = mid
+            grp[int(eid)] = group(eid)
 
         minutes: dict[tuple[int, str], float] = defaultdict(float)
         pdays: dict[tuple[int, str], int] = defaultdict(int)
@@ -189,6 +217,7 @@ def _read_month(ym: str, trigger: str) -> dict:
                             mid = who.get(int(eid)) if eid.isdigit() else None
                             if mid is None:
                                 continue
+                            g = grp[int(eid)]
                             for d in rec.get("days") or []:
                                 day = _day(d.get("date"))
                                 if day is None or not (first <= day <= last):
@@ -198,8 +227,8 @@ def _read_month(ym: str, trigger: str) -> dict:
                                     k = str(f.get("time_kind_id") or "")
                                     v = _num(f.get("fact_value"))
                                     if k and v:
-                                        minutes[(mid, k)] += v
-                                        seen.add(k)
+                                        minutes[(mid, f"{k}:{g}")] += v
+                                        seen.add(f"{k}:{g}")
                                 for k in seen:
                                     pdays[(mid, k)] += 1
         except verifix.VerifixError as exc:
@@ -216,9 +245,11 @@ def _read_month(ym: str, trigger: str) -> dict:
         db.query(VerifixMonthKind).filter(VerifixMonthKind.ym == ym).delete(synchronize_session=False)
         for (mid, k), v in minutes.items():
             db.add(VerifixMonthKind(ym=ym, manager_id=mid, kind_id=k,
-                                    kind_name=(kinds.get(k) or k)[:160], minutes=round(v, 2),
+                                    kind_name=(kinds.get(k.split(":")[0]) or k)[:160],
+                                    minutes=round(v, 2),
                                     person_days=pdays.get((mid, k), 0), read_at=now))
         _set_meta(db, ym, {"read_at": now.isoformat(), "people": len(who),
+                           "direct": sum(1 for g in grp.values() if g == "d"),
                            "partial": partial, "trigger": trigger,
                            "seconds": round(time.monotonic() - started, 1)})
         db.commit()
