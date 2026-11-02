@@ -121,6 +121,28 @@ def tracker_token(body: TokenIn, _a: dict = Depends(_admin)):
     return out
 
 
+@admin_router.put("/notion-token")
+def tracker_notion_token(body: TokenIn, _a: dict = Depends(_admin)):
+    """The Notion token the reminders and the page read with (else the platform's
+    NOTION_TOKEN): checked against the task list first — a token Notion refuses,
+    or one that cannot see the list, is not stored — then sealed."""
+    token = (body.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail={"code": "required"})
+    try:
+        nt.check_notion_token(token)
+    except nt.ApiError as e:
+        if e.status == 401:
+            raise HTTPException(status_code=400, detail={"code": "notion_refused"})
+        if e.status in (403, 404):
+            raise HTTPException(status_code=400, detail={"code": "notion_no_access"})
+        raise HTTPException(status_code=424, detail={"code": "service", "message": e.message})
+    nt.save_notion_token(token)
+    action_log.enrich(target_kind="setting", target_id="notion_tracker_notion_token",
+                      target_name="Notion eslatmalari", details={"length": len(token)})
+    return nt.admin_payload()
+
+
 @admin_router.post("/preview")
 def tracker_preview(admin: dict = Depends(_admin)):
     """Today's messages, sent only to the caller's own chat with the bot."""

@@ -460,6 +460,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/admin/trello/boards/{}",               "config", "config.trello_board_removed"),
     (("PUT",),    "/api/admin/trello",                         "config", "config.trello_saved"),
     (("PUT",),    "/api/admin/notion-tracker/token",           "config", "config.notion_tracker_token_set"),
+    (("PUT",),    "/api/admin/notion-tracker/notion-token",    "config", "config.notion_tracker_notion_token_set"),
     (("POST",),   "/api/admin/notion-tracker/preview",         "comms", "notification.notion_preview"),
     (("PUT",),    "/api/admin/notion-tracker",                 "config", "config.notion_tracker_saved"),
     (("PUT",),    "/api/category-compliance/rule",             "config", "config.category_rule_saved"),

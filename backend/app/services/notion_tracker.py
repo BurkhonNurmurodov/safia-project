@@ -64,6 +64,7 @@ K_SETTINGS = "notion_tracker_settings"
 K_TOKEN = "notion_tracker_bot_token"   # sealed
 K_STATUS = "notion_tracker_status"
 K_MEMORY = "notion_tracker_memory"
+K_NOTION = "notion_tracker_notion_token"   # sealed; empty = the platform's NOTION_TOKEN
 
 
 def log(msg):
@@ -1088,9 +1089,50 @@ def explain(error):
 
 # --------------------------------------------------------------------------- Notion
 
+def own_notion_token() -> str:
+    """The Notion token saved on the tab (the GitHub bot's own integration),
+    or "" — sealed like the bot token."""
+    from app.web_auth import open_password
+    with SessionLocal() as db:
+        row = db.get(AppSetting, K_NOTION)
+    return (open_password(row.value) if row and row.value else None) or ""
+
+
 def notion_token() -> str:
+    """The tab's own Notion token when one is saved, else the platform's
+    NOTION_TOKEN (the Kaizen page's). They are two integrations: on 2026-11-02
+    the platform's could not see the "Production" list and the bot's could."""
+    own = own_notion_token()
+    if own:
+        return own
     from app.services.notion_kaizen import _token
     return _token()
+
+
+def check_notion_token(token: str) -> None:
+    """One row of the task list with this token: raises ApiError when Notion
+    refuses it (401) or it cannot see the list (404)."""
+    call_json("Notion", f"{NOTION_API}/data_sources/{DEFAULT_DATA_SOURCE}/query", body={"page_size": 1},
+              headers={"Authorization": f"Bearer {token}", "Notion-Version": NOTION_VERSION}, attempts=2)
+
+
+def save_notion_token(token: str) -> None:
+    from app.web_auth import seal_password
+    with SessionLocal() as db:
+        row = db.get(AppSetting, K_NOTION)
+        if row:
+            row.value = seal_password(token)
+        else:
+            db.add(AppSetting(key=K_NOTION, value=seal_password(token)))
+        db.commit()
+    _CACHE.update(at=0.0, tasks=None)  # the page reads with the new token at once
+
+    def fn(d):
+        if (d.get("error") or {}).get("code") in ("notion_missing", "notion_token", "notion_not_found"):
+            d["error"] = None
+        d.pop("notion", None)
+    _mutate(K_STATUS, fn)
+    reset_retry()
 
 
 def load_tasks():
@@ -1430,6 +1472,7 @@ def admin_payload() -> dict:
         mem = _read(db, K_MEMORY, {}) or {}
         status = _read(db, K_STATUS, {}) or {}
     s = parse_settings(raw)
+    own_notion = own_notion_token()
     now = dt.datetime.now(TZ)
     with using(s):
         wait = daily_wait(now)
@@ -1443,7 +1486,8 @@ def admin_payload() -> dict:
                   "sent_groups": [c for c in s.groups if daily_key(now.date(), c) in sent]},
         "bot_groups": [{"chat_id": int(k), "title": v}
                        for k, v in sorted(seen.items(), key=lambda kv: (kv[1] or "").casefold())],
-        "notion": {"configured": bool(notion_token()), "data_source": DEFAULT_DATA_SOURCE},
+        "notion": {"configured": bool(notion_token()), "data_source": DEFAULT_DATA_SOURCE,
+                   "own": bool(own_notion), "hint": token_hint(own_notion)},
         "webhook": bool(webhook_url()),
         "max_remind_days": MAX_REMIND_DAYS,
     }

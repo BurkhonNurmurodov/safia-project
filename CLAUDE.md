@@ -9740,8 +9740,13 @@ operator's to delete.
   `enabled: false`, plus its learned Telegram IDs and groups. The work group
   («Рабочая группа», -1002661831949) is listed under «Bot qo'shilgan
   guruhlar» to add in one tap.
-- **Notion** is read with the platform's `NOTION_TOKEN` (`notion_kaizen._token`,
-  the Kaizen page's), data source `DEFAULT_DATA_SOURCE` (the "Production" list),
+- **Notion** is read with the token saved on the tab («Notion tokeni»,
+  `notion_tracker_notion_token`, SEALED) when there is one, else the platform's
+  `NOTION_TOKEN` (`notion_kaizen._token`, the Kaizen page's). They are two
+  integrations: on 2026-11-02 the platform's answered 404 on the "Production"
+  list while the GitHub bot's own token read it, so the tab takes the bot's.
+  `PUT …/notion-token` reads one row of the list before storing (400
+  `notion_refused` / `notion_no_access`). Data source `DEFAULT_DATA_SOURCE`,
   fixed. Nothing is written to Notion.
 - **The bot's updates** arrive on `POST /bot/notion-webhook` (secret token
   `sha256("notion-tracker-webhook:" + SECRET_KEY)`, checked first; set by

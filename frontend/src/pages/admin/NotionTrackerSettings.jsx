@@ -91,6 +91,19 @@ function GroupChip({ T, g, sentToday }) {
   );
 }
 
+function SecretForm({ label, hint, placeholder, saveLabel, value, onChange, error, pending, onSave }) {
+  return (
+    <FormField label={label} hint={hint} error={error}>
+      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSave(); }}>
+        <input type="password" autoComplete="off" spellCheck={false} className={`${inputCls} flex-1 min-w-[14rem]`}
+          style={inputStyle(!!error)} value={value} placeholder={placeholder} aria-label={label}
+          onChange={(e) => onChange(e.target.value)} />
+        <Button type="submit" size="lg" loading={pending} disabled={!value.trim() || pending}>{saveLabel}</Button>
+      </form>
+    </FormField>
+  );
+}
+
 export default function NotionTrackerSettings() {
   const T = useNT();
   const qc = useQueryClient();
@@ -111,10 +124,12 @@ export default function NotionTrackerSettings() {
   const [errors, setErrors] = useState({});
   const [tokenIn, setTokenIn] = useState("");
   const [tokenErr, setTokenErr] = useState(null);
+  const [notionIn, setNotionIn] = useState("");
+  const [notionErr, setNotionErr] = useState(null);
   const saved = data?.settings;
   const draft = edits ?? saved;
   const dirty = !!(draft && saved && JSON.stringify(draft) !== JSON.stringify(saved));
-  useAdminDirty(dirty || tokenIn.trim().length > 0);
+  useAdminDirty(dirty || tokenIn.trim().length > 0 || notionIn.trim().length > 0);
 
   const edit = (patch) => { setEdits((d) => ({ ...(d ?? saved), ...patch })); setErrors({}); };
   const editRow = (key, i, patch) => edit({ [key]: draft[key].map((r, j) => (j === i ? { ...r, ...patch } : r)) });
@@ -144,6 +159,19 @@ export default function NotionTrackerSettings() {
     onError: (e) => {
       const d = detailOf(e);
       setTokenErr(T.tokenErr[d?.code] ? fill(T.tokenErr[d.code], { m: d.message || "" }) : T.tokenErr.service.replace("{m}", ""));
+    },
+  });
+  const saveNotion = useMutation({
+    mutationFn: () => api.put("/api/admin/notion-tracker/notion-token", { token: notionIn.trim() }).then((r) => r.data),
+    onSuccess: (res) => {
+      put(res); setNotionIn(""); setNotionErr(null);
+      toast.success(T.notionSaved);
+      qc.invalidateQueries({ queryKey: SQK });
+      qc.invalidateQueries({ queryKey: ["notion-tasks"] });
+    },
+    onError: (e) => {
+      const d = detailOf(e);
+      setNotionErr(T.notionErr[d?.code] ? fill(T.notionErr[d.code], { m: d.message || "" }) : T.notionErr.service.replace("{m}", ""));
     },
   });
   const preview = useMutation({
@@ -339,23 +367,28 @@ export default function NotionTrackerSettings() {
         </div>
       </section>
 
-      {/* ── Bot token ── */}
+      {/* ── Tokens: the bot's and Notion's ── */}
       <section className="rounded-2xl overflow-hidden" style={card}>
         <SectionHead icon={KeyRound} title={T.aToken} />
         <div className="px-4 py-4 space-y-3">
           <p className="text-sm" style={{ color: "var(--text-2)" }}>
             {data.token.set ? fill(T.tokenSet, { h: data.token.hint }) : T.tokenNone}
           </p>
-          <FormField label={T.tokenField} hint={T.tokenHint} error={tokenErr}>
-            <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (tokenIn.trim()) saveToken.mutate(); }}>
-              <input type="password" autoComplete="off" spellCheck={false} className={`${inputCls} flex-1 min-w-[14rem]`}
-                style={inputStyle(!!tokenErr)} value={tokenIn} placeholder="123456789:AA…" aria-label={T.tokenField}
-                onChange={(e) => { setTokenIn(e.target.value); setTokenErr(null); }} />
-              <Button type="submit" size="lg" loading={saveToken.isPending} disabled={!tokenIn.trim() || saveToken.isPending}>
-                {T.tokenSave}
-              </Button>
-            </form>
-          </FormField>
+          <SecretForm label={T.tokenField} hint={T.tokenHint} placeholder="123456789:AA…" saveLabel={T.tokenSave}
+            value={tokenIn} onChange={(v) => { setTokenIn(v); setTokenErr(null); }} error={tokenErr}
+            pending={saveToken.isPending} onSave={() => saveToken.mutate()} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl overflow-hidden" style={card}>
+        <SectionHead icon={KeyRound} title={T.aNotion} />
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-sm" style={{ color: "var(--text-2)" }}>
+            {data.notion?.own ? fill(T.notionOwn, { h: data.notion.hint }) : T.notionPlatform}
+          </p>
+          <SecretForm label={T.notionField} hint={T.notionHint} placeholder="ntn_…" saveLabel={T.notionSave}
+            value={notionIn} onChange={(v) => { setNotionIn(v); setNotionErr(null); }} error={notionErr}
+            pending={saveNotion.isPending} onSave={() => saveNotion.mutate()} />
         </div>
       </section>
 

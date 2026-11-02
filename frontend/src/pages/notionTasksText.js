@@ -30,7 +30,7 @@ const uz = {
   errLoad: "Notion'dan o'qib bo'lmadi", retry: "Qayta urinish",
   err: {
     notion_token: "Notion tokenni qabul qilmadi",
-    notion_not_found: "Notion vazifalar ro'yxatini topmadi — u integratsiya bilan ulashilganmi?",
+    notion_not_found: "Bu token Notion vazifalar ro'yxatini ko'ra olmaydi. Admin «Notion eslatmalari» bo'limida ro'yxat ulashilgan integratsiyaning tokenini kiritadi.",
     service: "{m}", other: "{m}",
   },
 
@@ -95,6 +95,11 @@ const uz = {
   tokenHint: "@BotFather bergan token. Saqlangach qayta ko'rsatilmaydi; Telegram qabul qilmasa saqlanmaydi.",
   tokenField: "Yangi token", tokenSave: "Tokenni saqlash", tokenSaved: "Token saqlandi: @{u}",
   tokenNoHook: "Token saqlandi, lekin buyruqlar (/tasks) uchun webhook o'rnatilmadi — server qayta ishga tushganda yana urinadi.",
+  aNotion: "Notion tokeni", notionOwn: "Saqlangan token: {h}",
+  notionPlatform: "Hozir platformaning NOTION_TOKEN'i ishlatilmoqda (Kaizen sahifasiniki).",
+  notionHint: "Vazifalar ro'yxati ulashilgan Notion integratsiyasining tokeni. Saqlashdan oldin ro'yxat o'qib tekshiriladi; qayta ko'rsatilmaydi.",
+  notionField: "Yangi Notion tokeni", notionSave: "Notion tokenini saqlash", notionSaved: "Notion tokeni saqlandi",
+  notionErr: { required: "Tokenni kiriting.", notion_refused: "Notion bu tokenni qabul qilmadi.", notion_no_access: "Bu token vazifalar ro'yxatini ko'ra olmaydi — ro'yxatni shu integratsiya bilan ulashing.", service: "Notion javob bermadi: {m}" },
   tokenErr: { required: "Tokenni kiriting.", token_refused: "Telegram bu tokenni qabul qilmadi.", service: "Telegram javob bermadi: {m}" },
 
   dirty: "Saqlanmagan o'zgarishlar bor", discard: "Bekor qilish", save: "Saqlash", saved: "Sozlamalar saqlandi",
@@ -131,7 +136,7 @@ const uz_cyrl = {
   errLoad: "Notionдан ўқиб бўлмади", retry: "Қайта уриниш",
   err: {
     notion_token: "Notion токенни қабул қилмади",
-    notion_not_found: "Notion вазифалар рўйхатини топмади — у интеграция билан улашилганми?",
+    notion_not_found: "Бу токен Notion вазифалар рўйхатини кўра олмайди. Админ «Notion эслатмалари» бўлимида рўйхат улашилган интеграциянинг токенини киритади.",
     service: "{m}", other: "{m}",
   },
 
@@ -195,6 +200,11 @@ const uz_cyrl = {
   tokenHint: "@BotFather берган токен. Сақлангач қайта кўрсатилмайди; Telegram қабул қилмаса сақланмайди.",
   tokenField: "Янги токен", tokenSave: "Токенни сақлаш", tokenSaved: "Токен сақланди: @{u}",
   tokenNoHook: "Токен сақланди, лекин буйруқлар (/tasks) учун webhook ўрнатилмади — сервер қайта ишга тушганда яна уринади.",
+  aNotion: "Notion токени", notionOwn: "Сақланган токен: {h}",
+  notionPlatform: "Ҳозир платформанинг NOTION_TOKEN'и ишлатилмоқда (Kaizen саҳифасиники).",
+  notionHint: "Вазифалар рўйхати улашилган Notion интеграциясининг токени. Сақлашдан олдин рўйхат ўқиб текширилади; қайта кўрсатилмайди.",
+  notionField: "Янги Notion токени", notionSave: "Notion токенини сақлаш", notionSaved: "Notion токени сақланди",
+  notionErr: { required: "Токенни киритинг.", notion_refused: "Notion бу токенни қабул қилмади.", notion_no_access: "Бу токен вазифалар рўйхатини кўра олмайди — рўйхатни шу интеграция билан улашинг.", service: "Notion жавоб бермади: {m}" },
   tokenErr: { required: "Токенни киритинг.", token_refused: "Telegram бу токенни қабул қилмади.", service: "Telegram жавоб бермади: {m}" },
 
   dirty: "Сақланмаган ўзгаришлар бор", discard: "Бекор қилиш", save: "Сақлаш", saved: "Созламалар сақланди",
@@ -231,7 +241,7 @@ const ru = {
   errLoad: "Не удалось прочитать Notion", retry: "Повторить",
   err: {
     notion_token: "Notion не принял токен",
-    notion_not_found: "Notion не нашёл список задач — открыт ли он интеграции?",
+    notion_not_found: "Этот токен не видит список задач Notion. Админ вводит токен интеграции, которой открыт список, в разделе «Напоминания Notion».",
     service: "{m}", other: "{m}",
   },
 
@@ -295,6 +305,11 @@ const ru = {
   tokenHint: "Токен от @BotFather. После сохранения не показывается; если Telegram его не примет, он не сохранится.",
   tokenField: "Новый токен", tokenSave: "Сохранить токен", tokenSaved: "Токен сохранён: @{u}",
   tokenNoHook: "Токен сохранён, но webhook для команд (/tasks) не установлен — сервер повторит при перезапуске.",
+  aNotion: "Токен Notion", notionOwn: "Сохранённый токен: {h}",
+  notionPlatform: "Сейчас используется NOTION_TOKEN платформы (тот, что у страницы Kaizen).",
+  notionHint: "Токен интеграции Notion, которой открыт список задач. Перед сохранением проверяется чтением списка; обратно не показывается.",
+  notionField: "Новый токен Notion", notionSave: "Сохранить токен Notion", notionSaved: "Токен Notion сохранён",
+  notionErr: { required: "Введите токен.", notion_refused: "Notion не принял этот токен.", notion_no_access: "Этот токен не видит список задач — откройте список этой интеграции.", service: "Notion не ответил: {m}" },
   tokenErr: { required: "Введите токен.", token_refused: "Telegram не принял этот токен.", service: "Telegram не ответил: {m}" },
 
   dirty: "Есть несохранённые изменения", discard: "Отменить", save: "Сохранить", saved: "Настройки сохранены",
@@ -331,7 +346,7 @@ const en = {
   errLoad: "Could not read Notion", retry: "Try again",
   err: {
     notion_token: "Notion rejected the token",
-    notion_not_found: "Notion can't find the task list — is it shared with the integration?",
+    notion_not_found: "This token can't see the Notion task list. An admin enters the token of the integration it's shared with on «Notion reminders».",
     service: "{m}", other: "{m}",
   },
 
@@ -395,6 +410,11 @@ const en = {
   tokenHint: "The token from @BotFather. Never shown again once saved; not saved if Telegram rejects it.",
   tokenField: "New token", tokenSave: "Save token", tokenSaved: "Token saved: @{u}",
   tokenNoHook: "Token saved, but the webhook for commands (/tasks) wasn't set — the server tries again when it restarts.",
+  aNotion: "Notion token", notionOwn: "Saved token: {h}",
+  notionPlatform: "The platform's NOTION_TOKEN (the Kaizen page's) is in use now.",
+  notionHint: "The token of the Notion integration the task list is shared with. Checked by reading the list before it's saved; never shown again.",
+  notionField: "New Notion token", notionSave: "Save Notion token", notionSaved: "Notion token saved",
+  notionErr: { required: "Enter the token.", notion_refused: "Notion rejected this token.", notion_no_access: "This token can't see the task list — share the list with its integration.", service: "Notion didn't answer: {m}" },
   tokenErr: { required: "Enter the token.", token_refused: "Telegram rejected this token.", service: "Telegram didn't answer: {m}" },
 
   dirty: "Unsaved changes", discard: "Discard", save: "Save", saved: "Settings saved",
