@@ -52,8 +52,8 @@ export default function SeatStrip({ seats, rights, mine, current, onClaim, onLea
             {!free && (
               <div>
                 <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-                  <div className="h-full rounded-full transition-all"
-                    style={{ width: `${pct}%`, background: s.submitted ? VERDICT.pass.hex : "var(--brand)" }} />
+                  <div className="h-full origin-left transition-transform duration-300"
+                    style={{ transform: `scaleX(${pct / 100})`, background: s.submitted ? VERDICT.pass.hex : "var(--brand)" }} />
                 </div>
                 <div className="mt-1 flex items-center gap-1.5 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
                   {fill(T.seatProgress, { g: s.graded, t: total })}
@@ -84,8 +84,9 @@ export default function SeatStrip({ seats, rights, mine, current, onClaim, onLea
               </Button>
             )}
             {!s.mine && !free && !s.submitted && rights.release_any && (
-              <Button size="sm" variant="danger" tint icon={X} onClick={() => onRelease(s)} className="mt-auto"
-                aria-label={`${T.releaseTip} · ${dept}`}>
+              // A rare admin act: quiet on the tile, the danger confirm says the rest.
+              <Button size="sm" variant="ghost" icon={X} onClick={() => onRelease(s)} className="mt-auto"
+                style={{ color: "var(--text-3)" }} aria-label={`${T.releaseTip} · ${dept}`}>
                 {T.release}
               </Button>
             )}

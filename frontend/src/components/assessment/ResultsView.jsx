@@ -18,6 +18,39 @@ function Bar({ pct }) {
   );
 }
 
+/** The panel's verdicts at a glance — one square per question, grouped by the
+ *  department that judged it (the seats' own order), each filled with the
+ *  toggle's verdict colour; a question whose judge has not submitted is a
+ *  dashed square. Nothing is computed: it is the rows below, drawn small. */
+function VerdictStrip({ rows, seats, T }) {
+  const label = (r) => `${r.position}. ${r.text} — ${r.submitted ? (r.verdict === "pass" ? T.pass : r.verdict === "fail" ? T.fail : "—") : T.notSubmitted}`;
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-3">
+      {seats.map((s) => {
+        const mine = rows.filter((r) => r.department === s.department).sort((a, b) => a.position - b.position);
+        if (!mine.length) return null;
+        return (
+          <div key={s.department} className="min-w-0">
+            <div className="mb-1.5"><DeptChip dept={s.department} T={T} /></div>
+            <div className="flex flex-wrap gap-1">
+              {mine.map((r) => {
+                const v = r.submitted ? r.verdict : null;
+                const style = v ? { background: VERDICT[v].bg, color: VERDICT[v].fg }
+                  : { background: "transparent", color: "var(--text-3)", border: "1px dashed var(--border-md)" };
+                return (
+                  <span key={r.item_id} title={label(r)} aria-label={label(r)}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-[11px] font-semibold tabular-nums"
+                    style={style}>{r.position}</span>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** A small «share» card — a label, the pass share, its base. No traffic
  *  light: the platform has no pass mark for a candidate, so a colour here
  *  would be a verdict nobody has defined. */
@@ -61,7 +94,7 @@ export default function ResultsView({ data }) {
         <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{T.overallRes}</div>
-            <div className="mt-1 text-4xl font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{pct0(res.overall.pct)}</div>
+            <div className="mt-1 text-4xl font-medium tabular-nums" style={{ color: "var(--text-1)" }}>{pct0(res.overall.pct)}</div>
             <div className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
               {fill(T.overallResSub, { p: res.overall.passed, j: res.overall.judged })}
             </div>
@@ -79,6 +112,10 @@ export default function ResultsView({ data }) {
               </div>
             </div>
           </div>
+        </div>
+        <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-3)" }}>{T.stripTitle}</div>
+          <VerdictStrip rows={res.rows} seats={seats} T={T} />
         </div>
       </div>
 

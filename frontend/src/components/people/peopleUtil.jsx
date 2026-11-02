@@ -28,15 +28,9 @@ export function useCanOpen(page) {
 /** May this viewer open the card at all (`people` page access)? */
 export const useCanOpenPeople = () => useCanOpen("people");
 
-/** Verifix spells names in CAPITALS («QODIROVA DILNOZA BAXTIYOR QIZI»); a
- *  shouted name reads in title case (only the first letter of each word is
- *  raised, /kelish's rule, so «O'G'LI» reads «O'g'li»). A name already in
- *  mixed case is left as typed. */
-export function nameCase(s) {
-  const v = String(s || "");
-  if (/\p{Ll}/u.test(v)) return v;
-  return v.toLocaleLowerCase().replace(/(^|[\s-])(\S)/gu, (_, a, b) => a + b.toLocaleUpperCase());
-}
+/** A shouted Verifix name in title case — the platform's one rule
+ *  (utils/personName.js), re-exported here for the card's own imports. */
+export { nameCase } from "../../utils/personName";
 
 export function fmtDate(iso) {
   if (!iso) return "—";

@@ -1,15 +1,16 @@
 // One section of «Hisobotlar» — its blocks, in the order the server folded
 // them. TWO block shapes and no third:
 //
-//   periods — a figure per row, the months across (TopSim's own reading:
-//             the picked month last and emphasised, so a number is always
-//             read against where it came from);
+//   periods — a figure per row, its unit of measurement beside it, then the
+//             previous month and the picked one (TopSim's own reading: the
+//             picked month last and emphasised, so a number is always read
+//             against where it came from);
 //   units   — a brigadir per row, describing the PICKED month alone.
 //
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
 import TableCard, { Th } from "../ui/DataTable";
-import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, monthLabel, fill, useRT }
+import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, uomOf, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -19,21 +20,25 @@ const TONE = {
   bad: "var(--status-bad)",
 };
 
-function DeltaChip({ row, T }) {
+function DeltaCell({ row, T }) {
   // A TOTAL over a month still running is not comparable with a whole month —
   // the server withholds its delta and says so (`no_delta`), and the cell
   // carries that reason rather than leaving a silent gap where every other
   // row has a change.
   if (row.no_delta === "partial") {
-    return <span className="ml-2 text-[11px]" style={{ color: "var(--text-4)" }}
+    return <span className="text-xs" style={{ color: "var(--text-3)" }}
       title={T.noDeltaPartial}>·</span>;
   }
+  // «—» means no answer; a change of exactly nothing is a 0, said plainly.
+  if (row.delta != null && Number(row.delta) === 0) {
+    return <span className="text-xs" style={{ color: "var(--text-3)" }}>{row.fmt === "pct" ? "0 p.p." : "0"}</span>;
+  }
   const txt = fmtDelta(row.delta, row.fmt);
-  if (!txt) return null;
+  if (!txt) return <span style={{ color: "var(--text-4)" }}>{DASH}</span>;
   const tone = deltaTone(`${row.section || ""}.${row.key.split(".").pop()}`, row.delta);
   return (
-    <span className="ml-2 text-[11px] font-medium"
-      style={{ color: tone ? TONE[tone] : "var(--text-3)" }}>{txt}</span>
+    <span className="text-xs font-medium"
+      style={{ color: tone ? TONE[tone] : "var(--text-2)" }}>{txt}</span>
   );
 }
 
@@ -48,36 +53,46 @@ function colMonth(m, T, t) {
 
 function PeriodsBlock({ block, months, T, t, caption }) {
   const last = months.length - 1;
+  // The change against the month before gets a column of its own, so the
+  // picked month's figures line up; only where the server sends one.
+  const hasDelta = block.rows.some((r) => r.delta != null || r.no_delta);
   return (
     <TableCard title={caption} maxHeight="none">
       <thead>
         <tr>
           <Th label={T.caps.figure} cls="min-w-[180px]" />
-          {months.map((m, i) => (
+          <Th label={T.colUnit} />
+          {months.map((m) => (
             <Th key={m.ym} align="right"
               label={colMonth(m, T, t)}
-              hint={m.partial ? T.partial : undefined}
-              cls={i === last ? "font-bold" : ""} />
+              hint={m.partial ? T.partial : undefined} />
           ))}
+          {hasDelta && <Th label={T.colDelta} align="right" hint={T.prevLabel} />}
         </tr>
       </thead>
       <tbody>
         {block.rows.map((r) => (
           <tr key={r.key}>
-            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
+            <td className="px-3 py-2"
+              style={{ color: "var(--text-1)", fontWeight: r.bold ? 600 : 500 }}>
               {rowLabel(r, T, t)}
+            </td>
+            <td className="px-3 py-2 whitespace-nowrap text-xs" style={{ color: "var(--text-3)" }}>
+              {uomOf(r, T)}
             </td>
             {r.values.map((v, i) => (
               <td key={i} className="px-3 py-2 text-right tabular-nums"
                 style={{
                   color: v === null || v === undefined ? "var(--text-4)" : "var(--text-1)",
-                  fontWeight: i === last && (r.bold || r.delta != null) ? 600 : 400,
+                  fontWeight: i === last ? 500 : 400,
                   background: i === last ? "var(--bg-inner)" : undefined,
                 }}>
-                {fmtCell(v, r.fmt)}
-                {i === last && <DeltaChip row={r} T={T} />}
+                {fmtCell(v, r.fmt, true)}
               </td>
             ))}
+            {hasDelta && (
+              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap"><DeltaCell row={r} T={T} /></td>
+            )}
           </tr>
         ))}
       </tbody>

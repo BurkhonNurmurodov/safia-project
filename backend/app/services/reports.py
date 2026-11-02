@@ -44,9 +44,11 @@ and the document carries it too: «not reported» said out loud, never a zero.
 
 The PERIOD is a calendar MONTH — the platform's own KPI month (`leaders_kpi`,
 `turnover` and `category_compliance` all count by it) — and every table carries
-the picked month plus `HISTORY - 1` months before it, oldest → newest, so a
+the picked month and the one before it (`HISTORY`), oldest → newest, so a
 figure is always read against where it came from. The picked month is the last
-column and the one the per-unit tables describe.
+column and the one the per-unit tables describe. A periods table also names
+each figure's unit of measurement (TopSim's «MEUR / %» column) — the words for
+it come from the page, like every other word in the document.
 
 Shapes, so the page, the document and a later section all read ONE of them:
 
@@ -64,9 +66,10 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Iterable, Optional
 
-# How many months a table carries, the picked one last. Three is TopSim's own
-# reading (Period 0 · 1 · 2) and the most a phone column can hold.
-HISTORY = 3
+# How many months a table carries, the picked one last: the month and the one
+# before it — TopSim's «Previous Period · Current Period» (the operator,
+# 2026-11-02: «we don't need 3 months of comparison, just 2»).
+HISTORY = 2
 
 # The section ids, in the order the page lists them and the document lays them
 # out. The words live in the frontend's bundle (pages/reportsText.js) in the
@@ -609,15 +612,19 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
 
     `words` is what the SCREEN printed, in the reader's language, sent back by
     the client (`grid_export`'s rule): `sections` {key: title}, `rows`
-    {key: label}, `cols` {key: label}, `months` [labels], `units` {…}, plus the
-    fixed captions. Every figure is already formatted by the page, so the file
-    and the screen cannot state two different numbers.
+    {key: label}, `cols` {key: label}, `months` [labels], `rowUnits`
+    {"<section>.<block>.<row>": unit} with its column's header `uomCol`, plus
+    the fixed captions. Every figure is already formatted by the page, so the
+    file and the screen cannot state two different numbers. A tab from before
+    the unit column sends no `rowUnits`, and its file simply has no such column.
     """
     sec_t = words.get("sections") or {}
     row_t = words.get("rows") or {}
     col_t = words.get("cols") or {}
     cap = words.get("caps") or {}
     mcols = words.get("months") or [m["ym"] for m in payload.get("months") or []]
+    uom = words.get("rowUnits") if isinstance(words.get("rowUnits"), dict) else None
+    uom_col = [words.get("uomCol") or ""] if uom is not None else []
 
     out: list[dict] = []
     for sec in payload.get("sections") or []:
@@ -632,10 +639,12 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
             # bundle's `caps` — «Kutish — brigadalar», not a fifth «Brigadalar
             # bo'yicha»): «… (2)», «… (3)» would name nothing.
             if b["kind"] == "periods":
+                key = f"{sec['key']}.{b['key']}"
                 out.append({
                     "type": "table",
-                    "columns": [cap.get("figure", ""), *mcols],
+                    "columns": [cap.get("figure", ""), *uom_col, *mcols],
                     "rows": [[row_t.get(r["key"], r.get("label") or r["key"]),
+                              *([uom.get(f"{key}.{r['key']}") or ""] if uom is not None else []),
                               *[_cell(v) for v in r.get("display", r["values"])]]
                              for r in b["rows"]],
                 })

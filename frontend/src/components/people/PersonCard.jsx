@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Briefcase, CalendarClock, Flag, UserX } from "lucide-react";
+import { ArrowLeft, Briefcase, CalendarClock, UserX } from "lucide-react";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -69,6 +69,21 @@ function Tiles({ tiles, P }) {
   );
 }
 
+/** One labelled fact of the hero — a quiet label over its value, so six facts
+ *  read as one row instead of six differently styled chips. */
+function HeroFact({ label, children, title }) {
+  return (
+    <div className="min-w-0" title={title}>
+      <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-1 flex items-center gap-1.5 min-w-0 text-[13px]" style={{ color: "var(--text-1)" }}>{children}</div>
+    </div>
+  );
+}
+
+// Today's live state: the dot is a status (green at work, yellow on a break,
+// slate otherwise) — never the brand gold, which is an accent.
+const LIVE_DOT = { inside: "#22c55e", break: "#eab308" };
+
 function Fact({ icon: Icon, children, title }) {
   return (
     <span className="inline-flex items-center gap-1.5 min-w-0 text-xs" style={{ color: "var(--text-2)" }} title={title}>
@@ -88,12 +103,12 @@ function Hero({ hero, P }) {
   const today = hero.today;
   return (
     <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex gap-4 items-start">
-        <ProfileAvatar name={nameCase(tl(hero.name))} colorKey={hero.name} size={isMobile ? 64 : 88}
+      <div className="flex gap-4 items-center">
+        <ProfileAvatar muted name={nameCase(tl(hero.name))} colorKey={hero.name} size={isMobile ? 52 : 64}
           photoUrl={hero.photo ? `/api/people/${encodeURIComponent(hero.employee_id)}/photo?size=${isMobile ? 96 : 192}` : undefined} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{nameCase(tl(hero.name))}</h2>
+            <h2 className="text-lg sm:text-xl font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{nameCase(tl(hero.name))}</h2>
             <StatusChip status={hero.status} dismissed={hero.dismissed} P={P} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -102,51 +117,59 @@ function Hero({ hero, P }) {
               {P.tenure}: {tenureText(hero.tenure_months, P)}
             </Fact>
           </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            {c ? (
-              <span className="inline-flex items-center gap-2 min-w-0">
-                <CellLink id={c.id} className="text-xs font-bold tabular-nums" title={P.cell}>
-                  <span className="px-2 py-1 rounded-md" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>{c.code}</span>
-                </CellLink>
-                <GroupBadge group={c.letter} />
-                <span className="inline-flex items-center gap-1 text-xs min-w-0" title={P.manager}>
-                  <Flag size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} aria-hidden="true" />
-                  <span className="truncate" style={{ color: c.leader ? "var(--text-2)" : "var(--text-3)" }}>{c.leader ? tl(c.leader) : P.noLeader}</span>
-                </span>
-              </span>
-            ) : (
-              <Fact>{P.noCell}{hero.unit_name ? ` · ${tx(hero.unit_name)}` : ""}</Fact>
-            )}
-            {c?.unit && canBrigadir && (
-              <button type="button" className="cell-link text-xs" onClick={() => nav(`/brigadir/${c.unit_id}`)} title={P.brigadir}>
-                {P.brigadir}: {tl(c.unit)}
-              </button>
-            )}
-            {c?.unit && !canBrigadir && <Fact>{P.brigadir}: {tl(c.unit)}</Fact>}
-            {c?.shift && <Fact>{fill(P.shiftN, { n: c.shift })}</Fact>}
-          </div>
-
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            {cat && (
-              <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs" title={P.categoryTip}>
-                <span className="whitespace-nowrap" style={{ color: "var(--text-3)" }}>{P.category}:</span>
-                <b className="whitespace-nowrap" style={{ color: "var(--text-1)" }}>{cat.actual ? tx(cat.actual) : P.categoryNone}</b>
-                {cat.expected && <span className="whitespace-nowrap" style={{ color: "var(--text-3)" }}>({fill(P.expected, { e: tx(cat.expected) })})</span>}
-                <VerdictChip counted={cat.counted} compliant={cat.compliant}>{P.verdict[cat.verdict] || cat.verdict}</VerdictChip>
-              </span>
-            )}
-            {today && (
-              <span className="inline-flex items-center gap-1.5 text-xs rounded-md px-2 py-0.5"
-                style={{ background: "rgba(var(--brand-rgb),0.10)", color: "var(--brand-text)", border: "1px solid rgba(var(--brand-rgb),0.30)" }}>
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} aria-hidden="true" />
-                {P.today}: {today.in && today.out ? `${P.live[today.status] || today.status} · ${today.in}–${today.out}`
-                  : today.in ? fill(P.liveSince, { s: P.live[today.status] || today.status, t: today.in })
-                  : (P.live[today.status] || today.status)}
-              </span>
-            )}
-          </div>
         </div>
+      </div>
+
+      {/* The facts in ONE row of label over value — they were eight chip and
+          link styles over two rows, each asking to be read first. */}
+      <div className="mt-4 pt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-6 gap-y-3"
+        style={{ borderTop: "1px solid var(--border)" }}>
+        <HeroFact label={P.cell}>
+          {c ? (
+            <>
+              <CellLink id={c.id} className="text-xs font-semibold tabular-nums" title={P.cell}>
+                <span className="px-1.5 py-0.5 rounded-md" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}>{c.code}</span>
+              </CellLink>
+              <GroupBadge group={c.letter} />
+            </>
+          ) : (
+            <span className="truncate" style={{ color: "var(--text-3)" }}>{P.noCell}{hero.unit_name ? ` · ${tx(hero.unit_name)}` : ""}</span>
+          )}
+        </HeroFact>
+        <HeroFact label={P.manager}>
+          <span className="truncate" style={{ color: c?.leader ? "var(--text-1)" : "var(--text-3)" }}>
+            {c?.leader ? tl(c.leader) : c ? P.noLeader : "—"}
+          </span>
+        </HeroFact>
+        <HeroFact label={P.brigadir}>
+          {c?.unit && canBrigadir ? (
+            <button type="button" className="cell-link truncate" onClick={() => nav(`/brigadir/${c.unit_id}`)}>{tl(c.unit)}</button>
+          ) : <span className="truncate">{c?.unit ? tl(c.unit) : "—"}</span>}
+        </HeroFact>
+        <HeroFact label={P.shift}>{c?.shift ? fill(P.shiftN, { n: c.shift }) : "—"}</HeroFact>
+        <HeroFact label={P.category} title={P.categoryTip}>
+          {cat ? (
+            <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+              <span className="whitespace-nowrap">{cat.actual ? tx(cat.actual) : P.categoryNone}</span>
+              {/* The expected step only where it is not the one held. */}
+              {cat.expected && cat.expected !== cat.actual && (
+                <span className="whitespace-nowrap text-xs" style={{ color: "var(--text-3)" }}>({fill(P.expected, { e: tx(cat.expected) })})</span>
+              )}
+              <VerdictChip counted={cat.counted} compliant={cat.compliant}>{P.verdict[cat.verdict] || cat.verdict}</VerdictChip>
+            </span>
+          ) : "—"}
+        </HeroFact>
+        {today && (
+          <HeroFact label={P.today}>
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" aria-hidden="true"
+              style={{ background: LIVE_DOT[today.status] || "#94a3b8" }} />
+            <span className="truncate">
+              {today.in && today.out ? `${P.live[today.status] || today.status} · ${today.in}–${today.out}`
+                : today.in ? fill(P.liveSince, { s: P.live[today.status] || today.status, t: today.in })
+                : (P.live[today.status] || today.status)}
+            </span>
+          </HeroFact>
+        )}
       </div>
     </div>
   );
@@ -156,7 +179,7 @@ function HeroSkeleton() {
   return (
     <div className="space-y-3">
       <div className="rounded-2xl p-4 sm:p-5 flex gap-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SkeletonBlock className="w-16 h-16 sm:w-[88px] sm:h-[88px] rounded-full flex-shrink-0" />
+        <SkeletonBlock className="w-[52px] h-[52px] sm:w-16 sm:h-16 rounded-full flex-shrink-0" />
         <div className="flex-1 space-y-2.5">
           <SkeletonBlock className="h-6 w-56" />
           <SkeletonBlock className="h-4 w-72 max-w-full" />

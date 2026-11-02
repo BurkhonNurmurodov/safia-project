@@ -193,7 +193,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
         </div>
         <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}
           role="progressbar" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={graded}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+          <div className="h-full origin-left transition-transform duration-300" style={{ transform: `scaleX(${pct / 100})`, background: "var(--brand)" }} />
         </div>
       </div>
 
@@ -225,15 +225,18 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
             return (
               <article key={it.id} id={`aq-${it.position}`} tabIndex={-1}
                 className="rounded-2xl p-4 outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] scroll-mt-4"
-                style={{
-                  background: "var(--bg-card)", border: "1px solid var(--border)",
-                  borderLeft: `4px solid ${v ? VERDICT[v].hex : "var(--border)"}`,
-                }}>
-                {/* Number and type on one line, the text full width under them —
-                    a number column of its own took a fifth of a phone's width. */}
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                {/* Number and type on one line. The number badge carries the
+                    verdict (the toggle's own fill), so a graded question reads
+                    at a glance without a coloured stripe down every card. */}
                 <div className="flex items-center gap-2 min-h-[24px]">
-                  <span className="inline-flex items-center justify-center min-w-[26px] h-[22px] px-1.5 rounded-md text-xs font-bold tabular-nums"
-                    style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{it.position}</span>
+                  <span className="inline-flex items-center justify-center gap-0.5 min-w-[26px] h-[22px] px-1.5 rounded-md text-xs font-semibold tabular-nums"
+                    style={v ? { background: VERDICT[v].bg, color: VERDICT[v].fg } : { background: "var(--bg-inner)", color: "var(--text-2)" }}
+                    aria-label={v ? `${it.position} · ${v === "pass" ? T.pass : T.fail}` : undefined}>
+                    {v === "pass" && <Check size={11} strokeWidth={3} aria-hidden="true" />}
+                    {v === "fail" && <X size={11} strokeWidth={3} aria-hidden="true" />}
+                    {it.position}
+                  </span>
                   <TypeChip type={it.qtype} T={T} />
                   <span className="ml-auto inline-flex items-center">
                     {st === "saving" && <Loader2 size={14} className="animate-spin" style={{ color: "var(--text-3)" }} aria-label={T.saving} />}
@@ -245,10 +248,13 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                     )}
                   </span>
                 </div>
-                <p className="mt-2 text-[15px] sm:text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                {/* On a wide screen the verdict sits beside the question — under
+                    it, a 400px control left two thirds of every card empty. */}
+                <div className="mt-2 flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-6">
+                <p className="flex-1 min-w-0 text-[15px] sm:text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
                   {it.text}
                 </p>
-                <div className="mt-3 sm:max-w-sm">
+                <div className="sm:max-w-sm lg:w-[300px] lg:flex-shrink-0">
                   <SegmentedToggle fill size={phone ? "lg" : "md"} value={v ?? null}
                     onChange={(nv) => setVerdict(it.id, nv)}
                     ariaLabel={fill(T.verdictAria, { n: it.position })}
@@ -260,6 +266,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
                         disabled: readOnly && v !== "fail",
                         label: <><X size={15} strokeWidth={3} aria-hidden="true" />{T.fail}</> },
                     ]} />
+                </div>
                 </div>
                 {/* The two extras side by side on one quiet row — stacked, each
                     took a full line under every question. */}
@@ -371,7 +378,7 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
               </div>
               <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}
                 role="progressbar" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={graded}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+                <div className="h-full origin-left transition-transform duration-300" style={{ transform: `scaleX(${pct / 100})`, background: "var(--brand)" }} />
               </div>
             </div>
             {missing.length > 0 ? (
