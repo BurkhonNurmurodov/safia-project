@@ -324,19 +324,8 @@ def _cost(inp: dict, n: int) -> list[dict]:
         prow("hc", "num1", [_r(x.get("hc"), 1) for x in t]),
     ])]
 
-    # The CAUSE rows add up to more than the bill wherever one minute carried
-    # two causes — the «Xarajat» tab's own two sums, each named rather than one
-    # of them quietly printed as the other.
-    cat_cost: dict[str, dict] = {}
-    for y in yms:
-        for r in (cost.get(y) or {}).get("cat_rows") or []:
-            cat_cost.setdefault(r["category"], {})[y] = r.get("cost")
-    picked = yms[-1]
-    order = sorted(cat_cost, key=lambda c: (-(cat_cost[c].get(picked) or 0), c))
-    if order:
-        blocks.append(periods_block("byCategory", [
-            prow(c, "money", [cat_cost[c].get(y) for y in yms], label=c) for c in order
-        ]))
+    # No table by cause here either (the operator, 2026-11-02: «we dont need
+    # this table also») — the «Xarajat» tab on /downtime carries the causes.
 
     return blocks
 

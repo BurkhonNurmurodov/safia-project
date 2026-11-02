@@ -9695,8 +9695,8 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   figure is the scope's whole; a brigadir's own figures live on the pages that
   own them. The brigadir FILTER stays — it narrows the whole, it lists nobody.
   The page renders only `periods` blocks and skips any other kind. «Kutish»
-  carries no table BY CAUSE either (the same day: «remove this one too») —
-  the causes are /downtime's; «Xarajat — toifalar» stays.
+  and «Xarajat» carry no table BY CAUSE either (the same day: «remove this
+  one too», «we dont need this table also») — the causes are /downtime's.
 - **The document is `assistant_documents.build`** — the house builder, never a
   second layout engine — as **pdf · docx · xlsx** (`POST
   /api/reports/export.{fmt}`; a format it does not know is refused, never
