@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -185,6 +185,12 @@ DEFAULT_PAGE_ACCESS = {
     # why and every complaint's text, and a leader's own scope is enforced
     # server-side by every endpoint it reads.
     "leaders-kpi": [],
+    # «Brigadirlar KPI» — HR's monthly brigadir KPI (2026-11-02): turnover and
+    # the quality register's corrective measures computed, mentoring / KRU /
+    # payout left as places. ADMIN-ONLY until the operator opens it on the
+    # Access tab; a supervisor reads only their own unit, a shift-manager their
+    # shift ∩ plant (routers/brigadirs_kpi.py `_lock`).
+    "brigadirs-kpi": [],
     # «Ta'lim» video lessons (routers/education.py). Open to every role by
     # default, and that is deliberate rather than permissive: the page shows a
     # viewer exactly the lessons an admin ADDRESSED to their profile and nothing

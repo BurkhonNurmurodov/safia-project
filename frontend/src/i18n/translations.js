@@ -1725,6 +1725,7 @@ const t = {
     "zcell.diagIdleCrew":       "Tozalash {n} daq kamroq hisoblandi — faqat tozalagan odamlar ulushi (kutish sahifasida butun yacheyka vaqti ko'rinadi).",
     "nav.concerns":        "Xavotirlar",
     "nav.leadersKpi":      "Liderlar KPI",
+    "nav.brigadirsKpi":    "Brigadirlar KPI",
     "nav.cellConcerns":    "Yacheyka havotirlari",
     "nav.tasks":           "Vazifalar",
 
@@ -4392,6 +4393,7 @@ const t = {
     "logs.act.sync.foreign_refresh": "Yot jismlar: sifat reyestri yangilandi",
     "logs.act.export.foreign_objects": "Yot jismlar eksport qilindi",
     "logs.act.export.leaders_kpi": "Liderlar KPI eksport qilindi",
+    "logs.act.export.brigadirs_kpi": "Brigadirlar KPI eksport qilindi",
     "logs.act.export.leaderboard": "Brigadirlar reytingi eksport qilindi",
     "logs.act.sync.category_read": "Toifaga muvofiqlik: Verifix jurnallari o'qildi",
     "logs.act.config.category_rule_saved": "Toifaga muvofiqlik qoidasi saqlandi",
@@ -10058,6 +10060,7 @@ const t = {
     "zcell.diagIdleCrew":       "Тозалаш {n} дақ камроқ ҳисобланди — фақат тозалаган одамлар улуши (кутиш саҳифасида бутун ячейка вақти кўринади).",
     "nav.concerns":        "Хавотирлар",
     "nav.leadersKpi":      "Лидерлар KPI",
+    "nav.brigadirsKpi":    "Бригадирлар KPI",
     "nav.cellConcerns":    "Ячейка ҳавотирлари",
     "nav.tasks":           "Вазифалар",
 
@@ -12722,6 +12725,7 @@ const t = {
     "logs.act.sync.foreign_refresh": "Ёт жисмлар: сифат реестри янгиланди",
     "logs.act.export.foreign_objects": "Ёт жисмлар экспорт қилинди",
     "logs.act.export.leaders_kpi": "Лидерлар KPI экспорт қилинди",
+    "logs.act.export.brigadirs_kpi": "Бригадирлар KPI экспорт қилинди",
     "logs.act.export.leaderboard": "Бригадирлар рейтинги экспорт қилинди",
     "logs.act.sync.category_read": "Тоифага мувофиқлик: Verifix журналлари ўқилди",
     "logs.act.config.category_rule_saved": "Тоифага мувофиқлик қоидаси сақланди",
@@ -18388,6 +18392,7 @@ const t = {
     "zcell.diagIdleCrew":       "Уборка учтена на {n} мин меньше — только доля убиравших людей (на странице ожиданий видно время всей ячейки).",
     "nav.concerns":        "Обеспокоенности",
     "nav.leadersKpi":      "KPI лидеров",
+    "nav.brigadirsKpi":    "KPI бригадиров",
     "nav.cellConcerns":    "Хавотиры по ячейкам",
     "nav.tasks":           "Задачи",
 
@@ -21052,6 +21057,7 @@ const t = {
     "logs.act.sync.foreign_refresh": "Инородные предметы: реестр качества обновлён",
     "logs.act.export.foreign_objects": "Инородные предметы: выгрузка",
     "logs.act.export.leaders_kpi": "KPI лидеров: выгрузка",
+    "logs.act.export.brigadirs_kpi": "KPI бригадиров: выгрузка",
     "logs.act.export.leaderboard": "Рейтинг бригадиров: выгрузка",
     "logs.act.sync.category_read": "Соответствие категории: журналы Verifix прочитаны",
     "logs.act.config.category_rule_saved": "Соответствие категории: правило сохранено",
@@ -26718,6 +26724,7 @@ const t = {
     "zcell.diagIdleCrew":       "Cleaning counted {n} min less — only the share of the people who cleaned (the ojidaniya page shows the whole cell's time).",
     "nav.concerns":        "Concerns",
     "nav.leadersKpi":      "Leaders' KPI",
+    "nav.brigadirsKpi":    "Supervisors' KPI",
     "nav.cellConcerns":    "Cell concerns",
     "nav.tasks":           "Tasks",
 
@@ -29382,6 +29389,7 @@ const t = {
     "logs.act.sync.foreign_refresh": "Foreign objects: quality register refreshed",
     "logs.act.export.foreign_objects": "Foreign objects exported",
     "logs.act.export.leaders_kpi": "Leaders' KPI exported",
+    "logs.act.export.brigadirs_kpi": "Supervisors' KPI exported",
     "logs.act.export.leaderboard": "Brigadir ranking exported",
     "logs.act.sync.category_read": "Category compliance: Verifix journals read",
     "logs.act.config.category_rule_saved": "Category compliance: rule saved",

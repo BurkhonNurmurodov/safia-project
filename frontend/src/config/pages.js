@@ -53,6 +53,7 @@ export const PAGES = [
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "cell-concerns", route: "/cell-concerns", labelKey: "nav.cellConcerns" },
   { key: "leaders-kpi", route: "/leaders-kpi", labelKey: "nav.leadersKpi" },
+  { key: "brigadirs-kpi", route: "/brigadirs-kpi", labelKey: "nav.brigadirsKpi" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
@@ -113,6 +114,10 @@ export const DEFAULT_PAGE_ACCESS = {
   // Admin-only until the operator opens it on the Access tab; a role's reach
   // is enforced server-side (routers/leaders_kpi.py, worker_concerns.py).
   "leaders-kpi": [],
+  // «Brigadirlar KPI» — HR's monthly brigadir KPI (2026-11-02). Admin-only
+  // until the operator opens it on the Access tab; a role's reach is enforced
+  // server-side (routers/brigadirs_kpi.py `_lock`).
+  "brigadirs-kpi": [],
   // THE task board — both tiers on one page: shift managers set tasks for
   // brigadirs, brigadirs for leaders, each assignee works their own queue.
   tasks: ["shift-manager", "supervisor", "leader"],

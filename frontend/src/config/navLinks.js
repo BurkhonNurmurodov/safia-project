@@ -60,6 +60,9 @@ export const ALL_LINKS = [
   // «Liderlar KPI» — the leaders' five KPIs on ONE page, as a leaderboard
   // (2026-10-19; it merged /worker-concerns, /turnover and /foreign-objects).
   { to: "/leaders-kpi", page: "leaders-kpi", key: "nav.leadersKpi", icon: Award, group: "leaders" },
+  // «Brigadirlar KPI» — HR's monthly brigadir KPI: turnover and the quality
+  // register's corrective measures computed, mentoring / KRU / payout to come.
+  { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },

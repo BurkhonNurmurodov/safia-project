@@ -72,6 +72,7 @@ const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const NotionTasks = lazyWithReload(() => import("./pages/NotionTasks"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const LeadersKpi = lazyWithReload(() => import("./pages/LeadersKpi"));
+const BrigadirsKpi = lazyWithReload(() => import("./pages/BrigadirsKpi"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const CellConcerns = lazyWithReload(() => import("./pages/CellConcerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
@@ -123,7 +124,7 @@ const ROUTE_PAGES = {
   reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
-  concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
+  concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi, "brigadirs-kpi": BrigadirsKpi,
   tasks: Tasks, activity: UsersActivity, "setup-times": SetupTimes, "idle-cell": IdleCell,
   "zagruzka-cell": ZagruzkaCell, live: LiveOverview, kelish: Kelish, arc: Arc,
   education: Education, exam: Exam, targets: Targets, profile: Profile,
@@ -608,6 +609,7 @@ function AppWithLang() {
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
             <Route path="/cell-concerns" element={<AuthGate><RequirePage page="cell-concerns"><CellConcerns /></RequirePage></AuthGate>} />
             <Route path="/leaders-kpi" element={<AuthGate><RequirePage page="leaders-kpi"><LeadersKpi /></RequirePage></AuthGate>} />
+            <Route path="/brigadirs-kpi" element={<AuthGate><RequirePage page="brigadirs-kpi"><BrigadirsKpi /></RequirePage></AuthGate>} />
             <Route path="/worker-concerns" element={<KpiTabRedirect tab="concerns" />} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
             {/* Retired 2026-09-04: both tiers of the task board live on /tasks. A bot
