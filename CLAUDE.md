@@ -9590,7 +9590,7 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   router and makes no query (the `ojidaniya_deck` split). Section by section:
   **Ishlab chiqarish** — `plan_fulfillment.build`'s own minute totals (the
   /plan page's figure; plan, fact and shortfall PRINTED IN HOURS, whole, from
-  2026-11-02 — the operator), «Samaradorlik» the /zagruzka heatmap's AVG through
+  2026-11-02 — the operator, who dropped the three day counts the same day), «Samaradorlik» the /zagruzka heatmap's AVG through
   `brigadir_board.efficiency`, «Smena boshi / Smena oxiri zagruzka» (from
   2026-11-02, the operator; in the summary and Key figures too) the P and A
   halves of /zagruzka's «Smena boshi va Smena oxiri Zagruzka» table pooled

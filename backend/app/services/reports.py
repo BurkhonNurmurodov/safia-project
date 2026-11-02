@@ -96,7 +96,6 @@ CUMULATIVE = {
     "personnel.vkFree", "personnel.vkDayOff", "personnel.vkEarlyLeave", "personnel.vkLate",
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
-    "production.countedDays", "production.noFact", "production.noPlan",
     "idle.unitDays", "idle.flaggedDays",
     "cost.pricedMin", "cost.unpricedMin", "quality.openLeft",
     "concerns.uplifted", "concerns.openLeft", "summary.cells",
@@ -236,7 +235,6 @@ def _production(inp: dict, n: int) -> list[dict]:
     pl = [(plan.get(y) or {}).get("plan") for y in yms]
     ac = [(plan.get(y) or {}).get("actual") for y in yms]
     sh = [(plan.get(y) or {}).get("short") for y in yms]
-    days = [(plan.get(y) or {}).get("days") for y in yms]
     # «Smena boshi / Smena oxiri Zagruzka» — /zagruzka's simplified table,
     # pooled over the scope's closed unit-days (`brigadir_board.shift_load`).
     sl = inp.get("sload") or {}
@@ -253,9 +251,6 @@ def _production(inp: dict, n: int) -> list[dict]:
         prow("eff", "pct", [_mean(x) for x in _series(eff, ids, "v", n)]),
         prow("loadStart", "pct", l_start),
         prow("loadEnd", "pct", l_end),
-        prow("countedDays", "int", [_r(v) for v in days]),
-        prow("noFact", "int", [_r((plan.get(y) or {}).get("no_fact")) for y in yms]),
-        prow("noPlan", "int", [_r((plan.get(y) or {}).get("no_plan")) for y in yms]),
     ])]
 
     return blocks
