@@ -9,7 +9,6 @@
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
 import TableCard, { Th } from "../ui/DataTable";
-import KpiDeltaCard from "../ui/KpiDeltaCard";
 import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
@@ -39,38 +38,6 @@ function DeltaCell({ row, T }) {
   return (
     <span className="text-xs font-medium"
       style={{ color: tone ? TONE[tone] : "var(--text-2)" }}>{txt}</span>
-  );
-}
-
-/** The summary's headline — each figure set large with the month before it
- *  and the change, the platform's own KPI card. The same rows the table held
- *  (and the document still prints), drawn as figures: a reader wants these
- *  before any table. No sparkline — three months make a line that says
- *  nothing the two figures beside it do not. */
-function HeadlineTiles({ block, months, T, t }) {
-  const last = months.length - 1;
-  const prevYm = months[last - 1]?.ym;
-  return (
-    // Two to a row until the screen is wide enough for a whole sum («111 920
-    // 000 so'm») and its change to sit on one line — four at 1440 broke both.
-    <div className="grid grid-cols-2 2xl:grid-cols-4 gap-3">
-      {block.rows.map((r) => {
-        const cur = r.values[last];
-        const prev = last > 0 ? r.values[last - 1] : null;
-        const tone = deltaTone(`${r.section || ""}.${r.key.split(".").pop()}`, r.delta);
-        const up = Number(r.delta) > 0;
-        return (
-          <KpiDeltaCard key={r.key} label={rowLabel(r, T, t)}
-            value={fmtCell(cur, r.fmt)}
-            prevValue={fmtCell(prev, r.fmt)}
-            prevLabel={prevYm ? `${monthLabel(prevYm, t)}:` : ""}
-            delta={tone ? Number(r.delta) || 0 : 0}
-            deltaText={fmtDelta(r.delta, r.fmt)}
-            higherIsBetter={tone ? (tone === "good") === up : true}
-            sub={r.no_delta === "partial" ? T.partial : null} />
-        );
-      })}
-    </div>
   );
 }
 
@@ -180,9 +147,6 @@ export default function ReportSection({ section, months }) {
     <div className="space-y-4">
       {(section.blocks || []).map((b) => {
         const caption = T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || "";
-        if (section.key === "summary" && b.key === "headline" && b.kind === "periods") {
-          return <HeadlineTiles key={b.key} block={b} months={months} T={T} t={t} />;
-        }
         return b.kind === "periods"
           ? <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t} caption={caption} />
           : <UnitsBlock key={b.key} block={b} T={T} caption={caption} tl={tl} />;
