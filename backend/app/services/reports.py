@@ -298,20 +298,8 @@ def _idle(inp: dict, n: int) -> list[dict]:
         prow("idlePersonMin", "min", [_r(x.get("idle")) for x in sh]),
         prow("workedMin", "min", [_r(x.get("worked")) for x in sh]),
     ])]
-
-    # Categories, worst first in the PICKED month — a cause that only appeared
-    # earlier still gets its row, so a column is never silently short.
-    last_cats = (idle.get(yms[-1]) or {}).get("by_cat") or {}
-    names: set = set()
-    for y in yms:
-        names |= set(((idle.get(y) or {}).get("by_cat") or {}).keys())
-    order = sorted(names, key=lambda c: (-(last_cats.get(c) or 0), c))
-    if order:
-        blocks.append(periods_block("byCategory", [
-            prow(c, "min", [_r(((idle.get(y) or {}).get("by_cat") or {}).get(c)) for y in yms],
-                 label=c)
-            for c in order
-        ]))
+    # No table by cause here (the operator, 2026-11-02: «remove this one too»)
+    # — the /downtime page carries the causes.
 
     return blocks
 
