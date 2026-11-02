@@ -76,8 +76,12 @@ HISTORY = 2
 # four platform languages and come back with the export — the rule
 # `services/grid_export.py` keeps: the screen describes itself, the server only
 # lays it out, so the file can never name something the page does not.
-SECTIONS = ("summary", "production", "personnel", "idle", "cost",
-            "quality", "concerns", "figures")
+SECTIONS = ("summary", "production", "personnel", "idle", "figures")
+# Built but never shown as sections of their own (the operator, 2026-11-02:
+# «we dont need section called Cost of Waiting, Quality and Concerns»): their
+# headline figures still reach the Executive summary and Key figures, which
+# lift rows out of them.
+BUILT_ONLY = ("cost", "quality", "concerns")
 
 # The headline rows that are a TOTAL over the period rather than a rate. A
 # month still running holds fewer days than the one before it, so the change
@@ -92,7 +96,7 @@ CUMULATIVE = {
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
     "production.countedDays", "production.noFact", "production.noPlan",
-    "personnel.attDays", "idle.unitDays", "idle.flaggedDays",
+    "idle.unitDays", "idle.flaggedDays",
     "cost.pricedMin", "cost.unpricedMin", "quality.openLeft",
     "concerns.uplifted", "concerns.openLeft", "summary.cells",
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
@@ -269,7 +273,6 @@ def _personnel(inp: dict, n: int) -> list[dict]:
         prow("onLeave", "int", [_r(v) for v in leave]),
         prow("attRate", "pct", _pooled([(c + lv, r) for r, c, lv in zip(roster, came, leave)]),
              bold=True),
-        prow("attDays", "int", [_r(v) for v in _sums(att, ids, "days", n)]),
     ])]
 
     # Verifix's own time kinds, in hours (the operator, 2026-11-02 — overtime

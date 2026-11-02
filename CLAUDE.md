@@ -9719,6 +9719,13 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   The page renders only `periods` blocks and skips any other kind. «Kutish»
   and «Xarajat» carry no table BY CAUSE either (the same day: «remove this
   one too», «we dont need this table also») — the causes are /downtime's.
+  **«Xarajat», «Sifat» and «Xavotirlar» are no longer SECTIONS** (the same
+  day: «we dont need section called Cost of Waiting, Quality and
+  Concerns»): `reports.BUILT_ONLY` still builds them, because the Executive
+  summary and Key figures lift their headline rows (cost of waiting,
+  complaints, concerns resolved %) out of them, but `SECTIONS` — what the
+  page lists and the file lays out — leaves them out. Personnel's «Yopilgan
+  kunlar» row is gone too.
 - **The document is `assistant_documents.build`** — the house builder, never a
   second layout engine — as **pdf · docx · xlsx** (`POST
   /api/reports/export.{fmt}`; a format it does not know is refused, never
