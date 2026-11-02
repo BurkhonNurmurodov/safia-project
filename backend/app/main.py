@@ -143,6 +143,7 @@ async def lifespan(app: FastAPI):
         report_pin_mismatch,
         report_leader_merge,
         report_quality_brigadirs,
+        report_quality_cells,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -500,6 +501,8 @@ async def lifespan(app: FastAPI):
     # line, `startup.report_quality_brigadirs` and
     # `services/quality_brigadir_report_nov02.py` once it has been sent.
     run(report_quality_brigadirs)
+    # Its sequel: the same rows attributed by CELL — the impact, read-only.
+    run(report_quality_cells)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

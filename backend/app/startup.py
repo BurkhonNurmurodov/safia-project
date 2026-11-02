@@ -7886,6 +7886,41 @@ def _quality_brigadirs_job() -> None:
                       quality_brigadir_report_nov02.send, REPORT_CHAT_BURKHON)
 
 
+# ── one-shot: the Quality register attributed by CELL — the impact (2026-11-02) ─
+# The operator's rulings, asked one by one: a row belongs to the brigadir and
+# the «Egasi» its «Номер виновного цеха» cell had on the row's date, by the
+# code whatever the fault flag says, on the Quality page, «Smena kunligi»,
+# «Brigadirlar reytingi» + «Hisobotlar» and «Brigadirlar KPI». READ-ONLY report
+# FIRST (`quality_brigadir_report_nov02.send_cells`): who each row goes to, what
+# moves against today's name rule, October's «Sifat nazorati %» both ways, and
+# whether the rows with no usable code name an IMS brigadir — the rule for them
+# is decided after it. DMed once to Burkhon. Changing what it sends needs a NEW
+# key. Delete with the report above.
+QUALITY_CELL_REPORT_FLAG = "quality_cell_attribution_report_2026_11_02_v1"
+_QUALITY_CELL_REPORT_DELAY_S = 180
+
+
+def report_quality_cells() -> None:
+    """Quality rows by cell: the impact, DMed once. Never raises."""
+    try:
+        if not _report_pending(QUALITY_CELL_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("quality-cell-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_QUALITY_CELL_REPORT_DELAY_S),
+                    _quality_cells_job)
+    except Exception as exc:
+        print(f"[startup] quality cell report could not be scheduled: {exc}")
+
+
+def _quality_cells_job() -> None:
+    print("[startup] quality cell report: started")
+    from app.services import quality_brigadir_report_nov02
+    _send_report_once(QUALITY_CELL_REPORT_FLAG, "quality cell report",
+                      quality_brigadir_report_nov02.send_cells, REPORT_CHAT_BURKHON)
+
+
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
 # The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
 # cell's positions follow it from its own move day, closed days included. The

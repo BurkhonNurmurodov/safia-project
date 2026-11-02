@@ -335,3 +335,278 @@ def send(db: Session, chat_id: int, *_window) -> int:
                               "application/vnd.openxmlformats-officedocument."
                               "spreadsheetml.sheet")})
     return len(chunks) + 1
+
+
+# ═══ Report 2 (same day): what changes when a row is attributed by its CELL ═══
+# The operator's rulings (2026-11-02, asked one by one): a quality row belongs
+# to the brigadir and the «Egasi» its «Номер виновного цеха» cell had ON THE
+# ROW'S DATE (`cell_links.value_on`; a cell with no Egasi that day → no
+# leader), by the code whatever the fault flag says, on all four pages that
+# read the register. Rows with no usable code wait on this report: does their
+# «Отв. бригадир» name an IMS brigadir? Nothing is changed — it only reports.
+# Sent under `startup.QUALITY_CELL_REPORT_FLAG`.
+
+RESULT_UZ = {
+    "same": "bir xil",
+    "changes": "boshqa brigadaga o'tadi",
+    "gains": "ism bo'yicha yo'q edi — endi bor",
+    "loses": "yacheykada brigadir yo'q — brigadasiz qoladi",
+    "none_both": "ikkalasida ham yo'q",
+}
+CODE_UZ = {"cell": "yacheyka", "blank": "kod yo'q", "unknown": "/cells'da yo'q kod"}
+
+
+def collect_cells(db: Session) -> dict:
+    from app.models import Cell, RoleProfile
+    from app.services import cell_links, shift_report
+    from app.services.cell_lookup import by_verifix, resolve_verifix
+
+    q = (db.query(QualityComplaint.id, QualityComplaint.date, QualityComplaint.ref_no,
+                  QualityComplaint.place, QualityComplaint.source, QualityComplaint.ctype,
+                  QualityComplaint.category, QualityComplaint.fault,
+                  QualityComplaint.fault_code, QualityComplaint.brigadir,
+                  QualityComplaint.status)
+         .order_by(QualityComplaint.date.desc(), QualityComplaint.id.desc()).all())
+
+    mgrs = db.query(Manager).all()
+    live = [m for m in mgrs if not m.archived]
+    mname = {m.id: m.name for m in mgrs}
+    march = {m.id for m in mgrs if m.archived}
+    pname = {p.id: p.name for p in db.query(RoleProfile.id, RoleProfile.name).all()}
+    match = name_map.supervisor_match(
+        live, {name_map.register_brigadir(r.place, r.brigadir) for r in q} - {None, ""})
+
+    table = by_verifix(db)
+    cells = {c.id: c for c in db.query(Cell.id, Cell.verifix_code, Cell.manager_id,
+                                       Cell.owner_id, Cell.archived_at).all()}
+    cell_links.events(fresh=True)
+
+    def label(mid):
+        if mid is None:
+            return ""
+        return mname.get(mid, f"#{mid}") + (" (arxiv)" if mid in march else "")
+
+    rows, trans = [], defaultdict(lambda: {"rows": 0, "codes": defaultdict(int)})
+    verdicts = defaultdict(int)
+    state_n = defaultdict(int)
+    owner_set = owner_none = 0
+    per_unit = defaultdict(lambda: {"name_all": 0, "by_cell": 0, "nocell_name": 0})
+    nocell = {}
+    unknown = {}
+    # October's «Sifat nazorati %» (hair aside, actionable statuses) per unit,
+    # three ways: today's name rule; by cell with the no-cell rows by name;
+    # by cell with the no-cell rows counted for nobody.
+    oct_from, oct_to = "2026-10-01", "2026-11-01"
+    octs = defaultdict(lambda: {k: [0, 0] for k in ("today", "cell_name", "cell_only")})
+
+    for r in q:
+        raw = (r.brigadir or "").strip()
+        reg = name_map.register_brigadir(r.place, r.brigadir)
+        name_unit = (match.get(reg) or {}).get("id") if reg else None
+        code = (r.fault_code or "").strip()
+        cell = resolve_verifix(table, code) if code else None
+        state = "cell" if cell else ("blank" if not code else "unknown")
+        state_n[state] += 1
+        cell_unit = owner = None
+        ccode = ""
+        if cell:
+            c = cells.get(cell["id"])
+            ccode = (c.verifix_code if c else cell.get("verifix_code")) or code
+            if c is not None:
+                cell_unit = cell_links.value_on(c, "manager_id", r.date)
+                owner = cell_links.value_on(c, "owner_id", r.date)
+            if owner:
+                owner_set += 1
+            else:
+                owner_none += 1
+            if name_unit == cell_unit:
+                v = "same" if cell_unit else "none_both"
+            elif cell_unit is None:
+                v = "loses"
+            elif name_unit is None:
+                v = "gains"
+            else:
+                v = "changes"
+            verdicts[v] += 1
+            if v in ("changes", "gains", "loses"):
+                t = trans[(name_unit, cell_unit)]
+                t["rows"] += 1
+                t["codes"][ccode] += 1
+            if cell_unit:
+                per_unit[cell_unit]["by_cell"] += 1
+        else:
+            e = nocell.setdefault(raw or "(bo'sh)", {
+                "raw": raw or "(bo'sh)", "rows": 0, "blank": 0, "unknown": 0,
+                "codes": defaultdict(int), "unit": name_unit,
+                "first": None, "last": None})
+            e["rows"] += 1
+            e["blank" if state == "blank" else "unknown"] += 1
+            if state == "unknown":
+                e["codes"][code] += 1
+                u = unknown.setdefault(code.upper(), {"code": code, "rows": 0,
+                                                      "places": defaultdict(int),
+                                                      "names": defaultdict(int)})
+                u["rows"] += 1
+                u["places"][r.place or ""] += 1
+                u["names"][raw or "(bo'sh)"] += 1
+            d = r.date or ""
+            if d and (e["first"] is None or d < e["first"]):
+                e["first"] = d
+            if d and (e["last"] is None or d > e["last"]):
+                e["last"] = d
+            if name_unit:
+                per_unit[name_unit]["nocell_name"] += 1
+        if name_unit:
+            per_unit[name_unit]["name_all"] += 1
+
+        if (oct_from <= (r.date or "") < oct_to and r.status in shift_report.ACTIONABLE
+                and r.category != shift_report.SKIP_CATEGORY):
+            done = 1 if r.status == shift_report.RESOLVED else 0
+            def add(unit, key):
+                if unit:
+                    octs[unit][key][0] += done
+                    octs[unit][key][1] += 1
+            add(name_unit, "today")
+            add(cell_unit if cell else name_unit, "cell_name")
+            add(cell_unit if cell else None, "cell_only")
+
+        rows.append([
+            r.id, r.date, r.ref_no, r.place, r.source, r.ctype, r.category,
+            ("ha" if r.fault is True else "yo'q" if r.fault is False else ""),
+            code, CODE_UZ[state], ccode, label(cell_unit),
+            (pname.get(owner, f"#{owner}") if owner else ""),
+            raw, label(name_unit),
+            (RESULT_UZ[v] if cell else ""), r.status,
+        ])
+
+    units = sorted({*per_unit.keys(), *octs.keys()},
+                   key=lambda u: mname.get(u, ""))
+    return {
+        "taken": datetime.now(TZ), "total": len(q), "state": dict(state_n),
+        "verdicts": dict(verdicts), "owner_set": owner_set, "owner_none": owner_none,
+        "trans": sorted(([label(a), label(b), t["rows"],
+                          ", ".join(f"{k} ({n})" for k, n in sorted(
+                              t["codes"].items(), key=lambda kv: -kv[1])[:12])]
+                         for (a, b), t in trans.items()), key=lambda x: -x[2]),
+        "units": [{"id": u, "name": label(u), **per_unit[u],
+                   "oct": {k: tuple(v) for k, v in octs[u].items()}} for u in units],
+        "nocell": sorted(nocell.values(), key=lambda e: -e["rows"]),
+        "unknown": sorted(unknown.values(), key=lambda u: -u["rows"]),
+        "rows": rows, "label": label,
+    }
+
+
+def _pct(pair) -> str:
+    done, n = pair
+    return f"{round(100 * done / n)}% ({done}/{n})" if n else "—"
+
+
+def text_cells(rep: dict) -> str:
+    L: list[str] = []
+    A = L.append
+    st, vd = rep["state"], rep["verdicts"]
+    label = rep["label"]
+    A(f"Sifat reyestri — qatorlar YACHEYKA bo'yicha (holat {rep['taken']:%d.%m.%Y %H:%M})")
+    A("Qoida: «Номер виновного цеха» → yacheyka → o'sha SANADAGI brigadir va «Egasi». "
+      "Hech narsa o'zgartirilmadi — bu faqat hisobot.")
+    A("")
+    A(f"Jami qatorlar: {rep['total']}")
+    A(f"• Kod /cells'dagi yacheykaga tushadi: {st.get('cell', 0)}")
+    A(f"• Kod yo'q: {st.get('blank', 0)}")
+    A(f"• Kod bor, lekin /cells'da yo'q: {st.get('unknown', 0)}")
+    A("")
+    A("━━ Yacheykaga tushgan qatorlar: bugungi (ism bo'yicha) brigadaga nisbatan ━━")
+    for k in ("same", "changes", "gains", "loses", "none_both"):
+        A(f"• {RESULT_UZ[k]}: {vd.get(k, 0)}")
+    A(f"• «Egasi» bor: {rep['owner_set']} · «Egasi» yo'q (lider bo'lmaydi): {rep['owner_none']}")
+    A("")
+    A("━━ Eng katta o'tishlar (ism bo'yicha → yacheyka bo'yicha) ━━")
+    for a, b, n, codes in rep["trans"][:20]:
+        A(f"• {a or '—'} → {b or '—'}: {n} qator · kodlar: {codes}")
+    A("")
+    A("━━ Brigadalar: qatorlar va oktyabr «Sifat nazorati %» ━━")
+    A("(bugun · yacheyka + kodsizlar ism bo'yicha · yacheyka, kodsizlar hech kimniki)")
+    for u in rep["units"]:
+        o = u["oct"]
+        A(f"• {u['name']}: ism {u['name_all']} → yacheyka {u['by_cell']} "
+          f"(+ kodsiz ism bo'yicha {u['nocell_name']}) · okt: {_pct(o['today'])} · "
+          f"{_pct(o['cell_name'])} · {_pct(o['cell_only'])}")
+    A("")
+    A("━━ Kodsiz / noma'lum kodli qatorlar — «Отв. бригадир» IMS brigadasimi? ━━")
+    with_unit = sum(e["rows"] for e in rep["nocell"] if e["unit"])
+    no_unit = sum(e["rows"] for e in rep["nocell"] if not e["unit"])
+    A(f"IMS brigadasiga tushadi: {with_unit} qator · tushmaydi: {no_unit} qator")
+    for e in rep["nocell"][:40]:
+        who = label(e["unit"]) if e["unit"] else "IMS brigadasi emas"
+        A(f"• {e['raw']} — {e['rows']} (kodsiz {e['blank']}, noma'lum kod {e['unknown']}) → {who}")
+    if len(rep["nocell"]) > 40:
+        A(f"… yana {len(rep['nocell']) - 40} ta yozuv — Excel'da")
+    A("")
+    A("━━ /cells'da yo'q kodlar (eng ko'p) ━━")
+    for u in rep["unknown"][:20]:
+        places = ", ".join(p for p, _ in sorted(u["places"].items(), key=lambda kv: -kv[1])[:2])
+        A(f"• {u['code']} — {u['rows']} qator · {places}")
+    A("")
+    A("Excel: har bir qator, o'tishlar, brigadalar, kodsizlar, noma'lum kodlar.")
+    return "\n".join(L)
+
+
+def build_cells_workbook(rep: dict) -> BytesIO:
+    wb = Workbook()
+    wb.remove(wb.active)
+    _sheet(wb, "Qatorlar", [
+        "id", "Sana", "№", "Joy", "Manba", "Tur", "Kategoriya", "Vina",
+        "Kod (varaq)", "Kod holati", "Yacheyka", "Brigada (yacheyka, shu sana)",
+        "Egasi (shu sana)", "«Отв. бригадир» (varaq)", "Brigada (ism, bugun)",
+        "Natija", "Holat"], rep["rows"])
+    _sheet(wb, "O'tishlar", ["Ism bo'yicha (bugun)", "Yacheyka bo'yicha (yangi)",
+                             "Qatorlar", "Kodlar"], rep["trans"])
+    _sheet(wb, "Brigadalar", [
+        "id", "Brigada", "Qatorlar: ism bo'yicha (bugun)", "Qatorlar: yacheyka bo'yicha",
+        "Kodsiz qatorlar, ism shu brigada", "Okt %: bugun",
+        "Okt %: yacheyka + kodsiz ism bo'yicha", "Okt %: faqat yacheyka"],
+        [[u["id"], u["name"], u["name_all"], u["by_cell"], u["nocell_name"],
+          _pct(u["oct"]["today"]), _pct(u["oct"]["cell_name"]),
+          _pct(u["oct"]["cell_only"])] for u in rep["units"]])
+    _sheet(wb, "Kodsiz qatorlar", [
+        "«Отв. бригадир»", "Qatorlar", "Kod yo'q", "Noma'lum kod", "Kodlar",
+        "IMS brigadasi (ism bo'yicha)", "Birinchi sana", "Oxirgi sana"],
+        [[e["raw"], e["rows"], e["blank"], e["unknown"],
+          ", ".join(f"{k} ({n})" for k, n in sorted(e["codes"].items(), key=lambda kv: -kv[1])[:15]),
+          rep["label"](e["unit"]) if e["unit"] else "", e["first"], e["last"]]
+         for e in rep["nocell"]])
+    _sheet(wb, "Noma'lum kodlar", ["Kod", "Qatorlar", "Joylar", "«Отв. бригадир»"],
+           [[u["code"], u["rows"],
+             ", ".join(f"{k} ({n})" for k, n in sorted(u["places"].items(), key=lambda kv: -kv[1])[:6]),
+             ", ".join(f"{k} ({n})" for k, n in sorted(u["names"].items(), key=lambda kv: -kv[1])[:6])]
+            for u in rep["unknown"]])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def send_cells(db: Session, chat_id: int, *_window) -> int:
+    if not settings.telegram_bot_token:
+        raise RuntimeError("telegram bot token not configured")
+    rep = collect_cells(db)
+    body = text_cells(rep)
+    book = build_cells_workbook(rep).getvalue()
+    db.rollback()
+    chunks, cur = [], ""
+    for line in body.split("\n"):
+        if len(cur) + len(line) + 1 > 3900:
+            chunks.append(cur)
+            cur = ""
+        cur += line + "\n"
+    chunks.append(cur)
+    for c in chunks:
+        _post("sendMessage", {"chat_id": chat_id, "text": c})
+    stamp = rep["taken"].strftime("%d.%m.%Y")
+    _post("sendDocument",
+          {"chat_id": chat_id,
+           "caption": f"Sifat reyestri — yacheyka bo'yicha brigada va Egasi, {stamp}"},
+          files={"document": (f"sifat-yacheyka-{stamp}.xlsx", book,
+                              "application/vnd.openxmlformats-officedocument."
+                              "spreadsheetml.sheet")})
+    return len(chunks) + 1
