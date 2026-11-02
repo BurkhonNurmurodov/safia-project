@@ -339,7 +339,8 @@ def unit_display_names(sup_match: dict[str, dict],
 # profile sat in the unit made to measure his cell's load, so the unit pool
 # could not reach it and his history stood beside his bot days as a second
 # person in every leader picker (reported 25 Sep 2026). His profile is back in
-# Aripova's unit since 26 Sep (`services/leader_unit_fix_sep26.py`); the pin
+# Aripova's unit since 26 Sep (a one-shot, since deleted), and so is his cell
+# since 2 Nov (`services/unit_merge_nov02.py`); the pin
 # keeps the Form spelling his wherever the profile sits. The one day he filed
 # through both doors (25 Aug) is settled by `leader_day_sources`.
 _LEADER_PINS = {

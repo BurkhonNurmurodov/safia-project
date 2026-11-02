@@ -7821,6 +7821,38 @@ def _verifix_roles_job() -> None:
                       verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: Elnora and her deputy Xasan Malikov, before the merge ──────────
+# The operator (2026-11-02): Maksumov Sanjar's leader Elnora was away, a leader
+# profile was made for her deputy Xasan Malikov, she is back, and her profile is
+# to be merged with his history. READ-ONLY: production's record of both people
+# (`services/leader_merge_report_nov02.py`) DMed once to Burkhon as a .txt file
+# + text. Changing what it sends needs a NEW key. Delete this block, the module
+# and both entrypoint calls once it has landed.
+LEADER_MERGE_REPORT_FLAG = "leader_merge_elnora_xasan_report_2026_11_02_v1"
+_LEADER_MERGE_REPORT_DELAY_S = 150
+
+
+def report_leader_merge() -> None:
+    """Elnora × Xasan Malikov state report, DMed once. Never raises."""
+    try:
+        if not _report_pending(LEADER_MERGE_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("leader-merge-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_MERGE_REPORT_DELAY_S),
+                    _leader_merge_report_job)
+    except Exception as exc:
+        print(f"[startup] leader merge report could not be scheduled: {exc}")
+
+
+def _leader_merge_report_job() -> None:
+    print("[startup] leader merge report: started")
+    from app.services import leader_merge_report_nov02
+    _send_report_once(LEADER_MERGE_REPORT_FLAG, "leader merge report",
+                      leader_merge_report_nov02.send, REPORT_CHAT_BURKHON)
+
+
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
 # The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
 # cell's positions follow it from its own move day, closed days included. The
@@ -10038,96 +10070,6 @@ def _leader_temp_hours_dm_job() -> None:
         db.close()
 
 
-# ── one-shot: Turdimurodov Nodirjon counted under Aripova Manzura (26 Sep) ────
-# See `services/leader_unit_fix_sep26.py`. Inline and flag-guarded, like the
-# other checklist fixes here. A REFUSAL (the names did not resolve as expected)
-# writes nothing, is DMed once and is re-checked quietly on every later boot, so
-# an admin correcting the register lets it land without another deploy.
-# v2: the operator's ruling that he is Aripova's leader, his own unit existing
-# only for his cell's загрузка — v1 (the same morning) moved the other way and
-# is superseded, hence the new key.
-NODIRJON_FIX_FLAG = "leader_nodirjon_to_aripova_2026_09_26_v2"
-
-
-def fix_nodirjon_leader_unit() -> None:
-    """Count Nodirjon's checklist under Aripova Manzura, once. Never raises."""
-    db = SessionLocal()
-    try:
-        row = db.query(AppSetting).filter_by(key=NODIRJON_FIX_FLAG).first()
-        val = (row.value or "") if row else ""
-        if val.startswith("done"):
-            return
-        tries = 0
-        if val.startswith("failed:"):
-            try:
-                tries = int(val.split(":")[-1])
-            except ValueError:
-                tries = _UNPRICED_DM_TRIES
-        if tries >= _UNPRICED_DM_TRIES:
-            return
-
-        from app.services import leader_unit_fix_sep26 as fx
-
-        def mark(value: str) -> None:
-            # Commits whatever `apply` staged in the SAME transaction as the
-            # flag, so the fix and its "done" can never disagree.
-            nonlocal row
-            if row is None:
-                row = AppSetting(key=NODIRJON_FIX_FLAG, value=value)
-                db.add(row)
-            else:
-                row.value = value
-            db.commit()
-
-        try:
-            out = fx.apply(db)
-        except Exception as exc:
-            db.rollback()
-            mark(f"failed:{tries + 1}")
-            print(f"[startup] Nodirjon unit fix failed "
-                  f"(attempt {tries + 1}/{_UNPRICED_DM_TRIES}): {exc}")
-            return
-
-        if out["problems"]:
-            db.rollback()
-            print("[startup] Nodirjon unit fix refused: "
-                  + "; ".join(out["problems"]))
-            if not val.startswith("blocked"):
-                mark("blocked")
-                _nodirjon_fix_dm(fx.message(out))
-            return
-
-        mark(f"done:{len(out['moved'])}")
-        print(f"[startup] Nodirjon unit fix: profile moved={out['profile_moved']}, "
-              f"{len(out['moved'])} day(s) to {out['to']} {out['side']}; "
-              f"digests {out['digests']}; form-counted {out['sheet_days']}")
-        from app.services import action_log
-        action_log.record_system(
-            "leader_review", "checklist.leader_moved",
-            target_kind="profile", target_name=out["profile"],
-            unit_name=out["to"],
-            details=[("cell_unit", out["cell_unit"]),
-                     ("profile_moved", out["profile_moved"] or None),
-                     ("holders", out["holders"] or None),
-                     ("days", len(out["moved"]) or None),
-                     ("from", out["moved"][0] if out["moved"] else None),
-                     ("to", out["moved"][-1] if out["moved"] else None),
-                     *[(k, v) for k, v in out["side"].items()],
-                     ("digests", out["digests"] or None),
-                     ("form_counted", ", ".join(d for d, *_ in out["sheet_days"])
-                      or None)],
-            reason=("Operator: he is Aripova Manzura's leader — his checklist "
-                    "counts in her unit; his own unit exists only for his cell's "
-                    "загрузка, which stays there"),
-        )
-        _nodirjon_fix_dm(fx.message(out))
-    except Exception as exc:  # pragma: no cover — never block startup
-        db.rollback()
-        print(f"[startup] Nodirjon unit fix skipped: {exc}")
-    finally:
-        db.close()
-
-
 # ── one-shot: Jumaniyazov Sanjarbek's checklist runs on shift 1 (2026-10-06) ──
 # The operator, 5 Oct 2026: his brigadir is on shift 2 while his cell works
 # shift 1, so his checklist moves to shift 1's hours and standard from the day
@@ -10361,31 +10303,51 @@ def repair_live_exchanges_oct08() -> None:
         print(f"[startup] live exchange repair skipped: {exc}")
 
 
-# ── cell 0811 back in its own unit (2026-10-14) ───────────────────────────────
+# ── unit «Turdimurodov Nodirjon» joins Aripova Manzura's (2026-11-02) ─────────
 #
-# ⚠ TEMPORARY. `services/cell_unit_fix_oct14.py` is the whole of it; delete
-# it, this function and both entrypoint calls once its flag and DM flag read
-# «done». The exception that keeps it there is `verifix_sync.KEPT_APART`, and
-# STAYS.
+# ⚠ TEMPORARY. `services/unit_merge_nov02.py` is the whole of it; delete it,
+# these two functions and both entrypoint calls once its flag reads «done»
+# (or «blocked») and the report has gone. The report waits a couple of minutes
+# so it can say whether the catalog follow has moved 0811's positions.
+_UNIT_MERGE_REPORT_DELAY_S = 150
 
-def put_cell_0811_back() -> None:
-    """Boot, inline (before /health, so the deploy's report step reads the
-    repaired state): the 13 Oct `brigadir_differs` move of cell 0811 to Aripova
-    Manzura's unit is undone from the day it landed, and the closed live days
-    since are re-copied. Never raises."""
+
+def merge_nodirjon_unit_nov02() -> None:
+    """Deferred, once: cell 0811 joins Aripova Manzura's unit from 2 Nov, his
+    brigadir role goes and his unit is archived (preconditions, one transaction
+    with the flag); the two people are told; the report to Burkhon is scheduled.
+    Never raises."""
     try:
-        from app.services import cell_unit_fix_oct14 as fx
+        from app.services import unit_merge_nov02 as fx
         db = SessionLocal()
         try:
             rec = fx.run(db)
             if rec is not None:
-                print(f"[startup] cell 0811 fix: {rec.get('result')} "
-                      f"(from {rec.get('since')}, {len(rec.get('days') or {})} days checked)")
-            fx.send_dm(db, UNPRICED_DM_CHAT)
+                print(f"[startup] unit merge 0811: {rec.get('result')}")
+            fx.notify(db)
+            result = fx.result(db)
         finally:
             db.close()
+        if result and _report_pending(fx.dm_flag(result)):
+            from datetime import timedelta
+            from app.scheduler import schedule_at
+            schedule_at("unit-merge-nov02-report",
+                        datetime.now(timezone.utc) + timedelta(seconds=_UNIT_MERGE_REPORT_DELAY_S),
+                        _unit_merge_report_job)
     except Exception as exc:  # pragma: no cover — never block startup
-        print(f"[startup] cell 0811 fix skipped: {exc}")
+        print(f"[startup] unit merge 0811 skipped: {exc}")
+
+
+def _unit_merge_report_job() -> None:
+    from app.services import unit_merge_nov02 as fx
+    db = SessionLocal()
+    try:
+        result = fx.result(db)
+    finally:
+        db.close()
+    if result:
+        _send_report_once(fx.dm_flag(result), "unit merge 0811 report", fx.send_report,
+                          REPORT_CHAT_BURKHON)
 
 
 # ── a leader's cell link counts from the day it is made (2026-10-17) ─────────

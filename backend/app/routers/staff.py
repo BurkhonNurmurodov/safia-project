@@ -188,6 +188,62 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "From {date} you are the brigadir of «{unit}». On the platform the unit is now called «{name}»: "
                "its leaders, attendance, checklist and reports are yours."),
     },
+    # A unit joined another (2026-11-02, services/unit_merge_nov02): to the
+    # brigadir who takes the cell (`leader` = its leader; `concerns` / `docs` =
+    # the numbers handed over, rows dropped when blank) and to the brigadir who
+    # stays the cell's leader (`unit` = the unit it joined, `name` = his own
+    # unit's name, now archived).
+    "cell_unit_merged": {
+        "uz": ("Bo'linmangizga yacheyka qo'shildi",
+               "{date} dan boshlab {cell} yacheyka (lider {leader}) sizning bo'linmangizda. Bugungi kunni "
+               "uning xodimlari bilan birga siz yopasiz; davomat, xodim almashinuvi, «Ish grafigi», "
+               "kutishlar va pozitsiyalar endi sizniki.\n"
+               "📌 Sizga o'tdi — xavotir: {concerns}\n"
+               "📝 Sizga o'tdi — so'rov: {docs}"),
+        "uz_cyrl": ("Бўлинмангизга ячейка қўшилди",
+                    "{date} дан бошлаб {cell} ячейка (лидер {leader}) сизнинг бўлинмангизда. Бугунги кунни "
+                    "унинг ходимлари билан бирга сиз ёпасиз; давомат, ходим алмашинуви, «Иш графиги», "
+                    "кутишлар ва позициялар энди сизники.\n"
+                    "📌 Сизга ўтди — хавотир: {concerns}\n"
+                    "📝 Сизга ўтди — сўров: {docs}"),
+        "ru": ("К вашему участку добавлена ячейка",
+               "С {date} ячейка {cell} (лидер {leader}) входит в ваш участок. Сегодняшний день вместе с её "
+               "работниками закрываете вы; посещаемость, перемещения, «График работы», простои и позиции "
+               "теперь ваши.\n"
+               "📌 Передано вам — обращение: {concerns}\n"
+               "📝 Передано вам — заявка: {docs}"),
+        "en": ("A cell has joined your unit",
+               "From {date} cell {cell} (leader {leader}) is part of your unit. You close today's day with "
+               "its workers too; its attendance, transfers, «Work schedule», idle time and positions are "
+               "now yours.\n"
+               "📌 Handed to you — concern: {concerns}\n"
+               "📝 Handed to you — request: {docs}"),
+    },
+    "cell_unit_merged_leader": {
+        "uz": ("Brigadirlik vazifangiz yakunlandi",
+               "{date} dan boshlab {cell} yacheyka {unit} bo'linmasida, siz esa uning lideri bo'lib qolasiz: "
+               "chek-list, reja, fakt va odam soni avvalgidek sizda. «{name}» bo'linmasi arxivlandi, "
+               "bugungi kunni {unit} yopadi.\n"
+               "Telegram ilovasini to'liq yopib, qayta oching — shundan keyin u sizni lider sifatida ochadi."),
+        "uz_cyrl": ("Бригадирлик вазифангиз якунланди",
+                    "{date} дан бошлаб {cell} ячейка {unit} бўлинмасида, сиз эса унинг лидери бўлиб "
+                    "қоласиз: чек-лист, режа, факт ва одам сони аввалгидек сизда. «{name}» бўлинмаси "
+                    "архивланди, бугунги кунни {unit} ёпади.\n"
+                    "Телеграм иловасини тўлиқ ёпиб, қайта очинг — шундан кейин у сизни лидер сифатида "
+                    "очади."),
+        "ru": ("Ваша роль бригадира завершена",
+               "С {date} ячейка {cell} входит в участок {unit}, а вы остаётесь её лидером: чек-лист, план, "
+               "факт и число людей по-прежнему ваши. Участок «{name}» архивирован, сегодняшний день "
+               "закрывает {unit}.\n"
+               "Полностью закройте приложение в Telegram и откройте снова — после этого оно откроется для "
+               "вас как для лидера."),
+        "en": ("Your brigadir role has ended",
+               "From {date} cell {cell} is part of {unit}'s unit, and you stay its leader: the checklist, "
+               "plan, fact and headcount are yours as before. The unit «{name}» is archived; {unit} "
+               "closes today's day.\n"
+               "Close the Telegram app completely and open it again — it will then open for you as a "
+               "leader."),
+    },
     # The settings dialog's «Sinov xabari» (routers/push.py): a row to the
     # person themself, proving the Android app's phone notifications work.
     "push_test": {

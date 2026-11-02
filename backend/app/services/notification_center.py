@@ -84,6 +84,8 @@ _EXACT = {
     "call_forecast": "other",
     # A unit changed brigadir (2026-10-24).
     "brigadir_changed": "other", "brigadir_appointed": "other",
+    # A unit joined another (2026-11-02).
+    "cell_unit_merged": "other", "cell_unit_merged_leader": "other",
     "push_test": "other",
     # The Verifix live sync (2026-10-12): a leader dismissed / back on Verifix.
     "vfx_leader_dismissed": "checklist", "vfx_leader_returned": "checklist",

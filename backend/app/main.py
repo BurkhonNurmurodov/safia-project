@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
+        report_leader_merge,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -230,11 +231,10 @@ async def lifespan(app: FastAPI):
         purge_leader_ai_history,
         drop_paused_shift_reviews,
         queue_shift2_backlog,
-        fix_nodirjon_leader_unit,
         move_sanjarbek_checklist_shift,
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
-        put_cell_0811_back,
+        merge_nodirjon_unit_nov02,
         land_waiting_leader_links,
         repair_leader_units,
         seed_one_process_cells,
@@ -485,6 +485,13 @@ async def lifespan(app: FastAPI):
     # phase. Remove this line, `startup.report_pin_mismatch` and
     # `services/pin_mismatch_report.py` once it has been sent.
     run(report_pin_mismatch)
+
+    # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov, production's
+    # record before their profiles are merged, DMed once to Burkhon. READ-ONLY.
+    # Only SCHEDULES a job (one flag read). Remove this line,
+    # `startup.report_leader_merge` and `services/leader_merge_report_nov02.py`
+    # once it has been sent.
+    run(report_leader_merge)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).
@@ -834,11 +841,6 @@ async def lifespan(app: FastAPI):
     # Remove with them.
     later(preview_leader_rules_sep19)
     later(patch_task10_description_sep19)
-    # ⚠ TEMPORARY one-shot (2026-09-26) — Turdimurodov Nodirjon's checklist
-    # days stamped with Aripova Manzura's unit go back to his own unit. Inline
-    # and flag-guarded. Remove this line, `startup.fix_nodirjon_leader_unit`
-    # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
-    later(fix_nodirjon_leader_unit)
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     later(move_sanjarbek_checklist_shift)
     # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
@@ -851,11 +853,12 @@ async def lifespan(app: FastAPI):
     # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
     # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
     later(repair_live_exchanges_oct08)
-    # ⚠ TEMPORARY one-shot (2026-10-14) — cell 0811 back in «Turdimurodov
-    # Nodirjon» from the day the 13 Oct Verifix-sync move landed. Remove this
-    # line, `startup.put_cell_0811_back` and `services/cell_unit_fix_oct14.py`
-    # once its flag and DM flag read «done».
-    later(put_cell_0811_back)
+    # ⚠ TEMPORARY one-shot (2026-11-02) — unit «Turdimurodov Nodirjon» joins
+    # Aripova Manzura's: cell 0811 moves to her unit from 2 Nov, his brigadir
+    # role goes and the unit is archived; he stays her leader. Remove this
+    # line, `startup.merge_nodirjon_unit_nov02` and
+    # `services/unit_merge_nov02.py` once its flags read «done» / «sent».
+    later(merge_nodirjon_unit_nov02)
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
     # still waiting for the next shift opening count from the day they were
     # made. Remove this line, `startup.land_waiting_leader_links` and its flag

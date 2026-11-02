@@ -124,6 +124,7 @@ try:
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
+        report_leader_merge,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -140,11 +141,10 @@ try:
         register_leader_rules_sep26,
         register_leader_rules_oct07,
         register_leader_temp_hours,
-        fix_nodirjon_leader_unit,
         move_sanjarbek_checklist_shift,
         fix_cell_9123_oct05,
         repair_live_exchanges_oct08,
-        put_cell_0811_back,
+        merge_nodirjon_unit_nov02,
         land_waiting_leader_links,
         repair_leader_units,
         seed_one_process_cells,
@@ -567,6 +567,9 @@ try:
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
+    # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov before the
+    # merge, DMed once. Remove once it has been sent.
+    report_leader_merge()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()
@@ -685,10 +688,6 @@ try:
     # they are scored by changes until the two passes above fire on the 19th.
     # Remove with them.
     preview_leader_rules_sep19()
-    # ⚠ TEMPORARY one-shot (2026-09-26) — Turdimurodov Nodirjon's checklist
-    # days stamped with Aripova Manzura's unit go back to his own unit. Remove
-    # with `startup.fix_nodirjon_leader_unit` (mirrored in the FastAPI lifespan).
-    fix_nodirjon_leader_unit()
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     move_sanjarbek_checklist_shift()
     # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
@@ -701,11 +700,10 @@ try:
     # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
     # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
     repair_live_exchanges_oct08()
-    # ⚠ TEMPORARY one-shot (2026-10-14) — cell 0811 back in «Turdimurodov
-    # Nodirjon» from the day the 13 Oct Verifix-sync move landed. Remove this
-    # line, `startup.put_cell_0811_back` and `services/cell_unit_fix_oct14.py`
-    # once its flag and DM flag read «done».
-    put_cell_0811_back()
+    # ⚠ TEMPORARY one-shot (2026-11-02) — unit «Turdimurodov Nodirjon» joins
+    # Aripova Manzura's (mirrored in the FastAPI lifespan). Remove with
+    # `startup.merge_nodirjon_unit_nov02` and `services/unit_merge_nov02.py`.
+    merge_nodirjon_unit_nov02()
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
     # still waiting for the next shift opening count from the day they were
     # made. Remove this line, `startup.land_waiting_leader_links` and its flag
