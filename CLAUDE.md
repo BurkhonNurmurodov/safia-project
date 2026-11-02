@@ -3553,6 +3553,59 @@ total can pass 5.0 (`MAX_POINTS` stays 5).
 - **Consequence to know**: while the weight is 0 the zones still count it —
   «Diqqat zonasi» is «a KPI scored 1–2», and plan fulfilment is a KPI.
 
+## «Brigadirlar KPI» — HR's monthly brigadir KPI (`/brigadirs-kpi`, 2026-11-02)
+
+The operator, on HR's July 2026 workbook: «Build for first 2 KPI categories
+and leave space for the remaining 3. For the brigadirs which are not on our
+IMS, check our resources Verifix and sheets for their data to load.» HR's rule:
+four pass / fail criteria at 25% each, result = passed ÷ 4, payout = passed ×
+(daily rate × 26 + allowance) × 20% ÷ 4. Page key **`brigadirs-kpi`**,
+«Liderlar» nav group after «Liderlar KPI», **admin-only until the operator
+opens it on the Access tab** (in `SCOPED_PAGES`: a supervisor reads their own
+unit, a shift-manager shift ∩ plant, a leader nothing — `routers/brigadirs_kpi
+._lock`). `services/brigadirs_kpi.py` is THE rule, `routers/brigadirs_kpi.py`
+the door (`GET /api/brigadirs-kpi?month&factory&shift&managers`, one request
+for every tab, kept 60 s like /api/leaders-kpi; `POST …/export.xlsx` →
+`services/brigadirs_kpi_export.py`, logged `export.brigadirs_kpi`),
+`pages/BrigadirsKpi.jsx` + `components/brigadirkpi/` + `pages/brigadirsKpiText.js`.
+
+- **Two criteria are computed, never re-measured.** «Qo'nimsizlik»
+  (Текучесть): per cell leavers ÷ working on the month's last day × 12, read
+  off `turnover.month_payload` (the leaders' turnover month — its read, its
+  frozen months, its ×12); a brigadir's figure is the MEAN of their cells'
+  rates (HR's AVERAGEIFS; `method: "pooled"` in the rule is the alternative)
+  over cells with somebody working — HR's IFERROR → 0 for an empty cell was
+  NOT carried over, its leavers are named. Passes BELOW 60 (strict, judged as
+  printed to one decimal). «OKK tuzatuvchi choralar»: the month's quality
+  register by «Отв. бригадир» (`register_brigadir` + `supervisor_match`, the
+  Quality page's rule), statuses `shift_report.ACTIONABLE`, resolved ÷ all,
+  hair excluded by default; passes ABOVE 90 (strict). No record → «—», not
+  passed (HR's #DIV/0! → blank).
+- **Three are places**: «Murabbiylik» (no attestation result anywhere),
+  «KRU» (the KRU department's audit score is not on the platform), «To'lov»
+  (rates and allowances — Verifix payroll lists closed since 2026-10-03). Each
+  is null on every row, a «—» column on the board and a tab with the reason.
+- **Brigadirs not on the platform come from Verifix.** Rows = every
+  non-archived unit with a cell or a quality record, PLUS every working
+  Verifix brigadir (`verifix_org.brigadirs_over`) tied to no unit and spelled
+  like none — key `v:<Verifix id>`, Verifix's name through `profile_name`,
+  marked «Verifix». A cell is credited by the cells register on the month's
+  last day (`turnover.cell_map`); a cell with no brigadir there, or a Verifix
+  subdivision /cells lacks, by the Verifix brigadir standing over it (HR's own
+  «Руководитель» reading; one person over two units, or two brigadirs, is
+  named, not guessed). Quality spellings are matched against the units AND
+  those Verifix brigadirs together. A Verifix brigadir's plant is the first
+  division above them whose name names a plant, else the first plant (where
+  `migrate_factories` attaches unassigned units), so the plant tab the page
+  opens on shows them; a shift or brigadir pick leaves them out.
+- The rule is app setting `brigadir_kpi_rule` (written through
+  `PUT /admin/settings`), laid over HR's field by field
+  (`turnover.max`/`method`, `okk.min`/`skip_hair`/`no_records`, the two
+  places' thresholds); a malformed value is ignored.
+- Open with HR (from the July file, not decided here): the 60% vs 70%
+  threshold, mean vs pooled, crediting by Verifix supervisor vs the cells
+  register, «no records = fail», hair in OKK.
+
 ## «Brigadirlar reytingi» on real data (`/leaderboard`, 2026-10-23)
 
 The Laboratory's brigadir board was a deterministic mock until 2026-10-23
