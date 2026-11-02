@@ -36,6 +36,7 @@ const TITLE_KEYS = {
   "/leaders":          "nav.leaders",
   "/cells":            "nav.cells",
   "/kaizen":           "nav.kaizen",
+  "/notion-tasks":     "nav.notionTasks",
   "/quality":          "nav.quality",
   "/concerns":         "nav.concerns",
   "/tasks":            "nav.tasks",

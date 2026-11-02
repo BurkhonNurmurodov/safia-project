@@ -7,7 +7,7 @@ import {
   Activity, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
-  GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListTodo, Medal, MessageSquarePlus,
+  GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, ShieldAlert, Sparkles, Target,
   SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
 } from "lucide-react";
@@ -45,6 +45,9 @@ export const ALL_LINKS = [
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck, group: "leaders" },
   { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid, group: "cells" },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality" },
+  // «Notion vazifalari» — the Notion "Production" task list, read-only
+  // (services/notion_tracker.py); its reminders' settings are the admin tab.
+  { to: "/notion-tasks", page: "notion-tasks", key: "nav.notionTasks", icon: ListChecks, group: "quality" },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.

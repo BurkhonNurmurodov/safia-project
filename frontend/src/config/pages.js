@@ -48,6 +48,7 @@ export const PAGES = [
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
+  { key: "notion-tasks", route: "/notion-tasks", labelKey: "nav.notionTasks" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "cell-concerns", route: "/cell-concerns", labelKey: "nav.cellConcerns" },
@@ -96,6 +97,7 @@ export const DEFAULT_PAGE_ACCESS = {
   //            cells, read-only (narrowed server-side); admins and per-person
   //            view/edit grants on the Permissions tab read the whole register
   kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
+  "notion-tasks": [], // the Notion "Production" task list, read-only — admin-only until enabled
   // Quality register (complaints & non-conformances) — a factory-wide management view
   quality: ["top-manager", "shift-manager"],
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,

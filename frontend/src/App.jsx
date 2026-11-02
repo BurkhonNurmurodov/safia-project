@@ -69,6 +69,7 @@ const LeaderAppeal = lazyWithReload(() => import("./pages/LeaderAppeal"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
+const NotionTasks = lazyWithReload(() => import("./pages/NotionTasks"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const LeadersKpi = lazyWithReload(() => import("./pages/LeadersKpi"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
@@ -121,7 +122,7 @@ const ROUTE_PAGES = {
   workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
   reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
-  trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, quality: Quality,
+  trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi,
   tasks: Tasks, activity: UsersActivity, "setup-times": SetupTimes, "idle-cell": IdleCell,
   "zagruzka-cell": ZagruzkaCell, live: LiveOverview, kelish: Kelish, arc: Arc,
@@ -602,6 +603,7 @@ function AppWithLang() {
                 own capability/admin guard. */}
             <Route path="/cells/:id" element={<AuthGate><CellDetails /></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
+            <Route path="/notion-tasks" element={<AuthGate><RequirePage page="notion-tasks"><NotionTasks /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
             <Route path="/cell-concerns" element={<AuthGate><RequirePage page="cell-concerns"><CellConcerns /></RequirePage></AuthGate>} />

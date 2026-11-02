@@ -4,7 +4,7 @@
 // pulling the whole panel — which imports every destination statically — into
 // every page's bundle. AdminPanel imports it from here; never keep a second copy.
 import {
-  Building2, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users,
+  BellRing, Building2, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users,
 } from "lucide-react";
 
 export const ADMIN_GROUPS = [
@@ -104,6 +104,10 @@ export const ADMIN_NAV = [
   // the boards it reads and what «done» means on each. No capKey: the token
   // reads every board its Trello member can open — admin-only, never grantable.
   { id: "trello",       group: "tools",  Icon: SquareKanban,   labelKey: "admin.tabTrello",       descKey: "admin.desc.trello" },
+  // «Notion eslatmalari» — the Notion task list's daily Telegram reminders
+  // (moved from the GitHub bot, 2026-11-02): schedule, groups, team and the
+  // bot's sealed token. No capKey: admin-only, never grantable.
+  { id: "notiontracker", group: "tools", Icon: BellRing,       labelKey: "admin.tabNotionTracker", descKey: "admin.desc.notiontracker" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
   // on /zagruzka now carries its own colour bands and its own admin button.

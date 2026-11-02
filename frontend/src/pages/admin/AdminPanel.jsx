@@ -37,6 +37,7 @@ import VerifixSettings from "./VerifixSettings";
 import VerifixSync from "./VerifixSync";
 import AiKeys from "./AiKeys";
 import TrelloSettings from "./TrelloSettings";
+import NotionTrackerSettings from "./NotionTrackerSettings";
 
 /**
  * The admin panel shell.
@@ -91,6 +92,7 @@ const VIEWS = {
   verifixsync:  VerifixSync,
   aikeys:       AiKeys,
   trello:       TrelloSettings,
+  notiontracker: NotionTrackerSettings,
   translations: TranslationsEditor,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,
