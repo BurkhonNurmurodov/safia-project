@@ -142,8 +142,6 @@ async def lifespan(app: FastAPI):
         schedule_catalog_follow_retro,
         report_pin_mismatch,
         report_leader_merge,
-        report_quality_brigadirs,
-        report_quality_cells,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -494,15 +492,6 @@ async def lifespan(app: FastAPI):
     # `startup.report_leader_merge` and `services/leader_merge_report_nov02.py`
     # once it has been sent.
     run(report_leader_merge)
-
-    # ⚠ TEMPORARY report (2026-11-02) — every «Отв. бригадир» spelling on the
-    # Quality register and the IMS unit it is connected to, DMed once to
-    # Burkhon. READ-ONLY. Only SCHEDULES a job (one flag read). Remove this
-    # line, `startup.report_quality_brigadirs` and
-    # `services/quality_brigadir_report_nov02.py` once it has been sent.
-    run(report_quality_brigadirs)
-    # Its sequel: the same rows attributed by CELL — the impact, read-only.
-    run(report_quality_cells)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

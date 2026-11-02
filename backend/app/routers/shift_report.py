@@ -36,15 +36,14 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import LeaderConcern, Manager, QualityComplaint
+from app.models import LeaderConcern, Manager
 from app.permissions import require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
 from app.services import (cell_hours, leader_register, live_overview, live_staff,
-                          shared_build, shift_report, shift_scope, verifix_live,
-                          zagruzka_source)
+                          quality_attribution, shared_build, shift_report, shift_scope,
+                          verifix_live, zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services.name_map import register_rows, supervisor_match
 
 router = APIRouter(prefix="/api/shift-report", tags=["shift-report"])
 log = logging.getLogger(__name__)
@@ -253,26 +252,10 @@ def _compute(db: Session, units: list, note, now, windows) -> dict:
     # ── Hal qilingan % — the quality register for the CURRENT MONTH
     # (`shift_report.quality_window`, which is also what says why), WITHOUT the
     # hair category (`SKIP_CATEGORY`, ditto), attributed exactly as the Quality
-    # page attributes it: «Отв. бригадир» resolved against EVERY live unit (a
-    # subset would let the fuzzy matcher hand a row to the wrong unit), over
-    # every spelling the register holds.
-    #
-    # The category test keeps a row whose category is NULL: in SQL `category !=
-    # 'hair'` is NULL there, i.e. false, so an uncategorised record would be
-    # dropped as though it were hair.
-    counts = register_rows(
-        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
-                 func.count(QualityComplaint.id))
-        .filter(QualityComplaint.brigadir.isnot(None),
-                QualityComplaint.date >= m_from, QualityComplaint.date < m_to,
-                or_(QualityComplaint.category.is_(None),
-                    QualityComplaint.category != shift_report.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status)
-        .all()
-    )
-    live = db.query(Manager).filter(Manager.archived.is_(False)).all()
-    match = supervisor_match(live, {b for b, _st, _n in counts if b})
-    quality = shift_report.fold_quality(counts, match)
+    # page attributes it: `quality_attribution` — the record's cell on its date,
+    # else «Отв. бригадир» resolved against EVERY live unit.
+    quality = shift_report.fold_quality(
+        quality_attribution.unit_rows(db, m_from, m_to, shift_report.SKIP_CATEGORY))
 
     # ── Ochiq xavotirlar — open, and sitting at the brigadir's own level.
     concerns = dict(

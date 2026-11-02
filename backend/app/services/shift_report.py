@@ -166,25 +166,24 @@ def compl_cell(totals: Optional[dict]) -> dict:
     return {"value": _ratio(totals.get("completion")), "reason": None}
 
 
-def fold_quality(counts: Iterable[tuple], match: dict) -> dict[int, dict]:
+def fold_quality(counts: Iterable[tuple]) -> dict[int, dict]:
     """{manager_id: {"done": n, "actionable": N}} over the month handed in.
 
-    The window is the router's — this module never queries — so a spelling that
-    filed nothing this month, or nothing but `SKIP_CATEGORY` records, is simply
-    absent, and its unit reads the blank `no_records` rather than a 0% it did
+    The window is the router's — this module never queries — so a unit that
+    had nothing filed this month, or nothing but `SKIP_CATEGORY` records, is
+    simply absent, and reads the blank `no_records` rather than a 0% it did
     not earn.
 
-    `counts` is (register brigadir spelling, status, rows); `match` is
-    `name_map.supervisor_match` over EVERY live unit — the Quality page's own
-    attribution («Отв. бригадир» resolved to a platform unit). A spelling that
-    names no unit (technologists, IT, stores) is nobody's row here, as there.
+    `counts` is (unit id, status, …, rows) — `quality_attribution.unit_rows`,
+    the Quality page's own attribution (from 2026-11-02 the record's CELL on
+    its date, else «Отв. бригадир»). A record no unit answers for
+    (technologists, IT, stores) is nobody's row here, as there.
     """
     out: dict[int, dict] = {}
-    for name, status, n in counts:
-        unit = match.get(name)
-        if not unit or status not in ACTIONABLE:
+    for unit_id, status, *_rest, n in counts:
+        if unit_id is None or status not in ACTIONABLE:
             continue
-        acc = out.setdefault(unit["id"], {"done": 0, "actionable": 0})
+        acc = out.setdefault(unit_id, {"done": 0, "actionable": 0})
         acc["actionable"] += int(n)
         if status == RESOLVED:
             acc["done"] += int(n)

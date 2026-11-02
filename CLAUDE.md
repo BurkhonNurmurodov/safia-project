@@ -3553,6 +3553,49 @@ total can pass 5.0 (`MAX_POINTS` stays 5).
 - **Consequence to know**: while the weight is 0 the zones still count it —
   «Diqqat zonasi» is «a KPI scored 1–2», and plan fulfilment is a KPI.
 
+## Who answers for a Quality record (`quality_attribution`, 2026-11-02)
+
+The operator: «each row has the cell code, that cell code has its owner on our
+IMS — assign the leader and brigadirs for these rows with the cell code»;
+every point asked, a read-only impact report DMed and read first. Until then a
+record of the Quality register counted for the unit its «Отв. бригадир»
+spelling matched (`name_map.supervisor_match`) and its leader was the cell's
+CURRENT «Boshqaruvchi». `services/quality_attribution.py` is THE rule
+(`Resolver`, `unit_rows`, `owner_names`) — never re-spell it at a call site.
+
+- **BRIGADIR** = the unit the «Номер виновного цеха» cell stood in ON THE
+  RECORD'S DATE (`cell_links.value_on` — exact from 12 Oct 2026, the cell's
+  first known value before it). A unit ARCHIVED since hands its records to the
+  unit the cell stands in today (the operator's call: unit «Turdimurodov
+  Nodirjon», merged into Aripova Manzura's on 2 Nov — 0811's 49 earlier
+  records are hers). When the code names no cell on /cells, the code is blank,
+  or the cell had no brigadir that day, the record falls back to the unit «Отв.
+  бригадир» names (`register_brigadir`'s per-site blanking, `supervisor_match`
+  over every live unit) — and to nobody when that names none (technologists,
+  IT, АРС, Келес…).
+- **LEADER** = the cell's «Egasi» (`cells.owner_id`) on the record's date — not
+  the «Boshqaruvchi». A cell nobody owned that day, or a record with no cell,
+  has no leader. The «Есть ли вина цеха» flag is NOT consulted.
+- **Four readers, one rule**: the Quality page (`routers/quality.py` — `sup` /
+  `sh` / `fi` per row, `ld` its Egasi of the day, `hw` "c" | "n" for how the
+  brigadir was found; the `cells` registry's `leader` is the CURRENT Egasi, for
+  the leader roster and picker), «Smena kunligi» «Sifat nazorati %»
+  (`shift_report.fold_quality` over `unit_rows`), «Brigadirlar reytingi» +
+  «Hisobotlar» (`brigadir_board.quality(rows, unit_ids, pers)` over
+  `unit_rows`) and «Brigadirlar KPI»'s OKK (the Verifix brigadirs tied to no
+  unit stay name candidates — `extra=`). `foreign_objects` was already
+  cell-based and keeps its own rule (owner on the month's last day, fault only).
+- **Nothing is stored**: a cell moved, a unit renamed, an owner changed re-reads
+  every record. **Consequence to know** (the 2 Nov report): of 7,670 records
+  3,109 name a cell; 347 moved to another unit — chiefly unit HISTORY: a
+  renamed unit's records stay with the unit (Raximova Kamola → Niyozov
+  Izzatilla 131 on 9411–9414, Suvonov Elshod → Erkanboyev 48, the Abdullayev ↔
+  Kulmurodov swap) — 280 gained a unit their name never matched, and ~27% of
+  cell records have no Egasi that day. Of the 4,561 records with no usable
+  code only 174 name an IMS brigadir — the codes /cells lacks (Salimov 1711 /
+  1811, 6832, 1410, 0613, Suvonov's «B2B» Келес); registering those cells
+  would move them onto the cell rule.
+
 ## «Brigadirlar KPI» — HR's monthly brigadir KPI (`/brigadirs-kpi`, 2026-11-02)
 
 The operator, on HR's July 2026 workbook: «Build for first 2 KPI categories
@@ -3577,8 +3620,9 @@ for every tab, kept 60 s like /api/leaders-kpi; `POST …/export.xlsx` →
   over cells with somebody working — HR's IFERROR → 0 for an empty cell was
   NOT carried over, its leavers are named. Passes BELOW 60 (strict, judged as
   printed to one decimal). «OKK tuzatuvchi choralar»: the month's quality
-  register by «Отв. бригадир» (`register_brigadir` + `supervisor_match`, the
-  Quality page's rule), statuses `shift_report.ACTIONABLE`, resolved ÷ all,
+  register attributed by the Quality page's rule (`quality_attribution` — the
+  record's cell on its date, else «Отв. бригадир» matched against the units and
+  the untied Verifix brigadirs), statuses `shift_report.ACTIONABLE`, resolved ÷ all,
   hair excluded by default; passes ABOVE 90 (strict). No record → «—», not
   passed (HR's #DIV/0! → blank).
 - **Three are places**: «Murabbiylik» (no attestation result anywhere),
@@ -3661,10 +3705,10 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
     мера» stays out of both halves), the share resolved, with the HAIR
     category left out (`shift_report.SKIP_CATEGORY`, the 2026-09-18 ruling;
     a row with NO category is KEPT, since «uncategorised» is not «hair»).
-    Attributed as that page attributes it: «Отв. бригадир» through
-    `name_map.supervisor_match` over EVERY live unit (a subset lets the fuzzy
-    matcher hand a row to the wrong unit), so a spelling naming no unit —
-    technologists, IT, the stores — is nobody's row here either. Bucketed by
+    Attributed as that page attributes it (`quality_attribution`, from
+    2026-11-02: the record's cell on its date, else «Отв. бригадир» over EVERY
+    live unit), so a record neither names — technologists, IT, the stores —
+    is nobody's row here either. Bucketed by
     the complaint's own date, and NOT gated on the day close, as the concerns
     beside it are not: a complaint is filed against a date, not against a
     shift somebody closed. A period with no actionable record reads «—», never
@@ -9491,8 +9535,8 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
   **Sifat** — the Quality closure rate through `brigadir_board.quality`
-  (actionable records, hair out, «Отв. бригадир» matched against every live
-  unit); **Xavotirlar** — the /concerns register through
+  (actionable records, hair out, attributed by `quality_attribution` — the
+  record's cell on its date, else «Отв. бригадир»); **Xavotirlar** — the /concerns register through
   `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
   ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
   the sections they belong to, so the two can never disagree.
@@ -13406,9 +13450,9 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   and «Bajarish %» (yesterday) are `totals.avg_load` / `totals.completion` of
   `production._build_dashboard` — the very call `/api/production/dashboard`
   makes, so they ARE the «Zagruzka fayli» KPI cards. «Bartaraf etilgan %» is the
-  Quality page's closure rate over the CURRENT MONTH, hair aside:
-  `supervisor_match` over
-  every live unit (a subset lets the fuzzy matcher hand a row to the wrong unit),
+  Quality page's closure rate over the CURRENT MONTH, hair aside, each record
+  attributed by `quality_attribution` (its cell on its date, else «Отв.
+  бригадир» over every live unit — «Who answers for a Quality record»),
   done ÷ actionable, where `shift_report.ACTIONABLE` is the twin of
   `Quality.jsx`'s `ACTIONABLE` and the two must stay one list. «Ochiq
   xavotirlar» counts `leader_concerns` at level `supervisor` with status

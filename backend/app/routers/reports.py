@@ -32,16 +32,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Manager, QualityComplaint
-from app.services.name_map import register_rows, supervisor_match
 from app.permissions import require_page
 from app.services import (
     action_log, assistant_documents, brigadir_board as bb, idle_scope, idle_share,
-    ojidaniya_cost, plan_fulfillment, reports, turnover, wage_rate,
+    ojidaniya_cost, plan_fulfillment, quality_attribution, reports, turnover, wage_rate,
 )
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.gc_pause import paused as gc_paused
@@ -86,24 +83,14 @@ def _ids(raw) -> list[int]:
 
 
 def _quality_rows(db: Session, d_from: date, d_to: date):
-    """The Quality register over the window, WITHOUT the hair category — the
-    /leaderboard query, which is itself the shift dashboard's and the Quality
-    page's own reading. A row whose category is NULL is KEPT: in SQL
-    `category != 'hair'` is NULL there, i.e. false, and «uncategorised» is not
-    «hair». The upper bound is exclusive on the day after `d_to`, because
-    `date` is an ISO string a row may carry a time on."""
-    return register_rows(
-        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
-                 QualityComplaint.date, func.count(QualityComplaint.id))
-        .filter(QualityComplaint.brigadir.isnot(None),
-                QualityComplaint.date >= d_from.isoformat(),
-                QualityComplaint.date < (d_to + timedelta(days=1)).isoformat(),
-                or_(QualityComplaint.category.is_(None),
-                    QualityComplaint.category != bb.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.place,
-                  QualityComplaint.status, QualityComplaint.date)
-        .all()
-    )
+    """The Quality register over the window, WITHOUT the hair category, each
+    record credited by `quality_attribution` — the /leaderboard reading, which
+    is itself the shift dashboard's and the Quality page's own:
+    (unit id, status, date, count). The upper bound is exclusive on the day
+    after `d_to`, because `date` is an ISO string a row may carry a time on."""
+    return quality_attribution.unit_rows(db, d_from.isoformat(),
+                                         (d_to + timedelta(days=1)).isoformat(),
+                                         bb.SKIP_CATEGORY)
 
 
 def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, factory,
@@ -305,10 +292,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
         xav = bb.concerns(db, ids, months)
-        qrows = _quality_rows(db, d_from, d_to)
-        live = db.query(Manager).filter(Manager.archived.is_(False)).all()
-        qual = bb.quality(qrows, ids, months,
-                          supervisor_match(live, {b for b, _s, _d, _n in qrows if b}))
+        qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
         plan_tot = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
         idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))

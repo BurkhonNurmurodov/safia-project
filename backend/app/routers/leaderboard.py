@@ -16,17 +16,14 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import identity
 from app.database import get_db
-from app.models import Manager, QualityComplaint
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import action_log, brigadir_board as bb, gc_pause
+from app.services import action_log, brigadir_board as bb, gc_pause, quality_attribution
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services.name_map import register_rows, supervisor_match
 from app.services.ojidaniya_matrix import TZ, today_local
 from app.services.shared_build import SharedBuild
 from app.xlsx_delivery import deliver_xlsx
@@ -103,38 +100,16 @@ def checklist_pool(db: Session, units: dict[int, str], d_from: date, d_to: date)
 
 
 def _quality_rows(db: Session, d_from: date, d_to: date) -> list[tuple]:
-    """(brigadir spelling, status, date, count) over the history window, the
-    HAIR category left out — the shift dashboard's own query, bucketed by day
+    """(unit id, status, date, count) over the history window, the HAIR
+    category left out, each record credited by `quality_attribution` — the
+    Quality page's and the shift dashboard's own rule — and bucketed by day
     here because this board's periods are not its one month.
-
-    The category test keeps a row whose category is NULL: in SQL `category !=
-    'hair'` is NULL there, i.e. false, so an uncategorised record would be
-    dropped as though it were hair — and «uncategorised» is not «hair».
 
     The upper bound is EXCLUSIVE on the day after `d_to`: `date` is an ISO
     string, so a row that ever carries a time («2026-10-23T10:00») survives a
     `< "2026-10-24"` that a `<= "2026-10-23"` would silently drop."""
-    return register_rows(
-        db.query(QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
-                 QualityComplaint.date, func.count(QualityComplaint.id))
-        .filter(QualityComplaint.brigadir.isnot(None),
-                QualityComplaint.date >= _iso(d_from),
-                QualityComplaint.date < _iso(d_to + timedelta(days=1)),
-                or_(QualityComplaint.category.is_(None),
-                    QualityComplaint.category != bb.SKIP_CATEGORY))
-        .group_by(QualityComplaint.brigadir, QualityComplaint.place,
-                  QualityComplaint.status, QualityComplaint.date)
-        .all()
-    )
-
-
-def _quality_match(db: Session, rows: list[tuple]) -> dict:
-    """«Отв. бригадир» → unit, resolved against EVERY live unit, exactly as the
-    Quality page and the shift dashboard resolve it. Every live unit and not
-    the board's own: a subset lets the fuzzy matcher hand a row to the wrong
-    unit, and `bb.quality` drops whatever lands off this board anyway."""
-    live = db.query(Manager).filter(Manager.archived.is_(False)).all()
-    return supervisor_match(live, {b for b, _st, _d, _n in rows if b})
+    return quality_attribution.unit_rows(db, _iso(d_from), _iso(d_to + timedelta(days=1)),
+                                         bb.SKIP_CATEGORY)
 
 
 def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) -> dict:
@@ -157,7 +132,7 @@ def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) 
         att = bb.attendance(head, ids, pers)
         xav = bb.concerns(db, ids, pers)
         qrows = _quality_rows(db, d_from, d_to)
-        qual = bb.quality(qrows, ids, pers, _quality_match(db, qrows))
+        qual = bb.quality(qrows, ids, pers)
         pool = checklist_pool(db, {m.id: m.name for m in managers}, d_from, d_to)
 
     keys = {m.id: identity.profile_key("supervisor", m.id) for m in managers}

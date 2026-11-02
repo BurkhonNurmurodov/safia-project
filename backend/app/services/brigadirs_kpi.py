@@ -17,8 +17,9 @@ amount. What this module answers:
   when the figure, rounded to the decimal printed, is BELOW `turnover.max`
   (60), strict, as HR's file compares.
 * **OKK tuzatuvchi choralar (ОКК корректирующие меры)** — LIVE. The month's
-  quality-register records the brigadir answers for («Отв. бригадир», matched
-  by `name_map.supervisor_match`, the Quality page's own rule), the statuses
+  quality-register records the brigadir answers for (`quality_attribution`,
+  the Quality page's own rule: the record's cell on its date, else «Отв.
+  бригадир»), the statuses
   that describe work (`shift_report.ACTIONABLE`): resolved ÷ all. The hair
   category is left out by default (`okk.skip_hair`, the platform's reading
   since 2026-09-18). Passes when the resolved share, rounded to the decimal
@@ -55,8 +56,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting, Factory, Manager, QualityComplaint
-from app.services import foreign_objects, shift_report, turnover, verifix_org
-from app.services.name_map import register_brigadir, supervisor_match
+from app.services import foreign_objects, quality_attribution, shift_report, turnover, verifix_org
+from app.services.name_map import register_brigadir
 from app.translit import transliterate
 from app.services.turnover import (PAST_FROM, last_day, local, month_start, next_month, now_aware,
                                    round1, ym)
@@ -254,6 +255,7 @@ def _okk_of(counts: dict, r: dict) -> dict:
 def _quality_rows(db: Session, m: date) -> list:
     return (db.query(QualityComplaint.id, QualityComplaint.date, QualityComplaint.ref_no,
                      QualityComplaint.brigadir, QualityComplaint.place, QualityComplaint.status,
+                     QualityComplaint.fault_code,
                      QualityComplaint.ctype, QualityComplaint.category, QualityComplaint.product,
                      QualityComplaint.description, QualityComplaint.action)
             .filter(QualityComplaint.date >= m.isoformat(),
@@ -343,11 +345,14 @@ def board(db: Session, m: date, scope: dict, lock: Optional[list], at: Optional[
                                      "hired": p.get("hired"), "left": p.get("left"),
                                      "days": p.get("days"), "reason": p.get("reason")})
 
-    # ── OKK: the month's quality register, matched ──────────────────────────
+    # ── OKK: the month's quality register, attributed ───────────────────────
+    # `quality_attribution` — the Quality page's own rule (2026-11-02): the
+    # record's cell on its date, else «Отв. бригадир» matched against the units
+    # AND the Verifix brigadirs tied to none (the name half only — a cell
+    # always answers with a unit).
     qrows = _quality_rows(db, m)
     pseudo = [SimpleNamespace(id=f"v:{b['id']}", name=b["name"], shift=None) for b in vfx.brigadirs.values()]
-    spellings = {register_brigadir(q.place, q.brigadir) for q in qrows} - {None, ""}
-    match = supervisor_match(list(units) + pseudo, spellings)
+    who = quality_attribution.Resolver(db, {q.brigadir for q in qrows}, extra=pseudo)
     okk_counts: dict[str, dict] = defaultdict(lambda: defaultdict(int))
     records_of: dict[str, list] = defaultdict(list)
     spelled_by: dict[str, dict] = defaultdict(lambda: defaultdict(int))
@@ -355,12 +360,12 @@ def board(db: Session, m: date, scope: dict, lock: Optional[list], at: Optional[
     no_brigadir = 0
     for q in qrows:
         name = register_brigadir(q.place, q.brigadir)
-        if not name:
-            no_brigadir += 1
-            continue
-        hit = match.get(name)
+        hit = who(q.place, q.brigadir, q.fault_code, q.date).unit
         if not hit:
-            nobody[name] += 1
+            if name:
+                nobody[name] += 1
+            else:
+                no_brigadir += 1
             continue
         hid = hit["id"]
         bkey = hid if isinstance(hid, str) else f"m:{hid}"
@@ -369,7 +374,8 @@ def board(db: Session, m: date, scope: dict, lock: Optional[list], at: Optional[
         if hair and r["okk"]["skip_hair"]:
             acc["hair"] += 1
             continue
-        spelled_by[bkey][name] += 1
+        if name:
+            spelled_by[bkey][name] += 1
         if q.status == "not_required":
             acc["not_required"] += 1
         elif q.status in shift_report.ACTIONABLE:

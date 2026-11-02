@@ -39,10 +39,10 @@ read through that page's own code:
   the twin of Quality.jsx's — «не требуется мера» is not a failure to fix and
   never enters it), the share resolved, with the HAIR category left out
   (`SKIP_CATEGORY`, the operator's call of 2026-09-18 — the Quality page itself
-  opens «Sochsiz»). Attributed as that page attributes it: «Отв. бригадир»
-  resolved against EVERY live unit (`name_map.supervisor_match`; a subset lets
-  the fuzzy matcher hand a row to the wrong unit), so a spelling that names no
-  unit — technologists, IT, the stores — is nobody's row here either. Bucketed
+  opens «Sochsiz»). Attributed as that page attributes it
+  (`quality_attribution`, from 2026-11-02): the unit the record's cell stood
+  in on its date, else «Отв. бригадир» resolved against EVERY live unit, so a
+  record neither names — technologists, IT, the stores — is nobody's here. Bucketed
   by the complaint's own date. Not gated on the day close, as the concerns
   beside it are not: a complaint is filed against a date, not against a shift
   somebody closed. Read as the register stands, so a recent period reads lower
@@ -341,14 +341,13 @@ def _iso_date(raw) -> Optional[date]:
         return None
 
 
-def quality(rows: Iterable[tuple], unit_ids: set[int], pers: list[dict],
-            match: dict) -> dict[int, dict]:
+def quality(rows: Iterable[tuple], unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
     """unit → {"v": [resolved %], "n": [actionable], "done": [resolved]}.
 
-    `rows` is (register brigadir spelling, status, date, count) — the router's
-    query, already cut to the history window and already WITHOUT the hair
-    category (this module never queries); `match` is `supervisor_match` over
-    every live unit. A period a unit filed nothing in — or nothing but records
+    `rows` is (unit id, status, date, count) — `quality_attribution.unit_rows`,
+    already cut to the history window and already WITHOUT the hair category
+    (this module never queries), each record credited by the Quality page's own
+    rule (its cell on its date, else «Отв. бригадир»). A period a unit filed nothing in — or nothing but records
     whose status describes no work — gets None, never 0%: «nothing filed» and
     «nothing resolved» are different facts, and the board prints the first as
     «—». `n` and `done` ride along because «0% of one» and «0% of forty» are
@@ -356,17 +355,16 @@ def quality(rows: Iterable[tuple], unit_ids: set[int], pers: list[dict],
     if not unit_ids or not pers:
         return {}
     acc: dict[int, list[list[int]]] = {}
-    for name, status, raw, n in rows:
+    for uid, status, raw, n in rows:
         if status not in QUALITY_ACTIONABLE:
             continue
-        unit = match.get(name)
-        if not unit or unit["id"] not in unit_ids:
+        if uid is None or uid not in unit_ids:
             continue
         d = _iso_date(raw)
         i = _bucket(pers, d) if d else None
         if i is None:
             continue
-        slot = acc.setdefault(unit["id"], [[0, 0] for _ in pers])[i]   # actionable, done
+        slot = acc.setdefault(uid, [[0, 0] for _ in pers])[i]   # actionable, done
         slot[0] += int(n)
         if status == QUALITY_RESOLVED:
             slot[1] += int(n)

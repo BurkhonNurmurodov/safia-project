@@ -20,9 +20,9 @@ from app.database import get_db
 from app.models import Cell, Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
 from app.services import action_log
-from app.services.cell_lookup import by_verifix, resolve_verifix
+from app.services.cell_lookup import by_verifix
 from app.services.factory_scope import factory_of_managers, viewer_factory_id
-from app.services.name_map import register_brigadir, supervisor_match
+from app.services.quality_attribution import Resolver, owner_names
 from app.services.quality_export import build_quality_workbook
 from app.services.sheets_sync import sync_quality_sheet
 from app.xlsx_delivery import deliver_xlsx
@@ -67,12 +67,13 @@ def get_quality(
         .all()
     )
 
-    # The register writes the responsible person in full passport form; resolve
-    # the ones who are supervisor units on the platform so the page speaks the
-    # same names as the rest of the dashboard. Everyone else (technologists, IT,
-    # logistics, individual leaders) stays under their sheet name.
+    # WHO answers for each record is `quality_attribution`'s rule (2026-11-02):
+    # the unit its «Номер виновного цеха» cell stood in on the record's date,
+    # else the unit «Отв. бригадир» names, and the cell's «Egasi» that day as
+    # its leader. A record that resolves to no unit keeps its sheet name in «b»
+    # (technologists, IT, logistics…) — they are genuinely not supervisors.
     managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
-    sup = supervisor_match(managers, {r.brigadir for r in rows if r.brigadir})
+    who = Resolver(db, {r.brigadir for r in rows})
 
     # Resolve each row's «виновная ячейка» code against the canonical cells
     # registry so the page can show the platform's workshop name / owner instead
@@ -80,7 +81,7 @@ def get_quality(
     # code (store/warehouse codes and unseeded cells simply don't match → raw).
     # Each matched cell's name set rides ONE top-level `cells` map keyed by id;
     # rows carry only `ci` so the ~12k-row array stays compact.
-    cells_tbl = by_verifix(db, with_leader=True)
+    cells_tbl = by_verifix(db)
 
     # ── factory attribution ───────────────────────────────────────────────────
     # The register has no factory column and never will — it is a sheet. So each
@@ -109,7 +110,11 @@ def get_quality(
     # unit's shift and factory, so the page can narrow the roster by plant /
     # shift / brigadir exactly the way it narrows the records. ~100 cells against
     # ~12k rows — the payload doesn't notice.
+    # The cell's LEADER here is its «Egasi» today (`owner_id`) — the leader slot
+    # the Quality register answers to; a record carries its own leader of the
+    # day in `ld`.
     mgr_by_id = {m.id: m for m in managers}
+    egasi = owner_names(db)
     registry: dict[int, dict] = {}
     for c in cells_tbl.values():
         if c["id"] in registry:      # zero-stripped aliases point at the same dict
@@ -117,6 +122,7 @@ def get_quality(
         owner = mgr_by_id.get(cell_owner.get(c["id"]))
         registry[c["id"]] = {
             **c,
+            "leader": egasi.get(c["id"], ""),
             "mid": owner.id if owner else None,
             "sup": owner.name if owner else "",
             "sh": owner.shift if owner else None,
@@ -125,22 +131,24 @@ def get_quality(
 
     out_rows = []
     for r in rows:
-        cell = resolve_verifix(cells_tbl, r.fault_code)
-        # A row `register_brigadir` blanks (a pinned spelling at a site that is
-        # not that unit's) keeps its sheet name in «b» and matches no unit.
-        sup_row = sup.get(register_brigadir(r.place, r.brigadir)) or {}
+        w = who(r.place, r.brigadir, r.fault_code, r.date)
+        sup_row = w.unit or {}
         fi = fac_of_manager.get(sup_row.get("id"))
-        if fi is None and cell:
-            fi = fac_of_manager.get(cell_owner.get(cell["id"]))
+        if fi is None and w.cell_id is not None:
+            fi = fac_of_manager.get(cell_owner.get(w.cell_id))
         out_rows.append({
             "id": r.id, "d": r.date, "s": r.source, "pl": r.place, "pr": r.product,
             "t": r.ctype, "c": r.category, "f": r.fault, "fc": r.fault_code,
-            "cn": r.cell_name, "ci": (cell["id"] if cell else None),
+            "cn": r.cell_name, "ci": w.cell_id,
             "b": r.brigadir, "m": r.manager, "r": r.returned,
             "st": r.status, "no": r.ref_no,
             "sup": sup_row.get("name", ""),
             "sh": sup_row.get("shift"),
             "fi": fi,
+            # The cell's «Egasi» on the record's date; "" when none.
+            "ld": who.leader_name(w.leader_id),
+            # How the brigadir was found: "c" by the cell, "n" by the name.
+            "hw": {"cell": "c", "name": "n"}.get(w.how),
         })
 
     return {
@@ -168,8 +176,9 @@ def get_quality(
         # to the sheet cell_name / raw code.
         "cells": registry,
         # Short keys: this array carries ~12k rows.
-        # sup / sh = the matched supervisor unit and its shift (absent when the
-        # responsible person isn't a supervisor).
+        # sup / sh = the answering unit and its shift (`quality_attribution`:
+        # the cell's unit on the record's date, else the name's; absent when
+        # neither names a unit). ld = the cell's «Egasi» that day.
         # ci = matched cells.id (null when the fault code isn't a known cell).
         "rows": out_rows,
     }

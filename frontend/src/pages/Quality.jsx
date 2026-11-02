@@ -68,11 +68,13 @@ const cellCodeOf = (r, cellMap) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
   return c?.verifix_code || r?.fc || r?.cn || "";
 };
-// A row's tooltip: code · leader, collapsing to the code when the registry
-// knows no leader (or does not know the code at all).
+// A row's tooltip: code · leader, collapsing to the code when the cell had no
+// leader on the record's date (or the code is not a registered cell at all).
+// The leader is the server's `ld` — the cell's «Egasi» ON THE RECORD'S DATE
+// (services/quality_attribution.py) — never today's owner of the cell.
 const cellTitleOf = (r, cellMap, tl) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
-  return cellLabel(cellCodeOf(r, cellMap), tl(c?.leader || ""));
+  return cellLabel(cellCodeOf(r, cellMap), tl((r?.ld ?? c?.leader) || ""));
 };
 // The breakdown kid's tooltip — same rule, off the leader stored on the row.
 const brkTitle = (k) => cellLabel(k.label, k.leader);
@@ -653,9 +655,12 @@ export default function Quality() {
   // else the raw code — never the display name, which changes with the viewer's
   // language and would strand a saved pick the moment they switch it.
   const cellKey = (r) => (r.ci != null ? `c${r.ci}` : (r.fc ? `x${String(r.fc).trim().toUpperCase()}` : ""));
-  // The leader who owns that cell; empty for a code that isn't a registered cell
-  // (store / warehouse codes) or a cell nobody holds yet.
-  const leaderOf = (r) => (r.ci != null ? (cellMap[r.ci]?.leader || "") : "");
+  // The record's leader: the faulting cell's «Egasi» ON THE RECORD'S DATE, as the
+  // server attributed it (`ld`, services/quality_attribution.py). Empty for a
+  // code that isn't a registered cell (store / warehouse codes) or a cell that
+  // had no owner that day. A payload from before `ld` existed falls back to the
+  // registry's current owner.
+  const leaderOf = (r) => (r.ld != null ? r.ld : (r.ci != null ? (cellMap[r.ci]?.leader || "") : ""));
 
   // Surname + initials — full passport names ("SULTONOV ABROR ALISHEROVICH")
   // overflow chart axes and legends, so responsible people collapse to this.
@@ -1028,13 +1033,13 @@ export default function Quality() {
       if (isLeadDim || brkDim === "cell") {
         // Shown as the code, hovered as code · leader.
         label = cellCodeOf(r, cellMap);
-        leader = tl(c?.leader || "");
+        leader = tl(leaderOf(r));
         // Registry hit → key by cell id, so two spellings of one cell merge.
         // Otherwise the code stands on its own.
         key = c ? `c${c.id}` : `raw:${label}`;
         if (!label) { key = F_NOCELL; label = T.brkNoCell; leader = ""; }
-      } else if (c?.leader) {
-        key = `l${c.leader}`; label = tl(c.leader);
+      } else if (leaderOf(r)) {
+        key = `l${leaderOf(r)}`; label = tl(leaderOf(r));
       } else {
         key = F_NOLEAD; label = T.brkNoLead;
       }
