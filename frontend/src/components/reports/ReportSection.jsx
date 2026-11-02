@@ -1,11 +1,9 @@
 // One section of «Hisobotlar» — its blocks, in the order the server folded
-// them. TWO block shapes and no third:
-//
-//   periods — a figure per row, its unit of measurement beside it, then the
-//             previous month and the picked one (TopSim's own reading: the
-//             picked month last and emphasised, so a number is always read
-//             against where it came from);
-//   units   — a brigadir per row, describing the PICKED month alone.
+// them. ONE block shape: a figure per row, its unit of measurement beside it,
+// then the previous month and the picked one (TopSim's own reading: the
+// picked month last and emphasised, so a number is always read against where
+// it came from). No table lists brigadirs (the operator, 2026-11-02: «we
+// don't need any data by supervisors») — a block of any other kind is skipped.
 //
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
@@ -16,10 +14,9 @@
 // shrink-to-fit, so the months line up from one card to the next; a value
 // wider than its column still widens it.
 import TableCard, { Th } from "../ui/DataTable";
-import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, uomOf, monthLabel, fill, useRT }
+import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, uomOf, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
-import { useTranslit } from "../../utils/transliterate";
 
 const TONE = {
   good: "var(--status-ok)",
@@ -50,7 +47,6 @@ function DeltaCell({ row, T }) {
 
 const NUM_W = "w-[100px]";  // a month or the change
 const UOM_W = "w-[88px]";   // the unit of measurement
-const UNIT_NUM_W = "w-[88px] whitespace-normal!";  // a brigadir table's figure
 
 /** A month's column label on two lines — the month, then its year — so the
  *  column stays as narrow as its figures. While the month is still running the
@@ -118,63 +114,15 @@ function PeriodsBlock({ block, months, T, t, caption }) {
   );
 }
 
-function UnitsBlock({ block, T, caption, tl }) {
-  const cols = block.columns || [];
-  return (
-    <TableCard title={caption} maxHeight="none" right={
-      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
-        {block.rows.length}
-      </span>
-    }>
-      <thead>
-        <tr>
-          {cols.map((c, i) => (
-            <Th key={c.key} label={colLabel(c, T)} align={i === 0 ? "left" : "right"}
-              cls={i === 0 ? "min-w-[160px]" : UNIT_NUM_W} />
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {block.rows.map((r) => (
-          <tr key={r.key}>
-            {r.cells.map((v, i) => (
-              <td key={i}
-                className={`px-3 py-2 ${i === 0 ? "" : "text-right tabular-nums"}`}
-                style={{
-                  color: v === null || v === undefined ? "var(--text-4)" : "var(--text-1)",
-                  maxWidth: i === 0 ? 240 : undefined,
-                  overflow: i === 0 ? "hidden" : undefined,
-                  textOverflow: i === 0 ? "ellipsis" : undefined,
-                }}
-                title={i === 0 && v ? tl(String(v)) : undefined}>
-                {i === 0 ? (v ? tl(String(v)) : DASH) : fmtCell(v, cols[i]?.fmt)}
-              </td>
-            ))}
-          </tr>
-        ))}
-        {!block.rows.length && (
-          <tr>
-            <td colSpan={cols.length} className="px-3 py-6 text-center"
-              style={{ color: "var(--text-3)" }}>{T.noRows}</td>
-          </tr>
-        )}
-      </tbody>
-    </TableCard>
-  );
-}
-
 export default function ReportSection({ section, months }) {
   const T = useRT();
   const { t } = useLang();
-  const { tl } = useTranslit();
   return (
     <div className="space-y-4">
-      {(section.blocks || []).map((b) => {
-        const caption = T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || "";
-        return b.kind === "periods"
-          ? <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t} caption={caption} />
-          : <UnitsBlock key={b.key} block={b} T={T} caption={caption} tl={tl} />;
-      })}
+      {(section.blocks || []).filter((b) => b.kind === "periods").map((b) => (
+        <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t}
+          caption={T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || ""} />
+      ))}
     </div>
   );
 }

@@ -150,7 +150,3 @@ export function uomOf(row, T) {
   const kind = UOM_BY_KEY[String(row.key).split(".").pop()] || UOM_BY_FMT[row.fmt];
   return (kind && T.uom?.[kind]) || "";
 }
-
-export function colLabel(c, T) {
-  return T.col?.[c.key] || c.key;
-}

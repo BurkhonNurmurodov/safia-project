@@ -45,16 +45,16 @@ and the document carries it too: «not reported» said out loud, never a zero.
 The PERIOD is a calendar MONTH — the platform's own KPI month (`leaders_kpi`,
 `turnover` and `category_compliance` all count by it) — and every table carries
 the picked month and the one before it (`HISTORY`), oldest → newest, so a
-figure is always read against where it came from. The picked month is the last
-column and the one the per-unit tables describe. A periods table also names
-each figure's unit of measurement (TopSim's «MEUR / %» column) — the words for
-it come from the page, like every other word in the document.
+figure is always read against where it came from. A table also names each
+figure's unit of measurement (TopSim's «MEUR / %» column) — the words for it
+come from the page, like every other word in the document.
 
-Shapes, so the page, the document and a later section all read ONE of them:
-
-* a **periods** block — `rows[]`, each `{key, fmt, values: [per month], ...}`;
-* a **units** block — `columns[]` (the first is the unit's name) and `rows[]`,
-  each `{key, cells: [...]}`, describing the PICKED month alone.
+ONE block shape — a **periods** block, `rows[]`, each `{key, fmt, values: [per
+month], ...}` — so the page, the document and a later section all read it the
+same way. **The report carries no per-brigadir table** (the operator,
+2026-11-02: «we don't need any data by supervisors»): every figure is the
+plant's — or the scope's — whole; a brigadir's own figures live on the pages
+that own them.
 
 `fmt` says how a cell is printed and nothing else: int · num1 · pct · min ·
 money · text. `None` is «no answer» everywhere and is printed «—», never 0 —
@@ -188,14 +188,6 @@ def periods_block(key: str, rows: list[dict]) -> dict:
     return {"kind": "periods", "key": key, "rows": [r for r in rows if r]}
 
 
-def units_block(key: str, columns: list[dict], rows: list[dict]) -> dict:
-    return {"kind": "units", "key": key, "columns": columns, "rows": rows}
-
-
-def col(key: str, fmt: str = "num1", **extra) -> dict:
-    return {"key": key, "fmt": fmt, **extra}
-
-
 def _series(by_unit: dict, ids: Iterable[int], field: str, n: int) -> list[list]:
     """Per period, the `field` list of every unit that has one — the input a
     pooled share is summed from."""
@@ -216,15 +208,6 @@ def _sums(by_unit: dict, ids: Iterable[int], field: str, n: int) -> list[float]:
     return [sum(x) for x in _series(by_unit, ids, field, n)]
 
 
-def _at(vals: Optional[list], i: int):
-    """The i-th value of a series, or None. Every series the builders are
-    handed is exactly as long as the month list — this keeps a short one from
-    raising rather than reading «—»."""
-    if not vals or i < 0 or i >= len(vals):
-        return None
-    return vals[i]
-
-
 def _mean(vals: list) -> Optional[float]:
     nums = [v for v in vals if v is not None]
     return _r(sum(nums) / len(nums)) if nums else None
@@ -234,7 +217,6 @@ def _mean(vals: list) -> Optional[float]:
 def _production(inp: dict, n: int) -> list[dict]:
     plan = inp["plan"]                       # ym → plan_fulfillment totals
     eff = inp["eff"]                         # unit → {"v": [...], "days": [...]}
-    ful = inp["ful"]
     ids = inp["unit_ids"]
     yms = inp["yms"]
 
@@ -253,23 +235,6 @@ def _production(inp: dict, n: int) -> list[dict]:
         prow("noPlan", "int", [_r((plan.get(y) or {}).get("no_plan")) for y in yms]),
     ])]
 
-    last = n - 1
-    rows = []
-    for u in inp["units"]:
-        pu = (inp["plan_units"].get(u["id"]) or {})
-        rows.append({"key": str(u["id"]), "cells": [
-            u["name"],
-            _r(pu.get("plan")), _r(pu.get("actual")), _r(pu.get("short")),
-            _pct(pu.get("actual"), pu.get("plan")),
-            _at((ful.get(u["id"]) or {}).get("v"), last),
-            _at((eff.get(u["id"]) or {}).get("v"), last),
-        ]})
-    rows.sort(key=lambda r: (r["cells"][4] is None, r["cells"][4] or 0))
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("planMin", "min"), col("actualMin", "min"),
-        col("shortMin", "min"), col("fulfil", "pct"), col("fulfilAvg", "pct"),
-        col("eff", "pct"),
-    ], rows))
     return blocks
 
 
@@ -300,22 +265,6 @@ def _personnel(inp: dict, n: int) -> list[dict]:
                  bold=True),
         ]))
 
-    last = n - 1
-    rows = []
-    for u in inp["units"]:
-        a = att.get(u["id"]) or {}
-        rows.append({"key": str(u["id"]), "cells": [
-            u["name"],
-            _r(_at(a.get("roster"), last)),
-            _r(_at(a.get("came"), last)),
-            _r(_at(a.get("leave"), last)),
-            _at(a.get("v"), last),
-        ]})
-    rows.sort(key=lambda r: (r["cells"][4] is None, r["cells"][4] or 0))
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("listed", "int"), col("came", "int"),
-        col("onLeave", "int"), col("attRate", "pct"),
-    ], rows))
     return blocks
 
 
@@ -357,24 +306,11 @@ def _idle(inp: dict, n: int) -> list[dict]:
             for c in order
         ]))
 
-    rows = []
-    for u in inp["units"]:
-        r = ((idle.get(yms[-1]) or {}).get("by_unit") or {}).get(u["id"]) or {}
-        rows.append({"key": str(u["id"]), "cells": [
-            u["name"], _r(r.get("total")), _r(r.get("days")),
-            _r(r.get("total") / r["days"], 1) if r.get("total") is not None and r.get("days") else None,
-            _r(r.get("flagged")),
-        ]})
-    rows.sort(key=lambda r: (r["cells"][1] is None, -(r["cells"][1] or 0)))
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("idleMin", "min"), col("unitDays", "int"),
-        col("idlePerDay", "num1"), col("flaggedDays", "int"),
-    ], rows))
     return blocks
 
 
 def _cost(inp: dict, n: int) -> list[dict]:
-    cost = inp["cost"]                       # ym → {"totals", "cat_rows", "rows"}
+    cost = inp["cost"]                       # ym → {"totals", "cat_rows"}
     if cost is None:
         # Not this viewer's section (`routers/reports._sees_cost` —
         # `/downtime/cost`'s own COST_ROLES): no block at all, so `compose`
@@ -407,17 +343,6 @@ def _cost(inp: dict, n: int) -> list[dict]:
             prow(c, "money", [cat_cost[c].get(y) for y in yms], label=c) for c in order
         ]))
 
-    rows = []
-    for r in sorted(((cost.get(yms[-1]) or {}).get("rows") or []),
-                    key=lambda x: -(x.get("cost") or 0)):
-        rows.append({"key": str(r.get("manager_id") or r.get("manager")), "cells": [
-            r.get("manager"), _r(r.get("minutes")), _r(r.get("priced_minutes")),
-            r.get("cost"), _r(r.get("hc"), 1),
-        ]})
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("idleMin", "min"), col("pricedMin", "min"),
-        col("costSum", "money"), col("hc", "num1"),
-    ], rows))
     return blocks
 
 
@@ -433,21 +358,6 @@ def _quality(inp: dict, n: int) -> list[dict]:
         prow("openLeft", "int", [_r(a - d) for a, d in zip(act, done)]),
     ])]
 
-    last = n - 1
-    rows = []
-    for u in inp["units"]:
-        r = q.get(u["id"]) or {}
-        rows.append({"key": str(u["id"]), "cells": [
-            u["name"],
-            _r(_at(r.get("n"), last)),
-            _r(_at(r.get("done"), last)),
-            _at(r.get("v"), last),
-        ]})
-    rows.sort(key=lambda r: (r["cells"][3] is None, r["cells"][3] or 0))
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("actionable", "int"), col("resolved", "int"),
-        col("closure", "pct"),
-    ], rows))
     return blocks
 
 
@@ -466,22 +376,6 @@ def _concerns(inp: dict, n: int) -> list[dict]:
         prow("openLeft", "int", [_r(a - d) for a, d in zip(cnt, done)]),
     ])]
 
-    last = n - 1
-    rows = []
-    for u in inp["units"]:
-        r = c.get(u["id"]) or {}
-        rows.append({"key": str(u["id"]), "cells": [
-            u["name"],
-            _r(_at(r.get("n"), last)),
-            _r(_at(r.get("done"), last)),
-            _at(r.get("v"), last),
-            _r(_at(r.get("up"), last)),
-        ]})
-    rows.sort(key=lambda r: (r["cells"][3] is None, r["cells"][3] or 0))
-    blocks.append(units_block("byUnit", [
-        col("unit", "text"), col("counted", "int"), col("resolved", "int"),
-        col("closure", "pct"), col("uplifted", "int"),
-    ], rows))
     return blocks
 
 
@@ -573,9 +467,8 @@ def compose(inp: dict) -> dict:
     """The whole payload from inputs each page's own code produced.
 
     `inp` carries, all already scoped and already period-bucketed by the
-    router: `months` (the `months_for` list), `units`, `unit_ids`, `plan`,
-    `plan_units`, `eff`, `ful`, `att`, `turnover`, `idle`, `idle_share`, `cost`,
-    `qual`, `xav`, `scope`. `idle` arrives through the viewer's category lock and
+    router: `months` (the `months_for` list), `unit_ids`, `plan`, `eff`, `att`,
+    `turnover`, `idle`, `idle_share`, `cost`, `qual`, `xav`, `scope`. `idle` arrives through the viewer's category lock and
     `cost` is None for a viewer the «Xarajat» section is not for — both the
     router's decisions; nothing here knows a role.
     """
@@ -612,7 +505,7 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
 
     `words` is what the SCREEN printed, in the reader's language, sent back by
     the client (`grid_export`'s rule): `sections` {key: title}, `rows`
-    {key: label}, `cols` {key: label}, `months` [labels], `rowUnits`
+    {key: label}, `months` [labels], `rowUnits`
     {"<section>.<block>.<row>": unit} with its column's header `uomCol`, plus
     the fixed captions. Every figure is already formatted by the page, so the
     file and the screen cannot state two different numbers. A tab from before
@@ -620,7 +513,6 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
     """
     sec_t = words.get("sections") or {}
     row_t = words.get("rows") or {}
-    col_t = words.get("cols") or {}
     cap = words.get("caps") or {}
     mcols = words.get("months") or [m["ym"] for m in payload.get("months") or []]
     uom = words.get("rowUnits") if isinstance(words.get("rowUnits"), dict) else None
@@ -636,25 +528,18 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
                 out.append({"type": "heading", "level": 2, "text": title})
             # A workbook names its sheet after the last heading, so every
             # block title in this report is DISTINCT across sections (the
-            # bundle's `caps` — «Kutish — brigadalar», not a fifth «Brigadalar
-            # bo'yicha»): «… (2)», «… (3)» would name nothing.
-            if b["kind"] == "periods":
-                key = f"{sec['key']}.{b['key']}"
-                out.append({
-                    "type": "table",
-                    "columns": [cap.get("figure", ""), *uom_col, *mcols],
-                    "rows": [[row_t.get(r["key"], r.get("label") or r["key"]),
-                              *([uom.get(f"{key}.{r['key']}") or ""] if uom is not None else []),
-                              *[_cell(v) for v in r.get("display", r["values"])]]
-                             for r in b["rows"]],
-                })
-            else:
-                out.append({
-                    "type": "table",
-                    "columns": [col_t.get(c["key"], c["key"]) for c in b["columns"]],
-                    "rows": [[_cell(v) for v in r.get("display", r["cells"])]
-                             for r in b["rows"]],
-                })
+            # bundle's `caps` — «Kutish — toifalar», not a second «Toifalar»): «… (2)», «… (3)» would name nothing.
+            if b["kind"] != "periods":
+                continue
+            key = f"{sec['key']}.{b['key']}"
+            out.append({
+                "type": "table",
+                "columns": [cap.get("figure", ""), *uom_col, *mcols],
+                "rows": [[row_t.get(r["key"], r.get("label") or r["key"]),
+                          *([uom.get(f"{key}.{r['key']}") or ""] if uom is not None else []),
+                          *[_cell(v) for v in r.get("display", r["values"])]]
+                         for r in b["rows"]],
+            })
     notes = words.get("missingNote")
     if notes:
         out.append({"type": "heading", "level": 1, "text": cap.get("notReported", "")})

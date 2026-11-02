@@ -9485,9 +9485,8 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `services/brigadir_board.py` rule, and why `services/reports.py` imports no
   router and makes no query (the `ojidaniya_deck` split). Section by section:
   **Ishlab chiqarish** — `plan_fulfillment.build`'s own minute totals (the
-  /plan page's figure), «Samaradorlik» and per-unit «Plan bajarish» the
-  /zagruzka heatmaps' AVG through `brigadir_board.efficiency` /
-  `fulfillment`; **Xodimlar** — /workers' own `att_rate` through
+  /plan page's figure), «Samaradorlik» the /zagruzka heatmap's AVG through
+  `brigadir_board.efficiency`; **Xodimlar** — /workers' own `att_rate` through
   `brigadir_board.attendance`, and `turnover.month_payload`; **Kutish** —
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
@@ -9526,8 +9525,7 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   don't need 3 months of comparison, just 2»; it was 3 until then), oldest →
   newest, the picked one last and emphasised. A month that ended before the
   platform's first closed day (`brigadir_board.data_floor`) is dropped: it
-  could only read «—» in every row. The per-unit tables describe the PICKED
-  month alone.
+  could only read «—» in every row.
 - **A periods table names each figure's UNIT** (same day, TopSim's
   «MEUR / %» column): Figure · O'lchov · the two months · O'zgarish.
   `reportsUtil.uomOf` picks the kind off the row's key (its last segment, so
@@ -9535,7 +9533,7 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   (% · daq · so'm · ta · kun · odam-kun · kishi · odam-daq). The attendance
   counts are PERSON-DAYS (the roster summed per day), never «kishi». Since the
   column says «%», a periods cell prints the bare number (`fmtCell(v, fmt,
-  true)`); per-unit tables keep their «%». The document carries the same
+  true)`). The document carries the same
   column (`words.rowUnits`, keyed «section.block.row» — one idle category is
   minutes under «Kutish» and so'm under «Xarajat»; a tab sending none gets a
   file without it). Figure names are medium weight in `--text-1`, headline
@@ -9543,8 +9541,7 @@ rule — every section reads the whole plant). `services/reports.py` folds,
 - **Number columns are narrow and fixed — TopSim's layout** (the operator,
   2026-11-02: «we don't need big spaces for number columns»). In
   `ReportSection.jsx` a month and the change are 100px (`NUM_W`), the unit
-  88px (`UOM_W`), a brigadir table's figures 88px with headers allowed to
-  wrap (`UNIT_NUM_W`); the figure / brigadir name takes the rest of the card.
+  88px (`UOM_W`); the figure's name takes the rest of the card.
   A month header is two lines — the month, then its year (and «1–26» while it
   runs). Fixed rather than shrink-to-fit, so the months line up from card to
   card; a wider value still widens its column.
@@ -9562,11 +9559,16 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   **Never fill one of those rows from anything but a real source.** `None` is
   «no answer» everywhere and prints «—», never 0 — which is what keeps
   «nothing filed» apart from «nothing resolved».
-- **TWO block shapes and no third**: a `periods` block (a figure per row, the
-  months across) and a `units` block (a brigadir per row, the picked month).
-  Per-unit tables list EVERY unit in scope — the «Toifalar bo'yicha» rule, so
-  «no data» is never mistaken for «not in scope» — with the carriers sorted to
-  the top and the blanks last.
+- **ONE block shape — a `periods` block** (a figure per row, the months
+  across). **No table lists brigadirs** (the operator, 2026-11-02: «we don't
+  need any data by supervisors»): the per-unit tables every section carried
+  until then («Ishlab chiqarish / Davomat / Kutish / Xarajat / Sifat /
+  Xavotirlar — brigadalar») are gone from the screen, the payload and the
+  document, and so are the inputs only they read (`brigadir_board.fulfillment`,
+  `plan_fulfillment`'s per-unit rows, the idle and cost per-unit splits). Every
+  figure is the scope's whole; a brigadir's own figures live on the pages that
+  own them. The brigadir FILTER stays — it narrows the whole, it lists nobody.
+  The page renders only `periods` blocks and skips any other kind.
 - **The document is `assistant_documents.build`** — the house builder, never a
   second layout engine — as **pdf · docx · xlsx** (`POST
   /api/reports/export.{fmt}`; a format it does not know is refused, never
@@ -9582,9 +9584,9 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   copy of the sections it wants, because it writes the page's formatting onto
   the rows). A build is every figure of three months over every unit.
 - **Every block title is DISTINCT across the whole report** (`caps` in
-  `reportsText.js`: «Kutish — brigadalar», not a fifth «Brigadalar bo'yicha»).
-  A workbook names each sheet after the last heading, so five identical titles
-  become «… (2)»…«(6)» and name nothing.
+  `reportsText.js`: «Kutish — toifalar», not a second «Toifalar»). A
+  workbook names each sheet after the last heading, so identical titles become
+  «… (2)», «… (3)» and name nothing.
 - **The scope is resolved ONCE**, in `_build`: the viewer's plant lock
   (`scoped_manager_ids`), the shift, the brigadir pick, then `board_units`'
   own rule. Every half is handed that set — the turnover half included, which

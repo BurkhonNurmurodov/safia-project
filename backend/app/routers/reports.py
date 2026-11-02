@@ -108,7 +108,7 @@ def _quality_rows(db: Session, d_from: date, d_to: date):
 
 def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, factory,
                    unit_ids: set[int]) -> dict:
-    """Per month: the plant's waiting, its causes and each unit's own — through
+    """Per month: the plant's waiting and its causes — through
     `routers/downtime._downtime`, which IS the /downtime page's computation
     (the headcount-weighted mean of a unit's cells, the platform's one
     ojidaniya reading). `kpi_only=True` is what every consumer other than the
@@ -137,31 +137,21 @@ def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, 
             _downtime(db, payload, m["from"], m["to"], shift, mids, True, factory),
             cats, lock=lock)
         by_cat: dict[str, float] = {}
-        by_unit: dict[int, dict] = {}
         total = 0.0
         flagged = 0
+        unit_days = 0
         for r in dt.get("rows") or []:
             if unit_ids and r["manager_id"] not in unit_ids:
                 continue
             total += float(r["total"] or 0)
+            unit_days += 1
             if r.get("flagged"):
                 flagged += 1
-            u = by_unit.setdefault(r["manager_id"],
-                                   {"total": 0.0, "days": 0, "flagged": 0})
-            u["total"] += float(r["total"] or 0)
-            u["days"] += 1
-            if r.get("flagged"):
-                u["flagged"] += 1
             for c, v in (r.get("by_category") or {}).items():
                 by_cat[c] = by_cat.get(c, 0.0) + float(v or 0)
-        if locked:
-            flagged = None
-            for u in by_unit.values():
-                u["flagged"] = None
         out[m["ym"]] = {
-            "total": total, "flagged": flagged,
-            "unit_days": sum(u["days"] for u in by_unit.values()),
-            "by_cat": by_cat, "by_unit": by_unit,
+            "total": total, "flagged": None if locked else flagged,
+            "unit_days": unit_days, "by_cat": by_cat,
         }
     return out
 
@@ -226,33 +216,28 @@ def _cost_by_month(db: Session, payload: dict, months: list[dict], ids: list[int
     out: dict[str, dict] = {}
     for m in months:
         if not ids or idle_scope.empty_scope(cats):
-            out[m["ym"]] = {"totals": {}, "cat_rows": [], "rows": []}
+            out[m["ym"]] = {"totals": {}, "cat_rows": []}
             continue
         built = ojidaniya_cost.build(db, ids, m["from"], m["to"], list(cats or []),
                                      rates, cat_lock=lock)
         out[m["ym"]] = {"totals": built.get("totals") or {},
-                        "cat_rows": built.get("cat_rows") or [],
-                        "rows": built.get("rows") or []}
+                        "cat_rows": built.get("cat_rows") or []}
     return out
 
 
-def _plan_by_month(db: Session, units: list, months: list[dict]) -> tuple[dict, dict]:
+def _plan_by_month(db: Session, units: list, months: list[dict]) -> dict:
     """Per month: `plan_fulfillment.build`'s own minute totals (the /plan
-    page's figure), plus the PICKED month's per-unit rows."""
+    page's figure)."""
     totals: dict[str, dict] = {}
-    per_unit: dict[int, dict] = {}
     if not units:
-        return {m["ym"]: {} for m in months}, {}
+        return {m["ym"]: {} for m in months}
     cells, leaders = plan_fulfillment.registry(
         db, [m.id for m in units], months[0]["from"], months[-1]["to"])
-    for i, m in enumerate(months):
+    for m in months:
         built = plan_fulfillment.build(db, units, m["from"], m["to"],
                                        cells=cells, leader_names=leaders, compare=False)
         totals[m["ym"]] = built.get("totals") or {}
-        if i == len(months) - 1:
-            for u in built.get("units") or []:
-                per_unit[u["manager_id"]] = u
-    return totals, per_unit
+    return totals
 
 
 def _turnover_by_month(db: Session, months: list[dict], scope: dict) -> dict:
@@ -300,12 +285,10 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     n = len(months)
 
     eff: dict = {}
-    ful: dict = {}
     att: dict = {}
     xav: dict = {}
     qual: dict = {}
     plan_tot: dict = {m0["ym"]: {} for m0 in months}
-    plan_units: dict = {}
     idle = {m0["ym"]: {} for m0 in months}
     idle_pct = {m0["ym"]: None for m0 in months}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
@@ -318,7 +301,6 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
 
         metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
         eff = bb.efficiency(metrics, ids, months)
-        ful = bb.fulfillment(metrics, ids, months)
         head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
@@ -327,7 +309,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         live = db.query(Manager).filter(Manager.archived.is_(False)).all()
         qual = bb.quality(qrows, ids, months,
                           supervisor_match(live, {b for b, _s, _d, _n in qrows if b}))
-        plan_tot, plan_units = _plan_by_month(db, units, months)
+        plan_tot = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
         idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))
         if cost is not None:
@@ -340,10 +322,9 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
 
     out = reports.compose({
         "months": months,
-        "units": [{"id": u.id, "name": u.name, "shift": u.shift} for u in units],
         "unit_ids": ids,
-        "plan": plan_tot, "plan_units": plan_units,
-        "eff": eff, "ful": ful, "att": att,
+        "plan": plan_tot,
+        "eff": eff, "att": att,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside

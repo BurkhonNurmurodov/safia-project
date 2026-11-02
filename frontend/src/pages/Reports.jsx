@@ -21,7 +21,7 @@ import ReportSection from "../components/reports/ReportSection";
 import CatLockNotice from "../components/idle/CatLockNotice";
 import { CATS } from "../components/idle/categories";
 import {
-  useRT, fill, monthLabel, fmtCell, rowLabel, colLabel, uomOf, PAST_FROM, todayISO,
+  useRT, fill, monthLabel, fmtCell, rowLabel, uomOf, PAST_FROM, todayISO,
 } from "../components/reports/reportsUtil";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
@@ -158,33 +158,21 @@ export default function Reports() {
   const exportBody = () => {
     const want = scopeAll ? secs : (current ? [current] : []);
     const display = {};
-    for (const s of want) {
-      for (const b of s.blocks || []) {
-        for (const r of b.rows || []) {
-          const vals = b.kind === "periods" ? r.values : r.cells;
-          const cols = b.kind === "periods" ? null : (b.columns || []);
-          display[`${s.key}.${b.key}.${r.key}`] = vals.map((v, i) => {
-            if (b.kind === "units" && i === 0) return v ? tl(String(v)) : "—";
-            // A periods table carries its unit in a column of its own, so its
-            // cells print bare numbers — exactly as the screen does.
-            return b.kind === "periods" ? fmtCell(v, r.fmt, true) : fmtCell(v, cols[i]?.fmt);
-          });
-        }
-      }
-    }
     const rows = {};
-    const cols = {};
     const rowUnits = {};
     for (const s of want) {
       for (const b of s.blocks || []) {
+        if (b.kind !== "periods") continue;
         for (const r of b.rows || []) {
-          if (b.kind !== "periods") continue;
+          const key = `${s.key}.${b.key}.${r.key}`;
+          // The unit has a column of its own, so the cells print bare
+          // numbers — exactly as the screen does.
+          display[key] = r.values.map((v) => fmtCell(v, r.fmt, true));
           rows[r.key] = rowLabel(r, T, t);
           // Keyed like `display`: one category is minutes under «Kutish» and
           // so'm under «Xarajat», so the row key alone cannot name its unit.
-          rowUnits[`${s.key}.${b.key}.${r.key}`] = uomOf(r, T);
+          rowUnits[key] = uomOf(r, T);
         }
-        for (const c of b.columns || []) cols[c.key] = colLabel(c, T);
       }
     }
     return {
@@ -202,7 +190,7 @@ export default function Reports() {
       sections: want.map((s) => s.key),
       words: {
         sections: Object.fromEntries(want.map((s) => [s.key, T.sec[s.key] || s.key])),
-        rows, cols, rowUnits,
+        rows, rowUnits,
         uomCol: T.colUnit,
         caps: T.caps,
         months: (data?.months || []).map((m) => monthLabel(m.ym, t)),
