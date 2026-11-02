@@ -907,6 +907,11 @@ async def lifespan(app: FastAPI):
     # brigadir after a deploy is not the one who waits for it.
     from app.routers import leaders as _leaders_router
     _leaders_router.warm_standing()
+    # …and the trudoyomkost of every unit-day of the last two months
+    # (services/labor_kept.py), which /zagruzka, /downtime, /workers, /plan and
+    # «Hisobotlar» all read — so a deploy's empty store is not paid by viewers.
+    from app.services import labor_kept as _labor_kept
+    _labor_kept.warm()
 
     # One port, no root (app/supervisor.py): this worker is READY — the
     # supervisor stops answering for it and retires the worker it replaces.

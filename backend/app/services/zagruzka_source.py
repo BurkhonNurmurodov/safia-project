@@ -59,7 +59,7 @@ from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
 from app.services.pp_calc import line_facts as pp_line_facts
 from app.services import pp_catalog
-from app.services import cell_archive, cell_links, wc_group
+from app.services import cell_archive, cell_links, labor_kept, wc_group
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
 # the «Zagruzka fayli» page and the «Одам сони» / «Минут» sheet tabs are not a
@@ -417,7 +417,33 @@ def wc_labor(db: Session, manager_ids: Iterable[int],
     `line_keys` is computed PER UNIT, exactly as the Positions table computes
     it: a catalog belongs to one brigadir, and pooling two would let one unit's
     line adopt another's positional suffix.
+
+    Each (unit, day) is KEPT between requests and served while nothing it was
+    computed from has changed (services/labor_kept.py) — exact, never stale.
     """
+    got = labor_kept.get(
+        db, "wc", manager_ids, date_from, date_to,
+        lambda ids, lo, hi: _by_day(_wc_labor_raw(db, ids, lo, hi)),
+        labor_kept.pack_wc, labor_kept.unpack_wc)
+    if got is None:
+        return _wc_labor_raw(db, manager_ids, date_from, date_to)
+    return {(mid, iso, *row[:-2]): (row[-2], row[-1])
+            for (mid, iso) in sorted(got) for row in got[(mid, iso)]}
+
+
+def _by_day(acc: dict) -> dict:
+    """``{(mid, iso, *rest): (plan, actual)}`` → ``{(mid, iso): [(*rest, plan,
+    actual), …]}``, each day's rows in the order they were computed — the order
+    `unit_labor` sums them in."""
+    out: dict = defaultdict(list)
+    for key, (p, a) in acc.items():
+        out[(key[0], key[1])].append((*key[2:], p, a))
+    return out
+
+
+def _wc_labor_raw(db: Session, manager_ids: Iterable[int],
+                  date_from: date, date_to: date) -> dict[tuple[int, str, str], tuple[float, float]]:
+    """`wc_labor` computed from the rows — no store."""
     prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
     if not prods:
         return {}
@@ -448,7 +474,20 @@ def wc_group_labor(db: Session, manager_ids: Iterable[int], date_from: date,
     ungrouped part. Same
     inputs, same resolution (`pp_calc.line_minutes_by_group` is `line_minutes`'
     own loop), so Σ over the groups of a work centre is its `wc_labor` figure.
-    Hand it to `cell_labor` for what each CELL carries."""
+    Hand it to `cell_labor` for what each CELL carries. Kept like `wc_labor`."""
+    got = labor_kept.get(
+        db, "grp", manager_ids, date_from, date_to,
+        lambda ids, lo, hi: _by_day(_wc_group_labor_raw(db, ids, lo, hi)),
+        labor_kept.pack_grp, labor_kept.unpack_grp)
+    if got is None:
+        return _wc_group_labor_raw(db, manager_ids, date_from, date_to)
+    return {(mid, iso, *row[:-2]): (row[-2], row[-1])
+            for (mid, iso) in sorted(got) for row in got[(mid, iso)]}
+
+
+def _wc_group_labor_raw(db: Session, manager_ids: Iterable[int], date_from: date,
+                        date_to: date) -> dict[tuple[int, str, str, Optional[str]], tuple[float, float]]:
+    """`wc_group_labor` computed from the rows — no store."""
     prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
     acc: dict[tuple[int, str, str, Optional[str]], list] = {}
     for mid, products, sh, pl in _per_span(prods, shared, per_line):
@@ -525,7 +564,47 @@ def line_facts(db: Session, manager_ids: Iterable[int], date_from: date,
     `pp_calc.line_facts` is `line_minutes`' own loop with a callback, so the
     lines of a (unit, day) add up to exactly the trudoyomkost the загрузка and
     the Positions table count. The plan-fulfilment page ranks products off it
-    (services/plan_fulfillment.py)."""
+    (services/plan_fulfillment.py).
+
+    Kept like `wc_labor`: a kept day hands `emit` a plain SNAPSHOT of each
+    catalog line (`pp_catalog.LINE_FIELDS` — what a dated catalog version holds
+    anyway), never a live ORM row, since one answer serves many requests. The
+    days are handed over oldest first; within a day, in the order computed."""
+    def compute(ids, lo, hi):
+        acc: dict = defaultdict(list)
+        snaps: dict = {}
+
+        def collect(mid, line, wc, key, lk, d, qp, qa, pv, av):
+            iso = d.isoformat() if hasattr(d, "isoformat") else str(d)
+            acc[(mid, iso)].append((_line_snapshot(line, snaps), wc, key, lk, d, qp, qa, pv, av))
+
+        _line_facts_raw(db, ids, lo, hi, collect)
+        return acc
+
+    got = labor_kept.get(db, "facts", manager_ids, date_from, date_to, compute,
+                         labor_kept.pack_facts, labor_kept.unpack_facts)
+    if got is None:
+        _line_facts_raw(db, manager_ids, date_from, date_to, emit)
+        return
+    for key in sorted(got):
+        labor_kept.replay_facts(key[0], got[key], emit)
+
+
+def _line_snapshot(line, snaps: dict):
+    """A catalog line as a plain object — a dated version's line already is one;
+    a current `PPProduct` is copied once per computation."""
+    if line is None or not isinstance(line, PPProduct):
+        return line
+    got = snaps.get(id(line))
+    if got is None:
+        got = snaps[id(line)] = pp_catalog._load(
+            pp_catalog._dump(line, pp_catalog.LINE_FIELDS), pp_catalog._LINE_DEFAULTS)
+    return got
+
+
+def _line_facts_raw(db: Session, manager_ids: Iterable[int], date_from: date,
+                    date_to: date, emit) -> None:
+    """`line_facts` computed from the rows — no store."""
     prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
     for mid, products, sh, pl in _per_span(prods, shared, per_line):
         lines_by_key, sap_off = _lines_of(products)

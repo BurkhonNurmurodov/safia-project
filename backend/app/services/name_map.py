@@ -194,6 +194,7 @@ _OVERRIDES = {
 # report's «Sifat nazorati %», the brigadir ranking and «Hisobotlar» alike.
 # Keyed on (place, brigadir), both folded, so an alphabet or spacing drift on
 # either column still matches («Келес В2В» typed on the Russian layout too).
+@lru_cache(maxsize=4096)
 def _place_key(place: str | None) -> str:
     from app.services.latin_code import latin_code
     toks = [latin_code(t) for t in str(place or "").split()]
@@ -207,13 +208,19 @@ _PLACE_EXCLUSIONS = {
         ("Келес B2B", "XAYRULLO O'G'LI ХABIBULLO"),
     )
 }
+# The brigadirs any exclusion names — a row naming anybody else is never
+# excluded, so its place is never folded (/api/quality folded every record's
+# place, ~7,700 of them, on every open: «Server was slow», 2 Nov 2026).
+_EXCLUDED_BRIGADIRS = {b for _p, b in _PLACE_EXCLUSIONS}
 
 
 def register_brigadir(place: str | None, brigadir: str | None) -> str | None:
     """The quality-register «Отв. бригадир» to resolve to a unit for ONE row —
     None when that row must count for no brigadir (see _PLACE_EXCLUSIONS)."""
-    if brigadir and (_place_key(place), _norm(brigadir)) in _PLACE_EXCLUSIONS:
-        return None
+    if brigadir:
+        nb = _norm(brigadir)
+        if nb in _EXCLUDED_BRIGADIRS and (_place_key(place), nb) in _PLACE_EXCLUSIONS:
+            return None
     return brigadir
 
 

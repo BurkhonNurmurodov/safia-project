@@ -1823,6 +1823,47 @@ for byte**; only where three numbers come from changes.
   Permissions — widening the units it covers is not the same decision as
   widening who may open it.
 
+## The trudoyomkost is KEPT between requests (`labor_kept`, 2026-11-02)
+
+`zagruzka_source.wc_labor`, `wc_group_labor` and `line_facts` — the загрузка's
+numerator, the per-cell split and the per-line facts /plan reads — answer each
+(unit, day) from a process store, `services/labor_kept.py`, instead of
+re-reading the dated catalog and every quantity row of the range on every
+request. It is what /zagruzka, /downtime (and its bubbles), /workers, «Smena
+kunligi», Plan Prognoz, /plan, «Liderlar KPI» and «Hisobotlar» all read.
+
+- **Exact, never for-a-while.** Every call first reads ONE stamp query: per
+  (unit, day) count / Σ / max of `xmin` over `pp_daily` and `pp_line_daily`,
+  per unit the same over `pp_products` and `pp_catalog_versions` — every input
+  of the computation. A kept day is served only while its stamp is unchanged; a
+  typed ФАКТ re-computes that one unit-day, a catalog edit that unit's days.
+  The stamp is read BEFORE the inputs, so a write landing mid-computation only
+  costs the next request a recompute. **A new input of the trudoyomkost is a
+  new arm of `_STAMP_SQL`**, or a kept day goes stale on exactly that table.
+- **Never from a session that wrote**: `txid_current_if_assigned()` set, or
+  unflushed ORM changes → the call computes from the rows as before and stores
+  nothing (catalog_follow, the uploads). Not Postgres, or the stamp query fails
+  (inside a savepoint) → the same. The stamp is read once per (units, range)
+  per session and dropped on any flush, commit or rollback.
+- **Byte for byte per day**: a day's numbers come out of `pp_calc`'s one loop
+  in the same order whatever the range, so `unit_labor`'s sums are the same
+  floats. Only the order ACROSS days changed — oldest first, where the old code
+  walked a set of dates in a per-process random order (Python hashes dates with
+  the hash seed). Proven on generated data: the OLD code disagreed with ITSELF
+  between two restarts on 15 of 2,293 /plan products (a 0.1 rounding, the
+  last-seen group letter); the new code answers the same every time.
+- **A kept line is a plain SNAPSHOT** of the catalog row
+  (`pp_catalog.LINE_FIELDS`, what a dated version holds anyway), never a live
+  ORM object — one answer serves many requests.
+- **Bounded**: values packed (interned strings, `array('d')`), LRU caps per
+  kind (`CAPS`); two months of the fleet ≈ 11 MB. **Warmed** 15 s after a
+  process starts (`labor_kept.warm`, the last 62 days, `wc` and `facts`), so a
+  deploy's empty store is not paid by the first viewers.
+- Measured on a production-sized stand-in (21 units, 2 months, 52k quantity
+  rows): `wc_labor` 1.4 s → 45 ms, `line_facts` 1.2 s → 25 ms; /shift-report
+  start-load 4.9 s → 0.3 s, Plan Prognoz 1.4 s → 0.16 s, /plan 2.1 s → 1.0 s.
+  `labor_kept.stats()` counts hits, misses and bypasses per process.
+
 ## «Bugungi fakt» ШТАТКА is Verifix's (`/production` → «Odamlar soni»)
 
 From **2026-10-05** (the operator: «should not be editable anymore … take from
@@ -15193,6 +15234,17 @@ blocking work on the event loop freezes every request on the server at once.
   day cell in one query (`one_process.day_cells`) and answers each cell /
   (leader, day) once per request. Not touched: `/api/leaders-kpi` (4.3 s, small
   reads queued behind the freeze) and `/health` (3.1 s, the same).
+- **The eighteenth (2 Nov, 15:11–15:20) named ONE function behind almost
+  every slow line**: `zagruzka_source:wc_labor › _labor_inputs` under
+  /api/heatmap, /api/downtime/bubbles, /api/workers/headcount and the 59 s
+  /api/reports. The trudoyomkost was recomputed from the rows on EVERY
+  request, for every unit and day of the range — and since 2026-10-26 every
+  reader of a typed pin ran it too (`typed_pins` keeps only planned work
+  centres), so a page paid it two to eight times. Fixed by keeping it — see
+  «The trudoyomkost is KEPT between requests». Same DM: /api/quality spent
+  half its time folding every record's PLACE (`name_map._place_key`, a
+  transliteration per record) to test one exclusion; it folds a place now
+  only for a brigadir an exclusion names, and memoises the fold.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
