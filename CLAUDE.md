@@ -6793,6 +6793,25 @@ component serves a shift-manager's `/daily`.
   and a KPI label's (i) can wrap alone; the shared header's bell/avatar/menu
   buttons are under 44px (global, not asked).
 
+## The Monitoring ranking wears profile photos (2026-11-02)
+
+The operator: «Show the profile photos of the leaders and brigadirs on this
+rating». The podium cards, the phone list and the desktop table of the
+/leaders standings draw each person's PROFILE PHOTO (`ProfileAvatar`), and the
+tinted initials they always drew where there is none — also while it loads
+(`ProfileAvatar`'s new `fallback` prop, so a row never changes size).
+
+- The board is keyed by the NAME a row prints, so `photoOf` in `Leaders.jsx`
+  resolves it: a leader through the `leader_id` their rows and roster entry
+  carry, a brigadir through the unit's id (`supervisor:<manager_id>`, off the
+  roster and the bot rows). A name that resolves to two profiles (namesakes)
+  keeps its initials rather than wearing somebody else's face.
+- Versions come from ONE small read, `GET /api/profiles/photo-versions?roles=
+  leader,supervisor` (profile key → version, only profiles that HAVE a photo),
+  open to any approved session like the bytes behind it. Nothing was added to
+  the kept register (`leader_register`), whose fingerprint does not watch
+  photos — a photo set today shows within the read's 5-minute staleTime.
+
 ## Empty days count NOWHERE on `/leaders` (`countCap`)
 
 From **2026-10-02** (the operator: «empty days shouldn't affect any

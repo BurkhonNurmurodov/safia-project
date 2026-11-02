@@ -65,6 +65,11 @@ export default function ProfileAvatar({
   // thing on it (the «Xodim kartasi» hero). The photo, when there is one, is
   // unchanged.
   muted = false,
+  // What to draw while there is no photo (none, or not loaded yet) instead of
+  // the default initials circle — for a page with an initials style of its
+  // own (the /leaders ranking), so a person with no photo looks exactly as
+  // they did before photos reached that page.
+  fallback,
 }) {
   const { data: blob } = useQuery({
     queryKey: photoUrl ? ["avatar-url", photoUrl] : ["avatar", profileKey, photoVer],
@@ -99,6 +104,8 @@ export default function ProfileAvatar({
       />
     );
   }
+
+  if (fallback !== undefined) return fallback;
 
   return (
     <div

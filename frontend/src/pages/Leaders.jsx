@@ -12,6 +12,7 @@ import {
   ChevronRight, ChevronDown, Medal, Globe,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import ProfileAvatar from "../components/ui/ProfileAvatar";
 import StyledSelect from "../components/ui/StyledSelect";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -1362,13 +1363,21 @@ const tierOrderOk = (c) =>
   [c?.top, c?.good, c?.mid].every((v) => Number.isFinite(v) && v >= 0 && v <= 100)
   && c.top > c.good && c.good > c.mid;
 
-function Avatar({ name, size = 24 }) {
+// The person's profile PHOTO where they have one (`photo` = {key, ver}, from
+// the page's `photoOf`), else the tinted initials this ranking always drew —
+// also while the photo loads, so a row never changes size or style under it.
+function Avatar({ name, size = 24, photo }) {
   const hue = hueOf(name);
-  return (
+  const initials = (
     <span className="inline-flex items-center justify-center rounded-full font-bold flex-shrink-0"
       style={{ width: size, height: size, fontSize: Math.round(size * 0.38), background: hexA(hue, 0.18), color: hue }}>
       {initialsOf(name)}
     </span>
+  );
+  if (!photo) return initials;
+  return (
+    <ProfileAvatar name={name} profileKey={photo.key} photoVer={photo.ver} size={size}
+      fallback={initials} style={{ border: `1px solid ${hexA(hue, 0.35)}` }} />
   );
 }
 
@@ -1526,7 +1535,7 @@ function ShiftChip({ shift, T }) {
   );
 }
 
-function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
+function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift, photo }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
   const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
@@ -1541,7 +1550,7 @@ function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
         style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.14) }}>{e.place}</span>
 
       <div className="relative flex items-center gap-2">
-        <Avatar name={name} size={30} />
+        <Avatar name={name} size={30} photo={photo} />
         <div className="min-w-0">
           <div className="text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
           {/* Whose unit this is. The register below DROPS the podium rows, so its
@@ -2624,6 +2633,41 @@ export default function Leaders() {
       if (p.name && p.supervisor && !m[p.name]) m[p.name] = p.supervisor;
     return m;
   }, [rows, data]);
+  // Whose FACE each ranking row is. The board is keyed by the name a row
+  // prints, so the name is resolved to a profile here — a leader by the
+  // profile id their rows and roster entry carry, a brigadir by their unit's
+  // id — and a name that resolves to two profiles (namesakes) keeps its
+  // initials rather than wearing somebody's photo. Versions come from one
+  // small read of every leader / brigadir profile that has a photo.
+  const { data: photoVers } = useQuery({
+    queryKey: ["profile-photo-versions", "leader,supervisor"],
+    queryFn: () => api.get("/api/profiles/photo-versions",
+      { params: { roles: "leader,supervisor" } }).then((r) => r.data?.versions || {}),
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
+  const profileOfName = useMemo(() => {
+    const lead = new Map(), unit = new Map();
+    const add = (m, name, key) => {
+      if (!name || name === "N/A" || !key) return;
+      const was = m.get(name);
+      m.set(name, was === undefined || was === key ? key : null);
+    };
+    for (const r of rows) {
+      if (r.leader_id) add(lead, r.leader, `leader:${r.leader_id}`);
+      if (r.manager_id) add(unit, r.supervisor, `supervisor:${r.manager_id}`);
+    }
+    for (const p of data?.roster ?? []) {
+      add(lead, p.name, `leader:${p.id}`);
+      if (p.manager_id) add(unit, p.supervisor, `supervisor:${p.manager_id}`);
+    }
+    return { lead, unit };
+  }, [rows, data]);
+  const photoOf = (name) => {
+    const key = (effStandMode === "leader" ? profileOfName.lead : profileOfName.unit).get(name);
+    const ver = key && photoVers?.[key];
+    return ver ? { key, ver } : null;
+  };
   // supervisor → shift (from the row the backend tags with Manager.shift), so a
   // shift filter can also narrow the supervisor picker. An unmatched supervisor
   // has no shift and drops out once a shift is chosen.
@@ -4019,7 +4063,7 @@ export default function Leaders() {
           {!standSearch.trim() && standTop.length === 3 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3">
               {standTop.map((e) => (
-                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} trend={standTrend}
+                <StandCard key={e.name} e={e} name={nm(e.name)} photo={photoOf(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} trend={standTrend}
                   sup={effStandMode === "leader" && !isSupervisor && leaderSup[e.name] ? nm(leaderSup[e.name]) : null}
                   shift={showShiftChips ? shiftOf.get(e.name) : null} />
               ))}
@@ -4042,7 +4086,7 @@ export default function Leaders() {
                 <li key={e.name} className="px-3 py-2.5 flex items-start gap-2.5">
                   <span className="w-6 flex-shrink-0 text-right text-[13px] font-semibold tabular-nums pt-[5px]"
                     style={{ color: "var(--text-3)" }}>{e.place}</span>
-                  <Avatar name={nm(e.name)} size={30} />
+                  <Avatar name={nm(e.name)} size={30} photo={photoOf(e.name)} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
@@ -4119,7 +4163,7 @@ export default function Leaders() {
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={nm(e.name)}>
                         <span className="inline-flex items-center gap-2">
-                          <Avatar name={nm(e.name)} size={24} />
+                          <Avatar name={nm(e.name)} size={24} photo={photoOf(e.name)} />
                           <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
                           {showShiftChips && <ShiftChip shift={shiftOf.get(e.name)} T={T} />}
                         </span>

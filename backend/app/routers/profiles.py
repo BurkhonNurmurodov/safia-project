@@ -3069,6 +3069,23 @@ def _photo_version(row: ProfilePhoto) -> int:
     return int(row.updated_at.timestamp()) if row.updated_at else 1
 
 
+@router.get("/photo-versions")
+def profile_photo_versions(roles: str = "leader,supervisor",
+                           db: Session = Depends(get_db),
+                           _: dict = Depends(_caller)) -> dict:
+    """Every profile of these roles that HAS a photo → its photo version, so a
+    board drawn from names (the /leaders ranking) can show each person's face
+    without a key per row in its own payload. Any approved session may read it,
+    for the reason the bytes behind it are open (`/photo/{key}`); a profile
+    with no photo is absent, and is therefore never asked for bytes."""
+    wanted = [r for r in (s.strip() for s in roles.split(",")) if r in PROFILE_TYPES]
+    if not wanted:
+        return {"versions": {}}
+    q = db.query(ProfilePhoto.profile_key, ProfilePhoto.updated_at).filter(
+        or_(*[ProfilePhoto.profile_key.like(f"{r}:%") for r in wanted]))
+    return {"versions": {k: int(ts.timestamp()) if ts else 1 for k, ts in q.all()}}
+
+
 @router.get("/photo/{key}")
 def profile_photo(key: str, db: Session = Depends(get_db),
                   _: dict = Depends(_caller)):
