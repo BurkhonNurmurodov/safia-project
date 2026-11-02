@@ -146,7 +146,7 @@ export function rowLabel(row, T, t) {
  */
 const UOM_BY_KEY = {
   fulfil: "pct", eff: "pct", loadStart: "pct", loadEnd: "pct", attRate: "pct", turnRate: "pct", idlePct: "pct", closure: "pct",
-  planMin: "min", actualMin: "min", shortMin: "min", idleMin: "min", idlePerDay: "min",
+  planMin: "hour", actualMin: "hour", shortMin: "hour", idleMin: "min", idlePerDay: "min",
   pricedMin: "min", unpricedMin: "min",
   idlePersonMin: "personMin", workedMin: "personMin",
   costSum: "money", costPerDay: "money",

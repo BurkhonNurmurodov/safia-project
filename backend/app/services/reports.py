@@ -243,9 +243,12 @@ def _production(inp: dict, n: int) -> list[dict]:
     l_start = _pooled(list(zip(_sums(sl, ids, "plan", n), _sums(sl, ids, "pcap", n))))
     l_end = _pooled(list(zip(_sums(sl, ids, "act", n), _sums(sl, ids, "acap", n))))
     blocks = [periods_block("volume", [
-        prow("planMin", "min", [_r(v) for v in pl]),
-        prow("actualMin", "min", [_r(v) for v in ac]),
-        prow("shortMin", "min", [_r(v) for v in sh]),
+        # Plan, fact and shortfall in HOURS (the operator, 2026-11-02: «these
+        # should not be in minutes but hours») — the minutes ÷ 60, whole;
+        # the keys keep their old names, the unit column says «soat».
+        prow("planMin", "int", [_r(v / 60) if v is not None else None for v in pl]),
+        prow("actualMin", "int", [_r(v / 60) if v is not None else None for v in ac]),
+        prow("shortMin", "int", [_r(v / 60) if v is not None else None for v in sh]),
         prow("fulfil", "pct", [_pct(a, p) for a, p in zip(ac, pl)], bold=True),
         prow("eff", "pct", [_mean(x) for x in _series(eff, ids, "v", n)]),
         prow("loadStart", "pct", l_start),
