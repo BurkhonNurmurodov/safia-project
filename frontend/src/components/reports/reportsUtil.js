@@ -75,7 +75,7 @@ export function fmtDelta(d, fmt) {
  *  not been given. */
 const LOWER_IS_BETTER = new Set([
   "idle.idleMin", "idle.idlePct", "idle.idlePerDay", "cost.costSum",
-  "production.shortMin", "personnel.turnRate",
+  "production.shortMin", "personnel.turnRate", "quality.complaints",
 ]);
 const HIGHER_IS_BETTER = new Set([
   "production.fulfil", "production.eff", "personnel.attRate",

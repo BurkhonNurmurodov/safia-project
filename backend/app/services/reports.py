@@ -88,7 +88,7 @@ CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
-    "cost.costSum", "quality.actionable", "quality.resolved",
+    "cost.costSum", "quality.complaints", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
 }
 
@@ -351,7 +351,11 @@ def _quality(inp: dict, n: int) -> list[dict]:
     ids = inp["unit_ids"]
     act = _sums(q, ids, "n", n)
     done = _sums(q, ids, "done", n)
+    # Every complaint filed, whatever its status (hair aside, as the whole
+    # section is) — «needing action» below is the closure rate's base only.
+    filed = _sums(inp.get("qual_n") or {}, ids, "n", n)
     blocks = [periods_block("total", [
+        prow("complaints", "int", [_r(v) for v in filed], bold=True),
         prow("actionable", "int", [_r(v) for v in act]),
         prow("resolved", "int", [_r(v) for v in done]),
         prow("closure", "pct", _pooled(list(zip(done, act))), bold=True),
@@ -416,6 +420,7 @@ def _figures(inp: dict, n: int, built: dict) -> list[dict]:
         ("idle", "total", "idlePct"),
         ("idle", "total", "idlePerDay"),
         ("cost", "total", "costSum"),
+        ("quality", "total", "complaints"),
         ("quality", "total", "closure"),
         ("concerns", "total", "closure"),
     ]
@@ -444,7 +449,9 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
                                 ("idle", "total", "idleMin"),
                                 ("idle", "total", "idlePct"),
                                 ("cost", "total", "costSum"),
-                                ("quality", "total", "closure"),
+                                # How many complaints came in — the count, not
+                                # the share resolved (the operator, 2026-11-02).
+                                ("quality", "total", "complaints"),
                                 ("concerns", "total", "closure")):
         r = val(section, block, key)
         if r:

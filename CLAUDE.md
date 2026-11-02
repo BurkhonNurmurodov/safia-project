@@ -9536,7 +9536,12 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;
   **Sifat** — the Quality closure rate through `brigadir_board.quality`
   (actionable records, hair out, attributed by `quality_attribution` — the
-  record's cell on its date, else «Отв. бригадир»); **Xavotirlar** — the /concerns register through
+  record's cell on its date, else «Отв. бригадир»), plus «Shikoyatlar soni»,
+  every record filed whatever its status, hair out
+  (`brigadir_board.quality_filed`, the same attributed rows) — the figure the
+  Executive summary carries for Quality instead of the share resolved (the
+  operator, 2026-11-02); «Asosiy ko'rsatkichlar» carries both;
+  **Xavotirlar** — the /concerns register through
   `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
   ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
   the sections they belong to, so the two can never disagree.

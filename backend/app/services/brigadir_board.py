@@ -341,6 +341,28 @@ def _iso_date(raw) -> Optional[date]:
         return None
 
 
+def quality_filed(rows: Iterable[tuple], unit_ids: set[int],
+                  pers: list[dict]) -> dict[int, dict]:
+    """unit → {"n": [records filed per period]} — every record of the register
+    the unit answers for, WHATEVER its status: how many complaints came in.
+    `quality` below counts only the records whose status describes work (its
+    closure-rate denominator); this is the plain count «Hisobotlar» prints.
+    `rows` is `quality_attribution.unit_rows`, already without the hair
+    category, as for `quality`."""
+    if not unit_ids or not pers:
+        return {}
+    acc: dict[int, list[int]] = {}
+    for uid, _status, raw, n in rows:
+        if uid is None or uid not in unit_ids:
+            continue
+        d = _iso_date(raw)
+        i = _bucket(pers, d) if d else None
+        if i is None:
+            continue
+        acc.setdefault(uid, [0] * len(pers))[i] += int(n)
+    return {mid: {"n": per} for mid, per in acc.items()}
+
+
 def quality(rows: Iterable[tuple], unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
     """unit → {"v": [resolved %], "n": [actionable], "done": [resolved]}.
 

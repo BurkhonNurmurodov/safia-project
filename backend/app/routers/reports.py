@@ -275,6 +275,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     att: dict = {}
     xav: dict = {}
     qual: dict = {}
+    qual_n: dict = {}
     plan_tot: dict = {m0["ym"]: {} for m0 in months}
     idle = {m0["ym"]: {} for m0 in months}
     idle_pct = {m0["ym"]: None for m0 in months}
@@ -292,7 +293,9 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
         xav = bb.concerns(db, ids, months)
-        qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
+        qrows = _quality_rows(db, d_from, d_to)
+        qual = bb.quality(qrows, ids, months)
+        qual_n = bb.quality_filed(qrows, ids, months)
         plan_tot = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
         idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))
@@ -310,7 +313,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "plan": plan_tot,
         "eff": eff, "att": att,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
-        "qual": qual, "xav": xav,
+        "qual": qual, "qual_n": qual_n, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside
         # `compose`, out of each month's «Xarajat» totals.
         "scope": {"factory": factory, "shift": shift, "managers": mids,
