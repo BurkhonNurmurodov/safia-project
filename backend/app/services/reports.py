@@ -346,8 +346,9 @@ def _quality(inp: dict, n: int) -> list[dict]:
     ids = inp["unit_ids"]
     act = _sums(q, ids, "n", n)
     done = _sums(q, ids, "done", n)
-    # Every complaint filed, whatever its status (hair aside, as the whole
-    # section is) — «needing action» below is the closure rate's base only.
+    # Every complaint filed, whatever its status, HAIR INCLUDED (the operator,
+    # 2026-11-02) — «needing action» and the closure rate below stay hair
+    # aside, as on the Quality page.
     filed = _sums(inp.get("qual_n") or {}, ids, "n", n)
     blocks = [periods_block("total", [
         prow("complaints", "int", [_r(v) for v in filed], bold=True),

@@ -9603,8 +9603,9 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   **Sifat** — the Quality closure rate through `brigadir_board.quality`
   (actionable records, hair out, attributed by `quality_attribution` — the
   record's cell on its date, else «Отв. бригадир»), plus «Shikoyatlar soni»,
-  every record filed whatever its status, hair out
-  (`brigadir_board.quality_filed`, the same attributed rows) — the figure the
+  every record filed whatever its status, HAIR INCLUDED (the operator, the
+  same day — only the closure rate stays hair aside)
+  (`brigadir_board.quality_filed`, the same attribution) — the figure the
   Executive summary carries for Quality instead of the share resolved (the
   operator, 2026-11-02); «Asosiy ko'rsatkichlar» carries both;
   **Xavotirlar** — the /concerns register through

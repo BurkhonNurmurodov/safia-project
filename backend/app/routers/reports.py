@@ -82,15 +82,16 @@ def _ids(raw) -> list[int]:
     return sorted(out)
 
 
-def _quality_rows(db: Session, d_from: date, d_to: date):
-    """The Quality register over the window, WITHOUT the hair category, each
+def _quality_rows(db: Session, d_from: date, d_to: date, skip=bb.SKIP_CATEGORY):
+    """The Quality register over the window, WITHOUT the hair category (unless
+    `skip` is None — the complaint COUNT counts hair too), each
     record credited by `quality_attribution` — the /leaderboard reading, which
     is itself the shift dashboard's and the Quality page's own:
     (unit id, status, date, count). The upper bound is exclusive on the day
     after `d_to`, because `date` is an ISO string a row may carry a time on."""
     return quality_attribution.unit_rows(db, d_from.isoformat(),
                                          (d_to + timedelta(days=1)).isoformat(),
-                                         bb.SKIP_CATEGORY)
+                                         skip)
 
 
 def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, factory,
@@ -295,9 +296,11 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
         xav = bb.concerns(db, ids, months)
-        qrows = _quality_rows(db, d_from, d_to)
-        qual = bb.quality(qrows, ids, months)
-        qual_n = bb.quality_filed(qrows, ids, months)
+        qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
+        # The complaint COUNT includes hair (the operator, 2026-11-02: «the
+        # number should be the with hair complaints»); the closure rate beside
+        # it stays hair aside, as on the Quality page.
+        qual_n = bb.quality_filed(_quality_rows(db, d_from, d_to, skip=None), ids, months)
         plan_tot = _plan_by_month(db, units, months)
         idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
         idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))

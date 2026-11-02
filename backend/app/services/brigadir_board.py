@@ -383,8 +383,9 @@ def quality_filed(rows: Iterable[tuple], unit_ids: set[int],
     the unit answers for, WHATEVER its status: how many complaints came in.
     `quality` below counts only the records whose status describes work (its
     closure-rate denominator); this is the plain count «Hisobotlar» prints.
-    `rows` is `quality_attribution.unit_rows`, already without the hair
-    category, as for `quality`."""
+    `rows` is `quality_attribution.unit_rows` — «Hisobotlar» hands it the rows
+    WITH the hair category (the count includes hair; the closure rate does
+    not)."""
     if not unit_ids or not pers:
         return {}
     acc: dict[int, list[int]] = {}
