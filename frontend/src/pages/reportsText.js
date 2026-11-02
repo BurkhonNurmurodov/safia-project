@@ -160,6 +160,10 @@ const uz = {
   builtAt: "Tayyorlandi: {at}",
   prevLabel: "oldingi oyga nisbatan",
   colDelta: "O'zgarish",
+  // The unit-of-measurement column of a periods table (components/reports/
+  // reportsUtil.js `uomOf` picks the kind).
+  colUnit: "O'lchov",
+  uom: { pct: "%", min: "daq", money: "so'm", count: "ta", day: "kun", personDay: "odam-kun", person: "kishi", personMin: "odam-daq" },
   noUnits: "Tanlangan qamrovda brigada yo'q",
   noUnitsMsg: "Filtrlarni kengaytiring yoki boshqa zavodni tanlang.",
   noRows: "Bu oyda ma'lumot yo'q",
@@ -262,6 +266,10 @@ const uz_cyrl = {
   noDeltaPartial: "Ой тугамагани учун олдинги ой билан солиштирилмайди — кунлар сони тенг эмас.",
   prevLabel: "олдинги ойга нисбатан",
   colDelta: "Ўзгариш",
+  // The unit-of-measurement column of a periods table (components/reports/
+  // reportsUtil.js `uomOf` picks the kind).
+  colUnit: "Ўлчов",
+  uom: { pct: "%", min: "дақ", money: "сўм", count: "та", day: "кун", personDay: "одам-кун", person: "киши", personMin: "одам-дақ" },
   noUnits: "Танланган қамровда бригада йўқ",
   noUnitsMsg: "Филтрларни кенгайтиринг ёки бошқа заводни танланг.",
   noRows: "Бу ойда маълумот йўқ",
@@ -351,6 +359,10 @@ const ru = {
   noDeltaPartial: "Месяц не закончен — сравнение с предыдущим не показано: дней не поровну.",
   prevLabel: "к предыдущему месяцу",
   colDelta: "Изменение",
+  // The unit-of-measurement column of a periods table (components/reports/
+  // reportsUtil.js `uomOf` picks the kind).
+  colUnit: "Ед. изм.",
+  uom: { pct: "%", min: "мин", money: "сум", count: "шт.", day: "дн.", personDay: "чел.-дн.", person: "чел.", personMin: "чел.-мин" },
   noUnits: "В выбранном охвате нет бригад",
   noUnitsMsg: "Расширьте фильтры или выберите другой завод.",
   noRows: "За этот месяц данных нет",
@@ -437,6 +449,10 @@ const en = {
   noDeltaPartial: "The month is not over — no comparison with the one before it: the day counts differ.",
   prevLabel: "vs the previous month",
   colDelta: "Change",
+  // The unit-of-measurement column of a periods table (components/reports/
+  // reportsUtil.js `uomOf` picks the kind).
+  colUnit: "Unit",
+  uom: { pct: "%", min: "min", money: "UZS", count: "qty", day: "days", personDay: "person-days", person: "people", personMin: "person-min" },
   noUnits: "No units in the selected scope",
   noUnitsMsg: "Widen the filters or pick another plant.",
   noRows: "No data for this month",

@@ -1,15 +1,16 @@
 // One section of «Hisobotlar» — its blocks, in the order the server folded
 // them. TWO block shapes and no third:
 //
-//   periods — a figure per row, the months across (TopSim's own reading:
-//             the picked month last and emphasised, so a number is always
-//             read against where it came from);
+//   periods — a figure per row, its unit of measurement beside it, then the
+//             previous month and the picked one (TopSim's own reading: the
+//             picked month last and emphasised, so a number is always read
+//             against where it came from);
 //   units   — a brigadir per row, describing the PICKED month alone.
 //
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
 import TableCard, { Th } from "../ui/DataTable";
-import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, monthLabel, fill, useRT }
+import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, uomOf, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -60,6 +61,7 @@ function PeriodsBlock({ block, months, T, t, caption }) {
       <thead>
         <tr>
           <Th label={T.caps.figure} cls="min-w-[180px]" />
+          <Th label={T.colUnit} />
           {months.map((m) => (
             <Th key={m.ym} align="right"
               label={colMonth(m, T, t)}
@@ -71,8 +73,12 @@ function PeriodsBlock({ block, months, T, t, caption }) {
       <tbody>
         {block.rows.map((r) => (
           <tr key={r.key}>
-            <td className="px-3 py-2" style={{ color: r.bold ? "var(--text-1)" : "var(--text-2)" }}>
+            <td className="px-3 py-2"
+              style={{ color: "var(--text-1)", fontWeight: r.bold ? 600 : 500 }}>
               {rowLabel(r, T, t)}
+            </td>
+            <td className="px-3 py-2 whitespace-nowrap text-xs" style={{ color: "var(--text-3)" }}>
+              {uomOf(r, T)}
             </td>
             {r.values.map((v, i) => (
               <td key={i} className="px-3 py-2 text-right tabular-nums"
@@ -81,7 +87,7 @@ function PeriodsBlock({ block, months, T, t, caption }) {
                   fontWeight: i === last ? 500 : 400,
                   background: i === last ? "var(--bg-inner)" : undefined,
                 }}>
-                {fmtCell(v, r.fmt)}
+                {fmtCell(v, r.fmt, true)}
               </td>
             ))}
             {hasDelta && (

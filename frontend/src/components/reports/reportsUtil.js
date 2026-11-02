@@ -39,12 +39,15 @@ const nf = (n, d = 0) => {
  *   pct   — a whole percent with its sign
  *   min   — minutes, whole
  *   money — so'm, whole
+ *
+ * `bare` drops the «%» — for a periods table, whose unit column already says
+ * it (TopSim's own reading: the unit beside the name, the cells numbers only).
  */
-export function fmtCell(v, fmt) {
+export function fmtCell(v, fmt, bare = false) {
   if (v === null || v === undefined || v === "") return DASH;
   switch (fmt) {
     case "text":  return String(v);
-    case "pct":   return `${nf(v, Number.isInteger(Number(v)) ? 0 : 1)}%`;
+    case "pct":   return `${nf(v, Number.isInteger(Number(v)) ? 0 : 1)}${bare ? "" : "%"}`;
     case "num1":  return nf(v, 1);
     case "min":   return nf(v, 0);
     case "money": return nf(v, 0);
@@ -116,6 +119,36 @@ export function rowLabel(row, T, t) {
     if (said && said !== key) return `${raw} — ${said}`;
   }
   return raw;
+}
+
+/**
+ * A periods row's UNIT of measurement — the column TopSim prints beside every
+ * figure («MEUR», «%»). Named by the figure's own key (its last segment, so the
+ * mixed summary tables read the same word), else by how it is printed; a
+ * figure whose unit is not known prints nothing rather than a guess.
+ *
+ * Counts that sum a DAY per person (the attendance roster) are person-days,
+ * not people — saying «kishi» there would misread 30 days of 100 people as
+ * three thousand of them.
+ */
+const UOM_BY_KEY = {
+  fulfil: "pct", eff: "pct", attRate: "pct", turnRate: "pct", idlePct: "pct", closure: "pct",
+  planMin: "min", actualMin: "min", shortMin: "min", idleMin: "min", idlePerDay: "min",
+  pricedMin: "min", unpricedMin: "min",
+  idlePersonMin: "personMin", workedMin: "personMin",
+  costSum: "money", costPerDay: "money",
+  countedDays: "day", noFact: "day", noPlan: "day", attDays: "day",
+  unitDays: "day", flaggedDays: "day",
+  listed: "personDay", came: "personDay", onLeave: "personDay",
+  working: "person", left: "person", hc: "person",
+  actionable: "count", resolved: "count", openLeft: "count", filed: "count",
+  counted: "count", uplifted: "count", units: "count", cells: "count",
+};
+const UOM_BY_FMT = { pct: "pct", min: "min", money: "money", int: "count" };
+
+export function uomOf(row, T) {
+  const kind = UOM_BY_KEY[String(row.key).split(".").pop()] || UOM_BY_FMT[row.fmt];
+  return (kind && T.uom?.[kind]) || "";
 }
 
 export function colLabel(c, T) {

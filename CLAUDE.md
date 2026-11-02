@@ -9428,11 +9428,25 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `concerns` already carried theirs.
 - **The period is a calendar MONTH** — the platform's own KPI month
   (`leaders_kpi`, `turnover` and `category_compliance` all count by it) — and
-  every table carries the picked month plus `HISTORY - 1` (3 columns, TopSim's
-  Period 0 · 1 · 2), oldest → newest, the picked one last and emphasised. A
-  month that ended before the platform's first closed day
-  (`brigadir_board.data_floor`) is dropped: it could only read «—» in every
-  row. The per-unit tables describe the PICKED month alone.
+  every table carries the picked month and the one before it (`HISTORY` = 2,
+  TopSim's «Previous Period · Current Period» — the operator, 2026-11-02: «we
+  don't need 3 months of comparison, just 2»; it was 3 until then), oldest →
+  newest, the picked one last and emphasised. A month that ended before the
+  platform's first closed day (`brigadir_board.data_floor`) is dropped: it
+  could only read «—» in every row. The per-unit tables describe the PICKED
+  month alone.
+- **A periods table names each figure's UNIT** (same day, TopSim's
+  «MEUR / %» column): Figure · O'lchov · the two months · O'zgarish.
+  `reportsUtil.uomOf` picks the kind off the row's key (its last segment, so
+  the mixed summary tables agree), else its `fmt`; the words are `T.uom`
+  (% · daq · so'm · ta · kun · odam-kun · kishi · odam-daq). The attendance
+  counts are PERSON-DAYS (the roster summed per day), never «kishi». Since the
+  column says «%», a periods cell prints the bare number (`fmtCell(v, fmt,
+  true)`); per-unit tables keep their «%». The document carries the same
+  column (`words.rowUnits`, keyed «section.block.row» — one idle category is
+  minutes under «Kutish» and so'm under «Xarajat»; a tab sending none gets a
+  file without it). Figure names are medium weight in `--text-1`, headline
+  rows semibold.
 - **A month still running compares only its RATES.** A total over 26 days
   against a whole month says nothing a reader can act on, so the delta on a
   CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is
