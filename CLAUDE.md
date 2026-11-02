@@ -9540,6 +9540,14 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   minutes under «Kutish» and so'm under «Xarajat»; a tab sending none gets a
   file without it). Figure names are medium weight in `--text-1`, headline
   rows semibold.
+- **Number columns are narrow and fixed — TopSim's layout** (the operator,
+  2026-11-02: «we don't need big spaces for number columns»). In
+  `ReportSection.jsx` a month and the change are 100px (`NUM_W`), the unit
+  88px (`UOM_W`), a brigadir table's figures 88px with headers allowed to
+  wrap (`UNIT_NUM_W`); the figure / brigadir name takes the rest of the card.
+  A month header is two lines — the month, then its year (and «1–26» while it
+  runs). Fixed rather than shrink-to-fit, so the months line up from card to
+  card; a wider value still widens its column.
 - **A month still running compares only its RATES.** A total over 26 days
   against a whole month says nothing a reader can act on, so the delta on a
   CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is
