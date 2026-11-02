@@ -2223,7 +2223,8 @@ def file_dispute(
                 if judge == leader_dispute.KIND_ADMIN else None))
     db.commit()
 
-    if leaders_admin(db, payload):
+    admin_filed = leaders_admin(db, payload)
+    if admin_filed:
         # An admin asking themselves for permission is not a flow. Filing IS
         # the decision — the same rule as opening a late day. «Lider nazorati
         # — admin» files the same way, and the thread names their own role.
@@ -2231,11 +2232,14 @@ def file_dispute(
                                     actor_name=who, actor_telegram=tid,
                                     actor_profile=prof_key, actor_role=role or "admin")
         db.commit()
-        leader_dispute.notify_decided(db, d, stage="admin",
-                                      actor_profile=prof_key, actor_telegram=tid)
-        _report_after_ruling(db, d)
-    else:
-        _dispute_announce(db, d)
+    # The cards, the notices and a corrected report are Telegram round trips
+    # the leader's answer does not need — sent after it (`tg_later`, in
+    # order), as a ruling's already are. The 2 Nov «Server was slow» DM: a
+    # filing took 6.0 s, most of it waiting on Telegram (the brigadir's card,
+    # a refused rich message retried as plain, each recipient's menu button).
+    from app.services import tg_later
+    tg_later.run(_dispute_filed_later, d.id, d.status,
+                 admin_filed=admin_filed, actor_profile=prof_key, actor_telegram=tid)
     logger.info("leader-dispute: %s filed by %s (%s) on %s task %s (%s)",
                 d.status, who, role, uid, task_id, reason[:80])
     # An admin's own filing IS the ruling, so the row says which of the two
@@ -2252,6 +2256,30 @@ def file_dispute(
     fresh = leader_reports.day_report(db, uid, allow_open=True)
     return {"ok": True, "status": d.status, "id": d.id,
             "report": _stamp_report_rights(db, payload, fresh) if fresh else None}
+
+
+def _dispute_filed_later(dispute_id: int, status: str, *, admin_filed: bool,
+                         actor_profile: str | None, actor_telegram: int | None) -> None:
+    """What a filing owes the outside world, on a session of its own after the
+    answer has gone: an admin's own filing IS the ruling (its notices and the
+    corrected report), anybody else's is put in front of whoever rules next. A
+    row whose status moved on meanwhile is told nothing — whatever moved it
+    sends its own notices."""
+    db = SessionLocal()
+    try:
+        d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+        if d is None or d.status != status:
+            return
+        if admin_filed:
+            leader_dispute.notify_decided(db, d, stage="admin", actor_profile=actor_profile,
+                                          actor_telegram=actor_telegram)
+            db.commit()
+            _report_after_ruling(db, d)
+        else:
+            _dispute_announce(db, d)
+        db.commit()
+    finally:
+        db.close()
 
 
 def _dispute_announce(db: Session, d: LeaderAiDispute) -> None:

@@ -67,9 +67,19 @@ class InvalidGroup(ValueError):
     """A group that is not one Latin letter A–Z."""
 
 
+_IS_MAPPING: dict[type, bool] = {}
+
+
 def _get(obj: Any, key: str, default=None):
-    """Read one field off an ORM row or a plain dict alike."""
-    if isinstance(obj, Mapping):
+    """Read one field off an ORM row or a plain dict alike. Whether a TYPE is a
+    mapping is asked once per type: `isinstance(obj, Mapping)` goes through the
+    ABC machinery on every call, and per-cell readers call this thousands of
+    times a request (9% of a /api/heatmap, 2 Nov 2026 «Server was slow»)."""
+    t = type(obj)
+    m = _IS_MAPPING.get(t)
+    if m is None:
+        m = _IS_MAPPING[t] = isinstance(obj, Mapping)
+    if m:
         return obj.get(key, default)
     return getattr(obj, key, default)
 

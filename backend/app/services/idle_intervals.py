@@ -37,6 +37,7 @@ theirs alone — `people_pieces` is the one place that turns the union into
 person-minutes, so the mean, the matrix and the cost cannot count one cleaning
 three ways. The union itself — the answer to «how long» — is untouched by it.
 """
+from functools import lru_cache
 from typing import Iterable, Optional
 
 DAY = 1440
@@ -44,9 +45,22 @@ MAX_SPAN = DAY - 1          # 23h59m — the longest range a single day can hold
 
 
 def to_min(hhmm: Optional[str]) -> Optional[int]:
-    """"HH:MM" -> minutes from midnight, or None when it is not a clock time."""
+    """"HH:MM" -> minutes from midnight, or None when it is not a clock time.
+    Memoised per string — there are 1,440 clock times and the waiting readers
+    parse the same few hundred thousands of times a request."""
     if not hhmm:
         return None
+    if isinstance(hhmm, str):
+        return _to_min_str(hhmm)
+    return _to_min(hhmm)
+
+
+@lru_cache(maxsize=8192)
+def _to_min_str(hhmm: str) -> Optional[int]:
+    return _to_min(hhmm)
+
+
+def _to_min(hhmm) -> Optional[int]:
     try:
         h, m = str(hhmm).split(":")
         hh, mm = int(h), int(m)

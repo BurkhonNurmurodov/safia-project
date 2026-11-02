@@ -15244,7 +15244,14 @@ blocking work on the event loop freezes every request on the server at once.
   «The trudoyomkost is KEPT between requests». Same DM: /api/quality spent
   half its time folding every record's PLACE (`name_map._place_key`, a
   transliteration per record) to test one exclusion; it folds a place now
-  only for a brigadir an exclusion names, and memoises the fold.
+  only for a brigadir an exclusion names, and memoises the fold. The next DM
+  (15:43, still the old code) added: FILING an objection took 6.0 s waiting
+  on Telegram (the brigadir's card, a rich message retried as plain, each
+  recipient's menu button) — a ruling already sent after its answer, a filing
+  did not; it does now (`_dispute_filed_later`, `tg_later`). And two pure
+  helpers per-cell readers call thousands of times a request are memoised:
+  `wc_group._get` asks `isinstance(…, Mapping)` once per TYPE (the ABC check
+  was 9% of a heatmap), `idle_intervals.to_min` once per "HH:MM" string.
 - Not built: an admin page over the ledger (it is memory only, per process),
   and any automatic retry of a hung request beyond those four (axios still has
   no timeout; the reload button is the way out).
