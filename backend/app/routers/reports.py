@@ -465,6 +465,8 @@ class ExportIn(BaseModel):
     # "<section>.<block>" → [row key, …]. Absent (an older tab) = the
     # server's order.
     order: dict = {}
+    # Each row's change cell as the page printed it, keyed like `display`.
+    deltas: dict = {}
 
 
 @router.post("/export.{fmt}")
@@ -503,6 +505,8 @@ def export_report(
     pay = {**kept, "sections": deepcopy(secs)}
     _apply_display(pay, body.display)
     _apply_order(pay, body.order)
+    if isinstance(body.deltas, dict) and body.deltas:
+        pay["_deltas"] = {str(k): str(v)[:40] for k, v in body.deltas.items()}
 
     title = (body.title or f"Hisobot — {reports.ym(m)}").strip()
     blocks = reports.doc_blocks(pay, body.words or {})

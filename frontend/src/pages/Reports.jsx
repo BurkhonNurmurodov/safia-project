@@ -22,7 +22,7 @@ import { useRowOrder, ordered } from "../components/reports/useRowOrder";
 import CatLockNotice from "../components/idle/CatLockNotice";
 import { CATS } from "../components/idle/categories";
 import {
-  useRT, fill, monthLabel, fmtCell, rowLabel, uomOf, PAST_FROM, todayISO,
+  useRT, fill, monthLabel, fmtCell, deltaText, rowLabel, uomOf, PAST_FROM, todayISO,
 } from "../components/reports/reportsUtil";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
@@ -165,6 +165,8 @@ export default function Reports() {
     const rows = {};
     const rowUnits = {};
     const order = {};
+    const deltas = {};
+    const months = data?.months || [];
     for (const s of want) {
       for (const b of s.blocks || []) {
         if (b.kind !== "periods") continue;
@@ -175,6 +177,8 @@ export default function Reports() {
           // The unit has a column of its own, so the cells print bare
           // numbers — exactly as the screen does.
           display[key] = r.values.map((v) => fmtCell(v, r.fmt, true));
+          // The change cell as the screen prints it — every table has one.
+          if (months.length > 1) deltas[key] = deltaText(r);
           rows[r.key] = rowLabel(r, T, t);
           // Keyed like `display`: one category is minutes under «Kutish» and
           // so'm under «Xarajat», so the row key alone cannot name its unit.
@@ -199,12 +203,14 @@ export default function Reports() {
         sections: Object.fromEntries(want.map((s) => [s.key, T.sec[s.key] || s.key])),
         rows, rowUnits,
         uomCol: T.colUnit,
+        deltaCol: months.length > 1 ? T.colDelta : "",
         caps: T.caps,
         months: (data?.months || []).map((m) => monthLabel(m.ym, t)),
         missing: T.missing,
         missingNote: scopeAll ? T.missingNote : "",
       },
       display,
+      deltas,
       order,
     };
   };

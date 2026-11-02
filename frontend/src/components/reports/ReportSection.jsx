@@ -24,7 +24,7 @@ import { ArrowUpDown, Check, GripVertical, RotateCcw } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Button from "../ui/Button";
 import { ordered } from "./useRowOrder";
-import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, uomOf, monthLabel, fill, useRT }
+import { DASH, fmtCell, deltaText, deltaTone, rowLabel, uomOf, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
 
@@ -33,22 +33,24 @@ const TONE = {
   bad: "var(--status-bad)",
 };
 
-function DeltaCell({ row, T }) {
+function DeltaCell({ row, T, secKey }) {
   // A TOTAL over a month still running is not comparable with a whole month —
   // the server withholds its delta and says so (`no_delta`), and the cell
   // carries that reason rather than leaving a silent gap where every other
   // row has a change.
+  const txt = deltaText(row);
   if (row.no_delta === "partial") {
     return <span className="text-xs" style={{ color: "var(--text-3)" }}
-      title={T.noDeltaPartial}>·</span>;
+      title={T.noDeltaPartial}>{txt}</span>;
   }
   // «—» means no answer; a change of exactly nothing is a 0, said plainly.
   if (row.delta != null && Number(row.delta) === 0) {
-    return <span className="text-xs" style={{ color: "var(--text-3)" }}>{row.fmt === "pct" ? "0 p.p." : "0"}</span>;
+    return <span className="text-xs" style={{ color: "var(--text-3)" }}>{txt}</span>;
   }
-  const txt = fmtDelta(row.delta, row.fmt);
-  if (!txt) return <span style={{ color: "var(--text-4)" }}>{DASH}</span>;
-  const tone = deltaTone(`${row.section || ""}.${row.key.split(".").pop()}`, row.delta);
+  if (txt === DASH) return <span style={{ color: "var(--text-4)" }}>{DASH}</span>;
+  // A summary row names its section; a section's own row is read under the
+  // section it sits in.
+  const tone = deltaTone(`${row.section || secKey || ""}.${row.key.split(".").pop()}`, row.delta);
   return (
     <span className="text-xs font-medium"
       style={{ color: tone ? TONE[tone] : "var(--text-2)" }}>{txt}</span>
@@ -77,11 +79,12 @@ function MonthHead({ m, T, t }) {
 
 const sameKeys = (a, b) => a.length === b.length && a.every((k, i) => k === b[i]);
 
-function PeriodsBlock({ block, months, T, t, caption, saved, onOrder }) {
+function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey }) {
   const last = months.length - 1;
-  // The change against the month before gets a column of its own, so the
-  // picked month's figures line up; only where the server sends one.
-  const hasDelta = block.rows.some((r) => r.delta != null || r.no_delta);
+  // The change against the month before has a column of its own on EVERY
+  // table (the operator, 2026-11-02), so the picked month's figures line up —
+  // wherever there is a month before to compare with.
+  const hasDelta = months.length > 1;
 
   const serverKeys = block.rows.map((r) => r.key);
   const shown = ordered(block.rows, saved);
@@ -242,7 +245,7 @@ function PeriodsBlock({ block, months, T, t, caption, saved, onOrder }) {
               </td>
             ))}
             {hasDelta && (
-              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap"><DeltaCell row={r} T={T} /></td>
+              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap"><DeltaCell row={r} T={T} secKey={secKey} /></td>
             )}
           </tr>
         ))}
@@ -259,6 +262,7 @@ export default function ReportSection({ section, months, order = {}, setBlock })
       {(section.blocks || []).filter((b) => b.kind === "periods").map((b) => (
         <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t}
           caption={T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || ""}
+          secKey={section.key}
           saved={order[`${section.key}.${b.key}`]}
           onOrder={(keys, now) => setBlock?.(`${section.key}.${b.key}`, keys, now)} />
       ))}

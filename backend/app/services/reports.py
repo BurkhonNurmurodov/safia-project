@@ -88,6 +88,12 @@ CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
     "personnel.overtimeH", "personnel.overtimeDays",
+    # Counts over the month that a running month has not finished counting —
+    # their change is withheld too, now every table carries one.
+    "production.countedDays", "production.noFact", "production.noPlan",
+    "personnel.attDays", "idle.unitDays", "idle.flaggedDays",
+    "cost.pricedMin", "cost.unpricedMin", "quality.openLeft",
+    "concerns.uplifted", "concerns.openLeft", "summary.cells",
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
     "cost.costSum", "quality.complaints", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
@@ -490,6 +496,24 @@ def compose(inp: dict) -> dict:
     built["summary"] = _summary(inp, n, built)
     built["figures"] = _figures(inp, n, built)
 
+    # Every row of every table carries its change against the month before
+    # (the operator, 2026-11-02: «All sections should have change column») —
+    # `_headline_row`'s rule, so a figure changes by one number wherever it is
+    # printed: withheld on a TOTAL while the picked month is still running.
+    for sec, blocks in built.items():
+        for b in blocks:
+            for r in b.get("rows") or []:
+                if "delta" in r:
+                    continue
+                vals = r["values"]
+                cur = vals[-1] if vals else None
+                prev = vals[-2] if len(vals) > 1 else None
+                if inp["partial"] and f"{sec}.{r['key']}" in CUMULATIVE:
+                    r["delta"] = None
+                    r["no_delta"] = "partial"
+                else:
+                    r["delta"] = _delta(cur, prev)
+
     return {
         "month": months[-1]["ym"],
         "months": [{"ym": m["ym"], "from": m["from"].isoformat(),
@@ -520,6 +544,10 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
     mcols = words.get("months") or [m["ym"] for m in payload.get("months") or []]
     uom = words.get("rowUnits") if isinstance(words.get("rowUnits"), dict) else None
     uom_col = [words.get("uomCol") or ""] if uom is not None else []
+    # The change column, as the screen printed it (`deltaText`), on every
+    # table; a tab that sends none gets a file without it.
+    deltas = payload.get("_deltas") if isinstance(payload.get("_deltas"), dict) else None
+    delta_col = [words.get("deltaCol") or ""] if deltas and words.get("deltaCol") else []
 
     out: list[dict] = []
     for sec in payload.get("sections") or []:
@@ -537,10 +565,11 @@ def doc_blocks(payload: dict, words: dict) -> list[dict]:
             key = f"{sec['key']}.{b['key']}"
             out.append({
                 "type": "table",
-                "columns": [cap.get("figure", ""), *uom_col, *mcols],
+                "columns": [cap.get("figure", ""), *uom_col, *mcols, *delta_col],
                 "rows": [[row_t.get(r["key"], r.get("label") or r["key"]),
                           *([uom.get(f"{key}.{r['key']}") or ""] if uom is not None else []),
-                          *[_cell(v) for v in r.get("display", r["values"])]]
+                          *[_cell(v) for v in r.get("display", r["values"])],
+                          *([deltas.get(f"{key}.{r['key']}") or "—"] if delta_col else [])]
                          for r in b["rows"]],
             })
     notes = words.get("missingNote")

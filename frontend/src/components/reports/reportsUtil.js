@@ -71,6 +71,16 @@ export function fmtDelta(d, fmt) {
   return `${sign}${nf(abs, fmt === "num1" ? 1 : 0)}`;
 }
 
+/** A row's change cell as text — the screen and the downloaded file print
+ *  this one string. A TOTAL over a month still running has its change withheld
+ *  (`no_delta`, «·»); a change of exactly nothing is said as 0; no answer is
+ *  «—». */
+export function deltaText(row) {
+  if (row?.no_delta === "partial") return "·";
+  if (row?.delta != null && Number(row.delta) === 0) return row.fmt === "pct" ? "0 p.p." : "0";
+  return fmtDelta(row?.delta, row?.fmt) || DASH;
+}
+
 /** Which way is GOOD for a figure — the only thing that decides a delta's
  *  colour. A figure not named here is neutral: a change in it is a fact, not a
  *  verdict, and colouring one would be the platform stating an opinion it has

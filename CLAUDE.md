@@ -9682,7 +9682,13 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   against a whole month says nothing a reader can act on, so the delta on a
   CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is
   partial and the cell says why; a rate keeps its delta. The column header
-  names the days it actually covers («Oktyabr 2026 · 1–26»).
+  names the days it actually covers («Oktyabr 2026 · 1–26»). **Every table
+  carries the change column** (the operator, 2026-11-02: «All sections should
+  have change column»): `compose` gives every section row the
+  `_headline_row` delta, CUMULATIVE now names every month count (days, open
+  left, priced minutes…), the column shows whenever there is a month before,
+  its colour follows the row's own section (`DeltaCell secKey`), and the file
+  carries it too (`deltas`, the page's `deltaText`).
 - **A figure the platform has no source for is NOT in this report, and the
   report SAYS so.** TopSim's financial half — equity, WACC, NOPAT, EVA, the
   cash-flow statement, the balance sheet, contribution margin, inventory, R&D,
