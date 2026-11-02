@@ -272,6 +272,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     n = len(months)
 
     eff: dict = {}
+    sload: dict = {}
     att: dict = {}
     xav: dict = {}
     qual: dict = {}
@@ -289,6 +290,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
 
         metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
         eff = bb.efficiency(metrics, ids, months)
+        sload = bb.shift_load(metrics, ids, months)
         head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
@@ -311,7 +313,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "months": months,
         "unit_ids": ids,
         "plan": plan_tot,
-        "eff": eff, "att": att,
+        "eff": eff, "sload": sload, "att": att,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "qual_n": qual_n, "xav": xav,
         # How many cells carried a stoppage is read per MONTH inside

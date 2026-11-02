@@ -224,12 +224,19 @@ def _production(inp: dict, n: int) -> list[dict]:
     ac = [(plan.get(y) or {}).get("actual") for y in yms]
     sh = [(plan.get(y) or {}).get("short") for y in yms]
     days = [(plan.get(y) or {}).get("days") for y in yms]
+    # «Smena boshi / Smena oxiri Zagruzka» — /zagruzka's simplified table,
+    # pooled over the scope's closed unit-days (`brigadir_board.shift_load`).
+    sl = inp.get("sload") or {}
+    l_start = _pooled(list(zip(_sums(sl, ids, "plan", n), _sums(sl, ids, "pcap", n))))
+    l_end = _pooled(list(zip(_sums(sl, ids, "act", n), _sums(sl, ids, "acap", n))))
     blocks = [periods_block("volume", [
         prow("planMin", "min", [_r(v) for v in pl]),
         prow("actualMin", "min", [_r(v) for v in ac]),
         prow("shortMin", "min", [_r(v) for v in sh]),
         prow("fulfil", "pct", [_pct(a, p) for a, p in zip(ac, pl)], bold=True),
         prow("eff", "pct", [_mean(x) for x in _series(eff, ids, "v", n)]),
+        prow("loadStart", "pct", l_start),
+        prow("loadEnd", "pct", l_end),
         prow("countedDays", "int", [_r(v) for v in days]),
         prow("noFact", "int", [_r((plan.get(y) or {}).get("no_fact")) for y in yms]),
         prow("noPlan", "int", [_r((plan.get(y) or {}).get("no_plan")) for y in yms]),
@@ -413,6 +420,8 @@ def _figures(inp: dict, n: int, built: dict) -> list[dict]:
         ("production", "volume", "actualMin"),
         ("production", "volume", "fulfil"),
         ("production", "volume", "eff"),
+        ("production", "volume", "loadStart"),
+        ("production", "volume", "loadEnd"),
         ("personnel", "attendance", "listed"),
         ("personnel", "attendance", "attRate"),
         ("personnel", "turnover", "turnRate"),
@@ -445,6 +454,8 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
     rows = []
     for section, block, key in (("production", "volume", "fulfil"),
                                 ("production", "volume", "eff"),
+                                ("production", "volume", "loadStart"),
+                                ("production", "volume", "loadEnd"),
                                 ("personnel", "attendance", "attRate"),
                                 ("idle", "total", "idleMin"),
                                 ("idle", "total", "idlePct"),

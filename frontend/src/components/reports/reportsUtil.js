@@ -132,7 +132,7 @@ export function rowLabel(row, T, t) {
  * three thousand of them.
  */
 const UOM_BY_KEY = {
-  fulfil: "pct", eff: "pct", attRate: "pct", turnRate: "pct", idlePct: "pct", closure: "pct",
+  fulfil: "pct", eff: "pct", loadStart: "pct", loadEnd: "pct", attRate: "pct", turnRate: "pct", idlePct: "pct", closure: "pct",
   planMin: "min", actualMin: "min", shortMin: "min", idleMin: "min", idlePerDay: "min",
   pricedMin: "min", unpricedMin: "min",
   idlePersonMin: "personMin", workedMin: "personMin",

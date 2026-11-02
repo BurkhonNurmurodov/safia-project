@@ -9549,7 +9549,13 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   router and makes no query (the `ojidaniya_deck` split). Section by section:
   **Ishlab chiqarish** — `plan_fulfillment.build`'s own minute totals (the
   /plan page's figure), «Samaradorlik» the /zagruzka heatmap's AVG through
-  `brigadir_board.efficiency`; **Xodimlar** — /workers' own `att_rate` through
+  `brigadir_board.efficiency`, «Smena boshi / Smena oxiri zagruzka» (from
+  2026-11-02, the operator; in the summary and Key figures too) the P and A
+  halves of /zagruzka's «Smena boshi va Smena oxiri Zagruzka» table pooled
+  like its AVG corner — Σ prod_plan (resp. prod_actual) ÷ Σ 480 × 0.9 × typed
+  headcount over the closed unit-days that half has a figure for
+  (`brigadir_board.shift_load`, the twin of `simplePlanUtil` /
+  `simpleActualUtil`), no delta colour; **Xodimlar** — /workers' own `att_rate` through
   `brigadir_board.attendance`, and `turnover.month_payload`; **Kutish** —
   `routers/downtime._downtime`, which IS the /downtime page's computation;
   **Xarajat** — `ojidaniya_cost.build`, the «Xarajat» tab's own tree;

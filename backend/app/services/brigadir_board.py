@@ -242,6 +242,42 @@ def _heatmap_avg(metrics: Iterable, unit_ids: set[int], pers: list[dict], read) 
     return out
 
 
+SHIFT_MIN = 480
+
+
+def shift_load(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
+    """The two halves of /zagruzka's «Smena boshi va Smena oxiri Zagruzka»
+    table, as SUMS a plant figure is pooled from: unit → {"plan": [Σ prod_plan],
+    "pcap": [Σ 480 × 0.9 × typed headcount], "act": [Σ prod_actual], "acap":
+    [...]} per period. The twin of `simplePlanUtil` / `simpleActualUtil`
+    (utils/formulas.js): a zero minutes figure or no typed headcount is no
+    data, and each half counts only the days it has a figure for — the table's
+    AVG corner, Σ part ÷ Σ capacity (the 2026-10-19 pooled ruling)."""
+    cap = SHIFT_MIN * PRODUCTIVE_SHARE
+    acc: dict[int, dict] = {}
+    for m in metrics:
+        if m.manager_id not in unit_ids:
+            continue
+        d = _iso_of(m.date)
+        i = _bucket(pers, d) if d else None
+        if i is None:
+            continue
+        hc = float(m.official_hc or 0)
+        if not hc > 0:
+            continue
+        slot = acc.setdefault(m.manager_id, {k: [0.0] * len(pers)
+                                             for k in ("plan", "pcap", "act", "acap")})
+        p = float(m.prod_plan or 0)
+        a = float(m.prod_actual or 0)
+        if p > 0:
+            slot["plan"][i] += p
+            slot["pcap"][i] += cap * hc
+        if a > 0:
+            slot["act"][i] += a
+            slot["acap"][i] += cap * hc
+    return acc
+
+
 def efficiency(metrics: Iterable, unit_ids: set[int], pers: list[dict]) -> dict[int, dict]:
     """Samaradorlik per period — the «Samaradorlik» heatmap's AVG."""
     return _heatmap_avg(metrics, unit_ids, pers, eff_util)
