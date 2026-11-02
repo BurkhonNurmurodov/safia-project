@@ -395,6 +395,10 @@ class ExportIn(BaseModel):
     # "<section>.<block>.<row key>". A figure the page prints «—» is «—» in the
     # file: one number, two places, never two spellings of it.
     display: dict = {}
+    # Each table's rows in the order the reader put them on screen, keyed
+    # "<section>.<block>" → [row key, …]. Absent (an older tab) = the
+    # server's order.
+    order: dict = {}
 
 
 @router.post("/export.{fmt}")
@@ -432,6 +436,7 @@ def export_report(
         secs.sort(key=lambda s: order[s["key"]])
     pay = {**kept, "sections": deepcopy(secs)}
     _apply_display(pay, body.display)
+    _apply_order(pay, body.order)
 
     title = (body.title or f"Hisobot — {reports.ym(m)}").strip()
     blocks = reports.doc_blocks(pay, body.words or {})
@@ -455,6 +460,24 @@ def export_report(
                                ("size", len(data)),
                                ("sections", len(pay.get("sections") or []))])
     return resp
+
+
+def _apply_order(pay: dict, order: dict) -> None:
+    """Lay each table's rows out in the order the reader chose on screen. A row
+    the list does not name keeps its place after the named ones, so a figure is
+    never dropped from the file for being missing from a stale order."""
+    if not isinstance(order, dict) or not order:
+        return
+    for sec in pay.get("sections") or []:
+        for b in sec.get("blocks") or []:
+            keys = order.get(f"{sec['key']}.{b['key']}")
+            if not isinstance(keys, list) or not keys:
+                continue
+            pos = {str(k): i for i, k in enumerate(keys)}
+            rows = b.get("rows") or []
+            named = sorted((r for r in rows if str(r.get("key")) in pos),
+                           key=lambda r: pos[str(r.get("key"))])
+            b["rows"] = named + [r for r in rows if str(r.get("key")) not in pos]
 
 
 def _apply_display(pay: dict, display: dict) -> None:

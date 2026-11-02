@@ -158,6 +158,13 @@ const uz = {
   dlFailed: "Hujjat tayyorlanmadi",
 
   sectionsNav: "Bo'limlar",
+  // Reordering a table's figures — saved for this profile, followed by the file.
+  arrange: "Tartib", arrangeTip: "Ko'rsatkichlar tartibini o'zgartirish",
+  arrangeDone: "Tayyor", arrangeReset: "Asl tartib",
+  arrangeHint: "Qatorni chapdagi tutqichdan ushlab suring yoki tutqichni tanlab ↑ ↓ bosing. Tartib sizda saqlanadi, yuklab olinadigan fayl ham shu tartibda bo'ladi.",
+  moveRow: "«{name}» — {i}/{n}. Suring yoki ↑ ↓ bosing",
+  orderCustom: "Sizning tartibingiz",
+  orderSaveFailed: "Tartib saqlanmadi — sahifani yangilab, qayta urinib ko'ring",
 };
 
 const uz_cyrl = {
@@ -240,6 +247,12 @@ const uz_cyrl = {
   dlDone: "Ҳужжат юклаб олинди", dlSent: "Ҳужжат Телеграмга юборилди",
   dlFailed: "Ҳужжат тайёрланмади",
   sectionsNav: "Бўлимлар",
+  arrange: "Тартиб", arrangeTip: "Кўрсаткичлар тартибини ўзгартириш",
+  arrangeDone: "Тайёр", arrangeReset: "Асл тартиб",
+  arrangeHint: "Қаторни чапдаги тутқичдан ушлаб суринг ёки тутқични танлаб ↑ ↓ босинг. Тартиб сизда сақланади, юклаб олинадиган файл ҳам шу тартибда бўлади.",
+  moveRow: "«{name}» — {i}/{n}. Суринг ёки ↑ ↓ босинг",
+  orderCustom: "Сизнинг тартибингиз",
+  orderSaveFailed: "Тартиб сақланмади — саҳифани янгилаб, қайта уриниб кўринг",
 };
 
 const ru = {
@@ -321,6 +334,12 @@ const ru = {
   dlDone: "Документ скачан", dlSent: "Документ отправлен в Telegram",
   dlFailed: "Документ не подготовлен",
   sectionsNav: "Разделы",
+  arrange: "Порядок", arrangeTip: "Изменить порядок показателей",
+  arrangeDone: "Готово", arrangeReset: "Исходный порядок",
+  arrangeHint: "Перетащите строку за ручку слева или выберите ручку и нажимайте ↑ ↓. Порядок сохраняется для вас, и скачанный файл будет в том же порядке.",
+  moveRow: "«{name}» — {i}/{n}. Перетащите или нажмите ↑ ↓",
+  orderCustom: "Ваш порядок",
+  orderSaveFailed: "Порядок не сохранился — обновите страницу и попробуйте снова",
 };
 
 const en = {
@@ -401,6 +420,12 @@ const en = {
   dlDone: "Document downloaded", dlSent: "Document sent to Telegram",
   dlFailed: "The document could not be built",
   sectionsNav: "Sections",
+  arrange: "Order", arrangeTip: "Change the order of the figures",
+  arrangeDone: "Done", arrangeReset: "Original order",
+  arrangeHint: "Drag a row by the handle on its left, or focus the handle and press ↑ ↓. The order is saved for you, and the downloaded file follows it.",
+  moveRow: "«{name}» — {i} of {n}. Drag, or press ↑ ↓",
+  orderCustom: "Your order",
+  orderSaveFailed: "The order was not saved — reload the page and try again",
 };
 
 export const TXT = { uz, uz_cyrl, ru, en };

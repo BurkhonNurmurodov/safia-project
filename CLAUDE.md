@@ -9589,6 +9589,16 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   A month header is two lines — the month, then its year (and «1–26» while it
   runs). Fixed rather than shrink-to-fit, so the months line up from card to
   card; a wider value still widens its column.
+- **A reader puts the figures in any order** (the operator, 2026-11-02: «I
+  should be able to move Figures freely»). «Tartib» in a card's header arms a
+  grip on every row — drag it (mouse or touch, followed on the window), or
+  focus it and press ↑ ↓; «Asl tartib» puts the server's order back, «Tayyor»
+  disarms. Saved PER PROFILE in ui-prefs `reports.rows`
+  (`components/reports/useRowOrder.js`: `{"<section>.<block>": [row keys]}`,
+  the server's own order stored as no entry, arrow-key runs saved once after
+  600 ms); a figure the saved list does not name goes at the end. The download
+  sends `order` and `routers/reports._apply_order` lays the file out the same
+  way — a tab that sends none gets the server's order.
 - **A month still running compares only its RATES.** A total over 26 days
   against a whole month says nothing a reader can act on, so the delta on a
   CUMULATIVE row (`reports.CUMULATIVE`) is withheld while the picked month is

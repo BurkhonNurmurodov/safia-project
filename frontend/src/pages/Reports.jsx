@@ -18,6 +18,7 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import ReportSection from "../components/reports/ReportSection";
+import { useRowOrder, ordered } from "../components/reports/useRowOrder";
 import CatLockNotice from "../components/idle/CatLockNotice";
 import { CATS } from "../components/idle/categories";
 import {
@@ -75,6 +76,9 @@ export default function Reports() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const toast = useToast();
+  // The order this reader put each table's figures in — the screen draws it,
+  // and the download sends it so the file follows the screen.
+  const rowOrder = useRowOrder({ onSaveError: () => toast.show(T.orderSaveFailed, "error") });
 
   const [month, setMonth] = usePersistentState("reports_month", curMonth());
   const [shift, setShift] = usePersistentState("reports_shift", null);
@@ -160,10 +164,13 @@ export default function Reports() {
     const display = {};
     const rows = {};
     const rowUnits = {};
+    const order = {};
     for (const s of want) {
       for (const b of s.blocks || []) {
         if (b.kind !== "periods") continue;
-        for (const r of b.rows || []) {
+        const shown = ordered(b.rows || [], rowOrder.order[`${s.key}.${b.key}`]);
+        order[`${s.key}.${b.key}`] = shown.map((r) => r.key);
+        for (const r of shown) {
           const key = `${s.key}.${b.key}.${r.key}`;
           // The unit has a column of its own, so the cells print bare
           // numbers — exactly as the screen does.
@@ -198,6 +205,7 @@ export default function Reports() {
         missingNote: scopeAll ? T.missingNote : "",
       },
       display,
+      order,
     };
   };
 
@@ -298,7 +306,8 @@ export default function Reports() {
             </p>
           </div>
           {LOCK_SECS.has(current?.key) && <CatLockNotice cats={catLocked} />}
-          {current && <ReportSection section={current} months={data.months || []} />}
+          {current && <ReportSection section={current} months={data.months || []}
+            order={rowOrder.order} setBlock={rowOrder.setBlock} />}
 
           {/* What this platform cannot report, said out loud rather than left
               as a gap the reader has to notice: a management report of this
