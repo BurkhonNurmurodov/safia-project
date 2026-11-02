@@ -11,6 +11,7 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import { SectionHead } from "../components/ui/DataTable";
 import { useToast } from "../components/ui/Toast";
 import { useTranslit } from "../utils/transliterate";
+import { nameCase } from "../utils/personName";
 import api from "../utils/api";
 import SeatStrip from "../components/assessment/SeatStrip";
 import { SeatDot } from "../components/assessment/AssessmentList";
@@ -169,9 +170,11 @@ export default function AssessmentGrade() {
     },
   };
   const dlg = ask ? dialogs[ask.kind] : null;
+  // Verifix spells the candidate in capitals; the page reads it in title case.
+  const candName = d.candidate ? nameCase(tl(d.candidate.full_name)) : null;
 
   return (
-    <Layout title={T.title} subtitle={d.candidate ? tl(d.candidate.full_name) : undefined}>
+    <Layout title={T.title} subtitle={candName || undefined}>
       <div className="space-y-4">
         <Link to="/assessment" className="inline-flex items-center gap-1.5 text-xs font-medium min-h-[32px]" style={{ color: "var(--text-2)" }}>
           <ArrowLeft size={14} aria-hidden="true" />{T.back}
@@ -183,12 +186,14 @@ export default function AssessmentGrade() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold break-words" style={{ color: "var(--text-1)" }}>
-                  {d.candidate ? tl(d.candidate.full_name) : "—"}
+                  {candName || "—"}
                 </h2>
-                <span className="inline-flex items-center rounded-md px-1.5 py-[2px] text-[11px] font-medium"
-                  style={d.status === "open"
-                    ? { background: "rgba(var(--brand-rgb),0.12)", color: "var(--brand-text)", border: "1px solid rgba(var(--brand-rgb),0.35)" }
-                    : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+                {/* A STATE, so a neutral chip with a status dot — brand gold is
+                    an accent, never a status. */}
+                <span className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                  style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
+                  <span className="w-1.5 h-1.5 rounded-full" aria-hidden="true"
+                    style={{ background: d.status === "open" ? "#22c55e" : "#94a3b8" }} />
                   {d.status === "open" ? T.chipOpen : T.chipClosed}
                 </span>
               </div>

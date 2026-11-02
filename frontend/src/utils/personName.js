@@ -36,3 +36,14 @@ export const surnameInitial = (name) => {
 const SHY = "\u00AD";
 export const softHyphenate = (s) => String(s ?? "").replace(/\S{13,}/g, (w) => [...w]
   .map((ch, i, a) => (i >= 4 && a.length - i >= 4 ? SHY + ch : ch)).join(""));
+
+// Verifix spells names in CAPITALS («QODIROVA DILNOZA BAXTIYOR QIZI»); a
+// shouted name reads in title case (only the first letter of each word is
+// raised, /kelish's rule, so «O'G'LI» reads «O'g'li»). A name already in mixed
+// case is left exactly as typed. ONE rule — the «Xodim kartasi» hero and the
+// assessment's candidate both read it.
+export function nameCase(s) {
+  const v = String(s || "");
+  if (/\p{Ll}/u.test(v)) return v;
+  return v.toLocaleLowerCase().replace(/(^|[\s-])(\S)/gu, (_, a, b) => a + b.toLocaleUpperCase());
+}

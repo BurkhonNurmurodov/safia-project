@@ -8,6 +8,7 @@ import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import FormField from "../components/ui/FormField";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import EmptyState from "../components/ui/EmptyState";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
@@ -265,21 +266,19 @@ export default function Reports() {
                 <li key={s.key}>
                   <button type="button" onClick={() => setOpen(s.key)}
                     aria-current={on ? "page" : undefined}
-                    className="w-full text-left px-4 py-2 flex items-start gap-2.5 transition-colors"
+                    className="w-full text-left px-4 py-2 min-h-[36px] flex items-center gap-2.5 transition-colors"
                     style={{
                       background: on ? "var(--bg-inner)" : "transparent",
                       boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined,
                     }}>
-                    <Icon size={15} className="flex-shrink-0 mt-px"
+                    <Icon size={15} className="flex-shrink-0"
                       style={{ color: on ? "var(--brand-text)" : "var(--text-3)" }} />
-                    <span className="min-w-0">
-                      <span className="block text-[13px] leading-tight"
-                        style={{ color: on ? "var(--text-1)" : "var(--text-2)",
-                                 fontWeight: on ? 600 : 400 }}>{T.sec[s.key] || s.key}</span>
-                      <span className="block text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
-                        {T.secSub[s.key] || ""}
-                      </span>
-                    </span>
+                    {/* One line per section: the section's own header under
+                        the toolbar already says what it holds. */}
+                    <span className="min-w-0 truncate text-[13px]"
+                      title={T.secSub[s.key] || undefined}
+                      style={{ color: on ? "var(--text-1)" : "var(--text-2)",
+                               fontWeight: on ? 500 : 400 }}>{T.sec[s.key] || s.key}</span>
                   </button>
                 </li>
               );
@@ -346,22 +345,17 @@ export default function Reports() {
               icon={<Download size={15} />}>{T.dlGo}</Button>
           </>
         }>
-        <div>
-          <div className="text-[11px] uppercase tracking-wider mb-1.5"
-            style={{ color: "var(--text-3)" }}>{T.dlWhat}</div>
+        <FormField label={T.dlWhat}>
           <SegmentedToggle value={scopeAll ? "all" : "one"} onChange={(v) => setScopeAll(v === "all")}
             options={[
               { value: "all", label: T.dlWhatAll },
               { value: "one", label: fill(T.dlWhatOne, { s: T.sec[current?.key] || "" }) },
             ]} />
-        </div>
-        <div>
-          <div className="text-[11px] uppercase tracking-wider mb-1.5"
-            style={{ color: "var(--text-3)" }}>{T.dlFormat}</div>
+        </FormField>
+        <FormField label={T.dlFormat} hint={T.fmtHint[fmt]}>
           <SegmentedToggle value={fmt} onChange={setFmt}
             options={FORMATS.map((f) => ({ value: f, label: T.fmt[f], title: T.fmtHint[f] }))} />
-          <p className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>{T.fmtHint[fmt]}</p>
-        </div>
+        </FormField>
       </Modal>
     </Layout>
   );

@@ -9,6 +9,7 @@
 // Every cell is printed by `fmtCell` and nothing else, and «—» means the
 // platform has no answer — never a 0 somebody could read as «none».
 import TableCard, { Th } from "../ui/DataTable";
+import KpiDeltaCard from "../ui/KpiDeltaCard";
 import { DASH, fmtCell, fmtDelta, deltaTone, rowLabel, colLabel, monthLabel, fill, useRT }
   from "./reportsUtil";
 import { useLang } from "../../context/LangContext";
@@ -19,21 +20,57 @@ const TONE = {
   bad: "var(--status-bad)",
 };
 
-function DeltaChip({ row, T }) {
+function DeltaCell({ row, T }) {
   // A TOTAL over a month still running is not comparable with a whole month —
   // the server withholds its delta and says so (`no_delta`), and the cell
   // carries that reason rather than leaving a silent gap where every other
   // row has a change.
   if (row.no_delta === "partial") {
-    return <span className="ml-2 text-[11px]" style={{ color: "var(--text-4)" }}
+    return <span className="text-xs" style={{ color: "var(--text-3)" }}
       title={T.noDeltaPartial}>·</span>;
   }
+  // «—» means no answer; a change of exactly nothing is a 0, said plainly.
+  if (row.delta != null && Number(row.delta) === 0) {
+    return <span className="text-xs" style={{ color: "var(--text-3)" }}>{row.fmt === "pct" ? "0 p.p." : "0"}</span>;
+  }
   const txt = fmtDelta(row.delta, row.fmt);
-  if (!txt) return null;
+  if (!txt) return <span style={{ color: "var(--text-4)" }}>{DASH}</span>;
   const tone = deltaTone(`${row.section || ""}.${row.key.split(".").pop()}`, row.delta);
   return (
-    <span className="ml-2 text-[11px] font-medium"
-      style={{ color: tone ? TONE[tone] : "var(--text-3)" }}>{txt}</span>
+    <span className="text-xs font-medium"
+      style={{ color: tone ? TONE[tone] : "var(--text-2)" }}>{txt}</span>
+  );
+}
+
+/** The summary's headline — each figure set large with the month before it
+ *  and the change, the platform's own KPI card. The same rows the table held
+ *  (and the document still prints), drawn as figures: a reader wants these
+ *  before any table. No sparkline — three months make a line that says
+ *  nothing the two figures beside it do not. */
+function HeadlineTiles({ block, months, T, t }) {
+  const last = months.length - 1;
+  const prevYm = months[last - 1]?.ym;
+  return (
+    // Two to a row until the screen is wide enough for a whole sum («111 920
+    // 000 so'm») and its change to sit on one line — four at 1440 broke both.
+    <div className="grid grid-cols-2 2xl:grid-cols-4 gap-3">
+      {block.rows.map((r) => {
+        const cur = r.values[last];
+        const prev = last > 0 ? r.values[last - 1] : null;
+        const tone = deltaTone(`${r.section || ""}.${r.key.split(".").pop()}`, r.delta);
+        const up = Number(r.delta) > 0;
+        return (
+          <KpiDeltaCard key={r.key} label={rowLabel(r, T, t)}
+            value={fmtCell(cur, r.fmt)}
+            prevValue={fmtCell(prev, r.fmt)}
+            prevLabel={prevYm ? `${monthLabel(prevYm, t)}:` : ""}
+            delta={tone ? Number(r.delta) || 0 : 0}
+            deltaText={fmtDelta(r.delta, r.fmt)}
+            higherIsBetter={tone ? (tone === "good") === up : true}
+            sub={r.no_delta === "partial" ? T.partial : null} />
+        );
+      })}
+    </div>
   );
 }
 
@@ -48,36 +85,41 @@ function colMonth(m, T, t) {
 
 function PeriodsBlock({ block, months, T, t, caption }) {
   const last = months.length - 1;
+  // The change against the month before gets a column of its own, so the
+  // picked month's figures line up; only where the server sends one.
+  const hasDelta = block.rows.some((r) => r.delta != null || r.no_delta);
   return (
     <TableCard title={caption} maxHeight="none">
       <thead>
         <tr>
           <Th label={T.caps.figure} cls="min-w-[180px]" />
-          {months.map((m, i) => (
+          {months.map((m) => (
             <Th key={m.ym} align="right"
               label={colMonth(m, T, t)}
-              hint={m.partial ? T.partial : undefined}
-              cls={i === last ? "font-bold" : ""} />
+              hint={m.partial ? T.partial : undefined} />
           ))}
+          {hasDelta && <Th label={T.colDelta} align="right" hint={T.prevLabel} />}
         </tr>
       </thead>
       <tbody>
         {block.rows.map((r) => (
           <tr key={r.key}>
-            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
+            <td className="px-3 py-2" style={{ color: r.bold ? "var(--text-1)" : "var(--text-2)" }}>
               {rowLabel(r, T, t)}
             </td>
             {r.values.map((v, i) => (
               <td key={i} className="px-3 py-2 text-right tabular-nums"
                 style={{
                   color: v === null || v === undefined ? "var(--text-4)" : "var(--text-1)",
-                  fontWeight: i === last && (r.bold || r.delta != null) ? 600 : 400,
+                  fontWeight: i === last ? 500 : 400,
                   background: i === last ? "var(--bg-inner)" : undefined,
                 }}>
                 {fmtCell(v, r.fmt)}
-                {i === last && <DeltaChip row={r} T={T} />}
               </td>
             ))}
+            {hasDelta && (
+              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap"><DeltaCell row={r} T={T} /></td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -138,6 +180,9 @@ export default function ReportSection({ section, months }) {
     <div className="space-y-4">
       {(section.blocks || []).map((b) => {
         const caption = T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || "";
+        if (section.key === "summary" && b.key === "headline" && b.kind === "periods") {
+          return <HeadlineTiles key={b.key} block={b} months={months} T={T} t={t} />;
+        }
         return b.kind === "periods"
           ? <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t} caption={caption} />
           : <UnitsBlock key={b.key} block={b} T={T} caption={caption} tl={tl} />;

@@ -117,9 +117,14 @@ export default function KpiDeltaCard({
         <div className="text-[11px] text-[var(--text-4)] max-sm:text-xs max-sm:text-[var(--text-2)]">
           {prevLabel} {prevValue ?? "—"}
         </div>
-        <div className="w-[55%] max-w-[130px] max-sm:w-full max-sm:max-w-none">
-          <Sparkline values={trend} color={chipColor === FLAT ? "var(--brand)" : chipColor} />
-        </div>
+        {/* A card handed no `trend` draws no line and keeps no room for one
+            («Hisobotlar»' headline: three months make no line worth drawing).
+            Every caller that passes one is unchanged. */}
+        {trend !== undefined && (
+          <div className="w-[55%] max-w-[130px] max-sm:w-full max-sm:max-w-none">
+            <Sparkline values={trend} color={chipColor === FLAT ? "var(--brand)" : chipColor} />
+          </div>
+        )}
       </div>
     </div>
   );

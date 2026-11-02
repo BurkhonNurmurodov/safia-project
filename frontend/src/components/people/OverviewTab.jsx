@@ -13,7 +13,7 @@ import { useAuth } from "../../context/AuthContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { fill, fmtDate, Chip } from "./peopleUtil";
+import { fill, fmtDate } from "./peopleUtil";
 
 const PAGE = 20;
 
@@ -87,10 +87,9 @@ export default function OverviewTab({ data, P, ready }) {
       <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={History} title={P.facts} />
         <div className="px-4 pb-2">
-          <FactRow label={P.fUnit}>{h.cell?.unit ? tl(h.cell.unit) : "—"}</FactRow>
-          <FactRow label={P.cell}>{h.cell ? `${h.cell.code}${h.cell.letter ? ` · ${h.cell.letter}` : ""}` : "—"}</FactRow>
+          {/* The brigada, the cell and the shift are the hero's own row just
+              above — not said twice. */}
           <FactRow label={P.unitVerifix}>{h.unit_name ? tx(h.unit_name) : "—"}</FactRow>
-          <FactRow label={P.shift}>{h.cell?.shift ? fill(P.shiftN, { n: h.cell.shift }) : "—"}</FactRow>
           <FactRow label={P.fSchedule}>{h.schedule ? tx(h.schedule) : "—"}</FactRow>
           <FactRow label={P.hired}>{fmtDate(h.hired)}</FactRow>
           <FactRow label={P.fFirstDay}>{fmtDate(h.first_day)}</FactRow>
@@ -113,14 +112,15 @@ export default function OverviewTab({ data, P, ready }) {
               const body = (
                 <>
                   <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                    style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
                     <Icon size={15} aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm truncate" style={{ color: "var(--text-1)" }}>{d.text}</span>
                     {d.sub && <span className="block text-xs truncate" style={{ color: "var(--text-3)" }}>{d.sub}</span>}
                   </span>
-                  <Chip className="tabular-nums">{fmtDate(e.date)}</Chip>
+                  {/* A date is meta: quiet figures in one right-hand column. */}
+                  <span className="flex-shrink-0 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDate(e.date)}</span>
                 </>
               );
               return (

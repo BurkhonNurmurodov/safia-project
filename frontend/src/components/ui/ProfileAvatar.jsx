@@ -60,6 +60,11 @@ export default function ProfileAvatar({
   size = 32,
   className = "",
   style,
+  // Initials on a NEUTRAL surface instead of the name's hue — for a page whose
+  // avatar is large enough that a hue with no meaning becomes the loudest
+  // thing on it (the «Xodim kartasi» hero). The photo, when there is one, is
+  // unchanged.
+  muted = false,
 }) {
   const { data: blob } = useQuery({
     queryKey: photoUrl ? ["avatar-url", photoUrl] : ["avatar", profileKey, photoVer],
@@ -97,10 +102,12 @@ export default function ProfileAvatar({
 
   return (
     <div
-      className={`rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 select-none ${className}`}
+      className={`rounded-full flex items-center justify-center ${muted ? "font-medium" : "font-bold text-white"} flex-shrink-0 select-none ${className}`}
       style={{
         ...base,
-        background: nameToColor(colorKey || name),
+        ...(muted
+          ? { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }
+          : { background: nameToColor(colorKey || name) }),
         fontSize: Math.max(9, Math.round(size * 0.34)),
       }}
     >
