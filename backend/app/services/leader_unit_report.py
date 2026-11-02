@@ -332,6 +332,19 @@ def _rows(db: Session, f: dict) -> list[dict]:
         rep = leader_reports.day_report(db, leader_bot.day_uid(x.id))
         if rep is None:
             continue                 # the profile is gone — nothing to name it by
+        if not rep.get("excluded") and _nobody_filed(rep):
+            # A closed day no PERSON answered a task of — the day an objection
+            # to a never-filed day creates (2026-11-02), or a day opened and
+            # left. It still reads «not filed», exactly as before it existed:
+            # same row, no uid, the same 0 in the unit's result.
+            rows.append({
+                "key": _key(x.leader_id, x.cell_id), "uid": None, "state": "missing",
+                "leader": rep.get("leader") or "—", "leaderId": rep.get("leaderId"),
+                "cell": rep.get("cell"), "cellId": rep.get("cellId"),
+                "score": None, "rawScore": None, "completion": None,
+                "counts": None, "rejectedTasks": [], "autoTasks": [], "excluded": None,
+            })
+            continue
         c = rep["counts"]
         state = ("excluded" if rep.get("excluded")
                  else "checking" if c["pending"]
@@ -394,6 +407,19 @@ def _rows(db: Session, f: dict) -> list[dict]:
                              str(r["leader"] or "").casefold(),
                              str(r["cell"] or "")))
     return rows
+
+
+def _nobody_filed(rep: dict) -> bool:
+    """Did no PERSON answer a single task of this closed day? Every task not
+    done, no photo, and its reason a platform sentinel — the deadline's
+    (`__missed__`) or an automatic check's (`__auto__`). An admin's «done»
+    ruling (an approved objection) makes a task done, and the day a real row."""
+    ts = rep.get("tasks") or []
+    marks = (leader_tasks.MISSED_PREFIX, leader_tasks.AUTO_PREFIX)
+    return bool(ts) and all(
+        not t.get("done") and not t.get("admin_done") and not t.get("media")
+        and str(t.get("reason") or "").startswith(marks)
+        for t in ts)
 
 
 def _unit_score(f: dict, rows: list[dict]) -> tuple[int | None, int, int]:

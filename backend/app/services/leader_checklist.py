@@ -205,3 +205,186 @@ def close_day(db: Session, day: LeaderTaskDay, cfg: dict,
         db.rollback()
     leader_ai.run_async(discover_first=False)
     return float(day.completion or 0)
+
+
+# ── a day the leader never filed, and objecting to it (2026-11-02) ───────────
+#
+# The operator (2026-11-02, asked «per task or one for the whole day»: «Per
+# task»): a leader who never opened the checklist that day may object to each
+# of its tasks, exactly as to a task the platform closed when its hour ran out.
+#
+# Such a day has NOTHING stored — a bot checklist exists only from the first
+# task a leader answers — and every objection hangs off one stored answer
+# (`ref` = `bot:<entry id>`), whose approval writes its grant beside it. So the
+# FIRST objection creates the day the platform would have closed had the
+# leader opened it: closed, every enabled task recorded not-done with the
+# missed-deadline sentinel (an automatic task with its own), completion 0 —
+# the score the register already gave the missing day. From then on it is an
+# ordinary «Muddat o'tib ketdi» day: the same chain, chat, rulings and grant
+# (`leader_dispute.KIND_DEADLINE` / `KIND_AUTO`). Nothing is created unless an
+# objection is actually filed.
+#
+# Until then the tab names the day by a stand-in uid (`unfiled_uid`), which
+# `routers.leaders.file_dispute` turns into the real day at the moment of
+# filing (`materialize_unfiled_day`), inside the filing's own transaction.
+
+UNFILED_PREFIX = "unfiled-"
+
+
+def unfiled_uid(leader_id: int, date: str, cell_id: int | None) -> str:
+    """The stand-in for a day nobody filed — `unfiled-<profile>-<date>[-<cell>]`."""
+    tail = f"-{int(cell_id)}" if cell_id else ""
+    return f"{UNFILED_PREFIX}{int(leader_id)}-{date}{tail}"
+
+
+def parse_unfiled_uid(uid: str | None) -> tuple[int, str, int | None] | None:
+    """`(profile id, date, cell id)` out of `unfiled_uid`, or None."""
+    s = str(uid or "")
+    if not s.startswith(UNFILED_PREFIX):
+        return None
+    parts = s[len(UNFILED_PREFIX):].split("-")
+    # id · YYYY · MM · DD [· cell]
+    if len(parts) not in (4, 5) or not all(p.isdigit() for p in parts):
+        return None
+    try:
+        date = datetime.strptime("-".join(parts[1:4]), "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+    cell = int(parts[4]) if len(parts) == 5 and int(parts[4]) > 0 else None
+    return int(parts[0]), date, cell
+
+
+def _day_row(db: Session, leader_id: int, date: str,
+             cell_id: int | None) -> LeaderTaskDay | None:
+    q = db.query(LeaderTaskDay).filter_by(leader_id=leader_id, date=date)
+    q = (q.filter(LeaderTaskDay.cell_id == cell_id) if cell_id
+         else q.filter(LeaderTaskDay.cell_id.is_(None)))
+    return q.first()
+
+
+def _shifts(db: Session, prof: RoleProfile, date: str) -> tuple[int, int]:
+    """(the unit's shift, the shift this leader's checklist ran on that day)."""
+    from app.services import leader_shift
+    unit_sh = leader_shift.unit_shift(db, prof.manager_id)
+    return unit_sh, leader_shift.shift_on(db, prof.id, date, unit_sh)
+
+
+def unfiled_objectable(db: Session, prof: RoleProfile, date: str,
+                       cell_id: int | None) -> bool:
+    """May this never-filed leader-day be objected to? Every condition under
+    which a day that DID exist could have been — and that the day the first
+    objection creates would then COUNT:
+
+      * on or after `leader_dispute.APPEALS_FROM`, and its filing window shut
+        (a day still being filed is filed, not argued);
+      * owed: not exempt (`leader_load`), owed by this profile (`leader_owes`),
+        and this cell one the leader owed a checklist for (`expected_days`);
+      * nothing stored for it — no bot day, no Google-Form row;
+      * a bot day for it would be the RECORD (`leader_bot.merges`, not a
+        rehearsal day): created where it does not count, an approved objection
+        would give back a weight the register never reads;
+      * not out of the results already (a day exclusion or a cutoff —
+        `leader_exclusions.excluded` answers both): it costs nobody anything.
+
+    Who may file is the caller's question (`routers.leaders._may_dispute_for`).
+    """
+    from app.services import leader_bot, leader_cells, leader_dispute, leader_exclusions
+    if prof is None or prof.role != "leader" or not prof.manager_id:
+        return False
+    if not leader_dispute.appealable(date):
+        return False
+    unit_sh, shift = _shifts(db, prof, date)
+    if date > leader_tasks.expired_through(shift):
+        return False
+    if leader_load.exempt(db, prof, date) or not leader_owes.owes(prof, date):
+        return False
+    if cell_id not in leader_cells.expected_days(db, prof, date):
+        return False
+    if _day_row(db, prof.id, date, cell_id) is not None:
+        return False
+    per_cell = cell_id is not None
+    overrides = leader_bot.source_overrides(db)
+    floors = leader_bot.bot_from_floors(db)
+    if not leader_bot.merges(unit_sh, prof.manager_id, date,
+                             leader_bot.camera_units(db), floors,
+                             leader_id=prof.id, overrides=overrides,
+                             per_cell=per_cell):
+        return False
+    if leader_bot.training(unit_sh, prof.manager_id, date, floors,
+                           leader_id=prof.id, overrides=overrides,
+                           per_cell=per_cell):
+        return False
+    if leader_exclusions.excluded(db, prof.id, date, leader_name=prof.name):
+        return False
+    if not per_cell:
+        # A Form row is a filing. Per-cell days never had one (the Form has no
+        # cell column), so only a cell-less day asks.
+        from app.routers.leader_checklist import _sheet_uid   # cycle
+        if _sheet_uid(db, prof, date):
+            return False
+    return True
+
+
+def materialize_unfiled_day(db: Session, prof: RoleProfile, date: str,
+                            cell_id: int | None) -> LeaderTaskDay:
+    """Create the closed, unfiled day an objection hangs off. FLUSHES, never
+    commits: the filing that called it commits both or neither.
+
+    The day `leader_close.close_expired_days` / `autoclose_due` would have left
+    behind had the leader opened it and walked away: every enabled task of
+    THAT day's checklist recorded not-done — `__missed__|HH:MM` with the task's
+    own closing hour on a unit that submits task by task, the day's filing
+    deadline on one that closes whole days; an automatic task `__auto__` with
+    what its check found at the hour when that was a failure, else
+    `not_checked` (never a pass: the day is created at the score the register
+    already gave it, 0, and moves only by a ruling). Completion 0.
+
+    `closed_at` is the moment the leader's time ran out that day
+    (`leader_unit_report._time_up_at`), never now: the brigadir's digest went
+    out after that moment, and a close stamped later would read as a checklist
+    filed after the digest — an update DM about a day nobody filed. A day that
+    already exists (two objections racing, a stale tab) is returned as it is.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from app.services import leader_auto, leader_unit_report
+
+    day = _day_row(db, prof.id, date, cell_id)
+    if day is not None:
+        return day
+    _unit_sh, shift = _shifts(db, prof, date)
+    per_task = leader_tasks.per_task_close(db, prof.manager_id)
+    cfg = leader_tasks.effective_leader_config(db, prof, shift, day=date)
+    try:
+        with db.begin_nested():
+            day = LeaderTaskDay(leader_id=prof.id, manager_id=prof.manager_id,
+                                date=date, cell_id=cell_id)
+            db.add(day)
+            db.flush()
+    except IntegrityError:
+        # Another filing created it a moment ago — `uq_ltask_day` waited for
+        # that transaction and refused this one. Its day is the day.
+        got = _day_row(db, prof.id, date, cell_id)
+        if got is None:
+            raise
+        return got
+    for tid, s in cfg.items():
+        if not s.get("enabled"):
+            continue
+        hhmm = leader_close.task_deadline(s, shift)
+        if leader_auto.owns(s, date):
+            got = leader_auto.measured(db, prof.id, date, tid, cell_id)
+            code = (got.code if got is not None and got.outcome == leader_auto.FAILED
+                    and got.code else "not_checked")
+            reason = leader_tasks.auto_reason(hhmm, code)
+        else:
+            reason = leader_tasks.missed_reason(shift, hhmm if per_task else None)
+        db.add(LeaderTaskEntry(day_id=day.id, task_id=tid, done=False, reason=reason))
+    db.flush()
+    day.closed_at = (leader_unit_report._time_up_at(db, prof, shift, date, per_task)
+                     or datetime.now(timezone.utc))
+    day.completion = leader_tasks.compute_completion(
+        cfg, db.query(LeaderTaskEntry).filter_by(day_id=day.id).all())
+    db.flush()
+    log.info("leader-checklist: unfiled day %s created for leader %s (%s, cell %s) "
+             "to carry an objection", day.id, prof.id, date, cell_id)
+    return day

@@ -5615,3 +5615,15 @@ class TrelloBoard(Base):
     error         = Column(Text, nullable=True)                      # the last attempt's failure
     added_by      = Column(String, nullable=True)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NotionTrackerSent(Base):
+    """«Notion vazifalari»: every reminder message already sent, so a retry or
+    a restart never sends one twice (services/notion_tracker.py). One row per
+    key — "daily|<day>|<chat>" for a group's whole day, "…|<person>" for one
+    person's message, "…|rich|<n>" / "…|plain|<n>" for each part. Kept 60 days."""
+    __tablename__ = "notion_tracker_sent"
+
+    key = Column(String, primary_key=True)
+    day = Column(String(10), nullable=False, index=True)
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -7303,8 +7303,58 @@ PLATFORM closed unsubmitted when its hour ran out (`__missed__|HH:MM`, state
   o'tdi · HH:MM» chip (`missed` on the item); `VerdictBlock missedReason`; the
   task sheet's `objIntroDeadline` and the expired banner's «quyida norozilik
   yozishingiz mumkin».
-- Still out: the leader's own «Yo'q» (not a rejection) and a day with no
-  entry at all («missing» — nothing to argue with). `APPEALS_FROM` stands.
+- Still out: the leader's own «Yo'q» (not a rejection). `APPEALS_FROM` stands.
+
+### …and a day the leader never filed (2026-11-02)
+
+The operator, shown a past day on the «Chek-list» tab with «Bu kun chek-list
+topshirilmagan» and no objection button anywhere, and asked «per task or one
+for the whole day»: «Per task». Each task of a never-filed day may be objected
+to, exactly like a deadline task.
+
+- **Why it had no door**: a bot checklist day is created only by the leader's
+  FIRST answer, so a day never opened has nothing stored — no day, no entry,
+  no report — and an objection hangs off one stored entry (`ref` =
+  `bot:<entry id>`), whose approval writes its grant beside it.
+- **So the FIRST objection creates the day** —
+  `services/leader_checklist.materialize_unfiled_day`, called from
+  `routers/leaders.file_dispute` inside the filing's own transaction (a refusal
+  further down rolls it back with the objection): closed, every enabled task
+  of that day's checklist not-done with `__missed__|HH:MM` (the task's own
+  closing hour on a per-task unit, the day's deadline otherwise), an automatic
+  task `__auto__|HH:MM|<code>` — its at-hour failure code when it failed, else
+  `not_checked`, never a pass — completion 0, the score the register already
+  gave the missing day. From then on it is an ordinary «Muddat o'tib ketdi»
+  day: `KIND_DEADLINE` / `KIND_AUTO`, the same chain, chat, rulings and
+  override grant. Nothing is created unless an objection is filed.
+- **`closed_at` is the moment the leader's time ran out that day**
+  (`leader_unit_report._time_up_at`), never now — a close stamped after the
+  brigadir's digest would read as a late filing and send an update DM.
+- **The tab names the day by a stand-in uid** — `unfiled_uid` →
+  `unfiled-<profile>-<date>[-<cell>]`, served as `objectUid` on the checklist
+  view (`uid` stays null); the sheet posts the objection to
+  `/api/leaders/report/<objectUid>/dispute`, and `file_dispute` turns it into
+  the real day (`parse_unfiled_uid`). A day that exists by then (another
+  objection, a stale tab) is used as it is.
+- **`unfiled_objectable` is THE rule** for offering it: on or after
+  `APPEALS_FROM` with its filing window shut; owed (not `leader_load`-exempt,
+  `leader_owes`, the cell in `expected_days`); nothing stored (no bot day, no
+  Form row); a bot day for it would be the RECORD (`leader_bot.merges`, not a
+  rehearsal day) — created where it does not count, an approval would give
+  back a weight nobody reads; and not already out of the results
+  (`leader_exclusions.excluded`, cutoffs included). Who may file is
+  `_may_dispute_for`, as for every objection.
+- **The brigadir's digest still reads such a day «not filed»** —
+  `leader_unit_report._nobody_filed`: a closed day where no person answered a
+  task (every task not done, no admin «done», no photo, a platform sentinel
+  for a reason) is the missing row it was, same 0 in the unit's result. An
+  approved objection makes it a real row with its score.
+- No day report DM is sent for it (it has no AI verdicts, so the report sweep
+  never reaches it, and a correction needs a first report); the objection's own
+  notices carry the news.
+- Words: `nothingObj` under the «nothing filed» card, `bExpiredObj` on the
+  «Bu vazifa topshirilmagan» banner; the objection reads as a deadline one
+  (`objIntroDeadline`), an automatic task's as `objIntroAuto`.
 
 ## Nothing before 1 September 2026 can be argued (`APPEALS_FROM`)
 

@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "education", "exam", "assistant", "reports", "assessment", "people"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -93,6 +93,10 @@ DEFAULT_PAGE_ACCESS = {
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
+    # «Notion vazifalari» — the Notion "Production" task list, read-only
+    # (services/notion_tracker.py). Admin-only by default; open up roles from
+    # the Access tab. Its reminders' settings tab is admin-only and never grantable.
+    "notion-tasks": [],
     # Quality register (complaints & non-conformances, synced from the QA
     # sheet). A management view of the whole factory: admins plus the two
     # manager tiers; supervisors/leaders can be toggled on from the Access tab.

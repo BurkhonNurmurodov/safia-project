@@ -2128,6 +2128,40 @@ def file_dispute(
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="task_id must be an integer")
 
+    # A day the leader NEVER FILED (2026-11-02, the operator: «Per task»): the
+    # «Chek-list» tab names it by a stand-in uid, and the day an objection
+    # hangs off is created here, closed and unfiled at 0, in THIS filing's
+    # transaction — every refusal below rolls it back with the objection
+    # (`services.leader_checklist.materialize_unfiled_day`).
+    from app.services import leader_checklist as leader_checklist_svc
+    unfiled = created_day = None
+    parsed_uid = leader_checklist_svc.parse_unfiled_uid(uid)
+    if parsed_uid is not None:
+        pid, uday, ucell = parsed_uid
+        prof = (db.query(RoleProfile)
+                .filter(RoleProfile.id == pid, RoleProfile.role == "leader").first())
+        if prof is None or not report_scope_ok(db, payload, {
+            "manager_id": prof.manager_id, "leader_id": prof.id, "leader": prof.name,
+        }):
+            raise HTTPException(status_code=404, detail="No such report")
+        if not _may_dispute_for(db, payload, {"leaderId": prof.id,
+                                              "managerId": prof.manager_id,
+                                              "leader": prof.name}):
+            raise HTTPException(status_code=403, detail="Not yours to dispute")
+        if leader_checklist_svc._day_row(db, prof.id, uday, ucell) is None:
+            if not leader_checklist_svc.unfiled_objectable(db, prof, uday, ucell):
+                raise HTTPException(status_code=409,
+                                    detail="This day can no longer be disputed")
+            unfiled = leader_checklist_svc.materialize_unfiled_day(db, prof, uday, ucell)
+            created_day = unfiled.id
+        else:
+            # Created a moment ago by another objection, or a stale tab.
+            unfiled = leader_checklist_svc._day_row(db, prof.id, uday, ucell)
+            if unfiled.closed_at is None:
+                raise HTTPException(status_code=409,
+                                    detail="This day is still being filed")
+        uid = leader_bot.day_uid(unfiled.id)
+
     # An OPEN day as well (2026-09-28): on a unit that submits task by task a
     # task is judged minutes after it is submitted, and the leader may argue the
     # verdict right there — from the «Chek-list» tab — rather than wait for a
@@ -2211,7 +2245,9 @@ def file_dispute(
         unit_id=d.manager_id, day=d.date, reason=reason,
         details=[("leader", d.leader_name), ("task", task_id),
                  ("filed_by", role), ("status", d.status), ("report", uid),
-                 ("against", judge)],
+                 ("against", judge)]
+        # The unfiled day this filing created to hang off (2026-11-02).
+        + ([("unfiled_day", created_day)] if created_day else []),
     )
     fresh = leader_reports.day_report(db, uid, allow_open=True)
     return {"ok": True, "status": d.status, "id": d.id,

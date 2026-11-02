@@ -337,6 +337,18 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
     rep_tasks = {int(t["id"]): t for t in (rep or {}).get("tasks") or []}
     may_object = bool(rep and rep.get("canDispute"))
     appealable = leader_dispute.appealable(date)
+    # A day NOTHING was filed for (2026-11-02, the operator: «Per task»): each
+    # task may still be objected to. The objection is posted against a stand-in
+    # uid, and the day it hangs off is created only when one is filed
+    # (`leader_checklist.materialize_unfiled_day`, from `file_dispute`).
+    object_uid = None
+    if (day is None and source is None and not is_today
+            and (not per_cell or cell_id) and not no_load and not not_owed
+            and _may_dispute_for(db, payload, {"leaderId": prof.id,
+                                               "managerId": prof.manager_id,
+                                               "leader": prof.name})
+            and leader_checklist.unfiled_objectable(db, prof, date, cell_id)):
+        object_uid = leader_checklist.unfiled_uid(prof.id, date, cell_id)
 
     open_day = day is not None and day.closed_at is None
     examples = leader_ai.example_ids_map(db, manager_id=prof.manager_id,
@@ -423,9 +435,14 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                     else "screenshot" if (e is not None and media.get(e.id)) else "none")
             has_media = bool(e is not None and media.get(e.id))
             st = leader_close.task_state(e, revs.get(tid), has_media, day)
+            unfiled_ok = False
             if e is None and not is_today:
                 # Nothing was ever recorded for this task on a day that is over.
                 st = "missing"
+                # …and on a day nothing at all was filed, it may be argued: it
+                # becomes the «Muddat o'tib ketdi» task (an automatic one, a
+                # failed check) of the day the first objection creates.
+                unfiled_ok = object_uid is not None and bool(c)
             st = _ruled_state(st, rt)
             timing = {} if tid in reopened else c
             closes = leader_close.task_deadline(timing, shift)
@@ -481,14 +498,18 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
                 "rejectedBy": (rt or {}).get("rejected_by"),
                 # WHAT an objection would argue with — the judge above, or
                 # "deadline" for a task the platform closed unsubmitted.
-                "objectionKind": (rt or {}).get("objection_kind"),
+                "objectionKind": ((rt or {}).get("objection_kind")
+                                  or (("auto" if kind == "auto" else "deadline")
+                                      if unfiled_ok else None)),
                 # A verdict exists only once the task was submitted (the AI's)
                 # or decided (the automatic check's, the deadline's), so
                 # `objectable` from the report already implies that; what is
                 # added here is WHO may argue it and that nothing is being
-                # argued yet.
-                "objectable": bool(may_object and appealable and rt
-                                   and rt.get("objectable") and not open_dispute),
+                # argued yet. A never-filed day's task is objectable on its own
+                # terms (`object_uid` above).
+                "objectable": bool(unfiled_ok or (
+                    may_object and appealable and rt
+                    and rt.get("objectable") and not open_dispute)),
                 "late": dict(_late_wire(late_row, drafts) or {}, eligible=late_ok)
                 if (late_ok or late_row is not None or drafts) else None,
                 "auto": (_auto_wire(db, prof, date, tid, c, cell_id, shift)
@@ -533,6 +554,10 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
         "filing": {"deadline": leader_tasks.deadline_hhmm(shift)},
         "source": source,
         "uid": uid,
+        # What an objection is posted against: the report's own uid, or — on a
+        # day nothing was filed for — the stand-in `file_dispute` turns into the
+        # day it creates (2026-11-02). None when nothing here can be argued.
+        "objectUid": uid or object_uid,
         "counted": counted,
         "rehearsal": rehearsal,
         "day": ({"id": day.id, "open": day.closed_at is None,
@@ -548,7 +573,7 @@ def _view_raw(db: Session, payload: dict, prof: RoleProfile,
             "file": bool(files and is_today and not (day and day.closed_at)
                          and not (per_cell and cell_id is None) and not no_load
                          and not not_owed),
-            "object": may_object and appealable,
+            "object": bool((may_object and appealable) or object_uid),
             "admin": leaders_admin(db, payload),
         },
         "closeDay": ({"ready": not missing, "missing": missing}

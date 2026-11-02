@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, ontime, reports, ops_door, assessment, people, trello
+from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, ontime, reports, ops_door, assessment, people, trello, notion_tasks
 from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -528,6 +528,15 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.trello import register_jobs as register_trello_jobs
     run(register_trello_jobs)
+    # «Notion vazifalari»: the Notion "Production" task list's daily Telegram
+    # reminders, moved from the stand-alone GitHub bot (2026-11-02) — a job
+    # every minute sends the day's messages at the first tick after the send
+    # time; the carried-over settings land once (test group, paused), and the
+    # bot's webhook is pointed here (mirrored in passenger_wsgi.py).
+    from app.services import notion_tracker
+    run(notion_tracker.register_jobs)
+    later(notion_tracker.seed)
+    later(notion_tracker.boot_webhook)
     # The report door: expire unanswered / untaken questions every minute and
     # redraw their cards; make the SELECT-only reader role (mirrored).
     from app.services.ops_door import register_jobs as register_ops_door_jobs
@@ -1339,6 +1348,12 @@ app.include_router(ontime.router)
 # connection card (/api/admin/trello) is admin-only and never grantable.
 app.include_router(trello.router)
 app.include_router(trello.admin_router)
+# «Notion vazifalari» (/notion-tasks): the Notion task list (page key
+# notion-tasks), its reminders' admin tab (/api/admin/notion-tracker, admin-only,
+# never grantable) and @Safia_Tracker_agent's webhook (/bot/notion-webhook).
+app.include_router(notion_tasks.router)
+app.include_router(notion_tasks.admin_router)
+app.include_router(notion_tasks.hook_router)
 # «Hisobotlar» (/reports): the platform's period report — every figure folded
 # out of the page that owns it, and the same thing as a document.
 app.include_router(reports.router)

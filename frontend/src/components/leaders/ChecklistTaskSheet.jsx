@@ -454,7 +454,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         return { color: C_BAD, Icon: XCircle, title: T.bNotdoneT,
                  message: task.reason ? `${T.reasonShown}: ${task.reason}` : "" };
       case "missing":
-        return { color: C_BAD, Icon: CircleSlash, title: T.bMissingT };
+        return { color: C_BAD, Icon: CircleSlash, title: T.bMissingT,
+                 message: task.objectable ? T.bExpiredObj : "" };
       case "ruledout":
         return { color: C_BAD, Icon: Gavel, title: T.bRuledoutT,
                  message: [task.admin?.by, task.objectable ? T.bRuledoutM : ""].filter(Boolean).join(" · ") };
@@ -489,6 +490,9 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   // An admin's «not done» ruling refused it — the third judge, and the one an
   // objection then argues with (VerdictBlock leads with it).
   const against = task.objectionKind || task.rejectedBy;
+  // What the objection is posted against — the report, or on a day nothing
+  // was filed for, the stand-in the server turns into that day (2026-11-02).
+  const objUid = view.objectUid || view.uid;
   const ruled = against === "admin";
   // The platform closed it unsubmitted at its hour — the fourth judge
   // (2026-10-30); the banner above already says when.
@@ -534,7 +538,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
 
         {/* The objection — written right here, as the first message of the
             chat it opens with the brigadir and the admins. */}
-        {task.objectable && view.uid && (
+        {task.objectable && objUid && (
           <Section title={T.objT} icon={ShieldQuestion} innerRef={objRef}>
             <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
               {ruled ? T.objIntroAdmin : deadline ? T.objIntroDeadline
@@ -543,8 +547,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
             <div className="rounded-xl overflow-hidden flex flex-col"
               style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
               <CommentsThread
-                endpoint={`/api/leaders/report/${encodeURIComponent(view.uid)}/dispute`}
-                queryKey={["cl-object", view.uid, task.id]}
+                endpoint={`/api/leaders/report/${encodeURIComponent(objUid)}/dispute`}
+                queryKey={["cl-object", objUid, task.id]}
                 listEnabled={false}
                 postFields={{ task_id: task.id }}
                 textField="reason"
@@ -554,7 +558,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 placeholder={ruled ? T.objPhAdmin : deadline ? T.objPhDeadline
                   : task.kind === "auto" ? T.objPhAuto : T.objPh}
                 emptyText={T.objEmpty}
-                refreshKeys={[["leader-disputes"], ["leaderDayReport", view.uid]]}
+                refreshKeys={[["leader-disputes"], ["leaderDayReport", objUid]]}
                 onPosted={() => { toast.success(T.objSent); onRefetch(); }}
               />
             </div>

@@ -459,6 +459,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/trello/boards/{}",               "config", "config.trello_board_set"),
     (("DELETE",), "/api/admin/trello/boards/{}",               "config", "config.trello_board_removed"),
     (("PUT",),    "/api/admin/trello",                         "config", "config.trello_saved"),
+    (("PUT",),    "/api/admin/notion-tracker/token",           "config", "config.notion_tracker_token_set"),
+    (("POST",),   "/api/admin/notion-tracker/preview",         "comms", "notification.notion_preview"),
+    (("PUT",),    "/api/admin/notion-tracker",                 "config", "config.notion_tracker_saved"),
     (("PUT",),    "/api/category-compliance/rule",             "config", "config.category_rule_saved"),
     # «Verifix to'g'irlash · Jonli» (lab) — /api/staff's twin over the live
     # Verifix read (routers/staff_live.py). Its own keys, so the register never
@@ -548,6 +551,8 @@ _SKIP = (
     "/api/boot-report",
     "/api/crash-report",
     "/bot/webhook",
+    # «Notion vazifalari»: @Safia_Tracker_agent's updates — the envelope, as above.
+    "/bot/notion-webhook",
     # «Ta'lim»: a viewer opened a lesson, and the player's watch-progress
     # flush (every 15 s while a lesson plays). Telemetry, not actions.
     "/api/education/seen/",

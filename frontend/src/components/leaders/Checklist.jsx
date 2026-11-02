@@ -143,6 +143,9 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
         <div className="mt-4 rounded-xl px-3 py-3" style={{ background: "var(--bg-inner)" }}>
           <p className="text-[13px] font-semibold" style={{ color: "var(--text-2)" }}>{T.nothingT}</p>
           <p className="text-[12px] mt-0.5" style={{ color: "var(--text-3)" }}>{T.nothingM}</p>
+          {view.tasks.some((t) => t.objectable) && (
+            <p className="text-[12px] mt-1.5" style={{ color: "var(--text-2)" }}>{T.nothingObj}</p>
+          )}
         </div>
       ) : (
         <>
