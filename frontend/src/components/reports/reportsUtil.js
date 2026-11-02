@@ -38,7 +38,8 @@ const nf = (n, d = 0) => {
  *   num1  — one decimal
  *   pct   — a whole percent with its sign
  *   min   — minutes, whole
- *   money — so'm, whole
+ *   money — MILLIONS of so'm, two decimals (TopSim's «MEUR»; the operator,
+ *           2026-11-02: «Unit is MUZS not UZS») — the unit column says «mln»
  *
  * `bare` drops the «%» — for a periods table, whose unit column already says
  * it (TopSim's own reading: the unit beside the name, the cells numbers only).
@@ -50,7 +51,7 @@ export function fmtCell(v, fmt, bare = false) {
     case "pct":   return `${nf(v, Number.isInteger(Number(v)) ? 0 : 1)}${bare ? "" : "%"}`;
     case "num1":  return nf(v, 1);
     case "min":   return nf(v, 0);
-    case "money": return nf(v, 0);
+    case "money": return nf(Number(v) / 1e6, 2);
     case "int":
     default:      return nf(v, 0);
   }
@@ -66,6 +67,7 @@ export function fmtDelta(d, fmt) {
   const sign = v > 0 ? "+" : "−";
   const abs = Math.abs(v);
   if (fmt === "pct") return `${sign}${nf(abs, Number.isInteger(abs) ? 0 : 1)} p.p.`;
+  if (fmt === "money") return `${sign}${nf(abs / 1e6, 2)}`;
   return `${sign}${nf(abs, fmt === "num1" ? 1 : 0)}`;
 }
 

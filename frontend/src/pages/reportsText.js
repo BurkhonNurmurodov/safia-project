@@ -136,7 +136,7 @@ const uz = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "O'lchov",
-  uom: { pct: "%", min: "daq", money: "so'm", count: "ta", day: "kun", personDay: "odam-kun", person: "kishi", personMin: "odam-daq" },
+  uom: { pct: "%", min: "daq", money: "mln so'm", count: "ta", day: "kun", personDay: "odam-kun", person: "kishi", personMin: "odam-daq" },
   noUnits: "Tanlangan qamrovda brigada yo'q",
   noUnitsMsg: "Filtrlarni kengaytiring yoki boshqa zavodni tanlang.",
   loadFailed: "Hisobot yuklanmadi",
@@ -240,7 +240,7 @@ const uz_cyrl = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Ўлчов",
-  uom: { pct: "%", min: "дақ", money: "сўм", count: "та", day: "кун", personDay: "одам-кун", person: "киши", personMin: "одам-дақ" },
+  uom: { pct: "%", min: "дақ", money: "млн сўм", count: "та", day: "кун", personDay: "одам-кун", person: "киши", personMin: "одам-дақ" },
   noUnits: "Танланган қамровда бригада йўқ",
   noUnitsMsg: "Филтрларни кенгайтиринг ёки бошқа заводни танланг.",
   loadFailed: "Ҳисобот юкланмади",
@@ -330,7 +330,7 @@ const ru = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Ед. изм.",
-  uom: { pct: "%", min: "мин", money: "сум", count: "шт.", day: "дн.", personDay: "чел.-дн.", person: "чел.", personMin: "чел.-мин" },
+  uom: { pct: "%", min: "мин", money: "млн сум", count: "шт.", day: "дн.", personDay: "чел.-дн.", person: "чел.", personMin: "чел.-мин" },
   noUnits: "В выбранном охвате нет бригад",
   noUnitsMsg: "Расширьте фильтры или выберите другой завод.",
   loadFailed: "Отчёт не загрузился",
@@ -419,7 +419,7 @@ const en = {
   // The unit-of-measurement column of a periods table (components/reports/
   // reportsUtil.js `uomOf` picks the kind).
   colUnit: "Unit",
-  uom: { pct: "%", min: "min", money: "UZS", count: "qty", day: "days", personDay: "person-days", person: "people", personMin: "person-min" },
+  uom: { pct: "%", min: "min", money: "MUZS", count: "qty", day: "days", personDay: "person-days", person: "people", personMin: "person-min" },
   noUnits: "No units in the selected scope",
   noUnitsMsg: "Widen the filters or pick another plant.",
   loadFailed: "The report did not load",

@@ -9646,7 +9646,9 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   «MEUR / %» column): Figure · O'lchov · the two months · O'zgarish.
   `reportsUtil.uomOf` picks the kind off the row's key (its last segment, so
   the mixed summary tables agree), else its `fmt`; the words are `T.uom`
-  (% · daq · so'm · ta · kun · odam-kun · kishi · odam-daq). The attendance
+  (% · daq · mln so'm · ta · kun · odam-kun · kishi · odam-daq — money is
+  printed in MILLIONS, two decimals, «MUZS» in English, TopSim's «MEUR»: the
+  operator, 2026-11-02). The attendance
   counts are PERSON-DAYS (the roster summed per day), never «kishi». Since the
   column says «%», a periods cell prints the bare number (`fmtCell(v, fmt,
   true)`). The document carries the same
