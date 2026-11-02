@@ -16,7 +16,8 @@ import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
+import { ALL_LINKS, NAV_GROUPS, APPS, adminPath } from "../../config/navLinks";
+import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
 import GlobalSearch from "./GlobalSearch";
 
 // Grouped sidebar. ALL_LINKS (config/navLinks.js) stays THE register and
@@ -80,12 +81,22 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const badgeFor = (to) => BADGES[to] || 0;
 
   const withSearch = (path) => `${path}${location.search}`;
-  const links = ALL_LINKS.filter(l =>
-    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages));
+
+  // «Ilovalar» (admins, 2026-11-02): inside an app the sidebar lists that app's
+  // pages and nothing else — the launcher at «/» is the way to the others. A
+  // page no app lists keeps the app it was opened from (utils/apps.js); with
+  // none yet, the whole register shows, grouped as before.
+  const app = isAdmin ? APPS.find(a => a.id === openApp(location.pathname)) : null;
+  useEffect(() => { if (isAdmin) rememberPage(location.pathname); }, [isAdmin, location.pathname]);
+  const links = app
+    ? linksOfApp(app.id)
+    : ALL_LINKS
+      .filter(l => (l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
+      .map(l => (isAdmin ? { ...l, to: adminPath(l.to) } : l));
 
   // Grouped mode only past the threshold — grouping helps a 20-row register,
   // it would just add chrome to a supervisor's 6 links.
-  const grouped = links.length > GROUP_THRESHOLD;
+  const grouped = !app && links.length > GROUP_THRESHOLD;
   const byGroup = new Map(NAV_GROUPS.map(g => [g.id, []]));
   links.forEach(l => (byGroup.get(l.group) ?? byGroup.get("system")).push(l));
 
@@ -323,6 +334,23 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           onScroll={(e) => { savedNavScroll = e.currentTarget.scrollTop; }}
           className="relative flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden"
         >
+          {/* The open app's name over its pages — same anatomy as a folder row,
+              not a button. A one-page app skips it: the row below says it. */}
+          {app && links.length > 1 && (
+            <div
+              className="app-label flex items-center rounded-lg text-[11px] font-semibold uppercase tracking-wider px-2.5 py-2.5 md:py-2"
+              data-app-hue={app.hue}
+              style={{ gap: "12px", color: "var(--text-3)", justifyContent: !expanded ? "center" : undefined }}
+            >
+              <app.icon size={16} className="flex-shrink-0" aria-hidden="true" />
+              <span
+                className="flex-1 min-w-0 truncate whitespace-nowrap leading-5 transition-all duration-200"
+                style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden" }}
+              >
+                {t(app.labelKey)}
+              </span>
+            </div>
+          )}
           {(grouped ? [] : links).map(l => renderLink(l))}
 
           {grouped && NAV_GROUPS.map((g) => {
@@ -438,7 +466,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         {/* Footer */}
         <div className="px-2 py-3 space-y-1 overflow-hidden"
           style={{ borderTop: "1px solid var(--border)", paddingBottom: "calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
-          {showAdminPanel && (
+          {/* An admin opens the panel from its tile on the launcher. */}
+          {showAdminPanel && !isAdmin && (
             <NavLink
               to={withSearch("/admin/upload")}
               onClick={onClose}

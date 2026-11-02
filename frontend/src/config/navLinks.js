@@ -8,12 +8,14 @@ import {
   Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
-  MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, ShieldAlert, Sparkles, Target,
-  SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
+  MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
+  SquareKanban, TestTubes, Ticket, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
 } from "lucide-react";
 
+// `app` moves a link out of its group's app on the admin launcher («Ilovalar»,
+// see APPS below); a link without one belongs to the app of its `group`.
 export const ALL_LINKS = [
-  { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
+  { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top", app: "overview" },
   // «Yordamchi» — the AI assistant's full page (the panel opens from the header).
   { to: "/assistant", page: "assistant", key: "nav.assistant", icon: BotMessageSquare, group: "top" },
   { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2, group: "prod" },
@@ -51,7 +53,7 @@ export const ALL_LINKS = [
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
-  { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality" },
+  { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality", app: "arc" },
   // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)
   // on one page since 2026-09-04; the level is a column, not a second page.
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
@@ -63,7 +65,7 @@ export const ALL_LINKS = [
   // «Brigadirlar KPI» — HR's monthly brigadir KPI: turnover and the quality
   // register's corrective measures computed, mentoring / KRU / payout to come.
   { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders" },
-  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
+  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system", app: "activity" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
@@ -117,3 +119,35 @@ export const NAV_GROUPS = [
   { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
   { id: "system" },                                // Активность + catch-all — headerless
 ];
+
+// «Ilovalar» — the admin's app launcher (2026-11-02, admins only for now).
+// For an admin «/» is a grid of these tiles, and while one is open the sidebar
+// lists only its pages. An app is a nav group by default; ARC, the overview
+// and the activity page are apps of their own (a link's `app` says so).
+// `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
+// The assistant has no tile: the header's button already opens it everywhere.
+export const APPS = [
+  { id: "overview",  labelKey: "nav.overview",      icon: LayoutDashboard, hue: "gold" },
+  { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
+  { id: "people",    labelKey: "navgrp.people",     icon: UsersRound,      hue: "sky" },
+  { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
+  { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
+  { id: "arc",       labelKey: "nav.arc",           icon: Ticket,          hue: "rose" },
+  { id: "cells",     labelKey: "navgrp.cells",      icon: Grid3x3,         hue: "teal" },
+  { id: "education", labelKey: "navgrp.education",  icon: GraduationCap,   hue: "indigo" },
+  { id: "verifix",   labelKey: "navgrp.verifix",    icon: ScanFace,        hue: "cyan" },
+  { id: "lab",       labelKey: "navgrp.lab",        icon: TestTubes,       hue: "pink" },
+  // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
+  // phone's tile; the tile says it in one word.
+  { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },
+  { id: "admin",     labelKey: "nav.admin",         icon: Settings,        hue: "slate" },
+];
+
+// The admin panel is not a sidebar page (it sits in the sidebar's footer), so
+// the «admin» app names its one page here.
+export const ADMIN_PANEL_LINK = { to: "/admin/upload", key: "nav.admin", icon: Settings, app: "admin" };
+
+export const appOf = (link) => link.app ?? link.group;
+
+// For an admin «/» is the launcher, so the overview answers at /overview.
+export const adminPath = (to) => (to === "/" ? "/overview" : to);

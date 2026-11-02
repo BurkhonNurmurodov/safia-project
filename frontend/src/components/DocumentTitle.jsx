@@ -23,6 +23,7 @@ const HTML_LANG = { uz: "uz", uz_cyrl: "uz-Cyrl", ru: "ru", en: "en" };
 // "/brigadir/:id" and every "/admin/*" destination with one entry each.
 const TITLE_KEYS = {
   "/":                 "nav.overview",
+  "/overview":         "nav.overview",
   "/zagruzka":         "nav.zagruzka",
   "/leaderboard":      "nav.leaderboard",
   "/gamification":     "nav.gamification",
@@ -75,15 +76,18 @@ export default function DocumentTitle() {
   // visitor cannot see yet.
   const gated = loading || auth?.status === "web_login";
 
+  // An admin's «/» is the app launcher (App.jsx HomeRoute), not the overview.
+  const launcher = pathname === "/" && auth?.role === "admin";
+
   useEffect(() => {
-    const key = gated ? null : keyForPath(pathname);
+    const key = gated ? null : launcher ? "apps.title" : keyForPath(pathname);
     // t() echoes an unknown key back — never put that in the tab.
     const page = key ? t(key) : "";
     document.title = page && page !== key ? APP_NAME + SEP + page : APP_NAME;
     document.documentElement.lang = HTML_LANG[lang] || "uz";
     // `t` re-identifies when the language changes AND when the DB translation
     // overrides land, so both reach the tab without a navigation.
-  }, [pathname, t, lang, gated]);
+  }, [pathname, t, lang, gated, launcher]);
 
   return null;
 }

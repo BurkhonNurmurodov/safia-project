@@ -122,6 +122,41 @@ whoever manages profiles, else the cell they run.
   on, 250 ms after typing stops; up to 6, opening `/people/:employee_id`.
 - Not built: concerns or tasks by text.
 
+## «Ilovalar» — the admin app launcher (2026-11-02, admins only for now)
+
+The operator: «separate IMS into different apps just like Odoo … shown as
+squares and icons». For an ADMIN, `/` is a grid of app tiles
+(`pages/AppLauncher.jsx`); every other role still gets the overview at `/`,
+untouched.
+
+- **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
+  icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
+  overview and the users-activity page are one-page apps; the admin panel is
+  the `admin` app (`ADMIN_PANEL_LINK`). The assistant has no tile — the
+  header's button opens it everywhere. A new page joins its group's app by
+  itself; give it `app` only to move it elsewhere. Twelve tiles fill 3 / 4 / 6
+  columns evenly — keep the count in mind before adding a thirteenth.
+- **The overview answers at `/overview`** for an admin (`adminPath`); the
+  sidebar, the header search and `DocumentTitle` map `/` there. `/overview`
+  works for every role (same `RequirePage`).
+- **Inside an app the admin's sidebar lists that app's pages only**, under its
+  name (a one-page app shows just its row). A page no app lists (a profile, a
+  notification, a leader's day report) keeps the app it was opened from —
+  `utils/apps.js`, sessionStorage `appOpen`; with none, the whole grouped
+  register shows as before. The header's grid button (`.hdr-apps`, beside the
+  title) and the sidebar logo lead back to `/`. The footer's «Admin» link is
+  gone for admins — the panel is a tile; capability grantees keep it.
+- **A tile opens where the app was left** (localStorage `appLastPage`), else
+  its first page. The People tile carries the /staff queue count (same query
+  key as the sidebar's badge).
+- **Light by design:** the launcher fetches one count and imports no chart, so
+  an admin's start no longer pays for the overview's requests and ApexCharts.
+  `preloadOpenedRoute` preloads the launcher, not the overview, once
+  `HomeRoute` has marked the device (localStorage `homeLauncher`).
+- Tile colours: `[data-app-hue]` in `index.css` — one rgb triple per app,
+  darker shades under the light theme; the sidebar's app label reuses it.
+- **Not built:** the launcher for other roles, per-app language packs.
+
 ## Admin panel structure
 
 `/admin/upload` is a first-class page inside the standard `Layout` (so admins keep

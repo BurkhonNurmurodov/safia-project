@@ -874,3 +874,107 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .edu-card { transition: none; }
   .edu-icon-btn { transition: none; }
 }
+
+/* «Ilovalar» — the admin app launcher (pages/AppLauncher.jsx). Twelve tiles
+   fill 3, 4 or 6 columns with no ragged last row. Each app has ONE colour,
+   `--hue` (an rgb triple, like --brand-rgb), tinting its icon square: the
+   tile's identity, so it is recognised before its name is read — paired with
+   the icon and the name, never the only cue. Light theme takes the darker
+   shade of the same hue so the glyph keeps its contrast on cream. */
+/* The grid sits a little above the middle of the screen, where a home screen
+   does — not stuck to the header with the lower half of the page empty. */
+.apps-wrap {
+  max-width: 880px; min-height: min(72vh, 720px); margin: 0 auto; padding: 24px 0 48px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.apps-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
+@media (min-width: 560px)  {
+  .apps-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .app-tile { padding: 16px 8px; }
+}
+@media (min-width: 1024px) { .apps-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; } }
+
+.app-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  height: 100%; padding: 16px 4px; border-radius: 16px;
+  color: var(--text-1); text-align: center; text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color .15s var(--ease-out), transform .15s var(--ease-out);
+}
+@media (hover: hover) {
+  .app-tile:hover { background: var(--bg-card); box-shadow: inset 0 0 0 1px var(--border); }
+  .app-tile:hover .app-icon { transform: translateY(-2px); }
+}
+.app-tile:active { transform: scale(.97); }
+.app-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
+
+.app-icon {
+  position: relative; display: grid; place-items: center; flex-shrink: 0;
+  width: 56px; height: 56px; border-radius: 16px;
+  background: rgba(var(--hue), .14);
+  box-shadow: inset 0 0 0 1px rgba(var(--hue), .24);
+  color: rgb(var(--hue));
+  transition: transform .2s var(--ease-out);
+}
+.app-icon svg { width: 26px; height: 26px; }
+@media (min-width: 1024px) {
+  .app-icon { width: 64px; height: 64px; }
+  .app-icon svg { width: 28px; height: 28px; }
+}
+.app-name {
+  max-width: 100%; font-size: 13px; font-weight: 500; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: break-word;
+}
+.app-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: #ef4444; color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+[data-app-hue="gold"]    { --hue: 212,169,92; }
+[data-app-hue="orange"]  { --hue: 251,146,60; }
+[data-app-hue="sky"]     { --hue: 56,189,248; }
+[data-app-hue="violet"]  { --hue: 167,139,250; }
+[data-app-hue="emerald"] { --hue: 52,211,153; }
+[data-app-hue="rose"]    { --hue: 251,113,133; }
+[data-app-hue="teal"]    { --hue: 45,212,191; }
+[data-app-hue="indigo"]  { --hue: 129,140,248; }
+[data-app-hue="cyan"]    { --hue: 34,211,238; }
+[data-app-hue="pink"]    { --hue: 244,114,182; }
+[data-app-hue="lime"]    { --hue: 163,230,53; }
+[data-app-hue="slate"]   { --hue: 148,163,184; }
+[data-theme="light"] .app-icon { background: rgba(var(--hue), .10); box-shadow: inset 0 0 0 1px rgba(var(--hue), .20); }
+[data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; }
+[data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
+[data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
+[data-theme="light"] [data-app-hue="violet"]  { --hue: 109,40,217; }
+[data-theme="light"] [data-app-hue="emerald"] { --hue: 4,120,87; }
+[data-theme="light"] [data-app-hue="rose"]    { --hue: 190,18,60; }
+[data-theme="light"] [data-app-hue="teal"]    { --hue: 15,118,110; }
+[data-theme="light"] [data-app-hue="indigo"]  { --hue: 67,56,202; }
+[data-theme="light"] [data-app-hue="cyan"]    { --hue: 14,116,144; }
+[data-theme="light"] [data-app-hue="pink"]    { --hue: 190,24,93; }
+[data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; }
+[data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; }
+
+/* The open app's name at the top of an admin's sidebar wears its tile's hue. */
+.app-label svg { color: rgb(var(--hue)); }
+
+/* The header's way back to the launcher, beside the page title (admins). */
+.hdr-apps { transition: color .15s var(--ease-out), border-color .15s var(--ease-out); }
+@media (hover: hover) {
+  .hdr-apps:hover { color: var(--brand-text) !important; border-color: var(--brand-border) !important; }
+}
+.hdr-apps:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-tile, .app-icon, .hdr-apps { transition: none; }
+  .app-tile:active { transform: none; }
+  .app-tile:hover .app-icon { transform: none; }
+}

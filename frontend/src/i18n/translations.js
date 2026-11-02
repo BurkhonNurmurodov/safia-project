@@ -955,6 +955,9 @@ const t = {
     "idleOwners.explain": "Har bir toifaga BITTA mas'ul. Uning ismi «Xarajat», «Toifalar bo'yicha» va Excel fayllarda toifa yonida chiqadi, «Kutish mas'uli» roli esa faqat o'ziga biriktirilgan toifalarni ko'radi (bu server tomonda tekshiriladi). Bir odam bir nechta toifani olishi mumkin. Hech qanday raqam o'zgarmaydi.",
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Umumiy ko'rinish",
+    "apps.title":          "Ilovalar",
+    "apps.all":            "Barcha ilovalar",
+    "apps.activity":       "Faollik",
     "search.placeholder": "Qidirish: sahifa, yacheyka, brigadir, lider…",
     "search.short": "Qidirish…",
     "search.aria": "Qidiruv",
@@ -9290,6 +9293,9 @@ const t = {
     "idleOwners.explain": "Ҳар бир тоифага БИТТА масъул. Унинг исми «Харажат», «Тоифалар бўйича» ва Excel файлларда тоифа ёнида чиқади, «Кутиш масъули» роли эса фақат ўзига бириктирилган тоифаларни кўради (бу сервер томонда текширилади). Бир одам бир нечта тоифани олиши мумкин. Ҳеч қандай рақам ўзгармайди.",
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Умумий кўриниш",
+    "apps.title":          "Иловалар",
+    "apps.all":            "Барча иловалар",
+    "apps.activity":       "Фаоллик",
     "search.placeholder": "Қидириш: саҳифа, ячейка, бригадир, лидер…",
     "search.short": "Қидириш…",
     "search.aria": "Қидирув",
@@ -17622,6 +17628,9 @@ const t = {
     "idleOwners.explain": "У каждой категории ОДИН ответственный. Его имя показывается рядом с категорией на вкладках «Расход», «По категориям» и в файлах Excel, а роль «Ответственный за ожидание» видит только назначенные ей категории (проверяется на сервере). Один человек может отвечать за несколько категорий. Никакие цифры не меняются.",
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Обзор",
+    "apps.title":          "Приложения",
+    "apps.all":            "Все приложения",
+    "apps.activity":       "Активность",
     "search.placeholder": "Поиск: страница, ячейка, бригадир, лидер…",
     "search.short": "Поиск…",
     "search.aria": "Поиск",
@@ -25954,6 +25963,9 @@ const t = {
     "idleOwners.explain": "ONE owner per category. Their name appears beside the category on «Cost», «By category» and in the Excel files, and the «Idle-time owner» role sees only the categories assigned to it (checked on the server). One person may own several categories. No figure changes.",
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Overview",
+    "apps.title":          "Apps",
+    "apps.all":            "All apps",
+    "apps.activity":       "Activity",
     "search.placeholder": "Search pages, cells, supervisors, leaders…",
     "search.short": "Search…",
     "search.aria": "Search",

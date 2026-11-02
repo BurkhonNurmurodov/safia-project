@@ -16,7 +16,7 @@ import { ADMIN_NAV, ADMIN_GROUPS } from "../../config/adminNav";
 import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
-import { ALL_LINKS, NAV_GROUPS } from "../../config/navLinks";
+import { ALL_LINKS, NAV_GROUPS, adminPath } from "../../config/navLinks";
 import { nameCase } from "../people/peopleUtil";
 
 /**
@@ -108,8 +108,10 @@ export default function GlobalSearch({ drawer = false, onPick }) {
       .filter((l) => (l.adminOnly ? isAdmin : can(l.page)))
       .map((l) => {
         const label = t(l.key);
+        // An admin's «/» is the app launcher; the overview is at /overview.
+        const to = isAdmin ? adminPath(l.to) : l.to;
         return {
-          id: `p:${l.to}`, kind: "page", to: l.to, Icon: l.icon, label, sort: label,
+          id: `p:${to}`, kind: "page", to, Icon: l.icon, label, sort: label,
           sub: groupLabel[l.group] || "",
           terms: [searchFold(label), searchFold(l.to.replace(/[/-]/g, " "))],
         };

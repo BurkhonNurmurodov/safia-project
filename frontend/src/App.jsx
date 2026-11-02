@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { importWithRecovery } from "./utils/importRecovery";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -42,6 +42,8 @@ function lazyWithReload(importer) {
   return Page;
 }
 const Overview = lazyWithReload(() => import("./pages/Overview"));
+// «Ilovalar» — an admin's «/» (see HomeRoute).
+const AppLauncher = lazyWithReload(() => import("./pages/AppLauncher"));
 // The shift dashboard has a route of its own so an admin or a top-manager can
 // open it; /daily still forks a shift-manager to the same component.
 const ShiftDaily = lazyWithReload(() => import("./pages/ShiftDaily"));
@@ -130,14 +132,21 @@ const ROUTE_PAGES = {
   education: Education, exam: Exam, targets: Targets, profile: Profile,
   notifications: Notifications, assistant: Assistant, proof: ProofCamera,
   admin: AdminPanel, "broadcast-receivers": BroadcastReceivers, broadcast: BroadcastRecord,
+  overview: Overview,
 };
 // «/» is what the Telegram menu button opens, and a role without the overview
 // is redirected from it to its first page (RequirePage) — remembered here, so
-// the page that will actually open is the one fetched early.
+// the page that will actually open is the one fetched early. An admin's «/» is
+// the app launcher (HomeRoute), remembered the same way.
 const HOME_ROUTE_KEY = "homeRoute";
+const LAUNCHER_HOME_KEY = "homeLauncher";
 function preloadOpenedRoute() {
   try {
     let path = window.location.pathname;
+    if (path === "/" && localStorage.getItem(LAUNCHER_HOME_KEY)) {
+      AppLauncher.preload();
+      return;
+    }
     if (path === "/") path = localStorage.getItem(HOME_ROUTE_KEY) || "/";
     const parts = path.split("/").filter(Boolean);
     const [first = "", second] = parts;
@@ -479,6 +488,24 @@ function RequirePage({ page, children }) {
   return <Navigate to={dest} replace />;
 }
 
+/**
+ * «/» — for an admin the app launcher («Ilovalar», 2026-11-02, admins only for
+ * now), the overview moving to /overview; for every other role the overview,
+ * exactly as before. Which one it was is remembered for preloadOpenedRoute.
+ */
+function HomeRoute() {
+  const { auth } = useAuth();
+  const isAdmin = auth?.role === "admin";
+  useEffect(() => {
+    try {
+      if (isAdmin) localStorage.setItem(LAUNCHER_HOME_KEY, "1");
+      else localStorage.removeItem(LAUNCHER_HOME_KEY);
+    } catch { /* a hint only */ }
+  }, [isAdmin]);
+  if (isAdmin) return <AppLauncher />;
+  return <RequirePage page="overview"><Overview /></RequirePage>;
+}
+
 function LogoutOverlay() {
   const { countdown } = useAuth();
   const { t } = useLang();
@@ -548,7 +575,8 @@ function AppWithLang() {
                 deep-link followed on a laptop) gets the password screen at "/"
                 instead of a picker that can only 401. */}
             <Route path="/login" element={inTelegram() ? <Login /> : <Navigate to="/" replace />} />
-            <Route path="/" element={<AuthGate><RequirePage page="overview"><Overview /></RequirePage></AuthGate>} />
+            <Route path="/" element={<AuthGate><HomeRoute /></AuthGate>} />
+            <Route path="/overview" element={<AuthGate><RequirePage page="overview"><Overview /></RequirePage></AuthGate>} />
             <Route path="/zagruzka" element={<AuthGate><RequirePage page="zagruzka"><Zagruzka /></RequirePage></AuthGate>} />
             <Route path="/leaderboard" element={<AuthGate><RequirePage page="leaderboard"><Leaderboard /></RequirePage></AuthGate>} />
             <Route path="/brigadir/:id" element={<AuthGate><RequirePage page="overview"><BrigadirProfile /></RequirePage></AuthGate>} />

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import Sidebar from "./Sidebar";
+import BrandLogo from "../ui/BrandLogo";
 import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog, Download, Share } from "lucide-react";
+import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog, Download, Share, LayoutGrid } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import NotificationBell from "../notifications/NotificationBell";
 import GlobalSearch from "./GlobalSearch";
 import useIsMobile from "../../hooks/useIsMobile";
@@ -574,9 +575,14 @@ function ImpersonationBar() {
   );
 }
 
-export default function Layout({ children, title, subtitle }) {
+// `bare`: no sidebar — the admin app launcher («Ilovalar», pages/AppLauncher),
+// where the tiles ARE the navigation and no app is open to list pages of.
+export default function Layout({ children, title, subtitle, bare = false }) {
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { t } = useLang();
+  const { auth } = useAuth();
+  // Inside an app, an admin's way back to the launcher sits beside the title.
+  const showAppsButton = !bare && auth?.role === "admin";
   const { pathname } = useLocation();
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -632,12 +638,14 @@ export default function Layout({ children, title, subtitle }) {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
-      <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        pinned={sidebarPinned}
-        onTogglePin={toggleSidebarPin}
-      />
+      {!bare && (
+        <Sidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          pinned={sidebarPinned}
+          onTogglePin={toggleSidebarPin}
+        />
+      )}
 
       {/* Offset matches sidebar width: 60px collapsed, 256px pinned. The side
           insets are 0 everywhere except a landscape Android phone, where the
@@ -645,7 +653,7 @@ export default function Layout({ children, title, subtitle }) {
           and the content clear of it together, so nothing shifts relative to
           anything else. */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${bare ? "" : sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}
         // `--assistant-dock`: «Yordamchi»'s panel, docked on a wide screen,
         // takes the right edge — the column narrows rather than hide under it.
         style={{ paddingLeft: "var(--tg-safe-left, 0px)",
@@ -662,14 +670,29 @@ export default function Layout({ children, title, subtitle }) {
           >
             {/* Left: hamburger + title */}
             <div className="flex items-center gap-3 min-w-0">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                aria-label={t("menu.title")}
-                className="md:hidden p-1.5 rounded-lg flex-shrink-0"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
-              >
-                <Menu size={16} />
-              </button>
+              {!bare && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label={t("menu.title")}
+                  className="md:hidden p-1.5 rounded-lg flex-shrink-0"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+                >
+                  <Menu size={16} />
+                </button>
+              )}
+              {/* With no sidebar, the brand would be nowhere on the screen. */}
+              {bare && <BrandLogo className="w-8 h-8 rounded-full object-cover flex-shrink-0" />}
+              {showAppsButton && (
+                <Link
+                  to="/"
+                  aria-label={t("apps.all")}
+                  title={t("apps.all")}
+                  className="hdr-apps p-1.5 rounded-lg flex-shrink-0"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+                >
+                  <LayoutGrid size={16} />
+                </Link>
+              )}
               {/* `subtitle`: a page may name WHAT is on screen once its own
                   heading has scrolled away (the appeal chat puts the case —
                   leader, task, day — here), the iOS large-title → bar-title
