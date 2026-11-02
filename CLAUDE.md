@@ -9700,6 +9700,84 @@ card), `pages/admin/TrelloSettings.jsx`.
 - Not built: people / deadline views (offered, not picked), webhooks (the
   15-minute read stands in), checklists, writing to Trello.
 
+## «Notion vazifalari» — the Notion task list and its reminders (`/notion-tasks`, 2026-11-02)
+
+The operator: the stand-alone reminder bot (`notion-tasks/tracker-bot`, GitHub
+Actions started hourly by cron-job.org, settings on a GitHub Pages site) needed
+a paid server to run reliably, so it was MERGED into IMS: «Add notion tasks to
+the Safia IMS» plus «one settings page, only visible for the admins». Rulings,
+asked one by one: the reminders move onto the IMS server AND a read-only tasks
+page; the same bot (@Safia_Tracker_agent); the team stays «Notion name →
+@username»; /tasks, /id, /help come back in the group; the page admin-only
+until opened on the Access tab; read-only («Open in Notion» to change); the
+settings an admin-panel tab; the group messages stay Russian; one tool,
+«Preview to my Telegram»; the TEST group first, the work group switched on
+later. The GitHub workflow was disabled the same day (`gh workflow disable
+Reminders`, BurkhonNurmurodov/safia-tracker-bot); the cron-job.org job is the
+operator's to delete.
+
+- **`services/notion_tracker.py` is THE module.** Its middle is the GitHub
+  bot's own code carried over line for line (parsing, `daily_people`, the rich
+  per-person message and its plain fallback, `digest_messages`, `/id`), so the
+  messages are word for word what the team had; `S()` is that code's SETTINGS,
+  a ContextVar set by `using(s)`. Around it: storage, the job, the webhook.
+- **Storage** — `app_settings`: `notion_tracker_settings` (the tab's JSON:
+  enabled, send_at, days, remind_days 0–3, sections_open, team, groups),
+  `notion_tracker_bot_token` (SEALED, `web_auth.seal_password`; never returned,
+  the register records its length), `notion_tracker_status` (last send, last
+  error as a CODE + detail, the bot, each group, Notion's counts),
+  `notion_tracker_memory` (Telegram IDs behind @usernames, groups the bot is
+  in, the webhook signature). Writes go through `_mutate` (a row lock — the job,
+  a webhook update and a request may all write one). What was sent is
+  `notion_tracker_sent` (one row per key: the group's day, each person, each
+  part), so a retry or a restart never repeats a message; kept 60 days.
+- **When**: the minute job `notion-tracker` (jobs lock, one copy) sends the
+  day's messages at the first tick after the send time (`daily_wait`: no
+  groups · done · paused · day off · not yet); a failed run retries in 10 min,
+  and a settings or token save retries at once. The plant clock is UTC+5.
+- **Seeded once** (`seed`, deferred boot step, insert-only): the GitHub bot's
+  settings with the groups replaced by «Test Group» (-1003966895975) and
+  `enabled: false`, plus its learned Telegram IDs and groups. The work group
+  («Рабочая группа», -1002661831949) is listed under «Bot qo'shilgan
+  guruhlar» to add in one tap.
+- **Notion** is read with the platform's `NOTION_TOKEN` (`notion_kaizen._token`,
+  the Kaizen page's), data source `DEFAULT_DATA_SOURCE` (the "Production" list),
+  fixed. Nothing is written to Notion.
+- **The bot's updates** arrive on `POST /bot/notion-webhook` (secret token
+  `sha256("notion-tracker-webhook:" + SECRET_KEY)`, checked first; set by
+  `setup_webhook` when a token is saved and at boot when it changed — only on an
+  HTTPS `backend_url`, so a laptop never takes the webhook), handled on the
+  module's own single thread, deduped by update_id. A group Telegram upgrades
+  to a supergroup is followed in the settings (`_move_group`). /tasks answers
+  only in a configured group; /start elsewhere says an admin connects groups
+  in IMS. Skipped by the action register (`_SKIP`) like `/bot/webhook`.
+- **Doors** (`routers/notion_tasks.py`): `GET /api/notion-tasks` (page key
+  `notion-tasks`; read at most once a minute, every 10 s on «refresh»; 409
+  `notion_missing`, 424 for a Notion refusal); `GET/PUT /api/admin/notion-tracker`,
+  `GET …/status` (the live look: getMe, each group, Notion), `PUT …/token`
+  (checked with getMe first — a refused token is not stored — then sealed and
+  the webhook set), `POST …/preview` (today's messages to the caller's own
+  chat, nothing recorded; 409 `start_bot` when the admin never pressed Start).
+  Admin endpoints refuse an «open as» tab. The assistant may not touch the tab
+  (`blocked:credentials`). Jurnal: `config.notion_tracker_saved`,
+  `config.notion_tracker_token_set`, `notification.notion_preview`.
+- **The page** (`pages/NotionTasks.jsx`, «Sifat» nav group after Kaizen):
+  four tiles (overdue · today · next 7 days · no deadline, open tasks only), then
+  one table per section — overdue, today, tomorrow, next 7 days, later, no
+  deadline, done (only when «Holat» says so) — one-line rows; a row opens the
+  task (status, people, deadline, priority, parent, the whole «Izoh») with
+  «Notion'da ochish». Filters: «Holat» (open · done · all) and «Mas'ul»
+  (incl. «Mas'ulsiz»), plus search. Words: `pages/notionTasksText.js`
+  (4 languages), helpers `components/notion/notionUtil.js`.
+- **The tab** (`pages/admin/NotionTrackerSettings.jsx`, «Vositalar», id
+  `notiontracker`, no capKey): status (on/off and what today holds, last send,
+  bot, Notion, last error, Notion people missing from the team with one-tap
+  add, the preview); schedule; groups (each with its reachability, the bot's
+  other groups to add); team (ordered — messages go in this order); the bot
+  token. Schedule + groups + team are ONE draft with one Save
+  (`useAdminDirty`); the server checks it whole and names the field.
+- Not built: a write to Notion, a per-person «my tasks» page, other Notion lists.
+
 ## The call forecast, sent by the clock (`forecast_autocall`)
 
 From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:
