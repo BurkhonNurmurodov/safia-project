@@ -885,7 +885,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
              under the light theme, where it must hold contrast on cream);
      --glow  the cloud and the day tile's body (500 shades, both themes);
      --cloud the cloud alone where --glow reads as a shadow (gold → brown,
-             slate → grey) — a lighter tone of the same colour.
+             slate → grey) — a lighter tone of the same colour;
+     --rim   the tile's 1px border, one step DARKER than the glyph (600 by
+             night, 800 by day) — never white.
    The clouds are kept faint on the operator's word (too much «background
    shadow», 2026-11-03).
    The look (2026-11-03, the operator's second pick that day — the first, a
@@ -960,7 +962,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 /* The tile is LIQUID GLASS (2026-11-03, the operator's call, from a mock-up
    of both themes): a clear pane with only a breath of the app's hue (7%),
-   a 1px rim lit on the top-left and again on the bottom-right, a still
+   a 1px rim in a darker shade of that hue (`--rim`), a still
    specular pool near the top edge, and the aura refracted through it. ONE
    recipe for every tile and BOTH themes — only the hue varies, and the glyph
    carries it at full strength. The pane's transparency is the night mock's,
@@ -984,19 +986,22 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
     linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.03) 45%, rgba(255,255,255,0)),
     rgba(var(--glow), .07);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.28),
-    inset 0 -1px 0 rgba(var(--glow), .35),
     0 14px 34px -10px rgba(var(--glow), .55),
     0 2px 8px rgba(0,0,0,.35);
   transition: transform .55s var(--ease-out);
 }
-/* The rim: a ring one pixel wide (the padding, masked out of a full box),
-   bright where the light hits. */
+/* The rim: a SOFT edge in a darker shade of the app's own colour (`--rim`) —
+   never white (the operator, 2026-11-03: «border of icons shouldn't be white,
+   it should be darker version of icon color»), then fainter and blurred
+   («make the border opacity lower and blurry»). Drawn as shadows, not a
+   masked 1px ring: a mask re-cuts a blur sharp. A faint hairline, a 4px
+   blur inside the edge and a 4px glow outside it. No white inset edge line. */
 .app-glass::before {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
-  background: linear-gradient(145deg, rgba(255,255,255,.55), rgba(255,255,255,.12) 35%, rgba(255,255,255,0) 55%, rgba(255,255,255,.35));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--rim), .22),
+    inset 0 0 4px rgba(var(--rim), .38),
+    0 0 4px rgba(var(--rim), .3);
   pointer-events: none;
 }
 @media (min-width: 768px) {
@@ -1010,24 +1015,20 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .app-glass { border-radius: 19px; }
   .app-glass svg { width: 28px; height: 28px; }
 }
-/* Day: the same pane; a brighter rim (a faint white ring is invisible on
-   cream), a warm shadow instead of a black one, the glyph in the 700 hue. */
+/* Day: the same pane; a warm shadow instead of a black one, the glyph in the
+   700 hue and the rim in the 800 one (the `--rim` triples below). */
 [data-theme="light"] .app-aura { opacity: .14; }
 [data-theme="light"] .app-glass {
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.75),
-    inset 0 -1px 0 rgba(var(--glow), .35),
     0 12px 30px -10px rgba(var(--glow), .45),
     0 2px 6px rgba(60,40,10,.08);
-}
-[data-theme="light"] .app-glass::before {
-  background: linear-gradient(145deg, rgba(255,255,255,.95), rgba(255,255,255,.18) 35%, rgba(255,255,255,0) 55%, rgba(255,255,255,.6));
 }
 [data-theme="light"] .app-glass svg { filter: none; }
 
 /* A band of light crosses each tile in turn — the wave runs across the grid
    about every twelve seconds. */
-.app-sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+/* Inset 1px, so neither the band nor the pool ever whitens the coloured rim. */
+.app-sheen { position: absolute; inset: 1px; border-radius: inherit; overflow: hidden; pointer-events: none; }
 /* The specular pool: the light's reflection near the top edge, still. */
 .app-sheen::before {
   content: ""; position: absolute; left: 12%; top: 6%; width: 56%; height: 32%; border-radius: 50%;
@@ -1065,7 +1066,11 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: break-word;
 }
-[data-theme="light"] .app-name { color: var(--text-1); }
+/* By day the names wear the header's chocolate (the operator, 2026-11-03:
+   «make icon text names the colour match this new top menu bar colour») —
+   the band's middle brown, a shade deeper on hover; 7:1 on the gold. */
+[data-theme="light"] .app-name { color: #573019; }
+@media (hover: hover) { [data-theme="light"] .app-tile:hover .app-name { color: #3d200f; } }
 
 /* The one thing waiting on the admin — a slow ripple, never a flash. */
 .app-badge {
@@ -1073,41 +1078,43 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
   background: #ef4444; color: #fff;
   font-size: 11px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 2px var(--bg-base);
+  /* No ring around it (the operator, 2026-11-03: it read as a white border). */
 }
 .app-badge::after {
-  content: ""; position: absolute; inset: -2px; border-radius: inherit;
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
   border: 2px solid rgba(239,68,68,.5); opacity: 0;
   animation: badgeRing 3.6s ease-out infinite 1.6s;
 }
 @keyframes badgeRing { 0% { opacity: .9; scale: 1; } 60%, 100% { opacity: 0; scale: 1.7; } }
 
-[data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; --cloud: 222,190,130; }
-[data-app-hue="blue"]    { --hue: 96,165,250;  --glow: 59,130,246; }
-[data-app-hue="orange"]  { --hue: 251,146,60;  --glow: 249,115,22; }
-[data-app-hue="sky"]     { --hue: 56,189,248;  --glow: 14,165,233; }
-[data-app-hue="violet"]  { --hue: 167,139,250; --glow: 139,92,246; }
-[data-app-hue="emerald"] { --hue: 52,211,153;  --glow: 16,185,129; }
-[data-app-hue="rose"]    { --hue: 251,113,133; --glow: 244,63,94; }
-[data-app-hue="teal"]    { --hue: 45,212,191;  --glow: 20,184,166; }
-[data-app-hue="indigo"]  { --hue: 129,140,248; --glow: 99,102,241; }
-[data-app-hue="cyan"]    { --hue: 34,211,238;  --glow: 6,182,212; }
-[data-app-hue="pink"]    { --hue: 244,114,182; --glow: 236,72,153; }
-[data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; }
-[data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; }
-[data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; --glow: 184,128,40; } /* deeper by day: the ground is gold */
-[data-theme="light"] [data-app-hue="blue"]    { --hue: 29,78,216; }
-[data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
-[data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
-[data-theme="light"] [data-app-hue="violet"]  { --hue: 109,40,217; }
-[data-theme="light"] [data-app-hue="emerald"] { --hue: 4,120,87; }
-[data-theme="light"] [data-app-hue="rose"]    { --hue: 190,18,60; }
-[data-theme="light"] [data-app-hue="teal"]    { --hue: 15,118,110; }
-[data-theme="light"] [data-app-hue="indigo"]  { --hue: 67,56,202; }
-[data-theme="light"] [data-app-hue="cyan"]    { --hue: 14,116,144; }
-[data-theme="light"] [data-app-hue="pink"]    { --hue: 190,24,93; }
-[data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; }
-[data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; }
+[data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; --cloud: 222,190,130; --rim: 168,124,52; }
+[data-app-hue="blue"]    { --hue: 96,165,250;  --glow: 59,130,246; --rim: 37,99,235; }
+[data-app-hue="orange"]  { --hue: 251,146,60;  --glow: 249,115,22; --rim: 234,88,12; }
+[data-app-hue="sky"]     { --hue: 56,189,248;  --glow: 14,165,233; --rim: 2,132,199; }
+[data-app-hue="violet"]  { --hue: 167,139,250; --glow: 139,92,246; --rim: 124,58,237; }
+[data-app-hue="emerald"] { --hue: 52,211,153;  --glow: 16,185,129; --rim: 5,150,105; }
+[data-app-hue="rose"]    { --hue: 251,113,133; --glow: 244,63,94; --rim: 225,29,72; }
+[data-app-hue="teal"]    { --hue: 45,212,191;  --glow: 20,184,166; --rim: 13,148,136; }
+[data-app-hue="indigo"]  { --hue: 129,140,248; --glow: 99,102,241; --rim: 79,70,229; }
+[data-app-hue="cyan"]    { --hue: 34,211,238;  --glow: 6,182,212; --rim: 8,145,178; }
+[data-app-hue="pink"]    { --hue: 244,114,182; --glow: 236,72,153; --rim: 219,39,119; }
+[data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; --rim: 101,163,13; }
+[data-app-hue="fuchsia"] { --hue: 232,121,249; --glow: 217,70,239; --rim: 192,38,211; }
+[data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; --rim: 71,85,105; }
+[data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; --glow: 184,128,40; --rim: 138,92,30; } /* deeper by day: the ground is gold */
+[data-theme="light"] [data-app-hue="blue"]    { --hue: 29,78,216; --rim: 30,64,175; }
+[data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; --rim: 154,52,18; }
+[data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; --rim: 7,89,133; }
+[data-theme="light"] [data-app-hue="violet"]  { --hue: 109,40,217; --rim: 91,33,182; }
+[data-theme="light"] [data-app-hue="emerald"] { --hue: 4,120,87; --rim: 6,95,70; }
+[data-theme="light"] [data-app-hue="rose"]    { --hue: 190,18,60; --rim: 159,18,57; }
+[data-theme="light"] [data-app-hue="teal"]    { --hue: 15,118,110; --rim: 17,94,89; }
+[data-theme="light"] [data-app-hue="indigo"]  { --hue: 67,56,202; --rim: 55,48,163; }
+[data-theme="light"] [data-app-hue="cyan"]    { --hue: 14,116,144; --rim: 21,94,117; }
+[data-theme="light"] [data-app-hue="pink"]    { --hue: 190,24,93; --rim: 157,23,77; }
+[data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; --rim: 63,98,18; }
+[data-theme="light"] [data-app-hue="fuchsia"] { --hue: 162,28,175; --rim: 134,25,143; }
+[data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; --rim: 30,41,59; }
 
 /* The backdrop (Layout's `backdrop`, under the header;
    components/launcher/LauncherBackdrop.jsx). The operator's reference
@@ -1196,8 +1203,12 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    frame a product floats beneath it; one pane is not thirteen, but a phone
    still pays it. By night a dark pane. By day CHOCOLATE glass — the coffee
    bean's brown the operator chose over a light band («not light like this»,
-   the same morning), now at seven-tenths so the gold warms it from behind
-   and the cream text still holds 4.5:1 on the blend.
+   the same morning). Its colour is the SOLID band's of v4.395.2 (#6a3c25 →
+   #4a2714), which the operator preferred to the lighter, more orange
+   seven-tenths glass of v4.400.0 («I liked the previous color … make it
+   glassy too, but not too much»): the same browns at ~0.82, a light 12px
+   blur and NO saturation boost (saturate turned the brown orange). The
+   cream text holds well over 4.5:1 on the blend.
    The day pane is dark, so it takes its OWN colour tokens, built like the
    dark theme's (light ink on dark surfaces): the title, the search box, the
    icon buttons, the name AND the menus that open inside the header (account,
@@ -1231,9 +1242,12 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   --brand-text: #e8be70;
   color-scheme: dark;
   color: var(--text-1);
-  background: linear-gradient(180deg, rgba(92,52,32,.74) 0%, rgba(74,40,21,.70) 60%, rgba(66,35,18,.68) 100%);
-  border-bottom: 1px solid rgba(255,228,200,.16);
-  box-shadow: inset 0 1px 0 rgba(255,220,180,.22), 0 8px 22px -12px rgba(60,28,8,.45);
+  background: linear-gradient(180deg, rgba(106,60,37,.84) 0%, rgba(87,48,25,.82) 55%, rgba(74,39,20,.80) 100%);
+  border-bottom: 1px solid rgba(30,12,4,.35);
+  box-shadow: inset 0 1px 0 rgba(255,220,180,.16), 0 8px 22px -10px rgba(60,28,8,.45);
+}
+@media (min-width: 768px) {
+  [data-theme="light"] .hdr-on-backdrop { -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 }
 
 /* The header's way back to the launcher, beside the page title (admins). */

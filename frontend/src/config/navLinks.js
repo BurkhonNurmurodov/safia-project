@@ -5,7 +5,7 @@
 // each section and link stay beside the sidebar code that reads them.
 import {
   Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
-  Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
+  Briefcase, BriefcaseBusiness, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
@@ -78,10 +78,12 @@ export const ALL_LINKS = [
   { to: "/kelish", page: "kelish", key: "nav.kelish", icon: UserCheck, group: "leaders" },
   // «Liderlar KPI» — the leaders' five KPIs on ONE page, as a leaderboard
   // (2026-10-19; it merged /worker-concerns, /turnover and /foreign-objects).
-  { to: "/leaders-kpi", page: "leaders-kpi", key: "nav.leadersKpi", icon: Award, group: "leaders" },
+  // On the admin launcher it is a page of the «HR» app (2026-11-03, the
+  // operator) beside «Brigadirlar KPI»; for anybody else it stays in Liderlar.
+  { to: "/leaders-kpi", page: "leaders-kpi", key: "nav.leadersKpi", icon: Award, group: "leaders", app: "hr" },
   // «Brigadirlar KPI» — HR's monthly brigadir KPI: turnover and the quality
   // register's corrective measures computed, mentoring / KRU / payout to come.
-  { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders" },
+  { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders", app: "hr" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system", app: "activity" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
@@ -155,6 +157,8 @@ export const APPS = [
   { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
   { id: "people",    labelKey: "navgrp.people",     icon: UsersRound,      hue: "sky" },
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
+  // HR's monthly KPIs — the leaders' and the brigadirs' (2026-11-03).
+  { id: "hr",        labelKey: "apps.hr",           icon: BriefcaseBusiness, hue: "fuchsia" },
   { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
   { id: "arc",       labelKey: "nav.arc",           icon: Repair,          hue: "rose" },
   { id: "cells",     labelKey: "navgrp.cells",      icon: Grid3x3,         hue: "teal" },
