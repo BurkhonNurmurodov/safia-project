@@ -180,8 +180,12 @@ untouched.
   (thirteen blurs over floating art are a repaint every frame on a phone;
   below that the gradients alone are the glass); the glyph wears the hue at
   full strength, never white. The header over the backdrop is the same glass
-  — chocolate by day, dark by night, blurred from 768px up
-  (`.hdr-on-backdrop`). The photos stay for now; a flat SVG cartoon set was
+  — dark by night; by day the SOLID band's chocolate of v4.395.2 (#6a3c25 →
+  #4a2714) at ~0.82 with a light 12px blur and no saturation boost (the
+  operator, v4.400.3: «I liked the previous color … glassy, but not too
+  much» — the lighter .70 glass with saturate 160% read orange), blurred from
+  768px up (`.hdr-on-backdrop`). By day the tile NAMES wear that chocolate
+  too (#573019, #3d200f on hover). The photos stay for now; a flat SVG cartoon set was
   mocked and approved for a later pass.
   The backdrop (`components/launcher/LauncherBackdrop.jsx`, handed to
   Layout's `backdrop` prop — it must live there, since inside `.page-enter` a
