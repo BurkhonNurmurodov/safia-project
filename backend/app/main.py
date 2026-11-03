@@ -1509,6 +1509,9 @@ import mimetypes  # noqa: E402
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("application/javascript", ".mjs")
+# The launcher's product photos (assets/launcher/*.webp, 2026-11-03): the
+# server's table had no entry, so they went out as application/octet-stream.
+mimetypes.add_type("image/webp", ".webp")
 
 if STATIC_DIR:
     class ImmutableStaticFiles(StaticFiles):

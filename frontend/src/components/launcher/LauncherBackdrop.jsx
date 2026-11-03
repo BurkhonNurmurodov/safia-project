@@ -1,5 +1,5 @@
 import latte from "../../assets/launcher/latte.webp";
-import oreo from "../../assets/launcher/oreo.webp";
+import oreo from "../../assets/launcher/oreo-cake.webp";
 import parij from "../../assets/launcher/parij-far.webp";
 import macPistachio from "../../assets/launcher/macaron-pistachio.webp";
 import macChocolate from "../../assets/launcher/macaron-chocolate.webp";
