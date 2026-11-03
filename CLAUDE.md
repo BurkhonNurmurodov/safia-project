@@ -135,11 +135,14 @@ untouched.
   overview, «Hisobotlar» (2026-11-03, the operator — out of the Laboratory
   app; its page access is unchanged, admins only by default, and for
   everybody else it stays in the Laboratory group) and the users-activity
-  page are one-page apps; the `admin` app's pages are `ADMIN_PAGE_LINKS`,
+  page are one-page apps; «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
+  hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
+  moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
+  for everybody else both stay in the Liderlar group); the `admin` app's pages are `ADMIN_PAGE_LINKS`,
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Thirteen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Fourteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. ARC is the repair department: its icon (tile and sidebar
   row) is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn
