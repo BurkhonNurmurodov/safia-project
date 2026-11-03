@@ -3866,6 +3866,32 @@ for every tab, kept 60 s like /api/leaders-kpi; `POST …/export.xlsx` →
 - Open with HR (from the July file, not decided here): the 60% vs 70%
   threshold, mean vs pooled, crediting by Verifix supervisor vs the cells
   register, «no records = fail», hair in OKK.
+- **The «Umumiy» tab is a board like «Liderlar KPI»'s, spoken in GATES**
+  (2026-11-03, the operator: «redesign brigadir's KPI like Leader's KPI. Be
+  creative») — `components/brigadirkpi/BkpiBoard.jsx` + `BkpiHero.jsx` +
+  `BkpiPanel.jsx` + `GateRing.jsx`, the vocabulary in `bkpiUtil.js`. Top to
+  bottom: one muted meta line + «Qanday hisoblanadi?»; an HONOUR WALL in
+  place of a podium (two counted pass / fail gates make most brigadirs tie,
+  so «the best three» would be arbitrary): every brigadir through every
+  counted gate, faces in gold rings, shown only above three rows; a result
+  tile — how many passed all, the four groups (all · some · none · no
+  figure, `groupOf`) as one bar and as toggles that narrow the ranking; one
+  tile per counted gate — how many passed, and every brigadir a dot on a
+  FIXED scale beside the line (`domainOf`: from the rule, never the month's
+  values; dots binned on a grid anchored at the threshold, a verdict always
+  on its own side; a dot opens its row). The ranking: avatar · shift · a
+  gate cell per counted gate (verdict icon + figure) · the result ring
+  (four quarters clockwise from 12 in HR's order — green passed, red failed,
+  grey no figure, DASHED not counted yet, so «not measured» never reads as
+  «failed») + «n / 4»; the mentoring / KRU / payout columns are gone (the
+  ring and the tabs say it). A row opens in place onto `BkpiPanel`: each
+  gate as a gauge on its strip's scale with how far inside or outside the
+  line («12.4 punkt zaxira»), last month beside it, the way to the cells /
+  records dialog; the big ring, the share HR pays on, the payout note.
+  Faces: unit profile photos (`supervisor:<id>`, the /leaders read); a
+  Verifix-only brigadir keeps initials. The month before is read on the
+  board only from `START_MONTH`, and compared only when it counted the same
+  gates the same way (`comparableMonths`). Nothing computes a score.
 
 ## «Brigadirlar reytingi» on real data (`/leaderboard`, 2026-10-23)
 

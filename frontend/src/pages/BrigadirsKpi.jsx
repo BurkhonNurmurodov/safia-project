@@ -27,9 +27,10 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { TXT, fill } from "./brigadirsKpiText";
-import { BoardTab, OkkTab, PlaceholderTab, TurnoverTab } from "../components/brigadirkpi/BkpiTabs";
+import { OkkTab, PlaceholderTab, TurnoverTab } from "../components/brigadirkpi/BkpiTabs";
+import BkpiBoard from "../components/brigadirkpi/BkpiBoard";
 import { BrigadirModal, RulesModal } from "../components/brigadirkpi/BkpiModals";
-import { PAST_FROM, curMonth, errText, monthLabel, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
+import { PAST_FROM, START_MONTH, curMonth, errText, monthLabel, prevMonth, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
 
 const TAB_KEYS = ["board", "turnover", "okk", "mentoring", "kru", "payout"];
 const PLACES = new Set(["mentoring", "kru", "payout"]);
@@ -79,6 +80,28 @@ export default function BrigadirsKpi() {
   });
   const data = dataQ.data;
   const state = data?.state;
+
+  // The month before, on the board only — read for its trend arrows, and only
+  // from the month the platform began computing every month by itself
+  // (START_MONTH); `comparableMonths` then decides whether it measured the
+  // same gates the same way.
+  const prevYm = prevMonth(ym);
+  const prevParams = useMemo(() => ({ ...params, month: prevYm }), [params, prevYm]);
+  const prevQ = useQuery({
+    queryKey: ["brigadirs-kpi", prevParams],
+    queryFn: () => api.get("/api/brigadirs-kpi", { params: prevParams }).then((r) => r.data),
+    enabled: tabKey === "board" && prevYm >= START_MONTH && ["open", "ended"].includes(state),
+    staleTime: 5 * 60_000,
+  });
+
+  // The brigadirs' faces — one small read of every unit profile with a photo
+  // (the /leaders ranking's own), keyed «supervisor:<unit id>».
+  const { data: photoVers } = useQuery({
+    queryKey: ["profile-photo-versions", "supervisor"],
+    queryFn: () => api.get("/api/profiles/photo-versions", { params: { roles: "supervisor" } }).then((r) => r.data?.versions || {}),
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
 
   // A brigadir pick the narrowed list no longer offers is dropped.
   const brigOpts = useMemo(() => (data?.options?.brigadirs || [])
@@ -199,8 +222,8 @@ export default function BrigadirsKpi() {
       body = <OkkTab T={T} tl={tl} data={data} rows={found} sort={sortO} onSort={onSortO}
         onOpen={onOpen} onRules={() => setRulesOpen(true)} />;
     } else {
-      body = <BoardTab T={T} tl={tl} data={data} rows={boardRows} sort={sortB} onSort={onSortB}
-        onOpen={onOpen} onRules={() => setRulesOpen(true)} />;
+      body = <BkpiBoard T={T} tl={tl} data={data} rows={boardRows} prev={prevQ.data} sort={sortB} onSort={onSortB}
+        onOpen={onOpen} onRules={() => setRulesOpen(true)} photoVers={photoVers} />;
     }
   }
 
