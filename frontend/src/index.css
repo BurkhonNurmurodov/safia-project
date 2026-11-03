@@ -907,6 +907,30 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   max-width: 960px; min-height: min(72vh, 720px); margin: 0 auto; padding: 24px 0 48px;
   display: flex; flex-direction: column; justify-content: center;
 }
+/* «Xush kelibsiz, {name}!» above the tiles (2026-11-03) — centred, the name
+   a shade heavier; by day the header's chocolate, like the tile names. It
+   gathers in with the tiles, just ahead of the first. */
+.apps-hello {
+  margin: 0 auto 16px; padding: 0 16px; max-width: 100%;
+  font-size: 20px; font-weight: 500; line-height: 1.25; letter-spacing: -0.01em;
+  text-align: center; text-wrap: balance; overflow-wrap: break-word;
+  color: var(--text-2);
+  animation: appIn .9s var(--ease-out) both;
+}
+/* The name and its «!» wrap as one piece — never «Abbos / Mustafakulov!». */
+.apps-hello-who { display: inline-block; max-width: 100%; }
+.apps-hello-name { font-weight: 700; color: var(--text-1); }
+[data-theme="light"] .apps-hello { color: #573019; }
+[data-theme="light"] .apps-hello-name { color: #3d200f; }
+/* On a phone the greeting's two lines are paid back above and between the
+   rows, so the last row still clears the treats in the bottom corners. */
+@media (max-width: 559px) {
+  .apps-wrap { padding-top: 8px; }
+  .apps-grid .app-tile { padding-block: 12px; }
+}
+@media (min-width: 560px)  { .apps-hello { font-size: 28px; margin-bottom: 36px; } }
+@media (min-width: 1024px) { .apps-hello { font-size: 32px; margin-bottom: 44px; } }
+
 /* A wrapping row of equal columns (--cols, --gap) rather than a grid: a grid
    leaves a short last row hanging on the left, a centred wrap does not. */
 .apps-grid {
@@ -1266,7 +1290,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .hdr-apps:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
 
 @media (prefers-reduced-motion: reduce) {
-  .apps-grid > li, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
+  .apps-grid > li, .apps-hello, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
   .apps-mote, .app-badge::after { display: none; }
   .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
   .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }

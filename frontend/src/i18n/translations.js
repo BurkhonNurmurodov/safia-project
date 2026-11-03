@@ -956,6 +956,7 @@ const t = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Umumiy ko'rinish",
     "apps.title":          "Ilovalar",
+    "apps.hello":          "Xush kelibsiz, {name}!",
     "apps.all":            "Barcha ilovalar",
     "apps.activity":       "Faollik",
     "apps.hr":             "HR",
@@ -9319,6 +9320,7 @@ const t = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Умумий кўриниш",
     "apps.title":          "Иловалар",
+    "apps.hello":          "Хуш келибсиз, {name}!",
     "apps.all":            "Барча иловалар",
     "apps.activity":       "Фаоллик",
     "apps.hr":             "HR",
@@ -17679,6 +17681,7 @@ const t = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Обзор",
     "apps.title":          "Приложения",
+    "apps.hello":          "Добро пожаловать, {name}!",
     "apps.all":            "Все приложения",
     "apps.activity":       "Активность",
     "apps.hr":             "HR",
@@ -26039,6 +26042,7 @@ const t = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Overview",
     "apps.title":          "Apps",
+    "apps.hello":          "Welcome, {name}!",
     "apps.all":            "All apps",
     "apps.activity":       "Activity",
     "apps.hr":             "HR",
