@@ -939,7 +939,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    it reads as a cloud slowly changing shape. */
 .app-aura {
   position: absolute; inset: -90%; z-index: -1; pointer-events: none;
-  opacity: .45;
+  opacity: .3;
   transition: transform .8s var(--ease-out), opacity .8s var(--ease-out);
 }
 /* Every ellipse ends INSIDE the box (centre ± radius within 0–100%), or the
@@ -959,7 +959,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 @keyframes auraTurn { to { rotate: 360deg; } }
 
 /* The tile is LIQUID GLASS (2026-11-03, the operator's call, from a mock-up
-   of both themes): a clear pane tinted a third of the way to the app's hue,
+   of both themes): a clear pane with only a breath of the app's hue (7%),
    a 1px rim lit on the top-left and again on the bottom-right, a still
    specular pool near the top edge, and the aura refracted through it. ONE
    recipe for every tile and BOTH themes — only the hue varies, and the glyph
@@ -967,6 +967,11 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    in both themes, by the operator's word («we liked the opacity on the dark
    mode»); a day tile differs only where cream needs it (a brighter rim, a
    warm shadow, no neon on the glyph).
+   The SCENE must show through (the operator on v4.400.0: «opacity is too
+   high, background should be visible through the icons»): the tint, the
+   cloud behind the tile and the blur are all kept light — a heavy blur with
+   a saturate boost smeared each tile's own cloud across it and read as a
+   solid coloured square. Raise any of them and the tiles go opaque again.
    The refraction is a backdrop-filter, and a backdrop-filter under thirteen
    tiles over floating artwork is a repaint every frame on a phone — so it is
    taken from 768px up only; below that the layered gradients alone are the
@@ -976,8 +981,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   width: 100%; height: 100%; border-radius: 17px;
   color: rgb(var(--hue));
   background:
-    linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.05) 45%, rgba(255,255,255,.02)),
-    rgba(var(--glow), .16);
+    linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.03) 45%, rgba(255,255,255,0)),
+    rgba(var(--glow), .07);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.28),
     inset 0 -1px 0 rgba(var(--glow), .35),
@@ -995,7 +1000,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   pointer-events: none;
 }
 @media (min-width: 768px) {
-  .app-glass { -webkit-backdrop-filter: blur(18px) saturate(170%); backdrop-filter: blur(18px) saturate(170%); }
+  .app-glass { -webkit-backdrop-filter: blur(4px) saturate(125%); backdrop-filter: blur(4px) saturate(125%); }
 }
 .app-glass svg {
   position: relative; width: 26px; height: 26px;
@@ -1007,7 +1012,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 /* Day: the same pane; a brighter rim (a faint white ring is invisible on
    cream), a warm shadow instead of a black one, the glyph in the 700 hue. */
-[data-theme="light"] .app-aura { opacity: .55; }
+[data-theme="light"] .app-aura { opacity: .14; }
 [data-theme="light"] .app-glass {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.75),
@@ -1047,8 +1052,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 @media (hover: hover) {
   .app-tile:hover .app-glass { transform: translateY(-4px); }
-  .app-tile:hover .app-aura { transform: scale(1.14); opacity: .7; }
-  [data-theme="light"] .app-tile:hover .app-aura { opacity: .8; }
+  .app-tile:hover .app-aura { transform: scale(1.14); opacity: .5; }
+  [data-theme="light"] .app-tile:hover .app-aura { opacity: .3; }
   .app-tile:hover .app-name { color: var(--text-1); }
 }
 .app-tile:active .app-glass { transform: translateY(-1px) scale(.95); transition-duration: .14s; }
