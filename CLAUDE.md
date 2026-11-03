@@ -10685,7 +10685,7 @@ anywhere**. All six survive unchanged beside this one; nothing was retired.
   composer); `record_system()` = a scheduled job did (the 09:00 auto-close, the
   AI drain, report sends, syncs). A job writes **one row per pass, never one per
   item**, and nothing on a tick where nothing happened.
-- **14 categories**, in rail order: attendance · documents · identity · sessions
+- **14 categories**, in the «Bo'lim» menu's order: attendance · documents · identity · sessions
   · org · leader_config · leader_review · shopfloor · collab · comms ·
   sync_export · config · danger · other.
 - **Keys, never sentences.** `category` and `action` are keys; the tab renders
@@ -10761,15 +10761,29 @@ the only write on the tab.
   action genuinely cannot be reversed. Failures land INSIDE the `ConfirmDialog`
   and leave it standing: `changed_since` is the message the operator must read
   before deciding what to do instead.
-- Reading it: the CATEGORY RAIL is the spine, not a filter — its counts are
-  computed with every filter applied EXCEPT the category, because its job is
-  telling the reader where the rest of the activity is. **Table COLUMNS follow
-  the selected category** (one `COLUMNS` map + one per-key `cell()` switch); a
-  row expands IN PLACE, never into a modal, because the reader is scanning a
-  sequence. New rows never arrive under the reader's hands — they wait behind a
-  «N new» button. Colour on this page means STATUS only: the four outcomes own
-  the traffic light and the categories are separated by ICON, so a category chip
-  can never be mistaken for a verdict.
+- Reading it (rebuilt **2026-11-03**, v4.398.0 — the audit and the plan are
+  `docs/plan-logs-rebuild.md`): ONE filter bar — period · search · «Bo'lim»
+  (the categories, a multi-select whose counts are computed with every filter
+  applied EXCEPT the category, because its job is telling the reader where the
+  rest of the activity is; a category with nothing in the window is DIMMED in
+  place, never hidden) · «Natija» (the outcomes) · the folded «Filtrlar» for
+  source, person, unit, action and detail level. The category rail and the
+  four stat tiles are gone: one line under the bar says events · people ·
+  refused (a chip that applies the outcome filter) · live, and the table takes
+  the whole column. **Rows are ONE line** — the name, then a «Rol» column in
+  the generic view and «name · role» inside a category's own columns; `done`
+  is a quiet check, the other three outcomes keep their chips, so the eye finds
+  them. **A row opens a SIDE PANEL** (`LogPanel.jsx` — non-modal, the right
+  edge, a bottom sheet on a phone; the body is `LogDetail.jsx`, the undo bar
+  included) instead of expanding in place: the sequence stays on screen and no
+  row moves while somebody reads. ↑ ↓ walk the rows from the table or the
+  panel, Esc closes, `/` focuses the search. Table COLUMNS still follow the
+  selected category (one `COLUMNS` map + one per-key `cell()` switch; the
+  generic set once several are picked — `category` is CSV on the API since
+  this day, a single value reads as before). New rows never arrive under the
+  reader's hands — they wait behind a «N new» button. Colour on this page
+  means STATUS only: the outcomes own the traffic light and the categories are
+  separated by ICON, so a category chip can never be mistaken for a verdict.
 
 ## Who uses the app (`/activity`)
 

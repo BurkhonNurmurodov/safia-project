@@ -167,3 +167,30 @@ export function roleLabel(t, role) {
   if (t(a) !== a) return t(a);
   return labelOf(t, "roles.", role);
 }
+
+// ── the target ───────────────────────────────────────────────────────────────
+
+// `target` is a snapshot of WHATEVER the row acted on — a person on one row, a
+// task's text, a plant or a file on the next — so its `target_kind` decides how
+// it is rendered: a person's name through `tl` (the English name convention),
+// every other kind through `tx`, which keeps Uzbek words spelled as Uzbek.
+// ("document" names the one worker an HR document covers.)
+const NAME_KINDS = new Set([
+  "profile", "user", "weblogin", "worker", "leader", "unit", "day",
+  "dispute", "lateday", "request", "photo", "autofill", "report", "document",
+]);
+// A kind is the DEFAULT, not a guarantee: a few writers file a person under a
+// kind whose other rows hold text, and the reverse. These actions say which.
+// A LEADER filed under «task» (a manual override, a late proof, an auto-close):
+const NAME_ACTIONS = new Set([
+  "ltask.task_overridden", "late_proof.decided", "checklist.task_autoclosed",
+  "checklist.late_proof_filed", "checklist.late_proof_supervisor", "checklist.late_proof_admin",
+]);
+// A report TITLE or a plant filed under «report», whose other rows name people:
+const TEXT_ACTIONS = new Set([
+  "export.quality", "export.concerns", "export.worker_concerns", "export.ojidaniya_deck",
+]);
+export const isNameTarget = (r) =>
+  NAME_ACTIONS.has(r.action) || (!TEXT_ACTIONS.has(r.action) && NAME_KINDS.has(r.target_kind));
+/** The row's target as text, through the right transliteration for its kind. */
+export const targetText = (r, { tl, tx }) => (isNameTarget(r) ? tl : tx)(r.target);

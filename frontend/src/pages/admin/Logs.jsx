@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, ArrowUp, Building2, CheckCircle2, Clock, FileSpreadsheet, Layers,
-  Radio, ScrollText, ShieldAlert, TriangleAlert, Undo2, UserRound, Users,
+  ArrowUp, Ban, Building2, CheckCircle2, FileSpreadsheet, Layers, Radio, ScrollText,
+  TriangleAlert, Undo2, UserRound,
 } from "lucide-react";
 import api from "../../utils/api";
 import { exportXlsx } from "../../utils/exportXlsx";
@@ -22,24 +22,32 @@ import { FilterPanel, OptsFilter, PickFilter } from "../../components/ui/ColumnF
 // frontend/.gitignore carries a bare `logs/` rule (for runtime log folders),
 // which matches a directory of that name at ANY depth — a components folder
 // called `logs` builds locally and ships nothing.
-import CategoryRail from "../../components/admin/actionlog/CategoryRail";
 import LogTable from "../../components/admin/actionlog/LogTable";
+import LogPanel from "../../components/admin/actionlog/LogPanel";
 import {
-  GREEN, RED, fmtDay, labelOf, num, timeAgo, tpl,
+  CAT_ICON, DANGER_CAT, GREEN, RED, fmtDay, labelOf, num, timeAgo, tpl,
 } from "../../components/admin/actionlog/taxonomy";
 
 /**
  * «Jurnal» — the register of everything anybody does on this platform.
  *
- * Two decisions shape the whole screen.
+ * Rebuilt on 2026-11-03 (`docs/plan-logs-rebuild.md`). Three decisions shape
+ * the screen.
  *
- * **The category is the page's spine, not a filter.** Fourteen kinds of event
- * share one table only if the reader is willing to treat them as one kind of
- * thing, and they are not: "who reopened a day" and "who revealed a browser
- * password" are different questions with different columns. So the rail is
- * always on screen, its counts are computed WITHOUT the category filter (the
- * rail's job is telling you where the rest of the activity is), and picking a
- * category re-shapes the table's middle columns to what that category carries.
+ * **One filter bar, and the table gets the width.** The category used to be a
+ * 200px rail beside the table, with four stat tiles above it; the table was
+ * left with its last column clipped. Now the period, the search, the category
+ * and the outcome stand in one row (the long tail of filters folds into
+ * «Filtrlar»), one line of figures sits under them, and the table is the page.
+ * The category's counts are still computed WITHOUT the category filter — the
+ * menu's job is telling the reader where the rest of the activity is — and a
+ * category with nothing in it is dimmed, never hidden. Picking one category
+ * still re-shapes the table's middle columns to what that category carries.
+ *
+ * **A row opens a panel beside the table, not inside it.** The reader is
+ * scanning a sequence; an expansion pushed the sequence down, a modal hid it.
+ * The panel (`LogPanel.jsx`) takes the right edge, ↑ ↓ walk the rows, Esc
+ * closes it, `/` jumps to the search.
  *
  * **Live, but never under the reader's hands.** The register is appended to
  * constantly; a table that reflowed every thirty seconds would move the line
@@ -56,6 +64,8 @@ const POLL_MS = 30_000;
 
 const SOURCES = ["telegram", "web", "bot", "system", "assistant", "ops"];
 const OUTCOMES = ["done", "refused", "denied", "error"];
+// What the «refused» figure counts, and what its chip narrows the table to.
+const NOT_DONE = ["refused", "denied", "error"];
 const LEVELS = ["", "rich", "auto"];
 
 // The workbook's own columns (backend `_COLS`), so the sheet's headers are the
@@ -81,39 +91,37 @@ const daysAgoISO = (n) => {
 const spanDays = (from, to) =>
   Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000) + 1;
 
-/** One stat tile. Every number on this page describes the FILTERED window, and
- *  the hint line is where each tile says so — a bare figure beside a filtered
- *  table is the oldest way to mislead somebody with true data. */
-function Tile({ Icon, label, value, hint, tone, loading }) {
+/** «{n} ta amal» with the number set in bold — the template stays one sentence
+ *  per language, the figure is the part the eye lands on. */
+function Stat({ tmpl, n }) {
+  const [before, after] = String(tmpl).split("{n}");
   return (
-    <div
-      className="rounded-2xl px-3 py-2.5 min-w-0"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+    <span className="whitespace-nowrap">
+      {before}<b className="tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{num(n)}</b>{after}
+    </span>
+  );
+}
+
+function Sep() {
+  return <span aria-hidden="true" className="w-px h-3.5" style={{ background: "var(--border-md)" }} />;
+}
+
+/** One category in the «Bo'lim» menu: icon · name · count, dimmed when the
+ *  period holds none of it — dimmed, never hidden, so the list keeps its shape
+ *  and the eye learns where each section sits. */
+function CatOption({ k, count, t }) {
+  const Icon = CAT_ICON[k] || Layers;
+  const danger = k === DANGER_CAT;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 min-w-0"
+      style={{ opacity: count ? 1 : 0.45 }}
+      title={count ? undefined : t("logs.catEmpty")}
     >
-      <div className="flex items-center gap-1.5 mb-1">
-        <span
-          className="grid place-items-center w-5 h-5 rounded-md flex-shrink-0"
-          style={{ background: "var(--bg-inner)" }}
-        >
-          <Icon size={11} style={{ color: "var(--text-4)" }} />
-        </span>
-        <span className="text-[10px] uppercase tracking-wide truncate" style={{ color: "var(--text-4)" }}>
-          {label}
-        </span>
-      </div>
-      {loading ? (
-        <SkeletonBlock className="h-6 w-16" />
-      ) : (
-        <div className="text-xl font-bold tabular-nums truncate" style={{ color: tone || "var(--text-1)" }}>
-          {value}
-        </div>
-      )}
-      {hint && (
-        <div className="text-[10px] mt-0.5 leading-tight truncate" style={{ color: "var(--text-4)" }} title={hint}>
-          {hint}
-        </div>
-      )}
-    </div>
+      <Icon size={11} className="flex-shrink-0" style={{ color: danger ? RED : "var(--text-4)" }} />
+      <span className="truncate" style={{ color: danger ? RED : undefined }}>{labelOf(t, "logs.cat.", k)}</span>
+      <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>· {num(count)}</span>
+    </span>
   );
 }
 
@@ -125,7 +133,7 @@ export default function Logs() {
   const today = todayISO();
 
   // ── the view, remembered ────────────────────────────────────────────────────
-  const [category, setCategory] = usePersistentState("logs_category", "");
+  const [cats, setCats] = usePersistentState("logs_cats", []);
   const [dateFrom, setDateFrom] = usePersistentState("logs_from", today);
   const [dateTo, setDateTo] = usePersistentState("logs_to", today);
   const [q, setQ] = usePersistentState("logs_q", "");
@@ -146,15 +154,20 @@ export default function Logs() {
   }, [q]);
 
   const [page, setPage] = useState(1);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   // The generation the table is frozen at. Bumped only by the reader.
   const [gen, setGen] = useState(0);
+  // The event open in the side panel — by id, so a refetch that still holds
+  // the row keeps it open and one that does not closes the panel.
+  const [selectedId, setSelectedId] = useState(null);
+
+  // One category keeps its own column set; several fall back to the generic one.
+  const category = cats.length === 1 ? cats[0] : "";
 
   const params = useMemo(() => ({
     from: dateFrom,
     to: dateTo,
-    category: category || undefined,
+    category: cats.length ? cats.join(",") : undefined,
     action: action || undefined,
     outcome: outcome.length ? outcome.join(",") : undefined,
     source: source.length ? source.join(",") : undefined,
@@ -162,7 +175,7 @@ export default function Logs() {
     unit_id: unitId || undefined,
     q: qq.trim() || undefined,
     enriched: level || undefined,
-  }), [dateFrom, dateTo, category, action, outcome, source, actor, unitId, qq, level]);
+  }), [dateFrom, dateTo, cats, action, outcome, source, actor, unitId, qq, level]);
 
   const sig = JSON.stringify(params);
   // Any narrowing puts the reader back on page 1 — page 7 of a different result
@@ -170,8 +183,8 @@ export default function Logs() {
   useEffect(() => { setPage(1); }, [sig]);
 
   // ── data ────────────────────────────────────────────────────────────────────
-  // The list and the summary are FROZEN together at `gen`: the tiles must never
-  // count rows the table is not showing.
+  // The list and the summary are FROZEN together at `gen`: the figures must
+  // never count rows the table is not showing.
   const frozen = { staleTime: 30_000, refetchOnWindowFocus: false, placeholderData: keepPreviousData };
 
   const listQ = useQuery({
@@ -209,7 +222,7 @@ export default function Logs() {
   const data = listQ.data;
   const sum = sumQ.data;
   const facets = facetQ.data;
-  const rows = data?.rows || [];
+  const rows = useMemo(() => data?.rows || [], [data]);
   const total = data?.total ?? 0;
   const loading = listQ.isLoading || (listQ.isFetching && listQ.isPlaceholderData);
 
@@ -233,8 +246,38 @@ export default function Logs() {
     if (unitId && !facets.units.some((u) => String(u.id) === String(unitId))) setUnitId("");
   }, [facetsFresh, facets, action, actor, unitId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── the open event ──────────────────────────────────────────────────────────
+  const selIndex = rows.findIndex((r) => r.id === selectedId);
+  const selected = selIndex >= 0 ? rows[selIndex] : null;
+  // The page moved on (a filter, the next page, the new rows) and the open row
+  // went with it: the panel closes rather than show a row the table does not.
+  useEffect(() => {
+    if (selectedId != null && !loading && !rows.some((r) => r.id === selectedId)) setSelectedId(null);
+  }, [rows, loading, selectedId]);
+  const openRow = useCallback((r) => setSelectedId(r.id), []);
+  const closePanel = useCallback(() => setSelectedId(null), []);
+
+  // `/` focuses the search from anywhere on the page that is not already a
+  // field — the one key a register's reader presses most.
+  const searchRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      const tag = (el?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── labels ──────────────────────────────────────────────────────────────────
-  const catLabel = category ? labelOf(t, "logs.cat.", category) : t("logs.all");
+  const catLabel = cats.length === 0
+    ? t("logs.all")
+    : cats.length === 1 ? labelOf(t, "logs.cat.", cats[0]) : tpl(t("logs.selectedN"), { n: cats.length });
   const periodText = dateFrom === dateTo ? fmtDay(dateFrom) : `${fmtDay(dateFrom)} – ${fmtDay(dateTo)}`;
   const multiDay = dateFrom !== dateTo;
 
@@ -242,12 +285,58 @@ export default function Logs() {
     () => Object.fromEntries((sum?.sources || []).map((s) => [s.key, s.count])), [sum]);
   const outCount = useMemo(
     () => Object.fromEntries((sum?.outcomes || []).map((s) => [s.key, s.count])), [sum]);
+  // The category list and its counts, in the register's own order. Until the
+  // summary answers, the vocabulary's order stands in, so the menu is never
+  // empty.
+  const catList = useMemo(
+    () => (sum?.categories?.length ? sum.categories : Object.keys(CAT_ICON).map((key) => ({ key, count: 0 }))),
+    [sum]);
+  const catCount = useMemo(() => Object.fromEntries(catList.map((c) => [c.key, c.count])), [catList]);
 
   const levelLabel = (v) =>
     v === "auto" ? t("logs.level.auto") : v === "rich" ? t("logs.level.rich") : t("logs.level.all");
 
   // ── filters ─────────────────────────────────────────────────────────────────
+  // The category and the outcome are PINNED: they stand on the toolbar as their
+  // own controls, named, with their value on the trigger. The rest fold into
+  // «Filtrlar» — still a press away, but not in the way.
   const sections = [
+    {
+      key: "category",
+      pinned: true,
+      icon: Layers,
+      label: t("logs.filter.category"),
+      active: cats.length > 0,
+      display: catLabel,
+      onClear: () => setCats([]),
+      render: () => (
+        <OptsFilter
+          opts={catList.map((c) => c.key)}
+          sel={cats}
+          onChange={setCats}
+          labelOf={(k) => labelOf(t, "logs.cat.", k)}
+          render={(k) => <CatOption k={k} count={catCount[k] || 0} t={t} />}
+        />
+      ),
+    },
+    {
+      key: "outcome",
+      pinned: true,
+      icon: CheckCircle2,
+      label: t("logs.filter.outcome"),
+      active: outcome.length > 0,
+      display: outcome.map((o) => labelOf(t, "logs.out.", o)).join(", "),
+      onClear: () => setOutcome([]),
+      render: () => (
+        <OptsFilter
+          opts={OUTCOMES}
+          sel={outcome}
+          onChange={setOutcome}
+          labelOf={(o) => labelOf(t, "logs.out.", o)}
+          render={(o) => `${labelOf(t, "logs.out.", o)} · ${num(outCount[o] || 0)}`}
+        />
+      ),
+    },
     {
       key: "source",
       icon: Radio,
@@ -262,23 +351,6 @@ export default function Logs() {
           onChange={setSource}
           labelOf={(o) => labelOf(t, "logs.src.", o)}
           render={(o) => `${labelOf(t, "logs.src.", o)} · ${num(srcCount[o] || 0)}`}
-        />
-      ),
-    },
-    {
-      key: "outcome",
-      icon: CheckCircle2,
-      label: t("logs.filter.outcome"),
-      active: outcome.length > 0,
-      display: outcome.map((o) => labelOf(t, "logs.out.", o)).join(", "),
-      onClear: () => setOutcome([]),
-      render: () => (
-        <OptsFilter
-          opts={OUTCOMES}
-          sel={outcome}
-          onChange={setOutcome}
-          labelOf={(o) => labelOf(t, "logs.out.", o)}
-          render={(o) => `${labelOf(t, "logs.out.", o)} · ${num(outCount[o] || 0)}`}
         />
       ),
     },
@@ -348,12 +420,12 @@ export default function Logs() {
           note={facets?.actions_narrowed
             ? tpl(t("logs.narrowed"), { section: catLabel, n: (facets.actions || []).length })
             : null}
-          empty={category ? (
+          empty={cats.length ? (
             <div className="text-center px-1 py-1.5">
               <p className="text-[11px] mb-2 leading-snug" style={{ color: "var(--text-3)" }}>
                 {tpl(t("logs.noActions"), { section: catLabel })}
               </p>
-              <Button size="sm" variant="secondary" onClick={() => { setCategory(""); close && close(); }}>
+              <Button size="sm" variant="secondary" onClick={() => { setCats([]); close && close(); }}>
                 {t("logs.showAllSections")}
               </Button>
             </div>
@@ -395,10 +467,15 @@ export default function Logs() {
     },
   ];
 
-  const anyFilter = !!(source.length || outcome.length || actor || unitId || action || level || q.trim() || category);
+  const anyFilter = !!(cats.length || source.length || outcome.length || actor || unitId || action || level || q.trim());
   const clearAll = () => {
-    setSource([]); setOutcome([]); setActor(""); setUnitId(""); setAction(""); setLevel("");
+    setCats([]); setSource([]); setOutcome([]); setActor(""); setUnitId(""); setAction(""); setLevel("");
   };
+
+  // The «refused» figure is also the quickest filter: one press narrows the
+  // table to everything that did not go through, a second one lifts it.
+  const refusedOn = outcome.length === NOT_DONE.length && NOT_DONE.every((o) => outcome.includes(o));
+  const toggleRefused = () => setOutcome(refusedOn ? [] : [...NOT_DONE]);
 
   // ── taking one action back ──────────────────────────────────────────────────
   // The only WRITE on this tab. Two rules it is built on:
@@ -454,7 +531,7 @@ export default function Logs() {
         // shipped a column literally titled "logs.col.actor" in every language.
         ...Object.fromEntries(EXPORT_COLS.map(
           (k) => [`col.${k}`, labelOf(t, "logs.col.", EXPORT_COL_T[k] || k)])),
-        ...Object.fromEntries((sum?.categories || []).map((c) => [`cat.${c.key}`, labelOf(t, "logs.cat.", c.key)])),
+        ...Object.fromEntries(catList.map((c) => [`cat.${c.key}`, labelOf(t, "logs.cat.", c.key)])),
         ...Object.fromEntries(OUTCOMES.map((k) => [`out.${k}`, labelOf(t, "logs.out.", k)])),
         ...Object.fromEntries(SOURCES.map((k) => [`src.${k}`, labelOf(t, "logs.src.", k)])),
         ...Object.fromEntries((facets?.actions || []).map((a) => [`act.${a.key}`, labelOf(t, "logs.act.", a.key)])),
@@ -482,7 +559,7 @@ export default function Logs() {
       {t("logs.emptyWiden")}
     </Button>
   ) : anyFilter ? (
-    <Button size="sm" variant="secondary" onClick={() => { clearAll(); setQ(""); setCategory(""); }}>
+    <Button size="sm" variant="secondary" onClick={() => { clearAll(); setQ(""); }}>
       {t("logs.emptyClear")}
     </Button>
   ) : null;
@@ -499,127 +576,151 @@ export default function Logs() {
   );
 
   const last = sum?.last;
+  const denied = sum?.denied ?? 0;
   const isError = listQ.isError || sumQ.isError;
 
   return (
-    <div className="lg:flex lg:gap-4 lg:items-start">
-      <CategoryRail
-        cats={sum?.categories || []}
-        total={sum?.total ?? 0}
-        value={category}
-        loading={sumQ.isLoading}
-        onChange={setCategory}
-        sheetOpen={sheetOpen}
-        onSheet={setSheetOpen}
-      />
+    <div className="space-y-3">
+      {/* ONE toolbar row, every control on the 38px baseline. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <DateRangePicker
+          dateFrom={dateFrom} dateTo={dateTo}
+          setDateFrom={setDateFrom} setDateTo={setDateTo}
+          max={today} compactLabel triggerClassName="px-3 py-2 text-sm"
+        />
+        <SearchInput
+          ref={searchRef}
+          value={q}
+          onChange={setQ}
+          placeholder={t("logs.search")}
+          className="w-44 sm:w-64"
+          title={t("logs.searchKey")}
+          hint={(
+            <kbd
+              className="text-[10px] leading-none px-1 py-0.5 rounded font-sans"
+              style={{ border: "1px solid var(--border-md)", color: "var(--text-4)" }}
+            >
+              /
+            </kbd>
+          )}
+        />
+        <FilterPanel sections={sections} onClearAll={clearAll} />
+        <Button
+          size="lg" variant="secondary" className="ml-auto"
+          loading={exporting} disabled={loading || total === 0}
+          icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+          onClick={runExport}
+        >
+          <span className="hidden sm:inline">
+            {anyFilter ? tpl(t("logs.exportN"), { n: num(total) }) : t("logs.export")}
+          </span>
+        </Button>
+      </div>
 
-      <div className="flex-1 min-w-0 space-y-3">
-        {/* ONE toolbar row, every control on the 38px baseline. */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <DateRangePicker
-            dateFrom={dateFrom} dateTo={dateTo}
-            setDateFrom={setDateFrom} setDateTo={setDateTo}
-            max={today} compactLabel triggerClassName="px-3 py-2 text-sm"
-          />
-          <SearchInput value={q} onChange={setQ} placeholder={t("logs.search")} className="w-44 sm:w-60" />
-          <FilterPanel sections={sections} onClearAll={clearAll} />
+      {isError && (
+        <div
+          className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+          style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)", color: RED }}
+        >
+          <TriangleAlert size={13} className="flex-shrink-0 mt-0.5" />
+          <span className="min-w-0">
+            {listQ.error?.response?.data?.detail || sumQ.error?.response?.data?.detail || t("logs.loadFailed")}
+          </span>
+        </div>
+      )}
+
+      {/* ONE line of figures, every one describing the FILTERED window the
+          table shows. The «refused» figure is a control; the rest are facts. */}
+      <div
+        className="flex items-center gap-x-3 gap-y-1.5 flex-wrap px-1 text-xs min-h-[24px]"
+        style={{ color: "var(--text-2)" }}
+        aria-live="polite"
+      >
+        {sumQ.isLoading ? (
+          <SkeletonBlock className="h-4 w-56" />
+        ) : (
+          <>
+            <Stat tmpl={t("logs.stat.events")} n={sum?.total ?? 0} />
+            <Sep />
+            <Stat tmpl={t("logs.stat.people")} n={sum?.actors ?? 0} />
+            <Sep />
+            <button
+              type="button"
+              onClick={toggleRefused}
+              aria-pressed={refusedOn}
+              title={tpl(t("logs.tile.deniedHint"), { n: num(sum?.total ?? 0) })}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap"
+              style={denied
+                ? { background: `${RED}1f`, color: RED, border: `1px solid ${RED}${refusedOn ? "" : "55"}` }
+                : { background: "var(--bg-inner)", color: "var(--text-3)", border: `1px solid ${refusedOn ? "var(--brand)" : "var(--border)"}` }}
+            >
+              <Ban size={11} />
+              {tpl(t("logs.stat.refused"), { n: num(denied) })}
+            </button>
+            <span className="ml-auto inline-flex items-center gap-1.5 min-w-0" style={{ color: "var(--text-3)" }}>
+              <span
+                aria-hidden="true"
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ background: GREEN, boxShadow: `0 0 0 3px ${GREEN}33` }}
+              />
+              <span className="truncate tabular-nums">
+                {last ? tpl(t("logs.stat.live"), { time: last.time || "—" }) : t("logs.stat.liveNone")}
+                {last && (
+                  <span style={{ color: "var(--text-4)" }}>
+                    {" · "}{tl(last.actor) || "—"}{" · "}{labelOf(t, "logs.act.", last.action)}
+                  </span>
+                )}
+              </span>
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* New rows never arrive under the reader's hands — they wait behind a
+          button that says how many there are. */}
+      {newCount > 0 && (
+        <div className="flex justify-center">
           <Button
-            size="lg" variant="secondary" className="ml-auto"
-            loading={exporting} disabled={loading || total === 0}
-            icon={!exporting ? <FileSpreadsheet size={14} /> : null}
-            onClick={runExport}
+            size="sm" variant="primary" tint
+            icon={<ArrowUp size={13} />}
+            onClick={applyNew}
+            title={t("logs.newHint")}
           >
-            <span className="hidden sm:inline">{t("logs.export")}</span>
+            {tpl(t("logs.new"), { n: num(newCount) })}
           </Button>
         </div>
+      )}
 
-        {isError && (
-          <div
-            className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
-            style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)", color: RED }}
-          >
-            <TriangleAlert size={13} className="flex-shrink-0 mt-0.5" />
-            <span className="min-w-0">
-              {listQ.error?.response?.data?.detail || sumQ.error?.response?.data?.detail || t("logs.loadFailed")}
-            </span>
-          </div>
-        )}
+      <LogTable
+        rows={rows}
+        category={category}
+        loading={loading}
+        multiDay={multiDay}
+        empty={empty}
+        selectedId={selectedId}
+        onSelect={openRow}
+      />
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Tile
-            Icon={Activity}
-            label={t("logs.tile.actions")}
-            value={num(sum?.total ?? 0)}
-            hint={tpl(t("logs.tile.actionsHint"), { period: periodText, section: catLabel })}
-            loading={sumQ.isLoading}
-          />
-          <Tile
-            Icon={ShieldAlert}
-            label={t("logs.tile.denied")}
-            value={num(sum?.denied ?? 0)}
-            tone={sum?.denied ? RED : GREEN}
-            hint={tpl(t("logs.tile.deniedHint"), { n: num(sum?.total ?? 0) })}
-            loading={sumQ.isLoading}
-          />
-          <Tile
-            Icon={Users}
-            label={t("logs.tile.people")}
-            value={num(sum?.actors ?? 0)}
-            hint={t("logs.tile.peopleHint")}
-            loading={sumQ.isLoading}
-          />
-          <Tile
-            Icon={Clock}
-            label={t("logs.tile.last")}
-            value={last ? timeAgo(last.at, t) : "—"}
-            hint={last
-              ? `${tl(last.actor) || "—"} · ${labelOf(t, "logs.act.", last.action)}`
-              : t("logs.tile.lastNone")}
-            loading={sumQ.isLoading}
-          />
-        </div>
+      <Pagination
+        page={page}
+        pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onPage={setPage}
+      />
 
-        {/* New rows never arrive under the reader's hands — they wait behind a
-            button that says how many there are. */}
-        {newCount > 0 && (
-          <div className="flex justify-center">
-            <Button
-              size="sm" variant="primary" tint
-              icon={<ArrowUp size={13} />}
-              onClick={applyNew}
-              title={t("logs.newHint")}
-            >
-              {tpl(t("logs.new"), { n: num(newCount) })}
-            </Button>
-          </div>
-        )}
-
-        <LogTable
-          rows={rows}
-          category={category}
+      {selected && (
+        <LogPanel
+          r={selected}
+          onClose={closePanel}
+          onPrev={() => selIndex > 0 && setSelectedId(rows[selIndex - 1].id)}
+          onNext={() => selIndex < rows.length - 1 && setSelectedId(rows[selIndex + 1].id)}
+          hasPrev={selIndex > 0}
+          hasNext={selIndex < rows.length - 1}
           onUndo={askUndo}
-          undoing={undoM.isPending ? undoM.variables?.id : null}
-          loading={loading}
-          multiDay={multiDay}
-          empty={empty}
-          icon={ScrollText}
-          title={catLabel}
-          subtitle={category ? labelOf(t, "logs.catHint.", category) : t("logs.allHint")}
-          right={
-            <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-              {tpl(t("logs.rows"), { n: num(total) })}
-            </span>
-          }
+          busy={undoM.isPending && undoM.variables?.id === selected.id}
         />
-
-        <Pagination
-          page={page}
-          pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
-          total={total}
-          pageSize={PAGE_SIZE}
-          onPage={setPage}
-        />
-      </div>
+      )}
 
       {undoRow && (
         <ConfirmDialog

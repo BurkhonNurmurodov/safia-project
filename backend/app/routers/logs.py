@@ -97,7 +97,10 @@ class _F:
     def __init__(self, date_from, date_to, category, action, outcome, source,
                  actor, unit_id, q, enriched):
         self.start, self.end = _window(date_from, date_to)
-        self.category = category or None
+        # Several categories at once (the «Bo'lim» filter is a multi-select
+        # since 2026-11-03); a single value is the same list of one, so an
+        # older bundle's `category=x` reads exactly as it did.
+        self.category = _csv(category)
         self.action = action or None
         self.outcome = _csv(outcome)
         self.source = _csv(source)
@@ -110,7 +113,7 @@ class _F:
         query = query.filter(ActionLog.created_at >= self.start,
                              ActionLog.created_at < self.end)
         if self.category and except_ != "category":
-            query = query.filter(ActionLog.category == self.category)
+            query = query.filter(ActionLog.category.in_(self.category))
         if self.action and except_ != "action":
             query = query.filter(ActionLog.action == self.action)
         if self.outcome and except_ != "outcome":
@@ -166,7 +169,7 @@ class _F:
 def _filters(
     date_from: Optional[str] = Query(None, alias="from"),
     date_to: Optional[str] = Query(None, alias="to"),
-    category: Optional[str] = Query(None),
+    category: Optional[str] = Query(None, description="csv"),
     action: Optional[str] = Query(None),
     outcome: Optional[str] = Query(None, description="csv"),
     source: Optional[str] = Query(None, description="csv"),

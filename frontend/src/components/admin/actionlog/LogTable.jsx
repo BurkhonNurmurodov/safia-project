@@ -1,14 +1,13 @@
-import { Fragment, useState } from "react";
-import { ArrowRight, ChevronRight, EyeOff, KeyRound, Undo2 } from "lucide-react";
-import Button from "../../ui/Button";
+import { useEffect, useRef } from "react";
+import { ArrowRight, CheckCircle2, EyeOff, KeyRound } from "lucide-react";
 import TableCard, { Th } from "../../ui/DataTable";
 import { SkeletonBlock } from "../../ui/Skeleton";
 import { useLang } from "../../../context/LangContext";
 import { useTranslit } from "../../../utils/transliterate";
 import {
-  AMBER, CAT_ICON, OUTCOME, RED, SRC_ICON,
-  detail, firstOf, fmtDay, fmtDayShort, labelOf, num, roleLabel, timeAgo, tpl,
+  AMBER, GREEN, detail, firstOf, fmtDay, fmtDayShort, labelOf, num, roleLabel, targetText, tpl,
 } from "./taxonomy";
+import { CategoryChip, OutcomeChip, SourceChip } from "./LogDetail";
 
 /**
  * The register's table.
@@ -16,19 +15,22 @@ import {
  * **The columns follow the CATEGORY.** One generic table over fourteen kinds of
  * event is a table of mostly-empty cells: «Target» holds a document name on one
  * row, a task number on the next and nothing at all on the third, and the
- * reader has to open every row to find out which. So «All» keeps the generic
- * set and each category replaces the middle of it with the fields that category
- * actually carries — the same seven-ish columns, saying something every time.
+ * reader has to open every row to find out which. So the generic set (no
+ * category, or several) keeps the row's anchors and each single category
+ * replaces the middle of it with the fields that category actually carries —
+ * the same seven-ish columns, saying something every time.
  *
  * One `COLUMNS` map and one per-key `cell()` switch: adding a column later is
  * one entry and one `case`, not a new table.
  *
- * A row EXPANDS IN PLACE rather than opening a modal. The reader is scanning a
- * sequence — who did what, then what happened next — and a modal throws that
- * sequence away every time a question is asked of one line of it.
+ * **Every row is ONE line** (2026-11-03). The name and the role used to stack,
+ * which made a 52px row and eight of them per screen; the role is a column of
+ * its own in the generic view and a suffix on the name inside a category's own
+ * columns. A row no longer expands in place — it opens the side panel
+ * (`LogPanel.jsx`), so the rows the reader is scanning never move.
  */
 
-const BASE = ["time", "who", "category", "action", "target", "outcome", "source"];
+const BASE = ["time", "who", "actorRole", "action", "target", "category", "outcome"];
 
 export const COLUMNS = {
   "":              BASE,
@@ -45,14 +47,19 @@ export const COLUMNS = {
   sync_export:     ["time", "who", "action", "rows", "outcome"],
   config:          ["time", "who", "action", "setting", "change", "outcome"],
   danger:          ["time", "who", "action", "scope", "reason", "outcome"],
-  other:           [...BASE, "request"],
+  other:           [...BASE, "source", "request"],
 };
 
 export const colsFor = (category) => COLUMNS[category] || BASE;
 
+// A column key whose dictionary entry is spelled differently: the actor's role
+// column reads «Rol» like the identity view's role column does.
+const COL_LABEL = { actorRole: "role" };
+const colLabel = (t, k) => labelOf(t, "logs.col.", COL_LABEL[k] || k);
+
 // Columns the phone card renders in its own header instead of as a labelled
 // line — they are the card's identity, not one of its facts.
-const CARD_HEAD = new Set(["time", "who", "action", "outcome"]);
+const CARD_HEAD = new Set(["time", "who", "actorRole", "action", "outcome"]);
 
 // ── small parts ──────────────────────────────────────────────────────────────
 
@@ -62,30 +69,6 @@ const val = (v) => {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 };
 
-// `target` is a snapshot of WHATEVER the row acted on — a person on one row, a
-// task's text, a plant or a file on the next — so its `target_kind` decides how
-// it is rendered: a person's name through `tl` (the English name convention),
-// every other kind through `tx`, which keeps Uzbek words spelled as Uzbek.
-// ("document" names the one worker an HR document covers.)
-const NAME_KINDS = new Set([
-  "profile", "user", "weblogin", "worker", "leader", "unit", "day",
-  "dispute", "lateday", "request", "photo", "autofill", "report", "document",
-]);
-// A kind is the DEFAULT, not a guarantee: a few writers file a person under a
-// kind whose other rows hold text, and the reverse. These actions say which.
-// A LEADER filed under «task» (a manual override, a late proof, an auto-close):
-const NAME_ACTIONS = new Set([
-  "ltask.task_overridden", "late_proof.decided", "checklist.task_autoclosed",
-  "checklist.late_proof_filed", "checklist.late_proof_supervisor", "checklist.late_proof_admin",
-]);
-// A report TITLE or a plant filed under «report», whose other rows name people:
-const TEXT_ACTIONS = new Set([
-  "export.quality", "export.concerns", "export.worker_concerns", "export.ojidaniya_deck",
-]);
-const isNameTarget = (r) =>
-  NAME_ACTIONS.has(r.action) || (!TEXT_ACTIONS.has(r.action) && NAME_KINDS.has(r.target_kind));
-const targetText = (r, { tl, tx }) => (isNameTarget(r) ? tl : tx)(r.target);
-
 function Mark({ text, title }) {
   return (
     <span
@@ -94,47 +77,6 @@ function Mark({ text, title }) {
       style={{ background: "var(--bg-inner)", color: "var(--text-4)", border: "1px solid var(--border)" }}
     >
       {text}
-    </span>
-  );
-}
-
-export function OutcomeChip({ v, t }) {
-  const m = OUTCOME[v];
-  if (!m) return <span style={{ color: "var(--text-4)" }}>—</span>;
-  const { Icon, color } = m;
-  return (
-    <span
-      title={labelOf(t, "logs.outHint.", v)}
-      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap"
-      style={{ background: `${color}1f`, color, border: `1px solid ${color}55` }}
-    >
-      <Icon size={11} />
-      {labelOf(t, "logs.out.", v)}
-    </span>
-  );
-}
-
-function SourceChip({ v, t }) {
-  const Icon = SRC_ICON[v];
-  if (!Icon) return null;
-  return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
-      <Icon size={11} style={{ color: "var(--text-4)", flexShrink: 0 }} />
-      {labelOf(t, "logs.src.", v)}
-    </span>
-  );
-}
-
-function CategoryChip({ v, t }) {
-  const Icon = CAT_ICON[v];
-  const danger = v === "danger";
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 whitespace-nowrap"
-      style={{ color: danger ? RED : "var(--text-2)" }}
-    >
-      {Icon && <Icon size={11} style={{ color: danger ? RED : "var(--text-4)", flexShrink: 0 }} />}
-      {labelOf(t, "logs.cat.", v)}
     </span>
   );
 }
@@ -157,36 +99,27 @@ function ChangeCell({ r, t }) {
   );
 }
 
-function WhoCell({ r, t, tl }) {
+// One line. `withRole`: the role rides on the name («Aripova · Brigadir») where
+// the column set has no role column of its own.
+function WhoCell({ r, t, tl, withRole }) {
+  const name = tl(r.actor) || r.actor_key || "—";
+  const role = withRole && r.actor_role ? roleLabel(t, r.actor_role) : "";
   return (
-    <span className="inline-block min-w-0 align-middle">
-      <span className="flex items-center gap-1 min-w-0">
-        <span className="truncate max-w-[150px] font-medium" style={{ color: "var(--text-1)" }}>
-          {tl(r.actor) || r.actor_key || "—"}
-        </span>
-        {r.via_capability && (
-          <span title={tpl(t("logs.viaCapability"), { cap: r.via_capability })} className="flex-shrink-0 inline-flex">
-            <KeyRound size={10} style={{ color: AMBER }} />
-          </span>
-        )}
-      </span>
-      {r.actor_role && (
-        <span className="block text-[10px] truncate max-w-[150px]" style={{ color: "var(--text-4)" }}>
-          {roleLabel(t, r.actor_role)}
+    <span className="inline-flex items-center gap-1 min-w-0 max-w-[260px]" title={role ? `${name} · ${role}` : name}>
+      <span className="truncate font-medium" style={{ color: "var(--text-1)" }}>{name}</span>
+      {role && <span className="truncate flex-shrink" style={{ color: "var(--text-4)", maxWidth: 110 }}>· {role}</span>}
+      {r.via_capability && (
+        <span title={tpl(t("logs.viaCapability"), { cap: r.via_capability })} className="flex-shrink-0 inline-flex">
+          <KeyRound size={10} style={{ color: AMBER }} />
         </span>
       )}
     </span>
   );
 }
 
-function TimeCell({ r, open, multiDay, t }) {
+function TimeCell({ r, multiDay, t }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <ChevronRight
-        size={12}
-        className="flex-shrink-0 transition-transform"
-        style={{ color: "var(--text-4)", transform: open ? "rotate(90deg)" : "none" }}
-      />
       <span className="tabular-nums" style={{ color: "var(--text-1)" }}>{r.time || "—"}</span>
       {multiDay && (
         <span className="tabular-nums text-[10px]" style={{ color: "var(--text-4)" }}>{fmtDayShort(r.date)}</span>
@@ -202,6 +135,22 @@ function TimeCell({ r, open, multiDay, t }) {
   );
 }
 
+// «done» is the row's normal state and the table is mostly made of it, so it
+// is a quiet mark: the word and the shape, without the chip. The three
+// outcomes that mean something went wrong keep their coloured chips, which is
+// what lets the eye find them in a page of fifty.
+function OutcomeCell({ v, t }) {
+  if (v === "done") {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px]" title={labelOf(t, "logs.outHint.", v)} style={{ color: "var(--text-4)" }}>
+        <CheckCircle2 size={11} style={{ color: GREEN, opacity: 0.8 }} />
+        {labelOf(t, "logs.out.", v)}
+      </span>
+    );
+  }
+  return <OutcomeChip v={v} t={t} />;
+}
+
 function Plain({ children, w = "200px", tone = "var(--text-2)" }) {
   return (
     <span className="block truncate" style={{ maxWidth: w, color: tone }}>{children}</span>
@@ -213,18 +162,19 @@ function Plain({ children, w = "200px", tone = "var(--text-2)" }) {
 // renders the em dash, so "empty" looks the same everywhere).
 
 function cell(key, r, ctx) {
-  const { t, tl, multiDay, open } = ctx;
+  const { t, tl, multiDay, withRole } = ctx;
   switch (key) {
-    case "time":     return <TimeCell r={r} open={open} multiDay={multiDay} t={t} />;
-    case "who":      return <WhoCell r={r} t={t} tl={tl} />;
-    case "category": return <CategoryChip v={r.category} t={t} />;
-    case "action":   return <Plain w="260px" tone="var(--text-1)">{labelOf(t, "logs.act.", r.action)}</Plain>;
-    case "outcome":  return <OutcomeChip v={r.outcome} t={t} />;
-    case "source":   return <SourceChip v={r.source} t={t} />;
-    case "unit":     return val(tl(r.unit)) && <Plain w="160px">{tl(r.unit)}</Plain>;
-    case "day":      return r.day ? <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDay(r.day)}</span> : null;
-    case "change":   return <ChangeCell r={r} t={t} />;
-    case "target":   return val(targetText(r, ctx)) && <Plain w="200px">{targetText(r, ctx)}</Plain>;
+    case "time":      return <TimeCell r={r} multiDay={multiDay} t={t} />;
+    case "who":       return <WhoCell r={r} t={t} tl={tl} withRole={withRole} />;
+    case "actorRole": return r.actor_role ? <Plain w="120px">{roleLabel(t, r.actor_role)}</Plain> : null;
+    case "category":  return <CategoryChip v={r.category} t={t} />;
+    case "action":    return <Plain w="260px" tone="var(--text-1)">{labelOf(t, "logs.act.", r.action)}</Plain>;
+    case "outcome":   return <OutcomeCell v={r.outcome} t={t} />;
+    case "source":    return <SourceChip v={r.source} t={t} />;
+    case "unit":      return val(tl(r.unit)) && <Plain w="160px">{tl(r.unit)}</Plain>;
+    case "day":       return r.day ? <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDay(r.day)}</span> : null;
+    case "change":    return <ChangeCell r={r} t={t} />;
+    case "target":    return val(targetText(r, ctx)) && <Plain w="200px">{targetText(r, ctx)}</Plain>;
 
     case "document": {
       const v = firstOf(targetText(r, ctx), labelOf(t, "logs.f.", detail(r, ["doc_type"])));
@@ -310,261 +260,92 @@ function cell(key, r, ctx) {
   }
 }
 
-// ── the expanded row ─────────────────────────────────────────────────────────
-
-function Kv({ label, children }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>{label}</div>
-      <div className="text-xs break-words" style={{ color: "var(--text-1)" }}>{children}</div>
-    </div>
-  );
-}
-
-/**
- * The panel's action bar — the one place on this tab that WRITES.
- *
- * It renders on every row, in one of three states, and that is the point: an
- * undo control that only appeared when it worked would leave the reader of a
- * profile-deletion guessing whether the platform forgot the button or the
- * action genuinely cannot be reversed. So the bar always says which, in words —
- * `undo.ok` offers it, `undo.why` explains the refusal, and a row already taken
- * back says by whom and when instead of offering it a second time.
- *
- * The verdict is the SERVER's (`services/action_undo.py`). Deriving "is this
- * undoable" in the browser would be a second definition of the rule, and the
- * one that is wrong is always the one the operator is looking at.
- */
-function UndoBar({ r, onUndo, busy }) {
-  const { t } = useLang();
-  const { tl } = useTranslit();
-  const u = r.undo;
-  if (!u) return null;
-
-  if (r.undone) {
-    return (
-      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-        <Undo2 size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-        <span className="min-w-0">
-          {tpl(t("logs.undo.doneBy"), {
-            who: tl(r.undone.actor) || "—",
-            ago: timeAgo(r.undone.at, t),
-          })}
-        </span>
-      </div>
-    );
-  }
-
-  if (!u.ok) {
-    return (
-      <div className="flex items-start gap-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
-        <Undo2 size={12} className="flex-shrink-0 mt-px" />
-        <span className="min-w-0">{labelOf(t, "logs.undo.why.", u.why)}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between gap-3 flex-wrap">
-      <span className="text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
-        {tpl(t("logs.undo.will"), { action: labelOf(t, "logs.act.", u.action) })}
-      </span>
-      <Button
-        size="md" variant="primary" tint loading={busy}
-        icon={!busy ? <Undo2 size={13} /> : null}
-        onClick={(e) => { e.stopPropagation(); onUndo?.(r); }}
-      >
-        {t("logs.undo.do")}
-      </Button>
-    </div>
-  );
-}
-
-export function LogDetail({ r, onUndo, busy = false }) {
-  const { t } = useLang();
-  const { tl, tx } = useTranslit();
-
-  // The identification block always leads with the row's own anchors, then the
-  // handler's own lines. A category whose columns already show one of these
-  // still repeats it here: the panel has to be readable on its own.
-  const facts = [
-    r.target ? [t("logs.det.target"), `${targetText(r, { tl, tx })}${r.target_kind ? ` · ${labelOf(t, "logs.f.", r.target_kind)}` : ""}`] : null,
-    r.unit ? [labelOf(t, "logs.col.", "unit"), tl(r.unit)] : null,
-    r.day ? [labelOf(t, "logs.col.", "day"), fmtDay(r.day)] : null,
-    ...(r.details || [])
-      .filter((d) => d.v !== null && d.v !== undefined && d.v !== "")
-      .map((d) => [labelOf(t, "logs.f.", d.k), String(d.v)]),
-  ].filter(Boolean);
-
-  const tech = [
-    r.method && `${r.method} ${r.path || ""}`.trim(),
-    r.status != null && `${t("logs.det.status")} ${r.status}`,
-    r.ms != null && `${num(r.ms)} ${t("logs.det.ms")}`,
-    r.ip && `IP ${r.ip}`,
-    r.version && `v${r.version}`,
-    r.telegram_id && `TG ${r.telegram_id}`,
-    r.id != null && `#${r.id}`,
-  ].filter(Boolean);
-
-  return (
-    // `whitespace-normal` is load-bearing, not decoration: TableCard sets
-    // `whitespace-nowrap` on the <table> element and white-space INHERITS, so
-    // without this reset every `break-words` below is inert and a danger row's
-    // reason renders as one endless line the reader has to scroll sideways
-    // through. Reset here rather than passing `wrap` to TableCard, which would
-    // relax the whole register to fix one panel.
-    <div className="px-3 py-3 space-y-3 whitespace-normal" style={{ background: "var(--bg-inner)" }}>
-      {facts.length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>
-            {t("logs.det.details")}
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
-            {facts.map(([k, v], i) => <Kv key={`${k}-${i}`} label={k}>{v}</Kv>)}
-          </div>
-        </div>
-      )}
-
-      {(r.changes || []).length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>
-            {t("logs.det.changes")}
-          </p>
-          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-            <table className="w-full text-xs" style={{ background: "var(--bg-card)" }}>
-              <thead>
-                <tr style={{ background: "var(--bg-inner)" }}>
-                  <th className="text-left font-semibold px-2.5 py-1.5 w-1/4" style={{ color: "var(--text-4)" }}>{t("logs.det.field")}</th>
-                  <th className="text-left font-semibold px-2.5 py-1.5" style={{ color: "var(--text-4)" }}>{t("logs.det.old")}</th>
-                  <th className="text-left font-semibold px-2.5 py-1.5" style={{ color: "var(--text-4)" }}>{t("logs.det.new")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.changes.map((c, i) => (
-                  <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td className="px-2.5 py-1.5 align-top" style={{ color: "var(--text-3)" }}>{labelOf(t, "logs.f.", c.f)}</td>
-                    <td className="px-2.5 py-1.5 align-top break-words" style={{ color: "var(--text-4)" }}>
-                      {c.old === null || c.old === undefined || c.old === "" ? "—" : String(c.old)}
-                    </td>
-                    <td className="px-2.5 py-1.5 align-top break-words font-medium" style={{ color: "var(--text-1)" }}>
-                      {c.new === null || c.new === undefined || c.new === "" ? "—" : String(c.new)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {r.reason && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>
-            {t("logs.det.reason")}
-          </p>
-          <p
-            className="text-xs leading-relaxed rounded-xl px-3 py-2 break-words"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}
-          >
-            {r.reason}
-          </p>
-        </div>
-      )}
-
-      {/* Last of the human-readable half, and the only control on this tab: what
-          can still be done ABOUT this row, after everything it says has been
-          read. Above the request line, which is machine detail. */}
-      {onUndo && r.undo && (
-        <div className="pt-0.5" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="pt-2.5">
-            <UndoBar r={r} onUndo={onUndo} busy={busy} />
-          </div>
-        </div>
-      )}
-
-      {/* Technical, and therefore muted and last: the request line answers "was
-          this the app or somebody with a token", which is a question you only
-          ask after the human-readable half has failed to explain something. */}
-      {tech.length > 0 && (
-        <p className="text-[10px] font-mono leading-relaxed break-all" style={{ color: "var(--text-4)" }}>
-          {tech.join("  ·  ")}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── phone card ───────────────────────────────────────────────────────────────
 
-function LogCard({ r, cols, open, onToggle, ctx, onUndo, busy }) {
+function LogCard({ r, cols, selected, onSelect, ctx }) {
   const { t, tl } = ctx;
   const lines = cols
     .filter((k) => !CARD_HEAD.has(k))
-    .map((k) => [k, cell(k, r, { ...ctx, open })])
+    .map((k) => [k, cell(k, r, ctx)])
     .filter(([, node]) => node);
+  const danger = r.category === "danger";
 
   return (
-    <div
-      className="rounded-2xl overflow-hidden"
+    <button
+      type="button"
+      onClick={() => onSelect(r)}
+      aria-pressed={selected}
+      aria-label={t("logs.openRow")}
+      className="w-full text-left rounded-2xl px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
       style={{
-        background: r.category === "danger" ? "rgba(239,68,68,0.06)" : "var(--bg-card)",
-        border: `1px solid ${r.category === "danger" ? "rgba(239,68,68,0.30)" : "var(--border)"}`,
+        background: selected ? "var(--brand-bg)" : danger ? "rgba(239,68,68,0.06)" : "var(--bg-card)",
+        border: `1px solid ${selected ? "var(--brand-border)" : danger ? "rgba(239,68,68,0.30)" : "var(--border)"}`,
       }}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full text-left px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs">{cell("time", r, { ...ctx, open })}</span>
-          <OutcomeChip v={r.outcome} t={t} />
-        </div>
-        <div className="text-sm font-semibold mt-1 leading-snug" style={{ color: "var(--text-1)" }}>
-          {labelOf(t, "logs.act.", r.action)}
-        </div>
-        <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
-          {tl(r.actor) || r.actor_key || "—"}
-          {r.actor_role ? ` · ${roleLabel(t, r.actor_role)}` : ""}
-        </div>
-        {lines.length > 0 && (
-          <div className="mt-1.5 space-y-0.5">
-            {lines.map(([k, node]) => (
-              <div key={k} className="flex items-start gap-2 text-[11px]">
-                <span className="flex-shrink-0" style={{ color: "var(--text-4)" }}>{labelOf(t, "logs.col.", k)}</span>
-                <span className="min-w-0 flex-1">{node}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </button>
-      {open && (
-        <div style={{ borderTop: "1px solid var(--border)" }}>
-          <LogDetail r={r} onUndo={onUndo} busy={busy} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs">{cell("time", r, ctx)}</span>
+        <OutcomeCell v={r.outcome} t={t} />
+      </div>
+      <div className="text-sm font-semibold mt-1 leading-snug" style={{ color: "var(--text-1)" }}>
+        {labelOf(t, "logs.act.", r.action)}
+      </div>
+      <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
+        {tl(r.actor) || r.actor_key || "—"}
+        {r.actor_role ? ` · ${roleLabel(t, r.actor_role)}` : ""}
+      </div>
+      {lines.length > 0 && (
+        <div className="mt-1.5 space-y-0.5">
+          {lines.map(([k, node]) => (
+            <div key={k} className="flex items-start gap-2 text-[11px]">
+              <span className="flex-shrink-0" style={{ color: "var(--text-4)" }}>{colLabel(t, k)}</span>
+              <span className="min-w-0 flex-1">{node}</span>
+            </div>
+          ))}
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
 // ── the table ────────────────────────────────────────────────────────────────
 
 export default function LogTable({
-  rows, category, loading, multiDay, empty, icon, title, subtitle, right,
-  onUndo, undoing = null,
+  rows, category, loading, multiDay, empty, selectedId = null, onSelect,
 }) {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
-  const [openId, setOpenId] = useState(null);
   const cols = colsFor(category);
-  const ctx = { t, tl, tx, multiDay };
+  const withRole = !cols.includes("actorRole");
+  const ctx = { t, tl, tx, multiDay, withRole };
 
-  const toggle = (id) => setOpenId((cur) => (cur === id ? null : id));
-  const onKey = (e, id) => {
+  // One ref per row, so the keyboard can walk them and the panel can hand focus
+  // back to the row it was opened from.
+  const rowRefs = useRef(new Map());
+  const lastSel = useRef(null);
+  useEffect(() => {
+    if (selectedId != null) {
+      lastSel.current = selectedId;
+      rowRefs.current.get(selectedId)?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const id = lastSel.current;
+    lastSel.current = null;
+    if (id != null) rowRefs.current.get(id)?.focus({ preventScroll: true });
+  }, [selectedId]);
+
+  const onKey = (e, i) => {
     if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
       e.preventDefault();
-      toggle(id);
+      onSelect(rows[i]);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const next = rows[i + (e.key === "ArrowDown" ? 1 : -1)];
+      if (!next) return;
+      e.preventDefault();
+      rowRefs.current.get(next.id)?.focus();
+      // With the panel open, walking the rows walks the panel too.
+      if (selectedId != null) onSelect(next);
     }
   };
 
@@ -585,37 +366,33 @@ export default function LogTable({
         </tr>
       );
     }
-    return rows.map((r) => {
-      const open = openId === r.id;
+    return rows.map((r, i) => {
+      const selected = selectedId === r.id;
       return (
-        <Fragment key={r.id}>
-          <tr
-            tabIndex={0}
-            role="button"
-            aria-expanded={open}
-            onClick={() => toggle(r.id)}
-            onKeyDown={(e) => onKey(e, r.id)}
-            className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
-            // Danger rows carry their own tint. They lose the hover highlight in
-            // exchange — an inline background outranks the card's hover class —
-            // which is the right trade: a database restore should look different
-            // at rest, not only under a pointer no phone has.
-            style={r.category === "danger" ? { background: "rgba(239,68,68,0.06)" } : undefined}
-          >
-            {cols.map((c) => (
-              <td key={c} className="px-3 py-2 align-middle">
-                {cell(c, r, { ...ctx, open }) ?? <span style={{ color: "var(--text-4)" }}>—</span>}
-              </td>
-            ))}
-          </tr>
-          {open && (
-            <tr>
-              <td colSpan={cols.length} className="p-0">
-                <LogDetail r={r} onUndo={onUndo} busy={undoing === r.id} />
-              </td>
-            </tr>
-          )}
-        </Fragment>
+        <tr
+          key={r.id}
+          ref={(el) => { if (el) rowRefs.current.set(r.id, el); else rowRefs.current.delete(r.id); }}
+          tabIndex={0}
+          role="button"
+          aria-pressed={selected}
+          aria-label={t("logs.openRow")}
+          onClick={() => onSelect(r)}
+          onKeyDown={(e) => onKey(e, i)}
+          className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
+          // The selected row wears the brand tint and a stripe; a danger row
+          // its red tint. Both are inline so they outrank the card's hover
+          // class — a database restore should look different at rest, not
+          // only under a pointer no phone has.
+          style={selected
+            ? { background: "var(--brand-bg)", boxShadow: "inset 3px 0 var(--brand)" }
+            : r.category === "danger" ? { background: "rgba(239,68,68,0.06)" } : undefined}
+        >
+          {cols.map((c) => (
+            <td key={c} className="px-3 py-2 align-middle">
+              {cell(c, r, ctx) ?? <span style={{ color: "var(--text-4)" }}>—</span>}
+            </td>
+          ))}
+        </tr>
       );
     });
   };
@@ -632,36 +409,15 @@ export default function LogTable({
       // standalone cards that scroll with the page — a phone must not have to
       // scroll a list inside a list.
       : rows.map((r) => (
-        <LogCard
-          key={r.id}
-          r={r}
-          cols={cols}
-          ctx={ctx}
-          open={openId === r.id}
-          onToggle={() => toggle(r.id)}
-          onUndo={onUndo}
-          busy={undoing === r.id}
-        />
+        <LogCard key={r.id} r={r} cols={cols} ctx={ctx} selected={selectedId === r.id} onSelect={onSelect} />
       ));
 
   return (
-    <TableCard
-      icon={icon}
-      title={title}
-      subtitle={subtitle}
-      right={right}
-      minWidth={cols.length > 6 ? 980 : 820}
-      mobile={mobile}
-      mobileCards
-    >
+    <TableCard minWidth={cols.length > 7 ? 1100 : 960} mobile={mobile} mobileCards>
       <thead>
         <tr>
           {cols.map((c) => (
-            <Th
-              key={c}
-              label={labelOf(t, "logs.col.", c)}
-              hint={c === "time" ? t("logs.newestFirst") : undefined}
-            />
+            <Th key={c} label={colLabel(t, c)} hint={c === "time" ? t("logs.newestFirst") : undefined} />
           ))}
         </tr>
       </thead>

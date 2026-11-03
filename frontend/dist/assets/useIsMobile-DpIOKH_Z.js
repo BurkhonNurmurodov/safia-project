@@ -1,0 +1,1 @@
+import{s as i,u as m}from"./objectSpread2-CFc_O7Oo.js";var n=m(i(),1);function h(o=640){const e="(max-width: ".concat(o-1,"px)"),[r,s]=(0,n.useState)(()=>window.matchMedia(e).matches);return(0,n.useEffect)(()=>{const t=window.matchMedia(e),a=c=>s(c.matches);return t.addEventListener("change",a),()=>t.removeEventListener("change",a)},[e]),r}export{h as t};
