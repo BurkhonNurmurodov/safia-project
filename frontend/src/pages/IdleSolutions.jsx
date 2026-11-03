@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
-import { FilterPanel } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -15,7 +15,7 @@ import FormField from "../components/ui/FormField";
 import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
-import { useFactoryParams } from "../context/FactoryContext";
+import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -155,7 +155,7 @@ function CauseRow({ T, c, max, open, onToggle, refresh, label, ddmmyy }) {
   const pct = max > 0 ? Math.max(2, (c.minutes / max) * 100) : 0;
   const owners = useMemo(() => (c.owner ? { [c.category]: c.owner } : {}), [c]);
   return (
-    <div style={{ borderTop: "1px solid var(--border)" }}>
+    <div style={{ borderTop: "1px solid var(--border)", opacity: c.minutes > 0 ? 1 : 0.6 }}>
       <button type="button" onClick={onToggle} aria-expanded={open}
         className="w-full text-left px-4 py-3 flex flex-col gap-2 hover:bg-[var(--bg-inner)] transition-colors">
         <div className="flex items-center gap-2 min-w-0">
@@ -237,10 +237,23 @@ export default function IdleSolutions() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
-  const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, shift, setShift } = useFilters();
+  const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, shift, setShift, brigadirIds, setBrigadirIds } = useFilters();
   const fparams = useFactoryParams(params);
   const factorySection = useFactorySection();
   const [openCat, setOpenCat] = useState(null);
+  // Brigadir picker: several at once, limited to the plant on screen (a pick
+  // the plant no longer offers is dropped, never left over an empty page).
+  const { data: allSupervisors = [] } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const scopedSupervisors = useFactorySupervisors(allSupervisors, brigadirIds, setBrigadirIds);
+  const supOptions = useMemo(
+    () => [...scopedSupervisors]
+      .map((b) => ({ value: String(b.manager_id), label: tl(b.name) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [scopedSupervisors, tl]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["idle-solutions", fparams],
@@ -272,6 +285,22 @@ export default function IdleSolutions() {
           options={[[null, t("filter.all") || "—"], [1, "S1"], [2, "S2"]]} />
       ),
     },
+    {
+      key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+      active: brigadirIds.length > 0,
+      display: brigadirIds.length === 1
+        ? (supOptions.find((o) => o.value === String(brigadirIds[0]))?.label || "")
+        : `${brigadirIds.length} ${t("filter.selected2")}`,
+      onClear: () => setBrigadirIds([]),
+      render: () => (
+        <OptsFilter
+          opts={supOptions.map((o) => o.value)}
+          sel={brigadirIds.map(String)}
+          onChange={(v) => setBrigadirIds(v.map(Number))}
+          render={(v) => supOptions.find((o) => o.value === v)?.label || v}
+        />
+      ),
+    },
   ];
 
   return (
@@ -300,18 +329,12 @@ export default function IdleSolutions() {
               sub={fill(T.ofCauses, { n: active.length })} tone={data.no_solution_n ? AMBER : undefined} />
           </div>
 
-          {active.length === 0 ? (
+          {cats.length === 0 ? (
             <EmptyState icon={Clock} title={T.empty} message={T.emptySub} showUploadLink={false} />
           ) : (
             <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-              <SectionHead icon={Lightbulb} title={T.secCauses} right={fill(T.ofCauses, { n: active.length })} />
-              {active.map((c) => (
-                <CauseRow key={c.category} T={T} c={c} max={max} label={label} ddmmyy={ddmmyy}
-                  open={openCat === c.category}
-                  onToggle={() => setOpenCat(openCat === c.category ? null : c.category)}
-                  refresh={refresh} />
-              ))}
-              {quiet.some((c) => c.can_write) && quiet.filter((c) => c.can_write).map((c) => (
+              <SectionHead icon={Lightbulb} title={T.secCauses} right={fill(T.ofCauses, { n: cats.length })} />
+              {[...active, ...quiet].map((c) => (
                 <CauseRow key={c.category} T={T} c={c} max={max} label={label} ddmmyy={ddmmyy}
                   open={openCat === c.category}
                   onToggle={() => setOpenCat(openCat === c.category ? null : c.category)}
