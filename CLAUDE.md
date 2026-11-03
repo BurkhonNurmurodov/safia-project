@@ -173,8 +173,10 @@ untouched.
   dark mode»), then made clearer still on v4.400.1 («background should be
   visible through the icons»: the cloud behind each tile .14 by day / .3 by
   night, a 4px blur at 125% saturation — the first cut's 18px / 170% smeared
-  the cloud across the tile into a solid square) — a 1px rim lit top-left
-  and bottom-right, a still specular pool, a backdrop blur taken from 768px up only
+  the cloud across the tile into a solid square) — a 1px rim in a DARKER
+  shade of the app's own colour (`--rim`: 600 by night, 800 by day — the
+  operator, 2026-11-03: «border of icons shouldn't be white»; no white
+  inset edge line under it), a still specular pool, a backdrop blur taken from 768px up only
   (thirteen blurs over floating art are a repaint every frame on a phone;
   below that the gradients alone are the glass); the glyph wears the hue at
   full strength, never white. The header over the backdrop is the same glass
