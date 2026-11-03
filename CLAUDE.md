@@ -176,15 +176,15 @@ untouched.
   menus that open inside the header read light-on-brown) follows the operator's reference
   image: a warm golden gradient with Safia's products floating at different
   depths — near ones sharp with a soft shadow, far ones out of focus, the big
-  ones cut by the screen edge. They are Safia's catalog products — the Oreo,
-  «Safiya bejeviy» and Smorodina cakes, a latte macchiato, the pistachio
-  croissant, macarons, the takeaway cup — drawn as CARTOONS in one soft-clay
-  SVG style (the operator, v4.396.0: «cartoonish like the coffee»; real
-  cut-out photos were tried in v4.394.0 and replaced). A hidden sprite of
-  `<symbol>`s (`Cake`, `Macaron`, and the small decoration pieces), no image
-  files; the blur and shadow are SVG filters rasterised with each object, so
-  the browser only moves finished layers. A new product is one symbol and one
-  `FLOATS` row. They keep to the edges — on a phone only the ones clear of
+  ones cut by the screen edge. Only the TAKEAWAY CUP and MACARONS (pink,
+  pistachio, chocolate) float, drawn as CARTOONS in one soft-clay SVG style
+  (the operator: «cartoonish like the coffee», v4.396.0; real cut-out photos
+  were tried in v4.394.0 and replaced; cakes, a latte, a croissant and a
+  coffee bean were dropped in v4.396.1 as «too much distracting» — do not
+  bring them back unasked). A hidden sprite of `<symbol>`s (`lo-cup`,
+  `Macaron`), no image files; the blur and shadow are SVG filters rasterised
+  with each object, so the browser only moves finished layers. A new product
+  is one symbol and one `FLOATS` row. They keep to the edges — on a phone only the ones clear of
   the tiles show (`wide` = desktop only). By
   night the same scene sits under a dark veil with gold dust. Motion is slow
   on purpose («loyalty, peace, premium»): the tiles gather in on arrival, the
