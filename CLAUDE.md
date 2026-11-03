@@ -9786,8 +9786,8 @@ rule — every section reads the whole plant). `services/reports.py` folds,
 - **«Qamrov» carries Verifix's OWN counts** (2026-11-03, the operator: «the
   official-Verifix number of active cells, and … of shift managers,
   supervisors and leaders») — four rows beside «Brigadalar»: «Faol
-  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar», each
-  «(Verifix)». `services/verifix_scope.py` is THE rule, read off the STORED
+  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar» (no
+  «(Verifix)» in the names — the operator, the same day). `services/verifix_scope.py` is THE rule, read off the STORED
   org (`verifix_org.stored`, never a Verifix call) per month on its last day
   (today for the running month — a stock, so its change is never withheld).
   A cell is `verifix_org.cell_nodes`' node, active when opened by the day and
