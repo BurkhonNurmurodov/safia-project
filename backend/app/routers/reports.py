@@ -347,17 +347,18 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
                                                "managers": set(ids)})
 
     # Verifix's own count of cells, shift-managers, brigadirs and leaders
-    # (`services/verifix_scope.py`), narrowed by the plant the viewer is
-    # answered for; Verifix knows no shift or brigadir, so either pick leaves
-    # those rows «—» rather than a whole-plant figure beside a narrowed one.
+    # (`services/verifix_scope.py`): the cells — and the brigadirs over them,
+    # the leaders seated in them — of the units above (the загрузка's, in the
+    # viewer's scope); shift managers by the plant alone, so a shift or
+    # brigadir pick leaves that row «—».
     vfx_scope = None
-    if shift is None and not mids:
-        try:
-            with db.begin_nested():
-                vfx_scope = verifix_scope.counts(db, months, today,
-                                                 resolve_factory(db, payload, factory))
-        except Exception:  # noqa: BLE001 — four «—» rows, never a failed report
-            log.exception("reports: the Verifix scope counts failed")
+    try:
+        with db.begin_nested():
+            vfx_scope = verifix_scope.counts(
+                db, months, today, ids, resolve_factory(db, payload, factory),
+                shift_managers=shift is None and not mids)
+    except Exception:  # noqa: BLE001 — four «—» rows, never a failed report
+        log.exception("reports: the Verifix scope counts failed")
 
     out = reports.compose({
         "months": months,
@@ -366,8 +367,6 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
         "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
-        # How many cells carried a stoppage is read per MONTH inside
-        # `compose`, out of each month's «Xarajat» totals.
         "scope": {"factory": factory, "shift": shift, "managers": mids,
                   "units": len(units)},
     })

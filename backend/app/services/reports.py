@@ -98,7 +98,7 @@ CUMULATIVE = {
     # their change is withheld too, now every table carries one.
     "idle.unitDays", "idle.flaggedDays",
     "cost.pricedMin", "cost.unpricedMin", "quality.openLeft",
-    "concerns.uplifted", "concerns.openLeft", "summary.cells",
+    "concerns.uplifted", "concerns.openLeft",
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
     "cost.costSum", "quality.complaints", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
@@ -477,25 +477,14 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
             ot = inp.get("ontime") or {}
             rows.append(_headline_row("ontime", "pct", prow(
                 "pct", "pct", [ot.get(y) for y in inp["yms"]]), inp["partial"]))
-    # «units» is a FILTER fact — the same scope answers every month, so it is
-    # repeated. «cells» is a PERIOD fact (cells that carried a stoppage) and
-    # is read per month: repeating the picked month's count under the two
-    # before it would state something about them that was never measured.
-    scope = [prow("units", "int", [inp["scope"]["units"]] * n)]
     # Verifix's own count of what stands on each month's last day
-    # (`services/verifix_scope.py`) — «—» when no org read is stored, or the
-    # report is narrowed to a shift or a brigadir Verifix cannot answer for.
+    # (`services/verifix_scope.py`), the cells and their people narrowed to the
+    # units the загрузка counts — «—» when no org read is stored, and shift
+    # managers «—» under a shift or brigadir pick Verifix cannot answer for.
     vfx = inp.get("vfx_scope") or {}
-    scope.append(prow("vfxCells", "int", [(vfx.get(y) or {}).get("cells") for y in inp["yms"]]))
-    if inp["cost"] is not None:
-        # The count comes out of the «Xarajat» tree, so a viewer the cost
-        # section is not for gets no row — not a «—» that reads as unknown.
-        scope.append(prow("cells", "int",
-                          [((inp["cost"].get(y) or {}).get("totals") or {}).get("cells")
-                           for y in inp["yms"]]))
-    for key in ("shiftManagers", "brigadirs", "leaders"):
-        scope.append(prow(f"vfx{key[0].upper()}{key[1:]}", "int",
-                          [(vfx.get(y) or {}).get(key) for y in inp["yms"]]))
+    scope = [prow(f"vfx{key[0].upper()}{key[1:]}", "int",
+                  [(vfx.get(y) or {}).get(key) for y in inp["yms"]])
+             for key in ("cells", "shiftManagers", "brigadirs", "leaders")]
     return [periods_block("headline", rows), periods_block("scope", scope)]
 
 

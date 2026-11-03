@@ -22,6 +22,7 @@ or copy-paste its markup into a page.
 | Attached file (icon · name · size) | `FileIcon.jsx` (`FileIcon` + `FileTile` + `fileKind` + `humanSize`) | THE way an attached file is shown. Every file wears its EXTENSION's icon, tinted by one fixed `CATEGORY_COLORS` hue per type (PDF red, sheets green, documents blue, slides orange, images purple, video pink, audio teal, archives yellow, code indigo; unknown = slate `FOLD_COLOR` + plain file icon, never blank), with the extension printed on it. A file type is a category, never a status. `FileTile` is the row a chat message and a composer both use. |
 | File upload | `UploadDropzone.jsx` (`UploadDropzone` + `FileStateList` + `useFileStates`) | One drag-drop model for every upload surface. Rejected files always render (a silent rejection reads as success); rows are keyed by generated id, not filename; result detail wraps on its own line; the bar carries progressbar ARIA; 100% flips to "processing" because parsing happens after transfer. `renderExtra(state)` is the seam for per-endpoint result detail — use it instead of forking the row markup. |
 | Button | `Button.jsx` | Variants `primary/secondary/danger/ghost/success`, sizes `sm/md/lg` (`primary` is gold with a WHITE `--on-brand` label — a dark label shipped on 2026-10-03 for contrast and the operator reverted it the same day); `loading` shows the spinner. `tint` gives the soft-tinted form (12% bg + coloured border/label) — **THE form for table-row actions**. Never hand-roll a chip with inline rgba + `onMouseEnter/onMouseLeave`: mouse events never fire on touch, so a destructive action stays stuck in its neutral rest state on a phone. Forwards refs. |
+| Row actions (⋮ menu) | `ActionMenu.jsx` | THE way a table row or a phone card offers its actions (2026-11-03, first on /cells): a 32px ⋮ (44px tap pad) opening a short list — `items` `[{key, label, icon, onSelect, tone: "danger", disabled, title}]`, falsy entries skipped, a danger item after a normal one gets a divider, a disabled item stays listed with its reason in `title`. Portaled to `<body>` and seated against the ⋮, so a scrolling table never clips it; flips up when the screen has no room below. Closes on a pick, Escape, Tab, a tap outside, a scroll or a resize; focus returns to the ⋮ (so a dialog the pick opens hands focus back to it). Clicks never reach the row underneath. ↓/↑ on the ⋮ open it on the first/last item; ↑ ↓ Home End walk it. `label` names the row («Amallar: 9422»). `zIndex` 210+ inside a fullscreen overlay. A row with nothing to offer renders a 32px blank in its place, so rows stay one height. Never hand-roll another row of icon buttons or another dropdown of row actions. |
 | Segmented toggle + page view-tabs (min/hrs, P·A·P−A, view/mode switch, theme, Production/Staff tabs) | `SegmentedToggle.jsx` | Recessed-track pill: a `bg-inner` track (`rounded-xl`, `p-[3px]` inset, subtle `border`, no dividers) holding segments — the selected one is a brand-gold (`--brand`) pill with a WHITE `--on-brand` label (a dark label was tried on 2026-10-03 and reverted by the operator the same day), the rest transparent with muted `text-3`. This is ALSO the page-level "view tabs" template (Production view switch, Staff Workers/Requests) — same component, don't hand-roll a padded tab group. Outer height stays `size="md"` (default, 38px = `Button` lg / toolbar baseline) or `"sm"` (30px = `Button` md) so it aligns in toolbars; `"lg"` (52px track, each SEGMENT 44px — the track's inset is not tappable) is for a phone's page-level view tabs, where the toggle IS the navigation (/worker-concerns). `options` = `[value,label]` tuples or `{value,label,title}` objects (label may be a node/icon). **THE template for EVERY toggle on the platform — any set of 2+ mutually-exclusive options (mode / view / period / type / status / tab / shift / theme switch), current and future. Never hand-roll a button group or padded tab bar; extend this with a prop if it lacks something.** **The track can never overflow its container, and that is the template's job, not the call site's.** Labels are `whitespace-nowrap`, so an option set wider than the box it sits in used to run straight out of it — a `fill` toggle's segments are `flex-1`, but a flex item's automatic minimum size is its CONTENT width, so they refuse to shrink and push the track past the edge; a shrink-wrapped toolbar toggle had no width cap at all. Either way the last label was clipped by whatever ancestor was `overflow-hidden` and the surface around it grew a stray horizontal scrollbar («Ҳаммаси · Смена 1 · Смена 2» in a 240px filter dropdown). So the track is ALWAYS capped at its container and scrolls: it shrink-wraps exactly as before while the options fit, and once they do not it scrolls, scrolls the SELECTED segment into view and fades whichever edge still has content off-screen. This used to be the opt-in `scrollable` prop — **that prop is GONE**, because 105 of the 123 call sites had not opted in, the ones inside a narrow dropdown or a phone toolbar least of all, and an invariant every caller has to remember is one the template does not hold. Never wrap it in your own `overflow-x-auto` div either: a bare wrapper hides the scrollbar without replacing the affordance and leaves the selected segment off-screen, at which point nothing looks selected and the user cannot tell where they are. `className` lands on the OUTER box (widths / shrink / margins only) — never the track's own skin. `asTabs` adds tablist/tab roles, `aria-selected` and arrow-key navigation when the toggle switches VIEWS. An option object may carry `activeBg` / `activeFg` — the colours its pill takes WHEN SELECTED instead of brand gold — for a set whose options are verdicts (the assessment's Pass / No pass: green / red 700 shades with a white label), and `idleFg` the label colour of the UNSELECTED segment (so the verdicts read green / red before either is picked); without them every segment is unchanged. |
 | Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. `hint` puts consequential copy ("this resets manual edits", "re-uploading replaces the day") UNDER the control at 11px/`--text-3` — never at `--text-4`, where the eye skips exactly the text that matters most. `error` attaches a validation message to the field that caused it instead of dumping one paragraph below every field. |
 | Text field that exists in all 4 languages | `LangTextInput.jsx` | Never stack one input per language. A `SegmentedToggle` of language tabs (uz · uz_cyrl · ru · en, **ru open by default**) over ONE input for the selected tab. Every language is optional; a blank tab shows the Russian text as its PLACEHOLDER (previewed, never saved) plus the `ui.langInput.ruFallback` hint, because Russian is what the UI falls back to. Tabs stay plain — no filled/empty markers. `placeholderFn(lang)` previews something computed (e.g. a transliteration) instead of the Russian text; `action` puts a per-tab button beside the input — use these to ADOPT the template rather than forking it into stacked inputs. |
@@ -9793,23 +9794,32 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
   ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
   the sections they belong to, so the two can never disagree.
-- **«Qamrov» carries Verifix's OWN counts** (2026-11-03, the operator: «the
-  official-Verifix number of active cells, and … of shift managers,
-  supervisors and leaders») — four rows beside «Brigadalar»: «Faol
-  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar» (no
-  «(Verifix)» in the names — the operator, the same day). `services/verifix_scope.py` is THE rule, read off the STORED
+- **«Qamrov» is Verifix's OWN counts, of the загрузка's units** (2026-11-03,
+  the operator: «the official-Verifix number of active cells, and … of shift
+  managers, supervisors and leaders»; the same day «Units» and «Cells that
+  stopped» left the table, the cells were narrowed to «supervisors which we
+  consider on Zagruzka — we dont [want] supervisors of cleaning or logistics»,
+  and, asked, the supervisors and leaders with them). Four rows: «Faol
+  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar» (no «(Verifix)»
+  in the names). `services/verifix_scope.py` is THE rule, read off the STORED
   org (`verifix_org.stored`, never a Verifix call) per month on its last day
   (today for the running month — a stock, so its change is never withheld).
-  A cell is `verifix_org.cell_nodes`' node, active when opened by the day and
-  not closed by it (a passive one with no closing date counts on no day); a
-  person is employed on the day (`turnover.employed_on`) with a job naming
-  the role — `verifix_org.role_of` (leader → brigadir → shift-manager:
+  A **cell** counts when Verifix has its `cell_nodes` node active that day
+  (opened by it, not closed by it; a passive one with no closing date counts
+  on no day) AND its cell here (by `vfx_division_id`, else code) stood that
+  day (`cell_links.map_on`) under one of the report's units — `board_units`,
+  i.e. non-archived, `zagruzka_on`, in the viewer's plant / shift / brigadir
+  scope. **Leaders** are seated in a counted cell; **brigadirs** stand over
+  one (the nearest division upward holding any — `verifix_org.nearest_over`,
+  the `brigadirs_over` walk, each person once); **shift managers** are
+  plant-wide (`verifix_org.plant_of`, the division tree's names —
+  `brigadirs_kpi`'s rule, moved there), «—» under a shift or brigadir pick.
+  A person counts when employed that day (`turnover.employed_on`) with a job
+  naming the role — `verifix_org.role_of` (leader → brigadir → shift-manager:
   «смен» + a head word, the 25 Oct report's rule, moved there; assistants,
   deputies, «и.о.» never), the job on a past day the HR journals'
-  (`category_compliance.standing`). The plant narrows through
-  `verifix_org.plant_of` (the division tree's names — `brigadirs_kpi`'s rule,
-  moved there; a person by their CURRENT org unit); a shift or brigadir pick
-  leaves the four rows «—», and so does an org read that is missing or thin.
+  (`category_compliance.standing`), the place their CURRENT org unit. No org
+  read, or a thin one, leaves all four «—».
 - **«Kutish, ishlangan vaqtdan %» — idle as a share of WORKED time**
   (2026-10-31, the operator's rulings, asked one by one;
   `services/idle_share.py` is THE rule): Σ(N·T) ÷ Σ worked minutes × 100.
