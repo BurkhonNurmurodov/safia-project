@@ -112,7 +112,12 @@ export default function BkpiBoard({ T, tl, data, rows, prev, sort, onSort, onOpe
         <span className="text-sm font-semibold tabular-nums" style={{ color: x.passed ? "var(--text-1)" : "var(--text-3)" }}>
           {fill(T.passedOf, { n: x.passed, of: x.of })}
         </span>
-        {hist && <span className="w-6">{p ? <Delta d={x.passed - p.passed} title={T.bdVsPrev} /> : null}</span>}
+        {hist && (
+          <span className="min-w-6">
+            {p ? <Delta d={x.passed - p.passed} title={T.bdVsPrev} />
+              : <span className="text-[11px]" style={{ color: "var(--text-3)" }} title={T.bdNewHint}>{T.bdNew}</span>}
+          </span>
+        )}
       </span>
     );
   };
@@ -166,7 +171,7 @@ export default function BkpiBoard({ T, tl, data, rows, prev, sort, onSort, onOpe
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>{name(x)}</span>
                     <span className="block text-xs mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
-                      {x.kind === "verifix" ? T.srcVerifixHint : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
+                      {x.kind === "verifix" ? T.srcVerifix : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
                     </span>
                     <span className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
                       {live.map((k) => (

@@ -12,7 +12,7 @@ import ProfileAvatar from "../ui/ProfileAvatar";
 import { useTheme } from "../../context/ThemeContext";
 import useIsMobile from "../../hooks/useIsMobile";
 import useElementWidth from "../../hooks/useElementWidth";
-import { surnameInitial } from "../../utils/personName";
+import { softHyphenate, surnameInitial } from "../../utils/personName";
 import { fill } from "../../pages/brigadirsKpiText";
 import { Delta } from "../kpi/KpiBits";
 import { hexA, medalOf } from "../kpi/kpiUtil";
@@ -69,14 +69,17 @@ export function HonorWall({ rows, live, T, tl, photoVers, onPick, onShowAll }) {
                 <button type="button" onClick={() => onPick(x)} title={name}
                   aria-label={fill(T.bdWallOpen, { name })}
                   className="flex flex-col items-center rounded-xl px-1 py-1.5 outline-none transition-transform duration-200 motion-safe:hover:-translate-y-0.5 hover:bg-[var(--bg-inner)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
-                  style={{ width: phone ? 64 : 82 }}>
+                  style={{ width: phone ? 64 : 88 }}>
                   <span className="rounded-full" style={{ padding: 2.5, background: `linear-gradient(160deg, ${hexA(gold, 1)}, ${hexA(gold, 0.35)})` }}>
                     <span className="block rounded-full" style={{ padding: 2, background: "var(--bg-card)" }}>
                       <BrigAvatar row={x} tl={tl} photoVers={photoVers} size={size} />
                     </span>
                   </span>
-                  <span className="mt-1.5 text-xs font-medium max-w-full truncate" style={{ color: "var(--text-1)" }}>
-                    {surnameInitial(name)}
+                  {/* Two lines at most, never cut: a long surname breaks
+                      at a soft hyphen («Mirmakhmu-dova M.»), the initial
+                      goes under it. */}
+                  <span className="mt-1.5 text-xs font-medium leading-tight max-w-full text-center line-clamp-2" style={{ color: "var(--text-1)" }}>
+                    {softHyphenate(surnameInitial(name))}
                   </span>
                   <span className="text-[11px] max-w-full truncate" style={{ color: "var(--text-3)" }}>
                     {x.kind === "verifix" ? T.srcVerifix : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
@@ -89,7 +92,7 @@ export function HonorWall({ rows, live, T, tl, photoVers, onPick, onShowAll }) {
             <li>
               <button type="button" onClick={onShowAll} aria-label={fill(T.bdWallMoreAria, { n: more })}
                 className="flex flex-col items-center rounded-xl px-1 py-1.5 outline-none hover:bg-[var(--bg-inner)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
-                style={{ width: phone ? 64 : 82 }}>
+                style={{ width: phone ? 64 : 88 }}>
                 <span className="inline-grid place-items-center rounded-full text-sm font-semibold tabular-nums"
                   style={{ width: size + 9, height: size + 9, color: gold, background: hexA(gold, 0.1), boxShadow: `inset 0 0 0 1.5px ${hexA(gold, 0.45)}` }}>
                   +{more}
@@ -116,14 +119,18 @@ function Label({ icon: Icon, children, color = "var(--text-3)" }) {
   );
 }
 
+// The change against the month before sits on a line of its own, so a long
+// headline word never pushes it — and the tile's bar — down in one tile only.
 function Hero({ value, unit, word, delta }) {
   return (
-    <div className="flex items-baseline gap-1.5 mt-2.5 flex-wrap">
-      <span className="text-[26px] sm:text-[30px] font-semibold leading-none tabular-nums" style={{ color: "var(--text-1)", letterSpacing: "-0.02em" }}>{value}</span>
-      {unit && <span className="text-sm tabular-nums" style={{ color: "var(--text-3)" }}>{unit}</span>}
-      {word && <span className="text-sm" style={{ color: "var(--text-2)" }}>{word}</span>}
-      {delta}
-    </div>
+    <>
+      <div className="flex items-baseline gap-1.5 mt-2.5 flex-wrap">
+        <span className="text-[26px] sm:text-[30px] font-semibold leading-none tabular-nums" style={{ color: "var(--text-1)", letterSpacing: "-0.02em" }}>{value}</span>
+        {unit && <span className="text-sm tabular-nums" style={{ color: "var(--text-3)" }}>{unit}</span>}
+        {word && <span className="text-sm" style={{ color: "var(--text-2)" }}>{word}</span>}
+      </div>
+      {delta && <div className="mt-1">{delta}</div>}
+    </>
   );
 }
 
@@ -156,7 +163,7 @@ export function ResultTile({ rows, live, T, group, onGroup, prevCounts }) {
               className="flex items-center gap-2 min-h-[36px] px-2 rounded-lg text-xs text-left outline-none transition-colors hover:bg-[var(--bg-inner)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
               style={{ background: on ? hexA(GROUP_INK[g], 0.12) : undefined, boxShadow: on ? `inset 0 0 0 1px ${hexA(GROUP_INK[g], 0.55)}` : undefined }}>
               <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: GROUP_INK[g] }} aria-hidden />
-              <span className="flex-1 min-w-0 truncate" style={{ color: on ? "var(--text-1)" : "var(--text-2)" }}>{T[`grp_${g}`]}</span>
+              <span className="flex-1 min-w-0 leading-tight break-words" style={{ color: on ? "var(--text-1)" : "var(--text-2)" }}>{T[`grp_${g}`]}</span>
               <span className="font-semibold tabular-nums" style={{ color: counts[g] ? "var(--text-1)" : "var(--text-4)" }}>{counts[g]}</span>
               {on && <X size={12} style={{ color: "var(--text-3)" }} aria-hidden />}
             </button>
