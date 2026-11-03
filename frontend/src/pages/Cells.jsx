@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
+  LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash,
   FileSpreadsheet, ShieldCheck, UserRound, UserCheck, Layers, AlertTriangle, Archive, ArchiveRestore, Gauge,
   Workflow, Target, Tag,
 } from "lucide-react";
@@ -14,6 +14,9 @@ import { useToast } from "../components/ui/Toast";
 import SearchInput from "../components/ui/SearchInput";
 import EmptyState from "../components/ui/EmptyState";
 import TableCard, { Th } from "../components/ui/DataTable";
+import ActionMenu from "../components/ui/ActionMenu";
+import KPICard from "../components/ui/KPICard";
+import useIsMobile from "../hooks/useIsMobile";
 import CellLink from "../components/ui/CellLink";
 import CellFormModal from "../components/CellFormModal";
 import { CellManagerDialog, PendingChip, ManualMark } from "../components/CellManagerPicker";
@@ -55,8 +58,15 @@ import { exportXlsx } from "../utils/exportXlsx";
  * itself is the shared components/CellFormModal, also used by /cells/:id).
  *
  * Rows and phone cards NAVIGATE to the cell's own page (/cells/:id) — same
- * pattern as the Profiles tab rows; edit/delete stay as the row's icon pair
- * and stop the click from bubbling into the navigation.
+ * pattern as the Profiles tab rows; a row's actions (edit · archive · delete,
+ * or a brigadir's «Boshqaruvchi» pick) sit behind its ⋮ (ui/ActionMenu, from
+ * 2026-11-03), which never lets a click through to the navigation.
+ *
+ * Four cards head the page (2026-11-03): active cells · counted in the
+ * загрузка · no brigadir (a narrowed supervisor's register: owner ≠ manager)
+ * · no «Boshqaruvchi», counted over the register as served, active cells
+ * only — never the filtered rows. A card's number opens exactly its cells
+ * (every other filter and the search cleared).
  *
  * A cell names two leaders (2026-10-08): the «Boshqaruvchi» who runs it on the
  * platform (`leader_id`) and the «Egasi» Verifix seats in it (`owner_id`).
@@ -252,25 +262,6 @@ function LinkName({ name, empty, manual = false, pend, t, tl }) {
   );
 }
 
-// The brigadir's one door on a cell of their own unit: pick its manager.
-// Icon-only where the column is narrow; the label is always its name.
-function PickAction({ t, onPick, compact = false }) {
-  const label = t("cellMgr.pickTitle");
-  return (
-    <Button
-      size="sm"
-      tint
-      icon={<Flag size={12} />}
-      onClick={(e) => { e.stopPropagation(); onPick(); }}
-      title={label}
-      aria-label={label}
-      className="whitespace-nowrap"
-    >
-      <span className={compact ? "hidden lg:inline" : undefined}>{t("admin.profiles.colCellManager")}</span>
-    </Button>
-  );
-}
-
 // «Egasi» — the leader Verifix seats in the cell. Their profile may stand in
 // another brigadir's unit, or in none yet; the tooltip names which, and an
 // owner with no brigadir carries an amber mark, because that profile still has
@@ -291,52 +282,10 @@ function OwnerMark({ c, tl, t }) {
   );
 }
 
-// Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
-// the mobile card so both surfaces read identically. Clicks must not bubble:
-// the row/card underneath navigates to the cell page.
-function RowActions({ t, onEdit, onDelete, deleting, archived, onArchive, archiving }) {
-  const archLabel = t(archived ? "admin.profiles.cellUnarchive" : "admin.profiles.cellArchive");
-  return (
-    <div className="flex items-center justify-center gap-1.5">
-      <button
-        onClick={(e) => { e.stopPropagation(); onArchive(); }}
-        disabled={archiving}
-        title={archLabel}
-        aria-label={archLabel}
-        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-        style={{ background: "rgba(148,163,184,0.12)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.22)" }}
-      >
-        {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-      </button>
-      <button
-        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-        title={t("admin.profiles.edit")}
-        aria-label={t("admin.profiles.edit")}
-        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-        style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
-      >
-        <Pencil size={14} />
-      </button>
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        disabled={deleting}
-        title={t("admin.profiles.delete")}
-        aria-label={t("admin.profiles.delete")}
-        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-        style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "rgba(148,163,184,0.22)"; }}
-      >
-        <Trash2 size={14} />
-      </button>
-    </div>
-  );
-}
-
-// Phone-only card: code + SAP chip and the actions up top, the cell's name
+// Phone-only card: code + SAP chip and the ⋮ menu up top, the cell's name
 // under them, brigadir + leader pinned to the footer so a stack lines up.
-// The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, name, tl, t, canEdit, onEdit, onDelete, deleting, onArchive, archiving, onOpen, issue, onPick }) {
+// The whole card opens the cell's page; the menu stops propagation.
+function CellCard({ c, name, tl, t, menu, onOpen, issue }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -357,17 +306,7 @@ function CellCard({ c, name, tl, t, canEdit, onEdit, onDelete, deleting, onArchi
           {c.sap_code && <GroupMark c={c} issue={issue} t={t} placeholder={false} />}
           <ArchivedChip c={c} t={t} />
         </div>
-        {canEdit && (
-          <div className="flex-shrink-0">
-            <RowActions t={t} onEdit={onEdit} onDelete={onDelete} deleting={deleting}
-              archived={!!c.archived_at} onArchive={onArchive} archiving={archiving} />
-          </div>
-        )}
-        {!canEdit && onPick && (
-          <div className="flex-shrink-0">
-            <PickAction t={t} onPick={onPick} />
-          </div>
-        )}
+        {menu && <div className="flex-shrink-0 -mr-1 -mt-1">{menu}</div>}
       </div>
       {name && <NameCell name={name} className="-mt-1.5 text-sm" />}
 
@@ -412,6 +351,7 @@ export default function Cells() {
   const toast = useToast();
   const navigate = useNavigate();
   const { auth } = useAuth();
+  const phone = useIsMobile();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-cells"],
@@ -513,6 +453,61 @@ export default function Cells() {
       onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
     });
     else { archiveMut.reset(); setConfirmArchive(c); }
+  };
+
+  // The row's ⋮ menu: an editor's edit · archive/restore · delete; a brigadir's
+  // one door, the «Boshqaruvchi» picker, on their own unit's cells; nothing
+  // (no button) for a row the viewer may not act on.
+  const rowMenu = (c) => {
+    const label = `${t("admin.profiles.colActions")}: ${c.verifix_code || ""}`;
+    if (canEdit) {
+      return (
+        <ActionMenu label={label} items={[
+          { key: "edit", label: t("admin.profiles.edit"), icon: Pencil, onSelect: () => openEdit(c) },
+          {
+            key: "archive", icon: c.archived_at ? ArchiveRestore : Archive,
+            label: t(c.archived_at ? "admin.profiles.cellUnarchive" : "admin.profiles.cellArchive"),
+            disabled: archiveMut.isPending, onSelect: () => onArchive(c),
+          },
+          {
+            key: "delete", tone: "danger", label: t("admin.profiles.delete"), icon: Trash2,
+            disabled: deleteMut.isPending, onSelect: () => setConfirmDelete(c),
+          },
+        ]} />
+      );
+    }
+    if (canPickRow(c)) {
+      return (
+        <ActionMenu label={label} items={[
+          { key: "pick", label: t("cellMgr.pickTitle"), icon: Flag, onSelect: () => setPickFor(c) },
+        ]} />
+      );
+    }
+    return null;
+  };
+
+  // The four cards above the table count the register as the server sent it
+  // (a supervisor's own unit; everybody else the whole plant), ACTIVE cells
+  // only — never the filtered rows, so typing a search does not move them.
+  const stats = useMemo(() => {
+    const all = data?.cells ?? [];
+    const active = all.filter((c) => !c.archived_at);
+    return {
+      active: active.length,
+      archived: all.length - active.length,
+      inLoad: active.filter((c) => c.in_load).length,
+      noSup: active.filter((c) => c.manager_id == null).length,
+      noMgr: active.filter((c) => c.leader_id == null).length,
+      differs: active.filter((c) => (c.owner_id ?? null) !== (c.leader_id ?? null)).length,
+    };
+  }, [data]);
+  const ofActive = (n) => fill(t("cells.kpiOfActive"), { p: stats.active ? Math.round((n * 100) / stats.active) : 0 });
+  // A card's number opens exactly the cells it counted: every other filter and
+  // the search are cleared, the status set to active, then the card's own pick.
+  const showOnly = (apply) => {
+    setSearch(""); setFBrigadir(""); setFLeader(""); setFOwner("");
+    setFZag(""); setFProc(""); setFStatus("active");
+    apply();
   };
 
   // Cell id → what breaks the group rule for it (nothing for a sound register).
@@ -659,15 +654,9 @@ export default function Cells() {
           name={shownName(c)}
           tl={tl}
           t={t}
-          canEdit={canEdit}
-          onEdit={() => openEdit(c)}
-          onDelete={() => setConfirmDelete(c)}
-          deleting={deleteMut.isPending}
-          onArchive={() => onArchive(c)}
-          archiving={archiveMut.isPending}
+          menu={rowMenu(c)}
           onOpen={() => navigate(`/cells/${c.id}`)}
           issue={issues.get(c.id)}
-          onPick={canPickRow(c) ? () => setPickFor(c) : null}
         />
       ))}
     </div>
@@ -675,6 +664,66 @@ export default function Cells() {
 
   return (
     <Layout title={t("nav.cells")}>
+      {/* Four headline cards. Values load as skeletons of their final size and
+          every sub-line is always printed, so nothing below them moves. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {(() => {
+          const loadingVal = <SkeletonBlock className="h-8 max-sm:h-7 w-14" />;
+          const gap = (n) => (n > 0 ? "#eab308" : "#22c55e");
+          const gapText = (n) => (n > 0 ? "var(--status-warn)" : "var(--text-1)");
+          const cards = [
+            {
+              key: "active", label: t("cells.kpiActive"), icon: LayoutGrid, color: "#C8973F",
+              value: stats.active, valueColor: "var(--text-1)",
+              sub: fill(t("cells.kpiArchivedSub"), { n: stats.archived }),
+              tooltip: t("cells.kpiActiveTip"),
+            },
+            {
+              key: "load", label: t("cells.kpiLoad"), icon: Gauge, color: "#3b82f6",
+              value: stats.inLoad, valueColor: "var(--text-1)", sub: ofActive(stats.inLoad),
+              open: () => setFZag("on"),
+            },
+            // A supervisor's register is their own unit: every cell has its
+            // brigadir, so that card would always read 0 — theirs is the
+            // cells whose «Egasi» is not the one running them.
+            scope ? {
+              key: "differs", label: t("cells.kpiDiffers"), icon: UserCheck, color: "#94a3b8",
+              value: stats.differs, valueColor: "var(--text-1)", sub: ofActive(stats.differs),
+              open: () => setFOwner("differs"),
+            } : {
+              key: "nosup", label: t("cells.kpiNoSup"), icon: Users, color: gap(stats.noSup),
+              value: stats.noSup, valueColor: gapText(stats.noSup),
+              sub: stats.noSup ? ofActive(stats.noSup) : t("cells.kpiAllSet"),
+              open: stats.noSup ? () => setFBrigadir("none") : null,
+            },
+            {
+              key: "nomgr", label: t("cells.kpiNoMgr"), icon: Flag, color: gap(stats.noMgr),
+              value: stats.noMgr, valueColor: gapText(stats.noMgr),
+              sub: stats.noMgr ? ofActive(stats.noMgr) : t("cells.kpiAllSet"),
+              open: stats.noMgr ? () => setFLeader("none") : null,
+            },
+          ];
+          return cards.map((k) => {
+            const clickable = !isLoading && !!k.open && k.value > 0;
+            return (
+            <KPICard
+              key={k.key}
+              label={k.label}
+              icon={k.icon}
+              color={isLoading ? "#94a3b8" : k.color}
+              valueColor={isLoading ? undefined : k.valueColor}
+              value={isLoading ? loadingVal : k.value}
+              sub={isLoading ? " " : k.sub}
+              // On a phone the whole card is the button, so the click hint
+              // would only crowd a half-width label.
+              tooltip={k.tooltip || (clickable && !phone ? t("cells.kpiClickTip") : undefined)}
+              onValueClick={clickable ? () => showOnly(k.open) : undefined}
+            />
+            );
+          });
+        })()}
+      </div>
+
       <TableCard
         icon={LayoutGrid}
         title={t("admin.profiles.cellsTab")}
@@ -798,15 +847,16 @@ export default function Cells() {
         <thead>
           <tr>
             <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Tag} label={t("admin.profiles.colWorkshop")} k="name" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={Tag} label={t("admin.profiles.colWorkshop")} k="name" sort={sort} onSort={onSort} cls="w-[16%]" />
             <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[8%]" />
-            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[7%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[13%]" />
-            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[11%]" />
+            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[6%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[11%]" />
+            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[12%]" />
             <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[9%]" />
             <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[9%]" />
-            {showActions && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[9%]" />}
+            {/* The ⋮ column: a 56px slot, its name for screen readers only. */}
+            {showActions && <Th label={<span className="sr-only">{t("admin.profiles.colActions")}</span>} align="center" cls="w-[56px]" />}
           </tr>
         </thead>
         <tbody>
@@ -858,19 +908,10 @@ export default function Cells() {
               <td className="px-3 py-2 whitespace-nowrap">
                 <ProcessMark one={c.one_process} t={t} />
               </td>
-              {canEdit && (
-                <td className="px-3 py-2">
-                  <RowActions t={t} onEdit={() => openEdit(c)} onDelete={() => setConfirmDelete(c)} deleting={deleteMut.isPending}
-                    archived={!!c.archived_at} onArchive={() => onArchive(c)} archiving={archiveMut.isPending} />
-                </td>
-              )}
-              {!canEdit && showActions && (
-                <td className="px-3 py-2">
-                  {canPickRow(c) && (
-                    <div className="flex items-center justify-center">
-                      <PickAction t={t} onPick={() => setPickFor(c)} compact />
-                    </div>
-                  )}
+              {showActions && (
+                <td className="px-2 py-1.5 text-center">
+                  {/* A row with nothing to offer keeps the ⋮'s height: rows stay equal. */}
+                  {rowMenu(c) || <span className="inline-block w-8 h-8 align-middle" aria-hidden="true" />}
                 </td>
               )}
             </tr>
