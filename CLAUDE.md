@@ -10164,6 +10164,14 @@ computes the four itself (the operator's pick, asked).
     row «O'z vaqtida yetkazish (on time report)» (`SheetSource` `ontime`).
   - Also reads «свод» A4:D (the list above). A read whose predecessor kept no
     list is due at boot.
+  - **A read holds a Postgres advisory lock on a connection of its own**
+    (`ontime_sync._claim`, from 2026-11-03). A deploy that retires the worker
+    mid-read kills the connection too, so the lock is gone at once: an open
+    `ontime_reads` row with no lock holder is a dead read, not «reading…».
+    Such a row is closed as failed (`interrupted`) by the next read and by the
+    boot catch-up, which then reads again (the cut read lost its 2-hour turn).
+    Before this, the 17:20 reads of 2 and 3 Nov kept «Jadval o'qilmoqda…» up
+    for 30 minutes and refused the refresh button meanwhile.
   - Reads through the platform's Google service account. Columns are found by
     HEADER text (`ORDER_COLS` / `RECEIPT_COLS`), never by position. Rows are
     read 40,000 at a time.
