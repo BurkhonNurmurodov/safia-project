@@ -36,6 +36,11 @@ SHOW_LAST = 30          # solutions served per category, newest first
 TOP_UNITS = 5
 
 
+def _admin_only(payload: dict) -> None:
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+
 def _fmt_dt(v):
     return v.isoformat() if v else None
 
@@ -66,6 +71,7 @@ def analysis(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
+    _admin_only(payload)
     # Lazy: the downtime router is a sibling router, not a service.
     from app.routers.downtime import _downtime
 
@@ -192,6 +198,7 @@ def add_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
+    _admin_only(payload)
     if body.category not in idle_scope.CATEGORIES:
         raise HTTPException(status_code=400, detail="unknown_category")
     if not _may_write(db, payload, body.category):
@@ -217,6 +224,7 @@ def edit_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
+    _admin_only(payload)
     row = db.query(IdleCategorySolution).filter(IdleCategorySolution.id == solution_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="not_found")

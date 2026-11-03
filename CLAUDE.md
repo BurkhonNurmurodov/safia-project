@@ -4348,6 +4348,21 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   path (their minutes are the «Смена отчёт» row); the date picker is deliberately
   not clamped, and the empty state names the floor instead.
 
+## «Kutish yechimlari» — which cause hurts, who answers, what they will do (`/idle-solutions`, 2026-11-03)
+
+The operator: an analytics row beside Ojidaniya showing which waiting category
+costs most, who is assigned to it (the «Kutish mas'uli» register) and a place
+for that person to write their solution. `routers/idle_solutions.py`
+(`GET /api/idle-solutions/analysis`, `POST` / `PUT /api/idle-solutions[/{id}]`),
+table `idle_category_solutions` (a log per category: text, open · doing · done,
+author snapshot), `pages/IdleSolutions.jsx` + `pages/idleSolutionsText.js`.
+**ADMIN-ONLY for now, no page key** (`adminOnly` nav row, `RequireAdmin`, every
+endpoint refuses others); the owner-may-write rule (`_may_write`) is kept for
+the day it opens to the role. Minutes are `/downtime`'s own (`_downtime`, the
+stopped half) summed per category; nothing new is measured. All 12 categories
+are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
+(multi). Not built: deadlines per solution, notices to owners.
+
 ## WHO answers for a waiting category (`idle-owner`)
 
 From **2026-09-10** (the operator's directive) each ojidaniya category has ONE
