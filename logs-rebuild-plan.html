@@ -1,0 +1,704 @@
+<meta charset="utf-8">
+<title>Logs Page Rebuild</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one reading column (76ch) for the plan; the three mockup figures break out to 1200px and scale down to fit. */
+:root{
+  --bg:#F4F5F7;--surface:#FFFFFF;--surface-2:#EBEDF1;--border:#DDE1E6;--border-strong:#C4CAD3;
+  --fg:#1A1D23;--fg-2:#4B5361;--fg-3:#687180;
+  --accent:#8F6410;--accent-soft:rgba(217,169,63,.16);
+  --crit:#B42631;--crit-soft:rgba(180,38,49,.10);
+  --major:#9A5B0E;--major-soft:rgba(154,91,14,.10);
+  --minor:#4A5A72;--minor-soft:rgba(74,90,114,.10);
+  --ok:#1E7A4F;--ok-soft:rgba(30,122,79,.10);
+  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --measure:76ch;--wide:1200px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1116;--surface:#151A21;--surface-2:#1B2129;--border:#262D37;--border-strong:#343C48;
+  --fg:#E9ECF1;--fg-2:#AAB3BF;--fg-3:#8390A0;
+  --accent:#D9A93F;--accent-soft:rgba(217,169,63,.12);
+  --crit:#EF5F66;--crit-soft:rgba(239,95,102,.12);
+  --major:#E0A24A;--major-soft:rgba(224,162,74,.12);
+  --minor:#9AA8BF;--minor-soft:rgba(154,168,191,.12);
+  --ok:#4CC38A;--ok-soft:rgba(76,195,138,.12);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1116;--surface:#151A21;--surface-2:#1B2129;--border:#262D37;--border-strong:#343C48;
+  --fg:#E9ECF1;--fg-2:#AAB3BF;--fg-3:#8390A0;
+  --accent:#D9A93F;--accent-soft:rgba(217,169,63,.12);
+  --crit:#EF5F66;--crit-soft:rgba(239,95,102,.12);
+  --major:#E0A24A;--major-soft:rgba(224,162,74,.12);
+  --minor:#9AA8BF;--minor-soft:rgba(154,168,191,.12);
+  --ok:#4CC38A;--ok-soft:rgba(76,195,138,.12);color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.doc{max-width:var(--wide);margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 96px}
+.doc *{box-sizing:border-box}
+.doc h1,.doc h2,.doc h3{text-wrap:balance;line-height:1.2;margin:0}
+.doc h1{font-size:clamp(30px,4vw,40px);font-weight:600;letter-spacing:-.015em}
+.doc h2{font-size:26px;font-weight:600;letter-spacing:-.01em;margin-top:72px;padding-top:24px;border-top:1px solid var(--border)}
+.doc h3{font-size:18px;font-weight:600;margin-top:40px}
+.doc p,.doc ul,.doc ol{margin:12px 0 0}
+.doc ul,.doc ol{padding-left:22px}
+.doc li{margin-top:6px}
+.doc li::marker{color:var(--fg-3)}
+.doc a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.doc a:focus-visible,.doc button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.doc code,.doc kbd{font-family:var(--mono);font-size:.9em;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+.doc .prose{max-width:var(--measure)}
+.doc .eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
+.doc .lede{font-size:19px;line-height:1.5;color:var(--fg-2);margin-top:16px}
+.doc .meta{font-size:14px;color:var(--fg-3);margin-top:12px}
+.doc .toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;flex-wrap:wrap;gap:4px 18px;margin:28px 0 0;padding:10px 0;background:var(--bg);border-bottom:1px solid var(--border);font-size:14px}
+.doc .toc a{color:var(--fg-2);text-decoration:none}
+.doc .toc a:hover{color:var(--fg)}
+.doc .note{color:var(--fg-2);font-size:15px}
+
+/* tables */
+.doc .scroll{overflow-x:auto;margin-top:16px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.doc table.tb{width:100%;border-collapse:collapse;font-size:14.5px;line-height:1.45}
+.doc table.tb th,.doc table.tb td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc table.tb th{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);background:var(--surface-2);white-space:nowrap}
+.doc table.tb tr:last-child td{border-bottom:0}
+.doc table.tb .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.doc table.tb .mono{font-family:var(--mono);font-size:13px;white-space:nowrap}
+.doc table.tb .after{color:var(--ok);font-weight:600}
+.doc .sw{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid rgba(128,128,128,.35);vertical-align:-2px;margin-right:8px}
+
+/* issues */
+.doc .issues{margin-top:16px;border-top:1px solid var(--border)}
+.doc .issue{display:grid;grid-template-columns:92px 1fr;gap:6px 20px;padding:18px 0;border-bottom:1px solid var(--border)}
+.doc .issue h4{margin:0;font-size:16.5px;font-weight:600;line-height:1.35}
+.doc .issue p{margin:6px 0 0;font-size:15px;color:var(--fg-2)}
+.doc .issue .fix{color:var(--fg)}
+.doc .issue .fix b{font-weight:600;color:var(--fg-3);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-right:8px}
+.doc .sev{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:.03em;white-space:nowrap;align-self:start;margin-top:2px}
+.doc .sev.crit{color:var(--crit);background:var(--crit-soft)}
+.doc .sev.major{color:var(--major);background:var(--major-soft)}
+.doc .sev.minor{color:var(--minor);background:var(--minor-soft)}
+.doc .keep{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
+.doc .keep div{padding:14px 16px;border-left:3px solid var(--ok);background:var(--surface);border-radius:0 8px 8px 0;font-size:15px;color:var(--fg-2)}
+.doc .keep b{display:block;color:var(--fg);font-weight:600;margin-bottom:4px}
+
+/* figures */
+.doc figure{margin:20px 0 0}
+.doc .frame-wrap{position:relative;overflow:hidden;border:1px solid var(--border-strong);border-radius:10px;background:#0E1116}
+.doc .frame-wrap>*{position:absolute;left:0;top:0;transform-origin:0 0}
+.doc figcaption{font-size:14px;color:var(--fg-3);margin-top:10px;max-width:var(--measure)}
+.doc figcaption a{white-space:nowrap}
+.doc .figrow{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+@media (max-width:900px){.doc .figrow{grid-template-columns:1fr}}
+
+/* phases */
+.doc .phases{display:grid;gap:14px;margin-top:16px}
+.doc .phase{display:grid;grid-template-columns:150px 1fr;gap:8px 24px;padding:18px 20px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.doc .phase .ph-h{grid-column:1/-1;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.doc .phase .ph-h h3{margin:0;font-size:17px}
+.doc .phase .size{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--fg-3);background:var(--surface-2);padding:2px 8px;border-radius:6px}
+.doc .phase dt{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);padding-top:3px}
+.doc .phase dd{margin:0;font-size:15px;color:var(--fg-2)}
+.doc .phase dd ul{margin:0;padding-left:20px}
+.doc .phase dd li{margin-top:4px}
+.doc .phase dl{display:contents}
+.doc .done{color:var(--fg)}
+.doc .q{counter-reset:q;margin-top:12px;padding:0;list-style:none}
+.doc .q li{margin-top:14px;padding-left:36px;position:relative;color:var(--fg-2);font-size:15.5px}
+.doc .q li b{color:var(--fg);font-weight:600}
+.doc .q li::before{counter-increment:q;content:counter(q);position:absolute;left:0;top:2px;width:24px;height:24px;border-radius:50%;background:var(--surface-2);color:var(--fg-2);font-size:12px;font-weight:600;display:grid;place-items:center}
+
+@media (max-width:640px){
+  .doc h2{font-size:22px;margin-top:56px}
+  .doc .issue{grid-template-columns:1fr;gap:4px}
+  .doc .phase{grid-template-columns:1fr;gap:4px 0}
+  .doc .phase dt{margin-top:10px}
+  .doc .lede{font-size:17px}
+}
+@media (prefers-reduced-motion:no-preference){.doc a{transition:color .15s}}
+
+/* SAFIA IMS mockup — scoped under .sf so it never leaks into the plan page */
+.sf{--bg:#0E1116;--surface:#151A21;--surface-2:#1B2129;--surface-3:#222A34;--border:#262D37;--border-strong:#343C48;--text:#E9ECF1;--text-2:#AAB3BF;--text-3:#8390A0;--accent:#D9A93F;--accent-soft:rgba(217,169,63,.12);--on-accent:#1B1507;--danger:#EF5F66;--danger-soft:rgba(239,95,102,.12);--success:#4CC38A;--success-soft:rgba(76,195,138,.12);--r-s:6px;--r-m:10px;
+font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.4;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;text-align:left}
+.sf *{box-sizing:border-box;margin:0;padding:0;font:inherit;color:inherit}
+.sf a{color:inherit;text-decoration:none}
+.sf button{background:none;border:0;cursor:default;text-align:left}
+.sf svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sf kbd{font:500 11px/1 Inter,system-ui,sans-serif;color:var(--text-3);border:1px solid var(--border-strong);border-radius:4px;padding:3px 5px;background:var(--surface)}
+.sf code{font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface-3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-2)}
+.sf .chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:var(--r-s);font-size:12px;font-weight:500;border:1px solid transparent;white-space:nowrap}
+.sf .chip svg{width:13px;height:13px}
+.sf .chip.danger{color:var(--danger);background:var(--danger-soft);border-color:rgba(239,95,102,.25)}
+.sf .chip.ok{color:var(--success);background:var(--success-soft);border-color:rgba(76,195,138,.25)}
+.sf .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6B4F17,#D9A93F);flex:none}
+.sf .avatar.sm{width:22px;height:22px}
+.sf .eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+
+/* ---- full page ---- */
+.sf .app{display:grid;grid-template-columns:240px 1fr;width:1440px;height:900px;overflow:hidden}
+.sf .sb{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px;min-height:0}
+.sf .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 10px}
+.sf .logo{width:32px;height:32px;border-radius:var(--r-s);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:700;font-size:15px}
+.sf .brand b{display:block;font-size:14px;font-weight:600;letter-spacing:.02em}
+.sf .brand span{display:block;font-size:12px;color:var(--text-3)}
+.sf .brand .collapse{margin-left:auto;color:var(--text-3);width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-s)}
+.sf .grp{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);padding:14px 8px 6px}
+.sf .nav a{display:flex;align-items:center;gap:10px;height:34px;padding:0 8px;border-radius:var(--r-s);color:var(--text-2);font-weight:500}
+.sf .nav a svg{color:var(--text-3)}
+.sf .nav a:hover{background:var(--surface-2);color:var(--text)}
+.sf .nav a.on{background:var(--accent-soft);color:var(--accent)}
+.sf .nav a.on svg{color:var(--accent)}
+.sf .sb-foot{margin-top:auto;padding:8px;font-size:12px;color:var(--text-3)}
+.sf .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.sf .top{height:56px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 24px;background:var(--bg)}
+.sf .cmdk{display:flex;align-items:center;gap:8px;height:36px;width:360px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3)}
+.sf .cmdk kbd{margin-left:auto}
+.sf .top-r{margin-left:auto;display:flex;align-items:center;gap:2px}
+.sf .ib{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--r-s);color:var(--text-2);position:relative}
+.sf .ib.txt{width:auto;padding:0 10px;font-size:12px;font-weight:600;gap:6px;display:flex;align-items:center}
+.sf .ib .dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--danger);border:2px solid var(--bg)}
+.sf .user{display:flex;align-items:center;gap:10px;margin-left:10px;padding-left:14px;border-left:1px solid var(--border);text-align:right}
+.sf .user b{display:block;font-size:13px;font-weight:600}
+.sf .user span{display:block;font-size:11px;color:var(--text-3)}
+.sf .page{padding:24px 32px 0;display:flex;flex-direction:column;min-height:0;flex:1}
+.sf h1{font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+.sf .ph p{color:var(--text-2);font-size:15px;margin-top:4px}
+.sf .bar{display:flex;gap:8px;margin-top:20px;align-items:center}
+.sf .search{display:flex;align-items:center;gap:8px;height:36px;flex:1 1 320px;max-width:440px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3)}
+.sf .search kbd{margin-left:auto}
+.sf .sel{display:flex;align-items:center;gap:6px;height:36px;padding:0 10px 0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3);font-size:13px;font-weight:500;white-space:nowrap}
+.sf .sel b{color:var(--text);font-weight:500}
+.sf .sel svg.ch{color:var(--text-3);width:14px;height:14px}
+.sf .sel.open{border-color:var(--accent);color:var(--text-2)}
+.sf .btn{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--r-s);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:500;margin-left:auto;white-space:nowrap}
+.sf .stats{display:flex;align-items:center;gap:12px;margin:16px 0 12px;font-size:13px;color:var(--text-2)}
+.sf .stats b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.sf .stats .sep{width:1px;height:14px;background:var(--border-strong)}
+.sf .live{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.sf .live i{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px var(--success-soft)}
+.sf .tbl{border:1px solid var(--border);border-radius:var(--r-m);background:var(--surface);overflow:hidden;flex:1;display:flex;flex-direction:column;min-height:0}
+.sf .tscroll{flex:1;overflow:hidden;min-height:0}
+.sf table{width:100%;border-collapse:collapse;table-layout:fixed}
+.sf th{height:40px;text-align:left;font-size:12px;font-weight:600;color:var(--text-3);letter-spacing:.02em;padding:0 12px;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap}
+.sf td{height:44px;padding:0 12px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.sf tbody tr:hover td{background:var(--surface-2)}
+.sf tr.is-sel td{background:var(--accent-soft)}
+.sf tr.is-sel td:first-child{box-shadow:inset 2px 0 var(--accent)}
+.sf tr.is-ref td:first-child{box-shadow:inset 2px 0 var(--danger)}
+.sf td.t{color:var(--text-2);font-variant-numeric:tabular-nums}
+.sf td.w{font-weight:500}
+.sf td.r,.sf td.c{color:var(--text-2)}
+.sf td.a .chip{margin-left:8px;height:20px;font-size:11px;padding:0 6px;vertical-align:middle}
+.sf .tfoot{flex:none;height:40px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border);background:var(--surface);font-variant-numeric:tabular-nums}
+.sf .tfoot a{color:var(--accent);margin-left:auto;font-weight:500}
+
+/* ---- category menu figure ---- */
+.sf.stage-menu{width:520px;height:520px;padding:24px;display:block}
+.sf .menu{width:320px;margin-top:6px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--r-m);box-shadow:0 12px 32px rgba(0,0,0,.45);padding:6px;overflow:hidden}
+.sf .menu-search{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;margin:2px 2px 6px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3);font-size:13px}
+.sf .mi{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:var(--r-s);font-size:13px;color:var(--text-2);position:relative}
+.sf .mi:hover{background:var(--surface-3);color:var(--text)}
+.sf .mi.on{color:var(--text)}
+.sf .mi .cb{width:14px;height:14px;border:1.5px solid var(--border-strong);border-radius:3px;flex:none;display:grid;place-items:center;background:var(--surface)}
+.sf .mi .cb.chk{background:var(--accent);border-color:var(--accent)}
+.sf .mi .cb.chk svg{width:11px;height:11px;stroke:var(--on-accent);stroke-width:3}
+.sf .mi .n{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--text-3);font-size:12px}
+.sf .mi .only{position:absolute;right:62px;font-size:11px;color:var(--accent);visibility:hidden}
+.sf .mi:hover .only{visibility:visible}
+.sf .mi.more{color:var(--text-3)}
+.sf .mi.more svg{width:14px;height:14px;transform:rotate(-90deg)}
+.sf .menu-foot{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 4px;margin-top:4px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)}
+.sf .menu-foot a{color:var(--accent);font-weight:500}
+
+/* ---- detail panel figure ---- */
+.sf.stage-drawer{width:560px;height:640px;position:relative;display:block}
+.sf .ghost{position:absolute;left:0;top:0;bottom:0;width:120px;padding:24px 0 0 16px;color:var(--text-3);font-size:13px;opacity:.6}
+.sf .ghost div{height:44px;border-bottom:1px solid var(--border);display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.sf .drawer{position:absolute;right:0;top:0;bottom:0;width:440px;background:var(--surface);border-left:1px solid var(--border-strong);box-shadow:-16px 0 40px rgba(0,0,0,.45);display:flex;flex-direction:column}
+.sf .dh{display:flex;align-items:flex-start;gap:12px;padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+.sf .dh h2{font-size:18px;font-weight:600;margin-top:4px;line-height:1.3}
+.sf .dh .chip{margin-top:8px}
+.sf .dh .ib{margin-left:auto;margin-top:2px;width:32px;height:32px}
+.sf .ds{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+.sf .ds .eyebrow{margin-bottom:2px}
+.sf .kv{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;font-size:13px}
+.sf .kv dt{color:var(--text-3)}
+.sf .kv dd{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}
+.sf .kv .muted{color:var(--text-3)}
+.sf .lnk{margin-left:auto;color:var(--accent);font-weight:500;font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.sf .lnk svg{width:13px;height:13px}
+.sf .diff{width:100%;border-collapse:collapse;font-size:13px}
+.sf .diff th{text-align:left;font-weight:400;color:var(--text-3);padding:6px 0;width:96px;height:auto;background:none;border:0;letter-spacing:0;font-size:13px}
+.sf .diff td{padding:6px 0;height:auto;border:0;white-space:normal}
+.sf .diff .old{color:var(--text-3);text-decoration:line-through;width:90px}
+.sf .diff .arr{color:var(--text-3);width:28px;text-align:center}
+.sf .diff .new{color:var(--text);font-weight:500}
+.sf .df{margin-top:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)}
+.sf .df .hint{display:flex;align-items:center;gap:6px}
+.sf .df kbd{margin:0}
+.sf .df .esc{margin-left:auto}
+
+</style>
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+<symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+<symbol id="i-act" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+<symbol id="i-id" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h4M14 14h4"/></symbol>
+<symbol id="i-fac" viewBox="0 0 24 24"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M17 18h1M12 18h1M7 18h1"/></symbol>
+<symbol id="i-pages" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+<symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+<symbol id="i-logs" viewBox="0 0 24 24"><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M15 8h-5M15 12h-5"/></symbol>
+<symbol id="i-mega" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+<symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></symbol>
+<symbol id="i-calx" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9.5 14 5 5M14.5 14l-5 5"/></symbol>
+<symbol id="i-userx" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/></symbol>
+<symbol id="i-grad" viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+</svg>
+
+
+<main class="doc">
+<header>
+  <div class="eyebrow">SAFIA IMS · Admin · Logs · v4.390.2</div>
+  <h1 style="margin-top:10px">Logs page rebuild</h1>
+  <p class="lede prose">The Logs page gives most of its width to three columns of navigation and most of its height to numbers that repeat each other, then clips the one column that says what changed. This plan replaces the shell with one sidebar, turns the category list into a filter, and gives the table the room it needs. The dark navy and gold, the copy, and the data stay. Those parts already work.</p>
+  <p class="meta">Prepared 3 November 2026 from a 1850 × 1030 screenshot of the current page.</p>
+  <div class="scroll" style="max-width:var(--measure)">
+    <table class="tb">
+      <thead><tr><th>Measured on the screenshot</th><th class="num">Now</th><th class="num">After</th></tr></thead>
+      <tbody>
+        <tr><td>Navigation columns before content</td><td class="num">3</td><td class="num after">1</td></tr>
+        <tr><td>Width spent on navigation (1850px window)</td><td class="num">≈ 870 px</td><td class="num after">240 px</td></tr>
+        <tr><td>Log rows visible (1030px window)</td><td class="num">8</td><td class="num after">≈ 17</td></tr>
+        <tr><td>Places to set a filter</td><td class="num">4</td><td class="num after">1</td></tr>
+        <tr><td>Times the number 5 626 is printed</td><td class="num">4</td><td class="num after">1</td></tr>
+        <tr><td>Truncated or clipped labels on screen</td><td class="num">18</td><td class="num after">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <nav class="toc" aria-label="Sections">
+    <a href="#diagnosis">Diagnosis</a><a href="#quick-wins">Quick wins</a><a href="#target">Target design</a><a href="#tokens">Tokens</a><a href="#behavior">Behavior</a><a href="#build">Build order</a><a href="#questions">Open questions</a>
+  </nav>
+</header>
+
+<section id="diagnosis" class="prose">
+  <h2>Diagnosis</h2>
+  <h3>What a first-time user sees</h3>
+  <p>In the first five seconds: three columns of links, four boxes that all say 5 626, and a table whose last column runs off the screen. They work out that this is a log. They cannot tell which column of links to use, and they cannot read what changed without expanding a row. The page promises “who did it, when, and what changed” and delivers the first two.</p>
+
+  <h3>Keep these</h3>
+  <div class="keep" style="max-width:none">
+    <div><b>Dark navy with one gold accent</b>Distinctive and calm for an eight-hour screen. Nothing in this plan changes the palette.</div>
+    <div><b>The copy</b>“Plan override set”, “Signed in via Telegram”, “Worker concern filed” read as sentences. The action phrases need no rewriting.</div>
+    <div><b>The data</b>Time to the second, actor with role, category, action, target, outcome. The new page needs nothing added to the model, only a before/after payload for the detail panel.</div>
+    <div><b>Category counts and ⌘K</b>Both exist already. They move, they do not get rebuilt.</div>
+  </div>
+
+  <h3>Issues, ordered by user impact</h3>
+  <div class="issues">
+    <div class="issue"><span class="sev crit">Critical</span><div><h4>Three navigation columns before any content</h4><p>The outer sidebar is about 330px wide and holds one item, “Admin”. The section sidebar and the category list add roughly 540px more. The table gets what is left and clips its last column.</p><p class="fix"><b>Fix</b>One 240px sidebar that collapses to a 64px icon rail. Categories become a filter in the toolbar. The outer sidebar goes, or becomes a workspace switcher in the brand row (see open question 4).</p></div></div>
+    <div class="issue"><span class="sev crit">Critical</span><div><h4>“What changed” is not on the page</h4><p>The Target column is cut off at the viewport edge on every row, and the actual change is only reachable by expanding each row with an unlabeled chevron.</p><p class="fix"><b>Fix</b>A table that fits six columns at 1280px with no horizontal scroll, and a detail panel that opens on row click with the before/after values. The panel is the feature; the table is the index.</p></div></div>
+    <div class="issue"><span class="sev crit">Critical</span><div><h4>Four KPI cards that answer nothing the table does not</h4><p>5 626 appears in the category list, the Actions card, the table header and the footer. “People 200” and “Last action: just now” fill about 110px of height with subtitles that truncate. Only “Refused 6” carries a signal, and it is buried second.</p><p class="fix"><b>Fix</b>One stat line under the toolbar: events, people, a “6 refused” chip that applies the Outcome filter, and a live indicator on the right. The vertical space goes to rows.</p></div></div>
+    <div class="issue"><span class="sev crit">Critical</span><div><h4>Four places to filter, plus a second search 60px above</h4><p>Date picker, log search, a generic “Filters” dropdown and the category sidebar sit in three different regions. The global ⌘K search in the top bar looks identical to the log search.</p><p class="fix"><b>Fix</b>One filter bar: Search, Time range, Category, Outcome, Role. Each filter is named on its button and shows its current value. Active filters appear as removable chips beneath the bar. ⌘K stays, visually distinct and smaller.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Labels truncate everywhere</h4><p>Two category names, five of eight actor names and all four KPI subtitles end in an ellipsis. The layout does not fit its own content.</p><p class="fix"><b>Fix</b>Who column at 250px minimum; category names live in a 320px menu; stat line copy written to fit. Ellipsis is allowed only below 1280px, with the full value in a tooltip.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>“Action history” and “Logs” are neighbours and sound the same</h4><p>A new admin cannot tell which one is the audit trail. Both sit under People &amp; access.</p><p class="fix"><b>Fix</b>Rename so the names describe different things. Proposal: Logs becomes <em>Audit log</em>; Action history becomes <em>My recent actions</em> if it is personal, or merges into the audit log as a “Me” filter if it is not (open question 1).</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>A row bleeds through the sticky header</h4><p>“Supervisor · Shop floor · Plan override set” is visible, clipped, beneath the column headers. The header has no opaque background or a wrong offset.</p><p class="fix"><b>Fix</b>Opaque surface on <code>thead</code>, <code>z-index</code> above rows, sticky offset equal to the scroll container top. One-line CSS change, ship it this week.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Five empty categories take five rows</h4><p>Structure, Leader settings, Settings, Exam and Other all show 0 and still occupy the list, greyed out, pushing “Other” below the fold.</p><p class="fix"><b>Fix</b>In the Category menu, zero-count categories collapse into one row, “5 empty categories”, that expands on click.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Eight rows visible for a 5 626-row log</h4><p>Name and role stack on two lines, so rows are about 60px tall, and the header, title, toolbar, KPI cards and table card header take about 450px before the first row.</p><p class="fix"><b>Fix</b>Role gets its own column, rows become one line at 44px. About 17 rows fit in the same window. A compact density of 36px (phase 3) gives about 21.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Top bar noise: “99+”, five unlabeled icons, “Admin” three times</h4><p>A maxed-out badge says nothing. The bug and chat icons have no label. “Admin” appears in the sidebar, the top bar title and under the user's name.</p><p class="fix"><b>Fix</b>Notifications show a dot when unread, or a real count up to 99. Bug report and chat move into the Help menu. The top bar title goes; the sidebar brand row says “SAFIA IMS · Admin” once.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Two date formats, no range</h4><p>“3 November 2026” in the picker, “03.11.2026” in the KPI card. The picker only takes one day, so “what happened this week” means seven visits.</p><p class="fix"><b>Fix</b>One format, “3 Nov 2026”. Time range control with Today, Yesterday, Last 7 days, Last 30 days and Custom. Day separators in the table when the range spans more than one day.</p></div></div>
+    <div class="issue"><span class="sev major">Major</span><div><h4>Red “6” reads as an alarm for 0.1% of events</h4><p>The number is the only red on the page and its explanation is truncated. The user cannot tell whether 6 is normal.</p><p class="fix"><b>Fix</b>“6 refused” as a chip with the ban icon, danger colour at chip weight, not display weight. Red is reserved for the refused rows themselves. The panel explains why each one was refused.</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Every item has an icon</h4><p>17 nav items, 15 categories, every category cell in the table, every KPI card and every toolbar button. When everything has an icon, icons stop helping the eye.</p><p class="fix"><b>Fix</b>Icons in the sidebar only, 16px, same colour as the text. Category cells and the stat line are text.</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Boxes inside boxes</h4><p>Bordered sidebar card, bordered category card inside it, four bordered KPI cards, a bordered table card with its own header strip (“ALL · Every category together”).</p><p class="fix"><b>Fix</b>One border level: the table. Everything else is grouped by spacing. The table card header strip goes; the stat line already says what is in the table.</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>All-caps micro-labels doing three jobs</h4><p>DAILY WORK, SECTIONS, ACTIONS, ALL: nav groups, list headers and KPI labels share one style at about 11px.</p><p class="fix"><b>Fix</b>All-caps only for sidebar group headers and panel section headers. 11px, 600 weight, 0.06em tracking, muted colour.</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Four radii and five greys</h4><p>Buttons, cards, nav pills and KPI cards use slightly different corner radii; surfaces use several near-identical greys.</p><p class="fix"><b>Fix</b>Two radii (6px controls, 10px panels) and one neutral ramp (tokens below).</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Gold in three places at once</h4><p>“Admin”, “Logs” and “All” are all highlighted in gold across the three columns. The accent is spent on navigation state and cannot direct attention to anything.</p><p class="fix"><b>Fix</b>One selected nav item. Gold otherwise marks focus rings, the selected row, and links in the panel.</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Bare slugs as targets</h4><p>“~olcha u”, “~ejaveyl”, “~malina”. A new admin has no idea what the tilde means or what kind of thing this is.</p><p class="fix"><b>Fix</b>Slugs render as code with their entity type in the panel (“Cell ~olcha-u”), and link to the thing (open question 2).</p></div></div>
+    <div class="issue"><span class="sev minor">Minor</span><div><h4>Muted text below AA contrast</h4><p>Zero-count labels and card subtitles sit at roughly 3.5:1 on the dark surface. The 11px labels are below the size where that is allowed.</p><p class="fix"><b>Fix</b>Tokens below are measured: the dimmest text colour is 5.3:1 on the surface.</p></div></div>
+  </div>
+
+  <h3 id="quick-wins">Quick wins: one day, no redesign</h3>
+  <p>These ship on the current code and remove the most embarrassing defects while the rebuild is in progress.</p>
+  <ol>
+    <li>Give the sticky table header an opaque background and a z-index. The bleed-through disappears.</li>
+    <li>Delete the KPI subtitles, or shorten them to fit: “of 5 626”, “today”, “Akhmedova M.” Nothing in a card may end in an ellipsis.</li>
+    <li>Hide zero-count categories behind a “Show 5 empty” link.</li>
+    <li>Show role as a muted suffix on the same line as the name. Rows drop from about 60px to 44px.</li>
+    <li>Use one date format everywhere: “3 Nov 2026”.</li>
+    <li>Collapse the outer “Admin” sidebar to a 56px icon rail by default. The table gains about 270px.</li>
+  </ol>
+</section>
+
+<section id="target">
+  <h2>Target design</h2>
+  <p class="prose">One sidebar, one filter bar, one stat line, one table. Nothing on the page repeats a number or a label that appears elsewhere. The accent appears once in navigation and once in the table (the selected row). Shown in Inter as a stand-in; keep whatever typeface the app uses today. A <a href="https://claude.ai/artifact/Wyyd5H8sZeqmkUh2H3FE3R" target="_blank" rel="noopener">working prototype on mock data</a> implements everything below: filters, the category menu, the detail panel, keyboard navigation and each state.</p>
+  <figure>
+    <div class="frame-wrap" data-w="1440" data-h="900">
+<div class="sf"><div class="app">
+<aside class="sb">
+  <div class="brand"><div class="logo">S</div><div><b>SAFIA IMS</b><span>Admin</span></div><span class="collapse"><svg><use href="#i-panel"/></svg></span></div>
+  <nav class="nav">
+    <div class="grp">Daily work</div>
+    <a href="#"><svg><use href="#i-cal"/></svg>Attendance</a>
+    <a href="#"><svg><use href="#i-db"/></svg>Data</a>
+    <a href="#"><svg><use href="#i-act"/></svg>Production</a>
+    <div class="grp">People &amp; access</div>
+    <a href="#"><svg><use href="#i-users"/></svg>Users</a>
+    <a href="#"><svg><use href="#i-id"/></svg>Profiles</a>
+    <a href="#"><svg><use href="#i-fac"/></svg>Factories</a>
+    <a href="#"><svg><use href="#i-pages"/></svg>Pages by role</a>
+    <a href="#"><svg><use href="#i-key"/></svg>Personal grants</a>
+    <a href="#"><svg><use href="#i-hist"/></svg>Action history</a>
+    <a href="#" class="on"><svg><use href="#i-logs"/></svg>Logs</a>
+    <div class="grp">Tools</div>
+    <a href="#"><svg><use href="#i-mega"/></svg>Broadcast</a>
+    <a href="#"><svg><use href="#i-checks"/></svg>Checklist settings</a>
+    <a href="#"><svg><use href="#i-clip"/></svg>Leaders daily tasks</a>
+    <a href="#"><svg><use href="#i-calx"/></svg>Excluded days</a>
+    <a href="#"><svg><use href="#i-userx"/></svg>Excluded leaders</a>
+    <a href="#"><svg><use href="#i-grad"/></svg>Exam</a>
+  </nav>
+  <div class="sb-foot">Version 4.390.2</div>
+</aside>
+<div class="main">
+  <header class="top">
+    <div class="cmdk"><svg><use href="#i-search"/></svg>Search pages, cells, people…<kbd>⌘K</kbd></div>
+    <div class="top-r">
+      <span class="ib"><svg><use href="#i-bell"/></svg><i class="dot"></i></span>
+      <span class="ib txt"><svg><use href="#i-globe"/></svg>EN</span>
+      <span class="ib"><svg><use href="#i-sun"/></svg></span>
+      <span class="ib"><svg><use href="#i-help"/></svg></span>
+      <div class="user"><div><b>Burkhon Nurmurodov</b><span>Admin</span></div><div class="avatar"></div></div>
+    </div>
+  </header>
+  <div class="page">
+    <div class="ph"><h1>Logs</h1><p>Who changed what, and when, across the whole platform.</p></div>
+    <div class="bar">
+      <div class="search"><svg><use href="#i-search"/></svg>Search who, action or target<kbd>/</kbd></div>
+      <button class="sel"><svg><use href="#i-cal"/></svg><b>Today</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Category <b>All</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Outcome <b>Any</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Role <b>Any</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="btn"><svg><use href="#i-dl"/></svg>Export CSV</button>
+    </div>
+    <div class="stats">
+      <span><b>5 626</b> events</span><i class="sep"></i>
+      <span><b>200</b> people</span><i class="sep"></i>
+      <button class="chip danger"><svg><use href="#i-ban"/></svg>6 refused</button>
+      <span class="live"><i></i>Live · last event 10:33:00</span>
+    </div>
+    <div class="tbl">
+      <div class="tscroll">
+      <table>
+        <colgroup><col style="width:96px"><col style="width:250px"><col style="width:110px"><col style="width:300px"><col style="width:220px"><col></colgroup>
+        <thead><tr><th>Time</th><th>Who</th><th>Role</th><th>Action</th><th>Target</th><th>Category</th></tr></thead>
+        <tbody>
+          <tr class="is-sel"><td class="t">10:33:00</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~olcha-u</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:57</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~ejaveyl</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:54</td><td class="w">Saidova Khosiyatkhon Erkinovna</td><td class="r">Leader</td><td class="a">Signed in via Telegram</td><td>Saidova Khosiyatkhon E.</td><td class="c">Sign-ins</td></tr>
+          <tr><td class="t">10:32:54</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~malina</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:44</td><td class="w">Yakubova Nafisa Nasirovna</td><td class="r">Leader</td><td class="a">Worker concern filed</td><td>Smarov Dilshod</td><td class="c">Tasks and concerns</td></tr>
+          <tr><td class="t">10:32:12</td><td class="w">Akhmirzayeva Nilufar Kamolovna</td><td class="r">Leader</td><td class="a">Signed in via Telegram</td><td>Akhmirzayeva Nilufar K.</td><td class="c">Sign-ins</td></tr>
+          <tr><td class="t">10:32:11</td><td class="w">Kulboyeva Djumagul Sattorovna</td><td class="r">Leader</td><td class="a">Session role switched</td><td>Akhmirzayeva Nilufar K.</td><td class="c">People and access</td></tr>
+          <tr><td class="t">10:31:53</td><td class="w">Butabekov Aleksey Sergeyevich</td><td class="r">Leader</td><td class="a">Proof photo taken</td><td>Butabekov Aleksey S.</td><td class="c">Leader review</td></tr>
+          <tr class="is-ref"><td class="t">10:31:40</td><td class="w">Tashkentov Bobur</td><td class="r">Supervisor</td><td class="a">Plan override set<span class="chip danger">Refused</span></td><td><code>~olcha-u</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:31:12</td><td class="w">Rahimova Gulnora Baxtiyorovna</td><td class="r">Leader</td><td class="a">Shift check-in marked</td><td><code>~beshariq</code></td><td class="c">Attendance</td></tr>
+          <tr><td class="t">10:30:58</td><td class="w">System</td><td class="r">—</td><td class="a">Export to 1C completed</td><td>Daily production, 3 Nov</td><td class="c">Sync and export</td></tr>
+          <tr><td class="t">10:30:31</td><td class="w">Karimov Jasur Olimovich</td><td class="r">Leader</td><td class="a">Checklist item completed</td><td><code>~malina</code></td><td class="c">Leader review</td></tr>
+          <tr><td class="t">10:30:05</td><td class="w">Nurmurodov Burkhon</td><td class="r">Admin</td><td class="a">Document uploaded</td><td>Safety brief, November.pdf</td><td class="c">Documents</td></tr>
+          <tr><td class="t">10:29:47</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~ejaveyl</code></td><td class="c">Shop floor</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="tfoot">Showing 1–100 of 5 626 events<a href="#">Load 100 more</a></div>
+    </div>
+  </div>
+</div>
+</div></div>
+
+    </div>
+    <figcaption>Logs at 1440 × 900. The first row is selected because the detail panel, shown further down, is open for it. The refused event at 10:31:40 carries a red stripe and a chip, and nothing else on the row changes. <a href="mockup.html" target="_blank" rel="noopener">Open the mockup at full size</a>.</figcaption>
+  </figure>
+
+  <div class="prose">
+    <h3>How the layout works</h3>
+    <ul>
+      <li><b>Sidebar, 240px.</b> Brand row with “SAFIA IMS · Admin” and a collapse control. Three groups as today. Items 34px tall, 6px radius, icon 16px in the muted colour. Selected item: gold text on gold at 12% opacity. Collapses to a 64px icon rail with tooltips; the state is remembered per user.</li>
+      <li><b>Top bar, 56px.</b> ⌘K search at 360px on the left. On the right: notifications (dot when unread), language, theme, help, then the user. No page title here; the sidebar already says where you are.</li>
+      <li><b>Page header.</b> “Logs” at 24px/600 and a one-line description at 15px in the secondary colour. Nothing else. Export lives in the toolbar, next to the filters it exports.</li>
+      <li><b>Filter bar, 36px controls, 8px gaps.</b> Search grows to 440px. Each filter button shows its name and its value (“Category · All”). Export sits at the far right as a secondary button. When any filter is not at its default, a row of removable chips appears under the bar and the export label reads “Export 2 152 rows”.</li>
+      <li><b>Stat line, 13px.</b> Events, people, refused chip, live indicator. 16px above, 12px below. It is the only summary on the page.</li>
+      <li><b>Table.</b> Full content width (1136px at 1440). 40px header, 44px rows, 1px dividers, hover in surface-2, selected row with a 2px gold left stripe. Fits six columns at 1280px; Category hides first below that, then Role. Footer shows position and a “Load 100 more” link, with infinite scroll as the primary mechanism.</li>
+    </ul>
+  </div>
+
+  <div class="figrow" style="margin-top:40px">
+    <div>
+      <h3 style="margin-top:0">Category becomes a filter</h3>
+      <p class="note">The 250px sidebar becomes a 320px menu that opens from the Category button. Same counts, same names, no truncation, and it costs no width when closed.</p>
+      <figure>
+        <div class="frame-wrap" data-w="520" data-h="520">
+<div class="sf stage-menu">
+  <button class="sel open" style="display:inline-flex">Category <b>2 selected</b><svg class="ch"><use href="#i-chev"/></svg></button>
+  <div class="menu">
+    <div class="menu-search"><svg><use href="#i-search"/></svg>Find a category</div>
+    <div class="mi on"><i class="cb chk"><svg><use href="#i-check"/></svg></i>Attendance<span class="only">Only</span><span class="n">892</span></div>
+    <div class="mi"><i class="cb"></i>Documents<span class="only">Only</span><span class="n">56</span></div>
+    <div class="mi"><i class="cb"></i>Leader review<span class="only">Only</span><span class="n">1 311</span></div>
+    <div class="mi"><i class="cb"></i>Messaging<span class="only">Only</span><span class="n">1</span></div>
+    <div class="mi"><i class="cb"></i>People and access<span class="only">Only</span><span class="n">140</span></div>
+    <div class="mi on"><i class="cb chk"><svg><use href="#i-check"/></svg></i>Shop floor<span class="only">Only</span><span class="n">2 152</span></div>
+    <div class="mi"><i class="cb"></i>Sign-ins<span class="only">Only</span><span class="n">836</span></div>
+    <div class="mi"><i class="cb"></i>Sync and export<span class="only">Only</span><span class="n">98</span></div>
+    <div class="mi"><i class="cb"></i>Tasks and concerns<span class="only">Only</span><span class="n">140</span></div>
+    <div class="mi more"><svg><use href="#i-chev"/></svg>5 empty categories</div>
+    <div class="menu-foot"><span>3 044 of 5 626 events</span><a href="#">Clear</a></div>
+  </div>
+</div>
+
+        </div>
+        <figcaption>Multi-select, applied on each click with no Apply button. Counts right-aligned in tabular figures. “Only” appears on hover to select one category alone. Zero-count categories collapse into one row. The footer shows how many events the selection covers.</figcaption>
+      </figure>
+    </div>
+    <div>
+      <h3 style="margin-top:0">What changed lives in a detail panel</h3>
+      <p class="note">Clicking a row opens a 440px panel over the right edge. It is not modal: the table stays visible and ↑ ↓ moves through events while it is open.</p>
+      <figure>
+        <div class="frame-wrap" data-w="560" data-h="640">
+<div class="sf stage-drawer">
+  <div class="ghost"><div>10:33:00</div><div>10:32:57</div><div>10:32:54</div><div>10:32:54</div><div>10:32:44</div><div>10:32:12</div><div>10:32:11</div><div>10:31:53</div><div>10:31:40</div><div>10:31:12</div><div>10:30:58</div><div>10:30:31</div></div>
+  <aside class="drawer">
+    <header class="dh">
+      <div><div class="eyebrow">Shop floor</div><h2>Plan override set</h2></div>
+      <span class="chip ok"><svg><use href="#i-check"/></svg>Allowed</span>
+      <span class="ib"><svg><use href="#i-x"/></svg></span>
+    </header>
+    <section class="ds">
+      <dl class="kv"><dt>Who</dt><dd><span class="avatar sm"></span>Akhmedova Munisa<span class="muted">· Supervisor</span><a class="lnk" href="#">View profile<svg><use href="#i-arrow"/></svg></a></dd></dl>
+      <dl class="kv"><dt>When</dt><dd>10:33:00 · 3 Nov 2026<span class="muted">· 2 min ago</span></dd></dl>
+      <dl class="kv"><dt>Target</dt><dd>Cell <code>~olcha-u</code><a class="lnk" href="#">Open cell<svg><use href="#i-arrow"/></svg></a></dd></dl>
+    </section>
+    <section class="ds">
+      <div class="eyebrow">What changed</div>
+      <table class="diff">
+        <tr><th>Daily plan</th><td class="old">1 200</td><td class="arr">→</td><td class="new">1 350 units</td></tr>
+        <tr><th>Valid until</th><td class="old">—</td><td class="arr">→</td><td class="new">3 Nov, 18:00</td></tr>
+        <tr><th>Reason</th><td colspan="3">Rush order 4471 from Olcha</td></tr>
+      </table>
+    </section>
+    <section class="ds">
+      <div class="eyebrow">Context</div>
+      <dl class="kv"><dt>Source</dt><dd>Web app · Chrome on macOS</dd></dl>
+      <dl class="kv"><dt>IP</dt><dd>10.0.4.21</dd></dl>
+      <dl class="kv"><dt>Event</dt><dd><code>evt_8f3a21c</code><a class="lnk" href="#"><svg><use href="#i-copy"/></svg>Copy link</a></dd></dl>
+    </section>
+    <footer class="df"><span class="hint"><kbd>↑</kbd><kbd>↓</kbd> previous / next event</span><span class="esc"><kbd>Esc</kbd> close</span></footer>
+  </aside>
+</div>
+
+        </div>
+        <figcaption>Header: category eyebrow, action, outcome chip. Then who, when and target, each with a link to the thing itself. “What changed” shows old and new values side by side with the old struck through. Context carries source, IP and event id. For a refused event the chip turns red and a “Why” line shows the reason, for example “Supervisor has no grant for cell ~olcha-u”.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="tokens">
+  <h2>Design tokens</h2>
+  <p class="prose">These replace the ad-hoc greys and radii. Dark is the primary theme because that is what the product ships; light values are given for the theme toggle. Contrast is measured against the surface colour.</p>
+  <div class="scroll">
+    <table class="tb">
+      <thead><tr><th>Token</th><th>Dark</th><th>Light</th><th>Used for</th><th class="num">Contrast on surface (dark)</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">--bg</td><td class="mono"><span class="sw" style="background:#0E1116"></span>#0E1116</td><td class="mono"><span class="sw" style="background:#F4F5F7"></span>#F4F5F7</td><td>Page background, top bar</td><td class="num">—</td></tr>
+        <tr><td class="mono">--surface</td><td class="mono"><span class="sw" style="background:#151A21"></span>#151A21</td><td class="mono"><span class="sw" style="background:#FFFFFF"></span>#FFFFFF</td><td>Sidebar, table, panel, inputs</td><td class="num">—</td></tr>
+        <tr><td class="mono">--surface-2</td><td class="mono"><span class="sw" style="background:#1B2129"></span>#1B2129</td><td class="mono"><span class="sw" style="background:#EBEDF1"></span>#EBEDF1</td><td>Row hover, menus, secondary buttons</td><td class="num">—</td></tr>
+        <tr><td class="mono">--surface-3</td><td class="mono"><span class="sw" style="background:#222A34"></span>#222A34</td><td class="mono"><span class="sw" style="background:#DFE3E8"></span>#DFE3E8</td><td>Menu item hover, code chips</td><td class="num">—</td></tr>
+        <tr><td class="mono">--border</td><td class="mono"><span class="sw" style="background:#262D37"></span>#262D37</td><td class="mono"><span class="sw" style="background:#DDE1E6"></span>#DDE1E6</td><td>Dividers, table lines, input borders</td><td class="num">—</td></tr>
+        <tr><td class="mono">--border-strong</td><td class="mono"><span class="sw" style="background:#343C48"></span>#343C48</td><td class="mono"><span class="sw" style="background:#C4CAD3"></span>#C4CAD3</td><td>Button borders, kbd, menu edge</td><td class="num">—</td></tr>
+        <tr><td class="mono">--text</td><td class="mono"><span class="sw" style="background:#E9ECF1"></span>#E9ECF1</td><td class="mono"><span class="sw" style="background:#1A1D23"></span>#1A1D23</td><td>Names, actions, headings</td><td class="num">14.7 : 1</td></tr>
+        <tr><td class="mono">--text-2</td><td class="mono"><span class="sw" style="background:#AAB3BF"></span>#AAB3BF</td><td class="mono"><span class="sw" style="background:#4B5361"></span>#4B5361</td><td>Time, role, category, descriptions</td><td class="num">8.2 : 1</td></tr>
+        <tr><td class="mono">--text-3</td><td class="mono"><span class="sw" style="background:#8390A0"></span>#8390A0</td><td class="mono"><span class="sw" style="background:#687180"></span>#687180</td><td>Labels, placeholders, footers</td><td class="num">5.3 : 1</td></tr>
+        <tr><td class="mono">--accent</td><td class="mono"><span class="sw" style="background:#D9A93F"></span>#D9A93F</td><td class="mono"><span class="sw" style="background:#8F6410"></span>#8F6410</td><td>Selected nav, selected row stripe, links, focus ring</td><td class="num">8.0 : 1</td></tr>
+        <tr><td class="mono">--accent-soft</td><td class="mono">accent at 12%</td><td class="mono">accent at 16%</td><td>Selected nav and row background</td><td class="num">—</td></tr>
+        <tr><td class="mono">--on-accent</td><td class="mono"><span class="sw" style="background:#1B1507"></span>#1B1507</td><td class="mono"><span class="sw" style="background:#1B1507"></span>#1B1507</td><td>Text on a gold fill (logo, primary button, checked box)</td><td class="num">8.4 : 1 on gold</td></tr>
+        <tr><td class="mono">--danger</td><td class="mono"><span class="sw" style="background:#EF5F66"></span>#EF5F66</td><td class="mono"><span class="sw" style="background:#B42631"></span>#B42631</td><td>Refused chip and stripe, unread dot, errors</td><td class="num">5.4 : 1</td></tr>
+        <tr><td class="mono">--success</td><td class="mono"><span class="sw" style="background:#4CC38A"></span>#4CC38A</td><td class="mono"><span class="sw" style="background:#1E7A4F"></span>#1E7A4F</td><td>Allowed chip, live dot</td><td class="num">7.9 : 1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="figrow" style="margin-top:24px">
+    <div class="scroll" style="margin-top:0">
+      <table class="tb">
+        <thead><tr><th>Scale</th><th>Values</th></tr></thead>
+        <tbody>
+          <tr><td>Spacing</td><td class="mono">4 · 8 · 12 · 16 · 24 · 32 · 48</td></tr>
+          <tr><td>Radius</td><td class="mono">6 (controls, chips, rows) · 10 (table, panel, menu)</td></tr>
+          <tr><td>Control height</td><td class="mono">36 (inputs, buttons) · 34 (nav items) · 24 (chips)</td></tr>
+          <tr><td>Row height</td><td class="mono">44 default · 36 compact · 40 table header</td></tr>
+          <tr><td>Focus ring</td><td class="mono">2px accent, 2px offset, on every interactive element</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="scroll" style="margin-top:0">
+      <table class="tb">
+        <thead><tr><th>Type</th><th>Size / weight</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Page title</td><td class="mono">24 / 600</td><td>“Logs”</td></tr>
+          <tr><td>Panel title</td><td class="mono">18 / 600</td><td>Action name in the detail panel</td></tr>
+          <tr><td>Description</td><td class="mono">15 / 400</td><td>Line under the page title</td></tr>
+          <tr><td>Body</td><td class="mono">14 / 400–500</td><td>Table cells, nav, controls</td></tr>
+          <tr><td>Meta</td><td class="mono">13 / 400</td><td>Stat line, filter values, panel rows</td></tr>
+          <tr><td>Label</td><td class="mono">12 / 600</td><td>Column headers, chips, footer</td></tr>
+          <tr><td>Caps label</td><td class="mono">11 / 600 / 0.06em</td><td>Sidebar groups, panel sections only</td></tr>
+          <tr><td>Code</td><td class="mono">12 mono</td><td>Slugs and ids</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="note prose">Table body at 14px rather than 16px is deliberate: this is a scanning surface used all day, not reading content, and 16px would cost four rows per screen. Everything outside the table that is meant to be read is 15px or larger. Time and all counts use <code>font-variant-numeric: tabular-nums</code>.</p>
+</section>
+
+<section id="behavior">
+  <h2>Components and behavior</h2>
+  <div class="prose">
+    <h3>Filter bar</h3>
+    <ul>
+      <li><b>Search</b> matches who, action and target. Debounced at 250ms. <kbd>/</kbd> focuses it from anywhere on the page; <kbd>⌘K</kbd> stays global.</li>
+      <li><b>Time range</b> defaults to Today. Presets: Today, Yesterday, Last 7 days, Last 30 days, Custom (two date fields, one format). The button shows the chosen label, or “3–9 Nov” for custom.</li>
+      <li><b>Category</b> is the menu above. Multi-select, immediate apply, counts reflect the other active filters.</li>
+      <li><b>Outcome</b> is Any, Allowed, Refused. The “6 refused” chip sets it to Refused.</li>
+      <li><b>Role</b> is Any, Admin, Supervisor, Leader, System.</li>
+      <li>Every filter writes to the URL (<code>?from=2026-11-03&amp;to=2026-11-03&amp;category=shop-floor&amp;outcome=refused&amp;q=olcha</code>). Back and forward work. A pasted link opens the same view. This is the single most useful thing an audit log can do for a team.</li>
+      <li><b>Export CSV</b> exports the filtered set, and its label carries the count. Over 10 000 rows it asks the user to narrow the range or confirm.</li>
+    </ul>
+  </div>
+
+  <h3>Table columns at 1440px</h3>
+  <div class="scroll" style="max-width:var(--wide)">
+    <table class="tb">
+      <thead><tr><th>Column</th><th class="num">Width</th><th>Content</th><th>Below 1280px</th></tr></thead>
+      <tbody>
+        <tr><td>Time</td><td class="num">96</td><td>HH:MM:SS in the secondary colour, tabular figures. Day separators when the range spans more than one day.</td><td>Stays</td></tr>
+        <tr><td>Who</td><td class="num">250</td><td>Full name on one line. “System” for automated events. Hover shows the full name if it had to ellipsize.</td><td>Stays</td></tr>
+        <tr><td>Role</td><td class="num">110</td><td>Admin, Supervisor, Leader, or an em dash for System. Secondary colour.</td><td>Hidden below 1100</td></tr>
+        <tr><td>Action</td><td class="num">300</td><td>The event phrase as written today, in the primary colour. A “Refused” chip follows it when the outcome is refused.</td><td>Stays</td></tr>
+        <tr><td>Target</td><td class="num">220</td><td>The thing acted on. Cells and other slugs as code; people and documents as text.</td><td>Stays</td></tr>
+        <tr><td>Category</td><td class="num">rest</td><td>Text only, secondary colour. Still filterable when hidden.</td><td>Hidden below 1280</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <h3>Rows and the detail panel</h3>
+    <ul>
+      <li>The whole row is the click target. No chevron column. Cursor changes to pointer and the row lifts to surface-2 on hover.</li>
+      <li>Click, or <kbd>Enter</kbd> on a focused row, opens the panel for that event. The row gets the gold stripe and stays highlighted until the panel closes.</li>
+      <li>The panel is 440px, overlays the right edge, and is not modal. <kbd>↑</kbd> <kbd>↓</kbd> move to the previous or next event; <kbd>Esc</kbd> closes it and returns focus to the row. It slides in over 200ms, or fades when the user prefers reduced motion.</li>
+      <li>Panel contents: category eyebrow, action, outcome chip; who (links to the profile), when (absolute and relative), target (links to the entity); what changed as old → new pairs; context (source, IP, event id with a copy-link button). Refused events add a “Why” line.</li>
+      <li>Refused rows carry a 2px danger stripe on the left and the chip after the action. The row text does not change colour.</li>
+    </ul>
+  </div>
+
+  <h3>States the page must design, not inherit</h3>
+  <div class="scroll" style="max-width:var(--wide)">
+    <table class="tb">
+      <thead><tr><th>State</th><th>What the user sees</th></tr></thead>
+      <tbody>
+        <tr><td>Loading</td><td>Ten skeleton rows at 44px in the table body. The filter bar stays usable. No spinner, no layout jump.</td></tr>
+        <tr><td>No matches</td><td>Inside the table: “No events match these filters.” A “Clear filters” button and the hint “Try a wider time range.”</td></tr>
+        <tr><td>Nothing logged</td><td>“Nothing logged yet. Events appear here as soon as anyone signs in or changes something.”</td></tr>
+        <tr><td>Load failed</td><td>A banner above the table: “Couldn't load events. Retry.” The previous rows stay visible, dimmed, so nothing disappears.</td></tr>
+        <tr><td>New events arrive</td><td>A pill pinned to the top of the table: “12 new events”. Rows never move while the user is reading. Clicking the pill prepends them and scrolls to the top.</td></tr>
+        <tr><td>Panel for a deleted target</td><td>The target line reads “Cell ~olcha-u (deleted)” with no link, instead of a dead link.</td></tr>
+        <tr><td>Exporting</td><td>Button shows a spinner and “Preparing…”, then the browser download starts. The button never disables for more than the request.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <h3>Accessibility</h3>
+    <ul>
+      <li>A real <code>&lt;table&gt;</code> with <code>th scope="col"</code> and a visually hidden caption: “Audit log, 5 626 events on 3 November 2026”.</li>
+      <li>Rows are focusable (<code>tabindex="0"</code>) and announce as buttons that open the event. The panel has <code>role="complementary"</code> and an <code>aria-label</code> with the action and time.</li>
+      <li>Category icons in the sidebar are <code>aria-hidden</code>; every item has visible text.</li>
+      <li>Focus ring on everything: 2px gold, 2px offset. Never removed.</li>
+      <li>Outcome is never colour alone: the refused chip carries the word and the icon.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="build">
+  <h2>Build order</h2>
+  <p class="prose">Four phases. Each one leaves the product better than the last and can ship on its own. Sizes are relative: S is about a day, M a few days, L about a week for one front-end developer who knows the codebase.</p>
+  <div class="phases">
+    <div class="phase">
+      <div class="ph-h"><h3>Phase 0 · Quick wins</h3><span class="size">S</span></div>
+      <dl><dt>Scope</dt><dd>The six quick wins above. No new components.</dd>
+      <dt>Done when</dt><dd class="done">At 1440px nothing on the page ends in an ellipsis, no row shows through the header, one date format is used, and the table is at least 270px wider than today.</dd></dl>
+    </div>
+    <div class="phase">
+      <div class="ph-h"><h3>Phase 1 · Shell and tokens</h3><span class="size">M</span></div>
+      <dl><dt>Scope</dt><dd><ul><li>Token file with the values above, replacing hard-coded colours, radii and greys across the admin area.</li><li>One 240px sidebar with the three groups, collapse to rail, remembered state.</li><li>Top bar: ⌘K, notifications dot, language, theme, help, user. Bug report and chat move into Help.</li><li>Remove the outer “Admin” column or turn it into the workspace switcher (question 4).</li></ul></dd>
+      <dt>Done when</dt><dd class="done">Every admin page renders inside the new shell with no third column, and a grep for hex colours in page styles returns nothing outside the token file.</dd></dl>
+    </div>
+    <div class="phase">
+      <div class="ph-h"><h3>Phase 2 · The Logs page</h3><span class="size">L</span></div>
+      <dl><dt>Scope</dt><dd><ul><li>Filter bar with the five filters, active-filter chips and URL sync.</li><li>Stat line with the refused chip wired to the Outcome filter.</li><li>Table with the six columns, sticky header, 44px rows, responsive column hiding, cursor pagination with “Load 100 more”.</li><li>Detail panel with the before/after payload (needs the API to return old and new values per event).</li><li>Loading, no-match, empty, error states.</li><li>Export of the filtered set with the count in the label.</li></ul></dd>
+      <dt>Done when</dt><dd class="done">At 1280px all six columns fit without horizontal scroll. At 1030px tall at least 16 rows are visible. A refused event can be opened in two clicks from a cold page load (chip, then row). A pasted URL reproduces the same filtered view.</dd></dl>
+    </div>
+    <div class="phase">
+      <div class="ph-h"><h3>Phase 3 · Polish</h3><span class="size">M</span></div>
+      <dl><dt>Scope</dt><dd><ul><li>Live “N new events” pill over a socket or 15s poll.</li><li>Keyboard: <kbd>/</kbd>, <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>Enter</kbd>, <kbd>Esc</kbd>.</li><li>Density toggle (44px / 36px), remembered per user.</li><li>Optional: a 24-bar activity strip under the stat line showing events per hour, to answer “when did it happen” before scrolling.</li><li>Export confirmation above 10 000 rows.</li></ul></dd>
+      <dt>Done when</dt><dd class="done">The page is operable without a mouse from search to panel and back, and new events never move rows under the user.</dd></dl>
+    </div>
+  </div>
+</section>
+
+<section id="questions" class="prose">
+  <h2>Open questions for the team</h2>
+  <p>None of these block phase 0 or phase 1. Phase 2 needs answers to the first two.</p>
+  <ol class="q">
+    <li><b>What is “Action history”, and how is it different from Logs?</b> If it is the same data scoped to the current user, it becomes a “Me” filter on the audit log and the nav item goes. If it is something else (an undo stack, for instance), it needs a name that says so.</li>
+    <li><b>What does the tilde in “~olcha-u” denote?</b> A cell, a line, a workstation? The target column and the panel should name the entity type, and the panel should link to it.</li>
+    <li><b>Should the default range be today or the last 24 hours?</b> A factory with night shifts is better served by a rolling 24 hours; a calendar day splits a shift across two views.</li>
+    <li><b>Is the outer “Admin” sidebar a workspace switcher?</b> If supervisors and leaders see other entries there, it becomes a switcher in the brand row. If “Admin” is the only entry for admins, it goes.</li>
+    <li><b>Volume.</b> 5 626 events in one day is about two million a year. The table needs server-side filtering, cursor pagination and search; the export needs a size limit. Confirm the API can filter by all five dimensions before phase 2 starts.</li>
+  </ol>
+</section>
+</main>
+
+<script>
+(function(){
+  function fit(){
+    document.querySelectorAll('.frame-wrap').forEach(function(w){
+      var f=w.firstElementChild;if(!f)return;
+      var W=+w.dataset.w||1440,H=+w.dataset.h||900;
+      var s=Math.min(1,w.clientWidth/W);
+      f.style.transform='scale('+s+')';
+      w.style.height=Math.round(H*s)+'px';
+    });
+  }
+  window.addEventListener('resize',fit);
+  fit();
+  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(fit);}
+})();
+</script>

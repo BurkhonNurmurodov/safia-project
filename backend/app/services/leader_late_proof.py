@@ -835,7 +835,7 @@ def notify_decided(db: Session, row: LeaderLateProof, *, stage: str,
         chat.fanout(db, chat.LATE, row, nkey, params,
                     author_profile=actor_profile, author_telegram=actor_tid,
                     tone="success" if row.status == APPROVED else "info",
-                    skip_dm=skip_dm)
+                    skip_dm=skip_dm, stage=stage)
     except Exception:
         logger.warning("late-proof decision notice failed", exc_info=True)
 

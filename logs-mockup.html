@@ -1,0 +1,233 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1440"><title>Logs mockup</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><style>html,body{margin:0;background:#0E1116;color-scheme:dark}body{display:grid;place-items:start;padding:0}/* SAFIA IMS mockup — scoped under .sf so it never leaks into the plan page */
+.sf{--bg:#0E1116;--surface:#151A21;--surface-2:#1B2129;--surface-3:#222A34;--border:#262D37;--border-strong:#343C48;--text:#E9ECF1;--text-2:#AAB3BF;--text-3:#8390A0;--accent:#D9A93F;--accent-soft:rgba(217,169,63,.12);--on-accent:#1B1507;--danger:#EF5F66;--danger-soft:rgba(239,95,102,.12);--success:#4CC38A;--success-soft:rgba(76,195,138,.12);--r-s:6px;--r-m:10px;
+font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.4;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;text-align:left}
+.sf *{box-sizing:border-box;margin:0;padding:0;font:inherit;color:inherit}
+.sf a{color:inherit;text-decoration:none}
+.sf button{background:none;border:0;cursor:default;text-align:left}
+.sf svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sf kbd{font:500 11px/1 Inter,system-ui,sans-serif;color:var(--text-3);border:1px solid var(--border-strong);border-radius:4px;padding:3px 5px;background:var(--surface)}
+.sf code{font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface-3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-2)}
+.sf .chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:var(--r-s);font-size:12px;font-weight:500;border:1px solid transparent;white-space:nowrap}
+.sf .chip svg{width:13px;height:13px}
+.sf .chip.danger{color:var(--danger);background:var(--danger-soft);border-color:rgba(239,95,102,.25)}
+.sf .chip.ok{color:var(--success);background:var(--success-soft);border-color:rgba(76,195,138,.25)}
+.sf .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6B4F17,#D9A93F);flex:none}
+.sf .avatar.sm{width:22px;height:22px}
+.sf .eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+
+/* ---- full page ---- */
+.sf .app{display:grid;grid-template-columns:240px 1fr;width:1440px;height:900px;overflow:hidden}
+.sf .sb{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px;min-height:0}
+.sf .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 10px}
+.sf .logo{width:32px;height:32px;border-radius:var(--r-s);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:700;font-size:15px}
+.sf .brand b{display:block;font-size:14px;font-weight:600;letter-spacing:.02em}
+.sf .brand span{display:block;font-size:12px;color:var(--text-3)}
+.sf .brand .collapse{margin-left:auto;color:var(--text-3);width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-s)}
+.sf .grp{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);padding:14px 8px 6px}
+.sf .nav a{display:flex;align-items:center;gap:10px;height:34px;padding:0 8px;border-radius:var(--r-s);color:var(--text-2);font-weight:500}
+.sf .nav a svg{color:var(--text-3)}
+.sf .nav a:hover{background:var(--surface-2);color:var(--text)}
+.sf .nav a.on{background:var(--accent-soft);color:var(--accent)}
+.sf .nav a.on svg{color:var(--accent)}
+.sf .sb-foot{margin-top:auto;padding:8px;font-size:12px;color:var(--text-3)}
+.sf .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.sf .top{height:56px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 24px;background:var(--bg)}
+.sf .cmdk{display:flex;align-items:center;gap:8px;height:36px;width:360px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3)}
+.sf .cmdk kbd{margin-left:auto}
+.sf .top-r{margin-left:auto;display:flex;align-items:center;gap:2px}
+.sf .ib{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--r-s);color:var(--text-2);position:relative}
+.sf .ib.txt{width:auto;padding:0 10px;font-size:12px;font-weight:600;gap:6px;display:flex;align-items:center}
+.sf .ib .dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--danger);border:2px solid var(--bg)}
+.sf .user{display:flex;align-items:center;gap:10px;margin-left:10px;padding-left:14px;border-left:1px solid var(--border);text-align:right}
+.sf .user b{display:block;font-size:13px;font-weight:600}
+.sf .user span{display:block;font-size:11px;color:var(--text-3)}
+.sf .page{padding:24px 32px 0;display:flex;flex-direction:column;min-height:0;flex:1}
+.sf h1{font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+.sf .ph p{color:var(--text-2);font-size:15px;margin-top:4px}
+.sf .bar{display:flex;gap:8px;margin-top:20px;align-items:center}
+.sf .search{display:flex;align-items:center;gap:8px;height:36px;flex:1 1 320px;max-width:440px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3)}
+.sf .search kbd{margin-left:auto}
+.sf .sel{display:flex;align-items:center;gap:6px;height:36px;padding:0 10px 0 12px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3);font-size:13px;font-weight:500;white-space:nowrap}
+.sf .sel b{color:var(--text);font-weight:500}
+.sf .sel svg.ch{color:var(--text-3);width:14px;height:14px}
+.sf .sel.open{border-color:var(--accent);color:var(--text-2)}
+.sf .btn{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--r-s);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:500;margin-left:auto;white-space:nowrap}
+.sf .stats{display:flex;align-items:center;gap:12px;margin:16px 0 12px;font-size:13px;color:var(--text-2)}
+.sf .stats b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.sf .stats .sep{width:1px;height:14px;background:var(--border-strong)}
+.sf .live{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.sf .live i{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px var(--success-soft)}
+.sf .tbl{border:1px solid var(--border);border-radius:var(--r-m);background:var(--surface);overflow:hidden;flex:1;display:flex;flex-direction:column;min-height:0}
+.sf .tscroll{flex:1;overflow:hidden;min-height:0}
+.sf table{width:100%;border-collapse:collapse;table-layout:fixed}
+.sf th{height:40px;text-align:left;font-size:12px;font-weight:600;color:var(--text-3);letter-spacing:.02em;padding:0 12px;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap}
+.sf td{height:44px;padding:0 12px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.sf tbody tr:hover td{background:var(--surface-2)}
+.sf tr.is-sel td{background:var(--accent-soft)}
+.sf tr.is-sel td:first-child{box-shadow:inset 2px 0 var(--accent)}
+.sf tr.is-ref td:first-child{box-shadow:inset 2px 0 var(--danger)}
+.sf td.t{color:var(--text-2);font-variant-numeric:tabular-nums}
+.sf td.w{font-weight:500}
+.sf td.r,.sf td.c{color:var(--text-2)}
+.sf td.a .chip{margin-left:8px;height:20px;font-size:11px;padding:0 6px;vertical-align:middle}
+.sf .tfoot{flex:none;height:40px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border);background:var(--surface);font-variant-numeric:tabular-nums}
+.sf .tfoot a{color:var(--accent);margin-left:auto;font-weight:500}
+
+/* ---- category menu figure ---- */
+.sf.stage-menu{width:520px;height:520px;padding:24px;display:block}
+.sf .menu{width:320px;margin-top:6px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--r-m);box-shadow:0 12px 32px rgba(0,0,0,.45);padding:6px;overflow:hidden}
+.sf .menu-search{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;margin:2px 2px 6px;border:1px solid var(--border);border-radius:var(--r-s);background:var(--surface);color:var(--text-3);font-size:13px}
+.sf .mi{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:var(--r-s);font-size:13px;color:var(--text-2);position:relative}
+.sf .mi:hover{background:var(--surface-3);color:var(--text)}
+.sf .mi.on{color:var(--text)}
+.sf .mi .cb{width:14px;height:14px;border:1.5px solid var(--border-strong);border-radius:3px;flex:none;display:grid;place-items:center;background:var(--surface)}
+.sf .mi .cb.chk{background:var(--accent);border-color:var(--accent)}
+.sf .mi .cb.chk svg{width:11px;height:11px;stroke:var(--on-accent);stroke-width:3}
+.sf .mi .n{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--text-3);font-size:12px}
+.sf .mi .only{position:absolute;right:62px;font-size:11px;color:var(--accent);visibility:hidden}
+.sf .mi:hover .only{visibility:visible}
+.sf .mi.more{color:var(--text-3)}
+.sf .mi.more svg{width:14px;height:14px;transform:rotate(-90deg)}
+.sf .menu-foot{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 4px;margin-top:4px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)}
+.sf .menu-foot a{color:var(--accent);font-weight:500}
+
+/* ---- detail panel figure ---- */
+.sf.stage-drawer{width:560px;height:640px;position:relative;display:block}
+.sf .ghost{position:absolute;left:0;top:0;bottom:0;width:120px;padding:24px 0 0 16px;color:var(--text-3);font-size:13px;opacity:.6}
+.sf .ghost div{height:44px;border-bottom:1px solid var(--border);display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.sf .drawer{position:absolute;right:0;top:0;bottom:0;width:440px;background:var(--surface);border-left:1px solid var(--border-strong);box-shadow:-16px 0 40px rgba(0,0,0,.45);display:flex;flex-direction:column}
+.sf .dh{display:flex;align-items:flex-start;gap:12px;padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+.sf .dh h2{font-size:18px;font-weight:600;margin-top:4px;line-height:1.3}
+.sf .dh .chip{margin-top:8px}
+.sf .dh .ib{margin-left:auto;margin-top:2px;width:32px;height:32px}
+.sf .ds{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+.sf .ds .eyebrow{margin-bottom:2px}
+.sf .kv{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;font-size:13px}
+.sf .kv dt{color:var(--text-3)}
+.sf .kv dd{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}
+.sf .kv .muted{color:var(--text-3)}
+.sf .lnk{margin-left:auto;color:var(--accent);font-weight:500;font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.sf .lnk svg{width:13px;height:13px}
+.sf .diff{width:100%;border-collapse:collapse;font-size:13px}
+.sf .diff th{text-align:left;font-weight:400;color:var(--text-3);padding:6px 0;width:96px;height:auto;background:none;border:0;letter-spacing:0;font-size:13px}
+.sf .diff td{padding:6px 0;height:auto;border:0;white-space:normal}
+.sf .diff .old{color:var(--text-3);text-decoration:line-through;width:90px}
+.sf .diff .arr{color:var(--text-3);width:28px;text-align:center}
+.sf .diff .new{color:var(--text);font-weight:500}
+.sf .df{margin-top:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)}
+.sf .df .hint{display:flex;align-items:center;gap:6px}
+.sf .df kbd{margin:0}
+.sf .df .esc{margin-left:auto}
+</style></head><body><svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+<symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+<symbol id="i-act" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+<symbol id="i-id" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h4M14 14h4"/></symbol>
+<symbol id="i-fac" viewBox="0 0 24 24"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M17 18h1M12 18h1M7 18h1"/></symbol>
+<symbol id="i-pages" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+<symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+<symbol id="i-logs" viewBox="0 0 24 24"><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M15 8h-5M15 12h-5"/></symbol>
+<symbol id="i-mega" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+<symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></symbol>
+<symbol id="i-calx" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9.5 14 5 5M14.5 14l-5 5"/></symbol>
+<symbol id="i-userx" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/></symbol>
+<symbol id="i-grad" viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+</svg>
+<div class="sf"><div class="app">
+<aside class="sb">
+  <div class="brand"><div class="logo">S</div><div><b>SAFIA IMS</b><span>Admin</span></div><span class="collapse"><svg><use href="#i-panel"/></svg></span></div>
+  <nav class="nav">
+    <div class="grp">Daily work</div>
+    <a href="#"><svg><use href="#i-cal"/></svg>Attendance</a>
+    <a href="#"><svg><use href="#i-db"/></svg>Data</a>
+    <a href="#"><svg><use href="#i-act"/></svg>Production</a>
+    <div class="grp">People &amp; access</div>
+    <a href="#"><svg><use href="#i-users"/></svg>Users</a>
+    <a href="#"><svg><use href="#i-id"/></svg>Profiles</a>
+    <a href="#"><svg><use href="#i-fac"/></svg>Factories</a>
+    <a href="#"><svg><use href="#i-pages"/></svg>Pages by role</a>
+    <a href="#"><svg><use href="#i-key"/></svg>Personal grants</a>
+    <a href="#"><svg><use href="#i-hist"/></svg>Action history</a>
+    <a href="#" class="on"><svg><use href="#i-logs"/></svg>Logs</a>
+    <div class="grp">Tools</div>
+    <a href="#"><svg><use href="#i-mega"/></svg>Broadcast</a>
+    <a href="#"><svg><use href="#i-checks"/></svg>Checklist settings</a>
+    <a href="#"><svg><use href="#i-clip"/></svg>Leaders daily tasks</a>
+    <a href="#"><svg><use href="#i-calx"/></svg>Excluded days</a>
+    <a href="#"><svg><use href="#i-userx"/></svg>Excluded leaders</a>
+    <a href="#"><svg><use href="#i-grad"/></svg>Exam</a>
+  </nav>
+  <div class="sb-foot">Version 4.390.2</div>
+</aside>
+<div class="main">
+  <header class="top">
+    <div class="cmdk"><svg><use href="#i-search"/></svg>Search pages, cells, people…<kbd>⌘K</kbd></div>
+    <div class="top-r">
+      <span class="ib"><svg><use href="#i-bell"/></svg><i class="dot"></i></span>
+      <span class="ib txt"><svg><use href="#i-globe"/></svg>EN</span>
+      <span class="ib"><svg><use href="#i-sun"/></svg></span>
+      <span class="ib"><svg><use href="#i-help"/></svg></span>
+      <div class="user"><div><b>Burkhon Nurmurodov</b><span>Admin</span></div><div class="avatar"></div></div>
+    </div>
+  </header>
+  <div class="page">
+    <div class="ph"><h1>Logs</h1><p>Who changed what, and when, across the whole platform.</p></div>
+    <div class="bar">
+      <div class="search"><svg><use href="#i-search"/></svg>Search who, action or target<kbd>/</kbd></div>
+      <button class="sel"><svg><use href="#i-cal"/></svg><b>Today</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Category <b>All</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Outcome <b>Any</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="sel">Role <b>Any</b><svg class="ch"><use href="#i-chev"/></svg></button>
+      <button class="btn"><svg><use href="#i-dl"/></svg>Export CSV</button>
+    </div>
+    <div class="stats">
+      <span><b>5 626</b> events</span><i class="sep"></i>
+      <span><b>200</b> people</span><i class="sep"></i>
+      <button class="chip danger"><svg><use href="#i-ban"/></svg>6 refused</button>
+      <span class="live"><i></i>Live · last event 10:33:00</span>
+    </div>
+    <div class="tbl">
+      <div class="tscroll">
+      <table>
+        <colgroup><col style="width:96px"><col style="width:250px"><col style="width:110px"><col style="width:300px"><col style="width:220px"><col></colgroup>
+        <thead><tr><th>Time</th><th>Who</th><th>Role</th><th>Action</th><th>Target</th><th>Category</th></tr></thead>
+        <tbody>
+          <tr class="is-sel"><td class="t">10:33:00</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~olcha-u</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:57</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~ejaveyl</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:54</td><td class="w">Saidova Khosiyatkhon Erkinovna</td><td class="r">Leader</td><td class="a">Signed in via Telegram</td><td>Saidova Khosiyatkhon E.</td><td class="c">Sign-ins</td></tr>
+          <tr><td class="t">10:32:54</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~malina</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:32:44</td><td class="w">Yakubova Nafisa Nasirovna</td><td class="r">Leader</td><td class="a">Worker concern filed</td><td>Smarov Dilshod</td><td class="c">Tasks and concerns</td></tr>
+          <tr><td class="t">10:32:12</td><td class="w">Akhmirzayeva Nilufar Kamolovna</td><td class="r">Leader</td><td class="a">Signed in via Telegram</td><td>Akhmirzayeva Nilufar K.</td><td class="c">Sign-ins</td></tr>
+          <tr><td class="t">10:32:11</td><td class="w">Kulboyeva Djumagul Sattorovna</td><td class="r">Leader</td><td class="a">Session role switched</td><td>Akhmirzayeva Nilufar K.</td><td class="c">People and access</td></tr>
+          <tr><td class="t">10:31:53</td><td class="w">Butabekov Aleksey Sergeyevich</td><td class="r">Leader</td><td class="a">Proof photo taken</td><td>Butabekov Aleksey S.</td><td class="c">Leader review</td></tr>
+          <tr class="is-ref"><td class="t">10:31:40</td><td class="w">Tashkentov Bobur</td><td class="r">Supervisor</td><td class="a">Plan override set<span class="chip danger">Refused</span></td><td><code>~olcha-u</code></td><td class="c">Shop floor</td></tr>
+          <tr><td class="t">10:31:12</td><td class="w">Rahimova Gulnora Baxtiyorovna</td><td class="r">Leader</td><td class="a">Shift check-in marked</td><td><code>~beshariq</code></td><td class="c">Attendance</td></tr>
+          <tr><td class="t">10:30:58</td><td class="w">System</td><td class="r">—</td><td class="a">Export to 1C completed</td><td>Daily production, 3 Nov</td><td class="c">Sync and export</td></tr>
+          <tr><td class="t">10:30:31</td><td class="w">Karimov Jasur Olimovich</td><td class="r">Leader</td><td class="a">Checklist item completed</td><td><code>~malina</code></td><td class="c">Leader review</td></tr>
+          <tr><td class="t">10:30:05</td><td class="w">Nurmurodov Burkhon</td><td class="r">Admin</td><td class="a">Document uploaded</td><td>Safety brief, November.pdf</td><td class="c">Documents</td></tr>
+          <tr><td class="t">10:29:47</td><td class="w">Akhmedova Munisa</td><td class="r">Supervisor</td><td class="a">Plan override set</td><td><code>~ejaveyl</code></td><td class="c">Shop floor</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="tfoot">Showing 1–100 of 5 626 events<a href="#">Load 100 more</a></div>
+    </div>
+  </div>
+</div>
+</div></div>
+</body></html>

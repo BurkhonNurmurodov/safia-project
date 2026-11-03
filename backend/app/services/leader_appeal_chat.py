@@ -549,7 +549,8 @@ def open_chat_markup(thread: str, thread_id: int, lang: str):
 def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
            author_profile: str | None = None, author_telegram: int | None = None,
            tone: str = "info", skip_dm: set[int] | None = None,
-           skip_profiles: set[str] | None = None) -> set[int]:
+           skip_profiles: set[str] | None = None,
+           stage: str | None = None) -> set[int]:
     """Tell all three parties — the leader, the unit's brigadir and EVERY admin
     (the operator's ruling) — and everybody an admin brought in, each with the
     button onto the chat.
@@ -561,10 +562,16 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     `skip_profiles` are people told about this event some other way — the ones
     a message has just brought in, who get the invitation instead.
 
+    The DM is the rich card of `leader_appeal_rich` (2026-11-03), drawn per
+    reader — the leader is not told their own name — with the classic card
+    as its fallback; `stage` names the ruling's stage for the «who ruled, as
+    what» row. The bell row keeps the template.
+
     Never fatal, and never raises into a ruling somebody already made.
     """
     from app.identity import profile_key
     from app.routers.staff import notify_profile
+    from app.services import leader_appeal_rich as card
     dmed: set[int] = set(skip_dm or ())
     if author_telegram:
         dmed.add(int(author_telegram))
@@ -577,8 +584,10 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     subject = (subject_kind(thread), row.id)
 
     targets = []
+    leader_key = None
     if getattr(row, "leader_id", None):
-        targets.append(profile_key("leader", int(row.leader_id)))
+        leader_key = profile_key("leader", int(row.leader_id))
+        targets.append(leader_key)
     if getattr(row, "manager_id", None):
         targets.append(profile_key("supervisor", int(row.manager_id)))
     try:
@@ -605,9 +614,12 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     for key in targets:
         if not key or key == author_profile or key in skip:
             continue
+        rich_fn, html_fn = card.fns(thread, row, nkey, params, stage=stage,
+                                    to_leader=(key == leader_key))
         try:
             got = notify_profile(db, key, nkey, params, type=tone,
                                  skip_accounts=dmed, markup_fn=markup,
+                                 rich_fn=rich_fn, html_fn=html_fn,
                                  subject=subject) or set()
             dmed |= got
             told |= got
@@ -618,11 +630,13 @@ def fanout(db: Session, thread: str, row, nkey: str, params: dict, *,
     # and neither has a login granted «Lider nazorati — admin» on its own.
     lone = [int(a.telegram_id) for a in admins if not a.profile_id and a.telegram_id]
     lone += sorted(grant_ids)
+    rich_fn, html_fn = card.fns(thread, row, nkey, params, stage=stage)
     for tid in lone:
         if tid in dmed:
             continue
         try:
-            _notify_account(db, tid, nkey, params, tone, markup, subject=subject)
+            _notify_account(db, tid, nkey, params, tone, markup, subject=subject,
+                            rich_fn=rich_fn, html_fn=html_fn)
             dmed.add(tid)
             told.add(tid)
         except Exception:
@@ -638,13 +652,20 @@ def notify_invited(db: Session, thread: str, row, keys: list[str], nkey: str,
                    params: dict, *, author_telegram: int | None = None) -> None:
     """Tell each person an admin has just brought in that they are in — with
     the message that named them and the button onto the chat. Never fatal."""
+    from app.identity import profile_key
     from app.routers.staff import notify_profile
+    from app.services import leader_appeal_rich as card
     dmed: set[int] = {int(author_telegram)} if author_telegram else set()
+    leader_key = (profile_key("leader", int(row.leader_id))
+                  if getattr(row, "leader_id", None) else None)
     for key in keys:
+        rich_fn, html_fn = card.fns(thread, row, nkey, params,
+                                    to_leader=(key == leader_key))
         try:
             dmed |= notify_profile(
                 db, key, nkey, params, type="info", skip_accounts=dmed,
                 markup_fn=lambda lang: open_chat_markup(thread, row.id, lang),
+                rich_fn=rich_fn, html_fn=html_fn,
                 subject=(subject_kind(thread), row.id)) or set()
         except Exception:
             logger.warning("appeal invite notice to %s failed", key, exc_info=True)
@@ -655,9 +676,11 @@ def notify_invited(db: Session, thread: str, row, keys: list[str], nkey: str,
 
 
 def _notify_account(db: Session, tid: int, nkey: str, params: dict, tone: str,
-                    markup_fn, subject=None) -> None:
+                    markup_fn, subject=None, rich_fn=None, html_fn=None) -> None:
     """Bell row + DM for one ACCOUNT, with the chat button — the admin-without-
-    a-profile case `notify_profile` cannot address."""
+    a-profile case `notify_profile` cannot address. `rich_fn` / `html_fn` are
+    the card and its classic twin, guarded as `notify_profile` guards them: a
+    card that cannot be built costs the card, never the DM."""
     from app.notify_ctx import notifications_suppressed
     from app.routers.staff import _get_user_lang, _mk_notif, _mk_notif_tg, _notify
     if notifications_suppressed():
@@ -666,8 +689,20 @@ def _notify_account(db: Session, tid: int, nkey: str, params: dict, tone: str,
     from app.telegram_bot import send_tg_notification
     lang = _get_user_lang(db, tid)
     title, body = _mk_notif(nkey, params, lang)
-    send_tg_notification(tid, title, body, html=_mk_notif_tg(nkey, params, lang),
-                         markup=markup_fn(lang))
+    html = rich = None
+    if html_fn is not None:
+        try:
+            html = html_fn(lang)
+        except Exception:
+            logger.exception("appeal notice: html build failed for %s", nkey)
+    if rich_fn is not None:
+        try:
+            rich = rich_fn(lang)
+        except Exception:
+            logger.exception("appeal notice: rich build failed for %s", nkey)
+    send_tg_notification(tid, title, body,
+                         html=html if html is not None else _mk_notif_tg(nkey, params, lang),
+                         markup=markup_fn(lang), rich=rich)
 
 
 def subject_kind(thread: str) -> str:

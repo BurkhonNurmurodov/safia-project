@@ -769,7 +769,7 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str,
         chat.fanout(db, chat.DISPUTE, d, nkey, params,
                     author_profile=actor_profile, author_telegram=actor_tid,
                     tone="success" if d.status == APPROVED else "info",
-                    skip_dm=skip_dm)
+                    skip_dm=skip_dm, stage=stage)
     except Exception:
         logger.warning("leader-dispute: decision notice failed", exc_info=True)
 
