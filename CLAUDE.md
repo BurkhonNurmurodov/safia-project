@@ -3897,9 +3897,16 @@ for every tab, kept 60 s like /api/leaders-kpi; `POST …/export.xlsx` →
   line («12.4 punkt zaxira»), last month beside it, the way to the cells /
   records dialog; the big ring, the share HR pays on, the payout note.
   Faces: unit profile photos (`supervisor:<id>`, the /leaders read); a
-  Verifix-only brigadir keeps initials. The month before is read on the
+  Verifix-only brigadir keeps initials. A name on the wall is never cut: a
+  word of eight letters or more may break at a soft hyphen (`wallName`), two
+  lines at most, four tiles to a phone row. The month before is read on the
   board only from `START_MONTH`, and compared only when it counted the same
-  gates the same way (`comparableMonths`). Nothing computes a score.
+  gates the same way (`comparableMonths`); a brigadir missing from it reads
+  «yangi». The board says passed / failed in words of its own (`gPass` /
+  `gFail` — the tabs' «Да / Нет» chips read wrong as a verdict). Checked on
+  2026-11-03 against sample months through a local proxy (desktop 1280 /
+  1440, tablet 800, phone 384; uz · ru; dark · light; empty, three rows,
+  nobody through). Nothing computes a score.
 
 ## «Brigadirlar reytingi» on real data (`/leaderboard`, 2026-10-23)
 

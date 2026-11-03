@@ -35,7 +35,7 @@ function GateCell({ row, k, live, T }) {
   const s = gateOf(row, k, live);
   const Icon = STATE_ICON[s];
   const v = figureOfGate(row, k);
-  const word = { pass: T.pass, fail: T.fail, nodata: T.gNoData }[s];
+  const word = { pass: T.gPass, fail: T.gFail, nodata: T.gNoData }[s];
   return (
     <span className="inline-flex items-center gap-2" title={`${T.kpi[k]}: ${v == null ? "—" : pct1(v)} · ${word}`}>
       <Icon size={16} strokeWidth={2.25} style={{ color: GATE_INK[s] }} aria-hidden />
@@ -49,7 +49,7 @@ function GateCell({ row, k, live, T }) {
 
 const ringLabel = (row, live, T) => fill(T.bdRingAria, {
   n: GATES.filter((k) => gateOf(row, k, live) === "pass").length, of: row.of ?? 4,
-  list: GATES.map((k) => `${T.kpi[k]}: ${{ pass: T.pass, fail: T.fail, nodata: T.gNoData, pending: T.notYet }[gateOf(row, k, live)]}`).join(", "),
+  list: GATES.map((k) => `${T.kpi[k]}: ${{ pass: T.gPass, fail: T.gFail, nodata: T.gNoData, pending: T.notYet }[gateOf(row, k, live)]}`).join(", "),
 });
 
 export default function BkpiBoard({ T, tl, data, rows, prev, sort, onSort, onOpen, onRules, photoVers }) {
@@ -173,12 +173,14 @@ export default function BkpiBoard({ T, tl, data, rows, prev, sort, onSort, onOpe
                     <span className="block text-xs mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
                       {x.kind === "verifix" ? T.srcVerifix : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
                     </span>
-                    <span className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                    {/* Label and verdict in two columns, so the figures
+                        line up from one gate to the next. */}
+                    <span className="grid grid-cols-[max-content_auto] items-center gap-x-3 gap-y-1 mt-2">
                       {live.map((k) => (
-                        <span key={k} className="inline-flex items-center gap-1.5 text-xs">
-                          <span style={{ color: "var(--text-3)" }}>{T.tabs[k]}</span>
+                        <Fragment key={k}>
+                          <span className="text-xs" style={{ color: "var(--text-3)" }}>{T.tabs[k]}</span>
                           <GateCell row={x} k={k} live={live} T={T} />
-                        </span>
+                        </Fragment>
                       ))}
                     </span>
                   </span>

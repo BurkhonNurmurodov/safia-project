@@ -12,7 +12,7 @@ import ProfileAvatar from "../ui/ProfileAvatar";
 import { useTheme } from "../../context/ThemeContext";
 import useIsMobile from "../../hooks/useIsMobile";
 import useElementWidth from "../../hooks/useElementWidth";
-import { softHyphenate, surnameInitial } from "../../utils/personName";
+import { surnameInitial } from "../../utils/personName";
 import { fill } from "../../pages/brigadirsKpiText";
 import { Delta } from "../kpi/KpiBits";
 import { hexA, medalOf } from "../kpi/kpiUtil";
@@ -29,6 +29,13 @@ export function BrigAvatar({ row, tl, photoVers, size = 28 }) {
 }
 
 // ── the honour wall ─────────────────────────────────────────────────────────
+// A wall tile is narrow (56px of text on a phone), so any word of eight
+// letters or more may break — at a soft hyphen, three letters in from either
+// end — rather than be cut: «Ibragi-mova S.», never «Ibragimov».
+const SHY = "\u00AD";
+const wallName = (s) => String(s).replace(/\S{8,}/g, (w) => [...w]
+  .map((ch, i, a) => (i >= 3 && a.length - i >= 3 ? SHY + ch : ch)).join(""));
+
 export function HonorWall({ rows, live, T, tl, photoVers, onPick, onShowAll }) {
   const { theme } = useTheme();
   const phone = useIsMobile();
@@ -69,17 +76,15 @@ export function HonorWall({ rows, live, T, tl, photoVers, onPick, onShowAll }) {
                 <button type="button" onClick={() => onPick(x)} title={name}
                   aria-label={fill(T.bdWallOpen, { name })}
                   className="flex flex-col items-center rounded-xl px-1 py-1.5 outline-none transition-transform duration-200 motion-safe:hover:-translate-y-0.5 hover:bg-[var(--bg-inner)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
-                  style={{ width: phone ? 64 : 88 }}>
+                  style={{ width: phone ? 76 : 88 }}>
                   <span className="rounded-full" style={{ padding: 2.5, background: `linear-gradient(160deg, ${hexA(gold, 1)}, ${hexA(gold, 0.35)})` }}>
                     <span className="block rounded-full" style={{ padding: 2, background: "var(--bg-card)" }}>
                       <BrigAvatar row={x} tl={tl} photoVers={photoVers} size={size} />
                     </span>
                   </span>
-                  {/* Two lines at most, never cut: a long surname breaks
-                      at a soft hyphen («Mirmakhmu-dova M.»), the initial
-                      goes under it. */}
+                  {/* Two lines at most, never cut (see wallName). */}
                   <span className="mt-1.5 text-xs font-medium leading-tight max-w-full text-center line-clamp-2" style={{ color: "var(--text-1)" }}>
-                    {softHyphenate(surnameInitial(name))}
+                    {wallName(surnameInitial(name))}
                   </span>
                   <span className="text-[11px] max-w-full truncate" style={{ color: "var(--text-3)" }}>
                     {x.kind === "verifix" ? T.srcVerifix : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
@@ -92,7 +97,7 @@ export function HonorWall({ rows, live, T, tl, photoVers, onPick, onShowAll }) {
             <li>
               <button type="button" onClick={onShowAll} aria-label={fill(T.bdWallMoreAria, { n: more })}
                 className="flex flex-col items-center rounded-xl px-1 py-1.5 outline-none hover:bg-[var(--bg-inner)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
-                style={{ width: phone ? 64 : 88 }}>
+                style={{ width: phone ? 76 : 88 }}>
                 <span className="inline-grid place-items-center rounded-full text-sm font-semibold tabular-nums"
                   style={{ width: size + 9, height: size + 9, color: gold, background: hexA(gold, 0.1), boxShadow: `inset 0 0 0 1.5px ${hexA(gold, 0.45)}` }}>
                   +{more}

@@ -72,7 +72,7 @@ function GateBlock({ k, row, prevRow, data, live, T, on, setActive, onOpen }) {
   const Icon = STATE_ICON[state];
   const ink = state === "pending" ? "var(--text-4)" : GATE_INK[state];
   const v = figureOfGate(row, k);
-  const word = { pass: T.pass, fail: T.fail, nodata: T.gNoData, pending: T.notYet }[state];
+  const word = { pass: T.gPass, fail: T.gFail, nodata: T.gNoData, pending: T.notYet }[state];
   const prevState = prevRow ? gateOf(prevRow, k, live) : null;
   const prevV = prevRow ? figureOfGate(prevRow, k) : null;
 
@@ -101,7 +101,7 @@ function GateBlock({ k, row, prevRow, data, live, T, on, setActive, onOpen }) {
           style={{ background: state === "pending" ? "var(--border)" : `${GATE_INK[state]}1f`, color: ink }}>
           {state === "pending" ? <CircleDashed size={15} /> : <Icon size={15} strokeWidth={2.25} />}
         </span>
-        <h4 className="flex-1 min-w-0 text-sm font-medium truncate" style={{ color: state === "pending" ? "var(--text-3)" : "var(--text-1)" }}>
+        <h4 className="flex-1 min-w-0 text-sm font-medium leading-snug" style={{ color: state === "pending" ? "var(--text-3)" : "var(--text-1)" }}>
           {T.kpi[k]}
         </h4>
         <span className="text-xs font-semibold whitespace-nowrap" style={{ color: state === "pending" || state === "nodata" ? "var(--text-3)" : ink }}>{word}</span>
@@ -119,7 +119,7 @@ function GateBlock({ k, row, prevRow, data, live, T, on, setActive, onOpen }) {
         {facts && <p className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{facts}</p>}
         {prevRow && state !== "pending" && (
           <p className="text-xs tabular-nums inline-flex items-center gap-1.5 flex-wrap" style={{ color: "var(--text-3)" }}>
-            {fill(T.bdPrevLine, { v: prevV == null ? "—" : pct1(prevV), verdict: { pass: T.pass, fail: T.fail, nodata: T.gNoData }[prevState] || "—" })}
+            {fill(T.bdPrevLine, { v: prevV == null ? "—" : pct1(prevV), verdict: { pass: T.gPass, fail: T.gFail, nodata: T.gNoData }[prevState] || "—" })}
             {/* An arrow only where higher is better: «up» is painted green,
                 and a turnover that fell must never wear a rising arrow. */}
             {prevV != null && v != null && !LOWER_PASSES[k] && (
@@ -148,7 +148,7 @@ export default function BkpiPanel({ row, prevRow, data, live, T, onOpen }) {
   const prevPassed = prevRow ? GATES.filter((k) => gateOf(prevRow, k, live) === "pass").length : null;
   const ringLabel = fill(T.bdRingAria, {
     n: passed, of: row.of ?? 4,
-    list: GATES.map((k) => `${T.kpi[k]}: ${{ pass: T.pass, fail: T.fail, nodata: T.gNoData, pending: T.notYet }[gateOf(row, k, live)]}`).join(", "),
+    list: GATES.map((k) => `${T.kpi[k]}: ${{ pass: T.gPass, fail: T.gFail, nodata: T.gNoData, pending: T.notYet }[gateOf(row, k, live)]}`).join(", "),
   });
   return (
     <div className="grid gap-x-8 gap-y-4 px-2 py-4 sm:px-4 sm:py-5 lg:grid-cols-[minmax(0,1fr)_260px] items-start">

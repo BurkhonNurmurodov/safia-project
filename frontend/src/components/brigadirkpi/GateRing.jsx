@@ -31,9 +31,13 @@ export default function GateRing({ row, live, size = 28, stroke, active = null, 
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="absolute inset-0">
         {GATES.map((k, i) => {
           const s = gateOf(row, k, live);
-          const from = -90 + i * 90 + gap / 2;
-          const to = -90 + (i + 1) * 90 - gap / 2;
           const on = active === k;
+          // A round cap reaches half a stroke past its end, so each solid
+          // quarter is drawn short by that much — or the caps close the gaps
+          // and four verdicts read as one arc.
+          const cap = s === "pending" ? 0 : (((on ? sw + (big ? 4 : 1.5) : sw) / 2) / r) * (180 / Math.PI);
+          const from = -90 + i * 90 + gap / 2 + cap;
+          const to = -90 + (i + 1) * 90 - gap / 2 - cap;
           if (s === "pending") {
             return (
               <path key={k} d={arc(c, c, r, from, to)} fill="none" stroke="var(--text-4)" strokeOpacity={on ? 0.9 : 0.55}
