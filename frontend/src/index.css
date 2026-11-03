@@ -886,14 +886,15 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
      --glow  the cloud and the day tile's body (500 shades, both themes);
      --cloud the cloud alone where --glow reads as a shadow (gold → brown,
              slate → grey) — a lighter tone of the same colour.
-   The clouds and the backdrop are kept faint on the operator's word (too much
-   «background shadow», 2026-11-03).
+   The clouds are kept faint on the operator's word (too much «background
+   shadow», 2026-11-03).
    The look (2026-11-03, the operator's pick of two mock-ups): a glass tile on a
    coloured cloud by day, a dark glass tile with a neon glyph and a glow by
-   night, over safiabakery.uz's warm cream with drifting gold light and gold
-   dust. Motion is slow on purpose («loyalty, peace, premium»): the tiles
-   gather in on arrival, the clouds breathe and turn one after another as a
-   slow wave, a band of light passes over the tiles in turn, the dust rises.
+   night, over a golden backdrop with Safia's treats floating in it (the
+   operator's reference; dimmed under a veil by night, with gold dust). Motion
+   is slow on purpose («loyalty, peace, premium»): the tiles gather in on
+   arrival, the clouds breathe and turn one after another as a slow wave, a
+   band of light passes over the tiles in turn, the treats bob and turn.
    Only opacity and transforms ever animate — no filter, blur or shadow — so a
    phone's compositor carries it all; prefers-reduced-motion stills it. */
 /* The grid sits a little above the middle of the screen, where a home screen
@@ -1053,7 +1054,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-app-hue="pink"]    { --hue: 244,114,182; --glow: 236,72,153; }
 [data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; }
 [data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; }
-[data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; }
+[data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; --glow: 184,128,40; } /* deeper by day: the ground is gold */
 [data-theme="light"] [data-app-hue="blue"]    { --hue: 29,78,216; }
 [data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
 [data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
@@ -1067,47 +1068,72 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; }
 [data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; }
 
-/* The backdrop (Layout's `backdrop`, under the header): the site's warm base
-   with three wide pools of light drifting over a minute or so, and gold dust
-   rising. Night keeps the gold and adds a faint cool depth. Each pool is its
-   own GPU layer, so their size is capped: a phone's WebView pays for every
-   pixel of them at its device pixel ratio. */
+/* The backdrop (Layout's `backdrop`, under the header;
+   components/launcher/LauncherBackdrop.jsx). The operator's reference
+   (2026-11-03): by day a warm golden gradient with Safia's treats — a takeaway
+   cup, macarons, a donut, a croissant, beans — floating at different depths,
+   near ones sharp with a soft shadow, far ones out of focus; «don't worry
+   about shadows» there. By night the same scene behind a dark veil, under a
+   faint gold light and rising gold dust. The treats bob and turn a few degrees
+   over twenty-odd seconds; each is its own small GPU layer, and the light
+   pools are size-capped ones: a phone's WebView pays for every pixel of them
+   at its device pixel ratio. */
 .apps-backdrop {
   position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background: linear-gradient(160deg, #1c1712 0%, #15130f 45%, #0f1117 100%);
   animation: appsFade 1.4s var(--ease-out) both;
 }
+[data-theme="light"] .apps-backdrop {
+  background: linear-gradient(155deg, #e4b871 0%, #edc98f 38%, #f4dcb5 70%, #f8ead4 100%);
+}
 @keyframes appsFade { from { opacity: 0; } }
+/* One gradient for every pool (--c colour, --a its strength), eased in steps:
+   a straight fade to nothing reads as a disc with an edge. */
 .apps-light {
   position: absolute; border-radius: 50%; aspect-ratio: 1;
   width: min(80vmax, 1000px); will-change: transform;
-}
-/* One gradient for all three (--c colour, --a its strength), eased in steps:
-   a straight fade to nothing reads as a disc with an edge. */
-.apps-light {
   background: radial-gradient(closest-side, rgba(var(--c), var(--a)), rgba(var(--c), calc(var(--a) * .55)) 38%,
                               rgba(var(--c), calc(var(--a) * .2)) 68%, rgba(var(--c), 0));
 }
-.apps-light--a { left: -22%; top: -48%; --c: 200,151,63; --a: .07; animation: lightA 48s ease-in-out infinite alternate; }
-.apps-light--b { right: -26%; bottom: -58%; --c: 99,102,241; --a: .045; animation: lightB 60s ease-in-out infinite alternate; }
-/* The third pool — a white glow — is day only: faint gold on near-black bands
-   into a visible ring. */
+/* Night: a faint gold light. Day: a soft white sheen drifting over the gold. */
+.apps-light--a { left: -22%; top: -48%; --c: 200,151,63; --a: .10; animation: lightA 48s ease-in-out infinite alternate; }
 .apps-light--c {
-  display: none; left: 28%; top: 22%; width: min(52vmax, 700px);
+  display: none; left: 30%; top: 20%; width: min(60vmax, 800px); --c: 255,250,240; --a: .45;
   animation: lightC 54s ease-in-out infinite alternate;
 }
-[data-theme="light"] .apps-light--a { --c: 213,178,111; --a: .12; }
-[data-theme="light"] .apps-light--b { --c: 220,195,139; --a: .10; }
-[data-theme="light"] .apps-light--c { display: block; --c: 255,255,255; --a: .6; }
+[data-theme="light"] .apps-light--a { display: none; }
+[data-theme="light"] .apps-light--c { display: block; }
 @keyframes lightA { to { translate: 14% 18%; scale: 1.12; } }
-@keyframes lightB { to { translate: -16% -12%; scale: .9; } }
 @keyframes lightC { to { translate: -18% 10%; scale: 1.15; } }
+
+/* A floating treat: `--size` px, tilted `--tilt`, bobbing up and turning a
+   few degrees; every other one swings the other way. */
+.apps-float {
+  position: absolute; width: var(--size); height: var(--size);
+  rotate: var(--tilt);
+  animation: floatBob 22s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.apps-float:nth-of-type(even) { animation-direction: alternate-reverse; }
+.apps-float svg { display: block; overflow: visible; }
+@keyframes floatBob {
+  from { translate: 0 0;        rotate: var(--tilt); }
+  to   { translate: 12px -28px; rotate: calc(var(--tilt) + 8deg); }
+}
+@media (max-width: 559px) {
+  .apps-float { width: calc(var(--size) * .62); height: calc(var(--size) * .62); }
+  .apps-float--wide { display: none; }
+}
+/* Night: the scene stays, dimmed under a veil, so the neon tiles lead. */
+.apps-veil { position: absolute; inset: 0; background: rgba(15,17,23,.66); }
+[data-theme="light"] .apps-veil { display: none; }
 
 .apps-mote {
   position: absolute; border-radius: 50%; opacity: 0;
   background: rgba(232,196,122,.9); box-shadow: 0 0 6px rgba(232,196,122,.7);
   animation: moteRise 22s linear infinite; will-change: transform, opacity;
 }
-[data-theme="light"] .apps-mote { background: rgba(176,120,40,.5); box-shadow: none; }
+[data-theme="light"] .apps-mote { display: none; }
 @keyframes moteRise {
   0%   { opacity: 0;   translate: 0 0; }
   15%  { opacity: .85; }
@@ -1128,7 +1154,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .hdr-apps:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
 
 @media (prefers-reduced-motion: reduce) {
-  .apps-grid > li, .apps-backdrop, .apps-light, .app-aura::before, .app-sheen::after { animation: none; }
+  .apps-grid > li, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
   .apps-mote, .app-badge::after { display: none; }
   .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
   .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }
