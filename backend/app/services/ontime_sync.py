@@ -40,9 +40,9 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models import (
     OntimeDemand, OntimeMaterial, OntimeRead, OntimeReceipt, OntimeTracked, OntimeWindow,
     SheetSource,
@@ -68,6 +68,16 @@ MAX_WAVE = 9
 
 _lock = threading.Lock()
 
+# A read holds this Postgres advisory lock on a connection of its own for as
+# long as it runs. A deploy that retires the worker mid-read kills the thread
+# AND the connection, so Postgres drops the lock at once — which is how an open
+# `ontime_reads` row is told apart from a read still going (2026-11-03: reads
+# cut off at 17:20 on 2 and 3 Nov kept «reading…» up for 30 minutes and lost
+# that read). Off Postgres, the 30-minute rule alone answers.
+_READ_LOCK_KEY = 8_140_573_112_020_603   # arbitrary, must not collide app-wide
+_NO_LOCK = object()
+INTERRUPTED = "interrupted"
+
 
 # ── when a read last happened ────────────────────────────────────────────────
 
@@ -88,9 +98,66 @@ def last_read(db, ok_only: bool = False) -> Optional[OntimeRead]:
     return q.order_by(OntimeRead.id.desc()).first()
 
 
+def _claim():
+    """The read lock: the Connection holding it, None when a read is already
+    running somewhere (this copy or another), `_NO_LOCK` off Postgres."""
+    if engine.dialect.name != "postgresql":
+        return _NO_LOCK
+    try:
+        conn = engine.connect()
+    except Exception:  # noqa: BLE001
+        log.exception("ontime: no connection to claim the read lock on")
+        return None
+    try:
+        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _READ_LOCK_KEY}).scalar())
+        conn.commit()
+    except Exception:  # noqa: BLE001
+        log.exception("ontime: could not ask for the read lock")
+        got = False
+    if got:
+        return conn
+    conn.close()
+    return None
+
+
+def _release(conn) -> None:
+    """Let go of the lock ON THE CONNECTION THAT TOOK IT; a connection that
+    cannot be shown to have released it is discarded, never pooled."""
+    if conn is None or conn is _NO_LOCK:
+        return
+    try:
+        released = conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _READ_LOCK_KEY}).scalar()
+        conn.commit()
+        if released:
+            conn.close()
+            return
+    except Exception:  # noqa: BLE001
+        log.debug("ontime: read unlock failed", exc_info=True)
+    try:
+        conn.invalidate()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _lock_held(db) -> Optional[bool]:
+    """Is a read holding the lock right now (any process)? None off Postgres."""
+    if engine.dialect.name != "postgresql":
+        return None
+    k = _READ_LOCK_KEY
+    try:
+        return bool(db.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted "
+            "AND classid = :hi AND objid = :lo AND objsubid = 1)"),
+            {"hi": k >> 32, "lo": k & 0xFFFFFFFF}).scalar())
+    except Exception:  # noqa: BLE001
+        log.debug("ontime: could not look at the read lock", exc_info=True)
+        return None
+
+
 def running(db) -> bool:
     """A read in progress (here or in the other copy during a deploy). A row
-    left open by a process that died is not a read in progress."""
+    left open by a process that died is not a read in progress: its lock went
+    with its connection."""
     rd = last_read(db)
     if rd is None or rd.finished_at is not None:
         return False
@@ -99,7 +166,26 @@ def running(db) -> bool:
         return False
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
-    return now_aware() - started < STALE_RUNNING
+    if now_aware() - started >= STALE_RUNNING:
+        return False
+    held = _lock_held(db)
+    return True if held is None else held
+
+
+def close_interrupted(db) -> int:
+    """Close every open read no live read holds the lock for — a read a
+    restart cut off — as failed («interrupted»). Returns how many."""
+    if _lock_held(db) is not False:
+        return 0
+    rows = db.query(OntimeRead).filter(OntimeRead.finished_at.is_(None)).all()
+    for r in rows:
+        r.finished_at = now_aware()
+        r.ok = False
+        r.error = f"{INTERRUPTED}: the server restarted during the read"
+    if rows:
+        db.commit()
+        log.warning("ontime: closed %s read(s) a restart cut off", len(rows))
+    return len(rows)
 
 
 def read_state(db) -> dict:
@@ -553,11 +639,16 @@ def run_read(trigger: str) -> dict:
     second copy during a deploy). Never raises."""
     if not _lock.acquire(blocking=False):
         return {"started": False, "reason": "busy"}
+    held = _claim()
+    if held is None:
+        _lock.release()
+        return {"started": False, "reason": "busy"}
     db = SessionLocal()
     rd = None
     try:
-        if running(db):
+        if held is _NO_LOCK and running(db):
             return {"started": False, "reason": "busy"}
+        close_interrupted(db)       # this read holds the lock: any open row is a dead one
         sid = sheet_id(db)
         if not sid:
             return {"started": False, "reason": "not_configured"}
@@ -638,6 +729,7 @@ def run_read(trigger: str) -> dict:
         return {"started": True, "ok": False, "error": "error"}
     finally:
         db.close()
+        _release(held)
         _lock.release()
 
 
@@ -677,7 +769,9 @@ def _boot() -> None:
         # a read from before the «свод» list was kept has none: read again
         no_list = ok is not None and db.query(OntimeTracked.id).first() is None \
             and not (ok.notes or {}).get("tracked_missing")
-        due = fin is None or now_aware() - fin > BOOT_IF_OLDER or no_list
+        # a read a restart cut off lost its turn: read again now
+        cut = close_interrupted(db)
+        due = fin is None or now_aware() - fin > BOOT_IF_OLDER or no_list or cut > 0
     finally:
         db.close()
     if due:

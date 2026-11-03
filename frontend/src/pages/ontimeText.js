@@ -24,6 +24,7 @@ const uz = {
     no_windows: "«заход» varag'ida zaxod vaqtlari topilmadi", no_orders: "«заявки» varag'ida buyurtma yo'q",
     forbidden: "jadval platformaning Google hisobiga ochilmagan", not_found: "jadval topilmadi",
     error: "kutilmagan xato",
+    interrupted: "server yangilangani uchun o'qish to'xtab qoldi — jadval qaytadan o'qiladi",
   },
 
   notConfiguredTitle: "Jadval ulanmagan",
@@ -156,6 +157,7 @@ const uz_cyrl = {
     no_windows: "«заход» варағида заход вақтлари топилмади", no_orders: "«заявки» варағида буюртма йўқ",
     forbidden: "жадвал платформанинг Google ҳисобига очилмаган", not_found: "жадвал топилмади",
     error: "кутилмаган хато",
+    interrupted: "сервер янгилангани учун ўқиш тўхтаб қолди — жадвал қайтадан ўқилади",
   },
 
   notConfiguredTitle: "Жадвал уланмаган",
@@ -288,6 +290,7 @@ const ru = {
     no_windows: "на листе «заход» не найдены времена заходов", no_orders: "на листе «заявки» нет заявок",
     forbidden: "таблица не открыта для Google-аккаунта платформы", not_found: "таблица не найдена",
     error: "непредвиденная ошибка",
+    interrupted: "чтение прервалось из-за обновления сервера — таблица будет прочитана заново",
   },
 
   notConfiguredTitle: "Таблица не подключена",
@@ -420,6 +423,7 @@ const en = {
     no_windows: "no wave windows found on «заход»", no_orders: "no orders on «заявки»",
     forbidden: "the sheet is not shared with the platform's Google account", not_found: "the sheet was not found",
     error: "an unexpected error",
+    interrupted: "the read was cut off by a server update — the sheet will be read again",
   },
 
   notConfiguredTitle: "The sheet is not connected",
