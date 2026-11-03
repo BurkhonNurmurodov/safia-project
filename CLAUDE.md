@@ -169,7 +169,9 @@ untouched.
   cloud; by NIGHT a dark glass tile, a neon line glyph in the hue and a glow.
   The backdrop (`components/launcher/LauncherBackdrop.jsx`, handed to
   Layout's `backdrop` prop — it must live there, since inside `.page-enter` a
-  fixed box is sized to the content column) follows the operator's reference
+  fixed box is sized to the content column; it runs under the HEADER too,
+  which turns to static glass over it, `.hdr-on-backdrop`, so the top bar
+  matches — the operator, v4.392.1) follows the operator's reference
   image: a warm golden gradient with Safia's treats floating at different
   depths — takeaway coffee cups, macarons, a donut, a croissant, coffee beans
   — near ones sharp with a soft shadow, far ones out of focus, the big ones

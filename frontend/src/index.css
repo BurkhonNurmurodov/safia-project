@@ -1146,6 +1146,20 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 /* The open app's name at the top of an admin's sidebar wears its tile's hue. */
 .app-label svg { color: rgb(var(--hue)); }
 
+/* The header over the launcher's backdrop (Layout puts the backdrop under the
+   whole column there): a pane of glass the gold shows through, not a cream
+   band across the top of it. Static — no backdrop-filter, which would be
+   recomputed for every frame a treat floats beneath it. */
+.hdr-on-backdrop {
+  background: linear-gradient(180deg, rgba(15,17,23,.55), rgba(15,17,23,.3));
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+[data-theme="light"] .hdr-on-backdrop {
+  background: linear-gradient(180deg, rgba(255,251,243,.5), rgba(255,248,236,.22));
+  border-bottom: 1px solid rgba(255,255,255,.55);
+  box-shadow: 0 1px 0 rgba(138,90,28,.08);
+}
+
 /* The header's way back to the launcher, beside the page title (admins). */
 .hdr-apps { transition: color .15s var(--ease-out), border-color .15s var(--ease-out); }
 @media (hover: hover) {

@@ -578,10 +578,11 @@ function ImpersonationBar() {
 
 // `bare`: no sidebar — the admin app launcher («Ilovalar», pages/AppLauncher),
 // where the tiles ARE the navigation and no app is open to list pages of.
-// `backdrop`: a node painted BEHIND the content area (under the header, over
-// the base colour) — the launcher's moving background. It has to live here:
-// inside the page it would sit in `.page-enter`, whose transform makes a
-// `fixed` box the size of the content column instead of the screen.
+// `backdrop`: a node painted behind the whole column — header included, over
+// the base colour — the launcher's moving background; the header then turns to
+// glass over it (`.hdr-on-backdrop`, index.css). It has to live here: inside
+// the page it would sit in `.page-enter`, whose transform makes a `fixed` box
+// the size of the content column instead of the screen.
 export default function Layout({ children, title, subtitle, bare = false, backdrop = null }) {
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { t } = useLang();
@@ -660,17 +661,23 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
           nav bar sits on one edge — padding the whole column keeps the header
           and the content clear of it together, so nothing shifts relative to
           anything else. */}
+      {/* `relative isolate` only with a backdrop: its z-index -1 then paints
+          over this column's (absent) background and under everything in it,
+          never under the shell's base colour. */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${bare ? "" : sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${bare ? "" : sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}${backdrop ? " relative isolate" : ""}`}
         // `--assistant-dock`: «Yordamchi»'s panel, docked on a wide screen,
         // takes the right edge — the column narrows rather than hide under it.
         style={{ paddingLeft: "var(--tg-safe-left, 0px)",
                  paddingRight: "calc(var(--tg-safe-right, 0px) + var(--assistant-dock, 0px))" }}
       >
+        {backdrop}
         {/* Header */}
         <header
-          className="flex-shrink-0"
-          style={{ background: "var(--bg-base)", borderBottom: "1px solid var(--border)", paddingTop: "var(--tg-safe-top, 0px)" }}
+          className={`flex-shrink-0${backdrop ? " hdr-on-backdrop" : ""}`}
+          style={backdrop
+            ? { paddingTop: "var(--tg-safe-top, 0px)" }
+            : { background: "var(--bg-base)", borderBottom: "1px solid var(--border)", paddingTop: "var(--tg-safe-top, 0px)" }}
         >
           <div
             className="flex items-center justify-between px-4 md:px-6 py-3 gap-3"
@@ -759,11 +766,7 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
         {/* Content viewport. Layout remounts on every route change, so the
             .page-enter wrapper replays its fade-up once per navigation — a
             light, instant-feeling swap in place of the old logo overlay. */}
-        {/* `isolate` only with a backdrop: its z-index -1 then paints over this
-            box's (absent) background and under the page, never under the
-            shell's base colour. */}
-        <div className={`relative flex-1 min-h-0${backdrop ? " isolate" : ""}`}>
-          {backdrop}
+        <div className="relative flex-1 min-h-0">
           <main
             ref={mainRef}
             onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
