@@ -9899,7 +9899,10 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   summary and Key figures lift their headline rows (cost of waiting,
   complaints, concerns resolved %) out of them, but `SECTIONS` — what the
   page lists and the file lays out — leaves them out. Personnel's «Yopilgan
-  kunlar» row is gone too.
+  kunlar» row is gone too. **«Kutish» joined them on 2026-11-03** (the
+  operator: «we also dont need Idle Time section»): still built for the
+  summary's and Key figures' waiting rows (minutes, % of worked time, per
+  day), shown nowhere on its own.
 - **The document is `assistant_documents.build`** — the house builder, never a
   second layout engine — as **pdf · docx · xlsx** (`POST
   /api/reports/export.{fmt}`; a format it does not know is refused, never
@@ -9931,7 +9934,7 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   fact — «—», never 0), an owner with no category left reads «—» in every row
   (`empty_scope`), and an admin's answer is byte-identical to before. The
   payload carries `cat_locked`, which the page draws as `CatLockNotice` over
-  the sections carrying waiting figures (`LOCK_SECS`: idle · summary ·
+  the sections carrying waiting figures (`LOCK_SECS`: summary ·
   figures) and the document names in its subtitle. «Xarajat» is in the
   payload for `downtime.COST_ROLES` only (admins and shift managers —
   `/downtime/cost`'s own rule, imported by `_sees_cost`, never re-spelled)

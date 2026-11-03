@@ -76,12 +76,12 @@ HISTORY = 2
 # four platform languages and come back with the export — the rule
 # `services/grid_export.py` keeps: the screen describes itself, the server only
 # lays it out, so the file can never name something the page does not.
-SECTIONS = ("summary", "production", "personnel", "idle", "figures")
+SECTIONS = ("summary", "production", "personnel", "figures")
 # Built but never shown as sections of their own (the operator, 2026-11-02:
-# «we dont need section called Cost of Waiting, Quality and Concerns»): their
-# headline figures still reach the Executive summary and Key figures, which
-# lift rows out of them.
-BUILT_ONLY = ("cost", "quality", "concerns")
+# «we dont need section called Cost of Waiting, Quality and Concerns»; and
+# 2026-11-03 the Idle Time one too): their headline figures still reach the
+# Executive summary and Key figures, which lift rows out of them.
+BUILT_ONLY = ("idle", "cost", "quality", "concerns")
 
 # The headline rows that are a TOTAL over the period rather than a rate. A
 # month still running holds fewer days than the one before it, so the change

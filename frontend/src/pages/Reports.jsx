@@ -41,10 +41,10 @@ const ICON = {
 const FORMATS = ["pdf", "docx", "xlsx"];
 
 // The sections whose figures the «Kutish mas'uli» category lock narrows — the
-// waiting itself and the two tables that lift its headline rows. A narrowed
-// register must SAY so (CatLockNotice's own reasoning), and it says so where
-// the narrowed numbers are, not over a quality table the lock never touches.
-const LOCK_SECS = new Set(["idle", "summary", "figures"]);
+// two tables that lift the waiting's headline rows (the Idle section itself is
+// no longer shown). A narrowed register must SAY so (CatLockNotice's own
+// reasoning), and it says so where the narrowed numbers are.
+const LOCK_SECS = new Set(["summary", "figures"]);
 
 // `cat_locked` names categories as the server does («Cat D3»); the words the
 // reader knows them by are the Ojidaniya page's own labels.
