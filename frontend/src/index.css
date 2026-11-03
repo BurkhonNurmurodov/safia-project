@@ -876,8 +876,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 
 
-/* «Ilovalar» — the admin app launcher (pages/AppLauncher.jsx). Twelve tiles
-   fill 3, 4 or 6 columns with no ragged last row. Each app has ONE colour, its
+/* «Ilovalar» — the admin app launcher (pages/AppLauncher.jsx). The tiles fill
+   3, 5 or 7 columns and a short last row is CENTRED, so any count of apps
+   sits evenly (thirteen today: 3·3·3·3·1, 5·5·3, 7·6). Each app has ONE colour, its
    identity, so a tile is recognised before its name is read — paired with the
    icon and the name, never the only cue. Two rgb triples carry it:
      --hue   the glyph by night and the sidebar's app label (400 shades; 700
@@ -898,18 +899,22 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 /* The grid sits a little above the middle of the screen, where a home screen
    does — not stuck to the header with the lower half of the page empty. */
 .apps-wrap {
-  max-width: 880px; min-height: min(72vh, 720px); margin: 0 auto; padding: 24px 0 48px;
+  max-width: 960px; min-height: min(72vh, 720px); margin: 0 auto; padding: 24px 0 48px;
   display: flex; flex-direction: column; justify-content: center;
 }
+/* A wrapping row of equal columns (--cols, --gap) rather than a grid: a grid
+   leaves a short last row hanging on the left, a centred wrap does not. */
 .apps-grid {
+  --cols: 3; --gap: 8px;
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--gap);
 }
+.apps-grid > li { flex: 0 0 calc((100% - (var(--cols) - 1) * var(--gap)) / var(--cols)); min-width: 0; }
 @media (min-width: 560px)  {
-  .apps-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .apps-grid { --cols: 5; --gap: 12px; }
   .app-tile { padding: 18px 8px; }
 }
-@media (min-width: 1024px) { .apps-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; } }
+@media (min-width: 1024px) { .apps-grid { --cols: 7; --gap: 16px; } }
 
 /* Arrival: the tiles gather in one after another (`--i` = the tile's place).
    Individual transform properties, so the fill never pins `transform`. */
@@ -1036,6 +1041,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 @keyframes badgeRing { 0% { opacity: .9; scale: 1; } 60%, 100% { opacity: 0; scale: 1.7; } }
 
 [data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; --cloud: 222,190,130; }
+[data-app-hue="blue"]    { --hue: 96,165,250;  --glow: 59,130,246; }
 [data-app-hue="orange"]  { --hue: 251,146,60;  --glow: 249,115,22; }
 [data-app-hue="sky"]     { --hue: 56,189,248;  --glow: 14,165,233; }
 [data-app-hue="violet"]  { --hue: 167,139,250; --glow: 139,92,246; }
@@ -1048,6 +1054,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; }
 [data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; }
 [data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; }
+[data-theme="light"] [data-app-hue="blue"]    { --hue: 29,78,216; }
 [data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
 [data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
 [data-theme="light"] [data-app-hue="violet"]  { --hue: 109,40,217; }

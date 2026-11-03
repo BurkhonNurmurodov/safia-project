@@ -131,11 +131,17 @@ untouched.
 
 - **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
   icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
-  overview and the users-activity page are one-page apps; the admin panel is
-  the `admin` app (`ADMIN_PANEL_LINK`). The assistant has no tile — the
-  header's button opens it everywhere. A new page joins its group's app by
-  itself; give it `app` only to move it elsewhere. Twelve tiles fill 3 / 4 / 6
-  columns evenly — keep the count in mind before adding a thirteenth.
+  overview, «Hisobotlar» (2026-11-03, the operator — out of the Laboratory
+  app; its page access is unchanged, admins only by default, and for
+  everybody else it stays in the Laboratory group) and the users-activity
+  page are one-page apps; the admin panel is the `admin` app
+  (`ADMIN_PANEL_LINK`). The assistant has no tile — the header's button opens
+  it everywhere. A new page joins its group's app by itself; give it `app`
+  only to move it elsewhere. Thirteen tiles fill 3 / 5 / 7 columns and the
+  short last row is CENTRED (a wrapping flex row, not a grid), so any count
+  sits evenly. ARC is the repair department: its icon (tile and sidebar row)
+  is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn on
+  lucide's grid with `createLucideIcon` — plain `Wrench` is «Perenaladka».
 - **The overview answers at `/overview`** for an admin (`adminPath`); the
   sidebar, the header search and `DocumentTitle` map `/` there. `/overview`
   works for every role (same `RequirePage`).
