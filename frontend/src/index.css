@@ -1217,6 +1217,14 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    chips on the glass band, and a menu that still reads.
    `color` is restated because the shell resolved it above this element. */
 .hdr-on-backdrop {
+  /* ABOVE the content column. The backdrop-filter below makes this header a
+     stacking context, so anything hanging out of it — the search results, the
+     bell, the account menu — was painted AND hit-tested under `.page-enter`
+     (an animated transform, later in the DOM) and the glass tiles: the
+     results showed through the tiles and a press on one went to the launcher
+     (2026-11-03). On an ordinary page the header is no stacking context and
+     its menus' own z-index wins; here the header itself has to. */
+  position: relative; z-index: 20;
   background: linear-gradient(180deg, rgba(15,17,23,.52), rgba(15,17,23,.34));
   border-bottom: 1px solid rgba(255,255,255,.08);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
