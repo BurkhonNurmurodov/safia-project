@@ -966,6 +966,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 /* Arrival: the tiles gather in one after another (`--i` = the tile's place).
    Individual transform properties, so the fill never pins `transform`. */
+/* The greeting's typing ends when the last tile settles — AppLauncher.jsx
+   (`TILE_STEP` / `TILE_DELAY` / `TILE_IN`) repeats these three numbers. */
 .apps-grid > li { animation: appIn .9s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 55ms + 60ms); }
 @keyframes appIn { from { opacity: 0; translate: 0 14px; scale: .94; } }
 

@@ -28,27 +28,36 @@ import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
  *
  * Above the tiles, «Xush kelibsiz, {name}!» (2026-11-03, the operator) — the
  * signed-in profile's name as the header prints it, the name set a shade
- * heavier. It is TYPED: each letter appears at once on its own beat (`--d`),
- * a caret standing after the newest one (`--s` = how long until the next),
- * blinking a few times after the last before it goes; a screen reader is
- * handed the whole sentence once.
+ * heavier. It is TYPED, ending as the last tile settles: each letter appears
+ * at once on its own beat (`--d`), a caret standing after the newest one
+ * (`--s` = how long until the next), blinking a few times after the last
+ * before it goes; a screen reader is handed the whole sentence once.
  */
 
-// A typist's beat — never metronomic: 55–85ms a key, a breath after
+// A typist's beat — never metronomic: an uneven key rhythm, a breath after
 // punctuation. Deterministic (by the letter's place), so a re-render never
-// changes the rhythm.
-const TYPE_START = 250;
+// changes the rhythm. Only the SHAPE comes from here: the whole beat is
+// stretched or squeezed so the last letter lands as the last tile settles.
 const beat = (ch, i) => 55 + ((i * 37) % 31) + (/[,.!?:;]/.test(ch) ? 220 : 0);
+
+// The tiles' arrival, as index.css spells it (`.apps-grid > li`: delay
+// i × 55ms + 60ms, .9s) — keep the two in step.
+const TILE_STEP = 55, TILE_DELAY = 60, TILE_IN = 900;
+const TYPE_START = 120;
+const TYPE_END = (APPS.length - 1) * TILE_STEP + TILE_DELAY + TILE_IN;
 
 // The letters, in order, with the moment each is typed and how long it is the
 // newest. Spaces take a beat but have no span of their own.
 function typingPlan(text) {
   const plan = [];
-  let t = TYPE_START;
+  let t = 0;
   Array.from(text).forEach((ch, i) => {
     if (!/\s/.test(ch)) plan.push({ d: t });
     t += beat(ch, i);
   });
+  const last = plan[plan.length - 1]?.d || 0;
+  const k = last > 0 ? (TYPE_END - TYPE_START) / last : 0;
+  plan.forEach((p) => { p.d = Math.round(TYPE_START + p.d * k); });
   plan.forEach((p, i) => { p.s = (plan[i + 1]?.d ?? p.d) - p.d; });
   return plan;
 }

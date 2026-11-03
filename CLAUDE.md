@@ -235,8 +235,10 @@ untouched.
   `apps.hello`, the signed-in profile's name as the header prints it (`tl`),
   the name and its «!» kept on one line together (`.apps-hello-who`). It is
   TYPED (the operator, same day): each letter `.apps-hello-ch` is held
-  invisible for its `--d` and then simply there, on a 55–85ms beat with a
-  breath after punctuation (`typingPlan`), a caret after the newest letter
+  invisible for its `--d` and then simply there, on an uneven beat with a
+  breath after punctuation (`typingPlan`), stretched to start at 120ms and
+  land the LAST letter as the last tile settles (`TYPE_END`, from the tiles'
+  own 55ms / 60ms / .9s — keep in step with index.css), a caret after the newest letter
   that blinks four times at the end; never a 1ms step with a fill — float
   rounding left letters hidden. A screen reader reads it once from a
   `sr-only` copy. On a
