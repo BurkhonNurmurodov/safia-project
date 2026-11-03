@@ -198,7 +198,11 @@ untouched.
   `.hdr-on-backdrop`: by night a dark pane, by day a solid CHOCOLATE band,
   the coffee bean's brown (the operator, v4.395.2: «not light like this»),
   which carries its own dark-style colour tokens so the controls and the
-  menus that open inside the header read light-on-brown) follows the operator's reference
+  menus that open inside the header read light-on-brown; and it sits at
+  `z-index: 20`, because its backdrop-filter makes it a stacking context and
+  without that the search results, the bell and the account menu painted AND
+  hit-tested under `.page-enter` and the tiles — 2026-11-03, the results
+  showed through the tiles and a press on one went to the launcher) follows the operator's reference
   image: a warm golden gradient with Safia's products floating at different
   depths — near ones sharp with a soft shadow, far ones out of focus, the big
   ones cut by the screen edge. Only the TAKEAWAY CUP and MACARONS (pink,
