@@ -59,7 +59,7 @@ REASONS = ("not_configured", "no_people", "no_plan", "no_fact", "no_records",
 
 
 def report_days(now: datetime, shift: Optional[int],
-                windows: dict) -> tuple[date, date]:
+                windows: dict, day: Optional[date] = None) -> tuple[date, date]:
     """(today, yesterday) for one shift, read off the SHIFT FRAME.
 
     The most recent shift start at or before `now` names «today» —
@@ -72,6 +72,10 @@ def report_days(now: datetime, shift: Optional[int],
     `windows` is `cell_hours.defaults(db)`. A unit carrying no shift has no
     frame, so it reads the plant's calendar date.
     """
+    if day is not None:
+        # A day the reader picked on the page's stepper: it IS «today» for
+        # every shift (a night belongs to the date its evening opened on).
+        return day, day - timedelta(days=1)
     window = windows.get(shift) if shift is not None else None
     if window:
         today = date.fromisoformat(live_overview.shift_frame(now, shift, window)["day"])

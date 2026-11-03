@@ -137,13 +137,13 @@ def _units(db: Session, ids: Optional[list[int]], shift: Optional[int]) -> list:
     return q.order_by(Manager.name, Manager.id).all()
 
 
-def _key(units: list, note, month: str, now, windows) -> tuple:
+def _key(units: list, note, month: str, now, windows, day=None) -> tuple:
     """Everything the answer depends on: the units in reach (the scope AND the
     shift filter), the quality month, and each shift's report days — so a new
     shift-day or a new month is a new entry, never a stale one."""
     return (
         tuple(m.id for m in units), note, month,
-        tuple((s, *map(str, shift_report.report_days(now, s, windows))) for s in (1, 2, None)),
+        tuple((s, *map(str, shift_report.report_days(now, s, windows, day))) for s in (1, 2, None)),
     )
 
 
@@ -152,22 +152,25 @@ def get_shift_report(
     shift: Optional[int] = Query(default=None),
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    day: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("overview")),
 ):
     now = live_overview.now_local()
+    if day is not None and day > now.date():
+        day = None          # nothing has happened yet: read the live frame
     ids, note = _scope(db, payload, factory, manager_id)
     # The quality window rides on the payload from the first line, so an empty
     # board still states which month its (absent) closure rates would have been
     # counted over, and the header never has to guess it off the browser clock.
-    month, _m_from, _m_to = shift_report.quality_window(now.date())
+    month, _m_from, _m_to = shift_report.quality_window(day or now.date())
     if empty_scope(ids):
         return _empty(now, note, month)
     units = _units(db, ids, shift)
     if not units:
         return _empty(now, note, month)
     windows = cell_hours.defaults(db)
-    key = _key(units, note, month, now, windows)
+    key = _key(units, note, month, now, windows, day)
     hit = _cache_get(key)
     if hit is not None:
         started, value = hit
@@ -175,12 +178,12 @@ def get_shift_report(
         if age < _CACHE_TTL_S:
             return value
         if age < _CACHE_STALE_S and started > leader_register.last_write(payload):
-            _refresh_later(ids, note, shift)
+            _refresh_later(ids, note, shift, day)
             return value
 
     def build():
         t0 = time.monotonic()
-        value = _compute(db, units, note, now, windows)
+        value = _compute(db, units, note, now, windows, day)
         _cache_put(key, t0, value)
         return value
 
@@ -196,11 +199,11 @@ def _empty(now, note, month: str) -> dict:
     }
 
 
-def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int]) -> None:
+def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int], day=None) -> None:
     """Build this scope's board again off the request, in a session of its own,
     and keep it under the key its OWN clock gives (a shift-day that turned
     meanwhile is a new entry). One rebuild per scope at a time."""
-    rk = (tuple(ids) if ids is not None else None, note, shift)
+    rk = (tuple(ids) if ids is not None else None, note, shift, day)
     with _cache_lock:
         if rk in _refreshing:
             return
@@ -215,10 +218,10 @@ def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int]) -> None
                 if not units:
                     return
                 windows = cell_hours.defaults(s)
-                month = shift_report.quality_window(now.date())[0]
-                key = _key(units, note, month, now, windows)
+                month = shift_report.quality_window(day or now.date())[0]
+                key = _key(units, note, month, now, windows, day)
                 t0 = time.monotonic()
-                _cache_put(key, t0, _compute(s, units, note, now, windows))
+                _cache_put(key, t0, _compute(s, units, note, now, windows, day))
         except Exception:  # noqa: BLE001 — the next request builds inline
             log.exception("shift-report: background rebuild failed")
         finally:
@@ -232,9 +235,9 @@ def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int]) -> None
             _refreshing.discard(rk)
 
 
-def _compute(db: Session, units: list, note, now, windows) -> dict:
+def _compute(db: Session, units: list, note, now, windows, day=None) -> dict:
     """The board for `units` at `now` — every figure from the page that owns it."""
-    month, m_from, m_to = shift_report.quality_window(now.date())
+    month, m_from, m_to = shift_report.quality_window(day or now.date())
     out = _empty(now, note, month)
     unit_ids = [m.id for m in units]
 
@@ -274,7 +277,7 @@ def _compute(db: Session, units: list, note, now, windows) -> dict:
     for m in units:
         groups.setdefault(m.shift if m.shift in (1, 2) else None, []).append(m)
     order = sorted(groups, key=lambda k: (k is None, k or 0))
-    days = {s: shift_report.report_days(now, s, windows) for s in order}
+    days = {s: shift_report.report_days(now, s, windows, day) for s in order}
 
     # ── Davomat — each unit's attendance on its shift-day so far: /workers'
     # «Davomat issiqlik xaritasi» figure, counted off the STORED live Verifix

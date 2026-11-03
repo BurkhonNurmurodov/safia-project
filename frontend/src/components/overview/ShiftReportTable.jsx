@@ -5,7 +5,8 @@
 // them). This file only paints.
 //
 // Rules it keeps, so nobody has to rediscover them:
-// - The day stepper beside it does NOT reach it. Each column has its own fixed
+// - The day stepper beside it reaches it since 2026-11-03 (`day`); before
+//   that it did NOT. Each column has its own fixed
 //   window and prints it — with the date — in its own header. «Bartaraf etilgan
 //   %» covers the CURRENT MONTH (the operator's call, 2026-09-18), and the
 //   month it names is the one the SERVER counted (`quality_month` on the
@@ -249,7 +250,7 @@ const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 // while the slowest block on it worked. Held until the page's own data is in,
 // the board fills in UNDER a page that is already readable. The default is
 // true: a caller that does not say otherwise gets the old behaviour.
-export default function ShiftReportTable({ shift = null, pageReady = true }) {
+export default function ShiftReportTable({ shift = null, day = null, pageReady = true }) {
   const { t } = useLang();
   const { auth } = useAuth();
   // The bands in force. Calling this is also what tells `utils/statusBands`
@@ -262,8 +263,10 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const { capPages, deniedPages } = useCapabilities();
   const [sort, setSort] = usePersistentState("overview_sr_sort", DEFAULT_SORT);
 
-  // The page's scope only — never its dates.
-  const base = useMemo(() => (shift ? { shift } : {}), [shift]);
+  // The page's scope, plus the shift-day its stepper picked (2026-11-03): the
+  // board follows the day for every shift; «Bugun»/«Kecha» then mean that day
+  // and the one before it, and each header still prints its date.
+  const base = useMemo(() => ({ ...(shift ? { shift } : {}), ...(day ? { day } : {}) }), [shift, day]);
   const params = useFactoryParams(base);
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({

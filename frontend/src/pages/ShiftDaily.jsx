@@ -342,8 +342,10 @@ export default function ShiftDaily() {
           operator's directive, 2026-09-16), which is where a shift manager's
           day is read.
 
-          **The day stepper above does NOT reach it**, exactly as Overview's
-          period picker did not: every figure on it comes from the page that
+          **From 2026-11-03 the day stepper above DOES reach it** (`day` →
+          `GET /api/shift-report?day=`, every shift): «bugun» is the picked
+          day and «kecha» the one before. Before that it did NOT, exactly as
+          Overview's period picker did not: every figure on it comes from the page that
           owns it, over that page's own fixed window, and each column prints
           the window and the date it is showing. Wiring it to the stepper would
           mean recomputing four figures here, which is the one thing this board
@@ -353,7 +355,7 @@ export default function ShiftDaily() {
           It fetches LAST: one of its requests can run the «Zagruzka fayli»
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
-      <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
+      <ShiftReportTable shift={shift} day={date} pageReady={!isLoading && !cardsLoading} />
 
       <ContainerTotalsCard day={date} params={dayParams} enabled={scopeKnown} />
 
