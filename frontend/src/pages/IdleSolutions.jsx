@@ -68,7 +68,7 @@ function Kpi({ icon: Icon, label, value, sub, tone }) {
   );
 }
 
-function Composer({ T, cat, onSaved }) {
+function Composer({ T, cat, manager, onSaved, compact }) {
   const toast = useToast({ position: "bottom" });
   const [text, setText] = useState("");
   const [status, setStatus] = useState("open");
@@ -77,7 +77,7 @@ function Composer({ T, cat, onSaved }) {
     if (!text.trim()) return;
     setBusy(true);
     try {
-      await api.post("/api/idle-solutions", { category: cat, text: text.trim(), status });
+      await api.post("/api/idle-solutions", { category: cat, manager_id: manager ?? null, text: text.trim(), status });
       setText("");
       setStatus("open");
       toast.success(T.saved);
@@ -89,15 +89,15 @@ function Composer({ T, cat, onSaved }) {
     }
   }
   return (
-    <div className="mt-3">
-      <FormField label={T.write}>
+    <div className="mt-2">
+      <FormField label={compact ? T.problemSol : T.write}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          rows={3}
+          rows={2}
           maxLength={2000}
-          placeholder={T.writePh}
-          className="w-full rounded-xl px-3 py-2 text-base sm:text-sm resize-y min-h-[84px]"
+          placeholder={compact ? T.writeProblemPh : T.writePh}
+          className="w-full rounded-xl px-3 py-2 text-base sm:text-sm resize-y min-h-[64px]"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
         />
       </FormField>
@@ -147,6 +147,61 @@ function SolutionRow({ T, s, canWrite, onChanged, ddmmyy }) {
   );
 }
 
+function ProblemBlock({ T, c, u, n, refresh, ddmmyy }) {
+  const { tl } = useTranslit();
+  const [all, setAll] = useState(false);
+  const shown = all ? u.notes : u.notes.slice(0, 3);
+  return (
+    <section className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-5 text-xs tabular-nums text-center flex-shrink-0" style={{ color: "var(--text-3)" }}>{n}</span>
+        <UserRound size={14} style={{ color: "var(--text-3)" }} className="flex-shrink-0" />
+        <span className="text-sm font-semibold truncate flex-1" style={{ color: "var(--text-1)" }}>
+          {shortPerson(tl(u.manager_name) || u.manager_name)}
+        </span>
+        <StateChip T={T} state={u.state} />
+        <span className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: "var(--text-1)" }}>
+          {fill(T.minutes, { m: Math.round(u.minutes) })}
+        </span>
+      </div>
+
+      <div className="mt-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{T.comments}</div>
+      {u.notes.length === 0 ? (
+        <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noComments}</div>
+      ) : (
+        <ul className="mt-1.5 space-y-1.5">
+          {shown.map((x, i) => (
+            <li key={i} className="pl-2.5 text-sm" style={{ borderLeft: "2px solid var(--border)" }}>
+              <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                {ddmmyy(x.date)}{x.cell ? ` · ${x.cell}` : ""}{x.start ? ` · ${x.start}–${x.end}` : ""}
+                {x.minutes ? ` · ${fill(T.minutes, { m: Math.round(x.minutes) })}` : ""}
+              </div>
+              <div className="whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{x.note}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {u.notes_n > 3 && (
+        <button type="button" onClick={() => setAll(!all)} className="text-xs mt-1.5 font-medium" style={{ color: "var(--brand-text)" }}>
+          {all ? T.hide : fill(T.moreNotes, { n: u.notes.length - 3 })}
+        </button>
+      )}
+
+      {u.solutions.length > 0 && (
+        <ul className="space-y-2 mt-3">
+          {u.solutions.map((s) => (
+            <SolutionRow key={s.id} T={T} s={s} canWrite={c.can_write} onChanged={refresh} ddmmyy={ddmmyy} />
+          ))}
+        </ul>
+      )}
+      {u.solutions.length === 0 && !c.can_write && (
+        <div className="text-xs mt-3" style={{ color: "var(--text-2)" }}>{T.noSol}. {T.noSolRead}</div>
+      )}
+      {c.can_write && <Composer T={T} cat={c.category} manager={u.manager_id} onSaved={refresh} compact />}
+    </section>
+  );
+}
+
 function CauseRow({ T, c, max, open, onToggle, refresh, label, ddmmyy }) {
   const { tl } = useTranslit();
   const code = catCode(c.category);
@@ -176,7 +231,11 @@ function CauseRow({ T, c, max, open, onToggle, refresh, label, ddmmyy }) {
                     <AlertTriangle size={11} /> {T.noOwner}
                   </span>
                 )}
-              <StateChip T={T} state={c.state} />
+              {c.problems_n > 0 && (
+                <span className="text-[11px] tabular-nums" style={{ color: c.solved_n < c.problems_n ? AMBER : GREEN }}>
+                  {fill(T.solvedOf, { a: c.solved_n, b: c.problems_n })}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-right flex-shrink-0">
@@ -190,42 +249,23 @@ function CauseRow({ T, c, max, open, onToggle, refresh, label, ddmmyy }) {
         </div>
       </button>
       {open && (
-        <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>{T.worst}</div>
-            {c.top_units.length === 0 ? (
-              <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.noUnits}</div>
-            ) : (
-              <ul className="space-y-1.5">
-                {c.top_units.map((u) => (
-                  <li key={u.manager_id} className="flex items-center gap-2 text-sm">
-                    <UserRound size={13} style={{ color: "var(--text-3)" }} />
-                    <span className="truncate flex-1" style={{ color: "var(--text-1)" }}>{shortPerson(tl(u.manager_name) || u.manager_name)}</span>
-                    <span className="tabular-nums text-xs" style={{ color: "var(--text-2)" }}>{fill(T.minutes, { m: Math.round(u.minutes) })}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="text-[11px] mt-3" style={{ color: "var(--text-3)" }}>
-              {fill(T.days, { n: c.days })} · {fill(T.units, { n: c.units_n })}
-            </div>
-            {!c.owner && <div className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>{T.assignHint}</div>}
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>{T.solutions}</div>
-            {c.solutions.length === 0 ? (
-              <div className="text-xs" style={{ color: "var(--text-2)" }}>
-                {T.noSol}. {c.can_write ? T.noSolWrite : T.noSolRead}
-              </div>
-            ) : (
+        <div className="px-4 pb-4 space-y-3">
+          {c.problems.length === 0 ? (
+            <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.noUnits}</div>
+          ) : c.problems.map((u, i) => (
+            <ProblemBlock key={u.manager_id} T={T} c={c} u={u} n={i + 1} refresh={refresh} ddmmyy={ddmmyy} />
+          ))}
+          {c.solutions.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>{T.generalSol}</div>
               <ul className="space-y-2">
                 {c.solutions.map((s) => (
                   <SolutionRow key={s.id} T={T} s={s} canWrite={c.can_write} onChanged={refresh} ddmmyy={ddmmyy} />
                 ))}
               </ul>
-            )}
-            {c.can_write && <Composer T={T} cat={c.category} onSaved={refresh} />}
-          </div>
+            </div>
+          )}
+          {!c.owner && <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.assignHint}</div>}
         </div>
       )}
     </div>

@@ -4415,6 +4415,9 @@ class IdleCategorySolution(Base):
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
     category    = Column(String, nullable=False, index=True)
+    # The PROBLEM this answers: the brigadir's unit that lost minutes to the
+    # category. NULL = a general solution for the whole cause.
+    manager_id  = Column(Integer, nullable=True, index=True)
     text        = Column(Text, nullable=False)
     # open | doing | done
     status      = Column(String, nullable=False, default="open")

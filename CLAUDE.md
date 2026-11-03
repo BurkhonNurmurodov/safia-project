@@ -4363,6 +4363,17 @@ stopped half) summed per category; nothing new is measured. All 12 categories
 are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
 (multi). Not built: deadlines per solution, notices to owners.
 
+- **A problem is (category × brigadir)** (2026-11-03, the operator: «4 problems
+  → the responsible person writes 4 solutions»). Opening a cause lists one block
+  per brigadir who lost minutes to it — their minutes, then **the brigadirs' own
+  comments** (the `note` of every filed stop on /idle-cell, read through
+  `downtime._cell_detail`, newest first, 3 shown + «yana N ta izoh»), then that
+  problem's solutions and a composer. `idle_category_solutions.manager_id`
+  (NULL = a general solution for the whole cause, shown under «Umumiy
+  yechimlar»; `startup.add_idle_solution_manager`). The KPI «Yechimsiz
+  muammolar» counts problems without a solution, not causes.
+
+
 ## WHO answers for a waiting category (`idle-owner`)
 
 From **2026-09-10** (the operator's directive) each ojidaniya category has ONE
