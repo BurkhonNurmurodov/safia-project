@@ -5688,3 +5688,61 @@ class VerifixMonthKind(Base):
     read_at = Column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (UniqueConstraint("ym", "manager_id", "kind_id", name="uq_vfx_month_kind"),)
+
+
+# ── «Pechlar» — Revent rack ovens (/ovens) ──────────────────────────────────
+# The ovens sit on the factory LAN, which the server cannot reach, so a
+# COLLECTOR there (a laptop for the test, later a small device) reads each oven
+# with the three read-only calls of tools/revent-oven/revent_oven.py and posts
+# what it got to /api/ovens/collector/*. services/revent_ovens.py stores it and
+# services/revent_log.py decodes the logs per request. Nothing is ever sent to
+# an oven from here.
+
+class ReventOven(Base):
+    """One oven: where the collector finds it (an admin sets it on
+    /panel/ovens), and the last thing the collector read from it."""
+    __tablename__ = "revent_ovens"
+
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String, nullable=False)
+    ip          = Column(String(64), nullable=False)
+    port        = Column(Integer, nullable=False, server_default=text("8080"))
+    active      = Column(Boolean, nullable=False, server_default=text("true"))
+    position    = Column(Integer, nullable=False, server_default=text("0"))
+    note        = Column(Text, nullable=True)
+    # The live status: the oven's own lines (31, or 39 with a prover), as read.
+    status      = Column(JSONB, nullable=True)
+    status_at   = Column(DateTime(timezone=True), nullable=True)   # the last status that answered
+    tried_at    = Column(DateTime(timezone=True), nullable=True)   # the last attempt, either way
+    error       = Column(Text, nullable=True)                      # the last attempt's failure
+    collector   = Column(String, nullable=True)                    # which collector saw it last
+    # getSettings (OvenSettings.xml), zlib-compressed, and getLogs' ServiceData.txt.
+    settings    = Column(LargeBinary, nullable=True)
+    settings_sha = Column(String(64), nullable=True)
+    settings_at = Column(DateTime(timezone=True), nullable=True)
+    service     = Column(Text, nullable=True)
+    service_at  = Column(DateTime(timezone=True), nullable=True)
+    logs_at     = Column(DateTime(timezone=True), nullable=True)   # the last log upload
+    added_by    = Column(String, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReventOvenLog(Base):
+    """One of an oven's day log files (NNNNNN.log, 20-byte records), kept
+    forever although the oven keeps only seven. `data` is the file as the oven
+    sent it, zlib-compressed; `size` and `sha256` describe the RAW file, so the
+    collector can tell what is already here and send only what grew."""
+    __tablename__ = "revent_oven_logs"
+
+    id         = Column(Integer, primary_key=True)
+    oven_id    = Column(Integer, ForeignKey("revent_ovens.id", ondelete="CASCADE"), nullable=False, index=True)
+    name       = Column(String(64), nullable=False)
+    day        = Column(Date, nullable=True, index=True)   # the date of its first record
+    size       = Column(Integer, nullable=False, default=0)
+    sha256     = Column(String(64), nullable=False)
+    data       = Column(LargeBinary, nullable=False)
+    first_at   = Column(DateTime, nullable=True)           # the oven's own clock, no zone
+    last_at    = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("oven_id", "name", name="uq_revent_oven_log"),)

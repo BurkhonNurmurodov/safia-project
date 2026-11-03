@@ -88,6 +88,9 @@ _RULES: list[tuple[Optional[tuple[str, ...]], str, str]] = [
     (None, r"/api/admin/ai(/.*)?", "blocked:credentials"),
     (None, r"/api/admin/verifix(/.*)?", "blocked:credentials"),
     (None, r"/api/admin/trello(/.*)?", "blocked:credentials"),
+    # «Pechlar»: where the collector is sent, and the collector's own door.
+    (None, r"/api/admin/ovens(/.*)?", "blocked:credentials"),
+    (None, r"/api/ovens/collector(/.*)?", "blocked:credentials"),
     # «Notion eslatmalari»: the reminder bot's token, and a send to Telegram.
     (None, r"/api/admin/notion-tracker(/.*)?", "blocked:credentials"),
     # The Verifix sync's ties, taps and mode move people, cells and access.

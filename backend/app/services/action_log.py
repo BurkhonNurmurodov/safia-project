@@ -460,6 +460,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/trello/boards/{}",               "config", "config.trello_board_set"),
     (("DELETE",), "/api/admin/trello/boards/{}",               "config", "config.trello_board_removed"),
     (("PUT",),    "/api/admin/trello",                         "config", "config.trello_saved"),
+    (("POST",),   "/api/admin/ovens",                          "config", "config.oven_added"),
+    (("PUT",),    "/api/admin/ovens/{}",                       "config", "config.oven_set"),
+    (("DELETE",), "/api/admin/ovens/{}",                       "config", "config.oven_removed"),
     (("PUT",),    "/api/admin/notion-tracker/token",           "config", "config.notion_tracker_token_set"),
     (("PUT",),    "/api/admin/notion-tracker/notion-token",    "config", "config.notion_tracker_notion_token_set"),
     (("POST",),   "/api/admin/notion-tracker/preview",         "comms", "notification.notion_preview"),
@@ -583,6 +586,8 @@ _SKIP = (
     # The report door writes its own rows (routers/ops_door.py): the asker,
     # the approver and what was read, none of which this middleware can see.
     "/api/ops/",
+    # «Pechlar»: the oven collector's readings, one post a minute — telemetry.
+    "/api/ovens/collector/",
 )
 
 _PREFIXES = ("/api/", "/admin/")

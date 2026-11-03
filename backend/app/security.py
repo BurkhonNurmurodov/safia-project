@@ -85,7 +85,10 @@ _EXEMPT_PATHS = frozenset({
 #   * /api/ops/     — the report door (routers/ops_door.py): asked by a Claude
 #                     session with its own ask key, every answer allowed first
 #                     by a person in Telegram. Each route checks the key itself.
-_EXEMPT_PREFIXES = ("/api/android/", "/api/ops/")
+#   * /api/ovens/collector/ — the oven collector on the factory LAN
+#                     (routers/ovens.py): no person, its own key, checked by
+#                     every route; it can post oven readings and nothing else.
+_EXEMPT_PREFIXES = ("/api/android/", "/api/ops/", "/api/ovens/collector/")
 
 # The report door's GET (services/ops_door.run_get): a request THIS process
 # makes to itself, as the admin who allowed it, after they tapped «Ruxsat

@@ -1,0 +1,326 @@
+"""«Pechlar» — the Revent ovens (/ovens) and their register (/panel/ovens).
+
+Three routers over ``services/revent_ovens.py`` (what is kept) and
+``services/revent_analytics.py`` (what is shown):
+
+- ``/api/ovens/collector`` — the COLLECTOR on the factory LAN (a laptop for
+  the test). It reads each oven with the three read-only calls and posts the
+  answers here; the server never reaches an oven. Every route checks the
+  collector key itself (``X-Oven-Key``, or ``Authorization: Bearer``), so the
+  prefix is outside the Telegram-origin wall (security._EXEMPT_PREFIXES) and
+  outside the action log's middleware (telemetry, one post a minute).
+- ``/api/ovens`` — the page, gated on the ``ovens`` page key (admin-only until
+  the operator opens it on the Access tab).
+- ``/api/admin/ovens`` — the register: which ovens exist, at which LAN
+  address. ADMIN-ONLY and not grantable: the address list is where the
+  collector is sent, so it is limited to private LAN addresses.
+"""
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import ipaddress
+import logging
+from datetime import date, datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import ReventOven, ReventOvenLog
+from app.permissions import require_page
+from app.routers.admin import verify_admin
+from app.services import ops_door, revent_analytics, revent_ovens
+
+log = logging.getLogger(__name__)
+
+collector_router = APIRouter(prefix="/api/ovens/collector", tags=["ovens"])
+router = APIRouter(prefix="/api/ovens", tags=["ovens"])
+admin_router = APIRouter(prefix="/api/admin/ovens", tags=["ovens"])
+
+KEY_HEADER = "x-oven-key"
+
+
+def _iso(dt) -> Optional[str]:
+    return dt.isoformat() if dt else None
+
+
+def _refuse(code: str, message: str, status: int, **extra) -> HTTPException:
+    return HTTPException(status_code=status, detail={"code": code, "message": message, **extra})
+
+
+# ── the collector ─────────────────────────────────────────────────────────────
+
+def _ip(request: Request) -> str:
+    h = request.headers
+    return (h.get("cf-connecting-ip") or h.get("x-real-ip")
+            or (request.client.host if request.client else "") or "")[:64]
+
+
+def _collector(request: Request) -> str:
+    """The collector's name, or 401 / 429. Wrong keys share the report door's
+    per-address throttle — ten in ten minutes and the address waits."""
+    ip = _ip(request)
+    if ops_door.throttled(ip):
+        raise _refuse("throttled", "Too many wrong keys from this address — wait ten minutes.", 429)
+    v = (request.headers.get(KEY_HEADER) or "").strip()
+    if not v:
+        scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
+        v = token.strip() if scheme.lower() == "bearer" else ""
+    name = revent_ovens.collector_of(v)
+    if name:
+        return name
+    ops_door.note_bad(ip)
+    log.warning("[OVENS] collector key refused from %s", ip)
+    raise _refuse("bad_key", "Not a collector key.", 401)
+
+
+def _oven(db: Session, oven_id: int) -> ReventOven:
+    o = db.get(ReventOven, oven_id)
+    if o is None or not o.active:
+        raise _refuse("no_oven", "No such active oven.", 404)
+    return o
+
+
+@collector_router.get("/plan")
+def collector_plan(request: Request, db: Session = Depends(get_db)):
+    """Which ovens to read, how often, and what is already kept here."""
+    _collector(request)
+    return revent_ovens.plan(db)
+
+
+class StatusIn(BaseModel):
+    oven_id: int
+    lines: Optional[List[str]] = None
+    error: Optional[str] = None
+
+
+class StatusBatch(BaseModel):
+    readings: List[StatusIn] = Field(default_factory=list, max_length=50)
+
+
+@collector_router.post("/status")
+def collector_status(body: StatusBatch, request: Request, db: Session = Depends(get_db)):
+    """One poll's live status for every oven read (or why one could not be)."""
+    name = _collector(request)
+    saved = 0
+    for r in body.readings:
+        o = db.get(ReventOven, r.oven_id)
+        if o is None or not o.active:
+            continue
+        revent_ovens.save_status(db, o, r.lines, r.error, name)
+        saved += 1
+    db.commit()
+    return {"saved": saved}
+
+
+class FileIn(BaseModel):
+    oven_id: int
+    kind: str                       # log · service · settings
+    name: str = ""
+    offset: int = 0
+    size: int
+    sha256: str
+    data: str                       # base64 of the bytes from `offset` on
+
+
+@collector_router.post("/file")
+def collector_file(body: FileIn, request: Request, db: Session = Depends(get_db)):
+    """One file of one oven. A log may be sent as the bytes added since the
+    copy kept here (`offset` = that copy's size); anything that does not add
+    up is refused 409 with the size this side holds, and sent again whole."""
+    _collector(request)
+    o = _oven(db, body.oven_id)
+    try:
+        chunk = base64.b64decode(body.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise _refuse("bad_data", "data is not base64.", 400)
+    try:
+        if body.kind == "log":
+            row = revent_ovens.save_log(db, o, body.name, body.offset, chunk, body.size, body.sha256)
+            db.commit()
+            revent_analytics.forget(o.id)
+            return {"saved": True, "size": row.size}
+        if body.offset or len(chunk) != body.size:
+            raise revent_ovens.Refused("bad_size")
+        if hashlib.sha256(chunk).hexdigest() != (body.sha256 or "").lower():
+            raise revent_ovens.Refused("sha")
+        if body.kind == "service":
+            revent_ovens.save_service(o, chunk.decode("utf-8", "replace"))
+        elif body.kind == "settings":
+            revent_ovens.save_settings(o, chunk)
+        else:
+            raise _refuse("bad_kind", "kind is log, service or settings.", 400)
+        db.commit()
+        return {"saved": True, "size": len(chunk)}
+    except revent_ovens.Refused as e:
+        db.rollback()
+        status = 409 if e.reason in ("offset", "sha") else 400
+        raise _refuse(e.reason, "File refused: %s." % e.reason, status, size=e.size)
+
+
+# ── the page ──────────────────────────────────────────────────────────────────
+
+def _period(date_from: Optional[str], date_to: Optional[str]) -> tuple[date, date]:
+    try:
+        d2 = date.fromisoformat(date_to) if date_to else date.today()
+        d1 = date.fromisoformat(date_from) if date_from else d2 - timedelta(days=6)
+    except ValueError:
+        raise _refuse("bad_date", "Dates are YYYY-MM-DD.", 422)
+    if d1 > d2:
+        raise _refuse("range_reversed", "The period starts after it ends.", 422)
+    if (d2 - d1).days > 92:
+        raise _refuse("range_too_long", "At most 93 days at a time.", 422)
+    return d1, d2
+
+
+@router.get("/board", dependencies=[Depends(require_page("ovens"))])
+def board(db: Session = Depends(get_db)):
+    """Every oven as it stands now: the live status, its age, the collector."""
+    return revent_analytics.board(db)
+
+
+@router.get("/analysis", dependencies=[Depends(require_page("ovens"))])
+def analysis(date_from: Optional[str] = None, date_to: Optional[str] = None,
+             ovens: Optional[str] = Query(None, description="comma-separated oven ids"),
+             db: Session = Depends(get_db)):
+    """Bakes, utilisation, alarms and door over a period, per oven and whole."""
+    d1, d2 = _period(date_from, date_to)
+    ids = [int(x) for x in (ovens or "").split(",") if x.strip().isdigit()] or None
+    return revent_analytics.analysis(db, d1, d2, ids)
+
+
+@router.get("/day", dependencies=[Depends(require_page("ovens"))])
+def day(oven: int, date: str, db: Session = Depends(get_db)):  # noqa: A002 — the query name
+    """One oven's day in full: temperature series, bakes, modes, door, alarms."""
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise _refuse("bad_date", "Dates are YYYY-MM-DD.", 422)
+    o = db.get(ReventOven, oven)
+    if o is None:
+        raise _refuse("no_oven", "No such oven.", 404)
+    return revent_analytics.day(db, o, d)
+
+
+@router.get("/info", dependencies=[Depends(require_page("ovens"))])
+def info(oven: int, db: Session = Depends(get_db)):
+    """What the oven says about itself: its settings file and service hours."""
+    o = db.get(ReventOven, oven)
+    if o is None:
+        raise _refuse("no_oven", "No such oven.", 404)
+    return revent_analytics.info(db, o)
+
+
+# ── the register ──────────────────────────────────────────────────────────────
+
+def _check_ip(ip: str) -> str:
+    """A private LAN IPv4 address and nothing else: the collector is sent to
+    whatever this list names, so it must never be able to name a host outside
+    the factory network."""
+    ip = (ip or "").strip()
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        raise _refuse("bad_ip", "Not an IP address.", 400)
+    if a.version != 4 or not a.is_private or a.is_loopback or a.is_link_local:
+        raise _refuse("bad_ip", "Only a private LAN address (10.x, 172.16–31.x, 192.168.x).", 400)
+    return str(a)
+
+
+def _oven_out(o: ReventOven, logs: dict) -> dict:
+    n, size, last = logs.get(o.id, (0, 0, None))
+    return {
+        "id": o.id, "name": o.name, "ip": o.ip, "port": o.port, "active": bool(o.active),
+        "position": o.position, "note": o.note, "collector": o.collector,
+        "status_at": _iso(o.status_at), "tried_at": _iso(o.tried_at), "error": o.error,
+        "logs_at": _iso(o.logs_at), "settings_at": _iso(o.settings_at),
+        "service_at": _iso(o.service_at), "log_files": n, "log_bytes": size,
+        "last_record": _iso(last),
+    }
+
+
+def _register(db: Session) -> dict:
+    logs = {oid: (n, s or 0, last) for oid, n, s, last in
+            db.query(ReventOvenLog.oven_id, func.count(), func.sum(ReventOvenLog.size),
+                     func.max(ReventOvenLog.last_at)).group_by(ReventOvenLog.oven_id)}
+    ovens = db.query(ReventOven).order_by(ReventOven.position, ReventOven.id).all()
+    return {"ovens": [_oven_out(o, logs) for o in ovens],
+            "collectors": sorted(set(revent_ovens.COLLECTOR_KEYS.values())),
+            "poll": revent_ovens.POLL}
+
+
+class OvenIn(BaseModel):
+    name: Optional[str] = Field(None, max_length=80)
+    ip: Optional[str] = None
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    active: Optional[bool] = None
+    position: Optional[int] = None
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@admin_router.get("")
+def register(db: Session = Depends(get_db), _a=Depends(verify_admin)):
+    return _register(db)
+
+
+@admin_router.post("")
+def add_oven(body: OvenIn, db: Session = Depends(get_db), a=Depends(verify_admin)):
+    name = (body.name or "").strip()
+    if not name:
+        raise _refuse("name_required", "Give the oven a name.", 400)
+    ip = _check_ip(body.ip or "")
+    port = body.port or 8080
+    if db.query(ReventOven).filter(ReventOven.ip == ip, ReventOven.port == port).first():
+        raise _refuse("duplicate", "That address is already in the list.", 409)
+    pos = (db.query(func.max(ReventOven.position)).scalar() or 0) + 1
+    db.add(ReventOven(name=name, ip=ip, port=port, active=True, position=pos,
+                      note=(body.note or "").strip() or None,
+                      added_by=a.get("full_name") or str(a.get("telegram_id") or "admin")))
+    db.commit()
+    return _register(db)
+
+
+@admin_router.put("/{oven_id}")
+def edit_oven(oven_id: int, body: OvenIn, db: Session = Depends(get_db), _a=Depends(verify_admin)):
+    o = db.get(ReventOven, oven_id)
+    if o is None:
+        raise _refuse("no_oven", "No such oven.", 404)
+    if body.name is not None:
+        if not body.name.strip():
+            raise _refuse("name_required", "Give the oven a name.", 400)
+        o.name = body.name.strip()
+    if body.ip is not None or body.port is not None:
+        ip = _check_ip(body.ip) if body.ip is not None else o.ip
+        port = body.port or o.port
+        clash = (db.query(ReventOven).filter(ReventOven.ip == ip, ReventOven.port == port,
+                                             ReventOven.id != o.id).first())
+        if clash:
+            raise _refuse("duplicate", "That address is already in the list.", 409)
+        o.ip, o.port = ip, port
+    if body.active is not None:
+        o.active = body.active
+    if body.position is not None:
+        o.position = body.position
+    if body.note is not None:
+        o.note = body.note.strip() or None
+    db.commit()
+    return _register(db)
+
+
+@admin_router.delete("/{oven_id}")
+def delete_oven(oven_id: int, db: Session = Depends(get_db), _a=Depends(verify_admin)):
+    """Only an oven nothing was ever collected from. One with history is
+    switched off instead — its logs are the record."""
+    o = db.get(ReventOven, oven_id)
+    if o is None:
+        raise _refuse("no_oven", "No such oven.", 404)
+    if db.query(ReventOvenLog.id).filter(ReventOvenLog.oven_id == o.id).first() or o.status_at:
+        raise _refuse("has_history", "This oven has collected data — switch it off instead.", 409)
+    db.delete(o)
+    db.commit()
+    return _register(db)
