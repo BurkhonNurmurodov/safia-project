@@ -10138,9 +10138,6 @@ computes the four itself (the operator's pick, asked).
     row «O'z vaqtida yetkazish (on time report)» (`SheetSource` `ontime`).
   - Also reads «свод» A4:D (the list above). A read whose predecessor kept no
     list is due at boot.
-  - TEMPORARY: `GET /api/ontime/sheet-check` (`services/ontime_sheet_check.py`,
-    admin, read-only) sets the sheet's summary tabs against the page through
-    the report door. Delete both once the 2026-11-03 fix is confirmed.
   - Reads through the platform's Google service account. Columns are found by
     HEADER text (`ORDER_COLS` / `RECEIPT_COLS`), never by position. Rows are
     read 40,000 at a time.
@@ -10221,18 +10218,11 @@ computes the four itself (the operator's pick, asked).
     «pending» grey.
 - Not built: an export, and per-unit or cell attribution (the sheet carries
   neither).
-- **The ORIGINAL sheet, read once by production** (2026-10-21, the operator):
-  TEMPORARY `services/ontime_sheet_report.py`, `startup.report_ontime_sheet`
-  (flag `ontime_original_sheet_report_2026_10_21_v1`, ~150 s after boot, both
-  entrypoints), DMed as text + workbook to `UNPRICED_DM_CHAT`. It opens the
-  original (`ORIGINAL`), the sheet set on «Ma'lumotlar» and the old copy with
-  the service account, prints its address, samples every tab and the formulas
-  atop the summary tabs, runs the reader's own `read_*` over the raw tabs
-  (nothing stored), and sets `ontime.evaluate` on that data against the
-  sheet's «свод» (per material × wave × dated day: D, H, on time; row 3) and
-  «свод по группам» (group × wave means, the group's daily mean). Read-only;
-  it does not switch the page's sheet. Delete the module, the startup pair
-  and both calls once the DM has landed.
+- **Checked against the sheet's own tabs on production twice**: 2026-10-21
+  (a one-shot DM, deleted) and 2026-11-03 (a temporary admin endpoint asked
+  through the report door, deleted) — the second found the «свод» scope and
+  the wave-3 rule above. Another check is a new temporary module, not a
+  revival of either.
 
 ## «Trello tahlili» — a Trello board's analytics (`/trello`, Laboratory, 2026-11-01)
 
