@@ -173,12 +173,14 @@ export default function BkpiBoard({ T, tl, data, rows, prev, sort, onSort, onOpe
                     <span className="block text-xs mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
                       {x.kind === "verifix" ? T.srcVerifix : x.shift ? fill(T.shiftN, { n: x.shift }) : "—"}
                     </span>
-                    <span className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                    {/* Label and verdict in two columns, so the figures
+                        line up from one gate to the next. */}
+                    <span className="grid grid-cols-[max-content_auto] items-center gap-x-3 gap-y-1 mt-2">
                       {live.map((k) => (
-                        <span key={k} className="inline-flex items-center gap-1.5 text-xs">
-                          <span style={{ color: "var(--text-3)" }}>{T.tabs[k]}</span>
+                        <Fragment key={k}>
+                          <span className="text-xs" style={{ color: "var(--text-3)" }}>{T.tabs[k]}</span>
                           <GateCell row={x} k={k} live={live} T={T} />
-                        </span>
+                        </Fragment>
                       ))}
                     </span>
                   </span>

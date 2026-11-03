@@ -101,7 +101,7 @@ function GateBlock({ k, row, prevRow, data, live, T, on, setActive, onOpen }) {
           style={{ background: state === "pending" ? "var(--border)" : `${GATE_INK[state]}1f`, color: ink }}>
           {state === "pending" ? <CircleDashed size={15} /> : <Icon size={15} strokeWidth={2.25} />}
         </span>
-        <h4 className="flex-1 min-w-0 text-sm font-medium truncate" style={{ color: state === "pending" ? "var(--text-3)" : "var(--text-1)" }}>
+        <h4 className="flex-1 min-w-0 text-sm font-medium leading-snug" style={{ color: state === "pending" ? "var(--text-3)" : "var(--text-1)" }}>
           {T.kpi[k]}
         </h4>
         <span className="text-xs font-semibold whitespace-nowrap" style={{ color: state === "pending" || state === "nodata" ? "var(--text-3)" : ink }}>{word}</span>
