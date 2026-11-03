@@ -233,10 +233,13 @@ untouched.
   the gold tile (Overview) takes a deeper gold, or it sinks into the ground.
 - **«Xush kelibsiz, {name}!» heads the tiles** (2026-11-03, the operator) —
   `apps.hello`, the signed-in profile's name as the header prints it (`tl`),
-  the name and its «!» kept on one line together (`.apps-hello-who`). It
-  writes itself in letter by letter, left to right (`.apps-hello-ch`, 35ms a
-  letter, opacity + translate only; the sentence is read once from a
-  `sr-only` copy). On a
+  the name and its «!» kept on one line together (`.apps-hello-who`). It is
+  TYPED (the operator, same day): each letter `.apps-hello-ch` is held
+  invisible for its `--d` and then simply there, on a 55–85ms beat with a
+  breath after punctuation (`typingPlan`), a caret after the newest letter
+  that blinks four times at the end; never a 1ms step with a fill — float
+  rounding left letters hidden. A screen reader reads it once from a
+  `sr-only` copy. On a
   phone its height is paid back (smaller top padding, 12px tile padding) so
   the last row still clears the bottom-corner treats.
 - **Not built:** the launcher for other roles, per-app language packs.

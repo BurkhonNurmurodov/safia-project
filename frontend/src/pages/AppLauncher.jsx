@@ -28,19 +28,45 @@ import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
  *
  * Above the tiles, «Xush kelibsiz, {name}!» (2026-11-03, the operator) — the
  * signed-in profile's name as the header prints it, the name set a shade
- * heavier. It writes itself in letter by letter, left to right (`--c` = the
- * letter's place); a screen reader is handed the whole sentence once.
+ * heavier. It is TYPED: each letter appears at once on its own beat (`--d`),
+ * a caret standing after the newest one (`--s` = how long until the next),
+ * blinking a few times after the last before it goes; a screen reader is
+ * handed the whole sentence once.
  */
 
+// A typist's beat — never metronomic: 55–85ms a key, a breath after
+// punctuation. Deterministic (by the letter's place), so a re-render never
+// changes the rhythm.
+const TYPE_START = 250;
+const beat = (ch, i) => 55 + ((i * 37) % 31) + (/[,.!?:;]/.test(ch) ? 220 : 0);
+
+// The letters, in order, with the moment each is typed and how long it is the
+// newest. Spaces take a beat but have no span of their own.
+function typingPlan(text) {
+  const plan = [];
+  let t = TYPE_START;
+  Array.from(text).forEach((ch, i) => {
+    if (!/\s/.test(ch)) plan.push({ d: t });
+    t += beat(ch, i);
+  });
+  plan.forEach((p, i) => { p.s = (plan[i + 1]?.d ?? p.d) - p.d; });
+  return plan;
+}
+
 // Words stay unbroken (`.apps-hello-word`), each letter its own span so it can
-// arrive on its own beat. `n` counts letters across the whole greeting.
+// be typed on its own beat. `n.i` walks the plan across the whole greeting.
 function lettered(text, n) {
   return text.split(/(\s+)/).filter(Boolean).map((part, i) =>
     /^\s+$/.test(part) ? " " : (
       <span key={i} className="apps-hello-word">
-        {Array.from(part).map((ch, j) => (
-          <span key={j} className="apps-hello-ch" style={{ "--c": n.i++ }}>{ch}</span>
-        ))}
+        {Array.from(part).map((ch, j) => {
+          const k = n.i++;
+          const { d, s } = n.plan[k] || { d: 0, s: 0 };
+          return (
+            <span key={j} className={`apps-hello-ch${k === n.plan.length - 1 ? " is-last" : ""}`}
+              style={{ "--d": `${d}ms`, "--s": `${s}ms` }}>{ch}</span>
+          );
+        })}
       </span>
     ));
 }
@@ -52,7 +78,7 @@ export default function AppLauncher() {
   const who = tl(auth?.full_name || "").trim();
   const [before, after = ""] = t("apps.hello").split("{name}");
   const plain = who ? `${before}${who}${after}` : `${before.replace(/[,\s]+$/, "")}${after}`;
-  const n = { i: 0 };
+  const n = { i: 0, plan: typingPlan(plain) };
 
   const { data: pending } = useQuery({
     queryKey: ["staff-documents-pending-count"],

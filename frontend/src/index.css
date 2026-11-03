@@ -909,22 +909,33 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 /* «Xush kelibsiz, {name}!» above the tiles (2026-11-03) — centred, the name
    a shade heavier; by day the header's chocolate, like the tile names. It
-   writes itself in letter by letter, left to right, while the tiles gather. */
+   is typed in, letter by letter, while the tiles gather. */
 .apps-hello {
   margin: 0 auto 16px; padding: 0 16px; max-width: 100%;
   font-size: 20px; font-weight: 500; line-height: 1.25; letter-spacing: -0.01em;
   text-align: center; text-wrap: balance; overflow-wrap: break-word;
   color: var(--text-2);
 }
-/* A word never breaks between its letters; a letter slides in from the left
-   (inline-block, or `translate` would not move it). ~35ms a letter. */
+/* Typed, not faded: a word never breaks between its letters, each letter
+   is held invisible for `--d` and then simply there (no fill, so the end
+   state is the letter's own style — a 1ms step at the end of a delay left
+   some letters on the hidden side of the step through float rounding), and
+   the caret is a thin bar after the newest letter for `--s`, then blinks
+   four times after the last one and goes. */
 .apps-hello-word { white-space: nowrap; }
 .apps-hello-ch {
-  display: inline-block; white-space: pre;
-  animation: helloCh .55s var(--ease-out) both;
-  animation-delay: calc(var(--c, 0) * 35ms + 120ms);
+  display: inline-block; position: relative; white-space: pre;
+  animation: helloWait var(--d, 0ms) linear;
 }
-@keyframes helloCh { from { opacity: 0; translate: -0.4em 0; } }
+@keyframes helloWait { from, to { opacity: 0; } }
+.apps-hello-ch::after {
+  content: ""; position: absolute; top: .14em; bottom: .08em; right: -.09em;
+  width: 2px; border-radius: 1px; background: currentColor; opacity: 0;
+  animation: helloCaret var(--s, 0ms) steps(1, end) var(--d, 0ms);
+}
+@keyframes helloCaret { from, to { opacity: 1; } }
+.apps-hello-ch.is-last::after { animation: helloBlink 1.05s steps(1, end) var(--d, 0ms) 4; }
+@keyframes helloBlink { 0% { opacity: 1; } 50% { opacity: 0; } }
 /* The name and its «!» wrap as one piece — never «Abbos / Mustafakulov!». */
 .apps-hello-who { display: inline-block; max-width: 100%; }
 .apps-hello-name { font-weight: 700; color: var(--text-1); }
@@ -1298,7 +1309,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .hdr-apps:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
 
 @media (prefers-reduced-motion: reduce) {
-  .apps-grid > li, .apps-hello-ch, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
+  .apps-grid > li, .apps-hello-ch, .apps-hello-ch::after, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
   .apps-mote, .app-badge::after { display: none; }
   .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
   .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }
