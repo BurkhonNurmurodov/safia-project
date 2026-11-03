@@ -14,6 +14,7 @@ import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import { useToast } from "../../components/ui/Toast";
 import { useAdminDirty } from "./AdminPanel";
 import api from "../../utils/api";
+import { loadDictionary } from "../../i18n/packs";
 
 const BASE_LANGS = ["uz", "uz_cyrl", "ru", "en"];
 
@@ -91,7 +92,8 @@ export default function TranslationsEditor() {
     // arrive separately — merge both into the same overrides map.
     setInitLoading(true);
     Promise.allSettled([
-      import("../../i18n/translations").then((m) => setDict(m.default || {})),
+      // By its index.html name, never a direct import: see loadDictionary.
+      loadDictionary().then(setDict),
       api.get("/api/translations").then((r) => {
         setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
         if (r.data?.languages?.length) {

@@ -12286,8 +12286,29 @@ Cloudflare. Four changes, all on the path EVERY page shares:
   before any app code runs. Boot JS went from ~2.7 MB to ~1.0–1.2 MB (the shared
   chunk that carried the dictionary, 2.1 MB → 23 KB). **Never import
   `translations.js` from anything a page load runs** — only the admin
-  translations editor does, by dynamic `import()` when its tab opens. A
-  language switch loads the new pack FIRST, then moves `lang`.
+  translations editor reads it, through `loadDictionary()` (`i18n/packs.js`)
+  when its tab opens. A language switch loads the new pack FIRST, then moves
+  `lang`.
+- **A pack's file name lives only in `index.html`** (2026-11-03). The packs
+  used to be `import("virtual:i18n/<lang>")`ed from `packs.js`, which wrote
+  their names into the shared chunk ~220 others import — and a chunk's name
+  hashes the names it imports, so ONE new UI string renamed ~234 of ~250
+  build files and every phone re-downloaded the app (v4.389.0 did, for three
+  strings). Now the build emits the four packs and the whole dictionary
+  (`all`, the editor's) as chunks of their own, the plugin's inline script
+  publishes their names as `window.__i18nPacks`, and `virtual:i18n/loaders` —
+  what `packs.js` imports — reads them from there (dev keeps plain imports).
+  A new string now renames those five files plus `index.html`, `sw.js` and the
+  build lists, nothing else. **Never import `virtual:i18n/<lang>` or
+  `translations.js` directly**: the `i18n-packs` plugin's `generateBundle`
+  fails the build if a pack's name lands in any other chunk. The packs are
+  emitted with `preserveSignature: 'strict'` — an app build otherwise strips an
+  entry's exports, and a pack is nothing but its default export.
+- **Not fixed: a page change still renames ~118 files.** The entry chunk
+  names every lazy page (and Vite's preload map), and ~110 chunks import the
+  entry for the shared code Rolldown put in it — so any change to any page's
+  code renames the entry and all of those. Measured 2026-11-03 (one line added
+  to `Kaizen.jsx` → 118 renamed); a backend-only deploy renames none.
 - **The sign-in answer carries the permissions.** `/api/auth/webapp`,
   `/api/auth/web/session`, `/web/login` and `/web/impersonate` add `boot:
   {page_access, capabilities}` (`routers/settings.boot_extras`, through

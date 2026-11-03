@@ -187,10 +187,25 @@ function injectBuildMeta() {
 // (the inline preload injected below), so it adds no round trip in a row.
 // A pack is emitted as JSON.parse('…'): V8 parses a JSON string far faster
 // than the same object written as a JS literal.
+//
+// A pack's FILE NAME lives only in index.html (2026-11-03). packs.js used to
+// `import("virtual:i18n/<lang>")`, which wrote the four names into the shared
+// chunk that holds it — and ~220 chunks import that one. A chunk's name hashes
+// the names it imports, so ONE new UI string renamed the packs, then that
+// chunk, then nearly every file of the build (234 of ~250 for three strings),
+// and every phone re-downloaded the whole app. Now the build emits the packs
+// as chunks of their own (buildStart), the inline script below publishes their
+// names as `window.__i18nPacks`, and `virtual:i18n/loaders` — what packs.js
+// imports — reads them from there; a new string renames the four packs and
+// index.html (served no-store) and nothing else. Dev keeps the plain imports.
+// `generateBundle` fails the build if a pack's name reaches any other chunk.
 const I18N_PREFIX = 'virtual:i18n/'
 const I18N_LANGS = ['uz', 'uz_cyrl', 'ru', 'en']
+const I18N_LOADERS = `${I18N_PREFIX}loaders`
+const I18N_PACK_ID = /^\0virtual:i18n\/(\w+)$/
 function i18nPacks() {
   let root = process.cwd()
+  let isBuild = false
   let cache = null // { mtime, dict }
   const source = () => resolve(root, 'src', 'i18n', 'translations.js')
   const readDict = () => {
@@ -216,12 +231,38 @@ function i18nPacks() {
   }
   return {
     name: 'i18n-packs',
-    configResolved(config) { root = config.root },
+    configResolved(config) {
+      root = config.root
+      isBuild = config.command === 'build'
+    },
+    // Nothing imports a pack by name in a build, so each is emitted here — and
+    // so is the whole dictionary the admin translations editor reads (`all`),
+    // or every string edit would rename it, the admin panel naming it, and the
+    // entry chunk naming that. `preserveSignature`: an app build drops an
+    // entry's exports, and a pack is nothing BUT its default export.
+    buildStart() {
+      if (!isBuild) return
+      for (const lang of I18N_LANGS) {
+        this.emitFile({ type: 'chunk', id: `${I18N_PREFIX}${lang}`, name: lang, preserveSignature: 'strict' })
+      }
+      this.emitFile({ type: 'chunk', id: source(), name: 'translations', preserveSignature: 'strict' })
+    },
     resolveId(id) {
+      if (id === I18N_LOADERS) return `\0${id}`
       if (id.startsWith(I18N_PREFIX) && I18N_LANGS.includes(id.slice(I18N_PREFIX.length))) return `\0${id}`
       return null
     },
     load(id) {
+      // lang → () => import(pack). Built: the URL index.html published, read
+      // when the pack is asked for; no pack name is written into this module.
+      if (id === `\0${I18N_LOADERS}`) {
+        const devSpec = { all: '/src/i18n/translations.js' }
+        const entries = [...I18N_LANGS, 'all'].map((key) => (isBuild
+          ? `${JSON.stringify(key)}: function () { var m = window.__i18nPacks || {}; var u = m[${JSON.stringify(key)}];`
+            + ` return u ? import(/* @vite-ignore */ u) : Promise.reject(new Error("index.html names no ${key} language pack")); }`
+          : `${JSON.stringify(key)}: () => import(${JSON.stringify(devSpec[key] || `${I18N_PREFIX}${key}`)})`))
+        return `export default {\n  ${entries.join(',\n  ')}\n}`
+      }
       if (!id.startsWith(`\0${I18N_PREFIX}`)) return null
       this.addWatchFile(source())
       const json = JSON.stringify(pack(readDict(), id.slice(I18N_PREFIX.length + 1)))
@@ -240,11 +281,27 @@ function i18nPacks() {
         return []
       }
     },
-    // Build: name each pack's file in index.html and fetch the reader's one
-    // at once — the language is in localStorage, the app code is not needed to
-    // know it. Also puts the pack in the boot watchdog's view (it counts every
-    // modulepreload), so a slow pack reads as «still downloading», not as an
-    // app that never painted.
+    // The guard: a pack's name inside any other chunk brings the whole-build
+    // rename back (see above), so it fails the build instead of shipping.
+    generateBundle(_options, bundle) {
+      if (!isBuild) return
+      const chunks = Object.values(bundle).filter((f) => f.type === 'chunk')
+      const packs = chunks.filter((f) => I18N_PACK_ID.test(f.facadeModuleId || '') || f.facadeModuleId === source())
+      const names = packs.map((f) => f.fileName.split('/').pop())
+      const hit = chunks.filter((f) => !packs.includes(f) && names.some((n) => f.code.includes(n)))
+      if (hit.length) {
+        this.error(
+          `A language pack's file name is inside ${hit.length} JS chunk(s) (${hit.map((f) => f.fileName).slice(0, 5).join(', ')}): ` +
+          'every new UI string would rename them and every chunk importing them, and every user would re-download the app. ' +
+          'Load packs through src/i18n/packs.js (virtual:i18n/loaders), never import virtual:i18n/<lang> directly.')
+      }
+    },
+    // Build: name each pack's file in index.html — the ONLY place the names
+    // live (`window.__i18nPacks`, read by virtual:i18n/loaders) — and fetch the
+    // reader's one at once: the language is in localStorage, the app code is
+    // not needed to know it. Also puts the pack in the boot watchdog's view (it
+    // counts every modulepreload), so a slow pack reads as «still downloading»,
+    // not as an app that never painted.
     transformIndexHtml: {
       order: 'post',
       handler(_html, ctx) {
@@ -252,13 +309,14 @@ function i18nPacks() {
         const files = {}
         for (const f of Object.values(ctx.bundle)) {
           if (f.type !== 'chunk' || !f.facadeModuleId) continue
-          const m = f.facadeModuleId.match(/^\0virtual:i18n\/(\w+)$/)
+          const m = f.facadeModuleId.match(I18N_PACK_ID)
           if (m) files[m[1]] = `/${f.fileName}`
+          else if (f.facadeModuleId === source()) files.all = `/${f.fileName}`
         }
-        if (Object.keys(files).length !== I18N_LANGS.length) {
-          throw new Error(`i18n-packs: expected ${I18N_LANGS.length} language chunks, found ${Object.keys(files).join(', ') || 'none'}`)
+        if (Object.keys(files).length !== I18N_LANGS.length + 1) {
+          throw new Error(`i18n-packs: expected ${I18N_LANGS.length} language chunks and the dictionary, found ${Object.keys(files).join(', ') || 'none'}`)
         }
-        const code = `(function(){try{var f=${JSON.stringify(files)};var l=null;try{l=localStorage.getItem("lang")}catch(e){}`
+        const code = `(function(){try{var f=${JSON.stringify(files)};window.__i18nPacks=f;var l=null;try{l=localStorage.getItem("lang")}catch(e){}`
           + `var h=f[l||"uz"]||f.en;var e=document.createElement("link");e.rel="modulepreload";e.setAttribute("crossorigin","");e.href=h;`
           + `document.head.appendChild(e)}catch(e){}})();`
         return [{ tag: 'script', children: code, injectTo: 'head' }]

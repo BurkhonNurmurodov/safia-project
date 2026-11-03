@@ -1,4 +1,9 @@
 import { importWithRecovery } from "../utils/importRecovery";
+// lang → () => import(pack). Never `import("virtual:i18n/<lang>")` here: in a
+// build the packs' file names live only in index.html, so that a new UI string
+// renames the four packs and not every chunk importing this one (vite.config.js
+// → i18nPacks, whose build fails if a name gets in again).
+import LOADERS from "virtual:i18n/loaders";
 
 // The reader's ONE language (2026-10-23). translations.js holds all four and
 // stays the file people edit; the build cuts it into one module per language
@@ -9,12 +14,6 @@ import { importWithRecovery } from "../utils/importRecovery";
 // the language lacks — so one pack answers exactly what the whole dictionary
 // did. Never import translations.js from anything a page load runs: it would
 // put all four languages back into the boot download.
-const LOADERS = {
-  uz: () => import("virtual:i18n/uz"),
-  uz_cyrl: () => import("virtual:i18n/uz_cyrl"),
-  ru: () => import("virtual:i18n/ru"),
-  en: () => import("virtual:i18n/en"),
-};
 
 const packs = {};    // lang → pack, once loaded
 const loading = {};  // lang → promise in flight
@@ -38,13 +37,21 @@ export function loadPack(lang) {
   const code = lang || "uz";
   if (packs[code]) return Promise.resolve(packs[code]);
   if (loading[code]) return loading[code];
-  const p = LOADERS[code]
+  const p = LOADERS[code] && code !== "all"
     ? importWithRecovery(LOADERS[code]).then((m) => m.default)
     : loadPack("en").then((en) => ({ own: {}, uz: {}, en: en.own }));
   loading[code] = p
     .then((pack) => { packs[code] = pack; return pack; })
     .finally(() => { delete loading[code]; });
   return loading[code];
+}
+
+/**
+ * The whole dictionary, all four languages — for the admin translations
+ * editor only. Never from anything a page load runs (see the top of the file).
+ */
+export function loadDictionary() {
+  return importWithRecovery(LOADERS.all).then((m) => m.default || {});
 }
 
 /**
