@@ -131,12 +131,18 @@ untouched.
 
 - **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
   icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
-  overview and the users-activity page are one-page apps; the `admin` app's
-  pages are `ADMIN_PAGE_LINKS`, derived from `config/adminNav.js` (see «The
-  admin app»), and its `sections` group them in the sidebar. The assistant has no tile — the
-  header's button opens it everywhere. A new page joins its group's app by
-  itself; give it `app` only to move it elsewhere. Twelve tiles fill 3 / 4 / 6
-  columns evenly — keep the count in mind before adding a thirteenth.
+  overview, «Hisobotlar» (2026-11-03, the operator — out of the Laboratory
+  app; its page access is unchanged, admins only by default, and for
+  everybody else it stays in the Laboratory group) and the users-activity
+  page are one-page apps; the `admin` app's pages are `ADMIN_PAGE_LINKS`,
+  derived from `config/adminNav.js` (see «The admin app»), and its `sections`
+  group them in the sidebar. The assistant has no tile — the header's button
+  opens it everywhere. A new page joins its group's app by itself; give it
+  `app` only to move it elsewhere. Thirteen tiles fill 3 / 5 / 7 columns and
+  the short last row is CENTRED (a wrapping flex row, not a grid), so any
+  count sits evenly. ARC is the repair department: its icon (tile and sidebar
+  row) is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn
+  on lucide's grid with `createLucideIcon` — plain `Wrench` is «Perenaladka».
 - **The overview answers at `/overview`** for an admin (`adminPath`); the
   sidebar, the header search and `DocumentTitle` map `/` there. `/overview`
   works for every role (same `RequirePage`).
@@ -161,22 +167,32 @@ untouched.
 - **The look** (2026-11-03, the operator's pick of their own mock-ups): by
   DAY a frosted glass tile with a white glyph floating on a soft coloured
   cloud; by NIGHT a dark glass tile, a neon line glyph in the hue and a glow.
-  The backdrop is safiabakery.uz's warm cream with drifting pools of gold
-  light and rising gold dust (`LauncherBackdrop`, handed to Layout's
-  `backdrop` prop — it must live there, since inside `.page-enter` a fixed
-  box is sized to the content column). Motion is slow on purpose («loyalty,
-  peace, premium»): the tiles gather in on arrival, the clouds breathe and
-  turn one after another as a wave, a band of light crosses the tiles in
-  turn, a tile lifts on hover, the People badge ripples. **Only opacity and
-  transforms animate** — never a filter, blur, box-shadow or
-  backdrop-filter — so a phone's compositor carries it; the light pools are
-  size-capped GPU layers; prefers-reduced-motion stills all of it. Two
+  The backdrop (`components/launcher/LauncherBackdrop.jsx`, handed to
+  Layout's `backdrop` prop — it must live there, since inside `.page-enter` a
+  fixed box is sized to the content column) follows the operator's reference
+  image: a warm golden gradient with Safia's treats floating at different
+  depths — takeaway coffee cups, macarons, a donut, a croissant, coffee beans
+  — near ones sharp with a soft shadow, far ones out of focus, the big ones
+  cut by the screen edge. They are hand-drawn SVG in one soft-clay style (a
+  hidden sprite of `<symbol>`s; no image files), the blur and shadow are SVG
+  filters baked into each object's raster, and they keep to the edges — on a
+  phone only the ones clear of the tiles show (`wide` = desktop only). By
+  night the same scene sits under a dark veil with gold dust. Motion is slow
+  on purpose («loyalty, peace, premium»): the tiles gather in on arrival, the
+  clouds breathe and turn one after another as a wave, a band of light
+  crosses the tiles in turn, the treats bob and turn a few degrees, a tile
+  lifts on hover, the People badge ripples. **Only opacity and transforms
+  animate** — never a CSS filter, blur, box-shadow or backdrop-filter — so a
+  phone's compositor carries it; the light pools are size-capped GPU layers;
+  prefers-reduced-motion stills all of it. Two
   triples per hue: `--hue` (glyph by night, sidebar label) and `--glow`
   (cloud and day tile, 500 shades), plus `--cloud` where the 500 shade reads
   as a shadow behind its tile (gold → brown, slate → grey). A cloud's
   ellipses must end INSIDE its box, or the box edge cuts a visible rim.
-  **Keep the clouds and the backdrop faint** — the operator found the first
-  cut «too much background shadow» (v4.390.1–2 cut both to about a third).
+  **Keep the tile clouds faint** — the operator found the first cut «too much
+  background shadow» (v4.390.1–2); the golden backdrop with its shadows came
+  after, with «don't worry about shadows for background» (v4.392.0). By day
+  the gold tile (Overview) takes a deeper gold, or it sinks into the ground.
 - **Not built:** the launcher for other roles, per-app language packs.
 
 ## The admin app (`/panel/<id>`, from 2026-11-03)

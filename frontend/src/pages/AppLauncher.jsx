@@ -5,6 +5,7 @@ import { useLang } from "../context/LangContext";
 import { APPS } from "../config/navLinks";
 import { appEntry } from "../utils/apps";
 import api from "../utils/api";
+import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
 
 /**
  * «Ilovalar» — what «/» shows an admin (2026-11-02, admins only for now): one
@@ -17,39 +18,12 @@ import api from "../utils/api";
  * chart library now load only when the Overview tile is opened.
  *
  * The look (2026-11-03, the operator's pick): a glass tile on a coloured cloud
- * by day, a dark glass tile with a neon glyph and glow by night, over the
- * Safia site's warm cream with drifting gold light and gold dust. Every moving
- * part is CSS (index.css, «Ilovalar»), slow on purpose, and still under
+ * by day, a dark glass tile with a neon glyph and glow by night, over a warm
+ * golden backdrop with Safia's treats floating in it
+ * (components/launcher/LauncherBackdrop.jsx). Every moving part is CSS
+ * (index.css, «Ilovalar»), slow on purpose, and still under
  * prefers-reduced-motion.
  */
-
-// Gold dust: where each mote starts (% of the backdrop), its size (px), how
-// long one rise takes (s) and where in that rise it begins. Fixed rather than
-// random, so the screen looks the same every time it opens.
-const MOTES = [
-  [8, 78, 3, 19, 0], [17, 34, 2, 23, 6], [26, 88, 4, 21, 11], [34, 52, 2, 26, 3],
-  [43, 18, 3, 24, 15], [51, 72, 2, 20, 8], [59, 40, 4, 25, 1], [67, 90, 2, 22, 13],
-  [74, 24, 3, 27, 5], [82, 64, 2, 21, 17], [90, 38, 3, 24, 9], [95, 84, 2, 23, 4],
-  [13, 12, 2, 28, 19], [87, 10, 3, 26, 12],
-];
-
-function LauncherBackdrop() {
-  return (
-    <div className="apps-backdrop" aria-hidden="true">
-      <span className="apps-light apps-light--a" />
-      <span className="apps-light apps-light--b" />
-      <span className="apps-light apps-light--c" />
-      {MOTES.map(([x, y, s, d, at], i) => (
-        <i
-          key={i}
-          className="apps-mote"
-          style={{ left: `${x}%`, top: `${y}%`, width: s, height: s,
-                   animationDuration: `${d}s`, animationDelay: `-${at}s` }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export default function AppLauncher() {
   const { t } = useLang();

@@ -9,9 +9,20 @@ import {
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  SquareKanban, TestTubes, Ticket, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
+  SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
+
+// ARC is the repair department: a wrench crossed with a screwdriver, drawn on
+// lucide's grid and stroke (lucide has no screwdriver) so it sits with the
+// other icons. The wrench is lucide's own; plain Wrench already marks
+// «Perenaladka», so ARC gets the pair rather than a second lone wrench.
+const Repair = createLucideIcon("repair", [
+  ["path", { d: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z", key: "wrench" }],
+  ["path", { d: "M2.6 5.4a2 2 0 0 1 2.8-2.8l5 5-2.8 2.8z", key: "handle" }],
+  ["path", { d: "m9 9 9.5 9.5", key: "shaft" }],
+  ["path", { d: "m17.5 19.5 2-2", key: "tip" }],
+]);
 
 // `app` moves a link out of its group's app on the admin launcher («Ilovalar»,
 // see APPS below); a link without one belongs to the app of its `group`.
@@ -54,7 +65,7 @@ export const ALL_LINKS = [
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
-  { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality", app: "arc" },
+  { to: "/arc", page: "arc", key: "nav.arc", icon: Repair, group: "quality", app: "arc" },
   // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)
   // on one page since 2026-09-04; the level is a column, not a second page.
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
@@ -74,8 +85,10 @@ export const ALL_LINKS = [
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
   // «Hisobotlar» — the platform's period report, every section folded out of
   // the page that owns it and downloadable as a document. Laboratory,
-  // admin-only until the operator opens it on the Access tab.
-  { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab" },
+  // admin-only until the operator opens it on the Access tab. On the admin
+  // launcher it is an app of its own (2026-11-03, the operator), not a
+  // Laboratory page; for anybody else it stays in the Laboratory group.
+  { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab", app: "reports" },
   // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
   // candidate. Laboratory, admin-only until the operator opens it to judges.
   { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
@@ -127,17 +140,18 @@ export const NAV_GROUPS = [
 
 // «Ilovalar» — the admin's app launcher (2026-11-02, admins only for now).
 // For an admin «/» is a grid of these tiles, and while one is open the sidebar
-// lists only its pages. An app is a nav group by default; ARC, the overview
-// and the activity page are apps of their own (a link's `app` says so).
+// lists only its pages. An app is a nav group by default; ARC, the overview,
+// the reports and the activity page are apps of their own (a link's `app`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
 export const APPS = [
   { id: "overview",  labelKey: "nav.overview",      icon: LayoutDashboard, hue: "gold" },
+  { id: "reports",   labelKey: "nav.reports",       icon: FileBarChart,    hue: "blue" },
   { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
   { id: "people",    labelKey: "navgrp.people",     icon: UsersRound,      hue: "sky" },
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
   { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
-  { id: "arc",       labelKey: "nav.arc",           icon: Ticket,          hue: "rose" },
+  { id: "arc",       labelKey: "nav.arc",           icon: Repair,          hue: "rose" },
   { id: "cells",     labelKey: "navgrp.cells",      icon: Grid3x3,         hue: "teal" },
   { id: "education", labelKey: "navgrp.education",  icon: GraduationCap,   hue: "indigo" },
   { id: "verifix",   labelKey: "navgrp.verifix",    icon: ScanFace,        hue: "cyan" },
