@@ -34,6 +34,7 @@ MAX_DAYS = 124
 MAX_TEXT = 2000
 SHOW_LAST = 30          # solutions served per category, newest first
 TOP_UNITS = 5
+MAX_NOTES = 8           # brigadir comments served per problem, newest first
 
 
 def _admin_only(payload: dict) -> None:
@@ -47,7 +48,7 @@ def _fmt_dt(v):
 
 def _item(r: IdleCategorySolution) -> dict:
     return {
-        "id": r.id, "category": r.category, "text": r.text, "status": r.status,
+        "id": r.id, "category": r.category, "manager_id": r.manager_id, "text": r.text, "status": r.status,
         "author_key": r.author_key, "author_name": r.author_name,
         "created_at": _fmt_dt(r.created_at), "updated_at": _fmt_dt(r.updated_at),
     }
@@ -108,6 +109,30 @@ def analysis(
             unit_cat.setdefault(mid, {})
             unit_cat[mid][c] = unit_cat[mid].get(c, 0.0) + v
 
+    # The brigadirs' own words: the note on every filed stop (/idle-cell),
+    # per (category, unit). Read through the bar modal's own reader so the
+    # comment shown here is the very row /downtime lists.
+    from app.routers.downtime import _cell_detail
+    notes: dict[tuple, list] = {}
+    for mid in list(unit_name):
+        try:
+            det = _cell_detail(db, mid, date_from, date_to, True, False, [])
+        except Exception:
+            continue
+        for d, cells_ in (det.get("days") or {}).items():
+            for cell in cells_:
+                for iv in cell.get("intervals") or []:
+                    note = (iv.get("note") or "").strip()
+                    if not note:
+                        continue
+                    notes.setdefault((iv["category"], mid), []).append({
+                        "date": d, "cell": cell.get("code"), "leader": cell.get("leader"),
+                        "start": iv.get("start"), "end": iv.get("end"),
+                        "minutes": iv.get("minutes"), "note": note,
+                    })
+    for lst in notes.values():
+        lst.sort(key=lambda n: (n["date"], n["start"] or ""), reverse=True)
+
     labels = idle_scope.owner_labels(db)
     viewer = identity.viewer_profile_key(db, payload)
     is_admin = payload.get("role") == "admin"
@@ -124,7 +149,26 @@ def analysis(
     rows = []
     for c in cats:
         items = sols.get(c, [])
-        top = sorted(cat_units.get(c, {}).items(), key=lambda kv: -kv[1])[:TOP_UNITS]
+        ranked = sorted(cat_units.get(c, {}).items(), key=lambda kv: -kv[1])
+        top = ranked[:TOP_UNITS]
+        general = [i for i in items if i.manager_id is None]
+        per_unit: dict[int, list] = {}
+        for i in items:
+            if i.manager_id is not None:
+                per_unit.setdefault(i.manager_id, []).append(i)
+        cat_total = cat_min.get(c, 0.0)
+        problems = []
+        for m, v in ranked:
+            sl = per_unit.get(m, [])
+            nt = notes.get((c, m), [])
+            problems.append({
+                **unit_name[m], "minutes": round(v, 1),
+                "share": round(100 * v / cat_total, 1) if cat_total else 0.0,
+                "days": len({n["date"] for n in nt}) if nt else None,
+                "notes": nt[:MAX_NOTES], "notes_n": len(nt),
+                "solutions": [_item(i) for i in sl],
+                "state": (sl[0].status if sl else "none"),
+            })
         mins = round(cat_min.get(c, 0.0), 1)
         rows.append({
             "category": c,
@@ -136,7 +180,10 @@ def analysis(
             "owner": labels.get(c),
             "owner_key": owner_keys.get(c),
             "can_write": is_admin or bool(viewer and owner_keys.get(c) == viewer),
-            "solutions": [_item(i) for i in items[:SHOW_LAST]],
+            "problems": problems,
+            "problems_n": len(problems),
+            "solved_n": sum(1 for p in problems if p["solutions"]),
+            "solutions": [_item(i) for i in general[:SHOW_LAST]],
             "solutions_n": len(items),
             "state": (items[0].status if items else "none"),
             "open_n": sum(1 for i in items if i.status != "done"),
@@ -160,7 +207,8 @@ def analysis(
         "total": round(total, 1),
         "categories": rows, "units": units,
         "no_owner_n": sum(1 for r in rows if r["minutes"] > 0 and not r["owner"]),
-        "no_solution_n": sum(1 for r in rows if r["minutes"] > 0 and r["solutions_n"] == 0),
+        "no_solution_n": sum(r["problems_n"] - r["solved_n"] for r in rows),
+        "problems_n": sum(r["problems_n"] for r in rows),
         "cat_locked": lock,
         "is_admin": is_admin,
     }
@@ -170,6 +218,7 @@ class SolutionBody(BaseModel):
     category: str
     text: str
     status: Optional[str] = "open"
+    manager_id: Optional[int] = None
 
 
 class SolutionEdit(BaseModel):
@@ -208,12 +257,14 @@ def add_solution(
     key = identity.viewer_profile_key(db, payload)
     name = (idle_scope._profile_names(db, [key]).get(key) or {}).get("name") if key else None
     row = IdleCategorySolution(
-        category=body.category, text=text, status=status, author_key=key,
+        category=body.category, manager_id=body.manager_id, text=text, status=status,
+        author_key=key,
         author_name=name or payload.get("full_name") or payload.get("name"))
     db.add(row)
     db.commit()
     action_log.enrich(target_kind="idle_category", target_id=body.category,
-                      details=[("category", body.category), ("status", status)])
+                      details=[("category", body.category), ("manager_id", body.manager_id),
+                               ("status", status)])
     return _item(row)
 
 

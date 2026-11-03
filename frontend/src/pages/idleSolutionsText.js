@@ -10,7 +10,7 @@ const uz = {
   title: "Kutish yechimlari",
   hint: "Qaysi sabab eng ko'p kutdirmoqda, kim javob beradi va nima qilmoqchi",
   kTotal: "Jami kutish", kTotalSub: "brigadirlar bo'yicha yig'indi, daq",
-  kTop: "Eng katta sabab", kNoOwner: "Mas'ulsiz sabablar", kNoSol: "Yechimsiz sabablar",
+  kTop: "Eng katta sabab", kNoOwner: "Mas'ulsiz sabablar", kNoSol: "Yechimsiz muammolar",
   ofCauses: "{n} ta sabab",
   secCauses: "Sabablar — eng ko'pdan kamgacha", secUnits: "Brigadirlar — qaysi sababda ko'p kutgan",
   minutes: "{m} daq", share: "{p}%", days: "{n} kun", units: "{n} brigada",
@@ -29,6 +29,9 @@ const uz = {
   cUnit: "Brigadir", cTotal: "Jami, daq", cTop: "Asosiy sabablar",
   empty: "Bu davrda kutish yo'q", emptySub: "Boshqa davrni tanlang.",
   errLoad: "Ma'lumotni o'qib bo'lmadi", retry: "Qayta urinish",
+  comments: "Brigadir izohlari", noComments: "Brigadir izoh yozmagan", moreNotes: "yana {n} ta izoh",
+  problemSol: "Bu muammo uchun yechim", solvedOf: "{a}/{b} muammoga yechim", generalSol: "Umumiy yechimlar",
+  writeProblemPh: "Bu brigadirdagi kutishni kamaytirish uchun nima qilinadi? Kim, qachongacha?",
   show: "Ko'rsatish", hide: "Yopish", yours: "Sizniki",
 };
 
@@ -36,7 +39,7 @@ const uz_cyrl = {
   title: "Кутиш ечимлари",
   hint: "Қайси сабаб энг кўп кутдирмоқда, ким жавоб беради ва нима қилмоқчи",
   kTotal: "Жами кутиш", kTotalSub: "бригадирлар бўйича йиғинди, дақ",
-  kTop: "Энг катта сабаб", kNoOwner: "Масъулсиз сабаблар", kNoSol: "Ечимсиз сабаблар",
+  kTop: "Энг катта сабаб", kNoOwner: "Масъулсиз сабаблар", kNoSol: "Ечимсиз муаммолар",
   ofCauses: "{n} та сабаб",
   secCauses: "Сабаблар — энг кўпдан камгача", secUnits: "Бригадирлар — қайси сабабда кўп кутган",
   minutes: "{m} дақ", share: "{p}%", days: "{n} кун", units: "{n} бригада",
@@ -55,6 +58,9 @@ const uz_cyrl = {
   cUnit: "Бригадир", cTotal: "Жами, дақ", cTop: "Асосий сабаблар",
   empty: "Бу даврда кутиш йўқ", emptySub: "Бошқа давр танланг.",
   errLoad: "Маълумотни ўқиб бўлмади", retry: "Қайта уриниш",
+  comments: "Бригадир изоҳлари", noComments: "Бригадир изоҳ ёзмаган", moreNotes: "яна {n} та изоҳ",
+  problemSol: "Бу муаммо учун ечим", solvedOf: "{a}/{b} муаммога ечим", generalSol: "Умумий ечимлар",
+  writeProblemPh: "Бу бригадирдаги кутишни камайтириш учун нима қилинади? Ким, қачонгача?",
   show: "Кўрсатиш", hide: "Ёпиш", yours: "Сизники",
 };
 
@@ -62,7 +68,7 @@ const ru = {
   title: "Решения по ожиданиям",
   hint: "Какая причина ожиданий самая тяжёлая, кто за неё отвечает и что собирается делать",
   kTotal: "Всего ожиданий", kTotalSub: "сумма по бригадирам, мин",
-  kTop: "Главная причина", kNoOwner: "Причины без ответственного", kNoSol: "Причины без решения",
+  kTop: "Главная причина", kNoOwner: "Причины без ответственного", kNoSol: "Проблемы без решения",
   ofCauses: "{n} причин",
   secCauses: "Причины — от самых тяжёлых", secUnits: "Бригадиры — в какой причине ждали больше",
   minutes: "{m} мин", share: "{p}%", days: "{n} дн.", units: "{n} бриг.",
@@ -81,6 +87,9 @@ const ru = {
   cUnit: "Бригадир", cTotal: "Всего, мин", cTop: "Главные причины",
   empty: "В этом периоде ожиданий нет", emptySub: "Выберите другой период.",
   errLoad: "Не удалось прочитать данные", retry: "Повторить",
+  comments: "Комментарии бригадира", noComments: "Бригадир не оставил комментариев", moreNotes: "ещё {n} комм.",
+  problemSol: "Решение по этой проблеме", solvedOf: "решения: {a}/{b}", generalSol: "Общие решения",
+  writeProblemPh: "Что будет сделано, чтобы сократить ожидания у этого бригадира? Кто, к какому сроку?",
   show: "Показать", hide: "Скрыть", yours: "Ваша",
 };
 
@@ -88,7 +97,7 @@ const en = {
   title: "Idle-time solutions",
   hint: "Which cause costs the most waiting, who answers for it and what they plan to do",
   kTotal: "Total waiting", kTotalSub: "sum over brigadirs, min",
-  kTop: "Biggest cause", kNoOwner: "Causes with no owner", kNoSol: "Causes with no solution",
+  kTop: "Biggest cause", kNoOwner: "Causes with no owner", kNoSol: "Problems with no solution",
   ofCauses: "{n} causes",
   secCauses: "Causes — worst first", secUnits: "Brigadirs — where they waited most",
   minutes: "{m} min", share: "{p}%", days: "{n} d", units: "{n} units",
@@ -107,6 +116,9 @@ const en = {
   cUnit: "Brigadir", cTotal: "Total, min", cTop: "Main causes",
   empty: "No waiting in this period", emptySub: "Pick another period.",
   errLoad: "Could not read the data", retry: "Retry",
+  comments: "Brigadir comments", noComments: "The brigadir left no comment", moreNotes: "{n} more comments",
+  problemSol: "Solution for this problem", solvedOf: "{a}/{b} problems answered", generalSol: "General solutions",
+  writeProblemPh: "What will be done to cut this brigadir's waiting? Who, by when?",
   show: "Show", hide: "Hide", yours: "Yours",
 };
 
