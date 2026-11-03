@@ -28,8 +28,22 @@ import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
  *
  * Above the tiles, «Xush kelibsiz, {name}!» (2026-11-03, the operator) — the
  * signed-in profile's name as the header prints it, the name set a shade
- * heavier; it gathers in just ahead of the first tile.
+ * heavier. It writes itself in letter by letter, left to right (`--c` = the
+ * letter's place); a screen reader is handed the whole sentence once.
  */
+
+// Words stay unbroken (`.apps-hello-word`), each letter its own span so it can
+// arrive on its own beat. `n` counts letters across the whole greeting.
+function lettered(text, n) {
+  return text.split(/(\s+)/).filter(Boolean).map((part, i) =>
+    /^\s+$/.test(part) ? " " : (
+      <span key={i} className="apps-hello-word">
+        {Array.from(part).map((ch, j) => (
+          <span key={j} className="apps-hello-ch" style={{ "--c": n.i++ }}>{ch}</span>
+        ))}
+      </span>
+    ));
+}
 
 export default function AppLauncher() {
   const { t } = useLang();
@@ -37,6 +51,8 @@ export default function AppLauncher() {
   const { auth } = useAuth();
   const who = tl(auth?.full_name || "").trim();
   const [before, after = ""] = t("apps.hello").split("{name}");
+  const plain = who ? `${before}${who}${after}` : `${before.replace(/[,\s]+$/, "")}${after}`;
+  const n = { i: 0 };
 
   const { data: pending } = useQuery({
     queryKey: ["staff-documents-pending-count"],
@@ -49,9 +65,12 @@ export default function AppLauncher() {
     <Layout title={t("apps.title")} bare backdrop={<LauncherBackdrop />}>
       <div className="apps-wrap">
         <h2 className="apps-hello">
-          {who
-            ? <>{before}<span className="apps-hello-who"><span className="apps-hello-name">{who}</span>{after}</span></>
-            : `${before.replace(/[,\s]+$/, "")}${after}`}
+          <span className="sr-only">{plain}</span>
+          <span aria-hidden="true">
+            {who
+              ? <>{lettered(before, n)}<span className="apps-hello-who"><span className="apps-hello-name">{lettered(who, n)}</span>{lettered(after, n)}</span></>
+              : lettered(plain, n)}
+          </span>
         </h2>
         <nav aria-label={t("apps.title")}>
           <ul className="apps-grid">
