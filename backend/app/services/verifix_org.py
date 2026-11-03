@@ -577,17 +577,23 @@ def brigadirs_over(divs: dict, emps: dict, jobs: dict, units_by_vfx: dict):
         if not nid:
             return []
         if nid not in cache:
-            cur, out = nid, []
-            for _ in range(BRIGADIR_DEPTH + 1):
-                if not cur:
-                    break
-                if by_unit.get(cur):
-                    out = by_unit[cur]
-                    break
-                cur = (divs.get(cur) or {}).get("parent")
-            cache[nid] = out
+            cache[nid] = nearest_over(divs, nid, by_unit)
         return cache[nid]
     return over
+
+
+def nearest_over(divs: dict, nid: Optional[str], holders: dict) -> list:
+    """`holders[d]` of the nearest division d from `nid` upward (itself and up
+    to BRIGADIR_DEPTH ancestors) that has any — the «which brigadir stands
+    over this cell» walk; the holders may be anybody's (a day's brigadirs)."""
+    cur = nid
+    for _ in range(BRIGADIR_DEPTH + 1):
+        if not cur:
+            break
+        if holders.get(cur):
+            return holders[cur]
+        cur = (divs.get(cur) or {}).get("parent")
+    return []
 
 
 # ── which plant a subdivision stands in ───────────────────────────────────────

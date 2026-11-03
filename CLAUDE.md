@@ -9783,23 +9783,32 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   `brigadir_board.concerns`. **Boshqaruv xulosasi** and «Asosiy
   ko'rsatkichlar» (TopSim's «Corporate Key Figures») lift their rows out of
   the sections they belong to, so the two can never disagree.
-- **«Qamrov» carries Verifix's OWN counts** (2026-11-03, the operator: «the
-  official-Verifix number of active cells, and … of shift managers,
-  supervisors and leaders») — four rows beside «Brigadalar»: «Faol
-  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar» (no
-  «(Verifix)» in the names — the operator, the same day). `services/verifix_scope.py` is THE rule, read off the STORED
+- **«Qamrov» is Verifix's OWN counts, of the загрузка's units** (2026-11-03,
+  the operator: «the official-Verifix number of active cells, and … of shift
+  managers, supervisors and leaders»; the same day «Units» and «Cells that
+  stopped» left the table, the cells were narrowed to «supervisors which we
+  consider on Zagruzka — we dont [want] supervisors of cleaning or logistics»,
+  and, asked, the supervisors and leaders with them). Four rows: «Faol
+  yacheykalar», «Smena menejerlari», «Brigadirlar», «Liderlar» (no «(Verifix)»
+  in the names). `services/verifix_scope.py` is THE rule, read off the STORED
   org (`verifix_org.stored`, never a Verifix call) per month on its last day
   (today for the running month — a stock, so its change is never withheld).
-  A cell is `verifix_org.cell_nodes`' node, active when opened by the day and
-  not closed by it (a passive one with no closing date counts on no day); a
-  person is employed on the day (`turnover.employed_on`) with a job naming
-  the role — `verifix_org.role_of` (leader → brigadir → shift-manager:
+  A **cell** counts when Verifix has its `cell_nodes` node active that day
+  (opened by it, not closed by it; a passive one with no closing date counts
+  on no day) AND its cell here (by `vfx_division_id`, else code) stood that
+  day (`cell_links.map_on`) under one of the report's units — `board_units`,
+  i.e. non-archived, `zagruzka_on`, in the viewer's plant / shift / brigadir
+  scope. **Leaders** are seated in a counted cell; **brigadirs** stand over
+  one (the nearest division upward holding any — `verifix_org.nearest_over`,
+  the `brigadirs_over` walk, each person once); **shift managers** are
+  plant-wide (`verifix_org.plant_of`, the division tree's names —
+  `brigadirs_kpi`'s rule, moved there), «—» under a shift or brigadir pick.
+  A person counts when employed that day (`turnover.employed_on`) with a job
+  naming the role — `verifix_org.role_of` (leader → brigadir → shift-manager:
   «смен» + a head word, the 25 Oct report's rule, moved there; assistants,
   deputies, «и.о.» never), the job on a past day the HR journals'
-  (`category_compliance.standing`). The plant narrows through
-  `verifix_org.plant_of` (the division tree's names — `brigadirs_kpi`'s rule,
-  moved there; a person by their CURRENT org unit); a shift or brigadir pick
-  leaves the four rows «—», and so does an org read that is missing or thin.
+  (`category_compliance.standing`), the place their CURRENT org unit. No org
+  read, or a thin one, leaves all four «—».
 - **«Kutish, ishlangan vaqtdan %» — idle as a share of WORKED time**
   (2026-10-31, the operator's rulings, asked one by one;
   `services/idle_share.py` is THE rule): Σ(N·T) ÷ Σ worked minutes × 100.
