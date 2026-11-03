@@ -875,12 +875,22 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .edu-icon-btn { transition: none; }
 }
 
+
 /* «Ilovalar» — the admin app launcher (pages/AppLauncher.jsx). Twelve tiles
-   fill 3, 4 or 6 columns with no ragged last row. Each app has ONE colour,
-   `--hue` (an rgb triple, like --brand-rgb), tinting its icon square: the
-   tile's identity, so it is recognised before its name is read — paired with
-   the icon and the name, never the only cue. Light theme takes the darker
-   shade of the same hue so the glyph keeps its contrast on cream. */
+   fill 3, 4 or 6 columns with no ragged last row. Each app has ONE colour, its
+   identity, so a tile is recognised before its name is read — paired with the
+   icon and the name, never the only cue. Two rgb triples carry it:
+     --hue   the glyph by night and the sidebar's app label (400 shades; 700
+             under the light theme, where it must hold contrast on cream);
+     --glow  the cloud and the day tile's body (500 shades, both themes).
+   The look (2026-11-03, the operator's pick of two mock-ups): a glass tile on a
+   coloured cloud by day, a dark glass tile with a neon glyph and a glow by
+   night, over safiabakery.uz's warm cream with drifting gold light and gold
+   dust. Motion is slow on purpose («loyalty, peace, premium»): the tiles
+   gather in on arrival, the clouds breathe and turn one after another as a
+   slow wave, a band of light passes over the tiles in turn, the dust rises.
+   Only opacity and transforms ever animate — no filter, blur or shadow — so a
+   phone's compositor carries it all; prefers-reduced-motion stills it. */
 /* The grid sits a little above the middle of the screen, where a home screen
    does — not stuck to the header with the lower half of the page empty. */
 .apps-wrap {
@@ -893,63 +903,146 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 @media (min-width: 560px)  {
   .apps-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .app-tile { padding: 16px 8px; }
+  .app-tile { padding: 18px 8px; }
 }
 @media (min-width: 1024px) { .apps-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; } }
 
+/* Arrival: the tiles gather in one after another (`--i` = the tile's place).
+   Individual transform properties, so the fill never pins `transform`. */
+.apps-grid > li { animation: appIn .9s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 55ms + 60ms); }
+@keyframes appIn { from { opacity: 0; translate: 0 14px; scale: .94; } }
+
 .app-tile {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
   height: 100%; padding: 16px 4px; border-radius: 16px;
   color: var(--text-1); text-align: center; text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color .15s var(--ease-out), transform .15s var(--ease-out);
+  -webkit-tap-highlight-color: transparent; outline: none;
 }
-@media (hover: hover) {
-  .app-tile:hover { background: var(--bg-card); box-shadow: inset 0 0 0 1px var(--border); }
-  .app-tile:hover .app-icon { transform: translateY(-2px); }
-}
-.app-tile:active { transform: scale(.97); }
-.app-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
 
-.app-icon {
-  position: relative; display: grid; place-items: center; flex-shrink: 0;
-  width: 56px; height: 56px; border-radius: 16px;
-  background: rgba(var(--hue), .14);
-  box-shadow: inset 0 0 0 1px rgba(var(--hue), .24);
+.app-icon { position: relative; isolation: isolate; flex-shrink: 0; width: 56px; height: 56px; }
+@media (min-width: 1024px) { .app-icon { width: 64px; height: 64px; } }
+
+/* The cloud (day) / the glow (night). The box itself only grows on hover; the
+   moving gradient is its ::before — three soft ellipses off centre, so turning
+   it reads as a cloud slowly changing shape. */
+.app-aura {
+  position: absolute; inset: -110%; z-index: -1; pointer-events: none;
+  opacity: .62;
+  transition: transform .8s var(--ease-out), opacity .8s var(--ease-out);
+}
+/* Every ellipse ends INSIDE the box (centre ± radius within 0–100%), or the
+   box's edge would cut it into a visible rim; the stops fall off softly. */
+.app-aura::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(34% 30% at 44% 46%, rgba(var(--glow), .7), rgba(var(--glow), .38) 42%, rgba(var(--glow), .1) 72%, rgba(var(--glow), 0)),
+    radial-gradient(30% 34% at 58% 56%, rgba(var(--glow), .52), rgba(var(--glow), .28) 42%, rgba(var(--glow), .08) 72%, rgba(var(--glow), 0)),
+    radial-gradient(24% 22% at 58% 34%, rgba(var(--glow), .38), rgba(var(--glow), .18) 45%, rgba(var(--glow), 0));
+  animation: auraBreathe 7.5s ease-in-out infinite, auraTurn 32s linear infinite;
+  animation-delay: calc(var(--i, 0) * -.6s), calc(var(--i, 0) * -2.7s);
+  will-change: transform, opacity;
+}
+.apps-grid > li:nth-child(even) .app-aura::before { animation-direction: normal, reverse; }
+@keyframes auraBreathe { 0%, 100% { opacity: .68; scale: .9; } 50% { opacity: 1; scale: 1.06; } }
+@keyframes auraTurn { to { rotate: 360deg; } }
+
+/* Night: dark glass, a neon line glyph, a thin rim and a soft glow. */
+.app-glass {
+  position: relative; display: grid; place-items: center;
+  width: 100%; height: 100%; border-radius: 17px;
   color: rgb(var(--hue));
-  transition: transform .2s var(--ease-out);
+  background: linear-gradient(160deg, rgba(255,255,255,.085), rgba(255,255,255,.015) 62%), #15171e;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--hue), .36),
+    inset 0 1px 0 rgba(255,255,255,.10),
+    0 0 20px -4px rgba(var(--hue), .5);
+  transition: transform .55s var(--ease-out);
 }
-.app-icon svg { width: 26px; height: 26px; }
+.app-glass svg {
+  position: relative; width: 26px; height: 26px;
+  filter: drop-shadow(0 0 5px rgba(var(--hue), .7));
+}
 @media (min-width: 1024px) {
-  .app-icon { width: 64px; height: 64px; }
-  .app-icon svg { width: 28px; height: 28px; }
+  .app-glass { border-radius: 19px; }
+  .app-glass svg { width: 28px; height: 28px; }
 }
+/* Day: frosted glass lit by its own cloud, a white glyph. */
+[data-theme="light"] .app-aura { opacity: 1; }
+[data-theme="light"] .app-glass {
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.40), rgba(255,255,255,.10) 50%, rgba(0,0,0,.06)),
+    linear-gradient(150deg, rgba(var(--glow), .70), rgba(var(--glow), .92));
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.45),
+    inset 0 1px 0 rgba(255,255,255,.75),
+    0 12px 24px -14px rgba(var(--hue), .8);
+}
+[data-theme="light"] .app-glass svg { filter: drop-shadow(0 1px 1.5px rgba(var(--hue), .55)); }
+
+/* A band of light crosses each tile in turn — the wave runs across the grid
+   about every twelve seconds. */
+.app-sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+/* The band is a full-width box whose gradient is clear well inside its edges,
+   so no edge of the box ever shows as a stripe. */
+.app-sheen::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(110deg, rgba(255,255,255,0) 32%, rgba(255,255,255,.12) 45%,
+                              rgba(255,255,255,.2) 50%, rgba(255,255,255,.12) 55%, rgba(255,255,255,0) 68%);
+  translate: -100% 0;
+  animation: tileSheen 12s var(--ease-io) infinite;
+  animation-delay: calc(var(--i, 0) * .24s + 2.2s);
+}
+[data-theme="light"] .app-sheen::after {
+  background: linear-gradient(110deg, rgba(255,255,255,0) 32%, rgba(255,255,255,.34) 45%,
+                              rgba(255,255,255,.5) 50%, rgba(255,255,255,.34) 55%, rgba(255,255,255,0) 68%);
+}
+@keyframes tileSheen { 0% { translate: -100% 0; } 16%, 100% { translate: 100% 0; } }
+
+@media (hover: hover) {
+  .app-tile:hover .app-glass { transform: translateY(-4px); }
+  .app-tile:hover .app-aura { transform: scale(1.14); opacity: .95; }
+  [data-theme="light"] .app-tile:hover .app-aura { opacity: 1; }
+  .app-tile:hover .app-name { color: var(--text-1); }
+}
+.app-tile:active .app-glass { transform: translateY(-1px) scale(.95); transition-duration: .14s; }
+.app-tile:focus-visible .app-glass { outline: 2px solid var(--brand); outline-offset: 4px; }
+
 .app-name {
   max-width: 100%; font-size: 13px; font-weight: 500; line-height: 1.3;
+  color: var(--text-2); transition: color .3s var(--ease-out);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: break-word;
 }
+[data-theme="light"] .app-name { color: var(--text-1); }
+
+/* The one thing waiting on the admin — a slow ripple, never a flash. */
 .app-badge {
-  position: absolute; top: -6px; right: -6px;
+  position: absolute; top: -7px; right: -7px; z-index: 1;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
   background: #ef4444; color: #fff;
   font-size: 11px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums;
   box-shadow: 0 0 0 2px var(--bg-base);
 }
+.app-badge::after {
+  content: ""; position: absolute; inset: -2px; border-radius: inherit;
+  border: 2px solid rgba(239,68,68,.5); opacity: 0;
+  animation: badgeRing 3.6s ease-out infinite 1.6s;
+}
+@keyframes badgeRing { 0% { opacity: .9; scale: 1; } 60%, 100% { opacity: 0; scale: 1.7; } }
 
-[data-app-hue="gold"]    { --hue: 212,169,92; }
-[data-app-hue="orange"]  { --hue: 251,146,60; }
-[data-app-hue="sky"]     { --hue: 56,189,248; }
-[data-app-hue="violet"]  { --hue: 167,139,250; }
-[data-app-hue="emerald"] { --hue: 52,211,153; }
-[data-app-hue="rose"]    { --hue: 251,113,133; }
-[data-app-hue="teal"]    { --hue: 45,212,191; }
-[data-app-hue="indigo"]  { --hue: 129,140,248; }
-[data-app-hue="cyan"]    { --hue: 34,211,238; }
-[data-app-hue="pink"]    { --hue: 244,114,182; }
-[data-app-hue="lime"]    { --hue: 163,230,53; }
-[data-app-hue="slate"]   { --hue: 148,163,184; }
-[data-theme="light"] .app-icon { background: rgba(var(--hue), .10); box-shadow: inset 0 0 0 1px rgba(var(--hue), .20); }
+[data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; }
+[data-app-hue="orange"]  { --hue: 251,146,60;  --glow: 249,115,22; }
+[data-app-hue="sky"]     { --hue: 56,189,248;  --glow: 14,165,233; }
+[data-app-hue="violet"]  { --hue: 167,139,250; --glow: 139,92,246; }
+[data-app-hue="emerald"] { --hue: 52,211,153;  --glow: 16,185,129; }
+[data-app-hue="rose"]    { --hue: 251,113,133; --glow: 244,63,94; }
+[data-app-hue="teal"]    { --hue: 45,212,191;  --glow: 20,184,166; }
+[data-app-hue="indigo"]  { --hue: 129,140,248; --glow: 99,102,241; }
+[data-app-hue="cyan"]    { --hue: 34,211,238;  --glow: 6,182,212; }
+[data-app-hue="pink"]    { --hue: 244,114,182; --glow: 236,72,153; }
+[data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; }
+[data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; }
 [data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; }
 [data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
 [data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
@@ -963,6 +1056,56 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; }
 [data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; }
 
+/* The backdrop (Layout's `backdrop`, under the header): the site's warm base
+   with three wide pools of light drifting over a minute or so, and gold dust
+   rising. Night keeps the gold and adds a faint cool depth. Each pool is its
+   own GPU layer, so their size is capped: a phone's WebView pays for every
+   pixel of them at its device pixel ratio. */
+.apps-backdrop {
+  position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  animation: appsFade 1.4s var(--ease-out) both;
+}
+@keyframes appsFade { from { opacity: 0; } }
+.apps-light {
+  position: absolute; border-radius: 50%; aspect-ratio: 1;
+  width: min(80vmax, 1000px); will-change: transform;
+}
+/* One gradient for all three (--c colour, --a its strength), eased in steps:
+   a straight fade to nothing reads as a disc with an edge. */
+.apps-light {
+  background: radial-gradient(closest-side, rgba(var(--c), var(--a)), rgba(var(--c), calc(var(--a) * .55)) 38%,
+                              rgba(var(--c), calc(var(--a) * .2)) 68%, rgba(var(--c), 0));
+}
+.apps-light--a { left: -22%; top: -48%; --c: 200,151,63; --a: .16; animation: lightA 48s ease-in-out infinite alternate; }
+.apps-light--b { right: -26%; bottom: -58%; --c: 99,102,241; --a: .10; animation: lightB 60s ease-in-out infinite alternate; }
+/* The third pool — a white glow — is day only: faint gold on near-black bands
+   into a visible ring. */
+.apps-light--c {
+  display: none; left: 28%; top: 22%; width: min(52vmax, 700px);
+  animation: lightC 54s ease-in-out infinite alternate;
+}
+[data-theme="light"] .apps-light--a { --c: 213,178,111; --a: .32; }
+[data-theme="light"] .apps-light--b { --c: 220,195,139; --a: .30; }
+[data-theme="light"] .apps-light--c { display: block; --c: 255,255,255; --a: .85; }
+@keyframes lightA { to { translate: 14% 18%; scale: 1.12; } }
+@keyframes lightB { to { translate: -16% -12%; scale: .9; } }
+@keyframes lightC { to { translate: -18% 10%; scale: 1.15; } }
+
+.apps-mote {
+  position: absolute; border-radius: 50%; opacity: 0;
+  background: rgba(232,196,122,.9); box-shadow: 0 0 6px rgba(232,196,122,.7);
+  animation: moteRise 22s linear infinite; will-change: transform, opacity;
+}
+[data-theme="light"] .apps-mote { background: rgba(176,120,40,.5); box-shadow: none; }
+@keyframes moteRise {
+  0%   { opacity: 0;   translate: 0 0; }
+  15%  { opacity: .85; }
+  50%  { translate: 10px -60px; }
+  85%  { opacity: .6; }
+  100% { opacity: 0;   translate: -6px -130px; }
+}
+@media (max-width: 559px) { .apps-mote:nth-of-type(n+9) { display: none; } }
+
 /* The open app's name at the top of an admin's sidebar wears its tile's hue. */
 .app-label svg { color: rgb(var(--hue)); }
 
@@ -974,7 +1117,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .hdr-apps:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-ring); }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-tile, .app-icon, .hdr-apps { transition: none; }
-  .app-tile:active { transform: none; }
-  .app-tile:hover .app-icon { transform: none; }
+  .apps-grid > li, .apps-backdrop, .apps-light, .app-aura::before, .app-sheen::after { animation: none; }
+  .apps-mote, .app-badge::after { display: none; }
+  .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
+  .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }
 }

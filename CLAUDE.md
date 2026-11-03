@@ -155,6 +155,22 @@ untouched.
   `HomeRoute` has marked the device (localStorage `homeLauncher`).
 - Tile colours: `[data-app-hue]` in `index.css` — one rgb triple per app,
   darker shades under the light theme; the sidebar's app label reuses it.
+- **The look** (2026-11-03, the operator's pick of their own mock-ups): by
+  DAY a frosted glass tile with a white glyph floating on a soft coloured
+  cloud; by NIGHT a dark glass tile, a neon line glyph in the hue and a glow.
+  The backdrop is safiabakery.uz's warm cream with drifting pools of gold
+  light and rising gold dust (`LauncherBackdrop`, handed to Layout's
+  `backdrop` prop — it must live there, since inside `.page-enter` a fixed
+  box is sized to the content column). Motion is slow on purpose («loyalty,
+  peace, premium»): the tiles gather in on arrival, the clouds breathe and
+  turn one after another as a wave, a band of light crosses the tiles in
+  turn, a tile lifts on hover, the People badge ripples. **Only opacity and
+  transforms animate** — never a filter, blur, box-shadow or
+  backdrop-filter — so a phone's compositor carries it; the light pools are
+  size-capped GPU layers; prefers-reduced-motion stills all of it. Two
+  triples per hue: `--hue` (glyph by night, sidebar label) and `--glow`
+  (cloud and day tile, 500 shades). A cloud's ellipses must end INSIDE its
+  box, or the box edge cuts a visible rim.
 - **Not built:** the launcher for other roles, per-app language packs.
 
 ## Admin panel structure

@@ -577,7 +577,11 @@ function ImpersonationBar() {
 
 // `bare`: no sidebar — the admin app launcher («Ilovalar», pages/AppLauncher),
 // where the tiles ARE the navigation and no app is open to list pages of.
-export default function Layout({ children, title, subtitle, bare = false }) {
+// `backdrop`: a node painted BEHIND the content area (under the header, over
+// the base colour) — the launcher's moving background. It has to live here:
+// inside the page it would sit in `.page-enter`, whose transform makes a
+// `fixed` box the size of the content column instead of the screen.
+export default function Layout({ children, title, subtitle, bare = false, backdrop = null }) {
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { t } = useLang();
   const { auth } = useAuth();
@@ -751,7 +755,11 @@ export default function Layout({ children, title, subtitle, bare = false }) {
         {/* Content viewport. Layout remounts on every route change, so the
             .page-enter wrapper replays its fade-up once per navigation — a
             light, instant-feeling swap in place of the old logo overlay. */}
-        <div className="relative flex-1 min-h-0">
+        {/* `isolate` only with a backdrop: its z-index -1 then paints over this
+            box's (absent) background and under the page, never under the
+            shell's base colour. */}
+        <div className={`relative flex-1 min-h-0${backdrop ? " isolate" : ""}`}>
+          {backdrop}
           <main
             ref={mainRef}
             onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
