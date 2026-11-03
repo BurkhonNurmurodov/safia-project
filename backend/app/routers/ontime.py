@@ -74,6 +74,22 @@ def get_product(
     return ontime.product(db, material.strip(), d0, d1)
 
 
+@router.get("/sheet-check")
+def get_sheet_check(
+    days: int = Query(default=6, ge=1, le=14),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("ontime")),
+):
+    """TEMPORARY (2026-11-03, read-only, admin): the sheet's own summary tabs
+    against the page's arithmetic — `services/ontime_sheet_check.py`."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+    if not ontime_sync.sheet_id(db):
+        raise HTTPException(status_code=409, detail={"code": "not_configured"})
+    from app.services import ontime_sheet_check
+    return ontime_sheet_check.run(db, days)
+
+
 @router.get("/read")
 def get_read(db: Session = Depends(get_db), _: dict = Depends(require_page("ontime"))):
     return ontime_sync.read_state(db)
