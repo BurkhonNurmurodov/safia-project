@@ -109,6 +109,15 @@ def _fault(root):
     return None
 
 
+def _utf8(s):
+    """The oven's gSOAP treats its UTF-8 strings as Latin-1 and encodes them again,
+    so «Выпечка» arrives as «ÐÑÐ¿ÐµÑÐºÐ°». Undo that when it round-trips."""
+    try:
+        return s.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+
+
 def _items(root, container):
     """<item> children of the first element named `container`."""
     for el in root.iter():
@@ -147,7 +156,7 @@ def decode_answer(op, raw, ctype="", status=200):
     if fault or status != 200:
         raise OvenError("HTTP %s: %s" % (status, fault or "no SOAP fault given"))
     if op == "status":
-        return ["".join(i.itertext()) for i in _items(root, "returnStrings")]
+        return [_utf8(("".join(i.itertext()))) for i in _items(root, "returnStrings")]
     files = [_attachment(i, atts) for i in _items(root, op)]
     if not files and atts:  # an envelope that names no items: keep what arrived
         files = [(next(iter(dime_options(r["options"])), "") or r["id"], bytes(r["data"]))
@@ -347,7 +356,7 @@ def summarize(events):
 # ---------------------------------------------------------------------------
 
 STATUS_FIELDS = {
-    0: "bake_clock_s", 1: "line_1", 2: "bake_total_s", 3: "oven_set_c", 4: "oven_c",
+    0: "bake_elapsed_s", 1: "bake_remaining_s", 2: "bake_total_s", 3: "oven_set_c", 4: "oven_c",
     5: "core1_set_c", 6: "core1_c", 7: "core2_set_c", 8: "core2_c",
     9: "damper_program", 10: "steam_program", 11: "temp_program", 12: "steam", 13: "damper",
     14: "door_open", 15: "rotor_limit_switch", 16: "steam_on", 17: "damper_open_pct",
@@ -412,7 +421,8 @@ def main(argv=None):
             with open(os.path.join(out, fn), "wb") as f:
                 f.write(data)
             saved.append({"file": fn, "bytes": len(data)})
-            if op == "logs":
+            # getLogs also sends ServiceData.txt (running-hour counters, "id;value h")
+            if op == "logs" and fn.lower().endswith(".log"):
                 decoded.extend(decode_log(data))
         report[op] = {"files": saved}
         print("%-8s %d file(s), %d bytes" % (op, len(saved), sum(s["bytes"] for s in saved)))
