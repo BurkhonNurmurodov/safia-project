@@ -164,9 +164,19 @@ untouched.
   `HomeRoute` has marked the device (localStorage `homeLauncher`).
 - Tile colours: `[data-app-hue]` in `index.css` — one rgb triple per app,
   darker shades under the light theme; the sidebar's app label reuses it.
-- **The look** (2026-11-03, the operator's pick of their own mock-ups): by
-  DAY a frosted glass tile with a white glyph floating on a soft coloured
-  cloud; by NIGHT a dark glass tile, a neon line glyph in the hue and a glow.
+- **The look** (2026-11-03, the operator's SECOND pick that day — the first,
+  a frosted tile on a cloud by day and a neon tile by night, read «from
+  2012»): **Liquid Glass**. ONE recipe for every tile and both themes
+  (`.app-glass`): a clear pane tinted a third of the way to the app's hue —
+  the night mock's transparency in BOTH themes («we liked the opacity on the
+  dark mode») — a 1px rim lit top-left and bottom-right, a still specular
+  pool, the aura refracted through a backdrop blur taken from 768px up only
+  (thirteen blurs over floating art are a repaint every frame on a phone;
+  below that the gradients alone are the glass); the glyph wears the hue at
+  full strength, never white. The header over the backdrop is the same glass
+  — chocolate by day, dark by night, blurred from 768px up
+  (`.hdr-on-backdrop`). The photos stay for now; a flat SVG cartoon set was
+  mocked and approved for a later pass.
   The backdrop (`components/launcher/LauncherBackdrop.jsx`, handed to
   Layout's `backdrop` prop — it must live there, since inside `.page-enter` a
   fixed box is sized to the content column; it runs under the HEADER too —

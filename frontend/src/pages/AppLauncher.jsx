@@ -17,9 +17,9 @@ import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
  * same red count the sidebar's row does. The overview's eight requests and its
  * chart library now load only when the Overview tile is opened.
  *
- * The look (2026-11-03, the operator's pick): a glass tile on a coloured cloud
- * by day, a dark glass tile with a neon glyph and glow by night, over a warm
- * golden backdrop with Safia's treats floating in it
+ * The look (2026-11-03, the operator's second pick that day): Liquid Glass —
+ * one clear tinted pane for both themes, the glyph in the app's hue — over a
+ * warm golden backdrop with Safia's treats floating in it
  * (components/launcher/LauncherBackdrop.jsx). Every moving part is CSS
  * (index.css, «Ilovalar»), slow on purpose, and still under
  * prefers-reduced-motion.

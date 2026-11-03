@@ -888,15 +888,17 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
              slate → grey) — a lighter tone of the same colour.
    The clouds are kept faint on the operator's word (too much «background
    shadow», 2026-11-03).
-   The look (2026-11-03, the operator's pick of two mock-ups): a glass tile on a
-   coloured cloud by day, a dark glass tile with a neon glyph and a glow by
-   night, over a golden backdrop with Safia's treats floating in it (the
-   operator's reference; dimmed under a veil by night, with gold dust). Motion
+   The look (2026-11-03, the operator's second pick that day — the first, a
+   frosted tile on a cloud by day and a neon tile by night, read «from 2012»):
+   LIQUID GLASS, one clear tinted pane for both themes (see `.app-glass`),
+   over a golden backdrop with Safia's treats floating in it (the operator's
+   reference; dimmed under a veil by night, with gold dust). Motion
    is slow on purpose («loyalty, peace, premium»): the tiles gather in on
    arrival, the clouds breathe and turn one after another as a slow wave, a
    band of light passes over the tiles in turn, the treats bob and turn.
    Only opacity and transforms ever animate — no filter, blur or shadow — so a
-   phone's compositor carries it all; prefers-reduced-motion stills it. */
+   phone's compositor carries it all; the glass's backdrop blur is static and
+   taken from 768px up only; prefers-reduced-motion stills it. */
 /* The grid sits a little above the middle of the screen, where a home screen
    does — not stuck to the header with the lower half of the page empty. */
 .apps-wrap {
@@ -956,43 +958,77 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 @keyframes auraBreathe { 0%, 100% { opacity: .68; scale: .9; } 50% { opacity: 1; scale: 1.06; } }
 @keyframes auraTurn { to { rotate: 360deg; } }
 
-/* Night: dark glass, a neon line glyph, a thin rim and a soft glow. */
+/* The tile is LIQUID GLASS (2026-11-03, the operator's call, from a mock-up
+   of both themes): a clear pane tinted a third of the way to the app's hue,
+   a 1px rim lit on the top-left and again on the bottom-right, a still
+   specular pool near the top edge, and the aura refracted through it. ONE
+   recipe for every tile and BOTH themes — only the hue varies, and the glyph
+   carries it at full strength. The pane's transparency is the night mock's,
+   in both themes, by the operator's word («we liked the opacity on the dark
+   mode»); a day tile differs only where cream needs it (a brighter rim, a
+   warm shadow, no neon on the glyph).
+   The refraction is a backdrop-filter, and a backdrop-filter under thirteen
+   tiles over floating artwork is a repaint every frame on a phone — so it is
+   taken from 768px up only; below that the layered gradients alone are the
+   glass, the same look at rest. */
 .app-glass {
   position: relative; display: grid; place-items: center;
   width: 100%; height: 100%; border-radius: 17px;
   color: rgb(var(--hue));
-  background: linear-gradient(160deg, rgba(255,255,255,.085), rgba(255,255,255,.015) 62%), #15171e;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.05) 45%, rgba(255,255,255,.02)),
+    rgba(var(--glow), .16);
   box-shadow:
-    inset 0 0 0 1px rgba(var(--hue), .36),
-    inset 0 1px 0 rgba(255,255,255,.10),
-    0 0 20px -4px rgba(var(--hue), .5);
+    inset 0 1px 0 rgba(255,255,255,.28),
+    inset 0 -1px 0 rgba(var(--glow), .35),
+    0 14px 34px -10px rgba(var(--glow), .55),
+    0 2px 8px rgba(0,0,0,.35);
   transition: transform .55s var(--ease-out);
+}
+/* The rim: a ring one pixel wide (the padding, masked out of a full box),
+   bright where the light hits. */
+.app-glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: linear-gradient(145deg, rgba(255,255,255,.55), rgba(255,255,255,.12) 35%, rgba(255,255,255,0) 55%, rgba(255,255,255,.35));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .app-glass { -webkit-backdrop-filter: blur(18px) saturate(170%); backdrop-filter: blur(18px) saturate(170%); }
 }
 .app-glass svg {
   position: relative; width: 26px; height: 26px;
-  filter: drop-shadow(0 0 5px rgba(var(--hue), .7));
+  filter: drop-shadow(0 0 5px rgba(var(--hue), .45));
 }
 @media (min-width: 1024px) {
   .app-glass { border-radius: 19px; }
   .app-glass svg { width: 28px; height: 28px; }
 }
-/* Day: frosted glass lit by its own cloud, a white glyph. */
+/* Day: the same pane; a brighter rim (a faint white ring is invisible on
+   cream), a warm shadow instead of a black one, the glyph in the 700 hue. */
 [data-theme="light"] .app-aura { opacity: .55; }
 [data-theme="light"] .app-glass {
-  color: #fff;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.40), rgba(255,255,255,.10) 50%, rgba(0,0,0,.06)),
-    linear-gradient(150deg, rgba(var(--glow), .70), rgba(var(--glow), .92));
   box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,.45),
     inset 0 1px 0 rgba(255,255,255,.75),
-    0 10px 22px -14px rgba(var(--hue), .45);
+    inset 0 -1px 0 rgba(var(--glow), .35),
+    0 12px 30px -10px rgba(var(--glow), .45),
+    0 2px 6px rgba(60,40,10,.08);
 }
-[data-theme="light"] .app-glass svg { filter: drop-shadow(0 1px 1.5px rgba(var(--hue), .55)); }
+[data-theme="light"] .app-glass::before {
+  background: linear-gradient(145deg, rgba(255,255,255,.95), rgba(255,255,255,.18) 35%, rgba(255,255,255,0) 55%, rgba(255,255,255,.6));
+}
+[data-theme="light"] .app-glass svg { filter: none; }
 
 /* A band of light crosses each tile in turn — the wave runs across the grid
    about every twelve seconds. */
 .app-sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+/* The specular pool: the light's reflection near the top edge, still. */
+.app-sheen::before {
+  content: ""; position: absolute; left: 12%; top: 6%; width: 56%; height: 32%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255,255,255,.22), rgba(255,255,255,0));
+}
+[data-theme="light"] .app-sheen::before { background: radial-gradient(closest-side, rgba(255,255,255,.42), rgba(255,255,255,0)); }
 /* The band is a full-width box whose gradient is clear well inside its edges,
    so no edge of the box ever shows as a stripe. */
 .app-sheen::after {
@@ -1004,8 +1040,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   animation-delay: calc(var(--i, 0) * .24s + 2.2s);
 }
 [data-theme="light"] .app-sheen::after {
-  background: linear-gradient(110deg, rgba(255,255,255,0) 32%, rgba(255,255,255,.34) 45%,
-                              rgba(255,255,255,.5) 50%, rgba(255,255,255,.34) 55%, rgba(255,255,255,0) 68%);
+  background: linear-gradient(110deg, rgba(255,255,255,0) 32%, rgba(255,255,255,.22) 45%,
+                              rgba(255,255,255,.34) 50%, rgba(255,255,255,.22) 55%, rgba(255,255,255,0) 68%);
 }
 @keyframes tileSheen { 0% { translate: -100% 0; } 16%, 100% { translate: 100% 0; } }
 
@@ -1149,41 +1185,50 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .app-label svg { color: rgb(var(--hue)); }
 
 /* The header over the launcher's backdrop (Layout puts the backdrop under the
-   whole column there). By night a dark pane over the scene. By day CHOCOLATE
-   — the coffee bean's brown (the operator, 2026-11-03: «not light like
-   this») — a solid band the gold sits under, with a soft shadow on it.
-   Static — no backdrop-filter, which would be recomputed for every frame a
-   product floats beneath it.
-   The day band is dark, so it takes its OWN colour tokens, built like the
+   whole column there) is LIQUID GLASS too (2026-11-03, the operator: «fix
+   navbar», right after the tiles): a translucent pane the scene shows
+   through, blurred from 768px up — a backdrop-filter is recomputed for every
+   frame a product floats beneath it; one pane is not thirteen, but a phone
+   still pays it. By night a dark pane. By day CHOCOLATE glass — the coffee
+   bean's brown the operator chose over a light band («not light like this»,
+   the same morning), now at seven-tenths so the gold warms it from behind
+   and the cream text still holds 4.5:1 on the blend.
+   The day pane is dark, so it takes its OWN colour tokens, built like the
    dark theme's (light ink on dark surfaces): the title, the search box, the
    icon buttons, the name AND the menus that open inside the header (account,
    language, search results) all read them, so nothing is left dark-on-brown.
+   The surfaces are brown with a little of the page through them — glass
+   chips on the glass band, and a menu that still reads.
    `color` is restated because the shell resolved it above this element. */
 .hdr-on-backdrop {
-  background: linear-gradient(180deg, rgba(15,17,23,.55), rgba(15,17,23,.3));
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: linear-gradient(180deg, rgba(15,17,23,.52), rgba(15,17,23,.34));
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+@media (min-width: 768px) {
+  .hdr-on-backdrop { -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
 }
 [data-theme="light"] .hdr-on-backdrop {
   --bg-base:   #45251a;
-  --bg-card:   #4e2b1d;
-  --bg-inner:  #5a3424;
+  --bg-card:   rgba(78,43,29,.86);
+  --bg-inner:  rgba(90,52,36,.82);
   --bg-accent: #643c2a;
-  --border:    rgba(255,228,200,.14);
-  --border-md: rgba(255,228,200,.24);
+  --border:    rgba(255,228,200,.16);
+  --border-md: rgba(255,228,200,.26);
   --text-1:    #fff6ea;
   --text-2:    #ecd5bc;
   --text-3:    #cfae8e;
   --text-4:    #9b765a;
-  --input-bg:  #5a3424;
-  --hover-bg:  rgba(255,228,200,.08);
+  --input-bg:  rgba(90,52,36,.82);
+  --hover-bg:  rgba(255,228,200,.10);
   --scrollbar: #7a5038;
   --skeleton:  rgba(255,255,255,.08);
   --brand-text: #e8be70;
   color-scheme: dark;
   color: var(--text-1);
-  background: linear-gradient(180deg, #6a3c25 0%, #573019 55%, #4a2714 100%);
-  border-bottom: 1px solid rgba(30,12,4,.5);
-  box-shadow: inset 0 1px 0 rgba(255,220,180,.12), 0 8px 22px -10px rgba(60,28,8,.55);
+  background: linear-gradient(180deg, rgba(92,52,32,.74) 0%, rgba(74,40,21,.70) 60%, rgba(66,35,18,.68) 100%);
+  border-bottom: 1px solid rgba(255,228,200,.16);
+  box-shadow: inset 0 1px 0 rgba(255,220,180,.22), 0 8px 22px -12px rgba(60,28,8,.45);
 }
 
 /* The header's way back to the launcher, beside the page title (admins). */
