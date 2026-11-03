@@ -13,6 +13,7 @@ Delete this module and its route in `routers/ontime.py` once answered.
 """
 from __future__ import annotations
 
+import threading
 import time
 from collections import defaultdict
 from datetime import date, timedelta
@@ -105,7 +106,47 @@ def _stored(db: Session, days: set) -> dict:
     return {"demand": demand, "rec": rec, "mats": mats, "windows": windows}
 
 
-def run(db: Session, days_wanted: int = 6) -> dict:
+# One run at a time, in the background: the report door gives a GET 50 s, and
+# the Sheets reads alone can pass that when the API is throttled.
+_state: dict = {"state": "idle"}
+_lock = threading.Lock()
+
+
+def start(days_wanted: int, full: bool) -> None:
+    with _lock:
+        if _state.get("state") == "running":
+            return
+        _state.clear()
+        _state.update(state="running", started=time.time(), days=days_wanted, full=full)
+
+    def _go():
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            res = run(db, days_wanted, full)
+            with _lock:
+                _state.update(state="done", result=res, finished=time.time())
+        except Exception as exc:  # noqa: BLE001 — a check must report, not die
+            with _lock:
+                _state.update(state="failed", error=f"{type(exc).__name__}: {exc}"[:500],
+                              finished=time.time())
+        finally:
+            db.close()
+
+    threading.Thread(target=_go, name="ontime-sheet-check", daemon=True).start()
+
+
+def state(wait_s: float = 0.0) -> dict:
+    end = time.monotonic() + wait_s
+    while True:
+        with _lock:
+            st = dict(_state)
+        if st.get("state") != "running" or time.monotonic() >= end:
+            return st
+        time.sleep(1.0)
+
+
+def run(db: Session, days_wanted: int = 6, full: bool = True) -> dict:
     t0 = time.monotonic()
     out: dict = {"timing": {}}
     sid = ontime_sync.sheet_id(db)
@@ -127,11 +168,11 @@ def run(db: Session, days_wanted: int = 6) -> dict:
 
     # «заход» — values and formulas, the whole top of the tab
     ws, t = ws_of(ontime_sync.TAB_WAVES)
-    if ws is not None:
+    if ws is not None and full:
         out["zakhod"] = _get(ws, "A1:N80")
         out["zakhod_f"] = _formulas(ws, "A1:N80")
     ws, t = ws_of(ontime_sync.TAB_ORDERS)
-    if ws is not None:
+    if ws is not None and full:
         out["orders_head"] = _get(ws, "A1:AD2")
         out["orders_f"] = _formulas(ws, "A1:AD3")
     out["timing"]["small_s"] = round(time.monotonic() - t0, 1)
@@ -155,7 +196,9 @@ def run(db: Session, days_wanted: int = 6) -> dict:
                     if ci < len(svod_grid[i]):
                         svod_grid[i][ci] = v
             c_last = chosen[-1][0]
-            out["svod_f"] = _formulas(ws, "A1:F8") + _formulas(
+            out["svod_f"] = [] if not full else None
+            if full:
+                out["svod_f"] = _formulas(ws, "A1:F8") + _formulas(
                 ws, f"{ontime_sync._col(c_last)}1:{ontime_sync._col(c_last + 3)}8")
     out["timing"]["svod_s"] = round(time.monotonic() - t0, 1)
 
@@ -170,11 +213,11 @@ def run(db: Session, days_wanted: int = 6) -> dict:
         out["groups_header_days"] = [[ontime_sync._col(c), d.isoformat()] for c, d in dated][-40:]
         if grp_chosen:
             grp_grid = _sparse(ws, t["rows"] or 1, 2, [(c, 4) for c, _d in grp_chosen])
-            out["groups_f"] = _formulas(ws, "A1:B6") + _formulas(
+            out["groups_f"] = [] if not full else _formulas(ws, "A1:B6") + _formulas(
                 ws, f"{ontime_sync._col(grp_chosen[-1][0])}1:{ontime_sync._col(grp_chosen[-1][0] + 3)}6")
     # «средний on time»: small — read whole (bounded)
     ws, t = ws_of(SREDNIY)
-    if ws is not None:
+    if ws is not None and full:
         rows = min(t["rows"] or 1, 120)
         cols = min(t["cols"] or 1, 40)
         out["sredniy"] = _get(ws, f"A1:{ontime_sync._col(cols - 1)}{rows}")

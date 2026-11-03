@@ -77,6 +77,8 @@ def get_product(
 @router.get("/sheet-check")
 def get_sheet_check(
     days: int = Query(default=6, ge=1, le=14),
+    start: bool = Query(default=False),
+    full: bool = Query(default=False),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("ontime")),
 ):
@@ -87,7 +89,10 @@ def get_sheet_check(
     if not ontime_sync.sheet_id(db):
         raise HTTPException(status_code=409, detail={"code": "not_configured"})
     from app.services import ontime_sheet_check
-    return ontime_sheet_check.run(db, days)
+    db.rollback()
+    if start:
+        ontime_sheet_check.start(days, full)
+    return ontime_sheet_check.state(wait_s=40.0 if start else 0.0)
 
 
 @router.get("/read")
