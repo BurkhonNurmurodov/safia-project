@@ -238,7 +238,9 @@ def _spec(thread: str, row, nkey: str, params: dict, lang: str, *,
     glyph = GLYPH.get(nkey) or GLYPH.get(fam) or _REFUSED
 
     rows: list[tuple[str, str, str]] = []
-    if not to_leader and vals.get("leader"):
+    # The leader's name is a row for everybody but the leader themself — and
+    # not on a filing, whose title already names them.
+    if fam != FILED and not to_leader and vals.get("leader"):
         rows.append(("👤", t["leader"], str(vals["leader"])))
     if vals.get("date"):
         rows.append(("📅", t["date"], str(vals["date"])))
@@ -267,7 +269,8 @@ def _spec(thread: str, row, nkey: str, params: dict, lang: str, *,
         quote, cite = vals.get("note"), vals.get("by")
         head = t["reason"] if nkey in REASON_KEYS else t["comment"]
     elif fam in (MESSAGE, INVITED):
-        quote, cite = vals.get("text"), vals.get("author")
+        # The title names the author, so the quote carries no byline.
+        quote = vals.get("text")
     quote = str(quote).strip() if quote else ""
 
     after = t["after"].get(nkey, "")

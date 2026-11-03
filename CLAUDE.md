@@ -6631,9 +6631,10 @@ before (telebot swallows unknown button keys).
 
 ### Buttons INSIDE a message (Bot API 10.3, Phase 2 — 2026-10-19)
 
-Two rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
-instead of, or beside, the keyboard under them — the day digest and the
-auto-check warning. The operator's ruling: the late-proof / objection rulings
+Three rich DMs carry buttons in their BODY (`<tg-button>`, `<tg-button-row>`)
+instead of, or beside, the keyboard under them — the day digest, the
+auto-check warning and, from 2026-11-03, every appeal notice (see «The appeal
+CHAT» — its «Chatni ochish» sits at the foot of the card). The operator's ruling: the late-proof / objection rulings
 stay in the appeal chat (no reply prompt on those cards). A third, the call
 forecast's «Tasdiqlash» / «O'zgartirish», shipped and was REMOVED the same
 day (below).
@@ -7391,6 +7392,31 @@ Where this section and the two below disagree, THIS section is current.
   (`invited`). A re-filed objection carries its members (`chat.carry`).
   `CommentsThread` takes it as `mentionPeople` / `mentionNames` — tasks and
   concerns pass neither and render exactly as before.
+- **Every appeal notice is ONE rich card** (2026-11-03, the operator: «restyle
+  the notification, you might use rich message» — the «Norozilik rad etildi»
+  DM was one pipe-separated line with the outcome in its title alone).
+  `services/leader_appeal_rich.py` draws every key `fanout` and
+  `notify_invited` send — the four filing kinds, the rulings at both stages,
+  the undo, a chat message, an invitation, objections and late proofs alike —
+  in one recipe: `<h3>` the OUTCOME with a glyph that says it without colour
+  (📝 filed · 📤 passed up · ❌ refused · ✅ upheld · ↩️ undone · 💬 message ·
+  👥 brought in) → one bold line saying what it MEANS (the templates' own
+  consequence sentence: «Vazifa bajarilmagan bo'lib qoladi», «Endi adminlar
+  qarorini kutmoqda», «Navbat: brigadir» on a filing) → a bordered facts
+  table (the leader — to everybody but the leader themself, and never on a
+  filing whose title names them — the day, «№7 · task», who ruled «· admin /
+  brigadir» from the ruling's `stage`, a late proof's deadline) → the words
+  as a `<blockquote>` with its author in `<cite>` under an `<h4>` saying
+  «Sabab» for a required reason (an admin's refusal, a refused late proof)
+  and «Izoh» for a comment → «💬 Chatni ochish» INSIDE the body (`<tg-button>`,
+  tried first with no keyboard; the same card over the ordinary keyboard
+  when Telegram refuses it — `RichTry`, the digest's rule). The title is the
+  template's (`_mk_notif`), the values the bell row's (`_notif_values`), and
+  `classic` is the same card as plain Telegram HTML for a client refusing
+  rich (`html_fn`). The bell row keeps the template. `fanout(stage=)` names
+  the ruling's stage; `_notify_account` (an admin with no profile) carries
+  the card too. Never add a notice key to the chain without a `FAMILY` entry
+  there — a key the module does not know keeps its plain DM.
 - **Telegram carries ONLY «Open chat»** (the operator's ruling): the brigadir's
   and admins' cards (`_ad_kb`, `_lp_kb`, the approvals `leader_dispute` card via
   `_broadcast(kb_fn=)`) have no ruling buttons. A button on a card minted before
