@@ -6,7 +6,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import BrandLogo from "../ui/BrandLogo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Settings, X, PanelLeftClose, PanelLeftOpen, Headset, ChevronDown,
+  X, PanelLeftClose, PanelLeftOpen, Headset, ChevronDown,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -16,7 +16,7 @@ import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { ALL_LINKS, NAV_GROUPS, APPS, adminPath } from "../../config/navLinks";
+import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
 import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
 import GlobalSearch from "./GlobalSearch";
 
@@ -52,9 +52,6 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // needs the /staff link to reach the queue they were given.
   const { capPages, capTabs, deniedPages } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
-  // A grantee holding a panel-tab capability needs the entry point too — the
-  // panel itself then shows only the tabs they were granted.
-  const showAdminPanel = isAdmin || capTabs.length > 0;
 
   const BADGE_ROLES = ["admin", "shift-manager"];
   const showBadge = BADGE_ROLES.includes(auth?.role);
@@ -88,17 +85,29 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // none yet, the whole register shows, grouped as before.
   const app = isAdmin ? APPS.find(a => a.id === openApp(location.pathname)) : null;
   useEffect(() => { if (isAdmin) rememberPage(location.pathname); }, [isAdmin, location.pathname]);
+  // The admin app's pages this viewer may open — every one for an admin, the
+  // pages their grants name for anybody else (a grantee has no launcher, so
+  // these rows ARE their way in; the footer's single «Admin» row is gone).
+  const adminRows = ADMIN_PAGE_LINKS.filter(l => isAdmin || capTabs.includes(l.capKey ?? l.tab));
   const links = app
     ? linksOfApp(app.id)
-    : ALL_LINKS
-      .filter(l => (l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
-      .map(l => (isAdmin ? { ...l, to: adminPath(l.to) } : l));
+    : [
+      ...ALL_LINKS
+        .filter(l => (l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
+        .map(l => (isAdmin ? { ...l, to: adminPath(l.to) } : l)),
+      ...adminRows,
+    ];
 
   // Grouped mode only past the threshold — grouping helps a 20-row register,
-  // it would just add chrome to a supervisor's 6 links.
-  const grouped = !app && links.length > GROUP_THRESHOLD;
-  const byGroup = new Map(NAV_GROUPS.map(g => [g.id, []]));
-  links.forEach(l => (byGroup.get(l.group) ?? byGroup.get("system")).push(l));
+  // it would just add chrome to a supervisor's 6 links. An app that names
+  // `sections` (the admin app's four) is always grouped by them instead.
+  const sections = app?.sections ?? null;
+  const groupDefs = sections ?? NAV_GROUPS;
+  const groupOf = (l) => (sections ? l.section : l.group);
+  const fallbackGroup = sections ? sections[0].id : "system";
+  const grouped = sections ? true : !app && links.length > GROUP_THRESHOLD;
+  const byGroup = new Map(groupDefs.map(g => [g.id, []]));
+  links.forEach(l => (byGroup.get(groupOf(l)) ?? byGroup.get(fallbackGroup)).push(l));
 
   // Segment-safe, exactly like NavLink's own matching: /zagruzka-cell is NOT
   // inside /zagruzka, so it can't light up (or open) the wrong section.
@@ -109,9 +118,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   // The section holding the current page. Longest match wins, so a nested
   // route resolves to its own link rather than to the parent it sits under.
-  const activeGroup = links
+  const activeHit = links
     .filter(l => isLinkActive(l.to))
-    .sort((a, b) => b.to.length - a.to.length)[0]?.group;
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  const activeGroup = activeHit ? groupOf(activeHit) : undefined;
 
   // Accordion: the active section is open, everything else closed. Navigation
   // re-derives it (the effect re-fires only when the active section changes),
@@ -162,7 +172,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // `indent` steps a row under its folder header while expanded — as a margin
   // on the icon, not row padding, so the full-width active pill and hover wash
   // stay flush; on the icon rail it drops to 0 to keep icons centered.
-  const renderLink = ({ to, key, icon: Icon }, indent = false) => {
+  const renderLink = ({ to, key, icon: Icon, danger }, indent = false) => {
     const badgeCount = badgeFor(to);
     const badge = badgeCount > 0;
     return (
@@ -190,7 +200,9 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           className="relative flex-shrink-0 transition-all duration-200"
           style={{ marginLeft: indent && expanded ? 16 : 0 }}
         >
-          <Icon size={16} />
+          {/* A page that can destroy data keeps a red icon (the admin app's
+              «Xavfli» section), the same mark its folder carries. */}
+          <Icon size={16} style={danger ? { color: "#ef4444" } : undefined} />
           {badge && !expanded && (
             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
           )}
@@ -353,7 +365,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           )}
           {(grouped ? [] : links).map(l => renderLink(l))}
 
-          {grouped && NAV_GROUPS.map((g) => {
+          {grouped && groupDefs.map((g) => {
             const items = byGroup.get(g.id);
             if (!items.length) return null;
             const collapsed = Boolean(g.labelKey) && openGroup !== g.id;
@@ -382,12 +394,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                     style={{
                       gap: "12px",
                       marginTop: 8,
-                      color: collapsed && activeInside ? "var(--brand-text)" : "var(--text-3)",
+                      color: collapsed && activeInside ? "var(--brand-text)" : g.danger ? "#ef4444" : "var(--text-3)",
                       justifyContent: !expanded ? "center" : undefined,
                     }}
                   >
                     <span className="relative flex-shrink-0">
-                      <GroupIcon size={16} />
+                      {GroupIcon && <GroupIcon size={16} />}
                       {/* Closed on the rail while /staff carries
                           pending work — keep the dot rather than hiding the queue. */}
                       {groupBadge > 0 && !expanded && (
@@ -466,32 +478,9 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         {/* Footer */}
         <div className="px-2 py-3 space-y-1 overflow-hidden"
           style={{ borderTop: "1px solid var(--border)", paddingBottom: "calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
-          {/* An admin opens the panel from its tile on the launcher. */}
-          {showAdminPanel && !isAdmin && (
-            <NavLink
-              to={withSearch("/admin/upload")}
-              onClick={onClose}
-              title={!expanded ? t("nav.admin") : undefined}
-              className="nav-item flex items-center rounded-lg text-sm transition-colors"
-              style={({ isActive }) => ({
-                gap: "12px",
-                padding: "10px",
-                color: isActive ? "var(--text-1)" : "var(--text-3)",
-                // Background only while active — an inline "transparent" would
-                // beat the .nav-item hover wash.
-                ...(isActive ? { background: "var(--bg-inner)" } : null),
-                justifyContent: !expanded ? "center" : undefined,
-              })}
-            >
-              <Settings size={16} className="flex-shrink-0" />
-              <span
-                className="truncate whitespace-nowrap transition-all duration-200"
-                style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden", display: "block" }}
-              >
-                {t("nav.admin")}
-              </span>
-            </NavLink>
-          )}
+          {/* The admin app's pages are rows of the register above (an admin
+              opens the app from its launcher tile; a grantee sees the pages
+              their grants open, under «Admin»). */}
 
           {!isAdmin && (
             <a

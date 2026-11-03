@@ -184,7 +184,7 @@ export default function AssistantPanel() {
             <ThreadList compact onPick={() => setView("chat")} />
           </div>
         ) : (
-          <Chat variant="panel" onNavigate={go} onConfigure={() => go("/admin/upload?tab=aikeys")} />
+          <Chat variant="panel" onNavigate={go} onConfigure={() => go("/panel/aikeys")} />
         )}
       </div>
     </aside>,

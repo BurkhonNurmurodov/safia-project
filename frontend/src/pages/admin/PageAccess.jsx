@@ -10,7 +10,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 
 /**
  * «Sahifalar (rol bo'yicha)» — which ROLE may open which page.
@@ -57,7 +57,7 @@ export default function PageAccess() {
   const dirty = changes.length > 0;
   const removals = changes.filter((c) => !c.added);
   // Tab switches unmount this component; the shell asks before discarding.
-  useAdminDirty(dirty);
+  useLeaveGuard(dirty);
 
   useEffect(() => {
     if (!data?.pages) return;
@@ -136,7 +136,7 @@ export default function PageAccess() {
       <div className="px-4 pt-3">
         <p className="text-xs leading-snug" style={{ color: "var(--text-3)" }}>{t("admin.access.hint")}</p>
         <Link
-          to="/admin/upload?tab=permissions"
+          to="/panel/permissions"
           className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold hover:underline"
           style={{ color: "var(--brand-text)" }}
         >

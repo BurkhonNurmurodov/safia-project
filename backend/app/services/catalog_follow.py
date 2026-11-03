@@ -2090,7 +2090,7 @@ def _report(results: list) -> None:
         text_ = ("📦 <b>Pozitsiyalar yacheyka bilan ko'chdi</b> — ko'rib chiqing:\n"
                  + "\n".join("• " + html.escape(x) for x in tell[:30])
                  + (f"\n… +{len(tell) - 30}" if len(tell) > 30 else "")
-                 + "\n👉 /admin/upload?tab=logs")
+                 + "\n👉 /panel/logs")
         _dm(text_)
 
 

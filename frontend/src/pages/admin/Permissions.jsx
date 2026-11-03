@@ -22,7 +22,7 @@ import { SectionHead, Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/Toast";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import CopyPermsModal from "./CopyPermsModal";
 
 /**
@@ -321,7 +321,7 @@ export default function Permissions() {
 
   const dirty = Object.keys(draft).length > 0;
   // Tab switches unmount this component; the shell asks before discarding.
-  useAdminDirty(dirty);
+  useLeaveGuard(dirty);
 
   /**
    * Changing the selection used to call setDraft({}) — every tree click silently

@@ -1674,7 +1674,7 @@ def _digest(db: Session, rec: VerifixSyncRun, last: Optional[VerifixSyncRun], m:
     if q.get("opened"):
         lines.append(f"\nYangi takliflar: {q['opened']}")
     lines.append(f"Kutayotgan takliflar: {open_n}")
-    lines.append("👉 /admin/upload?tab=verifixsync")
+    lines.append("👉 /panel/verifixsync")
     _dm("\n".join(lines))
 
 
@@ -1686,7 +1686,7 @@ def _tell_guard(db: Session, rec: VerifixSyncRun, guard: str) -> None:
     if prev is not None and (prev.guard or "").split(":")[:2] == guard.split(":")[:2]:
         return
     _dm(f"⛔ <b>Verifix sinxron</b>: hech narsa yozilmadi — <code>{_esc(guard)}</code>\n"
-        "👉 /admin/upload?tab=verifixsync")
+        "👉 /panel/verifixsync")
 
 
 # ── the taps ──────────────────────────────────────────────────────────────────

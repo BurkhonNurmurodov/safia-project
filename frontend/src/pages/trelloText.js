@@ -1,4 +1,4 @@
-// «Trello» (/trello) and its admin card (/admin/upload?tab=trello) — the words
+// «Trello» (/trello) and its admin card (/panel/trello) — the words
 // in the four platform languages, beside the page (the /ontime pattern).
 // `fill(s, {n: 3})` puts the numbers in. Board, list and label names stay as
 // the board writes them.

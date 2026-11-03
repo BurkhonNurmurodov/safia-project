@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
@@ -20,7 +20,8 @@ const HTML_LANG = { uz: "uz", uz_cyrl: "uz-Cyrl", ru: "ru", en: "en" };
 // from the key their own page already shows as its heading.
 //
 // Lookup is exact first, then by first path segment — that is what covers
-// "/brigadir/:id" and every "/admin/*" destination with one entry each.
+// "/brigadir/:id" with one entry. The admin app's pages (/panel/<id>) are named
+// by their own entry in config/adminNav.js — see adminTitleKey below.
 const TITLE_KEYS = {
   "/":                 "nav.overview",
   "/overview":         "nav.overview",
@@ -51,17 +52,31 @@ const TITLE_KEYS = {
   "/exam":             "nav.exam",
   "/login":            "login.title",
   "/broadcast-receivers": "admin.tabBroadcast",
-  // Segment roots — "/brigadir/12", "/admin/upload" and friends land here.
-  // The admin panel deliberately stops at "Admin": its destination list lives
-  // in ADMIN_NAV and must stay the single source of truth, and importing it
-  // here would pull the lazy admin bundle into the initial chunk.
+  // Segment roots — "/brigadir/12" and friends land here.
   "/brigadir":         "profile.title",
   "/admin":            "nav.admin",
+  "/panel":            "nav.admin",
 };
 
 function keyForPath(pathname) {
   if (TITLE_KEYS[pathname]) return TITLE_KEYS[pathname];
   return TITLE_KEYS[`/${pathname.split("/")[1]}`] || null;
+}
+
+// The admin pages' keys come from ADMIN_NAV, THE register — fetched on the
+// first /panel/<id> visit rather than imported, so its icons stay out of the
+// boot chunk (it rides in the Layout chunk the page loads anyway).
+let adminNav = null;
+function useAdminTitleKey(pathname) {
+  const [, setLoaded] = useState(Boolean(adminNav));
+  const id = pathname.startsWith("/panel/") ? pathname.split("/")[2] : null;
+  useEffect(() => {
+    if (!id || adminNav) return;
+    let live = true;
+    import("../config/adminNav").then((m) => { adminNav = m.ADMIN_NAV; if (live) setLoaded(true); }).catch(() => {});
+    return () => { live = false; };
+  }, [id]);
+  return id && adminNav ? adminNav.find((n) => n.id === id)?.labelKey ?? null : null;
 }
 
 // Keeps <title> in step with the route and the language. Mounted once inside
@@ -78,16 +93,17 @@ export default function DocumentTitle() {
 
   // An admin's «/» is the app launcher (App.jsx HomeRoute), not the overview.
   const launcher = pathname === "/" && auth?.role === "admin";
+  const adminKey = useAdminTitleKey(pathname);
 
   useEffect(() => {
-    const key = gated ? null : launcher ? "apps.title" : keyForPath(pathname);
+    const key = gated ? null : launcher ? "apps.title" : adminKey || keyForPath(pathname);
     // t() echoes an unknown key back — never put that in the tab.
     const page = key ? t(key) : "";
     document.title = page && page !== key ? APP_NAME + SEP + page : APP_NAME;
     document.documentElement.lang = HTML_LANG[lang] || "uz";
     // `t` re-identifies when the language changes AND when the DB translation
     // overrides land, so both reach the tab without a navigation.
-  }, [pathname, t, lang, gated, launcher]);
+  }, [pathname, t, lang, gated, launcher, adminKey]);
 
   return null;
 }

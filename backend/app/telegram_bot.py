@@ -583,7 +583,7 @@ def _admin_panel_kb() -> types.InlineKeyboardMarkup:
     kb.add(types.InlineKeyboardButton(
         "👥 Admin panelda ko'rish",
         web_app=types.WebAppInfo(
-            url=f"{settings.webapp_url.rstrip('/')}/admin/upload?tab=users&status=pending"
+            url=f"{settings.webapp_url.rstrip('/')}/panel/users?status=pending"
         ),
     ))
     return kb
@@ -600,7 +600,7 @@ def _registration_kb(role_ref: int) -> types.InlineKeyboardMarkup:
     kb.add(types.InlineKeyboardButton(
         "👥 Admin panelda ko'rish",
         web_app=types.WebAppInfo(
-            url=f"{settings.webapp_url.rstrip('/')}/admin/upload?tab=users&status=pending"
+            url=f"{settings.webapp_url.rstrip('/')}/panel/users?status=pending"
         ),
     ))
     return kb

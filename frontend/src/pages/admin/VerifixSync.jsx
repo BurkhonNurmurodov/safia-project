@@ -28,7 +28,7 @@ import { useToast } from "../../components/ui/Toast";
 import { fill, fmtAt } from "./VerifixParity";
 
 /**
- * «Verifix sinxron» — `/admin/upload?tab=verifixsync`.
+ * «Verifix sinxron» — `/panel/verifixsync`.
  *
  * The platform's three registers (cells, leader and other profiles, brigadir
  * units) FOLLOW Verifix through a stored Verifix id per row

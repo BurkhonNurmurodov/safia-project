@@ -5,7 +5,7 @@ import { ShieldQuestion, Info, UserRound, Save, RotateCcw } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import SearchInput from "../../components/ui/SearchInput";
@@ -98,7 +98,7 @@ export default function IdleOwners() {
   const current = (cat) => (cat in draft ? draft[cat] : saved[cat] ?? null);
   const changed = Object.keys(draft).filter((c) => (draft[c] || null) !== (saved[c] || null));
   const dirty = changed.length > 0;
-  useAdminDirty(dirty);
+  useLeaveGuard(dirty);
 
   const nameOf = (key) => {
     const p = people.find((x) => x.profile_key === key);

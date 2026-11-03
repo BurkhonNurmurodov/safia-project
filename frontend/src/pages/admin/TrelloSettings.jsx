@@ -4,7 +4,7 @@ import {
   KanbanSquare, PlugZap, CheckCircle2, AlertTriangle, Info, Loader2, ExternalLink, Trash2, RefreshCw, Plus,
 } from "lucide-react";
 import api from "../../utils/api";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -145,7 +145,7 @@ export default function TrelloSettings() {
   useEffect(() => { if (data) setKey(data.key || ""); }, [data?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = !!data && (key.trim() !== (data.key || "") || token.length > 0);
-  useAdminDirty(dirty || link.trim().length > 0);
+  useLeaveGuard(dirty || link.trim().length > 0);
 
   const msgOf = (e) => {
     const d = detailOf(e);

@@ -163,7 +163,7 @@ export default function BroadcastRecord() {
   const back = (
     <button
       type="button"
-      onClick={() => navigate("/admin/upload?tab=broadcast")}
+      onClick={() => navigate("/panel/broadcast")}
       className="inline-flex items-center gap-1.5 mb-3 text-sm rounded-lg px-2 py-1 -ml-2 transition-colors hover:bg-[var(--bg-inner)]"
       style={{ color: "var(--text-3)" }}
     >
@@ -204,7 +204,7 @@ export default function BroadcastRecord() {
           message={gone ? t("admin.broadcast.notFoundMsg")
                         : (error?.response?.data?.detail || t("error.reload"))}
           action={gone
-            ? { label: t("admin.broadcast.recBack"), onClick: () => navigate("/admin/upload?tab=broadcast") }
+            ? { label: t("admin.broadcast.recBack"), onClick: () => navigate("/panel/broadcast") }
             : { label: t("error.reload"), onClick: () => refetch() }}
         />
       </Layout>
@@ -225,7 +225,7 @@ export default function BroadcastRecord() {
     : data.status === "sending" ? t("admin.broadcast.statusSending")
     : t("admin.broadcast.statusDone");
 
-  const duplicate = () => navigate("/admin/upload?tab=broadcast", {
+  const duplicate = () => navigate("/panel/broadcast", {
     state: {
       duplicate: {
         html: data.text_html,

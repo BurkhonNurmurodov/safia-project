@@ -440,7 +440,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
         <div className="p-4 flex flex-col items-start gap-3">
           <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>{T.aiOffBody}</p>
           <Button size="lg" variant="primary" icon={<Sparkles size={14} />}
-            onClick={() => navigate("/admin/upload?tab=aikeys")}>{T.aiOpenKeys}</Button>
+            onClick={() => navigate("/panel/aikeys")}>{T.aiOpenKeys}</Button>
         </div>
       </div>
     );

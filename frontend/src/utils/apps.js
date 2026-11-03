@@ -1,10 +1,10 @@
 // «Ilovalar» — the admin app launcher's bookkeeping (2026-11-02): which app a
 // page belongs to, which app is open, and where each app was left. The apps
 // themselves are APPS in config/navLinks.js.
-import { ALL_LINKS, APPS, ADMIN_PANEL_LINK, appOf, adminPath } from "../config/navLinks";
+import { ALL_LINKS, APPS, ADMIN_PAGE_LINKS, appOf, adminPath } from "../config/navLinks";
 
 // Every page an admin reaches, at the path an admin reaches it by.
-export const ADMIN_LINKS = [...ALL_LINKS.map((l) => ({ ...l, to: adminPath(l.to) })), ADMIN_PANEL_LINK];
+export const ADMIN_LINKS = [...ALL_LINKS.map((l) => ({ ...l, to: adminPath(l.to) })), ...ADMIN_PAGE_LINKS];
 
 const APP_IDS = new Set(APPS.map((a) => a.id));
 const LAST_APP_KEY = "appOpen";       // sessionStorage: the app open in this tab

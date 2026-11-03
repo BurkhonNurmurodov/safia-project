@@ -201,7 +201,7 @@ DEFAULT_PAGE_ACCESS = {
     # every writer.
     "education": ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
     # «Imtihon» — the dashboard exam. Leaders sit it; a supervisor reads their
-    # unit's results on the same page. Admins assign from /admin/upload?tab=exam.
+    # unit's results on the same page. Admins assign from /panel/exam.
     "exam": ["supervisor", "leader"],
     # «Yordamchi» — the AI assistant (routers/assistant.py). Admin-only until
     # the operator opens it (2026-10-05: "only visible for admins for now").

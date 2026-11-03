@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import SearchInput from "../../components/ui/SearchInput";
@@ -359,7 +359,7 @@ export default function Broadcast() {
 
   // Switching admin destinations unmounts this component; without the guard a
   // composed message and a 300-person selection vanish with one mistap.
-  useAdminDirty(hasMessage || selected.length > 0);
+  useLeaveGuard(hasMessage || selected.length > 0);
 
   // Autosave (debounced). Text + selection + mode + pin — never the schedule.
   useEffect(() => {

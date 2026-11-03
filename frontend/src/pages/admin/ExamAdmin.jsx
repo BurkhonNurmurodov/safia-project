@@ -1,5 +1,5 @@
 /**
- * «Imtihon» — the admin destination (/admin/upload?tab=exam). Three sub-tabs:
+ * «Imtihon» — the admin destination (/panel/exam). Three sub-tabs:
  * Natijalar (every attempt, drill-down, cancel, Excel) · Tayinlash (a
  * shift → unit → leader tree, a deadline, a note) · Vazifalar banki (the
  * pass mark, the badge switch, and each of the fifty tasks on or off).
@@ -14,7 +14,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { exportXlsx } from "../../utils/exportXlsx";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import KPICard from "../../components/ui/KPICard";
 import TableCard, { SectionHead, Th } from "../../components/ui/DataTable";
@@ -326,7 +326,7 @@ function Assign({ prefill, onDone }) {
   const [deadline, setDeadline] = useState(tomorrow);
   const [note, setNote] = useState("");
   const [confirm, setConfirm] = useState(false);
-  useAdminDirty(sel.length > 0 || note.trim().length > 0);
+  useLeaveGuard(sel.length > 0 || note.trim().length > 0);
 
   const lq = useQuery({ queryKey: ["exam-admin-leaders"], queryFn: () => api.get("/admin/exam/leaders").then((r) => r.data) });
   const leaders = lq.data?.leaders || [];
@@ -435,7 +435,7 @@ function Bank() {
   const badgeOn = badge ?? bq.data?.badge ?? false;
   const dirtyBank = draft != null && JSON.stringify([...draft].sort()) !== JSON.stringify(tasks.filter((x) => !x.enabled).map((x) => x.key).sort());
   const dirtySettings = (mark != null && mark !== bq.data?.pass_mark) || (badge != null && badge !== bq.data?.badge);
-  useAdminDirty(dirtyBank || dirtySettings);
+  useLeaveGuard(dirtyBank || dirtySettings);
 
   const saveSettings = useMutation({
     mutationFn: () => api.put("/admin/settings", { exam_pass_mark: String(passMark), exam_badge: badgeOn ? "1" : "0" }),

@@ -12,7 +12,7 @@ import { useFactory } from "../../context/FactoryContext";
 import { useFactorySection } from "../../components/ui/FactorySelect";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -536,7 +536,7 @@ export default function ShiftTimes() {
   const bulkDirty = !!bulk && (!!bulk.start || !!bulk.end);
   const anyDefDirty = rowDirty(1) || rowDirty(2) || closeDirty(1) || closeDirty(2);
   // The shell must warn before unmounting a destination holding a draft.
-  useAdminDirty(anyDefDirty || bulkDirty);
+  useLeaveGuard(anyDefDirty || bulkDirty);
 
   const openBulk = (ids) => {
     const rowsIn = cells.filter((c) => ids.includes(c.id));

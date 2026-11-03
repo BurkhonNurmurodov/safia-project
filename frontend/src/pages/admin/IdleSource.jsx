@@ -5,7 +5,7 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
@@ -110,7 +110,7 @@ export default function IdleSource() {
     setDrafts((prev) => ({ ...prev, [u.manager_id]: { ...effective(u), ...patch } }));
 
   const anyDirty = useMemo(() => units.some(isDirty), [units, drafts]); // eslint-disable-line react-hooks/exhaustive-deps
-  useAdminDirty(anyDirty);
+  useLeaveGuard(anyDirty);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();

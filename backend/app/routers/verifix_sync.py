@@ -1,4 +1,4 @@
-"""«Verifix sinxron» — `/admin/upload?tab=verifixsync` (2026-10-12).
+"""«Verifix sinxron» — `/panel/verifixsync` (2026-10-12).
 
 The doors over `services/verifix_sync.py`: the state (mode, caps, the last
 passes, the queue, the untied rows), the tie run and a pass on demand (each

@@ -70,7 +70,7 @@ export default function Assistant() {
             </button>
           </div>
           <div className="flex-1 min-h-0">
-            <Chat variant="page" onNavigate={go} onConfigure={() => go("/admin/upload?tab=aikeys")} />
+            <Chat variant="page" onNavigate={go} onConfigure={() => go("/panel/aikeys")} />
           </div>
         </section>
       </div>

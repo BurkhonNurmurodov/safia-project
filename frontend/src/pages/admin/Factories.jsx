@@ -8,7 +8,7 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useFactory, factoryName } from "../../context/FactoryContext";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -91,7 +91,7 @@ export default function Factories() {
   });
 
   // An open form holds a draft; the shell must warn before unmounting it.
-  useAdminDirty(!!form);
+  useLeaveGuard(!!form);
 
   const saveFactory = async () => {
     const code = (form.code || "").trim();

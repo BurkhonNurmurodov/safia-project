@@ -6,7 +6,7 @@ import {
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -192,7 +192,7 @@ export default function VerifixSettings() {
     || (host.trim() || data.default_host) !== (data.host || data.default_host)
     || password.length > 0
   );
-  useAdminDirty(dirty);
+  useLeaveGuard(dirty);
 
   const save = useMutation({
     mutationFn: (body) => api.put("/api/admin/verifix", body).then((r) => r.data),

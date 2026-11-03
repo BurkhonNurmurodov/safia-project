@@ -246,7 +246,7 @@ def link_for(kind: Optional[str], sid: Optional[str]) -> Optional[str]:
                                   "/kelish", "/cells"):
         return sid
     if kind == "admin_tab" and sid in ("verifixsync",):   # an admin destination
-        return f"/admin/upload?tab={sid}"
+        return f"/panel/{sid}"
     if kind == "lesson":
         return "/education"
     if kind == "exam":

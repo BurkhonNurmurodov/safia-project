@@ -168,7 +168,7 @@ export default function TrelloAnalytics() {
     const doneLine = !names ? T.doneNone : data.done_auto ? fill(T.doneAuto, { l: names }) : fill(T.doneSet, { l: names });
     notices.push({ icon: Info, warn: !names,
       text: `${doneLine} ${data.archived_done ? T.archivedDone : T.archivedOut} ${T.doneChange}`,
-      action: isAdmin ? { label: T.openSettings, onClick: () => navigate("/admin/upload?tab=trello") } : null });
+      action: isAdmin ? { label: T.openSettings, onClick: () => navigate("/panel/trello") } : null });
     if (data.history_truncated && data.history_from) {
       notices.push({ icon: Info, text: fill(T.historyNote, { d: ddmmyy(data.history_from.slice(0, 10)) }) });
     }
@@ -254,7 +254,7 @@ export default function TrelloAnalytics() {
         <EmptyState icon={KanbanSquare} title={notConfigured ? T.notConfiguredTitle : T.noBoardsTitle}
           message={isAdmin ? (notConfigured ? T.notConfiguredAdmin : T.noBoardsAdmin) : T.notConfiguredUser}
           showUploadLink={false}
-          action={isAdmin ? <Button size="sm" variant="secondary" onClick={() => navigate("/admin/upload?tab=trello")}>{T.openSettings}</Button> : null} />
+          action={isAdmin ? <Button size="sm" variant="secondary" onClick={() => navigate("/panel/trello")}>{T.openSettings}</Button> : null} />
       ) : neverRead ? (
         <EmptyState icon={Database} title={reading ? T.readRunning : T.neverReadTitle} message={T.neverReadMsg} showUploadLink={false}
           action={isAdmin && !reading ? <Button size="sm" variant="secondary" onClick={startRead}><RefreshCw size={12} /> {T.readNow}</Button> : null} />

@@ -1,17 +1,32 @@
-// The admin panel's destinations — THE list (order, grouping, landing tab and
-// capability filtering), moved out of pages/admin/AdminPanel.jsx so the header's
-// search (components/layout/GlobalSearch.jsx) can offer these tabs without
-// pulling the whole panel — which imports every destination statically — into
-// every page's bundle. AdminPanel imports it from here; never keep a second copy.
+// The admin app's pages — THE list (order, grouping, icons, labels and
+// capability filtering). Every admin page is a route of its own, /panel/<id>
+// (pages/admin/AdminPage.jsx is the frame, pages/admin/adminPages.js the lazy
+// page map); the sidebar, the header search, the launcher tile and the browser
+// tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users,
+  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
+// The admin app's home; /panel/<id> is a page. The old single page,
+// /admin/upload?tab=<id>, redirects here (App.jsx), so a link already sent in
+// Telegram keeps working.
+export const ADMIN_HOME = "/panel";
+export const adminPage = (id) => `${ADMIN_HOME}/${id}`;
+
+// May this viewer open this page? Admins open every page; anybody else only
+// the pages their capability grants name (capability_tabs on the server).
+export const adminAllows = (n, isAdmin, capTabs = []) => isAdmin || capTabs.includes(n.capKey ?? n.id);
+
+// The first page a viewer may open, in register order — null when none.
+export const firstAdminPage = (isAdmin, capTabs = []) => ADMIN_NAV.find((n) => adminAllows(n, isAdmin, capTabs)) ?? null;
+
+// The four sections of the admin app's sidebar. `icon` heads each folder and
+// is deliberately none of the page icons inside it.
 export const ADMIN_GROUPS = [
-  { id: "daily",  labelKey: "admin.group.daily" },
-  { id: "people", labelKey: "admin.group.people" },
-  { id: "tools",  labelKey: "admin.group.tools" },
-  { id: "danger", labelKey: "admin.group.danger", danger: true },
+  { id: "daily",  labelKey: "admin.group.daily",  icon: CalendarDays },
+  { id: "people", labelKey: "admin.group.people", icon: UsersRound },
+  { id: "tools",  labelKey: "admin.group.tools",  icon: Wrench },
+  { id: "danger", labelKey: "admin.group.danger", icon: AlertTriangle, danger: true },
 ];
 
 export const ADMIN_NAV = [

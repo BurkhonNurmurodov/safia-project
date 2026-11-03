@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
@@ -168,7 +168,7 @@ export default function AiKeys() {
     const d = drafts[id];
     return f && d && ((d.keyRef || null) !== (f.keyRef || null) || (d.keyRef && d.model !== f.model));
   });
-  useAdminDirty(dirtyIds.length > 0);
+  useLeaveGuard(dirtyIds.length > 0);
   const cur = (f) => drafts[f.id] || { keyRef: f.keyRef || null, model: f.model || null };
   const clearErr = (id) => setRowErr((e) => { if (!e[id]) return e; const x = { ...e }; delete x[id]; return x; });
 

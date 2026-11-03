@@ -5,7 +5,7 @@ import {
   MessageSquare, Plus, Send, Trash2, Users, XCircle,
 } from "lucide-react";
 import api from "../../utils/api";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
@@ -129,7 +129,7 @@ export default function NotionTrackerSettings() {
   const saved = data?.settings;
   const draft = edits ?? saved;
   const dirty = !!(draft && saved && JSON.stringify(draft) !== JSON.stringify(saved));
-  useAdminDirty(dirty || tokenIn.trim().length > 0 || notionIn.trim().length > 0);
+  useLeaveGuard(dirty || tokenIn.trim().length > 0 || notionIn.trim().length > 0);
 
   const edit = (patch) => { setEdits((d) => ({ ...(d ?? saved), ...patch })); setErrors({}); };
   const editRow = (key, i, patch) => edit({ [key]: draft[key].map((r, j) => (j === i ? { ...r, ...patch } : r)) });

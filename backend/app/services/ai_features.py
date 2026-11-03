@@ -359,7 +359,7 @@ def _tell_admins(text_html: str) -> int:
         from app.routers.boot import _recipients
         from app.telegram_bot import bot
 
-        url = settings.webapp_url.rstrip("/") + "/admin/upload?tab=aikeys"
+        url = settings.webapp_url.rstrip("/") + "/panel/aikeys"
         for chat_id in _recipients():
             kb = types.InlineKeyboardMarkup()
             if chat_id > 0:

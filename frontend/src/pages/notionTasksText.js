@@ -1,5 +1,5 @@
 // «Notion vazifalari» (/notion-tasks) and its admin tab «Notion eslatmalari»
-// (/admin/upload?tab=notiontracker) — the words in the four platform languages,
+// (/panel/notiontracker) — the words in the four platform languages,
 // beside the page (the /trello pattern). Task titles, names and statuses stay
 // as Notion writes them; the bot's own group messages stay Russian.
 

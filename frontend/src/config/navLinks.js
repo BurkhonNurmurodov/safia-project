@@ -11,6 +11,7 @@ import {
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   SquareKanban, TestTubes, Ticket, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench,
 } from "lucide-react";
+import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 
 // `app` moves a link out of its group's app on the admin launcher («Ilovalar»,
 // see APPS below); a link without one belongs to the app of its `group`.
@@ -117,6 +118,10 @@ export const NAV_GROUPS = [
   // «Verifix (test)» — the attendance system's API, page by page (admin-only).
   { id: "verifix", labelKey: "navgrp.verifix",    icon: ScanFace },
   { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
+  // The admin app's pages in the WHOLE register — what a capability grantee
+  // sees of it (only the pages their grants open), and an admin with no app
+  // open. Inside the admin app its own four sections take over (APPS.sections).
+  { id: "admin",   labelKey: "nav.admin",         icon: Settings },
   { id: "system" },                                // Активность + catch-all — headerless
 ];
 
@@ -140,12 +145,19 @@ export const APPS = [
   // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
   // phone's tile; the tile says it in one word.
   { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },
-  { id: "admin",     labelKey: "nav.admin",         icon: Settings,        hue: "slate" },
+  // Its pages come from config/adminNav.js; inside it the sidebar groups them
+  // by `sections` (the four admin groups) instead of listing one flat column.
+  { id: "admin",     labelKey: "nav.admin",         icon: Settings,        hue: "slate", sections: ADMIN_GROUPS },
 ];
 
-// The admin panel is not a sidebar page (it sits in the sidebar's footer), so
-// the «admin» app names its one page here.
-export const ADMIN_PANEL_LINK = { to: "/admin/upload", key: "nav.admin", icon: Settings, app: "admin" };
+// The admin app's pages as sidebar links, derived from ADMIN_NAV — never
+// listed twice. `group` places them in the whole register, `section` inside
+// the admin app; `tab` + `capKey` are what a capability grant is checked
+// against (adminNav.adminAllows).
+export const ADMIN_PAGE_LINKS = ADMIN_NAV.map((n) => ({
+  to: adminPage(n.id), key: n.labelKey, icon: n.Icon, app: "admin", group: "admin",
+  section: n.group, tab: n.id, capKey: n.capKey, danger: n.danger,
+}));
 
 export const appOf = (link) => link.app ?? link.group;
 

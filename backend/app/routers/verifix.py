@@ -1,4 +1,4 @@
-"""The Verifix connection card — `/admin/upload?tab=verifix`.
+"""The Verifix connection card — `/panel/verifix`.
 
 Three doors over ``app.services.verifix``: read what is stored, store it, and
 run the connection test. ADMIN-ONLY and not grantable — the card holds the

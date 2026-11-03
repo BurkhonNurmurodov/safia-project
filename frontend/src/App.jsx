@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect } from "react";
-import { importWithRecovery } from "./utils/importRecovery";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Suspense, useEffect } from "react";
+import { lazyWithReload } from "./utils/lazyPage";
+import { ADMIN_PAGES } from "./pages/admin/adminPages";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isNetworkError, isDown, subscribeConnectivity, OFFLINE_RETRY_MS } from "./utils/connectivity";
 import { queryPersister } from "./utils/offlineCache";
@@ -33,14 +34,8 @@ function KpiTabRedirect({ tab }) {
   return <Navigate to={{ pathname: "/leaders-kpi", search: `?${sp.toString()}`, hash }} replace />;
 }
 
-function lazyWithReload(importer) {
-  const Page = lazy(() => importWithRecovery(importer));
-  // Fetch the chunk now without rendering it — see preloadOpenedRoute below.
-  // A failure is swallowed here: the lazy load above meets the same failure
-  // and recovers exactly as it always did.
-  Page.preload = () => { importer().catch(() => {}); };
-  return Page;
-}
+// lazyWithReload (utils/lazyPage.js): a page's own chunk, with .preload() —
+// see preloadOpenedRoute below.
 const Overview = lazyWithReload(() => import("./pages/Overview"));
 // «Ilovalar» — an admin's «/» (see HomeRoute).
 const AppLauncher = lazyWithReload(() => import("./pages/AppLauncher"));
@@ -59,7 +54,10 @@ const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
 const People = lazyWithReload(() => import("./pages/People"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
-const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
+// The admin app: every page is /panel/<id> (pages/admin/AdminPage.jsx is the
+// frame, pages/admin/adminPages.js the lazy page map), /panel its home.
+const AdminPage = lazyWithReload(() => import("./pages/admin/AdminPage"));
+const AdminHome = lazyWithReload(() => import("./pages/admin/AdminPage").then((m) => ({ default: m.AdminHome })));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
 const Daily = lazyWithReload(() => import("./pages/Daily"));
 const Production = lazyWithReload(() => import("./pages/Production"));
@@ -131,7 +129,7 @@ const ROUTE_PAGES = {
   "zagruzka-cell": ZagruzkaCell, live: LiveOverview, kelish: Kelish, arc: Arc,
   education: Education, exam: Exam, targets: Targets, profile: Profile,
   notifications: Notifications, assistant: Assistant, proof: ProofCamera,
-  admin: AdminPanel, "broadcast-receivers": BroadcastReceivers, broadcast: BroadcastRecord,
+  "broadcast-receivers": BroadcastReceivers, broadcast: BroadcastRecord,
   overview: Overview,
 };
 // «/» is what the Telegram menu button opens, and a role without the overview
@@ -159,6 +157,10 @@ function preloadOpenedRoute() {
     else if (first === "education" && second) Page = EducationLesson;
     else if (first === "targets" && second) Page = TargetGoal;
     else if (first === "assessment" && second) Page = AssessmentGrade;
+    else if (first === "panel") {
+      AdminPage.preload();
+      Page = second ? ADMIN_PAGES[second] : null;
+    }
     Page?.preload?.();
   } catch { /* a hint only */ }
 }
@@ -388,19 +390,29 @@ function RequireProfilesManage({ children }) {
 }
 
 /**
- * Gates the /admin panel specifically. Admins always pass. A non-admin passes
- * only while holding at least one capability whose tab lives in the panel —
- * and then sees ONLY those tabs (AdminPanel filters by the same list), so
- * "run the Users tab" never becomes "run the admin panel". Deliberately
- * separate from RequireAdmin so widening the panel can't widen anything else.
+ * /panel/<id> — one admin page. Keyed by the page, so moving between two admin
+ * pages mounts a fresh Layout like any other navigation. Access is decided per
+ * page inside AdminPage (admins: every page; a grantee: the pages their
+ * capabilities name), so "run the Users tab" never becomes "run the panel".
  */
-function RequireAdminPanel({ children }) {
-  const { auth } = useAuth();
-  const { capTabs, isLoading } = useCapabilities();
-  if (auth?.role === "admin") return children;
-  if (isLoading) return <PageLoader where="caps" />;
-  if (capTabs.length > 0) return children;
-  return <Navigate to="/" replace />;
+function PanelRoute() {
+  const { id } = useParams();
+  return <AdminPage key={id} id={id} />;
+}
+
+/**
+ * The old single admin page, /admin/upload?tab=<id> — Telegram buttons and
+ * messages already sent hold it for as long as the chat exists. It lands on
+ * /panel/<id> with every OTHER query parameter kept (the bot's registration
+ * button carries status=pending); with no tab, on the app's home. Permanent.
+ */
+function LegacyAdminRedirect() {
+  const { search, hash } = useLocation();
+  const sp = new URLSearchParams(search);
+  const tab = (sp.get("tab") || "").replace(/[^a-z0-9-]/gi, "");
+  sp.delete("tab");
+  const rest = sp.toString();
+  return <Navigate to={{ pathname: tab ? `/panel/${tab}` : "/panel", search: rest ? `?${rest}` : "", hash }} replace />;
 }
 
 /**
@@ -701,10 +713,11 @@ function AppWithLang() {
             {/* Admin management view of one profile — where the Profiles tab
                 rows navigate instead of opening an edit modal. */}
             <Route path="/profile/:ptype/:pid" element={<AuthGate><RequireProfilesManage><Profile /></RequireProfilesManage></AuthGate>} />
-            <Route
-              path="/admin/upload"
-              element={<AuthGate><RequireAdminPanel><AdminPanel /></RequireAdminPanel></AuthGate>}
-            />
+            {/* The admin app — every page its own route (/panel/<id>), /panel
+                its home; /admin/upload?tab=… is the old address. */}
+            <Route path="/panel" element={<AuthGate><AdminHome /></AuthGate>} />
+            <Route path="/panel/:id" element={<AuthGate><PanelRoute /></AuthGate>} />
+            <Route path="/admin/upload" element={<LegacyAdminRedirect />} />
             {/* /broadcast mini-app recipient picker — opened from the bot's inline
                 button; admin membership is enforced server-side (active role may
                 not be "admin"), and it renders its own minimal, non-fullscreen UI. */}
@@ -730,7 +743,7 @@ function AppWithLang() {
               path="/broadcast/:id"
               element={<AuthGate><RequireAdmin><BroadcastRecord /></RequireAdmin></AuthGate>}
             />
-            <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
+            <Route path="/admin" element={<Navigate to="/panel" replace />} />
             {/* Catch-all. Must stay LAST — it matches whatever nothing above
                 did. Behind AuthGate so a signed-out visitor on a bad URL gets
                 the login screen (and keeps their deep link), not a 404. */}

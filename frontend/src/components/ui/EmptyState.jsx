@@ -36,7 +36,7 @@ export default function EmptyState({
       {action}
       {showUploadLink && (
         <button
-          onClick={() => navigate("/admin/upload")}
+          onClick={() => navigate("/panel")}
           className="text-xs text-[var(--brand)] hover:text-[var(--brand-text)] underline underline-offset-2"
         >
           Go to Admin Upload →

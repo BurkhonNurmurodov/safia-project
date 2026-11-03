@@ -1,5 +1,5 @@
 """«Trello» — a Trello board's analytics (/trello) and its connection card
-(/admin/upload?tab=trello).
+(/panel/trello).
 
 Two routers over ``services/trello.py`` (the client, the stored snapshot, the
 15-minute read) and ``services/trello_analytics.py`` (the figures):

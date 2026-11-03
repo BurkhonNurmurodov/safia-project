@@ -12,7 +12,7 @@ import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import { useToast } from "../../components/ui/Toast";
-import { useAdminDirty } from "./AdminPanel";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import api from "../../utils/api";
 import { loadDictionary } from "../../i18n/packs";
 
@@ -176,7 +176,7 @@ export default function TranslationsEditor() {
   });
   const dirtyCount = Object.keys(edits).length;
   // Dozens of painstaking cell edits used to vanish on a tab switch, silently.
-  useAdminDirty(dirtyCount > 0);
+  useLeaveGuard(dirtyCount > 0);
 
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(rows.length / MAX_ROWS));

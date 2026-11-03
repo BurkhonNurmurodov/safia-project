@@ -1771,7 +1771,7 @@ function DangerCard({ ptype, item, onDone }) {
       setConfirm(null);
       setImpacts(null);
       onDone();
-      navigate("/admin/upload?tab=profiles");
+      navigate("/panel/profiles");
     },
     onError: (e) => {
       // `detail_raw` holds the structure; api.js flattens `detail` to text.
@@ -1992,7 +1992,7 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
 
   const back = fromRegister ? (
     <Button size="sm" variant="ghost" icon={<ArrowLeft size={13} />}
-            onClick={() => navigate("/admin/upload?tab=profiles")}>
+            onClick={() => navigate("/panel/profiles")}>
       {t("profile.backToList")}
     </Button>
   ) : null;

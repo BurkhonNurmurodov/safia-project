@@ -1,5 +1,4 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Grid3x3, UsersRound, UserRound, Settings2, AlertTriangle, Contact } from "lucide-react";
 import api from "../../utils/api";
@@ -12,7 +11,8 @@ import { useAuth } from "../../context/AuthContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { ADMIN_NAV, ADMIN_GROUPS } from "../../config/adminNav";
+import { ADMIN_NAV, ADMIN_GROUPS, adminPage, adminAllows } from "../../config/adminNav";
+import { useGuardedNavigate } from "../../hooks/useLeaveGuard";
 import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
@@ -26,7 +26,7 @@ import { nameCase } from "../people/peopleUtil";
  *
  * One box finds FIVE kinds of thing, each opening where it lives:
  *   pages          → the page (the sidebar's own list, by the viewer's access)
- *   admin tabs     → /admin/upload?tab=… (the panel's own list, by capability)
+ *   admin pages    → /panel/<id> (the admin app's own list, by capability)
  *   cells          → /cells/:id — labelled by CODE and leader, never the
  *                    workshop (CLAUDE.md «A cell is its CODE»), though typing a
  *                    workshop name still finds it, as on /cells
@@ -76,7 +76,8 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const { auth } = useAuth();
   const { access } = usePageAccess();
   const { capPages, capTabs, deniedPages } = useCapabilities();
-  const navigate = useNavigate();
+  // Asks first while the page holds unsaved edits (LeaveGuard).
+  const navigate = useGuardedNavigate();
   const wide = !useIsMobile(1280);
 
   const [q, setQ] = useState("");
@@ -121,11 +122,11 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const adminItems = useMemo(() => {
     const groupLabel = Object.fromEntries(ADMIN_GROUPS.map((g) => [g.id, t(g.labelKey)]));
     return ADMIN_NAV
-      .filter((n) => isAdmin || capTabs.includes(n.capKey ?? n.id))
+      .filter((n) => adminAllows(n, isAdmin, capTabs))
       .map((n) => {
         const label = t(n.labelKey);
         return {
-          id: `a:${n.id}`, kind: "admin", to: `/admin/upload?tab=${n.id}`, Icon: n.Icon, label, sort: label,
+          id: `a:${n.id}`, kind: "admin", to: adminPage(n.id), Icon: n.Icon, label, sort: label,
           sub: `${t("nav.admin")} · ${groupLabel[n.group] || ""}`, danger: n.danger,
           terms: [searchFold(label), searchFold(n.id), searchFold(t(n.descKey))],
         };

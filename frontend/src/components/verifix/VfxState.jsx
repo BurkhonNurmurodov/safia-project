@@ -35,7 +35,7 @@ export function VfxError({ error, onRetry }) {
         showUploadLink={false}
         height="h-64"
         action={toCard ? (
-          <Button size="lg" variant="primary" onClick={() => navigate("/admin/upload?tab=verifix")}>
+          <Button size="lg" variant="primary" onClick={() => navigate("/panel/verifix")}>
             {t("vfx.err.openCard")}
           </Button>
         ) : onRetry ? (

@@ -23,6 +23,7 @@ import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { ScopedErrorBoundary } from "../ui/ErrorBoundary";
+import { LeaveGuardProvider } from "./LeaveGuard";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -640,7 +641,10 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
     });
   }
 
+  // LeaveGuardProvider: a page holding unsaved edits (useLeaveGuard) is asked
+  // about before any link or the header search takes the reader elsewhere.
   return (
+    <LeaveGuardProvider>
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
       {!bare && (
         <Sidebar
@@ -799,5 +803,6 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
       <UpdatePrompt />
       <ServerRestartNotice />
     </div>
+    </LeaveGuardProvider>
   );
 }

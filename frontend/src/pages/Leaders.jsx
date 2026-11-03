@@ -2146,7 +2146,7 @@ export default function Leaders() {
   // «Kechikkanlar», the shift-1 late-day queue, which is ruled on from the
   // Telegram card the request arrives as; and «Ma'lumotlarni tozalash», whose
   // delete lives on the admin «Liderlar kunlik vazifalari» destination
-  // (`/admin/upload?tab=ltdaily`), beside the submission it deletes and beside
+  // (`/panel/ltdaily`), beside the submission it deletes and beside
   // the day detail that says what is in it. Neither component was deleted —
   // nothing renders them today, and the backend still deep-links `?tab=late`,
   // which `tabOk` now refuses like any other tab a viewer cannot open.

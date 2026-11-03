@@ -303,7 +303,7 @@ export default function Ontime() {
       ) : notConfigured ? (
         <EmptyState icon={Database} title={T.notConfiguredTitle}
           message={isAdmin ? T.notConfiguredAdmin : T.notConfiguredUser} showUploadLink={false}
-          action={isAdmin ? <Button size="sm" variant="secondary" onClick={() => navigate("/admin/upload?tab=data")}>{T.openSources}</Button> : null} />
+          action={isAdmin ? <Button size="sm" variant="secondary" onClick={() => navigate("/panel/data")}>{T.openSources}</Button> : null} />
       ) : neverRead ? (
         <EmptyState icon={Database} title={running ? T.readRunning : T.neverReadTitle} message={T.neverReadMsg} showUploadLink={false}
           action={isAdmin && !running ? <Button size="sm" variant="secondary" onClick={startRead}><RefreshCw size={12} /> {T.readNow}</Button> : null} />

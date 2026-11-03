@@ -338,7 +338,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
 
   const productionTarget = (cell, r, date) => {
     if (cell?.reason === "not_configured") {
-      return isAdmin ? { to: "/admin/upload?tab=production", page: t("admin.tabProduction") } : null;
+      return isAdmin ? { to: "/panel/production", page: t("admin.tabProduction") } : null;
     }
     if (!canProd) return null;
     const tab = cell?.reason === "no_people" ? "people" : undefined;

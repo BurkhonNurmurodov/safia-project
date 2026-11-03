@@ -90,8 +90,8 @@ the icons. `components/layout/GlobalSearch.jsx` — in the header from md up
 (`drawer`, mounted by Sidebar.jsx only while the drawer is open), because a
 phone's header stays the title, the bell and the avatar. One box finds six kinds of
 thing, each opening where it lives: **pages** (the sidebar's `ALL_LINKS`, by
-the viewer's page access) → the page; **admin tabs** (`config/adminNav.js`, by
-capability) → `/admin/upload?tab=…`; **cells** → `/cells/:id`, printed as CODE
+the viewer's page access) → the page; **admin pages** (`config/adminNav.js`, by
+capability) → `/panel/<id>`; **cells** → `/cells/:id`, printed as CODE
 + letter + leader · brigadir, never the workshop (typing a workshop name still
 finds the cell, the /cells search rule); **brigadirs** → `/brigadir/:id`, for
 a viewer who may open «overview»; **leaders** → `/profile/leader/:id` for
@@ -131,8 +131,9 @@ untouched.
 
 - **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
   icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
-  overview and the users-activity page are one-page apps; the admin panel is
-  the `admin` app (`ADMIN_PANEL_LINK`). The assistant has no tile — the
+  overview and the users-activity page are one-page apps; the `admin` app's
+  pages are `ADMIN_PAGE_LINKS`, derived from `config/adminNav.js` (see «The
+  admin app»), and its `sections` group them in the sidebar. The assistant has no tile — the
   header's button opens it everywhere. A new page joins its group's app by
   itself; give it `app` only to move it elsewhere. Twelve tiles fill 3 / 4 / 6
   columns evenly — keep the count in mind before adding a thirteenth.
@@ -144,8 +145,10 @@ untouched.
   notification, a leader's day report) keeps the app it was opened from —
   `utils/apps.js`, sessionStorage `appOpen`; with none, the whole grouped
   register shows as before. The header's grid button (`.hdr-apps`, beside the
-  title) and the sidebar logo lead back to `/`. The footer's «Admin» link is
-  gone for admins — the panel is a tile; capability grantees keep it.
+  title) and the sidebar logo lead back to `/`. The sidebar footer carries no
+  «Admin» link for anybody: admins open the admin app from its tile, and a
+  capability grantee sees the admin pages their grants open as rows of their
+  own sidebar (see «The admin app»).
 - **A tile opens where the app was left** (localStorage `appLastPage`), else
   its first page. The People tile carries the /staff queue count (same query
   key as the sidebar's badge).
@@ -176,38 +179,81 @@ untouched.
   cut «too much background shadow» (v4.390.1–2 cut both to about a third).
 - **Not built:** the launcher for other roles, per-app language packs.
 
-## Admin panel structure
+## The admin app (`/panel/<id>`, from 2026-11-03)
 
-`/admin/upload` is a first-class page inside the standard `Layout` (so admins keep
-the notifications bell, Settings and profile while doing daily uploads). The
-shell is `pages/admin/AdminPanel.jsx`; each destination is a plain component that
-renders its own content and **no frame of its own** — no `max-w-*`, no `mx-auto`,
-no outer padding. The shell owns one content column, so switching destinations
-never moves the frame.
+The operator: «treat the admin as a separate app, and treat these tabs as
+pages». Until then the admin tile opened ONE page, `/admin/upload`, whose 29
+destinations swapped by `?tab=` behind a sidebar and a bottom sheet of their
+own (`pages/admin/AdminPanel.jsx`, deleted). Now every destination is a PAGE
+of the `admin` app, exactly like the pages of the other launcher apps. The
+plan, and the alternative not taken, is `docs/plan-admin-app.md`.
 
-- **`ADMIN_NAV` in `config/adminNav.js` is the single source of truth** for order,
-  grouping, landing destination and capability filtering (moved out of
-  `AdminPanel.jsx` on 2026-10-31 so the header search can list the tabs without
-  pulling the panel, which imports every destination). Never introduce a
-  second parallel list — the old code kept two, they drifted, and a grantee's
-  computed landing tab stopped matching the one displayed first.
-- Four groups, ordered by how often they are used and how much they can destroy:
-  **Kunlik** (attendance · data · production · cellatt) → **Odamlar va ruxsat**
-  (users · profiles · access · permissions · actions) → **Vositalar** (broadcast ·
-  ltasks · … · aikeys · translations) → **Xavfli zona** (cleanup · dbdump). Danger
-  items are marked red and stay last; never put a data-destroying tool next to a
-  daily one.
-- Navigation is a grouped sidebar on `lg+` and a grouped bottom sheet on phones.
-  A pill strip is NOT acceptable primary navigation here: at 390px only ~3 of 15
-  fit, and an off-screen selection makes the panel look like nothing is selected.
-- A destination with unsaved edits calls `useAdminDirty(true)`; the shell
-  interposes a confirm before unmounting it. Any new destination holding a local
-  draft must do this.
-- `?tab=` is two-way (the bot deep-links it) and every destination names itself
-  with a title + one-line description (`admin.desc.<id>`), so identity never
-  depends on a nav item being visible.
-- A destination added by splitting an existing one carries `capKey` pointing at
-  the original id, so the split cannot narrow any grantee's access.
+- **The URL is `/panel/<id>`**, `/panel` the app's home. The operator chose it
+  over `/admin/<id>` (2026-11-03): `/admin/*` is still the BACKEND's API
+  prefix (`routers/admin.py` and three more routers answer there, and
+  `GET /admin/users` is an API route), so pages there would have meant moving
+  the API first. `/panel` collides with nothing: no backend route, not in
+  `sw.js`'s pass-through list, not a server path for the Android bundle, not
+  in nginx's or the supervisor's backend-only list.
+- **The old address redirects, permanently** — `/admin/upload?tab=X` →
+  `/panel/X` with every other query parameter kept (`LegacyAdminRedirect` in
+  `App.jsx`; the bot's registration button carries `status=pending`), and
+  `/admin` / `/admin/upload` → `/panel`. Telegram messages already sent hold
+  the old URL for as long as the chat exists. `SPA_ADMIN` in `sw.js` and the
+  supervisor's `_SPA_ADMIN` stay for exactly these two redirect paths.
+  `POST /admin/upload` is still the backend's old attendance upload — a
+  different thing at the same path.
+- **`ADMIN_NAV` in `config/adminNav.js` is the single source of truth** for
+  order, sections, icon, label, description and capability key. Everything
+  else derives from it: `ADMIN_PAGE_LINKS` (`config/navLinks.js`, the sidebar
+  and `utils/apps.js`), the header search, the tab title (`DocumentTitle`
+  imports it lazily so its icons stay out of the boot chunk). `adminPage(id)`
+  is the path, `adminAllows(n, isAdmin, capTabs)` THE access test,
+  `firstAdminPage` the landing page. Never introduce a second parallel list.
+  The ONE other per-page list is `pages/admin/adminPages.js` — the lazy
+  component map, id → `lazyWithReload(() => import(...))`, nothing else; a new
+  page is an `ADMIN_NAV` entry plus one line there.
+- **`pages/admin/AdminPage.jsx` is the frame** every `/panel/<id>` renders
+  (`PanelRoute` in `App.jsx`, keyed by id so a move between two admin pages
+  mounts a fresh Layout like any other navigation): access per page (an admin
+  every page; anybody else only what their capabilities name — a page they
+  may not open lands them on the first one they may, with the amber
+  `admin.tabDenied` band; none at all → `/`), `Layout title` = the page's own
+  name, ONE content column (`max-w-6xl`, so the column's edge never moves),
+  the one-line `admin.desc.<id>` with the red «Xavfli» chip on a danger page,
+  and a skeleton while the page's chunk loads. A page renders **no frame of
+  its own** — no `max-w-*`, no `mx-auto`, no outer padding. `AdminHome`
+  (`/panel`): an admin lands where the app was left (`appEntry("admin")`),
+  else its first page; a grantee on their first allowed page.
+- **Each page is its own chunk** (the one 649 KB `AdminPanel` chunk is gone).
+  `preloadOpenedRoute` preloads the frame and the page for a `/panel/<id>`
+  address.
+- **Navigation is the app's sidebar.** Inside the admin app the sidebar
+  groups its pages by `APPS.admin.sections` (= `ADMIN_GROUPS`, four folders
+  with their own icons, the accordion the register uses), in order of how
+  often they are used and how much they can destroy: **Kunlik ish** →
+  **Odamlar va ruxsat** → **Vositalar** → **Xavfli** (red folder, red icons;
+  never put a data-destroying tool next to a daily one). On a phone the ☰
+  drawer is the same list. A capability grantee has no launcher, so the
+  admin pages their grants open are rows of their own sidebar, under an
+  «Admin» section (`NAV_GROUPS.admin`) when the list is long enough to group;
+  an admin with no app open sees them there too.
+- **Unsaved edits: `useLeaveGuard(isDirty)`** (`hooks/useLeaveGuard.js`; the
+  provider is `components/layout/LeaveGuard.jsx`, mounted by `Layout`, so any
+  page may use it). While any caller is dirty, ONE capture-phase click
+  listener asks («Saqlanmagan o'zgarishlar») before an in-app LINK to another
+  path is followed — the sidebar rows, the logo, the launcher button, the
+  bell, a link inside the page — and `useGuardedNavigate()` does the same for
+  code that navigates (the header search). Thirteen admin pages call it (the
+  page-access matrix, translations, permissions, broadcast…); any page holding
+  a local draft must. Not covered, as before: the back gesture (it needs a
+  data router's `useBlocker`) and closing the tab.
+- **Links into the app** use `/panel/<id>` everywhere — the frontend's deep
+  links (AI keys, Verifix, Trello, broadcast, profiles, data sources…), the
+  bot's buttons, the notification links (`notification_center.link_for`
+  `admin_tab`), the server's DMs. A destination added by splitting an
+  existing one carries `capKey` pointing at the original id, so the split
+  cannot narrow any grantee's access.
 
 ## A cell is its CODE (`utils/cellName.js`)
 
@@ -1614,7 +1660,7 @@ the shift-1 supervisors of Keles and nobody else.
   while shift-managers still belong to it, for the same reason it is refused
   while units do.
 
-## Cell shift times (`/admin/upload?tab=shifttimes`)
+## Cell shift times (`/panel/shifttimes`)
 
 From **2026-08-21** a cell carries the clock it actually works —
 `cells.shift_start` / `cells.shift_end`, two nullable `VARCHAR(5)` "HH:MM"
@@ -2359,7 +2405,7 @@ tozaladi»), and the old shift sheet asked it beside Cat H («Нечта ода�
   crew («tozalanmoqda · 2 kishi»), no pulse, no red alarm; `stopped_now` and its
   alerts are the other causes only.
 
-## Ojidaniya comes from the CELLS (`/admin/upload?tab=idlesource`)
+## Ojidaniya comes from the CELLS (`/panel/idlesource`)
 
 From **2026-08-27** — `idle_source.CELLS_FROM`, the user's directive — **every**
 supervisor's ojidaniya minutes come from the per-cell interval model
@@ -4267,7 +4313,7 @@ new decision; the two locks below are the feature.
   tiers; a role missing from it has profiles nobody can claim, however well the
   bot's own branch accepts it. That was shipped broken and fixed in v4.97.2 —
   any future role needs BOTH.
-- Admin: «Kutish mas'ullari» (`/admin/upload?tab=idleowners`), one row per
+- Admin: «Kutish mas'ullari» (`/panel/idleowners`), one row per
   category, everything a DRAFT until Save. **Admin-only and NOT grantable** — no
   `capKey`, so `capTabs.includes(capKey ?? id)` can never admit a grantee (the
   `permissions` / `logs` / `ltdaily` model): the assignment decides what a whole
@@ -4360,7 +4406,7 @@ ACCOUNT like any grant.
   archive / restore / delete, the bulk bar, the ABC import, the SAP upload,
   «Bugungi fakt» and the staffing pins — all still a real admin's.
 
-## The checklist config page (`/admin/upload?tab=ltasks`)
+## The checklist config page (`/panel/ltasks`)
 
 From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO
 tabs over one config, not the 22×13 brigadir×task matrix it was for a year.
@@ -7084,7 +7130,7 @@ produced those rejections directly above them.
 - **«Kechikkanlar» and «Ma'lumotlarni tozalash» are GONE from it.** The
   shift-1 late-day queue is ruled on from the Telegram card the request arrives
   as (`approvals.py`, kind `leader_late`), and the bot-day delete lives on the
-  admin «Liderlar kunlik vazifalari» destination (`/admin/upload?tab=ltdaily`),
+  admin «Liderlar kunlik vazifalari» destination (`/panel/ltdaily`),
   beside the submission it deletes and the day detail that says what is in it.
 - **Neither component was deleted** — `components/leaders/LateReports.jsx` and
   `BotDataClear.jsx` are simply rendered by nothing today, so putting either
@@ -7693,7 +7739,7 @@ which door reached the day first.
   running `/tasks` flow would strand the leader in it.
 - **It is no longer a tab on `/leaders`** (removed 2026-09-02, the operator's
   call): the admin «Liderlar kunlik vazifalari» destination
-  (`/admin/upload?tab=ltdaily`) reads both filing layers whole and carries the
+  (`/panel/ltdaily`) reads both filing layers whole and carries the
   same whole-day, closed-only delete. `BotDataClear.jsx` is left in the tree,
   rendered by nothing — what follows describes it as it stands.
 - The tab is TWO views behind a `SegmentedToggle` (`components/leaders/BotDataClear.jsx`):
@@ -7714,7 +7760,7 @@ which door reached the day first.
   on a day-close unit ⇒ they simply never pressed «KUNNI YOPISH». `expired` ⇒ it
   will close (and go to the AI) the moment that leader reopens the bot.
 
-## What the leaders FILED (`/admin/upload?tab=ltdaily`)
+## What the leaders FILED (`/panel/ltdaily`)
 
 From **2026-08-26** «Liderlar kunlik vazifalari» is the admin's read of both
 collection layers WHOLE — `pages/admin/LeaderDailyTasks.jsx`, two sub-tabs over
@@ -7811,7 +7857,7 @@ leaves two honest submissions and only a person can say which is the record.
   rehearsal day, an unmerged shift-1 day). The cell says «Hisobga olinmaydi»
   rather than naming a Form row that does not exist.
 
-## Days that count NEITHER way (`/admin/upload?tab=ltexclude`)
+## Days that count NEITHER way (`/panel/ltexclude`)
 
 From **2026-08-27** a leader-day can be taken OUT of the results entirely —
 `LeaderDayExclusion`, the «Hisobdan chiqarilgan kunlar» admin destination
@@ -7957,7 +8003,7 @@ October, files and is ranked as before.
 - Not changed: a per-cell unit's leader with at least one counted cell still
   files a checklist for every cell they own, counted or not.
 
-## A LEADER who stops counting (`/admin/upload?tab=ltcutoff`)
+## A LEADER who stops counting (`/panel/ltcutoff`)
 
 From **2026-08-30** a leader can be taken out of the results **from one day on,
 open-ended** — `LeaderCutoff`, the «Liderni hisobdan chiqarish» destination
@@ -9047,7 +9093,7 @@ col J), for **both shifts**, and on no other day.
   with until it is ingested again — by re-uploading it, or by a catalog
   backfill / line re-join, both of which now go through the same rule.
 
-## Who a SAP upload fills (`/admin/upload?tab=production`)
+## Who a SAP upload fills (`/panel/production`)
 
 From **2026-08-31** the plant-wide фаза/заголовок export no longer reaches every
 brigadir. `PPManagerSetting.auto_fill` is the standing switch, per SUPERVISOR,
@@ -9994,7 +10040,7 @@ client, stored read, jobs), `services/trello_analytics.py` (the figures, pure),
 `components/trello/` + `pages/trelloText.js` (four languages, page AND admin
 card), `pages/admin/TrelloSettings.jsx`.
 
-- **The connection is the admin tab «Trello»** (`/admin/upload?tab=trello`,
+- **The connection is the admin tab «Trello»** (`/panel/trello`,
   tools group, no `capKey` — admin-only, never grantable; the assistant may not
   reach `/api/admin/trello`, `blocked:credentials`). A Trello **API key** (a
   Power-Up's, trello.com/power-ups/admin) and a **token** that key issues —
@@ -10513,7 +10559,7 @@ wake it.
   only the tap that opens them.
 - A new APK is needed for this — **1.5.1**: 1.5.0 never scheduled the check (its job needs a network, and the manifest lacked `ACCESS_NETWORK_STATE`, so Android threw a SecurityException and nothing ever polled). The server and pages were fine.
 
-## The action register (`/admin/upload?tab=logs`)
+## The action register (`/panel/logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,
 `action_logs`, read on the admin «Jurnal» destination. Six partial trails existed
@@ -10688,7 +10734,7 @@ day), filled by the 60 s heartbeat `POST /api/activity/ping`.
 - Page key `activity`, admin-only by default. Every figure is derived per
   request; nothing but the heartbeat writes.
 
-## The Verifix connection (`/admin/upload?tab=verifix`)
+## The Verifix connection (`/panel/verifix`)
 
 From **2026-10-01** the admin panel carries the login the platform will read
 attendance from Verifix with — step one of replacing the daily «Davomat» Excel
@@ -10797,7 +10843,7 @@ once, and followed through the tie from then on; history is never affected.
   `services/cell_links.py` is the dated reader; `services/cell_archive.py`
   carries archive SPANS; `services/leader_owes.py` says from when a profile
   owes a checklist. `routers/verifix_sync.py` is the admin API; the page is
-  «Verifix sinxron» (`/admin/upload?tab=verifixsync`, tools group, admin-only,
+  «Verifix sinxron» (`/panel/verifixsync`, tools group, admin-only,
   NOT grantable — it moves people and access).
 - **A cell's brigadir, «Boshqaruvchi» and «Egasi» are DATED**
   (`cell_link_events`, append-only: field, value, prev, `effective_from` — the
@@ -11250,7 +11296,7 @@ comes from when each person came in over the last 14 days (day = arrival
 schedule's name. It reads only, and nothing on the platform is consulted. Delete
 the module, the startup pair and both calls once it has landed.
 
-## «Davomat» reads Verifix (`/admin/upload?tab=attendance`, from 2026-10-04)
+## «Davomat» reads Verifix (`/panel/attendance`, from 2026-10-04)
 
 **From `live_day.LIVE_FROM` (2026-10-06) this tab writes no live day** — the
 brigadir's close copies it (see «/staff reads TODAY live»). Everything below
@@ -11909,7 +11955,7 @@ of one. `services/close_window.py` is THE definition.
   by): S1 08:00 → D 12:00, S2 20:00 → D 23:00. A clock earlier than the start
   is the next morning (D+1). A past day is long open; a unit with no shift is
   shift 1.
-- **Where it is set.** «Smena vaqtlari» (`/admin/upload?tab=shifttimes`), card
+- **Where it is set.** «Smena vaqtlari» (`/panel/shifttimes`), card
   1b — two `AppSetting` rows `day_close_after_shift_1/2` ("HH:MM"), written by
   `PUT /api/cell-hours/close-after` (`admin.cell_hours.manage`). A missing row
   reads as the fallback 12:00 / 23:00, so nothing is seeded. Unlike the cell
@@ -13904,7 +13950,7 @@ From **2026-09-24** (the operator's twelve rulings, 2026-09-18 — recorded in
 fifty tasks that make them use the real pages — mark a task done, file a
 concern, find where the checklist rules are written — checked by the platform
 itself. Page key `exam` (leader · supervisor), nav group «Ta'lim»; the admin
-destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
+destination is `/panel/exam` (capability `admin.exam.manage`).
 
 - **Nothing a leader does during an exam changes real data, and that is
   STRUCTURAL.** While the mode is on, `utils/examMode.js` + the axios
@@ -14284,7 +14330,7 @@ hides it, the server refuses `X-Exam-Attempt`).
     and which source; never a table calculated in the model's head. A
     `compute` step wears a calculator icon in the chat's trail (`calc`).
 
-## AI keys, and which feature runs on which («AI kalitlari», `/admin/upload?tab=aikeys`)
+## AI keys, and which feature runs on which («AI kalitlari», `/panel/aikeys`)
 
 From **2026-10-19** (the operator, the day the proof reviewer got its key
 list: «build a tab dedicated to AI API keys on the admin panel. On there we

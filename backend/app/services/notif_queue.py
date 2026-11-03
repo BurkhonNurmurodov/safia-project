@@ -542,7 +542,7 @@ def _verifix_items(db: Session, payload: dict) -> list[dict]:
     return [{
         "key": f"verifix_item:{r.id}", "kind": "verifix_item", "id": r.id,
         "since": _iso(r.first_seen),
-        "link": "/admin/upload?tab=verifixsync",
+        "link": "/panel/verifixsync",
         "fields": {"what": r.kind,
                    "name": (r.payload or {}).get("name") or (r.payload or {}).get("code"),
                    "code": (r.payload or {}).get("code")},

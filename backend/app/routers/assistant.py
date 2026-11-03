@@ -443,5 +443,5 @@ def get_settings(db: Session = Depends(get_db), payload: dict = Depends(require_
         "month": {"replies": len(runs),
                   "people": len({r.owner_key for r in runs}),
                   "tokens": tokens},
-        "moved_to": "/admin/upload?tab=aikeys",
+        "moved_to": "/panel/aikeys",
     }
