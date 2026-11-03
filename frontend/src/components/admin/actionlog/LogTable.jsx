@@ -32,7 +32,7 @@ import { CategoryChip, OutcomeChip, SourceChip } from "./LogDetail";
 
 const BASE = ["time", "who", "actorRole", "action", "target", "category", "outcome"];
 
-export const COLUMNS = {
+const COLUMNS = {
   "":              BASE,
   attendance:      ["time", "who", "action", "unit", "day", "change", "outcome"],
   documents:       ["time", "who", "action", "document", "worker", "unit", "outcome"],
@@ -50,7 +50,7 @@ export const COLUMNS = {
   other:           [...BASE, "source", "request"],
 };
 
-export const colsFor = (category) => COLUMNS[category] || BASE;
+const colsFor = (category) => COLUMNS[category] || BASE;
 
 // A column key whose dictionary entry is spelled differently: the actor's role
 // column reads «Rol» like the identity view's role column does.

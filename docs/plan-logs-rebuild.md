@@ -24,7 +24,7 @@ role stacked, so a row was 52px. The sticky header let a row show through.
 
 ## What changed
 
-- **One filter bar**: `DateRangePicker` · `SearchInput` (`/` focuses it) ·
+- **One filter bar**: `DateRangePicker` · `SearchInput` ·
   `FilterPanel` with «Bo'lim» and «Natija» PINNED as their own named
   triggers and source / person / unit / action / detail folded. The
   category became a MULTI-SELECT; the API's `category` reads CSV

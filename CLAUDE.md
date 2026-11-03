@@ -10787,7 +10787,7 @@ the only write on the tab.
   edge, a bottom sheet on a phone; the body is `LogDetail.jsx`, the undo bar
   included) instead of expanding in place: the sequence stays on screen and no
   row moves while somebody reads. ↑ ↓ walk the rows from the table or the
-  panel, Esc closes, `/` focuses the search. Table COLUMNS still follow the
+  panel, Esc closes. Table COLUMNS still follow the
   selected category (one `COLUMNS` map + one per-key `cell()` switch; the
   generic set once several are picked — `category` is CSV on the API since
   this day, a single value reads as before). New rows never arrive under the

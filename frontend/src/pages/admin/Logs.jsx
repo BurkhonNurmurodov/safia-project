@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Ban, Building2, CheckCircle2, FileSpreadsheet, Layers, Radio, ScrollText,
@@ -153,7 +153,11 @@ export default function Logs() {
     return () => clearTimeout(id);
   }, [q]);
 
-  const [page, setPage] = useState(1);
+  // The page belongs to the result set it was turned in. Any narrowing puts
+  // the reader back on page 1 — page 7 of a different result set is not the
+  // page they were on — so the page is kept WITH the filter signature it was
+  // set under and reads as 1 the moment the signature moves on.
+  const [pageState, setPageState] = useState({ sig: "", page: 1 });
   const [exporting, setExporting] = useState(false);
   // The generation the table is frozen at. Bumped only by the reader.
   const [gen, setGen] = useState(0);
@@ -178,9 +182,8 @@ export default function Logs() {
   }), [dateFrom, dateTo, cats, action, outcome, source, actor, unitId, qq, level]);
 
   const sig = JSON.stringify(params);
-  // Any narrowing puts the reader back on page 1 — page 7 of a different result
-  // set is not the page they were on.
-  useEffect(() => { setPage(1); }, [sig]);
+  const page = pageState.sig === sig ? pageState.page : 1;
+  const setPage = (p) => setPageState({ sig, page: p });
 
   // ── data ────────────────────────────────────────────────────────────────────
   // The list and the summary are FROZEN together at `gen`: the figures must
@@ -251,28 +254,15 @@ export default function Logs() {
   const selected = selIndex >= 0 ? rows[selIndex] : null;
   // The page moved on (a filter, the next page, the new rows) and the open row
   // went with it: the panel closes rather than show a row the table does not.
-  useEffect(() => {
-    if (selectedId != null && !loading && !rows.some((r) => r.id === selectedId)) setSelectedId(null);
-  }, [rows, loading, selectedId]);
+  // Settled while rendering, against the rows the previous render had — the
+  // React pattern for state that follows a prop, with no effect in between.
+  const [rowsSeen, setRowsSeen] = useState(rows);
+  if (rows !== rowsSeen) {
+    setRowsSeen(rows);
+    if (selectedId != null && !rows.some((r) => r.id === selectedId)) setSelectedId(null);
+  }
   const openRow = useCallback((r) => setSelectedId(r.id), []);
   const closePanel = useCallback(() => setSelectedId(null), []);
-
-  // `/` focuses the search from anywhere on the page that is not already a
-  // field — the one key a register's reader presses most.
-  const searchRef = useRef(null);
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = e.target;
-      const tag = (el?.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) return;
-      e.preventDefault();
-      searchRef.current?.focus();
-      searchRef.current?.select?.();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
 
   // ── labels ──────────────────────────────────────────────────────────────────
   const catLabel = cats.length === 0
@@ -588,22 +578,10 @@ export default function Logs() {
           setDateFrom={setDateFrom} setDateTo={setDateTo}
           max={today} compactLabel triggerClassName="px-3 py-2 text-sm"
         />
-        <SearchInput
-          ref={searchRef}
-          value={q}
-          onChange={setQ}
-          placeholder={t("logs.search")}
-          className="w-44 sm:w-64"
-          title={t("logs.searchKey")}
-          hint={(
-            <kbd
-              className="text-[10px] leading-none px-1 py-0.5 rounded font-sans"
-              style={{ border: "1px solid var(--border-md)", color: "var(--text-4)" }}
-            >
-              /
-            </kbd>
-          )}
-        />
+        {/* No `/` shortcut of its own: the header's «Qidiruv» already answers
+            that key everywhere (GlobalSearch.jsx), and two boxes fighting for
+            one key is worse than one reachable by a click. */}
+        <SearchInput value={q} onChange={setQ} placeholder={t("logs.search")} className="w-44 sm:w-64" />
         <FilterPanel sections={sections} onClearAll={clearAll} />
         <Button
           size="lg" variant="secondary" className="ml-auto"
