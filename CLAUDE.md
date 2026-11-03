@@ -2500,7 +2500,29 @@ from that date on**, and nothing turns it back on.
 
 Related memory: `idle-source-switch`.
 
-## «Tarkib» — who is on the lists (`/workers`, third tab, 2026-10-23)
+## «Odam soni» — three pages, not three tabs (2026-11-03)
+
+The operator: «Move this page's 3 tabs as 3 pages to the sidebar». /workers'
+«Davomat» · «O'zgarishlar» · «Tarkib» tabs are three routes and three sidebar
+rows (group `people`, in that order): `/workers/attendance`
+(`pages/workers/WorkersAttendance.jsx`), `/workers/movements`
+(`WorkersMovements.jsx`), `/workers/composition` (`WorkersComposition.jsx`,
+`RequireAdmin`, an `adminOnly` row — its endpoint answers admins only).
+- The first two stay on the ONE page key `workers` — a grant opens both, the
+  Access tab still names it «Odam Soni» (`nav.workers`), and `PAGES` lands on
+  `/workers/attendance`. `/workers` itself redirects there (`WorkersRedirect`
+  in App.jsx, query kept), so old links, bot buttons and remembered home
+  routes keep working.
+- No row is a path prefix of another: a `/workers` row would light up on
+  `/workers/movements` too (NavLink and `isLinkActive` are segment-prefix
+  matches), which is why the first page is `/attendance`, not `/workers`.
+- Shared chrome is `components/workers/WorkersPage.jsx` — the frame (header
+  «Odam Soni · <page>», the one-row filter bar; `period={false}` on «Tarkib»),
+  `ChartCard`, `ScopeSwitch` — plus `chartBase.js`. «Davomat» and «Tarkib»
+  share `workers_scope`; the old `workers_view` key is gone. Each page fetches
+  only its own data (headcount + trend · requests-analysis · demographics).
+
+## «Tarkib» — who is on the lists (`/workers/composition`, 2026-10-23)
 
 The operator: «In this Workers can we have analysis of woman/man share, workers
 age, experience and living place with the help of Verifix data». A third tab

@@ -33,7 +33,7 @@ export const PAGES = [
   { key: "overview",    route: "/",            labelKey: "nav.overview" },
   { key: "zagruzka",    route: "/zagruzka",    labelKey: "nav.zagruzka" },
   { key: "leaderboard", route: "/leaderboard", labelKey: "nav.leaderboard" },
-  { key: "workers",     route: "/workers",     labelKey: "nav.workers" },
+  { key: "workers",     route: "/workers/attendance", labelKey: "nav.workers" },
   { key: "plan",     route: "/plan",     labelKey: "nav.planFulfillment" },
   { key: "downtime", route: "/downtime", labelKey: "nav.idleTime" },
   { key: "staff",    route: "/staff",    labelKey: "nav.staff" },

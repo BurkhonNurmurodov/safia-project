@@ -27,7 +27,8 @@ import { TXT, fill } from "./demographicsText";
 /* «Tarkib» — who is on the brigadirs' lists today: gender, age, years at
  * Safia and where people live, from Verifix (backend services/workforce.py).
  * A snapshot of TODAY (Verifix keeps only today's placement), so the page's
- * period does not reach it — Workers.jsx hides the period control on this tab
+ * period does not reach it — pages/workers/WorkersComposition.jsx offers no
+ * period control
  * — while plant, shift, brigadir and the page's role switch do.
  *
  * Colours: men / women are the categorical blue and pink of

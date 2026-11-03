@@ -4,7 +4,7 @@
 // that search inside its phone drawer without an import loop). The comments on
 // each section and link stay beside the sidebar code that reads them.
 import {
-  Activity, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
+  Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
@@ -38,7 +38,12 @@ export const ALL_LINKS = [
   // «Maqsadlar» — goal board test screen: per-profile demo data, no page-access
   // key (the same adminOnly pilot pattern as /gamification).
   { to: "/targets", adminOnly: true, key: "nav.targets", icon: Goal, group: "lab" },
-  { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users, group: "people" },
+  // «Odam soni» — its three tabs are three pages since 2026-11-03 (the
+  // operator), one row each in the order the tabs had. «Tarkib» is admins only
+  // (its endpoint refuses everybody else), so it carries no page key.
+  { to: "/workers/attendance",  page: "workers", key: "nav.workersAttendance",  icon: Users,          group: "people" },
+  { to: "/workers/movements",   page: "workers", key: "nav.workersMovements",   icon: ArrowLeftRight, group: "people" },
+  { to: "/workers/composition", adminOnly: true, key: "nav.workersComposition", icon: Contact,        group: "people" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.

@@ -71,7 +71,7 @@ export const toneFill = (tone) =>
   (tone ? { background: TONE_HEX[tone], color: contrastText(TONE_HEX[tone]) } : undefined);
 
 // Davomat — (came + on leave) ÷ on the list. ONE scale for /workers' «Davomat
-// issiqlik xaritasi» (pages/Workers.jsx) and the «Davomat» column of «Smena
+// issiqlik xaritasi» (pages/workers/WorkersAttendance.jsx) and the «Davomat» column of «Smena
 // hisoboti» (components/overview/ShiftReportTable.jsx), so one unit-day wears
 // one colour on both. Traffic-light families on the 90 / 75 breaks of the
 // heatmap's own rate column; the shades inside a family rank days within it, so

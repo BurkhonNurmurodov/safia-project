@@ -1061,6 +1061,9 @@ const t = {
     "nav.zagruzka":        "Zagruzka foizi",
     "nav.leaderboard":     "Liderlar",
     "nav.workers":         "Odam Soni",
+    "nav.workersAttendance":  "Davomat",
+    "nav.workersMovements":   "O'zgarishlar",
+    "nav.workersComposition": "Tarkib",
     "nav.planFulfillment": "Plan Bajarish",
     "nav.idleTime":        "Ojidaniya",
     "nav.admin":           "Admin",
@@ -3085,9 +3088,6 @@ const t = {
     "zagruzka.pendingNoLabor":      "Odam soni kiritilgan, lekin bu kun uchun trudoyomkost hisoblanmadi: «Zagruzka fayli» sahifasida katalog, trudoyomkost vaqtlari yoki ПЛАН/ФАКТ miqdorlari yo'q.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
-    "workers.title":           "Odam Soni · Xodimlar Tahlili",
-    "workers.tab.attendance":  "Davomat",
-    "workers.tab.movements":   "O'zgarishlar",
     "workers.kpi.workforce":   "Jami ishchi kuchi",
     "workers.kpi.supervisors": "brigadir",
     "workers.kpi.avgPresent":  "Kunlik o'rtacha",
@@ -9399,6 +9399,9 @@ const t = {
     "nav.zagruzka":        "Загрузка фоизи",
     "nav.leaderboard":     "Лидерлар",
     "nav.workers":         "Одам Сони",
+    "nav.workersAttendance":  "Давомат",
+    "nav.workersMovements":   "Ўзгаришлар",
+    "nav.workersComposition": "Таркиб",
     "nav.planFulfillment": "План Бажариш",
     "nav.idleTime":        "Ожидания",
     "nav.admin":           "Админ",
@@ -11421,9 +11424,6 @@ const t = {
     "zagruzka.pendingNoLabor":      "Одам сони киритилган, лекин бу кун учун трудоёмкость ҳисобланмади: «Zagruzka fayli» саҳифасида каталог, трудоёмкость вақтлари ёки ПЛАН/ФАКТ миқдорлари йўқ.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
-    "workers.title":           "Одам Сони · Ходимлар Таҳлили",
-    "workers.tab.attendance":  "Давомат",
-    "workers.tab.movements":   "Ўзгаришлар",
     "workers.kpi.workforce":   "Жами ишчи кучи",
     "workers.kpi.supervisors": "бригадир",
     "workers.kpi.avgPresent":  "Кунлик ўртача",
@@ -17734,6 +17734,9 @@ const t = {
     "nav.zagruzka":        "Процент загрузки",
     "nav.leaderboard":     "Лидеры",
     "nav.workers":         "Сотрудники",
+    "nav.workersAttendance":  "Посещаемость",
+    "nav.workersMovements":   "Перемещения",
+    "nav.workersComposition": "Состав",
     "nav.planFulfillment": "Выполнение плана",
     "nav.idleTime":        "Ожидания",
     "nav.admin":           "Админ",
@@ -19756,9 +19759,6 @@ const t = {
     "zagruzka.pendingNoLabor":      "Количество людей введено, но трудоёмкость за этот день не рассчитана: на странице «Zagruzka fayli» нет каталога, времён трудоёмкости или количеств ПЛАН/ФАКТ.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
-    "workers.title":           "Сотрудники · Анализ",
-    "workers.tab.attendance":  "Посещаемость",
-    "workers.tab.movements":   "Перемещения",
     "workers.kpi.workforce":   "Всего рабочих",
     "workers.kpi.supervisors": "бригадиров",
     "workers.kpi.avgPresent":  "Ср. явка / день",
@@ -26069,6 +26069,9 @@ const t = {
     "nav.zagruzka":        "Workload percentage",
     "nav.leaderboard":     "Leaderboard",
     "nav.workers":         "Workers",
+    "nav.workersAttendance":  "Attendance",
+    "nav.workersMovements":   "Movements",
+    "nav.workersComposition": "Composition",
     "nav.planFulfillment": "Plan Fulfillment",
     "nav.idleTime":        "Idle Time",
     "nav.admin":           "Admin",
@@ -28091,9 +28094,6 @@ const t = {
     "zagruzka.pendingNoLabor":      "The headcount is entered, but no trudoyomkost could be computed for this day: the «Zagruzka fayli» page has no catalog, no labor times, or no ПЛАН/ФАКТ quantities.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
-    "workers.title":           "Workers · Headcount Analysis",
-    "workers.tab.attendance":  "Attendance",
-    "workers.tab.movements":   "Movements",
     "workers.kpi.workforce":   "Total workforce",
     "workers.kpi.supervisors": "brigadirs",
     "workers.kpi.avgPresent":  "Avg present / day",

@@ -25,6 +25,14 @@ function StaffLiveRedirect() {
   return <Navigate to={{ pathname: "/staff", search, hash }} replace />;
 }
 
+// «Odam soni»'s three tabs became three pages (2026-11-03): /workers — old
+// bookmarks, links and remembered home routes — lands on the first, «Davomat»,
+// carrying the query string.
+function WorkersRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: "/workers/attendance", search, hash }} replace />;
+}
+
 // The three leaders' KPI pages were merged into «Liderlar KPI» (2026-10-19):
 // each retired route lands on its own tab, the rest of the query kept.
 function KpiTabRedirect({ tab }) {
@@ -45,7 +53,10 @@ const ShiftDaily = lazyWithReload(() => import("./pages/ShiftDaily"));
 const Zagruzka = lazyWithReload(() => import("./pages/Zagruzka"));
 const Leaderboard = lazyWithReload(() => import("./pages/Leaderboard"));
 const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
-const Workers = lazyWithReload(() => import("./pages/Workers"));
+// «Odam soni» — three pages since 2026-11-03 (they were /workers' tabs).
+const WorkersAttendance = lazyWithReload(() => import("./pages/workers/WorkersAttendance"));
+const WorkersMovements = lazyWithReload(() => import("./pages/workers/WorkersMovements"));
+const WorkersComposition = lazyWithReload(() => import("./pages/workers/WorkersComposition"));
 const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 // «Hisobotlar» — the platform's period report (Laboratory, admin-only).
@@ -120,7 +131,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 // else.
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
-  workers: Workers, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
+  workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
   reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
@@ -153,6 +164,9 @@ function preloadOpenedRoute() {
       Page = second === "report" ? LeaderDayReport
         : second === "unit-report" ? LeaderUnitReport
         : second === "appeal" ? LeaderAppeal : Leaders;
+    } else if (first === "workers") {
+      Page = second === "movements" ? WorkersMovements
+        : second === "composition" ? WorkersComposition : WorkersAttendance;
     } else if (first === "cells" && second) Page = CellDetails;
     else if (first === "education" && second) Page = EducationLesson;
     else if (first === "targets" && second) Page = TargetGoal;
@@ -592,7 +606,12 @@ function AppWithLang() {
             <Route path="/zagruzka" element={<AuthGate><RequirePage page="zagruzka"><Zagruzka /></RequirePage></AuthGate>} />
             <Route path="/leaderboard" element={<AuthGate><RequirePage page="leaderboard"><Leaderboard /></RequirePage></AuthGate>} />
             <Route path="/brigadir/:id" element={<AuthGate><RequirePage page="overview"><BrigadirProfile /></RequirePage></AuthGate>} />
-            <Route path="/workers" element={<AuthGate><RequirePage page="workers"><Workers /></RequirePage></AuthGate>} />
+            {/* «Odam soni» — one sidebar row per page, all on the `workers` key;
+                «Tarkib» is admins only (its endpoint refuses everybody else). */}
+            <Route path="/workers" element={<WorkersRedirect />} />
+            <Route path="/workers/attendance" element={<AuthGate><RequirePage page="workers"><WorkersAttendance /></RequirePage></AuthGate>} />
+            <Route path="/workers/movements" element={<AuthGate><RequirePage page="workers"><WorkersMovements /></RequirePage></AuthGate>} />
+            <Route path="/workers/composition" element={<AuthGate><RequireAdmin><WorkersComposition /></RequireAdmin></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
             {/* «Trello tahlili» — ADMINS ONLY, not grantable (no page key). */}

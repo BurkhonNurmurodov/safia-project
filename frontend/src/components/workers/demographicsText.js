@@ -1,4 +1,4 @@
-// «Tarkib» (/workers, third tab) — the tab's words in the four platform
+// «Tarkib» (/workers/composition) — the page's words in the four platform
 // languages, beside its component (the /turnover pattern). `fill(s, {n: 3})`
 // puts the numbers in. District names come from the backend in Uzbek Latin and
 // go through `tx`; the 14 regions are named here.
@@ -7,7 +7,6 @@ export const fill = (s, vars) =>
   String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
 
 const uz = {
-  tab: "Tarkib",
   snapshot: "Bugungi ro'yxat bo'yicha",
   readAt: "Verifix: {at}",
   readNever: "Verifix hali o'qilmagan",
@@ -99,7 +98,6 @@ const uz = {
 };
 
 const uz_cyrl = {
-  tab: "Таркиб",
   snapshot: "Бугунги рўйхат бўйича",
   readAt: "Verifix: {at}",
   readNever: "Verifix ҳали ўқилмаган",
@@ -191,7 +189,6 @@ const uz_cyrl = {
 };
 
 const ru = {
-  tab: "Состав",
   snapshot: "По сегодняшним спискам",
   readAt: "Verifix: {at}",
   readNever: "Verifix ещё не прочитан",
@@ -283,7 +280,6 @@ const ru = {
 };
 
 const en = {
-  tab: "Composition",
   snapshot: "Today's lists",
   readAt: "Verifix: {at}",
   readNever: "Verifix not read yet",
