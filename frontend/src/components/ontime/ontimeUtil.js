@@ -122,7 +122,7 @@ export function fmtDur(min, T) {
 
 // The rows of the sheet the last read left out (services/ontime_sync._Skips).
 const SKIP_TABS = [["orders", "заявки"], ["receipts", "поставка"]];
-const SKIP_REASONS = ["no_material", "no_day", "no_time", "no_qty", "no_wave"];
+const SKIP_REASONS = ["no_material", "no_day", "no_time", "no_qty", "no_store", "no_wave"];
 
 // The last read's notes → [{key, tab, n, read, detailed, reasons: [...]}],
 // tabs that left nothing out dropped.

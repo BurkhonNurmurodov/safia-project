@@ -8,8 +8,9 @@ material, per wave its group has a window for in «заход» («свод» ro
     D_w   ordered quantity («потребность»)
     P_1   received on d inside wave 1's window [start, end]
     P_2   received on d inside wave 2's window
-    P_3   received on d+1 from 00:00:01 to wave 3's end (wave 3 runs after
-          midnight; the sheet reads no start for it)
+    P_3   received on d+1 from 00:00:01 to wave 3's end — plus, when the
+          window starts before midnight (meat, «Мини Кухня NEW»: 22:00:01 →
+          02:00:00), what was received on d from its start to 23:59:59
 
     H_1 = P_1
     H_2 = max(P_2 if wave 1 was fully covered else P_2 − (D_1 − H_1), 0)
@@ -18,10 +19,18 @@ material, per wave its group has a window for in «заход» («свод» ro
     on time_2 = min(1, (H_2 + max(H_1 − D_1, 0)) / D_2)
     on time_3 = min(1, (H_3 + max(H_1 + H_2 − D_1 − D_2, 0)) / D_3)
 
-A wave nobody ordered has no figure («Нет заявки»). Two consequences of copying
-the sheet, both deliberate and said on the page: windows that overlap (meat and
-«Мини Кухня NEW» carry 10:00–22:00 for waves 1 AND 2) count that production for
-both waves; and wave 3 reads only what was posted after midnight.
+A wave nobody ordered has no figure («Нет заявки»). Windows that overlap (meat
+and «Мини Кухня NEW» carry 10:00–22:00 for waves 1 AND 2) count that production
+for both waves, as the sheet does, and the page says so.
+
+WHAT IS COUNTED is the sheet's «свод» list (2026-11-03): exactly the product ×
+wave rows «свод» carries, each with the windows «заход» gives the group «свод»
+files it under (its E:F = SUMIFS(заход!H/I; group; wave)), while the ordered
+quantity is the product's own on «заявки» (SUMIFS by material, wave and date —
+no group). Counting every ordered product, as the page first did, put ~480
+rows a day against the sheet's ~230 and moved every figure. What is ordered
+but not on the list is named, never counted. A read with no list (no «свод»
+tab) counts every ordered product with its «заявки» group, as before.
 
 Aggregation, as the sheet aggregates:
 - the DAY (and any period / wave / selection) — on-time quantity ÷ ordered
@@ -59,7 +68,7 @@ from typing import Iterable, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import OntimeDemand, OntimeMaterial, OntimeReceipt, OntimeWindow
+from app.models import OntimeDemand, OntimeMaterial, OntimeReceipt, OntimeTracked, OntimeWindow
 from app.services import ontime_sync
 
 WAVE3_FROM = 1               # 00:00:01 — the sheet's own lower bound for wave 3
@@ -100,6 +109,29 @@ def load_windows(db: Session) -> dict:
         g = out.setdefault(_fold(w.grp), {"name": w.grp, "waves": {}, "pos": w.pos or 0})
         g["waves"][w.wave] = (w.start_s, w.end_s)
     return out
+
+
+def load_tracked(db: Session) -> Optional[dict]:
+    """The «свод» list: {material: {wave: group}}, or None when the read kept
+    no list (then every ordered product is counted)."""
+    out: dict = {}
+    for m, w, g in db.query(OntimeTracked.material, OntimeTracked.wave, OntimeTracked.grp):
+        out.setdefault(m, {})[w] = g or ""
+    return out or None
+
+
+def tracked_windows(t: dict, windows: dict) -> tuple[dict, dict, list]:
+    """One listed product's windows: ({wave: (start, end)}, {wave: group name},
+    [waves whose group has no window for them])."""
+    wins, names, missing = {}, {}, []
+    for w, g in t.items():
+        gw = windows.get(_fold(g))
+        if gw and w in gw["waves"]:
+            wins[w] = gw["waves"][w]
+            names[w] = gw["name"]
+        else:
+            missing.append(w)
+    return wins, names, missing
 
 
 def overlapping(windows: dict) -> list[str]:
@@ -167,11 +199,14 @@ def data_days(db: Session) -> list[str]:
 
 
 def product_options(db: Session, d0: date, d1: date) -> list[dict]:
-    """Every material ordered in the period — the product filter's list, drawn
-    before any product pick so a pick never shortens the list it came from."""
+    """Every counted material ordered in the period (on the «свод» list, when
+    the read kept one) — the product filter's list, drawn before any product
+    pick so a pick never shortens the list it came from."""
     mats = materials(db)
+    tracked = load_tracked(db)
     seen = [m for (m,) in db.query(OntimeDemand.material)
-            .filter(OntimeDemand.day >= d0, OntimeDemand.day <= d1).distinct()]
+            .filter(OntimeDemand.day >= d0, OntimeDemand.day <= d1).distinct()
+            if tracked is None or m in tracked]
     out = [{"material": m, "name": mats.get(m, ("", ""))[0], "grp": mats.get(m, ("", ""))[1]} for m in seen]
     out.sort(key=lambda x: (x["name"] or x["material"]).casefold())
     return out
@@ -192,6 +227,10 @@ def evaluate(D: dict, posts_d: Optional[_Posts], posts_next: Optional[_Posts], w
     for w, (s, e) in wins.items():
         if w == 3:
             P[w] = posts_next.between(WAVE3_FROM, e) if posts_next else 0.0
+            if e < s and posts_d:
+                # a wave 3 that opens before midnight (22:00:01 → 02:00:00):
+                # the sheet reads day d from its start to 23:59:59 as well
+                P[w] += posts_d.between(s, 86_399)
         elif e < s:   # a window across midnight — none today; read both halves
             P[w] = (posts_d.between(s, 86_399) if posts_d else 0.0) + \
                    (posts_next.between(WAVE3_FROM, e) if posts_next else 0.0)
@@ -234,17 +273,56 @@ def _days(d0: date, d1: date) -> list[date]:
     return [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
 
 
+def _note_add(acc: dict, grp: str, wins_by_grp: dict, mat: str, q: float) -> None:
+    """A left-out quantity, gathered per group FOLDED (two spellings of one
+    group are one entry), named as «заход» names it where it can."""
+    k = _fold(grp) or "—"
+    a = acc.get(k)
+    if a is None:
+        g = wins_by_grp.get(k)
+        a = acc[k] = {"grp": (g["name"] if g else grp) or "—", "qty": 0.0, "materials": set()}
+    a["qty"] += q
+    a["materials"].add(mat)
+
+
 def _rows(db: Session, d0: date, d1: date, wins_by_grp: dict, mats: dict,
-          sel_mats: Optional[set] = None, pad: tuple = (0, 0)):
-    """Every (day, material, wave) row of the period, the sheet's way, plus what
-    could not be evaluated (a wave its group has no window for) and the posts
-    read. `pad` = (days before, days after) also evaluated — the lateness
-    simulation's margin; `no_window` counts the period alone."""
+          sel_mats: Optional[set] = None, pad: tuple = (0, 0),
+          tracked: Optional[dict] = None, notes: Optional[dict] = None):
+    """Every (day, material, wave) row of the period, the sheet's way, plus the
+    posts read. `pad` = (days before, days after) also evaluated — the lateness
+    simulation's margin. `notes` (when given) gathers, over the period alone,
+    what is ordered and not counted: `not_tracked` (not on the «свод» list) and
+    `no_window` (its group has no window for the wave)."""
     lo, hi = d0 - timedelta(days=pad[0]), d1 + timedelta(days=pad[1])
     demand = _demand(db, lo, hi, sel_mats)
     posts = _posts(db, lo, hi + timedelta(days=1), sel_mats)
     rows = []
-    no_window: dict = defaultdict(lambda: {"qty": 0.0, "materials": set()})
+    no_window: dict = {}
+    not_tracked: dict = {}
+    if notes is not None:
+        notes["no_window"] = no_window
+        notes["not_tracked"] = not_tracked
+    if tracked is not None:
+        for (day, mat), e in demand.items():
+            t = tracked.get(mat) or {}
+            wins, names, missing = tracked_windows(t, wins_by_grp) if t else ({}, {}, [])
+            if d0 <= day <= d1:
+                grp = e["grp"] or mats.get(mat, ("", ""))[1]
+                for w, q in e["waves"].items():
+                    if q <= 0:
+                        continue
+                    if w not in t:
+                        _note_add(not_tracked, grp, wins_by_grp, mat, q)
+                    elif w in missing:
+                        _note_add(no_window, t[w], wins_by_grp, mat, q)
+            if not wins:
+                continue
+            ev = evaluate(e["waves"], posts.get((day, mat)), posts.get((day + timedelta(days=1), mat)), wins)
+            for w, r in ev.items():
+                if r["D"] <= 0 and r["P"] <= 0:
+                    continue
+                rows.append((day, mat, names[w], w, r))
+        return rows, no_window, posts
     for (day, mat), e in demand.items():
         grp = e["grp"] or mats.get(mat, ("", ""))[1]
         g = wins_by_grp.get(_fold(grp))
@@ -252,9 +330,7 @@ def _rows(db: Session, d0: date, d1: date, wins_by_grp: dict, mats: dict,
         if d0 <= day <= d1:
             for w, q in e["waves"].items():
                 if w not in wins and q > 0:
-                    nw = no_window[grp or "—"]
-                    nw["qty"] += q
-                    nw["materials"].add(mat)
+                    _note_add(no_window, grp, wins_by_grp, mat, q)
         if not wins:
             continue
         ev = evaluate(e["waves"], posts.get((day, mat)), posts.get((day + timedelta(days=1), mat)), wins)
@@ -439,7 +515,10 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
     days = _days(d0, d1)
     di = {d: i for i, d in enumerate(days)}
 
-    span, no_window, posts = _rows(db, d0, d1, wins, mats, sel_mats, pad=(PAD_BEFORE, PAD_AFTER))
+    tracked = load_tracked(db)
+    left: dict = {}
+    span, _nw, posts = _rows(db, d0, d1, wins, mats, sel_mats, pad=(PAD_BEFORE, PAD_AFTER),
+                             tracked=tracked, notes=left)
     late = lateness(span, posts, wins, data_end(db))
     rows = [r for r in span if d0 <= r[0] <= d1]
     keep = [r for r in rows
@@ -575,7 +654,7 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
     prev = None
     first = rd.first_day if rd else None
     if first is None or p0 >= first:
-        prow, _, _ = _rows(db, p0, p1, wins, mats, sel_mats)
+        prow, _, _ = _rows(db, p0, p1, wins, mats, sel_mats, tracked=tracked)
         pd = pc = 0.0
         for _, _, grp, w, r in prow:
             if (gsel is None or _fold(grp) in gsel) and (wsel is None or w in wsel):
@@ -587,12 +666,16 @@ def _build(db, d0, d1, groups, waves, sel_mats, rd) -> dict:
 
     # The option lists: every group with a window (the sheet's order), waves.
     opt_groups = [g["name"] for g in sorted(wins.values(), key=lambda g: (g["pos"], g["name"]))]
+    def _left(acc: dict) -> list:
+        return sorted([{"grp": v["grp"], "qty": round(v["qty"], 3), "materials": len(v["materials"])}
+                       for v in acc.values()], key=lambda x: -x["qty"])[:12]
+
     notes = {
         "overlap": overlapping(wins),
-        "no_window": sorted(
-            [{"grp": g, "qty": round(v["qty"], 3), "materials": len(v["materials"])}
-             for g, v in no_window.items()],
-            key=lambda x: -x["qty"])[:12],
+        "no_window": _left(left.get("no_window", {})),
+        "not_tracked": _left(left.get("not_tracked", {})),
+        "tracked": tracked is not None,
+        "tracked_rows": sum(len(v) for v in tracked.values()) if tracked else 0,
     }
     return {
         "date_from": d0.isoformat(), "date_to": d1.isoformat(),
@@ -628,9 +711,17 @@ def product(db: Session, material: str, d0: date, d1: date) -> dict:
         if e["grp"]:
             grp = e["grp"]
             break
-    g = wins.get(_fold(grp))
-    w_of = g["waves"] if g else {}
-    span, _nw, span_posts = _rows(db, d0, d1, wins, mats, {material}, pad=(PAD_BEFORE, PAD_AFTER))
+    tracked = load_tracked(db)
+    if tracked is not None:
+        t = tracked.get(material) or {}
+        w_of, names, _missing = tracked_windows(t, wins)
+        if t:
+            grp = names.get(min(names)) if names else next(iter(t.values())) or grp
+    else:
+        g = wins.get(_fold(grp))
+        w_of = g["waves"] if g else {}
+    span, _nw, span_posts = _rows(db, d0, d1, wins, mats, {material}, pad=(PAD_BEFORE, PAD_AFTER),
+                                  tracked=tracked)
     late = lateness(span, span_posts, wins, data_end(db))
 
     def _late_of(d: date, w: int):
@@ -674,6 +765,7 @@ def product(db: Session, material: str, d0: date, d1: date) -> dict:
         if m == material and d0 <= d <= d1:
             tot.add(e)
     return {"material": material, "name": name, "grp": grp or None,
+            "tracked": tracked is None or material in tracked,
             "windows": {str(w): list(v) for w, v in w_of.items()},
             "days": days_out, "delay": tot.out(),
             "delay_rule": {"bands": [[k, e] for k, e in DELAY_BANDS], "horizon_min": HORIZON_MIN}}

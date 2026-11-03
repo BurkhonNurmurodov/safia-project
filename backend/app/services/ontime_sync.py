@@ -13,7 +13,11 @@ What is kept, replaced WHOLE by every complete read, in one transaction:
 - `ontime_demand`   — Σ ordered quantity per order day × material × wave;
 - `ontime_receipts` — Σ received quantity per entry day × second × material;
 - `ontime_materials`— each material's name and group;
-- `ontime_windows`  — each group's wave windows (start / end of the day).
+- `ontime_windows`  — each group's wave windows (start / end of the day);
+- `ontime_tracked`  — the «свод» list: the product × wave rows the sheet
+                      measures, each with the group «свод» files it under.
+                      The page counts exactly these (2026-11-03 — counting
+                      every ordered product made every figure differ).
 
 Columns are found by their HEADER text (row 1), never by letter, so a column
 the team inserts or moves does not break the read. Values are read UNFORMATTED:
@@ -40,7 +44,8 @@ from sqlalchemy import delete
 
 from app.database import SessionLocal
 from app.models import (
-    OntimeDemand, OntimeMaterial, OntimeRead, OntimeReceipt, OntimeWindow, SheetSource,
+    OntimeDemand, OntimeMaterial, OntimeRead, OntimeReceipt, OntimeTracked, OntimeWindow,
+    SheetSource,
 )
 
 log = logging.getLogger(__name__)
@@ -49,6 +54,7 @@ SOURCE = "ontime"
 TAB_ORDERS = "заявки"
 TAB_RECEIPTS = "поставка"
 TAB_WAVES = "заход"
+TAB_SVOD = "свод"
 
 CHUNK = 40_000              # rows per Sheets request (~5 MB of JSON for «заявки»)
 PAUSE_S = 1.2               # between requests: the API allows 60 reads/min per user
@@ -363,6 +369,7 @@ ORDER_COLS = {
     "group": ("группаматериалов",),
     "qty": ("количествозаказа", "количествовзаказе", "колвозаказа"),
     "wave": ("заход",),
+    "store": ("завод",),
 }
 RECEIPT_COLS = {
     "material": ("материал",),
@@ -382,8 +389,9 @@ def read_orders(ws, notes: dict) -> tuple[dict, dict, int, Optional[date], Optio
     demand: dict[tuple, list] = {}
     mats: dict[str, tuple[str, str]] = {}
     rows = 0
-    skip = _Skips(("no_material", "no_day", "no_qty", "no_wave"),
-                  {"no_material": "material", "no_day": "day", "no_qty": "qty", "no_wave": "wave"}, texts)
+    skip = _Skips(("no_material", "no_day", "no_qty", "no_store", "no_wave"),
+                  {"no_material": "material", "no_day": "day", "no_qty": "qty",
+                   "no_store": "store", "no_wave": "wave"}, texts)
     first = last = None
     for start, chunk in _chunks(ws, cols):
         for i, r in enumerate(chunk):
@@ -404,7 +412,14 @@ def read_orders(ws, notes: dict) -> tuple[dict, dict, int, Optional[date], Optio
                 continue
             w = parse_wave(r.get("wave"))
             if w is None:
-                skip.add("no_wave", row, r.get("wave"))
+                raw = r.get("wave")
+                if isinstance(raw, str) and ("#N/A" in raw or "VLOOKUP" in raw.upper()):
+                    # «заявки» L looks the store («Завод») up in «заход» A:C;
+                    # a store missing there leaves #N/A — the sheet's own
+                    # SUMIFS skips the row too. Named by its store.
+                    skip.add("no_store", row, r.get("store") or _store_of(raw))
+                else:
+                    skip.add("no_wave", row, raw)
                 continue
             grp = _text(r.get("group"))
             name = _text(r.get("name"))
@@ -425,6 +440,41 @@ def read_orders(ws, notes: dict) -> tuple[dict, dict, int, Optional[date], Optio
     notes["orders_skipped"] = skip.counts()
     notes.setdefault("skipped_rows", {})["orders"] = skip.detail(ws.title, rows)
     return demand, mats, rows, first, last
+
+
+_STORE_IN_ERROR = re.compile(r"value '([^']+)'")
+
+
+def _store_of(err: str) -> str:
+    m = _STORE_IN_ERROR.search(err or "")
+    return m.group(1) if m else ""
+
+
+def read_tracked(ws, notes: dict) -> list[dict]:
+    """«свод» A:D from row 4 — material · name · group · wave («№ 1»): the
+    product × wave rows the sheet measures. A pair written twice keeps its
+    FIRST row (the sheet computes both, the page counts the pair once)."""
+    last = min(ws.row_count or 2000, 20_000)
+    vals = _call(ws.get, f"A4:D{last}", value_render_option="UNFORMATTED_VALUE",
+                 date_time_render_option="SERIAL_NUMBER") or []
+    out: list[dict] = []
+    seen: set = set()
+    dup: list[str] = []
+    for i, r in enumerate(vals, start=4):
+        r = list(r) + [None] * (4 - len(r))
+        mat = _text(r[0])
+        w = parse_wave(r[3]) if r[3] not in (None, "") else None
+        if not mat or w is None:
+            continue
+        if (mat, w) in seen:
+            dup.append(f"{mat} № {w} ({i})")
+            continue
+        seen.add((mat, w))
+        out.append({"material": mat, "wave": w, "grp": _text(r[2]) or None, "pos": i})
+    notes["tracked_rows"] = len(out)
+    if dup:
+        notes["tracked_duplicate"] = dup[:20]
+    return out
 
 
 def read_receipts(ws, notes: dict, mats: dict) -> tuple[dict, int]:
@@ -524,6 +574,15 @@ def run_read(trigger: str) -> dict:
             windows = read_windows(ws_w, notes)
             if not windows:
                 raise SheetError("no_windows", TAB_WAVES)
+            try:
+                tracked = read_tracked(_find_tab(sh, TAB_SVOD), notes)
+            except SheetError as exc:
+                if exc.code != "no_tab":
+                    raise
+                tracked = []
+            if not tracked:
+                # No «свод» list: the page counts every ordered product, and says so.
+                notes["tracked_missing"] = True
             demand, mats, order_rows, first, last = read_orders(_find_tab(sh, TAB_ORDERS), notes)
             if not demand:
                 raise SheetError("no_orders", TAB_ORDERS)
@@ -536,6 +595,7 @@ def run_read(trigger: str) -> dict:
         db.execute(delete(OntimeReceipt))
         db.execute(delete(OntimeMaterial))
         db.execute(delete(OntimeWindow))
+        db.execute(delete(OntimeTracked))
         db.bulk_insert_mappings(OntimeDemand, [
             {"day": d, "material": m, "wave": w, "qty": a[0], "lines": a[1], "grp": a[2] or None}
             for (d, m, w), a in demand.items()
@@ -547,6 +607,7 @@ def run_read(trigger: str) -> dict:
             {"material": m, "name": n or None, "grp": g or None} for m, (n, g) in mats.items()
         ])
         db.bulk_insert_mappings(OntimeWindow, windows)
+        db.bulk_insert_mappings(OntimeTracked, tracked)
         row = db.get(OntimeRead, rd_id)
         row.finished_at = now_aware()
         row.ok = True
@@ -562,7 +623,7 @@ def run_read(trigger: str) -> dict:
         from app.services import action_log
         action_log.record_system("sync_export", "sync.ontime_read", db=None, details=[
             ("trigger", trigger), ("orders", order_rows), ("receipts", receipt_rows),
-            ("days", f"{first} … {last}"), ("windows", len(windows)),
+            ("days", f"{first} … {last}"), ("windows", len(windows)), ("tracked", len(tracked)),
         ])
         log.info("ontime: read %s orders, %s receipts (%s … %s)", order_rows, receipt_rows, first, last)
         return {"started": True, "ok": True, "orders": order_rows, "receipts": receipt_rows}
@@ -613,7 +674,10 @@ def _boot() -> None:
         fin = ok.finished_at if ok else None
         if fin is not None and fin.tzinfo is None:
             fin = fin.replace(tzinfo=timezone.utc)
-        due = fin is None or now_aware() - fin > BOOT_IF_OLDER
+        # a read from before the «свод» list was kept has none: read again
+        no_list = ok is not None and db.query(OntimeTracked.id).first() is None \
+            and not (ok.notes or {}).get("tracked_missing")
+        due = fin is None or now_aware() - fin > BOOT_IF_OLDER or no_list
     finally:
         db.close()
     if due:

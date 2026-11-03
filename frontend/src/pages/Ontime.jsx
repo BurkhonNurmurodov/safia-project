@@ -202,20 +202,35 @@ export default function Ontime() {
   if (data?.notes?.overlap?.length) {
     notices.push({ icon: Info, text: fill(T.overlapNote, { g: data.notes.overlap.map(gn).join(", ") }) });
   }
+  const leftOut = (list) => list.map((x) => `${gn(x.grp)} (${Math.round(x.qty).toLocaleString("ru-RU")})`).join(", ");
+  // What is ordered and not counted: not on the sheet's «свод» list (the
+  // sheet leaves it out too), or on it with no «заход» window for the wave.
+  if (data?.notes?.not_tracked?.length) {
+    notices.push({ icon: Info, text: fill(T.notTrackedNote, { g: leftOut(data.notes.not_tracked) }) });
+  }
   if (data?.notes?.no_window?.length) {
-    notices.push({ icon: Info, text: fill(T.noWindowNote, {
-      g: data.notes.no_window.map((x) => `${gn(x.grp)} (${Math.round(x.qty).toLocaleString("ru-RU")})`).join(", ") }) });
+    notices.push({ icon: Info, text: fill(T.noWindowNote, { g: leftOut(data.notes.no_window) }) });
   }
   // Rows of the sheet the last read left out: which tab and how many here,
-  // which rows and why behind the button.
+  // which rows and why behind the button. Order rows whose store «заход»
+  // does not list are named by their stores — the sheet drops them as well.
   const skipped = skippedOf(ok?.notes);
-  if (skipped.length) {
+  const storeSkip = skipped.find((x) => x.key === "orders")?.reasons.find((r) => r.key === "no_store");
+  const openSkipped = { label: T.skOpen, onClick: () => setSkipOpen(true) };
+  if (storeSkip) {
+    notices.push({ icon: Info, action: openSkipped,
+      text: fill(T.storeNote, { s: storeSkip.values.filter(Boolean).join(", ") || "—", n: storeSkip.n.toLocaleString("ru-RU") }) });
+  }
+  const otherSkipped = skipped
+    .map((x) => ({ ...x, n: x.n - (x.key === "orders" && storeSkip ? storeSkip.n : 0) }))
+    .filter((x) => x.n > 0);
+  if (otherSkipped.length) {
     notices.push({ icon: Info,
       text: fill(T.skippedNote, {
-        n: skipped.reduce((a, x) => a + x.n, 0).toLocaleString("ru-RU"),
-        tabs: skipped.map((x) => fill(T.skTabPart, { tab: x.tab, n: x.n.toLocaleString("ru-RU") })).join(", "),
+        n: otherSkipped.reduce((a, x) => a + x.n, 0).toLocaleString("ru-RU"),
+        tabs: otherSkipped.map((x) => fill(T.skTabPart, { tab: x.tab, n: x.n.toLocaleString("ru-RU") })).join(", "),
       }),
-      action: { label: T.skOpen, onClick: () => setSkipOpen(true) } });
+      action: openSkipped });
   }
 
   const tabs = [

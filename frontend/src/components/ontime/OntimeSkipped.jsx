@@ -30,7 +30,7 @@ function Reason({ r, T }) {
       )}
       {r.values.length > 0 && (
         <div className="flex items-center gap-1 flex-wrap text-xs">
-          <span style={{ color: "var(--text-3)" }}>{rowWords ? T.skRowHolds : T.skValues}:</span>
+          <span style={{ color: "var(--text-3)" }}>{rowWords ? T.skRowHolds : r.key === "no_store" ? T.skStores : T.skValues}:</span>
           {r.values.map((v) => (
             <span key={v} className="px-1.5 py-0.5 rounded-md max-w-full truncate" title={v || undefined}
               style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: v ? "var(--text-1)" : "var(--text-3)" }}>

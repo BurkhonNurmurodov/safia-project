@@ -5391,6 +5391,19 @@ class OntimeWindow(Base):
     pos     = Column(Integer, nullable=True)         # the row it was read from — the sheet's own order
 
 
+class OntimeTracked(Base):
+    """One row of the sheet's «свод» list (A material · C group · D wave): the
+    product × wave the sheet measures. The page counts exactly these, each with
+    the windows «заход» gives the group «свод» names (the sheet's E:F SUMIFS)."""
+    __tablename__ = "ontime_tracked"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    material = Column(String, nullable=False)
+    wave     = Column(Integer, nullable=False)
+    grp      = Column(String, nullable=True)
+    pos      = Column(Integer, nullable=True)         # the «свод» row it was read from
+
+
 class OntimeRead(Base):
     """One read of the sheet — when, why, how much, what failed. The page
     names the last one; a failed read leaves the stored data as it was."""

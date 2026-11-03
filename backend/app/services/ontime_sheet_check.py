@@ -241,6 +241,42 @@ def run(db: Session, days_wanted: int = 6) -> dict:
                 x["day"] = x["day"].isoformat()
             out["groups"] = {"rows": gp["rows"], "cells": gp["cells"], "same": gp["same"],
                              "bad": bad[:MAX_LIST], "ok_sample": [x for x in gp["list"] if x["ok"]][:20]}
+    # the PAGE itself (`ontime.build`, its own scope) against the sheet
+    if days:
+        b = ontime.build(db, min(days), max(days))
+        di = {d: i for i, d in enumerate(b["days"])}
+        page_gw = {}
+        for g in b["groups"]:
+            for w, arr in (g.get("wave_daily") or {}).items():
+                for d, v in zip(b["days"], arr):
+                    page_gw[(ontime._fold(g["grp"]), int(w), d)] = v
+        cells, same, bad = 0, 0, []
+        if grp_grid is not None:
+            for ri, r in enumerate(grp_grid):
+                grp = ontime_sync._text(rep._at(r, 0))
+                w = ontime_sync.parse_wave(rep._at(r, 1))
+                if not grp or w is None or ri < 1:
+                    continue
+                for c, d in grp_chosen:
+                    s = rep._num(rep._at(r, c + 2))
+                    p = page_gw.get((ontime._fold(grp), w, d.isoformat()))
+                    if s is None and p is None:
+                        continue
+                    cells += 1
+                    ok = (s is None) == (p is None) and (p is None or abs(p - s) <= 1e-4)
+                    same += ok
+                    if not ok:
+                        bad.append([d.isoformat(), ri + 1, grp, w, s, p])
+        totals = []
+        if svod_grid is not None:
+            for d in out.get("svod", {}).get("days", []):
+                t = b["trend"][di[d["day"]]] if d["day"] in di else None
+                pv = (t["ontime"] / t["demand"]) if t and t["demand"] else None
+                totals.append([d["day"], d["sheet_w"], pv, d["row3"]])
+        out["page"] = {"tracked": b["notes"].get("tracked"), "tracked_rows": b["notes"].get("tracked_rows"),
+                       "cells": cells, "same": same, "bad": bad[:MAX_LIST],
+                       "totals": totals, "not_tracked": b["notes"].get("not_tracked"),
+                       "no_window": b["notes"].get("no_window")}
     out["timing"]["total_s"] = round(time.monotonic() - t0, 1)
     return _plain(out)
 

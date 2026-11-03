@@ -10080,8 +10080,11 @@ computes the four itself (the operator's pick, asked).
   - H2 = production on d inside wave 2's window, minus wave 1's shortfall
     (floored at 0); when wave 1 had no order, the two windows' production
     together.
-  - H3 = production on d+1 from 00:00:01 to wave 3's end (its start is
-    ignored, as the sheet does).
+  - H3 = production on d+1 from 00:00:01 to wave 3's end — plus, for a
+    window that opens before midnight (meat, «Мини Кухня NEW»: 22:00:01 →
+    02:00:00), production on d from its start to 23:59:59 (from 2026-11-03;
+    the sheet's own wave-3 formula does this, and leaving it out read meat's
+    wave 3 far lower than the sheet).
   - Each share is capped at 100%. Wave 1's surplus is added to wave 2, and
     waves 1+2's surplus to wave 3.
   - Windows that OVERLAP («МЯСНАЯ ВЫПЕЧКА» and «Мини Кухня NEW», waves 1
@@ -10098,15 +10101,46 @@ computes the four itself (the operator's pick, asked).
   - A group's day is the mean of its waves; each wave is the mean of its
     materials («свод по группам»). A group's period is the mean of its days
     («средний on time»).
-  - The headline covers every group that has a window. The sheet's B column
-    covered the bakery rows only; the group filter narrows it.
-  - An order in a wave with no window is counted nowhere and named
-    (`notes.no_window`).
+  - **WHAT is counted is the sheet's «свод» list** (from 2026-11-03, after
+    «the page does not show the sheet's results»): exactly the product × wave
+    rows «свод» A/D carries (`ontime_tracked`, read with every read), each
+    with the windows «заход» gives the group «свод» C names — the sheet's
+    E:F SUMIFS — while the ordered quantity is the product's own on
+    «заявки» (by material, wave, date; no group). Until then the page
+    counted every ordered product (~480 rows a day against the sheet's
+    ~230), so every group and day figure differed (Sety Safiya was 37
+    products on the page, 1 on the sheet). Checked on production 27.10–01.11:
+    inside the list 185 of 221 group × wave × day cells equal the sheet;
+    the rest are the sheet's own formula errors (below).
+  - Ordered and not counted is named, never dropped: `notes.not_tracked`
+    (not on the list — the pastry groups' wave 2/3 orders, whose group has a
+    wave-1 window only and no «свод» row) and `notes.no_window` (on the list,
+    no «заход» window for the wave). Both gather per group FOLDED, so two
+    spellings of one group are one entry. A read with no «свод» tab counts
+    every ordered product as before (`notes.tracked` false).
+  - **The sheet's own errors, found 2026-11-03 (theirs to fix; the page does
+    not copy them)**: «свод» LN4:LN390 divides by SUM(LK$4:LK$314), so row
+    3 — and «средний on time» B, which reads it — runs over 100% (104–107%
+    on 28.10–31.10); «свод по группам» averages «свод» rows 4:314 only, so
+    products added below row 314 are missing from it; row 7–8 formulas read
+    the row above ($A6, $A7) and carry #REF!; the Наполеон rows 316/319 take
+    no wave-1 carry-over and 317/320 read the whole order day for wave 3;
+    several rows carry no formula at all (ПП Пироги 285/291, Булочка с
+    яблоком 35, Блинчики пустышка 10–12, Сомса с тыквой 183).
+  - **A store «заход» A:C does not list** (W231, W232 on 2026-11-03) makes
+    «заявки» L a VLOOKUP #N/A: those order rows count neither in the sheet
+    nor here. The reader files them under `no_store` with the store codes,
+    and the page names the stores in a notice of its own.
 - **The reader** — `services/ontime_sync.py`:
   - Runs every 2 hours at :20 from 07:20 to 23:20 Tashkent, plus a boot
     catch-up 240 s in when the last good read is older than 2 hours. An
     admin can also press it: the page's refresh button, or the «Ma'lumotlar»
     row «O'z vaqtida yetkazish (on time report)» (`SheetSource` `ontime`).
+  - Also reads «свод» A4:D (the list above). A read whose predecessor kept no
+    list is due at boot.
+  - TEMPORARY: `GET /api/ontime/sheet-check` (`services/ontime_sheet_check.py`,
+    admin, read-only) sets the sheet's summary tabs against the page through
+    the report door. Delete both once the 2026-11-03 fix is confirmed.
   - Reads through the platform's Google service account. Columns are found by
     HEADER text (`ORDER_COLS` / `RECEIPT_COLS`), never by position. Rows are
     read 40,000 at a time.
