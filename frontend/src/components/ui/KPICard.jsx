@@ -9,12 +9,16 @@ const hexA = (hex, a) => {
 
 export default function KPICard({
   label, value, sub, accent = false, danger = false, tooltip, onValueClick,
-  icon: Icon, color,
+  icon: Icon, color, valueColor,
 }) {
   // `color` (a #hex from the palette) tints the icon chip + value; it takes
   // precedence over the legacy accent/danger coloring but leaves them intact
-  // for existing callers that pass neither icon nor color.
-  const textStyle = color
+  // for existing callers that pass neither icon nor color. `valueColor` (any
+  // CSS colour, e.g. a `--status-*` token) paints the value instead — a 500
+  // shade on the light card is below AA for text, the chip keeps the hue.
+  const textStyle = valueColor
+    ? { color: valueColor }
+    : color
     ? { color }
     : accent
       ? { color: "var(--brand-text)" }

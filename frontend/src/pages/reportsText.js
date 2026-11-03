@@ -119,9 +119,8 @@ const uz = {
     closure: "Bartaraf etilgan %",
     openLeft: "Ochiq qolgan",
 
-    units: "Brigadalar",
-    cells: "To'xtagan yacheykalar",
-    // Verifix's own count on the month's last day (services/verifix_scope.py).
+    // Verifix's own count on the month's last day, narrowed to the units the
+    // загрузка counts (services/verifix_scope.py).
     vfxCells: "Faol yacheykalar",
     vfxShiftManagers: "Smena menejerlari",
     vfxBrigadirs: "Brigadirlar",
@@ -244,7 +243,6 @@ const uz_cyrl = {
     complaints: "Шикоятлар сони",
     actionable: "Чора талаб қиладиганлар", resolved: "Бартараф этилган",
     closure: "Бартараф этилган %", openLeft: "Очиқ қолган",
-    units: "Бригадалар", cells: "Тўхтаган ячейкалар",
     vfxCells: "Фаол ячейкалар", vfxShiftManagers: "Смена менежерлари",
     vfxBrigadirs: "Бригадирлар", vfxLeaders: "Лидерлар",
     filed: "Киритилган", counted: "Бригадирда ҳисобланган", uplifted: "Юқорига кўтарилган",
@@ -342,7 +340,6 @@ const ru = {
     complaints: "Число жалоб",
     actionable: "Требуют меры", resolved: "Устранено", closure: "Устранено %",
     openLeft: "Осталось открытых",
-    units: "Бригад", cells: "Ячеек с простоем",
     vfxCells: "Активные ячейки", vfxShiftManagers: "Начальники смен",
     vfxBrigadirs: "Бригадиры", vfxLeaders: "Лидеры",
     filed: "Подано", counted: "Учтено у бригадира", uplifted: "Поднято выше",
@@ -439,7 +436,6 @@ const en = {
     complaints: "Complaints",
     actionable: "Needing action", resolved: "Resolved", closure: "Resolved %",
     openLeft: "Still open",
-    units: "Units", cells: "Cells that stopped",
     vfxCells: "Active cells", vfxShiftManagers: "Shift managers",
     vfxBrigadirs: "Supervisors", vfxLeaders: "Leaders",
     filed: "Filed", counted: "Counted at the unit", uplifted: "Handed above",
