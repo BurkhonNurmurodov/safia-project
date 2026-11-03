@@ -1076,17 +1076,17 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   background: radial-gradient(closest-side, rgba(var(--c), var(--a)), rgba(var(--c), calc(var(--a) * .55)) 38%,
                               rgba(var(--c), calc(var(--a) * .2)) 68%, rgba(var(--c), 0));
 }
-.apps-light--a { left: -22%; top: -48%; --c: 200,151,63; --a: .16; animation: lightA 48s ease-in-out infinite alternate; }
-.apps-light--b { right: -26%; bottom: -58%; --c: 99,102,241; --a: .10; animation: lightB 60s ease-in-out infinite alternate; }
+.apps-light--a { left: -22%; top: -48%; --c: 200,151,63; --a: .07; animation: lightA 48s ease-in-out infinite alternate; }
+.apps-light--b { right: -26%; bottom: -58%; --c: 99,102,241; --a: .045; animation: lightB 60s ease-in-out infinite alternate; }
 /* The third pool — a white glow — is day only: faint gold on near-black bands
    into a visible ring. */
 .apps-light--c {
   display: none; left: 28%; top: 22%; width: min(52vmax, 700px);
   animation: lightC 54s ease-in-out infinite alternate;
 }
-[data-theme="light"] .apps-light--a { --c: 213,178,111; --a: .32; }
-[data-theme="light"] .apps-light--b { --c: 220,195,139; --a: .30; }
-[data-theme="light"] .apps-light--c { display: block; --c: 255,255,255; --a: .85; }
+[data-theme="light"] .apps-light--a { --c: 213,178,111; --a: .12; }
+[data-theme="light"] .apps-light--b { --c: 220,195,139; --a: .10; }
+[data-theme="light"] .apps-light--c { display: block; --c: 255,255,255; --a: .6; }
 @keyframes lightA { to { translate: 14% 18%; scale: 1.12; } }
 @keyframes lightB { to { translate: -16% -12%; scale: .9; } }
 @keyframes lightC { to { translate: -18% 10%; scale: 1.15; } }
