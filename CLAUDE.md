@@ -168,10 +168,13 @@ untouched.
 - **The look** (2026-11-03, the operator's SECOND pick that day — the first,
   a frosted tile on a cloud by day and a neon tile by night, read «from
   2012»): **Liquid Glass**. ONE recipe for every tile and both themes
-  (`.app-glass`): a clear pane tinted a third of the way to the app's hue —
-  the night mock's transparency in BOTH themes («we liked the opacity on the
-  dark mode») — a 1px rim lit top-left and bottom-right, a still specular
-  pool, the aura refracted through a backdrop blur taken from 768px up only
+  (`.app-glass`): a clear pane with a 7% breath of the app's hue — the
+  night mock's transparency in BOTH themes («we liked the opacity on the
+  dark mode»), then made clearer still on v4.400.1 («background should be
+  visible through the icons»: the cloud behind each tile .14 by day / .3 by
+  night, a 4px blur at 125% saturation — the first cut's 18px / 170% smeared
+  the cloud across the tile into a solid square) — a 1px rim lit top-left
+  and bottom-right, a still specular pool, a backdrop blur taken from 768px up only
   (thirteen blurs over floating art are a repaint every frame on a phone;
   below that the gradients alone are the glass); the glyph wears the hue at
   full strength, never white. The header over the backdrop is the same glass
