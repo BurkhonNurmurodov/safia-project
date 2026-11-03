@@ -169,8 +169,11 @@ untouched.
   backdrop-filter — so a phone's compositor carries it; the light pools are
   size-capped GPU layers; prefers-reduced-motion stills all of it. Two
   triples per hue: `--hue` (glyph by night, sidebar label) and `--glow`
-  (cloud and day tile, 500 shades). A cloud's ellipses must end INSIDE its
-  box, or the box edge cuts a visible rim.
+  (cloud and day tile, 500 shades), plus `--cloud` where the 500 shade reads
+  as a shadow behind its tile (gold → brown, slate → grey). A cloud's
+  ellipses must end INSIDE its box, or the box edge cuts a visible rim.
+  **Keep the clouds and the backdrop faint** — the operator found the first
+  cut «too much background shadow» (v4.390.1–2 cut both to about a third).
 - **Not built:** the launcher for other roles, per-app language packs.
 
 ## Admin panel structure

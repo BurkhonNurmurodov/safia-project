@@ -882,7 +882,11 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    icon and the name, never the only cue. Two rgb triples carry it:
      --hue   the glyph by night and the sidebar's app label (400 shades; 700
              under the light theme, where it must hold contrast on cream);
-     --glow  the cloud and the day tile's body (500 shades, both themes).
+     --glow  the cloud and the day tile's body (500 shades, both themes);
+     --cloud the cloud alone where --glow reads as a shadow (gold → brown,
+             slate → grey) — a lighter tone of the same colour.
+   The clouds and the backdrop are kept faint on the operator's word (too much
+   «background shadow», 2026-11-03).
    The look (2026-11-03, the operator's pick of two mock-ups): a glass tile on a
    coloured cloud by day, a dark glass tile with a neon glyph and a glow by
    night, over safiabakery.uz's warm cream with drifting gold light and gold
@@ -926,8 +930,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    moving gradient is its ::before — three soft ellipses off centre, so turning
    it reads as a cloud slowly changing shape. */
 .app-aura {
-  position: absolute; inset: -110%; z-index: -1; pointer-events: none;
-  opacity: .62;
+  position: absolute; inset: -90%; z-index: -1; pointer-events: none;
+  opacity: .45;
   transition: transform .8s var(--ease-out), opacity .8s var(--ease-out);
 }
 /* Every ellipse ends INSIDE the box (centre ± radius within 0–100%), or the
@@ -935,9 +939,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .app-aura::before {
   content: ""; position: absolute; inset: 0;
   background:
-    radial-gradient(34% 30% at 44% 46%, rgba(var(--glow), .7), rgba(var(--glow), .38) 42%, rgba(var(--glow), .1) 72%, rgba(var(--glow), 0)),
-    radial-gradient(30% 34% at 58% 56%, rgba(var(--glow), .52), rgba(var(--glow), .28) 42%, rgba(var(--glow), .08) 72%, rgba(var(--glow), 0)),
-    radial-gradient(24% 22% at 58% 34%, rgba(var(--glow), .38), rgba(var(--glow), .18) 45%, rgba(var(--glow), 0));
+    radial-gradient(34% 30% at 44% 46%, rgba(var(--cloud, var(--glow)), .7), rgba(var(--cloud, var(--glow)), .38) 42%, rgba(var(--cloud, var(--glow)), .1) 72%, rgba(var(--cloud, var(--glow)), 0)),
+    radial-gradient(30% 34% at 58% 56%, rgba(var(--cloud, var(--glow)), .52), rgba(var(--cloud, var(--glow)), .28) 42%, rgba(var(--cloud, var(--glow)), .08) 72%, rgba(var(--cloud, var(--glow)), 0)),
+    radial-gradient(24% 22% at 58% 34%, rgba(var(--cloud, var(--glow)), .38), rgba(var(--cloud, var(--glow)), .18) 45%, rgba(var(--cloud, var(--glow)), 0));
   animation: auraBreathe 7.5s ease-in-out infinite, auraTurn 32s linear infinite;
   animation-delay: calc(var(--i, 0) * -.6s), calc(var(--i, 0) * -2.7s);
   will-change: transform, opacity;
@@ -967,7 +971,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .app-glass svg { width: 28px; height: 28px; }
 }
 /* Day: frosted glass lit by its own cloud, a white glyph. */
-[data-theme="light"] .app-aura { opacity: 1; }
+[data-theme="light"] .app-aura { opacity: .55; }
 [data-theme="light"] .app-glass {
   color: #fff;
   background:
@@ -976,7 +980,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,.45),
     inset 0 1px 0 rgba(255,255,255,.75),
-    0 12px 24px -14px rgba(var(--hue), .8);
+    0 10px 22px -14px rgba(var(--hue), .45);
 }
 [data-theme="light"] .app-glass svg { filter: drop-shadow(0 1px 1.5px rgba(var(--hue), .55)); }
 
@@ -1001,8 +1005,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 @media (hover: hover) {
   .app-tile:hover .app-glass { transform: translateY(-4px); }
-  .app-tile:hover .app-aura { transform: scale(1.14); opacity: .95; }
-  [data-theme="light"] .app-tile:hover .app-aura { opacity: 1; }
+  .app-tile:hover .app-aura { transform: scale(1.14); opacity: .7; }
+  [data-theme="light"] .app-tile:hover .app-aura { opacity: .8; }
   .app-tile:hover .app-name { color: var(--text-1); }
 }
 .app-tile:active .app-glass { transform: translateY(-1px) scale(.95); transition-duration: .14s; }
@@ -1031,7 +1035,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 @keyframes badgeRing { 0% { opacity: .9; scale: 1; } 60%, 100% { opacity: 0; scale: 1.7; } }
 
-[data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; }
+[data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; --cloud: 222,190,130; }
 [data-app-hue="orange"]  { --hue: 251,146,60;  --glow: 249,115,22; }
 [data-app-hue="sky"]     { --hue: 56,189,248;  --glow: 14,165,233; }
 [data-app-hue="violet"]  { --hue: 167,139,250; --glow: 139,92,246; }
@@ -1042,7 +1046,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-app-hue="cyan"]    { --hue: 34,211,238;  --glow: 6,182,212; }
 [data-app-hue="pink"]    { --hue: 244,114,182; --glow: 236,72,153; }
 [data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; }
-[data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; }
+[data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; }
 [data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; }
 [data-theme="light"] [data-app-hue="orange"]  { --hue: 194,65,12; }
 [data-theme="light"] [data-app-hue="sky"]     { --hue: 3,105,161; }
