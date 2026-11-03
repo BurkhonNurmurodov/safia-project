@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
+  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -119,6 +119,9 @@ export const ADMIN_NAV = [
   // the boards it reads and what «done» means on each. No capKey: the token
   // reads every board its Trello member can open — admin-only, never grantable.
   { id: "trello",       group: "tools",  Icon: SquareKanban,   labelKey: "admin.tabTrello",       descKey: "admin.desc.trello" },
+  // «Pechlar» — which Revent ovens the factory-LAN collector reads, at which
+  // address. No capKey: the list is where the collector is sent — admin-only.
+  { id: "ovens",        group: "tools",  Icon: CookingPot,     labelKey: "admin.tabOvens",        descKey: "admin.desc.ovens" },
   // «Notion eslatmalari» — the Notion task list's daily Telegram reminders
   // (moved from the GitHub bot, 2026-11-02): schedule, groups, team and the
   // bot's sealed token. No capKey: admin-only, never grantable.

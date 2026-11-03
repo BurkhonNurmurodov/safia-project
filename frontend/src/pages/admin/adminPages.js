@@ -31,6 +31,7 @@ export const ADMIN_PAGES = {
   verifixsync:   lazyWithReload(() => import("./VerifixSync")),
   aikeys:        lazyWithReload(() => import("./AiKeys")),
   trello:        lazyWithReload(() => import("./TrelloSettings")),
+  ovens:         lazyWithReload(() => import("./OvensSettings")),
   notiontracker: lazyWithReload(() => import("./NotionTrackerSettings")),
   translations:  lazyWithReload(() => import("./TranslationsEditor")),
   cleanup:       lazyWithReload(() => import("./AttendanceCleanup")),

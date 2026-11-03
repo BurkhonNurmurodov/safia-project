@@ -9,7 +9,7 @@ import {
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
+  SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 
@@ -107,6 +107,9 @@ export const ALL_LINKS = [
   // «Trello tahlili» — a Trello board's analytics, read through Trello's API
   // (services/trello.py). ADMINS ONLY, and not grantable: no page key.
   { to: "/trello", adminOnly: true, key: "nav.trello", icon: SquareKanban, group: "lab" },
+  // «Pechlar» — the Revent ovens: live board, bakes, utilisation, alarms and
+  // door (services/revent_analytics.py). Laboratory, admin-only until opened.
+  { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

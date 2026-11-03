@@ -403,7 +403,7 @@ def analysis(db: Session, d1: date, d2: date, oven_ids: Optional[list[int]]) -> 
                 "bakes": 0, "bakes_manual": 0, "bake_s": 0.0, "door_open": 0, "door_s": 0.0,
                 "door_on_s": 0.0, "door_open_on": 0,
                 "alarms": 0, "mode_s": defaultdict(float), "heat_s": 0.0, "logged_s": 0.0,
-                "wh": 0, "set_c": defaultdict(int)})
+                "wh": 0, "set_c": defaultdict(int), "spans": []})
             c["logged_s"] += _clip(f["first"], f["last"], lo, hi)
             for b in f["bakes"]:
                 if lo <= b["start"] < hi:
@@ -435,6 +435,8 @@ def analysis(db: Session, d1: date, d2: date, oven_ids: Optional[list[int]]) -> 
                 s = _clip(a, z, lo, hi)
                 if s:
                     c["mode_s"][m] += s
+                    a0 = (max(a, lo) - lo).total_seconds() / 60
+                    c["spans"].append([round(a0, 1), round(a0 + s / 60, 1), m])
             c["heat_s"] += sum(_clip(a, z, lo, hi) for a, z in heat)
             c["wh"] += sum(e[1] for e in f["energy"] if lo <= e[0] < hi)
     rows = []
@@ -455,6 +457,7 @@ def analysis(db: Session, d1: date, d2: date, oven_ids: Optional[list[int]]) -> 
                 "kwh": round(c["wh"] / 1000, 2) if c["wh"] else None,
                 "mode_h": {m: round(s / 3600, 2) for m, s in c["mode_s"].items()},
                 "set_c": sorted(([t, n] for t, n in c["set_c"].items()), key=lambda x: -x[1])[:5],
+                "spans": c["spans"],                      # [from_min, to_min, mode] of the day
             })
     bakes_out.sort(key=lambda b: b["start"], reverse=True)
     alarms_out.sort(key=lambda a: a["t"], reverse=True)

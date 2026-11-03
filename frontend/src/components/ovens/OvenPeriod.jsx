@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Flame, Timer, Gauge, Thermometer, CalendarDays, ListOrdered, Hourglass, Zap, DoorOpen, Bell, Layers, CalendarRange,
+  Flame, Timer, Gauge, Info, Thermometer, CalendarDays, ListOrdered, Hourglass, Zap, DoorOpen, Bell, Layers, CalendarRange,
 } from "lucide-react";
 import KPICard from "../ui/KPICard";
 import TableCard, { Th } from "../ui/DataTable";
@@ -85,6 +85,19 @@ export function PeriodKpis({ data, which }) {
   return <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">{which.map((k) => cards[k])}</div>;
 }
 
+/** Ovens the period holds no log of — named once, never rows of blanks. */
+function SilentOvens({ data }) {
+  const T = useOT();
+  const silent = data.ovens.filter((o) => !o.days_logged);
+  if (!silent.length) return null;
+  return (
+    <p className="text-xs flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
+      <Info size={13} className="mt-0.5 flex-shrink-0" aria-hidden />
+      <span>{fill(T.silentOvens, { o: silent.map((o) => o.name).join(", ") })}</span>
+    </p>
+  );
+}
+
 const ovenColor = (ovens, id) => CATEGORY_COLORS[(ovens.findIndex((o) => o.id === id) + 2) % CATEGORY_COLORS.length];
 
 // ── «Pishirishlar» ────────────────────────────────────────────────────────────
@@ -94,7 +107,7 @@ export function BakesView({ data, onOpenDay }) {
   const ready = useReady();
   const { gridColor, labelColor, chartTheme, tooltipTheme } = useChartTheme();
   const [chartRef, chartW] = useElementWidth();
-  const ovens = data.ovens;
+  const ovens = data.ovens.filter((o) => o.days_logged > 0);
   const many = ovens.length > 1;
   const nameOf = useMemo(() => new Map(ovens.map((o) => [o.id, o.name])), [ovens]);
   const dates = useMemo(() => [...new Set(data.days.map((r) => r.date))].sort(), [data.days]);
@@ -137,7 +150,6 @@ export function BakesView({ data, onOpenDay }) {
   const [q, setQ] = useState("");
   const [sort, setSort] = usePersistentState("ovens_bakes_sort", { key: "start", dir: "desc" });
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [q, sort, data]);
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const list = data.bakes.filter((b) => !needle || (b.recipe || "").toLowerCase().includes(needle)
@@ -147,8 +159,11 @@ export function BakesView({ data, onOpenDay }) {
     const val = (b) => (k === "oven" ? nameOf.get(b.oven_id) || "" : b[k] ?? (k === "start" ? "" : -1));
     return [...list].sort((a, b) => { const x = val(a), y = val(b); return x < y ? -dir : x > y ? dir : 0; });
   }, [data.bakes, q, sort, nameOf]);
-  const onSort = (k) => setSort((s) => (s?.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "desc" }));
-  const pageRows = rows.slice((page - 1) * PAGE, page * PAGE);
+  const onSort = (k) => { setPage(1); setSort((s) => (s?.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "desc" })); };
+  const onSearch = (v) => { setPage(1); setQ(v); };
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
+  const curPage = Math.min(page, pageCount);                 // a narrower period never strands the pager
+  const pageRows = rows.slice((curPage - 1) * PAGE, curPage * PAGE);
   const cols = many ? 9 : 8;
   const kind = (b) => (b.manual ? T.manual : b.recipe || T.recipe);
   const over = (b) => (b.minutes != null && b.planned_min ? b.minutes - b.planned_min : null);
@@ -156,6 +171,7 @@ export function BakesView({ data, onOpenDay }) {
   return (
     <div className="space-y-4 lg:space-y-6">
       <PeriodKpis data={data} which={["bakes", "bakeTime", "busy", "alarms"]} />
+      <SilentOvens data={data} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         <ChartCard className="lg:col-span-2" icon={CalendarDays} title={T.secPerDay}
           subtitle={`${ddmmyy(data.from)} – ${ddmmyy(data.to)}`}>
@@ -177,7 +193,7 @@ export function BakesView({ data, onOpenDay }) {
         <TableCard icon={ListOrdered} title={T.secBakes}
           subtitle={fill(T.secBakesSub, { n: fmtN(data.bakes_total) })}
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtN(rows.length)}</span>}
-          toolbar={<SearchInput value={q} onChange={setQ} placeholder={T.search} className="w-full sm:w-72" />}
+          toolbar={<SearchInput value={q} onChange={onSearch} placeholder={T.search} className="w-full sm:w-72" />}
           fixed minWidth={many ? 960 : 860}
           footer={data.bakes_total > data.bakes.length
             ? <span className="text-xs" style={{ color: "var(--text-3)" }}>{fill(T.cutNote, { n: fmtN(data.bakes.length) })}</span> : null}
@@ -244,7 +260,7 @@ export function BakesView({ data, onOpenDay }) {
           </tbody>
         </TableCard>
         <div className="mt-3">
-          <Pagination page={page} pageCount={Math.max(1, Math.ceil(rows.length / PAGE))} total={rows.length} pageSize={PAGE} onPage={setPage} />
+          <Pagination page={curPage} pageCount={pageCount} total={rows.length} pageSize={PAGE} onPage={setPage} />
         </div>
       </div>
     </div>
@@ -259,10 +275,11 @@ function DayBar({ r, T }) {
   }
   const segs = MODE_ORDER.map((m) => [m, r.mode_h[m] || 0]).filter(([, h]) => h > 0);
   return (
-    <div className="h-5 rounded-md overflow-hidden flex" style={{ background: "var(--bg-inner)" }}
+    <div className="relative h-5 rounded-md overflow-hidden" style={{ background: "var(--bg-inner)" }}
       title={segs.map(([m, h]) => `${T.mode[m]} ${fmtH(h)}`).join(" · ")}>
-      {segs.map(([m, h]) => (
-        <div key={m} style={{ width: `${(100 * h) / 24}%`, background: MODE_COLOR[m] }} />
+      {(r.spans || []).map(([a, b, m], i) => (
+        <div key={i} className="absolute top-0 bottom-0"
+          style={{ left: `${(100 * a) / 1440}%`, width: `${Math.max(0.1, (100 * (b - a)) / 1440)}%`, background: MODE_COLOR[m] }} />
       ))}
     </div>
   );
@@ -270,13 +287,17 @@ function DayBar({ r, T }) {
 
 export function UseView({ data, onOpenDay }) {
   const T = useOT();
-  const many = data.ovens.length > 1;
+  const logged = data.ovens.filter((o) => o.days_logged > 0);
+  const many = logged.length > 1;
   const nameOf = new Map(data.ovens.map((o) => [o.id, o.name]));
-  const rows = [...data.days].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.oven_id - b.oven_id));
+  const keep = new Set(logged.map((o) => o.id));
+  const rows = data.days.filter((r) => keep.has(r.oven_id))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.oven_id - b.oven_id));
   const shown = MODE_ORDER.filter((m) => data.days.some((r) => r.logged && r.mode_h[m]));
   return (
     <div className="space-y-4 lg:space-y-6">
       <PeriodKpis data={data} which={["busy", "standby", "heat", "kwh"]} />
+      <SilentOvens data={data} />
       <ChartCard icon={Layers} title={T.secModes} subtitle={T.secModesSub}
         right={<Tooltip text={T.useTip} />}>
         <div className="px-4 pt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: "var(--text-2)" }}>
@@ -360,7 +381,7 @@ export function AlarmsView({ data, onOpenDay }) {
   const ready = useReady();
   const { gridColor, labelColor, chartTheme, tooltipTheme } = useChartTheme();
   const [chartRef, chartW] = useElementWidth();
-  const many = data.ovens.length > 1;
+  const many = data.ovens.filter((o) => o.days_logged > 0).length > 1;
   const nameOf = new Map(data.ovens.map((o) => [o.id, o.name]));
   const dates = [...new Set(data.days.map((r) => r.date))].sort();
   const cats = dates.map(ddmm);
@@ -397,6 +418,7 @@ export function AlarmsView({ data, onOpenDay }) {
   return (
     <div className="space-y-4 lg:space-y-6">
       <PeriodKpis data={data} which={["alarms", "door", "bakes", "busy"]} />
+      <SilentOvens data={data} />
       <ChartCard icon={DoorOpen} title={T.secDoor} subtitle={T.secDoorSub}
         right={t.bakes ? <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.doorPerBake, { n: fmtN(t.doorOn / t.bakes, 1) })}</span> : null}>
         <div ref={chartRef} className="px-2 pt-2 pb-1">

@@ -10319,6 +10319,78 @@ card), `pages/admin/TrelloSettings.jsx`.
 - Not built: people / deadline views (offered, not picked), webhooks (the
   15-minute read stands in), checklists, writing to Trello.
 
+## «Pechlar» — the Revent ovens (`/ovens`, Laboratory, 2026-11-03)
+
+The operator: show everything the Windows «Revent Oven Manager» shows — live
+board, bakes, utilisation, alarms and door — on the platform; test with the
+laptop on the production block first, find an always-on device later. Page key
+**`ovens`**, Laboratory, **ADMIN-ONLY until opened on the Access tab**; the
+register is `/panel/ovens` (tools group, no capKey).
+
+- **The server never reaches an oven.** The ovens are on the factory LAN; a
+  COLLECTOR there (`tools/revent-oven/collector.py`, stdlib only) reads each
+  oven and posts to `/api/ovens/collector/*` (`routers/ovens.py`
+  `collector_router`): GET `/plan` (which ovens, how often, what is kept),
+  POST `/status` (every minute, all ovens in one post), POST `/file` (a day
+  log only when it changed — the bytes added since the kept copy, `offset` =
+  that copy's size, the WHOLE file's SHA-256 checked, anything that does not
+  add up → 409 and the collector sends it whole; ServiceData.txt and
+  OvenSettings.xml when they change). Paces are `revent_ovens.POLL`, served by
+  the plan.
+- **READ-ONLY toward the ovens, by construction.** The oven's SOAP service
+  has no password and accepts writes (recipes, settings, FIRMWARE). The
+  collector calls only `revent_oven.call`, whose `OPERATIONS` hold status,
+  getLogs and getSettings. Never add an operation there.
+- **The collector key** (`X-Oven-Key` or Bearer) is checked against
+  `revent_ovens.COLLECTOR_KEYS` — SHA-256 digests in code; the key lives only
+  on the collector (`~/.safia/oven-collector.key` on the test laptop). It can
+  read the plan and post readings, nothing else; wrong keys share the report
+  door's per-address throttle. `/api/ovens/collector/` is in
+  `security._EXEMPT_PREFIXES` and the action log's `_SKIP`; the assistant may
+  touch neither it nor `/api/admin/ovens`. A new collector is a new digest.
+- **The register accepts private LAN IPv4 only** (`_check_ip`): the collector
+  is sent wherever the list says. An oven with collected data cannot be
+  deleted (409 `has_history`) — switch it off.
+- **Storage**: `revent_ovens` (register + last status lines + zlib settings
+  + ServiceData text) and `revent_oven_logs` (one row per oven × log file,
+  zlib, `day` = its first record's date). `services/revent_log.py` is THE
+  record decoder (20-byte big-endian records; recipe / manual starts carry a
+  name and a program) — `tools/revent-oven/revent_oven.py` keeps its own
+  copy so it stays stdlib-only; change both together.
+- **What each record MEANS is `services/revent_analytics.py`**, taken from the
+  decompiled Windows app 1.3.39: oven modes from records 1/2 (off), 3 and 13
+  (standby), 4 (energy save), 9/10 (recipe / manual bake), each lasting to
+  the next — the app never reads change_state (18) or baking (17), and
+  neither does this; a bake ends at the next 0,1,2,3,4,9,10,13; fault (15) /
+  alarm (16) codes are named (`FAULT`), prover alarms (27) too; digital_out
+  bits name the relays (`DIGITAL_OUT`, heat = 0x200 → heater hours),
+  digital_in 0x80 = door closed, 0x100 = rotor switch; energy (33) is u16
+  Wh counters (the app counts the first record's absolute total — here it is
+  the baseline). Status lines: 31 (oven), 38 or 39 (with prover — 39 puts the
+  prover status text at 38). Door time is split into «while the oven was on»
+  and total, because a door left open through a shutdown is not heat loss.
+  Settings passwords (`*PASSWORD*` strings) are never shown; a settings file
+  carrying a DOCTYPE or entity is refused (no defusedxml on the box).
+- **Nothing is stored derived**: each log file's facts are decoded once per
+  (row, sha) and kept in memory (`_facts`, 400 files); a file that grew is
+  decoded again. Days are the oven's own wall clock.
+- **The page** (`pages/Ovens.jsx` + `components/ovens/` + `pages/ovensText.js`):
+  tabs Hozir (one card per oven, polled 30 s: temperature vs set, bake
+  progress, door/heater/steam/damper, probes, prover, faults, today's line) ·
+  Pishirishlar (per-day chart, most-used set temperatures, every bake) ·
+  Bandlik (each day's real mode timeline, hours table, heater hours) ·
+  Signallar va eshik · Kun grafigi (temperature vs dashed set point with
+  bakes shaded, then lanes for mode, door and relays, the day's bakes with
+  programs) · Pech ma'lumotlari (serial, model, versions from the log,
+  restarts, ServiceData counters — unnamed by the oven — every setting). Mode
+  hues are categories, never traffic lights. An oven with no log in the period
+  is named once, not drawn as rows of blanks.
+- **Measured on the real 725 (3 Nov)**: a day file 213–252 KB, 44–64 manual
+  bakes a day, baking ~65–77% of the logged time, heater ~8–9.5 h a day, the
+  door ~75 openings a day while on; a week's period answer 0.2 s.
+- Not built yet: the always-on device (the laptop runs the collector for the
+  test), recipes / autostarts (read-only calls exist, not used), export.
+
 ## «Notion vazifalari» — the Notion task list and its reminders (`/notion-tasks`, 2026-11-02)
 
 The operator: the stand-alone reminder bot (`notion-tasks/tracker-bot`, GitHub

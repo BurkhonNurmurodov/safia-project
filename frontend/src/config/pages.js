@@ -45,6 +45,7 @@ export const PAGES = [
   { tier: "test", key: "reports", route: "/reports", labelKey: "nav.reports" },
   { tier: "test", key: "assessment", route: "/assessment", labelKey: "nav.assessment" },
   { tier: "test", key: "people", route: "/people", labelKey: "nav.people" },
+  { tier: "test", key: "ovens", route: "/ovens", labelKey: "nav.ovens" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -93,6 +94,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Xodim kartasi» — one person of the plant (Laboratory). Admin-only until
   // the operator opens it; the reach then follows the platform's locks.
   people: [],
+  // «Pechlar» — the Revent ovens, read off the logs a collector on the factory
+  // LAN posts (Laboratory). Admin-only until the operator opens it.
+  ovens: [],
   leaders: [], // pilot: admin-only until enabled from the Access tab
   cells: ["supervisor"], // Cell registry — supervisors read their OWN unit's
   //            cells, read-only (narrowed server-side); admins and per-person

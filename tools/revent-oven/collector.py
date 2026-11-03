@@ -158,7 +158,8 @@ class Collector:
             return
         kept = oven.get("logs") or {}
         done = {"same": 0, "tail": 0, "whole": 0, "failed": 0}
-        for name, data in files:
+        for path, data in files:
+            name = os.path.basename((path or "").replace("\\", "/"))   # the oven sends «./LogFiles/001794.log»
             if name.lower().endswith(".log"):
                 done[self._send_log(oven, name, data, kept.get(name))] += 1
             elif name == "ServiceData.txt":

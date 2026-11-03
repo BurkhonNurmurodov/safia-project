@@ -72,3 +72,6 @@ export function errOf(T, err) {
   const code = raw?.code;
   return (code && T.errs[code]) || raw?.message || T.loadError;
 }
+
+/** The refusal's code alone ("bad_ip", "duplicate", …), or null. */
+export const errCode = (err) => (err?.response?.data?.detail_raw ?? err?.response?.data?.detail)?.code || null;
