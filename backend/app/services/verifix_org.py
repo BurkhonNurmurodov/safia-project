@@ -353,6 +353,30 @@ def is_supervisor_job(job: Optional[str]) -> bool:
     return supervisor_kind.is_supervisor_job(job)
 
 
+# A shift-manager's job: it names the shift AND a head word — «Начальник
+# смены», «Менеджер смены», «Мастер смены» (the 2026-10-25 roles report's rule).
+_SHIFT_RE = re.compile(r"смен|smena|shift", re.I)
+_HEAD_RE = re.compile(r"начальн|менедж|мастер|руковод|старш|бошлиғ|бошлиг|boshlig|"
+                      r"manager|head|master|supervisor", re.I)
+
+
+def is_shift_manager_job(job: Optional[str]) -> bool:
+    j = job or ""
+    return bool(_SHIFT_RE.search(j) and _HEAD_RE.search(j)) and not _NOT_LEADER_RE.search(j)
+
+
+def role_of(job: Optional[str]) -> Optional[str]:
+    """leader · brigadir · shift_manager — the one role a Verifix job names,
+    checked in that order («Лидер смены» is a leader), else None."""
+    if is_leader_job(job):
+        return "leader"
+    if is_supervisor_job(job):
+        return "brigadir"
+    if is_shift_manager_job(job):
+        return "shift_manager"
+    return None
+
+
 def same_person(a: str, b: str) -> bool:
     """Two spellings of one person (either word order) — a tie whose Verifix
     name stops passing this is HELD, never followed."""
@@ -564,6 +588,43 @@ def brigadirs_over(divs: dict, emps: dict, jobs: dict, units_by_vfx: dict):
             cache[nid] = out
         return cache[nid]
     return over
+
+
+# ── which plant a subdivision stands in ───────────────────────────────────────
+
+def _plant_fold(v: Optional[str]) -> str:
+    return transliterate(v or "", "uz").casefold()
+
+
+def plants(db: Session) -> list[tuple[int, set]]:
+    """(plant id, the words that name it) — live plants, the first by id
+    first (the plant unassigned units are attached to)."""
+    from app.models import Factory
+    out = []
+    for f in db.query(Factory).filter(Factory.archived.is_(False)).order_by(Factory.id).all():
+        words = {_plant_fold(v).strip()
+                 for v in (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en) if v}
+        out.append((f.id, {w for w in words if len(w) >= 4}))
+    return out
+
+
+def plant_of(divs: dict, start: Optional[str], plants_: list[tuple[int, set]]) -> Optional[int]:
+    """The plant a Verifix subdivision stands in: the first division from it
+    upward whose name names a plant («Келес …»), else the platform's first
+    plant — where `startup.migrate_factories` puts every unit nobody assigned.
+    Verifix names no plant on a division, so this reads the tree's names."""
+    fallback = plants_[0][0] if plants_ else None
+    cur = start
+    for _ in range(12):
+        d = divs.get(cur or "")
+        if not d:
+            break
+        folded = _plant_fold(d.get("name"))
+        for fid, words in plants_:
+            if any(w in folded for w in words):
+                return fid
+        cur = d.get("parent")
+    return fallback
 
 
 # ── the strict name match ─────────────────────────────────────────────────────

@@ -54,28 +54,11 @@ ROLE_LABEL = {"shift_manager": "Shift-managers", "brigadir": "Brigadirs (supervi
               "leader": "Leaders"}
 ROLE_ONE = {"shift_manager": "Shift-manager", "brigadir": "Brigadir", "leader": "Leader"}
 
-_SHIFT_RE = re.compile(r"смен|smena|shift", re.I)
-_HEAD_RE = re.compile(r"начальн|менедж|мастер|руковод|старш|бошлиғ|бошлиг|boshlig|"
-                      r"manager|head|master|supervisor", re.I)
-_NOT_RE = re.compile(r"помощ|ассист|замест|\bзам\b|\bи\.?\s*о\b|yordamchi|o['’ʻ‘`]?rinbosar|"
-                     r"assistant|deputy|acting", re.I)
 # A job that names one of the roles at all — the «similar, left out» sheet.
 _ROLE_WORD_RE = re.compile(r"лидер|lider|leader|бригадир|brigadir|смен|smena|shift", re.I)
 
-
-def _is_shift_manager(job: str) -> bool:
-    j = job or ""
-    return bool(_SHIFT_RE.search(j) and _HEAD_RE.search(j)) and not _NOT_RE.search(j)
-
-
-def role_of(job: str) -> Optional[str]:
-    if verifix_org.is_leader_job(job):
-        return "leader"
-    if verifix_org.is_supervisor_job(job):
-        return "brigadir"
-    if _is_shift_manager(job):
-        return "shift_manager"
-    return None
+# The role rules live in `verifix_org` (the /reports «Qamrov» rows read them too).
+role_of = verifix_org.role_of
 
 
 def _shift_of_hour(h: int) -> int:

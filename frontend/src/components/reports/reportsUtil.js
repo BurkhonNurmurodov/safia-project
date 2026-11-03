@@ -156,6 +156,7 @@ const UOM_BY_KEY = {
   unitDays: "day", flaggedDays: "day",
   listed: "personDay", came: "personDay", onLeave: "personDay",
   working: "person", left: "person", hc: "person",
+  vfxShiftManagers: "person", vfxBrigadirs: "person", vfxLeaders: "person",
   actionable: "count", resolved: "count", openLeft: "count", filed: "count",
   counted: "count", uplifted: "count", units: "count", cells: "count",
 };

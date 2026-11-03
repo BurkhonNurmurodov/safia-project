@@ -40,8 +40,8 @@ from app.services import (
     action_log, assistant_documents, brigadir_board as bb, idle_scope, idle_share,
     ojidaniya_cost, plan_fulfillment, quality_attribution, reports, turnover, wage_rate,
 )
-from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services import verifix_month_kinds
+from app.services.factory_scope import empty_scope, resolve_factory, scoped_manager_ids
+from app.services import verifix_month_kinds, verifix_scope
 from app.services.gc_pause import paused as gc_paused
 from app.services.kept_answer import KeptAnswers
 from app.xlsx_delivery import deliver_file
@@ -346,13 +346,26 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         turn = _turnover_by_month(db, months, {"factory": factory, "shift": shift,
                                                "managers": set(ids)})
 
+    # Verifix's own count of cells, shift-managers, brigadirs and leaders
+    # (`services/verifix_scope.py`), narrowed by the plant the viewer is
+    # answered for; Verifix knows no shift or brigadir, so either pick leaves
+    # those rows «—» rather than a whole-plant figure beside a narrowed one.
+    vfx_scope = None
+    if shift is None and not mids:
+        try:
+            with db.begin_nested():
+                vfx_scope = verifix_scope.counts(db, months, today,
+                                                 resolve_factory(db, payload, factory))
+        except Exception:  # noqa: BLE001 — four «—» rows, never a failed report
+            log.exception("reports: the Verifix scope counts failed")
+
     out = reports.compose({
         "months": months,
         "unit_ids": ids,
         "plan": plan_tot,
         "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
         "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
-        "qual": qual, "qual_n": qual_n, "xav": xav,
+        "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
         # How many cells carried a stoppage is read per MONTH inside
         # `compose`, out of each month's «Xarajat» totals.
         "scope": {"factory": factory, "shift": shift, "managers": mids,

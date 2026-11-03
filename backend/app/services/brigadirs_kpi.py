@@ -55,10 +55,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, Factory, Manager, QualityComplaint
+from app.models import AppSetting, Manager, QualityComplaint
 from app.services import foreign_objects, quality_attribution, shift_report, turnover, verifix_org
 from app.services.name_map import register_brigadir
-from app.translit import transliterate
 from app.services.turnover import (PAST_FROM, last_day, local, month_start, next_month, now_aware,
                                    round1, ym)
 
@@ -129,7 +128,7 @@ class _Verifix:
     """The stored Verifix org, asked «which brigadir stands over this cell»."""
 
     def __init__(self, db: Session, units: list[Manager]):
-        self.plants = _plants(db)
+        self.plants = verifix_org.plants(db)
         self.org, self.at = verifix_org.stored(db)
         self.ok = bool(self.org) and verifix_org.guard(self.org) is None
         self.units = units
@@ -156,26 +155,13 @@ class _Verifix:
             self.brigadirs[e["id"]] = {"id": e["id"], "name": e.get("name") or f"#{e['id']}"}
 
     def plant_of(self, vfx_id: str) -> Optional[int]:
-        """The plant a Verifix brigadir works in: the first division above
-        their own whose name names a plant («Келес …»), else the platform's
-        first plant — where `startup.migrate_factories` puts every unit nobody
-        assigned. A brigadir with no plant would show only under «All
+        """The plant a Verifix brigadir works in — `verifix_org.plant_of` over
+        their own org unit. A brigadir with no plant would show only under «All
         factories», i.e. not on the tab the page opens on."""
-        fallback = self.plants[0][0] if self.plants else None
         if not self.ok:
-            return fallback
-        divs = self.org.get("divs") or {}
+            return self.plants[0][0] if self.plants else None
         cur = ((self.org.get("emps") or {}).get(vfx_id) or {}).get("unit")
-        for _ in range(12):
-            d = divs.get(cur or "")
-            if not d:
-                break
-            folded = _fold(d.get("name"))
-            for fid, words in self.plants:
-                if any(w in folded for w in words):
-                    return fid
-            cur = d.get("parent")
-        return fallback
+        return verifix_org.plant_of(self.org.get("divs") or {}, cur, self.plants)
 
     def _unit_named(self, name: str) -> Optional[int]:
         hits = [u.id for u in self.units if verifix_org.same_person(u.name or "", name)]
@@ -203,20 +189,6 @@ class _Verifix:
             return f"m:{uid}", "verifix_unit"
         self.brigadirs.setdefault(b["id"], {"id": b["id"], "name": b["name"]})
         return f"v:{b['id']}", "verifix"
-
-
-def _fold(v: Optional[str]) -> str:
-    return transliterate(v or "", "uz").casefold()
-
-
-def _plants(db: Session) -> list[tuple[int, set]]:
-    """(plant id, the words that name it) — live plants, the first by id
-    first (the plant unassigned units are attached to)."""
-    out = []
-    for f in db.query(Factory).filter(Factory.archived.is_(False)).order_by(Factory.id).all():
-        words = {_fold(v).strip() for v in (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en) if v}
-        out.append((f.id, {w for w in words if len(w) >= 4}))
-    return out
 
 
 # ── the two live criteria ─────────────────────────────────────────────────────
