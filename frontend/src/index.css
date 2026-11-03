@@ -1148,17 +1148,41 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 .app-label svg { color: rgb(var(--hue)); }
 
 /* The header over the launcher's backdrop (Layout puts the backdrop under the
-   whole column there): a pane of glass the gold shows through, not a cream
-   band across the top of it. Static — no backdrop-filter, which would be
-   recomputed for every frame a treat floats beneath it. */
+   whole column there). By night a dark pane over the scene. By day CHOCOLATE
+   — the coffee bean's brown (the operator, 2026-11-03: «not light like
+   this») — a solid band the gold sits under, with a soft shadow on it.
+   Static — no backdrop-filter, which would be recomputed for every frame a
+   product floats beneath it.
+   The day band is dark, so it takes its OWN colour tokens, built like the
+   dark theme's (light ink on dark surfaces): the title, the search box, the
+   icon buttons, the name AND the menus that open inside the header (account,
+   language, search results) all read them, so nothing is left dark-on-brown.
+   `color` is restated because the shell resolved it above this element. */
 .hdr-on-backdrop {
   background: linear-gradient(180deg, rgba(15,17,23,.55), rgba(15,17,23,.3));
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
 [data-theme="light"] .hdr-on-backdrop {
-  background: linear-gradient(180deg, rgba(255,251,243,.5), rgba(255,248,236,.22));
-  border-bottom: 1px solid rgba(255,255,255,.55);
-  box-shadow: 0 1px 0 rgba(138,90,28,.08);
+  --bg-base:   #45251a;
+  --bg-card:   #4e2b1d;
+  --bg-inner:  #5a3424;
+  --bg-accent: #643c2a;
+  --border:    rgba(255,228,200,.14);
+  --border-md: rgba(255,228,200,.24);
+  --text-1:    #fff6ea;
+  --text-2:    #ecd5bc;
+  --text-3:    #cfae8e;
+  --text-4:    #9b765a;
+  --input-bg:  #5a3424;
+  --hover-bg:  rgba(255,228,200,.08);
+  --scrollbar: #7a5038;
+  --skeleton:  rgba(255,255,255,.08);
+  --brand-text: #e8be70;
+  color-scheme: dark;
+  color: var(--text-1);
+  background: linear-gradient(180deg, #6a3c25 0%, #573019 55%, #4a2714 100%);
+  border-bottom: 1px solid rgba(30,12,4,.5);
+  box-shadow: inset 0 1px 0 rgba(255,220,180,.12), 0 8px 22px -10px rgba(60,28,8,.55);
 }
 
 /* The header's way back to the launcher, beside the page title (admins). */

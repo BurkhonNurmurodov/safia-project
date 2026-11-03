@@ -169,9 +169,11 @@ untouched.
   cloud; by NIGHT a dark glass tile, a neon line glyph in the hue and a glow.
   The backdrop (`components/launcher/LauncherBackdrop.jsx`, handed to
   Layout's `backdrop` prop — it must live there, since inside `.page-enter` a
-  fixed box is sized to the content column; it runs under the HEADER too,
-  which turns to static glass over it, `.hdr-on-backdrop`, so the top bar
-  matches — the operator, v4.392.1) follows the operator's reference
+  fixed box is sized to the content column; it runs under the HEADER too —
+  `.hdr-on-backdrop`: by night a dark pane, by day a solid CHOCOLATE band,
+  the coffee bean's brown (the operator, v4.395.2: «not light like this»),
+  which carries its own dark-style colour tokens so the controls and the
+  menus that open inside the header read light-on-brown) follows the operator's reference
   image: a warm golden gradient with Safia's products floating at different
   depths — near ones sharp with a soft shadow, far ones out of focus, the big
   ones cut by the screen edge. They are REAL catalog photos from
