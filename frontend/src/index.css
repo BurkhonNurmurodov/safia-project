@@ -1070,12 +1070,13 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 /* The backdrop (Layout's `backdrop`, under the header;
    components/launcher/LauncherBackdrop.jsx). The operator's reference
-   (2026-11-03): by day a warm golden gradient with Safia's treats — a takeaway
-   cup, macarons, a donut, a croissant, beans — floating at different depths,
-   near ones sharp with a soft shadow, far ones out of focus; «don't worry
-   about shadows» there. By night the same scene behind a dark veil, under a
-   faint gold light and rising gold dust. The treats bob and turn a few degrees
-   over twenty-odd seconds; each is its own small GPU layer, and the light
+   (2026-11-03): by day a warm golden gradient with Safia's products — real
+   catalog photos, cut out: cakes, a latte, macarons, a croissant — floating
+   at different depths, near ones sharp with a soft shadow, far ones out of
+   focus; «don't worry about shadows» there. By night the same scene behind a
+   dark veil, under a faint gold light and rising gold dust. The products bob
+   and turn a few degrees over twenty-odd seconds; each is its own small GPU
+   layer (its blur and shadow are in the picture itself), and the light
    pools are size-capped ones: a phone's WebView pays for every pixel of them
    at its device pixel ratio. */
 .apps-backdrop {
@@ -1106,22 +1107,22 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 @keyframes lightA { to { translate: 14% 18%; scale: 1.12; } }
 @keyframes lightC { to { translate: -18% 10%; scale: 1.15; } }
 
-/* A floating treat: `--size` px, tilted `--tilt`, bobbing up and turning a
-   few degrees; every other one swings the other way. */
+/* A floating product: `--size` px wide, tilted `--tilt`, bobbing up and
+   turning a few degrees (a photo turned further reads as a tilted picture,
+   not a floating cake); every other one swings the other way. */
 .apps-float {
-  position: absolute; width: var(--size); height: var(--size);
-  rotate: var(--tilt);
+  position: absolute; width: var(--size); height: auto; max-width: none;
+  rotate: var(--tilt); user-select: none; -webkit-user-drag: none;
   animation: floatBob 22s ease-in-out infinite alternate;
   will-change: transform;
 }
 .apps-float:nth-of-type(even) { animation-direction: alternate-reverse; }
-.apps-float svg { display: block; overflow: visible; }
 @keyframes floatBob {
   from { translate: 0 0;        rotate: var(--tilt); }
-  to   { translate: 12px -28px; rotate: calc(var(--tilt) + 8deg); }
+  to   { translate: 10px -24px; rotate: calc(var(--tilt) + 4deg); }
 }
 @media (max-width: 559px) {
-  .apps-float { width: calc(var(--size) * .62); height: calc(var(--size) * .62); }
+  .apps-float { width: calc(var(--size) * .62); }
   .apps-float--wide { display: none; }
 }
 /* Night: the scene stays, dimmed under a veil, so the neon tiles lead. */

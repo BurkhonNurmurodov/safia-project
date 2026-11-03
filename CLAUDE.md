@@ -172,13 +172,17 @@ untouched.
   fixed box is sized to the content column; it runs under the HEADER too,
   which turns to static glass over it, `.hdr-on-backdrop`, so the top bar
   matches — the operator, v4.392.1) follows the operator's reference
-  image: a warm golden gradient with Safia's treats floating at different
-  depths — takeaway coffee cups, macarons, a donut, a croissant, coffee beans
-  — near ones sharp with a soft shadow, far ones out of focus, the big ones
-  cut by the screen edge. They are hand-drawn SVG in one soft-clay style (a
-  hidden sprite of `<symbol>`s; no image files), the blur and shadow are SVG
-  filters baked into each object's raster, and they keep to the edges — on a
-  phone only the ones clear of the tiles show (`wide` = desktop only). By
+  image: a warm golden gradient with Safia's products floating at different
+  depths — near ones sharp with a soft shadow, far ones out of focus, the big
+  ones cut by the screen edge. They are REAL catalog photos from
+  safiabakery.uz (the operator, v4.394.0: cakes, a latte, macarons, a
+  croissant), lifted out of their studio scene with macOS Vision's subject
+  lifting (`VNGenerateForegroundInstanceMaskRequest`) and exported as small
+  WebP files in `assets/launcher/` (240 KB for nine) with the blur or shadow
+  baked into the picture, so the browser only moves finished pictures. A
+  swap is a new cut-out exported the same way and one `FLOATS` row. They keep
+  to the edges — on a phone only the ones clear of the tiles show (`wide` =
+  desktop only), and a photo turns only a few degrees as it floats. By
   night the same scene sits under a dark veil with gold dust. Motion is slow
   on purpose («loyalty, peace, premium»): the tiles gather in on arrival, the
   clouds breathe and turn one after another as a wave, a band of light
