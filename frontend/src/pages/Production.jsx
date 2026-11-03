@@ -60,6 +60,11 @@ const fmt = (v, d = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d });
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(0)}%`);
 // A row's «Вып %» — one spelling for the table cell and its Excel twin.
+// Team-card workload: minutes ÷ 60 ÷ people = hours per person; "—" without people.
+const laborHoursText = (labor, people, t, fmt) => {
+  const n = Number(people);
+  return n > 0 ? `${fmt(Number(labor || 0) / 60 / n, 1)} ${t("production.hourUnit")}` : "—";
+};
 const rowVyp = (r) => (r.total_labor ? r.actual_labor / r.total_labor : null);
 // The decimals each numeric column prints with — read by the cell AND the
 // export, so the file shows the very digits the table does.
@@ -3638,7 +3643,7 @@ export default function Production() {
                             title={t("production.group.shtatkaShared").replace("{code}", w.work_center)}
                             style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                         </span>
-                        <span className="tabular-nums shrink-0">{fmt(g.total_labor, 0)} {t("production.minUnit")}</span>
+                        <span className="tabular-nums shrink-0">{laborHoursText(g.total_labor, g.people, t, fmt)}</span>
                       </div>
                     </>
                   )}
@@ -3695,7 +3700,7 @@ export default function Production() {
                     {" · "}
                     {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                   </span>
-                  <span className="tabular-nums shrink-0">{fmt(w.total_labor, 0)} {t("production.minUnit")}</span>
+                  <span className="tabular-nums shrink-0">{laborHoursText(w.total_labor, w.people, t, fmt)}</span>
                 </div>
                 {/* A centre typed per group: its «Кол-во» above is the sum of
                     these — each group's own typed figure beside its letter, in
