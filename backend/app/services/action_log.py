@@ -507,6 +507,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # role may read, which is a setting about the platform, not a fact about a
     # person's post.
     (("PUT",),    "/api/idle-owner/admin/owners",              "config", "config.idle_owner_saved"),
+    (("POST",),   "/api/idle-solutions",                       "collab", "idle.solution_added"),
+    (("PUT",),    "/api/idle-solutions/{}",                    "collab", "idle.solution_edited"),
     (("PUT",),    "/api/downtime/wage-rates",                  "config", "config.wage_rate_saved"),
     (("POST",),   "/api/profiles/admin/cells/export.xlsx",     "sync_export", "export.cells"),
     (("POST",),   "/api/admin/exchange-audit/export.xlsx",     "sync_export", "export.exchange_audit"),

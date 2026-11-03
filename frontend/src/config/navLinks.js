@@ -7,7 +7,7 @@ import {
   Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, BriefcaseBusiness, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
-  GraduationCap, Grid3x3, IdCard, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
+  GraduationCap, Grid3x3, IdCard, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   SquareKanban, TestTubes, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
@@ -45,6 +45,8 @@ export const ALL_LINKS = [
   { to: "/workers/movements",   page: "workers", key: "nav.workersMovements",   icon: ArrowLeftRight, group: "people" },
   { to: "/workers/composition", adminOnly: true, key: "nav.workersComposition", icon: Contact,        group: "people" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
+  // Which waiting cause hurts most, who answers for it, and what they wrote they will do.
+  { to: "/idle-solutions", page: "downtime", key: "nav.idleSolutions", icon: Lightbulb, group: "prod" },
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },

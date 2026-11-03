@@ -81,6 +81,7 @@ const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const NotionTasks = lazyWithReload(() => import("./pages/NotionTasks"));
+const IdleSolutions = lazyWithReload(() => import("./pages/IdleSolutions"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const LeadersKpi = lazyWithReload(() => import("./pages/LeadersKpi"));
 const BrigadirsKpi = lazyWithReload(() => import("./pages/BrigadirsKpi"));
@@ -131,7 +132,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 // else.
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
-  workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime,
+  workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime, "idle-solutions": IdleSolutions,
   reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
@@ -628,6 +629,7 @@ function AppWithLang() {
             <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
+            <Route path="/idle-solutions" element={<AuthGate><RequirePage page="downtime"><IdleSolutions /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />

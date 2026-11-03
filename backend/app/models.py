@@ -4401,6 +4401,30 @@ class IdleCategoryOwner(Base):
     assigned_by = Column(BigInteger, nullable=True)
 
 
+class IdleCategorySolution(Base):
+    """A written SOLUTION for an ojidaniya category — what the person answerable
+    for it (``IdleCategoryOwner``) intends to do about the waiting it causes.
+
+    Several rows per category are normal: a solution is a short log
+    (open → doing → done), newest first, not one editable box. The author is a
+    PROFILE key, like the owner, and their name is snapshotted — a rename must
+    not rewrite who said what. Nothing here moves a figure: it is a register of
+    intent, read on «Kutish yechimlari» (``routers/idle_solutions.py``).
+    """
+    __tablename__ = "idle_category_solutions"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    category    = Column(String, nullable=False, index=True)
+    text        = Column(Text, nullable=False)
+    # open | doing | done
+    status      = Column(String, nullable=False, default="open")
+    author_key  = Column(String, nullable=True)
+    author_name = Column(String, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(),
+                         onupdate=func.now())
+
+
 # ── The dashboard exam («Imtihon») — services/exam*.py, routers/exam*.py ──────
 #
 # Leaders take an exam ON the dashboard: fifty tasks that make them use the

@@ -1,0 +1,113 @@
+// «Kutish yechimlari» (/idle-solutions) — the words in the four platform
+// languages, beside the page (the /trello pattern). Category names come from
+// the existing `downtime.cat.<code>.label` strings; people and solution texts
+// stay as written.
+
+export const fill = (s, vars) =>
+  String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
+
+const uz = {
+  title: "Kutish yechimlari",
+  hint: "Qaysi sabab eng ko'p kutdirmoqda, kim javob beradi va nima qilmoqchi",
+  kTotal: "Jami kutish", kTotalSub: "brigadirlar bo'yicha yig'indi, daq",
+  kTop: "Eng katta sabab", kNoOwner: "Mas'ulsiz sabablar", kNoSol: "Yechimsiz sabablar",
+  ofCauses: "{n} ta sabab",
+  secCauses: "Sabablar — eng ko'pdan kamgacha", secUnits: "Brigadirlar — qaysi sababda ko'p kutgan",
+  minutes: "{m} daq", share: "{p}%", days: "{n} kun", units: "{n} brigada",
+  owner: "Mas'ul", noOwner: "Mas'ul tayinlanmagan",
+  assignHint: "Admin «Kutish mas'ullari» bo'limida tayinlaydi.",
+  worst: "Eng ko'p kutgan brigadirlar", noUnits: "Bu davrda bu sababdan kutish bo'lmagan.",
+  solutions: "Yechimlar", noSol: "Yechim hali yozilmagan",
+  noSolWrite: "Siz bu sababning mas'ulisiz — nima qilmoqchiligingizni yozing.",
+  noSolRead: "Mas'ul yechim yozishi kutilmoqda.",
+  write: "Yechim yozing", writePh: "Bu sababdan kutishni kamaytirish uchun nima qilinadi? Kim, qachongacha?",
+  save: "Saqlash", saved: "Yechim saqlandi", saveFail: "Saqlab bo'lmadi",
+  notOwner: "Faqat shu sababning mas'uli yoki admin yoza oladi.",
+  status: "Holat",
+  st: { none: "Yechim yo'q", open: "Rejada", doing: "Bajarilmoqda", done: "Bajarildi" },
+  by: "{n} · {d}",
+  cUnit: "Brigadir", cTotal: "Jami, daq", cTop: "Asosiy sabablar",
+  empty: "Bu davrda kutish yo'q", emptySub: "Boshqa davrni tanlang.",
+  errLoad: "Ma'lumotni o'qib bo'lmadi", retry: "Qayta urinish",
+  show: "Ko'rsatish", hide: "Yopish", yours: "Sizniki",
+};
+
+const uz_cyrl = {
+  title: "Кутиш ечимлари",
+  hint: "Қайси сабаб энг кўп кутдирмоқда, ким жавоб беради ва нима қилмоқчи",
+  kTotal: "Жами кутиш", kTotalSub: "бригадирлар бўйича йиғинди, дақ",
+  kTop: "Энг катта сабаб", kNoOwner: "Масъулсиз сабаблар", kNoSol: "Ечимсиз сабаблар",
+  ofCauses: "{n} та сабаб",
+  secCauses: "Сабаблар — энг кўпдан камгача", secUnits: "Бригадирлар — қайси сабабда кўп кутган",
+  minutes: "{m} дақ", share: "{p}%", days: "{n} кун", units: "{n} бригада",
+  owner: "Масъул", noOwner: "Масъул тайинланмаган",
+  assignHint: "Админ «Кутиш масъуллари» бўлимида тайинлайди.",
+  worst: "Энг кўп кутган бригадирлар", noUnits: "Бу даврда бу сабабдан кутиш бўлмаган.",
+  solutions: "Ечимлар", noSol: "Ечим ҳали ёзилмаган",
+  noSolWrite: "Сиз бу сабабнинг масъулисиз — нима қилмоқчилигингизни ёзинг.",
+  noSolRead: "Масъул ечим ёзиши кутилмоқда.",
+  write: "Ечим ёзинг", writePh: "Бу сабабдан кутишни камайтириш учун нима қилинади? Ким, қачонгача?",
+  save: "Сақлаш", saved: "Ечим сақланди", saveFail: "Сақлаб бўлмади",
+  notOwner: "Фақат шу сабабнинг масъули ёки админ ёза олади.",
+  status: "Ҳолат",
+  st: { none: "Ечим йўқ", open: "Режада", doing: "Бажарилмоқда", done: "Бажарилди" },
+  by: "{n} · {d}",
+  cUnit: "Бригадир", cTotal: "Жами, дақ", cTop: "Асосий сабаблар",
+  empty: "Бу даврда кутиш йўқ", emptySub: "Бошқа давр танланг.",
+  errLoad: "Маълумотни ўқиб бўлмади", retry: "Қайта уриниш",
+  show: "Кўрсатиш", hide: "Ёпиш", yours: "Сизники",
+};
+
+const ru = {
+  title: "Решения по ожиданиям",
+  hint: "Какая причина ожиданий самая тяжёлая, кто за неё отвечает и что собирается делать",
+  kTotal: "Всего ожиданий", kTotalSub: "сумма по бригадирам, мин",
+  kTop: "Главная причина", kNoOwner: "Причины без ответственного", kNoSol: "Причины без решения",
+  ofCauses: "{n} причин",
+  secCauses: "Причины — от самых тяжёлых", secUnits: "Бригадиры — в какой причине ждали больше",
+  minutes: "{m} мин", share: "{p}%", days: "{n} дн.", units: "{n} бриг.",
+  owner: "Ответственный", noOwner: "Ответственный не назначен",
+  assignHint: "Админ назначает в разделе «Ответственные за ожидания».",
+  worst: "Бригадиры с наибольшим ожиданием", noUnits: "В этом периоде по этой причине ожиданий не было.",
+  solutions: "Решения", noSol: "Решение ещё не написано",
+  noSolWrite: "Вы отвечаете за эту причину — напишите, что собираетесь сделать.",
+  noSolRead: "Ждём, когда ответственный напишет решение.",
+  write: "Напишите решение", writePh: "Что будет сделано, чтобы сократить ожидания по этой причине? Кто, к какому сроку?",
+  save: "Сохранить", saved: "Решение сохранено", saveFail: "Не удалось сохранить",
+  notOwner: "Писать может только ответственный за причину или админ.",
+  status: "Статус",
+  st: { none: "Нет решения", open: "В плане", doing: "В работе", done: "Сделано" },
+  by: "{n} · {d}",
+  cUnit: "Бригадир", cTotal: "Всего, мин", cTop: "Главные причины",
+  empty: "В этом периоде ожиданий нет", emptySub: "Выберите другой период.",
+  errLoad: "Не удалось прочитать данные", retry: "Повторить",
+  show: "Показать", hide: "Скрыть", yours: "Ваша",
+};
+
+const en = {
+  title: "Idle-time solutions",
+  hint: "Which cause costs the most waiting, who answers for it and what they plan to do",
+  kTotal: "Total waiting", kTotalSub: "sum over brigadirs, min",
+  kTop: "Biggest cause", kNoOwner: "Causes with no owner", kNoSol: "Causes with no solution",
+  ofCauses: "{n} causes",
+  secCauses: "Causes — worst first", secUnits: "Brigadirs — where they waited most",
+  minutes: "{m} min", share: "{p}%", days: "{n} d", units: "{n} units",
+  owner: "Owner", noOwner: "No owner assigned",
+  assignHint: "An admin assigns owners in «Idle-time owners».",
+  worst: "Brigadirs with the most waiting", noUnits: "No waiting from this cause in the period.",
+  solutions: "Solutions", noSol: "No solution written yet",
+  noSolWrite: "You answer for this cause — write what you plan to do.",
+  noSolRead: "Waiting for the owner to write a solution.",
+  write: "Write a solution", writePh: "What will be done to cut the waiting from this cause? Who, by when?",
+  save: "Save", saved: "Solution saved", saveFail: "Could not save",
+  notOwner: "Only the owner of this cause or an admin can write.",
+  status: "Status",
+  st: { none: "No solution", open: "Planned", doing: "In progress", done: "Done" },
+  by: "{n} · {d}",
+  cUnit: "Brigadir", cTotal: "Total, min", cTop: "Main causes",
+  empty: "No waiting in this period", emptySub: "Pick another period.",
+  errLoad: "Could not read the data", retry: "Retry",
+  show: "Show", hide: "Hide", yours: "Yours",
+};
+
+export const TXT = { uz, uz_cyrl, ru, en };
