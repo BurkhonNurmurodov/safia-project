@@ -10391,7 +10391,13 @@ every endpoint (the «Trello tahlili» model).
   vaqt» by default), a search over the values, Excel, the `ColumnsPicker`
   (ui-prefs `audit.table.cols`); one-line rows, newest first, every column
   sortable; a row opens the record whole (JSON pretty-printed). A missing table,
-  a table the app may not read, and a failed load are three different states.
+  a table the app may not read, and a failed load are three different states;
+  the second hands over the fix — `GRANT SELECT ON public.audit TO <role>;`
+  naming the account the app connects as (`db_user` on `/meta`, the database's
+  own `current_user`) with a copy button, since the app cannot grant itself.
+- **Production, 2026-11-04**: the table is owned by `safia_prod_rw`, and the
+  app (`safia_prod`) may not read it — the screen shows the GRANT until the
+  owner or a database admin runs it.
 - Verified on a throwaway Postgres (a table with a key, a view without one, a
   missing table) and in headless Chrome over those answers. What production's
   `public.audit` actually holds was not seen by the code's author.

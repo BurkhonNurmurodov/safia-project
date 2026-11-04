@@ -84,8 +84,9 @@ def _meta(db: Session) -> dict:
                has_table_privilege(c.oid, 'SELECT') AS can_read
           FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = :s AND c.relname = :t"""), {"s": SCHEMA, "t": TABLE}).mappings().first()
+    db_user = db.execute(text("SELECT current_user")).scalar()
     if not rel:
-        return {"exists": False, "schema": SCHEMA, "table": TABLE}
+        return {"exists": False, "schema": SCHEMA, "table": TABLE, "db_user": db_user}
     cols = db.execute(text("""
         SELECT a.attname AS name, format_type(a.atttypid, a.atttypmod) AS type,
                t.typcategory AS cat, NOT a.attnotnull AS nullable
@@ -109,6 +110,8 @@ def _meta(db: Session) -> dict:
         "kind": _KIND.get(rel["relkind"], rel["relkind"]),
         "owner": rel["owner"], "size": rel["size"], "comment": rel["comment"],
         "est_rows": max(int(rel["est_rows"] or 0), 0), "can_read": bool(rel["can_read"]),
+        # The account the app connects as — what a GRANT must name when it may not read.
+        "db_user": db_user,
         "columns": columns, "pk": pk_col, "time_column": time_col,
         "default_sort": {"key": default, "dir": "desc"} if default else None,
     }

@@ -5,7 +5,7 @@
 // picker, a row opened whole, and the filtered rows as a workbook.
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileSpreadsheet, ScrollText, ShieldAlert, AlertTriangle, RotateCw } from "lucide-react";
+import { FileSpreadsheet, ScrollText, ShieldAlert, AlertTriangle, RotateCw, Copy, Check } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th } from "../components/ui/DataTable";
 import Pagination from "../components/ui/Pagination";
@@ -19,6 +19,7 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { exportXlsx } from "../utils/exportXlsx";
+import { copyText } from "../utils/copyText";
 import api from "../utils/api";
 import { useAT, fill } from "./auditTableText";
 
@@ -51,6 +52,32 @@ function pretty(v) {
     try { return JSON.stringify(JSON.parse(v), null, 2); } catch { /* cut or not JSON */ }
   }
   return null;
+}
+
+// A role name as SQL needs it: bare when it is a plain lower-case name.
+const sqlName = (u) => (/^[a-z_][a-z0-9_$]*$/.test(u) ? u : `"${String(u).replace(/"/g, '""')}"`);
+
+// What the database's owner has to run for the app to read the table — the
+// app cannot grant itself, so the screen hands over the exact line.
+function GrantHint({ user, T, toast }) {
+  const cmd = `GRANT SELECT ON public.audit TO ${sqlName(user)};`;
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    if (await copyText(cmd)) { setDone(true); toast.success(T.copied); setTimeout(() => setDone(false), 2000); }
+    else toast.error(T.copyFail);
+  };
+  return (
+    <div className="mt-4 w-full max-w-xl mx-auto text-left space-y-2">
+      <p className="text-xs" style={{ color: "var(--text-2)" }}>{T.grantAsk}</p>
+      <div className="flex items-stretch gap-2">
+        <pre className="flex-1 min-w-0 whitespace-pre-wrap rounded-lg px-3 py-2.5 text-xs font-mono select-all"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)", overflowWrap: "anywhere" }}>{cmd}</pre>
+        <Button variant="secondary" onClick={copy}
+          icon={done ? <Check size={14} /> : <Copy size={14} />}>{done ? T.copied : T.copy}</Button>
+      </div>
+      <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.grantAfter}</p>
+    </div>
+  );
 }
 
 function errCode(e) {
@@ -199,7 +226,8 @@ export default function AuditTable() {
     body = <EmptyState icon={ScrollText} title={T.missingTitle} message={T.missingMsg} showUploadLink={false} />;
   } else if (!meta.can_read) {
     body = <EmptyState tone="danger" icon={ShieldAlert} title={T.noReadTitle}
-      message={fill(T.noReadMsg, { owner: meta.owner })} showUploadLink={false} />;
+      message={fill(T.noReadMsg, { owner: meta.owner })} showUploadLink={false} height="min-h-40 py-10"
+      action={meta.db_user ? <GrantHint user={meta.db_user} T={T} toast={toast} /> : null} />;
   }
 
   const total = data?.total;
