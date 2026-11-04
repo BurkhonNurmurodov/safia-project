@@ -4374,6 +4374,14 @@ are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
   muammolar» counts problems without a solution, not causes.
 
 
+- **From 2026-11-04 the finest problem is ONE FILED STOP** (the operator: every
+  brigadir comment needs its own reason / solution, none hidden):
+  `idle_category_solutions.event_id` = `cell_ojidaniya_intervals.id`
+  (`startup.add_idle_solution_manager`). Every stop of a (category, brigadir) is
+  listed — comment or none, no «yana N ta» fold — each with its own solutions and
+  composer; `problems_n` / `solved_n` and the KPI count stops. Rows with
+  `event_id` NULL stay as the brigadir's / the cause's general solutions.
+
 ## WHO answers for a waiting category (`idle-owner`)
 
 From **2026-09-10** (the operator's directive) each ojidaniya category has ONE

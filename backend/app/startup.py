@@ -2382,6 +2382,13 @@ def add_idle_solution_manager() -> None:
         db.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_idle_category_solutions_manager_id "
             "ON idle_category_solutions (manager_id)"))
+        # 2026-11-04: a solution answers ONE filed stop (the brigadir's comment).
+        db.execute(text(
+            "ALTER TABLE idle_category_solutions "
+            "ADD COLUMN IF NOT EXISTS event_id INTEGER"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_idle_category_solutions_event_id "
+            "ON idle_category_solutions (event_id)"))
         db.commit()
     except Exception as exc:
         db.rollback()

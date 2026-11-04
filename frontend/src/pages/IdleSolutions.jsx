@@ -68,7 +68,7 @@ function Kpi({ icon: Icon, label, value, sub, tone }) {
   );
 }
 
-function Composer({ T, cat, manager, onSaved, compact }) {
+function Composer({ T, cat, manager, event, onSaved, compact }) {
   const toast = useToast({ position: "bottom" });
   const [text, setText] = useState("");
   const [status, setStatus] = useState("open");
@@ -77,7 +77,7 @@ function Composer({ T, cat, manager, onSaved, compact }) {
     if (!text.trim()) return;
     setBusy(true);
     try {
-      await api.post("/api/idle-solutions", { category: cat, manager_id: manager ?? null, text: text.trim(), status });
+      await api.post("/api/idle-solutions", { category: cat, manager_id: manager ?? null, event_id: event ?? null, text: text.trim(), status });
       setText("");
       setStatus("open");
       toast.success(T.saved);
@@ -149,8 +149,7 @@ function SolutionRow({ T, s, canWrite, onChanged, ddmmyy }) {
 
 function ProblemBlock({ T, c, u, n, refresh, ddmmyy }) {
   const { tl } = useTranslit();
-  const [all, setAll] = useState(false);
-  const shown = all ? u.notes : u.notes.slice(0, 3);
+  const total = u.notes_n || 0;
   return (
     <section className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2 min-w-0">
@@ -159,45 +158,62 @@ function ProblemBlock({ T, c, u, n, refresh, ddmmyy }) {
         <span className="text-sm font-semibold truncate flex-1" style={{ color: "var(--text-1)" }}>
           {shortPerson(tl(u.manager_name) || u.manager_name)}
         </span>
-        <StateChip T={T} state={u.state} />
+        {total > 0 && (
+          <span className="text-xs font-semibold tabular-nums flex-shrink-0"
+            style={{ color: u.solved_n >= total ? "var(--status-ok)" : "var(--status-warn)" }}>
+            {fill(T.solvedOf, { a: u.solved_n, b: total })}
+          </span>
+        )}
         <span className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: "var(--text-1)" }}>
           {fill(T.minutes, { m: Math.round(u.minutes) })}
         </span>
       </div>
 
-      <div className="mt-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{T.comments}</div>
-      {u.notes.length === 0 ? (
-        <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noComments}</div>
+      {total === 0 ? (
+        <>
+          <div className="text-xs mt-2" style={{ color: "var(--text-3)" }}>{T.noComments}</div>
+          {u.solutions.length > 0 && (
+            <ul className="space-y-2 mt-2">
+              {u.solutions.map((s) => (
+                <SolutionRow key={s.id} T={T} s={s} canWrite={c.can_write} onChanged={refresh} ddmmyy={ddmmyy} />
+              ))}
+            </ul>
+          )}
+          {c.can_write && <Composer T={T} cat={c.category} manager={u.manager_id} onSaved={refresh} compact />}
+        </>
       ) : (
-        <ul className="mt-1.5 space-y-1.5">
-          {shown.map((x, i) => (
-            <li key={i} className="pl-2.5 text-sm" style={{ borderLeft: "2px solid var(--border)" }}>
-              <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                {ddmmyy(x.date)}{x.cell ? ` · ${x.cell}` : ""}{x.start ? ` · ${x.start}–${x.end}` : ""}
-                {x.minutes ? ` · ${fill(T.minutes, { m: Math.round(x.minutes) })}` : ""}
+        <ul className="mt-2.5 space-y-3">
+          {u.notes.map((x, i) => (
+            <li key={x.id ?? i} className="rounded-lg p-2.5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+              <div className="flex items-start gap-2">
+                <span className="text-[11px] font-semibold tabular-nums pt-0.5 flex-shrink-0" style={{ color: "var(--text-3)" }}>#{i + 1}</span>
+                <div className="min-w-0 flex-1 pl-2.5" style={{ borderLeft: "2px solid var(--border)" }}>
+                  <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                    {ddmmyy(x.date)}{x.cell ? ` · ${x.cell}` : ""}{x.start ? ` · ${x.start}–${x.end}` : ""}
+                    {x.minutes ? ` · ${fill(T.minutes, { m: Math.round(x.minutes) })}` : ""}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                    {x.note || <span style={{ color: "var(--text-3)" }}>{T.noComment}</span>}
+                  </div>
+                </div>
               </div>
-              <div className="whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{x.note}</div>
+              {(x.solutions || []).length > 0 && (
+                <ul className="space-y-2 mt-2">
+                  {x.solutions.map((s) => (
+                    <SolutionRow key={s.id} T={T} s={s} canWrite={c.can_write} onChanged={refresh} ddmmyy={ddmmyy} />
+                  ))}
+                </ul>
+              )}
+              {(x.solutions || []).length === 0 && !c.can_write && (
+                <div className="text-xs mt-2" style={{ color: "var(--text-2)" }}>{T.noSol}. {T.noSolRead}</div>
+              )}
+              {c.can_write && x.id != null && (
+                <Composer T={T} cat={c.category} manager={u.manager_id} event={x.id} onSaved={refresh} compact />
+              )}
             </li>
           ))}
         </ul>
       )}
-      {u.notes_n > 3 && (
-        <button type="button" onClick={() => setAll(!all)} className="text-xs mt-1.5 font-medium" style={{ color: "var(--brand-text)" }}>
-          {all ? T.hide : fill(T.moreNotes, { n: u.notes.length - 3 })}
-        </button>
-      )}
-
-      {u.solutions.length > 0 && (
-        <ul className="space-y-2 mt-3">
-          {u.solutions.map((s) => (
-            <SolutionRow key={s.id} T={T} s={s} canWrite={c.can_write} onChanged={refresh} ddmmyy={ddmmyy} />
-          ))}
-        </ul>
-      )}
-      {u.solutions.length === 0 && !c.can_write && (
-        <div className="text-xs mt-3" style={{ color: "var(--text-2)" }}>{T.noSol}. {T.noSolRead}</div>
-      )}
-      {c.can_write && <Composer T={T} cat={c.category} manager={u.manager_id} onSaved={refresh} compact />}
     </section>
   );
 }
