@@ -18,7 +18,6 @@ import ContainerTotalsCard from "../components/overview/ContainerTotalsCard";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
-import { useAuth } from "../context/AuthContext";
 import { useFactoryParams } from "../context/FactoryContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
@@ -46,7 +45,6 @@ const WINDOW_DAYS = 7; // trend sparkline span, ending on the selected date
 
 export default function ShiftDaily() {
   const { unit, setUnit, shift: shiftPick, setShift } = useFilters();
-  const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
   const navigate = useNavigate();
@@ -71,24 +69,9 @@ export default function ShiftDaily() {
   // Scope: plant → shift, picked in the FilterPanel like every other page. The
   // plant is the shared FactoryContext value and the shift the shared
   // FilterContext one, so a pick carries across Overview, Zagruzka and
-  // Ojidaniya. A SHIFT-MANAGER works one shift and the board below is locked to
-  // it server-side, so the whole page reads that shift for them and states it
-  // as an inert chip — S1/S2 there would put another shift's cards over an
-  // empty board. Their shift is read off their own units, which
-  // /api/staff/supervisors already scopes to it.
-  const isShiftManager = auth?.role === "shift-manager";
-  const { data: supervisors = [], isFetched: supsFetched } = useQuery({
-    queryKey: ["staff-supervisors"],
-    queryFn: () => api.get("/api/staff/supervisors").then(r => r.data),
-    staleTime: 120_000,
-    enabled: isShiftManager,
-  });
-  const ownShift = isShiftManager ? (supervisors[0]?.shift ?? null) : null;
-  const shift = isShiftManager ? ownShift : shiftPick;
-  // A shift-manager whose shift is unknown reads nothing rather than both
-  // shifts: /api/brigadirs and /api/heatmap do not pin a shift themselves.
-  const scopePending = isShiftManager && !supsFetched;
-  const scopeKnown = !isShiftManager || ownShift != null;
+  // Ojidaniya. Every role picks both freely — a shift-manager reaches every
+  // plant and every shift since 2026-11-04 (services/shift_scope.py).
+  const shift = shiftPick;
 
   const dayBase = useMemo(
     () => ({ date_from: date, date_to: date, ...(shift ? { shift } : {}) }), [date, shift]);
@@ -100,13 +83,11 @@ export default function ShiftDaily() {
   const { data: brigadirs = [], isLoading: brigLoading } = useQuery({
     queryKey: ["shift-daily-brigadirs", dayParams],
     queryFn: () => api.get("/api/brigadirs", { params: dayParams }).then(r => r.data),
-    enabled: scopeKnown,
   });
 
   const { data: heatmap, isLoading: heatLoading } = useQuery({
     queryKey: ["shift-daily-heatmap", winParams],
     queryFn: () => api.get("/api/heatmap", { params: winParams }).then(r => r.data),
-    enabled: scopeKnown,
   });
   // «Smena boshi Zagruzka» per unit per day — the figure the «Smena hisoboti»
   // board's first column prints, so the three load cards and the board below
@@ -115,11 +96,9 @@ export default function ShiftDaily() {
   const { data: startLoad, isLoading: startLoading } = useQuery({
     queryKey: ["shift-daily-start-load", winParams],
     queryFn: () => api.get("/api/shift-report/start-load", { params: winParams }).then(r => r.data),
-    enabled: scopeKnown,
   });
-  // While the scope is still resolving the page is loading, not empty.
-  const isLoading = brigLoading || scopePending;
-  const hmLoading = heatLoading || scopePending;
+  const isLoading = brigLoading;
+  const hmLoading = heatLoading;
   const cardsLoading = hmLoading || startLoading;
 
   // Live colour thresholds from admin config — shared (same query keys) with the
@@ -229,27 +208,22 @@ export default function ShiftDaily() {
   const hasData = brigadirs.length > 0;
 
   // Plant switcher (null on a single-plant install, an inert chip for a
-  // locked viewer), then the shift.
+  // locked viewer — a supervisor or leader), then the shift.
   const factorySection = useFactorySection();
-  const shiftSection = isShiftManager
-    ? (ownShift != null && {
-        key: "shift", icon: Layers, static: true,
-        label: t("filter.shift"), display: `S${ownShift}`,
-      })
-    : {
-        key: "shift", icon: Layers, label: t("filter.shift"),
-        active: shiftPick != null,
-        display: shiftPick != null ? `S${shiftPick}` : "",
-        onClear: () => setShift(null),
-        render: () => (
-          <SegmentedToggle
-            fill
-            value={shiftPick}
-            onChange={setShift}
-            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-          />
-        ),
-      };
+  const shiftSection = {
+    key: "shift", icon: Layers, label: t("filter.shift"),
+    active: shiftPick != null,
+    display: shiftPick != null ? `S${shiftPick}` : "",
+    onClear: () => setShift(null),
+    render: () => (
+      <SegmentedToggle
+        fill
+        value={shiftPick}
+        onChange={setShift}
+        options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+      />
+    ),
+  };
 
   const unitToggle = (
     <SegmentedToggle
@@ -355,7 +329,7 @@ export default function ShiftDaily() {
           queries it takes the seconds the cards and the charts need to paint. */}
       <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
 
-      <ContainerTotalsCard day={date} params={dayParams} enabled={scopeKnown} />
+      <ContainerTotalsCard day={date} params={dayParams} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

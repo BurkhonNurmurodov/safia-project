@@ -661,12 +661,10 @@ def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
     if role == "supervisor":
         return [ref] if ref else []
     if role == "shift-manager":
-        # Shift AND plant — services/shift_scope.py, the same intersection
-        # /staff, /concerns and /production read. A grantee whose "own scope"
-        # was a whole shift could act on the other plant's units from a page
-        # that never shows them.
+        # Every unit, every plant — services/shift_scope.py, the reach /staff,
+        # /concerns and /production read (2026-11-04).
         p = db.query(RoleProfile).filter_by(id=ref, role="shift-manager").first() if ref else None
-        if not p or not p.shift:
+        if not p:
             return []
         return shift_scope.unit_ids(db, ref)
     return None

@@ -599,7 +599,7 @@ export default function Concerns() {
   // The org chain on the top bar — shift → brigadir → cell, each level scoping
   // the next (client-side, like the period). Shift and brigadir are hidden for
   // single-unit viewers: a supervisor or leader only ever sees their own rows,
-  // and a shift-manager is already pinned to one shift. Brigadir and cell are
+  // (a shift-manager picks a shift like an admin). Brigadir and cell are
   // multi-selects whose stored picks are RAW — every reader goes through the
   // effective `supSel` / `cellSel` below. (The old single brigadir pick lived
   // under `concerns_supervisor` as a string; a new key, so it is never read as
@@ -607,8 +607,9 @@ export default function Concerns() {
   const [fShift, setFShift] = usePersistentState("concerns_shift", null);  // null = all | 1 | 2
   const [fSups, setFSups] = usePersistentState("concerns_sup_sel", []);    // [] = all | [String(manager_id)]
   const [fCells, setFCells] = usePersistentState("concerns_cell_sel", []); // [] = all | [cell_code]
-  const canFilterShift = role === "admin" || role === "top-manager";
-  const canFilterSup = canFilterShift || role === "shift-manager";
+  // A shift-manager reaches every shift and plant since 2026-11-04.
+  const canFilterShift = role === "admin" || role === "top-manager" || role === "shift-manager";
+  const canFilterSup = canFilterShift;
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
   // Production/Staff tables) — status + owner multi-selects, deadline-day range.

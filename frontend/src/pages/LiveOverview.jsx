@@ -10,9 +10,9 @@
  * change VISIBLE: numbers count to their new value, the board reorders with a
  * FLIP animation, a new alert slides in, a stopped cell pulses.
  *
- * Page key `live` — admin-only until the operator opens it. A shift-manager
- * is locked to their shift ∩ plant server-side; admins pick a shift, and may
- * replay a finished day (`?date=`) to look at the screen when nothing runs.
+ * Page key `live` — admin-only until the operator opens it. A supervisor or
+ * leader is locked to their own unit server-side; everyone else picks a shift;
+ * admins may replay a finished day (`?date=`) to look at the screen when nothing runs.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";

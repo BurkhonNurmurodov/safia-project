@@ -5972,13 +5972,12 @@ def _caller_shift(db, payload: dict) -> int | None:
     on /api/summary & friends). role_id points at DIFFERENT tables per role
     (see RoleProfile's docstring): managers.id for supervisor/leader,
     role_profiles.id for shift-manager — reading the wrong one would scope to
-    an unrelated brigadir's shift. Admins and top-managers see every shift."""
+    an unrelated brigadir's shift. Admins, top-managers and shift-managers see
+    every shift."""
     role, rid = payload.get("role"), payload.get("role_id")
     if role == "admin" or not rid:
         return None
-    if role == "shift-manager":
-        prof = db.query(RoleProfile).filter_by(id=rid, role="shift-manager").first()
-        return prof.shift if prof else None
+    # A shift-manager reaches every shift since 2026-11-04 (services/shift_scope.py).
     if role in ("supervisor", "leader"):
         mgr = db.query(Manager).filter_by(id=rid).first()
         return mgr.shift if mgr else None

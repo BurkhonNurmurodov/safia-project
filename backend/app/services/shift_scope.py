@@ -1,35 +1,27 @@
 """
-Which supervisor units a SHIFT-MANAGER covers — ONE definition.
+Which supervisor units a SHIFT-MANAGER reaches, and who is ANSWERABLE for a
+unit — ONE definition each.
 
-A shift-manager used to be answered by SHIFT alone: every unit on shift 1,
-whichever plant it stood in. The company runs more than one plant, so from
-2026-09-02 (the operator's directive) the answer is the INTERSECTION — the
-shift-1 manager of Keles covers the shift-1 supervisors of Keles and nobody
-else.
+**Reach is EVERY unit — every shift, every plant** (2026-11-04, the operator:
+«all shift managers should have access to all factories and all shifts»).
+From 2026-09-02 until then a shift-manager reached the intersection of their
+shift and their plant; :func:`unit_ids` and :func:`covers` are what every page,
+guard and register reads, so widening them here widened /staff, /concerns,
+/production, /tasks, /kelish, /people, the bell queue and the rest at once.
+Never re-spell a shift-manager's reach at a call site.
 
-Why this module exists at all: "the units this shift-manager covers" was
-spelled NINE times before it — six in ``routers/staff.py``, one in
-``routers/concerns.py``, two in ``routers/production.py`` — and every one of
-them was ``Manager.shift == shift`` with no plant in it. Nine spellings of one
-rule is how a shift-manager comes to read one plant's day on /staff and approve
-another plant's edit request from the same screen. Never re-spell the
-intersection at a call site.
+**Answerable is still shift ∩ plant** — :func:`role_ids_for_unit`. It is no
+longer the inverse of :func:`covers`, on purpose: reach says what a
+shift-manager MAY read and act on, answerable says who is NOTIFIED about a
+unit and whom a supervisor escalates a concern to. Routing every unit's
+requests to every shift-manager would put each one's DMs in all their chats.
+``role_profiles.shift`` / ``role_profiles.factory_id`` therefore still matter:
+they decide routing, not access. A shift-manager with no plant is answerable
+for their shift in every plant, as before.
 
 The factory dimension is still attached in exactly ONE place for DATA
-(``managers.factory_id``: a cell follows its supervisor, a downtime row follows
-the unit its name resolves to). ``role_profiles.factory_id`` is not a second
-copy of that — it says which plant a PERSON belongs to, exactly as
-``role_profiles.shift`` already says which shift they work. A supervisor and a
-leader answer the same question through their unit, which is why
-:func:`factory_scope.viewer_factory_id` reads it off ``managers`` for them and
-off the profile through here.
-
-**A shift-manager with NO factory is unchanged: they cover their shift in every
-plant.** That is the same rule ``viewer_factory_id`` already applies to a unit
-nobody has assigned yet — pinning somebody to nothing would empty their pages —
-and it is what makes this inert until an admin says where each shift-manager
-works. It also means the answer degrades toward the OLD behaviour, never toward
-an empty one.
+(``managers.factory_id``). ``role_profiles.factory_id`` says which plant a
+PERSON belongs to — today only for routing.
 """
 from typing import Optional
 
@@ -76,50 +68,40 @@ def factory_of(db: Session, role_id: Optional[int]) -> Optional[int]:
 
 def unit_ids(db: Session, role_id: Optional[int], *,
              include_archived: bool = False) -> list[int]:
-    """THE unit set: this shift-manager's shift, narrowed to their plant.
+    """THE unit set a shift-manager reaches: every unit, every shift, every
+    plant (see the module docstring).
 
     ``include_archived`` mirrors what each call site did before — /staff reads
     live units only, /concerns keeps archived ones so a unit's history does not
-    vanish the day it is archived.
+    vanish the day it is archived. An explicit list rather than None, because
+    several callers spell «no unit» as ``or []``.
     """
-    shift = shift_of(db, role_id)
-    if shift is None:
+    if not role_id:
         return []
-    q = db.query(Manager.id).filter(Manager.shift == shift)
+    q = db.query(Manager.id)
     if not include_archived:
         q = q.filter(Manager.archived.is_(False))
-    fac = factory_of(db, role_id)
-    if fac is not None:
-        q = q.filter(Manager.factory_id == fac)
     return [mid for (mid,) in q.all()]
 
 
 def covers(db: Session, role_id: Optional[int], manager_id: Optional[int]) -> bool:
-    """Is this ONE unit inside the shift-manager's reach?
-
-    The single-unit door, so the guards that used to compare two shift numbers
-    do not each have to remember the plant half. Answers False for a unit that
-    does not exist — a caller naming a missing unit is not authorised over it.
+    """Is this ONE unit inside the shift-manager's reach? Every existing unit
+    is (see the module docstring). Answers False for a unit that does not exist
+    — a caller naming a missing unit is not authorised over it.
     """
-    if not manager_id:
+    if not manager_id or not role_id:
         return False
-    shift = shift_of(db, role_id)
-    if shift is None:
-        return False
-    m = db.query(Manager.shift, Manager.factory_id).filter(Manager.id == manager_id).first()
-    if m is None or m.shift != shift:
-        return False
-    fac = factory_of(db, role_id)
-    return fac is None or m.factory_id == fac
+    return db.query(Manager.id).filter(Manager.id == manager_id).first() is not None
 
 
 def role_ids_for_unit(db: Session, manager_id: Optional[int]) -> list[int]:
     """The shift-manager profile ids answerable for a unit — the fan-out door.
 
-    The inverse of :func:`covers`, and it must stay the inverse: this is what
-    decides who is notified about a unit's requests and who a supervisor may
-    escalate a concern to. Addressing "every manager on shift 1" is what sent
-    Keles's decisions to the other plant's chat.
+    Their shift AND their plant. NOT the inverse of :func:`covers` any more
+    (every shift-manager reaches every unit since 2026-11-04): this decides who
+    is notified about a unit's requests and whom a supervisor may escalate a
+    concern to. Addressing "every manager on shift 1" is what sent Keles's
+    decisions to the other plant's chat.
 
     A shift-manager with no plant is included for every unit on their shift —
     the same "None covers everything" rule the rest of the module runs on.

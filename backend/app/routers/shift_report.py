@@ -11,11 +11,8 @@ supervisor pick), narrowed to the reach each role already has everywhere else
 on the platform — the tiers `routers/concerns.py` `_scope_query` applies:
 
     admin, top-manager  every unit; both shifts, as two groups
-    shift-manager       their shift ∩ their plant (`shift_scope.unit_ids`)
+    shift-manager       every unit, every plant (from 2026-11-04)
     supervisor, leader  their own unit (reachable only through a page grant)
-
-A shift manager whose profile names no shift reads an EMPTY board with
-`note = "no_shift"`, never the whole plant: an empty scope is a real answer.
 
 The period picker beside the table does not reach it. Each column has a fixed
 window — today, yesterday, this month, whole time — and its header prints it.
@@ -41,7 +38,7 @@ from app.permissions import require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
 from app.services import (cell_hours, leader_register, live_overview, live_staff,
-                          quality_attribution, shared_build, shift_report, shift_scope,
+                          quality_attribution, shared_build, shift_report,
                           verifix_live, zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 
@@ -115,11 +112,7 @@ def _scope(db: Session, payload: dict, factory: Optional[int],
     ids = scoped_manager_ids(db, payload, factory, manager_id)
     role = payload.get("role")
     rid = payload.get("role_id")
-    if role == "shift-manager":
-        if shift_scope.shift_of(db, rid) is None:
-            return [], "no_shift"
-        own = set(shift_scope.unit_ids(db, rid))
-    elif role in ("supervisor", "leader"):
+    if role in ("supervisor", "leader"):
         own = {int(rid)} if rid else set()
     else:
         return ids, None

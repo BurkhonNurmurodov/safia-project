@@ -9,9 +9,9 @@ traced to the table it came from.
 
 Scope, in this order:
 
-  * a SHIFT-MANAGER is locked to their own shift ∩ plant (`shift_scope`), a
-    supervisor or a leader to their own unit — whatever `?shift=` says;
-  * everyone else (admin, top-manager) picks a shift, defaulting to the one
+  * a supervisor or a leader is locked to their own unit — whatever `?shift=`
+    says;
+  * everyone else (admin, top-manager, shift-manager) picks a shift, defaulting to the one
     running now, and the plant follows the global switcher through
     `factory_scope.scoped_manager_ids`, which also applies the viewer lock;
   * `?date=` replays a finished day — admins and top-managers only — for
@@ -36,7 +36,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.services import (cell_archive, cell_hours, idle_source, live_overview, pp_catalog,
-                          shift_scope, wc_group, zagruzka_source)
+                          wc_group, zagruzka_source)
 from app.services.day_state import day_state
 from app.services.factory_scope import (
     empty_scope, resolve_factory, scoped_manager_ids, viewer_factory_id,
@@ -58,8 +58,6 @@ def _own_scope(db: Session, payload: dict):
     """(unit ids the caller is locked to or None, the shift that lock implies or None)."""
     role = payload.get("role")
     rid = payload.get("role_id")
-    if role == "shift-manager":
-        return shift_scope.unit_ids(db, rid), shift_scope.shift_of(db, rid)
     if role in ("supervisor", "leader"):
         # A supervisor's role_id IS the unit; a leader's role_id is their UNIT too
         # (identity.py) — both read their own brigadir's board and nothing else.
