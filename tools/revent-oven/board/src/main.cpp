@@ -22,7 +22,9 @@
 //   mostly on                 the setup hotspot is open
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <lwip/sockets.h>
 
 #include <map>
 
@@ -85,6 +87,17 @@ void restart(const char* why) {
   blog("restarting: %s", why);
   delay(300);
   ESP.restart();
+}
+
+// What the network stack holds: open sockets (of CONFIG_LWIP_MAX_SOCKETS),
+// free internal RAM and its largest block (TLS needs ~16 KB in one piece).
+String netDiag() {
+  int open = 0;
+  for (int fd = LWIP_SOCKET_OFFSET; fd < LWIP_SOCKET_OFFSET + CONFIG_LWIP_MAX_SOCKETS; fd++)
+    if (lwip_fcntl(fd, F_GETFL, 0) >= 0) open++;
+  return String(open) + "/" + String(CONFIG_LWIP_MAX_SOCKETS) + " sockets, " +
+         String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024) + " KB internal free (largest " +
+         String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024) + " KB)";
 }
 
 String ago(uint32_t at) {
@@ -290,7 +303,8 @@ void doStatus() {
   if (rs.empty()) return;
   ImsReply ir = ims.status(rs);
   if (!ir.ok()) imsError = "status: " + ir.error;
-  blog("status: %d/%d oven(s) answered, IMS %s", ok, (int)rs.size(), ir.ok() ? "took it" : ir.error.c_str());
+  blog("status: %d/%d oven(s) answered, IMS %s [%s]", ok, (int)rs.size(), ir.ok() ? "took it" : ir.error.c_str(),
+       netDiag().c_str());
 }
 
 size_t queueCap() {
@@ -481,7 +495,7 @@ void roundTick() {
   ImsReply r = ims.plan(p);
   if (!r.ok()) {
     imsError = "IMS: " + r.error;
-    blog("plan: %s", r.error.c_str());
+    blog("plan: %s [%s]", r.error.c_str(), netDiag().c_str());
     nextRound = millis() + 30000;
     inRound = false;
     if (lastImsOk && millis() - lastImsOk > 30UL * 60000) restart("IMS has not answered for 30 minutes");
@@ -536,6 +550,7 @@ String showText() {
   s += "firmware   " + ota::text() + "\n";
   s += "uptime     " + uptimeText(millis()) + "\n";
   s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
+  s += "network    " + netDiag() + "\n";
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
   if (WiFi.status() == WL_CONNECTED)
     s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, access point " +
