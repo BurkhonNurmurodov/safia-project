@@ -224,6 +224,28 @@ def by_due_day(day) -> bool:
     return d is not None and d >= DUE_DAY_FROM
 
 
+# From this shift-day on (the operator, 2026-11-04: «Plan and Fakt columns
+# should not get numbers from SAP files … create another Plan and Fakt columns
+# which do that»; asked, they chose «typed only» for every figure) ПЛАН/ФАКТ are
+# what a PERSON typed and nothing else: the SAP snapshot stays stored in
+# `pp_daily.plan_qty` / `actual_qty`, is shown in its own «SAP» columns, and
+# moves no figure — not the Positions table's Вып %, minutes, ЛЮДИ, not the
+# загрузка, Plan bajarish, the leaders' checks or any page reading
+# `line_minutes`. An upload no longer clears what was typed either
+# (`production._ingest_for_manager`). Days before it read exactly as they did.
+# A FLOOR with no override, never to be moved LATER — that would hand days
+# back to the snapshot which have already been read without it.
+TYPED_ONLY_FROM = date(2026, 11, 5)
+
+
+def sap_counts(day) -> bool:
+    """Does the SAP snapshot answer ПЛАН/ФАКТ on this day? THE test — True only
+    before `TYPED_ONLY_FROM`. A day it cannot read counts as before the floor,
+    which is what every caller computed before the floor existed."""
+    d = _as_day(day)
+    return d is None or d < TYPED_ONLY_FROM
+
+
 def ops_for_day(ops, order_due: dict, day) -> tuple[list, dict]:
     """(the фаза operations this day OWNS, {other day: [ops]}) — THE day filter.
 
@@ -522,15 +544,22 @@ def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of
     for (wc, key, d, _n) in per_line:
         days.setdefault((wc, key), set()).add(d)
 
+    sap_day: dict = {}
     for (wc, key), lines in lines_by_key.items():
         for d in days.get((wc, key), ()):
             sv = shared.get((wc, key, d)) or (0.0, 0.0)
             sp, sa = sv[0], sv[1]
             typed_p = bool(sv[2]) if len(sv) > 2 else False
             typed_a = bool(sv[3]) if len(sv) > 3 else False
+            # From `TYPED_ONLY_FROM` the snapshot answers for no line at all —
+            # every line is gated as a switched-off one is, so only what a
+            # person typed is counted.
+            counts = sap_day.get(d)
+            if counts is None:
+                counts = sap_day[d] = sap_counts(d)
             for line_key, labor in lines:
                 lp, la = per_line.get((wc, key, d, line_key), (None, None))
-                gated = bool(off) and (wc, key, line_key) in off
+                gated = (not counts) or (bool(off) and (wc, key, line_key) in off)
                 bp = sp if (typed_p or not gated) else 0.0
                 ba = sa if (typed_a or not gated) else 0.0
                 qp = lp if lp is not None else bp
@@ -588,6 +617,7 @@ def compute_dashboard(
     wc_cells: Optional[dict[str, list]] = None,
     group_overrides: Optional[dict[tuple[str, str], dict]] = None,
     norm_wc=None,
+    typed_only: bool = False,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
@@ -609,6 +639,15 @@ def compute_dashboard(
                  the same way, can never disagree about one work centre over a
                  spelling. Omitted ⇒ codes are compared stripped, which is what
                  this engine did before the lock existed.
+    typed_only:  the day is on or after `TYPED_ONLY_FROM` (the caller asks
+                 `sap_counts(day)`): the SAP snapshot answers for no line, so a
+                 line's ПЛАН/ФАКТ is its own typed value, else the group's typed
+                 value, else 0 — and the snapshot is published beside it as
+                 `sap_plan_qty` / `sap_actual_qty`, which no figure reads. Each
+                 `quantities` entry may carry `sap_plan` / `sap_actual` (the raw
+                 snapshot, override not applied) for those two fields; without
+                 them they read None. Default False: every caller computes
+                 exactly what it did before.
     work_centers:[{code, shtatka, sort_order}, ...]
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
@@ -703,7 +742,7 @@ def compute_dashboard(
         # and not about who may state a number. With neither the row resolves to
         # 0, which is what the page has always shown for a position the day's
         # upload did not mention.
-        sap_ok = takes_sap(p.get("sap_code"), p.get("auto_fill", True))
+        sap_ok = (not typed_only) and takes_sap(p.get("sap_code"), p.get("auto_fill", True))
         plan_grp = sap_ok or bool(q.get("plan_overridden"))
         actual_grp = sap_ok or bool(q.get("actual_overridden"))
         plan_qty = (_f(plan_own) if plan_own is not None
@@ -770,6 +809,15 @@ def compute_dashboard(
             # from the other.
             "sap_filled": sap_ok,
             "auto_fill": p.get("auto_fill", True) is not False,
+            # What the SAP file said for this line's SAP code at its Команда —
+            # the «SAP» columns (TYPED_ONLY_FROM). Never what a person typed,
+            # and None where the file has no row for the pair or the line has
+            # no SAP code (the join reaches a line through its code). Read by
+            # no figure: from the floor ПЛАН/ФАКТ above are the typed numbers.
+            "sap_plan_qty": (_f(q["sap_plan"]) if str(p.get("sap_code") or "").strip()
+                             and q.get("sap_plan") is not None else None),
+            "sap_actual_qty": (_f(q["sap_actual"]) if str(p.get("sap_code") or "").strip()
+                               and q.get("sap_actual") is not None else None),
             # what the client echoes back when it overrides this line's quantity
             "line_key": line_key,
             # «Kontiner krishka» (2026-10-19): a number the brigadir typed for

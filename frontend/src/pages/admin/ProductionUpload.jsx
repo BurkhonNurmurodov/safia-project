@@ -5,6 +5,7 @@ import {
   Wand2, PencilLine, Layers, History, ArrowRightLeft,
 } from "lucide-react";
 import api from "../../utils/api";
+import { uploadReplacesTyped } from "../../utils/typedOnly";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -754,7 +755,9 @@ export default function ProductionUpload() {
               <span className="leading-snug">{t("admin.prod.tgNobody")}</span>
             </div>
           )}
-          {manualPicked.length > 0 && (
+          {/* From TYPED_ONLY_FROM an upload fills only the «SAP» columns, so
+              picking a manual unit replaces nothing a person typed. */}
+          {manualPicked.length > 0 && uploadReplacesTyped(date) && (
             <div
               className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-4"
               style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "#a16207" }}

@@ -165,6 +165,12 @@ const COLS = [
   { key: "vyp", labelKey: "production.col.vyp", align: "center", hintKey: "production.col.vypHint" },
   { key: "plan", labelKey: "production.col.plan", align: "center", edit: true, hintKey: "production.col.planHint" },
   { key: "fact", labelKey: "production.col.fact", align: "center", edit: true, hintKey: "production.col.factHint" },
+  // What the SAP file said for this line's SAP code at its Команда — read-only,
+  // beside the two typed columns it is compared with. From
+  // `pp_calc.TYPED_ONLY_FROM` (05.11.2026, the operator's call) ПЛАН/ФАКТ are
+  // what a person typed and the file's numbers live here, counted by no figure.
+  { key: "sap_plan", labelKey: "production.col.sapPlan", align: "center", hintKey: "production.col.sapPlanHint" },
+  { key: "sap_fact", labelKey: "production.col.sapFact", align: "center", hintKey: "production.col.sapFactHint" },
   // Where the two columns above come from — the file, or a person. It sits
   // directly after them because that is the question it answers.
   { key: "autofill", labelKey: "production.col.source", align: "center", hintKey: "production.col.sourceHint" },
@@ -204,6 +210,8 @@ const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill", "wc_gr
 // it would be a column of «—» and a picker row that toggles nothing, and a unit
 // nobody has grouped must read exactly as it did before groups existed.
 const GROUP_COL = "wc_group";
+// «Manba» — absent on a day ПЛАН/ФАКТ are typed only (`typedOnly` below).
+const AUTOFILL_COL = "autofill";
 // «O'lchov birligi» — the stored key («dona») to the word the reader sees. The
 // four keys are served on the payload (services/pp_uom is their one definition,
 // `catalog.uoms`), so this page holds no copy of the LIST — only of how each one
@@ -313,6 +321,8 @@ const sortVal = (r, key) => {
     // Groups the manual rows together; the chip below says which is which.
     case "autofill":     return r.sap_filled === false ? 0 : 1;
     case "plan":         return r.plan_qty;
+    case "sap_plan":     return r.sap_plan_qty ?? null;
+    case "sap_fact":     return r.sap_actual_qty ?? null;
     case "actual_labor": return r.actual_labor;
     case "labor_total":  return r.total_labor;
     case "minutes":      return r.minutes;
@@ -573,7 +583,8 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 // (`CAP.CATALOG_SAP`, never an admin): "create" draws the four fields its door
 // takes (code, Команда, name, Трудоемкость); "sap" draws the code alone and
 // names the line it belongs to, read-only. "full" is the admin's form.
-function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "full", line = null }) {
+function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "full", line = null,
+                         sapSwitch = true }) {
   const { t } = useLang();
   if (mode === "sap") {
     return (
@@ -677,7 +688,9 @@ function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "
           />
         </Field>
       )}
-      {full && hasCode && (
+      {/* `sapSwitch` false on a day ПЛАН/ФАКТ are typed only (pp_calc.TYPED_ONLY_FROM):
+          the switch decides whether the file fills them, which it no longer does. */}
+      {full && hasCode && sapSwitch && (
         <Field label={t("production.autofill.label")} hint={t("production.autofill.hint")}>
           <SegmentedToggle
             fill
@@ -1780,6 +1793,15 @@ export default function Production() {
 
   const dayLock = data?.day ?? null;
   const dayOpen = dayLock ? dayLock.can_write !== false : true;
+  // From `pp_calc.TYPED_ONLY_FROM` (05.11.2026) ПЛАН/ФАКТ are what a person
+  // typed and nothing else — the SAP file's numbers sit in the «SAP» columns and
+  // count nowhere. On such a day a line nobody typed shows «—» (its figures
+  // count 0), and the «Manba» column and the per-line SAP switch, which answer
+  // whether the file fills ПЛАН/ФАКТ, are not drawn: it fills them on no line.
+  const typedOnly = !!data?.typed_only;
+  const shownQty = (r, field) => (field === "actual"
+    ? (typedOnly && !r.actual_overridden ? null : r.actual_qty)
+    : (typedOnly && !r.plan_overridden ? null : r.plan_qty));
   // Per-day editing is gated by ROLE **and** by the day's closing.
   const canEditStaffing = canEditStaffingRole && dayOpen;
   const canEditPeople = canEditPeopleRole && dayOpen;
@@ -1910,20 +1932,28 @@ export default function Production() {
   const saveCols = useMutation({
     mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
   });
+  // The columns this view does not draw at all: «Guruh» on a unit with no
+  // groups, «Manba» on a day ПЛАН/ФАКТ are typed only. Neither is offered to the
+  // picker either, since a picker row that toggles nothing is a control that
+  // says nothing.
+  const absentCols = useMemo(
+    () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : [])],
+    [hasGroups, typedOnly],
+  );
   const onColsChange = (value) => {
-    // On a unit with no groups the picker is never shown the «Guruh» column, and
-    // its hide-all / show-all / drag commits rebuild the lists from the columns
-    // it WAS shown — so they would quietly drop the reader's own choice for it.
-    // Put that half back exactly as the config had it.
+    // The picker is never shown an absent column, and its hide-all / show-all /
+    // drag commits rebuild the lists from the columns it WAS shown — so they
+    // would quietly drop the reader's own choice for it. Put that half back
+    // exactly as the config had it.
     let next = value;
-    if (!hasGroups) {
-      const hidden = value.hidden.filter((k) => k !== GROUP_COL);
-      if (colCfg.hidden.includes(GROUP_COL)) hidden.push(GROUP_COL);
-      const order = value.order.filter((k) => k !== GROUP_COL);
-      const at = colCfg.order.indexOf(GROUP_COL);
+    for (const key of absentCols) {
+      const hidden = next.hidden.filter((k) => k !== key);
+      if (colCfg.hidden.includes(key)) hidden.push(key);
+      const order = next.order.filter((k) => k !== key);
+      const at = colCfg.order.indexOf(key);
       const before = at > 0 ? colCfg.order[at - 1] : null;
-      if (at === 0) order.unshift(GROUP_COL);
-      else if (before && order.includes(before)) order.splice(order.indexOf(before) + 1, 0, GROUP_COL);
+      if (at === 0) order.unshift(key);
+      else if (before && order.includes(before)) order.splice(order.indexOf(before) + 1, 0, key);
       // else: the reconcile above seats it where COLS puts it
       next = { order, hidden };
     }
@@ -1934,8 +1964,8 @@ export default function Production() {
   const visibleCols = useMemo(() => {
     const hiddenSet = new Set(colCfg.hidden);
     return colCfg.order.map((k) => COLS.find((c) => c.key === k))
-      .filter((c) => c && !hiddenSet.has(c.key) && (hasGroups || c.key !== GROUP_COL));
-  }, [colCfg, hasGroups]);
+      .filter((c) => c && !hiddenSet.has(c.key) && !absentCols.includes(c.key));
+  }, [colCfg, absentCols]);
   // Every colSpan on this table counts the pick column too, or the skeleton, the
   // empty row and the action strip each stop one cell short of the header.
   const colCount = visibleCols.length + (canPickRows ? 1 : 0);
@@ -2636,7 +2666,7 @@ export default function Production() {
   const saveOverride = (row, field) => (value) => {
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
                  field, line_key: row.line_key };
-    const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
+    const prev = shownQty(row, field) ?? null;
     tracked({
       label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,
       forward: () => override.mutateAsync({ ...at, value }),
@@ -2783,17 +2813,32 @@ export default function Production() {
       case "fact":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
-            title={r.sap_filled === false ? t("production.autofill.cellHint")
+            title={typedOnly ? (r.actual_overridden ? undefined : t("production.qty.notTyped"))
+              : r.sap_filled === false ? t("production.autofill.cellHint")
               : r.actual_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
-            value={r.actual_qty} onSave={saveOverride(r, "actual")} />
+            value={shownQty(r, "actual")} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
-            title={r.sap_filled === false ? t("production.autofill.cellHint")
+            title={typedOnly ? (r.plan_overridden ? undefined : t("production.qty.notTyped"))
+              : r.sap_filled === false ? t("production.autofill.cellHint")
               : r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
-            value={r.plan_qty} onSave={saveOverride(r, "plan")} />
+            value={shownQty(r, "plan")} onSave={saveOverride(r, "plan")} />
         );
+      // The SAP file's number for this SAP code at this Команда — read-only and
+      // muted, so it never reads as one of the typed figures beside it.
+      case "sap_plan":
+      case "sap_fact": {
+        const v = key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty;
+        return (
+          <td key={key} className="px-3 py-2 text-center tabular-nums"
+              title={v == null ? t("production.sapCol.none") : undefined}
+              style={{ color: v == null ? "var(--text-4)" : "var(--text-2)" }}>
+            {v == null ? "—" : fmt(v, 0)}
+          </td>
+        );
+      }
       case "autofill": {
         // Two states, never three: a row is filled by the file or it is typed.
         // WHY it is typed — the operator switched it off, or the line carries no
@@ -2876,6 +2921,8 @@ export default function Production() {
         : { v: vyp, k: "pct", fg: vypColor(vyp), b: true };
       case "plan": return num(r.plan_qty, NUM_DEC.plan);
       case "fact": return num(r.actual_qty, NUM_DEC.fact);
+      case "sap_plan": return num(r.sap_plan_qty, NUM_DEC.plan);
+      case "sap_fact": return num(r.sap_actual_qty, NUM_DEC.fact);
       case "autofill": return r.sap_filled !== false
         ? { t: t("production.autofill.sap"), fg: XL_SOFT }
         : { t: t("production.autofill.manual"), fg: "#b07828" };
@@ -3803,7 +3850,7 @@ export default function Production() {
             )}
             <ColumnsPicker
               className="ml-auto"
-              columns={COLS.filter((c) => hasGroups || c.key !== GROUP_COL)
+              columns={COLS.filter((c) => !absentCols.includes(c.key))
                 .map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
               hidden={colCfg.hidden}
@@ -4163,6 +4210,7 @@ export default function Production() {
               />
             </Field>
           </div>
+          {!typedOnly && (
           <Field label={t("production.autofill.label")} hint={t("production.bulk.autofillHint")}>
             <SegmentedToggle
               fill
@@ -4174,6 +4222,7 @@ export default function Production() {
               ariaLabel={t("production.autofill.label")}
             />
           </Field>
+          )}
           {/* Reaches every picked line, coded or not: what a position is
               counted in has nothing to do with the SAP file. This is the fast
               way to fill a 99-SKU catalog in — tick the tortes, pick «dona». */}
@@ -4368,7 +4417,7 @@ export default function Production() {
               still the line's own — elsewhere it names a group nobody there has. */}
           <CatalogFields draft={catDraft} setDraft={setCatField}
             mode={sapGrant ? "sap" : "full"} line={editRow}
-            uomOpts={uomOpts}
+            uomOpts={uomOpts} sapSwitch={!typedOnly}
             groupOpts={groupOptsFor(catDraft.work_center,
               sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
           {catalogFromHint && (
@@ -4393,7 +4442,7 @@ export default function Production() {
         >
           <CatalogFields draft={catDraft} setDraft={setCatField}
             mode={sapGrant ? "create" : "full"}
-            uomOpts={uomOpts}
+            uomOpts={uomOpts} sapSwitch={!typedOnly}
             groupOpts={groupOptsFor(catDraft.work_center)} />
           {catalogFromHint && (
             <p className="text-[11px] leading-relaxed mt-3" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>

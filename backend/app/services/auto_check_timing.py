@@ -35,6 +35,7 @@ from app.models import (
     PPDaily, PPLineDaily, PPManagerSetting, RoleProfile,
 )
 from app.services import cell_lookup, latin_code, leader_auto, leader_dispute
+from app.services.pp_calc import sap_counts
 
 TZ = leader_auto.TASHKENT
 CHECK = "plan_pct"
@@ -130,6 +131,10 @@ class _Unit:
         return self._sapwc
 
     def reaching_faza(self) -> list[dict]:
+        # From `pp_calc.TYPED_ONLY_FROM` an upload states the «SAP» columns and
+        # no ФАКТ: it neither sets nor clears a figure #9 reads.
+        if not sap_counts(self.d):
+            return []
         got_sap = bool(self.sap_wcs())
         return [x for x in self.uploads() if "faza" in x["type"]
                 and (self.auto_fill if x["note"] == "auto-fill" else got_sap)]

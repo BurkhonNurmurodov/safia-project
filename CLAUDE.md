@@ -9010,6 +9010,56 @@ four and nothing else.
   ПЛАН while it is visible on the table, green as the form's inputs are (see
   the UI-template table, «Column show/hide»).
 
+## ПЛАН/ФАКТ are TYPED; the SAP file has columns of its own (`pp_calc.TYPED_ONLY_FROM`, 2026-11-05)
+
+The operator (2026-11-04): «when SAP files get uploaded, Plan and Fakt columns
+should not get numbers from SAP files. Instead, create another Plan and Fakt
+columns which do that». Asked, they chose: every figure counts the TYPED numbers
+only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
+
+- **`pp_calc.TYPED_ONLY_FROM` (2026-11-05) + `sap_counts(day)` are THE floor**
+  — a constant with no override, never moved later. From that shift-day a
+  line's ПЛАН/ФАКТ is its own typed value (`pp_line_daily`), else the group's
+  typed value (`pp_daily.*_override`, legacy), else **0**. The SAP snapshot
+  (`pp_daily.plan_qty` / `actual_qty`) answers for NO line. Days before the
+  floor read exactly as they did (snapshot as step 3, gated by `takes_sap`).
+- **One gate, every figure.** `compute_dashboard(typed_only=…)` (the Positions
+  table, its KPI cards, Вып %, minutes, ЛЮДИ, the ABC workbook, the leader
+  checks #1/#9, the shift report's completion) and `_line_minutes` (which gates
+  every line on a typed-only date — `line_minutes`, `line_minutes_by_group`,
+  `line_facts`: the загрузка, `/zagruzka-cell`, `/live`, Plan bajarish, Plan
+  Prognoz, «Liderlar KPI», «Hisobotlar», the «Odam soni» plan lock). No reader
+  re-spells the date test. **Consequence to know**: from 5 Nov a unit whose
+  brigadir types nothing has no plan minutes — its загрузка, Plan bajarish and
+  checks #1/#9 read blank / fail until the lines are typed.
+- **An upload from the floor writes the snapshot and nothing else**
+  (`production._ingest_for_manager`): it never clears a group override, never
+  deletes or clears a `pp_line_daily` row; mode «both» restates the day's
+  snapshot (pairs the file dropped read 0, a row left with neither a snapshot
+  nor a typed value is deleted). Before the floor it still replaces the day as
+  it always did. `_backfill_manager` (the catalog import) goes through it, so it
+  keeps typed values from the floor too. `auto_check_timing` lists no SAP upload
+  for a typed-only day (it moves no ФАКТ).
+- **The «SAP» columns** — «SAP reja» / «SAP fakt» (ru «План SAP» / «Факт SAP»),
+  right after ФАКТ on «Pozitsiyalar»: each row's `sap_plan_qty` /
+  `sap_actual_qty`, the stored snapshot for its SAP code at its Команда (the
+  фаза join's own key — lines of one SKU at one Команда show the same number),
+  read-only, muted, «—» for a code-less line or a pair the file has no row for.
+  Shown on every day, sortable, in the ColumnsPicker, in the workbook (inserted
+  after ПЛАН). Filled by whoever the upload reaches — unchanged: the unit's
+  «SAP avto-to'ldirish» switch and an upload's own target picker.
+- **On a typed-only day** (`dashboard.typed_only`): an untyped ПЛАН/ФАКТ prints
+  «—» (it counts 0) with a hint naming the SAP columns; the «Manba» column and
+  the per-line SAP switch (row editor, create form, bulk bar) are not drawn —
+  the file fills ПЛАН/ФАКТ on no line, so they answer nothing. `absentCols` in
+  Production.jsx is the one list of columns a view does not draw (with
+  «Guruh»), and the picker keeps the reader's choice for them. The admin
+  upload's «manual units picked — typed values will be replaced» warning shows
+  only for a date before the floor (`utils/typedOnly.js`, the client twin).
+- Nothing stored moved: no snapshot, typed value or catalog flag was rewritten,
+  and `pp_products.auto_fill` / `PPManagerSetting.auto_fill` keep their columns
+  (the per-line one now matters only for days before the floor).
+
 ## A ПЛАН belongs to ONE catalog line (`pp_line_daily`)
 
 From **2026-09-03** a hand-typed ПЛАН or ФАКТ on `/production` belongs to the

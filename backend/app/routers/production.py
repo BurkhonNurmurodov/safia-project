@@ -73,7 +73,8 @@ from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
                                    line_keys, line_ident, group_sizes, faza_quantities, takes_sap,
-                                   ops_for_day, by_due_day,
+                                   ops_for_day, by_due_day, TYPED_ONLY_FROM,
+                                   sap_counts as pp_sap_counts,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
                                       sap_groups_for_leader, cells_units_for_leader)
@@ -630,6 +631,10 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "actual_qty": float(actual_eff or 0),
             "plan_overridden": d.plan_override is not None,
             "actual_overridden": d.actual_override is not None,
+            # the snapshot as the file wrote it, for the «SAP» columns
+            # (pp_calc.TYPED_ONLY_FROM) — never the override
+            "sap_plan": float(d.plan_qty or 0),
+            "sap_actual": float(d.actual_qty or 0),
         }
 
     shift_min, global_pm = _constants(db)
@@ -683,6 +688,9 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         # which work centres have a plan today (`people_locked`), so its lock
         # and `zagruzka_source.planned_wcs`' filter answer one question one way.
         norm_wc=norm_code,
+        # From `pp_calc.TYPED_ONLY_FROM` ПЛАН/ФАКТ are what a person typed; the
+        # SAP snapshot rides beside them in its own columns and counts nowhere.
+        typed_only=not pp_sap_counts(day),
     )
     if group_scope is not None:
         # The leader's slice is CUT from the code-scoped computation, never
@@ -759,6 +767,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         "unknown_skus": [{"sap_code": s, "work_center": w} for s, w in unknown],
         "archived": archived,
         "missing_labor_count": sum(1 for r in result["rows"] if not r["has_labor"]),
+        # ПЛАН/ФАКТ on this day are typed only (pp_calc.TYPED_ONLY_FROM); the
+        # page drops the «Manba» column and the per-line SAP switch, which
+        # answer nothing on such a day, and says where the file's numbers went.
+        "typed_only": not pp_sap_counts(day),
+        "typed_only_from": TYPED_ONLY_FROM.isoformat(),
     })
     # what the «Odamlar soni» tab needs to show and reset the efficiency box
     result["constants"].update({
@@ -2643,6 +2656,10 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     is written down onto it before that row is replaced. Its group's snapshot is
     still written, because the siblings that DO read it share that record.
 
+    From `pp_calc.TYPED_ONLY_FROM` it writes the SAP SNAPSHOT and nothing else:
+    ПЛАН/ФАКТ are typed only from that day, the file's numbers live in the
+    «SAP» columns, and no typed value — group or line — is cleared or moved.
+
     The unit's quantities are held SHARED (`pp_catalog.NS_QTY`) to the end of
     the caller's transaction: a cell's positions following it to another
     brigadir (services/catalog_follow) moves these very rows and takes that
@@ -2677,7 +2694,41 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                                            products, own_wcs, catalog_skus, exclude))
 
     updated = 0
-    if faza_agg:
+    if faza_agg and not pp_sap_counts(day):
+        # From `pp_calc.TYPED_ONLY_FROM` the file states the «SAP» columns and
+        # nothing else: ПЛАН/ФАКТ are what a person typed, so an upload writes
+        # the snapshot fields only and never clears a typed value — the group
+        # override on `pp_daily` and every `pp_line_daily` row stay exactly as
+        # they are. Mode 'both' still RESTATES the day's snapshot: a pair the
+        # file no longer carries reads 0, and a row left carrying neither a
+        # snapshot nor a typed value is dropped, so the rows that remain are the
+        # file's pairs plus whatever somebody typed.
+        fields = {"plan": ("plan_qty",), "actual": ("actual_qty",),
+                  "both": ("plan_qty", "actual_qty")}.get(mode, ())
+        rows = {(r.sap_code, r.work_center): r for r in db.query(PPDaily).filter(
+            PPDaily.manager_id == manager_id, PPDaily.date == day).all()}
+        if mode == "both":
+            for k, r in rows.items():
+                if k not in faza_agg:
+                    r.plan_qty = 0
+                    r.actual_qty = 0
+        for (sap, wc), agg in faza_agg.items():
+            row = rows.get((sap, wc))
+            if row is None:
+                row = PPDaily(manager_id=manager_id, date=day, sap_code=sap, work_center=wc,
+                              plan_qty=0, actual_qty=0)
+                db.add(row)
+                rows[(sap, wc)] = row
+            for f in fields:
+                setattr(row, f, agg[f])
+            updated += 1
+        if mode == "both":
+            for k, r in rows.items():
+                if (k not in faza_agg and r.plan_override is None
+                        and r.actual_override is None):
+                    db.delete(r)
+        db.flush()
+    elif faza_agg:
         # mode 'both' = fresh daily snapshot → replace the date (also clears overrides).
         if mode == "both":
             # A hand-typed value on the GROUP row is read by the manual lines
@@ -2896,7 +2947,8 @@ def _backfill_manager(db, manager_id: int, since: Optional[date] = None) -> dict
 
     A unit with auto-fill switched OFF is the second door the flag has to close:
     this writes exactly what the fan-out writes (mode 'both' — every stored date
-    replaced, every manual override cleared), so honouring the flag on the upload
+    replaced, every manual override cleared — before `pp_calc.TYPED_ONLY_FROM`;
+    from it a date keeps every typed value), so honouring the flag on the upload
     and ignoring it here would wipe a manual unit's figures the next time somebody
     re-imported its catalog. `skipped` says so; nothing is written.
 
