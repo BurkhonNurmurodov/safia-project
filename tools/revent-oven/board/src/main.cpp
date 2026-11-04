@@ -24,7 +24,9 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <lwip/priv/tcp_priv.h>
 #include <lwip/sockets.h>
+#include <lwip/tcpip.h>
 
 #include <map>
 
@@ -58,6 +60,8 @@ struct OvenNote {
   bool statusOk = false;
   String statusErr;
   uint32_t statusAt = 0;
+  int fails = 0;          // status reads in a row that failed
+  uint32_t nextTry = 0;   // an oven not answering is left alone until then
   String logs;
   uint32_t logsAt = 0;
   String settings;
@@ -89,15 +93,61 @@ void restart(const char* why) {
   ESP.restart();
 }
 
-// What the network stack holds: open sockets (of CONFIG_LWIP_MAX_SOCKETS),
+// What the network stack holds: TCP connections (of CONFIG_LWIP_MAX_ACTIVE_TCP),
 // free internal RAM and its largest block (TLS needs ~16 KB in one piece).
 String netDiag() {
-  int open = 0;
-  for (int fd = LWIP_SOCKET_OFFSET; fd < LWIP_SOCKET_OFFSET + CONFIG_LWIP_MAX_SOCKETS; fd++)
-    if (lwip_fcntl(fd, F_GETFL, 0) >= 0) open++;
-  return String(open) + "/" + String(CONFIG_LWIP_MAX_SOCKETS) + " sockets, " +
+  int act = 0, syn = 0, tw = 0;
+  LOCK_TCPIP_CORE();
+  for (struct tcp_pcb* p = tcp_active_pcbs; p; p = p->next) {
+    act++;
+    if (p->state == SYN_SENT) syn++;
+  }
+  for (struct tcp_pcb* p = tcp_tw_pcbs; p; p = p->next) tw++;
+  UNLOCK_TCPIP_CORE();
+  return "tcp " + String(act) + " active (" +
+         String(syn) + " connecting) + " + String(tw) + " time-wait, " +
          String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024) + " KB internal free (largest " +
          String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024) + " KB)";
+}
+
+// On an IMS failure: which step breaks — the name, or a bare TCP connection.
+String probeIms() {
+  String host = CFG.server;
+  host.replace("https://", "");
+  host.replace("http://", "");
+  int sl = host.indexOf('/');
+  if (sl > 0) host = host.substring(0, sl);
+  IPAddress ip;
+  uint32_t t0 = millis();
+  String servers = WiFi.dnsIP(0).toString() + "," + WiFi.dnsIP(1).toString();
+  bool okDns = Network.hostByName(host.c_str(), ip) && (uint32_t)ip != 0;
+  String out = "DNS[" + servers + "] " + (okDns ? ip.toString() : String("FAILED")) + " in " + String(millis() - t0) + " ms; ";
+  if (!okDns) return out;
+  int fd = lwip_socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) return out + "socket() failed errno " + String(errno);
+  lwip_fcntl(fd, F_SETFL, lwip_fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+  struct sockaddr_in a = {};
+  a.sin_family = AF_INET;
+  a.sin_port = htons(443);
+  a.sin_addr.s_addr = (uint32_t)ip;
+  t0 = millis();
+  int r = lwip_connect(fd, (struct sockaddr*)&a, sizeof a);
+  if (r < 0 && errno != EINPROGRESS) {
+    out += "connect errno " + String(errno);
+  } else {
+    fd_set w;
+    FD_ZERO(&w);
+    FD_SET(fd, &w);
+    struct timeval tv = {5, 0};
+    r = lwip_select(fd + 1, nullptr, &w, nullptr, &tv);
+    int err = 0;
+    socklen_t len = sizeof err;
+    if (r > 0) lwip_getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
+    out += r == 0 ? String("TCP connect timed out (5 s)") : r < 0 ? "select errno " + String(errno)
+           : err ? "TCP error " + String(err) : "TCP connect OK in " + String(millis() - t0) + " ms";
+  }
+  lwip_close(fd);
+  return out;
 }
 
 String ago(uint32_t at) {
@@ -109,6 +159,29 @@ String kb(size_t n) {
   char b[24];
   snprintf(b, sizeof b, n >= 1024 ? "%.1f KB" : "%.0f B", n >= 1024 ? n / 1024.0 : (double)n);
   return String(b);
+}
+
+// An oven that does not answer is asked less and less often: every failed
+// connection is a SYN the network has to carry, and a router counting them can
+// block the board's whole traffic (seen 2026-11-04: an office router cut the
+// board off from IMS after ~16 failed oven connections in 4 minutes).
+// Two failures in a row: next try in 1, 2, 4, then every 5 minutes.
+bool ovenDue(const OvenPlan& op) {
+  OvenNote& n = notes[op.id];
+  return n.fails < 2 || (int32_t)(millis() - n.nextTry) >= 0;
+}
+
+void ovenAnswered(OvenNote& n, bool ok) {
+  if (ok) {
+    n.fails = 0;
+    return;
+  }
+  n.fails++;
+  if (n.fails >= 2) {
+    uint32_t wait = 60000UL << (n.fails - 2 < 3 ? n.fails - 2 : 3);
+    if (wait > 300000UL) wait = 300000UL;
+    n.nextTry = millis() + wait;
+  }
 }
 
 bool endsWith(const std::string& s, const char* tail) {
@@ -256,9 +329,19 @@ void doStatus() {
   for (OvenPlan& op : plan.ovens) {
     Reading x;
     x.ovenId = op.id;
+    OvenNote& due = notes[op.id];
+    if (!ovenDue(op)) {
+      x.error = due.statusErr.length() ? due.statusErr : String("not answering");
+      x.error += " (asked again in " + String(((int32_t)(due.nextTry - millis()) + 999) / 1000) + " s)";
+      rs.push_back(x);
+      continue;
+    }
     std::string body;
     OvenReply r;
-    for (int attempt = 0; attempt < 2; attempt++) {  // the factory Wi-Fi drops the odd connection
+    // the factory Wi-Fi drops the odd connection: one retry — but not for an
+    // oven that already failed last time
+    int attempts = due.fails ? 1 : 2;
+    for (int attempt = 0; attempt < attempts; attempt++) {
       body.clear();
       r = ovenAsk(
           op.ip, op.port, soap::Op::Status, 15000, 40000,
@@ -291,6 +374,7 @@ void doStatus() {
     n.ip = op.ip;
     n.statusOk = x.ok;
     n.statusErr = x.error;
+    ovenAnswered(n, x.ok);
     if (x.ok) {
       n.statusAt = millis();
       ok++;
@@ -385,6 +469,11 @@ OvenReply readFiles(OvenPlan& op, soap::Op what, const FileCollector::FileFn& on
 }
 
 void logsOf(OvenPlan& op) {
+  if (notes[op.id].fails >= 2) {
+    notes[op.id].logs = "skipped: the oven is not answering";
+    notes[op.id].logsAt = millis();
+    return;
+  }
   UploadQueue q(queueCap());
   std::vector<std::string> deferred;
   int same = 0, tails = 0, wholes = 0, broken = 0;
@@ -455,6 +544,7 @@ void logsOf(OvenPlan& op) {
 }
 
 void settingsOf(OvenPlan& op) {
+  if (notes[op.id].fails >= 2) return;  // read when it answers again
   UploadQueue q(queueCap());
   bool got = false, same = false;
   String err;
@@ -495,7 +585,7 @@ void roundTick() {
   ImsReply r = ims.plan(p);
   if (!r.ok()) {
     imsError = "IMS: " + r.error;
-    blog("plan: %s [%s]", r.error.c_str(), netDiag().c_str());
+    blog("plan: %s [%s] probe: %s", r.error.c_str(), netDiag().c_str(), probeIms().c_str());
     nextRound = millis() + 30000;
     inRound = false;
     if (lastImsOk && millis() - lastImsOk > 30UL * 60000) restart("IMS has not answered for 30 minutes");
