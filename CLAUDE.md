@@ -10624,6 +10624,11 @@ register is `/panel/ovens` (tools group, no capKey).
   an hour without it, and the moment it joins starts a round at once.
   `X-Collector-Info` now always says `net=wifi` and never `link` (IMS still
   reads both). Ethernet, if it is ever wanted again, is in git history (1.3.5).
+  1.4.1 (same day): the USB `scan` stops the join attempt first and resumes it
+  (a scan during a join failed and printed «0 network(s)»), marks the board's
+  own network, and says ERR when a scan fails. Flashed over USB and published
+  2026-11-05; the board holds «alisa» (password set) and its key — in the
+  office it sees only «SPQR» and keeps looking.
 - **The board updates itself over Wi-Fi** (firmware 1.3.0+, 2026-11-04, the
   operator: «if you need any modifications for the device do it now»). ONE
   release lives in `backend/data/ovens/firmware/` (`services/oven_firmware.py`

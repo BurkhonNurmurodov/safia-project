@@ -62,6 +62,10 @@ first round goes out at once. The network is changed over USB only
 (`setup_board.py --wifi`), so nobody can move it onto another network from a
 phone (the office «SPQR» got onto it that way on 2026-11-04).
 
+`setup_board.py --cmd scan` shows what the board can see from where it stands
+(it pauses the join attempt for the scan, 1.4.1+); its own network is marked
+«← this board's network».
+
 ## How it holds a 1.5 MB answer in 2 MB
 
 `getLogs` takes no arguments: every call returns all 7 days (1.5 MB on the 725).

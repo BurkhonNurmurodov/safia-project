@@ -602,12 +602,20 @@ void handleLine(String l) {
       Serial.println("ERR set ssid|pass|key|server <value>");
     }
   } else if (cmd == "scan") {
+    // a scan cannot run while the board is joining its network: stop the
+    // attempt, scan, then go on looking for it
+    bool was = wifiUp();
+    if (!was) WiFi.disconnect(false);
+    delay(100);
     int n = WiFi.scanNetworks();
     for (int i = 0; i < n; i++)
-      Serial.printf("  %-32s ch %2d  %4d dBm  %s\n", WiFi.SSID(i).c_str(), (int)WiFi.channel(i), (int)WiFi.RSSI(i),
-                    WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "password");
+      Serial.printf("  %-32s ch %2d  %4d dBm  %s%s\n", WiFi.SSID(i).c_str(), (int)WiFi.channel(i), (int)WiFi.RSSI(i),
+                    WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "password",
+                    CFG.ssid.length() && WiFi.SSID(i) == CFG.ssid ? "  ← this board's network" : "");
     WiFi.scanDelete();
-    Serial.printf("OK %d network(s)\n", n < 0 ? 0 : n);
+    if (!was) wifiStart();
+    if (n < 0) Serial.println("ERR the scan failed — try again in a few seconds");
+    else Serial.printf("OK %d network(s)\n", n);
   } else if (cmd == "run") {
     forceAll = true;
     Serial.println("OK a full round (status, settings, logs) starts now");
