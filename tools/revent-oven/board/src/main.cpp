@@ -1,8 +1,9 @@
 // Safia oven board — the always-on COLLECTOR for the Revent ovens, on a
 // LOLIN S2 Mini (ESP32-S2, 4 MB flash, 2 MB PSRAM).
 //
-// It reaches the ovens and IMS through a W5500 Ethernet module when one is
-// wired (board/net.h), with Wi-Fi beside it as the backup, else Wi-Fi alone.
+// It reaches the ovens and IMS over ONE Wi-Fi network, saved over USB — the
+// production block's «alisa». Until that network is in range it keeps looking
+// for it (every 30 s); once it joins, it starts working by itself.
 //
 // It does what tools/revent-oven/collector.py does on the test laptop:
 //   every minute      each oven's live status          → IMS /api/ovens/collector/status
@@ -15,28 +16,21 @@
 // three reads in core/soap.cpp.
 //
 // The status light (GPIO 15):
-//   slow blink (1 a second)   not set up — no key, or neither Wi-Fi nor Ethernet
-//   fast blink                looking for a network (Ethernet cable or Wi-Fi)
-//   two short flashes         the network is fine, IMS is not answering (or refused the key)
+//   slow blink (1 a second)   not set up — no key or no Wi-Fi network (setup_board.py)
+//   fast blink                looking for the Wi-Fi network (not in range yet)
+//   two short flashes         on the Wi-Fi, IMS is not answering (or refused the key)
 //   one short flash / 3 s     working
-//   mostly on                 the setup hotspot is open
 #include <Arduino.h>
 #include <WiFi.h>
-#include <esp_heap_caps.h>
 #include <esp_system.h>
-#include <lwip/priv/tcp_priv.h>
-#include <lwip/sockets.h>
-#include <lwip/tcpip.h>
 
 #include <map>
 
 #include "board/blog.h"
 #include "board/config.h"
 #include "board/ims.h"
-#include "board/net.h"
 #include "board/ota.h"
 #include "board/oven.h"
-#include "board/portal.h"
 #include "core/dime.h"
 #include "core/sha256.h"
 #include "core/soap.h"
@@ -49,7 +43,6 @@
 namespace {
 
 const int LED = 15;
-const int BUTTON = 0;  // the «0» button: hold 3 s to open the setup hotspot
 
 Ims ims;
 Plan plan;
@@ -71,18 +64,17 @@ std::map<int, std::string> serviceSha;  // ServiceData.txt last sent, per oven
 
 uint32_t nextRound = 0, lastLogs = 0, lastSettings = 0, lastStatus = 0;
 bool logsDone = false, settingsDone = false, forceAll = false, inRound = false;
-uint32_t lastImsOk = 0, netDownSince = 0, netUpSince = 0, lastWifiTry = 0;
+uint32_t lastImsOk = 0, netDownSince = 0, lastWifiTry = 0;
 String imsError;
 String consoleLine;
 
 enum class Health { NoConfig, NoNet, ImsDown, Working };
 
-// A way out exists: a Wi-Fi network is set, or a W5500 answered at start.
-bool haveWayOut() { return configHasWifi() || net::ethFound(); }
+bool wifiUp() { return WiFi.status() == WL_CONNECTED; }
 
 Health health() {
-  if (!configReady() || !haveWayOut()) return Health::NoConfig;
-  if (!net::up()) return Health::NoNet;
+  if (!configReady() || !configHasWifi()) return Health::NoConfig;
+  if (!wifiUp()) return Health::NoNet;
   if (imsError.length()) return Health::ImsDown;
   return Health::Working;
 }
@@ -91,63 +83,6 @@ void restart(const char* why) {
   blog("restarting: %s", why);
   delay(300);
   ESP.restart();
-}
-
-// What the network stack holds: TCP connections (of CONFIG_LWIP_MAX_ACTIVE_TCP),
-// free internal RAM and its largest block (TLS needs ~16 KB in one piece).
-String netDiag() {
-  int act = 0, syn = 0, tw = 0;
-  LOCK_TCPIP_CORE();
-  for (struct tcp_pcb* p = tcp_active_pcbs; p; p = p->next) {
-    act++;
-    if (p->state == SYN_SENT) syn++;
-  }
-  for (struct tcp_pcb* p = tcp_tw_pcbs; p; p = p->next) tw++;
-  UNLOCK_TCPIP_CORE();
-  return "tcp " + String(act) + " active (" +
-         String(syn) + " connecting) + " + String(tw) + " time-wait, " +
-         String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024) + " KB internal free (largest " +
-         String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024) + " KB)";
-}
-
-// On an IMS failure: which step breaks — the name, or a bare TCP connection.
-String probeIms() {
-  String host = CFG.server;
-  host.replace("https://", "");
-  host.replace("http://", "");
-  int sl = host.indexOf('/');
-  if (sl > 0) host = host.substring(0, sl);
-  IPAddress ip;
-  uint32_t t0 = millis();
-  String servers = WiFi.dnsIP(0).toString() + "," + WiFi.dnsIP(1).toString();
-  bool okDns = Network.hostByName(host.c_str(), ip) && (uint32_t)ip != 0;
-  String out = "DNS[" + servers + "] " + (okDns ? ip.toString() : String("FAILED")) + " in " + String(millis() - t0) + " ms; ";
-  if (!okDns) return out;
-  int fd = lwip_socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) return out + "socket() failed errno " + String(errno);
-  lwip_fcntl(fd, F_SETFL, lwip_fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-  struct sockaddr_in a = {};
-  a.sin_family = AF_INET;
-  a.sin_port = htons(443);
-  a.sin_addr.s_addr = (uint32_t)ip;
-  t0 = millis();
-  int r = lwip_connect(fd, (struct sockaddr*)&a, sizeof a);
-  if (r < 0 && errno != EINPROGRESS) {
-    out += "connect errno " + String(errno);
-  } else {
-    fd_set w;
-    FD_ZERO(&w);
-    FD_SET(fd, &w);
-    struct timeval tv = {5, 0};
-    r = lwip_select(fd + 1, nullptr, &w, nullptr, &tv);
-    int err = 0;
-    socklen_t len = sizeof err;
-    if (r > 0) lwip_getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
-    out += r == 0 ? String("TCP connect timed out (5 s)") : r < 0 ? "select errno " + String(errno)
-           : err ? "TCP error " + String(err) : "TCP connect OK in " + String(millis() - t0) + " ms";
-  }
-  lwip_close(fd);
-  return out;
 }
 
 String ago(uint32_t at) {
@@ -189,36 +124,22 @@ bool endsWith(const std::string& s, const char* tail) {
   return s.size() >= n && s.compare(s.size() - n, n, tail) == 0;
 }
 
-// ── the light and the button ────────────────────────────────────────────────
+// ── the light ───────────────────────────────────────────────────────────────
 
 void ledTick() {
   uint32_t t = millis();
   bool on = false;
-  if (portal::isOpen()) {
-    on = (t % 1000) > 100;
-  } else {
-    switch (health()) {
-      case Health::NoConfig: on = (t / 500) % 2; break;
-      case Health::NoNet: on = (t / 100) % 2; break;
-      case Health::ImsDown: {
-        uint32_t p = t % 3000;
-        on = p < 80 || (p > 250 && p < 330);
-        break;
-      }
-      case Health::Working: on = (t % 3000) < 60; break;
+  switch (health()) {
+    case Health::NoConfig: on = (t / 500) % 2; break;
+    case Health::NoNet: on = (t / 100) % 2; break;
+    case Health::ImsDown: {
+      uint32_t p = t % 3000;
+      on = p < 80 || (p > 250 && p < 330);
+      break;
     }
+    case Health::Working: on = (t % 3000) < 60; break;
   }
   digitalWrite(LED, on ? HIGH : LOW);
-}
-
-void buttonTick() {
-  static uint32_t downAt = 0;
-  if (digitalRead(BUTTON) == LOW) {
-    if (!downAt) downAt = millis();
-    if (millis() - downAt > 3000 && !portal::isOpen()) portal::open(15, "button held");
-  } else {
-    downAt = 0;
-  }
 }
 
 // ── the heartbeat ───────────────────────────────────────────────────────────
@@ -228,7 +149,7 @@ void buttonTick() {
 bool inPing = false;
 
 void pingTick() {
-  if (inPing || !configReady() || !net::up()) return;
+  if (inPing || !configReady() || !wifiUp()) return;
   uint32_t every = (havePlan ? plan.pingS : 10) * 1000UL;
   if (ims.lastContactMs() && millis() - ims.lastContactMs() < every) return;
   static uint32_t lastTry = 0;
@@ -245,19 +166,13 @@ void consoleTick();
 // `show` answers while the board waits on an oven that does not.
 void background() {
   consoleTick();
-  portal::loop();
   ledTick();
-  buttonTick();
   if (!imsError.length()) pingTick();  // never wait on an IMS that is not answering mid-round
 }
 
 // While IMS itself is streaming to the board (a firmware download): nothing
 // that talks to IMS — the heartbeat would use the same connection.
-void backgroundQuiet() {
-  portal::loop();
-  ledTick();
-  buttonTick();
-}
+void backgroundQuiet() { ledTick(); }
 
 // ── Wi-Fi ───────────────────────────────────────────────────────────────────
 
@@ -269,55 +184,26 @@ void wifiStart() {
 }
 
 void wifiTick() {
-  if (portal::takeWifiChange()) {
-    WiFi.disconnect(false);
-    delay(100);
-    wifiStart();
-  }
-  if (!configHasWifi()) {
-    // No Wi-Fi network set: the hotspot offers one — unless Ethernet carries
-    // the board (its address may take a few seconds after start).
-    if (!net::ethUp() && !portal::isOpen() && (!net::ethFound() || millis() > 30000))
-      portal::open(60, "no Wi-Fi network set");
-    return;
-  }
+  if (!configHasWifi()) return;  // nothing to join: set it over USB (setup_board.py --wifi)
   static bool wasUp = false;
-  bool up = WiFi.status() == WL_CONNECTED;
-  if (up && !wasUp)
-    blog("Wi-Fi: connected to \"%s\" (access point %s, channel %d), IP %s, signal %d dBm%s", CFG.ssid.c_str(),
-         WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
-         net::ethUp() ? " — the backup while Ethernet is up" : "");
-  if (!up && wasUp) blog("Wi-Fi: lost the connection%s", net::ethUp() ? " (Ethernet carries the board)" : "");
+  bool up = wifiUp();
+  if (up && !wasUp) {
+    blog("Wi-Fi: connected to \"%s\" (access point %s, channel %d), IP %s, signal %d dBm", CFG.ssid.c_str(),
+         WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+    netDownSince = 0;
+    nextRound = millis();  // on the network: a round at once, not at the next pace
+  }
+  if (!up && wasUp) blog("Wi-Fi: lost the connection");
   wasUp = up;
   if (up) return;
-  // retries move the hotspot's channel; while Ethernet works there is no hurry
-  uint32_t retry = portal::isOpen() || net::ethUp() ? 120000 : 30000;
-  if (millis() - lastWifiTry > retry) {
+  if (!netDownSince) netDownSince = millis();
+  // not in range (yet): look for it again every 30 s, for as long as it takes
+  if (millis() - lastWifiTry > 30000) {
     WiFi.disconnect(false);
     wifiStart();
   }
-}
-
-// The way out as a whole — Ethernet or Wi-Fi.
-void netTick() {
-  net::loop();
-  static bool wasUp = false;
-  bool up = net::up();
-  if (up && !wasUp) {
-    netDownSince = 0;
-    netUpSince = millis();
-  }
-  if (!up && wasUp) netDownSince = millis();
-  wasUp = up;
-  if (up) {
-    // a hotspot nobody is using closes 3 minutes after the network works
-    if (portal::isOpen() && millis() - netUpSince > 180000 && WiFi.softAPgetStationNum() == 0) portal::close();
-    return;
-  }
-  if (!haveWayOut()) return;  // nothing set up: wifiTick's hotspot is the way forward
-  if (!netDownSince) netDownSince = millis();
-  if (millis() - netDownSince > 10UL * 60000 && !portal::isOpen()) portal::open(15, "no network for 10 minutes");
-  if (millis() - netDownSince > 60UL * 60000 && WiFi.softAPgetStationNum() == 0) restart("no network for an hour");
+  // a Wi-Fi stack that stopped finding a network in range starts over
+  if (millis() - netDownSince > 60UL * 60000) restart("no Wi-Fi for an hour");
 }
 
 // ── the rounds ──────────────────────────────────────────────────────────────
@@ -387,8 +273,7 @@ void doStatus() {
   if (rs.empty()) return;
   ImsReply ir = ims.status(rs);
   if (!ir.ok()) imsError = "status: " + ir.error;
-  blog("status: %d/%d oven(s) answered, IMS %s [%s]", ok, (int)rs.size(), ir.ok() ? "took it" : ir.error.c_str(),
-       netDiag().c_str());
+  blog("status: %d/%d oven(s) answered, IMS %s", ok, (int)rs.size(), ir.ok() ? "took it" : ir.error.c_str());
 }
 
 size_t queueCap() {
@@ -574,10 +459,8 @@ void settingsOf(OvenPlan& op) {
   if (err.length() || sent) blog("%s settings: %s", op.name.c_str(), n.settings.c_str());
 }
 
-void updatePortalStatus();
-
 void roundTick() {
-  if (inRound || !configReady() || !net::up()) return;
+  if (inRound || !configReady() || !wifiUp()) return;
   if (!forceAll && (int32_t)(millis() - nextRound) < 0) return;
   inRound = true;
   uint32_t t0 = millis();
@@ -585,12 +468,11 @@ void roundTick() {
   ImsReply r = ims.plan(p);
   if (!r.ok()) {
     imsError = "IMS: " + r.error;
-    blog("plan: %s [%s] probe: %s", r.error.c_str(), netDiag().c_str(), probeIms().c_str());
+    blog("plan: %s", r.error.c_str());
     nextRound = millis() + 30000;
     inRound = false;
     if (lastImsOk && millis() - lastImsOk > 30UL * 60000) restart("IMS has not answered for 30 minutes");
     if (!lastImsOk && millis() > 30UL * 60000) restart("IMS has not answered since the start");
-    updatePortalStatus();
     return;
   }
   if (!havePlan || p.ovens.size() != plan.ovens.size())
@@ -623,7 +505,6 @@ void roundTick() {
   }
   nextRound = t0 + plan.statusS * 1000UL;
   inRound = false;
-  updatePortalStatus();
 }
 
 // ── what the board says about itself ────────────────────────────────────────
@@ -641,20 +522,16 @@ String showText() {
   s += "firmware   " + ota::text() + "\n";
   s += "uptime     " + uptimeText(millis()) + "\n";
   s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
-  s += "network    " + netDiag() + "\n";
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
   if (WiFi.status() == WL_CONNECTED)
     s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, access point " +
-         WiFi.BSSIDstr() + " ch " + String(WiFi.channel()) + ", MAC " + WiFi.macAddress() +
-         (net::ethUp() ? " — the backup" : "") + "\n";
+         WiFi.BSSIDstr() + " ch " + String(WiFi.channel()) + ", MAC " + WiFi.macAddress() + "\n";
   else
-    s += "           not connected (MAC " + WiFi.macAddress() + ")\n";
-  s += "ethernet   " + net::ethText() + "\n";
-  s += "in use     " + net::viaText() + (net::up() ? ", IP " + net::ip().toString() : String("")) + "\n";
+    s += "           not connected" + String(CFG.ssid.length() ? " — looking for it every 30 s" : "") + " (MAC " +
+         WiFi.macAddress() + ")\n";
   s += "server     " + CFG.server + "\n";
   s += "key        " + keyText() + "\n";
   s += "IMS        " + (imsError.length() ? imsError : lastImsOk ? "answered " + ago(lastImsOk) : String("not asked yet")) + "\n";
-  s += "hotspot    " + (portal::isOpen() ? "open: \"" + portal::apName() + "\" → http://192.168.4.1" : String("closed")) + "\n";
   if (havePlan) {
     s += "ovens      " + String((int)plan.ovens.size()) + "; next round in " +
          String((int32_t)(nextRound - millis()) > 0 ? (nextRound - millis()) / 1000 : 0) + " s\n";
@@ -669,29 +546,6 @@ String showText() {
   return s;
 }
 
-void updatePortalStatus() {
-  using portal::htmlEscape;
-  String h = "<table>";
-  auto row = [&](const String& k, const String& v, int tone) {
-    h += "<tr><td>" + htmlEscape(k) + "</td><td" + String(tone > 0 ? " class=ok" : tone < 0 ? " class=bad" : "") + ">" +
-         htmlEscape(v) + "</td></tr>";
-  };
-  bool up = WiFi.status() == WL_CONNECTED;
-  bool eth = net::ethUp();
-  if (net::ethFound()) row("Ethernet", net::ethStatusUz(), eth ? 1 : -1);
-  row("Wi-Fi", CFG.ssid.length() ? CFG.ssid + (up ? " — ulangan, " + WiFi.localIP().toString() + (eth ? " (zaxira)" : "") : " — ulanmagan") : String("tanlanmagan"),
-      up ? 1 : eth ? 0 : -1);
-  row("Safia IMS", !configReady() ? String("kalit o'rnatilmagan (USB orqali)") : imsError.length() ? imsError : lastImsOk ? String("javob bermoqda") : String("hali so'ralmagan"),
-      imsError.length() || !configReady() ? -1 : lastImsOk ? 1 : 0);
-  for (OvenPlan& op : plan.ovens) {
-    OvenNote& n = notes[op.id];
-    row(op.name, n.statusOk ? String("javob bermoqda") : n.statusErr.length() ? n.statusErr : String("—"), n.statusOk ? 1 : n.statusErr.length() ? -1 : 0);
-  }
-  row("Ishlab turibdi", uptimeText(millis()), 0);
-  h += "</table>";
-  portal::setStatusText(h);
-}
-
 // ── the USB console ─────────────────────────────────────────────────────────
 
 void handleLine(String l) {
@@ -702,7 +556,7 @@ void handleLine(String l) {
   String arg = sp > 0 ? l.substring(sp + 1) : "";
   cmd.toLowerCase();
   if (cmd == "help") {
-    Serial.println("commands: show · log · scan · run · portal · set ssid <name> · set pass <password> · "
+    Serial.println("commands: show · log · scan · run · set ssid <name> · set pass <password> · "
                    "set key <key> · set server <https://…> · forget · reboot");
   } else if (cmd == "show") {
     Serial.print(showText());
@@ -757,9 +611,6 @@ void handleLine(String l) {
   } else if (cmd == "run") {
     forceAll = true;
     Serial.println("OK a full round (status, settings, logs) starts now");
-  } else if (cmd == "portal") {
-    portal::open(15, "console");
-    Serial.println("OK hotspot \"" + portal::apName() + "\" → http://192.168.4.1");
   } else if (cmd == "forget") {
     configForget();
     Serial.println("OK everything forgotten — restarting");
@@ -796,15 +647,13 @@ String deviceInfo() {
   String s = "fw=" FW_VERSION ";up=" + String(millis() / 1000) + ";heap=" + String(ESP.getFreeHeap() / 1024) +
              ";psram=" + String(ESP.getFreePsram() / 1024) + ";ping=" + String(havePlan ? plan.pingS : 10);
   // net = the way this request left the board; ip = the board's address there
-  if (net::up()) s += ";net=" + String(net::via()) + ";ip=" + net::ip().toString();
-  if (net::ethUp()) s += ";link=" + String(net::linkMbit());
-  if (WiFi.status() == WL_CONNECTED) s += ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID());
+  if (wifiUp())
+    s += ";net=wifi;ip=" + WiFi.localIP().toString() + ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID());
   return s;
 }
 
 void setup() {
   pinMode(LED, OUTPUT);
-  pinMode(BUTTON, INPUT_PULLUP);
   Serial.begin(115200);
   // Writes wait (at most this long) only while a program has the port open;
   // with nobody reading — a phone charger, a closed port — they never wait.
@@ -824,18 +673,14 @@ void setup() {
   // channel and join the STRONGEST one, not the first found.
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-  net::begin();  // after WiFi.mode(): the Ethernet netif comes first for an address both networks share
   if (configHasWifi()) wifiStart();
+  else blog("no Wi-Fi network yet: set it over USB (setup_board.py --wifi)");
   if (!CFG.key.length()) blog("no collector key yet: set it over USB (setup_board.py)");
-  updatePortalStatus();
 }
 
 void loop() {
   consoleTick();
-  buttonTick();
   wifiTick();
-  netTick();
-  portal::loop();
   ledTick();
   roundTick();
   pingTick();

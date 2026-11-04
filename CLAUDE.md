@@ -10575,9 +10575,9 @@ register is `/panel/ovens` (tools group, no capKey).
   `_store_file` shared with `/file` and run off the loop). Its own key,
   «board» in `COLLECTOR_KEYS` (`~/.safia/oven-board.key` on the build Mac, in
   the board's NVS — never shown, `show` prints a digest prefix). Setup: the key
-  and IMS address over USB (`setup_board.py`), the Wi-Fi over USB or from a
-  phone through the board's own hotspot «Safia-Pech-XXXX» (hold «0» 3 s, or
-  no network set, or 10 min with no network). HTTPS checks IMS against the roots
+  and IMS address over USB (`setup_board.py`), and the ONE Wi-Fi network over
+  USB too (`setup_board.py --wifi` = «alisa», the password typed into the
+  script). HTTPS checks IMS against the roots
   in `src/board/certs.h` (`make_certs.py`; GlobalSign Root CA ends Jan 2028).
   Host tests (`test/run_host_tests.sh`) feed the saved 725 answers through the
   core: every file byte for byte with its SHA-256, status lines equal to
@@ -10612,27 +10612,18 @@ register is `/panel/ovens` (tools group, no capKey).
   the heartbeat (every `plan.pingS`, only when nothing else reached IMS in
   that time, short timeouts, never mid-round while IMS is failing) and the
   header on every request; 1.0.0 is heard once a minute.
-- **Ethernet through a W5500 module, Wi-Fi as the backup** (firmware 1.2.0,
-  2026-11-04, the operator: «Yes, add W5500»). The ESP32-S2 has no Ethernet
-  of its own and its USB cannot drive a hub's adapter (checked that day: a
-  hub on the board's USB-C, Ethernet in the hub — IMS heard nothing). A W5500
-  SPI module on GPIO 7 (SCK) · 9 (MISO) · 11 (MOSI) · 12 (CS) + 3V3 + GND, no
-  IRQ or RST wire (the driver polls every 10 ms, SPI 12 MHz), is THE wiring —
-  `src/board/net.h` names it and the README carries the table. It is looked
-  for once at start (`net::begin`; a missing module costs a log line, the
-  board goes on Wi-Fi-only). Ethernet's route priority 200 beats Wi-Fi's 100,
-  so while its cable is in and it has an address IMS and the ovens go through
-  it; the system falls back to Wi-Fi by itself when the cable comes out. The
-  DNS servers are ONE list for the whole board, overwritten by whichever DHCP
-  renews last, so `net::loop` keeps them the in-use network's (each read at
-  its own GOT_IP). With Ethernet no Wi-Fi network is needed: `configReady` is
-  key + server only, and «set up» means a Wi-Fi network OR a W5500
-  (`haveWayOut`); the hotspot, the 10-minute / one-hour rules and the light
-  speak of «a network», not Wi-Fi; Wi-Fi retries every 2 min while Ethernet
-  carries the board. `X-Collector-Info` gains `net` (eth | wifi) and `link`
-  (Mbit/s), and «Kollektor qurilmasi» prints «Ulanish: Ethernet · 100 Mbit/s»
-  (Wi-Fi then reads «Wi-Fi (zaxira)»). Built and not yet run on a W5500;
-  OFF in the standard build from 1.3.1 (`WITH_W5500`).
+- **ONE network, «alisa», and nothing else** (firmware 1.4.0, 2026-11-05,
+  the operator: «the space on the device is limited — remove anything
+  unnecessary; set it to alisa; when it is reachable it should connect and
+  start working automatically»). Removed: the W5500 Ethernet support (1.2.0,
+  never wired — no module was bought), the setup hotspot «Safia-Pech-XXXX» and
+  its «0» button (how the office «SPQR» got onto the board on 2026-11-04), and
+  the SPQR-era `netDiag` / `probeIms` readouts — 94 KB, 72.4% → 67.6% of the
+  1.9 MB app slot. The board keeps ONE network in NVS, set over USB only; it
+  looks for it every 30 s for as long as it takes (fast blink), restarts after
+  an hour without it, and the moment it joins starts a round at once.
+  `X-Collector-Info` now always says `net=wifi` and never `link` (IMS still
+  reads both). Ethernet, if it is ever wanted again, is in git history (1.3.5).
 - **The board updates itself over Wi-Fi** (firmware 1.3.0+, 2026-11-04, the
   operator: «if you need any modifications for the device do it now»). ONE
   release lives in `backend/data/ovens/firmware/` (`services/oven_firmware.py`
@@ -10664,13 +10655,12 @@ register is `/panel/ovens` (tools group, no capKey).
   carrying ANY of the board's traffic — name lookups timed out, TCP to
   Cloudflare timed out, while memory and the board's own TCP table were fine;
   it cleared only after a minute of silence (a restart). The board's own
-  readout on an IMS failure (`netDiag` + `probeIms`: TCP connections, internal
-  RAM, a lookup and a bare TCP connect) is what showed it. The backoff did not
+  readout on an IMS failure (`netDiag` + `probeIms`, removed in 1.4.0) is what
+  showed it. The backoff did not
   stop SPQR's cut-off; it is there so a switched-off oven at the factory costs
   one connection every 5 minutes, not sixteen in four. The USB console answers
   during a round (`consoleTick` in `background()`), not during a firmware
-  download. The W5500 support (`net.h`) is OFF unless built with
-  `-DWITH_W5500=1` — never run with a module.
+  download.
 - **A loaded bake whose timer has not started is READY, not baking**
   (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
   the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».

@@ -3,12 +3,13 @@
 optionally, the Wi-Fi. Never prints the key or the password.
 
     ~/.safia-esp/venv/bin/python setup_board.py                 # key + server, then show
-    ~/.safia-esp/venv/bin/python setup_board.py --wifi "Name"   # also the Wi-Fi (asks the password)
+    ~/.safia-esp/venv/bin/python setup_board.py --wifi          # also the Wi-Fi «alisa» (asks the password)
+    ~/.safia-esp/venv/bin/python setup_board.py --wifi "Name"   # another network
     ~/.safia-esp/venv/bin/python setup_board.py --show          # only what the board says
     ~/.safia-esp/venv/bin/python setup_board.py --cmd run       # any console command
 
-The Wi-Fi can also be set from a phone: hold the board's «0» button for
-3 seconds, join the «Safia-Pech-XXXX» network and open http://192.168.4.1.
+The board knows ONE network and keeps looking for it until it is in range,
+then starts working by itself. USB is the only way to change it.
 """
 import argparse
 import getpass
@@ -24,6 +25,7 @@ except ImportError:
 
 KEY_FILE = os.path.expanduser("~/.safia/oven-board.key")
 SERVER = "https://production.safiacorporate.uz"
+FACTORY_WIFI = "alisa"  # the production block's network (many access points, one name)
 
 
 def find_port():
@@ -61,7 +63,8 @@ def main():
     ap.add_argument("--port", default=None)
     ap.add_argument("--key-file", default=KEY_FILE)
     ap.add_argument("--server", default=SERVER)
-    ap.add_argument("--wifi", default=None, help="the Wi-Fi network's name (the password is asked)")
+    ap.add_argument("--wifi", nargs="?", const=FACTORY_WIFI, default=None,
+                    help="the Wi-Fi network's name, «%s» when left out (the password is asked)" % FACTORY_WIFI)
     ap.add_argument("--no-key", action="store_true", help="leave the key as it is")
     ap.add_argument("--show", action="store_true", help="only print what the board says")
     ap.add_argument("--cmd", default=None, help="send one console command and print the answer")
