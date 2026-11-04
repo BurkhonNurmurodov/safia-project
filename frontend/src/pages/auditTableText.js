@@ -1,0 +1,126 @@
+// «Audit jadvali» (/audit) — the words in the four platform languages, beside
+// the page (the /ontime pattern). `fill(s, {n: 3})` puts the values in. Column
+// names and values are printed as the table holds them.
+import { useLang } from "../context/LangContext";
+
+export const fill = (s, vars) =>
+  String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
+
+const uz = {
+  title: "Audit jadvali",
+  sub: "{kind} · egasi {owner} · {size} · faqat o'qish",
+  kinds: { table: "jadval", view: "ko'rinish", foreign: "tashqi jadval" },
+  rowsN: "{n} ta yozuv", rowsApprox: "≈{n} ta yozuv", rowsOf: "{n} tadan",
+  search: "Qiymatlar bo'yicha qidirish…", clear: "Tozalash",
+  excel: "Excel", exportDl: "Fayl yuklab olindi", exportTg: "Fayl Telegramga yuborildi",
+  exportFail: "Faylni tayyorlab bo'lmadi",
+  periodOn: "Davr «{col}» ustuni bo'yicha", noPeriod: "Jadvalda sana ustuni yo'q — davr tanlanmaydi",
+  allTime: "Barcha vaqt",
+  none: "Hech narsa topilmadi", clearAll: "Filtrlarni tozalash",
+  empty: "Jadval bo'sh",
+  missingTitle: "public.audit jadvali yo'q",
+  missingMsg: "Bu ma'lumotlar bazasida public.audit degan jadval topilmadi.",
+  noReadTitle: "Jadvalni o'qishga ruxsat yo'q",
+  noReadMsg: "Ilova bu jadvalni o'qiy olmaydi. Jadval egasi: {owner}.",
+  errTitle: "Ma'lumotlarni yuklab bo'lmadi",
+  errMsg: "Server javob bermadi yoki so'rov 20 soniyadan uzoq davom etdi.",
+  retry: "Qayta urinish",
+  masked: "Maxfiy qiymatlar ••• bilan yashirilgan: {cols}",
+  cutNote: "Uzun qiymatlar qisqartirilgan — to'liq ko'rish uchun qatorni bosing.",
+  detailTitle: "Yozuv", detailSub: "{col} = {val}", detailSubNoKey: "{n}-qator",
+  detailCut: "Jadvalda birlamchi kalit yo'q, shuning uchun 500 belgidan uzun qiymatlar qisqartirilgan.",
+  detailGone: "Bu yozuv endi jadvalda yo'q.",
+  close: "Yopish",
+  yes: "ha", no: "yo'q",
+};
+
+const uz_cyrl = {
+  title: "Аудит жадвали",
+  sub: "{kind} · эгаси {owner} · {size} · фақат ўқиш",
+  kinds: { table: "жадвал", view: "кўриниш", foreign: "ташқи жадвал" },
+  rowsN: "{n} та ёзув", rowsApprox: "≈{n} та ёзув", rowsOf: "{n} тадан",
+  search: "Қийматлар бўйича қидириш…", clear: "Тозалаш",
+  excel: "Excel", exportDl: "Файл юклаб олинди", exportTg: "Файл Telegramга юборилди",
+  exportFail: "Файлни тайёрлаб бўлмади",
+  periodOn: "Давр «{col}» устуни бўйича", noPeriod: "Жадвалда сана устуни йўқ — давр танланмайди",
+  allTime: "Барча вақт",
+  none: "Ҳеч нарса топилмади", clearAll: "Филтрларни тозалаш",
+  empty: "Жадвал бўш",
+  missingTitle: "public.audit жадвали йўқ",
+  missingMsg: "Бу маълумотлар базасида public.audit деган жадвал топилмади.",
+  noReadTitle: "Жадвални ўқишга рухсат йўқ",
+  noReadMsg: "Илова бу жадвални ўқий олмайди. Жадвал эгаси: {owner}.",
+  errTitle: "Маълумотларни юклаб бўлмади",
+  errMsg: "Сервер жавоб бермади ёки сўров 20 сониядан узоқ давом этди.",
+  retry: "Қайта уриниш",
+  masked: "Махфий қийматлар ••• билан яширилган: {cols}",
+  cutNote: "Узун қийматлар қисқартирилган — тўлиқ кўриш учун қаторни босинг.",
+  detailTitle: "Ёзув", detailSub: "{col} = {val}", detailSubNoKey: "{n}-қатор",
+  detailCut: "Жадвалда бирламчи калит йўқ, шунинг учун 500 белгидан узун қийматлар қисқартирилган.",
+  detailGone: "Бу ёзув энди жадвалда йўқ.",
+  close: "Ёпиш",
+  yes: "ҳа", no: "йўқ",
+};
+
+const ru = {
+  title: "Таблица аудита",
+  sub: "{kind} · владелец {owner} · {size} · только чтение",
+  kinds: { table: "таблица", view: "представление", foreign: "внешняя таблица" },
+  rowsN: "{n} записей", rowsApprox: "≈{n} записей", rowsOf: "из {n}",
+  search: "Поиск по значениям…", clear: "Очистить",
+  excel: "Excel", exportDl: "Файл скачан", exportTg: "Файл отправлен в Telegram",
+  exportFail: "Не удалось подготовить файл",
+  periodOn: "Период по столбцу «{col}»", noPeriod: "В таблице нет столбца с датой — период не выбирается",
+  allTime: "Всё время",
+  none: "Ничего не найдено", clearAll: "Сбросить фильтры",
+  empty: "Таблица пуста",
+  missingTitle: "Таблицы public.audit нет",
+  missingMsg: "В этой базе данных не найдено таблицы public.audit.",
+  noReadTitle: "Нет доступа к таблице",
+  noReadMsg: "Приложение не может читать эту таблицу. Владелец таблицы: {owner}.",
+  errTitle: "Не удалось загрузить данные",
+  errMsg: "Сервер не ответил, или запрос шёл дольше 20 секунд.",
+  retry: "Повторить",
+  masked: "Секретные значения скрыты как •••: {cols}",
+  cutNote: "Длинные значения сокращены — нажмите на строку, чтобы увидеть целиком.",
+  detailTitle: "Запись", detailSub: "{col} = {val}", detailSubNoKey: "строка {n}",
+  detailCut: "У таблицы нет первичного ключа, поэтому значения длиннее 500 символов сокращены.",
+  detailGone: "Этой записи больше нет в таблице.",
+  close: "Закрыть",
+  yes: "да", no: "нет",
+};
+
+const en = {
+  title: "Audit table",
+  sub: "{kind} · owner {owner} · {size} · read-only",
+  kinds: { table: "table", view: "view", foreign: "foreign table" },
+  rowsN: "{n} rows", rowsApprox: "≈{n} rows", rowsOf: "of {n}",
+  search: "Search the values…", clear: "Clear",
+  excel: "Excel", exportDl: "File downloaded", exportTg: "File sent to Telegram",
+  exportFail: "Could not prepare the file",
+  periodOn: "Period by the «{col}» column", noPeriod: "The table has no date column — no period to pick",
+  allTime: "All time",
+  none: "Nothing found", clearAll: "Clear filters",
+  empty: "The table is empty",
+  missingTitle: "There is no public.audit table",
+  missingMsg: "This database has no table called public.audit.",
+  noReadTitle: "No permission to read the table",
+  noReadMsg: "The app may not read this table. Its owner: {owner}.",
+  errTitle: "Could not load the data",
+  errMsg: "The server did not answer, or the query ran longer than 20 seconds.",
+  retry: "Try again",
+  masked: "Secret values are hidden as •••: {cols}",
+  cutNote: "Long values are cut — click a row to see it whole.",
+  detailTitle: "Row", detailSub: "{col} = {val}", detailSubNoKey: "row {n}",
+  detailCut: "The table has no primary key, so values longer than 500 characters are cut.",
+  detailGone: "This row is no longer in the table.",
+  close: "Close",
+  yes: "yes", no: "no",
+};
+
+export const TXT = { uz, uz_cyrl, ru, en };
+
+export function useAT() {
+  const { lang } = useLang();
+  return TXT[lang] || TXT.uz;
+}

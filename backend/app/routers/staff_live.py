@@ -411,15 +411,11 @@ def list_supervisors(db: Session = Depends(get_db), caller: dict = Depends(_page
 
 @router.get("/field-options")
 def field_options(db: Session = Depends(get_db), _: dict = Depends(_page)):
-    """Job titles — Verifix's own list (the directory) — and the subset a role
-    change may name (`staff.is_assignable_target_role`)."""
-    from app.routers.staff import is_assignable_target_role
-    jobs: list = []
-    row = db.query(LiveVerifixRead).filter(LiveVerifixRead.key == "dir").first()
-    if row and row.data:
-        jobs = sorted({j for j in (row.data.get("jobs") or {}).values() if j})
-    return {"job_titles": jobs, "schedules": [],
-            "assignable_job_titles": [j for j in jobs if is_assignable_target_role(j)]}
+    """The file days' list (`staff.file_field_options`) — the titles the
+    загрузка cells carry. It was Verifix's whole job directory (every job of
+    the company, «1C Bukhgalter», «AI Projects Lead» …) until 2026-11-04."""
+    from app.routers.staff import file_field_options
+    return file_field_options(db)
 
 
 @router.get("/exchange-targets")

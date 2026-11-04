@@ -2488,8 +2488,12 @@ def _log_admin_action(
 
 # ── Field options ──────────────────────────────────────────────────────────────
 
-@router.get("/field-options")
-def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff)):
+def file_field_options(db: Session) -> dict:
+    """Job titles and schedules as the attendance FILES carried them — the
+    загрузка cells' own titles, never the company's whole Verifix job list —
+    and the subset a role change may name. A live day's dialog reads this too
+    (`staff_live.field_options`); a live close copies its titles into
+    `attendance`, so a title new since 6 Oct joins once a day is closed."""
     job_titles = [
         r[0] for r in db.query(distinct(Attendance.job_title))
         .filter(Attendance.job_title.isnot(None), Attendance.job_title != "nan", Attendance.job_title != "")
@@ -2506,6 +2510,11 @@ def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff))
         # Subset selectable as a Role Change target (verifix-only roles removed).
         "assignable_job_titles": [j for j in job_titles if is_assignable_target_role(j)],
     }
+
+
+@router.get("/field-options")
+def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff)):
+    return file_field_options(db)
 
 
 # ── Supervisors list (admin picker) ───────────────────────────────────────────
