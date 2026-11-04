@@ -171,18 +171,16 @@ def _verify_admin(token: Annotated[str, Depends(_oauth2)]) -> dict:
 
 
 def _shift_manager_units(payload: dict, db: Session) -> list[int]:
-    """The units a shift-manager covers — their shift, in their plant.
-
-    Their JWT ``role_id`` points at ``role_profiles.id``; both halves live on
-    that row and are intersected in ``services/shift_scope.py``, so this page
-    cannot disagree with /staff about who somebody manages.
+    """The units a shift-manager covers — every unit, every plant since
+    2026-11-04, read from ``services/shift_scope.py`` so this page cannot
+    disagree with /staff about who somebody manages.
     """
     rp = db.query(RoleProfile).filter(
         RoleProfile.id == payload.get("role_id"),
         RoleProfile.role == "shift-manager",
     ).first()
-    if not rp or rp.shift is None:
-        raise HTTPException(status_code=403, detail="No shift assigned to this shift-manager profile")
+    if not rp:
+        raise HTTPException(status_code=403, detail="No shift-manager profile")
     return shift_scope.unit_ids(db, payload.get("role_id"))
 
 

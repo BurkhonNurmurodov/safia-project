@@ -10,18 +10,16 @@ guard and register reads, so widening them here widened /staff, /concerns,
 /production, /tasks, /kelish, /people, the bell queue and the rest at once.
 Never re-spell a shift-manager's reach at a call site.
 
-**Answerable is still shift ∩ plant** — :func:`role_ids_for_unit`. It is no
-longer the inverse of :func:`covers`, on purpose: reach says what a
-shift-manager MAY read and act on, answerable says who is NOTIFIED about a
-unit and whom a supervisor escalates a concern to. Routing every unit's
-requests to every shift-manager would put each one's DMs in all their chats.
-``role_profiles.shift`` / ``role_profiles.factory_id`` therefore still matter:
-they decide routing, not access. A shift-manager with no plant is answerable
-for their shift in every plant, as before.
+**Answerable is every shift-manager too** (the operator, the same day:
+«notify all of them») — :func:`role_ids_for_unit` returns every shift-manager
+profile for any unit, so every unit's requests, approvals and live-day notices
+reach every shift-manager, and a supervisor may escalate a concern to any of
+them. It is the inverse of :func:`covers` again. ``role_profiles.shift`` and
+``role_profiles.factory_id`` no longer decide anything about reach or routing.
 
 The factory dimension is still attached in exactly ONE place for DATA
 (``managers.factory_id``). ``role_profiles.factory_id`` says which plant a
-PERSON belongs to — today only for routing.
+PERSON belongs to — a record only, since 2026-11-04.
 """
 from typing import Optional
 
@@ -97,23 +95,15 @@ def covers(db: Session, role_id: Optional[int], manager_id: Optional[int]) -> bo
 def role_ids_for_unit(db: Session, manager_id: Optional[int]) -> list[int]:
     """The shift-manager profile ids answerable for a unit — the fan-out door.
 
-    Their shift AND their plant. NOT the inverse of :func:`covers` any more
-    (every shift-manager reaches every unit since 2026-11-04): this decides who
-    is notified about a unit's requests and whom a supervisor may escalate a
-    concern to. Addressing "every manager on shift 1" is what sent Keles's
-    decisions to the other plant's chat.
-
-    A shift-manager with no plant is included for every unit on their shift —
-    the same "None covers everything" rule the rest of the module runs on.
+    Every shift-manager profile, for any unit that exists (2026-11-04, see the
+    module docstring): this decides who is notified about a unit's requests and
+    whom a supervisor may escalate a concern to, and it is the inverse of
+    :func:`covers`. ``concerns._sm_names`` is its in-memory twin.
     """
     if not manager_id:
         return []
-    m = db.query(Manager.shift, Manager.factory_id).filter(Manager.id == manager_id).first()
-    if m is None or m.shift is None:
+    if db.query(Manager.id).filter(Manager.id == manager_id).first() is None:
         return []
-    return [
-        p.id for p in db.query(RoleProfile.id, RoleProfile.factory_id)
-        .filter(RoleProfile.role == "shift-manager", RoleProfile.shift == m.shift).all()
-        if p.factory_id is None or p.factory_id == m.factory_id
-    ]
-
+    return [pid for (pid,) in db.query(RoleProfile.id)
+            .filter(RoleProfile.role == "shift-manager")
+            .order_by(RoleProfile.id).all()]

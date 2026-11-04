@@ -2350,10 +2350,9 @@ def _notify_all_parties(
         _profile_key("admin", a.profile_id) for a in admin_rows if a.profile_id
     }
 
-    # Shift-managers answerable for THIS unit — its shift and its plant — as
-    # profiles, so a profile is addressed once whether it is held by nobody,
-    # one person or three. Addressing every manager on the shift instead sent
-    # one plant's decisions to the other plant's chat.
+    # Shift-managers answerable for THIS unit — every shift-manager since
+    # 2026-11-04 (services/shift_scope.py) — as profiles, so a profile is
+    # addressed once whether it is held by nobody, one person or three.
     role_ids = shift_scope.role_ids_for_unit(db, manager_id)
     profiles.update(_profile_key("shift-manager", rid) for rid in role_ids)
 

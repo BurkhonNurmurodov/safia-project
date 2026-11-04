@@ -1708,21 +1708,24 @@ was the intersection of their shift and their plant. **Read the older
 sections' «shift ∩ plant» for a shift-manager as «every unit»** wherever they
 describe what one may read or act on.
 
-- **`services/shift_scope.py` is still THE definition**, and it now answers two
-  different questions. **Reach** — `unit_ids` (every unit; archived ones only
-  with `include_archived`) and `covers` (any existing unit) — is what every
-  page, guard and register reads: /staff and /daily (tables, requests,
-  approvals), /concerns and /cell-concerns, /production's picker, /tasks,
-  /kelish (read-only, as before), /people, «Liderlar KPI» / «Brigadirlar KPI»,
-  the bell's «Sizdan kutilmoqda» queue, `capabilities.profile_unit_ids` (so a
-  shift-manager's «own» grant scope is every unit too). **Answerable** —
-  `role_ids_for_unit`, still shift ∩ plant — decides who is NOTIFIED about a
-  unit's requests (DMs, approval cards, the live-day notices) and whom a
-  supervisor escalates a concern to (the picker and its validator). It is
-  deliberately NOT the inverse of `covers` any more: routing every unit's
-  requests to every shift-manager would put each one's DMs in all their chats.
-  `role_profiles.shift` / `factory_id` (and the «Smena menejerlarini
-  biriktirish» block on «Zavodlar») now decide routing only.
+- **`services/shift_scope.py` is still THE definition.** **Reach** —
+  `unit_ids` (every unit; archived ones only with `include_archived`) and
+  `covers` (any existing unit) — is what every page, guard and register reads:
+  /staff and /daily (tables, requests, approvals), /concerns and
+  /cell-concerns, /production's picker, /tasks, /kelish (read-only, as before),
+  /people, «Liderlar KPI» / «Brigadirlar KPI», the bell's «Sizdan kutilmoqda»
+  queue, `capabilities.profile_unit_ids` (so a shift-manager's «own» grant
+  scope is every unit too).
+- **Every shift-manager is NOTIFIED about every unit** (the operator, the same
+  day: «notify all of them»). `role_ids_for_unit` returns every shift-manager
+  profile for any existing unit, so it is the inverse of `covers` again:
+  every unit's request DMs and bell rows (`staff._notify`), the live-day
+  notices (`staff_live._notify` — «everybody left», «day still open»), a
+  legacy concern with no picked holder, and the supervisor's escalation picker
+  and its validator (any shift-manager may be picked). `concerns._sm_names`,
+  its in-memory twin, names all of them. `role_profiles.shift` / `factory_id`
+  (and the «Smena menejerlarini biriktirish» block on «Zavodlar») now decide
+  nothing about reach or routing — a record only.
 - **No plant lock**: `factory_scope.viewer_factory_id` answers None for a
   shift-manager, so `locked_factory_id` is null and the plant switcher is a
   free section on every factory-aware page.

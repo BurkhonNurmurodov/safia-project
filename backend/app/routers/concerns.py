@@ -137,25 +137,16 @@ def _sm_names(db: Session) -> dict:
     one unit render comma-joined.
 
     The in-memory twin of ``shift_scope.role_ids_for_unit`` — same rule, one
-    pass instead of a query per unit — so it must keep answering shift AND
-    plant, with a plant-less profile covering every factory on its shift.
+    pass instead of a query per unit: every shift-manager answers for every
+    unit since 2026-11-04.
     """
-    profs = (
-        db.query(RoleProfile.name, RoleProfile.shift, RoleProfile.factory_id)
-        .filter(RoleProfile.role == "shift-manager", RoleProfile.shift.isnot(None))
-        .order_by(RoleProfile.name).all()
-    )
-    if not profs:
+    names = [n for (n,) in db.query(RoleProfile.name)
+             .filter(RoleProfile.role == "shift-manager")
+             .order_by(RoleProfile.name).all()]
+    if not names:
         return {}
-    out: dict = {}
-    for mid, shift, fac in db.query(Manager.id, Manager.shift, Manager.factory_id).all():
-        names = [
-            p.name for p in profs
-            if p.shift == shift and (p.factory_id is None or p.factory_id == fac)
-        ]
-        if names:
-            out[mid] = ", ".join(names)
-    return out
+    joined = ", ".join(names)
+    return {mid: joined for (mid,) in db.query(Manager.id).all()}
 
 
 def _cell_leaders(db: Session) -> dict:
@@ -1049,10 +1040,8 @@ def list_shift_manager_profiles(
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     q = db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
     if role == "supervisor":
-        # Exactly the people answerable for this supervisor's own unit — their
-        # shift and their plant. Narrowing by shift alone offered a supervisor
-        # in one factory the shift-managers of another, who would then hold a
-        # concern about a unit they cannot see.
+        # The people answerable for this supervisor's own unit — every
+        # shift-manager since 2026-11-04 (services/shift_scope.py).
         q = q.filter(RoleProfile.id.in_(
             shift_scope.role_ids_for_unit(db, payload.get("role_id"))))
     elif shift is not None:
@@ -1834,7 +1823,7 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
             out.append((None, _profile_key("shift-manager", c.shift_manager_profile_id)))
         elif c.brigadir_manager_id:
             # Legacy rows without a picked holder: everyone answerable for the
-            # unit — its shift AND its plant, the one rule in shift_scope.
+            # unit — the one rule in shift_scope (every shift-manager).
             for rid in shift_scope.role_ids_for_unit(db, c.brigadir_manager_id):
                 out.append((None, _profile_key("shift-manager", rid)))
     elif level == "top-manager":
