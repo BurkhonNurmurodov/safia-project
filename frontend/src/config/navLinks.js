@@ -150,9 +150,11 @@ export const NAV_GROUPS = [
   { id: "system" },                                // Активность + catch-all — headerless
 ];
 
-// «Ilovalar» — the admin's app launcher (2026-11-02, admins only for now).
-// For an admin «/» is a grid of these tiles, and while one is open the sidebar
-// lists only its pages. An app is a nav group by default; ARC, the overview,
+// «Ilovalar» — the app launcher (admins 2026-11-02, top-managers 2026-11-04;
+// utils/launcherRoles.js). For them «/» is a grid of these tiles — a
+// top-manager's only the apps holding a page they may open
+// (hooks/useLauncher.js) — and while one is open the sidebar lists only its
+// pages. An app is a nav group by default; ARC, the overview,
 // the reports and the activity page are apps of their own (a link's `app`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
@@ -189,5 +191,5 @@ export const ADMIN_PAGE_LINKS = ADMIN_NAV.map((n) => ({
 
 export const appOf = (link) => link.app ?? link.group;
 
-// For an admin «/» is the launcher, so the overview answers at /overview.
+// For a launcher role «/» is the launcher, so the overview answers at /overview.
 export const adminPath = (to) => (to === "/" ? "/overview" : to);

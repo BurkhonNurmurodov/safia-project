@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { usesLauncher } from "../utils/launcherRoles";
 
 const APP_NAME = "Safia IMS";
 const SEP = " · "; // U+00B7 — the same separator the nav labels already use
@@ -94,8 +95,9 @@ export default function DocumentTitle() {
   // visitor cannot see yet.
   const gated = loading || auth?.status === "web_login";
 
-  // An admin's «/» is the app launcher (App.jsx HomeRoute), not the overview.
-  const launcher = pathname === "/" && auth?.role === "admin";
+  // An admin's and a top-manager's «/» is the app launcher (App.jsx
+  // HomeRoute), not the overview.
+  const launcher = pathname === "/" && usesLauncher(auth?.role);
   const adminKey = useAdminTitleKey(pathname);
 
   useEffect(() => {

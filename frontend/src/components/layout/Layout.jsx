@@ -22,6 +22,7 @@ import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
+import { usesLauncher } from "../../utils/launcherRoles";
 import { ScopedErrorBoundary } from "../ui/ErrorBoundary";
 import { LeaveGuardProvider } from "./LeaveGuard";
 
@@ -576,7 +577,7 @@ function ImpersonationBar() {
   );
 }
 
-// `bare`: no sidebar — the admin app launcher («Ilovalar», pages/AppLauncher),
+// `bare`: no sidebar — the app launcher («Ilovalar», pages/AppLauncher),
 // where the tiles ARE the navigation and no app is open to list pages of.
 // `backdrop`: a node painted behind the whole column — header included, over
 // the base colour — the launcher's moving background; the header then turns to
@@ -587,8 +588,9 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { t } = useLang();
   const { auth } = useAuth();
-  // Inside an app, an admin's way back to the launcher sits beside the title.
-  const showAppsButton = !bare && auth?.role === "admin";
+  // Inside an app, the way back to the launcher sits beside the title — for
+  // whoever has one (admins, top-managers: utils/apps.js LAUNCHER_ROLES).
+  const showAppsButton = !bare && usesLauncher(auth?.role);
   const { pathname } = useLocation();
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);

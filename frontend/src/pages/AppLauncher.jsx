@@ -1,18 +1,21 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/layout/Layout";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
-import { APPS } from "../config/navLinks";
 import { appEntry } from "../utils/apps";
+import { useLauncher } from "../hooks/useLauncher";
 import api from "../utils/api";
 import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
+import PageLoader from "../components/ui/PageLoader";
 
 /**
- * «Ilovalar» — what «/» shows an admin (2026-11-02, admins only for now): one
- * tile per app, the way Odoo opens. A tile opens the page its app was left on
- * (utils/apps.js), and the sidebar inside then lists that app's pages only.
+ * «Ilovalar» — what «/» shows an admin (2026-11-02) and a top-manager
+ * (2026-11-04): one tile per app, the way Odoo opens. A tile opens the page
+ * its app was left on (utils/apps.js), and the sidebar inside then lists that
+ * app's pages only. A top-manager is shown only the apps holding a page they
+ * may open (hooks/useLauncher.js) — the grid is the same at any count.
  *
  * Deliberately light: no chart, no table, one request — the /staff queue count
  * the sidebar already polls under the same key, so the People tile carries the
@@ -41,14 +44,15 @@ import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
 const beat = (ch, i) => 55 + ((i * 37) % 31) + (/[,.!?:;]/.test(ch) ? 220 : 0);
 
 // The tiles' arrival, as index.css spells it (`.apps-grid > li`: delay
-// i × 55ms + 60ms, .9s) — keep the two in step.
+// i × 55ms + 60ms, .9s) — keep the two in step. The typing ends as the LAST
+// tile settles, so it follows how many tiles this viewer has.
 const TILE_STEP = 55, TILE_DELAY = 60, TILE_IN = 900;
 const TYPE_START = 120;
-const TYPE_END = (APPS.length - 1) * TILE_STEP + TILE_DELAY + TILE_IN;
+const typeEnd = (tiles) => Math.max(tiles - 1, 0) * TILE_STEP + TILE_DELAY + TILE_IN;
 
 // The letters, in order, with the moment each is typed and how long it is the
 // newest. Spaces take a beat but have no span of their own.
-function typingPlan(text) {
+function typingPlan(text, end) {
   const plan = [];
   let t = 0;
   Array.from(text).forEach((ch, i) => {
@@ -56,7 +60,7 @@ function typingPlan(text) {
     t += beat(ch, i);
   });
   const last = plan[plan.length - 1]?.d || 0;
-  const k = last > 0 ? (TYPE_END - TYPE_START) / last : 0;
+  const k = last > 0 ? (end - TYPE_START) / last : 0;
   plan.forEach((p) => { p.d = Math.round(TYPE_START + p.d * k); });
   plan.forEach((p, i) => { p.s = (plan[i + 1]?.d ?? p.d) - p.d; });
   return plan;
@@ -84,17 +88,27 @@ export default function AppLauncher() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
+  const { apps, may, loading } = useLauncher();
   const who = tl(auth?.full_name || "").trim();
   const [before, after = ""] = t("apps.hello").split("{name}");
   const plain = who ? `${before}${who}${after}` : `${before.replace(/[,\s]+$/, "")}${after}`;
-  const n = { i: 0, plan: typingPlan(plain) };
+  const n = { i: 0, plan: typingPlan(plain, typeEnd(apps.length)) };
 
+  // The /staff queue — what waits on an ADMIN (the sidebar's own badge rule:
+  // a top-manager approves nothing there, so their People tile carries none).
   const { data: pending } = useQuery({
     queryKey: ["staff-documents-pending-count"],
     queryFn: () => api.get("/api/staff/documents/pending-count").then((r) => r.data),
+    enabled: auth?.role === "admin",
     refetchInterval: 30_000,
   });
   const badges = { people: pending?.count ?? 0 };
+
+  // A top-manager's tiles wait for their page access (an admin's never do).
+  // With no app at all — every page closed to them — the overview's own gate
+  // answers: it sends them to the one page they may open, or says «no access».
+  if (loading) return <PageLoader where="access" />;
+  if (apps.length === 0) return <Navigate to="/overview" replace />;
 
   return (
     <Layout title={t("apps.title")} bare backdrop={<LauncherBackdrop />}>
@@ -109,13 +123,13 @@ export default function AppLauncher() {
         </h2>
         <nav aria-label={t("apps.title")}>
           <ul className="apps-grid">
-            {APPS.map(({ id, labelKey, icon: Icon, hue }, i) => {
+            {apps.map(({ id, labelKey, icon: Icon, hue }, i) => {
               const name = t(labelKey);
               const count = badges[id] || 0;
               return (
                 <li key={id} style={{ "--i": i }}>
                   <Link
-                    to={appEntry(id)}
+                    to={appEntry(id, may)}
                     className="app-tile"
                     data-app-hue={hue}
                     aria-label={count > 0 ? `${name} (${count})` : undefined}

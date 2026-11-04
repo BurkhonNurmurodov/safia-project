@@ -45,7 +45,7 @@ function KpiTabRedirect({ tab }) {
 // lazyWithReload (utils/lazyPage.js): a page's own chunk, with .preload() —
 // see preloadOpenedRoute below.
 const Overview = lazyWithReload(() => import("./pages/Overview"));
-// «Ilovalar» — an admin's «/» (see HomeRoute).
+// «Ilovalar» — an admin's and a top-manager's «/» (see HomeRoute).
 const AppLauncher = lazyWithReload(() => import("./pages/AppLauncher"));
 // The shift dashboard has a route of its own so an admin or a top-manager can
 // open it; /daily still forks a shift-manager to the same component.
@@ -147,8 +147,8 @@ const ROUTE_PAGES = {
 };
 // «/» is what the Telegram menu button opens, and a role without the overview
 // is redirected from it to its first page (RequirePage) — remembered here, so
-// the page that will actually open is the one fetched early. An admin's «/» is
-// the app launcher (HomeRoute), remembered the same way.
+// the page that will actually open is the one fetched early. An admin's and a
+// top-manager's «/» is the app launcher (HomeRoute), remembered the same way.
 const HOME_ROUTE_KEY = "homeRoute";
 const LAUNCHER_HOME_KEY = "homeLauncher";
 function preloadOpenedRoute() {
@@ -193,6 +193,7 @@ import OpenInAppPrompt from "./components/layout/OpenInAppPrompt";
 import DocumentTitle from "./components/DocumentTitle";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
+import { usesLauncher } from "./utils/launcherRoles";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
 import { useTranslit } from "./utils/transliterate";
 import { inTelegram } from "./utils/session";
@@ -517,20 +518,21 @@ function RequirePage({ page, children }) {
 }
 
 /**
- * «/» — for an admin the app launcher («Ilovalar», 2026-11-02, admins only for
- * now), the overview moving to /overview; for every other role the overview,
- * exactly as before. Which one it was is remembered for preloadOpenedRoute.
+ * «/» — for an admin (2026-11-02) and a top-manager (2026-11-04) the app
+ * launcher («Ilovalar»), the overview moving to /overview; for every other
+ * role the overview, exactly as before. Which one it was is remembered for
+ * preloadOpenedRoute.
  */
 function HomeRoute() {
   const { auth } = useAuth();
-  const isAdmin = auth?.role === "admin";
+  const launcher = usesLauncher(auth?.role);
   useEffect(() => {
     try {
-      if (isAdmin) localStorage.setItem(LAUNCHER_HOME_KEY, "1");
+      if (launcher) localStorage.setItem(LAUNCHER_HOME_KEY, "1");
       else localStorage.removeItem(LAUNCHER_HOME_KEY);
     } catch { /* a hint only */ }
-  }, [isAdmin]);
-  if (isAdmin) return <AppLauncher />;
+  }, [launcher]);
+  if (launcher) return <AppLauncher />;
   return <RequirePage page="overview"><Overview /></RequirePage>;
 }
 

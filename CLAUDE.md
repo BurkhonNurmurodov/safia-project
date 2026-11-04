@@ -123,12 +123,33 @@ whoever manages profiles, else the cell they run.
   on, 250 ms after typing stops; up to 6, opening `/people/:employee_id`.
 - Not built: concerns or tasks by text.
 
-## «Ilovalar» — the admin app launcher (2026-11-02, admins only for now)
+## «Ilovalar» — the app launcher (admins 2026-11-02, top-managers 2026-11-04)
 
 The operator: «separate IMS into different apps just like Odoo … shown as
-squares and icons». For an ADMIN, `/` is a grid of app tiles
+squares and icons». For an ADMIN and (from 2026-11-04, «split into apps also
+for top-management») a TOP-MANAGER, `/` is a grid of app tiles
 (`pages/AppLauncher.jsx`); every other role still gets the overview at `/`,
 untouched.
+
+- **`utils/launcherRoles.js` is THE list of launcher roles** (`LAUNCHER_ROLES`,
+  `usesLauncher`) — a leaf, because App.jsx and DocumentTitle ride in the boot
+  chunk and `config/navLinks.js` (the apps, their icons) must not. Every
+  «does this viewer have the launcher» question asks it: HomeRoute, the
+  sidebar, the header's grid button, the header search's `/overview` path and
+  the tab title. A third role is one entry there.
+- **A top-manager sees only the apps holding a page they may open** —
+  `hooks/useLauncher.js` `may` is the sidebar's own rule (an admin: all;
+  anybody else: a page link through the page-access matrix with its grants and
+  denies, an admin-app page through a capability naming it, never an
+  `adminOnly` link), and `apps` the APPS with at least one such page. The
+  tile opens the app's remembered page only if they may open it
+  (`appEntry(id, may)`), the sidebar inside lists only their pages
+  (`linksOfApp(id, may)`), and an app holding none of them falls back to the
+  whole register. Their tiles wait for page access (a loader, never a flash
+  of every app); with no app at all the launcher hands «/» to `/overview`'s
+  own gate (their first page, or «no access»). The People tile's /staff badge
+  stays an admin's (the sidebar's badge rule — a top-manager approves nothing
+  there), and the greeting's typing ends as THEIR last tile settles.
 
 - **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
   icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
@@ -147,10 +168,10 @@ untouched.
   count sits evenly. ARC is the repair department: its icon (tile and sidebar
   row) is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn
   on lucide's grid with `createLucideIcon` — plain `Wrench` is «Perenaladka».
-- **The overview answers at `/overview`** for an admin (`adminPath`); the
+- **The overview answers at `/overview`** for a launcher role (`adminPath`); the
   sidebar, the header search and `DocumentTitle` map `/` there. `/overview`
   works for every role (same `RequirePage`).
-- **Inside an app the admin's sidebar lists that app's pages only**, under its
+- **Inside an app the sidebar lists that app's pages only**, under its
   name (a one-page app shows just its row). A page no app lists (a profile, a
   notification, a leader's day report) keeps the app it was opened from —
   `utils/apps.js`, sessionStorage `appOpen`; with none, the whole grouped
@@ -244,7 +265,8 @@ untouched.
   `sr-only` copy. On a
   phone its height is paid back (smaller top padding, 12px tile padding) so
   the last row still clears the bottom-corner treats.
-- **Not built:** the launcher for other roles, per-app language packs.
+- **Not built:** the launcher for shift-managers, supervisors and leaders,
+  per-app language packs.
 
 ## The admin app (`/panel/<id>`, from 2026-11-03)
 

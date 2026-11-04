@@ -17,6 +17,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
 import { ALL_LINKS, NAV_GROUPS, adminPath } from "../../config/navLinks";
+import { usesLauncher } from "../../utils/launcherRoles";
 import { nameCase } from "../people/peopleUtil";
 
 /**
@@ -109,15 +110,15 @@ export default function GlobalSearch({ drawer = false, onPick }) {
       .filter((l) => (l.adminOnly ? isAdmin : can(l.page)))
       .map((l) => {
         const label = t(l.key);
-        // An admin's «/» is the app launcher; the overview is at /overview.
-        const to = isAdmin ? adminPath(l.to) : l.to;
+        // A launcher's «/» is the app launcher; the overview is at /overview.
+        const to = usesLauncher(auth?.role) ? adminPath(l.to) : l.to;
         return {
           id: `p:${to}`, kind: "page", to, Icon: l.icon, label, sort: label,
           sub: groupLabel[l.group] || "",
           terms: [searchFold(label), searchFold(l.to.replace(/[/-]/g, " "))],
         };
       });
-  }, [t, isAdmin, access, capPages, deniedPages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t, isAdmin, auth?.role, access, capPages, deniedPages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const adminItems = useMemo(() => {
     const groupLabel = Object.fromEntries(ADMIN_GROUPS.map((g) => [g.id, t(g.labelKey)]));

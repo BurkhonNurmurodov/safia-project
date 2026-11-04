@@ -18,6 +18,7 @@ import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
 import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
+import { useLauncher } from "../../hooks/useLauncher";
 import GlobalSearch from "./GlobalSearch";
 
 // Grouped sidebar. ALL_LINKS (config/navLinks.js) stays THE register and
@@ -79,22 +80,28 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   const withSearch = (path) => `${path}${location.search}`;
 
-  // «Ilovalar» (admins, 2026-11-02): inside an app the sidebar lists that app's
-  // pages and nothing else — the launcher at «/» is the way to the others. A
-  // page no app lists keeps the app it was opened from (utils/apps.js); with
-  // none yet, the whole register shows, grouped as before.
-  const app = isAdmin ? APPS.find(a => a.id === openApp(location.pathname)) : null;
-  useEffect(() => { if (isAdmin) rememberPage(location.pathname); }, [isAdmin, location.pathname]);
+  // «Ilovalar» (admins 2026-11-02, top-managers 2026-11-04): inside an app the
+  // sidebar lists that app's pages — the ones this viewer may open — and
+  // nothing else; the launcher at «/» is the way to the others. A page no app
+  // lists keeps the app it was opened from (utils/apps.js); with none yet, or
+  // an app holding nothing this viewer may open, the whole register shows,
+  // grouped as before.
+  const { on: launcher, may } = useLauncher();
+  const appId = launcher ? openApp(location.pathname) : null;
+  const appLinks = appId ? linksOfApp(appId, may) : [];
+  const app = appLinks.length ? APPS.find(a => a.id === appId) : null;
+  useEffect(() => { if (launcher) rememberPage(location.pathname); }, [launcher, location.pathname]);
   // The admin app's pages this viewer may open — every one for an admin, the
   // pages their grants name for anybody else (a grantee has no launcher, so
   // these rows ARE their way in; the footer's single «Admin» row is gone).
   const adminRows = ADMIN_PAGE_LINKS.filter(l => isAdmin || capTabs.includes(l.capKey ?? l.tab));
   const links = app
-    ? linksOfApp(app.id)
+    ? appLinks
     : [
       ...ALL_LINKS
         .filter(l => (l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
-        .map(l => (isAdmin ? { ...l, to: adminPath(l.to) } : l)),
+        // A launcher's «/» is the launcher, so its overview answers at /overview.
+        .map(l => (launcher ? { ...l, to: adminPath(l.to) } : l)),
       ...adminRows,
     ];
 
