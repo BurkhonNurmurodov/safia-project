@@ -126,6 +126,7 @@ try:
         schedule_catalog_follow_retro,
         report_pin_mismatch,
         report_leader_merge,
+        report_audit_table,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -571,6 +572,9 @@ try:
     # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov before the
     # merge, DMed once. Remove once it has been sent.
     report_leader_merge()
+    # ⚠ TEMPORARY report (2026-11-04) — what public.audit is on production,
+    # DMed once to Abbos. Remove once it has been sent.
+    report_audit_table()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()

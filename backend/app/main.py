@@ -143,6 +143,7 @@ async def lifespan(app: FastAPI):
         schedule_catalog_follow_retro,
         report_pin_mismatch,
         report_leader_merge,
+        report_audit_table,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -493,6 +494,12 @@ async def lifespan(app: FastAPI):
     # `startup.report_leader_merge` and `services/leader_merge_report_nov02.py`
     # once it has been sent.
     run(report_leader_merge)
+
+    # ⚠ TEMPORARY report (2026-11-04) — what `public.audit` is on production,
+    # READ-ONLY, DMed once to Abbos. Only SCHEDULES a job (one flag read).
+    # Remove this line, `startup.report_audit_table` and
+    # `services/audit_table_report_nov04.py` once it has been sent.
+    run(report_audit_table)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

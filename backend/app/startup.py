@@ -7873,6 +7873,37 @@ def _leader_merge_report_job() -> None:
                       leader_merge_report_nov02.send, REPORT_CHAT_BURKHON)
 
 
+# ── one-shot: what `public.audit` is on production (2026-11-04) ──────────────
+# Abbos asked for `select * from public.audit;` on production; no model here
+# creates that table and the report door had no key on the asking Mac. READ-ONLY
+# (`services/audit_table_report_nov04.py`), DMed once to Abbos as text + .xlsx.
+# Changing what it sends needs a NEW key. Delete this block, the module and both
+# entrypoint calls once it has landed.
+AUDIT_TABLE_REPORT_FLAG = "audit_table_report_2026_11_04_v1"
+_AUDIT_TABLE_REPORT_DELAY_S = 150
+
+
+def report_audit_table() -> None:
+    """public.audit on production, DMed once to Abbos. Never raises."""
+    try:
+        if not _report_pending(AUDIT_TABLE_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("audit-table-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_AUDIT_TABLE_REPORT_DELAY_S),
+                    _audit_table_report_job)
+    except Exception as exc:
+        print(f"[startup] audit table report could not be scheduled: {exc}")
+
+
+def _audit_table_report_job() -> None:
+    print("[startup] audit table report: started")
+    from app.services import audit_table_report_nov04
+    _send_report_once(AUDIT_TABLE_REPORT_FLAG, "audit table report",
+                      audit_table_report_nov04.send, REPORT_CHAT_ABBOS)
+
+
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
 # The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
 # cell's positions follow it from its own move day, closed days included. The
