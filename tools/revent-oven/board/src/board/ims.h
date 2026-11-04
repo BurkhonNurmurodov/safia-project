@@ -11,6 +11,10 @@
 
 #include "../core/sync.h"
 
+// What the board says about itself on every request (X-Collector-Info):
+// firmware, uptime, Wi-Fi, memory, heartbeat pace — written in main.cpp.
+String deviceInfo();
+
 struct OvenPlan {
   int id = 0;
   String name;
@@ -21,7 +25,7 @@ struct OvenPlan {
 };
 
 struct Plan {
-  uint32_t statusS = 60, logsS = 600, settingsS = 3600;
+  uint32_t statusS = 60, logsS = 600, settingsS = 3600, pingS = 10;
   std::vector<OvenPlan> ovens;
 };
 
@@ -44,10 +48,14 @@ class Ims {
   ImsReply plan(Plan& out);
   ImsReply status(const std::vector<Reading>& readings);
   ImsReply file(int ovenId, const Upload& u);
+  ImsReply ping();  // the heartbeat between rounds: short timeouts, no retry
   String lastError() const { return last_; }
+  uint32_t lastContactMs() const { return contact_; }  // any answer from IMS
 
  private:
   ImsReply send(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype);
-  ImsReply sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype);
+  ImsReply sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype,
+                    bool quick = false);
   String last_;
+  uint32_t contact_ = 0;
 };

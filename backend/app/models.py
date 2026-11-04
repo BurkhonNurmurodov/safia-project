@@ -5746,3 +5746,17 @@ class ReventOvenLog(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (UniqueConstraint("oven_id", "name", name="uq_revent_oven_log"),)
+
+
+class ReventCollector(Base):
+    """A device reading the ovens (the board, the test laptop): when IMS last
+    heard from it and what it said about itself. One row per collector key
+    name (revent_ovens.COLLECTOR_KEYS), written on every collector request."""
+    __tablename__ = "revent_collectors"
+
+    name       = Column(String(40), primary_key=True)
+    last_seen  = Column(DateTime(timezone=True), nullable=False)
+    last_path  = Column(String(20), nullable=True)    # plan · status · file · ping
+    remote_ip  = Column(String(64), nullable=True)    # as IMS saw it (the factory's way out)
+    user_agent = Column(String(120), nullable=True)
+    info       = Column(JSONB, nullable=True)         # firmware, Wi-Fi, uptime, memory — as sent

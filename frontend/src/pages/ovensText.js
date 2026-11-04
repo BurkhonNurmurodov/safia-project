@@ -146,6 +146,22 @@ const uz = {
   },
   saved: "Saqlandi", added: "Pech qo'shildi", removed: "Olib tashlandi",
   pollNote: "Holat har {s} s, loglar har {l} daq, sozlamalar har {h} soatda o'qiladi.",
+
+  // the collector device (admin)
+  devTitle: "Kollektor qurilmasi",
+  devPrompt: "Qurilma hozir aloqadami — bilish uchun «Tekshirish»ni bosing.",
+  devCheck: "Tekshirish", devChecking: "Tekshirilmoqda…",
+  devWaiting: "Javob kutilmoqda, ko'pi bilan {s} s…",
+  devNone: "Hali hech bir qurilma IMS bilan bog'lanmagan.",
+  devOnline: "Onlayn", devOffline: "Oflayn",
+  devHeard: "oxirgi aloqa {t}", devNever: "aloqa bo'lmagan",
+  devNoAnswer: "{s} soniya kutildi — javob kelmadi.",
+  devNames: { board: "Pech platasi (ESP32-S2)", laptop: "Noutbuk (collector.py)" },
+  devFw: "Dastur", devWifi: "Wi-Fi", devLan: "Zavoddagi manzili", devUp: "Ishlab turibdi",
+  devMem: "Bo'sh xotira", devOut: "IMS ko'rgan manzil", devLastReq: "Oxirgi so'rov",
+  devReq: { plan: "reja", status: "holat", file: "fayl", ping: "signal" },
+  devOldFw: "Bu dastur Wi-Fi, xotira va ishlash vaqtini yubormaydi — 1.1.0 dan boshlab yuboradi.",
+  devCheckedAt: "Tekshirildi: {t}",
 };
 
 const uz_cyrl = {
@@ -260,6 +276,21 @@ const uz_cyrl = {
   },
   saved: "Сақланди", added: "Печ қўшилди", removed: "Олиб ташланди",
   pollNote: "Ҳолат ҳар {s} с, логлар ҳар {l} дақ, созламалар ҳар {h} соатда ўқилади.",
+
+  devTitle: "Коллектор қурилмаси",
+  devPrompt: "Қурилма ҳозир алоқадами — билиш учун «Текшириш»ни босинг.",
+  devCheck: "Текшириш", devChecking: "Текширилмоқда…",
+  devWaiting: "Жавоб кутилмоқда, кўпи билан {s} с…",
+  devNone: "Ҳали ҳеч бир қурилма IMS билан боғланмаган.",
+  devOnline: "Онлайн", devOffline: "Офлайн",
+  devHeard: "охирги алоқа {t}", devNever: "алоқа бўлмаган",
+  devNoAnswer: "{s} сония кутилди — жавоб келмади.",
+  devNames: { board: "Печ платаси (ESP32-S2)", laptop: "Ноутбук (collector.py)" },
+  devFw: "Дастур", devWifi: "Wi-Fi", devLan: "Заводдаги манзили", devUp: "Ишлаб турибди",
+  devMem: "Бўш хотира", devOut: "IMS кўрган манзил", devLastReq: "Охирги сўров",
+  devReq: { plan: "режа", status: "ҳолат", file: "файл", ping: "сигнал" },
+  devOldFw: "Бу дастур Wi-Fi, хотира ва ишлаш вақтини юбормайди — 1.1.0 дан бошлаб юборади.",
+  devCheckedAt: "Текширилди: {t}",
 };
 
 const ru = {
@@ -373,6 +404,21 @@ const ru = {
   },
   saved: "Сохранено", added: "Печь добавлена", removed: "Удалено",
   pollNote: "Состояние читается каждые {s} с, логи — каждые {l} мин, настройки — каждые {h} ч.",
+
+  devTitle: "Устройство-коллектор",
+  devPrompt: "На связи ли устройство сейчас — нажмите «Проверить».",
+  devCheck: "Проверить", devChecking: "Проверяем…",
+  devWaiting: "Ждём ответа, не дольше {s} с…",
+  devNone: "Ни одно устройство ещё не связывалось с IMS.",
+  devOnline: "В сети", devOffline: "Не в сети",
+  devHeard: "последняя связь {t}", devNever: "связи не было",
+  devNoAnswer: "Ждали {s} с — ответа нет.",
+  devNames: { board: "Плата печей (ESP32-S2)", laptop: "Ноутбук (collector.py)" },
+  devFw: "Прошивка", devWifi: "Wi-Fi", devLan: "Адрес на заводе", devUp: "Работает",
+  devMem: "Свободная память", devOut: "Адрес, видимый IMS", devLastReq: "Последний запрос",
+  devReq: { plan: "план", status: "состояние", file: "файл", ping: "сигнал" },
+  devOldFw: "Эта прошивка не передаёт Wi-Fi, память и время работы — передаёт начиная с 1.1.0.",
+  devCheckedAt: "Проверено: {t}",
 };
 
 const en = {
@@ -486,6 +532,21 @@ const en = {
   },
   saved: "Saved", added: "Oven added", removed: "Removed",
   pollNote: "Status is read every {s} s, logs every {l} min, settings every {h} h.",
+
+  devTitle: "Collector device",
+  devPrompt: "Is the device in touch right now? Press «Check».",
+  devCheck: "Check", devChecking: "Checking…",
+  devWaiting: "Waiting for an answer, at most {s} s…",
+  devNone: "No device has contacted IMS yet.",
+  devOnline: "Online", devOffline: "Offline",
+  devHeard: "last contact {t}", devNever: "no contact yet",
+  devNoAnswer: "Waited {s} s — no answer.",
+  devNames: { board: "Oven board (ESP32-S2)", laptop: "Laptop (collector.py)" },
+  devFw: "Firmware", devWifi: "Wi-Fi", devLan: "Address at the factory", devUp: "Running for",
+  devMem: "Free memory", devOut: "Address IMS sees", devLastReq: "Last request",
+  devReq: { plan: "plan", status: "status", file: "file", ping: "heartbeat" },
+  devOldFw: "This firmware does not send its Wi-Fi, memory or uptime — 1.1.0 and later do.",
+  devCheckedAt: "Checked: {t}",
 };
 
 export const TXT = { uz, uz_cyrl, ru, en };

@@ -11,6 +11,7 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { useOT, fill, stamp, fmtN, errOf, errCode } from "../../components/ovens/ovensUtil";
+import CollectorDevices from "../../components/ovens/CollectorDevices";
 
 // «Pechlar» on the admin panel — which ovens the collector reads, at which
 // factory-LAN address. Admin-only (the list is where the collector is sent,
@@ -68,6 +69,7 @@ export default function OvensSettings() {
       <p className="text-[13px]" style={{ color: "var(--text-3)" }}>
         {fill(T.pollNote, { s: p.status_s, l: Math.round((p.logs_s || 0) / 60), h: Math.round((p.settings_s || 0) / 3600) })}
       </p>
+      <CollectorDevices T={T} />
       <TableCard icon={CookingPot} title={T.regTitle}
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtN(ovens.length)}</span>}
         toolbar={<Button size="lg" variant="primary" onClick={() => { setFormErr(null); setForm({ ...EMPTY }); }}><Plus size={14} /> {T.add}</Button>}

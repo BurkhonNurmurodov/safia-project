@@ -9,6 +9,11 @@ The always-on collector for the Revent ovens: a **LOLIN S2 Mini** (ESP32-S2FNR2,
 | minute | each oven's live status | `POST /api/ovens/collector/status` |
 | 10 minutes | each oven's day logs + ServiceData.txt | only what IMS lacks, as raw bytes: `POST /api/ovens/collector/raw` |
 | hour | OvenSettings.xml | only when it changed |
+| 10 seconds (firmware 1.1+) | — | a heartbeat, only when nothing else reached IMS: `GET /api/ovens/collector/ping` |
+
+Every request also carries `X-Collector-Info` (firmware, uptime, Wi-Fi name and
+signal, its address, free memory, heartbeat pace): the admin page's
+«Kollektor qurilmasi» → «Tekshirish» shows it, with whether the board is online.
 
 The ovens, the paces and what IMS already holds come from IMS
 (`GET /api/ovens/collector/plan`); add or remove an oven on `/panel/ovens`.

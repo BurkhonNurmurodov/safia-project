@@ -33,7 +33,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import ReventOven, ReventOvenLog
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from app.models import ReventCollector, ReventOven, ReventOvenLog
 from app.services import revent_log
 
 log = logging.getLogger(__name__)
@@ -48,7 +50,8 @@ COLLECTOR_KEYS = {
 
 # How often the collector asks (seconds). Served by plan(), so changing the
 # pace is a deploy here and nothing on the collector.
-POLL = {"status_s": 60, "logs_s": 600, "settings_s": 3600}
+POLL = {"status_s": 60, "logs_s": 600, "settings_s": 3600,
+        "ping_s": 10}   # a heartbeat between rounds (board firmware 1.1+)
 
 MAX_FILE = 8 * 1024 * 1024          # one log file, raw — a day is ~250 KB
 MAX_STATUS_LINES = 80
@@ -170,3 +173,69 @@ def settings_xml(oven: ReventOven) -> Optional[bytes]:
 
 def log_bytes(row: ReventOvenLog) -> bytes:
     return zlib.decompress(row.data)
+
+
+# ── who is reading the ovens ──────────────────────────────────────────────────
+# Every collector request is a sign of life. The board (firmware 1.1+) also
+# sends a heartbeat every POLL["ping_s"] and describes itself in the
+# X-Collector-Info header ("fw=1.1.0;up=812;rssi=-59;ssid=alisa;ip=…").
+
+INFO_KEYS = {"fw", "up", "rssi", "ssid", "ip", "heap", "psram", "ping", "kind", "host"}
+
+
+def parse_info(header: Optional[str]) -> dict:
+    out = {}
+    for part in (header or "").split(";")[:20]:
+        k, _, v = part.partition("=")
+        k, v = k.strip().lower(), v.strip()
+        if k in INFO_KEYS and v:
+            out[k] = v[:64]
+    return out
+
+
+def note_contact(db: Session, name: str, what: str, ip: str, user_agent: str, info_header: Optional[str]) -> None:
+    """One collector request arrived: remember when and what it said. Its own
+    small transaction, so a refused file still counts as a sign of life."""
+    info = parse_info(info_header)
+    values = {"name": name, "last_seen": now(), "last_path": what[:20], "remote_ip": (ip or "")[:64],
+              "user_agent": (user_agent or "")[:120]}
+    if info:
+        values["info"] = info
+    stmt = pg_insert(ReventCollector).values(**values)
+    stmt = stmt.on_conflict_do_update(index_elements=[ReventCollector.name],
+                                      set_={k: v for k, v in values.items() if k != "name"})
+    try:
+        db.execute(stmt)
+        db.commit()
+    except Exception:                   # never let the bookkeeping refuse a reading
+        db.rollback()
+        log.exception("[OVENS] could not note the collector contact")
+
+
+def _expect_s(row: ReventCollector) -> int:
+    """How often this device should be heard from: its heartbeat, else a round."""
+    try:
+        ping = int((row.info or {}).get("ping") or 0)
+    except ValueError:
+        ping = 0
+    return ping if 5 <= ping <= 120 else POLL["status_s"]
+
+
+def devices(db: Session) -> dict:
+    t = now()
+    out = []
+    for r in db.query(ReventCollector).order_by(ReventCollector.name):
+        age = max(0.0, (t - r.last_seen).total_seconds()) if r.last_seen else None
+        expect = _expect_s(r)
+        online_s = max(30, expect * 2 + 15)    # two missed beats are not yet «offline»
+        ua = r.user_agent or ""
+        fw = (r.info or {}).get("fw") or (ua.split("/", 1)[1] if ua.startswith("safia-oven") and "/" in ua else None)
+        out.append({
+            "name": r.name, "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+            "age_s": round(age, 1) if age is not None else None,
+            "online": age is not None and age <= online_s,
+            "online_s": online_s, "wait_s": min(90, expect + 20), "expect_s": expect,
+            "last_path": r.last_path, "remote_ip": r.remote_ip, "fw": fw, "info": r.info or {},
+        })
+    return {"now": t.isoformat(), "devices": out}
+

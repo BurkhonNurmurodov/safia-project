@@ -57,7 +57,8 @@ ImsReply Ims::send(const char* method, const String& path, const uint8_t* body, 
   return r;
 }
 
-ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype) {
+ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype,
+                       bool quick) {
   ImsReply r;
   String url = CFG.server + path;
   bool https = CFG.server.startsWith("https://");
@@ -72,8 +73,8 @@ ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* bo
   }
   HTTPClient http;
   http.setReuse(true);
-  http.setConnectTimeout(10000);
-  http.setTimeout(45000);
+  http.setConnectTimeout(quick ? 5000 : 10000);
+  http.setTimeout(quick ? 8000 : 45000);
   bool begun = https ? http.begin(tls, url) : http.begin(plain, url);
   if (!begun) {
     r.http = -1;
@@ -84,11 +85,13 @@ ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* bo
   http.addHeader("X-Oven-Key", CFG.key);
   http.addHeader("User-Agent", "safia-oven-board/" FW_VERSION);
   http.addHeader("Accept", "application/json");
+  http.addHeader("X-Collector-Info", deviceInfo());
   if (ctype) http.addHeader("Content-Type", ctype);
   int code;
   if (!strcmp(method, "GET")) code = http.GET();
   else code = http.sendRequest(method, const_cast<uint8_t*>(body), n);
   r.http = code;
+  if (code > 0) contact_ = millis();
   if (code > 0) {
     r.body = http.getString();
   } else {
@@ -125,6 +128,8 @@ ImsReply Ims::plan(Plan& out) {
   p.statusS = d["poll"]["status_s"] | 60;
   p.logsS = d["poll"]["logs_s"] | 600;
   p.settingsS = d["poll"]["settings_s"] | 3600;
+  p.pingS = d["poll"]["ping_s"] | 10;
+  if (p.pingS < 5) p.pingS = 5;
   if (p.statusS < 15) p.statusS = 15;
   for (JsonObject o : d["ovens"].as<JsonArray>()) {
     OvenPlan op;
@@ -173,3 +178,9 @@ ImsReply Ims::file(int ovenId, const Upload& u) {
                 "&size=" + String((unsigned long)u.size) + "&sha256=" + String(u.sha.c_str());
   return send("POST", path, u.chunk.data(), u.chunk.size(), "application/octet-stream");
 }
+
+ImsReply Ims::ping() {
+  ImsReply r = sendOnce("GET", "/api/ovens/collector/ping", nullptr, 0, nullptr, true);
+  return r;  // a missed heartbeat is not an error worth reporting: the next round says
+}
+

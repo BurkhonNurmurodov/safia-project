@@ -10463,6 +10463,24 @@ register is `/panel/ovens` (tools group, no capKey).
   and 30 s for files, starts a fresh IMS connection after 15 s idle (Cloudflare
   drops idle ones) and retries an upload once. First round: 1.4–1.5 MB read
   per oven in ~75 s, six days uploaded, the seventh in the next round (memory).
+- **Is the device online — «Kollektor qurilmasi» on `/panel/ovens`**
+  (2026-11-04, the operator). IMS cannot reach the device, only hear it: every
+  collector request (plan · status · file · and the heartbeat
+  `GET /api/ovens/collector/ping`) is written to `revent_collectors` (one row
+  per key name: last contact, what it asked, the address IMS saw, and the
+  device's own `X-Collector-Info` — `fw · up · rssi · ssid · ip · heap ·
+  psram · ping`, whitelisted by `revent_ovens.parse_info`), in its own small
+  transaction so a refused file still counts. `revent_ovens.devices()` is THE
+  rule: a device is online while heard within max(30, 2 × its pace + 15) s —
+  its pace is its heartbeat (`ping` in its info, firmware 1.1+, POLL
+  `ping_s` 10) else a round (60 s) — and «Tekshirish» waits up to pace + 20 s
+  for it to call in (`GET /api/admin/ovens/devices`, admin-only, polled every
+  3 s by `components/ovens/CollectorDevices.jsx`): online at once when heard
+  lately, else «Oflayn» with the last contact and how long it waited; an
+  offline device's details are its last report, dimmed. Firmware 1.1.0 adds
+  the heartbeat (every `plan.pingS`, only when nothing else reached IMS in
+  that time, short timeouts, never mid-round while IMS is failing) and the
+  header on every request; 1.0.0 is heard once a minute.
 - **A loaded bake whose timer has not started is READY, not baking**
   (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
   the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».

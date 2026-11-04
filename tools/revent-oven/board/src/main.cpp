@@ -126,11 +126,30 @@ void buttonTick() {
   }
 }
 
+// ── the heartbeat ───────────────────────────────────────────────────────────
+// Between rounds the board tells IMS «I am here» every plan.pingS seconds, so
+// the admin page's «Tekshirish» answers in seconds. Any request to IMS counts,
+// so a busy round sends no extra ones.
+bool inPing = false;
+
+void pingTick() {
+  if (inPing || !configReady() || WiFi.status() != WL_CONNECTED) return;
+  uint32_t every = (havePlan ? plan.pingS : 10) * 1000UL;
+  if (ims.lastContactMs() && millis() - ims.lastContactMs() < every) return;
+  static uint32_t lastTry = 0;
+  if (lastTry && millis() - lastTry < every) return;
+  inPing = true;
+  lastTry = millis();
+  ims.ping();
+  inPing = false;
+}
+
 // What may run while a round waits on an oven or IMS.
 void background() {
   portal::loop();
   ledTick();
   buttonTick();
+  if (!imsError.length()) pingTick();  // never wait on an IMS that is not answering mid-round
 }
 
 // ── Wi-Fi ───────────────────────────────────────────────────────────────────
@@ -613,6 +632,19 @@ void consoleTick() {
 
 }  // namespace
 
+String deviceInfo() {
+  auto clean = [](String v) {
+    String o;
+    for (char c : v) o += (c == ';' || c == '=' || c < 0x20 || c > 0x7e) ? '?' : c;
+    return o;
+  };
+  String s = "fw=" FW_VERSION ";up=" + String(millis() / 1000) + ";heap=" + String(ESP.getFreeHeap() / 1024) +
+             ";psram=" + String(ESP.getFreePsram() / 1024) + ";ping=" + String(havePlan ? plan.pingS : 10);
+  if (WiFi.status() == WL_CONNECTED)
+    s += ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID()) + ";ip=" + WiFi.localIP().toString();
+  return s;
+}
+
 void setup() {
   pinMode(LED, OUTPUT);
   pinMode(BUTTON, INPUT_PULLUP);
@@ -646,6 +678,7 @@ void loop() {
   portal::loop();
   ledTick();
   roundTick();
+  pingTick();
   if (millis() > 24UL * 3600 * 1000 && !inRound) restart("daily restart");
   delay(5);
 }

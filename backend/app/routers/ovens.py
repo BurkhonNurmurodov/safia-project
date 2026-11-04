@@ -80,6 +80,12 @@ def _collector(request: Request) -> str:
     raise _refuse("bad_key", "Not a collector key.", 401)
 
 
+def _seen(db: Session, request: Request, name: str, what: str) -> None:
+    """Remember that this collector is alive (the admin page's «Tekshirish»)."""
+    revent_ovens.note_contact(db, name, what, _ip(request), request.headers.get("user-agent") or "",
+                              request.headers.get("x-collector-info"))
+
+
 def _oven(db: Session, oven_id: int) -> ReventOven:
     o = db.get(ReventOven, oven_id)
     if o is None or not o.active:
@@ -90,8 +96,17 @@ def _oven(db: Session, oven_id: int) -> ReventOven:
 @collector_router.get("/plan")
 def collector_plan(request: Request, db: Session = Depends(get_db)):
     """Which ovens to read, how often, and what is already kept here."""
-    _collector(request)
+    name = _collector(request)
+    _seen(db, request, name, "plan")
     return revent_ovens.plan(db)
+
+
+@collector_router.get("/ping")
+def collector_ping(request: Request, db: Session = Depends(get_db)):
+    """The heartbeat between rounds: nothing but «I am here»."""
+    name = _collector(request)
+    _seen(db, request, name, "ping")
+    return {"ok": True}
 
 
 class StatusIn(BaseModel):
@@ -108,6 +123,7 @@ class StatusBatch(BaseModel):
 def collector_status(body: StatusBatch, request: Request, db: Session = Depends(get_db)):
     """One poll's live status for every oven read (or why one could not be)."""
     name = _collector(request)
+    _seen(db, request, name, "status")
     saved = 0
     for r in body.readings:
         o = db.get(ReventOven, r.oven_id)
@@ -134,7 +150,8 @@ def collector_file(body: FileIn, request: Request, db: Session = Depends(get_db)
     """One file of one oven. A log may be sent as the bytes added since the
     copy kept here (`offset` = that copy's size); anything that does not add
     up is refused 409 with the size this side holds, and sent again whole."""
-    _collector(request)
+    name = _collector(request)
+    _seen(db, request, name, "file")
     try:
         chunk = base64.b64decode(body.data, validate=True)
     except (binascii.Error, ValueError):
@@ -153,7 +170,7 @@ async def collector_raw(request: Request,
     base64) — what the always-on board sends: it holds the file in a small
     memory and a third less to send matters there. The key is checked BEFORE
     the body is read, the body is capped, and the store runs off the loop."""
-    _collector(request)                         # in memory, no DB
+    who = _collector(request)                   # in memory, no DB
     try:
         declared = int(request.headers.get("content-length") or 0)
     except ValueError:
@@ -165,8 +182,13 @@ async def collector_raw(request: Request,
         buf += part
         if len(buf) > revent_ovens.MAX_FILE:
             raise _refuse("bad_size", "File refused: bad_size.", 400, size=0)
-    return await run_in_threadpool(_store_file, db, oven_id, kind, name, offset, bytes(buf),
-                                   size, sha256)
+    data = bytes(buf)
+
+    def work():
+        _seen(db, request, who, "file")
+        return _store_file(db, oven_id, kind, name, offset, data, size, sha256)
+
+    return await run_in_threadpool(work)
 
 
 def _store_file(db: Session, oven_id: int, kind: str, name: str, offset: int, chunk: bytes,
@@ -301,6 +323,13 @@ class OvenIn(BaseModel):
 @admin_router.get("")
 def register(db: Session = Depends(get_db), _a=Depends(verify_admin)):
     return _register(db)
+
+
+@admin_router.get("/devices")
+def devices(db: Session = Depends(get_db), _a=Depends(verify_admin)):
+    """The collector devices and when IMS last heard from each — the page's
+    «Tekshirish» asks this until the device answers or its wait runs out."""
+    return revent_ovens.devices(db)
 
 
 @admin_router.post("")
