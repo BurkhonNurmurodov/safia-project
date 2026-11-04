@@ -13,7 +13,7 @@ OvenReply ovenAsk(const String& ip, uint16_t port, soap::Op op, uint32_t idleMs,
   OvenReply r;
   uint32_t t0 = millis();
   WiFiClient c;
-  if (!c.connect(ip.c_str(), port, 5000)) {
+  if (!c.connect(ip.c_str(), port, 10000)) {
     r.error = "could not connect to " + ip + ":" + String(port);
     r.ms = millis() - t0;
     return r;

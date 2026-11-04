@@ -155,8 +155,8 @@ void wifiTick() {
   static bool wasUp = false;
   bool up = WiFi.status() == WL_CONNECTED;
   if (up && !wasUp) {
-    blog("Wi-Fi: connected to \"%s\", IP %s, signal %d dBm", CFG.ssid.c_str(), WiFi.localIP().toString().c_str(),
-         WiFi.RSSI());
+    blog("Wi-Fi: connected to \"%s\" (access point %s, channel %d), IP %s, signal %d dBm", CFG.ssid.c_str(),
+         WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
     wifiDownSince = 0;
     wifiUpSince = millis();
   }
@@ -189,14 +189,20 @@ void doStatus() {
     Reading x;
     x.ovenId = op.id;
     std::string body;
-    OvenReply r = ovenAsk(
-        op.ip, op.port, soap::Op::Status, 8000, 15000,
-        [&](const uint8_t* p, size_t n) {
-          if (body.size() + n > 64 * 1024) return false;
-          body.append((const char*)p, n);
-          return true;
-        },
-        background);
+    OvenReply r;
+    for (int attempt = 0; attempt < 2; attempt++) {  // the factory Wi-Fi drops the odd connection
+      body.clear();
+      r = ovenAsk(
+          op.ip, op.port, soap::Op::Status, 15000, 40000,
+          [&](const uint8_t* p, size_t n) {
+            if (body.size() + n > 64 * 1024) return false;
+            body.append((const char*)p, n);
+            return true;
+          },
+          background);
+      if (r.ok) break;
+      delay(1000);
+    }
     std::string xml = body;
     if (soap::looksLikeDime((const uint8_t*)body.data(), body.size())) {
       FileCollector fc([](OvenFile&) {});
@@ -282,7 +288,7 @@ OvenReply readFiles(OvenPlan& op, soap::Op what, const FileCollector::FileFn& on
   std::string sniff;
   bool decided = false, isDime = false;
   OvenReply r = ovenAsk(
-      op.ip, op.port, what, 20000, what == soap::Op::Logs ? 180000 : 60000,
+      op.ip, op.port, what, 30000, what == soap::Op::Logs ? 240000 : 90000,
       [&](const uint8_t* p, size_t n) {
         if (!decided && n) {
           decided = true;
@@ -469,7 +475,8 @@ String showText() {
   s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
   if (WiFi.status() == WL_CONNECTED)
-    s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, MAC " + WiFi.macAddress() + "\n";
+    s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, access point " +
+         WiFi.BSSIDstr() + " ch " + String(WiFi.channel()) + ", MAC " + WiFi.macAddress() + "\n";
   else
     s += "           not connected (MAC " + WiFi.macAddress() + ")\n";
   s += "server     " + CFG.server + "\n";
@@ -623,6 +630,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
+  // One network name, many access points (the factory's «alisa»): scan every
+  // channel and join the STRONGEST one, not the first found.
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   if (configHasWifi()) wifiStart();
   if (!CFG.key.length()) blog("no collector key yet: set it over USB (setup_board.py)");
   updatePortalStatus();

@@ -17,6 +17,11 @@ namespace {
 WiFiClientSecure tls;
 WiFiClient plain;
 bool tlsReady = false;
+uint32_t lastUse = 0;  // the kept-alive connection's last request
+
+// Cloudflare closes an idle connection; reusing one after a long oven read
+// fails half-way. After this long idle, start fresh.
+const uint32_t IDLE_FRESH_MS = 15000;
 
 String urlEncode(const std::string& s) {
   static const char* hex = "0123456789ABCDEF";
@@ -41,9 +46,25 @@ String detailCode(const String& body) {
 }  // namespace
 
 ImsReply Ims::send(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype) {
+  ImsReply r = sendOnce(method, path, body, n, ctype);
+  if (r.http <= 0 && r.http != -1) {
+    // no answer at all (a dropped connection, a slow link): once more, fresh
+    delay(500);
+    ImsReply again = sendOnce(method, path, body, n, ctype);
+    if (again.http > 0 || again.error.length()) r = again;
+  }
+  last_ = r.ok() ? "" : r.error;
+  return r;
+}
+
+ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype) {
   ImsReply r;
   String url = CFG.server + path;
   bool https = CFG.server.startsWith("https://");
+  if (lastUse && millis() - lastUse > IDLE_FRESH_MS) {
+    if (https) tls.stop();
+    else plain.stop();
+  }
   if (https && !tlsReady) {
     tls.setCACert(ROOT_CAS);
     tls.setHandshakeTimeout(20);
@@ -76,6 +97,7 @@ ImsReply Ims::send(const char* method, const String& path, const uint8_t* body, 
     if (https && tls.lastError(tlsErr, sizeof tlsErr)) r.error += String(" (TLS: ") + tlsErr + ")";
   }
   http.end();
+  lastUse = millis();
   if (code <= 0) {
     // a dead kept-alive connection: start the next one fresh
     if (https) tls.stop();
@@ -85,7 +107,6 @@ ImsReply Ims::send(const char* method, const String& path, const uint8_t* body, 
     String c = detailCode(r.body);
     r.error = "HTTP " + String(code) + (c.length() ? " " + c : "");
   }
-  last_ = r.ok() ? "" : r.error;
   return r;
 }
 

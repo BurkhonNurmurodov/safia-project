@@ -48,5 +48,6 @@ class Ims {
 
  private:
   ImsReply send(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype);
+  ImsReply sendOnce(const char* method, const String& path, const uint8_t* body, size_t n, const char* ctype);
   String last_;
 };
