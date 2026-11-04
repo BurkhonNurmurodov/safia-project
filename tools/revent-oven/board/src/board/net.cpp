@@ -5,6 +5,13 @@
 
 #include "blog.h"
 
+// The W5500 is OFF unless the build says otherwise (-DWITH_W5500=1 in
+// platformio.ini's build_flags): no board has a module, and the probe's
+// failure path is untested on the hardware (2026-11-04).
+#ifndef WITH_W5500
+#define WITH_W5500 0
+#endif
+
 namespace net {
 namespace {
 
@@ -76,6 +83,10 @@ void keepDns() {
 }  // namespace
 
 void begin() {
+  if (!WITH_W5500) {
+    blog("Ethernet: off in this build (WITH_W5500=0) — Wi-Fi only");
+    return;
+  }
   Network.onEvent(onEvent);
   // A W5500 that is not there answers nothing: the driver's chip check fails,
   // begin() says false within a moment, and the board goes on with Wi-Fi.
