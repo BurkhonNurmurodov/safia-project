@@ -9041,6 +9041,11 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   `sap_actual_qty` from every row for any other role, and the page lists both
   in `absentCols` for a non-admin (not drawn, not in the picker, not in the
   workbook). Opening them to more roles is those two places.
+  **A SAP number that differs is RED and names the gap** (the operator, same
+  day): `sapGap` in Production.jsx = SAP − the ПЛАН/ФАКТ the row shows, printed
+  «120 (+20)» on the cell's one line in `--status-bad`, both numbers in the
+  tooltip, bold red in the workbook. No gap when they agree, when the SAP row is
+  missing, or when ПЛАН/ФАКТ was never typed («—» is not a number that differs).
 - **On a typed-only day** (`dashboard.typed_only`): an untyped ПЛАН/ФАКТ prints
   «—» (it counts 0) with a hint naming the SAP columns; the «Manba» column and
   the per-line SAP switch (row editor, create form, bulk bar) are not drawn —

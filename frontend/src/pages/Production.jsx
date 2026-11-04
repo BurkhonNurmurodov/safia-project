@@ -94,6 +94,8 @@ const containerCount = (r, field) => {
 // Excel inks for the screen's muted / warning text (light theme values).
 const XL_SOFT = "#6b7280";
 const XL_WARN = "#a16207";
+// A «SAP» column number that differs from the row's ПЛАН/ФАКТ (light --status-bad).
+const XL_BAD = "#b91c1c";
 const XL_DASH = { t: "—", m: true };
 const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 // The page scope's shift filter — the platform runs two shifts and
@@ -1804,6 +1806,18 @@ export default function Production() {
   const shownQty = (r, field) => (field === "actual"
     ? (typedOnly && !r.actual_overridden ? null : r.actual_qty)
     : (typedOnly && !r.plan_overridden ? null : r.plan_qty));
+  // How far a «SAP» column's number is from the ПЛАН / ФАКТ the row shows:
+  // SAP − ПЛАН/ФАКТ, or null when they agree or there is nothing to set it
+  // against — no SAP row, or a ПЛАН/ФАКТ nobody typed (it prints «—», and a
+  // blank is not a number that differs). One answer for the cell, its tooltip
+  // and the workbook's red.
+  const sapGap = (r, key) => {
+    const sap = key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty;
+    const own = shownQty(r, key === "sap_plan" ? "plan" : "actual");
+    if (sap == null || own == null) return null;
+    const gap = Number(sap) - Number(own);
+    return Number.isNaN(gap) || Math.abs(gap) < 1e-6 ? null : gap;
+  };
   // Per-day editing is gated by ROLE **and** by the day's closing.
   const canEditStaffing = canEditStaffingRole && dayOpen;
   const canEditPeople = canEditPeopleRole && dayOpen;
@@ -2832,15 +2846,32 @@ export default function Production() {
             value={shownQty(r, "plan")} onSave={saveOverride(r, "plan")} />
         );
       // The SAP file's number for this SAP code at this Команда — read-only and
-      // muted, so it never reads as one of the typed figures beside it.
+      // muted, so it never reads as one of the typed figures beside it. Where it
+      // is NOT the number the row's ПЛАН / ФАКТ holds (the operator, 2026-11-04)
+      // it turns red and says by how much, on the same line: SAP − ПЛАН/ФАКТ.
       case "sap_plan":
       case "sap_fact": {
         const v = key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty;
+        const gap = sapGap(r, key);
+        if (v == null) {
+          return (
+            <td key={key} className="px-3 py-2 text-center tabular-nums"
+                title={t("production.sapCol.none")} style={{ color: "var(--text-4)" }}>—</td>
+          );
+        }
+        const own = shownQty(r, key === "sap_plan" ? "plan" : "actual");
         return (
-          <td key={key} className="px-3 py-2 text-center tabular-nums"
-              title={v == null ? t("production.sapCol.none") : undefined}
-              style={{ color: v == null ? "var(--text-4)" : "var(--text-2)" }}>
-            {v == null ? "—" : fmt(v, 0)}
+          <td key={key} className="px-3 py-2 text-center tabular-nums whitespace-nowrap"
+              title={gap == null ? undefined : t("production.sapCol.diffHint")
+                .replace("{sap}", fmt(v, 2))
+                .replace("{col}", t(key === "sap_plan" ? "production.col.plan" : "production.col.fact"))
+                .replace("{own}", fmt(own, 2))
+                .replace("{gap}", `${gap > 0 ? "+" : "−"}${fmt(Math.abs(gap), 2)}`)}
+              style={{ color: gap == null ? "var(--text-2)" : "var(--status-bad)" }}>
+            <span className={gap == null ? undefined : "font-semibold"}>{fmt(v, 0)}</span>
+            {gap != null && (
+              <span className="ml-1 text-[11px]">({gap > 0 ? "+" : "−"}{fmt(Math.abs(gap), 2)})</span>
+            )}
           </td>
         );
       }
@@ -2926,8 +2957,11 @@ export default function Production() {
         : { v: vyp, k: "pct", fg: vypColor(vyp), b: true };
       case "plan": return num(r.plan_qty, NUM_DEC.plan);
       case "fact": return num(r.actual_qty, NUM_DEC.fact);
-      case "sap_plan": return num(r.sap_plan_qty, NUM_DEC.plan);
-      case "sap_fact": return num(r.sap_actual_qty, NUM_DEC.fact);
+      case "sap_plan":
+      case "sap_fact": {
+        const c = num(key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty, NUM_DEC.plan);
+        return sapGap(r, key) == null || !("v" in c) ? c : { ...c, fg: XL_BAD, b: true };
+      }
       case "autofill": return r.sap_filled !== false
         ? { t: t("production.autofill.sap"), fg: XL_SOFT }
         : { t: t("production.autofill.manual"), fg: "#b07828" };
