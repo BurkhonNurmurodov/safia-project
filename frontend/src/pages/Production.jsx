@@ -212,6 +212,8 @@ const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill", "wc_gr
 const GROUP_COL = "wc_group";
 // «Manba» — absent on a day ПЛАН/ФАКТ are typed only (`typedOnly` below).
 const AUTOFILL_COL = "autofill";
+// «SAP reja» / «SAP fakt» — an admin's columns for now (`absentCols` below).
+const SAP_COLS = ["sap_plan", "sap_fact"];
 // «O'lchov birligi» — the stored key («dona») to the word the reader sees. The
 // four keys are served on the payload (services/pp_uom is their one definition,
 // `catalog.uoms`), so this page holds no copy of the LIST — only of how each one
@@ -1933,12 +1935,15 @@ export default function Production() {
     mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
   });
   // The columns this view does not draw at all: «Guruh» on a unit with no
-  // groups, «Manba» on a day ПЛАН/ФАКТ are typed only. Neither is offered to the
-  // picker either, since a picker row that toggles nothing is a control that
-  // says nothing.
+  // groups, «Manba» on a day ПЛАН/ФАКТ are typed only, and the two «SAP»
+  // columns for anybody but an admin (the operator, 2026-11-04: «only visible
+  // to admin for now» — the dashboard drops their figures for everybody else
+  // too). None is offered to the picker either, since a picker row that
+  // toggles nothing is a control that says nothing.
   const absentCols = useMemo(
-    () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : [])],
-    [hasGroups, typedOnly],
+    () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : []),
+           ...(isAdmin ? [] : SAP_COLS)],
+    [hasGroups, typedOnly, isAdmin],
   );
   const onColsChange = (value) => {
     // The picker is never shown an absent column, and its hide-all / show-all /

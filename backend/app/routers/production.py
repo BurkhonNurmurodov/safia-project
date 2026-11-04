@@ -1152,6 +1152,13 @@ def get_dashboard(
     units = _leader_units(db, payload, day)
     if units:
         dash["leader_units"] = units
+    # The «SAP» columns are an ADMIN's for now (the operator, 2026-11-04): the
+    # snapshot leaves this door for nobody else, so hiding the columns on the
+    # page is not the only thing keeping it from them.
+    if payload.get("role") != "admin":
+        for r in dash.get("rows") or ():
+            r.pop("sap_plan_qty", None)
+            r.pop("sap_actual_qty", None)
     return dash
 
 

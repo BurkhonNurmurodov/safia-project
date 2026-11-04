@@ -9036,6 +9036,11 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   Shown on every day, sortable, in the ColumnsPicker, in the workbook (inserted
   after ПЛАН). Filled by whoever the upload reaches — unchanged: the unit's
   «SAP avto-to'ldirish» switch and an upload's own target picker.
+  **ADMINS ONLY for now** (the operator, same day: «only visible to admin for
+  now»): `GET /api/production/dashboard` drops `sap_plan_qty` /
+  `sap_actual_qty` from every row for any other role, and the page lists both
+  in `absentCols` for a non-admin (not drawn, not in the picker, not in the
+  workbook). Opening them to more roles is those two places.
 - **On a typed-only day** (`dashboard.typed_only`): an untyped ПЛАН/ФАКТ prints
   «—» (it counts 0) with a hint naming the SAP columns; the «Manba» column and
   the per-line SAP switch (row editor, create form, bulk bar) are not drawn —
