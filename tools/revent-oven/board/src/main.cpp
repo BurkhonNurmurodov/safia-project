@@ -569,7 +569,7 @@ void handleLine(String l) {
   } else if (cmd == "scan") {
     int n = WiFi.scanNetworks();
     for (int i = 0; i < n; i++)
-      Serial.printf("  %-32s ch %2d  %4d dBm  %s\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i),
+      Serial.printf("  %-32s ch %2d  %4d dBm  %s\n", WiFi.SSID(i).c_str(), (int)WiFi.channel(i), (int)WiFi.RSSI(i),
                     WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "password");
     WiFi.scanDelete();
     Serial.printf("OK %d network(s)\n", n < 0 ? 0 : n);
@@ -610,7 +610,9 @@ void setup() {
   pinMode(LED, OUTPUT);
   pinMode(BUTTON, INPUT_PULLUP);
   Serial.begin(115200);
-  Serial.setTxTimeoutMs(0);  // powered by a charger, nobody reads: never wait on USB
+  // Writes wait (at most this long) only while a program has the port open;
+  // with nobody reading — a phone charger, a closed port — they never wait.
+  Serial.setTxTimeoutMs(200);
   uint32_t t = millis();
   while (!Serial && millis() - t < 1500) delay(10);
   blog("Safia oven board %s — %s rev %d, PSRAM %u KB free, reset reason %d", FW_VERSION, ESP.getChipModel(),

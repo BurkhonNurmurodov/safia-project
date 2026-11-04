@@ -112,7 +112,8 @@ ImsReply Ims::plan(Plan& out) {
     op.ip = (const char*)(o["ip"] | "");
     op.port = o["port"] | 8080;
     op.settingsSha = (const char*)(o["settings_sha256"] | "");
-    for (JsonPair kv : o["logs"].as<JsonObject>()) {
+    JsonObject logs = o["logs"].as<JsonObject>();
+    for (JsonPair kv : logs) {
       Kept k;
       k.has = true;
       k.size = kv.value()["size"] | 0;

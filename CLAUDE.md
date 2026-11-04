@@ -10429,8 +10429,32 @@ register is `/panel/ovens` (tools group, no capKey).
 - **Measured on the real 725 (3 Nov)**: a day file 213–252 KB, 44–64 manual
   bakes a day, baking ~65–77% of the logged time, heater ~8–9.5 h a day, the
   door ~75 openings a day while on; a week's period answer 0.2 s.
-- Not built yet: the always-on device (the laptop runs the collector for the
-  test), recipes / autostarts (read-only calls exist, not used), export.
+- **The always-on device is a LOLIN S2 Mini** (ESP32-S2FNR2, 4 MB flash,
+  2 MB PSRAM, 2.4 GHz Wi-Fi; firmware `tools/revent-oven/board/`, 2026-11-04,
+  the operator bought the board). It does `collector.py`'s job in C++: the
+  same plan, paces, decisions (`sync.cpp` `decide` is `_send_log`'s rule)
+  and read-only requests (`core/soap.cpp` builds only the three reads). It
+  reads getLogs AS IT ARRIVES (`core/http_response` → `dime` → `sync`): each
+  file hashed on the way and dropped once IMS has it, a grown file sends its
+  tail, uploads wait in a queue capped to the free PSRAM (newer day files push
+  older ones out; the rest go next round). It posts files to
+  **`POST /api/ovens/collector/raw`** — the `/file` door with the bytes as the
+  body and `oven_id · kind · name · offset · size · sha256` in the query
+  (key checked BEFORE the body is read, body capped at `MAX_FILE`, the store
+  `_store_file` shared with `/file` and run off the loop). Its own key,
+  «board» in `COLLECTOR_KEYS` (`~/.safia/oven-board.key` on the build Mac, in
+  the board's NVS — never shown, `show` prints a digest prefix). Setup: the key
+  and IMS address over USB (`setup_board.py`), the Wi-Fi over USB or from a
+  phone through the board's own hotspot «Safia-Pech-XXXX» (hold «0» 3 s, or
+  no network set, or 10 min without Wi-Fi). HTTPS checks IMS against the roots
+  in `src/board/certs.h` (`make_certs.py`; GlobalSign Root CA ends Jan 2028).
+  Host tests (`test/run_host_tests.sh`) feed the saved 725 answers through the
+  core: every file byte for byte with its SHA-256, status lines equal to
+  `revent_oven.py`'s. Toolchain in `~/.safia-esp/venv` (PlatformIO, esptool),
+  ~5 GB in `~/.platformio`. A change to how ovens are read is made in BOTH
+  `collector.py` and the board's core.
+- Not built yet: firmware updates over Wi-Fi (USB only), recipes / autostarts
+  (read-only calls exist, not used), export.
 
 ## «Notion vazifalari» — the Notion task list and its reminders (`/notion-tasks`, 2026-11-02)
 

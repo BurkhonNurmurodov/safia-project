@@ -92,7 +92,7 @@ Wi-Fi it joins — on the production block that is the 192.168.0.x network.
 
 It reconnects Wi-Fi every 30 s, restarts after an hour without Wi-Fi or
 30 minutes without IMS, and once a day. Powered by any USB phone charger — it
-never waits on the USB port when nobody is reading it.
+never waits on the USB port when no program has it open.
 
 ## Tests (no board needed)
 
