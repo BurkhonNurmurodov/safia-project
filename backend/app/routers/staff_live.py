@@ -567,11 +567,14 @@ def get_attendance(attend_date: Optional[str] = None, manager_id: Optional[int] 
 
 def _scope_docs(q, caller: dict, db: Session):
     """`staff._scope_documents`: own unit + exchanges addressed TO it for a
-    supervisor, shift ∩ plant for a shift-manager, everything for an admin or
-    a documents grant at "all"."""
+    supervisor, shift ∩ plant for a shift-manager, everything for an admin, a
+    top-manager (READ only — every write door checks its own rights, none of
+    which a top-manager holds) or a documents grant at "all"."""
     if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE):
         return q
     role, rid = caller.get("role"), caller.get("role_id")
+    if role == "top-manager":
+        return q
     if role == "supervisor":
         if not rid:
             return q.filter(LiveDocument.created_by_telegram_id == _tg(caller))
@@ -687,7 +690,7 @@ def _scope_deletions(caller: dict, db: Session) -> list:
                 q.filter(LiveDeletion.supervisor_telegram_id == _tg(caller))
         elif role == "shift-manager":
             q = q.filter(LiveDeletion.manager_id.in_(shift_scope.unit_ids(db, rid) or [-1]))
-        elif role != "admin":
+        elif role not in ("admin", "top-manager"):   # a top-manager reads, never decides
             return []
     return q.order_by(LiveDeletion.day.desc(), LiveDeletion.id).all()
 

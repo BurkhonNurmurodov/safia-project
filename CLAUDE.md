@@ -11748,7 +11748,13 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
   approval). Its page gate is `require_page("staff")` (strict parity: /staff's
   own `_require_staff` also admits a «daily» grant — a /daily-only viewer is
   refused the live doors, a gap that predates the retirement), and a grant at
-  "all" on staff or daily widens it as on /staff.
+  "all" on staff or daily widens it as on /staff. **A top-manager READS the
+  whole register** (every unit's documents and deletion requests,
+  `_scope_docs` / `_scope_deletions`, 2026-11-04 — the file register always let
+  them, by falling through to «everything»; the live one listed three roles and
+  gave every other an empty tab) and decides nothing: every write door checks
+  rights a top-manager does not hold. Their unit reads (`_visible`) stay closed,
+  as on the file days.
 - **`services/live_staff.py` is THE day** — the stored read folded into
   /staff's row shape, with every APPROVED document laid over it on every
   request. **Nothing is applied**: /staff writes a file-day document onto

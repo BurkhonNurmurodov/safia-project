@@ -3331,8 +3331,10 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   // The supervisor column and its filter only earn their space for someone who
   // sees more than one unit — managers, and grantees scoped to "all". An
   // "own"-scoped grantee sees a single unit, so the column would be one value
-  // repeated down the page.
-  const crossUnit = isManager || canAll(CAP.DOCUMENTS_APPROVE) || canAll(CAP.REQUESTS_APPROVE);
+  // repeated down the page. A top-manager reads every unit's requests (and
+  // decides none of them), so the column is theirs too.
+  const crossUnit = isManager || role === "top-manager"
+    || canAll(CAP.DOCUMENTS_APPROVE) || canAll(CAP.REQUESTS_APPROVE);
 
   const [selected, setSelected]     = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
