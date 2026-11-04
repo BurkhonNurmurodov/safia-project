@@ -99,7 +99,7 @@ export default function OvensSettings() {
           {ovens.length ? ovens.map((o) => (
             <tr key={o.id} style={{ opacity: o.active ? 1 : 0.6 }}>
               <td className="px-3 py-2 max-w-0 truncate font-semibold" title={o.name}>{o.name}</td>
-              <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>{o.ip}:{o.port}</td>
+              <td className="px-3 py-2 max-w-0 truncate tabular-nums" style={{ color: "var(--text-2)" }} title={`${o.ip}:${o.port}`}>{o.ip}:{o.port}</td>
               <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{o.active ? T.actOn : T.actOff}</td>
               <td className="px-3 py-2 max-w-0 truncate tabular-nums" title={o.error || ""}
                 style={{ color: o.error ? "var(--status-warn)" : "var(--text-2)" }}>
