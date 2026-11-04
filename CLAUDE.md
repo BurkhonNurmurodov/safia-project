@@ -10360,6 +10360,42 @@ card), `pages/admin/TrelloSettings.jsx`.
 - Not built: people / deadline views (offered, not picked), webhooks (the
   15-minute read stands in), checklists, writing to Trello.
 
+## «Audit jadvali» — the `public.audit` table, read-only (`/audit`, Laboratory, 2026-11-04)
+
+Abbos asked for `select * from public.audit;` on production, then for a screen
+over it. **No model here creates that table** — something outside this codebase
+writes it — so nothing knows its columns in advance: `routers/audit_table.py`
+reads the catalog on every request (columns, types, the single-column primary
+key, the date column) and `pages/AuditTable.jsx` (+ `pages/auditTableText.js`,
+four languages) draws whatever the table holds. **ADMINS ONLY, not grantable**:
+an `adminOnly` Laboratory row, `RequireAdmin` on the route, `verify_admin` on
+every endpoint (the «Trello tahlili» model).
+
+- **Read-only by construction**: every request runs in a READ ONLY transaction,
+  statements bounded at 20 s (`allow_long`). Values go through the report
+  door's masking (`ops_door.mask_rows`) — a credential-named column or a
+  credential-shaped value reads •••, and the search never looks inside a
+  credential-named column (it would reveal a masked value letter by letter).
+- `GET /api/audit-table/meta` (exists · kind · owner · size · ≈rows · may the
+  app read it · columns with a kind: number · timestamptz · timestamp · date ·
+  bool · json · text · the date column · the default order); `GET /rows`
+  (`page`, `size` 25/50/100/200, `q`, `date_from`/`date_to` on the date column
+  in Tashkent days, `sort`/`dir` — a sort key not among the columns falls back
+  to the default; `total` is the exact count, None with `est_rows` when the
+  count passes 20 s; values cut at 500 characters); `GET /row?key=` (one row
+  whole, by its primary key — 409 `no_pk` without one); `POST /export.xlsx`
+  (the filtered rows in the screen's column order, ≤ 20,000; logged as
+  `export.audit_table`).
+- **The page**: one card — `public.audit` with kind · owner · size, the row
+  count; the period on the date column (hidden when there is none; «Barcha
+  vaqt» by default), a search over the values, Excel, the `ColumnsPicker`
+  (ui-prefs `audit.table.cols`); one-line rows, newest first, every column
+  sortable; a row opens the record whole (JSON pretty-printed). A missing table,
+  a table the app may not read, and a failed load are three different states.
+- Verified on a throwaway Postgres (a table with a key, a view without one, a
+  missing table) and in headless Chrome over those answers. What production's
+  `public.audit` actually holds was not seen by the code's author.
+
 ## «Pechlar» — the Revent ovens (`/ovens`, Laboratory, 2026-11-03)
 
 The operator: show everything the Windows «Revent Oven Manager» shows — live
