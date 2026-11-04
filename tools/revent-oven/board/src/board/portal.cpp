@@ -18,7 +18,7 @@ bool changed = false;
 String status;
 uint32_t lastScan = 0;
 
-String esc(const String& s) {
+String esc(const String& s) {  // htmlEscape's body
   String o;
   for (char c : s) {
     if (c == '<') o += "&lt;";
@@ -109,6 +109,8 @@ void toPage() {
 }
 
 }  // namespace
+
+String htmlEscape(const String& s) { return esc(s); }
 
 String apName() {
   uint8_t m[6];

@@ -15,5 +15,6 @@ void loop();                 // serve the page; safe to call during a round
 bool takeWifiChange();       // true once after somebody saved a network there
 void setStatusText(const String& html);  // the board's state, shown on the page
 String apName();
+String htmlEscape(const String& s);
 
 }  // namespace portal
