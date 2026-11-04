@@ -27,6 +27,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -35,7 +36,7 @@ from app.database import get_db
 from app.models import ReventOven, ReventOvenLog
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import ops_door, revent_analytics, revent_ovens
+from app.services import action_log, android_release, oven_firmware, ops_door, revent_analytics, revent_ovens
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,51 @@ def collector_ping(request: Request, db: Session = Depends(get_db)):
     name = _collector(request)
     _seen(db, request, name, "ping")
     return {"ok": True}
+
+
+@collector_router.get("/firmware")
+def collector_firmware(request: Request, version: str = Query(..., max_length=12), db: Session = Depends(get_db)):
+    """The published firmware image, for the board to write into its other
+    app slot. Only the version the plan names — a board holding an older plan
+    is told 404 and asks again with the next plan."""
+    name = _collector(request)
+    _seen(db, request, name, "firmware")
+    rel = oven_firmware.latest()
+    if rel is None or rel["version"] != version:
+        raise _refuse("no_firmware", "That firmware is not the published one.", 404)
+    log.info("[OVENS] %s downloads firmware %s", name, version)
+    return FileResponse(oven_firmware.path(version), media_type="application/octet-stream",
+                        headers={"Cache-Control": "no-store", "X-Firmware-Sha256": rel["sha256"]})
+
+
+@collector_router.post("/firmware/publish")
+async def collector_firmware_publish(request: Request, version: str = Query(..., max_length=12)):
+    """tools/revent-oven/board/publish_firmware.sh: the build Mac's publish
+    key (the APK's), the image as the body. The board takes it at its next
+    round."""
+    if not android_release.key_ok(request.headers.get("X-Publish-Key")):
+        raise _refuse("bad_publish_key", "Not the publish key.", 403)
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared = 0
+    if declared > oven_firmware.MAX_BIN:
+        raise _refuse("bad_firmware", "Too big for the board's app slot.", 400)
+    buf = bytearray()
+    async for part in request.stream():
+        buf += part
+        if len(buf) > oven_firmware.MAX_BIN:
+            raise _refuse("bad_firmware", "Too big for the board's app slot.", 400)
+    try:
+        meta = await run_in_threadpool(oven_firmware.publish, bytes(buf), version)
+    except oven_firmware.BadFirmware as e:
+        raise _refuse("bad_firmware", str(e), 400)
+    log.info("[OVENS] firmware %s published (%s bytes, sha256 %s)", meta["version"], meta["size"], meta["sha256"][:12])
+    action_log.record(category="config", action="config.oven_firmware_published", source="system",
+                      actor_name="publish key", actor_role="system", target_kind="oven_firmware",
+                      target_id=meta["version"], target_name="Pech platasi " + meta["version"],
+                      details=[("size", meta["size"]), ("sha256", meta["sha256"][:16])])
+    return meta
 
 
 class StatusIn(BaseModel):

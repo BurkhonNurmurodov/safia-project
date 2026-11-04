@@ -85,8 +85,11 @@ def plan(db: Session) -> dict:
                                               ReventOvenLog.size, ReventOvenLog.sha256)
                                      .filter(ReventOvenLog.oven_id.in_(ids))):
             files[oid][name] = {"size": size, "sha256": sha}
+    from app.services import oven_firmware   # lazy: a leaf, no import loop
     return {
         "poll": POLL,
+        # the firmware the board should be running (firmware 1.3.0+ updates itself)
+        "firmware": oven_firmware.for_plan(),
         "ovens": [{"id": o.id, "name": o.name, "ip": o.ip, "port": o.port,
                    "settings_sha256": o.settings_sha, "logs": files.get(o.id, {})}
                   for o in ovens],
@@ -239,5 +242,8 @@ def devices(db: Session) -> dict:
             "online_s": online_s, "wait_s": min(90, expect + 20), "expect_s": expect,
             "last_path": r.last_path, "remote_ip": r.remote_ip, "fw": fw, "info": r.info or {},
         })
-    return {"now": t.isoformat(), "devices": out}
+    from app.services import oven_firmware
+    rel = oven_firmware.latest()
+    return {"now": t.isoformat(), "devices": out,
+            "firmware": {"version": rel["version"], "published_at": rel["published_at"]} if rel else None}
 
