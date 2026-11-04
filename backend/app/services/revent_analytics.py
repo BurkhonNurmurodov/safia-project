@@ -350,7 +350,10 @@ def live(lines: Optional[list]) -> Optional[dict]:
     out["prover_status"] = (raw.get("prover_status") or "").strip(" ,") if out["has_prover"] else None
     out["faults"] = [k for k in FAULT_FLAGS if out.get(k)]
     total, elapsed = out.get("bake_total_s"), out.get("bake_elapsed_s")
-    out["baking"] = bool(total)
+    # a loaded bake whose timer has not started («Темп. готова.») is READY,
+    # not baking: the oven waits for the rack and the start button
+    out["baking"] = bool(total) and bool(elapsed)
+    out["ready"] = bool(total) and not elapsed
     out["bake_left_s"] = max(0.0, total - (elapsed or 0)) if total else None   # the app: line 2 − line 0
     return out
 

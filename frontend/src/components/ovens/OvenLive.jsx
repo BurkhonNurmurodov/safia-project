@@ -40,8 +40,10 @@ function OvenCard({ o, today }) {
   if (never) pill = <Pill tone="idle" icon={WifiOff}>{failing ? T.stNoAnswer : T.stNever}</Pill>;
   else if (o.stale) pill = <Pill tone="warn" icon={Clock3}>{T.stStale}</Pill>;
   else if (st?.baking) pill = <Pill tone="bake" icon={Flame}>{T.stBaking}</Pill>;
+  else if (st?.ready) pill = <Pill tone="idle" icon={Clock3}>{T.stReady}</Pill>;
   else pill = <Pill tone="idle">{T.stIdle}</Pill>;
-  const pct = st?.baking && st.bake_total_s ? Math.min(100, (100 * (st.bake_elapsed_s || 0)) / st.bake_total_s) : null;
+  const pct = (st?.baking || st?.ready) && st.bake_total_s
+    ? Math.min(100, (100 * (st.bake_elapsed_s || 0)) / st.bake_total_s) : null;
   const faults = st?.faults || [];
 
   return (

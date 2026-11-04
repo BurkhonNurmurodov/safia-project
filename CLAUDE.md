@@ -10453,6 +10453,19 @@ register is `/panel/ovens` (tools group, no capKey).
   `revent_oven.py`'s. Toolchain in `~/.safia-esp/venv` (PlatformIO, esptool),
   ~5 GB in `~/.platformio`. A change to how ovens are read is made in BOTH
   `collector.py` and the board's core.
+- **Live since 2026-11-04** on the production block's Wi-Fi «alisa»: ONE name
+  for many access points, so the board scans every channel and joins the
+  STRONGEST (`WIFI_CONNECT_AP_BY_SIGNAL` — the default first-found AP gave
+  −69 dBm and ~2 KB/s; the strongest −59 dBm). The network is one
+  192.168.0.0/21 (oven №1 192.168.0.100 on-link, the board 192.168.3.x);
+  oven №2 192.168.250.100 sits behind the router with 0.6–2.6 s round trips.
+  So the board waits 10 s to connect, 15 s of silence for a status (one retry)
+  and 30 s for files, starts a fresh IMS connection after 15 s idle (Cloudflare
+  drops idle ones) and retries an upload once. First round: 1.4–1.5 MB read
+  per oven in ~75 s, six days uploaded, the seventh in the next round (memory).
+- **A loaded bake whose timer has not started is READY, not baking**
+  (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
+  the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».
 - Not built yet: firmware updates over Wi-Fi (USB only), recipes / autostarts
   (read-only calls exist, not used), export.
 
