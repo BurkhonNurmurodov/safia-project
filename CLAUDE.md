@@ -2587,7 +2587,23 @@ rows (group `people`, in that order): `/workers/attendance`
   «Odam Soni · <page>», the one-row filter bar; `period={false}` on «Tarkib»),
   `ChartCard`, `ScopeSwitch` — plus `chartBase.js`. «Davomat» and «Tarkib»
   share `workers_scope`; the old `workers_view` key is gone. Each page fetches
-  only its own data (headcount + trend · requests-analysis · demographics).
+  only its own data (headcount + trend + verifix-kinds · requests-analysis ·
+  demographics).
+- **«Davomat» ends with «Verifix — vaqt turlari»** (2026-11-04, moved from
+  «Hisobotlar», which keeps only overtime) —
+  `components/workers/VerifixKindsCard.jsx` over `GET
+  /api/workers/verifix-kinds`: Явка, Отсутствие, Свободное время, Отгул,
+  Ранний уход, Опоздание in hours, Verifix's own MONTHLY sums
+  (`verifix_month_kinds.ATTENDANCE_KINDS`, the stored read the report uses).
+  The page's period picks which months — every month it touches from the
+  first closed day (`brigadir_board.data_floor`), the newest three
+  (`VK_MAX_MONTHS`, the cut named in the footer) — and each column is the
+  WHOLE month (the running one «1–N», so far). Plant / shift / brigadir narrow
+  it (`scoped_manager_ids` + `Manager.shift`, every unit, not only
+  `zagruzka_on`); the page's «Jami / Zagruzka» switch reads all workers or the
+  direct half («<id>:d»). A month never read is «—», named in the footer, read
+  in the background and polled every 30 s until it lands. No change column: a
+  running month against a whole one says nothing.
 
 ## «Tarkib» — who is on the lists (`/workers/composition`, 2026-10-23)
 
@@ -9894,20 +9910,23 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   headcount over the closed unit-days that half has a figure for
   (`brigadir_board.shift_load`, the twin of `simplePlanUtil` /
   `simpleActualUtil`), no delta colour; **Xodimlar** — /workers' own `att_rate` through
-  `brigadir_board.attendance`, and `turnover.month_payload`; a «Verifix — vaqt turlari» table
-  (2026-11-02, the operator: «Overtime should be taken from Сверхурочно»):
-  Verifix's own time kinds in hours — Явка (23), Отсутствие (26), Свободное
-  время (27), Сверхурочные (34 — TWO rows, the operator the same day: direct
-  workers, counted in the загрузка, and indirect ones, by the worker's
-  Verifix job through `kpi_calculator.is_direct_role`), Отгул
-  (31), Ранний уход (25), Опоздание (24) (`verifix_month_kinds.TRACKED`).
-  They are READ from `core/timesheet$export` for the whole month and STORED
+  `brigadir_board.attendance`, and `turnover.month_payload`; a «Verifix —
+  qo'shimcha ish vaqti» table (2026-11-02, the operator: «Overtime should be
+  taken from Сверхурочно»): Сверхурочные (34) in hours, TWO rows (the
+  operator the same day: direct workers, counted in the загрузка, and indirect
+  ones, by the worker's Verifix job through `kpi_calculator.is_direct_role`)
+  (`verifix_month_kinds.REPORT_KINDS`). The other time kinds — Явка (23),
+  Отсутствие (26), Свободное время (27), Отгул (31), Ранний уход (25),
+  Опоздание (24) — were in this table until 2026-11-04 and are on «Odam soni ·
+  Davomat» now (the operator: «we don't need these figures apart from
+  Overtime … put them in Attendance screen»; `ATTENDANCE_KINDS`, see «Odam
+  soni — three pages»). They are READ from `core/timesheet$export` for the whole month and STORED
   (`services/verifix_month_kinds.py`, table `verifix_month_kinds`, meta in app
   setting `vfx_month_kinds2:<ym>`; every kind stored as «<id>:d» / «<id>:i»,
   the job off the stored `verifix_org` read): the current month every 3 hours (an hourly
   job at :50 decides), the month before until the 7th, a catch-up 240 s after
-  boot, and any month the report asks for that was never read (`want`, a
-  background read — «—» until it lands). A person is placed by their CURRENT
+  boot, and any month the report or the Attendance page asks for that was
+  never read (`want`, a background read — «—» until it lands). A person is placed by their CURRENT
   Verifix org unit → cell → brigadir (Verifix keeps no history); every day of
   the month counts, closed or not. A read cut short keeps the last complete
   one. The attendance-based overtime (effective hours − «Явка») shipped an

@@ -13,6 +13,7 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import HeatmapChart from "../../components/charts/HeatmapChart";
 import { SkeletonCard, SkeletonChart } from "../../components/ui/Skeleton";
 import { WorkersPage, ChartCard, ScopeSwitch } from "../../components/workers/WorkersPage";
+import VerifixKindsCard from "../../components/workers/VerifixKindsCard";
 import { chartBase } from "../../components/workers/chartBase";
 import { useFilters } from "../../context/FilterContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -657,7 +658,7 @@ export default function WorkersAttendance() {
       </Modal>
 
       {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
-      <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-8"
+      <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-6"
         right={(
           <div className="flex flex-wrap items-center justify-end gap-2">
             {/* The switches drive the ROLE columns only. Ro'yxatda / Keldi /
@@ -727,6 +728,11 @@ export default function WorkersAttendance() {
           ))}
         </tbody>
       </TableCard>
+
+      {/* Verifix's own monthly time kinds (Явка, Отсутствие, …) — moved here
+          from «Hisobotlar» on 2026-11-04; whole months, so they sit after
+          everything the period reads day by day. */}
+      <VerifixKindsCard fparams={fparams} ready={ready} scope={scope} setScope={setScope} t={t} className="mb-8" />
     </WorkersPage>
   );
 }

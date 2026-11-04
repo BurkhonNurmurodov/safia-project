@@ -88,7 +88,6 @@ export function deltaText(row) {
 const LOWER_IS_BETTER = new Set([
   "idle.idleMin", "idle.idlePct", "idle.idlePerDay", "cost.costSum",
   "production.shortMin", "personnel.turnRate", "quality.complaints",
-  "personnel.vkAbsence", "personnel.vkEarlyLeave", "personnel.vkLate",
 ]);
 const HIGHER_IS_BETTER = new Set([
   "production.fulfil", "production.eff", "personnel.attRate",
@@ -151,8 +150,7 @@ const UOM_BY_KEY = {
   idlePersonMin: "personMin", workedMin: "personMin",
   costSum: "money", costPerDay: "money",
   countedDays: "day", noFact: "day", noPlan: "day", attDays: "day",
-  overtimeDirect: "hour", overtimeIndirect: "hour", vkPresence: "hour", vkAbsence: "hour", vkFree: "hour",
-  vkDayOff: "hour", vkEarlyLeave: "hour", vkLate: "hour",
+  overtimeDirect: "hour", overtimeIndirect: "hour",
   unitDays: "day", flaggedDays: "day",
   listed: "personDay", came: "personDay", onLeave: "personDay",
   working: "person", left: "person", hc: "person",

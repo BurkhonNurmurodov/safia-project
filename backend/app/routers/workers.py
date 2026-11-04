@@ -2,7 +2,7 @@ import logging
 import threading
 import time
 from collections import namedtuple
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -949,6 +949,93 @@ def get_requests_analysis(
             key=lambda x: (-x["workers"], x["from"], x["to"]),
         )[:20],
     }
+
+
+# ── Verifix's own time kinds (from 2026-11-04) ───────────────────────────────
+# Явка, Отсутствие, Свободное время, Отгул, Ранний уход, Опоздание — in
+# «Hisobotlar» until the operator moved them here («we don't need these figures
+# apart from Overtime … put them in Attendance screen»). They are Verifix's
+# MONTHLY sums, read and stored by `services/verifix_month_kinds.py` per
+# (unit, kind, direct / indirect worker), so the page's period picks WHICH
+# months are shown — every month it touches, the newest VK_MAX_MONTHS — and
+# each column is the WHOLE month (the month still running: so far). A month
+# never read is asked for in the background and answers «—» until it lands.
+VK_MAX_MONTHS = 3
+
+
+def _months_of(first: date, last: date) -> list[str]:
+    out, y, m = [], first.year, first.month
+    while (y, m) <= (last.year, last.month):
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+@router.get("/workers/verifix-kinds")
+def get_verifix_kinds(
+    date_from: date = Query(default=None),
+    date_to: date = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("workers")),
+):
+    from app.services import brigadir_board, turnover
+    from app.services import verifix_month_kinds as vmk
+
+    today = turnover.local(turnover.now_aware()).date()
+    date_to = min(date_to or today, today)
+    date_from = date_from or (date_to - timedelta(days=13))
+    # Nothing before the first closed day can carry a figure (the report's own
+    # floor), and Verifix is never asked about such a month.
+    floor = brigadir_board.data_floor(db)
+    if floor and date_from < floor:
+        date_from = floor
+    yms = _months_of(date_from, date_to) if date_from <= date_to else []
+    cut = max(0, len(yms) - VK_MAX_MONTHS)
+    yms = yms[cut:]
+
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    ids: list[int] = []
+    if yms and not empty_scope(scoped):
+        q = db.query(Manager.id)
+        if scoped is not None:
+            q = q.filter(Manager.id.in_(scoped))
+        if shift:
+            q = q.filter(Manager.shift == shift)
+        ids = [i for (i,) in q.all()]
+
+    sums = vmk.totals(db, yms, ids) if ids else {}
+    months = []
+    for ym in yms:
+        first = date(int(ym[:4]), int(ym[5:]), 1)
+        m = vmk.meta(db, ym) or {}
+        at = None
+        try:
+            at = datetime.fromisoformat(m["read_at"]) if m.get("read_at") else None
+        except (TypeError, ValueError):
+            at = None
+        months.append({
+            "ym": ym,
+            # The month still running is a sum SO FAR — the header says through
+            # which day.
+            "through": today.day if (first.year, first.month) == (today.year, today.month) else None,
+            "read": at is not None,
+            "read_at": turnover.local(at).strftime("%d.%m %H:%M") if at else None,
+            "partial": bool(m.get("partial")),
+        })
+    kinds = []
+    for kid, key in vmk.ATTENDANCE_KINDS:
+        total, direct = [], []
+        for ym in yms:
+            mm = sums.get(ym)
+            total.append(None if mm is None else round(mm.get(kid) or 0.0, 1))
+            direct.append(None if mm is None else round(mm.get(f"{kid}:d") or 0.0, 1))
+        kinds.append({"key": key, "kind": kid, "total": total, "direct": direct})
+    if ids:
+        vmk.want([ym for ym in yms if ym not in sums])
+    return {"months": months, "kinds": kinds, "units": len(ids), "dropped": cut}
 
 
 # ── «Tarkib»: who is on the lists (from 2026-10-23) ──────────────────────────

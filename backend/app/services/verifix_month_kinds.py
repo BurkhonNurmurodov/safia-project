@@ -1,9 +1,10 @@
-"""Verifix's time kinds per month and brigade, for «Hisobotlar» (2026-11-02).
+"""Verifix's time kinds per month and brigade (2026-11-02).
 
 The operator, shown a one-time read of them: «Overtime should be taken from
 Сверхурочно», and the time kinds — Явка, Отсутствие, Свободное время,
-Сверхурочные, Отгул, Ранний уход, Опоздание — belong in the report's Personnel
-section. They are Verifix's own figures, so they are READ from Verifix
+Сверхурочные, Отгул, Ранний уход, Опоздание — belonged in «Hisobotlar»'
+Personnel section. From 2026-11-04 the report keeps overtime alone and the
+other six are on «Odam soni · Davomat» (`REPORT_KINDS` / `ATTENDANCE_KINDS`). They are Verifix's own figures, so they are READ from Verifix
 (`core/timesheet$export` for the whole month) and STORED here, because one
 month for every production worker is a read of minutes, never something a page
 request can wait for.
@@ -46,12 +47,16 @@ from app.models import AppSetting, Cell, VerifixMonthKind
 
 log = logging.getLogger(__name__)
 
-# The kinds the report prints, in its order: (kind key, row key) — a kind key
+# The kinds each page prints, in its order: (kind key, row key) — a kind key
 # is a Verifix time_kind_id, or «<id>:d» / «<id>:i» for its direct / indirect
-# workers' share. Overtime (34) is printed as those two halves.
-TRACKED = [("23", "vkPresence"), ("26", "vkAbsence"), ("27", "vkFree"),
-           ("34:d", "overtimeDirect"), ("34:i", "overtimeIndirect"),
-           ("31", "vkDayOff"), ("25", "vkEarlyLeave"), ("24", "vkLate")]
+# workers' share. From 2026-11-04 (the operator: «we don't need these figures
+# apart from Overtime … put them in Attendance screen») «Hisobotlar» prints
+# overtime (34) alone, as its two halves, and «Odam soni · Davomat»
+# (`GET /api/workers/verifix-kinds`) prints the other six.
+REPORT_KINDS = [("34:d", "overtimeDirect"), ("34:i", "overtimeIndirect")]
+ATTENDANCE_KINDS = [("23", "vkPresence"), ("26", "vkAbsence"), ("27", "vkFree"),
+                    ("31", "vkDayOff"), ("25", "vkEarlyLeave"), ("24", "vkLate")]
+TRACKED = REPORT_KINDS + ATTENDANCE_KINDS
 
 BUDGET_S = 900.0
 FRESH_CURRENT = timedelta(hours=3)
@@ -301,7 +306,7 @@ def run_job(trigger: str = "schedule") -> None:
 
 
 def want(yms: Iterable[str]) -> None:
-    """Start a background read of any month the report asked for that was never
+    """Start a background read of any month a page asked for that was never
     read — at most one try an hour per month, never blocking the request."""
     db = SessionLocal()
     try:

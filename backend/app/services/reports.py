@@ -92,8 +92,6 @@ CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
     "personnel.overtimeDirect", "personnel.overtimeIndirect",
-    "personnel.vkPresence", "personnel.vkAbsence",
-    "personnel.vkFree", "personnel.vkDayOff", "personnel.vkEarlyLeave", "personnel.vkLate",
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
     "idle.unitDays", "idle.flaggedDays",
@@ -274,18 +272,20 @@ def _personnel(inp: dict, n: int) -> list[dict]:
              bold=True),
     ])]
 
-    # Verifix's own time kinds, in hours (the operator, 2026-11-02 — overtime
-    # is «Сверхурочные», and these kinds belong here): stored by
-    # `verifix_month_kinds`, by each person's current placement. A month no
-    # read has landed for is «—», never 0.
+    # Verifix's overtime («Сверхурочные»), in hours, split by the worker's job
+    # (the operator, 2026-11-02): stored by `verifix_month_kinds`, by each
+    # person's current placement. A month no read has landed for is «—», never
+    # 0. The other time kinds (Явка, Отсутствие…) left the report on
+    # 2026-11-04 for «Odam soni · Davomat» (the operator: «we don't need these
+    # figures apart from Overtime»).
     def _vk(y: str, kid: str):
         m = vk.get(y)
         return None if m is None else _r((m.get(kid) or 0.0) / 60)
 
-    from app.services.verifix_month_kinds import TRACKED
+    from app.services.verifix_month_kinds import REPORT_KINDS
     blocks.append(periods_block("verifix", [
-        prow(key, "int", [_vk(y, kid) for y in yms], bold=key.startswith("overtime"))
-        for kid, key in TRACKED
+        prow(key, "int", [_vk(y, kid) for y in yms], bold=True)
+        for kid, key in REPORT_KINDS
     ]))
 
     have_turn = any(turn.get(y) for y in yms)

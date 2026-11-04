@@ -319,7 +319,7 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
                              manager_id=sorted(ids), factory=None, db=db, payload=payload)
         att = bb.attendance(head, ids, months)
-        # Verifix's time kinds (Явка, Отсутствие, Сверхурочные…), STORED by a
+        # Verifix's overtime («Сверхурочные», direct / indirect), STORED by a
         # background read (`services/verifix_month_kinds.py`); a month never
         # read is asked for in the background and prints «—» until it lands.
         vkinds = verifix_month_kinds.totals(db, [m0["ym"] for m0 in months], ids)
