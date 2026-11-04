@@ -178,9 +178,11 @@ def log_bytes(row: ReventOvenLog) -> bytes:
 # ── who is reading the ovens ──────────────────────────────────────────────────
 # Every collector request is a sign of life. The board (firmware 1.1+) also
 # sends a heartbeat every POLL["ping_s"] and describes itself in the
-# X-Collector-Info header ("fw=1.1.0;up=812;rssi=-59;ssid=alisa;ip=…").
+# X-Collector-Info header ("fw=1.1.0;up=812;rssi=-59;ssid=alisa;ip=…"); from
+# 1.2.0 also the way out it used, `net` ("eth" | "wifi"), and an Ethernet
+# link's speed, `link` (Mbit/s). `ip` is the board's address on that network.
 
-INFO_KEYS = {"fw", "up", "rssi", "ssid", "ip", "heap", "psram", "ping", "kind", "host"}
+INFO_KEYS = {"fw", "up", "rssi", "ssid", "ip", "heap", "psram", "ping", "kind", "host", "net", "link"}
 
 
 def parse_info(header: Optional[str]) -> dict:

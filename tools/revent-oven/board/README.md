@@ -11,14 +11,43 @@ The always-on collector for the Revent ovens: a **LOLIN S2 Mini** (ESP32-S2FNR2,
 | hour | OvenSettings.xml | only when it changed |
 | 10 seconds (firmware 1.1+) | — | a heartbeat, only when nothing else reached IMS: `GET /api/ovens/collector/ping` |
 
-Every request also carries `X-Collector-Info` (firmware, uptime, Wi-Fi name and
-signal, its address, free memory, heartbeat pace): the admin page's
+Every request also carries `X-Collector-Info` (firmware, uptime, whether it went
+out over Ethernet or Wi-Fi, the Wi-Fi name and signal, its address, free memory,
+heartbeat pace): the admin page's
 «Kollektor qurilmasi» → «Tekshirish» shows it, with whether the board is online.
 
 The ovens, the paces and what IMS already holds come from IMS
 (`GET /api/ovens/collector/plan`); add or remove an oven on `/panel/ovens`.
 **READ-ONLY toward the ovens**: the only requests the firmware can build are
 the three reads in `src/core/soap.cpp`.
+
+## Ethernet (firmware 1.2+)
+
+The S2 Mini has no Ethernet of its own, and its USB port cannot drive a USB hub's
+Ethernet adapter. A **W5500 Ethernet module** (an SPI board with an RJ45 socket,
+e.g. «W5500 Lite» or the larger «W5500» module) wired to it does the job, with
+six wires — no interrupt or reset wire is needed:
+
+| W5500 | S2 Mini |
+|---|---|
+| 3V3 (or VCC 3.3V) | 3V3 — **never 5V** |
+| GND | GND |
+| SCLK / SCK | GPIO 7 |
+| MISO / SO | GPIO 9 |
+| MOSI / SI | GPIO 11 |
+| CS / SCS | GPIO 12 |
+
+Keep the wires short (under 15 cm). The board looks for the module once, at
+start: `show` then says `ethernet   W5500 found …`, or `no W5500 module (Wi-Fi
+only)`. With the cable in, it takes an address by DHCP and **everything goes
+over Ethernet** — IMS and the ovens; Wi-Fi stays connected beside it as the
+backup and takes over by itself the moment the cable comes out. No Wi-Fi network
+is needed at all on Ethernet: key + IMS address over USB are enough. The admin
+page shows «Ulanish: Ethernet · 100 Mbit/s». Power it from a good 5V supply
+(1 A): the W5500 draws ~130 mA on top of the board's Wi-Fi.
+
+The ovens must be reachable from the network the cable is on (on the production
+block, the 192.168.0.x network).
 
 ## How it holds a 1.5 MB answer in 2 MB
 
@@ -70,8 +99,8 @@ and never shown again:
 3 seconds — the light stays on — join the open network **Safia-Pech-XXXX** and
 open `http://192.168.4.1`. Pick the network, type the password, save. The page
 also shows whether IMS and each oven answer, and the last log lines. The hotspot
-also opens by itself when no network is set, or after 10 minutes without Wi-Fi,
-and closes by itself. The key and the IMS address cannot be changed there.
+also opens by itself when no network is set (and no Ethernet carries the board),
+or after 10 minutes with no network at all, and closes by itself. The key and the IMS address cannot be changed there.
 
 Only **2.4 GHz** networks with a plain password work well (not a login page,
 not a per-person company login). The oven network must be reachable from the
@@ -81,9 +110,9 @@ Wi-Fi it joins — on the production block that is the 192.168.0.x network.
 
 | Light | Means |
 |---|---|
-| slow blink, once a second | not set up — no Wi-Fi network or no key |
-| fast blink | looking for the Wi-Fi network |
-| two short flashes every 3 s | Wi-Fi works, IMS does not answer or refused the key |
+| slow blink, once a second | not set up — no key, or neither a Wi-Fi network nor an Ethernet module |
+| fast blink | looking for a network (Ethernet cable or Wi-Fi) |
+| two short flashes every 3 s | the network works, IMS does not answer or refused the key |
 | one short flash every 3 s | working |
 | on, with a short gap every second | the setup hotspot is open |
 
@@ -95,8 +124,8 @@ Wi-Fi it joins — on the production block that is the 192.168.0.x network.
 
 ## It looks after itself
 
-It reconnects Wi-Fi every 30 s, restarts after an hour without Wi-Fi or
-30 minutes without IMS, and once a day. Powered by any USB phone charger — it
+It reconnects Wi-Fi every 30 s (every 2 minutes while Ethernet carries it),
+restarts after an hour with no network or 30 minutes without IMS, and once a day. Powered by any USB phone charger — it
 never waits on the USB port when no program has it open.
 
 ## Tests (no board needed)

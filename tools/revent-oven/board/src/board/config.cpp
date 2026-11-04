@@ -39,4 +39,4 @@ void configForget() {
 
 bool configHasWifi() { return CFG.ssid.length() > 0; }
 
-bool configReady() { return configHasWifi() && CFG.key.length() > 0 && CFG.server.length() > 0; }
+bool configReady() { return CFG.key.length() > 0 && CFG.server.length() > 0; }

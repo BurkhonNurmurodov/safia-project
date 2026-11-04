@@ -39,6 +39,9 @@ function Device({ d, T, waited }) {
   const info = d.info || {};
   const rich = !!(info.rssi || info.up || info.heap);
   const wifi = info.ssid || info.rssi ? [info.ssid, info.rssi ? `${info.rssi} dBm` : null].filter(Boolean).join(" · ") : null;
+  // firmware 1.2.0+: the way out it used — Ethernet (a W5500), else Wi-Fi
+  const onEth = info.net === "eth";
+  const net = onEth ? (info.link ? fill(T.netEth, { n: info.link }) : T.netEthBare) : info.net === "wifi" ? T.netWifi : null;
   // RAM in KB, the 2 MB PSRAM in MB — short enough for a quarter of the card
   const mem = info.heap ? `${fmtN(info.heap)} KB${info.psram ? ` · ${fmtN(info.psram / 1024, 1)} MB` : ""}` : null;
   return (
@@ -60,7 +63,8 @@ function Device({ d, T, waited }) {
       {/* offline: these are the device's LAST report, not live values — dimmed */}
       <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5" style={{ opacity: d.online ? 1 : 0.55 }}>
         <Fact k={T.devFw} v={d.fw} />
-        <Fact k={T.devWifi} v={wifi} />
+        <Fact k={T.devNet} v={net} />
+        <Fact k={onEth ? T.devWifiBackup : T.devWifi} v={wifi} />
         <Fact k={T.devLan} v={info.ip} />
         <Fact k={T.devUp} v={info.up ? dur(T, info.up) : null} />
         <Fact k={T.devMem} v={mem} />

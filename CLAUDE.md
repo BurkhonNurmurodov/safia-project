@@ -10446,7 +10446,7 @@ register is `/panel/ovens` (tools group, no capKey).
   the board's NVS — never shown, `show` prints a digest prefix). Setup: the key
   and IMS address over USB (`setup_board.py`), the Wi-Fi over USB or from a
   phone through the board's own hotspot «Safia-Pech-XXXX» (hold «0» 3 s, or
-  no network set, or 10 min without Wi-Fi). HTTPS checks IMS against the roots
+  no network set, or 10 min with no network). HTTPS checks IMS against the roots
   in `src/board/certs.h` (`make_certs.py`; GlobalSign Root CA ends Jan 2028).
   Host tests (`test/run_host_tests.sh`) feed the saved 725 answers through the
   core: every file byte for byte with its SHA-256, status lines equal to
@@ -10469,7 +10469,7 @@ register is `/panel/ovens` (tools group, no capKey).
   `GET /api/ovens/collector/ping`) is written to `revent_collectors` (one row
   per key name: last contact, what it asked, the address IMS saw, and the
   device's own `X-Collector-Info` — `fw · up · rssi · ssid · ip · heap ·
-  psram · ping`, whitelisted by `revent_ovens.parse_info`), in its own small
+  psram · ping · net · link`, whitelisted by `revent_ovens.parse_info`), in its own small
   transaction so a refused file still counts. `revent_ovens.devices()` is THE
   rule: a device is online while heard within max(30, 2 × its pace + 15) s —
   its pace is its heartbeat (`ping` in its info, firmware 1.1+, POLL
@@ -10481,6 +10481,26 @@ register is `/panel/ovens` (tools group, no capKey).
   the heartbeat (every `plan.pingS`, only when nothing else reached IMS in
   that time, short timeouts, never mid-round while IMS is failing) and the
   header on every request; 1.0.0 is heard once a minute.
+- **Ethernet through a W5500 module, Wi-Fi as the backup** (firmware 1.2.0,
+  2026-11-04, the operator: «Yes, add W5500»). The ESP32-S2 has no Ethernet
+  of its own and its USB cannot drive a hub's adapter (checked that day: a
+  hub on the board's USB-C, Ethernet in the hub — IMS heard nothing). A W5500
+  SPI module on GPIO 7 (SCK) · 9 (MISO) · 11 (MOSI) · 12 (CS) + 3V3 + GND, no
+  IRQ or RST wire (the driver polls every 10 ms, SPI 12 MHz), is THE wiring —
+  `src/board/net.h` names it and the README carries the table. It is looked
+  for once at start (`net::begin`; a missing module costs a log line, the
+  board goes on Wi-Fi-only). Ethernet's route priority 200 beats Wi-Fi's 100,
+  so while its cable is in and it has an address IMS and the ovens go through
+  it; the system falls back to Wi-Fi by itself when the cable comes out. The
+  DNS servers are ONE list for the whole board, overwritten by whichever DHCP
+  renews last, so `net::loop` keeps them the in-use network's (each read at
+  its own GOT_IP). With Ethernet no Wi-Fi network is needed: `configReady` is
+  key + server only, and «set up» means a Wi-Fi network OR a W5500
+  (`haveWayOut`); the hotspot, the 10-minute / one-hour rules and the light
+  speak of «a network», not Wi-Fi; Wi-Fi retries every 2 min while Ethernet
+  carries the board. `X-Collector-Info` gains `net` (eth | wifi) and `link`
+  (Mbit/s), and «Kollektor qurilmasi» prints «Ulanish: Ethernet · 100 Mbit/s»
+  (Wi-Fi then reads «Wi-Fi (zaxira)»). Built and not yet run on a W5500.
 - **A loaded bake whose timer has not started is READY, not baking**
   (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
   the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».

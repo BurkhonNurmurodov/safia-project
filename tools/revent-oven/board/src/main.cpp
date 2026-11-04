@@ -1,6 +1,9 @@
 // Safia oven board — the always-on COLLECTOR for the Revent ovens, on a
 // LOLIN S2 Mini (ESP32-S2, 4 MB flash, 2 MB PSRAM).
 //
+// It reaches the ovens and IMS through a W5500 Ethernet module when one is
+// wired (board/net.h), with Wi-Fi beside it as the backup, else Wi-Fi alone.
+//
 // It does what tools/revent-oven/collector.py does on the test laptop:
 //   every minute      each oven's live status          → IMS /api/ovens/collector/status
 //   every 10 minutes  each oven's day logs (+ ServiceData.txt), only what IMS lacks
@@ -11,9 +14,9 @@
 // three reads in core/soap.cpp.
 //
 // The status light (GPIO 15):
-//   slow blink (1 a second)   not set up — no Wi-Fi network or no key
-//   fast blink                looking for the Wi-Fi network
-//   two short flashes         Wi-Fi is fine, IMS is not answering (or refused the key)
+//   slow blink (1 a second)   not set up — no key, or neither Wi-Fi nor Ethernet
+//   fast blink                looking for a network (Ethernet cable or Wi-Fi)
+//   two short flashes         the network is fine, IMS is not answering (or refused the key)
 //   one short flash / 3 s     working
 //   mostly on                 the setup hotspot is open
 #include <Arduino.h>
@@ -25,6 +28,7 @@
 #include "board/blog.h"
 #include "board/config.h"
 #include "board/ims.h"
+#include "board/net.h"
 #include "board/oven.h"
 #include "board/portal.h"
 #include "core/dime.h"
@@ -59,15 +63,18 @@ std::map<int, std::string> serviceSha;  // ServiceData.txt last sent, per oven
 
 uint32_t nextRound = 0, lastLogs = 0, lastSettings = 0;
 bool logsDone = false, settingsDone = false, forceAll = false, inRound = false;
-uint32_t lastImsOk = 0, wifiDownSince = 0, wifiUpSince = 0, lastWifiTry = 0;
+uint32_t lastImsOk = 0, netDownSince = 0, netUpSince = 0, lastWifiTry = 0;
 String imsError;
 String consoleLine;
 
-enum class Health { NoConfig, NoWifi, ImsDown, Working };
+enum class Health { NoConfig, NoNet, ImsDown, Working };
+
+// A way out exists: a Wi-Fi network is set, or a W5500 answered at start.
+bool haveWayOut() { return configHasWifi() || net::ethFound(); }
 
 Health health() {
-  if (!configReady()) return Health::NoConfig;
-  if (WiFi.status() != WL_CONNECTED) return Health::NoWifi;
+  if (!configReady() || !haveWayOut()) return Health::NoConfig;
+  if (!net::up()) return Health::NoNet;
   if (imsError.length()) return Health::ImsDown;
   return Health::Working;
 }
@@ -104,7 +111,7 @@ void ledTick() {
   } else {
     switch (health()) {
       case Health::NoConfig: on = (t / 500) % 2; break;
-      case Health::NoWifi: on = (t / 100) % 2; break;
+      case Health::NoNet: on = (t / 100) % 2; break;
       case Health::ImsDown: {
         uint32_t p = t % 3000;
         on = p < 80 || (p > 250 && p < 330);
@@ -133,7 +140,7 @@ void buttonTick() {
 bool inPing = false;
 
 void pingTick() {
-  if (inPing || !configReady() || WiFi.status() != WL_CONNECTED) return;
+  if (inPing || !configReady() || !net::up()) return;
   uint32_t every = (havePlan ? plan.pingS : 10) * 1000UL;
   if (ims.lastContactMs() && millis() - ims.lastContactMs() < every) return;
   static uint32_t lastTry = 0;
@@ -168,35 +175,49 @@ void wifiTick() {
     wifiStart();
   }
   if (!configHasWifi()) {
-    if (!portal::isOpen()) portal::open(60, "no Wi-Fi network set");
+    // No Wi-Fi network set: the hotspot offers one — unless Ethernet carries
+    // the board (its address may take a few seconds after start).
+    if (!net::ethUp() && !portal::isOpen() && (!net::ethFound() || millis() > 30000))
+      portal::open(60, "no Wi-Fi network set");
     return;
   }
   static bool wasUp = false;
   bool up = WiFi.status() == WL_CONNECTED;
-  if (up && !wasUp) {
-    blog("Wi-Fi: connected to \"%s\" (access point %s, channel %d), IP %s, signal %d dBm", CFG.ssid.c_str(),
-         WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
-    wifiDownSince = 0;
-    wifiUpSince = millis();
-  }
-  if (!up && wasUp) {
-    blog("Wi-Fi: lost the connection");
-    wifiDownSince = millis();
-  }
+  if (up && !wasUp)
+    blog("Wi-Fi: connected to \"%s\" (access point %s, channel %d), IP %s, signal %d dBm%s", CFG.ssid.c_str(),
+         WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
+         net::ethUp() ? " — the backup while Ethernet is up" : "");
+  if (!up && wasUp) blog("Wi-Fi: lost the connection%s", net::ethUp() ? " (Ethernet carries the board)" : "");
   wasUp = up;
-  if (up) {
-    // a hotspot nobody is using closes 3 minutes after the Wi-Fi works
-    if (portal::isOpen() && millis() - wifiUpSince > 180000 && WiFi.softAPgetStationNum() == 0) portal::close();
-    return;
-  }
-  if (!wifiDownSince) wifiDownSince = millis();
-  uint32_t retry = portal::isOpen() ? 120000 : 30000;  // retries move the hotspot's channel
+  if (up) return;
+  // retries move the hotspot's channel; while Ethernet works there is no hurry
+  uint32_t retry = portal::isOpen() || net::ethUp() ? 120000 : 30000;
   if (millis() - lastWifiTry > retry) {
     WiFi.disconnect(false);
     wifiStart();
   }
-  if (millis() - wifiDownSince > 10UL * 60000 && !portal::isOpen()) portal::open(15, "no Wi-Fi for 10 minutes");
-  if (millis() - wifiDownSince > 60UL * 60000 && WiFi.softAPgetStationNum() == 0) restart("no Wi-Fi for an hour");
+}
+
+// The way out as a whole — Ethernet or Wi-Fi.
+void netTick() {
+  net::loop();
+  static bool wasUp = false;
+  bool up = net::up();
+  if (up && !wasUp) {
+    netDownSince = 0;
+    netUpSince = millis();
+  }
+  if (!up && wasUp) netDownSince = millis();
+  wasUp = up;
+  if (up) {
+    // a hotspot nobody is using closes 3 minutes after the network works
+    if (portal::isOpen() && millis() - netUpSince > 180000 && WiFi.softAPgetStationNum() == 0) portal::close();
+    return;
+  }
+  if (!haveWayOut()) return;  // nothing set up: wifiTick's hotspot is the way forward
+  if (!netDownSince) netDownSince = millis();
+  if (millis() - netDownSince > 10UL * 60000 && !portal::isOpen()) portal::open(15, "no network for 10 minutes");
+  if (millis() - netDownSince > 60UL * 60000 && WiFi.softAPgetStationNum() == 0) restart("no network for an hour");
 }
 
 // ── the rounds ──────────────────────────────────────────────────────────────
@@ -437,7 +458,7 @@ void settingsOf(OvenPlan& op) {
 void updatePortalStatus();
 
 void roundTick() {
-  if (inRound || !configReady() || WiFi.status() != WL_CONNECTED) return;
+  if (inRound || !configReady() || !net::up()) return;
   if (!forceAll && (int32_t)(millis() - nextRound) < 0) return;
   inRound = true;
   uint32_t t0 = millis();
@@ -495,9 +516,12 @@ String showText() {
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
   if (WiFi.status() == WL_CONNECTED)
     s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, access point " +
-         WiFi.BSSIDstr() + " ch " + String(WiFi.channel()) + ", MAC " + WiFi.macAddress() + "\n";
+         WiFi.BSSIDstr() + " ch " + String(WiFi.channel()) + ", MAC " + WiFi.macAddress() +
+         (net::ethUp() ? " — the backup" : "") + "\n";
   else
     s += "           not connected (MAC " + WiFi.macAddress() + ")\n";
+  s += "ethernet   " + net::ethText() + "\n";
+  s += "in use     " + net::viaText() + (net::up() ? ", IP " + net::ip().toString() : String("")) + "\n";
   s += "server     " + CFG.server + "\n";
   s += "key        " + keyText() + "\n";
   s += "IMS        " + (imsError.length() ? imsError : lastImsOk ? "answered " + ago(lastImsOk) : String("not asked yet")) + "\n";
@@ -524,8 +548,10 @@ void updatePortalStatus() {
          htmlEscape(v) + "</td></tr>";
   };
   bool up = WiFi.status() == WL_CONNECTED;
-  row("Wi-Fi", CFG.ssid.length() ? CFG.ssid + (up ? " — ulangan, " + WiFi.localIP().toString() : " — ulanmagan") : String("tanlanmagan"),
-      up ? 1 : -1);
+  bool eth = net::ethUp();
+  if (net::ethFound()) row("Ethernet", net::ethStatusUz(), eth ? 1 : -1);
+  row("Wi-Fi", CFG.ssid.length() ? CFG.ssid + (up ? " — ulangan, " + WiFi.localIP().toString() + (eth ? " (zaxira)" : "") : " — ulanmagan") : String("tanlanmagan"),
+      up ? 1 : eth ? 0 : -1);
   row("Safia IMS", !configReady() ? String("kalit o'rnatilmagan (USB orqali)") : imsError.length() ? imsError : lastImsOk ? String("javob bermoqda") : String("hali so'ralmagan"),
       imsError.length() || !configReady() ? -1 : lastImsOk ? 1 : 0);
   for (OvenPlan& op : plan.ovens) {
@@ -640,8 +666,10 @@ String deviceInfo() {
   };
   String s = "fw=" FW_VERSION ";up=" + String(millis() / 1000) + ";heap=" + String(ESP.getFreeHeap() / 1024) +
              ";psram=" + String(ESP.getFreePsram() / 1024) + ";ping=" + String(havePlan ? plan.pingS : 10);
-  if (WiFi.status() == WL_CONNECTED)
-    s += ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID()) + ";ip=" + WiFi.localIP().toString();
+  // net = the way this request left the board; ip = the board's address there
+  if (net::up()) s += ";net=" + String(net::via()) + ";ip=" + net::ip().toString();
+  if (net::ethUp()) s += ";link=" + String(net::linkMbit());
+  if (WiFi.status() == WL_CONNECTED) s += ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID());
   return s;
 }
 
@@ -666,6 +694,7 @@ void setup() {
   // channel and join the STRONGEST one, not the first found.
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+  net::begin();  // after WiFi.mode(): the Ethernet netif comes first for an address both networks share
   if (configHasWifi()) wifiStart();
   if (!CFG.key.length()) blog("no collector key yet: set it over USB (setup_board.py)");
   updatePortalStatus();
@@ -675,6 +704,7 @@ void loop() {
   consoleTick();
   buttonTick();
   wifiTick();
+  netTick();
   portal::loop();
   ledTick();
   roundTick();
