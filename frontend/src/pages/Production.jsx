@@ -1806,16 +1806,27 @@ export default function Production() {
   const shownQty = (r, field) => (field === "actual"
     ? (typedOnly && !r.actual_overridden ? null : r.actual_qty)
     : (typedOnly && !r.plan_overridden ? null : r.plan_qty));
+  // Did the SAP file reach this unit on this day at all — any row carrying a
+  // SAP number? Without it a missing SAP number says only that no file was
+  // uploaded for the unit (or it is not on SAP auto-fill), not that SAP has no
+  // plan, so nothing is set against it.
+  const sapReached = useMemo(
+    () => (data?.rows ?? []).some((r) => r.sap_plan_qty != null || r.sap_actual_qty != null),
+    [data],
+  );
   // How far a «SAP» column's number is from the ПЛАН / ФАКТ the row shows:
-  // SAP − ПЛАН/ФАКТ, or null when they agree or there is nothing to set it
-  // against — no SAP row, or a ПЛАН/ФАКТ nobody typed (it prints «—», and a
-  // blank is not a number that differs). One answer for the cell, its tooltip
-  // and the workbook's red.
+  // SAP − ПЛАН/ФАКТ, or null when they agree. A blank on either side counts as
+  // 0 (the operator, 2026-11-05: «yes flag them, and also the vice versa») — a
+  // ПЛАН nobody typed beside a SAP plan is red, and so is a typed ПЛАН where SAP
+  // has none. Never on a line with no SAP code (SAP can have no row for it) or
+  // on a unit-day the file did not reach (`sapReached`). One answer for the
+  // cell, its tooltip and the workbook's red.
   const sapGap = (r, key) => {
+    if (!sapReached || !r.sap_code) return null;
     const sap = key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty;
     const own = shownQty(r, key === "sap_plan" ? "plan" : "actual");
-    if (sap == null || own == null) return null;
-    const gap = Number(sap) - Number(own);
+    if (sap == null && own == null) return null;
+    const gap = Number(sap ?? 0) - Number(own ?? 0);
     return Number.isNaN(gap) || Math.abs(gap) < 1e-6 ? null : gap;
   };
   // Per-day editing is gated by ROLE **and** by the day's closing.
@@ -2853,7 +2864,7 @@ export default function Production() {
       case "sap_fact": {
         const v = key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty;
         const gap = sapGap(r, key);
-        if (v == null) {
+        if (v == null && gap == null) {
           return (
             <td key={key} className="px-3 py-2 text-center tabular-nums"
                 title={t("production.sapCol.none")} style={{ color: "var(--text-4)" }}>—</td>
@@ -2960,7 +2971,7 @@ export default function Production() {
       case "sap_plan":
       case "sap_fact": {
         const c = num(key === "sap_plan" ? r.sap_plan_qty : r.sap_actual_qty, NUM_DEC.plan);
-        return sapGap(r, key) == null || !("v" in c) ? c : { ...c, fg: XL_BAD, b: true };
+        return sapGap(r, key) == null ? c : { ...c, fg: XL_BAD, b: true };
       }
       case "autofill": return r.sap_filled !== false
         ? { t: t("production.autofill.sap"), fg: XL_SOFT }

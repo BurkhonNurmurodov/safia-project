@@ -1,1 +1,0 @@
-import{n as o,x as s}from"./LangContext-BphoLDgO.js";import{t as i}from"./Layout--qsH7d-R.js";import{Pn as n}from"./index-Bqc9RjxR.js";import{n as m,t as r}from"./DayReportView-DyR3FQkJ.js";var t=s();function _(){const{uid:a}=n(),{lang:e}=o();return(0,t.jsx)(i,{title:(r[e]||r.ru).title,children:(0,t.jsx)(m,{uid:a})})}export{_ as default};
