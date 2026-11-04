@@ -7844,9 +7844,9 @@ def _verifix_roles_job() -> None:
 # ── one-shot: Elnora's profile takes her deputy Xasan Malikov's history ──────
 # The operator (2026-11-02/04): Maksumov Sanjar's leader Elnora (#254) is back;
 # her profile carries the history of her deputy Xasan (#430). The whole of it
-# is `services/leader_merge_nov04.py`: MODE "dry" reads, checks and DMs the
-# plan to Burkhon; MODE "apply" (a later release) does it between 21:00 and
-# 06:00 Tashkent, one transaction with its flag. TEMPORARY: delete this block,
+# is `services/leader_merge_nov04.py`: the dry run (v4.418.5) read, checked and
+# DMed the plan to Burkhon; MODE "apply" (v4.418.6) does it between 21:00 and
+# 06:00 Tashkent, one transaction with its flag, and DMs what moved. TEMPORARY: delete this block,
 # the module and both entrypoint calls once the apply flag reads «done» (or
 # «blocked») and its report has gone.
 

@@ -490,6 +490,44 @@ Telegram app keeps the brigadir session until relaunched (his DM asks him to);
 `supervisor:21` keeps a personal `page.view.production` grant, inert while
 nobody holds it.
 
+## Elnora's profile takes her deputy's history (`leader_merge_nov04`, 2026-11-04)
+
+The operator: Maksumov Sanjar's leader Amirova Elnora (#254) was away
+(attendance 19 Jun → 25 Oct); a leader profile was made for her deputy Malikov
+Xasan (#430), who ran 8911 from 15 Oct; «merge the actual leader's current
+profile with his zam's history». Both profiles sat on ONE shared Telegram
+account (@Biskonti_8911, rows 107 / 447), so #254's own Jul–Oct days were
+already Xasan's work. Asked: Verifix corrected (Elnora seated in 8911, Egasi
+from 3 Nov); 15 Oct counts Xasan's 100% day; #430 retired, the account stays
+on Elnora. TEMPORARY `services/leader_merge_nov04.py`
+(`startup.merge_leader_elnora_xasan` → `_leader_merge_job`, both entrypoints):
+a DRY run (v4.418.5, flag `leader_merge_elnora_xasan_2026_11_04_dry_v1`)
+DMed the plan to Burkhon; the apply (v4.418.6, flag `…_apply_v1`, record in
+app setting `leader_merge_elnora_xasan_2026_11_04_apply`, every moved id kept
+for an undo by hand) runs between 21:00 and 06:00 Tashkent, ONE transaction
+with its flag, refused (`blocked`) unless Verifix seats Elnora in 8911 and the
+data is as the dry run read it:
+
+- #430's 21 days → #254; on 15 Oct #254's 10% day (5453) is parked on #430.
+  Automatic checks on #430's dates SWAP date by date (#254's «no checklist»
+  rows go to #430), so each side keeps one row per date · cell · task; a
+  swapped row waits on a 1900 date inside the transaction (the unique keys).
+- Photos, camera late shots, late proofs, AI verdicts, objections, the
+  day-report ledger and override labels follow their DAY.
+- Concerns held or filed by #430 and his tasks → #254 (role ref 447 → 107);
+  an in-flight bot capture too.
+- 8911's «Boshqaruvchi» = #254 from 15 Oct: one APPENDED dated event (src
+  manual) — /cells/:id shows both 15 Oct events.
+- #430: role row 447 removed from the shared account (active role → 107),
+  browser login disabled, cutoff from 14 Oct. The profile is KEPT.
+- Left with #430 (authorship): comments, chat messages, read marks, ojidaniya
+  entries, bell rows, activity, the Jurnal, «who filed» on objections.
+- NOT changed: #254's own 14 Oct day (10%) still counts; past digests are not
+  re-sent; nobody but Burkhon is told. Jurnal: `identity.profiles_merged`.
+
+Delete the module, both startup functions and both calls once the apply flag
+reads «done» (or «blocked») and its report has gone.
+
 ## A leader follows the cells they run (`leader_follow`, 2026-10-29)
 
 The floor: after Maksumov Sanjar's and Xakimov Ruslan's units exchanged cells

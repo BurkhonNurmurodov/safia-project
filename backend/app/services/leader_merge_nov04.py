@@ -25,9 +25,9 @@ his tasks, an in-flight bot capture, and cell 8911's «Boshqaruvchi» from 15 Oc
 comments, chat messages, read marks, ojidaniya entries, bell rows, activity,
 the Jurnal, «who filed this objection».
 
-MODE "dry" (this release): reads and checks everything and DMs the plan; NO
-row is written but the flag and the record. MODE "apply" (a later release,
-after the operator reads the dry run): preconditions, then ONE transaction
+MODE "dry" (v4.418.5): read and checked everything and DMed the plan; NO row
+was written but its flag and record. MODE "apply" (this release, after the
+operator read the dry run): the same preconditions, then ONE transaction
 with the flag, run between 21:00 and 06:00 Tashkent so no checklist is being
 filled. Every id it moves is kept in the record so the merge can be put back
 by hand. Delete this module, `startup.merge_leader_elnora_xasan` /
@@ -52,7 +52,9 @@ from app.config import settings
 log = logging.getLogger(__name__)
 TZ = ZoneInfo("Asia/Tashkent")
 
-MODE = "dry"                       # "dry" → report only · "apply" → do it
+MODE = "apply"                     # "dry" → report only · "apply" → do it
+# The dry run (v4.418.5, 4 Nov 23:51) answered «YES — every precondition holds»:
+# Verifix seats Elnora in 8911 (Egasi from 3 Nov), 21 days of #430 to move.
 FLAG = f"leader_merge_elnora_xasan_2026_11_04_{MODE}_v1"
 RECORD = f"leader_merge_elnora_xasan_2026_11_04_{MODE}"
 TRIES = 3
