@@ -10585,11 +10585,50 @@ register is `/panel/ovens` (tools group, no capKey).
   speak of «a network», not Wi-Fi; Wi-Fi retries every 2 min while Ethernet
   carries the board. `X-Collector-Info` gains `net` (eth | wifi) and `link`
   (Mbit/s), and «Kollektor qurilmasi» prints «Ulanish: Ethernet · 100 Mbit/s»
-  (Wi-Fi then reads «Wi-Fi (zaxira)»). Built and not yet run on a W5500.
+  (Wi-Fi then reads «Wi-Fi (zaxira)»). Built and not yet run on a W5500;
+  OFF in the standard build from 1.3.1 (`WITH_W5500`).
+- **The board updates itself over Wi-Fi** (firmware 1.3.0+, 2026-11-04, the
+  operator: «if you need any modifications for the device do it now»). ONE
+  release lives in `backend/data/ovens/firmware/` (`services/oven_firmware.py`
+  — `<version>.bin` + `latest.json`, gitignored like the APK's), published
+  from the build Mac by `tools/revent-oven/board/publish_firmware.sh`
+  (builds, then `POST /api/ovens/collector/firmware/publish?version=` with the
+  APK's publish key, `android_release.key_ok`; the image must be an ESP32-S2
+  app — magic 0xE9, chip id 2, app-desc magic — of 200 KB..0x1E0000; logged as
+  `config.oven_firmware_published`). `revent_ovens.plan()` carries
+  `firmware {version, sha256, size}`; a board on another version, right after
+  a plan answers and BEFORE reading ovens, downloads `GET
+  /api/ovens/collector/firmware?version=` (collector key; 404 unless it is the
+  published one) straight into its other app slot (`board/ota.cpp`, `Update`),
+  checks the SHA-256 and restarts. The new firmware is ON TRIAL
+  (`verifyRollbackLater()` → true, C linkage, so the core does not validate
+  it): it keeps itself at its first good plan (`ota::confirm`); a crash before
+  that, or 30 minutes without IMS, sends the bootloader back to the version
+  before, and that version is never tried again on this board (NVS
+  `safia_ota` try/bad) — re-publish under a NEW number. `/api/admin/ovens/devices`
+  names the published version and «Kollektor qurilmasi» prints «1.3.4 → 1.3.5
+  (yangilanmoqda)» meanwhile. Tested on the board: 1.3.4 → 1.3.5 in 47 s, kept.
+  **Raise `FW_VERSION` in platformio.ini for every publish.** The heartbeat
+  never runs during a download (it would share the TLS connection).
+- **An oven that does not answer is asked less and less** (1.3.3+): one
+  retry per status read only while it answered last time; two failures in a
+  row → next try in 1, 2, 4, then every 5 minutes, logs and settings skipped
+  until it answers. Found 2026-11-04 on the office Wi-Fi «SPQR»: a few minutes
+  of failed connections to the (unreachable) ovens and the network stopped
+  carrying ANY of the board's traffic — name lookups timed out, TCP to
+  Cloudflare timed out, while memory and the board's own TCP table were fine;
+  it cleared only after a minute of silence (a restart). The board's own
+  readout on an IMS failure (`netDiag` + `probeIms`: TCP connections, internal
+  RAM, a lookup and a bare TCP connect) is what showed it. The backoff did not
+  stop SPQR's cut-off; it is there so a switched-off oven at the factory costs
+  one connection every 5 minutes, not sixteen in four. The USB console answers
+  during a round (`consoleTick` in `background()`), not during a firmware
+  download. The W5500 support (`net.h`) is OFF unless built with
+  `-DWITH_W5500=1` — never run with a module.
 - **A loaded bake whose timer has not started is READY, not baking**
   (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
   the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».
-- Not built yet: firmware updates over Wi-Fi (USB only), recipes / autostarts
+- Not built yet: recipes / autostarts
   (read-only calls exist, not used), export.
 
 ## «Notion vazifalari» — the Notion task list and its reminders (`/notion-tasks`, 2026-11-02)

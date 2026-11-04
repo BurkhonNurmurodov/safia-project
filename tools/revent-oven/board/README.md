@@ -21,7 +21,37 @@ The ovens, the paces and what IMS already holds come from IMS
 **READ-ONLY toward the ovens**: the only requests the firmware can build are
 the three reads in `src/core/soap.cpp`.
 
-## Ethernet (firmware 1.2+)
+## Updates over Wi-Fi (firmware 1.3+)
+
+Once the board runs 1.3 or later it never needs the laptop again for a new
+version:
+
+```bash
+# raise FW_VERSION in platformio.ini, then:
+bash publish_firmware.sh
+```
+
+builds the firmware and publishes it to IMS (the APK's publish key,
+`~/.safia-android/signing/publish.key`). At its next plan the board sees the
+new version, downloads it (~1.4 MB, under a minute), checks its SHA-256, writes
+it into its other app slot and restarts into it. The new firmware is **on
+trial** until it reaches IMS — then it keeps itself; if it crashes, or runs 30
+minutes without reaching IMS, the board goes back to the version before by
+itself, and never tries that version again (publish a new number). Tested
+2026-11-04: 1.3.4 → 1.3.5 in 47 s, kept on the first plan. The admin page's
+«Kollektor qurilmasi» shows «1.3.4 → 1.3.5 (yangilanmoqda)» while it runs.
+
+## An oven that does not answer
+
+Each status read retries once; an oven that fails twice in a row is asked again
+after 1, 2, 4, then every 5 minutes, and its logs and settings wait until it
+answers. Every failed attempt is a connection the network has to carry, and on
+2026-11-04 an office network («SPQR», not the factory's) cut the board off from
+IMS entirely a couple of minutes after it kept trying ovens that are not there
+(and kept it cut off). Test the board away from the factory with that in mind:
+IMS answers for the first minute or two after a restart.
+
+## Ethernet (firmware 1.2+, OFF by default)
 
 The S2 Mini has no Ethernet of its own, and its USB port cannot drive a USB hub's
 Ethernet adapter. A **W5500 Ethernet module** (an SPI board with an RJ45 socket,
@@ -36,6 +66,11 @@ six wires — no interrupt or reset wire is needed:
 | MISO / SO | GPIO 9 |
 | MOSI / SI | GPIO 11 |
 | CS / SCS | GPIO 12 |
+
+**Off in the standard build** (`WITH_W5500=0` in `src/board/net.cpp`): no board
+has a module, and the probe was never run with one. Build with
+`-DWITH_W5500=1` in `build_flags` to switch it on — and test it on the module
+before publishing that build.
 
 Keep the wires short (under 15 cm). The board looks for the module once, at
 start: `show` then says `ethernet   W5500 found …`, or `no W5500 module (Wi-Fi
@@ -118,7 +153,8 @@ Wi-Fi it joins — on the production block that is the 192.168.0.x network.
 
 ## The USB console
 
-`~/.safia-esp/venv/bin/pio device monitor`, or `setup_board.py --cmd <command>`:
+`~/.safia-esp/venv/bin/pio device monitor`, or `setup_board.py --cmd <command>`
+(it answers during a round too, from 1.3.5):
 `show` · `log` · `scan` · `run` (a full round now) · `portal` · `set ssid|pass|key|server …`
 · `forget` · `reboot`.
 

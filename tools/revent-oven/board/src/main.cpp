@@ -601,6 +601,8 @@ void roundTick() {
   imsError = "";
   lastImsOk = millis();
   ota::confirm();  // a firmware on trial has reached IMS: it keeps itself
+  // a new firmware first: it restarts the board, and the ovens are read after
+  ota::maybeUpdate(ims, plan, backgroundQuiet);
   bool all = forceAll;
   forceAll = false;
   doStatus();
@@ -622,7 +624,6 @@ void roundTick() {
   nextRound = t0 + plan.statusS * 1000UL;
   inRound = false;
   updatePortalStatus();
-  ota::maybeUpdate(ims, plan, backgroundQuiet);  // restarts when it installed one
 }
 
 // ── what the board says about itself ────────────────────────────────────────
