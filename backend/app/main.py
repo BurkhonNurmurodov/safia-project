@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        report_leader_merge,
+        merge_leader_elnora_xasan,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -487,12 +487,11 @@ async def lifespan(app: FastAPI):
     # `services/pin_mismatch_report.py` once it has been sent.
     run(report_pin_mismatch)
 
-    # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov, production's
-    # record before their profiles are merged, DMed once to Burkhon. READ-ONLY.
-    # Only SCHEDULES a job (one flag read). Remove this line,
-    # `startup.report_leader_merge` and `services/leader_merge_report_nov02.py`
-    # once it has been sent.
-    run(report_leader_merge)
+    # ⚠ TEMPORARY one-shot (2026-11-04) — Elnora's profile takes her deputy
+    # Xasan Malikov's history (services/leader_merge_nov04.py; dry run first,
+    # DMed to Burkhon). Only SCHEDULES a job. Remove this line and
+    # `startup.merge_leader_elnora_xasan` once its apply flag reads «done».
+    run(merge_leader_elnora_xasan)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

@@ -7841,36 +7841,46 @@ def _verifix_roles_job() -> None:
                       verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: Elnora and her deputy Xasan Malikov, before the merge ──────────
-# The operator (2026-11-02): Maksumov Sanjar's leader Elnora was away, a leader
-# profile was made for her deputy Xasan Malikov, she is back, and her profile is
-# to be merged with his history. READ-ONLY: production's record of both people
-# (`services/leader_merge_report_nov02.py`) DMed once to Burkhon as a .txt file
-# + text. Changing what it sends needs a NEW key. Delete this block, the module
-# and both entrypoint calls once it has landed.
-LEADER_MERGE_REPORT_FLAG = "leader_merge_elnora_xasan_report_2026_11_02_v1"
-_LEADER_MERGE_REPORT_DELAY_S = 150
+# ── one-shot: Elnora's profile takes her deputy Xasan Malikov's history ──────
+# The operator (2026-11-02/04): Maksumov Sanjar's leader Elnora (#254) is back;
+# her profile carries the history of her deputy Xasan (#430). The whole of it
+# is `services/leader_merge_nov04.py`: the dry run (v4.418.5) read, checked and
+# DMed the plan to Burkhon; MODE "apply" (v4.418.6) does it between 21:00 and
+# 06:00 Tashkent, one transaction with its flag, and DMs what moved. TEMPORARY: delete this block,
+# the module and both entrypoint calls once the apply flag reads «done» (or
+# «blocked») and its report has gone.
 
 
-def report_leader_merge() -> None:
-    """Elnora × Xasan Malikov state report, DMed once. Never raises."""
+def merge_leader_elnora_xasan() -> None:
+    """Schedules the merge pass (dry or apply) when its flag or report is
+    still pending. Never raises."""
     try:
-        if not _report_pending(LEADER_MERGE_REPORT_FLAG):
-            return
-        from datetime import timedelta
+        from app.services import leader_merge_nov04 as fx
+        db = SessionLocal()
+        try:
+            if not fx.pending(db):
+                return
+        finally:
+            db.close()
         from app.scheduler import schedule_at
-        schedule_at("leader-merge-report",
-                    datetime.now(timezone.utc) + timedelta(seconds=_LEADER_MERGE_REPORT_DELAY_S),
-                    _leader_merge_report_job)
+        schedule_at("leader-merge-nov04", fx.run_at(), _leader_merge_job)
     except Exception as exc:
-        print(f"[startup] leader merge report could not be scheduled: {exc}")
+        print(f"[startup] leader merge could not be scheduled: {exc}")
 
 
-def _leader_merge_report_job() -> None:
-    print("[startup] leader merge report: started")
-    from app.services import leader_merge_report_nov02
-    _send_report_once(LEADER_MERGE_REPORT_FLAG, "leader merge report",
-                      leader_merge_report_nov02.send, REPORT_CHAT_BURKHON)
+def _leader_merge_job() -> None:
+    from app.services import leader_merge_nov04 as fx
+    db = SessionLocal()
+    try:
+        rec = fx.run(db)
+        if rec is not None:
+            print(f"[startup] leader merge ({fx.MODE}): {rec.get('result')}")
+        res = fx.result(db)
+    finally:
+        db.close()
+    if res:
+        _send_report_once(fx.dm_flag(res), f"leader merge {fx.MODE} report", fx.send_report,
+                          REPORT_CHAT_BURKHON)
 
 
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──

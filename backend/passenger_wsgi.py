@@ -125,7 +125,7 @@ try:
         report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        report_leader_merge,
+        merge_leader_elnora_xasan,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -568,9 +568,9 @@ try:
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
-    # ⚠ TEMPORARY report (2026-11-02) — Elnora × Xasan Malikov before the
-    # merge, DMed once. Remove once it has been sent.
-    report_leader_merge()
+    # ⚠ TEMPORARY one-shot (2026-11-04) — Elnora's profile takes Xasan
+    # Malikov's history. Remove once its apply flag reads «done».
+    merge_leader_elnora_xasan()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()
