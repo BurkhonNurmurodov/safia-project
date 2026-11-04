@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -134,24 +135,58 @@ def collector_file(body: FileIn, request: Request, db: Session = Depends(get_db)
     copy kept here (`offset` = that copy's size); anything that does not add
     up is refused 409 with the size this side holds, and sent again whole."""
     _collector(request)
-    o = _oven(db, body.oven_id)
     try:
         chunk = base64.b64decode(body.data, validate=True)
     except (binascii.Error, ValueError):
         raise _refuse("bad_data", "data is not base64.", 400)
+    return _store_file(db, body.oven_id, body.kind, body.name, body.offset, chunk,
+                       body.size, body.sha256)
+
+
+@collector_router.post("/raw")
+async def collector_raw(request: Request,
+                        oven_id: int = Query(...), kind: str = Query(..., max_length=20),
+                        name: str = Query("", max_length=120), offset: int = Query(0),
+                        size: int = Query(...), sha256: str = Query(..., max_length=64),
+                        db: Session = Depends(get_db)):
+    """The same as /file with the bytes as the request body (no JSON, no
+    base64) — what the always-on board sends: it holds the file in a small
+    memory and a third less to send matters there. The key is checked BEFORE
+    the body is read, the body is capped, and the store runs off the loop."""
+    _collector(request)                         # in memory, no DB
     try:
-        if body.kind == "log":
-            row = revent_ovens.save_log(db, o, body.name, body.offset, chunk, body.size, body.sha256)
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared = 0
+    if declared > revent_ovens.MAX_FILE:
+        raise _refuse("bad_size", "File refused: bad_size.", 400, size=0)
+    buf = bytearray()
+    async for part in request.stream():
+        buf += part
+        if len(buf) > revent_ovens.MAX_FILE:
+            raise _refuse("bad_size", "File refused: bad_size.", 400, size=0)
+    return await run_in_threadpool(_store_file, db, oven_id, kind, name, offset, bytes(buf),
+                                   size, sha256)
+
+
+def _store_file(db: Session, oven_id: int, kind: str, name: str, offset: int, chunk: bytes,
+                size: int, sha256: str) -> dict:
+    """Both doors' one store: a log (whole or its new tail), ServiceData.txt or
+    OvenSettings.xml. 409 (with the size kept here) when a tail does not fit."""
+    o = _oven(db, oven_id)
+    try:
+        if kind == "log":
+            row = revent_ovens.save_log(db, o, name, offset, chunk, size, sha256)
             db.commit()
             revent_analytics.forget(o.id)
             return {"saved": True, "size": row.size}
-        if body.offset or len(chunk) != body.size:
+        if offset or len(chunk) != size:
             raise revent_ovens.Refused("bad_size")
-        if hashlib.sha256(chunk).hexdigest() != (body.sha256 or "").lower():
+        if hashlib.sha256(chunk).hexdigest() != (sha256 or "").lower():
             raise revent_ovens.Refused("sha")
-        if body.kind == "service":
+        if kind == "service":
             revent_ovens.save_service(o, chunk.decode("utf-8", "replace"))
-        elif body.kind == "settings":
+        elif kind == "settings":
             revent_ovens.save_settings(o, chunk)
         else:
             raise _refuse("bad_kind", "kind is log, service or settings.", 400)

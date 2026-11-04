@@ -41,6 +41,9 @@ log = logging.getLogger(__name__)
 # digest → the collector's name, printed on the page («seen by …»).
 COLLECTOR_KEYS = {
     "ca0bb11a13a242a8348e307cc1e875d47a241ed72ca763798bea6413d68ef374": "laptop",
+    # the always-on ESP32-S2 board (tools/revent-oven/board/); its key is
+    # ~/.safia/oven-board.key on the build Mac and in the board's NVS
+    "434b575182296b1e31932ab5932a5a14712a85ab06a5599f66de1a824804e50e": "board",
 }
 
 # How often the collector asks (seconds). Served by plan(), so changing the
