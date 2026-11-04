@@ -5,6 +5,7 @@
 #pragma once
 #include <Arduino.h>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -27,6 +28,10 @@ struct OvenPlan {
 struct Plan {
   uint32_t statusS = 60, logsS = 600, settingsS = 3600, pingS = 10;
   std::vector<OvenPlan> ovens;
+  // the firmware IMS publishes for the board (empty: none) — board/ota.h
+  String fwVersion;
+  std::string fwSha;
+  uint32_t fwSize = 0;
 };
 
 struct Reading {
@@ -49,6 +54,10 @@ class Ims {
   ImsReply status(const std::vector<Reading>& readings);
   ImsReply file(int ovenId, const Upload& u);
   ImsReply ping();  // the heartbeat between rounds: short timeouts, no retry
+  // A GET whose body (exactly `expect` bytes) goes to `sink` as it arrives —
+  // the firmware image. `background` runs while waiting; it must not use IMS.
+  ImsReply download(const String& path, size_t expect, const std::function<bool(const uint8_t*, size_t)>& sink,
+                    const std::function<void()>& background);
   String lastError() const { return last_; }
   uint32_t lastContactMs() const { return contact_; }  // any answer from IMS
 

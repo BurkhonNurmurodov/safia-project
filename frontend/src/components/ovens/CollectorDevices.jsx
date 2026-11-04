@@ -34,7 +34,7 @@ function Fact({ k, v }) {
   );
 }
 
-function Device({ d, T, waited }) {
+function Device({ d, T, waited, published }) {
   const tone = d.online ? "ok" : "bad";
   const info = d.info || {};
   const rich = !!(info.rssi || info.up || info.heap);
@@ -62,7 +62,7 @@ function Device({ d, T, waited }) {
       )}
       {/* offline: these are the device's LAST report, not live values — dimmed */}
       <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5" style={{ opacity: d.online ? 1 : 0.55 }}>
-        <Fact k={T.devFw} v={d.fw} />
+        <Fact k={T.devFw} v={d.fw && published && published !== d.fw ? fill(T.devFwNext, { v: d.fw, n: published }) : d.fw} />
         <Fact k={T.devNet} v={net} />
         <Fact k={onEth ? T.devWifiBackup : T.devWifi} v={wifi} />
         <Fact k={T.devLan} v={info.ip} />
@@ -96,10 +96,10 @@ export default function CollectorDevices({ T }) {
         const waitMax = Math.max(0, ...pending.map((d) => d.wait_s || 0));
         const elapsed = (Date.now() - t0) / 1000;
         if (!pending.length || elapsed >= waitMax) {
-          setSt({ phase: "done", devs, waited: pending.length ? Math.round(elapsed) : 0, at: new Date().toISOString() });
+          setSt({ phase: "done", devs, fw: data.firmware?.version || null, waited: pending.length ? Math.round(elapsed) : 0, at: new Date().toISOString() });
           return;
         }
-        setSt({ phase: "checking", wait: Math.round(waitMax - elapsed), devs });
+        setSt({ phase: "checking", wait: Math.round(waitMax - elapsed), devs, fw: data.firmware?.version || null });
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (!alive.current) return;
       }
@@ -130,7 +130,7 @@ export default function CollectorDevices({ T }) {
         {st.phase === "done" && (
           st.devs.length ? (
             <>
-              {st.devs.map((d) => <Device key={d.name} d={d} T={T} waited={st.waited} />)}
+              {st.devs.map((d) => <Device key={d.name} d={d} T={T} waited={st.waited} published={st.fw} />)}
               <p className="px-4 py-2 text-[11px] tabular-nums" style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>
                 {fill(T.devCheckedAt, { t: stamp(st.at) })}
               </p>

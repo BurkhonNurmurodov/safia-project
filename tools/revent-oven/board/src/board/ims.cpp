@@ -37,6 +37,12 @@ String urlEncode(const std::string& s) {
   return out;
 }
 
+void addHeaders(HTTPClient& http) {
+  http.addHeader("X-Oven-Key", CFG.key);
+  http.addHeader("User-Agent", "safia-oven-board/" FW_VERSION);
+  http.addHeader("X-Collector-Info", deviceInfo());
+}
+
 String detailCode(const String& body) {
   JsonDocument d;
   if (deserializeJson(d, body)) return "";
@@ -82,10 +88,8 @@ ImsReply Ims::sendOnce(const char* method, const String& path, const uint8_t* bo
     last_ = r.error;
     return r;
   }
-  http.addHeader("X-Oven-Key", CFG.key);
-  http.addHeader("User-Agent", "safia-oven-board/" FW_VERSION);
+  addHeaders(http);
   http.addHeader("Accept", "application/json");
-  http.addHeader("X-Collector-Info", deviceInfo());
   if (ctype) http.addHeader("Content-Type", ctype);
   int code;
   if (!strcmp(method, "GET")) code = http.GET();
@@ -129,6 +133,11 @@ ImsReply Ims::plan(Plan& out) {
   p.logsS = d["poll"]["logs_s"] | 600;
   p.settingsS = d["poll"]["settings_s"] | 3600;
   p.pingS = d["poll"]["ping_s"] | 10;
+  if (!d["firmware"].isNull()) {
+    p.fwVersion = (const char*)(d["firmware"]["version"] | "");
+    p.fwSha = (const char*)(d["firmware"]["sha256"] | "");
+    p.fwSize = d["firmware"]["size"] | 0;
+  }
   if (p.pingS < 5) p.pingS = 5;
   if (p.statusS < 15) p.statusS = 15;
   for (JsonObject o : d["ovens"].as<JsonArray>()) {
@@ -184,3 +193,90 @@ ImsReply Ims::ping() {
   return r;  // a missed heartbeat is not an error worth reporting: the next round says
 }
 
+
+ImsReply Ims::download(const String& path, size_t expect, const std::function<bool(const uint8_t*, size_t)>& sink,
+                       const std::function<void()>& background) {
+  ImsReply r;
+  String url = CFG.server + path;
+  bool https = CFG.server.startsWith("https://");
+  // a long read on a connection of its own, never a kept-alive one
+  if (https) tls.stop();
+  else plain.stop();
+  if (https && !tlsReady) {
+    tls.setCACert(ROOT_CAS);
+    tls.setHandshakeTimeout(20);
+    tlsReady = true;
+  }
+  HTTPClient http;
+  http.setReuse(false);
+  http.setConnectTimeout(10000);
+  http.setTimeout(30000);
+  bool begun = https ? http.begin(tls, url) : http.begin(plain, url);
+  if (!begun) {
+    r.http = -1;
+    r.error = "bad server address: " + CFG.server;
+    return r;
+  }
+  addHeaders(http);
+  int code = http.GET();
+  r.http = code;
+  if (code > 0) contact_ = millis();
+  if (code != 200) {
+    if (code > 0) {
+      r.body = http.getString();
+      String c = detailCode(r.body);
+      r.error = "HTTP " + String(code) + (c.length() ? " " + c : "");
+    } else {
+      r.error = HTTPClient::errorToString(code);
+    }
+    http.end();
+    if (https) tls.stop();
+    else plain.stop();
+    lastUse = millis();
+    return r;
+  }
+  int len = http.getSize();
+  if (len >= 0 && (size_t)len != expect) {
+    r.http = -3;
+    r.error = "IMS sends " + String(len) + " bytes, the plan said " + String((unsigned long)expect);
+  }
+  NetworkClient* s = http.getStreamPtr();
+  static uint8_t buf[2048];
+  size_t got = 0;
+  uint32_t last = millis();
+  while (!r.error.length() && got < expect) {
+    int a = s ? s->available() : 0;
+    if (a > 0) {
+      size_t want = expect - got;
+      if (want > sizeof buf) want = sizeof buf;
+      if ((size_t)a < want) want = (size_t)a;
+      int n = s->read(buf, want);
+      if (n > 0) {
+        if (!sink(buf, (size_t)n)) {
+          r.error = "the image could not be written";
+          break;
+        }
+        got += (size_t)n;
+        last = contact_ = millis();
+        continue;
+      }
+    }
+    if (!s || (!s->connected() && s->available() <= 0)) {
+      r.error = "the connection closed after " + String((unsigned long)got) + " of " + String((unsigned long)expect) + " bytes";
+      break;
+    }
+    if (millis() - last > 30000) {
+      r.error = "IMS stopped sending (30 s without data)";
+      break;
+    }
+    if (background) background();
+    delay(1);
+  }
+  http.end();
+  if (https) tls.stop();
+  else plain.stop();
+  lastUse = millis();
+  if (r.error.length()) r.http = -3;
+  last_ = r.ok() ? "" : r.error;
+  return r;
+}

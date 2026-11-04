@@ -8,7 +8,8 @@
 //   every minute      each oven's live status          → IMS /api/ovens/collector/status
 //   every 10 minutes  each oven's day logs (+ ServiceData.txt), only what IMS lacks
 //   every hour        OvenSettings.xml, when it changed
-// The ovens, the paces and what IMS already holds come from IMS's plan.
+// The ovens, the paces and what IMS already holds come from IMS's plan — and
+// the firmware IMS publishes, which the board installs itself (board/ota.h).
 //
 // READ-ONLY toward the ovens: the only requests this firmware can build are the
 // three reads in core/soap.cpp.
@@ -29,6 +30,7 @@
 #include "board/config.h"
 #include "board/ims.h"
 #include "board/net.h"
+#include "board/ota.h"
 #include "board/oven.h"
 #include "board/portal.h"
 #include "core/dime.h"
@@ -61,7 +63,7 @@ struct OvenNote {
 std::map<int, OvenNote> notes;
 std::map<int, std::string> serviceSha;  // ServiceData.txt last sent, per oven
 
-uint32_t nextRound = 0, lastLogs = 0, lastSettings = 0;
+uint32_t nextRound = 0, lastLogs = 0, lastSettings = 0, lastStatus = 0;
 bool logsDone = false, settingsDone = false, forceAll = false, inRound = false;
 uint32_t lastImsOk = 0, netDownSince = 0, netUpSince = 0, lastWifiTry = 0;
 String imsError;
@@ -151,12 +153,24 @@ void pingTick() {
   inPing = false;
 }
 
-// What may run while a round waits on an oven or IMS.
+void consoleTick();
+
+// What may run while a round waits on an oven or IMS — the USB console too, so
+// `show` answers while the board waits on an oven that does not.
 void background() {
+  consoleTick();
   portal::loop();
   ledTick();
   buttonTick();
   if (!imsError.length()) pingTick();  // never wait on an IMS that is not answering mid-round
+}
+
+// While IMS itself is streaming to the board (a firmware download): nothing
+// that talks to IMS — the heartbeat would use the same connection.
+void backgroundQuiet() {
+  portal::loop();
+  ledTick();
+  buttonTick();
 }
 
 // ── Wi-Fi ───────────────────────────────────────────────────────────────────
@@ -223,6 +237,7 @@ void netTick() {
 // ── the rounds ──────────────────────────────────────────────────────────────
 
 void doStatus() {
+  lastStatus = millis();
   std::vector<Reading> rs;
   int ok = 0;
   for (OvenPlan& op : plan.ovens) {
@@ -481,6 +496,7 @@ void roundTick() {
   havePlan = true;
   imsError = "";
   lastImsOk = millis();
+  ota::confirm();  // a firmware on trial has reached IMS: it keeps itself
   bool all = forceAll;
   forceAll = false;
   doStatus();
@@ -490,13 +506,19 @@ void roundTick() {
     settingsDone = true;
   }
   if (all || !logsDone || millis() - lastLogs >= plan.logsS * 1000UL) {
-    for (OvenPlan& op : plan.ovens) logsOf(op);
+    for (size_t i = 0; i < plan.ovens.size(); i++) {
+      // one oven's logs take a minute or more on the factory Wi-Fi: the live
+      // status of every oven is read again between them, not after them all
+      if (i && millis() - lastStatus >= plan.statusS * 1000UL) doStatus();
+      logsOf(plan.ovens[i]);
+    }
     lastLogs = millis();
     logsDone = true;
   }
   nextRound = t0 + plan.statusS * 1000UL;
   inRound = false;
   updatePortalStatus();
+  ota::maybeUpdate(ims, plan, backgroundQuiet);  // restarts when it installed one
 }
 
 // ── what the board says about itself ────────────────────────────────────────
@@ -511,6 +533,7 @@ String keyText() {
 String showText() {
   String s;
   s += "Safia oven board " FW_VERSION "\n";
+  s += "firmware   " + ota::text() + "\n";
   s += "uptime     " + uptimeText(millis()) + "\n";
   s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
@@ -685,6 +708,7 @@ void setup() {
   blog("Safia oven board %s — %s rev %d, PSRAM %u KB free, reset reason %d", FW_VERSION, ESP.getChipModel(),
        ESP.getChipRevision(), (unsigned)(ESP.getFreePsram() / 1024), (int)esp_reset_reason());
   configLoad();
+  ota::begin();
   WiFi.persistent(false);
   WiFi.setHostname("safia-pech");
   WiFi.mode(WIFI_STA);
@@ -709,6 +733,7 @@ void loop() {
   ledTick();
   roundTick();
   pingTick();
+  ota::loop();
   if (millis() > 24UL * 3600 * 1000 && !inRound) restart("daily restart");
   delay(5);
 }
