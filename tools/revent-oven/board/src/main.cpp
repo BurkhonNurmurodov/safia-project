@@ -22,7 +22,9 @@
 //   one short flash / 3 s     working
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <mbedtls/platform.h>
 
 #include <map>
 
@@ -65,6 +67,22 @@ std::map<int, std::string> serviceSha;  // ServiceData.txt last sent, per oven
 uint32_t nextRound = 0, lastLogs = 0, lastSettings = 0, lastStatus = 0;
 bool logsDone = false, settingsDone = false, forceAll = false, inRound = false;
 uint32_t lastImsOk = 0, netDownSince = 0, lastWifiTry = 0;
+uint32_t lastDelivered = 0;  // IMS last TOOK a status post or a file
+String lastSendError;        // why the last status post or file did not reach IMS
+
+// ── TLS memory ──────────────────────────────────────────────────────────────
+// The prebuilt libraries give mbedTLS INTERNAL RAM only
+// (CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC): two ~16 KB buffers per connection, out
+// of ~70 KB that Wi-Fi, lwIP and the oven reads keep fragmenting. Once no 16 KB
+// block is left, every connection to IMS fails («SSL - Memory allocation
+// failed», X509 errors) while the board keeps reading the ovens — seen
+// 2026-11-05: no status reached IMS for 50 minutes. The 2 MB PSRAM takes them
+// instead; internal RAM is the fallback.
+void* tlsCalloc(size_t n, size_t size) {
+  void* p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return p ? p : heap_caps_calloc(n, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+void tlsFree(void* p) { heap_caps_free(p); }
 String imsError;
 String consoleLine;
 
@@ -212,6 +230,8 @@ void doStatus() {
   lastStatus = millis();
   std::vector<Reading> rs;
   int ok = 0;
+  std::string body;
+  body.reserve(16 * 1024);  // one block, in PSRAM: growing it piece by piece fragmented internal RAM
   for (OvenPlan& op : plan.ovens) {
     Reading x;
     x.ovenId = op.id;
@@ -222,7 +242,6 @@ void doStatus() {
       rs.push_back(x);
       continue;
     }
-    std::string body;
     OvenReply r;
     // the factory Wi-Fi drops the odd connection: one retry — but not for an
     // oven that already failed last time
@@ -272,7 +291,12 @@ void doStatus() {
   }
   if (rs.empty()) return;
   ImsReply ir = ims.status(rs);
-  if (!ir.ok()) imsError = "status: " + ir.error;
+  if (ir.ok()) {
+    lastDelivered = millis();
+  } else {
+    imsError = "status: " + ir.error;
+    lastSendError = imsError;
+  }
   blog("status: %d/%d oven(s) answered, IMS %s", ok, (int)rs.size(), ir.ok() ? "took it" : ir.error.c_str());
 }
 
@@ -289,6 +313,8 @@ size_t queueCap() {
 void sendQueue(OvenPlan& op, UploadQueue& q, int& sent, int& refused, int& failed, size_t& bytes) {
   for (Upload& u : q.items()) {
     ImsReply ir = ims.file(op.id, u);
+    if (ir.ok()) lastDelivered = millis();
+    else if (ir.http != 409) lastSendError = "file: " + ir.error;
     if (ir.ok()) {
       sent++;
       bytes += u.chunk.size();
@@ -521,7 +547,8 @@ String showText() {
   s += "Safia oven board " FW_VERSION "\n";
   s += "firmware   " + ota::text() + "\n";
   s += "uptime     " + uptimeText(millis()) + "\n";
-  s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
+  s += "memory     " + String(ESP.getFreeHeap() / 1024) + " KB free (largest block " + String(ESP.getMaxAllocHeap() / 1024) +
+       " KB), PSRAM " + String(ESP.getFreePsram() / 1024) + " KB free\n";
   s += "wifi       " + (CFG.ssid.length() ? "\"" + CFG.ssid + "\", password " + (CFG.pass.length() ? "set" : "none") : String("not set")) + "\n";
   if (WiFi.status() == WL_CONNECTED)
     s += "           connected, IP " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm, access point " +
@@ -532,6 +559,8 @@ String showText() {
   s += "server     " + CFG.server + "\n";
   s += "key        " + keyText() + "\n";
   s += "IMS        " + (imsError.length() ? imsError : lastImsOk ? "answered " + ago(lastImsOk) : String("not asked yet")) + "\n";
+  s += "delivered  " + (lastDelivered ? "a reading reached IMS " + ago(lastDelivered) : String("nothing yet")) +
+       (lastSendError.length() ? "; last failure: " + lastSendError : String("")) + "\n";
   if (havePlan) {
     s += "ovens      " + String((int)plan.ovens.size()) + "; next round in " +
          String((int32_t)(nextRound - millis()) > 0 ? (nextRound - millis()) / 1000 : 0) + " s\n";
@@ -653,7 +682,11 @@ String deviceInfo() {
     return o;
   };
   String s = "fw=" FW_VERSION ";up=" + String(millis() / 1000) + ";heap=" + String(ESP.getFreeHeap() / 1024) +
-             ";psram=" + String(ESP.getFreePsram() / 1024) + ";ping=" + String(havePlan ? plan.pingS : 10);
+             ";psram=" + String(ESP.getFreePsram() / 1024) + ";blk=" + String(ESP.getMaxAllocHeap() / 1024) +
+             ";ping=" + String(havePlan ? plan.pingS : 10);
+  // how long since IMS last took a reading, and why the last one failed
+  if (lastDelivered) s += ";sent=" + String((millis() - lastDelivered) / 1000);
+  if (lastSendError.length()) s += ";err=" + clean(lastSendError.substring(0, 60));
   // net = the way this request left the board; ip = the board's address there
   if (wifiUp())
     s += ";net=wifi;ip=" + WiFi.localIP().toString() + ";rssi=" + String(WiFi.RSSI()) + ";ssid=" + clean(WiFi.SSID());
@@ -670,6 +703,8 @@ void setup() {
   while (!Serial && millis() - t < 1500) delay(10);
   blog("Safia oven board %s — %s rev %d, PSRAM %u KB free, reset reason %d", FW_VERSION, ESP.getChipModel(),
        ESP.getChipRevision(), (unsigned)(ESP.getFreePsram() / 1024), (int)esp_reset_reason());
+  // before the first TLS connection: its buffers go to PSRAM (tlsCalloc)
+  if (psramFound()) mbedtls_platform_set_calloc_free(tlsCalloc, tlsFree);
   configLoad();
   ota::begin();
   WiFi.persistent(false);
@@ -693,6 +728,14 @@ void loop() {
   roundTick();
   pingTick();
   ota::loop();
+  // IMS answers the plan but takes no reading: whatever the board got itself
+  // into (memory, a stuck connection), a restart clears it — the first round
+  // after a start has always delivered. Never on a firmware on trial: a restart
+  // before ota::confirm() would roll a good firmware back.
+  if (!inRound && wifiUp() && havePlan && !plan.ovens.empty() && !ota::onTrial() && lastImsOk &&
+      millis() - lastImsOk < 10UL * 60000 &&
+      millis() - lastDelivered > 10UL * 60000)
+    restart(("no reading reached IMS for 10 minutes (" + lastSendError + ")").c_str());
   if (millis() > 24UL * 3600 * 1000 && !inRound) restart("daily restart");
   delay(5);
 }

@@ -166,19 +166,45 @@ class StatusBatch(BaseModel):
 
 
 @collector_router.post("/status")
-def collector_status(body: StatusBatch, request: Request, db: Session = Depends(get_db)):
-    """One poll's live status for every oven read (or why one could not be)."""
-    name = _collector(request)
-    _seen(db, request, name, "status")
-    saved = 0
-    for r in body.readings:
-        o = db.get(ReventOven, r.oven_id)
-        if o is None or not o.active:
-            continue
-        revent_ovens.save_status(db, o, r.lines, r.error, name)
-        saved += 1
-    db.commit()
-    return {"saved": saved}
+async def collector_status(request: Request, db: Session = Depends(get_db)):
+    """One poll's live status for every oven read (or why one could not be).
+
+    The body is read here, not by a model: bytes that are not UTF-8 are
+    replaced and a reading that does not hold together is skipped and named
+    (revent_ovens.parse_status_body), so one oven's odd line can never lose
+    every oven's status — and whatever had to be repaired or refused is kept
+    on the collector's row (the «Kollektor qurilmasi» card)."""
+    name = _collector(request)                  # in memory, no DB
+    buf = bytearray()
+    async for part in request.stream():
+        buf += part
+        if len(buf) > revent_ovens.STATUS_BODY_MAX:
+            break
+    raw = bytes(buf)
+
+    def work():
+        _seen(db, request, name, "status")
+        if len(raw) > revent_ovens.STATUS_BODY_MAX:
+            revent_ovens.note_trouble(db, name, "status", "body over 256 KB", http=400, size=len(raw), head=raw)
+            raise _refuse("bad_body", "Status refused: over 256 KB.", 400)
+        readings, notes = revent_ovens.parse_status_body(raw)
+        if readings is None:
+            revent_ovens.note_trouble(db, name, "status", "; ".join(notes), http=400, size=len(raw), head=raw)
+            raise _refuse("bad_body", "Status refused: " + "; ".join(notes), 400)
+        saved = 0
+        for r in readings:
+            o = db.get(ReventOven, r["oven_id"])
+            if o is None or not o.active:
+                continue
+            revent_ovens.save_status(db, o, r["lines"], r["error"], name)
+            saved += 1
+        db.commit()
+        if notes:
+            revent_ovens.note_trouble(db, name, "status", "kept, repaired: " + "; ".join(notes),
+                                      http=200, size=len(raw), head=raw)
+        return {"saved": saved, "notes": notes}
+
+    return await run_in_threadpool(work)
 
 
 class FileIn(BaseModel):

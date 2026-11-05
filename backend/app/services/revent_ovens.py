@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import re
 import zlib
@@ -35,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.models import ReventCollector, ReventOven, ReventOvenLog
+from app.models import AppSetting, ReventCollector, ReventOven, ReventOvenLog
 from app.services import revent_log
 
 log = logging.getLogger(__name__)
@@ -217,6 +218,121 @@ def note_contact(db: Session, name: str, what: str, ip: str, user_agent: str, in
         log.exception("[OVENS] could not note the collector contact")
 
 
+# ── what the collector door refused ──────────────────────────────────────────
+# A request refused BEFORE its handler (a body that is not JSON, a reading that
+# does not validate) leaves no trace on the collector row — the device looks
+# online while nothing it sends is kept (2026-11-05: the board pinged and asked
+# for its plan for half an hour, and not one status post was recorded). The
+# last few refusals are kept per collector, in app_settings, and shown on the
+# «Kollektor qurilmasi» card.
+TROUBLE_KEY = "oven_collector_trouble:{}"
+TROUBLE_KEEP = 8
+STATUS_BODY_MAX = 256 * 1024
+
+
+def _body_head(raw: bytes, n: int = 160) -> str:
+    return (raw or b"")[:n].decode("utf-8", errors="backslashreplace")
+
+
+def note_trouble(db: Session, name: str, what: str, reason: str, *, http: Optional[int] = None,
+                 size: Optional[int] = None, head: Optional[bytes] = None) -> None:
+    """Keep one refusal (or a reading this side had to repair) for the card.
+    Its own transaction; never raises."""
+    try:
+        key = TROUBLE_KEY.format(name)
+        row = db.get(AppSetting, key)
+        try:
+            items = json.loads(row.value) if row else []
+            if not isinstance(items, list):
+                items = []
+        except ValueError:
+            items = []
+        items.insert(0, {"at": now().isoformat(), "what": what[:20], "reason": str(reason)[:300],
+                         "http": http, "size": size, "head": _body_head(head) if head else None})
+        value = json.dumps(items[:TROUBLE_KEEP], ensure_ascii=False)
+        if row:
+            row.value = value
+        else:
+            db.add(AppSetting(key=key, value=value))
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("[OVENS] could not keep the collector refusal")
+    log.warning("[OVENS] %s %s: %s", name, what, reason)
+
+
+def note_refused_request(key_header: Optional[str], bearer: Optional[str], path: str, reason: str,
+                         size: Optional[int] = None) -> None:
+    """For the exception handler: a collector request FastAPI refused before
+    its handler ran. Opens its own session; only a known key is noted."""
+    v = (key_header or "").strip()
+    if not v:
+        scheme, _, token = (bearer or "").partition(" ")
+        v = token.strip() if scheme.lower() == "bearer" else ""
+    name = collector_of(v)
+    if not name:
+        return
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        what = path.rstrip("/").rsplit("/", 1)[-1] or path
+        note_trouble(db, name, what, reason, http=422, size=size)
+    finally:
+        db.close()
+
+
+def trouble_of(db: Session, name: str) -> list:
+    row = db.get(AppSetting, TROUBLE_KEY.format(name))
+    if not row:
+        return []
+    try:
+        items = json.loads(row.value)
+        return items if isinstance(items, list) else []
+    except ValueError:
+        return []
+
+
+def parse_status_body(raw: bytes) -> tuple[Optional[list], list[str]]:
+    """The status post, read leniently: bytes that are not UTF-8 are replaced
+    (a stray byte in one oven's line must not lose every oven's status), and a
+    reading that does not hold together is skipped and named, never the batch.
+    Returns (readings | None when the body is unusable, notes)."""
+    notes: list[str] = []
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        text = raw.decode("utf-8", errors="replace")
+        notes.append(f"not UTF-8 at byte {e.start} — replaced")
+    try:
+        obj = json.loads(text)
+    except ValueError as e:
+        return None, notes + [f"not JSON: {e}"]
+    items = obj.get("readings") if isinstance(obj, dict) else None
+    if not isinstance(items, list):
+        return None, notes + ["no readings list"]
+    out = []
+    for i, it in enumerate(items[:50]):
+        if not isinstance(it, dict):
+            notes.append(f"reading {i}: not an object")
+            continue
+        try:
+            oid = int(it.get("oven_id"))
+        except (TypeError, ValueError):
+            notes.append(f"reading {i}: no oven_id")
+            continue
+        lines = it.get("lines")
+        if lines is not None and not isinstance(lines, list):
+            notes.append(f"reading {i}: lines is not a list")
+            lines = None
+        err = it.get("error")
+        out.append({"oven_id": oid,
+                    "lines": [("" if x is None else str(x)) for x in lines] if lines is not None else None,
+                    "error": None if err is None else str(err)})
+    if len(items) > 50:
+        notes.append(f"{len(items) - 50} readings over the 50 a post may carry")
+    return out, notes
+
+
 def _expect_s(row: ReventCollector) -> int:
     """How often this device should be heard from: its heartbeat, else a round."""
     try:
@@ -226,9 +342,27 @@ def _expect_s(row: ReventCollector) -> int:
     return ping if 5 <= ping <= 120 else POLL["status_s"]
 
 
+def _iso_or_none(dt) -> Optional[str]:
+    return dt.isoformat() if dt else None
+
+
+def _age(t: datetime, dt) -> Optional[float]:
+    return round(max(0.0, (t - dt).total_seconds()), 1) if dt else None
+
+
 def devices(db: Session) -> dict:
     t = now()
     out = []
+    status_at: dict = {}
+    for name, at in (db.query(ReventOven.collector, ReventOven.tried_at)
+                     .filter(ReventOven.active.is_(True), ReventOven.collector.isnot(None))):
+        if at and (name not in status_at or at > status_at[name]):
+            status_at[name] = at
+    file_at = None
+    for o in db.query(ReventOven).filter(ReventOven.active.is_(True)):
+        for at in (o.logs_at, o.settings_at, o.service_at):
+            if at and (file_at is None or at > file_at):
+                file_at = at
     for r in db.query(ReventCollector).order_by(ReventCollector.name):
         age = max(0.0, (t - r.last_seen).total_seconds()) if r.last_seen else None
         expect = _expect_s(r)
@@ -241,6 +375,11 @@ def devices(db: Session) -> dict:
             "online": age is not None and age <= online_s,
             "online_s": online_s, "wait_s": min(90, expect + 20), "expect_s": expect,
             "last_path": r.last_path, "remote_ip": r.remote_ip, "fw": fw, "info": r.info or {},
+            # what this collector actually got KEPT here — online is only «it calls in»
+            "status_at": _iso_or_none(status_at.get(r.name)),
+            "status_age_s": _age(t, status_at.get(r.name)),
+            "file_at": _iso_or_none(file_at),
+            "trouble": trouble_of(db, r.name),
         })
     from app.services import oven_firmware
     rel = oven_firmware.latest()

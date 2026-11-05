@@ -162,6 +162,9 @@ const uz = {
   devFw: "Dastur", devWifi: "Wi-Fi", devLan: "Zavoddagi manzili", devUp: "Ishlab turibdi",
   devMem: "Bo'sh xotira", devOut: "IMS ko'rgan manzil", devLastReq: "Oxirgi so'rov",
   devReq: { plan: "reja", status: "holat", file: "fayl", ping: "signal" },
+  devStatusAt: "Holat oxirgi kelgan", devFileAt: "Oxirgi fayl",
+  devStale: "Qurilma IMS bilan aloqada, lekin pech holati {t} dan beri kelmayapti — qurilma o'qiyotgan ma'lumot IMSga yetib kelmayapti.",
+  devTrouble: "IMS rad etgan yoki tuzatgan so'rovlar", devTroubleNone: "IMS hech bir so'rovni rad etmagan.",
   devOldFw: "Bu dastur Wi-Fi, xotira va ishlash vaqtini yubormaydi — 1.1.0 dan boshlab yuboradi.",
   devCheckedAt: "Tekshirildi: {t}",
 };
@@ -293,6 +296,9 @@ const uz_cyrl = {
   devFw: "Дастур", devWifi: "Wi-Fi", devLan: "Заводдаги манзили", devUp: "Ишлаб турибди",
   devMem: "Бўш хотира", devOut: "IMS кўрган манзил", devLastReq: "Охирги сўров",
   devReq: { plan: "режа", status: "ҳолат", file: "файл", ping: "сигнал" },
+  devStatusAt: "Ҳолат охирги келган", devFileAt: "Охирги файл",
+  devStale: "Қурилма IMS билан алоқада, лекин печ ҳолати {t} дан бери келмаяпти — қурилма ўқиётган маълумот IMSга етиб келмаяпти.",
+  devTrouble: "IMS рад этган ёки тузатган сўровлар", devTroubleNone: "IMS ҳеч бир сўровни рад этмаган.",
   devOldFw: "Бу дастур Wi-Fi, хотира ва ишлаш вақтини юбормайди — 1.1.0 дан бошлаб юборади.",
   devCheckedAt: "Текширилди: {t}",
 };
@@ -423,6 +429,9 @@ const ru = {
   devFw: "Прошивка", devWifi: "Wi-Fi", devLan: "Адрес на заводе", devUp: "Работает",
   devMem: "Свободная память", devOut: "Адрес, видимый IMS", devLastReq: "Последний запрос",
   devReq: { plan: "план", status: "состояние", file: "файл", ping: "сигнал" },
+  devStatusAt: "Состояние получено", devFileAt: "Последний файл",
+  devStale: "Устройство на связи с IMS, но состояние печей не приходит с {t} — то, что читает устройство, не доходит до IMS.",
+  devTrouble: "Запросы, которые IMS отклонил или исправил", devTroubleNone: "IMS не отклонял запросов.",
   devOldFw: "Эта прошивка не передаёт Wi-Fi, память и время работы — передаёт начиная с 1.1.0.",
   devCheckedAt: "Проверено: {t}",
 };
@@ -553,6 +562,9 @@ const en = {
   devFw: "Firmware", devWifi: "Wi-Fi", devLan: "Address at the factory", devUp: "Running for",
   devMem: "Free memory", devOut: "Address IMS sees", devLastReq: "Last request",
   devReq: { plan: "plan", status: "status", file: "file", ping: "heartbeat" },
+  devStatusAt: "Status last received", devFileAt: "Last file",
+  devStale: "The device is in touch with IMS, but no oven status has arrived since {t} — what it reads is not reaching IMS.",
+  devTrouble: "Requests IMS refused or repaired", devTroubleNone: "IMS has refused no request.",
   devOldFw: "This firmware does not send its Wi-Fi, memory or uptime — 1.1.0 and later do.",
   devCheckedAt: "Checked: {t}",
 };

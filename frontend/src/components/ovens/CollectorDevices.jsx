@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Cpu, RefreshCw, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, Wifi, WifiOff, AlertTriangle } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../ui/Button";
 import { SectionHead } from "../ui/DataTable";
@@ -14,6 +14,8 @@ import { fill, ago, stamp, fmtN, errOf } from "./ovensUtil";
 // own `wait_s` for it to call in.
 
 const POLL_MS = 3000;
+// the board posts every oven's status once a minute; three missed is «stale»
+const STATUS_STALE_S = 180;
 
 function dur(T, s) {
   const n = Math.max(0, Math.round(Number(s) || 0));
@@ -70,7 +72,29 @@ function Device({ d, T, waited, published }) {
         <Fact k={T.devMem} v={mem} />
         <Fact k={T.devOut} v={d.remote_ip} />
         <Fact k={T.devLastReq} v={d.last_path ? (T.devReq[d.last_path] || d.last_path) : null} />
+        <Fact k={T.devStatusAt} v={d.status_at ? `${ago(T, d.status_age_s)} (${stamp(d.status_at)})` : null} />
+        <Fact k={T.devFileAt} v={d.file_at ? stamp(d.file_at) : null} />
       </div>
+      {d.online && d.status_at && d.status_age_s > STATUS_STALE_S && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
+          style={{ background: toneTint("warn"), color: "var(--text-1)" }}>
+          <AlertTriangle size={14} className="shrink-0 mt-px" style={{ color: TONE_HEX.warn }} />
+          <span>{fill(T.devStale, { t: stamp(d.status_at) })}</span>
+        </p>
+      )}
+      {(d.trouble || []).length > 0 && (
+        <div className="mt-3">
+          <div className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{T.devTrouble}</div>
+          <ul className="mt-1 space-y-1">
+            {d.trouble.slice(0, 4).map((x, i) => (
+              <li key={i} className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
+                <span style={{ color: "var(--text-1)" }}>{stamp(x.at)}</span>
+                {" · "}{T.devReq[x.what] || x.what}{x.http ? ` · HTTP ${x.http}` : ""}{" — "}{x.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {!rich && d.fw && <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.devOldFw}</p>}
     </div>
   );

@@ -980,6 +980,29 @@ json_offload.install()
 
 
 from sqlalchemy.exc import OperationalError  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from fastapi.exception_handlers import request_validation_exception_handler  # noqa: E402
+
+
+@app.exception_handler(RequestValidationError)
+async def collector_validation_handler(request: Request, exc: RequestValidationError):
+    """FastAPI's own 422 for every route — and, for the oven collector's door,
+    a note on the collector's row first: a request refused before its handler
+    leaves no other trace, and the device then looks online while nothing it
+    sends is kept (services/revent_ovens.note_trouble)."""
+    if request.url.path.startswith("/api/ovens/collector/"):
+        try:
+            from fastapi.concurrency import run_in_threadpool
+            from app.services import revent_ovens
+            errs = exc.errors() if hasattr(exc, "errors") else []
+            reason = "; ".join(f"{'.'.join(str(x) for x in e.get('loc', ()))}: {e.get('msg', '')}"
+                               for e in errs[:4]) or "request refused"
+            size = int(request.headers.get("content-length") or 0) or None
+            await run_in_threadpool(revent_ovens.note_refused_request, request.headers.get("x-oven-key"),
+                                    request.headers.get("authorization"), request.url.path, reason, size)
+        except Exception:
+            logging.getLogger("app.ovens").exception("could not note a refused collector request")
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(OperationalError)
