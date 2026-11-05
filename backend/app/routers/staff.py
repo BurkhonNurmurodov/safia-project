@@ -66,41 +66,36 @@ STAFF_ROLES = {"admin", "supervisor", "shift-manager"}
 # spell it as `Manager.shift == _sm_shift(...)`, which reached the same shift in
 # every factory; see that module's docstring.
 
-# Roles that exist only as verifix-imported job titles and may NOT be chosen as
-# the target of a Role Change document — staff can only acquire them via verifix
-# uploads. This restriction applies ONLY to the role-change target picker; these
-# roles still import freely and show everywhere else (staff filter, etc.).
-# Bare "Кондитер" is intentionally assignable — only its "Кондитер/…"
-# sub-department composites are blocked (handled by the prefix below).
-VERIFIX_ONLY_TARGET_ROLES = {
-    "Скульптор",
-    "Фасовщик",
-    "Бригадир",
-    "Разработчик",
-    "Оператор",
-    "Оператор производственного оборудования",
-    "Просеивальщик",
-    "Заготовитель продуктов и сырья",
-    "Специалист по отгрузке",
-    "Холодильщик пищевой продукции",
-}
-_KONDITER_COMPOSITE_PREFIX = "Кондитер/"
+# The ONLY job titles a Role Change document may name, in the order the picker
+# lists them (the operator, 2026-11-05: «only 4 options should be there»).
+# «Снабженец» is the title the floor calls «Мицу» (its English label, see
+# startup.SNABJENETS_EN). Every other title the attendance files carry — a
+# composite such as «Лидер/крем-тесто» or «Грузчик/Снабженец», «Фасовщик»,
+# «Бригадир», an office job — still imports and shows everywhere else (the
+# staff filter, the tables); it is only never a role-change TARGET.
+ROLE_CHANGE_TARGETS = ("Лидер", "Снабженец", "Кондитер", "Пекарь")
+
+
+def _fold_title(job_title: str) -> str:
+    return " ".join((job_title or "").split()).casefold()
+
+
+_TARGET_FOLDS = frozenset(_fold_title(t) for t in ROLE_CHANGE_TARGETS)
 
 
 def is_assignable_target_role(job_title: str) -> bool:
-    """True if `job_title` may be selected as the target of a Role Change document.
+    """True if `job_title` may be selected as the target of a Role Change
+    document — one of `ROLE_CHANGE_TARGETS`, case and spacing aside."""
+    return _fold_title(job_title) in _TARGET_FOLDS
 
-    Blocked: the verifix-only base roles above, plus any "Кондитер/…" composite
-    (a sub-department). Bare "Кондитер" stays assignable.
-    """
-    jt = (job_title or "").strip()
-    if not jt:
-        return False
-    if jt in VERIFIX_ONLY_TARGET_ROLES:
-        return False
-    if jt.startswith(_KONDITER_COMPOSITE_PREFIX):
-        return False
-    return True
+
+def role_change_targets(job_titles) -> list:
+    """The picker's list: all four targets, always, each in the spelling the
+    attendance files carry where one folds to it, else the canonical one."""
+    filed = {}
+    for j in job_titles:
+        filed.setdefault(_fold_title(j), j)
+    return [filed.get(_fold_title(t), t) for t in ROLE_CHANGE_TARGETS]
 
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
@@ -2506,8 +2501,8 @@ def file_field_options(db: Session) -> dict:
     return {
         "job_titles": job_titles,
         "schedules": schedules,
-        # Subset selectable as a Role Change target (verifix-only roles removed).
-        "assignable_job_titles": [j for j in job_titles if is_assignable_target_role(j)],
+        # The four titles a Role Change may name (`ROLE_CHANGE_TARGETS`).
+        "assignable_job_titles": role_change_targets(job_titles),
     }
 
 
@@ -5111,7 +5106,7 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
     if not body.new_role:
         raise HTTPException(status_code=400, detail="new_role is required")
     if not is_assignable_target_role(body.new_role):
-        raise HTTPException(status_code=400, detail="This role can only be set from verifix files and cannot be chosen as a role-change target")
+        raise HTTPException(status_code=400, detail="A role change can only name Лидер, Снабженец, Кондитер or Пекарь")
     if caller.get("role") == "supervisor":
         _assert_day_open(db, manager_id, d)
     payload = _build_role_payload(db, manager_id, d, body.new_role, body.employees)
@@ -5316,7 +5311,7 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
     if not body.new_role:
         raise HTTPException(status_code=400, detail="new_role is required")
     if not is_assignable_target_role(body.new_role):
-        raise HTTPException(status_code=400, detail="This role can only be set from verifix files and cannot be chosen as a role-change target")
+        raise HTTPException(status_code=400, detail="A role change can only name Лидер, Снабженец, Кондитер or Пекарь")
     doc.payload = _build_role_payload(db, doc.manager_id, doc.date, body.new_role, body.employees)
     _record_history(db, doc, "edited", caller, {
         "new_role": body.new_role, "employee_count": len(body.employees),

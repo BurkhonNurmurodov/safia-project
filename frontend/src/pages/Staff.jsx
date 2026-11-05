@@ -1819,21 +1819,27 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
     });
   }
 
+  // The four titles a role change may name (the server's ROLE_CHANGE_TARGETS).
+  // A draft filed before 2026-11-05 may name another; it reads as unpicked, so
+  // the editor asks for one of the four instead of saving into a refusal.
+  const roleChoices = roleOpts.assignable_job_titles ?? roleOpts.job_titles;
+  const pickedRole = roleChoices.includes(newRole) ? newRole : "";
+
   async function handleSave() {
     setError("");
-    if (!newRole)        { setError(t("staff.chooseRole")); return; }
+    if (!pickedRole)     { setError(t("staff.chooseRole")); return; }
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
     setSaving(true);
     try {
       if (isEdit) {
         await api.put(`${S.base}/documents/${editDoc.id}`, {
-          new_role: newRole, employees: [...selected],
+          new_role: pickedRole, employees: [...selected],
         });
       } else {
         await api.post(`${S.base}/documents`, {
           doc_type: "role_change", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
-          new_role: newRole, employees: [...selected],
+          new_role: pickedRole, employees: [...selected],
         });
       }
       qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
@@ -1864,7 +1870,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
         <div className="flex flex-wrap items-center justify-end gap-2 w-full">
           <span className="flex-1 min-w-0 self-center text-[11px] max-sm:basis-full max-sm:text-xs"
             style={{ color: error ? "#ef4444" : isPhone ? "var(--text-3)" : "var(--text-4)" }}>
-            {error || `${selected.size} ${t("staff.employeesWord")} → ${tx(newRole) || "…"}`}
+            {error || `${selected.size} ${t("staff.employeesWord")} → ${tx(pickedRole) || "…"}`}
           </span>
           <Button variant="secondary" size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" onClick={onClose}>{t("staff.cancel")}</Button>
           <Button size="sm" className="whitespace-nowrap max-sm:min-h-[38px] max-[359px]:w-full" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
@@ -1877,9 +1883,9 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
         <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.newRoleFor")}</span>
           <StyledSelect
-            value={newRole}
+            value={pickedRole}
             onChange={setNewRole}
-            options={(roleOpts.assignable_job_titles ?? roleOpts.job_titles).map(j => ({ value: j, label: tx(j) }))}
+            options={roleChoices.map(j => ({ value: j, label: tx(j) }))}
             placeholder={t("staff.selectRoleOpt")}
             className="flex-1 min-w-[200px] text-xs"
           />

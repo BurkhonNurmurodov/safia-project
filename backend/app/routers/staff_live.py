@@ -1136,7 +1136,7 @@ def _role_payload(body, ud) -> dict:
     if not body.new_role:
         raise HTTPException(status_code=400, detail="new_role is required")
     if not is_assignable_target_role(body.new_role):
-        raise HTTPException(status_code=400, detail="This role can only be set from verifix files and cannot be chosen as a role-change target")
+        raise HTTPException(status_code=400, detail="A role change can only name Лидер, Снабженец, Кондитер or Пекарь")
     rows = _picked(ud, body.employees, came=True)
     return {"new_role": body.new_role,
             "employees": [{"employee_id": r["employee_id"], "worker_name": r["worker_name"],
