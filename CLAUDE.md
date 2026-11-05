@@ -10544,6 +10544,15 @@ register is `/panel/ovens` (tools group, no capKey).
   record decoder (20-byte big-endian records; recipe / manual starts carry a
   name and a program) — `tools/revent-oven/revent_oven.py` keeps its own
   copy so it stays stdlib-only; change both together.
+- **The plan lists only the log files an oven can still hold** (2026-11-05,
+  `revent_ovens.plan_logs`): per oven the `PLAN_LOGS` (8) newest by name
+  (the oven keeps its 7 newest day files) together with the 8 the collector
+  sent last (an oven that restarts its numbering). IMS keeps every file
+  forever, and the board parses the whole plan into its ~67 KB of internal RAM
+  every minute — listing them all grew by one file per oven per day until it
+  would not fit. A file the plan leaves out is sent whole again; `save_log`
+  stamps `updated_at` even on identical bytes so it is listed from then on.
+  An oven model keeping more than ~8 files would need `PLAN_LOGS` raised.
 - **What each record MEANS is `services/revent_analytics.py`**, taken from the
   decompiled Windows app 1.3.39: oven modes from records 1/2 (off), 3 and 13
   (standby), 4 (energy save), 9/10 (recipe / manual bake), each lasting to

@@ -56,6 +56,14 @@ POLL = {"status_s": 60, "logs_s": 600, "settings_s": 3600,
 
 MAX_FILE = 8 * 1024 * 1024          # one log file, raw — a day is ~250 KB
 MAX_STATUS_LINES = 80
+
+# How many of an oven's stored log files plan() lists. The oven keeps its 7
+# newest day files, and the collector needs the size and SHA-256 of exactly
+# those; a file the plan leaves out is simply sent whole again. The board reads
+# the plan into its small internal RAM every minute, so listing every file IMS
+# has ever kept (one more per oven per day, forever) would run it out of memory.
+PLAN_LOGS = 8
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 LOG_NAME = re.compile(r"^\d{1,12}\.log$")
 SERVICE_NAME = "ServiceData.txt"
 
@@ -75,17 +83,32 @@ def collector_of(presented: Optional[str]) -> Optional[str]:
     return None
 
 
+def plan_logs(rows) -> dict:
+    """One oven's stored files the plan lists: the PLAN_LOGS newest by name
+    (the oven numbers its day files upward; the board orders them by length,
+    then text) together with the PLAN_LOGS the collector sent last — the second
+    set covers an oven that starts its numbering over, and a file re-sent
+    because the plan left it out (save_log stamps it) is listed from then on.
+    `rows` carry name, size, sha256, updated_at and id."""
+    by_name = sorted(rows, key=lambda r: (len(r.name), r.name), reverse=True)[:PLAN_LOGS]
+    by_time = sorted(rows, key=lambda r: (r.updated_at or _EPOCH, r.id), reverse=True)[:PLAN_LOGS]
+    keep = {r.name for r in by_name} | {r.name for r in by_time}
+    return {r.name: {"size": r.size, "sha256": r.sha256} for r in rows if r.name in keep}
+
+
 def plan(db: Session) -> dict:
-    """What the collector should read, and what is already kept here."""
+    """What the collector should read, and what is already kept here — of each
+    oven's log files only those it can still be holding (`plan_logs`)."""
     ovens = (db.query(ReventOven).filter(ReventOven.active.is_(True))
              .order_by(ReventOven.position, ReventOven.id).all())
     ids = [o.id for o in ovens]
-    files: dict[int, dict] = {i: {} for i in ids}
+    stored: dict[int, list] = {i: [] for i in ids}
     if ids:
-        for oid, name, size, sha in (db.query(ReventOvenLog.oven_id, ReventOvenLog.name,
-                                              ReventOvenLog.size, ReventOvenLog.sha256)
-                                     .filter(ReventOvenLog.oven_id.in_(ids))):
-            files[oid][name] = {"size": size, "sha256": sha}
+        for r in (db.query(ReventOvenLog.oven_id, ReventOvenLog.name, ReventOvenLog.size,
+                           ReventOvenLog.sha256, ReventOvenLog.updated_at, ReventOvenLog.id)
+                  .filter(ReventOvenLog.oven_id.in_(ids))):
+            stored[r.oven_id].append(r)
+    files = {oid: plan_logs(rs) for oid, rs in stored.items()}
     from app.services import oven_firmware   # lazy: a leaf, no import loop
     return {
         "poll": POLL,
@@ -145,6 +168,9 @@ def save_log(db: Session, oven: ReventOven, name: str, offset: int, chunk: bytes
     row.sha256 = hashlib.sha256(whole).hexdigest()
     row.first_at, row.last_at = first, last
     row.day = first.date() if first else None
+    # stamped even when the bytes did not change: a file sent again whole
+    # because plan() left it out is then among the newest and listed again
+    row.updated_at = now()
     oven.logs_at = now()
     return row
 
