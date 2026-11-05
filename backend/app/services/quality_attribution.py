@@ -142,3 +142,38 @@ def unit_rows(db: Session, d_from: str, d_to: str,
         if w.unit is not None:
             acc[(w.unit["id"], status, day)] += int(n)
     return [(uid, st, day, n) for (uid, st, day), n in acc.items()]
+
+
+def unit_rows_both(db: Session, d_from: str, d_to: str,
+                   skip_category: str) -> tuple[list[tuple], list[tuple]]:
+    """`unit_rows` twice — every record, and every record but `skip_category`
+    — from ONE read and ONE `Resolver` («Hisobotlar» counts complaints with
+    hair and closes them without, 2026-11-05). Each name is matched on its own
+    (`supervisor_match`), so a resolver built over every spelling attributes a
+    record exactly as one built over the narrower set does: the two lists are
+    the two `unit_rows` answers."""
+    from collections import defaultdict
+
+    from sqlalchemy import case, func
+
+    from app.models import QualityComplaint as QC
+
+    skip = case((QC.category == skip_category, 1), else_=0)
+    groups = (db.query(QC.brigadir, QC.place, QC.fault_code, QC.date, QC.status, skip,
+                       func.count(QC.id))
+              .filter(QC.date >= d_from, QC.date < d_to)
+              .group_by(QC.brigadir, QC.place, QC.fault_code, QC.date, QC.status, skip)
+              .all())
+    who = Resolver(db, {g[0] for g in groups})
+    every: dict[tuple, int] = defaultdict(int)
+    kept: dict[tuple, int] = defaultdict(int)
+    for brig, place, code, day, status, skipped, n in groups:
+        w = who(place, brig, code, day)
+        if w.unit is None:
+            continue
+        k = (w.unit["id"], status, day)
+        every[k] += int(n)
+        if not skipped:
+            kept[k] += int(n)
+    return ([(u, st, d, n) for (u, st, d), n in every.items()],
+            [(u, st, d, n) for (u, st, d), n in kept.items()])

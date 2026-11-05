@@ -197,7 +197,8 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
           cells: list, leader_names: dict,
           cell_ids: Optional[set] = None,
           skus: Optional[set] = None,
-          compare: bool = True) -> dict:
+          compare: bool = True,
+          totals_only: bool = False) -> dict:
     """The whole payload for one scope.
 
     `managers` — the units whose lines are read (already narrowed by the
@@ -207,7 +208,11 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
     leader pick arrives here as that leader's cells), None = no narrowing.
     `skus` — the picked products (`pp_daily.sap_code`, i.e. `daily_key`),
     None = every product. `compare=False` reads no comparison period (the
-    leaders' KPI board, which asks for one month and nothing before it)."""
+    leaders' KPI board, which asks for one month and nothing before it).
+    `totals_only=True` («Hisobotlar», 2026-11-05) answers `totals` alone — the
+    same sums from the same lines in the same order — and leaves every row
+    list empty; it needs no `cells` and holds only with no cell or product
+    pick, where every line counts whole."""
     win = window(date_from, date_to)
     if not compare:
         win["prev_lo"] = win["prev_hi"] = None
@@ -266,6 +271,39 @@ def build(db: Session, managers: list, date_from: date, date_to: date, *,
         if a > 0:
             return "np"
         return None
+
+    # ── totals only: with no cell or product pick every line counts whole
+    #    (w = 1), so the totals need no share rule and none of the product,
+    #    cell or day rows below — the main loop's own sums, branch for branch.
+    if totals_only and cell_ids is None and skus is None:
+        total = _Acc()
+        t_units = [set() for _ in range(n)]
+        t_nf = [set() for _ in range(n)]
+        t_np = [set() for _ in range(n)]
+        for (mid, d, _line, _wc, _key, _qp, _qa, pv, av) in recs:
+            st = state(mid, d)
+            if not lo <= d <= hi:
+                continue
+            i = (d - lo).days
+            wp, wa = 1.0 * pv, 1.0 * av
+            if st == "ok":
+                total.add(wp, wa)
+                if wp > 0:
+                    t_units[i].add(mid)
+            elif st == "nf" and wp > 0:
+                t_nf[i].add(mid)
+            elif st == "np" and wa > 0:
+                t_np[i].add(mid)
+        counted_days = sum(1 for i in range(n) if t_units[i])
+        return {
+            **base,
+            "days": [d.isoformat() for d in days],
+            "totals": {**_totals_out(total, counted_days,
+                                     sum(len(x) for x in t_nf), sum(len(x) for x in t_np)),
+                       "unit_days": sum(len(x) for x in t_units)},
+            "prev": None, "trend": [], "units": [], "cell_rows": [],
+            "products": [], "product_options": [],
+        }
 
     # ── who makes a line: THE share rule (wc_group.share), cached per
     #    (unit, work centre, letter) ──────────────────────────────────────

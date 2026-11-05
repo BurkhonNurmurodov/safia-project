@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Optional
 
 KAIZEN_BUFFER = 10
@@ -23,6 +24,14 @@ def is_direct_role(job_title: str, hours_worked=None, is_supervisor: bool = Fals
     if hw <= 0:
         return False  # didn't come — exclude regardless of job title
 
+    return _direct_title(job_title)
+
+
+@lru_cache(maxsize=4096)
+def _direct_title(job_title) -> bool:
+    """The title half of `is_direct_role`, remembered per title — the загрузка
+    asks it once per attendance row (~93,000 times for a month of the plant)
+    about a few dozen titles."""
     jt = (job_title or "").strip()
     if not jt or jt in ("nan", "NaN"):
         return True   # hours > 0 already checked above, empty title is fine

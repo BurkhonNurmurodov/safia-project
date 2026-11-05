@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from collections import namedtuple
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -216,6 +217,7 @@ def _hm(dt) -> Optional[str]:
     return dt.strftime("%H:%M") if dt is not None else None
 
 
+@lru_cache(maxsize=4096)
 def normalize_role(job_title: str) -> str:
     if not job_title or job_title in ("nan", "NaN", ""):
         return "Other"

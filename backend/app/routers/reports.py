@@ -40,7 +40,8 @@ from app.database import get_db
 from app.permissions import require_page
 from app.services import (
     action_log, assistant_documents, brigadir_board as bb, idle_scope, idle_share,
-    ojidaniya_cost, plan_fulfillment, quality_attribution, reports, turnover, wage_rate,
+    idle_source, ojidaniya_cost, plan_fulfillment, quality_attribution, reports, turnover,
+    wage_rate,
 )
 from app.services.factory_scope import empty_scope, resolve_factory, scoped_manager_ids
 from app.services import verifix_month_kinds, verifix_scope
@@ -78,16 +79,18 @@ def _ids(raw) -> list[int]:
     return sorted(out)
 
 
-def _quality_rows(db: Session, d_from: date, d_to: date, skip=bb.SKIP_CATEGORY):
-    """The Quality register over the window, WITHOUT the hair category (unless
-    `skip` is None — the complaint COUNT counts hair too), each
-    record credited by `quality_attribution` — the /leaderboard reading, which
-    is itself the shift dashboard's and the Quality page's own:
-    (unit id, status, date, count). The upper bound is exclusive on the day
-    after `d_to`, because `date` is an ISO string a row may carry a time on."""
-    return quality_attribution.unit_rows(db, d_from.isoformat(),
-                                         (d_to + timedelta(days=1)).isoformat(),
-                                         skip)
+def _quality_rows(db: Session, d_from: date, d_to: date) -> tuple[list, list]:
+    """The Quality register over the window, (every record, the records WITHOUT
+    the hair category) — the complaint COUNT counts hair, the closure rate does
+    not — each record credited by `quality_attribution`, the /leaderboard
+    reading, which is itself the shift dashboard's and the Quality page's own:
+    (unit id, status, date, count). One read for both
+    (`quality_attribution.unit_rows_both`). The upper bound is exclusive on the
+    day after `d_to`, because `date` is an ISO string a row may carry a time
+    on."""
+    return quality_attribution.unit_rows_both(db, d_from.isoformat(),
+                                              (d_to + timedelta(days=1)).isoformat(),
+                                              bb.SKIP_CATEGORY)
 
 
 def _idle_by_month(db: Session, payload: dict, months: list[dict], shift, mids, factory,
@@ -232,15 +235,14 @@ def _cost_by_month(db: Session, payload: dict, months: list[dict], ids: list[int
 
 def _plan_by_month(db: Session, units: list, months: list[dict]) -> dict:
     """Per month: `plan_fulfillment.build`'s own minute totals (the /plan
-    page's figure)."""
+    page's figure) — asked for the totals alone (`totals_only`): no cell or
+    product pick, so no share rule and none of the page's row lists."""
     totals: dict[str, dict] = {}
     if not units:
         return {m["ym"]: {} for m in months}
-    cells, leaders = plan_fulfillment.registry(
-        db, [m.id for m in units], months[0]["from"], months[-1]["to"])
     for m in months:
-        built = plan_fulfillment.build(db, units, m["from"], m["to"],
-                                       cells=cells, leader_names=leaders, compare=False)
+        built = plan_fulfillment.build(db, units, m["from"], m["to"], cells=[],
+                                       leader_names={}, compare=False, totals_only=True)
         totals[m["ym"]] = built.get("totals") or {}
     return totals
 
@@ -362,13 +364,13 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
         verifix_month_kinds.want([m0["ym"] for m0 in months])
         with clock("concerns"):
             xav = bb.concerns(db, ids, months)
-        with clock("quality"):
-            qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
         # The complaint COUNT includes hair (the operator, 2026-11-02: «the
         # number should be the with hair complaints»); the closure rate beside
         # it stays hair aside, as on the Quality page.
         with clock("quality"):
-            qual_n = bb.quality_filed(_quality_rows(db, d_from, d_to, skip=None), ids, months)
+            q_all, q_kept = _quality_rows(db, d_from, d_to)
+            qual = bb.quality(q_kept, ids, months)
+            qual_n = bb.quality_filed(q_all, ids, months)
         with clock("plan"):
             plan_tot = _plan_by_month(db, units, months)
         with clock("idle"):
@@ -502,7 +504,7 @@ def profile_month(
     t0 = time.perf_counter()
     prof.enable()
     try:
-        with gc_paused():
+        with gc_paused(), idle_source.reuse_weights(db):
             built = _month_part(db, payload, mo, None, None, [])
     finally:
         prof.disable()
@@ -550,7 +552,9 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
     states: list[str] = []
     for mo in months:
         def run(s: Session, mo=mo) -> dict:
-            with gc_paused():      # a build's objects die by refcount; a full GC is pure GIL
+            # A build's objects die by refcount (a full GC is pure GIL), and
+            # its four readers of the cell weights share one computation.
+            with gc_paused(), idle_source.reuse_weights(s):
                 return _month_part(s, payload, mo, factory, shift, mids)
 
         kept = _RUNNING if mo["partial"] else _FINISHED

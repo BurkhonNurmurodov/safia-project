@@ -76,6 +76,7 @@ with its reason on it, and the legacy minutes-only `cell_ojidaniya` rows are
 never consulted — they predate both the interval model and any from-date.
 """
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Iterable, Optional
 
@@ -273,7 +274,44 @@ class _Units:
         return m.get(unit, 0)
 
 
+_MEMO = "idle_source.reuse"
+
+
+@contextmanager
+def reuse_weights(db: Session):
+    """Inside it, the cell weights (`_n_by_cell`) and the unit waiting
+    (`unit_downtime`) are computed ONCE per (cells / units, range) on this
+    session and handed back to every later reader of the same — four readers
+    of one «Hisobotlar» month ask for them (the загрузка, /downtime's figure,
+    the idle share, the cost), 2026-11-05. The answers are shared, so a caller
+    inside reads them and never changes them; and only a build that WRITES
+    nothing in the session may hold it, or a weight could outlive the pin it
+    was read from. Off everywhere else: every other caller computes as
+    before."""
+    if _MEMO in db.info:
+        yield
+        return
+    db.info[_MEMO] = {}
+    try:
+        yield
+    finally:
+        db.info.pop(_MEMO, None)
+
+
 def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple[int, str], float]:
+    """`_n_by_cell_raw` — THE weight definition, below — reused inside
+    `reuse_weights`."""
+    memo = db.info.get(_MEMO)
+    if memo is None:
+        return _n_by_cell_raw(db, cells, date_from, date_to)
+    key = ("n", tuple(sorted(c.id for c in cells)), date_from, date_to)
+    got = memo.get(key)
+    if got is None:
+        got = memo[key] = dict(_n_by_cell_raw(db, cells, date_from, date_to))
+    return got
+
+
+def _n_by_cell_raw(db: Session, cells, date_from: date, date_to: date) -> dict[tuple[int, str], float]:
     """N per (cell, "YYYY-MM-DD") — the weight each cell carries in its unit's
     mean. THE definition, shared by `unit_downtime` and `cell_counts`: the two
     must divide by the same thing or the matrix and the KPI stop describing one
@@ -383,7 +421,18 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
         return {}
+    memo = db.info.get(_MEMO)
+    if memo is not None:
+        key = ("ud", tuple(ids), date_from, date_to)
+        got = memo.get(key)
+        if got is None:
+            got = memo[key] = _unit_downtime_raw(db, ids, date_from, date_to)
+        return got
+    return _unit_downtime_raw(db, ids, date_from, date_to)
 
+
+def _unit_downtime_raw(db: Session, ids: list[int], date_from: date,
+                       date_to: date) -> dict[tuple[int, str], dict]:
     # Every cell that stood in one of the units on a day of the range — a cell
     # that has since moved away still weighs into its OLD unit's days, and a
     # cell weighs into a unit only on the days it stood there (`cell_links`,

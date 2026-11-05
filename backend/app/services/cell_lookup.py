@@ -27,6 +27,7 @@ those codes — the enrichment is correct plumbing that lights up as data lands.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -44,9 +45,19 @@ _WS_COL = {
 _LANGS = ("ru", "uz", "uz_cyrl", "en")
 
 
+_WS = re.compile(r"\s+")
+
+
+@lru_cache(maxsize=16384)
+def _norm_text(text: str) -> str:
+    return _WS.sub("", text).upper()
+
+
 def _norm(code) -> str:
-    """Common normal form for matching: whitespace stripped, upper-cased."""
-    return re.sub(r"\s+", "", str(code or "")).upper()
+    """Common normal form for matching: whitespace stripped, upper-cased.
+    Remembered per text — a report build asks it ~85,000 times for a few
+    hundred distinct codes (2026-11-05)."""
+    return _norm_text(str(code or ""))
 
 
 def _leader_names(db: Session) -> dict[int, str]:

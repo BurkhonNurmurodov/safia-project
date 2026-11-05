@@ -10193,7 +10193,14 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   writers_refresh=True)`); the payload says `state` «refreshing» and the page
   asks again (3 s for a minute, then 20 s) and prints «Yangilanmoqda…», else
   «Tayyorlandi: HH:MM» — `built_at` is the OLDEST month's build. Every build
-  logs and carries `timings` per section (`_Clock`). The default report (this
+  logs and carries `timings` per section (`_Clock`). A month's build reuses
+  what its readers share (2026-11-05, after a cProfile on production): the cell
+  weights and unit waiting once per build (`idle_source.reuse_weights`, opt-in,
+  read-only sessions only), the plan totals without the share rule or row lists
+  (`plan_fulfillment.build(totals_only=True)`), the Quality register read once
+  for both counts (`quality_attribution.unit_rows_both`), and the code / title
+  normalisers remembered per text (`cell_lookup._norm`,
+  `kpi_calculator._direct_title`, `workers.normalize_role`). The default report (this
   month and the one before, the whole plant) is built two minutes after a
   process starts (`reports.warm`, from the lifespan). The export reads the same
   parts (a deep copy of the sections it wants, because it writes the page's
