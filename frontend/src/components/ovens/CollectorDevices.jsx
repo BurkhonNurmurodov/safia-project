@@ -26,15 +26,20 @@ function dur(T, s) {
   return part(T.min, m);
 }
 
-function Fact({ k, v }) {
+function Fact({ k, v, tone }) {
   if (v == null || v === "") return null;
   return (
     <div className="min-w-0">
       <div className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{k}</div>
-      <div className="text-sm truncate tabular-nums" style={{ color: "var(--text-1)" }} title={String(v)}>{v}</div>
+      <div className="text-sm truncate tabular-nums" style={{ color: tone ? TONE_HEX[tone] : "var(--text-1)", fontWeight: tone ? 600 : undefined }} title={String(v)}>{v}</div>
     </div>
   );
 }
+
+// Wi-Fi signal: from about -80 dBm a big POST (a status of every oven, a log
+// file) starts to fail while the small plan GET and the heartbeat still pass.
+const WEAK_DBM = -80;
+const VERY_WEAK_DBM = -85;
 
 function Device({ d, T, waited, published }) {
   const tone = d.online ? "ok" : "bad";
@@ -46,6 +51,9 @@ function Device({ d, T, waited, published }) {
   const net = onEth ? (info.link ? fill(T.netEth, { n: info.link }) : T.netEthBare) : info.net === "wifi" ? T.netWifi : null;
   // RAM in KB, the 2 MB PSRAM in MB — short enough for a quarter of the card
   const mem = info.heap ? `${fmtN(info.heap)} KB${info.psram ? ` · ${fmtN(info.psram / 1024, 1)} MB` : ""}` : null;
+  const dbm = info.rssi != null && info.rssi !== "" ? Number(info.rssi) : NaN;
+  const weakTone = Number.isFinite(dbm) && dbm <= WEAK_DBM ? (dbm <= VERY_WEAK_DBM ? "bad" : "warn") : null;
+  const stale = d.online && d.status_at && d.status_age_s > STATUS_STALE_S;
   return (
     <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
       <div className="flex items-center gap-3 flex-wrap">
@@ -66,20 +74,32 @@ function Device({ d, T, waited, published }) {
       <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5" style={{ opacity: d.online ? 1 : 0.55 }}>
         <Fact k={T.devFw} v={d.fw && published && published !== d.fw ? fill(T.devFwNext, { v: d.fw, n: published }) : d.fw} />
         <Fact k={T.devNet} v={net} />
-        <Fact k={onEth ? T.devWifiBackup : T.devWifi} v={wifi} />
+        <Fact k={onEth ? T.devWifiBackup : T.devWifi} v={wifi} tone={weakTone} />
         <Fact k={T.devLan} v={info.ip} />
         <Fact k={T.devUp} v={info.up ? dur(T, info.up) : null} />
         <Fact k={T.devMem} v={mem} />
+        <Fact k={T.devBlk} v={info.blk ? `${fmtN(info.blk)} KB` : null} />
+        <Fact k={T.devSent} v={info.sent != null && info.sent !== "" ? ago(T, Number(info.sent)) : null} />
         <Fact k={T.devOut} v={d.remote_ip} />
         <Fact k={T.devLastReq} v={d.last_path ? (T.devReq[d.last_path] || d.last_path) : null} />
         <Fact k={T.devStatusAt} v={d.status_at ? `${ago(T, d.status_age_s)} (${stamp(d.status_at)})` : null} />
         <Fact k={T.devFileAt} v={d.file_at ? stamp(d.file_at) : null} />
       </div>
-      {d.online && d.status_at && d.status_age_s > STATUS_STALE_S && (
+      {stale && (
         <p className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
           style={{ background: toneTint("warn"), color: "var(--text-1)" }}>
           <AlertTriangle size={14} className="shrink-0 mt-px" style={{ color: TONE_HEX.warn }} />
-          <span>{fill(T.devStale, { t: stamp(d.status_at) })}</span>
+          <span>
+            {fill(T.devStale, { t: stamp(d.status_at) })}
+            {info.err ? <>{" "}{T.devErr}: <b className="font-semibold">{info.err}</b></> : null}
+          </span>
+        </p>
+      )}
+      {d.online && weakTone === "bad" && (
+        <p className="mt-2 flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
+          style={{ background: toneTint("warn"), color: "var(--text-1)" }}>
+          <WifiOff size={14} className="shrink-0 mt-px" style={{ color: TONE_HEX.warn }} />
+          <span>{fill(T.devWeak, { n: info.rssi })}</span>
         </p>
       )}
       {(d.trouble || []).length > 0 && (

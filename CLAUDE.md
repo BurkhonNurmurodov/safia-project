@@ -10705,7 +10705,18 @@ register is `/panel/ovens` (tools group, no capKey).
   with no ovens in the plan). `show` gains the largest free block and
   «delivered … ago; last failure: …»; `X-Collector-Info` gains `blk`, `sent`
   (seconds since IMS took a reading) and `err` (the last failure) — the
-  server's `INFO_KEYS` does not keep them yet. Wi-Fi at the board's spot that
+  server keeps all three from v4.421.3 (`INFO_KEYS`) and «Kollektor
+  qurilmasi» prints them: «Eng katta bo'sh blok», «IMS oxirgi qabul qilgan
+  (qurilma hisobi)», and the board's own error inside the amber «status not
+  arriving» line. That pair separates the three cases the card could not
+  before: the board says it has not delivered (`sent` old, `err` set — the
+  failure is on the board's side), it says it delivered while the card's
+  «Holat oxirgi kelgan» is old (IMS took the post and stored nothing — look at
+  the door's refusals), or the board is silent about it. A Wi-Fi signal at or
+  below −80 dBm is printed amber and at or below −85 dBm red, with a line
+  saying small requests (plan, heartbeat) pass where big ones (status, files)
+  may not — on 2026-11-05 the card read online, −91 dBm and no status for 11
+  minutes while the plan was asked every round. Wi-Fi at the board's spot that
   day roamed over five access points at −59…−86 dBm and dropped every few
   minutes.
 - **A loaded bake whose timer has not started is READY, not baking**

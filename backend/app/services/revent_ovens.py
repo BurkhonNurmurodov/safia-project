@@ -211,8 +211,14 @@ def log_bytes(row: ReventOvenLog) -> bytes:
 # X-Collector-Info header ("fw=1.1.0;up=812;rssi=-59;ssid=alisa;ip=…"); from
 # 1.2.0 also the way out it used, `net` ("eth" | "wifi"), and an Ethernet
 # link's speed, `link` (Mbit/s). `ip` is the board's address on that network.
+# From 1.4.2 also `blk` (the largest free block of RAM, KB), `sent` (seconds
+# since IMS last TOOK a reading, by the board's own count) and `err` (why its
+# last post did not reach IMS, in the board's own words) — the three things that
+# tell «the board cannot send» from «IMS refused it» from «IMS took it and kept
+# nothing» when the card says the device is online and no status arrives.
 
-INFO_KEYS = {"fw", "up", "rssi", "ssid", "ip", "heap", "psram", "ping", "kind", "host", "net", "link"}
+INFO_KEYS = {"fw", "up", "rssi", "ssid", "ip", "heap", "psram", "blk", "sent", "err", "ping", "kind", "host",
+             "net", "link"}
 
 
 def parse_info(header: Optional[str]) -> dict:

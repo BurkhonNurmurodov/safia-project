@@ -166,6 +166,9 @@ const uz = {
   devStale: "Qurilma IMS bilan aloqada, lekin pech holati {t} dan beri kelmayapti — qurilma o'qiyotgan ma'lumot IMSga yetib kelmayapti.",
   devTrouble: "IMS rad etgan yoki tuzatgan so'rovlar", devTroubleNone: "IMS hech bir so'rovni rad etmagan.",
   devOldFw: "Bu dastur Wi-Fi, xotira va ishlash vaqtini yubormaydi — 1.1.0 dan boshlab yuboradi.",
+  devBlk: "Eng katta bo'sh blok", devSent: "IMS oxirgi qabul qilgan (qurilma hisobi)",
+  devErr: "qurilmaning o'z xatosi",
+  devWeak: "Wi-Fi signali juda zaif ({n} dBm): kichik so'rovlar (reja, signal) o'tadi, katta so'rovlar (pech holati, fayllar) yetib bormasligi mumkin. Platani kuchliroq signal joyiga ko'chiring.",
   devCheckedAt: "Tekshirildi: {t}",
 };
 
@@ -300,6 +303,9 @@ const uz_cyrl = {
   devStale: "Қурилма IMS билан алоқада, лекин печ ҳолати {t} дан бери келмаяпти — қурилма ўқиётган маълумот IMSга етиб келмаяпти.",
   devTrouble: "IMS рад этган ёки тузатган сўровлар", devTroubleNone: "IMS ҳеч бир сўровни рад этмаган.",
   devOldFw: "Бу дастур Wi-Fi, хотира ва ишлаш вақтини юбормайди — 1.1.0 дан бошлаб юборади.",
+  devBlk: "Энг катта бўш блок", devSent: "IMS охирги қабул қилган (қурилма ҳисоби)",
+  devErr: "қурилманинг ўз хатоси",
+  devWeak: "Wi-Fi сигнали жуда заиф ({n} dBm): кичик сўровлар (режа, сигнал) ўтади, катта сўровлар (печ ҳолати, файллар) етиб бормаслиги мумкин. Платани кучлироқ сигнал жойига кўчиринг.",
   devCheckedAt: "Текширилди: {t}",
 };
 
@@ -433,6 +439,9 @@ const ru = {
   devStale: "Устройство на связи с IMS, но состояние печей не приходит с {t} — то, что читает устройство, не доходит до IMS.",
   devTrouble: "Запросы, которые IMS отклонил или исправил", devTroubleNone: "IMS не отклонял запросов.",
   devOldFw: "Эта прошивка не передаёт Wi-Fi, память и время работы — передаёт начиная с 1.1.0.",
+  devBlk: "Самый большой свободный блок", devSent: "IMS принял в последний раз (по счёту устройства)",
+  devErr: "собственная ошибка устройства",
+  devWeak: "Сигнал Wi-Fi очень слабый ({n} dBm): маленькие запросы (план, сигнал) проходят, большие (состояние печей, файлы) могут не доходить. Перенесите плату туда, где сигнал сильнее.",
   devCheckedAt: "Проверено: {t}",
 };
 
@@ -566,6 +575,9 @@ const en = {
   devStale: "The device is in touch with IMS, but no oven status has arrived since {t} — what it reads is not reaching IMS.",
   devTrouble: "Requests IMS refused or repaired", devTroubleNone: "IMS has refused no request.",
   devOldFw: "This firmware does not send its Wi-Fi, memory or uptime — 1.1.0 and later do.",
+  devBlk: "Largest free block", devSent: "IMS last took a reading (device's count)",
+  devErr: "the device's own error",
+  devWeak: "The Wi-Fi signal is very weak ({n} dBm): small requests (plan, heartbeat) get through, big ones (oven status, files) may not. Move the board to where the signal is stronger.",
   devCheckedAt: "Checked: {t}",
 };
 
